@@ -59,7 +59,10 @@ TinyGo audio module:
 The image allocation accepts 32 bytes through 2 MiB and happens before audio
 initialization. A new module instance is required to load a different project.
 Legacy projects encode as version 13. Graph chords, schedules, prepared audio,
-and the experimental guitar use version 15. Versions 8–13 remain readable;
+and the experimental guitar use version 15. Independent performed note gates
+use [version 16](../spec/kernel-image-v16.md) and require
+`CapabilityPerformance` (bit 18), together with `CapabilityUnifiedImage`.
+Versions 8–13 remain readable;
 version 14 is rejected. See the [image format](../spec/kernel-image-v15.md). The little-endian image carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,
 and song entries. Use `kernelimage.Encode` instead of constructing the image

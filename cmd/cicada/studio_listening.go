@@ -77,6 +77,48 @@ func studioArrangementEnd(p *project.Project) int64 {
 func prepareStudioListening(p *project.Project, v studioListening) (*project.Project, *studioListening, error) {
 	end := studioArrangementEnd(p)
 	switch v.Kind {
+	case "pattern":
+		var pattern *project.Pattern
+		for i := range p.Patterns {
+			if p.Patterns[i].ID == v.Name {
+				pattern = &p.Patterns[i]
+				break
+			}
+		}
+		if pattern == nil || pattern.Performance == nil {
+			return nil, nil, fmt.Errorf("choose a played-timing pattern to audition")
+		}
+		track := ""
+		for _, t := range p.Tracks {
+			for _, slot := range t.Slots {
+				if slot != nil && *slot == v.Name {
+					track = t.ID
+					break
+				}
+			}
+			if track != "" {
+				break
+			}
+		}
+		if track == "" {
+			return nil, nil, fmt.Errorf("assign the performance to a track before auditioning")
+		}
+		names := project.EditPlan(p, nil).Names
+		name := "studio-performance-audition"
+		for names[name] {
+			name += "_"
+		}
+		copy := *p
+		copy.Format, copy.Version, copy.Edition = project.FormatID2, 2, 2
+		copy.Song, copy.Automation = []project.SongEntry{}, nil
+		copy.Tracks = append([]project.Track(nil), p.Tracks...)
+		for i := range copy.Tracks {
+			copy.Tracks[i].Chain = nil
+		}
+		copy.Arrange = &project.Arrangement{Markers: []project.Marker{}, Placements: []project.Placement{{ID: name, Track: track, Content: v.Name, LengthTicks: pattern.Performance.LengthTicks}}}
+		p = &copy
+		v.StartTick, v.EndTick = 0, pattern.Performance.LengthTicks
+		end = v.EndTick
 	case "placement":
 		if p.Arrange == nil {
 			return nil, nil, fmt.Errorf("named placement audition requires an arrange block")
@@ -162,6 +204,8 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 	}
 	v := studioListening{Loop: true}
 	switch input.Action {
+	case "patternAudition":
+		v.Kind, v.Name, v.Loop = "pattern", input.Pattern, input.Loop
 	case "audition":
 		v.Kind, v.Name, v.Mode, v.Loop = "placement", input.Placement, input.Mode, input.Loop
 		if v.Mode == "" {

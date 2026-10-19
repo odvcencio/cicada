@@ -10,6 +10,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // cicada.bin is generated from the grammargen DSL in language/grammar.
@@ -152,7 +153,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			if name := w.Field(n, "name"); name != nil {
 				namespace := kind
 				switch kind {
-				case "acid_pattern", "note_pattern", "drum_pattern", "clip_decl":
+				case "acid_pattern", "note_pattern", "drum_pattern", "performance_pattern", "clip_decl":
 					namespace = "pattern"
 				case "instrument_decl", "kit_decl", "sampler_decl", "preset_decl":
 					namespace = "voice"
@@ -236,7 +237,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Exports = append(s.Exports, parseExport(w, n))
 			case "phrase_decl":
 				s.Phrases = append(s.Phrases, parsePhrase(w, n))
-			case "acid_pattern", "note_pattern", "drum_pattern":
+			case "acid_pattern", "note_pattern", "drum_pattern", "performance_pattern":
 				s.Patterns = append(s.Patterns, parsePattern(w, n))
 			case "automate_decl":
 				lane := Automation{Path: w.parameterPath(w.Text(w.Field(n, "path")), w.position(n)), Position: w.position(n)}
@@ -536,16 +537,33 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 	p := Pattern{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	if w.Type(n) == "acid_pattern" {
 		p.Kind = "acid"
-	} else if w.Type(n) == "note_pattern" {
+	} else if w.Type(n) == "note_pattern" || w.Type(n) == "performance_pattern" {
 		p.Kind = "notes"
 	} else {
 		p.Kind = "drums"
+	}
+	if w.Type(n) == "performance_pattern" {
+		p.Performance = &seq.Performance{}
 	}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
 		case "pattern_attr":
-			p.Attrs = append(p.Attrs, parseParam(w, c))
+			param := parseParam(w, c)
+			p.Attrs = append(p.Attrs, param)
+			if p.Performance != nil && param.Name == "length" {
+				p.Performance.LengthTicks, _ = strconv.ParseInt(strings.TrimSuffix(param.Value, "ticks"), 10, 64)
+			}
+		case "performed_note":
+			pitch, pitchErr := strconv.Atoi(w.Text(w.Field(c, "pitch")))
+			velocity, velocityErr := strconv.Atoi(w.Text(w.Field(c, "velocity")))
+			at, atErr := strconv.ParseInt(strings.TrimSuffix(w.Text(w.Field(c, "at")), "ticks"), 10, 64)
+			length, lengthErr := strconv.ParseInt(strings.TrimSuffix(w.Text(w.Field(c, "length")), "ticks"), 10, 64)
+			if pitchErr != nil || velocityErr != nil || atErr != nil || lengthErr != nil || pitch < 0 || pitch > 127 || velocity < 1 || velocity > 127 || at < 0 || length < 1 || at > 1<<40 || length > 1<<40 {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-PERFORMANCE", Severity: "error", Message: "performed note needs a MIDI pitch, velocity 1 to 127 and valid tick positions", Position: w.position(c)})
+				continue
+			}
+			p.Performance.Notes = append(p.Performance.Notes, seq.PerformedNote{Tick: at, EndTick: at + length, Note: uint8(pitch), Velocity: uint8(velocity)})
 		case "acid_step":
 			if w.Text(c) != "|" {
 				step := parseStepToken(w, c)

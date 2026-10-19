@@ -1160,7 +1160,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
 		}
-	case "loop", "loopSection", "audition":
+	case "loop", "loopSection", "audition", "patternAudition":
 		if status, err := s.startListeningLocked(input); err != nil {
 			studioJSON(w, status, map[string]string{"error": err.Error()})
 			return

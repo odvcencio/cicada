@@ -75,12 +75,15 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"pattern melody acid steps=4 { c4^ . . . }\npattern beat drums steps=4 { bd: x... }\n" +
 		"pattern keys-line notes steps=4 { c4 . . . }\n" +
 		"pattern empty acid steps=4 { . . . .\n bend: 0ct 0ct 0ct 0ct\n vibrato: 0ct 0ct 0ct 0ct\n pressure: 0 0 0 0\n timbre: 0.5 0.5 0.5 0.5\n}\n" +
+		"pattern played performance length=3840ticks { note 60 at=17ticks length=703ticks velocity=82; }\n" +
 		"scene recording { lead=empty }\n" + scene + "\nscene other { lead=melody }\nsong { main*2 other recording }\n"
 	// Every foreign line/column lands in valid unrelated entry-file comments,
 	// so compilation cannot mask a writer that silently uses those offsets.
 	entry := "cicada 2\n" + strings.Repeat("// entry sentinel "+strings.Repeat("x", 180)+"\n", strings.Count(part, "\n")+5)
 	declaration := "sampler captured { asset=wave root=c4 mode=oneshot voices=4 }"
 	fixtures := map[string]edits.Intent{
+		"setperformednote":      &edits.SetPerformedNote{Entity: "pattern:played", Index: 0, Tick: 19, EndTick: 800, Pitch: 64, Velocity: 101},
+		"resizeperformance":     &edits.ResizePerformance{Entity: "pattern:played", LengthTicks: 7680},
 		"togglestep":            &edits.ToggleStep{Entity: "step:melody/0", Shared: "definition"},
 		"setpitch":              &edits.SetPitch{Entity: "step:melody/0", Pitch: 62, Shared: "definition"},
 		"togglemodifier":        &edits.ToggleModifier{Entity: "step:melody/0", Modifier: "accent", Shared: "definition"},

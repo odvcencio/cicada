@@ -28,6 +28,9 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 	if pattern.Expression != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Expression != nil {
 		return nil, Error("step expression requires a complete project image")
 	}
+	if pattern.Performance != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Performance != nil {
+		return nil, Error("performed note gates require a complete project image")
+	}
 	gate, seed := uint8(55), cfg.Seed
 	if len(cfg.Patterns) > 0 {
 		loaded := cfg.Patterns[track].Slots[slot]

@@ -37,6 +37,10 @@ func appendPlacementPattern(track *TrackChunk, pattern *seq.Pattern, origin, end
 	if pattern.Len == 0 {
 		return
 	}
+	if pattern.Performance != nil {
+		appendPerformedRange(track, pattern, origin, origin, end, end, ti, channel)
+		return
+	}
 	first := len(track.Notes)
 	var held heldNote
 	for step := int64(0); origin+step*pattern.GridTicks() < end; step++ {

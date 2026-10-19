@@ -44,6 +44,7 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	}
 	for _, pattern := range p.Patterns {
 		out := edit.Pattern{ID: pattern.ID, Kind: pattern.Kind, Steps: pattern.Steps, StepTicks: pattern.StepTicks, Transpose: pattern.Transpose, Data: editSteps(pattern.Data)}
+		out.Performance = pattern.Performance.Kernel()
 		if pattern.Lanes != nil {
 			out.Lanes = make(map[string][]*edit.Step, len(pattern.Lanes))
 			for lane, steps := range pattern.Lanes {

@@ -155,7 +155,7 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	if len(commands) != 0 {
 		t.Fatal("preview wrote notes before commit")
 	}
-	if checks.Load() != 1 {
+	if checks.Load() != 2 {
 		t.Fatal("preview skipped the native pattern check")
 	}
 	otherJar, _ := cookiejar.New(nil)
@@ -198,7 +198,7 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	r = post(t, client, app.URL+"/__actions/note-commit", form, false, app.URL)
 	r.Body.Close()
 	checked := getPage(t, client, app.URL+"/?panel=live")
-	if r.StatusCode != 303 || !strings.Contains(checked, "Pattern check passed") || !strings.Contains(checked, "E4") || checks.Load() != 3 || len(commands) != 0 {
+	if r.StatusCode != 303 || !strings.Contains(checked, "Pattern check passed") || !strings.Contains(checked, "E4") || checks.Load() != 6 || len(commands) != 0 {
 		t.Fatal("rechecking changed the performance or wrote the score")
 	}
 }

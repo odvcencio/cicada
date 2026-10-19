@@ -161,6 +161,24 @@
       "layer": "semantic"
     },
     {
+      "name": "performance",
+      "child_roles": [
+        "notes"
+      ],
+      "variants": [],
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "performed_note",
+      "child_roles": [],
+      "variants": [],
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "name": "step",
       "child_roles": [
         "notes"
@@ -1616,6 +1634,20 @@
     },
     {
       "construct": "pattern",
+      "name": "performance",
+      "required": false,
+      "type": "nullable\u003cperformance\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Optional played notes with independent gates",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "pattern",
       "name": "step_ticks",
       "required": false,
       "type": "integer",
@@ -1623,7 +1655,7 @@
       "range": "0..3840",
       "default": null,
       "meaning": "Cell duration at 960 PPQ; zero means 240 ticks",
-      "order": 1,
+      "order": 2,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1637,7 +1669,7 @@
       "range": null,
       "default": null,
       "meaning": "Pattern identifier",
-      "order": 2,
+      "order": 3,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1651,7 +1683,7 @@
       "range": null,
       "default": null,
       "meaning": "Melodic or drum pattern kind",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1665,7 +1697,7 @@
       "range": "1..64",
       "default": null,
       "meaning": "Number of steps",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1679,7 +1711,7 @@
       "range": "5000..7500",
       "default": null,
       "meaning": "Swing percentage scaled by one hundred",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1693,7 +1725,7 @@
       "range": "10..100",
       "default": null,
       "meaning": "Note gate percentage",
-      "order": 6,
+      "order": 7,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1707,7 +1739,7 @@
       "range": "-24..24",
       "default": null,
       "meaning": "Semitone transposition",
-      "order": 7,
+      "order": 8,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1721,7 +1753,7 @@
       "range": null,
       "default": null,
       "meaning": "Pattern random seed",
-      "order": 8,
+      "order": 9,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1735,7 +1767,7 @@
       "range": null,
       "default": null,
       "meaning": "Melodic steps",
-      "order": 9,
+      "order": 10,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1749,7 +1781,7 @@
       "range": null,
       "default": null,
       "meaning": "Drum lane steps",
-      "order": 10,
+      "order": 11,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1763,7 +1795,91 @@
       "range": null,
       "default": null,
       "meaning": "Resolved expression at each melodic step",
-      "order": 11,
+      "order": 12,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performance",
+      "name": "length_ticks",
+      "required": true,
+      "type": "integer",
+      "unit": "ticks",
+      "range": "30..1099511627776",
+      "default": null,
+      "meaning": "Loop length of the played performance",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performance",
+      "name": "notes",
+      "required": true,
+      "type": "array\u003cperformed_note\u003e",
+      "unit": null,
+      "range": "1..512",
+      "default": null,
+      "meaning": "Notes with independent start and end positions",
+      "order": 2,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performed_note",
+      "name": "tick",
+      "required": true,
+      "type": "integer",
+      "unit": "ticks",
+      "range": "0..1099511627775",
+      "default": null,
+      "meaning": "Inclusive note start",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performed_note",
+      "name": "end_tick",
+      "required": true,
+      "type": "integer",
+      "unit": "ticks",
+      "range": "1..1099511627776",
+      "default": null,
+      "meaning": "Exclusive note end",
+      "order": 2,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performed_note",
+      "name": "note",
+      "required": true,
+      "type": "integer",
+      "unit": null,
+      "range": "0..127",
+      "default": null,
+      "meaning": "MIDI pitch",
+      "order": 3,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performed_note",
+      "name": "velocity",
+      "required": true,
+      "type": "integer",
+      "unit": null,
+      "range": "1..127",
+      "default": null,
+      "meaning": "Played note velocity",
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"

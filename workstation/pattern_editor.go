@@ -24,6 +24,26 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
+		case "performed-note":
+			n := map[string]any{"remove": f["intent"] == "remove"}
+			keys := []string{"index"}
+			if f["intent"] != "remove" {
+				keys = append(keys, "tick", "end_tick", "pitch", "velocity")
+			}
+			for _, key := range keys {
+				value, err := strconv.ParseInt(f[key], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s must be a whole number", key)
+				}
+				n[key] = value
+			}
+			p["performanceNote"] = n
+		case "performance-length":
+			length, err := strconv.ParseInt(f["length_ticks"], 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("loop length must be a whole number of ticks")
+			}
+			p["performanceLength"] = length
 		case "settings":
 			swing, err := finiteNumber(f, "swing")
 			if err != nil || swing < 50 || swing > 75 || math.Abs(swing*100-math.Round(swing*100)) > 1e-6 {
@@ -145,7 +165,14 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		if candidate.ID == p.ID {
 			attrs = append(attrs, gosx.Attr("aria-current", "true"))
 		}
-		library = append(library, gosx.El("a", attrs, gosx.El("strong", gosx.Text(candidate.ID)), gosx.El("span", gosx.Text(fmt.Sprintf("%s · %d steps", candidate.Kind, candidate.Steps)))))
+		description := fmt.Sprintf("%s · %d steps", candidate.Kind, candidate.Steps)
+		if candidate.Performance != nil {
+			description = fmt.Sprintf("%d notes · %s", len(candidate.Performance.Notes), performanceDuration(candidate.Performance.LengthTicks))
+		}
+		library = append(library, gosx.El("a", attrs, gosx.El("strong", gosx.Text(candidate.ID)), gosx.El("span", gosx.Text(description))))
+	}
+	if p.Performance != nil {
+		return s.performanceEditor(ctx, v, csrf, p, library)
 	}
 	var laneNames []string
 	usesPhrase := false

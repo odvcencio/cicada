@@ -529,6 +529,15 @@ func ValidateProject(p *Project) error {
 			return fmt.Errorf("duplicate or invalid pattern ID %q", pattern.ID)
 		}
 		patterns[pattern.ID] = pattern
+		if pattern.Performance != nil {
+			if pattern.Kind != "notes" && pattern.Kind != "acid" || pattern.Steps != 1 || pattern.StepTicks != 0 || pattern.SwingPercent100 != 5000 || len(pattern.Expression) != 0 || len(pattern.Data) != 1 || pattern.Data[0] != nil || len(pattern.Lanes) != 0 {
+				return fmt.Errorf("performance pattern %s cannot contain step-grid notes or timing", pattern.ID)
+			}
+			compiled := seq.Pattern{Len: 1, GatePercent: pattern.GatePercent, Transpose: pattern.Transpose, Performance: pattern.Performance.Kernel()}
+			if err := compiled.Validate(); err != nil {
+				return fmt.Errorf("performance pattern %s: %w", pattern.ID, err)
+			}
+		}
 		if pattern.StepTicks != 0 && (pattern.StepTicks < 30 || pattern.StepTicks > 3840) {
 			return fmt.Errorf("pattern %s has invalid grid", pattern.ID)
 		}
@@ -620,6 +629,9 @@ func ValidateProject(p *Project) error {
 			pattern, ok := patterns[*slot]
 			if !ok || seen[*slot] || !compatible(track.Kind, pattern.Kind, kits) {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
+			}
+			if err := validatePerformedTrack(p, track, pattern); err != nil {
+				return err
 			}
 			if samplers[track.Kind].Name != "" && len(pattern.Expression) > 0 {
 				return fmt.Errorf("CICADA-UNSUPPORTED: sampler track %s cannot play note expression in pattern %s", track.ID, pattern.ID)

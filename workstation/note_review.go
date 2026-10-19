@@ -26,7 +26,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf string, d draft) gosx.Node 
 	children := []gosx.Node{
 		gosx.El("h3", gosx.Text("Retained note take")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%s · %s", noteCount(count), destinationCount(len(takes))))),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("The lines show what you played, including held notes. Applying snaps note starts to the pattern’s step size and repeats them at its saved length. Held-note lengths are shown for review; they are not written as note durations.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, and velocities in a looping performance pattern. Every destination shares the first played bar as its origin and the final release rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
 	}
 	for _, take := range takes {
 		var pattern *project.Pattern
@@ -38,23 +38,30 @@ func (s *studioApp) noteTakeReview(v workspace, csrf string, d draft) gosx.Node 
 		}
 		children = append(children, noteRecordingReview(take, pattern))
 	}
+	playedBlocked := d.PlayedCheckRevision == v.Revision && d.PlayedCheckError != ""
+	if playedBlocked {
+		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check take-check-error")), gosx.Text("Played timing: "+d.PlayedCheckError+" Your performance is still retained.")))
+	}
+	children = append(children, s.form(v, csrf, "live", "note-commit", gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", "played"), gosx.Attr("disabled", playedBlocked)), gosx.Text("Keep played timing"))))
+	children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Replaces the destination patterns. Their current sounds and scene assignments stay in use; song and placement lengths stay as authored. Use the pattern view to play the full loop. Undo restores the previous patterns.")))
 	intent, label := "commit", "Commit notes to patterns"
 	if d.Revision != v.Revision {
 		intent, label = "rebase", "Apply notes to current score"
 		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("The score changed since this take. Check the current patterns before applying.")))
 	}
 	blocked := d.CheckRevision == v.Revision && d.CheckError != ""
+	var gridCheck gosx.Node = gosx.Fragment()
 	if blocked {
 		reason := strings.TrimSpace(d.CheckError)
 		if !strings.HasSuffix(reason, ".") {
 			reason += "."
 		}
-		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check take-check-error"), gosx.Attr("role", "status")), gosx.Text("Pattern check: "+reason+" Your performance is still retained.")))
+		gridCheck = gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check take-check-error"), gosx.Attr("role", "status")), gosx.Text("Pattern check: "+reason+" Your performance is still retained."))
 	} else if d.CheckRevision == v.Revision {
-		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("Pattern check passed. The score is unchanged until you apply. Undo restores the previous patterns.")))
+		gridCheck = gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("Pattern check passed. The score is unchanged until you apply. Undo restores the previous patterns."))
 	}
 	apply := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", intent), gosx.Attr("disabled", blocked)), gosx.Text(label))
-	children = append(children, s.form(v, csrf, "live", "note-commit", apply, submit("intent", "check", "Check current patterns"), submit("intent", "discard", "Discard note take")))
+	children = append(children, gosx.El("details", gosx.El("summary", gosx.Text("Snap to the existing step grid")), gridCheck, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Snaps starts to the destination grid and repeats at its saved length. Held lengths and overlapping notes may need a played-timing pattern instead.")), s.form(v, csrf, "live", "note-commit", apply)), s.form(v, csrf, "live", "note-commit", submit("intent", "check", "Check current patterns"), submit("intent", "discard", "Discard note take")))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "note-preview"), gosx.Attr("aria-label", "Retained note take")), gosx.Fragment(children...))
 }
 
@@ -93,7 +100,7 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 	notes := append([]control.Note(nil), take.Notes...)
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Tick < notes[j].Tick })
 	stepTicks, steps, drums := seq.TicksPerStep, int64(0), false
-	if pattern != nil {
+	if pattern != nil && pattern.Performance == nil {
 		stepTicks, steps, drums = (edit.Pattern{StepTicks: pattern.StepTicks}).StepTicksOrDefault(), int64(pattern.Steps), pattern.Kind == "drums"
 	}
 	key := func(n control.Note) string {
@@ -127,6 +134,9 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 			}
 		}
 		placement := "Target unavailable"
+		if pattern != nil && pattern.Performance != nil {
+			placement = "Played timing"
+		}
 		if steps > 0 {
 			placement = fmt.Sprintf("Step %d", (n.Tick+stepTicks/2)/stepTicks%steps+1)
 		}
@@ -146,6 +156,9 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 		heads = append(heads, gosx.El("th", gosx.Attrs(gosx.Attr("scope", "col")), gosx.Text(text)))
 	}
 	destination := "Target pattern is no longer available."
+	if pattern != nil && pattern.Performance != nil {
+		destination = "Played timing · " + performanceDuration(pattern.Performance.LengthTicks) + " loop"
+	}
 	if steps > 0 {
 		destination = fmt.Sprintf("%d steps · %s per step", steps, performanceDuration(stepTicks))
 	}

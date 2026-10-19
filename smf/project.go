@@ -97,6 +97,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	for i := range slots {
 		slots[i] = -1
 	}
+	var origins [engine.MaxTracks]int64
 	var chained [engine.MaxTracks]bool
 	for ti := range p.Tracks {
 		chained[ti] = len(cfg.Patterns[ti].Chain) > 0
@@ -111,14 +112,37 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 				binding := scene.Track[ti]
 				switch binding.Mode {
 				case engine.SceneOff:
+					old := slots[ti]
+					if chained[ti] {
+						old, _ = chainPosition(&cfg.Patterns[ti], max(int64(0), boundary-1))
+					}
+					if old >= 0 && cfg.Patterns[ti].Slots[old].Performance != nil {
+						closePerformedAt(&file.Tracks[ti+1], boundary)
+					}
 					chained[ti] = false
 					for lane := range held[ti] {
 						closeAt(&file.Tracks[ti+1], &held[ti][lane], boundary)
 					}
 					slots[ti] = -1
 				case engine.SceneSlot:
-					chained[ti] = false
-					slots[ti] = int(binding.Slot)
+					old, origin := slots[ti], origins[ti]
+					if chained[ti] {
+						old, origin = chainPosition(&cfg.Patterns[ti], max(int64(0), boundary-1))
+					}
+					target := &cfg.Patterns[ti].Slots[binding.Slot]
+					if old != int(binding.Slot) {
+						if old >= 0 && cfg.Patterns[ti].Slots[old].Performance != nil {
+							closePerformedAt(&file.Tracks[ti+1], boundary)
+						}
+						origin = 0
+						if target.Performance != nil {
+							for lane := range held[ti] {
+								closeAt(&file.Tracks[ti+1], &held[ti][lane], boundary)
+							}
+							appendPerformedChase(&file.Tracks[ti+1], target, origin, boundary, endTick, uint8(ti), channels[ti])
+						}
+					}
+					chained[ti], slots[ti], origins[ti] = false, int(binding.Slot), origin
 				}
 			}
 			for ti := range p.Tracks {
@@ -136,6 +160,10 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 				}
 				appendPattern := func(pattern *seq.Pattern, lane uint8, isDrum bool) {
 					if pattern.Len == 0 {
+						return
+					}
+					if pattern.Performance != nil {
+						appendPerformedRange(&file.Tracks[ti+1], pattern, origins[ti], boundary, boundary+seq.TicksPerBar, endTick, uint8(ti), channels[ti])
 						return
 					}
 					grid := pattern.GridTicks()
@@ -224,11 +252,10 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	track.Slots[0] = &patternID
 	clone.Tracks = []project.Track{track}
 	clone.Scenes = []project.Scene{{ID: "midi-pattern", Bindings: map[string]string{track.ID: patternID}}}
-	grid := int64(pattern.StepTicks)
-	if grid == 0 {
-		grid = seq.TicksPerStep
+	bars := int((pattern.DurationTicks() + seq.TicksPerBar - 1) / seq.TicksPerBar)
+	if bars > 256 {
+		return File{}, fmt.Errorf("MIDI export requires 1 to 256 pattern bars")
 	}
-	bars := int((int64(pattern.Steps)*grid + seq.TicksPerBar - 1) / seq.TicksPerBar)
 	clone.Song = []project.SongEntry{{Scene: "midi-pattern", Bars: uint16(bars)}}
 	clone.Title = patternID
 	return fromProject(&clone, bars, &probabilityIdentity{track: uint8(selected), slot: uint8(selectedSlot)})
@@ -313,13 +340,21 @@ func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64,
 	var period int64
 	for _, slot := range bank.Chain {
 		p := &bank.Slots[slot]
-		period += int64(p.Len) * p.GridTicks()
+		period += p.DurationTicks()
 	}
 	for cycle := boundary / period * period; cycle < boundary+seq.TicksPerBar; cycle += period {
 		start := cycle
 		for _, slot := range bank.Chain {
 			p := &bank.Slots[slot]
-			length := int64(p.Len) * p.GridTicks()
+			length := p.DurationTicks()
+			if p.Performance != nil {
+				if start >= boundary {
+					closeAt(track, &held[0], start)
+				}
+				appendPerformedRange(track, p, start, boundary, boundary+seq.TicksPerBar, min(start+length, track.EndTick), trackIndex, channel)
+				start += length
+				continue
+			}
 			for index := int64(0); index < int64(p.Len); index++ {
 				tick := start + index*p.GridTicks()
 				if tick < boundary || tick >= boundary+seq.TicksPerBar {

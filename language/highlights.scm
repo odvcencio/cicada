@@ -301,3 +301,11 @@
 (marker_decl name: (identifier) @constant)
 (musical_position) @number.position
 (tick_count) @number.ticks
+
+(performance_pattern name: (identifier) @function)
+(performance_pattern "performance" @type.builtin)
+(performed_note "note" @keyword)
+(performed_note ["at" "length" "velocity"] @attribute)
+
+(performed_note pitch: (integer) @number)
+(performed_note velocity: (integer) @number)

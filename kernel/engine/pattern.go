@@ -17,6 +17,7 @@ type chainEntry struct {
 }
 
 type patternTrack struct {
+	performed         *performedTrack
 	slots             [16]seq.Pattern
 	drumSlots         *[16][drum.LaneCount]seq.Pattern
 	active            int8 // -1 until a slot is selected
@@ -64,11 +65,11 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			return
 		}
 		slot = int(c.Index)
-		patternTicks := int64(p.slots[slot].Len) * p.slots[slot].GridTicks()
+		patternTicks := p.slots[slot].DurationTicks()
 		length := p.slots[slot].Len
 		if p.active >= 0 {
 			length = p.slots[p.active].Len
-			patternTicks = int64(length) * p.slots[p.active].GridTicks()
+			patternTicks = p.slots[p.active].DurationTicks()
 		}
 		at, err := seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), length)
 		if c.Arg0 == 3 {
@@ -96,6 +97,10 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		}
 		p.chainArmed = false // a direct selection or scene takes over the track
 		e.selectPatternNow(track, slot, c.Arg1 == 1)
+		return
+	}
+	if p.slots[slot].Performance != nil {
+		e.fault(FaultPatternEdit) // immutable gates require a complete project revision
 		return
 	}
 	e.patternEdit = p.slots[slot]
@@ -200,6 +205,21 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 
 func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	p := &e.patterns[track]
+	e.releasePerformed(track, e.transport.Tick())
+	if p.slots[slot].Performance != nil && p.playingNote != 0 {
+		e.tapRelease(track, e.transport.Tick())
+		v := &e.voices[track]
+		if v.poly != nil {
+			v.poly.Release(graph.Cohort{NoteID: p.playingNote, Generation: uint64(p.playingGen)})
+		} else if v.kind == VoicePiano {
+			e.releasePianoPattern(track)
+		} else if keysEnabled && v.kind == VoiceKeys {
+			e.releaseKeysPattern(track)
+		} else {
+			e.noteOff(track, 0xffff)
+		}
+		p.playingNote, p.heldValid = 0, false
+	}
 	if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 {
 		p.held = p.slots[p.active]
 		p.heldSlot = uint8(p.active)
@@ -209,13 +229,16 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	}
 	p.slideFrom, p.slideAt = 0, 0
 	p.forceValid = false
-	if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 && e.switchSlideTarget(track, slot, e.transport.Tick(), restart) {
+	if p.slots[slot].Performance == nil && p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 && e.switchSlideTarget(track, slot, e.transport.Tick(), restart) {
 		p.slideFrom = p.playingNote
 		p.slideAt = e.switchOnsetSample(track, slot, e.transport.Tick())
 	} else if release, ok := e.normalSlideRelease(track, e.transport.Tick(), e.transport.Clock()); ok && p.playingNote == release.NoteID && release.Sample >= e.transport.Sample() {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
 	p.active = int8(slot)
+	if p.performed != nil {
+		p.performed.chase = true
+	}
 	if v := &e.voices[track]; v.prepared != nil {
 		if v.prepared.SelectSlot(uint8(slot), 0, e.transport.Playing()) != nil {
 			e.fault(FaultPreparedVoice)
@@ -250,32 +273,36 @@ func (e *Engine) scheduleTrack(track int) {
 	}
 	clock := e.transport.Clock()
 	startSample := e.transport.Sample()
+	scratch := e.eventScratch[:]
+	if p.performed != nil {
+		scratch = p.performed.scratch
+	}
 	if p.active >= 0 {
 		var n int
 		var overflow bool
 		if e.voices[track].kind == VoiceDrums {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				n, overflow = seq.EventsAtTickInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
-				if overflow || p.eventCount+n > len(p.events) {
+				if overflow || p.eventCount+n > len(p.eventStorage()) {
 					e.fault(FaultPatternEvents)
 					return
 				}
 				for _, event := range e.eventScratch[:n] {
-					p.events[p.eventCount] = patternEvent{event: event, generation: p.generation}
+					p.eventStorage()[p.eventCount] = patternEvent{event: event, generation: p.generation}
 					p.eventCount++
 				}
 			}
 		} else {
-			n, overflow = seq.EventsWithGatesAtTickInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
-			if overflow || p.eventCount+n > len(p.events) {
+			n, overflow = seq.EventsWithGatesAtTickInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, scratch)
+			if overflow || p.eventCount+n > len(p.eventStorage()) {
 				e.fault(FaultPatternEvents)
 				return
 			}
-			for _, event := range e.eventScratch[:n] {
+			for _, event := range scratch[:n] {
 				if event.Kind == seq.NoteOn && event.Sample == p.slideAt && p.playingNote == p.slideFrom && p.slideFrom != 0 {
 					event.Slide = true
 				}
-				p.events[p.eventCount] = patternEvent{event: event, generation: p.generation}
+				p.eventStorage()[p.eventCount] = patternEvent{event: event, generation: p.generation}
 				p.eventCount++
 			}
 		}
@@ -290,31 +317,31 @@ func (e *Engine) scheduleTrack(track int) {
 			if event.Kind != seq.NoteOff || event.NoteID != p.playingNote {
 				continue
 			}
-			if p.eventCount == len(p.events) {
+			if p.eventCount == len(p.eventStorage()) {
 				e.fault(FaultPatternEvents)
 				return
 			}
-			p.events[p.eventCount] = patternEvent{event: event, generation: p.heldGen}
+			p.eventStorage()[p.eventCount] = patternEvent{event: event, generation: p.heldGen}
 			p.eventCount++
 		}
 	}
 	if p.forceValid && p.playingNote == p.forceOff.NoteID && p.forceOff.Sample >= startSample && p.forceOff.Sample < startSample+int64(frames) {
-		if p.eventCount == len(p.events) {
+		if p.eventCount == len(p.eventStorage()) {
 			e.fault(FaultPatternEvents)
 			return
 		}
-		p.events[p.eventCount] = patternEvent{event: p.forceOff, generation: p.forceGen}
+		p.eventStorage()[p.eventCount] = patternEvent{event: p.forceOff, generation: p.forceGen}
 		p.eventCount++
 	}
 	e.scheduleSwitchRelease(track, clock, startSample, frames)
 	for i := 1; i < p.eventCount; i++ {
-		current := p.events[i]
+		current := p.eventStorage()[i]
 		j := i
-		for j > 0 && patternEventBefore(current, p.events[j-1], p.drumSlots != nil) {
-			p.events[j] = p.events[j-1]
+		for j > 0 && patternEventBefore(current, p.eventStorage()[j-1], p.drumSlots != nil) {
+			p.eventStorage()[j] = p.eventStorage()[j-1]
 			j--
 		}
-		p.events[j] = current
+		p.eventStorage()[j] = current
 	}
 }
 
@@ -441,11 +468,11 @@ func (e *Engine) scheduleNormalRelease(track, slot int, switchTick int64, restar
 	if offSample < startSample || offSample >= startSample+int64(frames) {
 		return
 	}
-	if p.eventCount == len(p.events) {
+	if p.eventCount == len(p.eventStorage()) {
 		e.fault(FaultPatternEvents)
 		return
 	}
-	p.events[p.eventCount] = patternEvent{event: release, generation: p.generation}
+	p.eventStorage()[p.eventCount] = patternEvent{event: release, generation: p.generation}
 	p.eventCount++
 }
 
@@ -532,13 +559,20 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 	sample := e.transport.Sample()
 	for track := 0; track < e.tracks; track++ {
 		p := &e.patterns[track]
+		if kind == seq.NoteOn {
+			e.chasePerformed(track)
+		}
 		for p.eventIndex < p.eventCount {
-			item := p.events[p.eventIndex]
+			item := p.eventStorage()[p.eventIndex]
 			if item.event.Sample > sample || item.event.Sample == sample && item.event.Kind != kind {
 				break
 			}
 			p.eventIndex++
 			if item.event.Sample < sample {
+				continue
+			}
+			if p.slots[item.event.Slot].Performance != nil {
+				e.performedEvent(track, item)
 				continue
 			}
 			if kind == seq.NoteOff {

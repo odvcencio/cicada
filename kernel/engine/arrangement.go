@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"math/bits"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -79,8 +80,8 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 }
 
 // scenePatternEndTick finds the first shared end of the active patterns,
-// including restart offsets. Their lengths are at most 64 steps, so each
-// congruence can be combined in bounded time without allocating.
+// including restart offsets. Combine congruences without searching through
+// a potentially long performed loop; all arithmetic stays bounded and allocation free.
 func (e *Engine) scenePatternEndTick() (int64, bool) {
 	period, residue := int64(0), int64(0)
 	active := false
@@ -89,7 +90,7 @@ func (e *Engine) scenePatternEndTick() (int64, bool) {
 		if p.active < 0 {
 			continue
 		}
-		length := int64(p.slots[p.active].Len) * p.slots[p.active].GridTicks()
+		length := p.slots[p.active].DurationTicks()
 		target := p.startTick % length
 		if !active {
 			period, residue, active = length, target, true
@@ -103,12 +104,15 @@ func (e *Engine) scenePatternEndTick() (int64, bool) {
 		if period > math.MaxInt64/cycles {
 			return 0, false
 		}
-		for k := int64(0); k < cycles; k++ {
-			candidate := residue + period*k
-			if candidate%length == target {
-				residue = candidate
-				break
+		if cycles > 1 {
+			delta := ((target - residue) / g) % cycles
+			if delta < 0 {
+				delta += cycles
 			}
+			inverse := inverseMod(period/g%cycles, cycles)
+			hi, lo := bits.Mul64(uint64(delta), uint64(inverse))
+			_, k := bits.Div64(hi, lo, uint64(cycles))
+			residue += period * int64(k)
 		}
 		period *= cycles
 	}
@@ -358,4 +362,19 @@ func (e *Engine) advanceSong() {
 	} else {
 		e.applySceneTempo(entry.Scene, false) // the manual scene wins the patterns, not the tempo
 	}
+}
+
+// The reduced moduli are coprime. Coefficients stay within the performance
+// length bound; the product above uses 128-bit arithmetic before reduction.
+func inverseMod(a, modulus int64) int64 {
+	r0, r1, x0, x1 := modulus, a, int64(0), int64(1)
+	for r1 != 0 {
+		q := r0 / r1
+		r0, r1 = r1, r0-q*r1
+		x0, x1 = x1, x0-q*x1
+	}
+	if x0 < 0 {
+		x0 += modulus
+	}
+	return x0
 }

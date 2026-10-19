@@ -105,7 +105,8 @@ func (c ChordStep) Validate(step Step) error {
 }
 
 type Pattern struct {
-	StepTicks uint16 `json:",omitempty"` // zero keeps the sixteenth-note grid
+	Performance *Performance `json:",omitempty"`
+	StepTicks   uint16       `json:",omitempty"` // zero keeps the sixteenth-note grid
 	// Expression is immutable once loaded by the engine; nil is neutral.
 	Expression    *[64]Expression `json:",omitempty"`
 	Chords        [64]ChordStep   `json:",omitzero"`
@@ -115,6 +116,14 @@ type Pattern struct {
 	Transpose     int8
 	GatePercent   uint8
 	Seed          uint32
+}
+
+// DurationTicks is independent of a step grid for a performed pattern.
+func (p *Pattern) DurationTicks() int64 {
+	if p.Performance != nil {
+		return p.Performance.LengthTicks
+	}
+	return int64(p.Len) * p.GridTicks()
 }
 
 // GridTicks returns the duration of one cell.
@@ -128,6 +137,25 @@ func (p *Pattern) GridTicks() int64 {
 }
 
 func (p *Pattern) Validate() error {
+	if p.Performance != nil {
+		if err := p.Performance.Validate(); err != nil {
+			return err
+		}
+		if p.Len != 1 || p.StepTicks != 0 || p.SwingPermille != 0 || p.Expression != nil || p.Chords != [64]ChordStep{} {
+			return Error("a performance cannot contain step-grid timing or expression")
+		}
+		for _, packed := range p.Steps {
+			step, err := UnpackStep(packed)
+			if err != nil || step.Gate || step.Slide || step.Accent || step.Tie {
+				return Error("a performance cannot contain grid notes")
+			}
+		}
+		for _, note := range p.Performance.Notes {
+			if int(note.Note)+int(p.Transpose) < 0 || int(note.Note)+int(p.Transpose) > 127 {
+				return Error("transposed performed pitch is out of range")
+			}
+		}
+	}
 	if p.StepTicks != 0 && (p.StepTicks < 30 || p.StepTicks > 3840) {
 		return Error("grid must be 30 to 3840 ticks")
 	}

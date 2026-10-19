@@ -145,6 +145,7 @@ type Export struct {
 }
 
 type Pattern struct {
+	Performance     *Performance       `cicada:"Optional played notes with independent gates" json:"performance,omitempty"`
 	StepTicks       uint16             `cicada:"Cell duration at 960 PPQ; zero means 240 ticks" unit:"ticks" range:"0..3840" json:"step_ticks,omitempty"`
 	ID              string             `cicada:"Pattern identifier" json:"id"`
 	Kind            string             `cicada:"Melodic or drum pattern kind" json:"kind"`
@@ -484,6 +485,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			Data: []*Step{}, Lanes: map[string][]*Step{},
 		}
 		pattern.Expression = projectExpression(compiled[0].Pattern)
+		pattern.Performance = projectPerformance(compiled[0].Pattern.Performance)
 		for _, attr := range source.Attrs {
 			if attr.Name == "swing" {
 				pattern.SwingPercent100, _ = parsePercent100(attr.Value)

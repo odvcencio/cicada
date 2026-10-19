@@ -17,7 +17,7 @@ func (e *Engine) parallelSegmentFrames(remaining int) int {
 	for track := 0; track < e.tracks; track++ {
 		p := &e.patterns[track]
 		if p.eventIndex < p.eventCount {
-			limitSample(p.events[p.eventIndex].event.Sample)
+			limitSample(p.eventStorage()[p.eventIndex].event.Sample)
 		}
 		d := &e.director[track]
 		if d.stop && d.frames != 0 {

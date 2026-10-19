@@ -80,3 +80,5 @@
 (marker_decl name: (identifier) @name) @definition.marker
 (place_decl track: (identifier) @name) @reference.track
 (place_decl content: (identifier) @name) @reference.pattern
+
+(performance_pattern name: (identifier) @name) @definition.pattern

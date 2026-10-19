@@ -65,6 +65,25 @@ func TestPatternRangeTimingAndVariationActionContracts(t *testing.T) {
 	}
 }
 
+func TestPerformanceActionsKeepTickPrecisionAndSelection(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
+	target := patternURL("p", 1, "", "") + "&note=2"
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "pattern": {"p"}, "action": {"performed-note"}, "index": {"2"}, "pitch": {"64"}, "tick": {"961"}, "end_tick": {"1099511627775"}, "velocity": {"105"}, "__gosx_return_to": {target}}
+	r := post(t, client, address+"/__actions/pattern", form, false, address)
+	if r.StatusCode != 303 || r.Header.Get("Location") != target || len(*edits) != 1 {
+		t.Fatalf("performance selection lost: %d %s", r.StatusCode, r.Header.Get("Location"))
+	}
+	n := (*edits)[0]["performanceNote"].(map[string]any)
+	if n["tick"] != float64(961) || n["end_tick"] != float64(1099511627775) || n["velocity"] != float64(105) {
+		t.Fatal("performance action changed exact tick positions", n)
+	}
+	form.Set("tick", "1.5")
+	if r := post(t, client, address+"/__actions/pattern", form, true, address); r.StatusCode != 422 || len(*edits) != 1 {
+		t.Fatal("fractional ticks reached the service")
+	}
+}
+
 func TestProjectActionKeepsMilliBPMPrecisionAndSourceRevision(t *testing.T) {
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))

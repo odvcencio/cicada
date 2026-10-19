@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // Revision is the SHA-256 of the exact source bytes; Studio's studioRevision delegates to it.
@@ -41,13 +42,14 @@ type Track struct {
 }
 
 type Pattern struct {
-	ID, Kind   string
-	Steps      uint8
-	Transpose  int8
-	StepTicks  uint16 // zero means 240 (project/model.go:147)
-	Data       []*Step
-	Lanes      map[string][]*Step
-	Expression []NoteExpression // resolved per-step expression (project/model.go:157); used by RecordTake (T32)
+	Performance *seq.Performance
+	ID, Kind    string
+	Steps       uint8
+	Transpose   int8
+	StepTicks   uint16 // zero means 240 (project/model.go:147)
+	Data        []*Step
+	Lanes       map[string][]*Step
+	Expression  []NoteExpression // resolved per-step expression (project/model.go:157); used by RecordTake (T32)
 }
 
 // StepTicksOrDefault follows project/compile.go:119-125: an explicit
@@ -60,7 +62,12 @@ func (p Pattern) StepTicksOrDefault() int64 {
 }
 
 // LengthTicks is Steps x StepTicks. Never use Steps x seq.TicksPerStep.
-func (p Pattern) LengthTicks() int64 { return int64(p.Steps) * p.StepTicksOrDefault() }
+func (p Pattern) LengthTicks() int64 {
+	if p.Performance != nil {
+		return p.Performance.LengthTicks
+	}
+	return int64(p.Steps) * p.StepTicksOrDefault()
+}
 
 type Step struct {
 	Note                           uint8

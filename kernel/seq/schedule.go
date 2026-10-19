@@ -85,6 +85,9 @@ func EventsAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOf
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
+	if p.Performance != nil {
+		return PerformanceEventsInBlock(p.Performance, clock, track, slot, startTickOffset, startSample, frames, p.Transpose, dst, false)
+	}
 	grid := p.GridTicks()
 	startStep := startTickOffset / grid
 	offset := startTickOffset % grid
@@ -169,6 +172,9 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOffset, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
+	}
+	if p.Performance != nil {
+		return PerformanceEventsInBlock(p.Performance, clock, track, slot, startTickOffset, startSample, frames, p.Transpose, dst, true)
 	}
 	written, overflow = EventsAtTickInBlock(p, clock, track, slot, startTickOffset, startSample, frames, dst)
 	grid := p.GridTicks()

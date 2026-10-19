@@ -157,10 +157,14 @@ func (s *studioApp) commitNotes(ctx *action.Context) error {
 		return nil
 	}
 	revision := d.Revision
-	if ctx.FormData["intent"] == "rebase" {
+	if ctx.FormData["intent"] == "rebase" || ctx.FormData["intent"] == "played" {
 		revision = ctx.FormData["revision"]
 	}
-	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/record", map[string]any{"revision": revision, "recordings": takes}, nil); err != nil {
+	timing := "grid"
+	if ctx.FormData["intent"] == "played" {
+		timing = "played"
+	}
+	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/record", map[string]any{"revision": revision, "timing": timing, "recordings": takes}, nil); err != nil {
 		return domainActionError(err)
 	}
 	message := "Recorded notes committed. Undo restores the previous patterns."
@@ -185,7 +189,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	var pitched, drums, targets []string
 	trackPatterns := map[string][]string{}
 	for _, t := range v.Project.Tracks {
-		if t.Kind == "acid" || keyboard.ID(t.Kind) != 0 {
+		if t.Kind == "acid" || t.Kind == "piano" || keyboard.ID(t.Kind) != 0 {
 			pitched = append(pitched, t.ID)
 		} else {
 			for _, voice := range v.Project.Instruments {
@@ -270,7 +274,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	// subtree when props are unchanged without retaining detached listeners.
 	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), session.Current(ctx.Request).String("note-preview"), ctx.Request.URL.Query().Get("noteHistory") == "on"))
+	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, piano, modeled keyboards, authored instruments, and drums. Retain a take, then keep played timing or snap starts to a step pattern."}, s.liveLaunch(v, csrf), surface, preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), session.Current(ctx.Request).String("note-preview"), ctx.Request.URL.Query().Get("noteHistory") == "on"))
 }
 
 // Validate through the same native edit service that will commit the take.
@@ -279,21 +283,28 @@ func (s *studioApp) checkNoteDraft(ctx *action.Context, key, revision string, ta
 	data, _ := json.Marshal(takes)
 	var recordings []edit.Recording
 	err := json.Unmarshal(data, &recordings)
-	var result struct{ Valid bool }
-	if err == nil {
-		err = s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/intents", edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, DryRun: true, Intents: []edit.Intent{&edit.RecordTake{Recordings: recordings}}}, &result)
-	}
-	message := ""
-	if err != nil {
-		message = err.Error()
-	} else if !result.Valid {
-		message = "The pattern check could not validate this take. Check the current patterns again."
-	}
-	s.draftMu.Lock()
-	defer s.draftMu.Unlock()
-	if d, ok := s.drafts[key]; ok && d.Owner == workspaceOwner(ctx.Request) && d.Kind == "notes" {
-		d.CheckRevision, d.CheckError = revision, message
-		s.drafts[key] = d
+	for _, timing := range []string{"grid", "played"} {
+		var result struct{ Valid bool }
+		checkErr := err
+		if checkErr == nil {
+			checkErr = s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/intents", edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, DryRun: true, Intents: []edit.Intent{&edit.RecordTake{Timing: timing, Recordings: recordings}}}, &result)
+		}
+		message := ""
+		if checkErr != nil {
+			message = checkErr.Error()
+		} else if !result.Valid {
+			message = "The pattern check could not validate this take. Check the current patterns again."
+		}
+		s.draftMu.Lock()
+		if d, ok := s.drafts[key]; ok && d.Owner == workspaceOwner(ctx.Request) && d.Kind == "notes" {
+			if timing == "played" {
+				d.PlayedCheckRevision, d.PlayedCheckError = revision, message
+			} else {
+				d.CheckRevision, d.CheckError = revision, message
+			}
+			s.drafts[key] = d
+		}
+		s.draftMu.Unlock()
 	}
 }
 

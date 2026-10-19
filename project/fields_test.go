@@ -25,8 +25,8 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 	if catalog.Format != "cicada.fields/2" || len(catalog.Fields) < 70 {
 		t.Fatalf("incomplete field catalog: %s, %d fields", catalog.Format, len(catalog.Fields))
 	}
-	if len(catalog.Constructs) != 37 {
-		t.Fatalf("expected 37 semantic constructs, got %d", len(catalog.Constructs))
+	if len(catalog.Constructs) != 39 {
+		t.Fatalf("expected 39 semantic constructs, got %d", len(catalog.Constructs))
 	}
 	arrangementConstructs := map[string]bool{"arrangement": false, "placement": false, "marker": false}
 	for _, construct := range catalog.Constructs {
@@ -91,9 +91,9 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		if field.Introduced == "cicada.project/2" {
 			continue
 		}
-		if field.Construct == "pattern" && field.Name == "expression" {
+		if field.Construct == "pattern" && (field.Name == "expression" || field.Name == "performance") {
 			if field.Required {
-				t.Error("pattern expression must remain optional for existing projects")
+				t.Error("pattern expression and performance must remain optional for existing projects")
 			}
 			continue
 		}

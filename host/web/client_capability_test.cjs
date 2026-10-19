@@ -55,7 +55,7 @@ async function start(harness) {
     assert.ok((await start(legacy)).result);
     assert.equal(legacy.client.capabilities, 0);
   }
-  for (const version of [14, 16, 65535]) {
+  for (const version of [14, 17, 65535]) {
     const invalid = setup(version);
     assert.match((await start(invalid)).error.message, version === 14 ? /Ambiguous.*image14.*recompile/ : /Unsupported image version/);
     assert.equal(invalid.stats.nodes, 0, 'invalid image reached the worklet');
@@ -78,7 +78,7 @@ async function start(harness) {
   assert.equal(legacy.stats.posted.length, before, 'client partly posted a rejected command batch');
   for (const version of [14, 15, 16]) {
     legacy.setImage(version);
-    await assert.rejects(legacy.client.stageCurrentScore('edited'), version === 14 ? /Ambiguous.*image14/ : version === 15 ? /image15.*CapabilityUnifiedImage/ : /Unsupported image version/);
+    await assert.rejects(legacy.client.stageCurrentScore('edited'), version === 14 ? /Ambiguous.*image14/ : /image15.*CapabilityUnifiedImage/);
     assert.equal(legacy.stats.posted.length, before, 'client posted an incompatible staged image');
     assert.equal(legacy.client.stageWaiters.size, 0);
     assert.equal(legacy.client.bpmMilli, 120000, 'rejected stage changed tempo');
@@ -92,6 +92,15 @@ async function start(harness) {
   assert.equal(new DataView(spatial.stats.posted.at(-1).bytes.buffer).getFloat32(12, true), .5);
   const unified = setup(15);
   assert.ok((await start(unified)).result);
+  const cachedPerformance = setup(16);
+  assert.match((await start(cachedPerformance)).error.message, /CapabilityPerformance/);
+  assert.equal(cachedPerformance.stats.disconnected, 1);
+  unified.setImage(16);
+  const performedPosts = unified.stats.posted.length;
+  await assert.rejects(unified.client.stageCurrentScore('edited'), /CapabilityPerformance/);
+  assert.equal(unified.stats.posted.length, performedPosts);
+  const performed = setup(16, { t: 'r', p: 65536 | 262144, c: true });
+  assert.ok((await start(performed)).result);
   unified.client.sendCommands([{ op: 22 }]);
   assert.equal(unified.stats.posted.at(-1).t, 'c');
   unified.setImage(15);

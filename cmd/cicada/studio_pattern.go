@@ -49,6 +49,16 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	env := edits.Envelope{}
 	var intent edits.Intent
 	switch edit.Action {
+	case "performed-note":
+		if edit.PerformanceNote == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a performed note is required"})
+			return
+		}
+		in := *edit.PerformanceNote
+		in.Entity = entity
+		intent = &in
+	case "performance-length":
+		intent = &edits.ResizePerformance{Entity: entity, LengthTicks: edit.PerformanceLength}
 	case "settings":
 		in := &edits.SetPatternSettings{Entity: entity}
 		if edit.Settings != nil {

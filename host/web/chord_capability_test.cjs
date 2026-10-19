@@ -80,7 +80,7 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.match(old.messages.find(m => m.t === 'e')?.e || '', /Ambiguous.*image14.*recompile/);
       assert.equal(old.instances.length, 0, 'ambiguous image instantiated a kernel');
     }
-    for (const version of [0, 7, 16, 255, 65535]) {
+    for (const version of [0, 7, 17, 255, 65535]) {
       const unknown = await setup(asset, capture, version, 3);
       assert.match(unknown.messages.find(m => m.t === 'e')?.e || '', /Unsupported image version/);
       assert.equal(unknown.instances.length, 0);
@@ -95,6 +95,13 @@ async function setup(asset, capture, version, capability, options = {}) {
       const unified = await setup(asset, capture, 15, capability);
       assert.ok(unified.messages.some(m => m.t === 'r' && m.p === capability));
     }
+    for (const capability of [65536, 258047]) {
+      const missing = await setup(asset, capture, 16, capability);
+      assert.match(missing.messages.find(m => m.t === 'e')?.e || '', /image16.*CapabilityPerformance/);
+      assert.equal(missing.counts.projectAllocs, 0, 'unnegotiated performance mutated old kernel');
+    }
+    const performed = await setup(asset, capture, 16, 65536 | 262144);
+    assert.ok(performed.messages.some(m => m.t === 'r' && m.p === (65536 | 262144)));
     for (const capability of [undefined, -1, 1.5, NaN, Infinity, 4096, 0x100000000]) {
       const malformed = await setup(asset, capture, 13, capability);
       assert.match(malformed.messages.find(m => m.t === 'e')?.e || '', /Invalid capabilities/);

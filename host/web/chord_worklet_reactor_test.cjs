@@ -36,12 +36,12 @@ async function check(asset, capture, module, image) {
       timeout = setTimeout(() => reject(new Error('actual worklet did not become ready')), 30000);
     })]);
   } finally { clearTimeout(timeout); }
-  assert.equal(messages.find(message => message.t === 'r').p, 255487, 'unified/chord, pack and spatial capability handshake missing');
+  assert.equal(messages.find(message => message.t === 'r').p, 255487 | 262144, 'unified/chord, pack and spatial capability handshake missing');
   const play = new Uint8Array(24); play[0] = 1; play[1] = 255;
   port.onmessage({ data: { t: 'c', bytes: play } });
   const output = [[new Float32Array(128), new Float32Array(128)]];
   let nonzero = false;
-  for (let block = 0; block < 32; block++) {
+  for (let block = 0; block < (expected ? expected.length / (128 * 8) : 32); block++) {
     assert.equal(processor.process([], output), true);
     for (const channel of output[0]) for (const sample of channel) {
       assert.ok(Number.isFinite(sample), 'non-finite worklet output');
@@ -60,7 +60,7 @@ async function check(asset, capture, module, image) {
 (async () => {
   const module = await WebAssembly.compile(fs.readFileSync(wasmPath));
   const bytes = fs.readFileSync(imagePath);
-  assert.equal(bytes.readUInt16LE(4), 15, 'test requires a unified chord image');
+  assert.ok([15,16].includes(bytes.readUInt16LE(4)), 'test requires a unified chord or performance image');
   const image = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   for (const [asset, capture] of [['processor.js', false], ['processor.js', true], ['processor.min.js', false], ['processor-capture.min.js', true]]) await check(asset, capture, module, image);
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

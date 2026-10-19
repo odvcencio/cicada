@@ -62,7 +62,7 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 	// playback fingerprint that poll will compute (entry, every source file and
 	// cicada.mod), so an unrelated edit to another file cannot consume it.
 	edit.recordedTake = true
-	intent := &edits.RecordTake{Recordings: editRecordings(edit.Recordings)}
+	intent := &edits.RecordTake{Timing: edit.Timing, Recordings: editRecordings(edit.Recordings)}
 	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 

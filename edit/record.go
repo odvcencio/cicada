@@ -12,6 +12,7 @@ import (
 
 // RecordTake commits all recorded patterns as one validated edit.
 type RecordTake struct {
+	Timing     string      `json:"timing,omitempty"`
 	Recordings []Recording `json:"recordings"`
 }
 
@@ -20,6 +21,12 @@ func init() {
 	Register("recordtake", func() Intent { return &RecordTake{} })
 	Handle("recordtake", func(ctx *Context, intent Intent) error {
 		in := intent.(*RecordTake)
+		if in.Timing == "played" {
+			return recordPerformedTake(ctx, in.Recordings)
+		}
+		if in.Timing != "" && in.Timing != "grid" {
+			return fmt.Errorf("take timing must be grid or played")
+		}
 		if len(in.Recordings) == 0 {
 			return fmt.Errorf("at least one recorded track and pattern are required")
 		}
@@ -123,7 +130,7 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 		return nil, fmt.Errorf("pattern %q is not on track %q", patternID, trackID)
 	}
 	drumTrack := track.Kind == "drums"
-	modeledKeys := keyboard.ID(track.Kind) != 0
+	modeledKeys := track.Kind == "piano" || keyboard.ID(track.Kind) != 0
 	for _, kit := range score.Kits {
 		if kit.Name == track.Kind {
 			drumTrack = true
@@ -151,6 +158,9 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	}
 	if !drums && !pitched {
 		return nil, fmt.Errorf("track %q is not a pitched instrument track", trackID)
+	}
+	if pattern.Performance != nil {
+		return nil, fmt.Errorf("pattern %q uses played timing and has no step grid; keep played timing or edit its notes", patternID)
 	}
 	if pattern.Steps < 1 || pattern.Steps > 64 {
 		return nil, fmt.Errorf("pattern %q has an invalid length", patternID)

@@ -255,27 +255,44 @@ messages. **MIDI launch timing** chooses next beat, next bar, or one, two, or fo
 bars. Mapping and track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
-Press **Play**, choose the **Pitched pattern** and **Drum pattern** to record
-into, then select **Record notes**. Acid and drum recordings use separate
-pattern targets. **Finish note take** retains the notes for review without
-changing the score. Under **Retained note take**, **Commit notes to patterns**
-quantizes the notes to the nearest step and **Discard note take** drops them;
-after a commit, **Undo** restores the previous patterns. While you record, the
-take stays in the page, and an interrupted take is retained in the tab's session
-storage when available. If the score changes after you finish, the preview
-stays and a message asks you to review the notes against the current patterns
-before you choose **Apply notes to current score**. Server previews expire
-after thirty minutes or when Studio closes.
-Take commits support acid, drum, and eight-voice programmable tracks with
-single-note takes. Existing chord patterns are refused without changing the
-score; edit their chords in the grid or source pane. Chord recording is not
-available through the take editor. An acid take turns a note that is still held
-when the next one starts into a slide.
+Press **Play**, choose the **Pitched pattern** and **Drum pattern** destinations,
+then select **Record notes**. **Finish note take** retains a private copy for
+review. The trace shows original note starts, held lengths, and velocities;
+**Inspect notes** shows exact timing at 960 ticks per beat. Estimated releases
+are marked. A local desktop profile also keeps interrupted takes and recovery
+copies across restarts; closing a browser tab does not apply a take to the score.
 
-The Live panel records each note's pitch, timing, and velocity. It does not
-record bend, vibrato, pressure, or timbre. To add expression, write `bend:`,
-`vibrato:`, `pressure:`, and `timbre:` rows in **Score**; see [expression
-rows](../spec/features.md#expression-rows).
+**Keep played timing** writes independent note starts, releases, and velocities
+as a performance pattern. Chords can have different starts and held lengths.
+All destinations use the first played bar as a common origin, and the final
+release rounds the loop up to a whole bar. A zero-length hit gets a one-tick
+gate. Existing pattern transpose, swing, and gate settings do not alter the
+captured pitches or timings. Scene assignments and the song's lengths stay as
+authored; a short song block can end before a long performance finishes.
+
+In **Patterns**, select the performance to inspect its trace, edit each note's
+MIDI pitch, start tick, end tick, and velocity, add or remove notes, or change
+the loop length. Shortening refuses to discard held notes. **Loop this
+performance** auditions its full loop independently of the arrangement. It
+uses the first track assigned to the pattern. Each edit has Undo. WAV, stems,
+MIDI, and the portable audio kernel retain the performed gates and velocities.
+
+Played timing supports acid, modeled keyboards and piano, and authored pitched
+instruments, using each instrument's existing mono or polyphonic voice policy.
+It supports up to 512 notes. Pattern actions edit the open entry score; edit
+the owning file for imported patterns. Library sources remain read-only.
+Overlapping gates of the same pitch need separate
+tracks. Drum, sampler, and per-note expression performances are refused by this
+mode with the retained take intact. For step patterns, expand **Snap to the
+existing step grid** and choose **Commit notes to patterns**. This quantizes
+starts, uses the destination's saved length, and checks for collisions before
+writing. Drum hits retain their separate lanes in this grid workflow.
+
+**Check current patterns** validates both timing choices without changing the
+score. If the score changed, review the current instrument and destination
+before applying. **Undo** restores the previous pattern source;
+**Discard note take** closes the retained copy without writing notes. Recovery
+history remains private to the workspace owner.
 
 ## Mixer and instruments
 
@@ -322,9 +339,8 @@ Declared parameters show their default and current track override. Apply a
 value to shape just that track; **Use default** removes its override. Values
 use the parameter's declared unit. Each change is revision checked and can be
 undone. Edit the complete graph in **Score**. Notes patterns support two- to
-four-pitch chords, editable in the grid or source. Committed note takes currently
-support single notes; overlapping polyphonic takes explain this limit instead
-of discarding chord notes.
+four-pitch chords, editable in the grid or source. **Keep played timing** stores captured chords with independent note lengths;
+step-grid commits continue to check for collisions before writing.
 
 ## Score and history
 

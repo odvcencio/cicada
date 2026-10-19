@@ -600,7 +600,7 @@ func kernelPattern(pattern Pattern) (seq.Pattern, error) {
 	}
 	compiled := seq.Pattern{
 		Len: pattern.Steps, StepTicks: pattern.StepTicks, SwingPermille: swing, GatePercent: pattern.GatePercent,
-		Transpose: pattern.Transpose, Seed: pattern.Seed,
+		Transpose: pattern.Transpose, Seed: pattern.Seed, Performance: pattern.Performance.Kernel(),
 	}
 	if len(pattern.Expression) > 0 {
 		compiled.Expression = new([64]seq.Expression)

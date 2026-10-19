@@ -3,7 +3,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     super();
     const port = this.port;
     const post = port.postMessage.bind(port);
-    const CapabilityChords = 1, CapabilityUnifiedImage = 65536;
+    const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
     let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
@@ -23,7 +23,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 header');
       const version = bytes[4] | bytes[5] << 8;
       if (version === 14) invalid('Ambiguous image14; recompile');
-      if (version < 8 || version > 15) invalid(`Unsupported image version ${version}`);
+      if (version < 8 || version > 16) invalid(`Unsupported image version ${version}`);
       const instance = await WebAssembly.instantiate(module);
       const exports = instance.exports;
       let slot = 0;
@@ -41,8 +41,9 @@ class CicadaKernel extends AudioWorkletProcessor {
         for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
         if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
         const capability = x.capabilities ? x.capabilities() : 0;
-        if (capability !== (capability >>> 0) || (capability & ~0x3efff)) invalid('Invalid capabilities');
-        if (version === 15 && !(capability & CapabilityUnifiedImage)) invalid('image15 needs CapabilityUnifiedImage');
+        if ((capability & 0x7efff) !== capability) invalid('Invalid capabilities');
+        const missing = version >= 15 && !(capability & CapabilityUnifiedImage) ? 'UnifiedImage' : version === 16 && !(capability & CapabilityPerformance) ? 'Performance' : '';
+        if (missing) invalid(`image${version} needs Capability${missing}`);
         if (bank) {
           const bankPtr = x.bank_alloc(bank.byteLength);
           if (!bankPtr) invalid('bank');
@@ -137,10 +138,9 @@ class CicadaKernel extends AudioWorkletProcessor {
       // Reject the whole batch before writing command memory or changing playback.
       if (!target) return reject('Reload audio');
       if (length % 24 || start + length > bytes.length) return reject();
-      const count = length / 24;
       let seekTick = null, starts = false, stops = false, committed = 0, queued = 0;
-      for (let i = 0; i < count; i++) {
-        const at = start + i * 24, op = bytes[at];
+      for (let at = start; at < start + length; at += 24) {
+        const op = bytes[at];
         if (op === 3) {
           let bar = 0, tick = 0;
           for (let j = 3; j >= 0; j--) { bar = bar * 256 + bytes[at + 4 + j]; tick = tick * 256 + bytes[at + 8 + j]; }
@@ -149,19 +149,19 @@ class CicadaKernel extends AudioWorkletProcessor {
         if (op === 1) starts = true;
         if (op === 2) stops = true;
       }
-      const promotes = pending && pending !== true && (stops || starts && seekTick !== null);
+      const promotes = pending?.x && (stops || starts && seekTick !== null);
       if (promotes) target = pending;
       if (length > target.d.length) return reject();
-      for (let i = 0; i < count; i++) {
-        const op = bytes[start + i * 24];
+      for (let at = start; at < start + length; at += 24) {
+        const op = bytes[at];
         if (op === 22 && !(target.p & CapabilityChords)) return reject('Unsupported chord opcode22');
         if (op >= 26 && op <= 28 && !(target.p & 131072)) return reject('spatial');
         if (pending && !promotes && (op === 10 || op === 9)) queued++;
       }
       if (deferredCount + queued > deferred.length / 24) return reject();
       if (promotes) promote(target);
-      for (let i = 0; i < count; i++) {
-        const at = start + i * 24, op = bytes[at];
+      for (let at = start; at < start + length; at += 24) {
+        const op = bytes[at];
         const launch = op === 10 || op === 9;
         const queued = launch && pending;
         const destination = queued ? deferred : target.d;
@@ -182,7 +182,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     // The kernel owns the tempo map, so a scene tempo moves the bar boundary.
     const sampleAtTick = tick => anchorSample + active.x.tick_frames(anchorTick, tick);
     const swapAtBoundary = (tick) => {
-      if (!pending || pending === true) { nextBarTick += 3840; return; }
+      if (!pending?.x) { nextBarTick += 3840; return; }
       const next = pending;
       swapView.setUint32(4, tick / 3840, true);
       next.d.set(swap, 0);

@@ -36,7 +36,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("_declaration", choice(
 		sym("import_decl"), sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
 		sym("instrument_decl"), sym("preset_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
-		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
+		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"), sym("performance_pattern"),
 		sym("automate_decl"), sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
@@ -146,7 +146,7 @@ func Cicada() *grammargen.Grammar {
 		str("pattern"), field("name", sym("_name")), str("drums"), repeat(sym("pattern_attr")),
 		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
-	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction")))))
+	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction"), sym("tick_count")))))
 
 	// Expression rows follow the melodic cells. Joined labels delimit rows
 	// even when semicolons and newlines are omitted.
@@ -227,9 +227,20 @@ func Cicada() *grammargen.Grammar {
 
 	g.Define("chord_note", seq(str("["), repeat(sym("chord_pitch")), str("]"), repeat(sym("modifier"))))
 	g.Define("chord_pitch", seq(sym("pitch"), repeat(sym("octave_shift"))))
+	g.Define("performance_pattern", seq(
+		str("pattern"), field("name", sym("_name")), str("performance"), repeat(sym("pattern_attr")),
+		str("{"), repeat(choice(sym("pattern_attr"), sym("performed_note"))), str("}"),
+	))
+	g.Define("performed_note", seq(
+		str("note"), field("pitch", sym("integer")),
+		str("at"), str("="), field("at", sym("tick_count")),
+		str("length"), str("="), field("length", sym("tick_count")),
+		str("velocity"), str("="), field("velocity", sym("integer")), optional(str(";")),
+	))
 
 	g.SetExtras(pat(`[ \t\r\n]+`), sym("comment"))
 	g.SetWord("identifier")
+	g.Test("performed gates", "pattern played performance length=7680ticks { note 60 at=17ticks length=703ticks velocity=82; note 64 at=19ticks length=1201ticks velocity=105; }", "")
 
 	g.Test("dense drum rows", "cicada 1 pattern beat drums { bd: Xx..x1x9*2%50; }",
 		"(source_file (integer) (drum_pattern (identifier) (drum_lane (drum_lane_label) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")

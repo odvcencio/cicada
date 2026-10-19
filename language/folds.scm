@@ -12,6 +12,7 @@
   (phrase_decl)
   (acid_pattern)
   (note_pattern)
+  (performance_pattern)
   (drum_pattern)
   (scene_decl)
   (song_decl)

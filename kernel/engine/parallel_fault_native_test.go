@@ -33,7 +33,7 @@ func TestParallelRenderFaultKeepsOutstandingWorkerOwnership(t *testing.T) {
 			for i := range e.messages {
 				e.messages[i] = cmd.Message{Kind: cmd.NoteOn}
 			}
-			e.messageWrite = uint16(len(e.messages))
+			e.messageWrite = uint32(len(e.messages))
 		}
 		var l, r [128]float32
 		e.Render(l[:], r[:])

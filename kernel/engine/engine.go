@@ -266,7 +266,8 @@ type Engine struct {
 	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
-	messageRead, messageWrite    uint16
+	performanceMessages          []cmd.Message
+	messageRead, messageWrite    uint32
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
 	pending                      [CommandCapacity]cmd.Command
@@ -707,7 +708,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				return Error("keyboard voices do not support per-note expression")
 			}
 			if pattern.Len == 0 {
-				if pattern.Chords != [64]seq.ChordStep{} {
+				if pattern.Performance != nil || pattern.Chords != [64]seq.ChordStep{} {
 					return Error("unused slot contains chord payload")
 				}
 				if isDrum {
@@ -734,6 +735,14 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				}
 			}
 			loaded := *pattern
+			if err := e.preparePerformedTrack(track, pattern); err != nil {
+				return err
+			}
+			if pattern.Performance != nil {
+				cloned := *pattern.Performance
+				cloned.Notes = append([]seq.PerformedNote(nil), pattern.Performance.Notes...)
+				loaded.Performance = &cloned
+			}
 			// Copy expression once before rendering. Internal pattern revisions and
 			// held gates share this immutable storage, never caller-owned memory.
 			if pattern.Expression != nil {
@@ -764,6 +773,19 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				}
 			}
 		}
+	}
+	capacity := 0
+	for track := range cfg.Patterns {
+		if state := e.patterns[track].performed; state != nil {
+			capacity += len(state.events)
+		}
+	}
+	if capacity > 0 {
+		size := len(e.messages)
+		for size < capacity+len(e.messages) {
+			size <<= 1
+		}
+		e.performanceMessages = make([]cmd.Message, size)
 	}
 	return nil
 }
@@ -914,8 +936,10 @@ func (e *Engine) Poll(m *cmd.Message) bool {
 	if m == nil {
 		return false
 	}
+	messages := e.messageStorage()
+	mask := uint32(len(messages) - 1)
 	if e.messageRead != e.messageWrite {
-		*m = e.messages[e.messageRead%uint16(len(e.messages))]
+		*m = messages[e.messageRead&mask]
 		e.messageRead++
 		return true
 	}
@@ -1219,6 +1243,11 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
 	case cmd.OpStop:
+		for track := 0; track < e.tracks; track++ {
+			if state := e.patterns[track].performed; state != nil {
+				state.chase = true
+			}
+		}
 		e.resetDirector()
 		e.transport.Stop()
 		e.lastBarTick = -1
@@ -1391,6 +1420,9 @@ func (e *Engine) apply(c cmd.Command) {
 		default:
 			e.fault(FaultVoiceUnsupported)
 			return
+		}
+		if performed := e.patterns[track].performed; performed != nil && (v.kind == VoicePiano || v.kind == VoiceGraphPoly || keysEnabled && v.kind == VoiceKeys) {
+			performed.live[note/64] |= uint64(1) << (note % 64)
 		}
 		v.noteIdentity, v.noteActive = c.Index, true
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
@@ -1855,6 +1887,17 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 
 func (e *Engine) noteOff(track int, lane uint16) {
 	v := &e.voices[track]
+	if performed := e.patterns[track].performed; performed != nil {
+		if lane == 0xffff {
+			e.releasePerformed(track, e.transport.Tick())
+			performed.live = [2]uint64{}
+		} else if lane < 128 && (v.kind == VoicePiano || v.kind == VoiceGraphPoly || keysEnabled && v.kind == VoiceKeys) {
+			performed.live[lane/64] &^= uint64(1) << (lane % 64)
+			if performed.gates[lane].id != 0 {
+				return // a live key release cannot end an independently held performance gate
+			}
+		}
+	}
 	v.noteActive = false
 	switch v.kind {
 	case VoiceAcid:
@@ -1909,6 +1952,11 @@ func (e *Engine) noteOff(track int, lane uint16) {
 }
 
 func (e *Engine) resetVoice(track int) {
+	e.releasePerformed(track, e.transport.Tick())
+	if performed := e.patterns[track].performed; performed != nil {
+		performed.live = [2]uint64{}
+		performed.chase = true
+	}
 	v := &e.voices[track]
 	v.noteActive = false
 	if v.chain != nil {
@@ -1954,33 +2002,35 @@ func (e *Engine) resetVoice(track int) {
 }
 
 func (e *Engine) emit(message cmd.Message) {
+	messages := e.messageStorage()
+	mask := uint32(len(messages) - 1)
 	if message.Kind == cmd.Playhead {
 		for i := e.messageRead; i != e.messageWrite; i++ {
-			if e.messages[i%uint16(len(e.messages))].Kind != cmd.Playhead {
+			if messages[i&mask].Kind != cmd.Playhead {
 				continue
 			}
 			for j := i; j != e.messageWrite-1; j++ {
-				e.messages[j%uint16(len(e.messages))] = e.messages[(j+1)%uint16(len(e.messages))]
+				messages[j&mask] = messages[(j+1)&mask]
 			}
 			e.messageWrite--
 			break
 		}
 	}
-	if e.messageWrite-e.messageRead >= uint16(len(e.messages)) {
+	if e.messageWrite-e.messageRead >= uint32(len(messages)) {
 		if message.Kind == cmd.Meter {
 			return
 		}
 		for i := e.messageRead; i != e.messageWrite; i++ {
-			if e.messages[i%uint16(len(e.messages))].Kind != cmd.Meter {
+			if messages[i&mask].Kind != cmd.Meter {
 				continue
 			}
 			for j := i; j != e.messageWrite-1; j++ {
-				e.messages[j%uint16(len(e.messages))] = e.messages[(j+1)%uint16(len(e.messages))]
+				messages[j&mask] = messages[(j+1)&mask]
 			}
 			e.messageWrite--
 			break
 		}
-		if e.messageWrite-e.messageRead >= uint16(len(e.messages)) {
+		if e.messageWrite-e.messageRead >= uint32(len(messages)) {
 			if e.overflowLen == 0 {
 				e.overflowMessages[0] = message
 				e.overflowLen = 1
@@ -2010,7 +2060,7 @@ func (e *Engine) emit(message cmd.Message) {
 			return
 		}
 	}
-	e.messages[e.messageWrite%uint16(len(e.messages))] = message
+	messages[e.messageWrite&mask] = message
 	e.messageWrite++
 }
 
