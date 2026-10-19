@@ -65,14 +65,14 @@ func resolvePresetSymbols(symbols []language.Symbol, score *notation.Score) []la
 
 type byteRange struct{ start, end int }
 
-func instrumentScope(source []byte, offset int) byteRange {
+func localScope(source []byte, offset int) byteRange {
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return byteRange{}
 	}
 	for i := 0; i < root.NamedChildCount(); i++ {
 		node := root.NamedChild(i)
-		if walker.Type(node) == "instrument_decl" && int(node.StartByte()) <= offset && offset < int(node.EndByte()) {
+		if (walker.Type(node) == "instrument_decl" || walker.Type(node) == "performance_pattern") && int(node.StartByte()) <= offset && offset < int(node.EndByte()) {
 			return byteRange{int(node.StartByte()), int(node.EndByte())}
 		}
 	}
@@ -103,7 +103,7 @@ func definition(uri string, source []byte, at position) any {
 	if !ok {
 		return nil
 	}
-	scope := instrumentScope(source, scalarOffset(source, selected.Position))
+	scope := localScope(source, scalarOffset(source, selected.Position))
 	for _, symbol := range symbols {
 		if symbol.Role == "definition" && sameSymbol(source, selected, symbol, scope) {
 			return map[string]any{"uri": uri, "range": symbolRegion(source, symbol)}
@@ -136,7 +136,7 @@ func rename(uri string, source []byte, at position, newName string) any {
 	if !ok || selected.Name == newName {
 		return nil
 	}
-	scope := instrumentScope(source, scalarOffset(source, selected.Position))
+	scope := localScope(source, scalarOffset(source, selected.Position))
 	var edits []map[string]any
 	var replacements []replacement
 	for _, symbol := range symbols {

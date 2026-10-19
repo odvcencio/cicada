@@ -43,7 +43,7 @@ func (t *Transport) Stop() { t.playing = false }
 
 func (t *Transport) SeekTick(tick int64) error {
 	if tick < 0 {
-		return Error("seek tick cannot be negative")
+		return validationError("seek tick cannot be negative")
 	}
 	t.tick = tick
 	t.clock.AnchorSample = t.sample
@@ -69,7 +69,7 @@ func (t *Transport) SetTempoNow(bpmMilli int64) {
 
 func (t *Transport) QueueTempo(bpmMilli int64) error {
 	if bpmMilli < minBPMMilli || bpmMilli > maxBPMMilli {
-		return Error("tempo must be 20 to 300 BPM")
+		return validationError("tempo must be 20 to 300 BPM")
 	}
 	t.pendingTempo = bpmMilli
 	t.applyTick = nextMultiple(t.tick, TicksPerBar)
@@ -110,7 +110,7 @@ func (t *Transport) Advance(frames int) (startTick, endTick int64) {
 // Pattern-end quantization uses the active pattern length.
 func QuantizeTick(tick int64, quantize cmd.Quantize, patternLength uint8) (int64, error) {
 	if tick < 0 {
-		return 0, Error("quantize tick cannot be negative")
+		return 0, validationError("quantize tick cannot be negative")
 	}
 	switch quantize {
 	case 0:
@@ -121,12 +121,12 @@ func QuantizeTick(tick int64, quantize cmd.Quantize, patternLength uint8) (int64
 		return nextMultiple(tick, TicksPerBar), nil
 	case 3:
 		if patternLength < 1 || patternLength > 64 {
-			return 0, Error("pattern length must be 1 to 64")
+			return 0, validationError("pattern length must be 1 to 64")
 		}
 		return nextMultiple(tick, int64(patternLength)*TicksPerStep), nil
 	default:
 		if quantize < 5 || quantize > 20 {
-			return 0, Error("quantize value is out of range")
+			return 0, validationError("quantize value is out of range")
 		}
 		return nextMultiple(tick, int64(quantize-4)*TicksPerBar), nil
 	}

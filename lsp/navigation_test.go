@@ -49,3 +49,31 @@ func TestLocalParameterRenameStaysInsideInstrument(t *testing.T) {
 		t.Fatalf("parameter definition: %s", encoded)
 	}
 }
+
+func TestSharedLaneRenameStaysInsidePerformance(t *testing.T) {
+	source := []byte(`cicada 2
+instrument first { param touch=0.5 voice poly { out=sine(pitch)*touch } }
+track keys first {}
+pattern one performance length=3840ticks {
+ note 60 at=17ticks length=703ticks velocity=103 group=touch;
+ gesture-group touch { gesture at=0ticks bend=0ct pressure=0 timbre=0.5; }
+}
+pattern two performance length=3840ticks {
+ gesture-group touch { gesture at=0ticks bend=0ct pressure=0 timbre=0.5; }
+ note 64 at=19ticks length=1301ticks velocity=87 group=touch;
+}
+scene main { keys=one }
+song { main }
+`)
+	reference := bytes.Index(source, []byte("group=touch")) + len("group=")
+	edit := rename("file:///score.cicada", source, utf16Position(source, reference), "breath")
+	encoded, _ := json.Marshal(edit)
+	if bytes.Count(encoded, []byte(`"newText":"breath"`)) != 2 || bytes.Contains(encoded, []byte(`"line":1,`)) {
+		t.Fatalf("shared rename crossed its scope: %s", encoded)
+	}
+	location := definition("file:///score.cicada", source, utf16Position(source, reference))
+	encoded, _ = json.Marshal(location)
+	if !bytes.Contains(encoded, []byte(`"line":5`)) {
+		t.Fatalf("forward shared definition resolved outside the pattern: %s", encoded)
+	}
+}

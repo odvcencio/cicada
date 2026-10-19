@@ -229,13 +229,15 @@ func Cicada() *grammargen.Grammar {
 	g.Define("chord_pitch", seq(sym("pitch"), repeat(sym("octave_shift"))))
 	g.Define("performance_pattern", seq(
 		str("pattern"), field("name", sym("_name")), str("performance"), repeat(sym("pattern_attr")),
-		str("{"), repeat(choice(sym("pattern_attr"), sym("performed_note"))), str("}"),
+		str("{"), repeat(choice(sym("pattern_attr"), sym("performed_note"), sym("performed_group"))), str("}"),
 	))
+	g.Define("performed_group", seq(str("gesture-group"), field("name", sym("identifier")), str("{"), sym("performed_expression"), repeat(sym("performed_expression")), str("}")))
 	g.Define("performed_note", seq(
 		str("note"), field("pitch", sym("integer")),
 		str("at"), str("="), field("at", sym("tick_count")),
 		str("length"), str("="), field("length", sym("tick_count")),
 		str("velocity"), str("="), field("velocity", sym("integer")),
+		optional(seq(str("group"), str("="), field("group", sym("identifier")))),
 		optional(choice(str(";"), seq(str("{"), sym("performed_expression"), repeat(sym("performed_expression")), str("}")))),
 	))
 	g.Define("performed_expression", seq(
@@ -251,6 +253,7 @@ func Cicada() *grammargen.Grammar {
 	g.SetWord("identifier")
 	g.Test("performed gates", "pattern played performance length=7680ticks { note 60 at=17ticks length=703ticks velocity=82; note 64 at=19ticks length=1201ticks velocity=105; }", "")
 	g.Test("performed gestures", "pattern played performance length=3840ticks { note 60 at=17ticks length=703ticks velocity=82 { gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5; gesture at=600ticks bend=123.5ct pressure=0.7 timbre=0.9 vibrato=5ct; } }", "")
+	g.Test("shared gestures", "pattern played performance length=3840ticks { gesture-group touch { gesture at=0ticks bend=0ct pressure=0 timbre=0.5; gesture at=960ticks bend=200ct pressure=0.8 timbre=0.6; } note 60 at=0ticks length=480ticks velocity=100 group=touch; }", "")
 
 	g.Test("dense drum rows", "cicada 1 pattern beat drums { bd: Xx..x1x9*2%50; }",
 		"(source_file (integer) (drum_pattern (identifier) (drum_lane (drum_lane_label) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")

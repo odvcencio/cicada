@@ -20,7 +20,7 @@ func GraphPolyphony(p *Project, kind string) int {
 				}
 				if pattern.Performance != nil {
 					for _, note := range pattern.Performance.Notes {
-						if len(note.Expressions) > 0 {
+						if len(note.Expressions) > 0 && len(pattern.Performance.Groups) == 0 {
 							return graph.MaxPolyphony
 						}
 					}

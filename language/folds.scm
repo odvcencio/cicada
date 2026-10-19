@@ -13,6 +13,7 @@
   (acid_pattern)
   (note_pattern)
   (performance_pattern)
+  (performed_group)
   (drum_pattern)
   (scene_decl)
   (song_decl)

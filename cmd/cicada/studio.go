@@ -491,6 +491,9 @@ type studioEdit struct {
 	Settings              *studioPatternSettings        `json:"settings,omitempty"`
 	PerformanceNote       *edits.SetPerformedNote       `json:"performanceNote,omitempty"`
 	PerformanceExpression *edits.SetPerformedExpression `json:"performanceExpression,omitempty"`
+	PerformanceGroup      *edits.SetPerformanceGroup    `json:"performanceGroup,omitempty"`
+	PerformanceBinding    *edits.BindPerformedGroup     `json:"performanceBinding,omitempty"`
+	SharedExpression      *edits.SetSharedExpression    `json:"sharedExpression,omitempty"`
 	PerformanceLength     int64                         `json:"performanceLength,omitempty"`
 	NoteEdit              *studioStepEdit               `json:"noteEdit,omitempty"`
 	NewName               string                        `json:"newName,omitempty"`

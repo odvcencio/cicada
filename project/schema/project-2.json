@@ -711,6 +711,13 @@
           "items": {
             "$ref": "#/$defs/performed_note"
           }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/control_group"
+          }
         }
       }
     },
@@ -750,6 +757,11 @@
           "items": {
             "$ref": "#/$defs/performed_expression"
           }
+        },
+        "group": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
         }
       }
     },
@@ -2090,6 +2102,62 @@
           "type": "number",
           "minimum": 0,
           "maximum": 100
+        }
+      }
+    },
+    "control_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "points"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z_][a-z0-9_-]*$"
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 65536,
+          "items": {
+            "$ref": "#/$defs/group_expression"
+          }
+        }
+      }
+    },
+    "group_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "pitch_cents",
+        "pressure",
+        "timbre"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627775
+        },
+        "pitch_cents": {
+          "type": "number",
+          "minimum": -9600,
+          "maximum": 9600
+        },
+        "pressure": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "timbre": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     }

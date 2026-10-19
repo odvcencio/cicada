@@ -1,6 +1,9 @@
 package graph
 
-import "math"
+import (
+	"m31labs.dev/cicada/kernel/expression"
+	"math"
+)
 
 const PolyVoices = 8
 
@@ -18,6 +21,7 @@ type polySlot struct {
 	voice                      *Voice
 	age                        uint64
 	identity                   uint16
+	group                      expression.Group
 	note                       uint8
 	active, held               bool
 	last                       float32
@@ -61,6 +65,7 @@ func (p *Poly) noteOn(note, velocity uint8, slide bool) int {
 		if index >= 0 {
 			s := &p.slots[index]
 			s.note = note
+			s.group = expression.Group{}
 			s.voice.NoteOn(note, velocity, true)
 			return index
 		}
@@ -109,6 +114,7 @@ func (p *Poly) noteOn(note, velocity uint8, slide bool) int {
 	s.voice.spreadPhase(uint32(p.serial) * 0x9e3779b9)
 	s.age, s.note, s.active, s.held = p.serial, note, true, true
 	s.identity = 0
+	s.group = expression.Group{}
 	s.last, s.quietFrames, s.releaseFrames = 0, 0, 0
 	return index
 }

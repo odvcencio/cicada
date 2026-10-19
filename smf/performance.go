@@ -9,6 +9,7 @@ import (
 // retain gates across bar windows and close them at the exclusive region end.
 func appendPerformedRange(track *TrackChunk, pattern *seq.Pattern, origin, from, to, end int64, trackIndex, channel uint8) {
 	p := pattern.Performance
+	groupBase := appendSharedRange(track, p, origin, from, min(to, end))
 	first := max(int64(0), (from-origin)/p.LengthTicks)
 	for iteration := first; origin+iteration*p.LengthTicks < to; iteration++ {
 		base := origin + iteration*p.LengthTicks
@@ -17,12 +18,17 @@ func appendPerformedRange(track *TrackChunk, pattern *seq.Pattern, origin, from,
 			if at < from || at >= to || off <= at {
 				continue
 			}
-			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: at, Dur: off - at, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel, Gesture: performedMIDIGesture(note, 0, off-at)})
+			gesture := performedMIDIGesture(note, 0, off-at)
+			if note.Group != 0 {
+				gesture.Group = groupBase + int(note.Group)
+			}
+			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: at, Dur: off - at, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel, Gesture: gesture})
 		}
 	}
 }
 
 func closePerformedAt(track *TrackChunk, tick int64) {
+	track.performedGroups = nil
 	for i := range track.Notes {
 		note := &track.Notes[i]
 		if note.Tick < tick && note.Tick+note.Dur > tick {
@@ -42,17 +48,22 @@ func closePerformedAt(track *TrackChunk, tick int64) {
 // held gate retriggers at the boundary, preserving its remaining duration.
 func appendPerformedChase(track *TrackChunk, pattern *seq.Pattern, origin, tick, end int64, trackIndex, channel uint8) {
 	p := pattern.Performance
+	groupBase := appendSharedRange(track, p, origin, tick, tick)
 	base := origin + (tick-origin)/p.LengthTicks*p.LengthTicks
 	for _, note := range p.Notes {
 		if base+note.Tick < tick && base+note.EndTick > tick {
 			duration := min(base+note.EndTick, end) - tick
-			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: tick, Dur: duration, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel, Gesture: performedMIDIGesture(note, tick-base-note.Tick, duration)})
+			gesture := performedMIDIGesture(note, tick-base-note.Tick, duration)
+			if note.Group != 0 {
+				gesture.Group = groupBase + int(note.Group)
+			}
+			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: tick, Dur: duration, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel, Gesture: gesture})
 		}
 	}
 }
 
 func performedMIDIGesture(note seq.PerformedNote, skip, duration int64) *NoteGesture {
-	if len(note.Expressions) == 0 {
+	if len(note.Expressions) == 0 && note.Group == 0 {
 		return nil
 	}
 	var points []seq.PerformedExpression
@@ -64,12 +75,12 @@ func performedMIDIGesture(note seq.PerformedNote, skip, duration int64) *NoteGes
 			} else {
 				points[0] = point
 			}
-		} else if point.Tick < skip+duration {
+		} else if point.Tick < skip+duration || note.Group != 0 && point.Tick == skip+duration {
 			point.Tick -= skip
 			points = append(points, point)
 		}
 	}
-	if len(points) == 0 {
+	if len(points) == 0 && note.Group == 0 {
 		return nil
 	}
 	return &NoteGesture{Points: points}

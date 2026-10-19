@@ -160,8 +160,11 @@ func replacePerformedPattern(ctx *Context, id string, performance *seq.Performan
 		}
 	}
 	comments(document.Root)
+	for _, group := range performance.Groups {
+		replacement.WriteString(notation.PerformedGroupSource(group))
+	}
 	for _, note := range performance.Notes {
-		replacement.WriteString(notation.PerformedNoteSource(note))
+		replacement.WriteString(notation.PerformedNoteSource(note, performance.Groups...))
 	}
 	replacement.WriteString("}")
 	text := strings.ReplaceAll(replacement.String(), "\n", Newline(before))

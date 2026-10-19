@@ -2,17 +2,21 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
 func (e *Engine) releaseLiveIdentities(track int) {
 	v := &e.voices[track]
+	v.expressionGroup = expression.Group{}
 	if v.poly != nil {
 		v.poly.ReleaseLive()
+		v.poly.DetachGroups()
 	}
 	if v.legacyPoly != nil {
 		v.legacyPoly.NoteOffIdentity(65535)
+		v.legacyPoly.DetachGroups()
 	}
 }
 

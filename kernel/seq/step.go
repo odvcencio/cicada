@@ -19,16 +19,16 @@ type Step struct {
 
 func (s Step) Validate() error {
 	if s.Ratchet < 1 || s.Ratchet > 8 {
-		return Error("ratchet must be 1 to 8")
+		return validationError("ratchet must be 1 to 8")
 	}
 	if s.Probability > 100 {
-		return Error("probability must be 0 to 100")
+		return validationError("probability must be 0 to 100")
 	}
 	if s.Tie && !s.Gate {
-		return Error("tie requires gate")
+		return validationError("tie requires gate")
 	}
 	if s.Tie && s.Ratchet != 1 {
-		return Error("tie cannot ratchet")
+		return validationError("tie cannot ratchet")
 	}
 	return nil
 }
@@ -55,7 +55,7 @@ func PackStep(s Step) (uint32, error) {
 
 func UnpackStep(v uint32) (Step, error) {
 	if v>>28 != 0 {
-		return Step{}, Error("reserved step bits must be zero")
+		return Step{}, validationError("reserved step bits must be zero")
 	}
 	s := Step{
 		Note: uint8(v & 0x7f), Accent: v&(1<<7) != 0,
@@ -78,26 +78,26 @@ type ChordStep struct {
 func (c ChordStep) Validate(step Step) error {
 	if c.Count == 0 {
 		if c.Notes != [4]uint8{} {
-			return Error("unused chord pitches must be zero")
+			return validationError("unused chord pitches must be zero")
 		}
 		return nil
 	}
 	if c.Count < 2 || c.Count > 4 || !step.Gate || step.Tie || step.Slide || step.Ratchet != 1 || c.Notes[0] != step.Note {
-		return Error("chord needs 2 to 4 pitches, a gate, and no tie, slide or ratchet")
+		return validationError("chord needs 2 to 4 pitches, a gate, and no tie, slide or ratchet")
 	}
 	for i := uint8(0); i < 4; i++ {
 		if i >= c.Count {
 			if c.Notes[i] != 0 {
-				return Error("unused chord pitches must be zero")
+				return validationError("unused chord pitches must be zero")
 			}
 			continue
 		}
 		if c.Notes[i] > 127 {
-			return Error("chord pitch is out of range")
+			return validationError("chord pitch is out of range")
 		}
 		for j := uint8(0); j < i; j++ {
 			if c.Notes[j] == c.Notes[i] {
-				return Error("chord pitches must be distinct")
+				return validationError("chord pitches must be distinct")
 			}
 		}
 	}
@@ -142,38 +142,38 @@ func (p *Pattern) Validate() error {
 			return err
 		}
 		if p.Len != 1 || p.StepTicks != 0 || p.SwingPermille != 0 || p.Expression != nil || p.Chords != [64]ChordStep{} {
-			return Error("a performance cannot contain step-grid timing or expression")
+			return validationError("a performance cannot contain step-grid timing or expression")
 		}
 		for _, packed := range p.Steps {
 			step, err := UnpackStep(packed)
 			if err != nil || step.Gate || step.Slide || step.Accent || step.Tie {
-				return Error("a performance cannot contain grid notes")
+				return validationError("a performance cannot contain grid notes")
 			}
 		}
 		for _, note := range p.Performance.Notes {
 			if int(note.Note)+int(p.Transpose) < 0 || int(note.Note)+int(p.Transpose) > 127 {
-				return Error("transposed performed pitch is out of range")
+				return validationError("transposed performed pitch is out of range")
 			}
 		}
 	}
 	if p.StepTicks != 0 && (p.StepTicks < 30 || p.StepTicks > 3840) {
-		return Error("grid must be 30 to 3840 ticks")
+		return validationError("grid must be 30 to 3840 ticks")
 	}
 	if p.Len < 1 || p.Len > 64 {
-		return Error("pattern length must be 1 to 64")
+		return validationError("pattern length must be 1 to 64")
 	}
 	if p.SwingPermille > 500 {
-		return Error("swing must be 0 to 500 permille")
+		return validationError("swing must be 0 to 500 permille")
 	}
 	if p.Transpose < -24 || p.Transpose > 24 {
-		return Error("transpose must be -24 to 24 semitones")
+		return validationError("transpose must be -24 to 24 semitones")
 	}
 	if p.GatePercent < 10 || p.GatePercent > 100 {
-		return Error("gate must be 10 to 100 percent")
+		return validationError("gate must be 10 to 100 percent")
 	}
 	for i := int(p.Len); i < 64; i++ {
 		if p.Chords[i] != (ChordStep{}) {
-			return Error("chord payload exceeds pattern length")
+			return validationError("chord payload exceeds pattern length")
 		}
 	}
 	for i := uint8(0); i < p.Len; i++ {
@@ -190,16 +190,16 @@ func (p *Pattern) Validate() error {
 		if p.Chords[i].Count > 0 {
 			prev, _ := UnpackStep(p.Steps[(int(i)+int(p.Len)-1)%int(p.Len)])
 			if prev.Slide {
-				return Error("a slide cannot target a chord")
+				return validationError("a slide cannot target a chord")
 			}
 		}
 		for n := uint8(0); n < p.Chords[i].Count; n++ {
 			if int(p.Chords[i].Notes[n])+int(p.Transpose) < 0 || int(p.Chords[i].Notes[n])+int(p.Transpose) > 127 {
-				return Error("transposed chord pitch is out of range")
+				return validationError("transposed chord pitch is out of range")
 			}
 		}
 		if step.Gate && !step.Tie && (int(step.Note)+int(p.Transpose) < 0 || int(step.Note)+int(p.Transpose) > 127) {
-			return Error("transposed note is out of range")
+			return validationError("transposed note is out of range")
 		}
 	}
 	return nil

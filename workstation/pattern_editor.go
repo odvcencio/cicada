@@ -24,6 +24,54 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
+		case "performance-group", "performance-binding", "shared-gesture":
+			n := map[string]any{}
+			keys := []string{"index"}
+			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
+			query := target.Query()
+			if f["note_index"] != "" {
+				query.Set("note", f["note_index"])
+			}
+			fieldName := "performanceGroup"
+			switch f["action"] {
+			case "performance-group":
+				n["name"], n["remove"] = f["name"], f["intent"] == "remove"
+				query.Set("group", f["index"])
+			case "performance-binding":
+				keys = []string{"note_index", "group"}
+				fieldName = "performanceBinding"
+				if value, err := strconv.Atoi(f["group"]); err == nil && value > 0 {
+					query.Set("group", strconv.Itoa(value-1))
+				}
+			case "shared-gesture":
+				keys = []string{"group_index", "index"}
+				fieldName = "sharedExpression"
+				n["remove"] = f["intent"] == "remove"
+				query.Set("group", f["group_index"])
+				query.Set("shared_point", f["index"])
+				if f["intent"] != "remove" {
+					keys = append(keys, "tick")
+					for _, key := range []string{"pitch_cents", "pressure", "timbre"} {
+						value, err := finiteNumber(f, key)
+						if err != nil {
+							return nil, err
+						}
+						n[key] = value
+					}
+					query.Set("shared_tick", f["tick"])
+					query.Del("shared_point")
+				}
+			}
+			for _, key := range keys {
+				value, err := strconv.ParseInt(f[key], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s must be a whole number", key)
+				}
+				n[key] = value
+			}
+			target.RawQuery, target.Fragment = query.Encode(), "shared-gestures"
+			destination = target.String()
+			p[fieldName] = n
 		case "performed-gesture":
 			n := map[string]any{"remove": f["intent"] == "remove"}
 			keys := []string{"note_index", "index"}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -48,9 +49,16 @@ func parsePerformedExpression(w *loweringWalker, point *gts.Node) (seq.Performed
 
 // PerformedNoteSource is shared by project exports and typed source edits.
 // Gesture positions are relative to the note, with canonical float32 spelling.
-func PerformedNoteSource(note seq.PerformedNote) string {
+func PerformedNoteSource(note seq.PerformedNote, groups ...seq.ControlGroup) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "  note %d at=%dticks length=%dticks velocity=%d", note.Note, note.Tick, note.EndTick-note.Tick, note.Velocity)
+	if note.Group > 0 && int(note.Group) <= len(groups) {
+		fmt.Fprintf(&out, " group=%s", groups[note.Group-1].Name)
+	} else if note.Group > 0 {
+		// Missing context must fail as an unresolved reference on re-parse,
+		// never silently export an unbound note with a different sound.
+		fmt.Fprintf(&out, " group=missing-shared-lane-%d", note.Group)
+	}
 	if len(note.Expressions) == 0 {
 		out.WriteString(";\n")
 		return out.String()
@@ -70,4 +78,35 @@ func PerformedNoteSource(note seq.PerformedNote) string {
 	}
 	out.WriteString("  }\n")
 	return out.String()
+}
+
+func PerformedGroupSource(group seq.ControlGroup) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "  gesture-group %s {\n", group.Name)
+	number := func(value float32) string { return strconv.FormatFloat(float64(value), 'f', -1, 32) }
+	for _, point := range group.Points {
+		v := point.Value
+		fmt.Fprintf(&out, "    gesture at=%dticks bend=%sct pressure=%s timbre=%s;\n", point.Tick, number(v.PitchCents), number(v.Pressure), number(v.Timbre))
+	}
+	out.WriteString("  }\n")
+	return out.String()
+}
+
+func parsePerformedGroup(w *loweringWalker, node *gts.Node) (seq.ControlGroup, error) {
+	group := seq.ControlGroup{Name: w.Text(w.Field(node, "name"))}
+	for i := 0; i < node.NamedChildCount(); i++ {
+		point := node.NamedChild(i)
+		if w.Type(point) != "performed_expression" {
+			continue
+		}
+		value, err := parsePerformedExpression(w, point)
+		if err != nil {
+			return group, err
+		}
+		if w.Field(point, "vibrato") != nil || w.Field(point, "rate") != nil {
+			return group, fmt.Errorf("shared gestures carry bend, pressure and timbre; put vibrato on each note")
+		}
+		group.Points = append(group.Points, seq.GroupPoint{Tick: value.Tick, Value: expression.Controls{PitchCents: value.Params.PitchCents, Pressure: value.Params.Pressure, Timbre: value.Params.Timbre}})
+	}
+	return group, nil
 }

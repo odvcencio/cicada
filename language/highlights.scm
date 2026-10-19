@@ -306,6 +306,10 @@
 (performance_pattern "performance" @type.builtin)
 (performed_note "note" @keyword)
 (performed_note ["at" "length" "velocity"] @attribute)
+(performed_note "group" @attribute)
+(performed_note group: (identifier) @variable)
+(performed_group "gesture-group" @keyword)
+(performed_group name: (identifier) @variable)
 
 (performed_note pitch: (integer) @number)
 (performed_note velocity: (integer) @number)

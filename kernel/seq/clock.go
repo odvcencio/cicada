@@ -29,10 +29,10 @@ type Clock struct {
 
 func NewClock(sampleRate int, bpmMilli int64) (Clock, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return Clock{}, Error("sample rate must be 44100, 48000, or 96000")
+		return Clock{}, validationError("sample rate must be 44100, 48000, or 96000")
 	}
 	if bpmMilli < minBPMMilli || bpmMilli > maxBPMMilli {
-		return Clock{}, Error("tempo must be 20 to 300 BPM")
+		return Clock{}, validationError("tempo must be 20 to 300 BPM")
 	}
 	return Clock{SampleRate: int64(sampleRate), BPMMilli: bpmMilli}, nil
 }
@@ -72,10 +72,10 @@ func (c Clock) SampleAtTick(tick int64) int64 {
 // bar). The boundary sample is computed with the old tempo.
 func (c Clock) Reanchor(tick, bpmMilli int64) (Clock, error) {
 	if bpmMilli < minBPMMilli || bpmMilli > maxBPMMilli {
-		return Clock{}, Error("tempo must be 20 to 300 BPM")
+		return Clock{}, validationError("tempo must be 20 to 300 BPM")
 	}
 	if tick < c.AnchorTick {
-		return Clock{}, Error("tempo anchor cannot move backwards")
+		return Clock{}, validationError("tempo anchor cannot move backwards")
 	}
 	c.AnchorSample = c.SampleAtTick(tick)
 	c.AnchorTick = tick

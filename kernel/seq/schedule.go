@@ -8,6 +8,7 @@ const (
 	NoteOn EventKind = iota
 	NoteOff
 	NoteExpression
+	GroupExpression
 )
 
 type Event struct {
@@ -27,6 +28,7 @@ type Event struct {
 	Accent          bool
 	Slide           bool
 	ExpressionIndex uint16 // point within a performed note; ordinary steps use StepIndex
+	Group           uint16 // 1-based shared lane within the performed pattern
 }
 
 // SwingDelayTicks returns the delay of an odd grid step. For example,
@@ -39,7 +41,7 @@ func SwingDelayTicks(permille uint16) int64 {
 // packed pattern field: 5000=50%, 5400=54%, 7500=75%.
 func SwingFromPercent100(percent100 uint16) (uint16, error) {
 	if percent100 < 5000 || percent100 > 7500 {
-		return 0, Error("swing percent must be 50 to 75")
+		return 0, validationError("swing percent must be 50 to 75")
 	}
 	return (percent100 - 5000 + 2) / 5, nil
 }
@@ -340,6 +342,9 @@ func eventPriority(kind EventKind) int {
 	}
 	if kind == NoteOn {
 		return 1
+	}
+	if kind == GroupExpression {
+		return 3
 	}
 	return 2
 }

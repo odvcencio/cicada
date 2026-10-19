@@ -2,6 +2,7 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -564,7 +565,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 		}
 		for p.eventIndex < p.eventCount {
 			item := p.eventStorage()[p.eventIndex]
-			if item.event.Sample > sample || item.event.Sample == sample && item.event.Kind != kind {
+			controller := kind == seq.NoteExpression && item.event.Kind == seq.GroupExpression
+			if item.event.Sample > sample || item.event.Sample == sample && item.event.Kind != kind && !controller {
 				break
 			}
 			p.eventIndex++
@@ -618,6 +620,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			}
 			// A new note ends the one it replaces, including a slide's source.
 			e.tapRelease(track, event.Tick)
+			e.voices[track].expressionGroup = expression.Group{}
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
@@ -720,6 +723,9 @@ func patternEventPriority(kind seq.EventKind) int {
 	if kind == seq.NoteOn {
 		return 1
 	}
+	if kind == seq.GroupExpression {
+		return 3
+	}
 	return 2
 }
 
@@ -737,11 +743,11 @@ func (e *Engine) applyStepExpression(track int, params seq.Expression) {
 	}
 }
 
-// Polyphonic generations must never wrap into an old cohort's identity.
-// Legacy mono wrapping behavior is retained for compatibility.
+// Cohorts and shared lanes must never wrap into an old voice's identity.
+// Legacy step-only mono wrapping behavior is retained for compatibility.
 func (e *Engine) nextPatternGeneration(track int) bool {
 	p := &e.patterns[track]
-	if p.generation == ^uint32(0) && e.voices[track].poly != nil {
+	if p.generation == ^uint32(0) && (e.voices[track].poly != nil || p.performed != nil) {
 		e.fault(FaultPolyGeneration)
 		return false
 	}

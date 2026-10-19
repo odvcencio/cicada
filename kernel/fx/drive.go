@@ -45,7 +45,7 @@ func DefaultDriveParams() DriveParams {
 func (p DriveParams) Validate() error {
 	if p.Shape >= driveShapes || !finite(p.GainDB) || !finite(p.ToneHz) || !finite(p.Mix) ||
 		p.GainDB < 0 || p.GainDB > 36 || p.ToneHz < 1_000 || p.ToneHz > 20_000 || p.Mix < 0 || p.Mix > 1 {
-		return Error("drive parameter is invalid or out of range")
+		return validationError("drive parameter is invalid or out of range")
 	}
 	return nil
 }
@@ -83,7 +83,7 @@ type Drive struct {
 
 func NewDrive(sampleRate int) (*Drive, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return nil, Error("unsupported drive sample rate")
+		return nil, validationError("unsupported drive sample rate")
 	}
 	d := &Drive{
 		sampleRate: float64(sampleRate), smooth: 1 - math.Exp(-1/(.005*float64(sampleRate))),

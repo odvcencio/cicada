@@ -37,6 +37,7 @@ async function check(asset, capture, module, image) {
     })]);
   } finally { clearTimeout(timeout); }
   assert.equal(messages.find(message => message.t === 'r').p & (255487 | 262144 | 524288), 255487 | 262144 | 524288, 'unified/chord, pack, spatial and gesture capability handshake missing');
+  if (new DataView(image).getUint16(4, true) === 18) assert.ok(messages.find(message => message.t === 'r').p & 2097152, 'shared control capability missing');
   const play = new Uint8Array(24); play[0] = 1; play[1] = 255;
   port.onmessage({ data: { t: 'c', bytes: play } });
   const output = [[new Float32Array(128), new Float32Array(128)]];
@@ -60,7 +61,7 @@ async function check(asset, capture, module, image) {
 (async () => {
   const module = await WebAssembly.compile(fs.readFileSync(wasmPath));
   const bytes = fs.readFileSync(imagePath);
-  assert.ok([15,16,17].includes(bytes.readUInt16LE(4)), 'test requires a unified chord or performance image');
+  assert.ok([15,16,17,18].includes(bytes.readUInt16LE(4)), 'test requires a unified chord or performance image');
   const image = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   for (const [asset, capture] of [['processor.js', false], ['processor.js', true], ['processor.min.js', false], ['processor-capture.min.js', true]]) await check(asset, capture, module, image);
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

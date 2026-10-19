@@ -14,7 +14,7 @@ type DeesserParams struct {
 func DefaultDeesserParams() DeesserParams { return DeesserParams{6000, -24, 4, 9, 1, 80, 1} }
 func (p DeesserParams) Validate() error {
 	if !finite(p.FrequencyHz) || !finite(p.ThresholdDB) || !finite(p.Ratio) || !finite(p.RangeDB) || !finite(p.AttackMs) || !finite(p.ReleaseMs) || !finite(p.Mix) || p.FrequencyHz < 2000 || p.FrequencyHz > 12000 || p.ThresholdDB < -60 || p.ThresholdDB > 0 || p.Ratio < 1 || p.Ratio > 20 || p.RangeDB < 0 || p.RangeDB > 24 || p.AttackMs < .1 || p.AttackMs > 20 || p.ReleaseMs < 10 || p.ReleaseMs > 500 || p.Mix < 0 || p.Mix > 1 {
-		return Error("de-esser parameter is invalid or out of range")
+		return validationError("de-esser parameter is invalid or out of range")
 	}
 	return nil
 }
@@ -30,7 +30,7 @@ type Deesser struct {
 
 func NewDeesser(rate int, p DeesserParams) (*Deesser, error) {
 	if rate != 44100 && rate != 48000 && rate != 96000 {
-		return nil, Error("unsupported de-esser sample rate")
+		return nil, validationError("unsupported de-esser sample rate")
 	}
 	if err := p.Validate(); err != nil {
 		return nil, err

@@ -163,7 +163,8 @@
     {
       "name": "performance",
       "child_roles": [
-        "notes"
+        "notes",
+        "groups"
       ],
       "variants": [],
       "introduced": "cicada.project/1",
@@ -190,6 +191,24 @@
     },
     {
       "name": "note_expression",
+      "child_roles": [],
+      "variants": [],
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "control_group",
+      "child_roles": [
+        "points"
+      ],
+      "variants": [],
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "group_expression",
       "child_roles": [],
       "variants": [],
       "introduced": "cicada.project/1",
@@ -1839,6 +1858,20 @@
       "layer": "semantic"
     },
     {
+      "construct": "performance",
+      "name": "groups",
+      "required": false,
+      "type": "array\u003ccontrol_group\u003e",
+      "unit": null,
+      "range": "0..512",
+      "default": null,
+      "meaning": "Shared bend, pressure and timbre lanes",
+      "order": 3,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "construct": "performed_note",
       "name": "tick",
       "required": true,
@@ -1904,6 +1937,20 @@
       "default": null,
       "meaning": "Played controller samples relative to this note",
       "order": 5,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "performed_note",
+      "name": "group",
+      "required": false,
+      "type": "integer",
+      "unit": null,
+      "range": "0..512",
+      "default": null,
+      "meaning": "Shared gesture lane ordinal; zero is unbound",
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -2001,6 +2048,90 @@
       "range": "0..9600",
       "default": null,
       "meaning": "Per-note vibrato depth at 5 Hz",
+      "order": 4,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "control_group",
+      "name": "name",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Shared gesture lane name",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "control_group",
+      "name": "points",
+      "required": true,
+      "type": "array\u003cgroup_expression\u003e",
+      "unit": null,
+      "range": "1..65536",
+      "default": null,
+      "meaning": "Controller snapshots in pattern time",
+      "order": 2,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "group_expression",
+      "name": "tick",
+      "required": true,
+      "type": "integer",
+      "unit": "ticks",
+      "range": "0..1099511627775",
+      "default": null,
+      "meaning": "Controller position within the pattern loop",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "group_expression",
+      "name": "pitch_cents",
+      "required": true,
+      "type": "number",
+      "unit": "ct",
+      "range": "-9600..9600",
+      "default": null,
+      "meaning": "Shared pitch offset",
+      "order": 2,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "group_expression",
+      "name": "pressure",
+      "required": true,
+      "type": "number",
+      "unit": null,
+      "range": "0..1",
+      "default": null,
+      "meaning": "Shared pressure",
+      "order": 3,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "group_expression",
+      "name": "timbre",
+      "required": true,
+      "type": "number",
+      "unit": null,
+      "range": "0..1",
+      "default": null,
+      "meaning": "Shared timbre; 0.5 is neutral",
       "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
@@ -12,6 +13,7 @@ import (
 type Performance struct {
 	LengthTicks int64           `json:"length_ticks" cicada:"Loop length of the played performance" unit:"ticks" range:"30..1099511627776"`
 	Notes       []PerformedNote `json:"notes" cicada:"Notes with independent start and end positions" range:"1..512"`
+	Groups      []ControlGroup  `json:"groups,omitempty" cicada:"Shared bend, pressure and timbre lanes" range:"0..512"`
 }
 
 type PerformedNote struct {
@@ -20,6 +22,19 @@ type PerformedNote struct {
 	Note        uint8                 `json:"note" cicada:"MIDI pitch" range:"0..127"`
 	Velocity    uint8                 `json:"velocity" cicada:"Played note velocity" range:"1..127"`
 	Expressions []PerformedExpression `json:"expressions,omitempty" cicada:"Played controller samples relative to this note" range:"0..65536"`
+	Group       uint16                `json:"group,omitempty" cicada:"Shared gesture lane ordinal; zero is unbound" range:"0..512"`
+}
+
+type ControlGroup struct {
+	Name   string            `json:"name" cicada:"Shared gesture lane name"`
+	Points []GroupExpression `json:"points" cicada:"Controller snapshots in pattern time" range:"1..65536"`
+}
+
+type GroupExpression struct {
+	Tick       int64   `json:"tick" cicada:"Controller position within the pattern loop" unit:"ticks" range:"0..1099511627775"`
+	PitchCents float32 `json:"pitch_cents" cicada:"Shared pitch offset" unit:"ct" range:"-9600..9600"`
+	Pressure   float32 `json:"pressure" cicada:"Shared pressure" range:"0..1"`
+	Timbre     float32 `json:"timbre" cicada:"Shared timbre; 0.5 is neutral" range:"0..1"`
 }
 
 type PerformedExpression struct {
@@ -34,12 +49,19 @@ func (p *Performance) Kernel() *seq.Performance {
 	}
 	out := &seq.Performance{LengthTicks: p.LengthTicks, Notes: make([]seq.PerformedNote, len(p.Notes))}
 	for i, note := range p.Notes {
-		out.Notes[i] = seq.PerformedNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity}
+		out.Notes[i] = seq.PerformedNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity, Group: note.Group}
 		for _, point := range note.Expressions {
 			value := point.Value
 			params := seq.Expression{Set: true, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents, VibratoRateHz: point.VibratoRateHz}
 			out.Notes[i].Expressions = append(out.Notes[i].Expressions, seq.PerformedExpression{Tick: point.Tick, Params: params})
 		}
+	}
+	for _, group := range p.Groups {
+		value := seq.ControlGroup{Name: group.Name}
+		for _, point := range group.Points {
+			value.Points = append(value.Points, seq.GroupPoint{Tick: point.Tick, Value: expression.Controls{PitchCents: point.PitchCents, Pressure: point.Pressure, Timbre: point.Timbre}})
+		}
+		out.Groups = append(out.Groups, value)
 	}
 	return out
 }
@@ -50,11 +72,18 @@ func projectPerformance(p *seq.Performance) *Performance {
 	}
 	out := &Performance{LengthTicks: p.LengthTicks, Notes: make([]PerformedNote, len(p.Notes))}
 	for i, note := range p.Notes {
-		out.Notes[i] = PerformedNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity}
+		out.Notes[i] = PerformedNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity, Group: note.Group}
 		for _, point := range note.Expressions {
 			value := point.Params
 			out.Notes[i].Expressions = append(out.Notes[i].Expressions, PerformedExpression{Tick: point.Tick, Value: NoteExpression{PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents}, VibratoRateHz: value.VibratoRateHz})
 		}
+	}
+	for _, group := range p.Groups {
+		value := ControlGroup{Name: group.Name}
+		for _, point := range group.Points {
+			value.Points = append(value.Points, GroupExpression{Tick: point.Tick, PitchCents: point.Value.PitchCents, Pressure: point.Value.Pressure, Timbre: point.Value.Timbre})
+		}
+		out.Groups = append(out.Groups, value)
 	}
 	return out
 }
@@ -110,8 +139,12 @@ func performanceSource(pattern Pattern, slot int, assigned bool, projectSeed uin
 		fmt.Fprintf(&out, " slot=%d", slot)
 	}
 	out.WriteString(" {\n")
-	for _, note := range pattern.Performance.Kernel().Notes {
-		out.WriteString(notation.PerformedNoteSource(note))
+	kernel := pattern.Performance.Kernel()
+	for _, group := range kernel.Groups {
+		out.WriteString(notation.PerformedGroupSource(group))
+	}
+	for _, note := range kernel.Notes {
+		out.WriteString(notation.PerformedNoteSource(note, kernel.Groups...))
 	}
 	out.WriteString("}\n")
 	return out.String()
@@ -147,6 +180,9 @@ func validatePerformedTrack(p *Project, track Track, pattern Pattern) error {
 			authored = authored || instrument.ID == track.Kind
 		}
 		if !authored {
+			if len(pattern.Performance.Groups) > 0 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: shared gestures need an acid or authored synth voice on track %s", track.ID)
+			}
 			for _, note := range pattern.Performance.Notes {
 				if len(note.Expressions) != 0 {
 					return fmt.Errorf("CICADA-UNSUPPORTED: performed expression needs an acid or authored synth voice on track %s", track.ID)

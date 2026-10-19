@@ -2,6 +2,7 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
@@ -10,6 +11,7 @@ import (
 type performedGate struct {
 	id         int64
 	generation uint32
+	pitch      uint8
 }
 
 // Storage is admitted once per track, outside the callback. Ordinary step
@@ -44,13 +46,16 @@ func (e *Engine) preparePerformedTrack(track int, pattern *seq.Pattern) error {
 		return engineError("performed notes need a pitched live-note voice")
 	}
 	for _, note := range pattern.Performance.Notes {
-		if len(note.Expressions) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph {
+		if len(note.Expressions) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph && !(v.kind == VoiceGraphPoly && len(pattern.Performance.Groups) > 0) {
 			return engineError("gestures need acid or an authored synth")
 		}
 		pitch := int(note.Note) + int(pattern.Transpose)
 		if (v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys) && (pitch < keyboard.MinNote || pitch > keyboard.MaxNote) {
 			return engineError("performed keyboard notes must stay in MIDI range 21 to 108")
 		}
+	}
+	if len(pattern.Performance.Groups) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph && v.kind != VoiceGraphPoly {
+		return engineError("shared gestures need acid or an authored synth")
 	}
 	// Admit enough events for any legal tempo and this configured block size,
 	// including both ends of gates across loop boundaries. Dense performances
@@ -60,6 +65,9 @@ func (e *Engine) preparePerformedTrack(track int, pattern *seq.Pattern) error {
 	points := 0
 	for _, note := range pattern.Performance.Notes {
 		points += len(note.Expressions)
+	}
+	for _, group := range pattern.Performance.Groups {
+		points += len(group.Points) + 1
 	}
 	capacity := max(256, int(cycles)*len(pattern.Performance.Notes)*2+128)
 	if points > 0 {
@@ -96,6 +104,25 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 		return
 	}
 	event := item.event
+	if event.Kind == seq.GroupExpression {
+		if item.generation != p.generation || p.active < 0 {
+			return
+		}
+		performance := p.slots[event.Slot].Performance
+		if performance == nil || event.Group == 0 || int(event.Group) > len(performance.Groups) {
+			return
+		}
+		group := &performance.Groups[event.Group-1]
+		value := expression.Controls{Timbre: .5}
+		if event.StepIndex == 0 {
+			if int(event.ExpressionIndex) >= len(group.Points) {
+				return
+			}
+			value = group.Points[event.ExpressionIndex].Value
+		}
+		e.setGroupControls(track, expression.Group{ID: event.Group, Generation: uint64(item.generation)}, value)
+		return
+	}
 	gate := &state.gates[event.Note]
 	v := &e.voices[track]
 	cohort := graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}
@@ -114,6 +141,29 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 	if event.Kind == seq.NoteOff {
 		if gate.id != event.NoteID || gate.generation != item.generation {
 			return
+		}
+		// A final member point at the release sample becomes the frozen value
+		// used by the shared lane throughout the envelope's release.
+		if performance := p.slots[event.Slot].Performance; performance != nil {
+			ordinal := (event.NoteID - 1) % seq.MaxPerformanceNotes
+			if ordinal >= 0 && ordinal < int64(len(performance.Notes)) {
+				note := &performance.Notes[ordinal]
+				if note.Group != 0 {
+					local := event.Tick - p.startTick - (event.NoteID-1)/seq.MaxPerformanceNotes*performance.LengthTicks - note.Tick
+					lo, hi := 0, len(note.Expressions)
+					for lo < hi {
+						mid := lo + (hi-lo)/2
+						if note.Expressions[mid].Tick <= local {
+							lo = mid + 1
+						} else {
+							hi = mid
+						}
+					}
+					if lo > 0 {
+						e.performedExpression(track, *gate, note.Expressions[lo-1].Params)
+					}
+				}
+			}
 		}
 		*gate = performedGate{}
 		if v.poly != nil {
@@ -137,6 +187,7 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 	if item.generation != p.generation || event.Kind != seq.NoteOn {
 		return
 	}
+	v.expressionGroup = expression.Group{}
 	switch {
 	case v.poly != nil:
 		if _, err := v.poly.NoteOn([4]uint8{event.Note}, 1, event.Velocity, false, cohort); err != nil {
@@ -163,8 +214,15 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 		v.acid.NoteOn(event.Note, event.Velocity >= 96, false, event.Velocity)
 		v.noteActive = false
 	}
-	*gate = performedGate{id: event.NoteID, generation: item.generation}
+	*gate = performedGate{id: event.NoteID, generation: item.generation, pitch: event.Note}
 	state.mono = *gate
+	if event.Group != 0 {
+		performance := p.slots[event.Slot].Performance
+		if performance != nil && int(event.Group) <= len(performance.Groups) {
+			local := (event.Tick - p.startTick) % performance.LengthTicks
+			e.bindPerformedGroup(track, event.Note, cohort, expression.Group{ID: event.Group, Generation: uint64(item.generation)}, performance.Groups[event.Group-1].At(local))
+		}
+	}
 	e.performedExpression(track, *gate, seq.Expression{})
 	e.tap.fire(track, event)
 	e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
@@ -174,6 +232,8 @@ func (e *Engine) performedExpression(track int, gate performedGate, params seq.E
 	v, state := &e.voices[track], e.patterns[track].performed
 	if v.poly != nil {
 		v.poly.SetExpression(graph.Cohort{NoteID: gate.id, Generation: uint64(gate.generation)}, params)
+	} else if v.legacyPoly != nil {
+		v.legacyPoly.SetExpressionNote(gate.pitch, params)
 	} else if !v.noteActive && state.mono == gate {
 		switch v.kind {
 		case VoiceGraph:
@@ -191,7 +251,7 @@ func (e *Engine) releasePerformed(track int, tick int64) {
 	}
 	for pitch, gate := range state.gates {
 		if gate.id != 0 {
-			e.performedEvent(track, patternEvent{generation: gate.generation, event: seq.Event{Kind: seq.NoteOff, NoteID: gate.id, Tick: tick, Track: uint8(track), Note: uint8(pitch)}})
+			e.performedEvent(track, patternEvent{generation: gate.generation, event: seq.Event{Kind: seq.NoteOff, NoteID: gate.id, Tick: tick, Track: uint8(track), Slot: uint8(max(0, int(e.patterns[track].active))), Note: uint8(pitch)}})
 		}
 	}
 }
@@ -227,7 +287,8 @@ func (e *Engine) chasePerformed(track int) {
 		if (base+note.Tick < clock.AnchorTick || clock.SampleAtTick(base+note.Tick) < sample) && clock.SampleAtTick(base+note.EndTick) > sample {
 			e.performedEvent(track, patternEvent{generation: p.generation, event: seq.Event{
 				Kind: seq.NoteOn, NoteID: iteration*seq.MaxPerformanceNotes + int64(ordinal) + 1,
-				Tick: e.transport.Tick(), Sample: sample, Track: uint8(track), Slot: uint8(p.active),
+				Group: note.Group,
+				Tick:  e.transport.Tick(), Sample: sample, Track: uint8(track), Slot: uint8(p.active),
 				Note: uint8(int(note.Note) + int(pattern.Transpose)), Velocity: note.Velocity,
 			}})
 			lo, hi := 0, len(note.Expressions)

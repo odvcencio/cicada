@@ -49,6 +49,30 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	env := edits.Envelope{}
 	var intent edits.Intent
 	switch edit.Action {
+	case "performance-group":
+		if edit.PerformanceGroup == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a shared gesture lane is required"})
+			return
+		}
+		in := *edit.PerformanceGroup
+		in.Entity = entity
+		intent = &in
+	case "performance-binding":
+		if edit.PerformanceBinding == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a note and shared gesture lane are required"})
+			return
+		}
+		in := *edit.PerformanceBinding
+		in.Entity = entity
+		intent = &in
+	case "shared-gesture":
+		if edit.SharedExpression == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a shared gesture point is required"})
+			return
+		}
+		in := *edit.SharedExpression
+		in.Entity = entity
+		intent = &in
 	case "performed-gesture":
 		if edit.PerformanceExpression == nil {
 			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a performed gesture sample is required"})

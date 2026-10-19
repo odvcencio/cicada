@@ -21,7 +21,7 @@ func (p ReverbParams) Validate() error {
 	if !finite(p.Size) || !finite(p.DecaySec) || !finite(p.DampHz) || !finite(p.HighpassHz) || !finite(p.PredelayMs) || !finite(p.Mix) ||
 		p.Size < .5 || p.Size > 1.5 || p.DecaySec < .3 || p.DecaySec > 12 || p.DampHz < 2_000 || p.DampHz > 16_000 ||
 		p.HighpassHz < 40 || p.HighpassHz > 400 || p.PredelayMs < 0 || p.PredelayMs > 200 || p.Mix < 0 || p.Mix > 1 {
-		return Error("reverb parameter is invalid or out of range")
+		return validationError("reverb parameter is invalid or out of range")
 	}
 	return nil
 }
@@ -100,7 +100,7 @@ type Reverb struct {
 
 func NewReverb(sampleRate int) (*Reverb, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return nil, Error("unsupported reverb sample rate")
+		return nil, validationError("unsupported reverb sample rate")
 	}
 	r := &Reverb{
 		sampleRate: float64(sampleRate),

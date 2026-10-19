@@ -125,7 +125,7 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 	}
 	h := config.Humanize
 	if len(zones) == 0 || len(zones) > 4096 || config.Voices < 1 || config.Voices > MaxVoices || !validEnvelope(config.Amp) || !validEnvelope(config.Filter) || !finite(config.Gain) || config.Gain < 0 || config.Gain > 16 || !finite(config.TuneCents) || math.Abs(config.TuneCents) > 1200 || !finite(config.Cutoff) || config.Cutoff < 0 || config.Cutoff > float64(rate)/2 || !finite(config.FilterDepth) || config.FilterDepth < 0 || config.FilterDepth > float64(rate)/2 || !finite(h.DelayMS) || h.DelayMS < 0 || h.DelayMS > 100 || !finite(h.Velocity) || h.Velocity < 0 || h.Velocity > 32 || !finite(h.Cents) || h.Cents < 0 || h.Cents > 100 {
-		return nil, Error("invalid sample instrument configuration")
+		return nil, validationError("invalid sample instrument configuration")
 	}
 	p := &Instrument{rate: rate, config: config, zones: append([]Zone(nil), zones...), voices: make([]instrumentVoice, config.Voices), random: h.Seed}
 	for i, z := range p.zones {
@@ -133,7 +133,7 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 			return nil, err
 		}
 		if z.KeyLow > z.KeyHigh || z.KeyHigh > 127 || z.VelocityLow < 1 || z.VelocityLow > z.VelocityHigh || z.VelocityHigh > 127 || z.Layer < z.VelocityLow || z.Layer > z.VelocityHigh || z.Count < 1 || z.Count > 32 || z.Position >= z.Count || !finite(z.Gain) || z.Gain < 0 || z.Gain > 16 || !finite(z.TuneCents) || math.Abs(z.TuneCents) > 1200 || z.Release && z.Region.Loop {
-			return nil, Error("invalid sample instrument zone")
+			return nil, validationError("invalid sample instrument zone")
 		}
 		// Check complete cycles and identical mapping for every layer. Ambiguous
 		// overlapping groups are rejected rather than depending on input order.
@@ -143,17 +143,17 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 				continue
 			}
 			if o.KeyLow != z.KeyLow || o.KeyHigh != z.KeyHigh || o.VelocityLow != z.VelocityLow || o.VelocityHigh != z.VelocityHigh || o.Count != z.Count || o.ChokeGroup != z.ChokeGroup || o.OneShot != z.OneShot || o.ChokeSustain != z.ChokeSustain || seen&(1<<o.Position) != 0 {
-				return nil, Error("inconsistent or duplicate round robin zone")
+				return nil, validationError("inconsistent or duplicate round robin zone")
 			}
 			seen |= 1 << o.Position
 		}
 		if seen != uint32((uint64(1)<<z.Count)-1) {
-			return nil, Error("incomplete sample round robin cycle")
+			return nil, validationError("incomplete sample round robin cycle")
 		}
 		for j := 0; j < i; j++ {
 			o := p.zones[j]
 			if o.Release == z.Release && o.Group != z.Group && max(o.KeyLow, z.KeyLow) <= min(o.KeyHigh, z.KeyHigh) && max(o.VelocityLow, z.VelocityLow) <= min(o.VelocityHigh, z.VelocityHigh) {
-				return nil, Error("overlapping sample groups")
+				return nil, validationError("overlapping sample groups")
 			}
 		}
 		// Admit the whole key zone plus maximum humanization before publication.
@@ -229,7 +229,7 @@ func (p *Instrument) NoteOnSeeded(note, velocity uint8, seed uint64) (Handle, er
 
 func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 	if note > 127 || velocity > 127 || p.serial == ^uint64(0) {
-		return Handle{}, Error("sample note, velocity or ID out of range")
+		return Handle{}, validationError("sample note, velocity or ID out of range")
 	}
 	if velocity == 0 {
 		return Handle{}, nil
@@ -243,7 +243,7 @@ func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 		}
 	}
 	if group < 0 {
-		return Handle{}, Error("sample note has no attack zone")
+		return Handle{}, validationError("sample note has no attack zone")
 	}
 	h := p.config.Humanize
 	vel := uint8(max(1, min(127, int(math.Round(float64(velocity)+p.jitter()*h.Velocity)))))
@@ -378,7 +378,7 @@ func (p *Instrument) Sustain(down bool) {
 func (p *Instrument) Legato(h Handle, note uint8, cents float64) error {
 	v := p.owned(h)
 	if v == nil || v.off || !finite(cents) || math.Abs(cents) > 100 {
-		return Error("invalid sample legato handle or tuning")
+		return validationError("invalid sample legato handle or tuning")
 	}
 	for _, index := range v.zones {
 		if index < 0 {
@@ -386,7 +386,7 @@ func (p *Instrument) Legato(h Handle, note uint8, cents float64) error {
 		}
 		z := p.zones[index]
 		if note < z.KeyLow || note > z.KeyHigh {
-			return Error("legato crosses a recorded sample zone")
+			return validationError("legato crosses a recorded sample zone")
 		}
 	}
 	// Prepare both layers before publishing any pitch change.

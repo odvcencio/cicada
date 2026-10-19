@@ -21,13 +21,24 @@ type Note struct {
 	Gesture *NoteGesture
 }
 
-type NoteGesture struct{ Points []seq.PerformedExpression }
+type NoteGesture struct {
+	Points []seq.PerformedExpression
+	Group  int // 1-based lane in the containing track
+}
+
+// SharedGesture keeps master controls in absolute file ticks, including samples
+// after member gates close. Separate lanes use separate logical MPE ports.
+type SharedGesture struct {
+	Name   string
+	Points []seq.GroupPoint
+}
 
 // ChannelEvent retains MIDI controller and program messages through decoding.
 // Status contains the channel; program/pressure messages use Data1 only.
 type ChannelEvent struct {
 	Tick                 int64
 	Status, Data1, Data2 byte
+	BeforeRelease        bool // final member snapshot must precede its note-off
 }
 
 type MetaEvent struct {
@@ -37,11 +48,13 @@ type MetaEvent struct {
 }
 
 type TrackChunk struct {
-	Name    string
-	Notes   []Note
-	Meta    []MetaEvent
-	Events  []ChannelEvent
-	EndTick int64
+	Name            string
+	Notes           []Note
+	Meta            []MetaEvent
+	Events          []ChannelEvent
+	EndTick         int64
+	Groups          []SharedGesture
+	performedGroups *performedMIDIState
 }
 
 type File struct {
@@ -103,7 +116,11 @@ func Encode(file File, writer io.Writer) error {
 			if kind != 0xc0 && kind != 0xd0 {
 				data = append(data, event.Data2)
 			}
-			events = append(events, wireEvent{tick: event.Tick, priority: 2, data: data})
+			priority := 2
+			if event.BeforeRelease {
+				priority = 0
+			}
+			events = append(events, wireEvent{tick: event.Tick, priority: priority, data: data})
 		}
 		sort.SliceStable(events, func(i, j int) bool {
 			if events[i].tick != events[j].tick {

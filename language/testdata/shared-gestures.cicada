@@ -1,0 +1,14 @@
+cicada 2
+track lead acid {}
+pattern phrase performance length=3840ticks {
+  gesture-group breath {
+    gesture at=0ticks bend=0ct pressure=0 timbre=0.5;
+    gesture at=960ticks bend=150ct pressure=0.8 timbre=0.9;
+  }
+  note 60 at=17ticks length=703ticks velocity=103 group=breath {
+    gesture at=0ticks bend=25ct pressure=0.2 timbre=0.7;
+  }
+  note 64 at=19ticks length=1301ticks velocity=87 group=breath;
+}
+scene main { lead=phrase }
+song { main }

@@ -23,6 +23,9 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 		return nil
 	}
 	if performance := pattern.Performance; performance != nil {
+		if len(performance.Groups) > 0 {
+			return validateSharedDelay(program, sampleRate, pattern)
+		}
 		for _, note := range performance.Notes {
 			if len(note.Expressions) == 0 || note.Expressions[0].Tick > 0 {
 				if err := validateGraphDelayNote(program, sampleRate, int(note.Note)+int(pattern.Transpose)); err != nil {

@@ -34,7 +34,7 @@ func (p CompParams) Validate() error {
 		!finite(p.ReleaseMs) || !finite(p.MakeupDB) || !finite(p.Mix) || p.Threshold < -40 || p.Threshold > 0 ||
 		p.Ratio < 1 || p.Ratio > 20 || p.Knee < 0 || p.Knee > 12 || p.AttackMs < .1 || p.AttackMs > 100 ||
 		p.ReleaseMs < 10 || p.ReleaseMs > 1_000 || p.Mix < 0 || p.Mix > 1 || !p.MakeupAuto && (p.MakeupDB < -24 || p.MakeupDB > 24) {
-		return Error("compressor parameter is invalid or out of range")
+		return validationError("compressor parameter is invalid or out of range")
 	}
 	return nil
 }
@@ -67,7 +67,7 @@ type Compressor struct {
 
 func NewCompressor(sampleRate int) (*Compressor, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return nil, Error("unsupported compressor sample rate")
+		return nil, validationError("unsupported compressor sample rate")
 	}
 	c := &Compressor{
 		sampleRate: float64(sampleRate),

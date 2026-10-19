@@ -545,6 +545,26 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 	if w.Type(n) == "performance_pattern" {
 		p.Performance = &seq.Performance{}
 	}
+	groups := map[string]uint16{}
+	if p.Performance != nil {
+		for i := 0; i < n.NamedChildCount(); i++ {
+			child := n.NamedChild(i)
+			if w.Type(child) != "performed_group" {
+				continue
+			}
+			group, err := parsePerformedGroup(w, child)
+			if err != nil {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-PERFORMANCE", Severity: "error", Message: err.Error(), Position: w.position(child)})
+				continue
+			}
+			if _, exists := groups[group.Name]; exists {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate shared gesture lane " + group.Name, Position: w.position(child)})
+				continue
+			}
+			p.Performance.Groups = append(p.Performance.Groups, group)
+			groups[group.Name] = uint16(len(p.Performance.Groups))
+		}
+	}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
@@ -564,6 +584,15 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 				continue
 			}
 			note := seq.PerformedNote{Tick: at, EndTick: at + length, Note: uint8(pitch), Velocity: uint8(velocity)}
+			if ref := w.Field(c, "group"); ref != nil {
+				name := w.Text(ref)
+				id, ok := groups[name]
+				if !ok {
+					*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-PERFORMANCE", Severity: "error", Message: "unknown shared gesture lane " + name, Position: w.position(ref)})
+				} else {
+					note.Group = id
+				}
+			}
 			for j := 0; j < c.NamedChildCount(); j++ {
 				point := c.NamedChild(j)
 				if w.Type(point) != "performed_expression" {

@@ -285,6 +285,17 @@ MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
+**Shared gestures** lets one lane shape several notes and their release
+tails. Create a lane, select each note and choose **Bind note**, then edit
+the lane's bend, pressure and timbre points. Times are measured from the loop
+start. Moving a note keeps its binding and leaves the shared curve in place.
+Each note retains its own gestures and vibrato. Bend adds, pressure uses the
+larger value, and timbre adds around its neutral center of 0.5. The curve
+starts neutral on each loop unless a point at tick zero sets its initial
+values. Unbind all member notes before removing a lane. Every edit has Undo.
+These lanes are authored in the editor or source; live MPE capture still
+records combined controller snapshots on individual notes.
+
 Played timing supports acid, modeled keyboards and piano, and authored pitched
 instruments, using each instrument's existing mono or polyphonic voice policy.
 It supports up to 512 notes and 65,536 gesture samples per pattern, subject

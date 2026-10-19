@@ -610,7 +610,7 @@ func parameterHover(source []byte, offset int, name string) string {
 	if score == nil {
 		return ""
 	}
-	scope := instrumentScope(source, offset)
+	scope := localScope(source, offset)
 	for _, inst := range score.Instruments {
 		at := scalarOffset(source, inst.Position)
 		if at < scope.start || at >= scope.end {

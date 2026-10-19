@@ -28,11 +28,11 @@ func (p Params) Validate() error {
 	values := [...]float32{p.PitchCents, p.Pressure, p.Timbre, p.VibratoRateHz, p.VibratoDepthCents}
 	for _, value := range values {
 		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-			return Error("note expression must be finite")
+			return validationError("note expression must be finite")
 		}
 	}
 	if p.PitchCents < -9600 || p.PitchCents > 9600 || p.Pressure < 0 || p.Pressure > 1 || p.Timbre < 0 || p.Timbre > 1 || p.VibratoRateHz < 0 || p.VibratoRateHz > 100 || p.VibratoDepthCents < 0 || p.VibratoDepthCents > 9600 {
-		return Error("note expression is out of range")
+		return validationError("note expression is out of range")
 	}
 	return nil
 }
@@ -41,18 +41,21 @@ func (p Params) Validate() error {
 // at zero phase; rate changes preserve phase, and zero depth bypasses vibrato.
 type State struct {
 	Params
+	member           Params
+	shared           Controls
+	grouped          bool
 	phase, increment float64
 	ratio            float64
 }
 
-func (s *State) Reset() { *s = State{Params: Params{Timbre: .5}, ratio: 1} }
+func (s *State) Reset() { *s = State{Params: Params{Timbre: .5}, member: Params{Timbre: .5}, ratio: 1} }
 
 func (s *State) SetParams(p Params, rate float32) {
 	if !p.Set {
 		p = Params{Timbre: .5}
 	}
-	s.Params = p
-	s.updateRatio()
+	s.member = p
+	s.resolve()
 	s.increment = float64(p.VibratoRateHz) / float64(rate)
 }
 
@@ -72,8 +75,8 @@ func (s *State) NextCents() float64 {
 
 // SetControls retains a running vibrato while updating live note controllers.
 func (s *State) SetControls(pitchCents, pressure, timbre float32) {
-	s.PitchCents, s.Pressure, s.Timbre = pitchCents, pressure, timbre
-	s.updateRatio()
+	s.member.PitchCents, s.member.Pressure, s.member.Timbre = pitchCents, pressure, timbre
+	s.resolve()
 }
 
 func (s *State) updateRatio() {

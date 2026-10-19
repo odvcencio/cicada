@@ -99,6 +99,15 @@ Exports include standard Device Name metadata and the widely supported
 nonstandard numeric MIDI Port metadata. A receiver that merges those devices
 onto one port cannot keep their gestures independent.
 
+Shared gesture lanes use separate logical MPE ports, with their snapshots
+on each zone's master channel. Master changes after note-off remain in the
+file. Final member snapshots precede note-off so they freeze before a channel
+is reused. A lane with more than 15 simultaneous notes copies its master
+stream to additional ports. Export refuses combined bends that require the
+engine's ±9600-cent clamp; reduce the bend or render audio.
+MIDI member bend messages end at note-off, and receivers supply their own
+release envelopes. Use WAV or stems for the exact sound of a vibrato tail.
+
 The file uses the highest exact integer multiple of its original PPQ below
 32768, so authored note and controller ticks stay exact. MIDI 1 pressure and
 timbre have 7-bit precision, and bend has 14-bit precision. Vibrato is rendered

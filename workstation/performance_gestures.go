@@ -150,6 +150,10 @@ func gestureOverviewIndices(points []project.PerformedExpression, selected int) 
 }
 
 func gestureTrace(points []project.PerformedExpression, duration int64, selected int) gosx.Node {
+	return gestureTraceLabeled(points, duration, selected, "Held controller values · note starts at 0 ticks", "Bend, pressure and timbre over this note")
+}
+
+func gestureTraceLabeled(points []project.PerformedExpression, duration int64, selected int, caption, label string) gosx.Node {
 	indices := gestureOverviewIndices(points, selected)
 	span := float64(100)
 	for _, p := range points {
@@ -185,9 +189,8 @@ func gestureTrace(points []project.PerformedExpression, duration int64, selected
 	if selected < len(points) {
 		lanes = append(lanes, gosx.El("path", gosx.Attrs(gosx.Attr("class", "gesture-cursor"), gosx.Attr("d", fmt.Sprintf("M %.2f 8V224", x(points[selected].Tick))))))
 	}
-	caption := "Held controller values · note starts at 0 ticks"
 	if len(points) > 512 {
 		caption += " · overview keeps extrema; use the paged table for every point"
 	}
-	return gosx.El("figure", gosx.Attrs(gosx.Attr("class", "gesture-trace")), gosx.El("svg", gosx.Attrs(gosx.Attr("viewBox", "0 0 1000 240"), gosx.Attr("role", "img"), gosx.Attr("aria-label", "Bend, pressure and timbre over this note")), gosx.El("title", gosx.Text(caption)), gosx.Fragment(lanes...)), gosx.El("figcaption", gosx.Text(caption)))
+	return gosx.El("figure", gosx.Attrs(gosx.Attr("class", "gesture-trace")), gosx.El("svg", gosx.Attrs(gosx.Attr("viewBox", "0 0 1000 240"), gosx.Attr("role", "img"), gosx.Attr("aria-label", label)), gosx.El("title", gosx.Text(caption)), gosx.Fragment(lanes...)), gosx.El("figcaption", gosx.Text(caption)))
 }

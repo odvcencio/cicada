@@ -1,0 +1,39 @@
+cicada 2
+
+title "Held light"
+
+tempo 96
+
+instrument light {
+  voice poly {
+    let body = sine(pitch) + sine(pitch * 2.01) * timbre * 0.2
+    out = body * adsr(gate, 8ms, 130ms, 0.6, 1800ms) * velocity * (0.04 + pressure * 0.08)
+  }
+}
+
+track keys light {
+  level = -12dB
+}
+
+pattern phrase performance length = 3840ticks {
+  gesture-group breath {
+    gesture at = 0ticks bend = 0ct pressure = 0.1 timbre = 0.5;
+    gesture at = 400ticks bend = 150ct pressure = 0.8 timbre = 0.9;
+    gesture at = 1100ticks bend = -75ct pressure = 0.3 timbre = 0.2;
+    gesture at = 2200ticks bend = 0ct pressure = 0 timbre = 0.5;
+  }
+  note 60 at = 17ticks length = 103ticks velocity = 103 group = breath {
+    gesture at = 0ticks bend = 25ct pressure = 0.2 timbre = 0.7 vibrato = 14ct rate = 7Hz;
+    gesture at = 103ticks bend = 50ct pressure = 0.4 timbre = 0.6;
+  }
+  note 64 at = 19ticks length = 301ticks velocity = 87 group = breath;
+  note 67 at = 91ticks length = 510ticks velocity = 90 group = breath;
+}
+
+scene main {
+  keys = phrase
+}
+
+song {
+  main*4
+}

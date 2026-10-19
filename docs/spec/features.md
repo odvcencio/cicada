@@ -444,3 +444,37 @@ polyphony. Modeled keys and piano accept performed notes without gestures.
 Drum and sampler performances remain unsupported. Unsupported voices,
 non-finite controls, duplicate ticks, and edits that discard held data report
 errors. Studio keeps the raw captured take available when an edit is refused.
+
+### Shared gestures
+
+Declare a named lane inside a performance and bind notes with `group=NAME`:
+
+```cicada
+cicada 2
+track lead acid {}
+pattern phrase performance length=3840ticks {
+  gesture-group breath {
+    gesture at=0ticks bend=0ct pressure=0.1 timbre=0.5;
+    gesture at=960ticks bend=150ct pressure=0.8 timbre=0.9;
+  }
+  note 60 at=17ticks length=703ticks velocity=103 group=breath;
+  note 64 at=19ticks length=1301ticks velocity=87 group=breath;
+}
+scene main { lead=phrase }
+song { main }
+```
+
+Lane times belong to the pattern loop. They continue to shape bound notes
+after their gates close. Bend adds to each note's bend, pressure uses the
+larger value, and centered timbre adds before clamping to 0…1. The note keeps
+its own vibrato. Shared lanes have no vibrato/rate fields. Each new loop
+starts neutral unless a point at tick zero supplies the initial value.
+
+Names use lowercase letters, digits, underscores and hyphens, begin with a
+letter or underscore, and contain at most 64 bytes. A performance may have
+512 unique lanes. Shared points fall strictly before the loop end and share
+the 65,536-point budget with note gestures. Moving a note keeps its binding;
+resizing refuses to discard shared points. Grouped authored performances
+retain eight voices unless another assigned pattern needs the existing
+four-voice cohort mode. See [image version 18](kernel-image-v18.md) and the
+[Held light example](../../examples/shared-gestures/main.cicada).

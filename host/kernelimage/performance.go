@@ -9,6 +9,7 @@ import (
 // Version 16 is otherwise the unchanged version-15 layout with an appended table.
 const CapabilityPerformance uint32 = 1 << 18
 const CapabilityGestures uint32 = 1 << 19
+const CapabilitySharedControls uint32 = 1 << 21
 
 // The worklet drains at most 256 status records each eight 128-frame quanta.
 // Reserve half that throughput for its other status and grid tracks. A burst
@@ -44,14 +45,14 @@ func validatePortablePerformances(cfg *engine.Config) error {
 
 // Version 17 appends controller data after the complete version-16 payload.
 // Older images retain their bytes and negotiate no new capability.
-func writePerformedExpressions(w *writer, cfg *engine.Config) error {
+func writePerformedExpressions(w *writer, cfg *engine.Config, shared bool) error {
 	count, points := 0, 0
 	for track := range cfg.Patterns {
 		for slot := range cfg.Patterns[track].Slots {
 			if p := cfg.Patterns[track].Slots[slot].Performance; p != nil {
 				for _, note := range p.Notes {
 					if len(note.Expressions) > 0 {
-						if cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph {
+						if cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph && !(shared && cfg.Track[track].Kind == engine.VoiceGraphPoly) {
 							return imageError("gestures need acid or an authored synth")
 						}
 						count++
@@ -61,7 +62,7 @@ func writePerformedExpressions(w *writer, cfg *engine.Config) error {
 			}
 		}
 	}
-	if points > seq.MaxPerformanceExpressions || count == 0 {
+	if points > seq.MaxPerformanceExpressions || count == 0 && !shared {
 		return imageError("invalid performed gesture table size")
 	}
 	w.u32(uint32(count))
@@ -92,9 +93,9 @@ func writePerformedExpressions(w *writer, cfg *engine.Config) error {
 	return nil
 }
 
-func readPerformedExpressions(r *reader, cfg *engine.Config) error {
+func readPerformedExpressions(r *reader, cfg *engine.Config, shared bool) error {
 	count, err := r.u32()
-	if err != nil || count == 0 || count > seq.MaxPerformanceExpressions {
+	if err != nil || count == 0 && !shared || count > seq.MaxPerformanceExpressions {
 		return imageError("invalid gesture data")
 	}
 	remaining := seq.MaxPerformanceExpressions
@@ -111,7 +112,7 @@ func readPerformedExpressions(r *reader, cfg *engine.Config) error {
 		if err != nil {
 			return err
 		}
-		if int(track) >= cfg.Tracks || slot >= 16 || (cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph) {
+		if int(track) >= cfg.Tracks || slot >= 16 || (cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph && !(shared && cfg.Track[track].Kind == engine.VoiceGraphPoly)) {
 			return imageError("invalid gesture data")
 		}
 		performance := cfg.Patterns[track].Slots[slot].Performance

@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/limits"
@@ -175,6 +176,7 @@ type voiceSlot struct {
 	graph                          *graph.Voice
 	noteIdentity                   uint16
 	noteActive                     bool
+	expressionGroup                expression.Group
 	piano                          *piano.Instrument
 	keys                           keyboard.Voice
 	keysControl                    keyboard.Controller
@@ -734,13 +736,18 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 					return engineError("chord pattern requires a polyphonic graph track")
 				}
 			}
-			loaded := *pattern
 			if err := e.preparePerformedTrack(track, pattern); err != nil {
 				return err
 			}
+			loaded := &e.patterns[track].slots[slot]
+			*loaded = *pattern
 			if pattern.Performance != nil {
 				cloned := *pattern.Performance
 				cloned.Notes = append([]seq.PerformedNote(nil), pattern.Performance.Notes...)
+				cloned.Groups = append([]seq.ControlGroup(nil), pattern.Performance.Groups...)
+				for i := range cloned.Groups {
+					cloned.Groups[i].Points = append([]seq.GroupPoint(nil), cloned.Groups[i].Points...)
+				}
 				for i := range cloned.Notes {
 					cloned.Notes[i].Expressions = append([]seq.PerformedExpression(nil), cloned.Notes[i].Expressions...)
 				}
@@ -753,7 +760,6 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				*cloned = *pattern.Expression
 				loaded.Expression = cloned
 			}
-			e.patterns[track].slots[slot] = loaded
 			if !isDrum {
 				continue
 			}
@@ -1432,6 +1438,7 @@ func (e *Engine) apply(c cmd.Command) {
 		if performed := e.patterns[track].performed; performed != nil && (v.kind == VoicePiano || v.kind == VoiceGraphPoly || keysEnabled && v.kind == VoiceKeys) {
 			performed.live[note/64] |= uint64(1) << (note % 64)
 		}
+		v.expressionGroup = expression.Group{}
 		v.noteIdentity, v.noteActive = c.Index, true
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
 	case cmd.OpNoteExpression:
@@ -1971,6 +1978,7 @@ func (e *Engine) resetVoice(track int) {
 	}
 	v := &e.voices[track]
 	v.noteActive = false
+	v.expressionGroup = expression.Group{}
 	if v.chain != nil {
 		v.chain.Reset()
 	}

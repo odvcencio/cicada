@@ -113,9 +113,11 @@ bar_count ::= /-?[0-9]+(\.[0-9]+)?bars?/ ;
 chord_note ::= "[" , { chord_pitch } , "]" , { modifier } ;
 chord_pitch ::= pitch , { octave_shift } ;
 performance_pattern ::= "pattern" , _name , "performance" , { pattern_attr } , "{" ,
-                        { pattern_attr | performed_note } , "}" ;
+                        { pattern_attr | performed_note | performed_group } , "}" ;
+performed_group ::= "gesture-group" , identifier , "{" , performed_expression ,
+                    { performed_expression } , "}" ;
 performed_note ::= "note" , integer , "at" , "=" , tick_count , "length" , "=" , tick_count ,
-                   "velocity" , "=" , integer ,
+                   "velocity" , "=" , integer , [ "group" , "=" , identifier ] ,
                    [ ";" | "{" , performed_expression , { performed_expression } , "}" ] ;
 performed_expression ::= "gesture" , "at" , "=" , tick_count , "bend" , "=" , expression_number ,
                          "pressure" , "=" , expression_number , "timbre" , "=" , expression_number ,

@@ -71,7 +71,7 @@ func midiGestureSamples(note Note, tempo []midiTempo, ppq uint16, budget *int) (
 				return nil, 0, err
 			}
 			previous = point.Tick
-			if point.Tick == note.Dur {
+			if point.Tick == note.Dur && note.Gesture.Group == 0 {
 				continue
 			}
 			if point.Tick == 0 {
@@ -184,11 +184,29 @@ func prepareGestureMIDI(file File) (File, error) {
 				return File{}, fmt.Errorf("invalid gestural MIDI note")
 			}
 			if note.Gesture != nil {
+				if note.Gesture.Group < 0 || note.Gesture.Group > len(track.Groups) {
+					return File{}, fmt.Errorf("MIDI note refers to an unknown shared gesture lane")
+				}
 				for _, point := range note.Gesture.Points {
 					if point.Tick < 0 || point.Tick > note.Dur {
 						return File{}, fmt.Errorf("invalid gestural MIDI controller tick")
 					}
 				}
+			}
+		}
+		for _, group := range track.Groups {
+			previous := int64(-1)
+			if len(group.Points) == 0 {
+				return File{}, fmt.Errorf("empty MIDI shared gesture lane")
+			}
+			for _, point := range group.Points {
+				if point.Tick <= previous || point.Tick < 0 || point.Tick > track.EndTick || point.Tick > limit {
+					return File{}, fmt.Errorf("invalid MIDI shared gesture position")
+				}
+				if err := point.Value.Validate(); err != nil {
+					return File{}, err
+				}
+				previous = point.Tick
 			}
 		}
 	}
@@ -268,14 +286,15 @@ func prepareGestureMIDI(file File) (File, error) {
 			track TrackChunk
 			until [16]int64
 			index int
+			lane  int
 		}
 		var groups []group
-		newGroup := func() error {
+		newGroup := func(lane int) error {
 			p, name, err := port()
 			if err != nil {
 				return err
 			}
-			g := group{track: TrackChunk{Name: track.Name, EndTick: track.EndTick}, index: ti}
+			g := group{track: TrackChunk{Name: track.Name, EndTick: track.EndTick}, index: ti, lane: lane}
 			if len(groups) == 0 {
 				g.track.Meta = append([]MetaEvent(nil), track.Meta...)
 			} else {
@@ -292,12 +311,44 @@ func prepareGestureMIDI(file File) (File, error) {
 			for _, pair := range [][2]byte{{101, 0}, {100, 6}, {6, 15}, {101, 127}, {100, 127}} {
 				g.track.Events = append(g.track.Events, ChannelEvent{Status: 0xb0, Data1: pair[0], Data2: pair[1]})
 			}
+			if lane != 0 {
+				shared := &original.Groups[lane-1]
+				peak := float64(0)
+				for _, point := range shared.Points {
+					peak = max(peak, math.Abs(float64(point.Value.PitchCents)))
+				}
+				sensitivity := max(2, int(math.Ceil(peak/100)))
+				for _, pair := range [][2]byte{{101, 0}, {100, 0}, {6, byte(sensitivity)}, {38, 0}, {101, 127}, {100, 127}} {
+					g.track.Events = append(g.track.Events, ChannelEvent{Status: 0xb0, Data1: pair[0], Data2: pair[1]})
+				}
+				for _, point := range shared.Points {
+					if budget == 0 {
+						return fmt.Errorf("MIDI gesture export exceeds one million controller samples")
+					}
+					budget--
+					bend := max(0, min(16383, 8192+int(math.Round(float64(point.Value.PitchCents)/float64(sensitivity*100)*8192))))
+					at := point.Tick * factor
+					g.track.Events = append(g.track.Events,
+						ChannelEvent{Tick: at, Status: 0xe0, Data1: byte(bend & 127), Data2: byte(bend >> 7)},
+						ChannelEvent{Tick: at, Status: 0xd0, Data1: byte(math.Round(float64(point.Value.Pressure) * 127))},
+						ChannelEvent{Tick: at, Status: 0xb0, Data1: 74, Data2: byte(math.Round(float64(point.Value.Timbre) * 127))})
+				}
+			}
 			groups = append(groups, g)
 			return nil
 		}
 		notes := append([]Note(nil), original.Notes...)
 		sort.SliceStable(notes, func(i, j int) bool { return notes[i].Tick < notes[j].Tick })
 		for _, note := range notes {
+			lane := 0
+			if note.Gesture != nil {
+				lane = note.Gesture.Group
+			}
+			if lane != 0 {
+				if err := validateSharedMIDIRange(note, original.Groups[lane-1]); err != nil {
+					return File{}, err
+				}
+			}
 			note.Tick *= factor
 			note.Dur *= factor
 			if note.Gesture != nil {
@@ -305,10 +356,13 @@ func prepareGestureMIDI(file File) (File, error) {
 				for i := range points {
 					points[i].Tick *= factor
 				}
-				note.Gesture = &NoteGesture{Points: points}
+				note.Gesture = &NoteGesture{Points: points, Group: lane}
 			}
 			gi, ch := -1, 0
 			for i := range groups {
+				if groups[i].lane != lane {
+					continue
+				}
 				for c := 1; c < 16; c++ {
 					if groups[i].until[c] <= note.Tick {
 						gi, ch = i, c
@@ -320,7 +374,7 @@ func prepareGestureMIDI(file File) (File, error) {
 				}
 			}
 			if gi < 0 {
-				if err := newGroup(); err != nil {
+				if err := newGroup(lane); err != nil {
 					return File{}, err
 				}
 				gi, ch = len(groups)-1, 1
@@ -340,13 +394,13 @@ func prepareGestureMIDI(file File) (File, error) {
 				bend = max(0, min(16383, bend))
 				pressure, timbre := int(math.Round(sample.pressure*127)), int(math.Round(sample.timbre*127))
 				if bend != lastBend {
-					g.track.Events = append(g.track.Events, ChannelEvent{Tick: sample.tick, Status: 0xe0 | byte(ch), Data1: byte(bend & 127), Data2: byte(bend >> 7)})
+					g.track.Events = append(g.track.Events, ChannelEvent{Tick: sample.tick, Status: 0xe0 | byte(ch), Data1: byte(bend & 127), Data2: byte(bend >> 7), BeforeRelease: sample.tick == note.Tick+note.Dur})
 				}
 				if pressure != lastPressure {
-					g.track.Events = append(g.track.Events, ChannelEvent{Tick: sample.tick, Status: 0xd0 | byte(ch), Data1: byte(pressure)})
+					g.track.Events = append(g.track.Events, ChannelEvent{Tick: sample.tick, Status: 0xd0 | byte(ch), Data1: byte(pressure), BeforeRelease: sample.tick == note.Tick+note.Dur})
 				}
 				if timbre != lastTimbre {
-					g.track.Events = append(g.track.Events, ChannelEvent{Tick: sample.tick, Status: 0xb0 | byte(ch), Data1: 74, Data2: byte(timbre)})
+					g.track.Events = append(g.track.Events, ChannelEvent{Tick: sample.tick, Status: 0xb0 | byte(ch), Data1: 74, Data2: byte(timbre), BeforeRelease: sample.tick == note.Tick+note.Dur})
 				}
 				lastBend, lastPressure, lastTimbre = bend, pressure, timbre
 			}

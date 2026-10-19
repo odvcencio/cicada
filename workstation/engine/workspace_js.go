@@ -54,6 +54,7 @@ type workspaceJob struct {
 	form                      js.Value
 	controls                  []workspaceControl
 	refresh                   bool
+	fragment                  string
 	// A current job reads the location when it runs, not when it was queued.
 	// Gestures queued before it can change the step, and a refresh built from
 	// the earlier location would put that older step back in front of the user.
@@ -414,12 +415,12 @@ func (u *workspaceUI) click(event js.Value) {
 	}
 	parsed, safe := workspaceURL(workspaceAttr(anchor, "href"))
 	current, _ := url.Parse(workspaceLocation())
-	if !safe || parsed.Path != current.Path || parsed.RawQuery == current.RawQuery || parsed.Query().Get("panel") != current.Query().Get("panel") || parsed.Fragment != "" {
+	if !safe || parsed.Path != current.Path || parsed.RawQuery == current.RawQuery || parsed.Query().Get("panel") != current.Query().Get("panel") {
 		return
 	}
 	event.Call("preventDefault")
 	event.Call("stopImmediatePropagation")
-	u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + parsed.RawQuery, form: js.Undefined()})
+	u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + parsed.RawQuery, fragment: parsed.Fragment, form: js.Undefined()})
 }
 
 func workspaceStop(event js.Value) {
@@ -817,7 +818,19 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		return false
 	}
 	if err == nil {
+		if job.fragment != "" {
+			if location, parseErr := url.Parse(projection.Location); parseErr == nil {
+				location.Fragment = job.fragment
+				projection.Location = location.String()
+			}
+		}
 		err = u.apply(projection, job)
+		if err == nil && job.fragment != "" {
+			target := js.Global().Get("document").Call("getElementById", job.fragment)
+			if workspacePresent(target) && u.root.Call("contains", target).Bool() {
+				target.Call("scrollIntoView", map[string]any{"block": "start"})
+			}
+		}
 	}
 	workspacePending(job, -1)
 	u.root.Call("removeAttribute", "aria-busy")

@@ -75,52 +75,52 @@ func DefaultParams(lane Lane) Params {
 
 func (p Params) Validate(lane Lane) error {
 	if lane >= LaneCount {
-		return Error("unsupported drum lane")
+		return validationError("unsupported drum lane")
 	}
 	for _, value := range [...]float64{p.Tune, p.Decay, p.Sweep, p.SweepTime, p.Click, p.Drive, p.Tone, p.Mix, p.Snappy, p.Spread, p.LevelDB, p.Pan} {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return Error("drum parameter must be finite")
+			return validationError("drum parameter must be finite")
 		}
 	}
 	if (p.LevelDB != -1000 && p.LevelDB < -60) || p.LevelDB > 6 || p.Pan < -1 || p.Pan > 1 {
-		return Error("drum level or pan is out of range")
+		return validationError("drum level or pan is out of range")
 	}
 	switch lane {
 	case BD:
 		if p.Tune < 40 || p.Tune > 120 || p.Decay < .08 || p.Decay > 1.5 || p.Sweep < 1 || p.Sweep > 8 || p.SweepTime < .01 || p.SweepTime > .08 || p.Click < 0 || p.Click > 1 || p.Drive < 0 || p.Drive > 1 {
-			return Error("bass drum parameter is out of range")
+			return validationError("bass drum parameter is out of range")
 		}
 	case SD:
 		if p.Tune < .7 || p.Tune > 1.4 || p.Tone < .5 || p.Tone > 2 || p.Mix < 0 || p.Mix > 1 || p.Snappy < .06 || p.Snappy > .4 || p.Decay < .04 || p.Decay > .3 {
-			return Error("snare parameter is out of range")
+			return validationError("snare parameter is out of range")
 		}
 	case CH:
 		if p.Tune < .8 || p.Tune > 1.25 || p.Tone < 5000 || p.Tone > 10000 || p.Decay < .02 || p.Decay > .15 {
-			return Error("closed hat parameter is out of range")
+			return validationError("closed hat parameter is out of range")
 		}
 	case OH:
 		if p.Tune < .8 || p.Tune > 1.25 || p.Tone < 5000 || p.Tone > 10000 || p.Decay < .15 || p.Decay > 1.2 {
-			return Error("open hat parameter is out of range")
+			return validationError("open hat parameter is out of range")
 		}
 	case CP:
 		if p.Tune < .5 || p.Tune > 2 || p.Tone < 700 || p.Tone > 2000 || p.Decay < .06 || p.Decay > .4 || p.Spread < .006 || p.Spread > .016 {
-			return Error("clap parameter is out of range")
+			return validationError("clap parameter is out of range")
 		}
 	case RS:
 		if p.Tune < .7 || p.Tune > 1.4 || p.Decay < .004 || p.Decay > .05 {
-			return Error("rimshot parameter is out of range")
+			return validationError("rimshot parameter is out of range")
 		}
 	case LT, MT, HT:
 		if p.Tune < math.Exp2(-7.0/12) || p.Tune > math.Exp2(7.0/12) || p.Decay < .08 || p.Decay > 1 || p.Sweep < 0 || p.Sweep > 2 {
-			return Error("tom parameter is out of range")
+			return validationError("tom parameter is out of range")
 		}
 	case CB:
 		if p.Tune < .7 || p.Tune > 1.4 || p.Decay < .04 || p.Decay > .4 {
-			return Error("cowbell parameter is out of range")
+			return validationError("cowbell parameter is out of range")
 		}
 	case CY:
 		if p.Tune < .8 || p.Tune > 1.25 || p.Decay < .5 || p.Decay > 4 || p.Tone < .5 || p.Tone > 2 {
-			return Error("cymbal parameter is out of range")
+			return validationError("cymbal parameter is out of range")
 		}
 	}
 	return nil
@@ -192,7 +192,7 @@ type Kit struct {
 
 func New(sampleRate int, seed uint32) (*Kit, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return nil, Error("drum sample rate must be 44100, 48000, or 96000")
+		return nil, validationError("drum sample rate must be 44100, 48000, or 96000")
 	}
 	k := &Kit{rate: float64(sampleRate), seed: seed, clickDecay: math.Exp(-1 / (.002 * float64(sampleRate)))}
 	for lane := Lane(0); lane < LaneCount; lane++ {
@@ -208,7 +208,7 @@ func New(sampleRate int, seed uint32) (*Kit, error) {
 
 func (k *Kit) SetParams(lane Lane, params Params) error {
 	if lane >= LaneCount {
-		return Error("unsupported drum lane")
+		return validationError("unsupported drum lane")
 	}
 	if err := params.Validate(k.lanes[lane].recipe); err != nil {
 		return err
@@ -266,7 +266,7 @@ func (v LiveParamValidator) Validate(params Params) error {
 		controls := params
 		controls.LevelDB, controls.Pan = v.params.LevelDB, v.params.Pan
 		if controls != v.params {
-			return Error("modeled kit synthesis controls require prepared lane bindings")
+			return validationError("modeled kit synthesis controls require prepared lane bindings")
 		}
 	}
 	return nil
@@ -275,7 +275,7 @@ func (v LiveParamValidator) Validate(params Params) error {
 // SetParamsTarget smooths live lane controls in NextStereo without allocating.
 func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
 	if lane >= LaneCount || math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
-		return Error("drum parameter smoothing is out of range")
+		return validationError("drum parameter smoothing is out of range")
 	}
 	if err := k.LiveParamValidator(lane).Validate(params); err != nil {
 		return err
@@ -297,7 +297,7 @@ func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
 // its own voice and noise state even when multiple lanes share one recipe.
 func (k *Kit) SetRecipe(lane, recipe Lane) error {
 	if lane >= LaneCount || recipe >= LaneCount {
-		return Error("unsupported drum lane")
+		return validationError("unsupported drum lane")
 	}
 	v := &k.lanes[lane]
 	v.recipe = recipe
@@ -323,7 +323,7 @@ func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
 // SetGraphFromProgram prepares both retrigger voices without copying the node array.
 func (k *Kit) SetGraphFromProgram(lane Lane, program *graph.Program) error {
 	if lane >= LaneCount {
-		return Error("unsupported drum lane")
+		return validationError("unsupported drum lane")
 	}
 	current, err := graph.NewVoiceFromProgram(program, int(k.rate))
 	if err != nil {
@@ -350,7 +350,7 @@ func (k *Kit) SetGraphFromProgram(lane Lane, program *graph.Program) error {
 // lanes may select any articulation; hat choking follows the selected models.
 func (k *Kit) SetModeled(lane Lane, profile modeledkit.Profile, params modeledkit.Params, levelDB, pan float64) error {
 	if lane >= LaneCount {
-		return Error("unsupported drum lane")
+		return validationError("unsupported drum lane")
 	}
 	voice, err := modeledkit.NewVoice(profile, int(k.rate), k.seed^uint32(lane+1)*0x9e3779b9)
 	if err != nil {
@@ -377,7 +377,7 @@ func (k *Kit) SetModeled(lane Lane, profile modeledkit.Profile, params modeledki
 // Like SetRecipe, this configures the kit outside the audio callback.
 func (k *Kit) Disable(lane Lane) error {
 	if lane >= LaneCount {
-		return Error("unsupported drum lane")
+		return validationError("unsupported drum lane")
 	}
 	v := &k.lanes[lane]
 	v.enabled = false
