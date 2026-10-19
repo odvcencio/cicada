@@ -7,11 +7,13 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
-In the desktop app, **Arrange** contains the song timeline, vocal recording,
-and automation. **Session** contains the launch matrix and live playing;
+In the desktop app, **Arrange** contains the song timeline and vocal recording.
+**Session** contains the launch matrix and live playing;
 **Mixer** contains mix controls. Instruments, Generate, Takes, and Sampler are
-in the left Browser. The **Clip** detail tab edits patterns, and the **Code**
-lens shows the score. Older screenshots show these tools as standalone panels.
+in the left Browser. The detail dock's **Clip** tab edits patterns, **Device**
+edits the selected track's sound and processing, and **Automation** contains
+curve and scene-point editors. The **Code** lens shows the score. Older
+screenshots show these tools as standalone panels.
 
 **Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
 effects, and performance resampling. A placement's **Sample into pads** link
@@ -75,6 +77,14 @@ supports Undo. The **Placement list** shows exact starts and exclusive ends;
 sub-sixteenth boundaries retain their exact ticks. Content links open the
 pattern or clip editor. Returning from Score reads the current saved project.
 
+With a placement inspected in Arrange, **Command-D** on Mac (**Control-D**
+elsewhere) duplicates it after the existing placements on its track.
+**Backspace** or **Delete** removes it; the last placement remains protected.
+**Command-L** (**Control-L**) or the toolbar's **Loop** button loops that
+placement in song context; repeat the command to stop the loop. These commands
+respect text/editor focus, unsaved work, and active recording. Use Undo to
+restore a duplicated or removed placement.
+
 Choose a **Section** and **Loop section** to repeat from its marker to the next
 marker, or the arrangement end. For scene-based songs, **Loop block** repeats
 the selected song block. **Loop an exact range** accepts `@bar.beat.step` or
@@ -103,7 +113,7 @@ disk revision before saving, and has an Undo entry.
 
 ![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
-**Arrange → Scene automation** shows parameter lanes alongside the song's scene
+**Automation → Scene automation** shows parameter lanes alongside the song's scene
 blocks. Choose a parameter and **Inspect parameter**, then choose a scene and
 **Add or replace point**. Track level and pan, sends, supported synth controls,
 and effect parameters use the shared parameter catalog. Values accept their units

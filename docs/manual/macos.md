@@ -15,10 +15,29 @@ The app includes its audio engine and interface; you do not need Go, TinyGo,
 or a terminal to use a packaged build. Developers can build it using the
 [desktop packaging instructions](../../desktop/README.md).
 
-Use **Arrange** for the song timeline, vocal recording, and automation;
+Use **Arrange** for the song timeline and vocal recording;
 **Session** for the launch matrix and live playing; and **Mixer** for mix
-controls. **Sampler** is in the left Browser. The **Clip** detail tab edits
-patterns, and the **Code** lens shows the score.
+controls. **Sampler** is in the left Browser. In the bottom detail dock,
+**Clip** edits patterns, **Device** shapes the selected track, and
+**Automation** edits curves and scene points. The **Code** lens shows the score.
+
+Inspect a placement to follow its track in **Device**, or choose another track
+and select **Inspect track**. Instrument parameters, mixer/routing settings,
+and insert controls save to the score and support Undo. Declared instruments
+show their editable sound parameters; built-in voices expose their supported
+mix and insert controls.
+
+![Device controls below the arrangement in a 1280 × 840 Studio window.](screenshots/studio-device-mac-1280.png)
+
+The Automation tab keeps its own scroll position. Choose a parameter, then
+draw or edit points without leaving the arrangement. These screenshots show
+the running Studio interface with a saved bass level point; the narrow layout
+uses **Detail** in the region navigation.
+
+![A saved bass level point in the Automation dock.](screenshots/studio-automation-dock-1280.png)
+
+[Device at 390 pixels](screenshots/studio-device-390.png) ·
+[Automation at 390 pixels](screenshots/studio-automation-dock-390.png)
 
 ## Set up playback and recording
 
@@ -87,10 +106,19 @@ the selected Live instrument. SysEx is not supported.
 | Space | Play / pause outside text fields |
 | Home, or Fn-Left Arrow on a MacBook | Return to the beginning |
 | Command-Shift-R | Record / finish the selected vocal take |
+| Command-D | Duplicate the selected Arrange placement |
+| Backspace / Delete | Remove the selected Arrange placement |
+| Command-L | Loop the selected placement in the song; press again to stop |
 | Command-Q | Quit and stop the audio engine |
 
 **Shortcuts** in the toolbar lists the available commands. Unsupported editing
 commands are marked unavailable there.
+
+Placement shortcuts require an inspected placement in Arrange. They leave
+text fields, Code, the Browser, and the detail dock's own keys alone, and do
+not run with unsaved edits or an active take. Duplicate appends a copy after
+the track's existing placements. The last placement cannot be removed.
+The toolbar's **Loop** button performs the same contextual loop action.
 
 ## Files and troubleshooting
 
