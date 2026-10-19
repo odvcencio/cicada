@@ -188,30 +188,61 @@ func windowTitle(score string) string {
 type openQueue struct {
 	mu      sync.Mutex
 	busy    bool
+	current string
 	pending string
 }
 
-// request reports whether the caller may start the switch now. If a switch is
-// already running, the score is kept and false is returned.
-func (q *openQueue) request(score string) bool {
+// scorePathKey compares Finder's resolved paths with command-line aliases.
+// The requested path itself remains unchanged for project-relative assets.
+func scorePathKey(score string) string {
+	if score == "" {
+		return ""
+	}
+	if absolute, err := filepath.Abs(score); err == nil {
+		score = absolute
+	}
+	if resolved, err := filepath.EvalSymlinks(score); err == nil {
+		score = resolved
+	}
+	return filepath.Clean(score)
+}
+
+// request reports whether the caller may start a switch. A duplicate Finder
+// delivery reuses the current attempt or live sidecar, leaving a distinct
+// pending request intact. Reload explicitly bypasses both forms of reuse.
+// activeKey is empty after a failed launch or unexpected process exit.
+func (q *openQueue) request(score, activeKey string, reload bool) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if score == "" {
+		return false
+	}
+	key := scorePathKey(score)
 	if q.busy {
+		if !reload && samePath(q.current, key) {
+			return false
+		}
 		q.pending = score
 		return false
 	}
+	if !reload && activeKey != "" && samePath(activeKey, key) {
+		return false
+	}
 	q.busy = true
+	q.current = key
 	return true
 }
 
-// done ends the running switch and returns the latest score requested meanwhile,
-// or an empty string. The caller then opens it.
+// done hands the worker the latest waiting score while keeping its reservation.
+// Releasing between switches would let an older queued request overtake a newer
+// Finder event. An empty result releases the worker.
 func (q *openQueue) done() string {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.busy = false
 	next := q.pending
 	q.pending = ""
+	q.busy = next != ""
+	q.current = scorePathKey(next)
 	return next
 }
 

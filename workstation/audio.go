@@ -46,11 +46,11 @@ func recordingReadiness(state audioState) audioReadiness {
 		backend = strings.ToLower(state.Inventory.Backend)
 	}
 	if backend == "null" {
-		r.Title, r.Detail, r.Output, r.Input = "Silent playback", "Reopen the song with Record-Full-Song to use your speakers and microphone.", "Silent output", "Microphone unavailable"
+		r.Title, r.Detail, r.Output, r.Input = "Silent playback", "This song was opened with audio disabled. Reopen it in Cicada Studio with native audio to use your speakers and microphone.", "Silent output", "Microphone unavailable"
 		return r
 	}
 	if backend != "tymbal" {
-		r.Title, r.Detail, r.Input, r.Output = "Microphone unavailable", "Reopen the song with Record-Full-Song to record vocals using native audio.", "Recording unavailable", "System default"
+		r.Title, r.Detail, r.Input, r.Output = "Microphone unavailable", "Playback is available. Reopen this song in Cicada Studio with native audio to record vocals.", "Recording unavailable", "System default"
 		return r
 	}
 	if !state.Inventory.Supported || state.Inventory.Message != "" {
@@ -80,7 +80,7 @@ func recordingReadiness(state audioState) audioReadiness {
 		return r
 	}
 
-	r.Title, r.Detail, r.Ready = "Microphone configured", "Record a pass in Session. Use headphones to keep the backing out of your microphone.", true
+	r.Title, r.Detail, r.Ready = "Microphone configured", "Record a vocal pass. Use headphones to keep the backing out of your microphone.", true
 	return r
 }
 
@@ -164,7 +164,7 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 		back += "&vocalTrack=" + url.QueryEscape(track)
 	}
 	if ctx.Request.URL.Query().Get("returnTo") == "session" {
-		returnTo, apply = back, "Apply and return to Session"
+		returnTo, apply = back, "Apply and return to recording"
 	}
 	locked := state.Playing || state.Runtime.Armed
 	fields := gosx.El("fieldset", gosx.Attrs(gosx.Attr("class", "audio-settings"), gosx.Attr("data-audio-routing", ""), gosx.Attr("disabled", locked)),
@@ -181,6 +181,10 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 
 	refresh := gosx.El("a", gosx.Attrs(gosx.Attr("href", ctx.Request.URL.RequestURI()), gosx.Attr("data-workspace-refresh", ""), gosx.Attr("class", "button-link")), gosx.Text("Refresh devices"))
 	details := gosx.El("details", gosx.Attrs(gosx.Attr("class", "audio-details")), gosx.El("summary", gosx.Text("Audio details")), gosx.El("p", gosx.Text(state.Status)), gosx.El("p", gosx.Text(state.Inventory.Message)))
+	var permission gosx.Node = gosx.Fragment()
+	if strings.EqualFold(state.Inventory.Host, "coreaudio") || strings.Contains(strings.ToLower(state.Inventory.Backend), "coreaudio") {
+		permission = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("macOS will ask for microphone access when you enable input and apply. If access was denied, open System Settings → Privacy & Security → Microphone, allow Cicada Studio, then reopen the app. Use headphones while recording with the built-in microphone."))
+	}
 	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Microphone and playback", Description: "Choose where you record and listen."}, audioSummary(state),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to Session"))), notice, form, audioPerformance(state), details)
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to recording"))), notice, form, permission, audioPerformance(state), details)
 }

@@ -1,4 +1,4 @@
-//go:build linux || windows
+//go:build linux || windows || darwin
 
 package audiobackend
 
@@ -100,6 +100,10 @@ func TestTymbalDeviceErrorLines(t *testing.T) {
 			name: "WASAPI failure", goos: "windows", direction: tymbal.Output, device: "Speakers",
 			err: errors.New("WASAPI activation failed\nHRESULT 0x80070005"), want: "Tymbal WASAPI device \"Speakers\" could not be opened; use --audio oto: WASAPI activation failed HRESULT 0x80070005",
 		},
+		{
+			name: "CoreAudio failure", goos: "darwin", direction: tymbal.Output, device: "MacBook Pro Speakers",
+			err: errors.New("CoreAudio device disconnected"), want: "Tymbal CoreAudio device \"MacBook Pro Speakers\" could not be opened; use --audio oto: CoreAudio device disconnected",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := tymbalDeviceErrorForOS(test.goos, test.direction, test.device, test.err).Error()
@@ -118,5 +122,16 @@ func TestTymbalDuplexErrorNamesPlaybackAndCaptureDevices(t *testing.T) {
 	want := "Tymbal WASAPI playback device \"Speakers\" and capture device \"Microphone\" could not be opened because one endpoint is busy; use --audio oto: tymbal: device busy"
 	if err.Error() != want {
 		t.Fatalf("duplex device error = %q, want %q", err, want)
+	}
+}
+
+func TestCoreAudioPermissionErrorsKeepPlaybackAndRecordingRemediesSeparate(t *testing.T) {
+	for _, err := range []error{
+		tymbalDuplexDeviceErrorForOS("darwin", "Speakers", "Microphone", tymbal.ErrPermission),
+		tymbalDeviceErrorForOS("darwin", tymbal.Input, "Microphone", tymbal.ErrPermission),
+	} {
+		if !errors.Is(err, tymbal.ErrPermission) || !strings.Contains(err.Error(), "Privacy & Security > Microphone") || strings.Contains(err.Error(), "--audio oto") {
+			t.Fatalf("capture permission error lost its remedy or cause: %v", err)
+		}
 	}
 }

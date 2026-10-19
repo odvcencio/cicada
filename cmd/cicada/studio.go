@@ -127,7 +127,10 @@ func studioCommand(args []string) error {
 	}()
 	studio.transport.audioNull = audioNull
 	studio.transport.audioBackend = string(backendName)
-	studio.transport.audioOptions = defaultStudioAudioOptionsFor(backendName)
+	studio.transport.audioOptions, err = loadStudioAudioPreferences(backendName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Cicada audio settings: using defaults:", err)
+	}
 	handler := studio.routes()
 	var serviceToken string
 	if !serviceOnly {

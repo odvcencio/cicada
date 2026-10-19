@@ -36,6 +36,9 @@ def isolated_app(app, output):
         info = plistlib.loads(plist.read_bytes())
         info["CFBundleIdentifier"] = bundle_id
         info["CFBundleName"] = info["CFBundleDisplayName"] = "Cicada Studio Smoke"
+        # A temporary test app must never become Finder's default score editor.
+        info.pop("CFBundleDocumentTypes", None)
+        info.pop("UTExportedTypeDeclarations", None)
         plist.write_bytes(plistlib.dumps(info))
         with (output / "signing.log").open("w") as log:
             for args in [
@@ -81,7 +84,7 @@ def descendants(pid):
         found |= children
 
 
-def check_launch(binary, output, mode):
+def check_launch(binary, output, mode, workflow):
     folder = Path(tempfile.mkdtemp(prefix=mode + "-", dir=output))
     score = folder / "main.cicada"
     score.write_text(
@@ -94,6 +97,8 @@ def check_launch(binary, output, mode):
         str(binary), "--audio", "null", "--data-dir", str(folder / "data"),
         "--smoke-out", str(report), "--smoke-hold", "5s" if mode == "normal" else "60s",
     ]
+    if mode == "normal":
+        args += ["--smoke-script", str(workflow)]
     marker = folder / "helper.pid"
     if mode.startswith("early-"):
         helper = folder / "slow-cicada"
@@ -123,6 +128,11 @@ def check_launch(binary, output, mode):
                     proc.send_signal(signal.SIGTERM if mode.endswith("term") else signal.SIGINT)
                     checked = True
                 elif not checked and match:
+                    if mode == "normal":
+                        # Let WKWebView own the first authenticated session.
+                        # Its workflow checks runtime and mutations itself.
+                        checked = True
+                        continue
                     url = match[1]
                     with urllib.request.urlopen(url, timeout=5) as response:
                         page = response.read().decode()
@@ -151,6 +161,8 @@ def check_launch(binary, output, mode):
                 raise RuntimeError(f"{mode}: failed startup: {startup}")
             if mode == "normal" and not startup.get("studioLoadedMs"):
                 raise RuntimeError(f"native window never loaded Studio: {startup}")
+            if mode == "normal" and not startup.get("frontend", {}).get("ok"):
+                raise RuntimeError(f"native workflow failed: {startup.get('frontend')}; see {folder}")
             return {
                 "mode": mode, "pids": sorted(seen), "startup": startup,
                 "artifacts": str(folder), "stateDir": env["CICADA_STATE_DIR"],
@@ -175,17 +187,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--workflow", type=Path, default=Path(__file__).parent / "testdata/native-workflow.js")
+    parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int"], default="all")
     args = parser.parse_args()
     app = args.app.resolve()
     binary = app / "Contents/MacOS/cicada-studio"
     if not binary.is_file():
         parser.error(f"desktop host is missing: {binary}")
+    workflow = args.workflow.resolve()
+    if not workflow.is_file():
+        parser.error(f"native workflow is missing: {workflow}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     results = []
     with isolated_app(app, output) as binary:
-        for mode in ["normal", "term", "int", "early-term", "early-int"]:
-            result = check_launch(binary, output, mode)
+        modes = ["normal", "term", "int", "early-term", "early-int"] if args.mode == "all" else [args.mode]
+        for mode in modes:
+            result = check_launch(binary, output, mode, workflow)
             results.append(result)
             (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")
             print(f"{mode}: passed", flush=True)

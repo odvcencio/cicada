@@ -7,9 +7,15 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
+In the desktop app, **Arrange** contains the song timeline, vocal recording,
+and automation. **Session** contains the launch matrix and live playing;
+**Mixer** contains mix controls. Instruments, Generate, Takes, and Sampler are
+in the left Browser. The **Clip** detail tab edits patterns, and the **Code**
+lens shows the score. Older screenshots show these tools as standalone panels.
+
 **Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
 effects, and performance resampling. A placement's **Sample into pads** link
-opens it as a source; printed performances become regular Session audio
+opens it as a source; printed performances become regular arrangement audio
 placements. See the [pad sampler guide](sampler.md).
 
 From a source checkout, build both executables and open a score:
@@ -32,7 +38,7 @@ files can also be played in your usual music player.
 
 ![GoSX Studio's pattern controls on a narrow screen.](screenshots/studio-mobile-390.png)
 
-## Transport and session
+## Transport, Arrange, and Session
 
 **Play**, **Pause**, **Stop**, and **Return to start** control native playback.
 The bar, step, backend, and errors update through GoSX live bindings. Valid
@@ -44,15 +50,15 @@ score playing.
 assignments, a pattern cell to queue one track, or **Stop** to stop a track.
 Launches are quantized to the next bar. **Keep** preserves that track's slot.
 
-The arrangement timeline shows scene blocks across all tracks, their bar
-ranges, and inherited patterns. Click a scene header to play from that block,
-or a pattern clip to open its editor. Expand a block to replace its scene,
-set its length, duplicate it, remove it, or move it earlier or later.
+**Arrange** shows scene blocks across all tracks, their bar ranges, and inherited
+patterns. Click a scene header to play from that block, or a pattern clip to
+open its editor. Expand a block to replace its scene, set its length, duplicate
+it, remove it, or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
 Structural changes to songs with intervening comments require a Score edit
 so those comments keep their attachment. Local scene and bar edits preserve them.
 
-For an edition-2 score using `arrange`, **Session** shows named placements on
+For an edition-2 score using `arrange`, **Arrange** shows named placements on
 a track timeline with section markers. Select a block to open its controls.
 Drag it horizontally to move it, or drag its right edge to resize it. Arrow
 keys on a block or edge change its start or length by a sixteenth; hold Shift
@@ -62,7 +68,7 @@ The placement controls change the track, pattern or clip, exact **Start**,
 and **Length**. Start accepts `@bar.beat.step` or exact ticks. Length accepts
 bars, note divisions, or ticks, such as `4bars`, `1/8`, or `320ticks`.
 **Make a copy**, **Remove placement**, **Add a placement**, and **Edit markers**
-keep arrangement work in Session. At least one placement must remain.
+keep arrangement work in Arrange. At least one placement must remain.
 Overlapping pattern placements, incompatible content, and stale writes are
 rejected without changing the score; audio placements may overlap. Every edit
 supports Undo. The **Placement list** shows exact starts and exclusive ends;
@@ -88,7 +94,7 @@ listening range at the next bar or loop restart. Removing the target stops
 playback. **Play full song** restores all parts and starts at the beginning;
 **Stop listening** clears the listening selection and stops playback.
 
-![Tidal Glass placement editing and listening controls in Session, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
+![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
 **Project settings** changes the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
@@ -97,10 +103,10 @@ disk revision before saving, and has an Undo entry.
 
 ![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
-**Scene automation** shows parameter lanes alongside the song's scene blocks.
-Choose a parameter and **Inspect parameter**, then choose a scene and **Add or
-replace point**. Track level and pan, sends, supported synth controls, and
-effect parameters use the shared parameter catalog. Values accept their units
+**Arrange → Scene automation** shows parameter lanes alongside the song's scene
+blocks. Choose a parameter and **Inspect parameter**, then choose a scene and
+**Add or replace point**. Track level and pan, sends, supported synth controls,
+and effect parameters use the shared parameter catalog. Values accept their units
 (for example `1.25kHz`, `250ms`, or `-6.25dB`), and controls report the allowed
 range and alternatives. Existing points can be edited or removed.
 
@@ -119,7 +125,7 @@ exponential or tension-controlled curves. **Save point** makes one Undo step;
 retain unit-aware entry, and **All saved curves** shows the complete overview.
 Recording knob/fader movements is not implemented.
 
-![Session's continuous automation editor, captured from the current build with a test project.](screenshots/studio-producer-automation-1440.png)
+![Continuous automation editor, captured with a test project.](screenshots/studio-producer-automation-1440.png)
 
 The editor also supports [touch editing on phone screens](screenshots/studio-producer-automation-390.png).
 
@@ -278,7 +284,7 @@ Silk pluck, Round bass, and Soft bell. **Add instrument and track** saves an
 editable graph and its track in one Undo step. Five patches have eight-note
 polyphony; Round bass is monophonic. Choose the new track in **Live** to play
 it using the on-screen keyboard, typing keyboard, or MIDI. Bind a notes pattern
-in **Session** to sequence it and include it in WAV exports.
+in **Arrange** to sequence it and include it in WAV exports.
 
 Declared parameters show their default and current track override. Apply a
 value to shape just that track; **Use default** removes its override. Values
@@ -357,16 +363,16 @@ Its gain only changes what you hear. Raw input is retained before monitoring,
 and a period-sized capture queue gives the disk writer at least one second of
 headroom without adding headphone latency.
 
-**Session → Record vocals** records across the full song, including arrange-only
+**Arrange → Record vocals** records across the full song, including arrange-only
 scores. In **Recording setup**, choose a microphone and output in **Audio**,
 enable input, and add an audio track such as `danilo`. Use headphones and leave
 monitoring muted if the device delay is distracting. Native recording requires
 Tymbal (`cicada studio score.cicada --audio tymbal`); Oto provides playback.
 
-Session explains whether your microphone is configured, off, or unavailable.
-**Choose microphone and output** opens Audio with **Apply and return to Session**,
-which returns to the same vocal track. Monitoring mute only affects what you
-hear; it does not mute the recorded microphone.
+Recording setup explains whether your microphone is configured, off, or
+unavailable. **Choose microphone and output** opens Audio with **Apply and return
+to recording**, which returns to the same vocal track. Monitoring mute only
+affects what you hear; it does not mute the recorded microphone.
 
 **Microphone level** shows live mono or stereo input in dBFS while playback or
 capture opens your configured input. Play the song and sing a phrase before
@@ -430,7 +436,7 @@ gain** restores 0 dB in the editor; choose **Use selection** to save the reset.
 Original recordings keep their PCM. **Use whole take** uses the pass's complete
 covered interval at its original level.
 
-![Phrase gain and vocal-only auditioning in Session, using simulated vocal takes.](screenshots/studio-vocal-levels-1440.png)
+![Phrase gain and vocal-only auditioning, using simulated vocal takes.](screenshots/studio-vocal-levels-1440.png)
 
 The level controls also fit [phone screens](screenshots/studio-vocal-levels-390.png).
 
@@ -464,11 +470,11 @@ recording levels between takes. Waveform analysis does not edit or load the
 entire recording into browser memory. If a waveform is unavailable, the take
 stays retained and Exact positions remains available.
 
-![Session waveform take lanes with a dragged phrase and chosen vocal assembled from three retained takes.](screenshots/studio-vocal-lanes-1440.png)
+![Waveform take lanes with a dragged phrase and chosen vocal assembled from three retained takes.](screenshots/studio-vocal-lanes-1440.png)
 
-The same controls wrap for [phone-sized Session views](screenshots/studio-vocal-lanes-390.png).
+The same controls wrap for [phone-sized recording views](screenshots/studio-vocal-lanes-390.png).
 
-Session retains raw takes and their tempo/origin in the durable journal. The
+Studio retains raw takes and their tempo/origin in the durable journal. The
 chosen vocal is printed as a mono WAV (stereo input is averaged). Native playback
 streams long audio clips from verified files through a bounded prefetch cache;
 separate lead, double and harmony prints no longer consume the shared resident
@@ -479,7 +485,7 @@ printing the comp. Failed or conflicting passes remain available for selection.
 Changing tempo requires restoring the take's recording tempo before comping;
 recorded vocals are not time-stretched.
 
-A scene-based song becomes ordinary Session placements on its first vocal
+A scene-based song becomes ordinary arrangement placements on its first vocal
 selection. Explicit part starts and **Keep** continuity carry over, and block
 boundaries become markers. The original scene definitions remain available.
 Arrangement-only scores keep their existing placements and markers. Original
@@ -534,7 +540,7 @@ long vocals into the resident arena. Portable AudioWorklet/WAM projects retain
 their resident image limits. Native Session streaming does not provide browser
 worker page transfer.
 
-![Phrase timing, fades and crossfades in Session, using simulated retained takes.](screenshots/studio-producer-vocal-timing-1440.png)
+![Phrase timing, fades and crossfades, using simulated retained takes.](screenshots/studio-producer-vocal-timing-1440.png)
 
 The same controls fit [phone screens](screenshots/studio-producer-vocal-timing-390.png).
 

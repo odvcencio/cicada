@@ -135,7 +135,7 @@ func TestShellRegistersEveryCommandInTheTable(t *testing.T) {
 	for id, keys := range map[string]string{
 		"transport.toggle": "Space", "transport.home": "Home", "view.arrange": "Alt+Shift+1", "view.session": "Alt+Shift+2", "view.mixer": "Alt+Shift+3", "dock.clip": "Alt+Shift+4", "dock.device": "Alt+Shift+5", "dock.automation": "Alt+Shift+6",
 		"edit.undo": "Mod+Z", "edit.redo": "Mod+Shift+Z", "palette.open": "Mod+K,?,Shift+/", "arrange.consolidate": "Mod+J",
-		"live.scene.1": "F1", "live.scene.8": "F8", "transport.record": "F9", "tool.draw": "B", "select.left": "ArrowLeft",
+		"live.scene.1": "F1", "live.scene.8": "F8", "transport.record": "F9,Mod+Shift+R", "tool.draw": "B", "select.left": "ArrowLeft", "edit.save": "Mod+S",
 	} {
 		if got[id].ID == "" || strings.Join(got[id].Keys, ",") != keys {
 			t.Errorf("command %s keys=%v, want %s", id, got[id].Keys, keys)
@@ -145,6 +145,14 @@ func TestShellRegistersEveryCommandInTheTable(t *testing.T) {
 		if !got[id].Reserved {
 			t.Errorf("command %s must stay reserved", id)
 		}
+	}
+	for _, id := range []string{"edit.save", "edit.undo", "edit.redo"} {
+		if got[id].Reserved {
+			t.Errorf("command %s must submit its working form", id)
+		}
+	}
+	if !got["edit.save"].AllowEditable || got["edit.undo"].AllowEditable || got["edit.redo"].AllowEditable {
+		t.Error("Save must work inside the score editor while text fields keep their own Undo and Redo")
 	}
 	for _, cmd := range shellCommands() {
 		for _, key := range cmd.Keys {

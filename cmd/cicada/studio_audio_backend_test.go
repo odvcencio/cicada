@@ -5,9 +5,32 @@ import (
 	"os"
 	"testing"
 
+	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/tymbal"
 	"m31labs.dev/tymbal/tymbaltest"
 )
+
+func TestStudioNativeAudioHostNames(t *testing.T) {
+	for _, test := range []struct{ goos, host, label string }{
+		{"darwin", "coreaudio", "Tymbal CoreAudio"},
+		{"windows", "wasapi", "Tymbal WASAPI shared mode"},
+		{"linux", "alsa", "Tymbal ALSA"},
+	} {
+		if host, label := studioAudioHostForOS(audiobackend.Tymbal, test.goos), studioAudioBackendLabelForOS(audiobackend.Tymbal, test.goos); host != test.host || label != test.label {
+			t.Fatalf("%s: host=%q label=%q, want %q and %q", test.goos, host, label, test.host, test.label)
+		}
+		if host := studioAudioHostForOS(audiobackend.Oto, test.goos); host != "" {
+			t.Fatalf("Oto inherited native host %q on %s", host, test.goos)
+		}
+	}
+}
+
+func TestMacPlaybackDoesNotEnableMicrophoneUntilRequested(t *testing.T) {
+	options := defaultStudioAudioOptionsForOS(audiobackend.Tymbal, "darwin")
+	if options.InputEnabled || !options.MonitorMuted || options.PeriodFrames != 256 {
+		t.Fatalf("new Mac session should start with playback and muted, disabled input: %+v", options)
+	}
+}
 
 type zeroAudioSource struct{}
 

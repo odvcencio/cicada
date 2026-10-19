@@ -51,4 +51,4 @@ require (
 
 replace m31labs.dev/cicada => ..
 
-replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20260929091837-23968cefb0c6
+replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20261018224641-e5e266c6aaf1

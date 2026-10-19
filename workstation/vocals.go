@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -169,7 +170,11 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 	if active {
 		status = "Take armed or recording · " + state.Active
 	}
-	props, _ := json.Marshal(map[string]any{"hasAudioTracks": len(tracks) > 0, "active": state.Active, "timeline": true})
+	// Managed navigation retains an engine whose props are unchanged. Include
+	// the saved score, take projection and selection so its server-owned forms
+	// and waveform lanes refresh when another vocal track or take is added.
+	projection, _ := json.Marshal(state)
+	props, _ := json.Marshal(map[string]any{"revision": v.Revision, "projection": fmt.Sprintf("%x", sha256.Sum256(projection)), "track": chosen, "selection": selectedRange, "audition": ctx.Request.URL.RawQuery, "hasAudioTracks": len(tracks) > 0, "active": state.Active, "timeline": true})
 	var laneEditor gosx.Node = gosx.Fragment()
 	if len(lanes) > 0 {
 		selected := lanes[0]

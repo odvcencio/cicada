@@ -179,6 +179,7 @@ type audioState struct {
 		Supported     bool          `json:"supported"`
 		Backend       string        `json:"backend"`
 		BackendName   string        `json:"backendName"`
+		Host          string        `json:"host"`
 		Message       string        `json:"message"`
 		Devices       []audioDevice `json:"devices"`
 		BufferChoices []int         `json:"bufferChoices"`

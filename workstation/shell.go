@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/command"
 	"m31labs.dev/gosx/controller"
+	"m31labs.dev/gosx/engine"
 	"m31labs.dev/gosx/server"
 	"m31labs.dev/gosx/session"
 )
@@ -160,11 +162,16 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		dockPanel("automation", later("detail-automation-later", "Automation lanes are in the Session panel under Arrange for now.")))
 	code := ui.CodeLens(ui.CodeLensProps{Open: true, Width: strconv.Itoa(shellCodeWidth)}, panel("code"), panel("collaboration"))
 
+	// This engine binds the surrounding document, rather than owning its
+	// rendered children. A fresh masked CSRF token gives managed navigation a
+	// fresh binding instead of retaining a listener on the previous shell.
+	shellProps, _ := json.Marshal(map[string]string{"csrf": csrf})
 	dialogs := gosx.Fragment(
 		ui.DialogFrame(ui.DialogFrameProps{ID: "history-dialog", Title: "History"}, panel("history")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, panel("audio")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "export-dialog", Title: "Export"}, panel("export")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "palette", Title: "Keyboard shortcuts"}, shortcuts(), ui.ShortcutNotes()),
+		meterEngine(ctx, engine.Config{Name: "CicadaShell", Kind: engine.KindSurface, MountID: "cicada-shell-actions", Runtime: engine.RuntimeGoWASM, Props: shellProps, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.BoolAttr("hidden")))),
 	)
 	message, hasMessage := props.Message, props.HasMessage
 	for name, result := range action.States(ctx.Request) {
