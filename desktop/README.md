@@ -123,7 +123,7 @@ Run the same native launch and shutdown checks locally with Python 3:
 
 ```sh
 python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke
-python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke/arrange --mode normal --workflow desktop/testdata/native-arrange-workflow.js
+python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke/arrange --mode normal --timeout 120 --workflow desktop/testdata/native-arrange-workflow.js
 ```
 
 The smoke checks copy the app into a temporary directory, assign a unique
@@ -138,6 +138,8 @@ The Arrange workflow exercises saved placement shortcuts, contextual looping,
 Device sound and mix controls, Automation points, and exact Undo in WKWebView.
 It verifies the saved source after navigation and checks that focused editors
 keep their own keys. It leaves microphone input off and uses silent null audio.
+This longer workflow has a 120-second total budget; individual conditions still
+must settle within 15 seconds. Other smoke cases retain their 60-second budget.
 
 Development builds are ad-hoc signed (no Developer ID, no notarization), so
 Gatekeeper may ask the first time: right-click the bundle → **Open**.
