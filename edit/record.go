@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 )
@@ -25,7 +24,12 @@ func init() {
 			return fmt.Errorf("at least one recorded track and pattern are required")
 		}
 		count := 0
+		patterns := make(map[string]bool)
 		for _, recording := range in.Recordings {
+			if patterns[recording.Pattern] {
+				return fmt.Errorf("take targets pattern %q more than once; separate the performances before applying", recording.Pattern)
+			}
+			patterns[recording.Pattern] = true
 			updated, err := recordedTakeSource(ctx, recording.Track, recording.Pattern, recording.Notes)
 			if err != nil {
 				return err
@@ -153,6 +157,7 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	}
 
 	steps := make(map[int]recordedStep)
+	stepTicks := pattern.StepTicksOrDefault()
 	expressive := false
 	for _, note := range take {
 		if note.Tick < 0 || note.EndTick < note.Tick || note.Tick > 1<<60 || note.EndTick > 1<<60 {
@@ -174,7 +179,7 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 			return nil, err
 		}
 		expressive = expressive || len(note.Expressions) != 0
-		step := int((note.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
+		step := int((note.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 		key := step
 		if drums {
 			lane, ok := GMDrumLane(note.Note)
@@ -182,6 +187,9 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note.Note)
 			}
 			key += int(lane) * 64
+		}
+		if _, exists := steps[key]; exists {
+			return nil, fmt.Errorf("take has multiple notes at pattern %q step %d; this destination holds one pitch per step. Separate the phrases before applying", patternID, step+1)
 		}
 		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
 	}
@@ -210,12 +218,12 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	}
 	if !drums && !polyphonic {
 		for _, prior := range take {
-			priorStep := int((prior.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
+			priorStep := int((prior.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 			for _, next := range take {
 				if prior.Tick >= next.Tick || prior.EndTick <= next.Tick {
 					continue
 				}
-				nextStep := int((next.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
+				nextStep := int((next.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 				if priorStep != nextStep {
 					current := steps[priorStep]
 					current.slide = true
@@ -393,7 +401,8 @@ func recordedExpressionSource(source []byte, targetFile string, score *notation.
 	copy(values, pattern.Expression)
 	occupied := make([]bool, pattern.Steps)
 	edits := make([]Span, 0, len(take)+4)
-	quantize := func(tick int64) int64 { return (tick + seq.TicksPerStep/2) / seq.TicksPerStep }
+	stepTicks := pattern.StepTicksOrDefault()
+	quantize := func(tick int64) int64 { return (tick + stepTicks/2) / stepTicks }
 	for _, note := range take {
 		start, end := quantize(note.Tick), quantize(note.EndTick)
 		if end <= start {
