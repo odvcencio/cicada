@@ -405,6 +405,7 @@ jobs:
           desktop/package.sh --target darwin --version 0.0.0-ci --output build/macos
           codesign --verify --deep --strict 'build/macos/Cicada Studio.app'
           go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
+          python3 -m unittest discover -s desktop -p test_smoke.py
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/recording --mode normal --workflow desktop/testdata/native-recording-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/import --mode normal --workflow desktop/testdata/native-import-workflow.js
