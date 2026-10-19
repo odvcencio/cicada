@@ -15,8 +15,35 @@
       responses.push(response.status);
     return response;
   };
-  addEventListener('error', event => errors.push(event.message));
-  addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+  function errorDetails(event) {
+    const error = event.error ?? event.reason;
+    const target = event.target;
+    let detail = null;
+    if (event.detail != null) {
+      try {
+        detail = JSON.parse(JSON.stringify(event.detail, (key, value) => {
+          if (/csrf|cookie|authorization/i.test(key)) return '<redacted>';
+          if (value instanceof Error) return {name: value.name, message: value.message, stack: value.stack};
+          if (value instanceof Element) return {tag: value.tagName, id: value.id};
+          return value;
+        }));
+      } catch (_) { detail = String(event.detail); }
+    }
+    return {
+      type: event.type, eventType: event.constructor?.name, trusted: event.isTrusted,
+      detail, check: checks.at(-1) ?? 'startup', path: location.pathname + location.search,
+      message: event.message ?? null, source: event.filename ?? null,
+      line: event.lineno ?? null, column: event.colno ?? null,
+      target: target === window ? 'window' : target?.tagName ?? null,
+      targetId: target?.id ?? null, targetSource: target?.src ?? target?.href ?? null,
+      error: error == null ? null : {
+        text: String(error), name: error.name ?? null,
+        message: error.message ?? null, stack: error.stack ?? null,
+      },
+    };
+  }
+  addEventListener('error', event => errors.push(errorDetails(event)));
+  addEventListener('unhandledrejection', event => errors.push(errorDetails(event)));
   document.addEventListener('submit', event => {
     if (!event.target.matches('.vocal-record form[action$="/__actions/take"]')) return;
     const fields = new FormData(event.target);
@@ -140,9 +167,10 @@
     if ((await state('takes')).takes?.length) throw new Error('Disabled input created an unexpected take');
     if (document.querySelector('.vocal-record [data-capture-control=stop]')?.disabled !== true)
       throw new Error('Finish take enabled with no active recording');
-    if (errors.length) throw new Error(errors.join('; '));
+    if (errors.length) throw new Error('Global browser errors: ' + JSON.stringify(errors));
     checks.push('song remains valid; no false take or enabled Finish control');
     return {type: 'cicada-native-smoke', ok: true, checks};
-  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, error: String(error.stack || error)}))
+  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks,
+    error: String(error), stack: String(error.stack || ''), errors}))
     .then(result => window.chrome.webview.postMessage(JSON.stringify(result)));
 })();
