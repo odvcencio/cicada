@@ -9,6 +9,8 @@ go run ./cmd/cicada-audio-encode -in take.wav -out smaller -tier hq16
 
 The output stem receives `.flac` or `.wav.gz`, plus a `.json` descriptor. Existing files are never overwritten. FLAC encoding uses an installed FFmpeg executable; `-ffmpeg` selects it. Lossless export falls back to deterministic gzip if FLAC encoding or exact reconstruction is unavailable. The `hq16` tier requires FFmpeg and verifies its output before writing. No network access is needed.
 
+Short samples retain their exact frame count, including a single frame. FLAC block sizing never adds silent padding to the asset.
+
 Decode the descriptor's `asset` with `host/audioencoding.Decode` in Go or `decodeEncodedAudio` from `host/web/audio-encoding.js` in a browser host. Browser FLAC uses `decodeAudioData` with an `OfflineAudioContext` at the authored sample rate; gzip WAV decodes its sample bytes directly to preserve float32 tails. These are independent asset APIs. Existing instrument-pack loaders do not yet consume these descriptors.
 
 ## Descriptor and admission
