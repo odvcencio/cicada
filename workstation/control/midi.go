@@ -95,13 +95,3 @@ func GMDrum(note int) bool {
 	}
 	return false
 }
-
-// Tick estimates sub-step position between bounded transport samples. Never
-// extrapolate more than 250 ms when the native clock stops being observable.
-func Tick(bar, step int64, bpm, elapsedMS float64, playing bool) int64 {
-	base := float64((bar-1)*1920 + (step-1)*120)
-	if playing {
-		base += math.Max(0, math.Min(250, elapsedMS)) * bpm * 480 / 60000
-	}
-	return int64(math.Round(math.Max(0, base)))
-}

@@ -65,7 +65,7 @@ type liveUI struct {
 	active               map[string]int
 	takes                []control.Recording
 	recording            bool
-	bar, step            int64
+	playhead             control.Playhead
 	playing              bool
 	sampled              time.Time
 	learning             bool
@@ -281,16 +281,14 @@ func (u *liveUI) poll() {
 			heartbeat = time.Now()
 		}
 		var t struct {
-			Bar          int64             `json:"bar"`
-			Step         int64             `json:"step"`
-			Playing      bool              `json:"playing"`
+			control.PlaybackState
 			Scene        string            `json:"scene"`
 			PendingScene string            `json:"pendingScene"`
 			ActiveSlots  map[string]string `json:"activeSlots"`
 			PendingSlots map[string]string `json:"pendingSlots"`
 		}
 		if read("/api/transport", &t) == nil && !u.closed.Load() {
-			u.bar, u.step, u.playing, u.sampled = t.Bar, t.Step, t.Playing, time.Now()
+			u.playhead, u.playing, u.sampled = t.Playhead(), t.Playing, time.Now()
 			launch := "Scene: " + t.Scene
 			if t.PendingScene != "" {
 				launch += " · queued: " + t.PendingScene
@@ -334,7 +332,7 @@ func (u *liveUI) poll() {
 	}
 }
 func (u *liveUI) tick() int64 {
-	return control.Tick(u.bar, u.step, u.props.BPM, float64(time.Since(u.sampled).Milliseconds()), u.playing)
+	return u.playhead.NoteTick(time.Since(u.sampled), u.props.BPM)
 }
 
 func (u *liveUI) noteOn(id, track string, note, velocity int) {
@@ -384,7 +382,9 @@ func (u *liveUI) noteOn(id, track string, note, velocity int) {
 		u.active[id] = i*1024 + n
 		u.saveTake()
 		label := "notes"
-		if total == 0 { label = "note" }
+		if total == 0 {
+			label = "note"
+		}
 		u.status.Set(fmt.Sprintf("Recording · %d %s", total+1, label))
 	}
 }

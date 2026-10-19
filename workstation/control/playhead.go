@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"math"
 	"time"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // PlaybackState consumes the small native transport projection. The binary
@@ -42,7 +44,7 @@ type Playhead struct {
 }
 
 func (s PlaybackState) Playhead() Playhead {
-	p := Playhead{Tick: max(0, s.Bar-1)*3840 + max(0, s.Step-1)*240, Playing: s.Playing, Range: s.Range}
+	p := Playhead{Tick: max(0, s.Bar-1)*seq.TicksPerBar + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range}
 	b, err := base64.StdEncoding.DecodeString(s.Frames.Transport)
 	if err != nil || len(b) != 64 || b[0] != 1 || b[1] != 1 {
 		return p
@@ -51,10 +53,10 @@ func (s PlaybackState) Playhead() Playhead {
 	beat := int64(int32(binary.LittleEndian.Uint32(b[56:])))
 	tick := int64(int32(binary.LittleEndian.Uint32(b[60:])))
 	tempo := int64(binary.LittleEndian.Uint32(b[22:]))
-	if bar < 1 || beat < 1 || beat > 4 || tick < 0 || tick >= 960 || tempo < 20000 || tempo > 300000 {
+	if bar < 1 || beat < 1 || beat > 4 || tick < 0 || tick >= seq.PPQ || tempo < 20000 || tempo > 300000 {
 		return p
 	}
-	p.Tick, p.Tempo = (bar-1)*3840+(beat-1)*960+tick, tempo
+	p.Tick, p.Tempo = (bar-1)*seq.TicksPerBar+(beat-1)*seq.PPQ+tick, tempo
 	return p
 }
 
@@ -63,7 +65,7 @@ func (s PlaybackState) Playhead() Playhead {
 func (p Playhead) At(elapsed time.Duration) float64 {
 	tick := float64(p.Tick)
 	if p.Playing {
-		tick += max(0, min(elapsed.Seconds(), .35)) * float64(p.Tempo) * 960 / 60000
+		tick += max(0, min(elapsed.Seconds(), .35)) * float64(p.Tempo) * float64(seq.PPQ) / 60000
 	}
 	if r := p.Range; r != nil && r.End > r.Start {
 		if r.Loop && tick >= float64(r.End) {
@@ -73,4 +75,14 @@ func (p Playhead) At(elapsed time.Duration) float64 {
 		}
 	}
 	return tick
+}
+
+// NoteTick uses the audio clock's sub-step position and current tempo. Older
+// hosts without transport frames fall back to the score tempo. Stop advancing
+// after 250 ms without a fresh sample, preserving the recording clock's bound.
+func (p Playhead) NoteTick(elapsed time.Duration, fallbackBPM float64) int64 {
+	if p.Tempo == 0 && fallbackBPM >= 20 && fallbackBPM <= 300 {
+		p.Tempo = int64(math.Round(fallbackBPM * 1000))
+	}
+	return int64(math.Round(p.At(min(elapsed, 250*time.Millisecond))))
 }
