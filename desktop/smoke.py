@@ -84,7 +84,7 @@ def descendants(pid):
         found |= children
 
 
-def check_launch(binary, output, mode, workflow):
+def check_launch(binary, output, mode, workflow, timeout=60):
     folder = Path(tempfile.mkdtemp(prefix=mode + "-", dir=output))
     score = folder / "main.cicada"
     score.write_text(
@@ -95,7 +95,7 @@ def check_launch(binary, output, mode, workflow):
     report = folder / "startup.json"
     args = [
         str(binary), "--audio", "null", "--data-dir", str(folder / "data"),
-        "--smoke-out", str(report), "--smoke-hold", "5s" if mode == "normal" else "60s",
+        "--smoke-out", str(report), "--smoke-timeout", f"{timeout}s", "--smoke-hold", "5s" if mode == "normal" else "60s",
     ]
     if mode == "normal":
         args += ["--smoke-script", str(workflow)]
@@ -114,7 +114,7 @@ def check_launch(binary, output, mode, workflow):
     with (folder / "stderr.log").open("w") as stderr:
         proc = subprocess.Popen(args, stdout=stderr, stderr=stderr, env=env)
         seen.add(proc.pid)
-        deadline = time.monotonic() + 70
+        deadline = time.monotonic() + timeout + 10
         checked = False
         try:
             while proc.poll() is None and time.monotonic() < deadline:
@@ -189,7 +189,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workflow", type=Path, default=Path(__file__).parent / "testdata/native-workflow.js")
     parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int"], default="all")
+    parser.add_argument("--timeout", type=int, default=60, help="total workflow timeout in seconds (default: 60)")
     args = parser.parse_args()
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
     app = args.app.resolve()
     binary = app / "Contents/MacOS/cicada-studio"
     if not binary.is_file():
@@ -203,7 +206,7 @@ def main():
     with isolated_app(app, output) as binary:
         modes = ["normal", "term", "int", "early-term", "early-int"] if args.mode == "all" else [args.mode]
         for mode in modes:
-            result = check_launch(binary, output, mode, workflow)
+            result = check_launch(binary, output, mode, workflow, args.timeout)
             results.append(result)
             (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")
             print(f"{mode}: passed", flush=True)
