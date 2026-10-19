@@ -90,12 +90,14 @@ func TestUnrolledPushMatchesTapLoopBits(t *testing.T) {
 		reference.history[reference.position] = input
 		reference.history[reference.position+Taps] = input
 		var want float64
+		// Preserve the portable multiply-then-add rounding of the original
+		// tap loop; native arm64 may otherwise fuse the reference's operations.
 		for tap := 0; tap < center; tap += 2 {
-			want += reference.coefficients[tap] * reference.history[reference.position+Taps-tap]
+			want += float64(reference.coefficients[tap] * reference.history[reference.position+Taps-tap])
 		}
-		want += reference.coefficients[center] * reference.history[reference.position+Taps-center]
+		want += float64(reference.coefficients[center] * reference.history[reference.position+Taps-center])
 		for tap := center + 1; tap < Taps; tap += 2 {
-			want += reference.coefficients[tap] * reference.history[reference.position+Taps-tap]
+			want += float64(reference.coefficients[tap] * reference.history[reference.position+Taps-tap])
 		}
 		reference.position = (reference.position + 1) % Taps
 		if math.Float64bits(got) != math.Float64bits(want) || optimized.position != reference.position {

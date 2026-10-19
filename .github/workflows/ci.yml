@@ -370,6 +370,12 @@ jobs:
           CICADA_COREMIDI_TEST=1 go test -race ./host/midi -run '^TestCoreMIDIInput' -count=1
           go test -race ./cmd/cicada -run '^Test(ApplyRefusesConcurrentSaveAtExchange|StudioLateExternalWriteSurvivesSavesAndRestart|StudioOpenWriterDuringCommitIsRetained|StudioRecoveryWithoutReceiptRefusesSave|RouteGuardsMatchIntentsAndApply|StudioNativeCaptureCapabilityCannotBeBypassedBySavedSettings|AudioSetup.*|InputAuthorization.*|MissingInputPermission.*|NativeMIDI.*|GoSXLive.*)$' -count=1
           CICADA_AUDIO_CALLBACK_NOALLOC=1 go test ./cmd/cicada -run '^TestStudioAudioRenderCallbackDoesNotAllocate$' -count=1
+      - name: Verify native and WASM audio determinism
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          go test ./kernel/dsp/halfband ./kernel/graph ./kernel/voice/ep -count=1 -v | tee build/native-audio-determinism.log
+          go test -tags ep_wasm ./kernel/voice/ep -run '^TestEpNativeWASMDeterminism$' -count=1 -v | tee build/ep-wasm-determinism.log
       - name: Package and launch from a clean checkout
         run: |
           set -euo pipefail
@@ -378,13 +384,16 @@ jobs:
           go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
-      - name: Save macOS smoke reports
+      - name: Save macOS validation reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: macos-desktop-${{ matrix.arch }}-reports
           if-no-files-found: warn
-          path: build/macos-smoke/
+          path: |
+            build/macos-smoke/
+            build/native-audio-determinism.log
+            build/ep-wasm-determinism.log
 
   m2-pr:
     name: M2 AudioWorklet gates

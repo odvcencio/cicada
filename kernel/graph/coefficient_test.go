@@ -65,9 +65,11 @@ func TestCoefficientCacheMatchesUncachedPrograms(t *testing.T) {
 }
 
 // nextUncached retains the original per-sample formulas as the regression oracle.
+// Explicit product rounding matches portable PCM; arm64 must not silently fuse
+// a multiply and add in this reference while testing the coefficient cache.
 func (v *Voice) nextUncached() float32 {
 	if v.gliding {
-		v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
+		v.pitchLog += float64((v.targetLog - v.pitchLog) * v.pitchAlpha)
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
 	}
 	for i := 0; i < int(v.program.Len); i++ {
@@ -139,23 +141,23 @@ func (v *Voice) nextUncached() float32 {
 			if n.Op == Diode {
 				feedback = 2.8 * clamp(c, 0, 1)
 			}
-			input := float32(math.Tanh(float64(a - feedback*s.filter[3])))
+			input := float32(math.Tanh(float64(a - float32(feedback*s.filter[3]))))
 			for stage := 0; stage < 4; stage++ {
-				s.filter[stage] += coef * (input - s.filter[stage])
+				s.filter[stage] += float32(coef * (input - s.filter[stage]))
 				input = s.filter[stage]
 			}
 			y = s.filter[3]
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			coef := float32(1 - math.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
-			s.filter[0] += coef * (a - s.filter[0])
+			s.filter[0] += float32(coef * (a - s.filter[0]))
 			y = s.filter[0]
 			if n.Op == Highpass {
 				y = a - y
 			}
 		case Mix:
 			blend := clamp(c, 0, 1)
-			y = a*(1-blend) + b*blend
+			y = float32(a*(1-blend)) + float32(b*blend)
 		case Tanh:
 			y = float32(math.Tanh(float64(a)))
 		case Exp2:
