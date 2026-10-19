@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/workstation/control"
 	"m31labs.dev/cicada/workstation/ui"
@@ -107,6 +108,7 @@ func (s *studioApp) previewNotes(ctx *action.Context) error {
 		return err
 	}
 	session.Current(ctx.Request).Set("note-preview", key)
+	s.checkNoteDraft(ctx, key, ctx.FormData["revision"], takes)
 	ctx.FormData = nil
 	if action.WantsJSON(ctx.Request) {
 		return ctx.Success("Take retained for review.", nil)
@@ -129,6 +131,11 @@ func (s *studioApp) commitNotes(ctx *action.Context) error {
 	var takes []control.Recording
 	if err := json.Unmarshal([]byte(d.Source), &takes); err != nil {
 		return err
+	}
+	if ctx.FormData["intent"] == "check" {
+		s.checkNoteDraft(ctx, store.String("note-preview"), ctx.FormData["revision"], takes)
+		ctx.RedirectBackWithMessage("/?panel=live", "Pattern check updated. Your performance is unchanged.")
+		return nil
 	}
 	revision := d.Revision
 	if ctx.FormData["intent"] == "rebase" {
@@ -228,11 +235,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), button("midi", "Enable MIDI"), field("Learn target", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-target", "")), options(targets))), field("MIDI launch timing", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-quantize", "")), gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear mappings"))
 	var preview gosx.Node = gosx.Fragment()
 	if d, ok := s.draft(session.Current(ctx.Request).String("note-preview"), workspaceOwner(ctx.Request)); ok && d.Kind == "notes" {
-		apply := submit("intent", "commit", "Commit notes to patterns")
-		if d.Revision != v.Revision {
-			apply = gosx.Fragment(gosx.El("p", gosx.Text("The score changed since this take. Review the notes and current target patterns before applying.")), submit("intent", "rebase", "Apply notes to current score"))
-		}
-		preview = gosx.El("section", gosx.Attrs(gosx.Attr("class", "note-preview")), gosx.El("h3", gosx.Text("Retained note take")), gosx.El("pre", gosx.Text(d.Source)), s.form(v, csrf, "live", "note-commit", apply, submit("intent", "discard", "Discard note take")))
+		preview = s.noteTakeReview(v, csrf, d)
 	}
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "preview": session.Current(ctx.Request).String("note-preview")})
 	// SSR controls are the engine's owned subtree. GoSX can preserve that
@@ -240,6 +243,30 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview)
+}
+
+// Validate through the same native edit service that will commit the take.
+// A failed check never replaces or discards the retained performance.
+func (s *studioApp) checkNoteDraft(ctx *action.Context, key, revision string, takes []control.Recording) {
+	data, _ := json.Marshal(takes)
+	var recordings []edit.Recording
+	err := json.Unmarshal(data, &recordings)
+	var result struct{ Valid bool }
+	if err == nil {
+		err = s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/intents", edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, DryRun: true, Intents: []edit.Intent{&edit.RecordTake{Recordings: recordings}}}, &result)
+	}
+	message := ""
+	if err != nil {
+		message = err.Error()
+	} else if !result.Valid {
+		message = "The pattern check could not validate this take. Check the current patterns again."
+	}
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	if d, ok := s.drafts[key]; ok && d.Owner == workspaceOwner(ctx.Request) && d.Kind == "notes" {
+		d.CheckRevision, d.CheckError = revision, message
+		s.drafts[key] = d
+	}
 }
 
 type liveLaunchCommand struct {

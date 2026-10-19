@@ -11,10 +11,11 @@ import (
 )
 
 type draft struct {
-	Source, Revision, Owner string
-	File                    string
-	Kind                    string
-	Expires                 time.Time
+	Source, Revision, Owner   string
+	CheckRevision, CheckError string
+	File                      string
+	Kind                      string
+	Expires                   time.Time
 }
 
 // CSRF tokens are masked per response. Private drafts and live mount leases

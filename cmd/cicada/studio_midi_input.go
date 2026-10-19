@@ -14,10 +14,10 @@ import (
 type studioMIDIInput struct{ connected atomic.Bool }
 
 func (s *studio) midiInput(w http.ResponseWriter, r *http.Request) {
-	s.nativeMIDI.serve(w, r, midi.Open)
+	s.nativeMIDI.serve(w, r, midi.Open, s.transport.midiPosition)
 }
 
-func (m *studioMIDIInput) serve(w http.ResponseWriter, r *http.Request, open func(context.Context) (midi.Stream, error)) {
+func (m *studioMIDIInput) serve(w http.ResponseWriter, r *http.Request, open func(context.Context) (midi.Stream, error), position func(midi.Event) *midi.Position) {
 	if !studioSameOrigin(r) {
 		studioJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin MIDI input is not allowed"})
 		return
@@ -70,6 +70,9 @@ func (m *studioMIDIInput) serve(w http.ResponseWriter, r *http.Request, open fun
 		case event := <-stream.Events():
 			if !inputs.Accept(event) {
 				continue
+			}
+			if position != nil {
+				event.Position = position(event)
 			}
 			if !write(event) {
 				return

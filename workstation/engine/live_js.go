@@ -65,6 +65,7 @@ type liveUI struct {
 	active               map[string]int
 	takes                []control.Recording
 	recording            bool
+	clockEpoch           uint64
 	playhead             control.Playhead
 	playing              bool
 	sampled              time.Time
@@ -288,6 +289,10 @@ func (u *liveUI) poll() {
 			PendingSlots map[string]string `json:"pendingSlots"`
 		}
 		if read("/api/transport", &t) == nil && !u.closed.Load() {
+			if t.MIDIClockEpoch < u.clockEpoch {
+				continue
+			}
+			u.syncMIDIClock(t.MIDIClockEpoch)
 			u.playhead, u.playing, u.sampled = t.Playhead(), t.Playing, time.Now()
 			launch := "Scene: " + t.Scene
 			if t.PendingScene != "" {
@@ -335,7 +340,25 @@ func (u *liveUI) tick() int64 {
 	return u.playhead.NoteTick(time.Since(u.sampled), u.props.BPM)
 }
 
+func (u *liveUI) syncMIDIClock(epoch uint64) {
+	if epoch <= u.clockEpoch {
+		return
+	}
+	if u.clockEpoch != 0 {
+		u.closeNotes()
+		if u.recording {
+			u.recording = false
+			u.status.Set("Playback moved. Recording stopped; your take is retained.")
+		}
+	}
+	u.clockEpoch = epoch
+}
+
 func (u *liveUI) noteOn(id, track string, note, velocity int) {
+	u.noteOnAt(id, track, note, velocity, nil)
+}
+
+func (u *liveUI) noteOnAt(id, track string, note, velocity int, at *control.NoteTime) {
 	if track == "" || !u.playing {
 		u.status.Set("Select a track and press Play before sending notes.")
 		return
@@ -376,9 +399,12 @@ func (u *liveUI) noteOn(id, track string, note, velocity int) {
 			i = len(u.takes)
 			u.takes = append(u.takes, control.Recording{Track: track, Pattern: pattern})
 		}
-		tick := u.tick()
+		timing := control.NoteTime{Tick: u.tick()}
+		if at != nil {
+			timing = *at
+		}
 		n := len(u.takes[i].Notes)
-		u.takes[i].Notes = append(u.takes[i].Notes, control.Note{Tick: tick, EndTick: tick, Note: note, Velocity: velocity})
+		u.takes[i].Notes = append(u.takes[i].Notes, control.Note{Tick: timing.Tick, EndTick: timing.Tick, Note: note, Velocity: velocity, Input: timing.Input})
 		u.active[id] = i*1024 + n
 		u.saveTake()
 		label := "notes"
@@ -389,6 +415,10 @@ func (u *liveUI) noteOn(id, track string, note, velocity int) {
 	}
 }
 func (u *liveUI) noteOff(id string) {
+	u.noteOffAt(id, nil)
+}
+
+func (u *liveUI) noteOffAt(id string, at *control.NoteTime) {
 	h, ok := u.held[id]
 	if !ok {
 		return
@@ -404,7 +434,11 @@ func (u *liveUI) noteOff(id string) {
 		i, n := encoded/1024, encoded%1024
 		if i < len(u.takes) && n < len(u.takes[i].Notes) {
 			note := &u.takes[i].Notes[n]
-			note.EndTick = max(note.Tick, u.tick())
+			timing := control.NoteTime{Tick: u.tick()}
+			if at != nil {
+				timing = *at
+			}
+			note.End(timing)
 		}
 		delete(u.active, id)
 		u.saveTake()
@@ -770,6 +804,10 @@ func (u *liveUI) bindMIDI() {
 	u.status.Set(fmt.Sprintf("MIDI enabled · %d inputs · no system-exclusive access", count))
 }
 func (u *liveUI) midiMessage(device string, data js.Value) {
+	u.midiMessageAt(device, data, nil)
+}
+
+func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTime) {
 	if data.Length() < 3 {
 		return
 	}
@@ -780,7 +818,7 @@ func (u *liveUI) midiMessage(device string, data js.Value) {
 		return
 	}
 	if cc && (a == 120 || a == 123) {
-		u.releaseMIDIPrefix(fmt.Sprintf("midi:%s:%d:", device, channel))
+		u.releaseMIDIPrefixAt(fmt.Sprintf("midi:%s:%d:", device, channel), at)
 		return
 	}
 	if u.learning && (cc || on) {
@@ -860,9 +898,9 @@ func (u *liveUI) midiMessage(device string, data js.Value) {
 	}
 	id := fmt.Sprintf("midi:%s:%d:%d", device, channel, a)
 	if on {
-		u.noteOn(id, track, a, b)
+		u.noteOnAt(id, track, a, b, at)
 	} else if off {
-		u.noteOff(id)
+		u.noteOffAt(id, at)
 	}
 }
 func (u *liveUI) mappedAction(target string) {

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/bits"
 )
 
 var ErrUnsupported = errors.New("native MIDI input is unavailable on this platform; use a browser with Web MIDI")
@@ -21,16 +23,45 @@ type Device struct {
 // Data is a MIDI 1 channel message; Length distinguishes two-byte messages.
 // Devices events include removed sources so a reader can release their notes.
 type Event struct {
-	Type      string   `json:"type"`
-	Device    string   `json:"device,omitempty"`
-	Epoch     uint64   `json:"epoch,omitempty"`
-	Group     uint8    `json:"group,omitempty"`
-	Timestamp uint64   `json:"timestamp,omitempty"`
-	Data      [3]uint8 `json:"data,omitempty"`
-	Length    uint8    `json:"length,omitempty"`
-	Inputs    []Device `json:"inputs,omitempty"`
-	Removed   []string `json:"removed,omitempty"`
-	Message   string   `json:"message,omitempty"`
+	Type       string    `json:"type"`
+	Device     string    `json:"device,omitempty"`
+	Epoch      uint64    `json:"epoch,omitempty"`
+	Group      uint8     `json:"group,omitempty"`
+	Timestamp  uint64    `json:"timestamp,omitempty"`
+	HostNanos  int64     `json:"hostNanos,omitempty"`
+	TimeSource string    `json:"timeSource,omitempty"`
+	Position   *Position `json:"position,omitempty"`
+	Data       [3]uint8  `json:"data,omitempty"`
+	Length     uint8     `json:"length,omitempty"`
+	Inputs     []Device  `json:"inputs,omitempty"`
+	Removed    []string  `json:"removed,omitempty"`
+	Message    string    `json:"message,omitempty"`
+}
+
+// Position is the native transport position at the event's source time. Its
+// epoch changes when playback restarts or moves; stale events cannot enter a
+// new recording. Invalid positions retain their source time for later review.
+type Position struct {
+	Epoch   uint64 `json:"epoch"`
+	Tick    int64  `json:"tick"`
+	Playing bool   `json:"playing"`
+	Valid   bool   `json:"valid"`
+	Stale   bool   `json:"stale,omitempty"`
+}
+
+func scaleHostTime(stamp uint64, numerator, denominator uint32) (int64, bool) {
+	if numerator == 0 || denominator == 0 {
+		return 0, false
+	}
+	hi, lo := bits.Mul64(stamp, uint64(numerator))
+	if hi >= uint64(denominator) {
+		return 0, false
+	}
+	nanos, _ := bits.Div64(hi, lo, uint64(denominator))
+	if nanos > math.MaxInt64 {
+		return 0, false
+	}
+	return int64(nanos), true
 }
 
 type Stream interface {

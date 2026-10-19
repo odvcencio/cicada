@@ -13,12 +13,17 @@ import (
 	"syscall/js"
 
 	"m31labs.dev/cicada/host/midi"
+	"m31labs.dev/cicada/workstation/control"
 )
 
 func (u *liveUI) releaseMIDIPrefix(prefix string) {
+	u.releaseMIDIPrefixAt(prefix, nil)
+}
+
+func (u *liveUI) releaseMIDIPrefixAt(prefix string, at *control.NoteTime) {
 	for id := range u.held {
 		if strings.HasPrefix(id, prefix) {
-			u.noteOff(id)
+			u.noteOffAt(id, at)
 		}
 	}
 }
@@ -80,10 +85,18 @@ func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) string {
 		if ctx.Err() != nil || u.closed.Load() || generation != u.nativeMIDIGeneration {
 			return "MIDI disconnected."
 		}
+		if event.Position != nil {
+			u.syncMIDIClock(event.Position.Epoch)
+		}
+		timing, current := control.NativeNoteTime(event, u.clockEpoch, u.tick())
+		var at *control.NoteTime
+		if current {
+			at = &timing
+		}
 		switch event.Type {
 		case "devices":
 			for _, id := range event.Removed {
-				u.releaseMIDIPrefix("midi:native:" + id + ":")
+				u.releaseMIDIPrefixAt("midi:native:"+id+":", at)
 			}
 			var names []string
 			for _, device := range event.Inputs {
@@ -98,13 +111,18 @@ func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) string {
 				u.status.Set("MIDI connected · " + strings.Join(names, ", "))
 			}
 		case "reset":
-			u.releaseMIDIPrefix("midi:native:" + event.Device + ":")
+			if current {
+				u.releaseMIDIPrefixAt("midi:native:"+event.Device+":", at)
+			}
 		case "message":
+			if !current {
+				continue
+			}
 			if event.Length < 2 || event.Length > 3 {
 				return "MIDI input returned an invalid message."
 			}
 			values := []any{event.Data[0], event.Data[1], event.Data[2]}
-			u.midiMessage(fmt.Sprintf("native:%s:g%d", event.Device, event.Group), js.ValueOf(values))
+			u.midiMessageAt(fmt.Sprintf("native:%s:g%d", event.Device, event.Group), js.ValueOf(values), at)
 		case "error":
 			return event.Message
 		}

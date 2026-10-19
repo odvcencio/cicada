@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/host/midi"
 )
 
 type studioTakeNote struct {
@@ -14,6 +15,7 @@ type studioTakeNote struct {
 	NoteID      uint16                 `json:"noteId,omitempty"`
 	Channel     uint8                  `json:"channel,omitempty"`
 	Expressions []studioTakeExpression `json:"expressions,omitempty"`
+	Input       *midi.NoteTiming       `json:"input,omitempty"`
 }
 
 type studioTakeExpression struct {

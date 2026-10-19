@@ -12,12 +12,15 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/cicada/workstation/control"
 )
 
 func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	var revision atomic.Value
 	revision.Store("initial")
 	commands := make(chan map[string]any, 8)
+	var checks atomic.Int32
+	var refuseCheck atomic.Bool
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -34,6 +37,28 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 			_, _ = w.Write([]byte(`{"playing":true,"bar":1,"step":1}`))
 		case "/api/params":
 			_, _ = w.Write([]byte(`{"registry":[],"addresses":[]}`))
+		case "/api/intents":
+			var check struct {
+				Version  int    `json:"version"`
+				Revision string `json:"revision"`
+				DryRun   bool   `json:"dryrun"`
+				Intents  []struct {
+					Kind       string              `json:"kind"`
+					Recordings []control.Recording `json:"recordings"`
+				} `json:"intents"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&check); err != nil || check.Version != 1 || !check.DryRun || len(check.Intents) != 1 || check.Intents[0].Kind != "recordtake" || len(check.Intents[0].Recordings) != 1 || check.Revision == "" {
+				t.Errorf("invalid pattern check: %+v, %v", check, err)
+				w.WriteHeader(400)
+				return
+			}
+			checks.Add(1)
+			if refuseCheck.Load() {
+				w.WriteHeader(503)
+				_, _ = w.Write([]byte(`{"error":"Pattern check temporarily unavailable."}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"valid":true,"dryrun":true}`))
 		case "/api/record", "/api/live":
 			var data map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&data)
@@ -130,6 +155,9 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	if len(commands) != 0 {
 		t.Fatal("preview wrote notes before commit")
 	}
+	if checks.Load() != 1 {
+		t.Fatal("preview skipped the native pattern check")
+	}
 	otherJar, _ := cookiejar.New(nil)
 	if strings.Contains(getPage(t, &http.Client{Jar: otherJar}, app.URL+"/?panel=live"), "Retained note take") {
 		t.Fatal("take leaked to another session")
@@ -156,5 +184,21 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	}
 	if strings.Contains(getPage(t, client, app.URL+"/?panel=live"), "Retained note take") {
 		t.Fatal("committed note take remained active")
+	}
+	refuseCheck.Store(true)
+	if r := jsonPost("/__actions/note-preview", map[string]string{"revision": "newer", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":20,"endTick":180,"note":64,"velocity":100}]}]`}, csrf); r.StatusCode != 200 {
+		t.Fatalf("failed check discarded take: %d", r.StatusCode)
+	}
+	failed := getPage(t, client, app.URL+"/?panel=live")
+	if !strings.Contains(failed, "temporarily unavailable") || !strings.Contains(failed, "E4") {
+		t.Fatal("failed check lost the original performance or its error")
+	}
+	refuseCheck.Store(false)
+	form.Set("intent", "check")
+	r = post(t, client, app.URL+"/__actions/note-commit", form, false, app.URL)
+	r.Body.Close()
+	checked := getPage(t, client, app.URL+"/?panel=live")
+	if r.StatusCode != 303 || !strings.Contains(checked, "Pattern check passed") || !strings.Contains(checked, "E4") || checks.Load() != 3 || len(commands) != 0 {
+		t.Fatal("rechecking changed the performance or wrote the score")
 	}
 }

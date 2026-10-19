@@ -266,6 +266,20 @@ func (p *Publisher) PublishHealth(f HealthFrame) {
 	p.publish(FrameHealth, b)
 }
 
+// Transport returns the newest transport value without copying meter buffers.
+func (p *Publisher) Transport() (TransportFrame, bool) {
+	if p == nil {
+		return TransportFrame{}, false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.latest[FrameTransport]) != TransportFrameSize {
+		return TransportFrame{}, false
+	}
+	f, err := DecodeTransportFrame(p.latest[FrameTransport])
+	return f, err == nil
+}
+
 // Latest returns copies of the newest frame of each kind, indexed by
 // FrameKind. A kind that was never published is nil.
 func (p *Publisher) Latest() [4][]byte {

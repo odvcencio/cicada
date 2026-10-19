@@ -36,6 +36,8 @@ type coreAPI struct {
 	stringRead                  func(uintptr, *byte, int64, uint32) bool
 	release                     func(uintptr)
 	runLoop                     func()
+	timebase                    func(*[2]uint32) int32
+	timeRatio                   [2]uint32
 	displayName, name, uniqueID uintptr
 	// The input and notification blocks live for the process. Connection
 	// changes never allocate another Go callback or native block.
@@ -115,7 +117,12 @@ func (a *coreAPI) initializeOnThread() {
 	bind(&a.stringRead, cf, "CFStringGetCString")
 	bind(&a.release, cf, "CFRelease")
 	bind(&a.runLoop, cf, "CFRunLoopRun")
+	bind(&a.timebase, purego.RTLD_DEFAULT, "mach_timebase_info")
 	if a.err != nil {
+		return
+	}
+	if a.timebase(&a.timeRatio) != 0 || a.timeRatio[0] == 0 || a.timeRatio[1] == 0 {
+		a.err = fmt.Errorf("CoreMIDI host timebase is unavailable")
 		return
 	}
 	class, err := purego.Dlsym(purego.RTLD_DEFAULT, "_NSConcreteGlobalBlock")
@@ -350,7 +357,7 @@ func (s *coreStream) refresh(initial bool) error {
 			return cmp.Compare(a.ID, b.ID)
 		})
 		slices.Sort(removed)
-		s.emit(Event{Type: "devices", Inputs: inputs, Removed: removed})
+		s.emit(Event{Type: "devices", Inputs: inputs, Removed: removed, HostNanos: HostTimeNanos(), TimeSource: "arrival"})
 	}
 	return nil
 }
@@ -372,9 +379,16 @@ func receiveCoreMIDI(_ unsafe.Pointer, list unsafe.Pointer, token uintptr) {
 		return
 	}
 	packet := unsafe.Add(list, 8)
+	arrival := HostTimeNanos()
 	remaining := uint32(65536)
 	for i := uint32(0); i < packets; i++ {
 		stamp := *(*uint64)(packet)
+		hostNanos, timeSource := arrival, "arrival"
+		if stamp != 0 {
+			if converted, valid := scaleHostTime(stamp, core.timeRatio[0], core.timeRatio[1]); valid {
+				hostNanos, timeSource = converted, "source"
+			}
+		}
 		count := *(*uint32)(unsafe.Add(packet, 8))
 		if count > remaining {
 			connection.stream.fail(fmt.Errorf("CoreMIDI packet words exceed limit"))
@@ -386,6 +400,7 @@ func receiveCoreMIDI(_ unsafe.Pointer, list unsafe.Pointer, token uintptr) {
 			event.Device = connection.device.ID
 			event.Epoch = connection.device.Epoch
 			event.Timestamp = stamp
+			event.HostNanos, event.TimeSource = hostNanos, timeSource
 			connection.stream.emit(event)
 		}); err != nil {
 			connection.stream.fail(err)

@@ -13,10 +13,11 @@ import (
 // layout is TransportFrame v1 in host/liveplay/telemetry.go; keep native audio
 // dependencies out of the browser module.
 type PlaybackState struct {
-	Playing bool  `json:"playing"`
-	Bar     int64 `json:"bar"`
-	Step    int64 `json:"step"`
-	Frames  struct {
+	MIDIClockEpoch uint64 `json:"midiClockEpoch"`
+	Playing        bool   `json:"playing"`
+	Bar            int64  `json:"bar"`
+	Step           int64  `json:"step"`
+	Frames         struct {
 		Transport string `json:"transport"`
 	} `json:"frames"`
 	Range     *PlaybackRange `json:"listening"`

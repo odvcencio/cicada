@@ -20,6 +20,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/host/midi"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/project"
@@ -56,6 +57,8 @@ type studioTransport struct {
 	pendingSong       string
 	pendingSongID     uint64
 	snapshotSeq       uint64
+	midiTimeline      midi.Timeline
+	midiFrameWall     int64
 	scene             string
 	stoppedTracks     map[string]bool
 	activeSlots       map[string]string
@@ -88,6 +91,7 @@ type snapshotFrames struct {
 }
 
 type transportSnapshot struct {
+	MIDIClockEpoch      uint64              `json:"midiClockEpoch"`
 	Frames              *snapshotFrames     `json:"frames,omitempty"`
 	Type                string              `json:"type"`
 	Sequence            uint64              `json:"sequence"`
@@ -153,7 +157,8 @@ func (t *studioTransport) snapshot() transportSnapshot {
 			t.scene, t.activeSlots = scene, nil
 		}
 	}
-	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	t.observeMIDIClockLocked()
+	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, MIDIClockEpoch: t.midiTimeline.Epoch(), Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if t.stream != nil {
 		stats := t.stream.StreamStats()
 		if stats.ArenaBytes > 0 {
@@ -267,6 +272,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.stopPreviewLocked()
+	changeMIDIClock := t.stream == nil || !t.playing || index >= 0 || listening != nil || t.listening != nil
 	if t.stream != nil {
 		wasListening := t.listening != nil
 		if listening != nil {
@@ -347,8 +353,12 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 			}
 		}
 		t.playing, t.errText = true, ""
+		if changeMIDIClock {
+			t.resetMIDIClockLocked()
+		}
 		t.stream.SetTransportPlaying(true)
 		t.stream.PublishTelemetry()
+		t.observeMIDIClockLocked()
 		t.publishHealthLocked()
 		return nil
 	}
@@ -445,7 +455,9 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		t.scene = stream.CurrentScene()
 	}
 	stream.SetPublisher(t.telemetry)
+	t.resetMIDIClockLocked()
 	stream.PublishTelemetry()
+	t.observeMIDIClockLocked()
 	t.publishHealthLocked()
 	go t.watch(ctx, stream)
 	return nil
@@ -556,6 +568,9 @@ func (t *studioTransport) pause() {
 }
 
 func (t *studioTransport) pauseLocked() {
+	if t.playing {
+		t.resetMIDIClockLocked()
+	}
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
@@ -777,6 +792,11 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 			}
 			t.mu.Unlock()
 			stream.PublishTelemetry()
+			t.mu.Lock()
+			if t.stream == stream {
+				t.observeMIDIClockLocked()
+			}
+			t.mu.Unlock()
 		case <-healthFrames.C:
 			t.mu.Lock()
 			t.publishHealthLocked()

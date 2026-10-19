@@ -4,6 +4,8 @@ package control
 import (
 	"fmt"
 	"math"
+
+	"m31labs.dev/cicada/host/midi"
 )
 
 type Descriptor struct {
@@ -55,10 +57,11 @@ func CCValue(d Descriptor, cc int) (*float64, error) {
 }
 
 type Note struct {
-	Tick     int64 `json:"tick"`
-	EndTick  int64 `json:"endTick"`
-	Note     int   `json:"note"`
-	Velocity int   `json:"velocity"`
+	Tick     int64            `json:"tick"`
+	EndTick  int64            `json:"endTick"`
+	Note     int              `json:"note"`
+	Velocity int              `json:"velocity"`
+	Input    *midi.NoteTiming `json:"input,omitempty"`
 }
 type Recording struct {
 	Track   string `json:"track"`
@@ -79,6 +82,9 @@ func ValidateRecordings(takes []Recording) error {
 		for _, n := range take.Notes {
 			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 {
 				return fmt.Errorf("recorded note range or timing is invalid")
+			}
+			if n.Input != nil && (n.Input.HostNanos <= 0 || n.Input.EndHostNanos != 0 && n.Input.EndHostNanos < n.Input.HostNanos || n.Input.Source != "source" && n.Input.Source != "arrival" || n.Input.EndSource != "" && n.Input.EndSource != "source" && n.Input.EndSource != "arrival") {
+				return fmt.Errorf("recorded input timing is invalid")
 			}
 		}
 	}

@@ -39,7 +39,7 @@ func TestNativeMIDIStreamChecksOriginAndClosesOnDisconnect(t *testing.T) {
 			s.events <- midi.Event{Type: "devices"}
 			opened <- s
 			return s, nil
-		})
+		}, nil)
 	}))
 	defer server.Close()
 	post := func(ctx context.Context, origin string) *http.Response {
@@ -96,7 +96,7 @@ func TestNativeMIDIStreamFailsClosedOnOverflow(t *testing.T) {
 	stream.errors <- midi.ErrOverflow
 	stream.events <- midi.Event{Type: "message", Data: [3]uint8{144, 60, 100}, Length: 3}
 	w := httptest.NewRecorder()
-	control.serve(w, httptest.NewRequest(http.MethodPost, "http://localhost/api/midi/input", nil), func(context.Context) (midi.Stream, error) { return stream, nil })
+	control.serve(w, httptest.NewRequest(http.MethodPost, "http://localhost/api/midi/input", nil), func(context.Context) (midi.Stream, error) { return stream, nil }, nil)
 	var event midi.Event
 	if err := json.Unmarshal(w.Body.Bytes(), &event); err != nil || event.Type != "error" || event.Message != midi.ErrOverflow.Error() {
 		t.Fatalf("overflow emitted stale input: %s %v", w.Body, err)
@@ -112,7 +112,7 @@ func TestNativeMIDIUnavailableReleasesConnectionClaim(t *testing.T) {
 	var control studioMIDIInput
 	for _, failure := range []error{midi.ErrUnsupported, errors.New("MIDI service unavailable")} {
 		w := httptest.NewRecorder()
-		control.serve(w, httptest.NewRequest(http.MethodPost, "http://localhost/api/midi/input", nil), func(context.Context) (midi.Stream, error) { return nil, failure })
+		control.serve(w, httptest.NewRequest(http.MethodPost, "http://localhost/api/midi/input", nil), func(context.Context) (midi.Stream, error) { return nil, failure }, nil)
 		want := http.StatusServiceUnavailable
 		if errors.Is(failure, midi.ErrUnsupported) {
 			want = http.StatusNotImplemented

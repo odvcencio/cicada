@@ -18,6 +18,23 @@ import (
 	"github.com/ebitengine/purego"
 )
 
+func TestNativeHostClockMatchesMachTimebase(t *testing.T) {
+	var timebase func(*[2]uint32) int32
+	var absoluteTime func() uint64
+	purego.RegisterLibFunc(&timebase, purego.RTLD_DEFAULT, "mach_timebase_info")
+	purego.RegisterLibFunc(&absoluteTime, purego.RTLD_DEFAULT, "mach_absolute_time")
+	var ratio [2]uint32
+	if timebase(&ratio) != 0 {
+		t.Fatal("Mach timebase unavailable")
+	}
+	before := HostTimeNanos()
+	converted, ok := scaleHostTime(absoluteTime(), ratio[0], ratio[1])
+	after := HostTimeNanos()
+	if !ok || before <= 0 || converted < before || converted > after {
+		t.Fatalf("CoreMIDI and transport clocks differ: %d <= %d <= %d (%v)", before, converted, after, ok)
+	}
+}
+
 func TestCoreMIDIInputHotplugAcrossProcesses(t *testing.T) {
 	if os.Getenv("CICADA_COREMIDI_HELPER") == "1" {
 		runCoreMIDISourceProcess(t)
@@ -88,11 +105,19 @@ func TestCoreMIDIInputHotplugAcrossProcesses(t *testing.T) {
 	if _, err := fmt.Fprintln(in, "send"); err != nil {
 		t.Fatal(err)
 	}
+	var packetTime int64
 	for _, want := range [][3]uint8{{0x90, 60, 100}, {0xb0, 21, 96}, {0x80, 60, 0}} {
 		event := wait(func(e Event) bool { return e.Type == "message" && e.Device == id })
 		if event.Data != want {
 			t.Fatalf("cross-process data=%v, want %v", event.Data, want)
 		}
+		if event.TimeSource != "source" || event.Timestamp == 0 || event.HostNanos <= 0 || HostTimeNanos()-event.HostNanos < int64(400*time.Millisecond) {
+			t.Fatalf("lost delayed source timestamp: %+v", event)
+		}
+		if packetTime != 0 && event.HostNanos != packetTime {
+			t.Fatal("one UMP packet acquired different event times")
+		}
+		packetTime = event.HostNanos
 	}
 	if _, err := fmt.Fprintln(in, "drop"); err != nil {
 		t.Fatal(err)
@@ -147,9 +172,13 @@ func runCoreMIDISourceProcess(t *testing.T) {
 		t.Fatal("missing send command", err)
 	}
 	words := []uint32{0x20903c64, 0x20b01560, 0x20803c00}
+	var absoluteTime func() uint64
+	purego.RegisterLibFunc(&absoluteTime, purego.RTLD_DEFAULT, "mach_absolute_time")
+	delay := uint64(500*time.Millisecond) * uint64(core.timeRatio[1]) / uint64(core.timeRatio[0])
+	stamp := absoluteTime() - delay
 	packet := make([]byte, 256)
 	first := init(unsafe.Pointer(&packet[0]), 1)
-	if add(unsafe.Pointer(&packet[0]), uintptr(len(packet)), first, 0, uintptr(len(words)), &words[0]) == nil {
+	if add(unsafe.Pointer(&packet[0]), uintptr(len(packet)), first, stamp, uintptr(len(words)), &words[0]) == nil {
 		t.Fatal("packet overflow")
 	}
 	if status := send(source, unsafe.Pointer(&packet[0])); status != 0 {
