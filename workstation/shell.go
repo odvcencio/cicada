@@ -137,11 +137,6 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	dockPanel := func(id string, content func() gosx.Node) gosx.Node {
 		return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id, Tab: "detail-tab-" + id, Hidden: id != dock}, content())
 	}
-	later := func(id, text string) func() gosx.Node {
-		return func() gosx.Node {
-			return ui.Panel(ui.PanelProps{ID: id, Title: "Not in this view yet", Description: text})
-		}
-	}
 
 	browser := ui.Browser(ui.BrowserProps{Open: true, Width: strconv.Itoa(shellBrowserWidth)},
 		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Title: "Instruments", Open: true}, panel("instruments")),
@@ -158,8 +153,8 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ClipHref: shellLink(current, "dock", "clip"), DeviceHref: shellLink(current, "dock", "device"), AutomationHref: shellLink(current, "dock", "automation"),
 		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", Height: strconv.Itoa(shellDockHeight),
 	}, dockPanel("clip", func() gosx.Node { return panel("patterns") }),
-		dockPanel("device", later("detail-device-later", "The Device view arrives with the Browser lane; use Instruments in the Browser for now.")),
-		dockPanel("automation", later("detail-automation-later", "Automation lanes are in the Session panel under Arrange for now.")))
+		dockPanel("device", func() gosx.Node { return panel("device") }),
+		dockPanel("automation", func() gosx.Node { return panel("automation") }))
 	code := ui.CodeLens(ui.CodeLensProps{Open: true, Width: strconv.Itoa(shellCodeWidth)}, panel("code"), panel("collaboration"))
 
 	// This engine binds the surrounding document, rather than owning its
@@ -239,6 +234,7 @@ func registerShell(ctx *server.Context, tab, dock string) {
 			{Name: "dock", Signal: "$dock", Initial: dock},
 			{Name: "tool", Signal: "$tool", Initial: "select"},
 			{Name: "selectionActive", Signal: "$selectionActive", Initial: false},
+			{Name: "placementSelectionActive", Signal: "$placementSelectionActive", Initial: false},
 			layout("browserWidth", shellBrowserWidth), layout("codeWidth", shellCodeWidth), layout("dockHeight", shellDockHeight),
 			layout("browserOpen", true), layout("codeOpen", true),
 		},
@@ -367,12 +363,12 @@ func shellReturn(r *http.Request) {
 // score can still be repaired and inspected in the shell.
 var shellNeedsScore = map[string]bool{
 	"session": true, "live": true, "mixer": true, "patterns": true, "instruments": true,
-	"generator": true, "takes": true, "sampler": true,
+	"generator": true, "takes": true, "sampler": true, "device": true, "automation": true,
 }
 
 var shellPanelTitles = map[string]string{
 	"session": "Arrange", "live": "Session", "mixer": "Mixer", "patterns": "Clip", "instruments": "Instruments",
-	"generator": "Generate", "takes": "Takes", "sampler": "Sampler",
+	"generator": "Generate", "takes": "Takes", "sampler": "Sampler", "device": "Device", "automation": "Automation",
 }
 
 // shellPanel mounts a panel, or a short explanation when the score does not
@@ -390,5 +386,16 @@ func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name stri
 			node = unavailable("This panel could not read the score. Fix the score in the Code lens.")
 		}
 	}()
-	return s.panel(ctx, v, csrf, name)
+	switch name {
+	case "session":
+		// Automation lives in its detail tab in the shell. The standalone
+		// Session panel still renders its editors through panel().
+		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(v, csrf, ctx.Request.URL.Query().Get("placement")))
+	case "device":
+		return s.deviceDock(ctx, v, csrf)
+	case "automation":
+		return s.automationDock(ctx, v, csrf)
+	default:
+		return s.panel(ctx, v, csrf, name)
+	}
 }

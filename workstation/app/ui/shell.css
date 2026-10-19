@@ -73,3 +73,24 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 	.shell .shell-dialog { top:2vh; max-height:96vh; }
 }
 .shell main { padding:0; }
+
+/* Detail editors reuse the full panels' controls with compact dock spacing. */
+.shell .device-track-picker { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:0 0 12px; }
+.shell .device-track-picker .field { min-width:160px; margin:0; }
+.shell .device-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); align-items:start; gap:12px; }
+.shell .device-group { min-width:0; padding:12px; border:1px solid var(--border); border-radius:6px; background:var(--raised); }
+.shell .device-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr)); gap:8px 12px; }
+.shell .device-controls .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:6px; margin:0; }
+.shell .device-controls .mixer-control,.shell .device-controls .field { min-width:0; margin:0; }
+.shell .device-controls .field { flex:1 0 100%; }
+.shell .device-controls input,.shell .device-controls select { width:100%; min-width:0; }
+.shell .device-controls .muted { margin:0; }
+.shell .device-controls .effect-chain,.shell .device-controls .device-effect { grid-column:1/-1; margin:0; }
+.shell .device-effect > summary { cursor:pointer; padding:5px 0; color:var(--mint); }
+.shell .device-effect[open] > summary { margin-bottom:8px; }
+.shell #detail-panel-automation .panel-heading { margin-bottom:8px; }
+.shell #detail-panel-automation .automation-parameter-picker { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
+.shell #detail-panel-automation .automation-parameter-picker .field { margin:0; max-width:100%; }
+.shell #detail-panel-automation .automation-parameter-picker select { max-width:100%; }
+.shell #detail-panel-automation .automation-curve { height:128px; }
+.shell #detail-panel-automation .automation-curve-scroll { margin:8px 0; }

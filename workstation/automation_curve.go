@@ -99,7 +99,7 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 		value, at, shape, tension = first.Value, first.Tick, first.Shape, first.Curve
 	}
 	returnTo := "/?panel=session&curvePath=" + url.QueryEscape(selected)
-	chooser := gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("class", "action-form")), hidden("panel", "session"), field("Automation parameter", selectInput("curvePath", selected, paths, "Automation parameter")), submit("", "", "Show curve"))
+	chooser := gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "action-form automation-parameter-picker")), hidden("panel", "session"), field("Automation parameter", selectInput("curvePath", selected, paths, "Automation parameter")), submit("", "", "Show curve"))
 	pointForm := ui.Form(ui.FormProps{Action: "/__actions/automation", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form automation-point-form"},
 		hidden("path", selected), hidden("oldAt", map[bool]string{true: vocalPosition(at), false: ""}[len(props.Points) > 0]),
 		field("Point position", textInput("at", vocalPosition(at))), field("Point value", textInput("value", strconv.FormatFloat(value, 'f', -1, 64)+props.Unit)),
