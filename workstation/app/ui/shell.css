@@ -74,15 +74,24 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 }
 .shell main { padding:0; }
 
+/* Each detail tab keeps its own scroll position, so inspecting one device
+   cannot hide the next tab's heading. */
+.shell #studio-detail > .shell-tabs > .shell-scroll { flex:1; overflow:hidden; padding:0; }
+.shell #studio-detail > .shell-tabs > .shell-scroll > .gsx-tabs__panel { height:100%; overflow:auto; padding:8px 12px; }
+
 /* Detail editors reuse the full panels' controls with compact dock spacing. */
-.shell .device-track-picker { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:0 0 12px; }
-.shell .device-track-picker .field { min-width:160px; margin:0; }
+.shell #device-editor { padding:8px 12px; }
+.shell #device-editor > .panel-heading { gap:8px 16px; margin-bottom:6px; }
+.shell #device-editor > .panel-heading p { max-width:none; font-size:12px; }
+.shell .device-track-picker { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:0 0 8px; }
+.shell .device-track-picker .field { display:flex; align-items:center; gap:8px; min-width:0; margin:0; }
+.shell .device-track-picker select { width:160px; max-width:100%; }
 .shell .device-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); align-items:start; gap:12px; }
-.shell .device-group { min-width:0; padding:12px; border:1px solid var(--border); border-radius:6px; background:var(--raised); }
+.shell .device-group { min-width:0; padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--raised); }
 .shell .device-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr)); gap:8px 12px; }
 .shell .device-controls .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:6px; margin:0; }
 .shell .device-controls .mixer-control,.shell .device-controls .field { min-width:0; margin:0; }
-.shell .device-controls .field { flex:1 0 100%; }
+.shell .device-controls .field { flex:1 1 100px; gap:3px; }
 .shell .device-controls input,.shell .device-controls select { width:100%; min-width:0; }
 .shell .device-controls .muted { margin:0; }
 .shell .device-controls .effect-chain,.shell .device-controls .device-effect { grid-column:1/-1; margin:0; }
@@ -94,3 +103,12 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #detail-panel-automation .automation-parameter-picker select { max-width:100%; }
 .shell #detail-panel-automation .automation-curve { height:128px; }
 .shell #detail-panel-automation .automation-curve-scroll { margin:8px 0; }
+
+/* Browser panels have a sidebar's width, so their descriptions sit below the
+   title instead of being squeezed beside it. */
+.shell #studio-browser .panel > .panel-heading { display:block; margin-bottom:12px; }
+.shell #studio-browser .panel > .panel-heading p { max-width:none; margin-top:4px; text-align:left; }
+@media (max-width:600px) {
+	.shell #device-editor > .panel-heading { flex-direction:column; align-items:start; gap:4px; }
+	.shell #device-editor > .panel-heading p { text-align:left; }
+}
