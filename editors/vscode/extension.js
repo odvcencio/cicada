@@ -8,6 +8,7 @@ const { LanguageClient } = require("vscode-languageclient/node");
 let client;
 let scorePath;
 let studioURL;
+let studioOpened = false;
 let panel;
 let starting;
 
@@ -21,6 +22,7 @@ async function start(score) {
   const binary = vscode.workspace.getConfiguration("cicada").get("serverPath") || "cicada";
   scorePath = score;
   studioURL = undefined;
+  studioOpened = false;
   let child;
   const serverOptions = () => new Promise((resolve, reject) => {
     child = spawn(binary, ["studio", score, "--lsp-stdio"], {
@@ -47,11 +49,14 @@ async function start(score) {
         if (end < 0) break;
         const line = pending.slice(0, end).trim();
         pending = pending.slice(end + 1);
-        const match = /^Cicada Studio: (http:\/\/[^\s]+\/)$/u.exec(line);
+        const match = /^Cicada Studio: (http:\/\/\S+)$/u.exec(line);
         if (!match || settled) continue;
-        const url = new URL(match[1]);
-        if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
-          fail(new Error("Studio reported a non-loopback address"));
+        let url;
+        try { url = new URL(match[1]); } catch { /* rejected below */ }
+        if (!url || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) ||
+            url.username || url.password || url.search || url.hash ||
+            !/^\/(?:__local\/[A-Za-z0-9_-]{20,128})?$/u.test(url.pathname)) {
+          fail(new Error("Studio reported an invalid local startup address"));
           child.kill();
           return;
         }
@@ -88,7 +93,10 @@ async function openStudio() {
     vscode.window.showErrorMessage("Open a .cicada score before opening Studio.");
     return;
   }
-  if (score !== scorePath) {
+  // A new webview can have a different cookie partition. Restarting supplies
+  // a fresh one-use owner capability while keeping the saved profile identity.
+  const reopen = !panel && studioOpened && studioURL && new URL(studioURL).pathname !== "/";
+  if (score !== scorePath || !client || reopen) {
     if (starting) await starting.catch(() => {});
     if (client) await client.stop();
     await start(score);
@@ -96,13 +104,19 @@ async function openStudio() {
     await starting;
   }
   if (!studioURL) throw new Error("Studio is not running");
+  if (panel && studioOpened) {
+    panel.reveal(vscode.ViewColumn.Beside);
+    return;
+  }
   if (panel) panel.dispose();
-  panel = vscode.window.createWebviewPanel(
+  const nextPanel = vscode.window.createWebviewPanel(
     "cicadaStudio", "Cicada Studio", vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] }
   );
-  panel.onDidDispose(() => { panel = undefined; });
+  panel = nextPanel;
+  nextPanel.onDidDispose(() => { if (panel === nextPanel) panel = undefined; });
   await renderPanel();
+  studioOpened = true;
 }
 
 async function renderPanel() {

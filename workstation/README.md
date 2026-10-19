@@ -133,8 +133,9 @@ alternate production recording path: recording uses Tymbal's selected native
 input. Web MIDI is explicitly feature-detected inside the unrestricted
 Go/WASM engine; no nonexistent framework MIDI capability is declared.
 
-The **Collaborate** panel shares a score draft over a GoSX hub. The first active
-session owns the workspace; later sessions start as viewers. The owner can
+The **Collaborate** panel shares a score draft over a GoSX hub. The desktop's
+one-use startup URL restores the local owner, including after browser cookie
+loss. Other sessions start as viewers. The owner can
 create single-use editor or viewer invitation codes that expire after 15 minutes.
 The server checks roles on every score operation, save, and workspace action.
 Presence shows each connected editor's role and cursor line. **Undo my edit**
@@ -146,8 +147,11 @@ private tab storage and merge on reconnect. Studio stores the shared draft in a
 private `.collaboration` file beside the score, including invalid drafts. **Save
 shared score** validates the current synchronized draft and checks the disk
 revision before changing the score. File changes from another editor produce a
-conflict and retain the shared draft. Access remains loopback-only, and roles
-are issued anew after restarting Studio. Shared draft history is bounded to
+conflict and retain the shared draft. Access remains loopback-only. Desktop
+membership and private note performances persist in the local profile across
+restarts; checkpoint recovery opens a review copy and keeps the score unchanged.
+Applied and dismissed performances remain available in Live's history.
+Shared draft history is bounded to
 20,000 operations and 8 MiB of inserted text; automatic compaction is not yet
 available. Run `make test-collaboration` for the seeded convergence, offline
 PCM24, role, undo, and reconnect checks, and `make test-studio-collaboration`

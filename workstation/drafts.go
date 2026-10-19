@@ -16,6 +16,7 @@ type draft struct {
 	File                      string
 	Kind                      string
 	Expires                   time.Time
+	SavedNoteID               string
 }
 
 // CSRF tokens are masked per response. Private drafts and live mount leases
@@ -81,10 +82,16 @@ func (s *studioApp) storeDraft(source, revision, owner, kind string) (string, er
 
 func (s *studioApp) draft(id, owner string) (draft, bool) {
 	s.draftMu.Lock()
-	defer s.draftMu.Unlock()
 	d, ok := s.drafts[id]
-	if !ok || d.Owner != owner || time.Now().After(d.Expires) {
-		return draft{}, false
+	s.draftMu.Unlock()
+	if ok && d.Owner == owner && !time.Now().After(d.Expires) {
+		return d, true
 	}
-	return d, true
+	if s.notes != nil {
+		if saved, err := s.notes.get(owner, id); err == nil && saved.State == "ready" {
+			s.cacheNoteDraft(saved, owner)
+			return noteDraft(saved, owner), true
+		}
+	}
+	return draft{}, false
 }

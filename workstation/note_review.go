@@ -115,9 +115,13 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 	nativeTiming, estimatedTiming := false, false
 	for _, n := range notes {
 		duration := performanceDuration(n.EndTick - n.Tick)
+		if n.EndEstimated {
+			duration += " · estimated"
+			estimatedTiming = true
+		}
 		if n.Input != nil {
 			nativeTiming = true
-			if n.Input.Estimated || n.Input.EndHostNanos == 0 {
+			if !n.EndEstimated && (n.Input.Estimated || n.Input.EndHostNanos == 0) {
 				duration += " · estimated"
 				estimatedTiming = true
 			}

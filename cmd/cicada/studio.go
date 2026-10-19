@@ -165,7 +165,12 @@ func studioCommand(args []string) error {
 		if lspStdio {
 			output = os.Stderr
 		}
-		cancelApp, done, launchErr := launchStudioWorkstation(workstationPath, "http://"+listener.Addr().String(), frontAddress, serviceToken, output)
+		stateDir, stateErr := studioWorkstationStateDir(studio.path)
+		if stateErr != nil {
+			_ = server.Close()
+			return stateErr
+		}
+		cancelApp, done, launchErr := launchStudioWorkstation(workstationPath, "http://"+listener.Addr().String(), frontAddress, serviceToken, stateDir, output)
 		if launchErr != nil {
 			_ = server.Close()
 			return launchErr

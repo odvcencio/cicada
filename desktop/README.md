@@ -25,6 +25,13 @@ WebView2 profile is Windows-only; WKWebView keeps its website data in the
 default store keyed by the bundle identifier. New projects go to
 `Documents\Cicada` or `~/Documents/Cicada`.
 
+Live saves private note checkpoints and finished performances in the desktop
+profile, scoped to the score's path. After a restart, use **Review saved
+performance** to open a copy without changing the score. **Previous note
+performances** also retains applied and dismissed takes. Recovery uses the last
+successful checkpoint; an interrupted held note has an estimated end. Keeping
+the profile and score path preserves this history.
+
 ## Build
 
 Windows (development):
@@ -87,7 +94,7 @@ ad-hoc signs the bundle. Output goes to `dist/macos`.
 
 The bundle is self-contained and builds from a clean checkout. The desktop
 host pins the published GoSX Darwin backend at
-[`efb6f4a234d8`](https://github.com/jvcencio/gosx/commit/efb6f4a234d89ec2f48e3ac360dd641f5de932ee)
+[`088e1fe1f18d`](https://github.com/jvcencio/gosx/commit/088e1fe1f18d02b2ca8bccf59f4baf3cfec6fab5)
 through a versioned replacement in `desktop/go.mod`. Go downloads and verifies
 it using `desktop/go.sum`; no local GoSX checkout or `go.work` is needed. This
 replacement can be removed once an upstream GoSX release includes the backend.
@@ -95,7 +102,7 @@ replacement can be removed once an upstream GoSX release includes the backend.
 Packaging sets `GOWORK=off` for every executable and the runtime, so a local
 workspace cannot override release dependencies. It also checks desktop backend
 availability before building the bundle. The workstation runtime retains its
-own pinned GoSX version.
+own matching GoSX pin, including the SVG namespace fix for dynamic note charts.
 An existing output app is replaced only after the new bundle passes signature
 verification. Packaging reuses the stripped workstation executable from the
 production runtime build, avoiding a second compilation.
@@ -108,7 +115,9 @@ python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/mac
 ```
 
 The smoke checks use disposable scores and the null audio backend. Reports
-and app logs are kept in the output directory.
+and app logs are kept in the output directory. The MIDI shutdown check opens
+its input inside the authenticated native window and keeps it open until
+SIGTERM, using the same cookie and CSRF checks as normal MIDI input.
 
 Development builds are ad-hoc signed (no Developer ID, no notarization), so
 Gatekeeper may ask the first time: right-click the bundle → **Open**.
@@ -123,6 +132,7 @@ Gatekeeper may ask the first time: right-click the bundle → **Open**.
 | `--devtools` | Enable the WebView2 developer tools (F12) |
 | `--mute` | Mute the page (tests) |
 | `--smoke-out <file>` | Write a startup report and exit once Studio loads (tests) |
+| `--smoke-midi` | With `--smoke-out`, keep native MIDI input open for shutdown testing |
 
 Linux: run `cicada studio` and open the printed address in a browser. The
 GoSX desktop runtime supports Windows and macOS natively; Linux stays on the

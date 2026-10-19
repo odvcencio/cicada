@@ -2,8 +2,6 @@
 """Check a packaged macOS app without an audio device or a user's project."""
 
 import argparse
-from html.parser import HTMLParser
-from http.cookiejar import CookieJar
 import json
 import os
 from pathlib import Path
@@ -14,17 +12,6 @@ import subprocess
 import tempfile
 import time
 import urllib.request
-
-
-class CSRFInput(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.token = None
-
-    def handle_starttag(self, tag, attrs):
-        values = dict(attrs)
-        if tag == "input" and values.get("name") == "csrf_token":
-            self.token = values.get("value")
 
 
 def alive(pid):
@@ -59,6 +46,8 @@ def check_launch(binary, output, mode):
         str(binary), "--audio", "null", "--data-dir", str(folder / "data"),
         "--smoke-out", str(report), "--smoke-hold", "5s" if mode == "normal" else "60s",
     ]
+    if mode == "midi-term":
+        args.append("--smoke-midi")
     marker = folder / "helper.pid"
     if mode.startswith("early-"):
         helper = folder / "slow-cicada"
@@ -69,7 +58,6 @@ def check_launch(binary, output, mode):
         args += ["--cicada", str(helper)]
     args.append(str(score))
     seen = set()
-    midi_stream = None
     with (folder / "stderr.log").open("w") as stderr:
         proc = subprocess.Popen(args, stdout=stderr, stderr=stderr)
         seen.add(proc.pid)
@@ -80,7 +68,7 @@ def check_launch(binary, output, mode):
                 seen |= descendants(proc.pid)
                 log = folder / "data/logs/studio.log"
                 text = log.read_text() if log.exists() else ""
-                match = re.search(r"Cicada Studio: (http://127\.0\.0\.1:\d+/)", text)
+                match = re.search(r"^Cicada Studio: (http://127\.0\.0\.1:\d+/)(?:__local/[A-Za-z0-9_-]{20,128})?\s*$", text, re.MULTILINE)
                 helper_pid = marker.read_text().strip() if marker.exists() else ""
                 if not checked and mode.startswith("early-") and helper_pid:
                     seen.add(int(helper_pid))
@@ -98,20 +86,14 @@ def check_launch(binary, output, mode):
                         with urllib.request.urlopen(url.rstrip("/") + path, timeout=5) as response:
                             response.read()
                     if mode == "midi-term":
-                        browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
-                        with browser.open(url + "?panel=live", timeout=5) as response:
-                            parser = CSRFInput()
-                            parser.feed(response.read().decode())
-                        if not parser.token:
-                            raise RuntimeError("native MIDI lifecycle test has no CSRF token")
-                        request = urllib.request.Request(
-                            url + "api/midi/input", data=b"{}", method="POST",
-                            headers={"Content-Type": "application/json", "X-CSRF-Token": parser.token, "Origin": url.rstrip("/")},
-                        )
-                        midi_stream = browser.open(request, timeout=5)
-                        event = json.loads(midi_stream.readline())
-                        if event.get("type") != "devices":
-                            raise RuntimeError(f"native MIDI did not connect: {event}")
+                        startup = json.loads(report.read_text()) if report.exists() else {}
+                        if startup.get("nativeMIDIError"):
+                            raise RuntimeError(f"native MIDI did not connect: {startup['nativeMIDIError']}")
+                        if "Native MIDI input disconnected" in text:
+                            raise RuntimeError("native MIDI disconnected before the shutdown signal")
+                        if "Native MIDI input connected" not in text:
+                            time.sleep(0.1)
+                            continue
                     if mode != "normal":
                         proc.send_signal(signal.SIGTERM if mode in {"term", "midi-term"} else signal.SIGINT)
                     checked = True
@@ -132,8 +114,6 @@ def check_launch(binary, output, mode):
                 raise RuntimeError(f"native window never loaded Studio: {startup}")
             return {"mode": mode, "pids": sorted(seen), "startup": startup, "nativeMIDIConnected": mode == "midi-term", "artifacts": str(folder)}
         finally:
-            if midi_stream is not None:
-                midi_stream.close()
             if proc.poll() is None:
                 proc.terminate()
                 try:

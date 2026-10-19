@@ -19,7 +19,7 @@ import (
 
 // studioReadyLine matches the address line `cicada studio` prints once it
 // listens.
-var studioReadyLine = regexp.MustCompile(`^Cicada Studio: (http://127\.0\.0\.1:\d+/)`)
+var studioReadyLine = regexp.MustCompile(`^Cicada Studio: (http://127\.0\.0\.1:\d+/(?:__local/[A-Za-z0-9_-]{20,128})?)\s*$`)
 
 const maxRecentFiles = 8
 

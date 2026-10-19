@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -26,6 +27,8 @@ func (s *studioApp) nativeMIDIInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(data), response.StatusCode)
 		return
 	}
+	slog.Info("Native MIDI input connected")
+	defer slog.Info("Native MIDI input disconnected")
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

@@ -247,16 +247,18 @@ func (s *studioApp) actions() map[string]action.Handler {
 			}
 			return map[string]any{"revision": f["revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
 		}),
-		"pattern":        s.patternAction,
-		"sampler":        s.samplerAction,
-		"live":           s.liveAction,
-		"launch":         s.launchAction,
-		"note-preview":   s.previewNotes,
-		"note-commit":    s.commitNotes,
-		"loudness-reset": s.mutation("/api/loudness/reset", func(f map[string]string) (any, error) { return edit(f), nil }),
-		"generate":       s.generatePhrase,
-		"mutate":         s.mutatePhrase,
-		"source":         s.saveSource,
+		"pattern":         s.patternAction,
+		"sampler":         s.samplerAction,
+		"live":            s.liveAction,
+		"launch":          s.launchAction,
+		"note-preview":    s.previewNotes,
+		"note-commit":     s.commitNotes,
+		"note-checkpoint": s.checkpointNotes,
+		"note-restore":    s.restoreNotes,
+		"loudness-reset":  s.mutation("/api/loudness/reset", func(f map[string]string) (any, error) { return edit(f), nil }),
+		"generate":        s.generatePhrase,
+		"mutate":          s.mutatePhrase,
+		"source":          s.saveSource,
 		"toggle": s.mutation("/api/toggle", func(f map[string]string) (any, error) {
 			step, err := integer(f, "step")
 			if err != nil {

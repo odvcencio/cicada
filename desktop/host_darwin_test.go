@@ -13,6 +13,22 @@ import (
 	"time"
 )
 
+func TestOpenLogRestrictsStartupCapability(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "studio.log")
+	if err := os.WriteFile(path, []byte("previous launch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log, err := openLog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	info, err := log.Stat()
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("startup log is not private: %v %v", info, err)
+	}
+}
+
 func TestSidecarReceivesChosenAudioSettingsFolder(t *testing.T) {
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "cicada")

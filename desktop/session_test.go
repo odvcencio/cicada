@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,15 @@ func TestStudioReadyLine(t *testing.T) {
 	}
 	if studioReadyLine.MatchString("Cicada Studio: http://example.com:80/") {
 		t.Fatal("non-loopback address matched")
+	}
+	local := "http://127.0.0.1:52341/__local/" + strings.Repeat("a", 26)
+	if match := studioReadyLine.FindStringSubmatch("Cicada Studio: " + local); len(match) != 2 || match[1] != local {
+		t.Fatal("desktop dropped the local startup capability")
+	}
+	for _, url := range []string{"http://127.0.0.1:52341/__local/short", "http://127.0.0.1:52341/other", "http://127.0.0.1:52341/@example.com"} {
+		if studioReadyLine.MatchString("Cicada Studio: " + url) {
+			t.Fatal("unexpected startup path accepted")
+		}
 	}
 }
 

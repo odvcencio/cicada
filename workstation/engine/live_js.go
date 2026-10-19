@@ -22,10 +22,11 @@ import (
 )
 
 type liveProps struct {
-	CSRF          string              `json:"csrf"`
-	Revision      string              `json:"revision"`
-	BPM           float64             `json:"bpm"`
-	TrackPatterns map[string][]string `json:"trackPatterns"`
+	CSRF            string              `json:"csrf"`
+	Revision        string              `json:"revision"`
+	BPM             float64             `json:"bpm"`
+	TrackPatterns   map[string][]string `json:"trackPatterns"`
+	PersistentNotes bool                `json:"persistentNotes"`
 }
 type liveMapping struct {
 	Device     string `json:"device"`
@@ -44,6 +45,14 @@ type liveJob struct {
 	Action string
 	Values map[string]string
 }
+
+type liveActionFailure struct {
+	Status  int
+	Message string
+}
+
+func (e *liveActionFailure) Error() string { return e.Message }
+
 type liveEvent struct {
 	Target   js.Value
 	Name     string
@@ -64,6 +73,13 @@ type liveUI struct {
 	counts               map[liveHeld]int
 	active               map[string]int
 	takes                []control.Recording
+	takeID               string
+	takeRevision         string
+	takeSequence         uint64
+	takeDirty            bool
+	checkpointWake       chan struct{}
+	finishing            bool
+	checkingTake         bool
 	recording            bool
 	clockEpoch           uint64
 	playhead             control.Playhead
@@ -93,6 +109,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan liveJob, 128), status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midi: js.Undefined()}
 	u.loadMappings()
 	u.midiNames = map[string]string{}
+	u.checkpointWake = make(chan struct{}, 1)
 	u.loadSettings()
 	u.refreshPatterns()
 	watch := signal.Watch(func() { root.Call("querySelector", "[data-live-status]").Set("textContent", u.status.Get()) })
@@ -107,6 +124,9 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.syncControls()
 	go u.runCommands()
 	go u.poll()
+	if u.props.PersistentNotes {
+		go u.checkpointNotes()
+	}
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
@@ -145,9 +165,9 @@ func (u *liveUI) on(target js.Value, name string, fn func(js.Value)) {
 }
 func (u *liveUI) query(selector string) js.Value  { return u.root.Call("querySelector", selector) }
 func (u *liveUI) selected(selector string) string { return u.query(selector).Get("value").String() }
-func (u *liveUI) queue(action string, values map[string]string) {
+func (u *liveUI) queue(action string, values map[string]string) bool {
 	if u.closed.Load() {
-		return
+		return false
 	}
 	if action == "live" {
 		u.sequence++
@@ -156,9 +176,11 @@ func (u *liveUI) queue(action string, values map[string]string) {
 	}
 	select {
 	case u.jobs <- liveJob{action, values}:
+		return true
 	default:
 		u.status.Set("Live command queue is full. Reopen Live to resume.")
 		u.releaseMount()
+		return false
 	}
 }
 func (u *liveUI) releaseMount() {
@@ -207,7 +229,7 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 		if action == "live" && resp.StatusCode == http.StatusConflict {
 			result.Message += ". Reopen Live to resume."
 		}
-		return nil, fmt.Errorf("%s", result.Message)
+		return nil, &liveActionFailure{Status: resp.StatusCode, Message: result.Message}
 	}
 	return result.Data, nil
 }
@@ -223,11 +245,20 @@ func (u *liveUI) runCommands() {
 			}
 			if err == nil && job.Action == "note-preview" && !u.closed.Load() {
 				u.takes = nil
+				u.takeID, u.takeRevision = "", ""
+				u.takeSequence, u.takeDirty, u.finishing = 0, false, false
 				u.active = map[string]int{}
 				u.saveTake()
 				u.syncControls()
 				u.status.Set("Note take retained for review. Commit it to patterns, or discard it.")
 				workspaceRefreshRequested.Set(workspaceRefreshRequested.Get() + 1)
+			}
+			if err != nil && job.Action == "note-preview" {
+				u.finishing = false
+				u.takeDirty = true
+			}
+			if job.Action == "note-preview" {
+				u.syncControls()
 			}
 		}
 	}
@@ -456,7 +487,7 @@ func (u *liveUI) syncControls() {
 	}
 	u.query("[data-live-control=record]").Set("disabled", !u.playing || u.recording || len(u.takes) > 0)
 	u.query("[data-live-control=record]").Call("setAttribute", "aria-pressed", strconv.FormatBool(u.recording))
-	u.query("[data-live-control=finish]").Set("disabled", len(u.takes) == 0)
+	u.query("[data-live-control=finish]").Set("disabled", len(u.takes) == 0 || u.finishing || u.checkingTake)
 	buttons := u.root.Call("querySelectorAll", "[data-live-note],[data-live-drum]")
 	for i := 0; i < buttons.Length(); i++ {
 		track, note := u.buttonNote(buttons.Index(i))
@@ -556,10 +587,15 @@ func (u *liveUI) bindControls() {
 			return
 		}
 		u.recording = true
+		u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
+		u.takeRevision, u.takeSequence = u.props.Revision, 0
 		u.syncControls()
 		u.status.Set("Recording notes. Finish the take to review it before committing.")
 	})
 	button("finish", func() {
+		if u.finishing || u.checkingTake {
+			return
+		}
 		u.closeNotes()
 		u.recording = false
 		if err := control.ValidateRecordings(u.takes); err != nil {
@@ -567,8 +603,14 @@ func (u *liveUI) bindControls() {
 			return
 		}
 		data, _ := json.Marshal(u.takes)
-		u.queue("note-preview", map[string]string{"revision": u.props.Revision, "recordings": string(data)})
-		u.status.Set("Retaining note take for review…")
+		u.finishing = true
+		u.takeSequence++
+		u.finishing = u.queue("note-preview", map[string]string{"revision": u.takeBaseRevision(), "recordings": string(data), "takeId": u.takeID, "sequence": strconv.FormatUint(u.takeSequence, 10)})
+		u.persistTakeStorage()
+		u.syncControls()
+		if u.finishing {
+			u.status.Set("Retaining note take for review…")
+		}
 	})
 	button("midi", u.enableMIDI)
 	button("learn", func() {
@@ -653,11 +695,24 @@ func (u *liveUI) saveMappings() {
 	u.storage().Call("setItem", "cicada.midi.mappings.v1", string(data))
 }
 func (u *liveUI) saveTake() {
+	if len(u.takes) > 0 {
+		u.takeDirty = true
+		select {
+		case u.checkpointWake <- struct{}{}:
+		default:
+		}
+	}
+	u.persistTakeStorage()
+}
+
+func (u *liveUI) persistTakeStorage() {
 	defer func() { _ = recover() }()
 	data, _ := json.Marshal(struct {
 		Revision string              `json:"revision"`
 		Takes    []control.Recording `json:"takes"`
-	}{u.props.Revision, u.takes})
+		ID       string              `json:"id"`
+		Sequence uint64              `json:"sequence"`
+	}{u.takeBaseRevision(), u.checkpointSnapshot(), u.takeID, u.takeSequence})
 	js.Global().Get("sessionStorage").Call("setItem", "cicada.note-take", string(data))
 }
 func (u *liveUI) restoreTake() {
@@ -669,10 +724,17 @@ func (u *liveUI) restoreTake() {
 	var saved struct {
 		Revision string              `json:"revision"`
 		Takes    []control.Recording `json:"takes"`
+		ID       string              `json:"id"`
+		Sequence uint64              `json:"sequence"`
 	}
 	if json.Unmarshal([]byte(v.String()), &saved) == nil && control.ValidateRecordings(saved.Takes) == nil {
 		u.takes = saved.Takes
-		u.props.Revision = saved.Revision
+		u.takeRevision, u.takeID, u.takeSequence = saved.Revision, saved.ID, saved.Sequence
+		if u.takeID == "" {
+			u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
+		}
+		u.takeDirty = true
+		u.checkingTake = u.props.PersistentNotes
 		u.status.Set("An unfinished note take was restored. Finish it to review and commit.")
 	}
 }

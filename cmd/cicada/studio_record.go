@@ -8,14 +8,15 @@ import (
 )
 
 type studioTakeNote struct {
-	Tick        int64                  `json:"tick"`
-	EndTick     int64                  `json:"endTick"`
-	Note        int                    `json:"note"`
-	Velocity    int                    `json:"velocity"`
-	NoteID      uint16                 `json:"noteId,omitempty"`
-	Channel     uint8                  `json:"channel,omitempty"`
-	Expressions []studioTakeExpression `json:"expressions,omitempty"`
-	Input       *midi.NoteTiming       `json:"input,omitempty"`
+	Tick         int64                  `json:"tick"`
+	EndTick      int64                  `json:"endTick"`
+	Note         int                    `json:"note"`
+	Velocity     int                    `json:"velocity"`
+	NoteID       uint16                 `json:"noteId,omitempty"`
+	Channel      uint8                  `json:"channel,omitempty"`
+	Expressions  []studioTakeExpression `json:"expressions,omitempty"`
+	Input        *midi.NoteTiming       `json:"input,omitempty"`
+	EndEstimated bool                   `json:"endEstimated,omitempty"`
 }
 
 type studioTakeExpression struct {

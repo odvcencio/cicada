@@ -9,6 +9,7 @@ tool m31labs.dev/gosx/cmd/gosx
 require (
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/net v0.52.0
+	golang.org/x/sys v0.47.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
 	m31labs.dev/gosx v0.57.11-0.20261010215726-f066763a70be
 	m31labs.dev/gosx/editor v0.19.11
@@ -37,7 +38,6 @@ require (
 	github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	golang.org/x/image v0.38.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
@@ -55,4 +55,4 @@ replace m31labs.dev/cicada => ..
 replace m31labs.dev/tymbal => github.com/jvcencio/tymbal v0.0.0-20261018235149-d90b3551827b
 
 // Preserve SVG namespaces in dynamically patched performance charts.
-replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261019011808-5029619202a3
+replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261019020039-088e1fe1f18d

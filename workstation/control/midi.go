@@ -57,11 +57,12 @@ func CCValue(d Descriptor, cc int) (*float64, error) {
 }
 
 type Note struct {
-	Tick     int64            `json:"tick"`
-	EndTick  int64            `json:"endTick"`
-	Note     int              `json:"note"`
-	Velocity int              `json:"velocity"`
-	Input    *midi.NoteTiming `json:"input,omitempty"`
+	Tick         int64            `json:"tick"`
+	EndTick      int64            `json:"endTick"`
+	Note         int              `json:"note"`
+	Velocity     int              `json:"velocity"`
+	Input        *midi.NoteTiming `json:"input,omitempty"`
+	EndEstimated bool             `json:"endEstimated,omitempty"`
 }
 type Recording struct {
 	Track   string `json:"track"`

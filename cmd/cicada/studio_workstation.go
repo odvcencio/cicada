@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+
+	"m31labs.dev/cicada/internal/audiobackend"
 )
 
 func findStudioWorkstation() (string, error) {
@@ -32,12 +35,25 @@ func findStudioWorkstation() (string, error) {
 	return "", fmt.Errorf("GoSX workstation executable is missing; run make build or install cicada-workstation next to cicada")
 }
 
-func launchStudioWorkstation(path, backend, address, token string, output io.Writer) (func(), <-chan error, error) {
+func studioWorkstationStateDir(score string) (string, error) {
+	settings, err := studioAudioSettingsPath(audiobackend.Null)
+	if err != nil {
+		return "", err
+	}
+	canonical, err := filepath.EvalSymlinks(score)
+	if err != nil {
+		return "", err
+	}
+	identity := sha256.Sum256([]byte(canonical))
+	return filepath.Join(filepath.Dir(filepath.Dir(settings)), "workspaces", hex.EncodeToString(identity[:])), nil
+}
+
+func launchStudioWorkstation(path, backend, address, token, stateDir string, output io.Writer) (func(), <-chan error, error) {
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(path, "--backend", backend, "--listen", address, "--parent-watch")
+	command := exec.Command(path, "--backend", backend, "--listen", address, "--state-dir", stateDir, "--parent-watch")
 	configureStudioWorkstation(command)
 	command.Env = append(os.Environ(), "CICADA_BACKEND_TOKEN="+token)
 	command.Stdin = reader

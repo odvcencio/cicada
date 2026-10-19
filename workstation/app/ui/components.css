@@ -148,9 +148,9 @@ td button { width:100%; }
 .live-keyboard,.live-drums { display:grid; grid-template-columns:repeat(auto-fit,minmax(65px,1fr)); gap:8px; margin:16px 0; }
 .live-keyboard button,.live-drums button { min-height:64px; touch-action:none; }
 #live .actions > .field { flex:1 1 180px; min-width:0; }
-.note-preview { margin-top:24px; border-top:1px solid var(--border); padding-top:22px; min-width:0; }
+.note-preview,.note-recovery { margin-top:24px; border-top:1px solid var(--border); padding-top:22px; min-width:0; }
 .note-preview h3 { margin-bottom:4px; }
-.note-preview .action-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.note-preview .action-form,.note-recovery .action-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .take-summary { color:var(--mint); margin:0 0 10px; }
 .take-recording { border:1px solid var(--border); border-radius:6px; margin:16px 0; padding:14px; min-width:0; }
 .take-destination { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px; }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,19 +24,51 @@ import (
 )
 
 type studioApp struct {
-	backend       *backend
-	collaboration *collaboration
-	draftMu       sync.Mutex
-	drafts        map[string]draft
+	backend        *backend
+	collaboration  *collaboration
+	draftMu        sync.Mutex
+	drafts         map[string]draft
+	notes          *noteStore
+	bootstrapMu    sync.Mutex
+	bootstrapToken string
 }
 
+type workspaceOptions struct {
+	StateDir       string
+	LocalBootstrap bool
+}
+type workspaceHandler struct {
+	http.Handler
+	startupPath string
+}
+
+func (h *workspaceHandler) StartupPath() string { return h.startupPath }
+
 func newApp(b *backend) (http.Handler, error) {
+	return newAppWithState(b, "")
+}
+
+func newAppWithState(b *backend, stateDir string) (http.Handler, error) {
+	return newConfiguredApp(b, workspaceOptions{StateDir: stateDir})
+}
+
+func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error) {
+	stateDir := options.StateDir
 	var key [32]byte
 	if _, err := rand.Read(key[:]); err != nil {
 		return nil, err
 	}
 	cookieName := "cicada-workstation"
-	if b != nil {
+	var notes *noteStore
+	if stateDir != "" {
+		var err error
+		notes, key, err = openNoteStore(stateDir)
+		if err != nil {
+			return nil, fmt.Errorf("open private note recovery: %w", err)
+		}
+		identity := sha256.Sum256([]byte(notes.dir))
+		cookieName += "-" + hex.EncodeToString(identity[:8])
+	} else if b != nil {
 		// Browser cookies share a host across ports. Isolate simultaneous
 		// workspaces by their private service origin, without exposing a key.
 		identity := sha256.Sum256([]byte(b.url.String()))
@@ -47,7 +80,16 @@ func newApp(b *backend) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &studioApp{backend: b, collaboration: newCollaboration(b)}
+	s := &studioApp{backend: b, collaboration: newCollaboration(b), notes: notes}
+	s.collaboration.access = notes
+	startupPath := "/"
+	if options.LocalBootstrap && notes != nil && b != nil {
+		if _, err := notes.localOwner("", ""); err != nil && !errors.Is(err, errLocalOwnerSession) {
+			return nil, err
+		}
+		s.bootstrapToken = rand.Text()
+		startupPath = "/__local/" + s.bootstrapToken
+	}
 	app := server.New()
 	root := runtimeRoot()
 	app.SetPublicDir("")
@@ -95,7 +137,10 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Use(sessions.Protect)
 	app.Page("GET /{$}", s.page)
 	if b == nil {
-		return app.Build(), nil
+		return &workspaceHandler{Handler: app.Build(), startupPath: startupPath}, nil
+	}
+	if s.bootstrapToken != "" {
+		app.Mount("GET /__local/{token}", http.HandlerFunc(s.bootstrapLocalOwner))
 	}
 	app.Mount("GET /collaboration/score", http.HandlerFunc(s.collaboration.serveHub))
 	app.Mount("POST /api/collaboration/invite", http.HandlerFunc(s.collaboration.invite))
@@ -114,6 +159,7 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Mount("POST /__instrument/import", http.HandlerFunc(s.importInstrument))
 	app.Mount("POST /__sampler/import", http.HandlerFunc(s.importSampler))
 	app.Mount("POST /api/midi/input", http.HandlerFunc(s.nativeMIDIInput))
+	app.Mount("GET /api/note-recovery/{id}", http.HandlerFunc(s.savedNoteState))
 	app.Mount("GET /media/sampler/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
 		s.samplerMedia(w, r)
@@ -145,7 +191,7 @@ func newApp(b *backend) (http.Handler, error) {
 			_, _ = w.Write(data)
 		}))
 	}
-	return app.Build(), nil
+	return &workspaceHandler{Handler: app.Build(), startupPath: startupPath}, nil
 }
 
 func (s *studioApp) page(ctx *server.Context) gosx.Node {

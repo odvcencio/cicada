@@ -103,9 +103,20 @@ func (s *studioApp) previewNotes(ctx *action.Context) error {
 		return action.Validation(err.Error(), nil, nil)
 	}
 	data, _ := json.Marshal(takes)
-	key, err := s.storeDraft(string(data), ctx.FormData["revision"], workspaceOwner(ctx.Request), "notes")
-	if err != nil {
-		return err
+	var key string
+	if s.notes != nil {
+		saved, err := s.saveNoteCheckpoint(ctx, "ready", takes)
+		if err != nil {
+			return err
+		}
+		key = saved.ID
+		s.cacheNoteDraft(saved, workspaceOwner(ctx.Request))
+	} else {
+		var err error
+		key, err = s.storeDraft(string(data), ctx.FormData["revision"], workspaceOwner(ctx.Request), "notes")
+		if err != nil {
+			return err
+		}
 	}
 	session.Current(ctx.Request).Set("note-preview", key)
 	s.checkNoteDraft(ctx, key, ctx.FormData["revision"], takes)
@@ -120,6 +131,14 @@ func (s *studioApp) previewNotes(ctx *action.Context) error {
 func (s *studioApp) commitNotes(ctx *action.Context) error {
 	store := session.Current(ctx.Request)
 	if ctx.FormData["intent"] == "discard" {
+		if d, ok := s.draft(store.String("note-preview"), workspaceOwner(ctx.Request)); ok && s.notes != nil && d.SavedNoteID != "" {
+			if err := s.notes.archive(d.Owner, d.SavedNoteID, "discarded"); err != nil {
+				return err
+			}
+		}
+		s.draftMu.Lock()
+		delete(s.drafts, store.String("note-preview"))
+		s.draftMu.Unlock()
 		store.Delete("note-preview")
 		ctx.RedirectBackWithMessage("/?panel=live", "Note take discarded.")
 		return nil
@@ -144,9 +163,18 @@ func (s *studioApp) commitNotes(ctx *action.Context) error {
 	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/record", map[string]any{"revision": revision, "recordings": takes}, nil); err != nil {
 		return domainActionError(err)
 	}
+	message := "Recorded notes committed. Undo restores the previous patterns."
+	if s.notes != nil && d.SavedNoteID != "" {
+		if err := s.notes.archive(d.Owner, d.SavedNoteID, "applied"); err != nil {
+			message = "Notes committed. The recovery copy could not be marked as applied; inspect your patterns before applying it again."
+		}
+	}
+	s.draftMu.Lock()
+	delete(s.drafts, store.String("note-preview"))
+	s.draftMu.Unlock()
 	store.Delete("note-preview")
 	ctx.FormData = nil
-	ctx.RedirectBackWithMessage("/?panel=live", "Recorded notes committed. Undo restores the previous patterns.")
+	ctx.RedirectBackWithMessage("/?panel=live", message)
 	return nil
 }
 
@@ -237,12 +265,12 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	if d, ok := s.draft(session.Current(ctx.Request).String("note-preview"), workspaceOwner(ctx.Request)); ok && d.Kind == "notes" {
 		preview = s.noteTakeReview(v, csrf, d)
 	}
-	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "preview": session.Current(ctx.Request).String("note-preview")})
+	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "preview": session.Current(ctx.Request).String("note-preview"), "persistentNotes": s.notes != nil})
 	// SSR controls are the engine's owned subtree. GoSX can preserve that
 	// subtree when props are unchanged without retaining detached listeners.
 	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview)
+	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), session.Current(ctx.Request).String("note-preview"), ctx.Request.URL.Query().Get("noteHistory") == "on"))
 }
 
 // Validate through the same native edit service that will commit the take.
