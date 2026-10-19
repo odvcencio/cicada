@@ -370,11 +370,12 @@ jobs:
           CICADA_COREMIDI_TEST=1 go test -race ./host/midi -run '^TestCoreMIDIInput' -count=1
           go test -race ./cmd/cicada -run '^Test(ApplyRefusesConcurrentSaveAtExchange|StudioLateExternalWriteSurvivesSavesAndRestart|StudioOpenWriterDuringCommitIsRetained|StudioRecoveryWithoutReceiptRefusesSave|RouteGuardsMatchIntentsAndApply|StudioNativeCaptureCapabilityCannotBeBypassedBySavedSettings|AudioSetup.*|InputAuthorization.*|MissingInputPermission.*|NativeMIDI.*|GoSXLive.*)$' -count=1
           CICADA_AUDIO_CALLBACK_NOALLOC=1 go test ./cmd/cicada -run '^TestStudioAudioRenderCallbackDoesNotAllocate$' -count=1
-      - name: Verify native and WASM audio determinism
+      - name: Verify native audio and WASM determinism
         run: |
           set -euo pipefail
           mkdir -p build
-          go test ./kernel/dsp/halfband ./kernel/graph ./kernel/voice/ep -count=1 -v | tee build/native-audio-determinism.log
+          make test-build-tools
+          go test ./kernel/amp ./kernel/dsp/halfband ./kernel/graph ./kernel/voice/ep -count=1 -v | tee build/native-audio-determinism.log
           go test -tags ep_wasm ./kernel/voice/ep -run '^TestEpNativeWASMDeterminism$' -count=1 -v | tee build/ep-wasm-determinism.log
       - name: Package and launch from a clean checkout
         run: |

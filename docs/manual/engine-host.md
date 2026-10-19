@@ -169,6 +169,15 @@ fields are in the [semantic reference](../spec/semantic-model.md).
 
 `make test-timing` checks musical boundary timing and block-size invariance.
 `make test-alloc` checks render allocations, including a sixteen-track chain.
+The amp cost check uses per-thread CPU time on Linux and macOS so scheduler
+delays do not count as DSP work during the parallel test suite. `make test-timing`
+also runs the separate 670 µs wall-clock check; run it on a quiet machine.
+
+Audio WASM builds need Go, TinyGo, and Python 3. They use an explicit `WASMOPT`
+executable when set, otherwise TinyGo's bundled `wasm-opt`, then Binaryen on
+`PATH`. The core, vocals, and sampler builds retain their 180-second default
+deadline and five-second termination grace on both Linux and macOS; GNU
+`timeout` is not required. `KERNEL_WASM_BUILD_TIMEOUT` changes the deadline.
 
 ## Fault codes
 
