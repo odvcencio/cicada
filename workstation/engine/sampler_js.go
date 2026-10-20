@@ -298,18 +298,8 @@ func (u *samplerUI) refreshLoop() {
 func (u *samplerUI) load() error {
 	u.loadMu.Lock()
 	defer u.loadMu.Unlock()
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequestWithContext(u.ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/sampler", nil)
-	response, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != 200 {
-		return fmt.Errorf("sampler state is unavailable")
-	}
 	var state samplerProjection
-	if err = json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&state); err != nil {
+	if err := readNativeJSON(u.ctx, "/api/sampler", 15*time.Second, 2<<20, &state); err != nil {
 		return err
 	}
 	if u.closed.Load() {

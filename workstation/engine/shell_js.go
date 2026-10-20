@@ -4,10 +4,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -84,7 +81,9 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			case "edit.redo":
 				selector = "#redo-form button[type=submit]"
 			case "edit.save":
-				selector = "#score form[action='/__actions/source'] button[type=submit]"
+				// Managed navigation may resolve the form action to an absolute URL.
+				// The mounted Code editor remains the save target in either form.
+				selector = "#score form[data-editor-native='true'] button[type=submit]"
 			default:
 				scene, err := strconv.Atoi(strings.TrimPrefix(id, "live.scene."))
 				if err != nil || scene < 1 || scene > 8 {
@@ -119,14 +118,5 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 }
 
 func readNativeProjection(ctx context.Context, path string, target any) bool {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+path, nil)
-	if err != nil {
-		return false
-	}
-	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
-	if err != nil {
-		return false
-	}
-	defer response.Body.Close()
-	return response.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(target) == nil
+	return readNativeJSON(ctx, path, 2*time.Second, 64<<10, target) == nil
 }

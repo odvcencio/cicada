@@ -581,11 +581,11 @@ async function scenario(t) {
     const beforeCode = await state('/api/state');
     const codeOriginal = beforeCode.source.replace(/\r\n/g, '\n');
     assert.ok(codeOriginal.includes('\n  \n'), 'fixture lost its indent-only blank line before the Score checks');
-    // The first-party editor displays empty lines without indentation while
-    // canonical source retains those bytes until the user saves edited text.
-    const cleanCode = codeOriginal.replace(/(^|\n)[ \t]+(?=\n|$)/g, '$1');
+    // The Code surface preserves whitespace-only lines, so indentation is
+    // byte-for-byte visible/editable until the user changes it.
+    const cleanCode = codeOriginal;
     assert.equal(await textarea.inputValue(), cleanCode);
-    assert.equal(await textarea.evaluate(editor => editor.value !== editor.defaultValue), false, 'canonical indentation made the clean editor dirty');
+    assert.equal(await textarea.evaluate(editor => editor.value !== editor.defaultValue), false, 'canonical whitespace made the clean editor dirty');
     await page.evaluate(() => {
       const editor = document.querySelector('#editor-content');
       window.__continuityCode = {root: document.querySelector('#cicada-workspace'), editor,
@@ -658,7 +658,7 @@ async function scenario(t) {
     assert.equal(requests.length, start, 'editor Ctrl-Z escaped into a global score action');
     assert.deepEqual(await state('/api/state'), beforeCode, 'editor Ctrl-Z changed the saved score');
     assert.equal(documentRequests, 0, 'editor Ctrl-Z navigated the document');
-    t.diagnostic('Score Save preserved exact visible text/editor/caret/scroll; Undo restored canonical indentation and a clean visible buffer; unrelated action retained unsaved text and native Ctrl-Z issued no score action.');
+    t.diagnostic('Score Save preserved exact visible text/editor/caret/scroll; Undo restored exact canonical whitespace and a clean visible buffer; unrelated action retained unsaved text and native Ctrl-Z issued no score action.');
     assert.deepEqual(errors, [], 'browser callback errors');
     assert.deepEqual(warnings, [], 'browser callback warnings');
     assert.equal(mixerRecord.status, 200, `action mixer: ${mixerRecord.result?.message || 'missing success response'}`);

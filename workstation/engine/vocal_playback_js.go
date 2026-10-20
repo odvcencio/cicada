@@ -3,39 +3,22 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
-	"syscall/js"
 	"time"
 
 	"m31labs.dev/cicada/workstation/control"
 )
 
 func (u *vocalLanesUI) watchPlayback() {
-	client := &http.Client{Timeout: 2 * time.Second}
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	lastFetch := time.Time{}
 	for {
 		if time.Since(lastFetch) >= 250*time.Millisecond {
 			lastFetch = time.Now()
-			req, err := http.NewRequestWithContext(u.ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/transport", nil)
-			if err != nil {
-				return
-			}
-			response, err := client.Do(req)
 			var state control.PlaybackState
-			if err == nil {
-				if response.StatusCode == 200 {
-					err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&state)
-				} else {
-					err = fmt.Errorf("transport unavailable")
-				}
-				response.Body.Close()
-			}
+			err := readNativeJSON(u.ctx, "/api/transport", 2*time.Second, 64<<10, &state)
 			if u.closed.Load() {
 				return
 			}

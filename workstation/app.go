@@ -127,6 +127,7 @@ func newApp(b *backend) (http.Handler, error) {
 		_, _ = w.Write(ui.CSS)
 	}))
 	app.Mount("/editor/", http.StripPrefix("/editor/", editor.AssetHandler()))
+	app.Mount("POST /__code/analysis", http.HandlerFunc(codeAnalysis))
 	app.Mount("GET /media/takes/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
 		s.takeAudio(w, r)
@@ -221,13 +222,13 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 			props.HasMessage = true
 		}
 		if name == "source" && !state.OK() {
-			if saved, ok := s.draft(state.Value("draft"), workspaceOwner(ctx.Request)); ok {
+			if saved, ok := s.draft(state.Value("draft"), workspaceOwner(ctx.Request)); ok && saved.File == view.File {
 				view.Source, view.FileRevision = saved.Source, saved.Revision
 			}
 		}
 	}
 	if panel == "code" {
-		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), workspaceOwner(ctx.Request)); ok && saved.File == view.File {
+		if saved, ok := s.sourceDraft(ctx.Request, view.File); ok {
 			view.Source, view.FileRevision = saved.Source, saved.Revision
 			view.HasDraft = true
 			if !props.HasMessage {

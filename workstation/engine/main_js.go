@@ -4,11 +4,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"sort"
 	"sync"
 	"syscall/js"
@@ -234,25 +231,14 @@ func mountMeters(host enginewasm.Context) (enginewasm.Handle, error) {
 	go func() {
 		ticker := time.NewTicker(time.Second / 20)
 		defer ticker.Stop()
-		client := &http.Client{Timeout: 2 * time.Second}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 			}
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/meters", nil)
-			if err != nil {
-				return
-			}
-			response, err := client.Do(request)
-			if err != nil {
-				continue
-			}
 			var frame meterFrame
-			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&frame)
-			response.Body.Close()
-			if response.StatusCode == http.StatusOK && decodeErr == nil && ctx.Err() == nil {
+			if readNativeJSON(ctx, "/api/meters", 2*time.Second, 64<<10, &frame) == nil && ctx.Err() == nil {
 				state.Set(frame)
 			}
 		}

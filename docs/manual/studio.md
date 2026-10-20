@@ -320,14 +320,32 @@ of discarding chord notes.
 
 ## Score and history
 
-**Score** uses the GoSX code editor with syntax highlighting, a gutter, and
-two-space indentation. **Score** lists the project files. Select a file, edit it, then use **Check file**
-to review its diagnostics or **Save file** to validate and write that file. Other
-score files retain their exact bytes. External changes refresh clean editors and
-project views; unsaved drafts remain available for an explicit merge. Saved
-revision files live in app data, with late writes from other editors retained. A rejected edit
-keeps the file unchanged and retains the draft across reload and navigation.
-Rejected drafts expire after thirty minutes or when Studio closes.
+The **Code** lens opens a score editor with live syntax highlighting, a gutter,
+and two-space indentation. **Tab** indents and **Shift-Tab** unindents the current
+line or selected lines. **Enter** carries indentation into the new line and
+indents inside braces. Editing incomplete notation keeps the text visible;
+highlighting does not save or change the playing song.
+
+Use **Command-F** on Mac (**Control-F** elsewhere) to find text. Replace uses
+**Command-Option-F** on Mac or **Control-H** elsewhere. **Command-/**
+(**Control-/**) toggles line comments. While the score text has focus,
+**Command-Z** / **Command-Shift-Z** (**Control-Z** / **Control-Shift-Z**)
+undo and redo text edits, including indentation and replacement. The Mac
+**Edit** menu uses the same text history. The Studio toolbar's **Undo** and
+**Redo** operate on saved project edits.
+
+Select a project file, edit it, then use **Check file** to review diagnostics
+without saving or **Save file** (**Command-S** / **Control-S**) to validate and
+write that file. Other score files retain their exact bytes. External changes
+refresh clean editors and project views; unsaved drafts remain available for an
+explicit merge. Saved revision files live in app data, with late writes from
+other editors retained. Checking or rejecting a file retains its draft across
+reload and navigation, independently of drafts in other project files.
+These recovery drafts expire after thirty minutes or when Studio closes.
+
+![Code editing beside the arrangement, with Save and Check inside the dock.](screenshots/studio-code-editor-1280.png)
+
+Find and Replace also fit the [Code pane on a phone](screenshots/studio-code-editor-390.png).
 
 Every Studio edit is an intent: a small, named change such as toggling a step,
 moving a song block, changing an arrangement placement, setting an automation
