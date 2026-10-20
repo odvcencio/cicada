@@ -4,10 +4,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -121,14 +118,5 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 }
 
 func readNativeProjection(ctx context.Context, path string, target any) bool {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+path, nil)
-	if err != nil {
-		return false
-	}
-	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
-	if err != nil {
-		return false
-	}
-	defer response.Body.Close()
-	return response.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(target) == nil
+	return readNativeJSON(ctx, path, 2*time.Second, 64<<10, target) == nil
 }

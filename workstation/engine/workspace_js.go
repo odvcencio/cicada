@@ -1850,26 +1850,16 @@ func (u *workspaceUI) watchFiles() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	requested := ""
-	client := &http.Client{Timeout: 3 * time.Second}
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		case <-ticker.C:
 		}
-		req, err := http.NewRequestWithContext(u.ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/revision", nil)
-		if err != nil {
-			return
-		}
-		response, err := client.Do(req)
-		if err != nil {
-			continue
-		}
 		var state struct {
 			Revision string `json:"projectRevision"`
 		}
-		err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state)
-		response.Body.Close()
+		err := readNativeJSON(u.ctx, "/api/revision", 3*time.Second, 4096, &state)
 		if err != nil || state.Revision == "" || state.Revision == requested || state.Revision == u.renderedProject() {
 			continue
 		}

@@ -4,11 +4,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"sync/atomic"
 	"syscall/js"
 	"time"
@@ -47,24 +44,11 @@ func captureRoot() js.Value {
 }
 
 func publishCapture(ctx context.Context) {
-	client := &http.Client{Timeout: 2 * time.Second}
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/capture", nil)
-		if err != nil {
-			return
-		}
-		response, err := client.Do(request)
 		state := nativeCapture.Get().State
-		if response != nil {
-			if response.StatusCode != http.StatusOK {
-				err = fmt.Errorf("capture service unavailable")
-			} else {
-				err = json.NewDecoder(io.LimitReader(response.Body, 16<<10)).Decode(&state)
-			}
-			response.Body.Close()
-		}
+		err := readNativeJSON(ctx, "/api/capture", 2*time.Second, 16<<10, &state)
 		if ctx.Err() != nil {
 			return
 		}

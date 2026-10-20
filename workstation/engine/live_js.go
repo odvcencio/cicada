@@ -223,22 +223,8 @@ func (u *liveUI) runCommands() {
 	}
 }
 func (u *liveUI) poll() {
-	client := &http.Client{Timeout: 2 * time.Second}
-	origin := js.Global().Get("location").Get("origin").String()
 	read := func(path string, out any) error {
-		req, e := http.NewRequestWithContext(u.ctx, http.MethodGet, origin+path, nil)
-		if e != nil {
-			return e
-		}
-		r, e := client.Do(req)
-		if e != nil {
-			return e
-		}
-		defer r.Body.Close()
-		if r.StatusCode != 200 {
-			return fmt.Errorf("live state unavailable")
-		}
-		return json.NewDecoder(io.LimitReader(r.Body, 2<<20)).Decode(out)
+		return readNativeJSON(u.ctx, path, 2*time.Second, 2<<20, out)
 	}
 	var params struct {
 		Registry []struct {
