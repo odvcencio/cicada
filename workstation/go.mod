@@ -10,7 +10,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/net v0.52.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
-	m31labs.dev/gosx v0.57.11-0.20261010215726-f066763a70be
+	m31labs.dev/gosx v0.57.16
 	m31labs.dev/gosx/editor v0.19.11
 )
 
@@ -31,7 +31,7 @@ require (
 	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
 	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 	github.com/odvcencio/corkscrewdb v0.2.0 // indirect
-	github.com/odvcencio/gotreesitter v0.54.0 // indirect
+	github.com/odvcencio/gotreesitter v0.56.0 // indirect
 	github.com/odvcencio/turboquant v0.1.3 // indirect
 	github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -45,10 +45,12 @@ require (
 	m31labs.dev/eos v0.1.4 // indirect
 	m31labs.dev/mll v0.1.0 // indirect
 	m31labs.dev/prism v0.1.3 // indirect
-	m31labs.dev/selena v0.5.3-0.20261009230029-91a4a8c05027 // indirect
+	m31labs.dev/selena v0.5.3-0.20261010191520-994398415643 // indirect
 	m31labs.dev/turboquant v0.2.1 // indirect
 )
 
 replace m31labs.dev/cicada => ..
 
 replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20261018224641-e5e266c6aaf1
+
+replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.57.17-0.20261018233127-670b577ea5bc

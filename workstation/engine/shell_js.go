@@ -26,6 +26,11 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("Studio shell is missing")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	releaseNavigation, err := bindShellNavigation(host, root)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	releasePlacementCommands := watchPlacementCommands(host, root)
 	var busy atomic.Bool
 	command := js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -66,6 +71,9 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			case "transport.home":
 				selector = "#transport-form button[value=home]"
 			case "transport.record":
+				if !revealVocalWorkspace(ctx, host, root) {
+					return
+				}
 				action := "record"
 				if nativeCapture.Get().State.Active != "" {
 					action = "stop"
@@ -100,6 +108,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	releaseCapture := capturePublisher.acquire()
 	return enginewasm.HandleFunc(func() {
 		cancel()
+		releaseNavigation()
 		releasePlacementCommands()
 		releaseAudio()
 		releaseCapture()

@@ -65,13 +65,14 @@ func SplitHandleY(props SplitHandleProps, children ...gosx.Node) gosx.Node {
 
 type TabProps struct {
 	ID       string
+	Value    string
 	Href     string
 	Panel    string
 	Selected bool
 }
 
 func Tab(props TabProps, children ...gosx.Node) gosx.Node {
-	return gosx.Fragment(gosx.If(props.Selected, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "true"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.ID), gosx.Attr("data-gosx-tab-panel", props.Panel), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Selected == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "false"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.ID), gosx.Attr("data-gosx-tab-panel", props.Panel)), gosx.Expr(children)))))
+	return gosx.Fragment(gosx.If(props.Selected, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "true"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.Value), gosx.Attr("data-gosx-tab-panel", props.Panel), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Selected == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "false"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.Value), gosx.Attr("data-gosx-tab-panel", props.Panel)), gosx.Expr(children)))))
 }
 
 type TabPanelProps struct {
@@ -185,7 +186,7 @@ type CenterProps struct {
 }
 
 func Center(props CenterProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("main", gosx.Attrs(gosx.Attr("id", "studio-center"), gosx.Attr("class", "gsx-dock__center shell-region"), gosx.Attr("data-studio-region", props.View)), gosx.El("div", gosx.Attrs(gosx.Attr("id", "view-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$view"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Views")), Tab(TabProps{ID: "view-tab-arrange", Href: props.ArrangeHref, Panel: "view-panel-arrange", Selected: props.ArrangeShown}, gosx.Text("Arrange")), Tab(TabProps{ID: "view-tab-session", Href: props.SessionHref, Panel: "view-panel-session", Selected: props.SessionShown}, gosx.Text("Session")), Tab(TabProps{ID: "view-tab-mixer", Href: props.MixerHref, Panel: "view-panel-mixer", Selected: props.MixerShown}, gosx.Text("Mixer"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
+	return gosx.El("main", gosx.Attrs(gosx.Attr("id", "studio-center"), gosx.Attr("class", "gsx-dock__center shell-region"), gosx.Attr("data-studio-region", props.View)), gosx.El("div", gosx.Attrs(gosx.Attr("id", "view-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$view"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Views")), Tab(TabProps{ID: "view-tab-arrange", Value: "arrange", Href: props.ArrangeHref, Panel: "view-panel-arrange", Selected: props.ArrangeShown}, gosx.Text("Arrange")), Tab(TabProps{ID: "view-tab-session", Value: "session", Href: props.SessionHref, Panel: "view-panel-session", Selected: props.SessionShown}, gosx.Text("Session")), Tab(TabProps{ID: "view-tab-mixer", Value: "mixer", Href: props.MixerHref, Panel: "view-panel-mixer", Selected: props.MixerShown}, gosx.Text("Mixer"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
 }
 
 type DetailDockProps struct {
@@ -199,7 +200,7 @@ type DetailDockProps struct {
 }
 
 func DetailDock(props DetailDockProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
+	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
 }
 
 type CodeLensProps struct {
@@ -214,10 +215,11 @@ func CodeLens(props CodeLensProps, children ...gosx.Node) gosx.Node {
 type PhoneLinkProps struct {
 	Href    string
 	Current bool
+	Region  string
 }
 
 func PhoneLink(props PhoneLinkProps, children ...gosx.Node) gosx.Node {
-	return gosx.Fragment(gosx.If(props.Current, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Current == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href)), gosx.Expr(children)))))
+	return gosx.Fragment(gosx.If(props.Current, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("data-shell-region", props.Region), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Current == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("data-shell-region", props.Region)), gosx.Expr(children)))))
 }
 
 type PhoneNavProps struct {
@@ -233,7 +235,7 @@ type PhoneNavProps struct {
 
 // PhoneNav is visible only at phone width, where one region shows at a time.
 func PhoneNav(props PhoneNavProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("nav", gosx.Attrs(gosx.Attr("class", "shell-phone-nav"), gosx.Attr("aria-label", "Regions")), PhoneLink(PhoneLinkProps{Href: props.BrowserHref, Current: props.BrowserOn}, gosx.Text("Browser")), PhoneLink(PhoneLinkProps{Href: props.CenterHref, Current: props.CenterOn}, gosx.Text("Center")), PhoneLink(PhoneLinkProps{Href: props.DetailHref, Current: props.DetailOn}, gosx.Text("Detail")), PhoneLink(PhoneLinkProps{Href: props.CodeHref, Current: props.CodeOn}, gosx.Text("Code")))
+	return gosx.El("nav", gosx.Attrs(gosx.Attr("class", "shell-phone-nav"), gosx.Attr("aria-label", "Regions")), PhoneLink(PhoneLinkProps{Href: props.BrowserHref, Current: props.BrowserOn, Region: "browser"}, gosx.Text("Browser")), PhoneLink(PhoneLinkProps{Href: props.CenterHref, Current: props.CenterOn, Region: "center"}, gosx.Text("Center")), PhoneLink(PhoneLinkProps{Href: props.DetailHref, Current: props.DetailOn, Region: "detail"}, gosx.Text("Detail")), PhoneLink(PhoneLinkProps{Href: props.CodeHref, Current: props.CodeOn, Region: "code"}, gosx.Text("Code")))
 }
 
 type ShortcutGroupProps struct{ Title string }

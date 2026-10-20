@@ -47,6 +47,9 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell-scroll .panel { padding:12px; margin-bottom:12px; }
 .shell-section { border-bottom:1px solid var(--border); }
 .shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
+.shell .arrange-workspace-nav { position:sticky; top:-8px; z-index:2; display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 0; margin-bottom:8px; border-bottom:1px solid var(--border); background:var(--bg); }
+.shell .arrange-workspace-nav a { padding:4px 0; color:var(--mint); text-underline-offset:3px; }
+.shell #arrangement,.shell #vocals { scroll-margin-top:52px; }
 
 .shell-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:30; }
 .shell-backdrop[hidden], .shell-dialog[hidden] { display:none; }
