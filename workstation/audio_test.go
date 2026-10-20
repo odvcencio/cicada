@@ -7,6 +7,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -72,6 +73,20 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 	}
 	if applied.PeriodFrames != 64 || applied.RecordingOffsetMS != 17.5 {
 		t.Fatalf("enhanced Audio lost buffer/timing: %+v", applied)
+	}
+	// Opening Audio in Studio does not navigate, so its existing form must
+	// retain the vocal track without relying on the legacy returnTo query.
+	studioLocation := "/studio?tab=arrange&dock=automation&vocalTrack=harmony"
+	studioPage := getPage(t, client, app.URL+studioLocation)
+	audioForm := regexp.MustCompile(`(?s)<form[^>]*action="/__actions/audio"[^>]*>.*?</form>`).FindString(studioPage)
+	if !strings.Contains(audioForm, `name="__gosx_return_to" value="/?panel=session&amp;vocalTrack=harmony"`) {
+		t.Fatal("Studio Audio form lost the selected vocal track")
+	}
+	form.Set("csrf_token", tokenFromPage(t, studioPage))
+	form.Set("__gosx_return_to", "/?panel=session&vocalTrack=harmony")
+	response = shellPost(t, client, app.URL, "/__actions/audio", form, app.URL+studioLocation)
+	if want := "/studio?dock=automation&tab=arrange&vocalTrack=harmony"; response.StatusCode != 303 || response.Header.Get("Location") != want {
+		t.Fatalf("Studio Audio lost recording context: %d %s", response.StatusCode, response.Header.Get("Location"))
 	}
 	for _, period := range []string{"0", "63", "480", "8192", "64.5", "bad"} {
 		previous := applied

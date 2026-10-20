@@ -7,12 +7,43 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/project"
 )
+
+func TestRecordingSetupUsesAudioDialogInStudioAndLinksInStandalonePanels(t *testing.T) {
+	address, client, _ := detailDockApp(t)
+	for _, tc := range []struct {
+		name, location, label, tag string
+		attributes                 []string
+	}{
+		{"Studio setup", "/studio?tab=arrange&vocalTrack=harmony", "Choose microphone and output", "button", []string{`type="button"`, `data-gosx-disclosure-target="#audio-dialog"`, `aria-controls="audio-dialog"`}},
+		{"Studio return", "/studio?tab=arrange&vocalTrack=harmony", "Back to recording", "button", []string{`type="button"`, `data-gosx-disclosure-close="#audio-dialog"`}},
+		{"standalone setup", "/?panel=session&vocalTrack=harmony", "Choose microphone and output", "a", []string{`href="/?panel=audio&amp;returnTo=session&amp;vocalTrack=harmony"`}},
+		{"standalone return", "/?panel=audio&returnTo=session&vocalTrack=harmony", "Back to recording", "a", []string{`href="/?panel=session&amp;vocalTrack=harmony"`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			page := getPage(t, client, address+tc.location)
+			matches := regexp.MustCompile(`<([a-z]+)\b[^>]*>`+regexp.QuoteMeta(tc.label)+`</[a-z]+>`).FindAllStringSubmatch(page, -1)
+			if len(matches) != 1 || matches[0][1] != tc.tag {
+				t.Fatalf("expected one %s for %q, got %v", tc.tag, tc.label, matches)
+			}
+			control := matches[0][0]
+			for _, attribute := range tc.attributes {
+				if !strings.Contains(control, attribute) {
+					t.Errorf("control missing %s: %s", attribute, control)
+				}
+			}
+			if tc.tag == "button" && strings.Contains(control, "href=") {
+				t.Fatal("Studio audio dialog control must not navigate")
+			}
+		})
+	}
+}
 
 func TestVocalLanesProjectWaveformsAndKeepAuditionRange(t *testing.T) {
 	t.Setenv("CICADA_BACKEND_TOKEN", "wave-private")

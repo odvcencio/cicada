@@ -121,7 +121,11 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		idle = "Microphone configured. Record the full song, or set a punch range for a phrase."
 	}
 	setupURL := "/?panel=audio&returnTo=session&vocalTrack=" + url.QueryEscape(chosen)
-	setup := gosx.El("details", gosx.Attrs(gosx.Attr("class", "vocal-setup"), gosx.Attr("open", len(tracks) == 0 || !readiness.Ready)), gosx.El("summary", gosx.Text("Recording setup")), summary, gosx.El("a", gosx.Attrs(gosx.Attr("href", setupURL), gosx.Attr("class", "button-link")), gosx.Text("Choose microphone and output")), add)
+	var setupControl gosx.Node = gosx.El("a", gosx.Attrs(gosx.Attr("href", setupURL), gosx.Attr("class", "button-link")), gosx.Text("Choose microphone and output"))
+	if ctx.Request.URL.Path == "/studio" {
+		setupControl = ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Choose microphone and output"})
+	}
+	setup := gosx.El("details", gosx.Attrs(gosx.Attr("class", "vocal-setup"), gosx.Attr("open", len(tracks) == 0 || !readiness.Ready)), gosx.El("summary", gosx.Text("Recording setup")), summary, setupControl, add)
 
 	var trackLinks []gosx.Node
 	for _, track := range tracks {
