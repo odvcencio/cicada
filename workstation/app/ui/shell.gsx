@@ -135,6 +135,7 @@ component Tab(props: TabProps) {
 				id={props.ID}
 				class="gsx-tabs__tab"
 				href={props.Href}
+				data-gosx-native="true"
 				role="tab"
 				aria-selected="true"
 				aria-controls={props.Panel}
@@ -148,6 +149,7 @@ component Tab(props: TabProps) {
 				id={props.ID}
 				class="gsx-tabs__tab"
 				href={props.Href}
+				data-gosx-native="true"
 				role="tab"
 				aria-selected="false"
 				aria-controls={props.Panel}
@@ -359,8 +361,8 @@ type PhoneLinkProps struct {
 
 component PhoneLink(props: PhoneLinkProps) {
 	return <>
-		<If cond={props.Current}><a href={props.Href} data-shell-region={props.Region} aria-current="page">{children}</a></If>
-		<If cond={props.Current == false}><a href={props.Href} data-shell-region={props.Region}>{children}</a></If>
+		<If cond={props.Current}><a href={props.Href} data-gosx-native="true" data-shell-region={props.Region} aria-current="page">{children}</a></If>
+		<If cond={props.Current == false}><a href={props.Href} data-gosx-native="true" data-shell-region={props.Region}>{children}</a></If>
 	</>
 }
 

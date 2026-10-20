@@ -72,7 +72,7 @@ type TabProps struct {
 }
 
 func Tab(props TabProps, children ...gosx.Node) gosx.Node {
-	return gosx.Fragment(gosx.If(props.Selected, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "true"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.Value), gosx.Attr("data-gosx-tab-panel", props.Panel), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Selected == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "false"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.Value), gosx.Attr("data-gosx-tab-panel", props.Panel)), gosx.Expr(children)))))
+	return gosx.Fragment(gosx.If(props.Selected, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("data-gosx-native", "true"), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "true"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.Value), gosx.Attr("data-gosx-tab-panel", props.Panel), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Selected == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("data-gosx-native", "true"), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "false"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.Value), gosx.Attr("data-gosx-tab-panel", props.Panel)), gosx.Expr(children)))))
 }
 
 type TabPanelProps struct {
@@ -219,7 +219,7 @@ type PhoneLinkProps struct {
 }
 
 func PhoneLink(props PhoneLinkProps, children ...gosx.Node) gosx.Node {
-	return gosx.Fragment(gosx.If(props.Current, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("data-shell-region", props.Region), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Current == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("data-shell-region", props.Region)), gosx.Expr(children)))))
+	return gosx.Fragment(gosx.If(props.Current, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("data-gosx-native", "true"), gosx.Attr("data-shell-region", props.Region), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Current == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href), gosx.Attr("data-gosx-native", "true"), gosx.Attr("data-shell-region", props.Region)), gosx.Expr(children)))))
 }
 
 type PhoneNavProps struct {

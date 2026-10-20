@@ -91,10 +91,18 @@ func shellCurrentURL() js.Value {
 func syncShellLocation(root, url js.Value) {
 	window := js.Global()
 	window.Get("history").Call("replaceState", window.Get("history").Get("state"), "", url.Get("href"))
-	links := root.Call("querySelectorAll", ".shell-phone-nav [data-shell-region], [data-gosx-tabs] [data-gosx-tab]")
+	links := root.Call("querySelectorAll", "a[href]")
 	for i := 0; i < links.Length(); i++ {
 		link := links.Index(i)
-		target := window.Get("URL").New(url.Get("href"))
+		href := workspaceAttr(link, "href")
+		if href == "" || href[0] == '#' {
+			continue
+		}
+		target := window.Get("URL").New(href, url.Get("href"))
+		if !shellContextTarget(target, url) || target.Get("search").String() == "" {
+			continue
+		}
+		copyShellContext(target, url)
 		if region := workspaceAttr(link, "data-shell-region"); region != "" {
 			if region == workspaceAttr(root, "data-phone-region") {
 				link.Call("setAttribute", "aria-current", "page")
@@ -102,7 +110,7 @@ func syncShellLocation(root, url js.Value) {
 				link.Call("removeAttribute", "aria-current")
 			}
 			target.Get("searchParams").Call("set", "region", region)
-		} else {
+		} else if workspaceAttr(link, "data-gosx-tab") != "" {
 			container := link.Call("closest", "[data-gosx-tabs]")
 			key := "dock"
 			if workspaceAttr(container, "data-gosx-tabs-signal") == "$view" {
@@ -110,7 +118,53 @@ func syncShellLocation(root, url js.Value) {
 			}
 			target.Get("searchParams").Call("set", key, workspaceAttr(link, "data-gosx-tab"))
 		}
-		target.Set("hash", "")
-		link.Call("setAttribute", "href", target.Get("pathname").String()+target.Get("search").String())
+		link.Call("setAttribute", "href", target.Get("pathname").String()+target.Get("search").String()+target.Get("hash").String())
+	}
+	// Managed form returns and GET pickers were rendered before the local tab
+	// switch. Carry the same workspace context through their next server update.
+	returns := root.Call("querySelectorAll", "input[name=__gosx_return_to]")
+	for i := 0; i < returns.Length(); i++ {
+		field := returns.Index(i)
+		target := window.Get("URL").New(field.Get("value"), url.Get("href"))
+		if shellContextTarget(target, url) {
+			copyShellContext(target, url)
+			field.Set("value", target.Get("pathname").String()+target.Get("search").String()+target.Get("hash").String())
+		}
+	}
+	forms := root.Call("querySelectorAll", "form[method=get]")
+	for i := 0; i < forms.Length(); i++ {
+		form := forms.Index(i)
+		if !shellContextTarget(window.Get("URL").New(form.Get("action")), url) {
+			continue
+		}
+		for _, key := range []string{"tab", "dock", "region"} {
+			field := form.Call("querySelector", "input[type=hidden][name="+key+"]")
+			if !workspacePresent(field) {
+				field = window.Get("document").Call("createElement", "input")
+				field.Set("type", "hidden")
+				field.Set("name", key)
+				form.Call("appendChild", field)
+			}
+			value := url.Get("searchParams").Call("get", key)
+			if value.IsNull() {
+				value = js.ValueOf("")
+			}
+			field.Set("value", value)
+		}
+	}
+}
+
+func shellContextTarget(target, current js.Value) bool {
+	return target.Get("origin").String() == current.Get("origin").String() && target.Get("pathname").String() == "/studio"
+}
+
+func copyShellContext(target, current js.Value) {
+	for _, key := range []string{"tab", "dock", "region"} {
+		value := current.Get("searchParams").Call("get", key)
+		if value.IsNull() {
+			target.Get("searchParams").Call("delete", key)
+		} else {
+			target.Get("searchParams").Call("set", key, value)
+		}
 	}
 }
