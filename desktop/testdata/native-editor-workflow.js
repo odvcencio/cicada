@@ -12,7 +12,12 @@
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
     return originalFetch.apply(this, args).then(response => {
       if (method.toUpperCase() === 'POST' && path.startsWith('/__actions/')) {
-        response.clone().json().then(body => responses.push({path, status: response.status, body}));
+        return response.clone().text().then(text => {
+          let body;
+          try { body = JSON.parse(text); } catch { body = {diagnosticParseError: 'Action response is not JSON'}; }
+          responses.push({path, status: response.status, body});
+          return response;
+        });
       }
       return response;
     });
