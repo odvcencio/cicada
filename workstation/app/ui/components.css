@@ -172,6 +172,17 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .editor-page { --editor-bg:var(--bg); --editor-surface:var(--panel); }
 #score .editor-native-body { grid-template-columns:minmax(0,1fr); }
 #score .editor-native-sidebar { display:none; }
+/* The Code lens can be narrow even on a wide desktop. Keep its actions and
+   search fields inside the lens instead of relying on viewport breakpoints. */
+#score .editor-code-topbar { flex-direction:row; flex-wrap:wrap; align-items:flex-start; gap:8px; }
+#score .editor-code-identity { flex:1 1 140px; max-width:100%; }
+#score .editor-segments:empty { display:none; }
+#score .editor-native-actions { flex:1 1 240px; min-width:0; max-width:100%; justify-content:flex-start; gap:6px; }
+#score .editor-save-status { min-width:0; }
+#score .editor-code-toolbar { flex-wrap:wrap; gap:6px; max-height:none; }
+#score .editor-native-main { min-height:0; }
+#score .editor-code-find { flex:1 1 100%; flex-wrap:wrap; margin-left:0; }
+#score .editor-code-find input { flex:1 1 112px; width:auto; max-width:100%; }
 @media(max-width:700px) { .masthead { gap:16px; flex-wrap:wrap; } .score-meta { width:100%; } .toolbar,.nav,.masthead,main { padding:14px 16px; } .panel { padding:14px; } .panel-heading { display:block; } .panel-heading p {text-align:left;} }
 @media(max-width:850px) { .pattern-editor { grid-template-columns:minmax(0,1fr); } .pattern-library { flex-direction:row; overflow:auto; } .pattern-choice { min-width:140px; flex-shrink:0; } }
 @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }

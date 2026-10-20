@@ -93,10 +93,11 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	e := editor.New(id, editor.Options{
 		Surface: editor.SurfaceCode, Content: v.Source, Title: v.Filename, Label: "Cicada score", Language: editor.Lang("cicada"), Theme: editor.ThemeDark,
 		FormAction: "/__actions/source", CSRFToken: csrf,
-		ExtraFields: map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo},
-		Code:        &editor.CodeOptions{Language: "cicada", TabWidth: 2, InsertSpaces: true, Gutter: true, Highlights: highlights},
-		Buttons:     buttons,
-		Panels:      []editor.Panel{},
+		ExtraFields:      map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo},
+		Code:             &editor.CodeOptions{Language: "cicada", TabWidth: 2, InsertSpaces: true, Gutter: true, Highlights: highlights},
+		CodeIntelligence: &editor.CodeIntelligence{Language: "cicada", ServerURL: "/__code/analysis"},
+		Buttons:          buttons,
+		Panels:           []editor.Panel{},
 	})
 	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Changes validate before saving and land at the next bar."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, e.Render())
 }

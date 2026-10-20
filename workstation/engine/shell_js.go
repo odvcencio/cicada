@@ -84,7 +84,9 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			case "edit.redo":
 				selector = "#redo-form button[type=submit]"
 			case "edit.save":
-				selector = "#score form[action='/__actions/source'] button[type=submit]"
+				// Managed navigation may resolve the form action to an absolute URL.
+				// The mounted Code editor remains the save target in either form.
+				selector = "#score form[data-editor-native='true'] button[type=submit]"
 			default:
 				scene, err := strconv.Atoi(strings.TrimPrefix(id, "live.scene."))
 				if err != nil || scene < 1 || scene > 8 {
