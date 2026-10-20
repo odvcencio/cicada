@@ -224,7 +224,8 @@ jobs:
   workstation:
     name: GoSX workstation and Tymbal boundary
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Cold Go/race/TinyGo builds must leave time for all Studio browser suites.
+    timeout-minutes: 30
     env:
       GOWORK: off
       CHROME_VERSION: 152.0.7977.64
