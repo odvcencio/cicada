@@ -437,6 +437,7 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/arrange --mode normal --timeout 120 --workflow desktop/testdata/native-arrange-workflow.js
           (cd desktop && CICADA_TEST_EDITOR_MENU_WORKFLOW="$PWD/../build/native-editor-workflow.js" go test -mod=readonly -run 'TestMacMenusKeepHistoryShortcutsInWorkstation|TestMacEditorMenuWorkflow' -count=1 .)
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/editor --mode normal --timeout 120 --workflow build/native-editor-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/cancellation --mode normal --workflow desktop/testdata/native-cancellation-workflow.js
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Save macOS smoke reports
         if: always()
