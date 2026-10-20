@@ -107,7 +107,7 @@ func TestRouteParity_InstrumentSetParameter(t *testing.T) {
 
 	assertRoute(t, fixture, "/api/instrument", studioEdit{Action: "set-parameter", Track: "keys", NewName: "nope", Value: json.RawMessage("1")}, 422, nil, "", `instrument my-pad does not declare parameter "nope"`)
 	assertRoute(t, fixture, "/api/instrument", studioEdit{Action: "set-parameter", Track: "keys", NewName: "brightness"}, 422, nil, "", "parameter value must be a number or compatible unit literal")
-	assertRoute(t, fixture, "/api/instrument", studioEdit{Action: "set-parameter", Track: "bass", NewName: "brightness", Value: value}, 422, nil, "", `track "bass" has no authored instrument`)
+	assertRoute(t, fixture, "/api/instrument", studioEdit{Action: "set-parameter", Track: "bass", NewName: "brightness", Value: value}, 422, nil, "", `track bass does not expose sound parameter "brightness"`)
 }
 
 func TestFidelityRule1_ReadEndpointsNeverWrite(t *testing.T) {
