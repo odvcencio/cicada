@@ -23,7 +23,7 @@ func detailDockApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 	t.Helper()
 	patch, _ := instrument.FindPatch("warm-pad")
 	declaration, _ := patch.Source("warm-pad")
-	source := "cicada 2\n" + declaration + "track bass warm-pad { brightness = 1200.25Hz }\ntrack lead acid {}\npattern p notes { c4 . }\nscene main { bass=p }\nsong { main*4 }\n"
+	source := "cicada 2\n" + declaration + "track bass warm-pad { brightness = 1200.25Hz }\ntrack lead acid {}\ntrack beat drums { bd_decay = 400ms }\npattern p notes { c4 . }\nscene main { bass=p }\nsong { main*4 }\n"
 	score, ds := notation.Parse([]byte(source))
 	if len(ds) != 0 {
 		t.Fatal(ds)
@@ -163,5 +163,58 @@ func TestDeviceTrackFallbackAndEmptyDock(t *testing.T) {
 	result := gosx.RenderHTML(dockForms(node, `/studio?file=a"<b>&dock=device`))
 	if strings.Contains(result, `file=a"<b>`) || !strings.Contains(result, "&lt;b&gt;") {
 		t.Error("return target not escaped")
+	}
+}
+
+func TestDeviceBuiltinSoundControlsUseCatalogAndSavedActions(t *testing.T) {
+	address, client, edits := detailDockApp(t)
+	location := "/studio?dock=device&placement=lead-intro"
+	body := getPage(t, client, address+location)
+	parameter := func(body, path string) string {
+		return regexp.MustCompile(`(?s)<div[^>]*data-device-parameter="` + regexp.QuoteMeta(path) + `"[^>]*>.*?</form>.*?</div>`).FindString(body)
+	}
+	cutoff := parameter(body, "lead.cutoff")
+	for _, want := range []string{`action="/__actions/instrument"`, `name="track" value="lead"`, `name="newName" value="cutoff"`, `name="value" value="600"`, `min="20"`, `max="8000"`, `step="any"`, "cutoff · default (Hz)", "20Hz to 8000Hz · Default: 600Hz", "Apply", "Use default"} {
+		if !strings.Contains(cutoff, want) {
+			t.Errorf("built-in cutoff control missing %q: %s", want, cutoff)
+		}
+	}
+	for path, choices := range map[string][]string{"lead.filter": {"diode", "ladder"}, "lead.savage": {"off", "on"}, "lead.octave": {"0", "1", "2", "3", "4", "5", "6"}} {
+		row := parameter(body, path)
+		for _, choice := range choices {
+			if !strings.Contains(row, `<option value="`+choice+`"`) {
+				t.Errorf("%s missing choice %s", path, choice)
+			}
+		}
+	}
+	for _, name := range []string{"level", "pan", "mute", "solo", "out", "insert"} {
+		if strings.Contains(body, `data-device-parameter="lead.`+name+`"`) {
+			t.Errorf("mixer setting %s leaked into Sound", name)
+		}
+	}
+	returnTo := "/studio?deviceTrack=lead&dock=device&placement=lead-intro"
+	form := url.Values{"csrf_token": {tokenFromPage(t, body)}, "revision": {"current"}, "action": {"set-parameter"}, "track": {"lead"}, "newName": {"cutoff"}, "value": {"1250.125"}, "__gosx_return_to": {returnTo}}
+	response := shellPost(t, client, address, "/__actions/instrument", form, address+location)
+	if response.StatusCode != 303 || response.Header.Get("Location") != returnTo || len(*edits) != 1 {
+		t.Fatalf("builtin sound POST status=%d location=%s edits=%+v", response.StatusCode, response.Header.Get("Location"), *edits)
+	}
+	edit := (*edits)[0]
+	for key, want := range map[string]string{"revision": "current", "action": "set-parameter", "track": "lead", "newName": "cutoff", "value": "1250.125"} {
+		if edit[key] != want {
+			t.Errorf("builtin sound payload %s=%v want %s", key, edit[key], want)
+		}
+	}
+	body = getPage(t, client, address+returnTo)
+	if !strings.Contains(body, `data-device-track="lead"`) || !strings.Contains(parameter(body, "lead.cutoff"), `name="revision" value="after"`) || strings.Contains(body, `name="revision" value="current"`) {
+		t.Error("saved builtin control lost selected track or kept stale forms")
+	}
+	body = getPage(t, client, address+"/studio?dock=device&deviceTrack=beat")
+	for path, texts := range map[string][]string{"beat.bd_tune": {"bd_tune · default (Hz)", `name="value" value="55"`, "40Hz to 120Hz · Default: 55Hz"}, "beat.bd_decay": {"bd_decay · track override (ms)", `name="value" value="400"`, "80ms to 1.5s · Default: 400ms"}} {
+		row := parameter(body, path)
+		for _, text := range texts {
+			if !strings.Contains(row, text) {
+				t.Errorf("%s missing %q: %s", path, text, row)
+			}
+		}
 	}
 }
