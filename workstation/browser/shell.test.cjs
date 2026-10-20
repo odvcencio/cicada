@@ -125,9 +125,6 @@ test('shell fits a 390 px phone without horizontal scroll and shows one region',
   await page.close();
 });
 
-// The next tests wait on pieces that are not in GoSX yet. They stay in the file
-// as skipped tests so the assertions are ready when the pieces land.
-
 test('Tab and Shift+Tab move keyboard focus and never switch views', async () => {
   const {page} = await openShell();
   const commands = [];
@@ -417,12 +414,7 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   await page.close();
 });
 
-// The workbench chunk in GoSX PR 605 adds the roving tab stop and the tab keys,
-// and wires $view and $dock to the tabs. Set CICADA_SHELL_TABS=1 once the pinned
-// GoSX has them.
-const tabsReady = process.env.CICADA_SHELL_TABS === '1' ? false : 'pending GoSX PR 605 (tab keys and the $view binding)';
-
-test('arrow keys, Home and End move between tabs inside the tab list', {skip: tabsReady}, async () => {
+test('arrow keys, Home and End move between tabs inside the tab list', async () => {
   const {page} = await openShell();
   const first = page.locator('#view-tab-arrange');
   await first.focus();
@@ -443,7 +435,7 @@ test('arrow keys, Home and End move between tabs inside the tab list', {skip: ta
   await page.close();
 });
 
-test('Alt+Shift+2 shows the Session view and Alt+Shift+5 the Device tab', {skip: tabsReady}, async () => {
+test('Alt+Shift+2 shows the Session view and Alt+Shift+5 the Device tab', async () => {
   const {page} = await openShell();
   await page.keyboard.press('Alt+Shift+Digit2');
   await page.locator('#view-tab-session[aria-selected="true"]').waitFor();
@@ -481,7 +473,7 @@ test('Mac Cmd save, undo and redo submit the current score forms and leave text 
 test('shell Space toggles actual playback, Home returns to start, and Audio unlocks after stop', async () => {
   const {page} = await openShell();
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
-  await page.locator('button[data-gosx-disclosure-target="#audio-dialog"]').click();
+  await page.getByRole('toolbar', {name: 'Transport'}).getByRole('button', {name: 'Audio', exact: true}).click();
   let playing = false;
   await page.route('**/api/transport', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, bar: 1, step: 1})}));
   await page.route('**/api/audio/config?runtime=1', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, runtime: {}, options: {periodFrames: 128}})}));

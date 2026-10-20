@@ -44,7 +44,7 @@ async function until(predicate, message) {
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers:{'Content-Type':request.headers()['content-type']}}).formData());
 
-test('Mac Arrange commands mutate real placements, retain Undo and respect focused editors', {timeout:120000}, async () => {
+test('Studio views, Record entry and Mac placement commands retain drafts and Undo', {timeout:120000}, async () => {
   const base = process.env.CICADA_STUDIO_URL;
   assert.ok(base, 'set CICADA_STUDIO_URL to a fresh disposable Studio');
   assert.ok(['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
@@ -55,13 +55,18 @@ test('Mac Arrange commands mutate real placements, retain Undo and respect focus
     Object.defineProperty(navigator, 'platform', {get:()=>'MacIntel'});
     Object.defineProperty(navigator, 'userAgentData', {get:()=>({platform:'macOS'})});
   });
-  const posts = [], errors = [];
-  page.on('request', request => { if (request.method()==='POST' && new URL(request.url()).pathname.startsWith('/__actions/')) posts.push(request); });
+  const posts = [], navigations = [], errors = [];
+  page.on('request', request => {
+    const pathname=new URL(request.url()).pathname;
+    if (request.method()==='POST' && pathname.startsWith('/__actions/')) posts.push(request);
+    if (request.isNavigationRequest() || request.method()==='GET' && pathname==='/studio') navigations.push(request);
+  });
   page.on('pageerror', error => errors.push(error.message));
   const state = async () => (await page.request.get(new URL('/api/state',base).href)).json();
   const transport = async () => (await page.request.get(new URL('/api/transport',base).href)).json();
   const ready = async () => {
     await page.waitForFunction(()=>!document.querySelector('form[data-gosx-form-state=pending]'));
+    await page.waitForFunction(()=>window.__gosx?.ready===true);
     await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
     await until(async()=>await page.locator('#undo-form input[name=revision]').inputValue()===(await state()).revision, 'managed navigation did not refresh revisions');
   };
@@ -85,15 +90,159 @@ test('Mac Arrange commands mutate real placements, retain Undo and respect focus
       focus:await page.evaluate(()=>({tag:document.activeElement?.tagName,id:document.activeElement?.id,classes:document.activeElement?.getAttribute('class'),detail:!!document.activeElement?.closest('#studio-detail'),available:window.__gosx.commands.available('edit.duplicate')})),
     }));
   };
+  const headingInCenter = async id => page.locator(id+' .panel-heading').evaluate(node=>{
+    const bounds=node.getBoundingClientRect(), pane=document.querySelector('#studio-center .shell-scroll').getBoundingClientRect();
+    return bounds.top>=pane.top-1 && bounds.bottom<=Math.min(pane.bottom,innerHeight)+1;
+  });
+  const recordingRevealed = async (entry='vocal navigation') => {
+    await page.locator('#view-panel-arrange').waitFor({state:'visible'});
+    await page.locator('#studio-center').waitFor({state:'visible'});
+    try { await until(()=>headingInCenter('#vocals'),'Record did not scroll vocal controls into the visible center pane'); }
+    catch (error) {
+      const layout=await page.evaluate(()=>{
+        const pane=document.querySelector('#studio-center .shell-scroll'), heading=document.querySelector('#vocals .panel-heading');
+        return {pane:pane.getBoundingClientRect().toJSON(),heading:heading.getBoundingClientRect().toJSON(),scrollTop:pane.scrollTop,scrollHeight:pane.scrollHeight,view:document.querySelector('#studio-center').getAttribute('data-studio-region'),region:document.querySelector('#studio-shell').getAttribute('data-phone-region'),href:location.href};
+      });
+      assert.fail(entry+': '+error.message+' '+JSON.stringify(layout));
+    }
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('#vocals [data-capture-control=record]').isDisabled(),true,'fixture without an audio track must keep Record take disabled');
+    assert.equal(await block('one').getAttribute('data-placement-selected'),'true','revealing recording changed the selected placement');
+  };
+  const shellTab = async (group,name) => {
+    await page.locator('#'+group+'-tab-'+name).click();
+    await page.locator('#'+group+'-panel-'+name).waitFor({state:'visible'});
+    await until(async()=>await page.locator('#'+group+'-tab-'+name).getAttribute('aria-selected')==='true','selected tab state did not follow '+name);
+  };
   try {
     await visit('?placement=one');
     assert.equal((await state()).source,fixture,'runner refuses an unmarked or modified score');
+
+    // Arrange opens on the song rather than placing its timeline below the
+    // entire vocal workflow. The sticky links move within the mounted pane.
+    assert.equal(await page.locator('#arrangement').evaluate(node=>Boolean(node.compareDocumentPosition(document.querySelector('#vocals')) & Node.DOCUMENT_POSITION_FOLLOWING)),true,'song timeline must precede vocal recording');
+    assert.equal(await headingInCenter('#arrangement'),true,'song timeline must be visible when Arrange first opens');
+    assert.equal(await page.locator('#arrangement .placement-scroll').evaluate(node=>{
+      const bounds=node.getBoundingClientRect(), pane=document.querySelector('#studio-center .shell-scroll').getBoundingClientRect();
+      return bounds.top>=pane.top && bounds.top<Math.min(pane.bottom,innerHeight) && bounds.bottom>pane.top;
+    }),true,'placement timeline must appear in the initial Arrange viewport');
+    const vocalLink=page.locator('#view-panel-arrange').getByRole('link',{name:'Record & comp vocals',exact:true});
+    const timelineLink=page.locator('#view-panel-arrange').getByRole('link',{name:'Song timeline',exact:true});
+    assert.equal(await vocalLink.getAttribute('href'),'#vocals');
+    assert.equal(await timelineLink.getAttribute('href'),'#arrangement');
+    const beforeLinks={posts:posts.length,navigations:navigations.length};
+    await page.evaluate(()=>{window.__arrangeNavigationDocument=document;});
+    await vocalLink.click(); await recordingRevealed();
+    await timelineLink.click();
+    await until(()=>headingInCenter('#arrangement'),'Song timeline link did not return to the timeline');
+    assert.equal(posts.length,beforeLinks.posts,'in-pane navigation must not submit score actions: '+posts.slice(beforeLinks.posts).map(request=>new URL(request.url()).pathname).join(', ')+'; page requests: '+navigations.slice(beforeLinks.navigations).map(request=>new URL(request.url()).search).join(', '));
+    assert.equal(navigations.length,beforeLinks.navigations,'in-pane navigation must not request another page');
+    assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true,'in-pane links replaced the document');
+    assert.equal((await state()).source,fixture);
+
+    const scoreDraft=fixture+'// keep this unsaved vocal idea\n';
+    const draftEditor=page.locator('#score textarea').first();
+    await draftEditor.fill(scoreDraft);
+    const beforeTabs={posts:posts.length,navigations:navigations.length};
+    for (const view of ['session','mixer','arrange']) {
+      await shellTab('view',view);
+      assert.equal(new URL(page.url()).searchParams.get('tab')||'arrange',view,'view selection must agree with its URL');
+      assert.equal(await draftEditor.inputValue(),scoreDraft,'view navigation discarded a Code draft');
+    }
+    for (const dock of ['device','automation','clip']) {
+      await shellTab('detail',dock);
+      assert.equal(new URL(page.url()).searchParams.get('dock')||'clip',dock,'dock selection must agree with its URL');
+      assert.equal(await draftEditor.inputValue(),scoreDraft,'dock navigation discarded a Code draft');
+    }
+    for (const [key,view] of [['Digit2','session'],['Digit3','mixer'],['Digit1','arrange']]) {
+      await page.locator('#view-tab-arrange').focus();
+      await page.keyboard.press('Alt+Shift+'+key);
+      await page.locator('#view-panel-'+view).waitFor({state:'visible'});
+      assert.equal(await page.locator('#view-tab-'+view).getAttribute('aria-selected'),'true','view shortcut must update accessible selection');
+      assert.equal(new URL(page.url()).searchParams.get('tab')||'arrange',view);
+      assert.equal(await draftEditor.inputValue(),scoreDraft,'view shortcut discarded a Code draft');
+    }
+    assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true);
+    assert.equal(navigations.length,beforeTabs.navigations,'view and dock switching must not request another page: '+navigations.slice(beforeTabs.navigations).map(request=>new URL(request.url()).search).join(', '));
+    assert.equal(posts.length,beforeTabs.posts,'view and dock switching must not submit an edit');
+    assert.equal(new URL(page.url()).searchParams.get('placement'),'one');
+    assert.equal((await state()).source,fixture);
+
+    // Both Record entry points reveal the actual controls even before a vocal
+    // track exists. The recording view must retain unsaved lyrics or score ideas.
+    for (const record of ['button','shortcut']) {
+      await shellTab('view','session');
+      await ready();
+      await draftEditor.fill(scoreDraft);
+      const beforeRecord={posts:posts.length,navigations:navigations.length};
+      if (record==='button') await page.locator('[data-gosx-command="transport.record"]').click();
+      else {
+        await page.locator('#view-tab-session').focus();
+        await page.keyboard.press('Meta+Shift+r');
+      }
+      await recordingRevealed(record);
+      assert.equal(await draftEditor.inputValue(),scoreDraft,'Record discarded an unsaved Code draft');
+      assert.equal(posts.length,beforeRecord.posts,'Record must not submit a disabled take form');
+      assert.equal(navigations.length,beforeRecord.navigations,'Record must reveal the mounted controls without navigation');
+      assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true);
+    }
+    assert.equal((await state()).source,fixture);
+
+    // On a narrow window, Record also returns from Detail to the center region
+    // so the revealed Arrange controls are actually on screen.
+    await shellTab('view','session');
+    await page.setViewportSize({width:390,height:844});
+    const beforeRegions={posts:posts.length,navigations:navigations.length};
+    for (const [label,region,panel] of [['Detail','detail','#studio-detail'],['Code','code','#studio-code'],['Center','center','#studio-center'],['Detail','detail','#studio-detail']]) {
+      await page.locator('.shell-phone-nav').getByRole('link',{name:label,exact:true}).click();
+      await page.locator(panel).waitFor({state:'visible'});
+      assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),region);
+      assert.equal(new URL(page.url()).searchParams.get('region')||'center',region);
+      assert.equal(await draftEditor.inputValue(),scoreDraft,'mobile region navigation discarded a Code draft');
+    }
+    assert.equal(posts.length,beforeRegions.posts);
+    assert.equal(navigations.length,beforeRegions.navigations,'mobile region switching must not request another page');
+    assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true);
+    assert.equal(await page.locator('#studio-center').isVisible(),false);
+    const beforeMobileRecord={posts:posts.length,navigations:navigations.length};
+    await page.locator('[data-gosx-command="transport.record"]').click();
+    await recordingRevealed();
+    assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),'center');
+    assert.equal(posts.length,beforeMobileRecord.posts);
+    assert.equal(navigations.length,beforeMobileRecord.navigations);
+    assert.equal(await draftEditor.inputValue(),scoreDraft,'mobile Record discarded a Code draft');
+    assert.equal((await state()).source,fixture);
+    await page.setViewportSize({width:1600,height:1000});
+    await draftEditor.fill(fixture);
+    await visit('?placement=one');
+
+    // A server-rendered placement link and form must inherit the current local
+    // view/dock choices, rather than reviving the previous page's selections.
+    await shellTab('detail','device');
+    await shellTab('view','session');
+    await page.locator('[data-gosx-command="transport.record"]').click();
+    await recordingRevealed('context round-trip');
+    await select('two');
+    assert.equal(await page.locator('#view-panel-arrange').isVisible(),true,'placement selection revived a stale Session view');
+    assert.equal(await page.locator('#detail-panel-device').isVisible(),true,'placement selection lost the chosen Device dock');
+    assert.equal(new URL(page.url()).searchParams.get('tab')||'arrange','arrange');
+    assert.equal(new URL(page.url()).searchParams.get('dock')||'clip','device');
+    await shellTab('detail','automation');
+    await key('Meta+d'); await block('two-copy').waitFor(); await ready();
+    assert.equal(await page.locator('#view-panel-arrange').isVisible(),true,'placement mutation changed the current view');
+    assert.equal(await page.locator('#detail-panel-automation').isVisible(),true,'placement mutation revived a stale dock');
+    assert.equal(new URL(page.url()).searchParams.get('dock'),'automation');
+    await undo(fixture);
+    assert.equal(await page.locator('#detail-panel-automation').isVisible(),true,'Undo lost the chosen dock');
+    await visit('?placement=one');
+
     const before = (await state()).revision;
+    const beforeDuplicatePosts=posts.length;
     await key('Meta+d'); await block('one-copy').waitFor(); await ready();
     assert.equal(await block('one-copy').getAttribute('data-placement-at'),'30720','duplicate appends after the last placement on its track');
     const duplicateSource=(await state()).source;
     assert.notEqual((await state()).revision,before);
-    const duplicate=posts.find(request=>new URL(request.url()).pathname==='/__actions/arrange');
+    const duplicate=posts.slice(beforeDuplicatePosts).find(request=>new URL(request.url()).pathname==='/__actions/arrange');
     const duplicateData=await actionValues(duplicate);
     assert.equal(duplicateData.action,'duplicate');
     assert.equal(duplicateData.name,'one');

@@ -81,8 +81,8 @@ func pinCollide(name string) string {
 }
 
 // TestRouteParity_InstrumentRefusesMixerNames pins /api/instrument to the
-// instrument writer: a mixer-named field never reaches the mixer writer. Texts
-// are main's.
+// instrument writer: a mixer-named field never reaches the mixer writer,
+// including built-in tracks whose catalog exposes only sound controls.
 func TestRouteParity_InstrumentRefusesMixerNames(t *testing.T) {
 	value := func(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
 	declares := func(name string) string { return `instrument pad does not declare parameter "` + name + `"` }
@@ -102,9 +102,9 @@ func TestRouteParity_InstrumentRefusesMixerNames(t *testing.T) {
 		{pinScore, "set-parameter", "keys", "out", value("music"), declares("out")},
 		{pinScore, "set-parameter", "keys", "send.room", value(0.4), declares("send.room")},
 		{pinScore, "set-parameter", "keys", "send", value(0.4), declares("send")},
-		{pinScore, "set-parameter", "bass", "level", value(-3), noInstrument("bass")},
-		{pinScore, "reset-parameter", "bass", "level", nil, noInstrument("bass")},
-		{pinScore, "set-parameter", "bass", "send.room", value(0.5), noInstrument("bass")},
+		{pinScore, "set-parameter", "bass", "level", value(-3), `track bass does not expose sound parameter "level"`},
+		{pinScore, "reset-parameter", "bass", "level", nil, `track bass does not expose sound parameter "level"`},
+		{pinScore, "set-parameter", "bass", "send.room", value(0.5), `track bass does not expose sound parameter "send.room"`},
 		{pinScore, "set-parameter", "master", "level", value(-2), noInstrument("master")},
 		{pinScore, "set-parameter", "music", "level", value(-2), noInstrument("music")},
 		{pinScore, "set-parameter", "music", "insert", value("none"), noInstrument("music")},

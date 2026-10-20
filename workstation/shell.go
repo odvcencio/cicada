@@ -390,7 +390,15 @@ func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name stri
 	case "session":
 		// Automation lives in its detail tab in the shell. The standalone
 		// Session panel still renders its editors through panel().
-		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(v, csrf, ctx.Request.URL.Query().Get("placement")))
+		timeline := s.session(v, csrf, ctx.Request.URL.Query().Get("placement"))
+		vocals := s.vocals(ctx, v, csrf)
+		if v.Project.Edition != 2 {
+			return timeline
+		}
+		jump := func(target, label string) gosx.Node {
+			return gosx.El("a", gosx.Attrs(gosx.Attr("href", target), gosx.Attr("data-gosx-native", "true")), gosx.Text(label))
+		}
+		return gosx.Fragment(gosx.El("nav", gosx.Attrs(gosx.Attr("class", "arrange-workspace-nav"), gosx.Attr("aria-label", "Arrange workspaces")), jump("#arrangement", "Song timeline"), jump("#vocals", "Record & comp vocals")), timeline, vocals)
 	case "device":
 		return s.deviceDock(ctx, v, csrf)
 	case "automation":

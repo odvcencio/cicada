@@ -122,6 +122,7 @@ component SplitHandleY(props: SplitHandleProps) {
 
 type TabProps struct {
 	ID       string
+	Value    string
 	Href     string
 	Panel    string
 	Selected bool
@@ -134,10 +135,11 @@ component Tab(props: TabProps) {
 				id={props.ID}
 				class="gsx-tabs__tab"
 				href={props.Href}
+				data-gosx-native="true"
 				role="tab"
 				aria-selected="true"
 				aria-controls={props.Panel}
-				data-gosx-tab={props.ID}
+				data-gosx-tab={props.Value}
 				data-gosx-tab-panel={props.Panel}
 				aria-current="page"
 			>{children}</a>
@@ -147,10 +149,11 @@ component Tab(props: TabProps) {
 				id={props.ID}
 				class="gsx-tabs__tab"
 				href={props.Href}
+				data-gosx-native="true"
 				role="tab"
 				aria-selected="false"
 				aria-controls={props.Panel}
-				data-gosx-tab={props.ID}
+				data-gosx-tab={props.Value}
 				data-gosx-tab-panel={props.Panel}
 			>{children}</a>
 		</If>
@@ -302,9 +305,9 @@ component Center(props: CenterProps) {
 	return <main id="studio-center" class="gsx-dock__center shell-region" data-studio-region={props.View}>
 		<div id="view-tabs" data-gosx-tabs data-gosx-tabs-signal="$view" class="shell-tabs">
 			<nav class="gsx-tabs__list" role="tablist" aria-orientation="horizontal" aria-label="Views">
-				<Tab ID="view-tab-arrange" Href={props.ArrangeHref} Panel="view-panel-arrange" Selected={props.ArrangeShown}>Arrange</Tab>
-				<Tab ID="view-tab-session" Href={props.SessionHref} Panel="view-panel-session" Selected={props.SessionShown}>Session</Tab>
-				<Tab ID="view-tab-mixer" Href={props.MixerHref} Panel="view-panel-mixer" Selected={props.MixerShown}>Mixer</Tab>
+				<Tab ID="view-tab-arrange" Value="arrange" Href={props.ArrangeHref} Panel="view-panel-arrange" Selected={props.ArrangeShown}>Arrange</Tab>
+				<Tab ID="view-tab-session" Value="session" Href={props.SessionHref} Panel="view-panel-session" Selected={props.SessionShown}>Session</Tab>
+				<Tab ID="view-tab-mixer" Value="mixer" Href={props.MixerHref} Panel="view-panel-mixer" Selected={props.MixerShown}>Mixer</Tab>
 			</nav>
 			<div class="shell-scroll">{children}</div>
 		</div>
@@ -326,9 +329,9 @@ component DetailDock(props: DetailDockProps) {
 		<SplitHandleY Signal="$layout.dockHeight" Label="Resize Detail dock" Min="120" Max="640" Value={props.Height} />
 		<div id="detail-tabs" data-gosx-tabs data-gosx-tabs-signal="$dock" class="shell-tabs">
 			<nav class="gsx-tabs__list" role="tablist" aria-orientation="horizontal" aria-label="Detail">
-				<Tab ID="detail-tab-clip" Href={props.ClipHref} Panel="detail-panel-clip" Selected={props.ClipShown}>Clip</Tab>
-				<Tab ID="detail-tab-device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
-				<Tab ID="detail-tab-automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
+				<Tab ID="detail-tab-clip" Value="clip" Href={props.ClipHref} Panel="detail-panel-clip" Selected={props.ClipShown}>Clip</Tab>
+				<Tab ID="detail-tab-device" Value="device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
+				<Tab ID="detail-tab-automation" Value="automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
 			</nav>
 			<div class="shell-scroll">{children}</div>
 		</div>
@@ -353,12 +356,13 @@ component CodeLens(props: CodeLensProps) {
 type PhoneLinkProps struct {
 	Href    string
 	Current bool
+	Region  string
 }
 
 component PhoneLink(props: PhoneLinkProps) {
 	return <>
-		<If cond={props.Current}><a href={props.Href} aria-current="page">{children}</a></If>
-		<If cond={props.Current == false}><a href={props.Href}>{children}</a></If>
+		<If cond={props.Current}><a href={props.Href} data-gosx-native="true" data-shell-region={props.Region} aria-current="page">{children}</a></If>
+		<If cond={props.Current == false}><a href={props.Href} data-gosx-native="true" data-shell-region={props.Region}>{children}</a></If>
 	</>
 }
 
@@ -376,10 +380,10 @@ type PhoneNavProps struct {
 // PhoneNav is visible only at phone width, where one region shows at a time.
 component PhoneNav(props: PhoneNavProps) {
 	return <nav class="shell-phone-nav" aria-label="Regions">
-		<PhoneLink Href={props.BrowserHref} Current={props.BrowserOn}>Browser</PhoneLink>
-		<PhoneLink Href={props.CenterHref} Current={props.CenterOn}>Center</PhoneLink>
-		<PhoneLink Href={props.DetailHref} Current={props.DetailOn}>Detail</PhoneLink>
-		<PhoneLink Href={props.CodeHref} Current={props.CodeOn}>Code</PhoneLink>
+		<PhoneLink Href={props.BrowserHref} Current={props.BrowserOn} Region="browser">Browser</PhoneLink>
+		<PhoneLink Href={props.CenterHref} Current={props.CenterOn} Region="center">Center</PhoneLink>
+		<PhoneLink Href={props.DetailHref} Current={props.DetailOn} Region="detail">Detail</PhoneLink>
+		<PhoneLink Href={props.CodeHref} Current={props.CodeOn} Region="code">Code</PhoneLink>
 	</nav>
 }
 

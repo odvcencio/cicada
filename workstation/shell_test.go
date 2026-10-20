@@ -100,6 +100,26 @@ func TestShellHasUniqueIDsAndOnePhoneRegion(t *testing.T) {
 	}
 }
 
+func TestShellArrangeStartsWithTimelineAndLinksToVocals(t *testing.T) {
+	address, client, _ := detailDockApp(t)
+	body := getPage(t, client, address+"/studio?placement=lead-intro&dock=device")
+	timeline, vocals := strings.Index(body, `id="arrangement"`), strings.Index(body, `id="vocals"`)
+	if timeline < 0 || vocals < 0 || timeline >= vocals {
+		t.Fatal("Arrange must expose the timeline before vocal setup")
+	}
+	for _, want := range []string{
+		`href="#arrangement" data-gosx-native="true"`,
+		`href="#vocals" data-gosx-native="true"`,
+		`data-gosx-tab="arrange"`, `data-gosx-tab="session"`, `data-gosx-tab="mixer"`,
+		`data-gosx-tab="clip"`, `data-gosx-tab="device"`, `data-gosx-tab="automation"`,
+		`data-shell-region="code"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing local workspace navigation %s", want)
+		}
+	}
+}
+
 // shellManifestCommands reads the commands out of the page's hydration manifest.
 func shellManifestCommands(t *testing.T, body string) []command.Command {
 	t.Helper()

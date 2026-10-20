@@ -5,7 +5,7 @@
   if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
   if (window.__cicadaNativeArrangeSmokeRunning) return;
   window.__cicadaNativeArrangeSmokeRunning = true;
-  const checks = [], errors = [], submissions = [], posts = [];
+  const checks = [], errors = [], submissions = [], posts = [], navigations = [];
   const documentIdentity = document;
   addEventListener('error', event => errors.push(event.message || String(event.error)));
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
@@ -15,6 +15,7 @@
     const method = args[1]?.method || request?.method || 'GET';
     const pathname = new URL(typeof request === 'string' ? request : request.url, location.href).pathname;
     if (method.toUpperCase() === 'POST' && pathname.startsWith('/__actions/')) posts.push(pathname);
+    if (method.toUpperCase() === 'GET' && ['/studio', '/__workspace'].includes(pathname)) navigations.push(pathname);
     return fetchOriginal.apply(this, args);
   };
   document.addEventListener('submit', event => {
@@ -24,7 +25,7 @@
     submissions.push({
       path: new URL(form.getAttribute('action'), location.href).pathname,
       action: event.submitter?.name === 'action' ? event.submitter.value : fields.get('action'),
-      name: fields.get('name'), parameter: fields.get('path'),
+      name: fields.get('name'), parameter: fields.get('path'), track: fields.get('track'), control: fields.get('newName'),
       revision: fields.get('revision'), hasCSRF: Boolean(fields.get('csrf_token')),
     });
   }, true);
@@ -43,7 +44,7 @@
     return response.json();
   }
   async function ready() {
-    await wait(() => document.querySelector('#studio-shell[data-shell-actions=ready]') &&
+    await wait(() => window.__gosx?.ready === true && document.querySelector('#studio-shell[data-shell-actions=ready]') &&
       !document.querySelector('#studio-shell form[data-gosx-form-state=pending], #studio-shell form[data-gosx-form-state=submitting]'), 'fresh native shell engine');
     await wait(async () => document.querySelector('#undo-form input[name=revision]')?.value === (await state()).revision,
       'displayed Undo revision agrees with disk');
@@ -52,10 +53,10 @@
   const placements = snapshot => [...snapshot.source.matchAll(/^\s*place\s+(\S+)\s+(\S+)\s+(\S+)\s*\{/gm)]
     .map(([, id, track, content]) => ({id, track, content}));
   const button = (root, label) => [...root.querySelectorAll('button')].find(node => node.textContent.trim() === label);
-  function key(name, code, meta = false, target = document.body) {
+  function key(name, code, meta = false, target = document.body, shift = false) {
     document.activeElement?.blur();
     target.focus();
-    const event = new KeyboardEvent('keydown', {key: name, code, metaKey: meta, bubbles: true, cancelable: true});
+    const event = new KeyboardEvent('keydown', {key: name, code, metaKey: meta, shiftKey: shift, bubbles: true, cancelable: true});
     target.dispatchEvent(event);
     return event;
   }
@@ -67,11 +68,28 @@
     await wait(() => block(id)?.getAttribute('data-placement-selected') === 'true' &&
       new URL(location.href).searchParams.get('placement') === id, id + ' selected');
     await ready();
+    if (document.querySelector('#view-panel-arrange').hidden)
+      throw new Error('Selecting placement ' + id + ' left Arrange: ' + location.search);
   }
   async function dock(name) {
     document.querySelector('#detail-tab-' + name).click();
     await wait(() => !document.querySelector('#detail-panel-' + name).hidden, name + ' dock visible');
     await ready();
+  }
+  function headingInCenter(id) {
+    const heading = document.querySelector(id + ' .panel-heading');
+    const scroller = document.querySelector('#studio-center .shell-scroll');
+    if (!heading || !scroller) return false;
+    const bounds = heading.getBoundingClientRect(), pane = scroller.getBoundingClientRect();
+    return bounds.top >= pane.top - 1 && bounds.bottom <= Math.min(pane.bottom, innerHeight) + 1;
+  }
+  async function recordingRevealed(selected = 'verse') {
+    await wait(() => !document.querySelector('#view-panel-arrange').hidden && headingInCenter('#vocals'), 'recording controls visible in Arrange');
+    if (!document.querySelector('#vocals [data-capture-control=record]')?.disabled)
+      throw new Error('Fixture without an audio track must keep Record take disabled');
+    const chosen = document.querySelectorAll('#view-panel-arrange [data-placement-block][data-placement-selected=true]');
+    if (chosen.length !== 1 || chosen[0].getAttribute('data-placement-block') !== selected)
+      throw new Error('Revealing recording changed the selected placement');
   }
   async function unchanged(source, count) {
     await pause(200);
@@ -131,7 +149,9 @@
     const sent = submissions.slice(start).filter(entry => entry.path === expected.path &&
       (expected.action === undefined || entry.action === expected.action) &&
       (expected.name === undefined || entry.name === expected.name) &&
-      (expected.parameter === undefined || entry.parameter === expected.parameter));
+      (expected.parameter === undefined || entry.parameter === expected.parameter) &&
+      (expected.track === undefined || entry.track === expected.track) &&
+      (expected.control === undefined || entry.control === expected.control));
     if (sent.length !== 1 || sent[0].revision !== revision || !sent[0].hasCSRF)
       throw new Error('Action did not submit exactly once with current revision and CSRF: ' + JSON.stringify({matched: sent, observed: submissions.slice(start)}));
   }
@@ -179,8 +199,57 @@ arrange {
     await ready();
     document.querySelector('#view-tab-arrange').click();
     await wait(() => !document.querySelector('#view-panel-arrange').hidden && block('verse') && block('answer'), 'Arrange displays both persisted placements');
+    const timeline = document.querySelector('#arrangement'), vocals = document.querySelector('#vocals');
+    if (!timeline || !vocals || !(timeline.compareDocumentPosition(vocals) & Node.DOCUMENT_POSITION_FOLLOWING))
+      throw new Error('Song timeline must precede vocal recording in Arrange');
+    await wait(() => headingInCenter('#arrangement'), 'song timeline visible when Arrange first opens');
+    const timelineBounds = timeline.querySelector('.placement-scroll').getBoundingClientRect();
+    const centerBounds = document.querySelector('#studio-center .shell-scroll').getBoundingClientRect();
+    if (timelineBounds.top < centerBounds.top || timelineBounds.top >= Math.min(centerBounds.bottom, innerHeight) || timelineBounds.bottom <= centerBounds.top)
+      throw new Error('Placement timeline is outside the initial Arrange viewport');
+    checks.push('Arrange initially shows the song timeline above vocal recording');
     await select('verse');
     checks.push('Command-S creates named arrangement and mounted controls refresh');
+
+    const workspaceNav = document.querySelector('#view-panel-arrange .arrange-workspace-nav');
+    const vocalLink = workspaceNav?.querySelector('a[href="#vocals"]');
+    const timelineLink = workspaceNav?.querySelector('a[href="#arrangement"]');
+    if (!vocalLink || !timelineLink) throw new Error('Arrange workspace links missing');
+    const linkPosts = posts.length, linkNavigations = navigations.length;
+    vocalLink.click();
+    await recordingRevealed();
+    timelineLink.click();
+    await wait(() => headingInCenter('#arrangement'), 'Song timeline link returns to visible timeline');
+    await unchanged(fixture, linkPosts);
+    if (document !== documentIdentity || navigations.length !== linkNavigations)
+      throw new Error('Arrange workspace links replaced or fetched the document');
+    checks.push('Song timeline and Record & comp vocals links round-trip within the mounted document');
+
+    // Use the second placement so a silent fallback to the first cannot
+    // satisfy the selected-placement preservation check.
+    await select('answer');
+    const draftEditor = document.querySelector('#score textarea');
+    const scoreDraft = fixture.replace(/\r\n?/g, '\n') + '\n// Keep this unsaved vocal idea\n';
+    fill(draftEditor, scoreDraft);
+    for (const entry of ['button', 'shortcut']) {
+      document.querySelector('#view-tab-session').click();
+      await wait(() => !document.querySelector('#view-panel-session').hidden, 'Session view before recording reveal');
+      const recordPosts = posts.length, recordNavigations = navigations.length;
+      if (entry === 'button') {
+        const record = document.querySelector('[data-gosx-command="transport.record"]');
+        record.focus(); record.click();
+      } else key('R', 'KeyR', true, document.body, true);
+      await recordingRevealed('answer');
+      await unchanged(fixture, recordPosts);
+      if (draftEditor !== document.querySelector('#score textarea') || draftEditor.value !== scoreDraft ||
+        document !== documentIdentity || navigations.length !== recordNavigations)
+        throw new Error('Record ' + entry + ' lost the Code draft or navigated away');
+    }
+    fill(draftEditor, fixture.replace(/\r\n?/g, '\n'));
+    document.querySelector('#view-panel-arrange .arrange-workspace-nav a[href="#arrangement"]').click();
+    await wait(() => headingInCenter('#arrangement'), 'return to timeline after recording reveal');
+    await select('verse');
+    checks.push('Record button and Command-Shift-R reveal disabled vocal controls from Session while preserving selection and Code draft');
 
     // Context follows actual managed placement navigation before any explicit
     // Device track choice is made.
@@ -188,6 +257,20 @@ arrange {
     await wait(() => document.querySelector('#device-editor select[name=deviceTrack]')?.value === 'bass', 'Device follows bass placement');
     await select('answer');
     await wait(() => document.querySelector('#device-editor select[name=deviceTrack]')?.value === 'lead', 'Device follows lead placement');
+    const cutoffForm = document.querySelector('#device-editor [data-device-parameter="lead.cutoff"] form[action$="/__actions/instrument"]');
+    if (!cutoffForm) throw new Error('Built-in acid Device cutoff control missing');
+    const builtinSnapshot = await state(), builtinCount = submissions.length;
+    const cutoffDefault = (await state('params')).addresses.find(parameter => parameter.address === 'lead.cutoff')?.value;
+    fill(cutoffForm.querySelector('[name=value]'), '1250.125');
+    button(cutoffForm, 'Apply').click();
+    await wait(async () => /track\s+lead\s+acid\s*\{[^}]*cutoff\s*=\s*1250\.125Hz/.test((await state()).source), 'built-in acid cutoff persists in saved score');
+    await wait(async () => (await state('params')).addresses.some(parameter => parameter.address === 'lead.cutoff' && parameter.value === 1250.125), 'built-in acid cutoff reaches native catalog');
+    await ready();
+    freshSubmission(builtinCount, {path: '/__actions/instrument', action: 'set-parameter', track: 'lead', control: 'cutoff'}, builtinSnapshot.revision);
+    if (document.querySelector('#detail-panel-device').hidden) throw new Error('Built-in sound edit left Device dock');
+    await undo(fixture, true);
+    await wait(async () => (await state('params')).addresses.some(parameter => parameter.address === 'lead.cutoff' && parameter.value === cutoffDefault), 'Undo restores native acid cutoff default');
+    checks.push('Built-in acid cutoff saves through the selected Device instrument form and exact settled Undo restores defaults');
     await select('verse');
     await wait(() => document.querySelector('#device-editor select[name=deviceTrack]')?.value === 'bass', 'Device returns to bass placement');
     checks.push('Device track follows selected placement across managed navigation');
@@ -326,6 +409,6 @@ arrange {
       throw new Error('Arrange workflow unexpectedly opened capture');
     if (errors.length) throw new Error(errors.join('; '));
     return {type: 'cicada-native-smoke', ok: true, checks};
-  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, error: String(error.stack || error), errors}))
+  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, error: String(error) + (error.stack ? '\n' + error.stack : ''), errors}))
     .then(result => window.chrome.webview.postMessage(JSON.stringify(result)));
 })();
