@@ -53,6 +53,6 @@ replace m31labs.dev/cicada => ..
 
 replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20261018224641-e5e266c6aaf1
 
-replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.57.17-0.20261018233127-670b577ea5bc
+replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.57.17-0.20261020191803-446b04dda9be
 
 replace m31labs.dev/gosx/editor => github.com/odvcencio/gosx/editor v0.19.12-0.20261020190509-31426aa5d449
