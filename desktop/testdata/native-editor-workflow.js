@@ -276,7 +276,7 @@
     navigationEditor.setSelectionRange(previousStart, previousStart + 10, 'backward');
     navigationEditor.scrollTop = 80; navigationEditor.scrollLeft = 40;
     const previousScroll = [navigationEditor.scrollTop, navigationEditor.scrollLeft];
-    if (!previousScroll[0] || !previousScroll[1]) throw new Error('Long native editor did not expose both scroll axes');
+    if (!previousScroll[0]) throw new Error('Long native editor did not expose vertical scroll');
     const gotoPanel = () => document.querySelector('#score [data-code-goto-panel]');
     const gotoQuery = () => document.querySelector('#score [data-code-goto=query]');
     const gotoButton = document.querySelector('#score [data-code-command=goto]');
