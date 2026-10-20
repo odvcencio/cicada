@@ -88,27 +88,63 @@ test('shell renders every region without a page scrollbar', async () => {
   await page.close();
 });
 
-test('shell keyboard: a reserved chord does nothing and is listed as unavailable', async () => {
+test('shell keyboard: a reserved chord does nothing and is listed as unavailable', {timeout: 45_000}, async () => {
   const {page, requests} = await openShell();
-  const before = requests.length;
-  const unavailable = page.evaluate(() => new Promise(resolve => document.addEventListener('gosx:command:unavailable', event => resolve(event.detail.id), {once: true})));
-  await page.keyboard.press('Control+j');
-  assert.equal(await unavailable, 'arrange.consolidate');
-  assert.deepEqual(actionPosts(requests.slice(before)), [], 'a reserved chord submits no action');
-  // The Shortcuts button opens the same disclosure the palette chord does.
-  await page.locator('button[data-gosx-disclosure-target="#palette"]').click();
-  const dialog = page.locator('#palette');
-  await dialog.waitFor({state: 'visible'});
-  const row = dialog.locator('li', {hasText: 'Consolidate'});
-  assert.match(await row.innerText(), /Unavailable/);
-  await page.keyboard.press('Escape');
-  await dialog.waitFor({state: 'hidden'});
-  // Browsers report ? as key "?" or, with Shift held, as "/"; both chords are registered.
-  await page.keyboard.press('Shift+/');
-  await dialog.waitFor({state: 'visible'});
-  await page.keyboard.press('Escape');
-  await dialog.waitFor({state: 'hidden'});
-  await page.close();
+  try {
+    const before = requests.length;
+    // Install the observer before sending either chord. Code owns shortcuts
+    // while it has focus; body.focus() alone does not blur a native textarea.
+    await page.evaluate(() => {
+      window.__reservedChord = {unavailable: [], keys: []};
+      document.addEventListener('gosx:command:unavailable', event => window.__reservedChord.unavailable.push(event.detail.id));
+      document.addEventListener('keydown', event => window.__reservedChord.keys.push({
+        key: event.key, code: event.code, ctrl: event.ctrlKey, meta: event.metaKey,
+        prevented: event.defaultPrevented, target: event.target?.id || event.target?.tagName,
+      }));
+    });
+    const editor = page.locator('#studio-code textarea').first();
+    await editor.focus();
+    await page.keyboard.press('Control+j');
+    assert.deepEqual(await page.evaluate(() => window.__reservedChord.unavailable), [], 'the editor retains its shortcut ownership');
+    assert.equal(await editor.evaluate(node => document.activeElement === node), true, 'the guarded chord retains editor focus');
+    assert.deepEqual(actionPosts(requests.slice(before)), [], 'a chord in the editor submits no shell action');
+    await page.evaluate(() => document.activeElement?.blur());
+    assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'the global shortcut starts with body focus');
+    await page.keyboard.press('Control+j');
+    try {
+      await page.waitForFunction(() => window.__reservedChord.unavailable.length > 0, null, {timeout: 15_000});
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => {
+        const commands = window.__gosx?.commands;
+        const active = document.activeElement;
+        return {
+          active: {tag: active?.tagName, id: active?.id, editable: active?.isContentEditable},
+          registered: commands?.list?.().some(command => command.id === 'arrange.consolidate'),
+          available: commands?.available?.('arrange.consolidate'),
+          shell: document.querySelector('#studio-shell')?.getAttribute('data-shell-actions'),
+          observed: window.__reservedChord,
+        };
+      });
+      assert.fail('reserved Ctrl+J did not report its unavailable command: ' + JSON.stringify(diagnostic) + '; ' + error.message);
+    }
+    assert.deepEqual(await page.evaluate(() => window.__reservedChord.unavailable), ['arrange.consolidate']);
+    assert.deepEqual(actionPosts(requests.slice(before)), [], 'a reserved chord submits no action');
+    // The Shortcuts button opens the same disclosure the palette chord does.
+    await page.locator('button[data-gosx-disclosure-target="#palette"]').click();
+    const dialog = page.locator('#palette');
+    await dialog.waitFor({state: 'visible'});
+    const row = dialog.locator('li', {hasText: 'Consolidate'});
+    assert.match(await row.innerText(), /Unavailable/);
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({state: 'hidden'});
+    // Browsers report ? as key "?" or, with Shift held, as "/"; both chords are registered.
+    await page.keyboard.press('Shift+/');
+    await dialog.waitFor({state: 'visible'});
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({state: 'hidden'});
+  } finally {
+    await page.close();
+  }
 });
 
 test('shell fits a 390 px phone without horizontal scroll and shows one region', async () => {
