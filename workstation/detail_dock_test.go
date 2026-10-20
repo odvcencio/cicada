@@ -173,6 +173,14 @@ func TestDeviceBuiltinSoundControlsUseCatalogAndSavedActions(t *testing.T) {
 	parameter := func(body, path string) string {
 		return regexp.MustCompile(`(?s)<div[^>]*data-device-parameter="` + regexp.QuoteMeta(path) + `"[^>]*>.*?</form>.*?</div>`).FindString(body)
 	}
+	order := regexp.MustCompile(`data-device-parameter="lead\.([^"]+)"`).FindAllStringSubmatch(body, -1)
+	if len(order) < 5 || order[0][1] != "cutoff" || order[1][1] != "reso" {
+		t.Fatalf("acid's first visible controls must shape its tone: %+v", order)
+	}
+	last := order[len(order)-3:]
+	if last[0][1] != "tune" || last[1][1] != "fine" || last[2][1] != "octave" {
+		t.Errorf("shared pitch controls must follow the voice's sound settings: %+v", last)
+	}
 	cutoff := parameter(body, "lead.cutoff")
 	for _, want := range []string{`action="/__actions/instrument"`, `name="track" value="lead"`, `name="newName" value="cutoff"`, `name="value" value="600"`, `min="20"`, `max="8000"`, `step="any"`, "cutoff · default (Hz)", "20Hz to 8000Hz · Default: 600Hz", "Apply", "Use default"} {
 		if !strings.Contains(cutoff, want) {
@@ -209,6 +217,10 @@ func TestDeviceBuiltinSoundControlsUseCatalogAndSavedActions(t *testing.T) {
 		t.Error("saved builtin control lost selected track or kept stale forms")
 	}
 	body = getPage(t, client, address+"/studio?dock=device&deviceTrack=beat")
+	drumOrder := regexp.MustCompile(`data-device-parameter="beat\.([^"]+)"`).FindAllStringSubmatch(body, -1)
+	if len(drumOrder) < 2 || drumOrder[0][1] != "bd_tune" || drumOrder[1][1] != "bd_decay" {
+		t.Errorf("drum-specific tuning and decay must stay at the front: %+v", drumOrder)
+	}
 	for path, texts := range map[string][]string{"beat.bd_tune": {"bd_tune · default (Hz)", `name="value" value="55"`, "40Hz to 120Hz · Default: 55Hz"}, "beat.bd_decay": {"bd_decay · track override (ms)", `name="value" value="400"`, "80ms to 1.5s · Default: 400ms"}} {
 		row := parameter(body, path)
 		for _, text := range texts {

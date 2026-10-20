@@ -178,7 +178,10 @@ func (s *studioApp) builtinTrackParameters(v workspace, csrf string, track proje
 			defaultValues[address.Param] = address.Value
 		}
 	}
-	var parameters []gosx.Node
+	// Put expressive sound controls in the visible first row, followed by
+	// other timbre settings and shared pitch controls. Each group retains
+	// catalog order; lane-specific drum tuning stays with its drum sounds.
+	var groups [3][]gosx.Node
 	seen := map[string]bool{}
 	for _, address := range project.ParamAddresses(v.Project) {
 		if address.Track != track.ID || strings.HasPrefix(address.Param, "mix.") {
@@ -218,9 +221,17 @@ func (s *studioApp) builtinTrackParameters(v workspace, csrf string, track proje
 		}
 		reset := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "reset-parameter"), gosx.BoolAttr("formnovalidate")), gosx.Text("Use default"))
 		form := s.form(v, csrf, "instruments", "instrument", hidden("track", track.ID), hidden("newName", descriptor.Source), field(label, input), submit("action", "set-parameter", "Apply"), reset)
-		parameters = append(parameters, gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control"), gosx.Attr("data-device-parameter", track.ID+"."+descriptor.Source), gosx.Attr("data-gosx-key", "builtin-parameter-"+track.ID+"-"+descriptor.Source)), form, gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(help))))
+		group := 1
+		if descriptor.Live && descriptor.Automatable {
+			group = 0
+		}
+		switch descriptor.Source {
+		case "tune", "fine", "octave":
+			group = 2
+		}
+		groups[group] = append(groups[group], gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control"), gosx.Attr("data-device-parameter", track.ID+"."+descriptor.Source), gosx.Attr("data-gosx-key", "builtin-parameter-"+track.ID+"-"+descriptor.Source)), form, gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(help))))
 	}
-	return parameters
+	return append(append(groups[0], groups[1]...), groups[2]...)
 }
 
 func builtinControlValue(descriptor paramdefs.Descriptor, value any) string {
