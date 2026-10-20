@@ -78,11 +78,11 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		if path == "/api/undo" || path == "/api/redo" || path == "/api/source" {
 			session.Current(ctx.Request).Delete("vocal-audition")
 		}
-		ctx.FormData = nil
 		if path == "/api/source" || path == "/api/files" {
-			session.Current(ctx.Request).Delete("score-draft")
+			s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}
+		ctx.FormData = nil
 		// Transport has no source projection to refresh. Its GoSX live binding
 		// updates in place, so a completed Play/Stop cannot redirect over a
 		// newer panel navigation. Native forms still use redirect-after-POST.
@@ -125,8 +125,14 @@ func finiteNumber(form map[string]string, key string) (float64, error) {
 }
 
 func (s *studioApp) saveSource(ctx *action.Context) error {
+	if err := actionValues(ctx); err != nil {
+		return err
+	}
+	// File selection and intent routing use the same fields for HTML forms
+	// and JSON callers. Do not decode again after choosing the merge revision.
+	ctx.Payload = nil
 	if ctx.FormData["intent"] == "discard" {
-		session.Current(ctx.Request).Delete("score-draft")
+		s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
 		ctx.FormData = nil
 		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/?panel=code"), "Draft discarded. The file is unchanged.")
 		return nil

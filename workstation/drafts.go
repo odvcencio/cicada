@@ -27,18 +27,14 @@ func workspaceOwner(r *http.Request) string {
 // A rejected submission can contain up to 2 MiB. Retain its receipt across
 // navigation and reload; managed submissions also keep the existing editor.
 func (s *studioApp) preserveDraft(ctx *action.Context) map[string]string {
-	key, err := s.storeDraft(ctx.FormData["content"], ctx.FormData["revision"], workspaceOwner(ctx.Request), "source")
+	revision := ctx.FormData["fileRevision"]
+	if revision == "" {
+		revision = ctx.FormData["revision"]
+	}
+	key, err := s.storeFileDraft(ctx.FormData["content"], revision, workspaceOwner(ctx.Request), "source", ctx.FormData["file"])
 	if err != nil {
 		return nil
 	}
-	s.draftMu.Lock()
-	d := s.drafts[key]
-	d.File = ctx.FormData["file"]
-	if ctx.FormData["fileRevision"] != "" {
-		d.Revision = ctx.FormData["fileRevision"]
-	}
-	s.drafts[key] = d
-	s.draftMu.Unlock()
 	session.Current(ctx.Request).Set("score-draft", key)
 	if action.WantsJSON(ctx.Request) {
 		return ctx.FormData
@@ -47,6 +43,10 @@ func (s *studioApp) preserveDraft(ctx *action.Context) map[string]string {
 }
 
 func (s *studioApp) storeDraft(source, revision, owner, kind string) (string, error) {
+	return s.storeFileDraft(source, revision, owner, kind, "")
+}
+
+func (s *studioApp) storeFileDraft(source, revision, owner, kind, file string) (string, error) {
 	var id [16]byte
 	if _, err := rand.Read(id[:]); err != nil {
 		return "", err
@@ -59,11 +59,11 @@ func (s *studioApp) storeDraft(source, revision, owner, kind string) (string, er
 		s.drafts = make(map[string]draft)
 	}
 	for id, d := range s.drafts {
-		if d.Owner == owner && d.Kind == kind || now.After(d.Expires) {
+		if d.Owner == owner && d.Kind == kind && d.File == file || now.After(d.Expires) {
 			delete(s.drafts, id)
 		}
 	}
-	// At most sixteen score drafts, all covered by the request-body limit.
+	// At most sixteen drafts, all covered by the request-body limit.
 	if len(s.drafts) >= 16 {
 		var oldest string
 		var at time.Time
@@ -74,8 +74,51 @@ func (s *studioApp) storeDraft(source, revision, owner, kind string) (string, er
 		}
 		delete(s.drafts, oldest)
 	}
-	s.drafts[key] = draft{Source: source, Revision: revision, Owner: owner, Kind: kind, Expires: now.Add(30 * time.Minute)}
+	s.drafts[key] = draft{Source: source, Revision: revision, Owner: owner, Kind: kind, File: file, Expires: now.Add(30 * time.Minute)}
 	return key, nil
+}
+
+// Each project file has its own recovery slot. A check or rejected save in a
+// second file must not replace the draft awaiting correction in the first.
+func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, bool) {
+	owner := workspaceOwner(r)
+	if owner == "" {
+		return draft{}, false
+	}
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	for _, d := range s.drafts {
+		if d.Owner == owner && d.Kind == "source" && d.File == file && time.Now().Before(d.Expires) {
+			return d, true
+		}
+	}
+	return draft{}, false
+}
+
+// Keep the legacy receipt pointed at another retained source draft. Other
+// workflows use its presence to avoid replacing a score with unsaved work.
+func (s *studioApp) clearSourceDraft(r *http.Request, file string) {
+	owner := workspaceOwner(r)
+	now := time.Now()
+	s.draftMu.Lock()
+	var receipt string
+	var expires time.Time
+	for id, d := range s.drafts {
+		if now.After(d.Expires) || d.Owner == owner && d.Kind == "source" && d.File == file {
+			delete(s.drafts, id)
+			continue
+		}
+		if d.Owner == owner && d.Kind == "source" && (receipt == "" || d.Expires.After(expires)) {
+			receipt, expires = id, d.Expires
+		}
+	}
+	s.draftMu.Unlock()
+	store := session.Current(r)
+	if receipt == "" {
+		store.Delete("score-draft")
+	} else {
+		store.Set("score-draft", receipt)
+	}
 }
 
 func (s *studioApp) draft(id, owner string) (draft, bool) {
