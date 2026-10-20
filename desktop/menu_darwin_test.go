@@ -3,6 +3,9 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"m31labs.dev/gosx/desktop"
@@ -37,5 +40,26 @@ func TestMacMenusKeepHistoryShortcutsInWorkstation(t *testing.T) {
 	}
 	if items["edit.copy"].Role != desktop.MenuRoleCopy {
 		t.Error("Copy does not use the focused native editor")
+	}
+}
+
+// TestMacEditorMenuWorkflow supplies the exact production menu scripts to an
+// external native smoke workflow without adding a test API to the app.
+func TestMacEditorMenuWorkflow(t *testing.T) {
+	output := os.Getenv("CICADA_TEST_EDITOR_MENU_WORKFLOW")
+	if output == "" {
+		t.Skip("set CICADA_TEST_EDITOR_MENU_WORKFLOW to generate the native editor smoke workflow")
+	}
+	workflow, err := os.ReadFile(filepath.Join("testdata", "native-editor-workflow.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts, err := json.Marshal(map[string]string{"undo": editHistoryScript("undo"), "redo": editHistoryScript("redo")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := append([]byte("window.__cicadaNativeEditorMenuScripts = "+string(scripts)+";\n"), workflow...)
+	if err := os.WriteFile(output, combined, 0600); err != nil {
+		t.Fatal(err)
 	}
 }

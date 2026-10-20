@@ -2,7 +2,11 @@
 
 package main
 
-import "m31labs.dev/gosx/desktop"
+import (
+	"strconv"
+
+	"m31labs.dev/gosx/desktop"
+)
 
 func platformMenu(h *host, menu desktop.Menu) desktop.Menu {
 	shortcuts := map[string]string{
@@ -44,9 +48,35 @@ func platformMenu(h *host, menu desktop.Menu) desktop.Menu {
 }
 
 func (h *host) editHistory(action string) {
-	// action is a fixed menu constant, never page or file input.
-	script := `(function(){var e=document.activeElement;var typing=e&&(e.matches('input,textarea,select')||e.isContentEditable||e.closest('[contenteditable]:not([contenteditable=false]),[role=textbox]'));if(typing){document.execCommand('` + action + `');}else if(window.__gosx&&window.__gosx.commands){window.__gosx.commands.run('edit.` + action + `');}})();`
+	script := editHistoryScript(action)
+	if script == "" {
+		return
+	}
 	if err := h.app.ExecuteScript(script); err != nil {
 		showError("Edit failed", err.Error())
 	}
+}
+
+func editHistoryScript(action string) string {
+	if action != "undo" && action != "redo" {
+		return ""
+	}
+	// The code editor owns edits such as indentation and Replace that do not
+	// enter WebKit's native typing history. Dispatch its public keyboard path
+	// first; before the editor mounts, ordinary native Undo remains available.
+	return `(function() {
+  var editor = document.activeElement;
+  var typing = editor && (editor.matches('input,textarea,select') || editor.isContentEditable ||
+    editor.closest('[contenteditable]:not([contenteditable=false]),[role=textbox]'));
+  if (typing) {
+    if (editor.matches('#score textarea')) {
+      var key = new KeyboardEvent('keydown', {key: 'z', code: 'KeyZ', metaKey: true,
+        shiftKey: ` + strconv.FormatBool(action == "redo") + `, bubbles: true, cancelable: true});
+      if (!editor.dispatchEvent(key)) return;
+    }
+    document.execCommand('` + action + `');
+  } else if (window.__gosx && window.__gosx.commands) {
+    window.__gosx.commands.run('edit.` + action + `');
+  }
+})();`
 }
