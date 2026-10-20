@@ -253,6 +253,7 @@
     await saved(draft, 'platform Save saves corrected draft');
     await actionComplete(responseStart, 'corrected Save completes');
     actionOnce(start, '', revision);
+    if (form().dataset.gosxFormState === 'error') throw new Error('Corrected Save retained the previous validation error state');
     checks.push('platform Save writes corrected Unicode score once with fresh revision and CSRF');
 
     document.activeElement?.blur();
