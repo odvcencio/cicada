@@ -41,9 +41,11 @@ The null backend is silent. In WSL or on a Linux desktop using PulseAudio,
 select the system output explicitly with `--audio oto`. Rendered WAV and MP3
 files can also be played in your usual music player.
 
-![GoSX Studio's desktop mixer and output meter surface.](screenshots/studio-desktop-1440.png)
+![Arrange opens on the song timeline, with the selected acid track's Sound controls in Device.](screenshots/studio-arrange-device-1280.png)
 
-![GoSX Studio's pattern controls on a narrow screen.](screenshots/studio-mobile-390.png)
+On a narrow window, choose **Center** for the
+[song timeline](screenshots/studio-arrange-390.png) or **Detail** for
+[Device Sound controls](screenshots/studio-device-sound-390.png).
 
 ## Transport, Arrange, and Session
 
