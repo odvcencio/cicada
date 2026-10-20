@@ -334,6 +334,18 @@ undo and redo text edits, including indentation and replacement. The Mac
 **Edit** menu uses the same text history. The Studio toolbar's **Undo** and
 **Redo** operate on saved project edits.
 
+Typing in Find keeps the search field focused. **Enter** or **F3** visits the
+next match; **Shift-Enter** or **Shift-F3** visits the previous match and wraps
+at the ends of the file. **Replace** changes the selected match first; each
+replacement can be undone as one text edit.
+
+Use **Go to line** or **Control-G** on every platform to jump within a long
+score. Enter a line number, or `line:column`, then press **Enter**. Lines and
+columns start at one, and columns count Unicode characters. Columns past the
+end of a line land at its end. An invalid line stays in the jump field with an
+explanation; **Escape** returns to the previous selection and scroll position.
+Navigation never saves or changes the score.
+
 Select a project file, edit it, then use **Check file** to review diagnostics
 without saving or **Save file** (**Command-S** / **Control-S**) to validate and
 write that file. Other score files retain their exact bytes. External changes
