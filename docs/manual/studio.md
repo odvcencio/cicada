@@ -7,13 +7,18 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
-In the desktop app, **Arrange** contains the song timeline and vocal recording.
+In the desktop app, **Arrange** opens on the song timeline, with vocal recording
+below it. Edition-2 scores have **Song timeline** and **Record & comp vocals**
+links to jump between them.
 **Session** contains the launch matrix and live playing;
 **Mixer** contains mix controls. Instruments, Generate, Takes, and Sampler are
 in the left Browser. The detail dock's **Clip** tab edits patterns, **Device**
 edits the selected track's sound and processing, and **Automation** contains
 curve and scene-point editors. The **Code** lens shows the score. Older
 screenshots show these tools as standalone panels.
+
+Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
+workspace region on a phone keeps your unsaved **Code** text in place.
 
 **Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
 effects, and performance resampling. A placement's **Sample into pads** link
@@ -257,6 +262,13 @@ rows](../spec/features.md#expression-rows).
 
 ## Mixer and instruments
 
+Select a placement and open **Device** to shape its track, or choose another
+**Track** and **Inspect track**. **Sound** includes controls for built-in voices
+and declared instrument parameters. Units, ranges, and menu choices show the
+values each control accepts. **Apply** saves the setting; **Use default**
+removes that track's override. Each change supports Undo. **Mix and routing**
+and **Insert effects** have their own controls below Sound.
+
 **Mixer** edits track, bus, return, effect, and master fields supported by the
 source patcher. Each **Set** writes one parameter. Unsupported fields explain
 their limitation and remain available in **Score**.
@@ -373,8 +385,13 @@ Its gain only changes what you hear. Raw input is retained before monitoring,
 and a period-sized capture queue gives the disk writer at least one second of
 headroom without adding headphone latency.
 
-**Arrange → Record vocals** records across the full song, including arrange-only
-scores. In **Recording setup**, choose a microphone and output in **Audio**,
+**Arrange → Record & comp vocals** records across the full song, including
+arrange-only scores. The toolbar's **Record** button, **F9**, or
+**Command-Shift-R** on Mac (**Control-Shift-R** elsewhere) reveals these controls.
+When recording is available, the same command starts a take or finishes the
+active take. With no audio track, it shows **Recording setup**.
+
+In **Recording setup**, choose a microphone and output in **Audio**,
 enable input, and add an audio track such as `danilo`. Use headphones and leave
 monitoring muted if the device delay is distracting. Native recording requires
 Tymbal (`cicada studio score.cicada --audio tymbal`); Oto provides playback.
