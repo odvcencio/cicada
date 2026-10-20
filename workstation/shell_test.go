@@ -108,8 +108,8 @@ func TestShellArrangeStartsWithTimelineAndLinksToVocals(t *testing.T) {
 		t.Fatal("Arrange must expose the timeline before vocal setup")
 	}
 	for _, want := range []string{
-		`href="#arrangement" data-gosx-link="false"`,
-		`href="#vocals" data-gosx-link="false"`,
+		`href="#arrangement" data-gosx-native="true"`,
+		`href="#vocals" data-gosx-native="true"`,
 		`data-gosx-tab="arrange"`, `data-gosx-tab="session"`, `data-gosx-tab="mixer"`,
 		`data-gosx-tab="clip"`, `data-gosx-tab="device"`, `data-gosx-tab="automation"`,
 		`data-shell-region="code"`,
