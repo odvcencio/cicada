@@ -102,6 +102,9 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 		if got := strings.Contains(page, "Recovered draft. Not saved to disk."); got != want {
 			t.Fatalf("%s recovered draft status = %t, want %t", file, got, want)
 		}
+		if got := strings.Contains(page, "data-code-unsaved"); got != want {
+			t.Fatalf("%s unsaved editor buffer = %t, want %t", file, got, want)
+		}
 	}
 
 	apply("main.cicada", "stale", "// main conflict 🎵\n", "")

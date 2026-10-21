@@ -36,10 +36,6 @@ main { padding:24px 28px; }
 .panel-heading h2 { flex-shrink:0; }
 .panel-heading p { max-width:60ch; text-align:right; }
 .source-draft-note { margin:0 0 8px; color:var(--amber); font-size:13px; }
-/* A restored recovery buffer has not been saved to disk. The editor's
-   initial Saved label describes its own buffer, so show the recovery status
-   until an edit changes that label or a successful save replaces the pane. */
-#score .source-draft-note ~ .editor-page .editor-save-status-saved { display:none; }
 .actions .action-form { align-items:center; flex-wrap:wrap; }
 .actions .action-form .field { min-width:100px; }
 .grid-scroll { overflow-x:auto; }
@@ -179,12 +175,18 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 #score .editor-native-sidebar { display:none; }
 /* The Code lens can be narrow even on a wide desktop. Keep its actions and
    search fields inside the lens instead of relying on viewport breakpoints. */
-#score .editor-code-topbar { flex-direction:row; flex-wrap:wrap; align-items:flex-start; gap:8px; }
-#score .editor-code-identity { flex:1 1 140px; max-width:100%; }
+#score .panel-heading { margin-bottom:8px; }
+#score nav[aria-label="Project files"] { padding:4px 0; gap:4px 8px; margin-bottom:8px; max-height:96px; overflow:auto; }
+#score nav[aria-label="Project files"] a { padding:4px 8px; min-height:32px; }
+#score .editor-code-topbar { position:relative; flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:6px; padding:8px 10px; }
+#score .editor-code-identity { flex:none; max-width:100%; padding-right:86px; }
 #score .editor-segments:empty { display:none; }
-#score .editor-native-actions { flex:1 1 240px; min-width:0; max-width:100%; justify-content:flex-start; gap:6px; }
-#score .editor-save-status { min-width:0; }
-#score .editor-code-toolbar { flex-wrap:wrap; gap:6px; max-height:none; }
+#score .editor-native-actions { flex:none; min-width:0; max-width:100%; justify-content:flex-start; gap:4px; }
+#score .editor-save-status { position:absolute; top:8px; right:10px; min-width:0; }
+#score .editor-native-actions button { font-size:12px; padding:5px 6px; min-height:38px; }
+#score .editor-code-toolbar { flex-wrap:wrap; gap:4px; max-height:none; padding:6px 8px; }
+#score .editor-code-toolbar button { font-size:12px; padding:4px 6px; min-height:32px; }
+#score .editor-source-shell { --editor-source-pad-block:12px; --editor-source-pad-inline:8px; --editor-gutter-width:2.4rem; }
 #score .editor-native-main { min-height:0; }
 #score .editor-code-find, #score .editor-code-goto { flex:1 1 100%; flex-wrap:wrap; margin-left:0; }
 #score .editor-code-find input, #score .editor-code-goto input { flex:1 1 112px; width:auto; max-width:100%; }
