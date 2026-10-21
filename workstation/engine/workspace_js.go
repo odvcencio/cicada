@@ -180,6 +180,10 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		refresh: func(js.Value) { u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()}) },
 	}
 	u.listen(document, "change", u.placements.placementViewChanged)
+	u.listen(document, "click", u.placements.placementViewChanged)
+	u.listen(document, "visibilitychange", u.placements.placementViewportChanged)
+	u.listen(js.Global(), "blur", u.placements.placementViewportChanged)
+	u.listen(js.Global(), "resize", u.placements.placementViewportChanged)
 	u.listen(document, "pointerdown", u.placements.placementPointerDown)
 	u.listen(document, "pointermove", u.placements.placementPointerMove)
 	u.listen(document, "pointerup", u.placements.placementPointerUp)

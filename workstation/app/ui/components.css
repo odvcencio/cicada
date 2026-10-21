@@ -102,6 +102,7 @@ main { padding:24px 28px; }
 .timeline-clip.silent { color:var(--muted); background:var(--raised); border-color:var(--border); }
 .timeline-clip.inherited { border-style:dashed; }
 .placement-scroll { border:1px solid var(--border); border-radius:6px; margin:12px 0; }
+.placement-scroll[data-placement-auto-scroll] { border-color:var(--mint); }
 .placement-timeline { --placement-label-width:112px; --placement-bar-width:48px; width:calc(var(--placement-label-width) + var(--placement-bars) * var(--placement-bar-width)); }
 .placement-row { display:grid; grid-template-columns:var(--placement-label-width) minmax(0,1fr); }
 .placement-track { position:sticky; left:0; z-index:2; display:flex; flex-direction:column; justify-content:center; padding:10px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); background:var(--raised); font-size:12px; overflow-wrap:anywhere; }

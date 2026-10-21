@@ -88,16 +88,17 @@ func bindShellPlacementEditor(root js.Value) func() {
 		}
 	}
 	var bindings []workspaceEvent
-	listen := func(name string, fn func(js.Value)) {
+	listenTo := func(target js.Value, name string, fn func(js.Value)) {
 		callback := js.FuncOf(func(_ js.Value, args []js.Value) any {
 			if root.Get("isConnected").Bool() && len(args) > 0 {
 				fn(args[0])
 			}
 			return nil
 		})
-		document.Call("addEventListener", name, callback, true)
-		bindings = append(bindings, workspaceEvent{document, name, callback})
+		target.Call("addEventListener", name, callback, true)
+		bindings = append(bindings, workspaceEvent{target, name, callback})
 	}
+	listen := func(name string, fn func(js.Value)) { listenTo(document, name, fn) }
 	listen("pointerdown", func(event js.Value) {
 		// A later pointer action belongs to the user, even while a save waits.
 		js.Global().Set(placementFocusKey, js.Undefined())
@@ -134,6 +135,7 @@ func bindShellPlacementEditor(root js.Value) func() {
 		}
 	})
 	listen("click", func(event js.Value) {
+		u.placementViewChanged(event)
 		target := event.Get("target")
 		if u.dragClick && workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-placement-block]")) {
 			u.dragClick = false
@@ -141,6 +143,9 @@ func bindShellPlacementEditor(root js.Value) func() {
 		}
 	})
 	listen("change", u.placementViewChanged)
+	listen("visibilitychange", u.placementViewportChanged)
+	listenTo(js.Global(), "blur", u.placementViewportChanged)
+	listenTo(js.Global(), "resize", u.placementViewportChanged)
 	listen("gosx:navigate", func(js.Value) {
 		u.clearPlacementDrag()
 		restorePlacementFocus(root)

@@ -17,10 +17,16 @@ type placementDrag struct {
 	block, scroller  js.Value
 	pointer          int
 	x, scroll, scale float64
+	clientX, clientY float64
 	at, length       int64
 	next             int64
 	resize, moved    bool
 	left, width      string
+	scrollFrame      int
+	scrollCallback   *js.Func
+	edgeAt, frameAt  float64
+	edgeDirection    int
+	autoScrolled     bool
 }
 
 // placementEditorUI shares move/trim geometry between the panel application
@@ -110,7 +116,15 @@ func (u *placementEditorUI) placementPointerMove(event js.Value) {
 		return
 	}
 	workspaceStop(event)
-	dx := event.Get("clientX").Float() - drag.x + drag.scroller.Get("scrollLeft").Float() - drag.scroll
+	drag.clientX, drag.clientY = event.Get("clientX").Float(), event.Get("clientY").Float()
+	u.previewPlacementDrag(drag)
+	if u.drag == drag && drag.moved {
+		u.schedulePlacementScroll(drag)
+	}
+}
+
+func (u *placementEditorUI) previewPlacementDrag(drag *placementDrag) {
+	dx := drag.clientX - drag.x + drag.scroller.Get("scrollLeft").Float() - drag.scroll
 	if !drag.moved && math.Abs(dx) < 4 {
 		return
 	}
@@ -133,7 +147,11 @@ func (u *placementEditorUI) placementPointerMove(event js.Value) {
 	if !drag.resize && next%seq.TicksPerStep == 0 {
 		value = fmt.Sprintf("@%d.%d.%d", next/seq.TicksPerBar+1, next%seq.TicksPerBar/seq.PPQ+1, next%seq.PPQ/seq.TicksPerStep+1)
 	}
-	u.status(workspaceAttr(drag.block, "data-placement-block") + " · " + field + " " + value)
+	message := workspaceAttr(drag.block, "data-placement-block") + " · " + field + " " + value
+	if direction := workspaceAttr(drag.scroller, "data-placement-auto-scroll"); direction != "" {
+		message += " · scrolling " + direction
+	}
+	u.status(message)
 }
 
 func (u *placementEditorUI) clearPlacementDrag() *placementDrag {
@@ -142,6 +160,7 @@ func (u *placementEditorUI) clearPlacementDrag() *placementDrag {
 		return nil
 	}
 	u.drag = nil
+	drag.stopScroll()
 	drag.block.Get("style").Set("left", drag.left)
 	drag.block.Get("style").Set("width", drag.width)
 	drag.block.Call("removeAttribute", "data-placement-preview")
@@ -175,18 +194,14 @@ func (u *placementEditorUI) placementPointerUp(event js.Value) {
 
 func (u *placementEditorUI) placementPointerCancel(event js.Value) {
 	if u.drag != nil && event.Get("pointerId").Int() == u.drag.pointer {
-		u.clearPlacementDrag()
-		u.dragClick = true
-		u.status("Placement edit cancelled.")
+		u.abortPlacementDrag("Placement edit cancelled.")
 	}
 }
 
 func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 	if u.drag != nil && event.Get("key").String() == "Escape" {
 		workspaceStop(event)
-		u.clearPlacementDrag()
-		u.dragClick = true
-		u.status("Placement edit cancelled.")
+		u.abortPlacementDrag("Placement edit cancelled.")
 		return true
 	}
 	target := event.Get("target")
@@ -245,8 +260,13 @@ func (u *workspaceUI) placementEdit(block js.Value, field string, value int64) {
 }
 
 func (u *placementEditorUI) placementViewChanged(event js.Value) {
-	if workspaceAttr(event.Get("target"), "name") == "placementZoom" && u.clearPlacementDrag() != nil {
-		u.dragClick = true
-		u.status("Placement edit cancelled after zoom changed.")
+	if u.drag == nil {
+		return
+	}
+	target := event.Get("target")
+	name := workspaceAttr(target, "name")
+	viewButton := workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-placement-view]"))
+	if name == "placementZoom" || name == "placementFollow" || viewButton {
+		u.abortPlacementDrag("Placement edit cancelled after changing the timeline view.")
 	}
 }
