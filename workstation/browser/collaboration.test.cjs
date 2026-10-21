@@ -14,7 +14,7 @@ function playwright() {
   return createRequire(path.resolve(location))('playwright');
 }
 
-test('shared score merges offline edits, retains per-user undo and rejects viewers', {timeout: 120_000}, async t => {
+test('shared score respects focus, follows selection anchors, merges offline edits and rejects viewers', {timeout: 120_000}, async t => {
   const base = process.env.CICADA_STUDIO_URL;
   assert.ok(base, 'set CICADA_STUDIO_URL to a disposable Studio');
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(base).hostname));
@@ -48,6 +48,53 @@ test('shared score merges offline edits, retains per-user undo and rejects viewe
     pages[1].getByRole('button', {name: 'Use invitation'}).click(),
   ]);
   await wait(async () => await second.count() && !(await second.evaluate(node => node.readOnly)), 'invited editor remained read-only');
+
+  // Deterministic WebKit behavior: setSelectionRange can focus its textarea.
+  // Only this shared editor is shimmed; the updates still come from a real peer.
+  await first.evaluate(node => {
+    const setSelectionRange = node.setSelectionRange;
+    node.collaborationSelectionProbe = {setSelectionRange, calls: []};
+    node.setSelectionRange = function (...args) {
+      this.collaborationSelectionProbe.calls.push({focused: document.activeElement === this});
+      const result = setSelectionRange.apply(this, args);
+      this.focus({preventScroll: true});
+      return result;
+    };
+  });
+  await invitation.focus();
+  await invitation.evaluate(node => node.setSelectionRange(2, 6));
+  const backgroundCalls = await first.evaluate(node => node.collaborationSelectionProbe.calls.length);
+  const backgroundDraft = (await second.inputValue()) + '\n// remote background update\n';
+  await second.fill(backgroundDraft);
+  await wait(async () => (await first.inputValue()) === backgroundDraft, 'background remote edit did not arrive');
+  assert.deepEqual(await invitation.evaluate(node => ({focused: document.activeElement === node, start: node.selectionStart, end: node.selectionEnd})),
+    {focused: true, start: 2, end: 6}, 'a background shared snapshot stole the invitation field focus or selection');
+  assert.equal(await first.evaluate(node => node.collaborationSelectionProbe.calls.length), backgroundCalls,
+    'a background shared snapshot called setSelectionRange on its inactive textarea');
+
+  const selectedText = 'Studio continuity regression';
+  const selectionStart = backgroundDraft.indexOf(selectedText);
+  assert.ok(selectionStart >= 0, 'fixture title is missing');
+  await first.focus();
+  await first.evaluate((node, selection) => node.setSelectionRange(selection.start, selection.end),
+    {start: selectionStart, end: selectionStart + selectedText.length});
+  const focusedCalls = await first.evaluate(node => node.collaborationSelectionProbe.calls.length);
+  const prefix = '// remote 🌙 café\n';
+  const anchoredDraft = prefix + backgroundDraft;
+  await second.fill(anchoredDraft);
+  await wait(async () => (await first.inputValue()) === anchoredDraft, 'focused remote edit did not arrive');
+  assert.deepEqual(await first.evaluate(node => ({focused: document.activeElement === node, start: node.selectionStart, end: node.selectionEnd,
+    selected: node.value.slice(node.selectionStart, node.selectionEnd)})),
+    {focused: true, start: selectionStart + prefix.length, end: selectionStart + prefix.length + selectedText.length, selected: selectedText},
+    'the active shared editor did not retain its CRDT selection anchors through a Unicode prefix insertion');
+  assert.ok(await first.evaluate((node, before) => node.collaborationSelectionProbe.calls.slice(before).some(call => call.focused), focusedCalls),
+    'the focused shared editor never restored its selection after the remote edit');
+  await first.evaluate(node => {
+    node.setSelectionRange = node.collaborationSelectionProbe.setSelectionRange;
+    delete node.collaborationSelectionProbe;
+  });
+  t.diagnostic('Real peer snapshots preserved another field’s focus and shifted the active selection by the Unicode prefix’s UTF-16 length; the selection-focus shim models WebKit.');
+
   await first.fill(original + '\n// first user\n');
   await wait(async () => (await second.inputValue()).includes('// first user'), 'remote edit did not arrive');
   await second.fill(await second.inputValue() + '// second user\n');

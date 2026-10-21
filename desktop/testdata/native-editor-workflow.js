@@ -5,7 +5,28 @@
   if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
-  const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [];
+  const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [], pageRequests = [];
+  const sharedSnapshots = [];
+  const NativeWebSocket = window.WebSocket;
+  // Observe the real transport before the shared engine mounts. Never inject
+  // a snapshot or change its handlers, traffic, or constructor behavior.
+  window.WebSocket = new Proxy(NativeWebSocket, {
+    construct(target, args, newTarget) {
+      const socket = Reflect.construct(target, args, newTarget);
+      const address = new URL(String(args[0]), location.href);
+      if (address.host === location.host && address.pathname === '/collaboration/score') {
+        socket.addEventListener('message', event => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.event === 'state' && message.data?.document && typeof message.data.revision === 'string')
+              sharedSnapshots.push({revision: message.data.revision});
+          } catch { /* Non-state frames are outside this snapshot assertion. */ }
+        });
+      }
+      return socket;
+    },
+  });
+  let recoveryNavigationCSRF = '';
   function evidence(label, observed) {
     const record = {order: interactions.length + 1, ...observed};
     interactions.push(record);
@@ -17,7 +38,23 @@
     const input = args[0], method = args[1]?.method || input?.method || 'GET';
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
-        (path.startsWith('/__actions/') || path.startsWith('/api/'))) mutations.push({path, method});
+        (path.startsWith('/__actions/') || path.startsWith('/api/'))) {
+      let validRecoveryRelease = false;
+      if (recoveryNavigationCSRF && path === '/__actions/live' && method.toUpperCase() === 'POST') {
+        try {
+          const raw = args[1]?.body;
+          const body = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw));
+          const headers = new Headers(args[1]?.headers || input?.headers);
+          validRecoveryRelease = Object.keys(body).sort().join(',') === 'csrf_token,lease,sequence,type' &&
+            body.type === 'release' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.lease) &&
+            /^\d+$/.test(body.sequence) && Number.isSafeInteger(Number(body.sequence)) && Number(body.sequence) > 0 &&
+            body.csrf_token === recoveryNavigationCSRF && headers.get('X-CSRF-Token') === recoveryNavigationCSRF &&
+            /^application\/json(?:;|$)/i.test(headers.get('Content-Type') || '');
+        } catch { /* The strict mutation guard below rejects malformed releases. */ }
+      }
+      mutations.push({path, method, validRecoveryRelease});
+    }
+    if (method.toUpperCase() === 'GET' && ['/', '/studio', '/__workspace'].includes(path)) pageRequests.push(path);
     return originalFetch.apply(this, args).then(response => {
       if (method.toUpperCase() === 'POST' && path.startsWith('/__actions/')) {
         return response.clone().text().then(text => {
@@ -56,6 +93,8 @@
   const normalize = value => value.replace(/\r\n?/g, '\n');
   const editor = () => document.querySelector('#score textarea');
   const form = () => editor()?.closest('form');
+  const visible = node => Boolean(node && node.getClientRects().length &&
+    getComputedStyle(node).display !== 'none' && getComputedStyle(node).visibility !== 'hidden');
   async function ready() {
     await wait(() => window.__gosx?.ready === true && document.querySelector('#studio-shell[data-shell-actions=ready]') &&
       document.querySelector('#score .editor-page.editor-highlight-ready') &&
@@ -183,10 +222,12 @@
     await ready();
   }
   async function actionComplete(start, name) {
-    await wait(() => responses.length > start &&
+    await wait(() => responses.slice(start).some(response => response.path === '/__actions/source') &&
       !document.querySelector('#studio-shell form[data-gosx-form-state=pending], #studio-shell form[data-gosx-form-state=submitting]'), name);
     await ready();
-    return responses[responses.length - 1];
+    const sourceResponses = responses.slice(start).filter(response => response.path === '/__actions/source');
+    if (sourceResponses.length !== 1) throw new Error(name + ': expected exactly one source response');
+    return sourceResponses[0];
   }
   function actionOnce(start, intent, revision) {
     const sent = submissions.slice(start);
@@ -422,6 +463,44 @@
     const openGoto = () => key('g', 'KeyG', navigationEditor, {ctrlKey: true});
     if (!openGoto().defaultPrevented || gotoPanel().hidden || document.activeElement !== gotoQuery())
       throw new Error('Ctrl+G did not open Go to line on this platform');
+    const sharedEditor = document.querySelector('textarea[data-collaboration-editor][aria-label="Shared score draft"]');
+    if (!sharedEditor?.isConnected) throw new Error('Background shared score editor did not mount');
+    const snapshotStart = sharedSnapshots.length, queryBeforeSnapshot = gotoQuery().value;
+    const querySelection = [gotoQuery().selectionStart, gotoQuery().selectionEnd, gotoQuery().selectionDirection];
+    const sourceSelection = [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection];
+    const sourceScroll = [navigationEditor.scrollTop, navigationEditor.scrollLeft];
+    const snapshotPages = pageRequests.length;
+    const requireQueryFocus = () => {
+      if (document.activeElement !== gotoQuery())
+        throw new Error('Real shared score snapshot stole Go query focus; active shared editor=' +
+          (document.activeElement === sharedEditor));
+    };
+    await wait(() => {
+      requireQueryFocus();
+      return sharedSnapshots.length > snapshotStart;
+    }, 'incoming real shared score snapshot while Go query stays focused');
+    // The observer runs before the engine's message handler. Allow that same
+    // event turn to finish before checking its selection/focus side effects.
+    await pause(50);
+    requireQueryFocus();
+    const snapshotState = await state(), snapshotCapture = await state('capture');
+    if (gotoQuery().value !== queryBeforeSnapshot || querySelection.join(':') !==
+        [gotoQuery().selectionStart, gotoQuery().selectionEnd, gotoQuery().selectionDirection].join(':') ||
+        sourceSelection.join(':') !== [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection].join(':') ||
+        sourceScroll.some((value, index) => Math.abs(value - [navigationEditor.scrollTop, navigationEditor.scrollLeft][index]) > 1) ||
+        navigationEditor !== editor() || navigationEditor.value !== longDraft || snapshotState.source !== sourceBeforeNavigation.source ||
+        snapshotState.revision !== sourceBeforeNavigation.revision || sharedSnapshots.at(-1).revision !== sourceBeforeNavigation.revision ||
+        navigationHistory !== [form().dataset.undoDepth, form().dataset.redoDepth].join(':') || navigationFields !==
+        JSON.stringify(['file', 'revision', 'fileRevision', 'diskRevision'].map(name => form().querySelector('input[name="' + name + '"]')?.value)) ||
+        mutations.length !== navigationMutations || submissions.length !== navigationSubmissions || pageRequests.length !== snapshotPages ||
+        (await state('transport')).playing || snapshotCapture.activeCapture || snapshotCapture.input.enabled)
+      throw new Error('Real shared score snapshot changed Go input, Code draft/selection/module/history, disk, or recording state');
+    checks.push(evidence('a real background shared snapshot preserves Go query focus and all Code draft state without writes',
+      {action: 'wait for real shared WebSocket state with Go query focused', realStateSnapshots: sharedSnapshots.length - snapshotStart,
+        expectedFocusedControl: 'Go query', actualFocusedControl: 'Go query', queryAndSelectionUnchanged: true,
+        exactCodeDraftAndSelectionUnchanged: true, savedSourceAndRevisionUnchanged: true, moduleAndHistoryUnchanged: true,
+        mutationRequests: mutations.length - navigationMutations, formSubmissions: submissions.length - navigationSubmissions,
+        navigationRequests: pageRequests.length - snapshotPages, transportPlaying: false, captureActive: false, microphoneEnabled: false}));
     await typeField(gotoQuery(), targetLine + ':7');
     const lineStart = longLines.slice(0, targetLine - 1).join('\n').length + 1;
     const unicodePosition = lineStart + Array.from(longLines[targetLine - 1]).slice(0, 6).join('').length;
@@ -481,17 +560,61 @@
     }, 'live Cicada highlights agree with current score text');
     checks.push('live Cicada highlights describe the mounted draft text');
 
-    let start = submissions.length, responseStart = responses.length, revision = (await state()).revision;
+    const beforeCheck = await state(), checkMutations = mutations.length;
+    let start = submissions.length, responseStart = responses.length, revision = beforeCheck.revision;
     const checkButton = [...form().querySelectorAll('button')].find(node => node.textContent.trim() === 'Check file');
     checkButton.click();
     const checked = await actionComplete(responseStart, 'Check file completes');
     actionOnce(start, 'check', revision);
-    if (checked.status !== 422 || !/File check passed/.test(checked.body.message || ''))
+    const checkMessage = 'File check passed. Draft is not saved.';
+    if (checked.status !== 200 || checked.body.ok !== true || checked.body.message !== checkMessage)
       throw new Error('Valid Check file did not return retained-draft confirmation: ' + checked.status + ' ' + checked.body.message);
-    if ((await state()).source !== original || editor().value !== draft) throw new Error('Check file saved or discarded the draft');
-    checks.push('Check file validates current draft without saving it');
+    await wait(() => [...document.querySelectorAll('.gosx-toast--success[role=status]')]
+      .some(node => visible(node) && node.textContent.includes(checkMessage)), 'visible successful Check notification');
+    const afterCheck = await state();
+    if (afterCheck.source !== original || afterCheck.revision !== beforeCheck.revision || editor().value !== draft ||
+        form().dataset.gosxFormState === 'error' || mutations.length !== checkMutations + 1 ||
+        mutations[checkMutations].path !== '/__actions/source')
+      throw new Error('Check file saved, discarded the draft, retained error feedback, or sent an extra mutation request');
+
+    const checkedFile = form().querySelector('input[name=file]').value;
+    const fileLink = [...document.querySelectorAll('#score nav[aria-label="Project files"] a')]
+      .find(node => new URL(node.href).searchParams.get('file') === checkedFile);
+    if (!fileLink) throw new Error('Current project file navigation link missing');
+    const checkedDocument = document, checkPages = pageRequests.length, checkedSubmissions = submissions.length;
+    const recoveryMutationStart = mutations.length;
+    recoveryNavigationCSRF = form().querySelector('input[name=csrf_token]').value;
+    if (!recoveryNavigationCSRF) throw new Error('Recovery navigation needs the current fixture CSRF token');
+    fileLink.click();
+    await wait(() => pageRequests.length > checkPages && document.querySelector('#score .source-draft-note'), 'real managed GET recovers checked draft');
+    await ready();
+    await pause(160);
+    recoveryNavigationCSRF = '';
+    // A real managed GET disposes the previous Live mount. Permit only its
+    // authenticated, empty-note lease release during this intentional GET.
+    const recoveryReleases = mutations.slice(recoveryMutationStart);
+    if (recoveryReleases.length > 1 || recoveryReleases.some(request => !request.validRecoveryRelease))
+      throw new Error('Recovery GET sent an unexpected mutation; only one validated Live lease release is permitted');
+    const recoveredNote = document.querySelector('#score .source-draft-note[role=status]');
+    const recoveredState = await state(), recoveredCapture = await state('capture');
+    if (document !== checkedDocument || editor().value !== draft || form().querySelector('input[name=file]').value !== checkedFile ||
+        !visible(recoveredNote) || recoveredNote.textContent !== 'Recovered draft. Not saved to disk.' ||
+        [...document.querySelectorAll('#score .editor-save-status-saved')].some(visible) ||
+        recoveredState.source !== original || recoveredState.revision !== beforeCheck.revision ||
+        mutations.length !== checkMutations + 1 + recoveryReleases.length || submissions.length !== checkedSubmissions ||
+        (await state('transport')).playing || recoveredCapture.activeCapture || recoveredCapture.input.enabled)
+      throw new Error('Managed GET lost checked draft, hid recovery feedback, showed Saved, or changed disk/recording state');
+    checks.push(evidence('Check file succeeds without saving; a managed GET recovers the exact draft with honest visible status',
+      {action: 'Check file then current project file link', expectedStatus: 200, actualStatus: checked.status,
+        resultOK: checked.body.ok, successFeedbackVisible: true, exactDraftRetained: true, sameDocument: true,
+        recoveredStatus: recoveredNote.textContent, visibleSavedLabels: 0, savedSourceAndRevisionUnchanged: true,
+        explicitCheckRequests: 1, validatedLiveLeaseReleases: recoveryReleases.length,
+        extraMutationRequests: mutations.length - checkMutations - 1 - recoveryReleases.length,
+        managedGETObserved: pageRequests.length > checkPages, transportPlaying: false, captureActive: false, microphoneEnabled: false}));
 
     fill(draft + '\nnot valid cicada syntax !!!\n');
+    if (!visible(document.querySelector('#score .editor-save-status-unsaved')))
+      throw new Error('Editing a recovered draft hid the Unsaved status');
     const rejected = editor().value;
     start = submissions.length; responseStart = responses.length;
     [...form().querySelectorAll('button')].find(node => node.textContent.trim() === 'Save file').click();
@@ -506,10 +629,14 @@
     start = submissions.length; responseStart = responses.length; revision = (await state()).revision;
     key('s', 'KeyS', editor(), {mod: true});
     await saved(draft, 'platform Save saves corrected draft');
-    await actionComplete(responseStart, 'corrected Save completes');
+    const corrected = await actionComplete(responseStart, 'corrected Save completes');
     actionOnce(start, '', revision);
     if (form().dataset.gosxFormState === 'error') throw new Error('Corrected Save retained the previous validation error state');
-    checks.push('platform Save writes corrected Unicode score once with fresh revision and CSRF');
+    if (document.querySelector('#score .source-draft-note')) throw new Error('Successful Save retained recovered-draft status');
+    checks.push(evidence('platform Save writes corrected Unicode score once with fresh revision and CSRF and clears draft recovery status',
+      {action: 'correct rejected draft and platform Save', actualStatus: corrected.status,
+        exactDraftSaved: true, savedRevisionChanged: (await state()).revision !== beforeCheck.revision,
+        formErrorPresent: false, recoveredStatusPresent: false}));
 
     document.activeElement?.blur();
     menuHistory(true);

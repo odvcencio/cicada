@@ -52,16 +52,18 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 				Error       string                `json:"error"`
 			}
 			_ = json.Unmarshal(response, &checked)
-			message := "File check passed."
-			if !checked.Valid {
-				message = checked.Error
-				for _, d := range checked.Diagnostics {
-					if d.Severity == "error" {
-						message += fmt.Sprintf(" %d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
-					}
+			values := s.preserveDraft(ctx)
+			if checked.Valid {
+				ctx.SetResult(action.Result{OK: true, Message: "File check passed. Draft is not saved.", Values: values})
+				return nil
+			}
+			message := checked.Error
+			for _, d := range checked.Diagnostics {
+				if d.Severity == "error" {
+					message += fmt.Sprintf(" %d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 				}
 			}
-			return action.Validation(message, nil, s.preserveDraft(ctx))
+			return action.Validation(message, nil, values)
 		}
 		// Explicit redirect gives native and enhanced forms the same refreshed
 		// projection. Never put full score text into a cookie-backed flash.

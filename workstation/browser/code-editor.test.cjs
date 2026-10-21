@@ -409,15 +409,60 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
       await ready(page);
       return response;
     };
+    const invalid='cicada 2\nthis is invalid\n';
+    await editor.fill(invalid);
+    let response=await submit(()=>page.getByRole('button',{name:'Check file',exact:true}).click());
+    assert.equal(response.status(),422,'invalid Check must still report validation failure');
+    assert.equal((await response.json()).ok,false);
+    assert.deepEqual(await state(page),original,'invalid Check changed the saved score');
+    assert.equal(await editor.inputValue(),invalid,'invalid Check discarded the draft');
     const checked=fixture+'// check this draft, do not save 🎵\n';
     await editor.fill(checked);
-    let response=await submit(()=>page.getByRole('button',{name:'Check file',exact:true}).click());
-    assert.equal(response.status(),422,'Check uses the retained-draft validation result');
-    assert.match((await response.json()).message,/File check passed/);
+    response=await submit(()=>page.getByRole('button',{name:'Check file',exact:true}).click());
+    assert.equal(response.status(),200,'a valid Check must succeed without saving');
+    const checkResult=await response.json();
+    assert.equal(checkResult.ok,true,'a successful Check must not be presented as a validation failure');
+    assert.match(checkResult.message,/File check passed.*not saved/);
     assert.deepEqual(await state(page),original,'Check changed the saved score');
     assert.equal(await editor.inputValue(),checked);
+    assert.equal(await page.locator('#editor-native-form').getAttribute('data-gosx-form-state'),'success','Check must present successful feedback');
+    assert.equal(await page.locator('#editor-save-status').textContent(),'Unsaved','Check must retain the unsaved buffer status');
+    t.diagnostic(JSON.stringify({scenario:'valid Check file',expected:{status:200,ok:true,formState:'success',bufferStatus:'Unsaved',songUnchanged:true,draftPreserved:true},actual:{status:response.status(),ok:checkResult.ok,formState:await page.locator('#editor-native-form').getAttribute('data-gosx-form-state'),bufferStatus:await page.locator('#editor-save-status').textContent(),songUnchanged:JSON.stringify(await state(page))===JSON.stringify(original),draftPreserved:(await editor.inputValue())===checked}}));
     await visibleText(page);
-    const invalid='cicada 2\nthis is invalid\n';
+    await page.reload(); await ready(page); await visibleText(page);
+    assert.equal(await editor.inputValue(),checked,'reload must restore the exact checked draft');
+    assert.equal(await page.locator('#score .source-draft-note').isVisible(),true,'recovered draft must identify its unsaved state');
+    assert.equal(await page.locator('#editor-save-status').isVisible(),true,'recovered draft must show its buffer status');
+    assert.equal(await page.locator('#editor-save-status').textContent(),'Unsaved','recovered draft must not claim to be saved');
+    assert.deepEqual(await state(page),original,'recovering a checked draft changed the saved song');
+    t.diagnostic(JSON.stringify({scenario:'checked draft after reload',expected:{exactDraft:true,recoveredStatusVisible:true,bufferStatus:'Unsaved',songUnchanged:true},actual:{exactDraft:(await editor.inputValue())===checked,recoveredStatusVisible:await page.locator('#score .source-draft-note').isVisible(),bufferStatus:await page.locator('#editor-save-status').textContent(),songUnchanged:JSON.stringify(await state(page))===JSON.stringify(original)}}));
+    for (const viewport of [{width:1280,height:840},{width:390,height:844}]) {
+      await page.setViewportSize(viewport);
+      await fit(page);
+      const geometry=await editor.evaluate(node=>{
+        const style=getComputedStyle(node),bounds=node.getBoundingClientRect();
+        let top=Math.max(0,bounds.top),bottom=Math.min(innerHeight,bounds.bottom);
+        for(let parent=node.parentElement;parent;parent=parent.parentElement){
+          const css=getComputedStyle(parent),rect=parent.getBoundingClientRect();
+          if(/^(auto|scroll|hidden|clip)$/.test(css.overflowY)){
+            top=Math.max(top,rect.top+parent.clientTop);
+            bottom=Math.min(bottom,rect.top+parent.clientTop+parent.clientHeight);
+          }
+        }
+        const pane=document.querySelector('#studio-code .shell-scroll').getBoundingClientRect();
+        const controls=[...document.querySelectorAll('#score .editor-native-actions button,#score .editor-code-toolbar button')].filter(button=>button.getBoundingClientRect().height);
+        return {
+          visibleSourceLines:(bottom-top-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom))/parseFloat(style.lineHeight),
+          controlsContained:controls.every(button=>{const rect=button.getBoundingClientRect();return rect.left>=pane.left-1 && rect.right<=Math.min(pane.right,innerWidth)+1 && rect.top>=pane.top-1 && rect.bottom<=Math.min(pane.bottom,innerHeight)+1;}),
+          bodyOverflow:document.documentElement.scrollWidth>innerWidth,
+        };
+      });
+      assert.ok(geometry.visibleSourceLines>=5,'recovered Code must leave at least five visible source lines at '+viewport.width);
+      assert.equal(geometry.controlsContained,true,'recovery actions and navigation controls must fit the Code pane');
+      assert.equal(geometry.bodyOverflow,false,'recovery must not overflow the viewport');
+      t.diagnostic(JSON.stringify({scenario:'recovered Code layout',viewport,expected:{minimumVisibleSourceLines:5,controlsContained:true,bodyOverflow:false},actual:geometry}));
+    }
+    await page.setViewportSize({width:1440,height:960});
     await editor.fill(invalid);
     response=await submit(()=>page.getByRole('button',{name:'Save file',exact:true}).click());
     assert.equal(response.status(),422);
@@ -454,6 +499,9 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
     assert.equal(await editor.inputValue(),saved);
     assert.ok(['idle','success'].includes(await page.locator('#editor-native-form').getAttribute('data-gosx-form-state')),'a successful correction must clear the previous source validation error state');
     assert.equal(await page.locator('#score .editor-save-status-error').count(),0,'a successful correction must clear editor error feedback');
+    assert.equal(await page.locator('#score .source-draft-note').count(),0,'a successful Save must clear the recovered draft status');
+    assert.equal(await page.locator('#editor-save-status').isVisible(),true,'a successful Save must restore the visible saved status');
+    assert.equal(await page.locator('#editor-save-status').textContent(),'Saved','successful Save must acknowledge the saved buffer');
     assert.equal(new URL(page.url()).searchParams.get('region'),'code','save hid the Code region');
     assert.deepEqual(errors,[],'editor callback errors');
     t.diagnostic('Valid Check did not save; invalid422 and stale409 kept the draft; keyboard Save recovered and retained visible Unicode source');
@@ -489,7 +537,7 @@ test('Studio Code remounts after managed project file navigation and retains che
   const check=async()=>{
     const response=page.waitForResponse(response=>new URL(response.url()).pathname==='/__actions/source' && response.request().method()==='POST');
     await page.getByRole('button',{name:'Check file',exact:true}).click();
-    assert.equal((await response).status(),422);
+    assert.equal((await response).status(),200,'a valid project file Check must succeed without writing');
     await ready();
   };
   const navigate=async name=>{

@@ -232,7 +232,7 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 			view.Source, view.FileRevision = saved.Source, saved.Revision
 			view.HasDraft = true
 			if !props.HasMessage {
-				props.Message, props.HasMessage = "Unsaved score draft restored. Save it after correcting the error or conflict.", true
+				props.Message, props.HasMessage = "Unsaved score draft restored. Check or save it to continue.", true
 			}
 		}
 	}
