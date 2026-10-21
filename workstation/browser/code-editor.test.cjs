@@ -267,7 +267,10 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
             return {visible:false,synchronized:false};
           },offset);
           return observed.visible && observed.synchronized;
-        },'Go to line did not reveal its target within all clipping ancestors with synchronized highlight and gutter scrolling');
+        },'Go to line did not reveal its target within all clipping ancestors with synchronized highlight and gutter scrolling').catch(error=>{
+          proof('Go target visibility failure',{offset,visible:true,synchronized:true},{offset,...observed});
+          throw error;
+        });
         return observed;
       };
       await page.setViewportSize({width:1280,height:900});
