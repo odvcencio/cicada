@@ -6,6 +6,7 @@
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
   const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [], pageRequests = [];
+  let recoveryNavigationCSRF = '';
   function evidence(label, observed) {
     const record = {order: interactions.length + 1, ...observed};
     interactions.push(record);
@@ -17,7 +18,22 @@
     const input = args[0], method = args[1]?.method || input?.method || 'GET';
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
-        (path.startsWith('/__actions/') || path.startsWith('/api/'))) mutations.push({path, method});
+        (path.startsWith('/__actions/') || path.startsWith('/api/'))) {
+      let validRecoveryRelease = false;
+      if (recoveryNavigationCSRF && path === '/__actions/live' && method.toUpperCase() === 'POST') {
+        try {
+          const raw = args[1]?.body;
+          const body = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw));
+          const headers = new Headers(args[1]?.headers || input?.headers);
+          validRecoveryRelease = Object.keys(body).sort().join(',') === 'csrf_token,lease,sequence,type' &&
+            body.type === 'release' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.lease) &&
+            /^\d+$/.test(body.sequence) && Number.isSafeInteger(Number(body.sequence)) && Number(body.sequence) > 0 &&
+            body.csrf_token === recoveryNavigationCSRF && headers.get('X-CSRF-Token') === recoveryNavigationCSRF &&
+            /^application\/json(?:;|$)/i.test(headers.get('Content-Type') || '');
+        } catch { /* The strict mutation guard below rejects malformed releases. */ }
+      }
+      mutations.push({path, method, validRecoveryRelease});
+    }
     if (method.toUpperCase() === 'GET' && ['/', '/studio', '/__workspace'].includes(path)) pageRequests.push(path);
     return originalFetch.apply(this, args).then(response => {
       if (method.toUpperCase() === 'POST' && path.startsWith('/__actions/')) {
@@ -186,10 +202,12 @@
     await ready();
   }
   async function actionComplete(start, name) {
-    await wait(() => responses.length > start &&
+    await wait(() => responses.slice(start).some(response => response.path === '/__actions/source') &&
       !document.querySelector('#studio-shell form[data-gosx-form-state=pending], #studio-shell form[data-gosx-form-state=submitting]'), name);
     await ready();
-    return responses[responses.length - 1];
+    const sourceResponses = responses.slice(start).filter(response => response.path === '/__actions/source');
+    if (sourceResponses.length !== 1) throw new Error(name + ': expected exactly one source response');
+    return sourceResponses[0];
   }
   function actionOnce(start, intent, revision) {
     const sent = submissions.slice(start);
@@ -506,23 +524,34 @@
       .find(node => new URL(node.href).searchParams.get('file') === checkedFile);
     if (!fileLink) throw new Error('Current project file navigation link missing');
     const checkedDocument = document, checkPages = pageRequests.length, checkedSubmissions = submissions.length;
+    const recoveryMutationStart = mutations.length;
+    recoveryNavigationCSRF = form().querySelector('input[name=csrf_token]').value;
+    if (!recoveryNavigationCSRF) throw new Error('Recovery navigation needs the current fixture CSRF token');
     fileLink.click();
     await wait(() => pageRequests.length > checkPages && document.querySelector('#score .source-draft-note'), 'real managed GET recovers checked draft');
     await ready();
+    await pause(160);
+    recoveryNavigationCSRF = '';
+    // A real managed GET disposes the previous Live mount. Permit only its
+    // authenticated, empty-note lease release during this intentional GET.
+    const recoveryReleases = mutations.slice(recoveryMutationStart);
+    if (recoveryReleases.length > 1 || recoveryReleases.some(request => !request.validRecoveryRelease))
+      throw new Error('Recovery GET sent an unexpected mutation; only one validated Live lease release is permitted');
     const recoveredNote = document.querySelector('#score .source-draft-note[role=status]');
     const recoveredState = await state(), recoveredCapture = await state('capture');
     if (document !== checkedDocument || editor().value !== draft || form().querySelector('input[name=file]').value !== checkedFile ||
         !visible(recoveredNote) || recoveredNote.textContent !== 'Recovered draft. Not saved to disk.' ||
         [...document.querySelectorAll('#score .editor-save-status-saved')].some(visible) ||
         recoveredState.source !== original || recoveredState.revision !== beforeCheck.revision ||
-        mutations.length !== checkMutations + 1 || submissions.length !== checkedSubmissions ||
+        mutations.length !== checkMutations + 1 + recoveryReleases.length || submissions.length !== checkedSubmissions ||
         (await state('transport')).playing || recoveredCapture.activeCapture || recoveredCapture.input.enabled)
       throw new Error('Managed GET lost checked draft, hid recovery feedback, showed Saved, or changed disk/recording state');
     checks.push(evidence('Check file succeeds without saving; a managed GET recovers the exact draft with honest visible status',
       {action: 'Check file then current project file link', expectedStatus: 200, actualStatus: checked.status,
         resultOK: checked.body.ok, successFeedbackVisible: true, exactDraftRetained: true, sameDocument: true,
         recoveredStatus: recoveredNote.textContent, visibleSavedLabels: 0, savedSourceAndRevisionUnchanged: true,
-        explicitCheckRequests: 1, extraMutationRequests: mutations.length - checkMutations - 1,
+        explicitCheckRequests: 1, validatedLiveLeaseReleases: recoveryReleases.length,
+        extraMutationRequests: mutations.length - checkMutations - 1 - recoveryReleases.length,
         managedGETObserved: pageRequests.length > checkPages, transportPlaying: false, captureActive: false, microphoneEnabled: false}));
 
     fill(draft + '\nnot valid cicada syntax !!!\n');
