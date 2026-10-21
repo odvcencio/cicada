@@ -257,6 +257,8 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
                 const rect=range.getBoundingClientRect();
                 return {visible:rect.height>0 && rect.top>=top-1 && rect.bottom<=bottom+1 && rect.left>=left-1 && rect.right<=right+1,
                   synchronized:Math.abs(layer.scrollTop-editor.scrollTop)<=1 && Math.abs(gutter.scrollTop-editor.scrollTop)<=1,
+                  viewportContained:bounds.top>=top-1 && bounds.bottom<=bottom+1 && bounds.left>=left-1 && bounds.right<=right+1,
+                  sourceViewport:{top:bounds.top,bottom:bounds.bottom,left:bounds.left,right:bounds.right},
                   target:{top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right},clip:{top,bottom,left,right},
                   scroll:{source:editor.scrollTop,highlight:layer.scrollTop,gutter:gutter.scrollTop}};
               }
@@ -269,16 +271,27 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
         return observed;
       };
       await page.setViewportSize({width:1280,height:900});
-      await editor.fill(fixture); await visibleText(page);
-      const shortOffset=fixture.split('\n').slice(0,7).reduce((offset,line)=>offset+line.length+1,0)+2;
+      const shortSource=fixture.trimEnd();
+      await editor.fill(shortSource); await visibleText(page);
+      const shortOffset=shortSource.split('\n').slice(0,7).reduce((offset,line)=>offset+line.length+1,0)+2;
       await editor.press('Control+g');
       await goPanel.waitFor({state:'visible'});
       await goQuery.fill(''); await goQuery.pressSequentially('8:3'); await goQuery.press('Enter');
       await goPanel.waitFor({state:'hidden'});
       assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[shortOffset,shortOffset],'short Go must select line8 column3');
-      assert.equal(await editor.inputValue(),fixture,'short Go must not edit the score');
+      assert.equal(await editor.inputValue(),shortSource,'short Go must not edit the score');
       const shortObservation=await reveal(shortOffset);
-      proof('Short Go in clipped dock',{viewport:[1280,900],target:'8:3',selection:[shortOffset,shortOffset],visible:true,synchronized:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...shortObservation});
+      assert.equal(shortObservation.viewportContained,true,'the entire source viewport must fit inside the actual Code clip');
+      proof('Short Go in clipped dock',{viewport:[1280,900],target:'8:3',selection:[shortOffset,shortOffset],visible:true,synchronized:true,viewportContained:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...shortObservation});
+      const eofQuery=shortSource.split('\n').length+':9999';
+      await editor.press('Control+g');
+      await goQuery.fill(''); await goQuery.pressSequentially(eofQuery); await goQuery.press('Enter');
+      await goPanel.waitFor({state:'hidden'});
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[shortSource.length,shortSource.length],'Go must reach the short score EOF');
+      assert.equal(await editor.inputValue(),shortSource,'Go to EOF must not edit the score');
+      const eofObservation=await reveal(shortSource.length-1);
+      assert.equal(eofObservation.viewportContained,true,'EOF source viewport must stay inside the actual Code clip');
+      proof('Short Go to EOF',{target:eofQuery,selection:[shortSource.length,shortSource.length],visible:true,synchronized:true,viewportContained:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...eofObservation});
       await page.setViewportSize({width:1440,height:960});
       await editor.fill(navigationSource); await visibleText(page);
       await editor.press('Control+g');
