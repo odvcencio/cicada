@@ -98,6 +98,12 @@ test('placements edit visually and Session follows saved Score without reloading
     await selectFar();
     await drag('[data-placement-block="far-in"] .placement-select',12); await at(17280); await undo();
     checks.push('pointer move by one beat');
+    await page.getByLabel('Timeline zoom',{exact:true}).selectOption('192');
+    await until(async()=>await page.locator('.placement-timeline').getAttribute('data-placement-zoom')==='192','zoom did not settle');
+    await drag('[data-placement-block="far-in"] .placement-select',48); await at(17280); await undo();
+    await page.getByLabel('Timeline zoom',{exact:true}).selectOption('48');
+    await until(async()=>await page.locator('.placement-timeline').getAttribute('data-placement-zoom')==='48','zoom reset did not settle');
+    checks.push('a four-times-zoomed pointer move still saves one beat');
     await drag('[data-placement-block="far-in"] [data-placement-resize]',-12);
     await until(async()=>await block(page).getAttribute('data-placement-length')==='14400','pointer resize did not trim a beat'); await idle(); await undo();
     checks.push('pointer resize by one beat');

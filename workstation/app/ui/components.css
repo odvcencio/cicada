@@ -389,3 +389,19 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 @media (max-width:600px) { .input-meter { padding:12px; } .input-meter-scale span:nth-child(4) { display:none; } }
 @media (prefers-reduced-motion:reduce) { .input-meter-fill { transition:none; } }
 .audio-settings .field:has(input[type=checkbox]) { flex-direction: row; align-items: center; gap: 8px; }
+
+/* Arrangement view controls never write to the score. */
+.placement-navigation { display:none; flex-wrap:wrap; align-items:end; gap:8px; margin-top:12px; }
+[data-placement-navigation-ready] > .placement-navigation { display:flex; }
+.placement-navigation .field { width:auto; min-width:0; gap:2px; }
+.placement-navigation .field > span { font-size:11px; }
+.placement-navigation select { min-width:86px; }
+.placement-follow { display:flex; align-items:center; gap:5px; min-height:38px; font-size:12px; }
+.placement-follow input { min-height:0; width:16px; height:16px; }
+.placement-navigation [data-placement-playback-status] { flex-basis:100%; font:11px ui-monospace,monospace; }
+.placement-timeline { position:relative; }
+.placement-playhead { position:absolute; top:0; bottom:0; width:2px; z-index:1; pointer-events:none; background:var(--amber); }
+.placement-playhead::before { content:''; position:absolute; top:0; left:-4px; border-left:5px solid transparent; border-right:5px solid transparent; border-top:8px solid var(--amber); }
+.placement-playhead[hidden] { display:none; }
+
+.placement-marker { overflow:hidden; text-overflow:ellipsis; }

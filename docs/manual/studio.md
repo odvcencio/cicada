@@ -73,6 +73,13 @@ Drag it horizontally to move it, or drag its right edge to resize it. Arrow
 keys on a block or edge change its start or length by a sixteenth; hold Shift
 for a whole bar. Drag previews are saved only when released; Escape cancels.
 
+Use **Timeline zoom** for 1×–8× detail, **Fit song** for an overview, and
+**Show selected** to bring the inspected placement into view. The playhead
+shows the native transport position. **Follow playback** advances the view
+near its edge; touching or scrolling the timeline turns Follow off. Zoom and
+Follow stay in place when switching Arrange and Session. These view controls
+leave the score and unsaved Code drafts unchanged.
+
 The placement controls change the track, pattern or clip, exact **Start**,
 and **Length**. Start accepts `@bar.beat.step` or exact ticks. Length accepts
 bars, note divisions, or ticks, such as `4bars`, `1/8`, or `320ticks`.

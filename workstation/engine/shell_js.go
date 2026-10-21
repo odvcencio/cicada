@@ -103,6 +103,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	})
 	document.Call("addEventListener", "gosx:command", command)
 	root.Call("setAttribute", "data-shell-actions", "ready")
+	releasePlacementView := placementViewPublisher.acquire()
 	releaseAudio := audioPublisher.acquire()
 	releaseCapture := capturePublisher.acquire()
 	return enginewasm.HandleFunc(func() {
@@ -110,6 +111,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		releaseNavigation()
 		releasePlacementCommands()
 		releaseAudio()
+		releasePlacementView()
 		releaseCapture()
 		root.Call("removeAttribute", "data-shell-actions")
 		document.Call("removeEventListener", "gosx:command", command)
