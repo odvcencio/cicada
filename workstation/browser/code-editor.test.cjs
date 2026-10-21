@@ -116,6 +116,8 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
   let page;
   try {
     for (const profile of profiles) {
+      let proofStep=0;
+      const proof=(scenario,expected,actual)=>t.diagnostic(JSON.stringify({profile:profile.name,step:++proofStep,scenario,expected,actual}));
       page = await context.newPage(); watch(page);
       await page.addInitScript(({platform,os})=>{
         Object.defineProperty(navigator,'platform',{get:()=>platform});
@@ -164,16 +166,44 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
       await page.keyboard.insertText('// café 🎵 日本語');
       await visibleText(page);
       assert.equal(await editor.inputValue(),'alpha beta alpha\n// café 🎵 日本語');
+      const searchSource=await editor.inputValue();
       await editor.press(profile.mod+'+f');
       const query=page.locator('[data-code-find=query]');
-      await query.fill('alpha');
+      await query.pressSequentially('alpha');
+      assert.equal(await query.inputValue(),'alpha',profile.name+' Find must retain every typed query character');
+      assert.equal(await query.evaluate(node=>document.activeElement===node),true,'typing a query must retain Find focus');
+      assert.equal(await editor.inputValue(),searchSource,'typing a query must not type into the score');
+      proof('Find typing',{query:'alpha',queryFocused:true,sourceUnchanged:true},{query:await query.inputValue(),queryFocused:await query.evaluate(node=>document.activeElement===node),sourceUnchanged:(await editor.inputValue())===searchSource});
+      await query.press('Control+g');
+      assert.equal(await page.locator('[data-code-goto-panel]').isVisible(),false,'Go shortcut must not take over Find input');
       assert.equal(await page.locator('.editor-code-find-status').textContent(),'1 / 2');
-      await page.getByRole('button',{name:'Next match',exact:true}).click();
+      await query.press('Enter');
       assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[11,16]);
+      assert.equal(await query.evaluate(node=>document.activeElement===node),true,'Find Enter retains query focus');
+      await query.press('Shift+Enter');
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[0,5]);
+      await page.getByRole('button',{name:'Previous match',exact:true}).click();
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[11,16],'Previous wraps to the last occurrence');
+      await page.getByRole('button',{name:'Next match',exact:true}).click();
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[0,5],'Next wraps to the first occurrence');
+      assert.equal(await editor.inputValue(),searchSource,'Find navigation must not edit the score');
       await editor.focus();
       await page.keyboard.press(profile.mod+(profile.name==='Mac'?'+Alt+f':'+h'));
-      assert.equal(await page.locator('[data-code-find=replacement]').evaluate(node=>document.activeElement===node),true,profile.name+' Replace shortcut must focus replacement');
-      await page.locator('[data-code-find=replacement]').fill('omega');
+      const replacement=page.locator('[data-code-find=replacement]');
+      assert.equal(await replacement.evaluate(node=>document.activeElement===node),true,profile.name+' Replace shortcut must focus replacement');
+      await replacement.pressSequentially('omega');
+      await replacement.press('Enter');
+      assert.equal(await editor.inputValue(),'omega beta alpha\n// café 🎵 日本語','Replace must use the selected first occurrence');
+      assert.equal(await replacement.evaluate(node=>document.activeElement===node),true,'Replace Enter retains replacement focus');
+      proof('Replace selected occurrence',{source:'omega beta alpha\n// café 🎵 日本語',replacementFocused:true},{source:await editor.inputValue(),replacementFocused:await replacement.evaluate(node=>document.activeElement===node)});
+      await replacement.press('Enter');
+      assert.equal(await editor.inputValue(),'omega beta omega\n// café 🎵 日本語','repeated Replace advances to the next occurrence');
+      proof('Replace next occurrence',{source:'omega beta omega\n// café 🎵 日本語'},{source:await editor.inputValue()});
+      await editor.focus(); await editor.press(profile.mod+'+z');
+      assert.equal(await editor.inputValue(),'omega beta alpha\n// café 🎵 日本語','one Undo reverses only one replacement');
+      proof('Undo one replacement',{source:'omega beta alpha\n// café 🎵 日本語'},{source:await editor.inputValue()});
+      await editor.press(profile.mod+'+z');
+      assert.equal(await editor.inputValue(),searchSource,'two replacements must create two local history entries');
       await page.locator('[data-code-find-action=replace-all]').click();
       assert.equal(await editor.inputValue(),'omega beta omega\n// café 🎵 日本語');
       await page.getByRole('button',{name:'Close find and replace',exact:true}).click();
@@ -187,6 +217,135 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
       await page.getByRole('button',{name:'Go to matching bracket',exact:true}).click();
       assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[17,18]);
       await visibleText(page);
+      // Go to line uses Unicode scalar columns, while textarea selection uses
+      // UTF-16 offsets. Long wrapped source must reveal the actual target and
+      // keep its highlight and line-number scrollers in the same position.
+      const lines=fixture.trimEnd().split('\n');
+      while(lines.length<180) lines.push('// '+String(lines.length+1).padStart(3,'0')+' '+('love song phrase '.repeat(6)));
+      lines[119]='// 🎵 café 日本語 target '+('long phrase '.repeat(10));
+      const navigationSource=lines.join('\n')+'\n';
+      const goPanel=page.locator('[data-code-goto-panel]');
+      const goQuery=page.getByRole('textbox',{name:'Line and column',exact:true});
+      const lineStart=lines.slice(0,119).reduce((offset,line)=>offset+line.length+1,0);
+      const targetOffset=lineStart+Array.from(lines[119]).slice(0,14).join('').length;
+      const caret=async()=>editor.evaluate(node=>({start:node.selectionStart,end:node.selectionEnd,direction:node.selectionDirection,top:node.scrollTop,left:node.scrollLeft}));
+      const reveal=async offset=>{
+        let observed;
+        await until(async()=>{
+          observed=await page.evaluate(offset=>{
+            const editor=document.querySelector('#editor-content'),highlight=document.querySelector('#editor-highlight-content');
+            const layer=highlight.closest('.editor-highlight-layer'),gutter=document.querySelector('#editor-line-numbers');
+            const bounds=editor.getBoundingClientRect(),dock=document.querySelector('#studio-code').getBoundingClientRect();
+            let top=Math.max(bounds.top,dock.top,0),bottom=Math.min(bounds.bottom,dock.bottom,innerHeight);
+            let left=Math.max(bounds.left,dock.left,0),right=Math.min(bounds.right,dock.right,innerWidth);
+            for(let parent=editor.parentElement;parent;parent=parent.parentElement){
+              const style=getComputedStyle(parent),rect=parent.getBoundingClientRect();
+              if(/^(auto|scroll|hidden|clip)$/.test(style.overflowY)){
+                top=Math.max(top,rect.top+parent.clientTop);
+                bottom=Math.min(bottom,rect.top+parent.clientTop+parent.clientHeight);
+              }
+              if(/^(auto|scroll|hidden|clip)$/.test(style.overflowX)){
+                left=Math.max(left,rect.left+parent.clientLeft);
+                right=Math.min(right,rect.left+parent.clientLeft+parent.clientWidth);
+              }
+            }
+            const walker=document.createTreeWalker(highlight,NodeFilter.SHOW_TEXT);
+            let node,at=0;
+            while((node=walker.nextNode())){
+              if(at+node.textContent.length>offset){
+                const range=document.createRange(); range.setStart(node,offset-at); range.setEnd(node,offset-at+1);
+                const rect=range.getBoundingClientRect();
+                return {visible:rect.height>0 && rect.top>=top-1 && rect.bottom<=bottom+1 && rect.left>=left-1 && rect.right<=right+1,
+                  synchronized:Math.abs(layer.scrollTop-editor.scrollTop)<=1 && Math.abs(gutter.scrollTop-editor.scrollTop)<=1,
+                  viewportContained:bounds.top>=top-1 && bounds.bottom<=bottom+1 && bounds.left>=left-1 && bounds.right<=right+1,
+                  sourceViewport:{top:bounds.top,bottom:bounds.bottom,left:bounds.left,right:bounds.right},
+                  target:{top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right},clip:{top,bottom,left,right},
+                  scroll:{source:editor.scrollTop,highlight:layer.scrollTop,gutter:gutter.scrollTop}};
+              }
+              at+=node.textContent.length;
+            }
+            return {visible:false,synchronized:false};
+          },offset);
+          return observed.visible && observed.synchronized;
+        },'Go to line did not reveal its target within all clipping ancestors with synchronized highlight and gutter scrolling').catch(error=>{
+          proof('Go target visibility failure',{offset,visible:true,synchronized:true},{offset,...observed});
+          throw error;
+        });
+        return observed;
+      };
+      await page.setViewportSize({width:1280,height:900});
+      const shortSource=fixture.trimEnd();
+      await editor.fill(shortSource); await visibleText(page);
+      const shortOffset=shortSource.split('\n').slice(0,7).reduce((offset,line)=>offset+line.length+1,0)+2;
+      await editor.press('Control+g');
+      await goPanel.waitFor({state:'visible'});
+      await goQuery.fill(''); await goQuery.pressSequentially('8:3'); await goQuery.press('Enter');
+      await goPanel.waitFor({state:'hidden'});
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[shortOffset,shortOffset],'short Go must select line8 column3');
+      assert.equal(await editor.inputValue(),shortSource,'short Go must not edit the score');
+      const shortObservation=await reveal(shortOffset);
+      assert.equal(shortObservation.viewportContained,true,'the entire source viewport must fit inside the actual Code clip');
+      proof('Short Go in clipped dock',{viewport:[1280,900],target:'8:3',selection:[shortOffset,shortOffset],visible:true,synchronized:true,viewportContained:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...shortObservation});
+      const eofQuery=shortSource.split('\n').length+':9999';
+      await editor.press('Control+g');
+      await goQuery.fill(''); await goQuery.pressSequentially(eofQuery); await goQuery.press('Enter');
+      await goPanel.waitFor({state:'hidden'});
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[shortSource.length,shortSource.length],'Go must reach the short score EOF');
+      assert.equal(await editor.inputValue(),shortSource,'Go to EOF must not edit the score');
+      const eofObservation=await reveal(shortSource.length-1);
+      assert.equal(eofObservation.viewportContained,true,'EOF source viewport must stay inside the actual Code clip');
+      proof('Short Go to EOF',{target:eofQuery,selection:[shortSource.length,shortSource.length],visible:true,synchronized:true,viewportContained:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...eofObservation});
+      await page.setViewportSize({width:1440,height:960});
+      await editor.fill(navigationSource); await visibleText(page);
+      await editor.press('Control+g');
+      await goPanel.waitFor({state:'visible'});
+      await goQuery.fill(''); await goQuery.pressSequentially('120:15'); await goQuery.press('Enter');
+      await goPanel.waitFor({state:'hidden'});
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[targetOffset,targetOffset],profile.name+' Go to line must convert scalar columns to UTF-16');
+      assert.equal(await editor.evaluate(node=>document.activeElement===node),true,'Go returns focus to the source');
+      assert.ok((await caret()).top>0,'Go must scroll beyond the initial viewport');
+      const targetObservation=await reveal(targetOffset);
+      proof('Unicode Go to line',{target:'120:15',selection:[targetOffset,targetOffset],visible:true,synchronized:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...targetObservation});
+      await editor.press('Shift+ArrowLeft'); await editor.press('Shift+ArrowLeft');
+      const checkpoint=await caret();
+      assert.equal(checkpoint.direction,'backward');
+      await editor.press('Control+g');
+      await goQuery.fill(''); await goQuery.pressSequentially('4:1'); await goQuery.press('Escape');
+      await goPanel.waitFor({state:'hidden'});
+      const restored=await caret();
+      assert.deepEqual([restored.start,restored.end,restored.direction],[checkpoint.start,checkpoint.end,checkpoint.direction],'Escape restores the prior source selection');
+      assert.ok(Math.abs(restored.top-checkpoint.top)<=1 && Math.abs(restored.left-checkpoint.left)<=1,'Escape restores source scrolling');
+      proof('Go Escape restoration',checkpoint,restored);
+      await editor.press('Control+g');
+      for(const invalid of ['0','9999','120:0','12.5']){
+        await goQuery.fill(''); await goQuery.pressSequentially(invalid); await goQuery.press('Enter');
+        assert.equal(await goPanel.isVisible(),true,'invalid position must keep Go to line open');
+        assert.equal(await goQuery.inputValue(),invalid,'invalid position must remain available for correction');
+        assert.equal(await goQuery.evaluate(node=>document.activeElement===node),true,'invalid Go retains input focus');
+        assert.ok((await page.locator('[data-code-goto=status]').textContent()).trim().length>0,'invalid position must explain the error');
+        assert.equal(await editor.inputValue(),navigationSource,'invalid Go must not edit the score');
+        assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[checkpoint.start,checkpoint.end],'invalid Go must not move the source selection');
+        proof('Invalid Go '+invalid,{panelOpen:true,sourceUnchanged:true,selection:[checkpoint.start,checkpoint.end]},{panelOpen:await goPanel.isVisible(),sourceUnchanged:(await editor.inputValue())===navigationSource,selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),status:await page.locator('[data-code-goto=status]').textContent()});
+      }
+      await page.getByRole('button',{name:'Close go to line',exact:true}).click();
+      await goPanel.waitFor({state:'hidden'});
+      await page.getByRole('button',{name:'Go to line',exact:true}).click();
+      await goQuery.fill(''); await goQuery.pressSequentially('120:9999');
+      await page.getByRole('button',{name:'Go',exact:true}).click();
+      await goPanel.waitFor({state:'hidden'});
+      const lineEnd=lineStart+lines[119].length;
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[lineEnd,lineEnd],'column beyond the line clamps to its end');
+      await reveal(lineEnd-1);
+      assert.equal(await editor.inputValue(),navigationSource,'Go navigation must not edit the score');
+      await page.evaluate(()=>document.activeElement?.blur());
+      await page.keyboard.press('Control+g');
+      assert.equal(await goPanel.isVisible(),false,'Go shortcut belongs to the code textarea');
+      if(profile.name==='Mac'){
+        await editor.focus(); await page.keyboard.press('Meta+g');
+        assert.equal(await goPanel.isVisible(),false,'Mac Cmd+G remains a native shortcut');
+      }
+      assert.equal(await editor.inputValue(),navigationSource,'shortcut ownership must not edit the score');
+      assert.equal(lf((await state(page)).source),fixture,'search and Go navigation must not save source');
       assert.equal(posts.length,beforePosts,'local '+profile.name+' text commands must not save or trigger song Undo');
 
       const draft=fixture+'// unsaved '+profile.name+' vocal idea 🎵\n';
@@ -207,7 +366,7 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
       for (const region of ['Center','Detail','Code']) await page.locator('.shell-phone-nav').getByRole('link',{name:region,exact:true}).click();
       await fit(page); await visibleText(page);
       assert.equal(await editor.inputValue(),draft,'narrow region switch discarded '+profile.name+' draft');
-      t.diagnostic(profile.name+': typing, indentation, local history, Unicode, search/replace, comments, brackets and draft-preserving view/narrow navigation passed');
+      t.diagnostic(profile.name+': typing, indentation, local history, Unicode, focused search/replace, Go to line, comments, brackets and draft-preserving view/narrow navigation passed');
       const sourcePosts=()=>posts.filter(request=>new URL(request.url()).pathname==='/__actions/source').length;
       const beforeSavePosts=sourcePosts();
       const saveResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/__actions/source' && response.request().method()==='POST');

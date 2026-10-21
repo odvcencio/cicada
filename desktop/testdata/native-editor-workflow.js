@@ -5,11 +5,19 @@
   if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
-  const checks = [], errors = [], submissions = [], responses = [];
+  const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [];
+  function evidence(label, observed) {
+    const record = {order: interactions.length + 1, ...observed};
+    interactions.push(record);
+    // Existing native hosts retain check strings, including this compact trace.
+    return label + ' | interaction=' + JSON.stringify(record);
+  }
   const originalFetch = window.fetch;
   window.fetch = function(...args) {
     const input = args[0], method = args[1]?.method || input?.method || 'GET';
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
+        (path.startsWith('/__actions/') || path.startsWith('/api/'))) mutations.push({path, method});
     return originalFetch.apply(this, args).then(response => {
       if (method.toUpperCase() === 'POST' && path.startsWith('/__actions/')) {
         return response.clone().text().then(text => {
@@ -88,6 +96,77 @@
       node.setRangeText(value, node.selectionStart, node.selectionEnd, 'end');
       node.dispatchEvent(new InputEvent('input', {inputType: 'insertText', data: value, bubbles: true}));
     }
+  }
+  async function typeField(node, value) {
+    const typed = [];
+    node.focus();
+    node.setSelectionRange(0, node.value.length);
+    node.setRangeText('', node.selectionStart, node.selectionEnd, 'end');
+    node.dispatchEvent(new InputEvent('input', {inputType: 'deleteContentBackward', bubbles: true}));
+    for (const character of value) {
+      if (document.activeElement !== node) throw new Error('Query field lost focus before typing ' + character);
+      const before = new InputEvent('beforeinput', {inputType: 'insertText', data: character, bubbles: true, cancelable: true});
+      if (node.dispatchEvent(before)) {
+        node.setRangeText(character, node.selectionStart, node.selectionEnd, 'end');
+        node.dispatchEvent(new InputEvent('input', {inputType: 'insertText', data: character, bubbles: true}));
+      }
+      await pause(0);
+      if (document.activeElement !== node) throw new Error('Query field lost focus after typing ' + character);
+      typed.push({value: node.value, focused: node.getAttribute('data-code-find') || node.getAttribute('data-code-goto'),
+        selection: [node.selectionStart, node.selectionEnd]});
+    }
+    if (node.value !== value) throw new Error('Query field did not retain typed characters: ' + node.value);
+    return typed;
+  }
+  function targetVisibility(offset) {
+    const source = editor(), highlight = document.querySelector('#editor-highlight-content');
+    const layer = highlight.closest('.editor-highlight-layer'), gutter = document.querySelector('#editor-line-numbers');
+    const bounds = source.getBoundingClientRect(), dock = document.querySelector('#studio-code').getBoundingClientRect();
+    let top = Math.max(bounds.top, dock.top, 0), bottom = Math.min(bounds.bottom, dock.bottom, innerHeight);
+    let left = Math.max(bounds.left, dock.left, 0), right = Math.min(bounds.right, dock.right, innerWidth);
+    for (let parent = source.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), rect = parent.getBoundingClientRect();
+      if (/^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+        top = Math.max(top, rect.top + parent.clientTop);
+        bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight);
+      }
+      if (/^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+        left = Math.max(left, rect.left + parent.clientLeft);
+        right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth);
+      }
+    }
+    const walker = document.createTreeWalker(highlight, NodeFilter.SHOW_TEXT);
+    let node, at = 0;
+    while ((node = walker.nextNode())) {
+      if (at + node.textContent.length > offset) {
+        const range = document.createRange();
+        range.setStart(node, offset - at); range.setEnd(node, offset - at + 1);
+        const rect = range.getBoundingClientRect();
+        return {offset, sourceLength: source.value.length, glyph: range.toString(),
+          visible: rect.height > 0 && rect.top >= top - 1 && rect.bottom <= bottom + 1 && rect.left >= left - 1 && rect.right <= right + 1,
+          viewportContained: bounds.top >= top - 1 && bounds.bottom <= bottom + 1 && bounds.left >= left - 1 && bounds.right <= right + 1,
+          synchronized: Math.abs(layer.scrollTop - source.scrollTop) <= 1 && Math.abs(gutter.scrollTop - source.scrollTop) <= 1,
+          target: {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right}, clip: {top, bottom, left, right},
+          textarea: {top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right},
+          scroll: {source: source.scrollTop, highlight: layer.scrollTop, gutter: gutter.scrollTop,
+            clientHeight: source.clientHeight, scrollHeight: source.scrollHeight}};
+      }
+      at += node.textContent.length;
+    }
+    return {visible: false, synchronized: false};
+  }
+  async function revealedTarget(offset, label) {
+    let observed;
+    try {
+      await wait(() => {
+        observed = targetVisibility(offset);
+        return observed.visible && observed.synchronized && observed.viewportContained;
+      }, label);
+    } catch (error) {
+      throw new Error(String(error) + ' | geometry=' + JSON.stringify(observed) +
+        ' | sourceTailCodes=' + JSON.stringify(Array.from(editor().value.slice(-4), character => character.codePointAt(0))));
+    }
+    return observed;
   }
   async function unchanged(source, count, label) {
     await pause(160);
@@ -189,19 +268,48 @@
     if (editor().value !== draft) throw new Error('Comment control did not restore the line');
     checks.push('Comment control round-trips the selected score line');
 
+    const findDraft = draft.replace('// Love song:', '// Love song Love song Love song:');
+    fill(findDraft);
+    const firstMatch = findDraft.indexOf('Love song');
+    editor().setSelectionRange(firstMatch, firstMatch + 'Love song'.length);
     document.querySelector('#score [data-code-command=find]').click();
     const query = document.querySelector('#score [data-code-find=query]');
-    query.value = 'Love song'; query.dispatchEvent(new Event('input', {bubbles: true}));
+    const findTyping = await typeField(query, 'Love song');
     await wait(() => editor().value.slice(editor().selectionStart, editor().selectionEnd) === 'Love song', 'Find selects real score text');
+    if (editor().selectionStart !== firstMatch) throw new Error('Find skipped the currently selected first match');
+    checks.push(evidence('Find query accepts characters without moving input focus into the score',
+      {action: 'type Find query', expected: {value: 'Love song', focused: 'query'}, observed: findTyping}));
     const replacement = document.querySelector('#score [data-code-find=replacement]');
-    replacement.value = 'Moon song'; replacement.dispatchEvent(new Event('input', {bubbles: true}));
+    await typeField(replacement, 'Moon song');
     document.querySelector('#score [data-code-find-action=replace]').click();
-    if (editor().value !== draft.replace('Love song', 'Moon song')) throw new Error('Replace did not edit the selected score phrase');
+    const replacedOnce = findDraft.replace('Love song', 'Moon song');
+    if (editor().value !== replacedOnce || editor().selectionStart !== firstMatch + 'Moon song'.length ||
+        editor().selectionEnd !== editor().selectionStart)
+      throw new Error('Replace skipped the selected first phrase or left the caret before the inserted phrase');
+    const replacements = [{expected: 'Moon song Love song Love song',
+      actual: editor().value.slice(firstMatch, firstMatch + 'Moon song Love song Love song'.length)}];
+    document.querySelector('#score [data-code-find-action=replace]').click();
+    const replacedTwice = replacedOnce.replace('Love song', 'Moon song');
+    if (editor().value !== replacedTwice || editor().selectionStart !== replacedTwice.lastIndexOf('Moon song') + 'Moon song'.length ||
+        editor().selectionEnd !== editor().selectionStart)
+      throw new Error('Repeated Replace skipped the next phrase or left the caret before its replacement');
+    replacements.push({expected: 'Moon song Moon song Love song',
+      actual: editor().value.slice(firstMatch, firstMatch + 'Moon song Moon song Love song'.length)});
+    editor().focus();
     menuHistory(true);
-    if (editor().value !== draft) throw new Error('Focused Undo did not reverse Replace');
+    if (editor().value !== replacedOnce) throw new Error('Menu Undo did not reverse exactly one replacement');
+    key('z', 'KeyZ', editor(), {mod: true});
+    if (editor().value !== findDraft) throw new Error('Local Undo did not restore the first replaced phrase');
+    key('z', 'KeyZ', editor(), {mod: true, shiftKey: true});
+    if (editor().value !== replacedOnce) throw new Error('Local Redo did not restore the first replacement');
+    menuHistory(false);
+    if (editor().value !== replacedTwice) throw new Error('Menu Redo did not restore the second replacement');
     document.querySelector('#score [data-code-find-action=close]').click();
     if (!document.querySelector('#score .editor-code-find').hidden) throw new Error('Find did not close');
-    checks.push('Find and Replace edit actual text, Undo reverses Replace, and Find closes');
+    fill(draft);
+    await unchanged(original, typingPosts, 'Find and repeated Replace');
+    checks.push(evidence('Replace edits the selected occurrence then advances; local and menu history restore each replacement',
+      {action: 'replace selected first match then repeat', replacements, history: 'local and menu Undo/Redo each restore one replacement'}));
     if (modifier === 'meta') {
       checks.push('production Mac menu Undo/Redo operate the editor history after Tab, Enter, and Replace');
       const nativeField = document.createElement('input');
@@ -214,6 +322,148 @@
       nativeField.remove(); editor().focus();
       checks.push('Mac menu Undo/Redo preserve native history in ordinary text fields');
     }
+
+    const shortDraft = '// Desktop CI navigation fixture\n// café 🌙 東京\ncicada 2\ntitle "Desktop CI"\n' +
+      'track bass acid { cutoff=700Hz }\npattern pulse { 1 . 5 . }\narrange {\n' +
+      '  place one bass pulse { at = @1.1.1 length = 4bars }\n  place two bass pulse { at = @5.1.1 length = 4bars }\n}';
+    fill(shortDraft);
+    await wait(() => [shortDraft, shortDraft + '\n'].includes(document.querySelector('#editor-highlight-content')?.textContent) &&
+      document.querySelector('#editor-highlight-content span[class]'), 'short wrapped draft highlight');
+    const shortOffset = shortDraft.split('\n').slice(0, 7).reduce((offset, line) => offset + line.length + 1, 0) + 2;
+    editor().setSelectionRange(0, 0);
+    editor().scrollTop = 0; editor().scrollLeft = 0;
+    await wait(() => targetVisibility(shortOffset).synchronized, 'short draft scrolling settles');
+    const shortBefore = targetVisibility(shortOffset), shortState = await state();
+    const shortHistory = [form().dataset.undoDepth, form().dataset.redoDepth].join(':');
+    const shortFile = form().querySelector('input[name=file]')?.value;
+    const shortMutations = mutations.length, shortSubmissions = submissions.length;
+    if (!shortBefore.viewportContained)
+      throw new Error('Native source viewport extends outside the actual Code dock clip: ' + JSON.stringify(shortBefore));
+    key('g', 'KeyG', editor(), {ctrlKey: true});
+    await typeField(document.querySelector('#score [data-code-goto=query]'), '8:3');
+    key('Enter', 'Enter', document.querySelector('#score [data-code-goto=query]'));
+    if (!document.querySelector('#score [data-code-goto-panel]').hidden || editor().selectionStart !== shortOffset || editor().selectionEnd !== shortOffset)
+      throw new Error('Short Go to line did not select line eight column three and close the panel');
+    const shortAfter = await revealedTarget(shortOffset, 'short Go target revealed inside every clipping ancestor with synchronized highlight and gutter');
+    const shortSelection = [editor().selectionStart, editor().selectionEnd];
+    const eofQuery = shortDraft.split('\n').length + ':9999';
+    key('g', 'KeyG', editor(), {ctrlKey: true});
+    await typeField(document.querySelector('#score [data-code-goto=query]'), eofQuery);
+    key('Enter', 'Enter', document.querySelector('#score [data-code-goto=query]'));
+    if (!document.querySelector('#score [data-code-goto-panel]').hidden ||
+        editor().selectionStart !== shortDraft.length || editor().selectionEnd !== shortDraft.length)
+      throw new Error('Go to the final line did not clamp its caret at the actual end of the short score');
+    const eofTarget = await revealedTarget(shortDraft.length - 1, 'short score EOF and final character revealed inside every clipping ancestor');
+    const shortEOF = {query: eofQuery, expectedUTF16: shortDraft.length,
+      actualUTF16: [editor().selectionStart, editor().selectionEnd], finalCharacter: eofTarget};
+    const shortFinal = await state(), shortCapture = await state('capture');
+    if (editor().value !== shortDraft || shortFinal.source !== shortState.source || shortFinal.revision !== shortState.revision ||
+        [form().dataset.undoDepth, form().dataset.redoDepth].join(':') !== shortHistory || form().querySelector('input[name=file]')?.value !== shortFile ||
+        mutations.length !== shortMutations || submissions.length !== shortSubmissions || (await state('transport')).playing ||
+        shortCapture.activeCapture || shortCapture.input.enabled)
+      throw new Error('Short Go changed draft, module, saved source, history, transport, capture, or sent a mutation request');
+    checks.push(evidence('short Go to line and EOF remain visible within the contained Code viewport',
+      {action: 'short wrapped Go 8:3', viewport: [innerWidth, innerHeight], expectedUTF16: shortOffset,
+        actualUTF16: shortSelection, before: shortBefore, after: shortAfter, eof: shortEOF,
+        mutationRequests: mutations.length - shortMutations, formSubmissions: submissions.length - shortSubmissions}));
+    fill(draft);
+
+    const longLines = (draft + Array.from({length: 180}, (_, index) =>
+      '// verse ' + (index + 1) + ' ' + 'wide phrase '.repeat(16) + '\n').join('')).split('\n');
+    const targetLine = 160;
+    longLines[targetLine - 1] = '// 🌙 café 東京';
+    const longDraft = longLines.join('\n');
+    fill(longDraft);
+    await wait(() => [longDraft, longDraft + '\n'].includes(document.querySelector('#editor-highlight-content')?.textContent),
+      'long draft live analysis');
+    const sourceBeforeNavigation = await state();
+    const navigationEditor = editor(), navigationForm = form();
+    const navigationFields = JSON.stringify(['file', 'revision', 'fileRevision', 'diskRevision'].map(name =>
+      navigationForm.querySelector('input[name="' + name + '"]')?.value));
+    const navigationHistory = [navigationForm.dataset.undoDepth, navigationForm.dataset.redoDepth].join(':');
+    const navigationMutations = mutations.length, navigationSubmissions = submissions.length;
+    const previousStart = longDraft.indexOf('// verse 2');
+    navigationEditor.focus();
+    navigationEditor.setSelectionRange(previousStart, previousStart + 10, 'backward');
+    navigationEditor.scrollTop = 80; navigationEditor.scrollLeft = 40;
+    const previousScroll = [navigationEditor.scrollTop, navigationEditor.scrollLeft];
+    if (!previousScroll[0]) throw new Error('Long native editor did not expose vertical scroll');
+    const gotoPanel = () => document.querySelector('#score [data-code-goto-panel]');
+    const gotoQuery = () => document.querySelector('#score [data-code-goto=query]');
+    const gotoButton = document.querySelector('#score [data-code-command=goto]');
+    if (gotoButton?.getAttribute('aria-label') !== 'Go to line') throw new Error('Go to line toolbar control is missing its accessible name');
+    gotoButton.click();
+    await wait(() => !gotoPanel().hidden && document.activeElement === gotoQuery(), 'Go to line toolbar opens focused query');
+    if (gotoQuery().getAttribute('aria-label') !== 'Line and column') throw new Error('Go to line query is missing its accessible name');
+    const invalidPositions = [];
+    for (const invalidQuery of ['0', '2:0', '2:1.5', String(longLines.length + 1)]) {
+      await typeField(gotoQuery(), invalidQuery);
+      key('Enter', 'Enter', gotoQuery());
+      const status = document.querySelector('#score [data-code-goto=status]');
+      if (gotoPanel().hidden || document.activeElement !== gotoQuery() || !status?.textContent.trim() ||
+          gotoQuery().getAttribute('aria-invalid') !== 'true' || navigationEditor.selectionStart !== previousStart ||
+          navigationEditor.selectionEnd !== previousStart + 10 || navigationEditor.selectionDirection !== 'backward')
+        throw new Error('Invalid Go to line input did not retain focus and inline error: ' + invalidQuery);
+      invalidPositions.push({query: invalidQuery, expectedSelection: [previousStart, previousStart + 10, 'backward'],
+        actualSelection: [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection],
+        panelOpen: !gotoPanel().hidden, errorPresent: Boolean(status.textContent.trim())});
+    }
+    key('Escape', 'Escape', gotoQuery());
+    if (!gotoPanel().hidden || document.activeElement !== navigationEditor || navigationEditor.selectionStart !== previousStart ||
+        navigationEditor.selectionEnd !== previousStart + 10 || navigationEditor.selectionDirection !== 'backward' ||
+        Math.abs(navigationEditor.scrollTop - previousScroll[0]) > 1 || Math.abs(navigationEditor.scrollLeft - previousScroll[1]) > 1)
+      throw new Error('Go to line Escape did not restore backward selection and both scroll offsets');
+    checks.push(evidence('invalid line and column inputs show errors; Escape restores native selection direction and scroll',
+      {action: 'invalid Go to line then Escape', invalid: invalidPositions,
+        escape: {expected: {selection: [previousStart, previousStart + 10, 'backward'], scroll: previousScroll},
+          actual: {selection: [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection],
+            scroll: [navigationEditor.scrollTop, navigationEditor.scrollLeft]}}}));
+
+    const openGoto = () => key('g', 'KeyG', navigationEditor, {ctrlKey: true});
+    if (!openGoto().defaultPrevented || gotoPanel().hidden || document.activeElement !== gotoQuery())
+      throw new Error('Ctrl+G did not open Go to line on this platform');
+    await typeField(gotoQuery(), targetLine + ':7');
+    const lineStart = longLines.slice(0, targetLine - 1).join('\n').length + 1;
+    const unicodePosition = lineStart + Array.from(longLines[targetLine - 1]).slice(0, 6).join('').length;
+    const jump = key('Enter', 'Enter', gotoQuery());
+    if (!jump.defaultPrevented || !gotoPanel().hidden || document.activeElement !== navigationEditor ||
+        navigationEditor.selectionStart !== unicodePosition || navigationEditor.selectionEnd !== unicodePosition ||
+        navigationEditor.scrollTop <= previousScroll[0] + 100)
+      throw new Error('Go to line Enter did not reveal the Unicode scalar column and close the panel');
+    const unicodeJump = {query: targetLine + ':7', expectedUTF16: unicodePosition,
+      actualUTF16: [navigationEditor.selectionStart, navigationEditor.selectionEnd],
+      previousScroll, actualScroll: [navigationEditor.scrollTop, navigationEditor.scrollLeft], panelClosed: gotoPanel().hidden};
+    openGoto();
+    await typeField(gotoQuery(), targetLine + ':999999');
+    document.querySelector('#score [data-code-goto=go]').click();
+    const lineEnd = lineStart + longLines[targetLine - 1].length;
+    if (!gotoPanel().hidden || navigationEditor.selectionStart !== lineEnd || navigationEditor.selectionEnd !== lineEnd)
+      throw new Error('Oversized Unicode column did not clamp to the target line end');
+    const clampedJump = {query: targetLine + ':999999', expectedUTF16: lineEnd,
+      actualUTF16: [navigationEditor.selectionStart, navigationEditor.selectionEnd]};
+    openGoto();
+    await typeField(gotoQuery(), '2');
+    key('Enter', 'Enter', gotoQuery());
+    if (navigationEditor.selectionStart !== longLines[0].length + 1 || navigationEditor.selectionEnd !== longLines[0].length + 1)
+      throw new Error('Line-only navigation did not default to column one');
+    if (modifier === 'meta' && (key('g', 'KeyG', navigationEditor, {metaKey: true}).defaultPrevented || !gotoPanel().hidden))
+      throw new Error('Go to line intercepted native Mac Cmd+G');
+    checks.push(evidence('Ctrl+G navigates and reveals Unicode scalar columns, clamps at line end, and preserves Mac Cmd+G',
+      {action: 'Ctrl+G and Enter', unicodeJump, clampedJump,
+        defaultColumn: {expectedUTF16: longLines[0].length + 1, actualUTF16: navigationEditor.selectionStart}}));
+
+    const afterNavigation = await state(), navigationCapture = await state('capture');
+    if (afterNavigation.source !== sourceBeforeNavigation.source || afterNavigation.revision !== sourceBeforeNavigation.revision ||
+        navigationEditor !== editor() || navigationEditor.value !== longDraft || mutations.length !== navigationMutations ||
+        submissions.length !== navigationSubmissions || (await state('transport')).playing || navigationCapture.activeCapture || navigationCapture.input.enabled ||
+        navigationHistory !== [form().dataset.undoDepth, form().dataset.redoDepth].join(':') || navigationFields !==
+        JSON.stringify(['file', 'revision', 'fileRevision', 'diskRevision'].map(name => form().querySelector('input[name="' + name + '"]')?.value)))
+      throw new Error('Go to line changed score, module, history, transport, capture, or sent a mutation request');
+    checks.push(evidence('Go to line is local navigation with unchanged draft, module, disk revision, undo history, and zero mutation requests',
+      {action: 'navigation invariants', mutationRequests: mutations.length - navigationMutations,
+        formSubmissions: submissions.length - navigationSubmissions, sameSource: true, sameModule: true, sameHistory: true,
+        transportPlaying: false, captureActive: false, microphoneEnabled: false}));
+    fill(draft);
 
     const draftSelection = [editor().selectionStart, editor().selectionEnd];
     for (const name of ['mixer', 'session', 'arrange']) {
@@ -290,7 +540,7 @@
     await saved(original, 'project Undo returns fixture');
     checks.push('project Undo/Redo outside editor restore exact saved score');
     if (errors.length) throw new Error(errors.join('; '));
-    return {type: 'cicada-native-smoke', ok: true, checks};
-  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, error: String(error) + '\n' + String(error.stack || '')}))
+    return {type: 'cicada-native-smoke', ok: true, checks, interactions};
+  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, interactions, error: String(error) + '\n' + String(error.stack || '')}))
     .then(result => window.chrome.webview.postMessage(JSON.stringify(result)));
 })();

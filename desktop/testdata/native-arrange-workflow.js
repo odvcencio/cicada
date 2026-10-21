@@ -5,8 +5,10 @@
   if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
   if (window.__cicadaNativeArrangeSmokeRunning) return;
   window.__cicadaNativeArrangeSmokeRunning = true;
-  const checks = [], errors = [], submissions = [], posts = [], navigations = [];
+  const checks = [], errors = [], submissions = [], posts = [], navigations = [], mutations = [];
+  let managedNavigations = 0;
   const documentIdentity = document;
+  addEventListener('gosx:navigate', () => managedNavigations++);
   addEventListener('error', event => errors.push(event.message || String(event.error)));
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
   const fetchOriginal = window.fetch;
@@ -15,6 +17,8 @@
     const method = args[1]?.method || request?.method || 'GET';
     const pathname = new URL(typeof request === 'string' ? request : request.url, location.href).pathname;
     if (method.toUpperCase() === 'POST' && pathname.startsWith('/__actions/')) posts.push(pathname);
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
+      (pathname.startsWith('/__actions/') || pathname.startsWith('/api/'))) mutations.push(pathname);
     if (method.toUpperCase() === 'GET' && ['/studio', '/__workspace'].includes(pathname)) navigations.push(pathname);
     return fetchOriginal.apply(this, args);
   };
@@ -215,15 +219,46 @@ arrange {
     const vocalLink = workspaceNav?.querySelector('a[href="#vocals"]');
     const timelineLink = workspaceNav?.querySelector('a[href="#arrangement"]');
     if (!vocalLink || !timelineLink) throw new Error('Arrange workspace links missing');
-    const linkPosts = posts.length, linkNavigations = navigations.length;
+    const linkEditor = document.querySelector('#score textarea');
+    const linkShell = document.querySelector('#studio-shell'), linkLive = document.querySelector('#cicada-live');
+    if (!linkEditor || !linkShell || !linkLive) throw new Error('Arrange link draft and mounted shell/Live roots missing');
+    const linkDraft = fixture.replace(/\r\n?/g, '\n') + '\n// Keep this unsaved Arrange jump idea\n';
+    fill(linkEditor, linkDraft);
+    // Local view/dock changes deliberately leave GoSX's last fetched URL
+    // behind. A native hash navigation must not reload that cached document.
+    await dock('device');
+    for (const view of ['session', 'mixer', 'arrange']) {
+      document.querySelector('#view-tab-' + view).click();
+      await wait(() => !document.querySelector('#view-panel-' + view).hidden, view + ' before Arrange pane links');
+    }
+    const linkBefore = await state();
+    const linkQuery = location.search;
+    const linkPosts = posts.length, linkNavigations = navigations.length, linkMutations = mutations.length;
+    const linkManaged = managedNavigations, linkSubmissions = submissions.length;
+    const linkInteractions = [];
     vocalLink.click();
     await recordingRevealed();
+    if (location.hash !== '#vocals') throw new Error('Vocal workspace link did not update its hash');
+    linkInteractions.push({action: 'Record & comp vocals', expectedHash: '#vocals', actualHash: location.hash, headingVisible: true});
     timelineLink.click();
     await wait(() => headingInCenter('#arrangement'), 'Song timeline link returns to visible timeline');
     await unchanged(fixture, linkPosts);
-    if (document !== documentIdentity || navigations.length !== linkNavigations)
-      throw new Error('Arrange workspace links replaced or fetched the document');
-    checks.push('Song timeline and Record & comp vocals links round-trip within the mounted document');
+    const linkAfter = await state(), linkCapture = await state('capture');
+    if (document !== documentIdentity || document.querySelector('#studio-shell') !== linkShell ||
+        document.querySelector('#cicada-live') !== linkLive || document.querySelector('#score textarea') !== linkEditor ||
+        linkEditor.value !== linkDraft || location.search !== linkQuery || location.hash !== '#arrangement' ||
+        linkAfter.source !== linkBefore.source || linkAfter.revision !== linkBefore.revision ||
+        navigations.length !== linkNavigations || managedNavigations !== linkManaged ||
+        mutations.length !== linkMutations || submissions.length !== linkSubmissions ||
+        linkCapture.activeCapture || linkCapture.input.enabled)
+      throw new Error('Arrange workspace links lost the draft/mount, navigated, submitted, or changed saved/capture state');
+    linkInteractions.push({action: 'Song timeline', expectedHash: '#arrangement', actualHash: location.hash, headingVisible: true,
+      sameDocument: true, sameShell: true, sameLive: true, sameEditor: true, exactUnsavedDraft: true,
+      queryUnchanged: true, savedSourceAndRevisionUnchanged: true, documentRequests: navigations.length - linkNavigations,
+      managedNavigationEvents: managedNavigations - linkManaged, mutationRequests: mutations.length - linkMutations,
+      formSubmissions: submissions.length - linkSubmissions, transportPlaying: false, captureActive: false, microphoneEnabled: false});
+    checks.push('Song timeline and Record & comp vocals links preserve the unsaved draft and mounted document after local view/dock changes | interaction=' + JSON.stringify(linkInteractions));
+    fill(linkEditor, fixture.replace(/\r\n?/g, '\n'));
 
     // Use the second placement so a silent fallback to the first cannot
     // satisfy the selected-placement preservation check.

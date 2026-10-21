@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createRequire} = require('node:module');
 const test = require('node:test');
+const {liveReleaseBeacon} = require('./live-release.cjs');
 
 const fixture = `// cicada-placement-commands-test: disposable fixture
 cicada 2
@@ -44,7 +45,7 @@ async function until(predicate, message) {
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers:{'Content-Type':request.headers()['content-type']}}).formData());
 
-test('Studio views, Record entry and Mac placement commands retain drafts and Undo', {timeout:120000}, async () => {
+test('Studio views, Record entry and Mac placement commands retain drafts and Undo', {timeout:120000}, async t => {
   const base = process.env.CICADA_STUDIO_URL;
   assert.ok(base, 'set CICADA_STUDIO_URL to a fresh disposable Studio');
   assert.ok(['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
@@ -55,19 +56,29 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     Object.defineProperty(navigator, 'platform', {get:()=>'MacIntel'});
     Object.defineProperty(navigator, 'userAgentData', {get:()=>({platform:'macOS'})});
   });
-  const posts = [], navigations = [], errors = [];
+  const posts = [], navigations = [], errors = [], liveReleases = [];
+  const csrfTokens = new Set();
   page.on('request', request => {
     const pathname=new URL(request.url()).pathname;
-    if (request.method()==='POST' && pathname.startsWith('/__actions/')) posts.push(request);
+    if (request.method()==='POST' && pathname.startsWith('/__actions/') && pathname!=='/__actions/live') posts.push(request);
     if (request.isNavigationRequest() || request.method()==='GET' && pathname==='/studio') navigations.push(request);
   });
   page.on('pageerror', error => errors.push(error.message));
+  // Interception exposes Blob Beacon bodies that Chromium's request event
+  // can omit. All non-release Live actions still count as score commands.
+  await page.route('**/__actions/live', async route => {
+    const release=liveReleaseBeacon(route.request(),csrfTokens);
+    if(release) liveReleases.push(release);
+    else if(route.request().method()==='POST') posts.push(route.request());
+    await route.continue();
+  });
   const state = async () => (await page.request.get(new URL('/api/state',base).href)).json();
   const transport = async () => (await page.request.get(new URL('/api/transport',base).href)).json();
   const ready = async () => {
     await page.waitForFunction(()=>!document.querySelector('form[data-gosx-form-state=pending]'));
     await page.waitForFunction(()=>window.__gosx?.ready===true);
     await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+    csrfTokens.add(await page.locator('input[name="csrf_token"]').first().inputValue());
     await until(async()=>await page.locator('#undo-form input[name=revision]').inputValue()===(await state()).revision, 'managed navigation did not refresh revisions');
   };
   const visit = async search => { await page.goto(new URL('/studio'+search,base).href); await ready(); };
@@ -94,6 +105,11 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     const bounds=node.getBoundingClientRect(), pane=document.querySelector('#studio-center .shell-scroll').getBoundingClientRect();
     return bounds.top>=pane.top-1 && bounds.bottom<=Math.min(pane.bottom,innerHeight)+1;
   });
+  const paneIdentity = async () => page.evaluate(()=>({
+    document:window.__arrangeNavigationDocument===document,
+    shell:!!window.__arrangePaneRefs.shell && window.__arrangePaneRefs.shell===document.querySelector('#studio-shell'),
+    live:!!window.__arrangePaneRefs.live && window.__arrangePaneRefs.live===document.querySelector('#cicada-live'),
+  }));
   const recordingRevealed = async (entry='vocal navigation') => {
     await page.locator('#view-panel-arrange').waitFor({state:'visible'});
     await page.locator('#studio-center').waitFor({state:'visible'});
@@ -131,14 +147,16 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal(await vocalLink.getAttribute('href'),'#vocals');
     assert.equal(await timelineLink.getAttribute('href'),'#arrangement');
     const beforeLinks={posts:posts.length,navigations:navigations.length};
-    await page.evaluate(()=>{window.__arrangeNavigationDocument=document;});
+    await page.evaluate(()=>{window.__arrangeNavigationDocument=document;window.__arrangePaneRefs={shell:document.querySelector('#studio-shell'),live:document.querySelector('#cicada-live')};});
     await vocalLink.click(); await recordingRevealed();
     await timelineLink.click();
     await until(()=>headingInCenter('#arrangement'),'Song timeline link did not return to the timeline');
     assert.equal(posts.length,beforeLinks.posts,'in-pane navigation must not submit score actions: '+posts.slice(beforeLinks.posts).map(request=>new URL(request.url()).pathname).join(', ')+'; page requests: '+navigations.slice(beforeLinks.navigations).map(request=>new URL(request.url()).search).join(', '));
-    assert.equal(navigations.length,beforeLinks.navigations,'in-pane navigation must not request another page');
-    assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true,'in-pane links replaced the document');
+    assert.equal(navigations.length,beforeLinks.navigations,'in-pane navigation must not request another page: '+JSON.stringify(navigations.slice(beforeLinks.navigations).map(request=>({path:new URL(request.url()).pathname,search:new URL(request.url()).search,type:request.resourceType(),document:request.isNavigationRequest()}))));
+    const initialPaneIdentity=await paneIdentity();
+    assert.deepEqual(initialPaneIdentity,{document:true,shell:true,live:true},'in-pane links must retain the existing document, shell and Live mounts');
     assert.equal((await state()).source,fixture);
+    t.diagnostic(JSON.stringify({scenario:'initial Arrange section jumps',expected:{posts:0,navigations:0,document:true,shell:true,live:true,sourceUnchanged:true},actual:{posts:posts.length-beforeLinks.posts,navigations:navigations.length-beforeLinks.navigations,...initialPaneIdentity,sourceUnchanged:(await state()).source===fixture}}));
 
     const scoreDraft=fixture+'// keep this unsaved vocal idea\n';
     const draftEditor=page.locator('#score textarea').first();
@@ -167,6 +185,21 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal(posts.length,beforeTabs.posts,'view and dock switching must not submit an edit');
     assert.equal(new URL(page.url()).searchParams.get('placement'),'one');
     assert.equal((await state()).source,fixture);
+
+    // Local view/dock changes update the URL without replacing the workbench.
+    // Native fragment popstate must not turn that updated query into a GoSX
+    // page fetch, dispose Live, or replace an unsaved score draft.
+    const beforeUpdatedLinks={posts:posts.length,navigations:navigations.length,state:await state()};
+    await vocalLink.click(); await recordingRevealed();
+    await timelineLink.click();
+    await until(()=>headingInCenter('#arrangement'),'Song timeline link after view changes did not return to the timeline');
+    assert.equal(posts.length,beforeUpdatedLinks.posts,'section jumps after view/dock changes must not submit any score action');
+    assert.equal(navigations.length,beforeUpdatedLinks.navigations,'section jumps after view/dock changes must not request another page');
+    const updatedPaneIdentity=await paneIdentity();
+    assert.deepEqual(updatedPaneIdentity,{document:true,shell:true,live:true},'section jumps after view/dock changes must retain existing document, shell and Live mounts');
+    assert.equal(await draftEditor.inputValue(),scoreDraft,'section jumps after view/dock changes must retain the exact unsaved draft');
+    assert.deepEqual(await state(),beforeUpdatedLinks.state,'section jumps after view/dock changes must not mutate the song');
+    t.diagnostic(JSON.stringify({scenario:'Arrange section jumps after local view and dock changes',expected:{posts:0,navigations:0,document:true,shell:true,live:true,draftPreserved:true,songUnchanged:true},actual:{posts:posts.length-beforeUpdatedLinks.posts,navigations:navigations.length-beforeUpdatedLinks.navigations,...updatedPaneIdentity,draftPreserved:(await draftEditor.inputValue())===scoreDraft,songUnchanged:JSON.stringify(await state())===JSON.stringify(beforeUpdatedLinks.state)}}));
 
     // Both Record entry points reveal the actual controls even before a vocal
     // track exists. The recording view must retain unsaved lyrics or score ideas.
@@ -317,8 +350,41 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await key('Meta+d'); await rejected;
     assert.equal((await state()).source,fixture,'stale keyboard edit changed the score');
     assert.equal((await actionValues(posts.at(-1))).revision,'stale-revision');
+    // Unload delivery is browser best effort. Exercise the actual pagehide
+    // listener while this fixture document lives, then prove the same mount
+    // releases its known lease with an advancing sequence on the next event.
+    const beforeProducer={releases:liveReleases.length,state:await state()};
+    await page.evaluate(()=>{window.__releaseProducerDocument=document;});
+    const produceRelease=async()=>{
+      const emitted=await page.evaluate(async()=>{
+        const original=navigator.sendBeacon,captured=[];
+        navigator.sendBeacon=function(url,data){
+          const sent=original.apply(this,arguments);
+          if(new URL(url,location.href).pathname==='/__actions/live' && data instanceof Blob){
+            captured.push(data.text().then(text=>{const fields=new URLSearchParams(text);return {lease:fields.get('lease'),sequence:Number(fields.get('sequence')),sent};}));
+          }
+          return sent;
+        };
+        try { window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:false})); }
+        finally { navigator.sendBeacon=original; }
+        return Promise.all(captured);
+      });
+      assert.equal(emitted.length,1,'the current Live pagehide producer must emit one release');
+      assert.equal(emitted[0].sent,true,'the native Beacon transport must accept the fixture release');
+      return emitted[0];
+    };
+    const firstEmission=await produceRelease();
+    await until(()=>liveReleases.slice(beforeProducer.releases).some(release=>release.lease===firstEmission.lease && release.sequence===firstEmission.sequence),'Live pagehide producer did not deliver its exact fixture release');
+    const beforeRepeat=liveReleases.length,repeatedEmission=await produceRelease();
+    assert.ok(repeatedEmission.lease===firstEmission.lease,'the repeated producer must retain its known mount lease');
+    assert.ok(repeatedEmission.sequence>firstEmission.sequence,'the repeated producer must advance its known lease sequence');
+    await until(()=>liveReleases.slice(beforeRepeat).some(release=>release.lease===repeatedEmission.lease && release.sequence===repeatedEmission.sequence),'Live pagehide producer did not deliver its exact repeated release');
+    assert.equal(await page.evaluate(()=>window.__releaseProducerDocument===document),true,'release producer proof must keep the fixture document alive');
+    assert.deepEqual(await state(),beforeProducer.state,'release producer must not mutate the song');
     assert.deepEqual(errors,[]);
+    t.diagnostic(JSON.stringify({scenario:'deterministic Live pagehide producer',expected:{sameLease:true,sequenceAdvanced:true,documentSame:true,songUnchanged:true},actual:{sameLease:repeatedEmission.lease===firstEmission.lease,sequenceAdvanced:repeatedEmission.sequence>firstEmission.sequence,firstSequence:firstEmission.sequence,repeatedSequence:repeatedEmission.sequence,documentSame:await page.evaluate(()=>window.__releaseProducerDocument===document),songUnchanged:JSON.stringify(await state())===JSON.stringify(beforeProducer.state)}}));
   } finally {
+    await page.unroute('**/__actions/live');
     await context.close(); await browser.close();
   }
 });
