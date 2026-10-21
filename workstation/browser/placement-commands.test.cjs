@@ -105,6 +105,11 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     const bounds=node.getBoundingClientRect(), pane=document.querySelector('#studio-center .shell-scroll').getBoundingClientRect();
     return bounds.top>=pane.top-1 && bounds.bottom<=Math.min(pane.bottom,innerHeight)+1;
   });
+  const paneIdentity = async () => page.evaluate(()=>({
+    document:window.__arrangeNavigationDocument===document,
+    shell:!!window.__arrangePaneRefs.shell && window.__arrangePaneRefs.shell===document.querySelector('#studio-shell'),
+    live:!!window.__arrangePaneRefs.live && window.__arrangePaneRefs.live===document.querySelector('#cicada-live'),
+  }));
   const recordingRevealed = async (entry='vocal navigation') => {
     await page.locator('#view-panel-arrange').waitFor({state:'visible'});
     await page.locator('#studio-center').waitFor({state:'visible'});
@@ -142,14 +147,16 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal(await vocalLink.getAttribute('href'),'#vocals');
     assert.equal(await timelineLink.getAttribute('href'),'#arrangement');
     const beforeLinks={posts:posts.length,navigations:navigations.length};
-    await page.evaluate(()=>{window.__arrangeNavigationDocument=document;});
+    await page.evaluate(()=>{window.__arrangeNavigationDocument=document;window.__arrangePaneRefs={shell:document.querySelector('#studio-shell'),live:document.querySelector('#cicada-live')};});
     await vocalLink.click(); await recordingRevealed();
     await timelineLink.click();
     await until(()=>headingInCenter('#arrangement'),'Song timeline link did not return to the timeline');
     assert.equal(posts.length,beforeLinks.posts,'in-pane navigation must not submit score actions: '+posts.slice(beforeLinks.posts).map(request=>new URL(request.url()).pathname).join(', ')+'; page requests: '+navigations.slice(beforeLinks.navigations).map(request=>new URL(request.url()).search).join(', '));
     assert.equal(navigations.length,beforeLinks.navigations,'in-pane navigation must not request another page: '+JSON.stringify(navigations.slice(beforeLinks.navigations).map(request=>({path:new URL(request.url()).pathname,search:new URL(request.url()).search,type:request.resourceType(),document:request.isNavigationRequest()}))));
-    assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true,'in-pane links replaced the document');
+    const initialPaneIdentity=await paneIdentity();
+    assert.deepEqual(initialPaneIdentity,{document:true,shell:true,live:true},'in-pane links must retain the existing document, shell and Live mounts');
     assert.equal((await state()).source,fixture);
+    t.diagnostic(JSON.stringify({scenario:'initial Arrange section jumps',expected:{posts:0,navigations:0,document:true,shell:true,live:true,sourceUnchanged:true},actual:{posts:posts.length-beforeLinks.posts,navigations:navigations.length-beforeLinks.navigations,...initialPaneIdentity,sourceUnchanged:(await state()).source===fixture}}));
 
     const scoreDraft=fixture+'// keep this unsaved vocal idea\n';
     const draftEditor=page.locator('#score textarea').first();
@@ -178,6 +185,21 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal(posts.length,beforeTabs.posts,'view and dock switching must not submit an edit');
     assert.equal(new URL(page.url()).searchParams.get('placement'),'one');
     assert.equal((await state()).source,fixture);
+
+    // Local view/dock changes update the URL without replacing the workbench.
+    // Native fragment popstate must not turn that updated query into a GoSX
+    // page fetch, dispose Live, or replace an unsaved score draft.
+    const beforeUpdatedLinks={posts:posts.length,navigations:navigations.length,state:await state()};
+    await vocalLink.click(); await recordingRevealed();
+    await timelineLink.click();
+    await until(()=>headingInCenter('#arrangement'),'Song timeline link after view changes did not return to the timeline');
+    assert.equal(posts.length,beforeUpdatedLinks.posts,'section jumps after view/dock changes must not submit any score action');
+    assert.equal(navigations.length,beforeUpdatedLinks.navigations,'section jumps after view/dock changes must not request another page');
+    const updatedPaneIdentity=await paneIdentity();
+    assert.deepEqual(updatedPaneIdentity,{document:true,shell:true,live:true},'section jumps after view/dock changes must retain existing document, shell and Live mounts');
+    assert.equal(await draftEditor.inputValue(),scoreDraft,'section jumps after view/dock changes must retain the exact unsaved draft');
+    assert.deepEqual(await state(),beforeUpdatedLinks.state,'section jumps after view/dock changes must not mutate the song');
+    t.diagnostic(JSON.stringify({scenario:'Arrange section jumps after local view and dock changes',expected:{posts:0,navigations:0,document:true,shell:true,live:true,draftPreserved:true,songUnchanged:true},actual:{posts:posts.length-beforeUpdatedLinks.posts,navigations:navigations.length-beforeUpdatedLinks.navigations,...updatedPaneIdentity,draftPreserved:(await draftEditor.inputValue())===scoreDraft,songUnchanged:JSON.stringify(await state())===JSON.stringify(beforeUpdatedLinks.state)}}));
 
     // Both Record entry points reveal the actual controls even before a vocal
     // track exists. The recording view must retain unsaved lyrics or score ideas.
