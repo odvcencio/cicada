@@ -346,6 +346,10 @@ end of a line land at its end. An invalid line stays in the jump field with an
 explanation; **Escape** returns to the previous selection and scroll position.
 Navigation never saves or changes the score.
 
+![Go to line beside the arrangement, using a disposable eight-bar score.](screenshots/studio-code-navigation-1280.png)
+
+Jump controls and validation also fit the [Code pane on a phone](screenshots/studio-code-navigation-390.png).
+
 Select a project file, edit it, then use **Check file** to review diagnostics
 without saving or **Save file** (**Command-S** / **Control-S**) to validate and
 write that file. Other score files retain their exact bytes. External changes
