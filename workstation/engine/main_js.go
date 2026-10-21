@@ -47,6 +47,9 @@ func main() {
 	if err := enginewasm.Register("CicadaSounds", mountSounds); err != nil {
 		panic(err)
 	}
+	if err := enginewasm.Register("CicadaPatternPreview", mountSounds); err != nil {
+		panic(err)
+	}
 	if err := enginewasm.Register("CicadaShell", mountShell); err != nil {
 		panic(err)
 	}

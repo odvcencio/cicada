@@ -72,7 +72,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 	}
 	workspace := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace performance-workspace")),
 		gosx.El("h3", gosx.Text(p.ID+" · Played timing")),
-		ui.Form(ui.FormProps{Action: "/__actions/transport", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, hidden("action", "patternAudition"), hidden("pattern", p.ID), hidden("loop", "true"), submit("", "", "Loop this performance")),
+		s.patternPreview(ctx, v, csrf, p),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%d notes · %s loop", len(notes), performanceDuration(performance.LengthTicks)))),
 		notePerformanceTrace(notes, p.ID), transpose,
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "performance-content")),

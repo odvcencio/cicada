@@ -18,12 +18,15 @@ func (s *studioApp) soundPreviewAction(ctx *action.Context) error {
 	payload := map[string]any{"action": f["action"], "lease": f["lease"]}
 	switch f["action"] {
 	case "open", "state":
-	case "stop", "close", "play":
+	case "stop", "close", "play", "pattern":
 		sequence, err := strconv.ParseUint(f["sequence"], 10, 64)
 		if err != nil || sequence == 0 {
 			return action.Validation("sound preview sequence is required", nil, f)
 		}
 		payload["sequence"] = sequence
+		if f["action"] == "pattern" {
+			payload["pattern"], payload["track"], payload["revision"] = f["pattern"], f["track"], f["revision"]
+		}
 		if f["action"] == "play" {
 			tempo, err := integer(f, "tempo")
 			if err != nil {

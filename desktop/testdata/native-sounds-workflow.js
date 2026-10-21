@@ -149,7 +149,12 @@
     patch.querySelector('summary').click();
     fill(patch.querySelector('form'),{newName:'starter-pad',track:'keys'});
     submit(patch.querySelector('form'));
-    const beforeCreation = await saved(source => source.includes('track keys starter-pad'), 'chosen sound added without replacing the song');
+    await saved(source => source.includes('track keys starter-pad'), 'chosen sound added without replacing the song');
+    const alternate = document.querySelector('[data-instrument-patch="wide-strings"]');
+    alternate.querySelector('summary').click();
+    fill(alternate.querySelector('form'),{newName:'alternate-pad',track:'otherkeys'});
+    submit(alternate.querySelector('form'));
+    const beforeCreation = await saved(source => source.includes('track otherkeys alternate-pad'), 'second compatible sound added for part comparison');
     const create = document.querySelector('[data-gosx-key="create-pattern-keys"]');
     create.querySelector('summary').click();
     fill(create.querySelector('form'),{newName:'first-part',starter:'chords',length:'16',scene:'main'});
@@ -161,6 +166,43 @@
     await saved(source => source === beforeCreation, 'one Undo removes the starting idea and binding exactly');
     document.querySelector('#redo-form').requestSubmit(document.querySelector('#redo-form button'));
     await saved(source => source === created, 'one Redo restores the complete musical part');
+
+    const part = () => document.querySelector('#cicada-pattern-preview[data-sounds-ready=true]');
+    const partButton = () => part().querySelector('[data-sound-preview]');
+    await wait(() => part(), 'part preview engine');
+    if (part().querySelector('[data-pattern-preview-track]').value !== 'keys') throw new Error('New part lost its chosen sound');
+    document.querySelector('#transport-form button[value=play]').click();
+    await wait(async () => { const t = await state('transport'); return t.playing && t.step > 1; }, 'song advances before preview');
+    document.querySelector('#transport-form button[value=pause]').click();
+    await wait(async () => !(await state('transport')).playing, 'paused song');
+    const paused = await state('transport');
+    if (paused.bar === 1 && paused.step === 1) throw new Error('Preview proof requires a paused song away from the beginning');
+    const draftEditor = document.querySelector('#score textarea'), partDraft = created+'\n// Unsaved part preview draft\n';
+    draftEditor.value = partDraft;
+    draftEditor.dispatchEvent(new Event('input',{bubbles:true}));
+    const beforePreviewNavigation = navigations;
+    partButton().click();
+    await wait(() => partButton().textContent === 'Stop' && partButton().getAttribute('aria-busy') === 'false', 'isolated part loop acknowledged');
+    const during = await state('transport'), duringSource = await state();
+    if (during.playing || during.bar !== paused.bar || during.step !== paused.step || duringSource.source !== created ||
+        draftEditor !== document.querySelector('#score textarea') || draftEditor.value !== partDraft || navigations !== beforePreviewNavigation)
+      throw new Error('Part preview changed the paused song, score, draft or mounted editor');
+    checks.push('Loop part preserves the paused song position, score and unsaved Code draft');
+    const trackChoice = part().querySelector('[data-pattern-preview-track]');
+    if (Array.from(trackChoice.options).some(option => option.value === 'bass')) throw new Error('A chord preview offered an incompatible mono sound');
+    trackChoice.value = 'otherkeys';
+    trackChoice.dispatchEvent(new Event('change',{bubbles:true}));
+    await wait(() => partButton().textContent === 'Loop part', 'changing preview sound acknowledges Stop');
+    checks.push('changing the preview sound stops the previous loop before retargeting');
+    partButton().click();
+    await wait(() => partButton().textContent === 'Stop', 'part loop with second sound');
+    button('warm-pad').click();
+    await wait(() => active('warm-pad') && partButton().textContent === 'Loop part', 'factory preview supersedes isolated part');
+    root().querySelector('[data-sound-stop]').click();
+    await stopped('factory and part previews share one output without moving the paused song');
+    const restored = await state('transport');
+    if (restored.playing || restored.bar !== paused.bar || restored.step !== paused.step || (await state()).source !== created)
+      throw new Error('Preview handoff changed song playback or source');
     if (errors.length) throw new Error('Global browser errors: '+JSON.stringify(errors));
     return {type:'cicada-native-smoke', ok:true, checks};
   })().catch(error => ({type:'cicada-native-smoke', ok:false, checks,

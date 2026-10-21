@@ -312,6 +312,9 @@ func (t *studioTransport) configureAudioAuthorized(ctx context.Context, options 
 		t.audioSettingsWarning = ""
 	}
 	t.audioOptions = options
+	if routeChanged {
+		t.stopPreviewLocked()
+	}
 	if t.audio != nil {
 		t.audio.SetMonitor(studioMonitorOptions(options))
 	}

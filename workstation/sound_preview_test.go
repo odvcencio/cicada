@@ -55,8 +55,23 @@ func TestSoundBrowserUsesPrivateActionsWithoutEditingOrNavigating(t *testing.T) 
 		}
 	}
 	csrf := tokenFromPage(t, page)
-	for _, command := range []string{"open", "play", "stop", "close"} {
+	for _, endpoint := range []string{"state", "revision", "transport", "meters", "audio/config", "takes", "capture", "history", "params", "sampler"} {
+		response, err := client.Get(app.URL + "/api/" + endpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("dynamic %s can be cached", endpoint)
+		}
+	}
+	for _, command := range []string{"open", "play", "stop", "close", "pattern"} {
 		fields := url.Values{"csrf_token": {csrf}, "action": {command}, "lease": {"private-preview"}, "sequence": {"3"}, "patch": {"warm-pad"}, "tempo": {"130000"}, "root": {"9"}, "scale": {"minor"}}
+		if command == "pattern" {
+			fields.Set("pattern", "idea")
+			fields.Set("track", "keys")
+			fields.Set("revision", "current")
+		}
 		r := post(t, client, app.URL+"/__actions/sound-preview", fields, true, app.URL)
 		var result action.Result
 		if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
@@ -66,15 +81,15 @@ func TestSoundBrowserUsesPrivateActionsWithoutEditingOrNavigating(t *testing.T) 
 			t.Fatalf("%s navigated or failed: %d %+v", command, r.StatusCode, result)
 		}
 	}
-	if len(calls) != 4 || calls[1]["tempo"] != float64(130000) || calls[1]["root"] != float64(9) || calls[1]["patch"] != "warm-pad" {
+	if len(calls) != 5 || calls[1]["tempo"] != float64(130000) || calls[1]["root"] != float64(9) || calls[1]["patch"] != "warm-pad" || calls[4]["pattern"] != "idea" || calls[4]["track"] != "keys" || calls[4]["revision"] != "current" {
 		t.Fatalf("lost audition context: %+v", calls)
 	}
 	invalid := post(t, client, app.URL+"/__actions/sound-preview", url.Values{"csrf_token": {csrf}, "action": {"play"}, "sequence": {"-1"}}, true, app.URL)
-	if invalid.StatusCode != 422 || len(calls) != 4 {
+	if invalid.StatusCode != 422 || len(calls) != 5 {
 		t.Fatal("invalid sequence reached audio")
 	}
 	forbidden := post(t, client, app.URL+"/__actions/sound-preview", url.Values{"action": {"open"}}, true, app.URL)
-	if forbidden.StatusCode != 403 || len(calls) != 4 {
+	if forbidden.StatusCode != 403 || len(calls) != 5 {
 		t.Fatal("sound preview bypassed CSRF")
 	}
 }

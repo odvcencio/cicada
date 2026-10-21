@@ -12,6 +12,9 @@ func (t *studioTransport) beginPreview() uint64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.previewGeneration++
+	if t.previewLoop {
+		t.clearPreviewLocked()
+	}
 	t.soundPreviewOwner = ""
 	t.pendingSoundLease = ""
 	return t.previewGeneration
@@ -44,7 +47,7 @@ func (t *studioTransport) startPreviewRequestFor(path string, p *project.Project
 	if err != nil {
 		return err
 	}
-	score, err := compileLiveProjectLoopAtRate(path, p, rate, !outputOnly)
+	score, err := compileLiveProjectLoopAtRate(path, p, rate, !outputOnly || duration == 0)
 	if err != nil {
 		return err
 	}
@@ -88,9 +91,13 @@ func (t *studioTransport) startPreviewRequestFor(path string, p *project.Project
 	}
 	t.preview = preview
 	t.previewOutputOnly = outputOnly
+	t.previewLoop = outputOnly && duration == 0
 	if outputOnly {
 		t.soundPreviewOwner = t.pendingSoundLease
 		t.pendingSoundLease = ""
+	}
+	if t.previewLoop {
+		duration = patternPreviewWatchdog
 	}
 	t.previewTimer = time.AfterFunc(duration, func() {
 		t.mu.Lock()
@@ -135,5 +142,7 @@ func (t *studioTransport) clearPreviewLocked() {
 	t.preview.Close()
 	t.preview = nil
 	t.previewOutputOnly = false
+	t.previewLoop = false
+	t.previewSourceHash = [32]byte{}
 	t.soundPreviewOwner = ""
 }

@@ -22,13 +22,14 @@ import (
 type soundJob struct {
 	patch, name string
 	sequence    uint64
+	track       string
 }
 
 type soundsUI struct {
 	root  js.Value
 	props struct {
-		CSRF, Scale string
-		Tempo, Root int
+		CSRF, Scale, Pattern, Revision string
+		Tempo, Root                    int
 	}
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -82,7 +83,16 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 		u.selected, u.pending = patch, true
 		name := workspaceAttr(button, "data-sound-name")
 		u.render("Preparing " + name + "…")
-		u.queue(soundJob{patch, name, u.sequence})
+		track := ""
+		if u.props.Pattern != "" {
+			track = u.root.Call("querySelector", "[data-pattern-preview-track]").Get("value").String()
+		}
+		u.queue(soundJob{patch: patch, name: name, sequence: u.sequence, track: track})
+	})
+	u.on(u.root, "change", func(e js.Value) {
+		if e.Get("target").Call("matches", "[data-pattern-preview-track]").Bool() && u.selected != "" {
+			u.stop("Preview stopped. Loop again with the chosen track.")
+		}
 	})
 	u.on(u.root, "keydown", func(e js.Value) {
 		if key := e.Get("key").String(); key == " " || key == "Enter" {
@@ -101,7 +111,11 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 		u.beacon(u.lease, "close", u.sequence)
 	})
 	u.root.Call("setAttribute", "data-sounds-ready", "true")
-	u.render("Listen to a sound, then add it to your song.")
+	message := "Listen to a sound, then add it to your song."
+	if u.props.Pattern != "" {
+		message = "Preview leaves your song position unchanged."
+	}
+	u.render(message)
 	go u.run()
 	go u.observe()
 	return enginewasm.HandleFunc(func() {
@@ -139,6 +153,9 @@ func (u *soundsUI) render(message string) {
 		button := buttons.Index(i)
 		selected := u.selected == workspaceAttr(button, "data-sound-preview")
 		label, text := "Listen to "+workspaceAttr(button, "data-sound-name"), "Listen"
+		if u.props.Pattern != "" {
+			label, text = "Loop "+workspaceAttr(button, "data-sound-name"), "Loop part"
+		}
 		if selected {
 			label, text = "Stop "+workspaceAttr(button, "data-sound-name")+" preview", "Stop"
 			if u.pending {
@@ -151,7 +168,9 @@ func (u *soundsUI) render(message string) {
 		button.Call("setAttribute", "aria-pressed", strconv.FormatBool(selected))
 		button.Call("setAttribute", "aria-busy", strconv.FormatBool(selected && u.pending))
 	}
-	u.root.Call("querySelector", "[data-sound-stop]").Set("disabled", u.selected == "")
+	if stop := u.root.Call("querySelector", "[data-sound-stop]"); workspacePresent(stop) {
+		stop.Set("disabled", u.selected == "")
+	}
 }
 
 func (u *soundsUI) stop(message string) {
@@ -159,7 +178,7 @@ func (u *soundsUI) stop(message string) {
 	u.beacon(u.lease, "stop", u.sequence)
 	u.pending = true
 	u.render("Stopping preview…")
-	u.queue(soundJob{"", message, u.sequence})
+	u.queue(soundJob{name: message, sequence: u.sequence})
 }
 
 func (u *soundsUI) queue(job soundJob) {
@@ -274,7 +293,11 @@ func (u *soundsUI) run() {
 				continue
 			}
 			if err == nil {
-				_, err = u.post(u.ctx, map[string]string{"action": "play", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "patch": job.patch, "tempo": strconv.Itoa(u.props.Tempo), "root": strconv.Itoa(u.props.Root), "scale": u.props.Scale})
+				values := map[string]string{"action": "play", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "patch": job.patch, "tempo": strconv.Itoa(u.props.Tempo), "root": strconv.Itoa(u.props.Root), "scale": u.props.Scale}
+				if u.props.Pattern != "" {
+					values = map[string]string{"action": "pattern", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "pattern": u.props.Pattern, "revision": u.props.Revision, "track": job.track}
+				}
+				_, err = u.post(u.ctx, values)
 			}
 			if job.sequence != u.sequence || u.closed.Load() {
 				continue
@@ -286,7 +309,11 @@ func (u *soundsUI) run() {
 				// declaring the browser idle; a failed Stop remains retryable.
 				u.stop(err.Error())
 			} else {
-				u.render("Listening to " + job.name + ".")
+				message := "Listening to " + job.name + "."
+				if u.props.Pattern != "" {
+					message = "Looping " + job.name + " with " + job.track + "."
+				}
+				u.render(message)
 			}
 		}
 	}
@@ -315,6 +342,9 @@ func (u *soundsUI) observe() {
 			if !result.Active {
 				u.selected = ""
 				message := "Choose another sound to compare."
+				if u.props.Pattern != "" {
+					message = "Preview stopped."
+				}
 				if result.Error != "" {
 					message = result.Error
 				}

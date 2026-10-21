@@ -84,6 +84,15 @@ const actionPosts = requests => requests.filter(request => request.startsWith('P
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers: {'Content-Type': request.headers()['content-type']}}).formData());
 
+async function waitUntil(check, message) {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.fail(message);
+}
+
 test('shell renders every region without a page scrollbar', async () => {
   const {page, errors} = await openShell();
   for (const id of ['studio-browser', 'studio-center', 'studio-detail', 'studio-code']) {
@@ -654,9 +663,72 @@ test('starting a musical part preserves the song and undoes in one step', {timeo
       assert.notEqual(created.revision,before.revision);
       if (process.env.CICADA_SHELL_PROOF_DIR) await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-created-part.png')});
       await page.locator('#undo-form button').click();
-      await page.waitForFunction(async source => (await (await fetch('/api/state')).json()).source === source,before.source);
+      await waitUntil(async () => (await snapshot()).source === before.source,'Undo restores the saved source');
       assert.equal((await snapshot()).source,before.source,'one Undo restores the entire original song');
       assert.deepEqual(errors,[]);
+    } finally { await page.close(); }
+  }
+});
+
+test('part loops preserve paused playback and drafts with keyboard control', {timeout:60_000}, async () => {
+  for (const [name,viewport] of [['desktop',{width:1440,height:900}],['phone',{width:390,height:800}]]) {
+    const {page,errors} = await openShell('dock=clip'+(name === 'phone' ? '&region=detail' : ''),viewport);
+    try {
+      const state = async path => (await page.request.get(new URL('/api/'+path,process.env.CICADA_STUDIO_URL).href)).json();
+      const original = await state('state');
+      if (name === 'desktop') {
+        const handle = await page.getByRole('separator',{name:'Resize Detail dock',exact:true}).boundingBox();
+        await page.mouse.move(handle.x+handle.width/2,handle.y+4);
+        await page.mouse.down();
+        await page.mouse.move(handle.x+handle.width/2,handle.y-236,{steps:8});
+        await page.mouse.up();
+      }
+      await page.locator('#transport-form button[value=play]').click();
+      await waitUntil(async () => { const t = await state('transport'); return t.playing && t.bar>1; },'song advances before preview');
+      await page.locator('#transport-form button[value=pause]').click();
+      await waitUntil(async () => !(await state('transport')).playing,'song pauses before preview');
+      const paused = await state('transport');
+      assert.ok(paused.bar>1 || paused.step>1,'preview proof pauses away from the beginning');
+      await page.waitForFunction(position => ['bar','step'].every(key =>
+        Number(document.querySelector('.position [data-gosx-live-bind='+key+']').textContent) === position[key]),paused);
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Code'}).click();
+      const editor = page.locator('#score textarea');
+      const draft = original.source+'\n// Unsaved part-loop draft\n';
+      await editor.fill(draft);
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Detail'}).click();
+      const preview = page.locator('#cicada-pattern-preview[data-sounds-ready=true]');
+      await preview.waitFor();
+      const selector = preview.locator('[data-pattern-preview-track]');
+      const choices = await selector.locator('option').evaluateAll(nodes => nodes.map(node => node.value));
+      await selector.selectOption(choices.at(-1));
+      const button = preview.locator('[data-sound-preview]');
+      await page.waitForFunction(() => document.documentElement.getAttribute('data-gosx-navigation-state') === 'idle');
+      await page.evaluate(() => {
+        window.__partLoopProof = {editor:document.querySelector('#score textarea'),navigations:0};
+        document.addEventListener('gosx:navigate',() => window.__partLoopProof.navigations++);
+      });
+      for (const key of ['Enter','Space']) {
+        await button.press(key);
+        await page.waitForFunction(() => document.querySelector('#cicada-pattern-preview [data-sound-preview]').textContent === 'Stop');
+        const during = await state('transport'), saved = await state('state');
+        assert.equal(during.playing,false);
+        assert.equal(during.bar,paused.bar);
+        assert.equal(during.step,paused.step);
+        assert.equal(saved.source,original.source);
+        assert.equal(saved.revision,original.revision);
+        assert.equal(await editor.inputValue(),draft);
+        assert.deepEqual(await page.evaluate(() => ({sameEditor:window.__partLoopProof.editor === document.querySelector('#score textarea'),navigations:window.__partLoopProof.navigations})),
+          {sameEditor:true,navigations:0},'preview retains the mounted editor without navigating');
+        if (key === 'Space' && process.env.CICADA_SHELL_PROOF_DIR) {
+          await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR,{recursive:true});
+          await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-part-loop.png')});
+        }
+        await button.press('Escape');
+        await page.waitForFunction(() => document.querySelector('#cicada-pattern-preview [data-sound-preview]').textContent === 'Loop part');
+      }
+      assert.deepEqual(errors,[]);
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Code'}).click();
+      await editor.fill(original.source);
     } finally { await page.close(); }
   }
 });

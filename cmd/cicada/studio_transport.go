@@ -41,6 +41,8 @@ type studioTransport struct {
 	previewTimer      *time.Timer
 	previewGeneration uint64
 	previewOutputOnly bool
+	previewLoop       bool
+	previewSourceHash [32]byte
 	soundPreviewOwner string
 	pendingSoundLease string
 	soundLeases       [32]soundPreviewLease

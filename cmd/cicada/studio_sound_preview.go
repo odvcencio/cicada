@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -16,6 +18,9 @@ import (
 )
 
 const soundLeaseLifetime = 10 * time.Minute
+const patternPreviewWatchdog = 30 * time.Second
+
+var errPatternPreviewChanged = errors.New("the saved score changed; refresh before looping this part")
 
 type soundPreviewLease struct {
 	id      string
@@ -32,6 +37,9 @@ type soundPreviewRequest struct {
 	Tempo    int    `json:"tempo"`
 	Root     int    `json:"root"`
 	Scale    string `json:"scale"`
+	Pattern  string `json:"pattern,omitempty"`
+	Track    string `json:"track,omitempty"`
+	Revision string `json:"revision,omitempty"`
 }
 
 type soundPreviewResult struct {
@@ -156,7 +164,95 @@ func (t *studioTransport) soundPreviewState(lease string) soundPreviewResult {
 			return soundPreviewResult{Error: "Preview stopped: " + err.Error()}
 		}
 	}
+	if t.previewLoop {
+		if t.previewTimer != nil {
+			t.previewTimer.Reset(patternPreviewWatchdog)
+		}
+		t.soundLeaseLocked(lease).expires = time.Now().Add(soundLeaseLifetime)
+	}
 	return soundPreviewResult{Active: true}
+}
+
+func (s *studio) patternPreviewState(lease string) soundPreviewResult {
+	t := s.transport
+	t.mu.Lock()
+	preview, fingerprint, path := t.preview, t.previewSourceHash, t.path
+	owned := t.soundPreviewOwner == lease && t.previewLoop
+	t.mu.Unlock()
+	if owned && fingerprint != ([32]byte{}) {
+		current, err := playSourceHash(path)
+		if err != nil || current != fingerprint {
+			t.mu.Lock()
+			if t.preview == preview && t.soundPreviewOwner == lease && t.previewSourceHash == fingerprint {
+				t.stopPreviewLocked()
+				t.mu.Unlock()
+				return soundPreviewResult{Error: "Part changed. Loop again to hear the saved edit."}
+			}
+			t.mu.Unlock()
+		}
+	}
+	return t.soundPreviewState(lease)
+}
+
+func patternPreviewProject(path string, request soundPreviewRequest) (*project.Project, [32]byte, error) {
+	var empty [32]byte
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, empty, err
+	}
+	if request.Revision == "" || studioRevision(source) != request.Revision {
+		return nil, empty, errPatternPreviewChanged
+	}
+	fingerprint, err := playSourceHashBytes(path, source)
+	if err != nil {
+		return nil, empty, err
+	}
+	p, err := compileStudioSource(path, source)
+	if err != nil {
+		return nil, empty, err
+	}
+	// Resolve relative pitches against the selected track, including for a
+	// library-only pattern that has no representative track in the song yet.
+	score, diagnostics, err := project.LoadScore(path, map[string][]byte{path: source})
+	if err != nil {
+		return nil, empty, err
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			return nil, empty, fmt.Errorf("%s", diagnostic.Message)
+		}
+	}
+	for _, authored := range score.Patterns {
+		if authored.Name != request.Pattern {
+			continue
+		}
+		for _, track := range score.Tracks {
+			if track.Name != request.Track {
+				continue
+			}
+			resolved, err := project.CompileProjectPattern(score, authored, track)
+			if err != nil {
+				return nil, empty, err
+			}
+			for index := range p.Patterns {
+				if p.Patterns[index].ID == request.Pattern {
+					p.Patterns[index] = resolved
+					break
+				}
+			}
+			break
+		}
+		break
+	}
+	current, err := playSourceHash(path)
+	if err != nil {
+		return nil, empty, err
+	}
+	if current != fingerprint {
+		return nil, empty, errPatternPreviewChanged
+	}
+	p, _, err = prepareStudioListening(p, studioListening{Kind: "pattern", Name: request.Pattern, Track: request.Track, Loop: true})
+	return p, fingerprint, err
 }
 
 func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
@@ -188,8 +284,8 @@ func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 		s.transport.stopSoundPreview(request)
 		studioJSON(w, 200, soundPreviewResult{})
 	case "state":
-		studioJSON(w, 200, s.transport.soundPreviewState(request.Lease))
-	case "play":
+		studioJSON(w, 200, s.patternPreviewState(request.Lease))
+	case "play", "pattern":
 		generation, err := s.transport.beginSoundPreview(request)
 		if err != nil {
 			studioJSON(w, 409, map[string]string{"error": err.Error()})
@@ -209,9 +305,18 @@ func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		var p *project.Project
 		var duration time.Duration
-		p, _, duration, err = soundPreviewProject(path, request)
+		var fingerprint [32]byte
+		if request.Action == "pattern" {
+			p, fingerprint, err = patternPreviewProject(path, request)
+		} else {
+			p, _, duration, err = soundPreviewProject(path, request)
+		}
 		if err != nil {
-			studioJSON(w, 422, map[string]string{"error": err.Error()})
+			status := 422
+			if errors.Is(err, errPatternPreviewChanged) {
+				status = 409
+			}
+			studioJSON(w, status, map[string]string{"error": err.Error()})
 			return
 		}
 		if err = r.Context().Err(); err == nil {
@@ -220,6 +325,13 @@ func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			studioJSON(w, 409, map[string]string{"error": err.Error()})
 			return
+		}
+		if request.Action == "pattern" {
+			s.transport.mu.Lock()
+			if s.transport.previewGeneration == generation && s.transport.soundPreviewOwner == request.Lease {
+				s.transport.previewSourceHash = fingerprint
+			}
+			s.transport.mu.Unlock()
 		}
 		studioJSON(w, 200, soundPreviewResult{Active: true, DurationMS: duration.Milliseconds()})
 	default:

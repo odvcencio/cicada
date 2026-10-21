@@ -630,43 +630,10 @@ func ValidateProject(p *Project) error {
 			if !ok || seen[*slot] || !compatible(track.Kind, pattern.Kind, kits) {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
 			}
-			if err := validatePerformedTrack(p, track, pattern); err != nil {
+			if err := validatePatternSound(p, track, pattern, instruments[track.Kind] != nil && instruments[track.Kind].Mode == "poly", samplers[track.Kind].Name != ""); err != nil {
 				return err
 			}
-			if samplers[track.Kind].Name != "" && len(pattern.Expression) > 0 {
-				return fmt.Errorf("CICADA-UNSUPPORTED: sampler track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
-			}
-			if isModeledKeys(p, track.Kind) && len(pattern.Expression) > 0 {
-				return fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboard track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
-			}
-			if isModeledPiano(p, track.Kind) && len(pattern.Expression) > 0 {
-				return fmt.Errorf("CICADA-UNSUPPORTED: modeled piano track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
-			}
-			for _, step := range pattern.Data {
-				if step != nil && len(step.Notes) > 0 {
-					inst := instruments[track.Kind]
-					if !isModeledPiano(p, track.Kind) && !isModeledKeys(p, track.Kind) && (inst == nil || inst.Mode != "poly") || pattern.Kind != "notes" {
-						return fmt.Errorf("chords require a voice poly instrument and a notes pattern")
-					}
-				}
-			}
 			seen[*slot] = true
-			if isModeledPiano(p, track.Kind) || isModeledKeys(p, track.Kind) {
-				for _, step := range pattern.Data {
-					if step == nil || step.Tie {
-						continue
-					}
-					notes := step.Notes
-					if len(notes) == 0 {
-						notes = []int{int(step.Note)}
-					}
-					for _, note := range notes {
-						if note+int(pattern.Transpose) < 21 || note+int(pattern.Transpose) > 108 {
-							return fmt.Errorf("track %s pattern %s: keyboard notes must be MIDI 21 to 108", track.ID, pattern.ID)
-						}
-					}
-				}
-			}
 			if program := trackGraphs[track.ID]; program.DelaySamples() > 0 {
 				if err := validateProjectGraphDelayPattern(program, 48_000, pattern); err != nil {
 					return fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
@@ -989,4 +956,73 @@ func hasSlot(track Track, patternID string) bool {
 		}
 	}
 	return false
+}
+
+// PatternTrackCompatible reports voice compatibility for an already valid
+// pattern and project. Project validation still checks routing, assets and budgets.
+func PatternTrackCompatible(p *Project, pattern Pattern, track Track) bool {
+	if track.Kind == "audio" {
+		return false
+	}
+	kind := track.Kind
+	for _, kit := range p.Kits {
+		if kit.ID == kind {
+			kind = "drums"
+			break
+		}
+	}
+	if !compatible(kind, pattern.Kind, nil) {
+		return false
+	}
+	polyphonic := false
+	for _, instrument := range p.Instruments {
+		if instrument.ID == track.Kind {
+			polyphonic = instrument.Mode == "poly"
+			break
+		}
+	}
+	sampler := false
+	for _, voice := range p.Samplers {
+		sampler = sampler || voice.Name == track.Kind
+	}
+	return validatePatternSound(p, track, pattern, polyphonic, sampler) == nil
+}
+
+func validatePatternSound(p *Project, track Track, pattern Pattern, polyphonic, sampler bool) error {
+	if err := validatePerformedTrack(p, track, pattern); err != nil {
+		return err
+	}
+	if sampler && len(pattern.Expression) > 0 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: sampler track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
+	}
+	if isModeledKeys(p, track.Kind) && len(pattern.Expression) > 0 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboard track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
+	}
+	if isModeledPiano(p, track.Kind) && len(pattern.Expression) > 0 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: modeled piano track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
+	}
+	for _, step := range pattern.Data {
+		if step != nil && len(step.Notes) > 0 {
+			if !isModeledPiano(p, track.Kind) && !isModeledKeys(p, track.Kind) && !polyphonic || pattern.Kind != "notes" {
+				return fmt.Errorf("chords require a voice poly instrument and a notes pattern")
+			}
+		}
+	}
+	if isModeledPiano(p, track.Kind) || isModeledKeys(p, track.Kind) {
+		for _, step := range pattern.Data {
+			if step == nil || step.Tie {
+				continue
+			}
+			notes := step.Notes
+			if len(notes) == 0 {
+				notes = []int{int(step.Note)}
+			}
+			for _, note := range notes {
+				if note+int(pattern.Transpose) < 21 || note+int(pattern.Transpose) > 108 {
+					return fmt.Errorf("track %s pattern %s: keyboard notes must be MIDI 21 to 108", track.ID, pattern.ID)
+				}
+			}
+		}
+	}
+	return nil
 }

@@ -189,6 +189,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	app.Mount("GET /api/takes/{id}/waveform", http.HandlerFunc(s.vocalWaveform))
 	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params", "/api/sampler"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
 			var data json.RawMessage
 			if err := b.call(r.Context(), http.MethodGet, path, nil, &data); err != nil {
 				http.Error(w, err.Error(), http.StatusBadGateway)

@@ -212,6 +212,14 @@ closed hat when present; other kits receive a pulse on their first lane.
 The notes and any scene assignment share one Undo step. Existing parts and the
 arrangement stay intact unless you choose to assign the new pattern to a scene.
 
+Pause the song, choose a compatible track under **Hear with**, then press
+**Loop part** to hear the selected grid or played performance on its own.
+Library-only patterns can preview before you assign them to a scene. The
+preview preserves your paused song position, score, Undo history, and unsaved
+Code draft. Press the same button or Escape to stop. Changing **Hear with**
+stops the previous preview; press **Loop part** again for the new sound.
+Saving changes stops the old loop so you can restart with the saved notes.
+
 In a notes grid, select a step and open **Build a chord** in its inspector.
 Choose the root, chord type, root octave, inversion, and **Hold (steps)**.
 **Place chord** writes the onset and holds in one Undo step. It replaces that

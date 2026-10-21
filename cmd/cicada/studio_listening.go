@@ -22,6 +22,7 @@ type studioTransportInput struct {
 type studioListening struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
+	Track     string `json:"track,omitempty"`
 	Mode      string `json:"mode,omitempty"`
 	Entry     int    `json:"entry,omitempty"`
 	StartTick int64  `json:"startTick"`
@@ -85,11 +86,14 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 				break
 			}
 		}
-		if pattern == nil || pattern.Performance == nil {
-			return nil, nil, fmt.Errorf("choose a played-timing pattern to audition")
+		if pattern == nil {
+			return nil, nil, fmt.Errorf("choose a pattern to audition")
 		}
-		track := ""
+		track := v.Track
 		for _, t := range p.Tracks {
+			if track != "" {
+				break
+			}
 			for _, slot := range t.Slots {
 				if slot != nil && *slot == v.Name {
 					track = t.ID
@@ -101,8 +105,22 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 			}
 		}
 		if track == "" {
-			return nil, nil, fmt.Errorf("assign the performance to a track before auditioning")
+			return nil, nil, fmt.Errorf("choose a track to hear this pattern")
 		}
+		found := false
+		for _, candidate := range p.Tracks {
+			if candidate.ID != track {
+				continue
+			}
+			found = true
+			if !project.PatternTrackCompatible(p, *pattern, candidate) {
+				return nil, nil, fmt.Errorf("choose a compatible instrument or drum track")
+			}
+		}
+		if !found {
+			return nil, nil, fmt.Errorf("the preview track is no longer in the song")
+		}
+		length := pattern.DurationTicks()
 		names := project.EditPlan(p, nil).Names
 		name := "studio-performance-audition"
 		for names[name] {
@@ -111,13 +129,17 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 		copy := *p
 		copy.Format, copy.Version, copy.Edition = project.FormatID2, 2, 2
 		copy.Song, copy.Automation = []project.SongEntry{}, nil
+		copy.Scenes = []project.Scene{}
 		copy.Tracks = append([]project.Track(nil), p.Tracks...)
 		for i := range copy.Tracks {
 			copy.Tracks[i].Chain = nil
+			if copy.Tracks[i].ID == track {
+				copy.Tracks[i].Slots = [16]*string{&v.Name}
+			}
 		}
-		copy.Arrange = &project.Arrangement{Markers: []project.Marker{}, Placements: []project.Placement{{ID: name, Track: track, Content: v.Name, LengthTicks: pattern.Performance.LengthTicks}}}
+		copy.Arrange = &project.Arrangement{Markers: []project.Marker{}, Placements: []project.Placement{{ID: name, Track: track, Content: v.Name, LengthTicks: length}}}
 		p = &copy
-		v.StartTick, v.EndTick = 0, pattern.Performance.LengthTicks
+		v.Track, v.StartTick, v.EndTick = track, 0, length
 		end = v.EndTick
 	case "placement":
 		if p.Arrange == nil {
@@ -205,7 +227,7 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 	v := studioListening{Loop: true}
 	switch input.Action {
 	case "patternAudition":
-		v.Kind, v.Name, v.Loop = "pattern", input.Pattern, input.Loop
+		v.Kind, v.Name, v.Track, v.Loop = "pattern", input.Pattern, input.Track, input.Loop
 	case "audition":
 		v.Kind, v.Name, v.Mode, v.Loop = "placement", input.Placement, input.Mode, input.Loop
 		if v.Mode == "" {
