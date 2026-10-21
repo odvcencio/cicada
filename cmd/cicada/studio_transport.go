@@ -27,7 +27,10 @@ import (
 )
 
 type studioTransport struct {
-	takeInputOpener   studioTakeInputOpener
+	takeInputOpener studioTakeInputOpener
+	// healthTicks starts the health frame schedule. Tests replace it with a
+	// manual clock; nil selects a wall-clock ticker.
+	healthTicks       func(period time.Duration) (ticks <-chan time.Time, stop func())
 	path              string
 	audioBackend      string
 	mu                sync.Mutex
@@ -459,7 +462,8 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	stream.PublishTelemetry()
 	t.observeMIDIClockLocked()
 	t.publishHealthLocked()
-	go t.watch(ctx, stream)
+	healthTicks, stopHealthTicks := t.startHealthTicks()
+	go t.watch(ctx, stream, healthTicks, stopHealthTicks)
 	return nil
 }
 
@@ -548,9 +552,12 @@ func (t *studioTransport) planAtFingerprint(fingerprint [32]byte, rate int) *liv
 }
 
 // publishHealthLocked publishes one health frame. Call it with t.mu held.
-// CPULoad stays 0 until the player measures it.
+// CPULoad is the player's render-time average, and 0 before any block.
 func (t *studioTransport) publishHealthLocked() {
 	var frame liveplay.HealthFrame
+	if t.stream != nil {
+		frame.CPULoad = float32(t.stream.CPULoad())
+	}
 	if t.audio != nil {
 		snapshot := t.audio.Snapshot()
 		frame.Dropouts = uint32(min(snapshot.Dropouts, uint64(^uint32(0))))
@@ -766,15 +773,26 @@ func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
 	return liveplay.LoudnessSnapshot{}
 }
 
-func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
+// healthFramePeriod is the interval between published health frames (twice a
+// second).
+const healthFramePeriod = 500 * time.Millisecond
+
+func (t *studioTransport) startHealthTicks() (<-chan time.Time, func()) {
+	if t.healthTicks != nil {
+		return t.healthTicks(healthFramePeriod)
+	}
+	ticker := time.NewTicker(healthFramePeriod)
+	return ticker.C, ticker.Stop
+}
+
+func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player, healthFrames <-chan time.Time, stopHealthFrames func()) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	health := time.NewTicker(time.Second)
 	telemetryTicker := time.NewTicker(40 * time.Millisecond)
-	healthFrames := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	defer health.Stop()
 	defer telemetryTicker.Stop()
-	defer healthFrames.Stop()
+	defer stopHealthFrames()
 	for {
 		select {
 		case <-ctx.Done():
@@ -797,7 +815,7 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 				t.observeMIDIClockLocked()
 			}
 			t.mu.Unlock()
-		case <-healthFrames.C:
+		case <-healthFrames:
 			t.mu.Lock()
 			t.publishHealthLocked()
 			t.mu.Unlock()
@@ -1069,11 +1087,66 @@ func (t *studioTransport) activatePlanLocked(path string, source []byte, fingerp
 		}
 		batch.SetResolvedParam(target, change.id, change.value)
 	}
+	targets := make(map[uint8]liveplay.PreviewTarget)
+	resolve := func(track uint8) (liveplay.PreviewTarget, bool) {
+		if target, ok := targets[track]; ok {
+			return target, true
+		}
+		if int(track) >= len(next.project.Tracks) {
+			return liveplay.PreviewTarget{}, false
+		}
+		target, err := t.stream.ResolvePreviewTrack(next.project.Tracks[track].ID)
+		if err != nil {
+			return liveplay.PreviewTarget{}, false
+		}
+		targets[track] = target
+		return target, true
+	}
+	for _, edit := range delta.edits {
+		var track uint8
+		switch edit := edit.(type) {
+		case stepChange:
+			track = edit.track
+		case lenChange:
+			track = edit.track
+		case metaChange:
+			track = edit.track
+		}
+		target, ok := resolve(track)
+		if !ok {
+			batch.Release()
+			return
+		}
+		switch edit := edit.(type) {
+		case stepChange:
+			batch.Step(target, edit.slot, edit.index, edit.packed)
+			if edit.chord != nil {
+				batch.Chord(target, edit.slot, edit.index, edit.chord.Notes, edit.chord.Count)
+			}
+		case lenChange:
+			batch.PatternLen(target, edit.slot, edit.length)
+		case metaChange:
+			batch.PatternMeta(target, edit.slot, edit.grid, edit.swing, edit.transpose)
+		}
+	}
+	for _, change := range delta.bindings {
+		target, ok := resolve(change.track)
+		if !ok {
+			batch.Release()
+			return
+		}
+		batch.SceneBinding(target, change.scene, change.binding)
+	}
 	if err := t.stream.Patch(batch); err != nil {
 		return
 	}
 	t.patchRevision++
+	delta.adopt(next)
 	t.last, t.livePlan, t.errText = fingerprint, next, ""
+	if t.history != nil {
+		// A patched take has no landing event; its handoff ends here.
+		t.history.consumeRecordedTake(studioFingerprintKey(fingerprint))
+	}
 }
 
 func (t *studioTransport) setError(err error) {

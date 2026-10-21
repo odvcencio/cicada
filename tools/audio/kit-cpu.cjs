@@ -3,6 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
+// Status ring: engine.MessageCapacity (512) messages of 16 bytes; a Go test keeps this equal.
+const MESSAGE_BYTES = 512 * 16;
 
 async function run(bytes, directory, probe) {
   const { instance } = await WebAssembly.instantiate(bytes);
@@ -15,7 +17,7 @@ async function run(bytes, directory, probe) {
   if (x.gosx_audio_init(48000, 128, 2)) throw Error('project init rejected');
   const command = new DataView(x.memory.buffer, x.gosx_audio_cmd_ptr(), probe.strikes.length * 24);
   const audio = new Float32Array(x.memory.buffer,x.gosx_audio_out_ptr(),256);
-  const messages = new Uint8Array(x.memory.buffer,x.gosx_audio_msg_ptr(),256*16);
+  const messages = new Uint8Array(x.memory.buffer,x.gosx_audio_msg_ptr(),MESSAGE_BYTES);
   const initialMemory = x.memory.buffer;
   const strike = () => {
     for (let i = 0; i < probe.strikes.length; i++) {

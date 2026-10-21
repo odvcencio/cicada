@@ -11,7 +11,7 @@ require (
 	golang.org/x/net v0.52.0
 	golang.org/x/sys v0.47.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
-	m31labs.dev/gosx v0.57.11-0.20261010215726-f066763a70be
+	m31labs.dev/gosx v0.57.16
 	m31labs.dev/gosx/editor v0.19.11
 )
 
@@ -52,7 +52,10 @@ require (
 
 replace m31labs.dev/cicada => ..
 
+// Published capture backend with explicit input authorization.
 replace m31labs.dev/tymbal => github.com/jvcencio/tymbal v0.0.0-20261018235149-d90b3551827b
 
-// Preserve SVG namespaces in dynamically patched performance charts.
-replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261019020039-088e1fe1f18d
+// Native Studio runtime with the published SVG namespace fix.
+replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261021201939-3bb04dd50868
+
+replace m31labs.dev/gosx/editor => github.com/odvcencio/gosx/editor v0.19.12-0.20261021030221-303188b38bc6

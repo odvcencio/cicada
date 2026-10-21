@@ -4,11 +4,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"sort"
 	"sync"
 	"syscall/js"
@@ -47,6 +44,9 @@ type meterFrame struct {
 // The engine owns only this meter mount. Tymbal and Cicada's kernel remain in
 // the native service. GoSX owns module boot, registration, remount and disposal.
 func main() {
+	if err := enginewasm.Register("CicadaShell", mountShell); err != nil {
+		panic(err)
+	}
 	if err := enginewasm.Register("CicadaAutomationCurve", mountAutomationCurve); err != nil {
 		panic(err)
 	}
@@ -71,6 +71,7 @@ func main() {
 	if err := enginewasm.Register("CicadaSampler", mountSampler); err != nil {
 		panic(err)
 	}
+	watchShellRefresh()
 	select {}
 }
 
@@ -230,25 +231,14 @@ func mountMeters(host enginewasm.Context) (enginewasm.Handle, error) {
 	go func() {
 		ticker := time.NewTicker(time.Second / 20)
 		defer ticker.Stop()
-		client := &http.Client{Timeout: 2 * time.Second}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 			}
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/meters", nil)
-			if err != nil {
-				return
-			}
-			response, err := client.Do(request)
-			if err != nil {
-				continue
-			}
 			var frame meterFrame
-			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&frame)
-			response.Body.Close()
-			if response.StatusCode == http.StatusOK && decodeErr == nil && ctx.Err() == nil {
+			if readNativeJSON(ctx, "/api/meters", 2*time.Second, 64<<10, &frame) == nil && ctx.Err() == nil {
 				state.Set(frame)
 			}
 		}

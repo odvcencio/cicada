@@ -52,16 +52,18 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 				Error       string                `json:"error"`
 			}
 			_ = json.Unmarshal(response, &checked)
-			message := "File check passed."
-			if !checked.Valid {
-				message = checked.Error
-				for _, d := range checked.Diagnostics {
-					if d.Severity == "error" {
-						message += fmt.Sprintf(" %d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
-					}
+			values := s.preserveDraft(ctx)
+			if checked.Valid {
+				ctx.SetResult(action.Result{OK: true, Message: "File check passed. Draft is not saved.", Values: values})
+				return nil
+			}
+			message := checked.Error
+			for _, d := range checked.Diagnostics {
+				if d.Severity == "error" {
+					message += fmt.Sprintf(" %d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 				}
 			}
-			return action.Validation(message, nil, s.preserveDraft(ctx))
+			return action.Validation(message, nil, values)
 		}
 		// Explicit redirect gives native and enhanced forms the same refreshed
 		// projection. Never put full score text into a cookie-backed flash.
@@ -78,18 +80,18 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		if path == "/api/undo" || path == "/api/redo" || path == "/api/source" {
 			session.Current(ctx.Request).Delete("vocal-audition")
 		}
-		ctx.FormData = nil
 		if path == "/api/source" || path == "/api/files" {
-			session.Current(ctx.Request).Delete("score-draft")
+			s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}
+		ctx.FormData = nil
 		// Transport has no source projection to refresh. Its GoSX live binding
 		// updates in place, so a completed Play/Stop cannot redirect over a
 		// newer panel navigation. Native forms still use redirect-after-POST.
 		if path == "/api/transport" && action.WantsJSON(ctx.Request) {
 			return nil
 		}
-		ctx.RedirectBackWithMessage("/", "")
+		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/"), "")
 		return nil
 	}
 }
@@ -125,10 +127,16 @@ func finiteNumber(form map[string]string, key string) (float64, error) {
 }
 
 func (s *studioApp) saveSource(ctx *action.Context) error {
+	if err := actionValues(ctx); err != nil {
+		return err
+	}
+	// File selection and intent routing use the same fields for HTML forms
+	// and JSON callers. Do not decode again after choosing the merge revision.
+	ctx.Payload = nil
 	if ctx.FormData["intent"] == "discard" {
-		session.Current(ctx.Request).Delete("score-draft")
+		s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
 		ctx.FormData = nil
-		ctx.RedirectBackWithMessage("/?panel=code", "Draft discarded. The file is unchanged.")
+		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/?panel=code"), "Draft discarded. The file is unchanged.")
 		return nil
 	}
 	if ctx.FormData["intent"] == "merge" {

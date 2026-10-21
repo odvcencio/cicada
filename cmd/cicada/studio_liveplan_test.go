@@ -109,7 +109,7 @@ func TestPlanDiffPatchesMixerValuesAndFlagsStructure(t *testing.T) {
 	}{
 		{"gain", "track bass acid {}", "track bass acid { level = -3dB }", false},
 		{"added", "track bass acid {}", "track bass acid {}\ntrack lead acid {}", true},
-		{"step", "1 . 5 .", "1 . 7 .", true},
+		{"step", "1 . 5 .", "1 . 7 .", false},
 		{"binding", "bass=pulse", "bass=off", true},
 		{"tempo", "title", "tempo 120\ntitle", true},
 	} {
@@ -124,6 +124,9 @@ func TestPlanDiffPatchesMixerValuesAndFlagsStructure(t *testing.T) {
 			}
 			if tc.name == "gain" && (len(diff.params) != 1 || diff.params[0].id != kernel.ParamMixGain || diff.params[0].value != -3) {
 				t.Fatalf("mixer diff %+v", diff)
+			}
+			if tc.name == "step" && (len(diff.edits) != 1 || len(diff.params) != 0) {
+				t.Fatalf("step diff %+v", diff)
 			}
 			if tc.name == "added" && diff.reason != "track added: lead" {
 				t.Fatalf("structural diff %+v", diff)

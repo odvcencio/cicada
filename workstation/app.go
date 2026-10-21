@@ -139,11 +139,13 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	})
 	app.Use(sessions.Protect)
 	app.Page("GET /{$}", s.page)
+	app.Page("GET /studio", s.shell)
 	if b == nil {
 		return &workspaceHandler{Handler: app.Build(), startupPath: startupPath}, nil
 	}
 	if s.bootstrapToken != "" {
 		app.Mount("GET /__local/{token}", http.HandlerFunc(s.bootstrapLocalOwner))
+		app.Mount("GET /__local/{token}/studio", http.HandlerFunc(s.bootstrapNativeOwner))
 	}
 	app.Mount("GET /collaboration/score", http.HandlerFunc(s.collaboration.serveHub))
 	app.Mount("POST /api/collaboration/invite", http.HandlerFunc(s.collaboration.invite))
@@ -156,6 +158,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 				http.Error(w, "Viewers cannot change the workspace.", http.StatusForbidden)
 				return
 			}
+			shellReturn(r)
 			s.serveAction(w, r, name, handler)
 		}))
 	}
@@ -175,6 +178,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 		_, _ = w.Write(ui.CSS)
 	}))
 	app.Mount("/editor/", http.StripPrefix("/editor/", editor.AssetHandler()))
+	app.Mount("POST /__code/analysis", http.HandlerFunc(codeAnalysis))
 	app.Mount("GET /media/takes/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
 		s.takeAudio(w, r)
@@ -202,13 +206,17 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 	return s.reactiveWorkspace(ctx, view, body)
 }
 
-func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace) {
+// loadWorkspace opens the editing session and reads the workspace for a page.
+// When ok is false the node is the complete page body, because the app is unavailable. The panel
+// name selects the code file and draft restoration only for "code". When saved
+// is not nil it receives the same read before those changes.
+func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *workspace) (workspace, ui.ShellProps, gosx.Node, bool) {
 	ctx.NoStore()
 	// GoSX's managed navigation has its own page cache. HTTP no-store alone
 	// cannot invalidate an already visited panel after a score mutation.
 	ctx.AddHead(gosx.El("meta", gosx.Attrs(gosx.Attr("name", "gosx-page-cache"), gosx.Attr("content", "no-store"))))
 	if s.backend == nil {
-		return gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace.")), workspace{}
+		return workspace{}, ui.ShellProps{}, gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace.")), false
 	}
 	// Studio is an editing session. GoSX leaves anonymous reads cookie-free;
 	// establish state before requesting the CSRF token used by every action.
@@ -226,9 +234,15 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 	var view workspace
 	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/workspace", nil, &view); err != nil {
 		ctx.SetStatus(http.StatusServiceUnavailable)
-		return ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), workspace{}
+		return workspace{}, ui.ShellProps{}, ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), false
 	}
-	if ctx.Request.URL.Query().Get("panel") == "code" {
+	if saved != nil {
+		// The unmodified snapshot, taken before any file selection or draft
+		// restoration, for panels that must match the saved project.
+		*saved = view
+		saved.DiskSource, saved.DiskRevision = saved.Source, saved.Revision
+	}
+	if panel == "code" {
 		selected := ctx.Request.URL.Query().Get("file")
 		for _, file := range view.Files {
 			if selected == file.Name || selected == "" && view.File == "" {
@@ -259,23 +273,31 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 			props.HasMessage = true
 		}
 		if name == "source" && !state.OK() {
-			if saved, ok := s.draft(state.Value("draft"), workspaceOwner(ctx.Request)); ok {
+			if saved, ok := s.draft(state.Value("draft"), workspaceOwner(ctx.Request)); ok && saved.File == view.File {
 				view.Source, view.FileRevision = saved.Source, saved.Revision
 			}
 		}
 	}
+	if panel == "code" {
+		if saved, ok := s.sourceDraft(ctx.Request, view.File); ok {
+			view.Source, view.FileRevision = saved.Source, saved.Revision
+			view.HasDraft = true
+			if !props.HasMessage {
+				props.Message, props.HasMessage = "Unsaved score draft restored. Check or save it to continue.", true
+			}
+		}
+	}
+	return view, props, gosx.Node{}, true
+}
+
+func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace) {
 	panel := ctx.Request.URL.Query().Get("panel")
 	if panel == "" {
 		panel = "session"
 	}
-	if panel == "code" {
-		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), workspaceOwner(ctx.Request)); ok && saved.File == view.File {
-			view.Source, view.FileRevision = saved.Source, saved.Revision
-			view.HasDraft = true
-			if !props.HasMessage {
-				props.Message, props.HasMessage = "Unsaved score draft restored. Save it after correcting the error or conflict.", true
-			}
-		}
+	view, props, unavailable, ok := s.loadWorkspace(ctx, panel, nil)
+	if !ok {
+		return unavailable, workspace{}
 	}
 	csrf := session.Token(ctx.Request)
 	var state transport

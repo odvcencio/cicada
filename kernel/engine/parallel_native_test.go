@@ -39,7 +39,7 @@ func parallelFixture(t testing.TB, tracks int, drives bool) *Engine {
 	t.Helper()
 	// A long floor keeps a loaded machine from timing out a lane and faulting
 	// tests that assert PCM or faults. The stall tests shorten it on purpose.
-	cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: tracks, MaxVoices: MaxVoices, BPMMilli: 120000, ParallelWaitFloor: time.Second}
+	cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: tracks, MaxVoices: MaxVoices, BPMMilli: 120000, ParallelWaitFloor: 30 * time.Second}
 	for track := 0; track < tracks; track++ {
 		cfg.Track[track].Kind = VoicePrepared
 		cfg.Track[track].Prepared = parallelFixtureFactory{phase: uint32(track+1) * 2654435761}
@@ -65,7 +65,7 @@ func TestParallelRawTrackPCMandShortSegmentFallback(t *testing.T) {
 		// Race instrumentation changes throughput, not the bounded-join
 		// behavior tested separately below.
 		if a.parallel != nil {
-			a.parallel.waitFloor = time.Second
+			a.parallel.waitFloor = 30 * time.Second
 		}
 		t.Cleanup(a.closeParallel)
 		for _, segment := range []struct{ start, count int }{{0, 128}, {11, 64}, {0, 1}, {91, 37}, {0, 128}} {

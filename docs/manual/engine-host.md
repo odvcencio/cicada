@@ -6,12 +6,12 @@ TinyGo/WebAssembly runtime. If you only want to write scores or use Studio, see
 
 ## Native Go
 
-`cicada play` and Studio select Tymbal by default (`Core Audio` on macOS,
-`WASAPI` on Windows, and `ALSA` on Linux). Cicada reports the selected backend
+On Windows, Linux, and macOS, `cicada play` and Studio select Tymbal by default
+(`WASAPI` on Windows, `ALSA` on Linux, and `CoreAudio` on macOS). Cicada reports the selected backend
 and device when playback starts, and it does not fall back silently. Use
 `--audio oto` when you need Oto's system-default device, or set
 `CICADA_AUDIO=oto`. Use `--audio null` for real-time rendering without an
-audio device.
+audio device. Oto provides output only; native recording uses Tymbal.
 
 Parse and validate source on the host, convert it to a typed project, and
 compile the project before starting audio. `project.CompileEngine` creates an
@@ -38,8 +38,8 @@ validation, and engine construction happen outside the audio reader. A valid
 save replaces the active engine at a bar boundary and crossfades for five
 milliseconds. A failed compile leaves the last valid project playing.
 
-`cicada play` and Studio select Tymbal by default on macOS (Core Audio),
-Windows (WASAPI), and Linux (ALSA). Tymbal does not fall
+`cicada play` and Studio select Tymbal by default on Windows (WASAPI), Linux
+(ALSA), and macOS (CoreAudio). Tymbal does not fall
 back silently: if the selected device cannot open, `play` exits with a device
 error and Studio leaves transport stopped. Use `--audio oto` or
 `CICADA_AUDIO=oto` to choose Oto explicitly.
@@ -102,7 +102,7 @@ success. It rejects invalid project data, channels, or block sizes and returns
 `gosx_audio_cmd_ptr` exposes 512 fixed 24-byte little-endian command records.
 Write a complete batch and commit it with `gosx_audio_cmd_commit(n)`; a
 rejected batch faults the engine with code 42. `gosx_audio_msg_drain` reads
-fixed 16-byte status records. Drain messages regularly so the host can report
+fixed 16-byte status records, up to 512 per call (the status ring size, `engine.MessageCapacity`), so size the view over `gosx_audio_msg_ptr` as 512 x 16 bytes. Drain messages regularly so the host can report
 queued scenes, transport changes, and engine errors. See
 [Fault codes](#fault-codes).
 
@@ -249,6 +249,7 @@ text.
 | 41 | `FaultPolyGeneration` | A polyphonic track ran out of pattern generations. |
 | 42 | `FaultHostCommandBatch` | The host refused a command batch: the count was out of range, a record was invalid, or the queue was full. The WASM exports send this. |
 | 43 | `FaultHostRenderFrames` | The host asked for a frame count outside 1 to the block limit. The WASM exports send this. |
+| 44 | `FaultSceneBinding` | A scene-binding command named a scene, track or clip the engine does not have. |
 | 46 | `FaultTrackInsert` | A serial track effect reported invalid audio. |
 | 47 | `FaultParallelWorker` | A native DSP worker failed or exceeded the bounded join time; replace the engine. |
 
@@ -306,6 +307,21 @@ listener-relative buses before decoding into caller-owned `[]spatial.Frame`
 storage. Its length must match the output slices. Stereo tracks and effect
 returns are absent from this capture. Per-track meters and taps for positioned
 tracks report the mono signal before distance attenuation and decoding.
+
+## Live edits
+
+A host that sees the `gosx_audio_live_edits` WASM export (it returns 1) can edit a
+playing engine through `gosx_audio_cmd_commit`; no capability bit changes.
+
+| Command | Routing and payload |
+| --- | --- |
+| `OpSetStep`, `OpSetChordStep`, `OpSetPatternLen`, `OpSetPatternMeta` | As before. Set `Tick` to the next step boundary to land the edit there; `Tick=0` while playing waits for the next bar unless `Pad=1` (`cmd.PatternEditNow`), which applies the edit at once. Works on every pattern voice, including drum lanes (the lane is the step's `Note`). |
+| `OpSetSceneBinding` (31) | `Track=255`, `Index=scene`; `Arg0 = track \| mode<<8 \| slot<<16` with mode 0 keep, 1 off, 2 slot, 3 clip; `Arg1=clip`. Changes the binding for the scene's next launch and faults with code 44 on an unknown scene, track or clip. |
+| `OpMeterRate` | `Arg0` is the block interval. Bit 0 of `Arg1` adds per-channel track meters: quantities 2 to 5 are left peak, right peak, left RMS and right RMS beside the mono 0 and 1. The ring holds the quantities for every track of the build (512 messages in every build). An engine whose ring is already too full for the whole emission sends the mono pair for every track instead, and the host reports both channels at the mono level. |
+
+Pattern edits run in the order they arrive, whatever their `Tick` values: an edit waits while an earlier edit still waits for its tick, and a seek (or a restart of the song schedule) first applies every edit that arrived before it, at once, because their step boundaries belong to the timeline it ends. A host can therefore check a batch by replaying the queue in order.
+
+Numbers 29 and 30 are reserved for later live-edit commands; `Validate` rejects them.
 
 ## Regress audio changes
 

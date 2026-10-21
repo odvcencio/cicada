@@ -104,70 +104,20 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		e.fault(FaultPatternEdit) // immutable gates require a complete project revision
 		return
 	}
+	if p.drumSlots != nil && c.Op == cmd.OpSetStep {
+		if code := drumStepEdit(&p.drumSlots[slot], c); code != 0 {
+			e.fault(code)
+			return
+		}
+		if p.active == int8(slot) && e.renderFrames > 0 {
+			e.scheduleTrack(track)
+		}
+		return
+	}
 	e.patternEdit = p.slots[slot]
 	updated := &e.patternEdit
-	switch c.Op {
-	case cmd.OpSetStep:
-		step, err := seq.UnpackStep(c.Arg0)
-		if err != nil {
-			e.fault(FaultPatternEdit)
-			return
-		}
-		if p.drumSlots != nil {
-			if step.Note >= uint8(drum.LaneCount) || step.Tie {
-				e.fault(FaultPatternEdit)
-				return
-			}
-			lane := drum.Lane(step.Note)
-			lanePattern := p.drumSlots[slot][lane]
-			lanePattern.Steps[c.Index] = c.Arg0
-			if lanePattern.Validate() != nil {
-				e.fault(FaultPatternEdit)
-				return
-			}
-			p.drumSlots[slot][lane] = lanePattern
-			if p.active == int8(slot) && e.renderFrames > 0 {
-				e.scheduleTrack(track)
-			}
-			return
-		}
-		updated.Steps[c.Index] = c.Arg0
-		updated.Chords[c.Index] = seq.ChordStep{}
-	case cmd.OpSetChordStep:
-		if e.voices[track].poly == nil && e.voices[track].kind != VoicePiano && (!keysEnabled || e.voices[track].kind != VoiceKeys) {
-			e.fault(FaultChordUnsupported)
-			return
-		}
-		notes, count, err := cmd.DecodeChordPayload(c)
-		if err != nil {
-			e.fault(FaultPatternEdit)
-			return
-		}
-		updated.Chords[c.Index] = seq.ChordStep{Notes: notes, Count: count}
-	case cmd.OpSetPatternLen:
-		updated.Len = uint8(c.Index)
-		for i := int(updated.Len); i < 64; i++ {
-			updated.Chords[i] = seq.ChordStep{}
-		}
-	case cmd.OpSetPatternMeta:
-		updated.StepTicks = c.Index
-		updated.SwingPermille = uint16(c.Arg0)
-		updated.Transpose = int8(int16(c.Arg0 >> 16))
-		if e.voices[track].kind == VoiceDrums && updated.Transpose != 0 {
-			e.fault(FaultPatternEdit)
-			return
-		}
-	}
-	if updated.Validate() != nil {
-		e.fault(FaultPatternEdit)
-		return
-	}
-	if e.voices[track].kind == VoicePiano && !validPianoPattern(updated) {
-		e.fault(FaultPatternEdit)
-		return
-	}
-	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(updated) {
-		e.fault(FaultPatternEdit)
+	if code := editPattern(updated, c, e.voices[track].kind, e.voices[track].poly != nil); code != 0 {
+		e.fault(code)
 		return
 	}
 	if p.active == int8(slot) && p.playingNote != 0 && p.playingGen == p.generation {
@@ -189,19 +139,273 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		}
 	}
 	if p.drumSlots != nil {
-		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-			lanePattern := p.drumSlots[slot][lane]
-			lanePattern.StepTicks = updated.StepTicks
-			lanePattern.Len = updated.Len
-			lanePattern.SwingPermille = updated.SwingPermille
-			lanePattern.Transpose = updated.Transpose
-			lanePattern.GatePercent = updated.GatePercent
-			p.drumSlots[slot][lane] = lanePattern
-		}
+		syncDrumLanes(&p.drumSlots[slot], updated)
 	}
 	if p.active == int8(slot) && e.renderFrames > 0 {
 		e.scheduleTrack(track)
 	}
+}
+
+// drumStepEdit writes one drum step into the lane its note names, undoing the
+// write if the lane pattern would become invalid. It returns a fault code, or
+// zero. Drum steps never tie.
+func drumStepEdit(lanes *[drum.LaneCount]seq.Pattern, c cmd.Command) uint16 {
+	step, err := seq.UnpackStep(c.Arg0)
+	if err != nil || step.Note >= uint8(drum.LaneCount) || step.Tie {
+		return FaultPatternEdit
+	}
+	lane := &lanes[step.Note]
+	previous := lane.Steps[c.Index]
+	lane.Steps[c.Index] = c.Arg0
+	if lane.Validate() != nil {
+		lane.Steps[c.Index] = previous
+		return FaultPatternEdit
+	}
+	return 0
+}
+
+// editPattern applies a step, chord, length or metadata command to updated and
+// checks that the result is a valid pattern for the voice. It returns a fault
+// code, or zero. poly reports a polyphonic graph pool, which accepts chords.
+func editPattern(updated *seq.Pattern, c cmd.Command, kind VoiceKind, poly bool) uint16 {
+	if code := changePattern(updated, c, kind, poly); code != 0 {
+		return code
+	}
+	if updated.Validate() != nil || (kind == VoicePiano || keysEnabled && kind == VoiceKeys) && !validPianoPattern(updated) {
+		return FaultPatternEdit
+	}
+	return 0
+}
+
+// changePattern makes the change of editPattern without checking the result.
+func changePattern(updated *seq.Pattern, c cmd.Command, kind VoiceKind, poly bool) uint16 {
+	switch c.Op {
+	case cmd.OpSetStep:
+		if _, err := seq.UnpackStep(c.Arg0); err != nil {
+			return FaultPatternEdit
+		}
+		updated.Steps[c.Index] = c.Arg0
+		updated.Chords[c.Index] = seq.ChordStep{}
+	case cmd.OpSetChordStep:
+		if !poly && kind != VoicePiano && (!keysEnabled || kind != VoiceKeys) {
+			return FaultChordUnsupported
+		}
+		notes, count, err := cmd.DecodeChordPayload(c)
+		if err != nil {
+			return FaultPatternEdit
+		}
+		updated.Chords[c.Index] = seq.ChordStep{Notes: notes, Count: count}
+	case cmd.OpSetPatternLen:
+		updated.Len = uint8(c.Index)
+		for i := int(updated.Len); i < 64; i++ {
+			updated.Chords[i] = seq.ChordStep{}
+		}
+	case cmd.OpSetPatternMeta:
+		updated.StepTicks = c.Index
+		updated.SwingPermille = uint16(c.Arg0)
+		updated.Transpose = int8(int16(c.Arg0 >> 16))
+		if kind == VoiceDrums && updated.Transpose != 0 {
+			return FaultPatternEdit
+		}
+	}
+	return 0
+}
+
+// syncDrumLanes copies the shared pattern fields into every lane of a drum slot.
+func syncDrumLanes(lanes *[drum.LaneCount]seq.Pattern, shared *seq.Pattern) {
+	for lane := range lanes {
+		pattern := &lanes[lane]
+		pattern.StepTicks, pattern.Len, pattern.SwingPermille = shared.StepTicks, shared.Len, shared.SwingPermille
+		pattern.Transpose, pattern.GatePercent = shared.Transpose, shared.GatePercent
+	}
+}
+
+// editSlot applies one pattern-edit command to a scratch slot (and, on a drum
+// track, its lane patterns) by the rules the engine uses, and reports whether
+// the engine would accept it.
+func editSlot(slot *seq.Pattern, lanes *[drum.LaneCount]seq.Pattern, c cmd.Command, kind VoiceKind, poly bool) bool {
+	if kind == VoiceDrums {
+		if lanes == nil {
+			return false
+		}
+		if c.Op == cmd.OpSetStep {
+			return drumStepEdit(lanes, c) == 0
+		}
+	}
+	if editPattern(slot, c, kind, poly) != 0 {
+		return false
+	}
+	if lanes != nil {
+		syncDrumLanes(lanes, slot)
+	}
+	return true
+}
+
+// changeSlot makes the change of editSlot without validating the result. It
+// carries queued edits that precede a batch, which the engine has already judged.
+func changeSlot(slot *seq.Pattern, lanes *[drum.LaneCount]seq.Pattern, c cmd.Command, kind VoiceKind, poly bool) {
+	if kind == VoiceDrums && c.Op == cmd.OpSetStep {
+		if step, err := seq.UnpackStep(c.Arg0); err == nil && step.Note < uint8(drum.LaneCount) && lanes != nil {
+			lanes[step.Note].Steps[c.Index] = c.Arg0
+		}
+		return
+	}
+	if changePattern(slot, c, kind, poly) == 0 && lanes != nil {
+		syncDrumLanes(lanes, slot)
+	}
+}
+
+// ApplyPatternEdit applies one pattern-edit command (OpSetStep, OpSetChordStep,
+// OpSetPatternLen or OpSetPatternMeta) to a slot as a playing engine would, so a
+// host can check a sequence of edits before it sends them. lanes is nil for
+// every track but a drum track. A returned error means the engine would fault.
+func ApplyPatternEdit(slot *seq.Pattern, lanes *[drum.LaneCount]seq.Pattern, c cmd.Command, track *TrackConfig) error {
+	if !editSlot(slot, lanes, c, track.Kind, track.Kind == VoiceGraph && track.Polyphony == 4) {
+		return Error("pattern edit is invalid for the voice")
+	}
+	return nil
+}
+
+func isPatternEditOp(op cmd.Op) bool {
+	return op == cmd.OpSetStep || op == cmd.OpSetChordStep || op == cmd.OpSetPatternLen || op == cmd.OpSetPatternMeta
+}
+
+func editSlotIndex(c cmd.Command) int {
+	if c.Op == cmd.OpSetChordStep {
+		return int(c.Arg1 & 15)
+	}
+	return int(c.Arg1)
+}
+
+// Pattern edits run in arrival order, whatever their ticks, so a host can check a
+// batch by replaying the queue in order. Two rules keep that true:
+//
+//   - applyPending holds back an edit while an edit that arrived before it is
+//     still waiting for its tick (head-of-line order), and
+//   - a transport discontinuity (a seek, a restart of the song or placement
+//     schedule) first applies every edit that arrived before it, in order, at
+//     the point where the old timeline ends. Their step boundaries lie on a
+//     timeline that no longer plays, so they land at once instead of being
+//     re-timed against the new position.
+//
+// Between discontinuities the tick only moves forward and a host stamps edits
+// at nondecreasing step boundaries, so the tick order already equals arrival
+// order and the rules change nothing. A song loop does not move the tick (it keeps
+// counting), so it is not a discontinuity.
+
+// flushPatternEdits applies, in arrival order, the pattern edits ahead of the
+// command being applied: the prefix of the pending queue that arrived before it.
+// flushLimit is that prefix length. It shrinks as entries leave, so the prefix
+// stays exactly the entries that arrived before the command, a second call finds
+// no edits in it, and an edit that arrived after the command is never touched.
+// Outside applyPending (flushLimit is -1) every pending edit arrived earlier.
+func (e *Engine) flushPatternEdits() {
+	if e.flushLimit < 0 {
+		for i := 0; i < e.pendingLen && !e.faulted; {
+			if !isPatternEditOp(e.pending[i].Op) {
+				i++
+				continue
+			}
+			c := e.pending[i]
+			copy(e.pending[i:], e.pending[i+1:e.pendingLen])
+			e.pendingLen--
+			e.apply(c)
+		}
+		return
+	}
+	for i := 0; i < e.flushLimit && !e.faulted; {
+		if !isPatternEditOp(e.pending[i].Op) {
+			i++
+			continue
+		}
+		c := e.pending[i]
+		copy(e.pending[i:], e.pending[i+1:e.pendingLen])
+		e.pendingLen--
+		e.flushLimit--
+		e.apply(c)
+	}
+}
+
+// seekTransport moves the playhead after landing the edits that arrived before
+// the move.
+func (e *Engine) seekTransport(tick int64) error {
+	e.flushPatternEdits()
+	return e.transport.SeekTick(tick)
+}
+
+// queuedCommand returns the command at a position in the combined order: the
+// pending queue, then the unread ring, then the batch under test.
+func (e *Engine) queuedCommand(index, ring int, cs []cmd.Command) cmd.Command {
+	switch {
+	case index < e.pendingLen:
+		return e.pending[index]
+	case index < e.pendingLen+ring:
+		return e.commands[(e.commandRead+uint16(index-e.pendingLen))%uint16(len(e.commands))]
+	}
+	return cs[index-e.pendingLen-ring]
+}
+
+// PatternEditsValid reports whether the pattern edits in cs would all be
+// accepted by this engine when they apply. Edits run in arrival order, so for
+// each slot cs touches it takes the active slot and drum lanes, then every edit
+// for that slot in the pending queue, the unread command ring and cs, in that
+// order. Queued edits are applied without checks, since the engine judged them
+// when they arrived; each edit in cs is validated. Other commands are ignored,
+// including transport commands: a seek lands the edits ahead of it in the same
+// order and does not change it. It copies the slot into stack scratch, mutates
+// nothing and allocates nothing, and costs a pass over the queue and the batch
+// per touched slot. Call it only from the render thread, which owns the engine,
+// once the earlier batches have been pushed.
+func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
+	var seen [MaxTracks * 16 / 64]uint64
+	ring := int(e.commandWrite - e.commandRead)
+	for i := range cs {
+		first := cs[i]
+		if !isPatternEditOp(first.Op) {
+			continue
+		}
+		track, slot := int(first.Track), editSlotIndex(first)
+		if track >= e.tracks || slot >= 16 {
+			return false
+		}
+		bit := track*16 + slot
+		if seen[bit/64]&(1<<(bit%64)) != 0 {
+			continue
+		}
+		seen[bit/64] |= 1 << (bit % 64)
+		p := &e.patterns[track]
+		kind, poly := e.voices[track].kind, e.voices[track].poly != nil
+		scratch := p.slots[slot]
+		var lanes [drum.LaneCount]seq.Pattern
+		var lanesPtr *[drum.LaneCount]seq.Pattern
+		if p.drumSlots != nil {
+			lanes, lanesPtr = p.drumSlots[slot], &lanes
+		}
+		valid := true
+		visit := func(c *cmd.Command, queued bool) {
+			if !valid || !isPatternEditOp(c.Op) || int(c.Track) != track || editSlotIndex(*c) != slot {
+				return
+			}
+			if queued {
+				changeSlot(&scratch, lanesPtr, *c, kind, poly)
+			} else if !editSlot(&scratch, lanesPtr, *c, kind, poly) {
+				valid = false
+			}
+		}
+		for j := 0; j < e.pendingLen; j++ {
+			visit(&e.pending[j], true)
+		}
+		for k := 0; k < ring; k++ {
+			visit(&e.commands[(e.commandRead+uint16(k))%uint16(len(e.commands))], true)
+		}
+		for m := i; m < len(cs); m++ {
+			visit(&cs[m], false)
+		}
+		if !valid {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) selectPatternNow(track, slot int, restart bool) {

@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 
+	"m31labs.dev/cicada/internal/appdirs"
 	"m31labs.dev/cicada/internal/audiobackend"
 )
 
@@ -28,18 +28,14 @@ func studioAudioSettingsPath(backend audiobackend.Name) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown audio backend %q", backend)
 	}
-	dir := os.Getenv("CICADA_AUDIO_SETTINGS_DIR")
-	if dir == "" {
-		base, err := os.UserConfigDir()
-		if runtime.GOOS == "windows" {
-			base, err = os.UserCacheDir() // Match the desktop app's LocalAppData folder.
-		}
-		if err != nil {
-			return "", err
-		}
-		dir = filepath.Join(base, "Cicada Studio", "audio")
+	if dir := os.Getenv("CICADA_AUDIO_SETTINGS_DIR"); dir != "" {
+		return filepath.Abs(filepath.Join(dir, string(backend)+".json"))
 	}
-	return filepath.Abs(filepath.Join(dir, string(backend)+".json"))
+	dir, err := appdirs.StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "audio-"+string(backend)+".json"), nil
 }
 
 func loadStudioAudioSettings(path string, defaults studioAudioOptions) (studioAudioOptions, error) {

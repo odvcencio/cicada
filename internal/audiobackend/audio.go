@@ -1,4 +1,4 @@
-// Package audiobackend provides Cicada's native audio backends.
+// Package audiobackend provides Cicada's native audio input and output backends.
 package audiobackend
 
 import (

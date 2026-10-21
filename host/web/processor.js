@@ -3,6 +3,8 @@ class CicadaKernel extends AudioWorkletProcessor {
     super();
     const port = this.port;
     const post = port.postMessage.bind(port);
+    // The kernel drains up to engine.MessageCapacity (512) 16-byte messages; a Go test keeps this equal.
+    const MESSAGE_BYTES = 512 * 16;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
     let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
@@ -75,7 +77,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         return {
           x, s: slot, p: capability, b: header.getUint32(12, true),
           d: new Uint8Array(x.memory.buffer, x.cmd_ptr(), commandBuffer),
-          m: new Uint8Array(x.memory.buffer, x.msg_ptr(), 256 * 16),
+          m: new Uint8Array(x.memory.buffer, x.msg_ptr(), MESSAGE_BYTES),
           l: new Float32Array(x.memory.buffer, out, max),
           r: new Float32Array(x.memory.buffer, out + max * 4, max)
         };
@@ -288,7 +290,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     quantumMs = 128000 / rate;
     durationLimit = quantumMs + (preciseClock ? 0.1 : 1);
     latency = o.l || 0;
-    const buffer = new ArrayBuffer(4096);
+    const buffer = new ArrayBuffer(MESSAGE_BYTES);
     view = new Uint8Array(buffer);
     message = { t: 'm', bytes: buffer, n: 0 };
     transfer = [buffer];

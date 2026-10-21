@@ -133,10 +133,12 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	go u.runCommands()
 	go u.poll()
 	go u.checkpointNotes()
+	releaseUnsaved := holdUnsavedWork("live", func() bool { return len(u.takes) > 0 || u.recording || len(u.held) > 0 })
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
 		}
+		releaseUnsaved()
 		u.closeNotes()
 		if u.nativeMIDICancel != nil {
 			u.nativeMIDICancel()
@@ -339,22 +341,8 @@ func (u *liveUI) consumeExpression(job *liveJob) {
 }
 
 func (u *liveUI) poll() {
-	client := &http.Client{Timeout: 2 * time.Second}
-	origin := js.Global().Get("location").Get("origin").String()
 	read := func(path string, out any) error {
-		req, e := http.NewRequestWithContext(u.ctx, http.MethodGet, origin+path, nil)
-		if e != nil {
-			return e
-		}
-		r, e := client.Do(req)
-		if e != nil {
-			return e
-		}
-		defer r.Body.Close()
-		if r.StatusCode != 200 {
-			return fmt.Errorf("live state unavailable")
-		}
-		return json.NewDecoder(io.LimitReader(r.Body, 2<<20)).Decode(out)
+		return readNativeJSON(u.ctx, path, 2*time.Second, 2<<20, out)
 	}
 	var params struct {
 		Registry []struct {
@@ -611,6 +599,9 @@ func (u *liveUI) bindControls() {
 		if t.Type() == js.TypeObject && !t.Call("closest", "input,textarea,select,[contenteditable=true]").IsNull() {
 			return
 		}
+		if !ownsKeyboard(keysLive) {
+			return
+		}
 		key := strings.ToLower(e.Get("key").String())
 		if key == " " || key == "enter" {
 			b := t.Call("closest", "[data-live-note],[data-live-drum]")
@@ -628,6 +619,13 @@ func (u *liveUI) bindControls() {
 	})
 	u.on(window, "keyup", func(e js.Value) { u.noteOff("key:" + strings.ToLower(e.Get("key").String())) })
 	u.on(window, "blur", func(js.Value) { u.closeNotes() })
+	watchKeyboardOwner(u.on, keysLive, func() {
+		for id := range u.held {
+			if strings.HasPrefix(id, "key:") {
+				u.noteOff(id)
+			}
+		}
+	})
 	u.on(window, "pagehide", func(js.Value) {
 		u.sequence++
 		form := url.Values{"csrf_token": {u.props.CSRF}, "type": {"release"}, "lease": {u.lease}, "sequence": {strconv.FormatUint(u.sequence, 10)}}

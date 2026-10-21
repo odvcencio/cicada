@@ -13,6 +13,20 @@ ordered track effects and an EQ/compressor/de-esser vocal chain. Session also
 edits continuous automation points by pointer, touch, keyboard, or unit-aware
 fields; saved changes use the same source revision and Undo history.
 
+The single-window Studio shell uses **Space** for play/pause and **Home** to
+return to the start. **Cmd+S** saves the score on Mac; **Cmd+Z** and
+**Cmd+Shift+Z** undo and redo saved edits when focus is outside a text field.
+Text fields keep their own editing history. Use **Cmd+Shift+R** (or **F9**) to
+record the selected vocal track or finish its active take. Windows and Linux
+use **Ctrl** for these shortcuts. In Session, **F1–F8** launch the corresponding
+scene from the launch matrix. The Shortcuts dialog lists available commands.
+
+On Mac, choose the microphone and output in **Audio**, select **Enable input**,
+and apply the settings before recording. macOS requests microphone permission
+at that point. If it was denied, allow Cicada Studio in **System Settings →
+Privacy & Security → Microphone** and reopen the app. Device settings unlock
+after playback or capture stops; timing readouts update while Audio is open.
+
 ## Framework conventions
 
 The implementation was checked against GoSX 0.57.5 source and compiler tests,

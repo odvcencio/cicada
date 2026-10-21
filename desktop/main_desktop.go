@@ -42,17 +42,20 @@ type host struct {
 	statePath   string
 	state       hostState
 	score       string
+	scoreKey    string
 	proc        *sidecar.Process
 	queue       openQueue
 	closing     bool
 	starting    sync.WaitGroup
 	startCancel context.CancelFunc
 
-	smokeOut  string
-	smokeHold time.Duration
-	smokeMIDI bool
-	started   time.Time
-	smoke     map[string]any
+	smokeOut     string
+	smokeHold    time.Duration
+	smokeTimeout time.Duration
+	smokeScript  string
+	smokeMIDI    bool
+	started      time.Time
+	smoke        map[string]any
 }
 
 func main() {
@@ -73,8 +76,27 @@ func run() error {
 	smokeOut := flags.String("smoke-out", "", "write a startup report to this JSON file and exit once Studio loads (tests)")
 	smokeHold := flags.Duration("smoke-hold", 1500*time.Millisecond, "with --smoke-out, how long to keep Studio open after it loads")
 	smokeMIDI := flags.Bool("smoke-midi", false, "with --smoke-out, keep an authenticated native MIDI input open for shutdown tests")
+	smokeTimeout := flags.Duration("smoke-timeout", 60*time.Second, "with --smoke-out, maximum time to await the workflow result (tests)")
+	smokeScript := flags.String("smoke-script", "", "with --smoke-out, run this JavaScript workflow and await its result (tests)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
+	}
+	if *smokeTimeout <= 0 {
+		return fmt.Errorf("--smoke-timeout must be positive")
+	}
+	var script []byte
+	if *smokeScript != "" {
+		if *smokeOut == "" {
+			return fmt.Errorf("--smoke-script requires --smoke-out")
+		}
+		var err error
+		script, err = os.ReadFile(*smokeScript)
+		if err != nil {
+			return fmt.Errorf("read smoke script: %w", err)
+		}
+		if len(script) == 0 {
+			return fmt.Errorf("smoke script is empty")
+		}
 	}
 	if *smokeMIDI && *smokeOut == "" {
 		return fmt.Errorf("--smoke-midi requires --smoke-out")
@@ -105,15 +127,11 @@ func run() error {
 		return err
 	}
 	h := &host{
-		cicada:    cicada,
-		audio:     *audio,
-		logOut:    logFile,
+		cicada: cicada, audio: *audio, logOut: logFile,
 		statePath: filepath.Join(*dataDir, "state.json"),
-		smokeOut:  *smokeOut,
-		smokeHold: *smokeHold,
-		smokeMIDI: *smokeMIDI,
-		started:   started,
-		smoke:     map[string]any{},
+		smokeOut:  *smokeOut, smokeHold: *smokeHold, smokeMIDI: *smokeMIDI,
+		smokeTimeout: *smokeTimeout, smokeScript: string(script),
+		started: started, smoke: map[string]any{"timeoutSeconds": smokeTimeout.Seconds()},
 	}
 	h.state = loadState(h.statePath)
 	score, err := resolveInitialScore(flags.Args(), h.state, cicada, filepath.Join(documentsDir(), "Cicada"))
@@ -122,7 +140,7 @@ func run() error {
 	}
 
 	h.app, err = desktop.New(desktop.Options{
-		Title:            windowTitle(score),
+		Title:            "Cicada Studio",
 		Width:            1280,
 		Height:           840,
 		AppID:            appID,
@@ -134,18 +152,27 @@ func run() error {
 		DevTools:         *devTools,
 		SingleInstance:   *smokeOut == "",
 		OnSecondInstance: h.onSecondInstance,
+		OnOpenFiles: func(paths []string) {
+			h.onSecondInstance(desktop.InstanceMessage{Args: paths})
+		},
+		OnWebMessage: h.onSmokeMessage,
 		OnNavigationCompleted: func(event desktop.NavigationCompleted) {
 			h.onNavigationCompleted(event)
 		},
 		// Start the audio engine once this process owns the window, while
 		// the web view starts. Starting it earlier would also start it in a
 		// second launch that only forwards its file and exits.
-		OnWindowCreated: func(*desktop.Window) { go h.open(score) },
+		OnWindowCreated: func(*desktop.Window) { h.open(score) },
 		OnClose:         h.shutdown,
 	})
 	if err != nil {
 		return err
 	}
+	closeMIDI, err := attachNativeMIDI(h.app)
+	if err != nil {
+		return fmt.Errorf("configure native MIDI: %w", err)
+	}
+	defer closeMIDI()
 	if err := h.optionalChrome("minimum window size", h.app.SetMinSize(800, 560)); err != nil {
 		return err
 	}
@@ -162,7 +189,7 @@ func run() error {
 	}
 	if h.smokeOut != "" {
 		go func() {
-			time.Sleep(60 * time.Second)
+			time.Sleep(h.smokeTimeout)
 			h.recordSmoke("timeout", true)
 			_ = h.app.Close()
 		}()
@@ -200,20 +227,43 @@ func (h *host) optionalChrome(what string, err error) error {
 	return err
 }
 
-// open stops the current Studio process, starts one for score, and shows it.
+// open reserves requests on the calling thread, then switches in the background.
+// Finder's first document must follow startup even if its goroutine runs first.
 func (h *host) open(score string) {
+	h.openRequested(score, false)
+}
+
+func (h *host) reload() {
+	h.openRequested(h.currentScore(), true)
+}
+
+func (h *host) openRequested(score string, reload bool) {
 	h.mu.Lock()
-	closing := h.closing
-	previous := h.proc
+	activeKey := ""
+	if h.proc != nil {
+		activeKey = h.scoreKey
+	}
+	start := !h.closing && h.queue.request(score, activeKey, reload)
 	h.mu.Unlock()
-	if closing || !h.queue.request(score) {
+	if !start {
 		return
 	}
-	defer func() {
-		if next := h.queue.done(); next != "" {
-			go h.open(next)
+	go func() {
+		for score != "" {
+			h.openScore(score)
+			score = h.queue.done()
 		}
 	}()
+}
+
+func (h *host) openScore(score string) {
+	key := scorePathKey(score)
+	h.mu.Lock()
+	closing, previous := h.closing, h.proc
+	h.mu.Unlock()
+	if closing {
+		return
+	}
 
 	if previous != nil {
 		_ = h.app.SetHTML(statusPage("Opening", filepath.Base(score)))
@@ -237,6 +287,7 @@ func (h *host) open(score string) {
 		return
 	}
 	h.score = score
+	h.scoreKey = key
 	h.state.remember(score)
 	state := h.state
 	h.mu.Unlock()
@@ -244,7 +295,7 @@ func (h *host) open(score string) {
 		fmt.Fprintf(h.logOut, "host: save state: %v\n", err)
 	}
 	_ = h.app.SetTitle(windowTitle(score))
-	if err := h.app.Navigate(proc.Ready()); err != nil {
+	if err := h.app.Navigate(strings.TrimRight(proc.Ready(), "/") + "/studio"); err != nil {
 		fmt.Fprintf(h.logOut, "host: navigate: %v\n", err)
 	}
 	go h.watch(proc, score)
@@ -342,13 +393,13 @@ func (h *host) menu() desktop.Menu {
 		recentItems = append(recentItems, desktop.MenuItem{
 			ID:      fmt.Sprintf("file.recent.%d", i),
 			Label:   fmt.Sprintf("&%d %s", i+1, file),
-			OnClick: func() { go h.open(file) },
+			OnClick: func() { h.open(file) },
 		})
 	}
 	if len(recentItems) == 0 {
 		recentItems = append(recentItems, desktop.MenuItem{ID: "file.recent.none", Label: "(none)", Disabled: true})
 	}
-	return desktop.Menu{Items: []desktop.MenuItem{
+	return platformMenu(h, desktop.Menu{Items: []desktop.MenuItem{
 		{ID: "file", Label: "&File", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
 			{ID: "file.new", Label: "&New Project...", OnClick: h.newProjectDialog},
 			{ID: "file.open", Label: "&Open...", OnClick: h.openDialog},
@@ -359,12 +410,12 @@ func (h *host) menu() desktop.Menu {
 			{ID: "file.exit", Label: "E&xit", OnClick: func() { _ = h.app.Close() }},
 		}}},
 		{ID: "view", Label: "&View", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
-			{ID: "view.reload", Label: "&Reload Studio", OnClick: func() { go h.open(h.currentScore()) }},
+			{ID: "view.reload", Label: "&Reload Studio", OnClick: h.reload},
 		}}},
 		{ID: "help", Label: "&Help", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
 			{ID: "help.docs", Label: "Cicada &Documentation", OnClick: func() { _ = h.app.OpenURL("https://github.com/odvcencio/cicada#readme") }},
 		}}},
-	}}
+	}})
 }
 
 var scoreFilter = []desktop.FileFilter{{Name: "Cicada score (*.cicada)", Pattern: "*.cicada"}}
@@ -374,7 +425,11 @@ func (h *host) openDialog() {
 		Title: "Open Cicada score", Filters: scoreFilter, DefaultExt: "cicada",
 		InitialDir: filepath.Dir(h.currentScore()),
 	})
-	if err != nil || len(paths) == 0 {
+	if err != nil {
+		showError("Open failed", err.Error())
+		return
+	}
+	if len(paths) == 0 {
 		return
 	}
 	h.rememberAndOpen(paths[0])
@@ -389,7 +444,11 @@ func (h *host) saveAsDialog() {
 		Title: "Save Cicada score as", Filters: scoreFilter, DefaultExt: "cicada",
 		InitialDir: filepath.Dir(current), InitialFilename: filepath.Base(current), OverwritePrompt: true,
 	})
-	if err != nil || target == "" {
+	if err != nil {
+		showError("Save As failed", err.Error())
+		return
+	}
+	if target == "" {
 		return
 	}
 	if err := saveCopyWithAssets(h.cicada, current, target); err != nil {
@@ -406,7 +465,11 @@ func (h *host) newProjectDialog() {
 		Title: "New Cicada project (choose a folder name)", InitialDir: parent,
 		InitialFilename: nextProjectName(parent), OverwritePrompt: false,
 	})
-	if err != nil || target == "" {
+	if err != nil {
+		showError("New project failed", err.Error())
+		return
+	}
+	if target == "" {
 		return
 	}
 	name := strings.TrimSuffix(filepath.Base(target), filepath.Ext(target))
@@ -428,7 +491,7 @@ func (h *host) rememberAndOpen(score string) {
 	h.state.remember(score)
 	h.mu.Unlock()
 	_ = h.app.SetMenuBar(h.menu())
-	go h.open(score)
+	h.open(score)
 }
 
 func (h *host) onSecondInstance(message desktop.InstanceMessage) {
@@ -468,10 +531,34 @@ func (h *host) onNavigationCompleted(event desktop.NavigationCompleted) {
 			h.writeSmoke()
 		}
 	}
+	if h.smokeScript != "" {
+		if err := h.app.ExecuteScript(h.smokeScript); err != nil {
+			h.recordSmoke("frontend", map[string]any{"ok": false, "error": err.Error()})
+			go h.app.Close()
+		}
+		return
+	}
 	go func() {
 		time.Sleep(h.smokeHold)
 		_ = h.app.Close()
 	}()
+}
+
+func (h *host) onSmokeMessage(message string) {
+	if h.smokeOut == "" || h.smokeScript == "" {
+		return
+	}
+	var result struct {
+		Type   string   `json:"type"`
+		OK     bool     `json:"ok"`
+		Checks []string `json:"checks"`
+		Error  string   `json:"error,omitempty"`
+	}
+	if json.Unmarshal([]byte(message), &result) != nil || result.Type != "cicada-native-smoke" {
+		return
+	}
+	h.recordSmoke("frontend", result)
+	go h.app.Close()
 }
 
 func (h *host) recordSmoke(key string, value any) {

@@ -22,7 +22,7 @@ async function checkAudioPerformance({browser, base, proof, ready, errors}) {
     await page.getByText('Recording timing', {exact: true}).click();
     await page.getByRole('spinbutton', {name: 'Recording timing correction (ms)', exact: true}).fill('17.5');
     await buffer.selectOption('64');
-    await page.getByRole('button', {name: 'Apply and return to Session', exact: true}).click();
+    await page.getByRole('button', {name: 'Apply and return to recording', exact: true}).click();
     await page.locator('#session').waitFor();
     await ready(page);
     const after = await (await page.request.get(base + '/api/audio/config')).json();

@@ -106,3 +106,32 @@ func TestLocalStartupKeepsEstablishedPrivateReview(t *testing.T) {
 		t.Fatal("native startup cleared the established private receipt")
 	}
 }
+
+func TestNativeStartupAuthenticatesBeforeOpeningShell(t *testing.T) {
+	app := configuredNoteRecoveryApp(t, t.TempDir(), true)
+	defer app.Close()
+	startup := app.Config.Handler.(interface{ StartupPath() string }).StartupPath()
+	owner := privateNoteClient()
+	response, err := owner.Get(app.URL + startup + "/studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/studio" || response.Header.Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("native bootstrap: %d %v", response.StatusCode, response.Header)
+	}
+	page := getPage(t, owner, app.URL+"/studio")
+	if !strings.Contains(page, `id="studio-shell"`) || strings.Contains(page, startup) {
+		t.Fatal("native bootstrap did not open a clean shell URL")
+	}
+	for _, path := range []string{startup, startup + "/studio"} {
+		r, err := privateNoteClient().Get(app.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if r.StatusCode != http.StatusNotFound {
+			t.Fatalf("startup capability reused via %s: %d", path, r.StatusCode)
+		}
+	}
+}

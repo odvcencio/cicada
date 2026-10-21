@@ -3,8 +3,10 @@ package edit
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/limits"
 
 	"m31labs.dev/cicada/instrument"
@@ -13,34 +15,59 @@ import (
 
 // instrumentParameterSource ports studio_instrument.go instrumentParameterSource.
 func instrumentParameterSource(source []byte, targetFile string, score *notation.Score, trackID, parameterID, value string, reset bool) ([]byte, error) {
+	var target *notation.Track
 	var definition *notation.Instrument
-	for _, track := range score.Tracks {
-		if track.Name != trackID {
-			continue
+	for i := range score.Tracks {
+		if score.Tracks[i].Name == trackID {
+			target = &score.Tracks[i]
+			break
 		}
+	}
+	if target != nil {
 		for i := range score.Instruments {
-			if score.Instruments[i].Name == track.Kind {
+			if score.Instruments[i].Name == target.Kind {
 				definition = &score.Instruments[i]
 				break
 			}
 		}
-		break
-	}
-	if definition == nil {
-		return nil, fmt.Errorf("track %q has no authored instrument", trackID)
-	}
-	program, ds := instrument.Compile(*definition)
-	if program == nil || hasErrors(ds) || !program.HasParameter(parameterID) {
-		return nil, fmt.Errorf("instrument %s does not declare parameter %q", definition.Name, parameterID)
 	}
 	literal := ""
-	if !reset {
-		var err error
-		literal, err = instrument.ParameterLiteral(program, parameterID, value)
-		if err != nil {
-			return nil, err
+	if definition != nil {
+		program, ds := instrument.Compile(*definition)
+		if program == nil || hasErrors(ds) || !program.HasParameter(parameterID) {
+			return nil, fmt.Errorf("instrument %s does not declare parameter %q", definition.Name, parameterID)
+		}
+		if !reset {
+			var err error
+			literal, err = instrument.ParameterLiteral(program, parameterID, value)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		if target == nil {
+			return nil, fmt.Errorf("track %q has no authored instrument", trackID)
+		}
+		// Custom kits and sample bindings have their own source controls. A
+		// registry drum address does not imply that those sources accept it.
+		for _, kit := range score.Kits {
+			if kit.Name == target.Kind {
+				return nil, fmt.Errorf("track %q uses a custom kit; edit its source settings in Score", trackID)
+			}
+		}
+		descriptor, ok := paramdefs.TrackParam(notation.ParameterVoiceKind(score, target.Kind), parameterID)
+		if !ok {
+			return nil, fmt.Errorf("track %s does not expose sound parameter %q", trackID, parameterID)
+		}
+		if !reset {
+			var err error
+			literal, err = builtinParameterLiteral(descriptor, value)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
+
 	decl, walker, err := declaration(source, []string{"track_decl"}, trackID)
 	if err != nil {
 		return nil, err
@@ -69,6 +96,28 @@ func instrumentParameterSource(source []byte, targetFile string, score *notation
 	}
 	at := int(decl.StartByte()) + bytes.IndexByte(source[decl.StartByte():decl.EndByte()], '{') + 1
 	return ReplaceSpan(source, targetFile, Span{at, at, " " + parameterID + " = " + literal + " ", targetFile})
+}
+
+// Built-in controls use the source catalog's units and range. Plain numbers
+// take the control's displayed unit, while explicit compatible literals keep
+// their original precision and spelling.
+func builtinParameterLiteral(descriptor paramdefs.Descriptor, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if number, err := strconv.ParseFloat(value, 64); err == nil && descriptor.Curve != "enum" && descriptor.Curve != "toggle" {
+		value = paramdefs.FormatValue(descriptor, number)
+	}
+	validation := descriptor
+	// Cents, like semitones and ratios, are plain source numbers.
+	if validation.Unit == "cent" {
+		validation.Unit = ""
+	}
+	if descriptor.Type == "integer" && descriptor.Curve != "enum" && descriptor.Curve != "toggle" {
+		validation.Curve = "integer"
+	}
+	if _, err := paramdefs.ValidateLiteral(validation, value); err != nil {
+		return "", err
+	}
+	return value, nil
 }
 
 // AddPreset inserts an authored instrument and its track in one edit.

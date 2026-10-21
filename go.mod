@@ -21,8 +21,8 @@ require (
 require (
 	github.com/ebitengine/purego v0.11.0
 	github.com/jfreymuth/pulse v0.1.3 // indirect
-	m31labs.dev/tymbal v0.0.0-20260929091837-23968cefb0c6
+	m31labs.dev/tymbal v0.0.0-20261018224641-e5e266c6aaf1
 )
 
-// Published Core Audio backend; no local Tymbal checkout is needed.
+// Published capture backend with explicit input authorization.
 replace m31labs.dev/tymbal => github.com/jvcencio/tymbal v0.0.0-20261018235149-d90b3551827b

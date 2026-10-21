@@ -35,6 +35,7 @@ main { padding:24px 28px; }
 .panel-heading p { margin:0; }
 .panel-heading h2 { flex-shrink:0; }
 .panel-heading p { max-width:60ch; text-align:right; }
+.source-draft-note { margin:0 0 8px; color:var(--amber); font-size:13px; }
 .actions .action-form { align-items:center; flex-wrap:wrap; }
 .actions .action-form .field { min-width:100px; }
 .grid-scroll { overflow-x:auto; }
@@ -101,6 +102,7 @@ main { padding:24px 28px; }
 .timeline-clip.silent { color:var(--muted); background:var(--raised); border-color:var(--border); }
 .timeline-clip.inherited { border-style:dashed; }
 .placement-scroll { border:1px solid var(--border); border-radius:6px; margin:12px 0; }
+.placement-scroll[data-placement-auto-scroll] { border-color:var(--mint); }
 .placement-timeline { --placement-label-width:112px; --placement-bar-width:48px; width:calc(var(--placement-label-width) + var(--placement-bars) * var(--placement-bar-width)); }
 .placement-row { display:grid; grid-template-columns:var(--placement-label-width) minmax(0,1fr); }
 .placement-track { position:sticky; left:0; z-index:2; display:flex; flex-direction:column; justify-content:center; padding:10px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); background:var(--raised); font-size:12px; overflow-wrap:anywhere; }
@@ -194,6 +196,24 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .editor-page { --editor-bg:var(--bg); --editor-surface:var(--panel); }
 #score .editor-native-body { grid-template-columns:minmax(0,1fr); }
 #score .editor-native-sidebar { display:none; }
+/* The Code lens can be narrow even on a wide desktop. Keep its actions and
+   search fields inside the lens instead of relying on viewport breakpoints. */
+#score .panel-heading { margin-bottom:8px; }
+#score nav[aria-label="Project files"] { padding:4px 0; gap:4px 8px; margin-bottom:8px; max-height:96px; overflow:auto; }
+#score nav[aria-label="Project files"] a { padding:4px 8px; min-height:32px; }
+#score .editor-code-topbar { position:relative; flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:6px; padding:8px 10px; }
+#score .editor-code-identity { flex:none; max-width:100%; padding-right:86px; }
+#score .editor-segments:empty { display:none; }
+#score .editor-native-actions { flex:none; min-width:0; max-width:100%; justify-content:flex-start; gap:4px; }
+#score .editor-save-status { position:absolute; top:8px; right:10px; min-width:0; }
+#score .editor-native-actions button { font-size:12px; padding:5px 6px; min-height:38px; }
+#score .editor-code-toolbar { flex-wrap:wrap; gap:4px; max-height:none; padding:6px 8px; }
+#score .editor-code-toolbar button { font-size:12px; padding:4px 6px; min-height:32px; }
+#score .editor-source-shell { --editor-source-pad-block:12px; --editor-source-pad-inline:8px; --editor-gutter-width:2.4rem; }
+#score .editor-native-main { min-height:0; }
+#score .editor-code-find, #score .editor-code-goto { flex:1 1 100%; flex-wrap:wrap; margin-left:0; }
+#score .editor-code-find input, #score .editor-code-goto input { flex:1 1 112px; width:auto; max-width:100%; }
+#score .editor-code-goto [data-code-goto=status] { flex:1 1 100%; max-width:100%; overflow-wrap:anywhere; }
 @media(max-width:700px) { .masthead { gap:16px; flex-wrap:wrap; } .score-meta { width:100%; } .toolbar,.nav,.masthead,main { padding:14px 16px; } .panel { padding:14px; } .panel-heading { display:block; } .panel-heading p {text-align:left;} }
 @media(max-width:850px) { .pattern-editor { grid-template-columns:minmax(0,1fr); } .pattern-library { flex-direction:row; overflow:auto; } .pattern-choice { min-width:140px; flex-shrink:0; } }
 @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }
@@ -437,3 +457,23 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .gesture-content nav { margin-top:12px; font-size:12px; }
 @media(max-width:800px) { .gesture-content { grid-template-columns:minmax(0,1fr); } .gesture-trace { padding:6px; } }
 @media(max-width:1000px) { .performance-content { grid-template-columns:minmax(0,1fr); } }
+
+/* Arrangement view controls never write to the score. */
+.placement-navigation { display:none; flex-wrap:wrap; align-items:end; gap:8px; margin-top:12px; }
+[data-placement-navigation-ready] > .placement-navigation { display:flex; }
+.placement-navigation .field { width:auto; min-width:0; gap:2px; }
+.placement-navigation .field > span { font-size:11px; }
+.placement-navigation select { min-width:86px; }
+.placement-follow { display:flex; align-items:center; gap:5px; min-height:38px; font-size:12px; }
+.placement-follow input { min-height:0; width:16px; height:16px; }
+.placement-navigation [data-placement-playback-status] { flex-basis:100%; font:11px ui-monospace,monospace; }
+.placement-timeline { position:relative; }
+.placement-playhead { position:absolute; top:0; bottom:0; width:2px; z-index:1; pointer-events:none; background:var(--amber); }
+.placement-playhead::before { content:''; position:absolute; top:0; left:-4px; border-left:5px solid transparent; border-right:5px solid transparent; border-top:8px solid var(--amber); }
+.placement-playhead[hidden] { display:none; }
+
+.placement-marker { overflow:hidden; text-overflow:ellipsis; }
+
+.placement-edit-status { flex-basis:100%; font-size:11px; }
+#studio-shell:not([data-shell-placement-editor=ready]) [data-placement-resize] { display:none; }
+#studio-shell [data-placement-resize] { display:block; }

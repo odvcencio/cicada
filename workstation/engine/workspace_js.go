@@ -82,8 +82,7 @@ type workspaceUI struct {
 	drafts      map[string]workspaceDraft
 	scrolls     []workspaceScroll
 	editors     map[string]workspaceEditorBaseline
-	drag        *placementDrag
-	dragClick   bool
+	placements  *placementEditorUI
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -176,11 +175,22 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "click", u.click)
 	u.listen(document, "dblclick", u.doubleClick)
 	u.listen(document, "keydown", u.keyDown)
-	u.listen(document, "pointerdown", u.placementPointerDown)
-	u.listen(document, "pointermove", u.placementPointerMove)
-	u.listen(document, "pointerup", u.placementPointerUp)
-	u.listen(document, "pointercancel", u.placementPointerCancel)
-	u.listen(document, "lostpointercapture", u.placementPointerCancel)
+	u.placements = &placementEditorUI{
+		owned:   u.owned,
+		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
+		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit,
+		refresh: func(js.Value) { u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()}) },
+	}
+	u.listen(document, "change", u.placements.placementViewChanged)
+	u.listen(document, "click", u.placements.placementViewChanged)
+	u.listen(document, "visibilitychange", u.placements.placementViewportChanged)
+	u.listen(js.Global(), "blur", u.placements.placementViewportChanged)
+	u.listen(js.Global(), "resize", u.placements.placementViewportChanged)
+	u.listen(document, "pointerdown", u.placements.placementPointerDown)
+	u.listen(document, "pointermove", u.placements.placementPointerMove)
+	u.listen(document, "pointerup", u.placements.placementPointerUp)
+	u.listen(document, "pointercancel", u.placements.placementPointerCancel)
+	u.listen(document, "lostpointercapture", u.placements.placementPointerCancel)
 	// Managed navigation retains this engine but reconciles the workspace's
 	// server-authored attributes. Restore its readiness marker after that
 	// reconciliation so enhanced controls keep working on revisited panels.
@@ -196,18 +206,25 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	confirmedWorkspaceRevision.Set(props.Revision)
 	go u.run()
 	go u.watchFiles()
-	go u.watchAudioControls()
-	go u.watchCapture()
+	releasePlacementView := placementViewPublisher.acquire()
+	releaseAudio := audioPublisher.acquire()
+	busy := func() bool { return u.busy.Load() }
+	captureBusy.Store(&busy)
+	releaseCapture := capturePublisher.acquire()
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
 		}
 		u.cancel()
+		u.placements.clearPlacementDrag()
+		releaseAudio()
+		releasePlacementView()
 		root.Call("removeAttribute", "data-workspace-reactive")
 		for _, event := range u.events {
 			event.target.Call("removeEventListener", event.name, event.callback, true)
 			event.callback.Release()
 		}
+		releaseCapture()
 		watch.Dispose()
 		refreshWatch.Dispose()
 		u.clearQueue()
@@ -378,8 +395,8 @@ func (u *workspaceUI) click(event js.Value) {
 	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction {
 		return
 	}
-	if u.dragClick && workspacePresent(target.Call("closest", "[data-placement-block]")) {
-		u.dragClick = false
+	if u.placements.dragClick && workspacePresent(target.Call("closest", "[data-placement-block]")) {
+		u.placements.dragClick = false
 		workspaceStop(event)
 		return
 	}
@@ -557,7 +574,7 @@ func (u *workspaceUI) keyDown(event js.Value) {
 	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || workspaceNative(target) || workspaceEngineOwned(target) {
 		return
 	}
-	if u.placementKeyDown(event) {
+	if u.placements.placementKeyDown(event) {
 		return
 	}
 	key := event.Get("key").String()
@@ -1896,26 +1913,16 @@ func (u *workspaceUI) watchFiles() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	requested := ""
-	client := &http.Client{Timeout: 3 * time.Second}
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		case <-ticker.C:
 		}
-		req, err := http.NewRequestWithContext(u.ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/revision", nil)
-		if err != nil {
-			return
-		}
-		response, err := client.Do(req)
-		if err != nil {
-			continue
-		}
 		var state struct {
 			Revision string `json:"projectRevision"`
 		}
-		err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state)
-		response.Body.Close()
+		err := readNativeJSON(u.ctx, "/api/revision", 3*time.Second, 4096, &state)
 		if err != nil || state.Revision == "" || state.Revision == requested || state.Revision == u.renderedProject() {
 			continue
 		}

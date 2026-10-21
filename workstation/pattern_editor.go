@@ -20,6 +20,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 		return err
 	}
 	returnTo := ctx.FormData[action.ReturnTargetField]
+	operation := ctx.FormData["action"]
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
@@ -253,6 +254,16 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	if err == nil && destination != "" {
 		// The framework captures native return targets before invoking the
 		// handler. Choose the new inspected step explicitly after a success.
+		destination = shellRedirect(ctx.Request, destination)
+		if operation == "create" {
+			if target, err := url.Parse(destination); err == nil && target.Path == "/studio" {
+				query := target.Query()
+				query.Set("dock", "clip")
+				query.Set("region", "detail")
+				target.RawQuery = query.Encode()
+				destination = target.String()
+			}
+		}
 		ctx.RedirectWithMessage(destination, "")
 	}
 	return err

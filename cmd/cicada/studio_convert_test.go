@@ -31,7 +31,7 @@ func convertEnvelope(source string, dryRun bool) edits.Envelope {
 }
 
 func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	s, handler, path := proposalFixture(t, convertChanceSongScore)
 	counter := &countingRender{inner: rendercheck.New(path)}
 	s.renderCheck = rendercheck.Cached(path, counter)
@@ -63,7 +63,7 @@ func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
 }
 
 func TestStudioConvertCommitsOneHistoryEntryAndUndoRestoresSong(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	_, handler, path := proposalFixture(t, convertSongScore)
 	r := studioCall(t, handler, "/api/intents", convertEnvelope(convertSongScore, true))
 	if r.Code != 200 || !strings.Contains(r.Body.String(), `"convertible":true`) || !strings.Contains(r.Body.String(), "arrange") {
@@ -91,7 +91,7 @@ func TestStudioConvertCommitsOneHistoryEntryAndUndoRestoresSong(t *testing.T) {
 }
 
 func TestStudioConvertWithoutRenderCheckIsRefusedNotWritten(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	s, handler, path := proposalFixture(t, convertSongScore)
 	s.renderCheck = nil
 	r := studioCall(t, handler, "/api/intents", convertEnvelope(convertSongScore, true))

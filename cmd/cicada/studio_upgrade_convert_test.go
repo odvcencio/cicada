@@ -35,7 +35,7 @@ func writeEditionOneProject(t *testing.T) (path, manifest string) {
 // A confirmed edition upgrade stages a new cicada.mod. The render check must
 // render that staged state, not the edition-1 manifest still on disk.
 func TestUpgradeThenConvertAndSplitInOneEnvelope(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, c := range []struct {
 		name    string
 		intents []edits.Intent

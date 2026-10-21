@@ -7,9 +7,22 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
+In the desktop app, **Arrange** opens on the song timeline, with vocal recording
+below it. Edition-2 scores have **Song timeline** and **Record & comp vocals**
+links to jump between them.
+**Session** contains the launch matrix and live playing;
+**Mixer** contains mix controls. Instruments, Generate, Takes, and Sampler are
+in the left Browser. The detail dock's **Clip** tab edits patterns, **Device**
+edits the selected track's sound and processing, and **Automation** contains
+curve and scene-point editors. The **Code** lens shows the score. Older
+screenshots show these tools as standalone panels.
+
+Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
+workspace region on a phone keeps your unsaved **Code** text in place.
+
 **Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
 effects, and performance resampling. A placement's **Sample into pads** link
-opens it as a source; printed performances become regular Session audio
+opens it as a source; printed performances become regular arrangement audio
 placements. See the [pad sampler guide](sampler.md).
 
 From a source checkout, build both executables and open a score:
@@ -52,11 +65,13 @@ The null backend is silent. In WSL or on a Linux desktop using PulseAudio,
 select the system output explicitly with `--audio oto`. Rendered WAV and MP3
 files can also be played in your usual music player.
 
-![GoSX Studio's desktop mixer and output meter surface.](screenshots/studio-desktop-1440.png)
+![Arrange opens on the song timeline, with the selected acid track's Sound controls in Device.](screenshots/studio-arrange-device-1280.png)
 
-![GoSX Studio's pattern controls on a narrow screen.](screenshots/studio-mobile-390.png)
+On a narrow window, choose **Center** for the
+[song timeline](screenshots/studio-arrange-390.png) or **Detail** for
+[Device Sound controls](screenshots/studio-device-sound-390.png).
 
-## Transport and session
+## Transport, Arrange, and Session
 
 **Play**, **Pause**, **Stop**, and **Return to start** control native playback.
 The bar, step, backend, and errors update through GoSX live bindings. Valid
@@ -68,30 +83,59 @@ score playing.
 assignments, a pattern cell to queue one track, or **Stop** to stop a track.
 Launches are quantized to the next bar. **Keep** preserves that track's slot.
 
-The arrangement timeline shows scene blocks across all tracks, their bar
-ranges, and inherited patterns. Click a scene header to play from that block,
-or a pattern clip to open its editor. Expand a block to replace its scene,
-set its length, duplicate it, remove it, or move it earlier or later.
+**Arrange** shows scene blocks across all tracks, their bar ranges, and inherited
+patterns. Click a scene header to play from that block, or a pattern clip to
+open its editor. Expand a block to replace its scene, set its length, duplicate
+it, remove it, or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
 Structural changes to songs with intervening comments require a Score edit
 so those comments keep their attachment. Local scene and bar edits preserve them.
 
-For an edition-2 score using `arrange`, **Session** shows named placements on
+For an edition-2 score using `arrange`, **Arrange** shows named placements on
 a track timeline with section markers. Select a block to open its controls.
 Drag it horizontally to move it, or drag its right edge to resize it. Arrow
 keys on a block or edge change its start or length by a sixteenth; hold Shift
 for a whole bar. Drag previews are saved only when released; Escape cancels.
+Focus stays on the block or edge after saving, so arrow-key nudges can continue.
+These gestures work directly in the Studio shell as well as the panel view.
+Small pointer movements are treated as selection, so a click does not shift a
+phrase. Save or discard unsaved Code edits before moving placements; finish
+recording and wait for a pending save before starting another edit.
+
+While dragging or trimming, hold the pointer near either timeline edge to
+scroll through the song. Scrolling starts after a brief pause and gets faster
+closer to the edge; the placement preview follows your held pointer. Move
+back into the middle or outside the visible timeline to stop scrolling.
+Release to save the entire gesture as one edit. Escape restores the placement
+and its original horizontal view. Changing the timeline view, hiding or
+resizing the window, or switching away from the window cancels the gesture safely.
+
+Use **Timeline zoom** for 1×–8× detail, **Fit song** for an overview, and
+**Show selected** to bring the inspected placement into view. The playhead
+shows the native transport position. **Follow song** advances the view
+near its edge; touching or scrolling the timeline turns Follow off. Zoom and
+Follow stay in place when switching Arrange and Session. Zoom and horizontal
+scroll also survive placement saves and Undo in the current window. These view controls
+leave the score and unsaved Code drafts unchanged.
 
 The placement controls change the track, pattern or clip, exact **Start**,
 and **Length**. Start accepts `@bar.beat.step` or exact ticks. Length accepts
 bars, note divisions, or ticks, such as `4bars`, `1/8`, or `320ticks`.
 **Make a copy**, **Remove placement**, **Add a placement**, and **Edit markers**
-keep arrangement work in Session. At least one placement must remain.
+keep arrangement work in Arrange. At least one placement must remain.
 Overlapping pattern placements, incompatible content, and stale writes are
 rejected without changing the score; audio placements may overlap. Every edit
 supports Undo. The **Placement list** shows exact starts and exclusive ends;
 sub-sixteenth boundaries retain their exact ticks. Content links open the
 pattern or clip editor. Returning from Score reads the current saved project.
+
+With a placement inspected in Arrange, **Command-D** on Mac (**Control-D**
+elsewhere) duplicates it after the existing placements on its track.
+**Backspace** or **Delete** removes it; the last placement remains protected.
+**Command-L** (**Control-L**) or the toolbar's **Loop** button loops that
+placement in song context; repeat the command to stop the loop. These commands
+respect text/editor focus, unsaved work, and active recording. Use Undo to
+restore a duplicated or removed placement.
 
 Choose a **Section** and **Loop section** to repeat from its marker to the next
 marker, or the arrangement end. For scene-based songs, **Loop block** repeats
@@ -112,7 +156,7 @@ listening range at the next bar or loop restart. Removing the target stops
 playback. **Play full song** restores all parts and starts at the beginning;
 **Stop listening** clears the listening selection and stops playback.
 
-![Tidal Glass placement editing and listening controls in Session, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
+![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
 **Project settings** changes the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
@@ -121,10 +165,10 @@ disk revision before saving, and has an Undo entry.
 
 ![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
-**Scene automation** shows parameter lanes alongside the song's scene blocks.
-Choose a parameter and **Inspect parameter**, then choose a scene and **Add or
-replace point**. Track level and pan, sends, supported synth controls, and
-effect parameters use the shared parameter catalog. Values accept their units
+**Automation → Scene automation** shows parameter lanes alongside the song's scene
+blocks. Choose a parameter and **Inspect parameter**, then choose a scene and
+**Add or replace point**. Track level and pan, sends, supported synth controls,
+and effect parameters use the shared parameter catalog. Values accept their units
 (for example `1.25kHz`, `250ms`, or `-6.25dB`), and controls report the allowed
 range and alternatives. Existing points can be edited or removed.
 
@@ -143,7 +187,7 @@ exponential or tension-controlled curves. **Save point** makes one Undo step;
 retain unit-aware entry, and **All saved curves** shows the complete overview.
 Recording knob/fader movements is not implemented.
 
-![Session's continuous automation editor, captured from the current build with a test project.](screenshots/studio-producer-automation-1440.png)
+![Continuous automation editor, captured with a test project.](screenshots/studio-producer-automation-1440.png)
 
 The editor also supports [touch editing on phone screens](screenshots/studio-producer-automation-390.png).
 
@@ -345,6 +389,13 @@ history remains private to the workspace owner.
 
 ## Mixer and instruments
 
+Select a placement and open **Device** to shape its track, or choose another
+**Track** and **Inspect track**. **Sound** includes controls for built-in voices
+and declared instrument parameters. Units, ranges, and menu choices show the
+values each control accepts. **Apply** saves the setting; **Use default**
+removes that track's override. Each change supports Undo. **Mix and routing**
+and **Insert effects** have their own controls below Sound.
+
 **Mixer** edits track, bus, return, effect, and master fields supported by the
 source patcher. Each **Set** writes one parameter. Unsupported fields explain
 their limitation and remain available in **Score**.
@@ -382,7 +433,7 @@ Silk pluck, Round bass, and Soft bell. **Add instrument and track** saves an
 editable graph and its track in one Undo step. Five patches have eight-note
 polyphony; Round bass is monophonic. Choose the new track in **Live** to play
 it using the on-screen keyboard, typing keyboard, or MIDI. Bind a notes pattern
-in **Session** to sequence it and include it in WAV exports.
+in **Arrange** to sequence it and include it in WAV exports.
 
 Declared parameters show their default and current track override. Apply a
 value to shape just that track; **Use default** removes its override. Values
@@ -393,14 +444,58 @@ step-grid commits continue to check for collisions before writing.
 
 ## Score and history
 
-**Score** uses the GoSX code editor with syntax highlighting, a gutter, and
-two-space indentation. **Score** lists the project files. Select a file, edit it, then use **Check file**
-to review its diagnostics or **Save file** to validate and write that file. Other
-score files retain their exact bytes. External changes refresh clean editors and
-project views; unsaved drafts remain available for an explicit merge. Saved
-revision files live in app data, with late writes from other editors retained. A rejected edit
-keeps the file unchanged and retains the draft across reload and navigation.
-Rejected drafts expire after thirty minutes or when Studio closes.
+The **Code** lens opens a score editor with live syntax highlighting, a gutter,
+and two-space indentation. **Tab** indents and **Shift-Tab** unindents the current
+line or selected lines. **Enter** carries indentation into the new line and
+indents inside braces. Editing incomplete notation keeps the text visible;
+highlighting does not save or change the playing song.
+
+Use **Command-F** on Mac (**Control-F** elsewhere) to find text. Replace uses
+**Command-Option-F** on Mac or **Control-H** elsewhere. **Command-/**
+(**Control-/**) toggles line comments. While the score text has focus,
+**Command-Z** / **Command-Shift-Z** (**Control-Z** / **Control-Shift-Z**)
+undo and redo text edits, including indentation and replacement. The Mac
+**Edit** menu uses the same text history. The Studio toolbar's **Undo** and
+**Redo** operate on saved project edits.
+
+Typing in Find keeps the search field focused. **Enter** or **F3** visits the
+next match; **Shift-Enter** or **Shift-F3** visits the previous match and wraps
+at the ends of the file. **Replace** changes the selected match first; each
+replacement can be undone as one text edit.
+
+Use **Go to line** or **Control-G** on every platform to jump within a long
+score. Enter a line number, or `line:column`, then press **Enter**. Lines and
+columns start at one, and columns count Unicode characters. Columns past the
+end of a line land at its end. An invalid line stays in the jump field with an
+explanation; **Escape** returns to the previous selection and scroll position.
+Navigation never saves or changes the score.
+
+![Go to line beside the arrangement, using a disposable eight-bar score.](screenshots/studio-code-navigation-1280.png)
+
+Jump controls and validation also fit the [Code pane on a phone](screenshots/studio-code-navigation-390.png).
+
+Select a project file, edit it, then use **Check file** to review diagnostics
+without saving or **Save file** (**Command-S** / **Control-S**) to validate and
+write that file. Other score files retain their exact bytes. External changes
+refresh clean editors and project views; unsaved drafts remain available for an
+explicit merge. Saved revision files live in app data, with late writes from
+other editors retained. Checking or rejecting a file retains its draft across
+reload and navigation, independently of drafts in other project files.
+These recovery drafts expire after thirty minutes or when Studio closes.
+
+A successful **Check file** says **File check passed. Draft is not saved.**
+It clears validation failure feedback while leaving your song on disk unchanged.
+Reloading a retained draft shows **Recovered draft. Not saved to disk.**
+The editor shows **Unsaved** as you type, including after a successful check.
+**Save file** writes the draft and clears that recovery status.
+
+![Recovered draft with Unsaved status and compact Code controls.](screenshots/studio-code-recovery-1280.png)
+
+Recovery and editing controls also fit the [Code pane on a phone](screenshots/studio-code-recovery-390.png).
+
+![Code editing beside the arrangement, with Save and Check inside the dock.](screenshots/studio-code-editor-1280.png)
+
+Find and Replace also fit the [Code pane on a phone](screenshots/studio-code-editor-390.png).
 
 Every Studio edit is an intent: a small, named change such as toggling a step,
 moving a song block, changing an arrangement placement, setting an automation
@@ -460,16 +555,21 @@ Its gain only changes what you hear. Raw input is retained before monitoring,
 and a period-sized capture queue gives the disk writer at least one second of
 headroom without adding headphone latency.
 
-**Session → Record vocals** records across the full song, including arrange-only
-scores. In **Recording setup**, choose a microphone and output in **Audio**,
+**Arrange → Record & comp vocals** records across the full song, including
+arrange-only scores. The toolbar's **Record** button, **F9**, or
+**Command-Shift-R** on Mac (**Control-Shift-R** elsewhere) reveals these controls.
+When recording is available, the same command starts a take or finishes the
+active take. With no audio track, it shows **Recording setup**.
+
+In **Recording setup**, choose a microphone and output in **Audio**,
 enable input, and add an audio track such as `danilo`. Use headphones and leave
 monitoring muted if the device delay is distracting. Native recording requires
 Tymbal (`cicada studio score.cicada --audio tymbal`); Oto provides playback.
 
-Session explains whether your microphone is configured, off, or unavailable.
-**Choose microphone and output** opens Audio with **Apply and return to Session**,
-which returns to the same vocal track. Monitoring mute only affects what you
-hear; it does not mute the recorded microphone.
+Recording setup explains whether your microphone is configured, off, or
+unavailable. **Choose microphone and output** opens Audio with **Apply and return
+to recording**, which returns to the same vocal track. Monitoring mute only
+affects what you hear; it does not mute the recorded microphone.
 
 **Microphone level** shows live mono or stereo input in dBFS while playback or
 capture opens your configured input. Play the song and sing a phrase before
@@ -515,7 +615,7 @@ for tighter edits; **Snap** offers sixteenth notes, beats, bars, or free ticks.
 A playhead shows where playback is in the take lanes. **Loop selection** repeats
 the selected phrase in your chosen listening mode until **Stop audition**; neither audition
 changes the score. Space while focused on a waveform hears or stops the phrase.
-**Follow playback** advances the visible timeline at its edge when zoomed in.
+**Follow song** advances the visible timeline at its edge when zoomed in.
 Follow is optional and remembered with the other lane preferences.
 
 ![Looping a vocal phrase with its playhead and follow controls.](screenshots/studio-session-phrase-loop-1440.png)
@@ -533,7 +633,7 @@ gain** restores 0 dB in the editor; choose **Use selection** to save the reset.
 Original recordings keep their PCM. **Use whole take** uses the pass's complete
 covered interval at its original level.
 
-![Phrase gain and vocal-only auditioning in Session, using simulated vocal takes.](screenshots/studio-vocal-levels-1440.png)
+![Phrase gain and vocal-only auditioning, using simulated vocal takes.](screenshots/studio-vocal-levels-1440.png)
 
 The level controls also fit [phone screens](screenshots/studio-vocal-levels-390.png).
 
@@ -567,11 +667,11 @@ recording levels between takes. Waveform analysis does not edit or load the
 entire recording into browser memory. If a waveform is unavailable, the take
 stays retained and Exact positions remains available.
 
-![Session waveform take lanes with a dragged phrase and chosen vocal assembled from three retained takes.](screenshots/studio-vocal-lanes-1440.png)
+![Waveform take lanes with a dragged phrase and chosen vocal assembled from three retained takes.](screenshots/studio-vocal-lanes-1440.png)
 
-The same controls wrap for [phone-sized Session views](screenshots/studio-vocal-lanes-390.png).
+The same controls wrap for [phone-sized recording views](screenshots/studio-vocal-lanes-390.png).
 
-Session retains raw takes and their tempo/origin in the durable journal. The
+Studio retains raw takes and their tempo/origin in the durable journal. The
 chosen vocal is printed as a mono WAV (stereo input is averaged). Native playback
 streams long audio clips from verified files through a bounded prefetch cache;
 separate lead, double and harmony prints no longer consume the shared resident
@@ -582,7 +682,7 @@ printing the comp. Failed or conflicting passes remain available for selection.
 Changing tempo requires restoring the take's recording tempo before comping;
 recorded vocals are not time-stretched.
 
-A scene-based song becomes ordinary Session placements on its first vocal
+A scene-based song becomes ordinary arrangement placements on its first vocal
 selection. Explicit part starts and **Keep** continuity carry over, and block
 boundaries become markers. The original scene definitions remain available.
 Arrangement-only scores keep their existing placements and markers. Original
@@ -637,7 +737,7 @@ long vocals into the resident arena. Portable AudioWorklet/WAM projects retain
 their resident image limits. Native Session streaming does not provide browser
 worker page transfer.
 
-![Phrase timing, fades and crossfades in Session, using simulated retained takes.](screenshots/studio-producer-vocal-timing-1440.png)
+![Phrase timing, fades and crossfades, using simulated retained takes.](screenshots/studio-producer-vocal-timing-1440.png)
 
 The same controls fit [phone screens](screenshots/studio-producer-vocal-timing-390.png).
 

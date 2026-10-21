@@ -137,7 +137,7 @@ func (e *Engine) startPlacementSchedule() {
 	}
 	tick := e.transport.Tick()
 	if tick >= e.scheduleDuration && !e.loopSong {
-		_ = e.transport.SeekTick(0)
+		_ = e.seekTransport(0)
 		tick = 0
 	}
 	e.cycleStart = 0

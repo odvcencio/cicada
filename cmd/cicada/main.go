@@ -730,9 +730,6 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
 		}
 	}
-	// The direct mixer adds DC correction after the master chain and after
-	// the export gain stage; the scheduled engine adds it before the gain.
-	biasAfterInputGain := limiterMode && !render.UsesScheduledEngine(score, opts)
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
 	safeGain, hasSafe, lowestUnsafe, prevUnsafe := 0.0, false, math.Inf(1), false
@@ -808,12 +805,10 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		}
 		pendingDC := !dcSafe
 		if !dcSafe {
-			gainLinear := math.Pow(10, gain/20)
-			if biasAfterInputGain {
-				gainLinear = 1
-			}
-			biasL -= float32(measurement.DCLeft / gainLinear)
-			biasR -= float32(measurement.DCRight / gainLinear)
+			// Both renderers add the bias after the master chain and every
+			// gain stage, so it reaches the output at unity gain.
+			biasL -= float32(measurement.DCLeft)
+			biasR -= float32(measurement.DCRight)
 		}
 		if limiterMode {
 			next := gain

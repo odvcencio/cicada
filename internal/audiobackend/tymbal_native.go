@@ -73,7 +73,7 @@ func (b tymbalBackend) SampleRate(config Config) (int, error) {
 			if rateErr != nil {
 				return 0, rateErr
 			}
-			if inputRate != rate {
+			if inputRate != rate && b.host.Name() != "coreaudio" {
 				return 0, fmt.Errorf("Tymbal shared duplex needs matching input/output rates; %q is %d Hz and %q is %d Hz", input.Name, inputRate, output.Name, rate)
 			}
 		} else if !config.AllowMissingInput || config.CaptureDevice != "" {
@@ -124,7 +124,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 			if rateErr != nil {
 				return nil, rateErr
 			}
-			if inputRate != config.SampleRate {
+			if inputRate != config.SampleRate && b.host.Name() != "coreaudio" {
 				return nil, fmt.Errorf("Tymbal shared duplex needs matching input/output rates; %q is %d Hz and %q is %d Hz", selected.Name, inputRate, output.Name, config.SampleRate)
 			}
 			input = &selected
@@ -136,7 +136,14 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 
 	callbackErr := &atomic.Pointer[audioError]{}
-	periods := tymbalPeriodCandidates(config.FramesPerPeriod, output, input)
+	periodInput := input
+	if b.host.Name() == "coreaudio" {
+		// CoreAudio captures on its own device clock and converts into the
+		// output stream's rate and period. Its input hardware period need not
+		// match the playback device, including for separate USB microphones.
+		periodInput = nil
+	}
+	periods := tymbalPeriodCandidates(config.FramesPerPeriod, output, periodInput)
 	if len(periods) == 0 {
 		return nil, fmt.Errorf("Tymbal input/output devices do not share a callback period between %d and 8192 frames", config.FramesPerPeriod)
 	}
@@ -198,12 +205,10 @@ func tymbalDuplexDeviceErrorForOS(goos, outputDevice, captureDevice string, err 
 	if err == nil {
 		return nil
 	}
-	backend := "WASAPI"
-	if goos == "linux" {
-		backend = "ALSA"
-	} else if goos == "darwin" {
-		backend = "Core Audio"
+	if goos == "darwin" && errors.Is(err, tymbal.ErrPermission) {
+		return fmt.Errorf("microphone access is unavailable; allow Cicada Studio in System Settings > Privacy & Security > Microphone, then retry recording: %w", err)
 	}
+	backend := tymbalHostLabel(goos)
 	detail := oneLineAudioError(err.Error())
 	message := "could not be opened"
 	if errors.Is(err, tymbal.ErrBusy) {
@@ -216,12 +221,10 @@ func tymbalDeviceErrorForOS(goos string, direction tymbal.Direction, device stri
 	if err == nil {
 		return nil
 	}
-	backend := "WASAPI"
-	if goos == "linux" {
-		backend = "ALSA"
-	} else if goos == "darwin" {
-		backend = "Core Audio"
+	if goos == "darwin" && direction == tymbal.Input && errors.Is(err, tymbal.ErrPermission) {
+		return tymbalDuplexDeviceErrorForOS(goos, "", device, err)
 	}
+	backend := tymbalHostLabel(goos)
 	kind := "playback"
 	if direction == tymbal.Input {
 		kind = "capture"
@@ -240,6 +243,17 @@ func tymbalDeviceErrorForOS(goos string, direction tymbal.Direction, device stri
 
 func oneLineAudioError(value string) string {
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
+}
+
+func tymbalHostLabel(goos string) string {
+	switch goos {
+	case "darwin":
+		return "CoreAudio"
+	case "linux":
+		return "ALSA"
+	default:
+		return "WASAPI"
+	}
 }
 
 var deviceEpoch atomic.Uint64

@@ -9,7 +9,7 @@ build-wam2: build-kernel-wasm build-vocals-wasm
 	npm install --prefix build/wam2-sdk --ignore-scripts --no-package-lock --no-save @webaudiomodules/sdk@0.0.12
 
 test-wam2: build-wam2
-	node --test host/wam2/processor.test.cjs
+	node --test host/wam2/processor.test.cjs host/wam2/message-drain.test.cjs
 	go test ./host/wam2 ./cmd/cicada -run WAM2 -count=1
 	go test -tags browser ./cmd/cicada -run '^TestBrowserWAM2$$' -count=1 -timeout=3m -v
 
@@ -21,6 +21,7 @@ KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 # Size optimization keeps the richer bounded voice engine within its existing
 # download budget. Audio parity and browser callback budgets gate this build.
 KERNEL_WASM_OPT ?= z
+KERNEL_WASM_BINARYEN_FLAGS ?= -Oz --converge --strip-producers
 
 # Binaryen may be installed separately from TinyGo. The desktop packager
 # accepts the same override for an executable outside PATH.
@@ -124,6 +125,11 @@ test-collaboration:
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
 
+.PHONY: test-studio-shell
+# Requires a fresh Studio process with a disposable score; this suite edits the score.
+test-studio-shell:
+	node --test workstation/browser/shell.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs
@@ -161,7 +167,7 @@ build-kernel-wasm:
 	mkdir -p build
 	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
 		tinygo build -tags cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
-		sh scripts/wasm-opt.sh -Oz build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
+		sh scripts/wasm-opt.sh $(KERNEL_WASM_BINARYEN_FLAGS) build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
 		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
@@ -222,7 +228,7 @@ test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm
 test-worklet-negotiation: build-worklets
 	node host/web/chord_capability_test.cjs
 	node host/web/client_capability_test.cjs
-	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs
+	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs host/web/message-drain.test.cjs
 
 test-browser: build-kernel-wasm
 	mkdir -p build

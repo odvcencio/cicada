@@ -29,10 +29,11 @@ func TestOpenLogRestrictsStartupCapability(t *testing.T) {
 	}
 }
 
-func TestSidecarReceivesChosenAudioSettingsFolder(t *testing.T) {
+func TestSidecarReceivesChosenStateFolder(t *testing.T) {
+	t.Setenv("CICADA_AUDIO_SETTINGS_DIR", "/unused/inherited-audio-profile")
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "cicada")
-	script := "#!/bin/sh\nprintf '%s' \"$CICADA_AUDIO_SETTINGS_DIR\" > \"${0%/*}/settings-path\"\necho 'Cicada Studio: http://127.0.0.1:12345/'\nexec sleep 60\n"
+	script := "#!/bin/sh\nprintf '%s' \"$CICADA_STATE_DIR\" > \"${0%/*}/settings-path\"\necho 'Cicada Studio: http://127.0.0.1:12345/'\nexec sleep 60\n"
 	if err := os.WriteFile(helper, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,7 @@ func TestSidecarReceivesChosenAudioSettingsFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "settings-path"))
-	if err != nil || string(got) != filepath.Join(profile, "audio") {
+	if err != nil || string(got) != profile {
 		t.Fatalf("sidecar used a different settings folder: %q %v", got, err)
 	}
 }

@@ -63,6 +63,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		})
 		audio.Call("addEventListener", "error", audioError)
 	}
+	releaseCapture := capturePublisher.acquire()
 	lastActive := props.Active
 	captureWatch := signal.Watch(func() {
 		update := nativeCapture.Get()
@@ -148,6 +149,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		if closed.Swap(true) {
 			return
 		}
+		releaseCapture()
 		captureWatch.Dispose()
 		watch.Dispose()
 		root.Call("removeEventListener", "click", fullSong)

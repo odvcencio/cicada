@@ -45,7 +45,11 @@ func studioWorkstationStateDir(score string) (string, error) {
 		return "", err
 	}
 	identity := sha256.Sum256([]byte(canonical))
-	return filepath.Join(filepath.Dir(filepath.Dir(settings)), "workspaces", hex.EncodeToString(identity[:])), nil
+	profile := filepath.Dir(settings)
+	if os.Getenv("CICADA_AUDIO_SETTINGS_DIR") != "" {
+		profile = filepath.Dir(profile)
+	}
+	return filepath.Join(profile, "workspaces", hex.EncodeToString(identity[:])), nil
 }
 
 func launchStudioWorkstation(path, backend, address, token, stateDir string, output io.Writer) (func(), <-chan error, error) {

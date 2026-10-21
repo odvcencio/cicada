@@ -476,7 +476,7 @@ func studioMeters(frame liveplay.MeterFrame, loudnessSnapshots ...liveplay.Loudn
 	master := map[string]any{
 		"pre_peak": dbfs(frame.MasterPre.Peak), "peak": dbfs(frame.MasterPeak), "rms": dbfs(frame.MasterRMS),
 		"comp_gr": math.Max(0, float64(frame.CompGR)), "limiter_gr": math.Max(0, float64(frame.LimiterGR)),
-		"over": dbfs(frame.MasterPre.Peak) > -0.3,
+		"over": frame.PreLimiterOver(),
 	}
 	result := map[string]any{
 		"type": "meters", "tick": frame.Tick, "tracks": tracks, "returns": returns, "buses": buses, "master": master,

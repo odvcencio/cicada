@@ -18,7 +18,7 @@ var trackCount = 1
 var output [8192]float32
 var commandBytes [512 * cmd.CommandSize]byte
 var decoded [512]cmd.Command
-var messageBytes [256 * cmd.MessageSize]byte
+var messageBytes [engine.MessageCapacity * cmd.MessageSize]byte
 var sceneBytes, songBytes []byte
 var arrangementPrepared, songLoop bool
 var projectBytes []byte
@@ -42,6 +42,13 @@ func allocationCount() uint64 {
 func capabilities() uint32 {
 	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | kernelimage.CapabilitySpatial | kernelimage.CapabilityPerformance | kernelimage.CapabilityGestures | kernelimage.CapabilityLiveIdentity | kernelimage.CapabilitySharedControls | uint32(kernelimage.SupportedCapabilities) | keyboardCapabilities
 }
+
+// gosx_audio_live_edits returns 1 when the kernel applies step, scene-binding
+// and parameter commands to a playing engine. The commands arrive through
+// gosx_audio_cmd_commit; no capability bit changes.
+//
+//go:wasmexport gosx_audio_live_edits
+func liveEdits() int32 { return 1 }
 
 // Allocation telemetry is queried by hosts outside the render callback.
 //

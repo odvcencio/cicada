@@ -3,6 +3,7 @@
 package liveplay
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -110,11 +111,19 @@ func TestHundredNativeReplacementsKeepTelemetrySafeAndReaperDrains(t *testing.T)
 	defer func() { close(stopped); <-done }()
 	var pcm [128 * 8]byte
 	for i := 0; i < 100; i++ {
-		next := meterScore(t, "replacement", -6)
-		// Ordinary single-track replacement here keeps the test cheap; the
-		// initial streamed engine exercises held telemetry while reaped.
-		if err := player.Offer(next); err != nil {
-			t.Fatal(err)
+		// Admission is bounded while retired engines close. Offer consumes an
+		// engine even on refusal, so retry with a fresh one after backpressure.
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			next := meterScore(t, "replacement", -6)
+			err := player.Offer(next)
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, errRetirementBusy) || time.Now().After(deadline) {
+				t.Fatal(err)
+			}
+			time.Sleep(time.Millisecond)
 		}
 		if _, err := player.Read(pcm[:]); err != nil {
 			t.Fatal(err)

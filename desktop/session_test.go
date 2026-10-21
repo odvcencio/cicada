@@ -43,10 +43,10 @@ func TestStudioArgs(t *testing.T) {
 	}
 }
 
-func TestStudioEnvironmentKeepsAudioInChosenDataFolder(t *testing.T) {
+func TestStudioEnvironmentKeepsStateInChosenDataFolder(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Studio profile")
 	got := studioEnvironment(filepath.Join(dir, "state.json"))
-	if len(got) != 1 || got[0] != "CICADA_AUDIO_SETTINGS_DIR="+filepath.Join(dir, "audio") {
+	if len(got) != 2 || got[0] != "CICADA_STATE_DIR="+dir || got[1] != "CICADA_AUDIO_SETTINGS_DIR=" {
 		t.Fatalf("audio settings escaped the chosen profile: %q", got)
 	}
 	if got := studioEnvironment(""); len(got) != 0 {
@@ -156,20 +156,95 @@ func TestWindowTitle(t *testing.T) {
 
 func TestOpenQueueKeepsTheLatestRequestDuringASwitch(t *testing.T) {
 	var q openQueue
-	if !q.request("a.cicada") {
+	if !q.request("a.cicada", "", false) {
 		t.Fatal("the first request must start")
 	}
-	if q.request("b.cicada") || q.request("c.cicada") {
+	if q.request("b.cicada", "", false) || q.request("c.cicada", "", false) {
 		t.Fatal("requests during a switch must wait")
 	}
 	if next := q.done(); next != "c.cicada" {
 		t.Fatalf("done returned %q, want the latest request c.cicada", next)
 	}
-	if !q.request("c.cicada") {
-		t.Fatal("after done the queue must accept a new switch")
+	if q.request("d.cicada", "", false) {
+		t.Fatal("handoff must keep the worker reserved so a new Finder event waits")
+	}
+	if next := q.done(); next != "d.cicada" {
+		t.Fatalf("new request was overtaken during handoff: got %q", next)
 	}
 	if next := q.done(); next != "" {
 		t.Fatalf("nothing was requested during the second switch, got %q", next)
+	}
+	if !q.request("e.cicada", "", false) {
+		t.Fatal("an idle queue must accept another switch")
+	}
+}
+
+func TestOpenQueueReusesDuplicateStartupWithoutLosingDistinctRequest(t *testing.T) {
+	var q openQueue
+	if !q.request("first.cicada", "", false) {
+		t.Fatal("startup did not reserve its score")
+	}
+	if q.request("first.cicada", "", false) || q.done() != "" {
+		t.Fatal("duplicate initial Finder delivery restarted the score")
+	}
+	if !q.request("first.cicada", "", false) {
+		t.Fatal("a failed startup must be retryable")
+	}
+	q.request("second.cicada", "", false)
+	q.request("third.cicada", "", false)
+	q.request("first.cicada", "", false)
+	if next := q.done(); next != "third.cicada" {
+		t.Fatalf("duplicate startup displaced the latest distinct request: %q", next)
+	}
+	q.request("third.cicada", "", false)
+	if q.done() != "" {
+		t.Fatal("a duplicate handoff restarted the score")
+	}
+}
+
+func TestOpenQueueReusesLiveScoreButReloadAndFailureCanRestart(t *testing.T) {
+	var q openQueue
+	key := scorePathKey("song.cicada")
+	if q.request("song.cicada", key, false) {
+		t.Fatal("opening the live score must keep its current Session")
+	}
+	if !q.request("song.cicada", key, true) {
+		t.Fatal("explicit Reload must restart the live score")
+	}
+	q.request("song.cicada", key, true)
+	q.request("song.cicada", key, false)
+	if q.done() != "song.cicada" || q.done() != "" {
+		t.Fatal("an explicit reload during startup must remain queued")
+	}
+	if !q.request("song.cicada", "", false) {
+		t.Fatal("failed or exited sidecars must allow the same score to retry")
+	}
+}
+
+func TestOpenQueueComparesFinderAliasesWithoutChangingLogicalPaths(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.cicada")
+	alias := filepath.Join(dir, "alias.cicada")
+	if err := os.WriteFile(real, []byte("title \"test\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, alias); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	var q openQueue
+	if !q.request(alias, "", false) || q.request(real, "", false) || q.done() != "" {
+		t.Fatal("Finder's resolved path duplicated an in-flight alias")
+	}
+	if q.request(alias, scorePathKey(real), false) {
+		t.Fatal("an alias restarted the live score")
+	}
+	q.request("other.cicada", "", false)
+	q.request(alias, "", false)
+	if next := q.done(); next != alias {
+		t.Fatalf("opening lost the logical path used for project assets: %q", next)
 	}
 }
 

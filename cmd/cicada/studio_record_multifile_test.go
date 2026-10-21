@@ -14,7 +14,7 @@ import (
 )
 
 func TestRecordRouteRefusesForeignExpressionPositions(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, newline := range []string{"\n", "\r\n"} {
 		t.Run(map[string]string{"\n": "lf", "\r\n": "crlf"}[newline], func(t *testing.T) {
 			dir := t.TempDir()
@@ -32,7 +32,7 @@ func TestRecordRouteRefusesForeignExpressionPositions(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer s.shutdown()
-			before := noopFiles(t, dir, os.Getenv("XDG_CONFIG_HOME"))
+			before := noopFiles(t, dir, isolatedState(t))
 			response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision(entry), Track: "lead", Pattern: "melody", Take: []studioTakeNote{{Note: 60, Velocity: 90, EndTick: 120, Expressions: []studioTakeExpression{{PitchCents: 50, Timbre: .5}}}}})
 			var reply map[string]any
 			if err := json.Unmarshal(response.Body.Bytes(), &reply); err != nil {
@@ -41,7 +41,7 @@ func TestRecordRouteRefusesForeignExpressionPositions(t *testing.T) {
 			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "another source file") {
 				t.Fatalf("foreign expression must be refused: %d %s", response.Code, response.Body.String())
 			}
-			if got := noopFiles(t, dir, os.Getenv("XDG_CONFIG_HOME")); !reflect.DeepEqual(before, got) {
+			if got := noopFiles(t, dir, isolatedState(t)); !reflect.DeepEqual(before, got) {
 				t.Fatal("refused recording changed a project or recovery file")
 			}
 			if len(s.history.historySnapshot().Edits) != 0 || s.history.pendingTakeRevision != "" {

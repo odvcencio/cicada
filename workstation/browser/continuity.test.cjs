@@ -21,6 +21,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createRequire} = require('node:module');
 const test = require('node:test');
+const {liveReleaseBeacon} = require('./live-release.cjs');
 
 const marker = 'cicada-continuity-test: disposable fixture';
 const phrase = degree => [degree, ...Array(62).fill('.'), 'c4'].join(' ');
@@ -97,7 +98,8 @@ async function scenario(t) {
   const {context} = await sharedBrowser();
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
-  const errors = [], warnings = [], requests = [];
+  const errors = [], warnings = [], requests = [], liveReleases = [];
+  const csrfTokens = new Set();
   let armed = false, documentRequests = 0, inFlight = 0, maxInFlight = 0;
   let injectStale = false, delayNextPattern = false, staleRevision = '';
   let injectInterveningSave = false, interveningState;
@@ -135,6 +137,7 @@ async function scenario(t) {
   };
   const ready = async () => {
     await page.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    csrfTokens.add(await page.locator('input[name="csrf_token"]').first().inputValue());
   };
   const nativeAction = async (name, values) => {
     const csrf = await page.locator('input[name="csrf_token"]').first().inputValue();
@@ -218,6 +221,8 @@ async function scenario(t) {
     await watchPage();
     await page.route('**/__actions/**', async route => {
       if (route.request().method() !== 'POST') return route.continue();
+      const release = liveReleaseBeacon(route.request(), csrfTokens);
+      if (release) { liveReleases.push(release); return route.continue(); }
       const contentType = route.request().headers()['content-type'] || '';
       assert.match(contentType, /^application\/json\b/i,
         `${new URL(route.request().url()).pathname} bypassed workspace JSON transport: ${contentType}`);
@@ -574,6 +579,15 @@ async function scenario(t) {
     // updates and dirty drafts follow their respective owners.
     armed = false;
     await collectPage();
+    const beforeLiveRelease = liveReleases.length;
+    // Exercise the real listener and Beacon while this fixture document is
+    // alive; delivery during the following unload is browser best effort.
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false})));
+    await until(() => liveReleases.slice(beforeLiveRelease).some(release => release.lease === held.payload.lease), 'Live pagehide listener did not release its active lease');
+    const departedLive = liveReleases.slice(beforeLiveRelease).find(release => release.lease === held.payload.lease);
+    const lastLiveCommand = requests.filter(request => request.action === 'live' && request.payload.lease === held.payload.lease).at(-1);
+    assert.ok(departedLive.sequence > Number(lastLiveCommand.payload.sequence), 'pagehide release must advance its Live sequence');
+    t.diagnostic('The Live pagehide listener sent the exact form-encoded lease release before navigation; JSON score-action guards remain active.');
     await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
     await ready();
     await watchPage();
@@ -581,11 +595,11 @@ async function scenario(t) {
     const beforeCode = await state('/api/state');
     const codeOriginal = beforeCode.source.replace(/\r\n/g, '\n');
     assert.ok(codeOriginal.includes('\n  \n'), 'fixture lost its indent-only blank line before the Score checks');
-    // The first-party editor displays empty lines without indentation while
-    // canonical source retains those bytes until the user saves edited text.
-    const cleanCode = codeOriginal.replace(/(^|\n)[ \t]+(?=\n|$)/g, '$1');
+    // The Code surface preserves whitespace-only lines, so indentation is
+    // byte-for-byte visible/editable until the user changes it.
+    const cleanCode = codeOriginal;
     assert.equal(await textarea.inputValue(), cleanCode);
-    assert.equal(await textarea.evaluate(editor => editor.value !== editor.defaultValue), false, 'canonical indentation made the clean editor dirty');
+    assert.equal(await textarea.evaluate(editor => editor.value !== editor.defaultValue), false, 'canonical whitespace made the clean editor dirty');
     await page.evaluate(() => {
       const editor = document.querySelector('#editor-content');
       window.__continuityCode = {root: document.querySelector('#cicada-workspace'), editor,
@@ -658,7 +672,7 @@ async function scenario(t) {
     assert.equal(requests.length, start, 'editor Ctrl-Z escaped into a global score action');
     assert.deepEqual(await state('/api/state'), beforeCode, 'editor Ctrl-Z changed the saved score');
     assert.equal(documentRequests, 0, 'editor Ctrl-Z navigated the document');
-    t.diagnostic('Score Save preserved exact visible text/editor/caret/scroll; Undo restored canonical indentation and a clean visible buffer; unrelated action retained unsaved text and native Ctrl-Z issued no score action.');
+    t.diagnostic('Score Save preserved exact visible text/editor/caret/scroll; Undo restored exact canonical whitespace and a clean visible buffer; unrelated action retained unsaved text and native Ctrl-Z issued no score action.');
     assert.deepEqual(errors, [], 'browser callback errors');
     assert.deepEqual(warnings, [], 'browser callback warnings');
     assert.equal(mixerRecord.status, 200, `action mixer: ${mixerRecord.result?.message || 'missing success response'}`);

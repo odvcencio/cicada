@@ -187,6 +187,37 @@ GO
 	<string>Cicada Studio uses microphone input to record voices, instruments, and samples into your project.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cicada records vocals and instruments from your microphone when you start recording.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Cicada score</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array><string>dev.cicada.score</string></array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>dev.cicada.score</string>
+			<key>UTTypeDescription</key>
+			<string>Cicada score</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.plain-text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>cicada</string></array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
 PLIST

@@ -10,6 +10,14 @@ import (
 // Only the private startup URL printed to the desktop parent carries this
 // one-use capability. It never appears in workspace HTML or collaboration links.
 func (s *studioApp) bootstrapLocalOwner(w http.ResponseWriter, r *http.Request) {
+	s.bootstrapOwner(w, r, "/")
+}
+
+func (s *studioApp) bootstrapNativeOwner(w http.ResponseWriter, r *http.Request) {
+	s.bootstrapOwner(w, r, "/studio")
+}
+
+func (s *studioApp) bootstrapOwner(w http.ResponseWriter, r *http.Request, destination string) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	s.bootstrapMu.Lock()
 	defer s.bootstrapMu.Unlock()
@@ -30,5 +38,5 @@ func (s *studioApp) bootstrapLocalOwner(w http.ResponseWriter, r *http.Request) 
 		store.Set("workspace", true)
 	}
 	s.bootstrapToken = ""
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, destination, http.StatusSeeOther)
 }

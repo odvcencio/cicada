@@ -13,6 +13,10 @@ For game integration, see [Game Director and the Go/JS SDKs](game-director.md).
 
 ### Install and hear a score
 
+On Mac, a packaged **Cicada Studio.app** includes the engine and interface.
+See [Cicada Studio on Mac](macos.md) for opening projects, audio setup, microphone
+permission, recording, and Command-key shortcuts.
+
 Cicada requires Go 1.25 or newer and `make`. Clone the public repository and
 build the command-line tool and the Studio workstation:
 
@@ -55,6 +59,8 @@ together.
 
 ## Manual chapters
 
+- [Cicada Studio on Mac](macos.md) — use the native app, files, CoreAudio devices,
+  recording, and Mac shortcuts.
 - [Writing music](writing-music.md) — build a score from tracks, patterns,
   pitches, drum rows, scenes, and songs.
 - [Composing a complete song](composing-songs.md) — develop a loop into a form,

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"m31labs.dev/cicada/internal/audiobackend"
 )
 
 //go:embed studio-audio-devices.js
@@ -61,6 +63,12 @@ func (s *studio) audioConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		studioJSON(w, status, map[string]string{"error": err.Error()})
 		return
+	}
+	if s.transport.audioSettingsPath == "" {
+		if err := saveStudioAudioPreferences(audiobackend.Name(s.transport.selectedAudioBackend()), options); err != nil {
+			studioJSON(w, http.StatusInternalServerError, map[string]string{"error": "Audio settings applied for this session, but could not be saved: " + err.Error()})
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	studioJSON(w, http.StatusOK, s.transport.audioState())

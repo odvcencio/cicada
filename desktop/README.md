@@ -1,7 +1,7 @@
 # Cicada Studio desktop (Windows, macOS)
 
 `cicada-studio` is Cicada Studio as a desktop app. It starts `cicada studio`
-as a helper process, so the native Tymbal audio engine keeps running in Go,
+as a helper process, so the native audio engine keeps running in Go,
 and shows the Studio page in a window hosted by the GoSX desktop runtime
 (Microsoft Edge WebView2 on Windows, WKWebView on macOS).
 
@@ -31,6 +31,22 @@ performance** to open a copy without changing the score. **Previous note
 performances** also retains applied and dismissed takes. Recovery uses the last
 successful checkpoint; an interrupted held note has an estimated end. Keeping
 the profile and score path preserves this history.
+
+macOS uses CoreAudio for native playback and microphone recording, with input,
+output, and buffer selection in Studio's Audio settings. The first recording
+asks for microphone access; playback and device discovery do not. If access is
+denied, enable Cicada Studio under System Settings → Privacy & Security →
+Microphone, then try recording again. Run the packaged app for recording so
+the capture helper uses its microphone usage description and app identity.
+Oto remains available for playback through the system default output.
+
+The Mac File menu uses native Open and Save panels. Finder can open `.cicada`
+scores in the running window; Open Recent returns to your previous projects.
+Command-N creates a project, Command-O opens one, Command-Shift-S saves a copy
+with its audio assets, Command-R reloads Studio, and Command-W closes the window.
+The Edit menu supports native Cut, Copy, Paste, and Select All. Command-Z and
+Command-Shift-Z use song history outside text fields and typing history inside
+them. The application menu retains the standard Command-Q and Command-H actions.
 
 ## Build
 
@@ -91,6 +107,8 @@ Builds the three executables and the GoSX runtime, assembles `Cicada
 Studio.app` with the standard macOS layout, writes an `Info.plist`
 (`CFBundleIdentifier=dev.cicada.studio`, `LSMinimumSystemVersion=12.0`), and
 ad-hoc signs the bundle. Output goes to `dist/macos`.
+The bundle declares the `.cicada` score type and explains microphone access to
+macOS. Both the UI host and its bundled audio helper read that same metadata.
 
 The bundle is self-contained and builds from a clean checkout. The desktop
 host pins the published GoSX Darwin backend at
@@ -112,12 +130,28 @@ Run the same native launch and shutdown checks locally with Python 3:
 
 ```sh
 python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke
+python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke/arrange --mode normal --timeout 120 --workflow desktop/testdata/native-arrange-workflow.js
 ```
 
 The smoke checks use disposable scores and the null audio backend. Reports
 and app logs are kept in the output directory. The MIDI shutdown check opens
 its input inside the authenticated native window and keeps it open until
 SIGTERM, using the same cookie and CSRF checks as normal MIDI input.
+
+The smoke checks copy the app into a temporary directory, assign a unique
+bundle identifier, and ad-hoc sign the copy. This isolates WKWebView's store
+from an installed or running Cicada app without changing the supplied bundle.
+Each case uses disposable scores, its own desktop data directory and
+`CICADA_STATE_DIR`, and the null audio backend. The copied app and its unique
+WebKit/cache directories are removed afterward. Reports, signing output, and
+app logs are kept in the output directory.
+
+The Arrange workflow exercises saved placement shortcuts, contextual looping,
+Device sound and mix controls, Automation points, and exact Undo in WKWebView.
+It verifies the saved source after navigation and checks that focused editors
+keep their own keys. It leaves microphone input off and uses silent null audio.
+This longer workflow has a 120-second total budget; individual conditions still
+must settle within 15 seconds. Other smoke cases retain their 60-second budget.
 
 Development builds are ad-hoc signed (no Developer ID, no notarization), so
 Gatekeeper may ask the first time: right-click the bundle → **Open**.

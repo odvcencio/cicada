@@ -2,17 +2,18 @@
 
 **Sampler** is a 404-style way to turn recordings or existing parts into new
 music. Its sixteen pads play stereo audio in the browser. Resampling prints a
-pad performance as an audio clip in **Session**, where it uses the song's
+pad performance as an audio clip in **Arrange**, where it uses the song's
 native mixer, placement editor, auditions, and section loops.
 
 ![Sampler with an Amber Coast bank, waveform, and performance controls.](screenshots/studio-sampler-1440.png)
 
 ## Load and chop
 
-In a Session placement's inspector, choose **Sample into pads**. Sampler opens
-with that placement selected. Choose 1–16 slices and select **Sample
-placement** to render the isolated part into a sample. This includes its mixer
-processing and brings its peak to a useful pad level. The score remains intact.
+In **Arrange**, select a placement and choose **Sample into pads** in its
+inspector. Sampler opens with that placement selected. Choose 1–16 slices and
+select **Sample placement** to render the isolated part into a sample. This
+includes its mixer processing and brings its peak to a useful pad level.
+The score remains intact.
 
 You can also **Import and chop WAV**, **Load score asset**, or split an existing
 sample with **Split across pads**. Imports fill all sixteen pads; other chop
@@ -62,9 +63,9 @@ This supports changes of texture within a single performance.
 Choose a clip name, destination pad (0 skips pad assignment), audio track, and
 musical position. Select **Resample performance**. With **Place in Session**
 enabled, Studio creates an asset, clip, audio track if needed, and named
-placement. Regular **Undo** restores both the score and bank for that print.
-Already printed pads bypass bank effects by default; uncheck **Bypass bank
-effects** to process them again deliberately.
+placement in **Arrange**. Regular **Undo** restores both the score and bank for
+that print. Already printed pads bypass bank effects by default; uncheck
+**Bypass bank effects** to process them again deliberately.
 
 Prints end at the chosen loop length, with a short fade at the boundary. Effect
 tails inside that length are included. Excess peaks receive one fixed gain
@@ -87,7 +88,7 @@ Pad monitoring uses browser audio, even when the workstation's native output
 device is unavailable. Browser WASM and Web Audio are required for pad playing,
 waveform dragging, and recording. Without them, native forms still edit the
 bank and print its saved performance, and the selected pad has an ordinary
-audio preview. Session playback still uses the native output device; see
+audio preview. Arrangement playback still uses the native output device; see
 [Troubleshooting](troubleshooting.md) if that device is unavailable.
 
 ![Sampler on a 390-pixel-wide touch layout.](screenshots/studio-sampler-390.png)

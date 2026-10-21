@@ -131,6 +131,7 @@ type previewRenderCounts struct {
 	additions, removals                                     int
 	automaticBoundaries, automaticPatched                   int
 	rangeWraps, rangeSeeks                                  int
+	editPatches                                             int
 }
 
 type previewRenderReference struct {
@@ -162,7 +163,11 @@ type previewRenderReference struct {
 	rangeLoop bool
 }
 
+// kind is 0 for a gain patch, previewPatchStep for a step edit and
+// previewPatchBinding for a scene binding. The last two take publication
+// order and command budget like any batch but change no gain or default.
 type previewRenderPatch struct {
+	kind        int
 	publication int
 	tracks      int
 	value       float32
@@ -185,6 +190,11 @@ type previewRenderProducer struct {
 	queues  bool
 	done    chan struct{}
 }
+
+const (
+	previewPatchStep = iota + 1
+	previewPatchBinding
+)
 
 func previewRenderScore(t *testing.T, gain float32) Score {
 	return previewRenderScoreTracks(t, gain, 16)
@@ -245,6 +255,15 @@ func previewRenderScoreScenes(t *testing.T, gain float32, count int, firstScene 
 		Song:            []SongEntry{{Scene: "preview", StartBar: 1}, {Scene: "later", StartBar: 2}, {Scene: "last", StartBar: 3}},
 		Parameters:      parameters,
 	}
+}
+
+func packedPreviewStep(t *testing.T) uint32 {
+	t.Helper()
+	packed, err := seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return packed
 }
 
 func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation, counts *previewRenderCounts) (failure error) {
@@ -339,7 +358,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				}
 				commands += patch.commands
 				consumed++
-				if patch.tracks > model.tracks {
+				if patch.kind != 0 || patch.tracks > model.tracks {
 					continue
 				}
 				applied = true
@@ -653,6 +672,36 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						model.patches = append(model.patches, previewRenderPatch{publication: model.publication, value: op.value, commands: 1})
 					}
 				}
+			case "step-patch", "binding-patch", "clip-binding-patch":
+				patchRevision++
+				batch := arena.Begin(patchRevision)
+				if batch != nil {
+					target, err := p.ResolvePreviewTrack("bass")
+					if err != nil {
+						failure = err
+						batch.Release()
+						break
+					}
+					kind := previewPatchStep
+					if op.kind == "clip-binding-patch" {
+						// No track here is audio: the render thread refuses the batch
+						// before the engine could fault. It still takes its place in
+						// publication order and budget, and moves no value.
+						kind = previewPatchBinding
+						batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneClip})
+					} else if op.kind == "binding-patch" {
+						kind = previewPatchBinding
+						batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneKeep})
+					} else {
+						batch.Step(target, 0, 1, packedPreviewStep(t))
+					}
+					failure = p.Patch(batch)
+					if failure == nil {
+						model.publication++
+						model.patches = append(model.patches, previewRenderPatch{kind: kind, publication: model.publication, commands: 1})
+						counts.editPatches++
+					}
+				}
 			case "burst":
 				for n := 0; n < 9; n++ {
 					patchRevision++
@@ -910,6 +959,18 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 			}
 			operations = append(operations, previewRenderOperation{kind: "cancel", client: 0}, previewRenderOperation{kind: "settle"})
 		}
+		// Step edits and scene bindings share the patch queue with gain patches:
+		// they keep publication order, spend the command budget, wait behind an
+		// older offer and are superseded by a newer one, without moving a value.
+		operations = append(operations,
+			previewRenderOperation{kind: "step-patch"}, previewRenderOperation{kind: "patch", value: values[(seed+1)%5]},
+			previewRenderOperation{kind: "binding-patch"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "step-patch"}, previewRenderOperation{kind: "offer-add", value: values[(seed+2)%5]},
+			previewRenderOperation{kind: "binding-patch"}, previewRenderOperation{kind: "activate"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "burst", value: values[(seed+3)%5]}, previewRenderOperation{kind: "step-patch"},
+			previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "binding-patch"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "clip-binding-patch"}, previewRenderOperation{kind: "offer-remove", value: values[(seed+4)%5]},
+			previewRenderOperation{kind: "clip-binding-patch"}, previewRenderOperation{kind: "activate"}, previewRenderOperation{kind: "settle"})
 		operations = append(operations, previewRenderOperation{kind: "Close"})
 		if err := runPreviewRenderLifecycle(t, operations, &counts); err != nil {
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimizePreviewRenderLifecycle(t, operations))
@@ -920,6 +981,9 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 	}
 	if counts.automaticBoundaries == 0 || counts.automaticPatched == 0 {
 		t.Fatalf("no automatic boundary crossed with a patch: %d boundaries, %d patched", counts.automaticBoundaries, counts.automaticPatched)
+	}
+	if counts.editPatches == 0 {
+		t.Fatal("no step or scene-binding patch was published")
 	}
 	if counts.additions == 0 || counts.removals == 0 {
 		t.Fatal("publication schedules did not add and remove tracks")
@@ -936,6 +1000,8 @@ func TestPreviewRenderLifecycleInterleavingRegressions(t *testing.T) {
 		"older-structural":      {{kind: "patch", value: -3}, {kind: "offer-add", value: -12}, {kind: "activate"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
 		"deferred-structural":   {{kind: "burst", value: -3}, {kind: "render-begin"}, {kind: "render-drain-N"}, {kind: "offer-remove", value: -12}, {kind: "patch", value: 0}, {kind: "activate"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
 		"later-waits-for-offer": {{kind: "offer-remove", value: -12}, {kind: "patch", value: -3}, {kind: "settle"}, {kind: "activate"}, {kind: "settle"}},
+		"step-behind-offer":     {{kind: "offer-remove", value: -12}, {kind: "step-patch"}, {kind: "binding-patch"}, {kind: "settle"}, {kind: "activate"}, {kind: "settle"}},
+		"edit-between-gains":    {{kind: "patch", value: -3}, {kind: "step-patch"}, {kind: "patch", value: 0}, {kind: "binding-patch"}, {kind: "settle"}},
 		"patch-seek":            {{kind: "patch", value: -3}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
 		"backward-cancel":       {{kind: "seek-forward"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "set", value: 0}, {kind: "cancel"}, {kind: "settle"}},
 		"paused-burst":          {{kind: "pause"}, {kind: "burst", value: -3}, {kind: "resume"}, {kind: "settle"}},

@@ -136,7 +136,8 @@ type Config struct {
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
-	// MasterBias is an optional DC correction before gain and limiting.
+	// MasterBias is an optional DC correction added after the master chain and
+	// master gain, immediately before the limiter.
 	MasterBiasL float32 `json:",omitempty"`
 	MasterBiasR float32 `json:",omitempty"`
 	// MasterGainDB is a static gain applied immediately before the master
@@ -215,8 +216,11 @@ type voiceSlot struct {
 }
 
 type meterAccum struct {
-	peak  float32
-	power float64
+	peak         float32
+	power        float64
+	peakL, peakR float32
+	powerL       float64
+	powerR       float64
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -267,13 +271,14 @@ type Engine struct {
 	masterMute, masterSolo       bool
 	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
-	messages                     [256]cmd.Message
+	messages                     [MessageCapacity]cmd.Message
 	performanceMessages          []cmd.Message
 	messageRead, messageWrite    uint32
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
 	pending                      [CommandCapacity]cmd.Command
 	pendingLen                   int
+	flushLimit                   int // pending entries that arrived before the command being applied, or -1
 	automation                   []cmd.Command
 	automationIndex              int
 	automationTick               int64
@@ -282,6 +287,7 @@ type Engine struct {
 	layerMask                    trackMask // effective: layerAuthored gated by the macro layer tables
 	layerAuthored                trackMask // set by scenes, OpSetLayerMask and source-off; never by macros
 	meterRate, meterBlock        uint32
+	stereoMeters                 bool
 	meterFrames                  uint32
 	trackMeter                   [MaxTracks]meterAccum
 	returnAMeter, returnBMeter   meterAccum
@@ -329,6 +335,14 @@ type Engine struct {
 
 // TrackCount reports the immutable track count established by New.
 func (e *Engine) TrackCount() int { return e.tracks }
+
+// SetStereoMeters turns the per-channel track meter quantities on or off. A host
+// calls it before the engine renders, or on the render thread; OpMeterRate
+// Arg1 sets the same flag from a command stream.
+func (e *Engine) SetStereoMeters(on bool) { e.stereoMeters = on }
+
+// SceneCount reports how many scenes the engine can launch.
+func (e *Engine) SceneCount() int { return len(e.scenes) }
 
 // TrackVoiceKind reports the source selected at construction.
 func (e *Engine) TrackVoiceKind(track int) VoiceKind {
@@ -396,7 +410,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
-		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
+		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1, flushLimit: -1}
 	if err := e.configureParallel(cfg); err != nil {
 		return nil, err
 	}
@@ -916,6 +930,12 @@ func (e *Engine) PushBatch(commands []cmd.Command) bool {
 // CommandCapacity is the fixed command and pending-command capacity.
 const CommandCapacity = 512
 
+// MessageCapacity is the status ring size, the same in every build so native and
+// WASM engines keep the same messages under the same drain schedule. One
+// emission of stereo meters for 64 tracks is 384 messages (six per track) plus
+// 16 others; the sixteen-track core build needs 112.
+const MessageCapacity = 512
+
 // AvailableCommands includes commands waiting for a future tick. Only the
 // render owner may inspect or mutate the engine's queues.
 func (e *Engine) AvailableCommands() int {
@@ -1094,6 +1114,10 @@ func accumulateMeter(m *meterAccum, left, right float32) {
 	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
 	m.peak = max(m.peak, peak)
 	m.power += (float64(left)*float64(left) + float64(right)*float64(right)) * .5
+	m.peakL = max(m.peakL, float32(math.Abs(float64(left))))
+	m.peakR = max(m.peakR, float32(math.Abs(float64(right))))
+	m.powerL += float64(left) * float64(left)
+	m.powerR += float64(right) * float64(right)
 }
 
 func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
@@ -1102,8 +1126,16 @@ func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
 
 func (e *Engine) emitMeters(masterBlockPeak float32) {
 	tick := e.transport.Tick()
+	// Four more messages per track must fit beside the rest of the emission, or
+	// a full ring would drop the master message that closes the frame. When the ring
+	// is too full for them, tracks report mono pairs only; hosts treat missing stereo
+	// quantities as equal channels.
+	stereo := e.stereoMeters && int(e.messageWrite-e.messageRead)+e.tracks*6+16 <= len(e.messages)
 	for track := 0; track < e.tracks; track++ {
 		e.emitMeterPair(uint8(track), &e.trackMeter[track], tick)
+		if stereo {
+			e.emitStereoMeter(uint8(track), &e.trackMeter[track], tick)
+		}
 		e.trackMeter[track] = meterAccum{}
 	}
 	e.emitMeterPair(0xf0, &e.returnAMeter, tick)
@@ -1124,6 +1156,20 @@ func (e *Engine) emitMeters(masterBlockPeak float32) {
 func (e *Engine) emitMeterPair(track uint8, meter *meterAccum, tick int64) {
 	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 0, B: math.Float32bits(meter.peak), Tick: tick})
 	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 1, B: math.Float32bits(meterRMS(meter, e.meterFrames)), Tick: tick})
+}
+
+// emitStereoMeter adds quantities 2 to 5: left peak, right peak, left RMS and
+// right RMS. The mono pair keeps its meaning.
+func (e *Engine) emitStereoMeter(track uint8, meter *meterAccum, tick int64) {
+	var rmsL, rmsR float32
+	if e.meterFrames != 0 {
+		rmsL = float32(math.Sqrt(meter.powerL / float64(e.meterFrames)))
+		rmsR = float32(math.Sqrt(meter.powerR / float64(e.meterFrames)))
+	}
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 2, B: math.Float32bits(meter.peakL), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 3, B: math.Float32bits(meter.peakR), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 4, B: math.Float32bits(rmsL), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 5, B: math.Float32bits(rmsR), Tick: tick})
 }
 
 func meterRMS(meter *meterAccum, frames uint32) float32 {
@@ -1159,7 +1205,7 @@ func (e *Engine) drainCommands() {
 		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
-		if e.transport.Playing() && c.Tick == 0 && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
+		if e.transport.Playing() && c.Tick == 0 && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
 		if e.pendingLen == len(e.pending) {
@@ -1182,8 +1228,19 @@ func (e *Engine) applyPending() {
 	chainPhase := false
 	for {
 		best, priority := -1, 5
+		// An edit waits while an earlier edit still waits for its tick.
+		editWaiting := false
 		for i := 0; i < e.pendingLen; i++ {
-			if e.pending[i].Tick <= e.transport.Tick() && commandPriority(e.pending[i].Op) < priority {
+			due := e.pending[i].Tick <= e.transport.Tick()
+			if isPatternEditOp(e.pending[i].Op) {
+				if !due {
+					editWaiting = true
+				}
+				if editWaiting {
+					continue
+				}
+			}
+			if due && commandPriority(e.pending[i].Op) < priority {
 				best, priority = i, commandPriority(e.pending[i].Op)
 			}
 		}
@@ -1201,7 +1258,9 @@ func (e *Engine) applyPending() {
 		c := e.pending[best]
 		copy(e.pending[best:], e.pending[best+1:e.pendingLen])
 		e.pendingLen--
+		e.flushLimit = best // the edits ahead of c arrived before it
 		e.apply(c)
+		e.flushLimit = -1
 		if e.faulted {
 			return
 		}
@@ -1212,7 +1271,7 @@ func commandPriority(op cmd.Op) int {
 	switch op {
 	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek, cmd.OpPlay:
 		return 0
-	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger:
+	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger, cmd.OpSetSceneBinding:
 		return 1
 	case cmd.OpNoteOn:
 		return 3
@@ -1268,11 +1327,12 @@ func (e *Engine) apply(c cmd.Command) {
 			e.patterns[i].heldValid = false
 		}
 	case cmd.OpSeek:
+		e.flushPatternEdits() // the old timeline ends here
 		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
 		e.seekTick = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
-		if e.transport.SeekTick(e.seekTick) != nil {
+		if e.seekTransport(e.seekTick) != nil {
 			e.fault(FaultSeek)
 			return
 		}
@@ -1504,10 +1564,12 @@ func (e *Engine) apply(c cmd.Command) {
 		e.applyChainCommand(c)
 	case cmd.OpLaunchScene:
 		e.applySceneCommand(c)
+	case cmd.OpSetSceneBinding:
+		e.applySceneBindingCommand(c)
 	case cmd.OpSetLayerMask:
 		e.setAuthoredLayerMask(trackMask(c.Arg0) | trackMask(c.Arg1)<<32)
 	case cmd.OpMeterRate:
-		e.meterRate = c.Arg0
+		e.meterRate, e.stereoMeters = c.Arg0, c.Arg1&1 == 1
 	default:
 		e.fault(FaultUnhandledCommand) // No accepted command may be silently discarded.
 	}

@@ -53,27 +53,7 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 		if definition.Mode == "poly" {
 			mode = "8-note polyphony"
 		}
-		var parameters []gosx.Node
-		for _, param := range definition.Params {
-			value := strconv.FormatFloat(param.Default, 'f', -1, 64)
-			defaultText := value + instrumentUnit(param.Unit)
-			label := param.ID + " · default"
-			if override, ok := track.Params[param.ID]; ok {
-				label = param.ID + " · track override"
-				if override.Number != nil {
-					value = strconv.FormatFloat(*override.Number, 'f', -1, 64)
-				} else {
-					value = override.Text
-				}
-			}
-			if unit := instrumentUnit(param.Unit); unit != "" {
-				label += " (" + unit + ")"
-			}
-			input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("step", "any"), gosx.Attr("name", "value"), gosx.Attr("value", value)))
-			reset := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "reset-parameter"), gosx.BoolAttr("formnovalidate")), gosx.Text("Use default"))
-			form := s.form(v, csrf, "instruments", "instrument", hidden("track", track.ID), hidden("newName", param.ID), field(label, input), submit("action", "set-parameter", "Apply"), reset)
-			parameters = append(parameters, gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control"), gosx.Attr("data-gosx-key", "parameter-"+param.ID)), form, gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Default: "+defaultText))))
-		}
+		parameters := s.instrumentTrackParameters(v, csrf, track, definition)
 		tracks = append(tracks, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-instrument-track", track.ID), gosx.Attr("data-gosx-key", "instrument-"+track.ID)), gosx.El("h3", gosx.Text(track.ID)), gosx.El("p", gosx.Text(definition.ID+" · "+mode)), s.patternCreation(ctx, v, csrf, track.ID), gosx.Fragment(parameters...)))
 	}
 	if len(tracks) == 0 {
@@ -131,4 +111,29 @@ func availableInstrumentTrack(p *project.Project, base string) string {
 			return name
 		}
 	}
+}
+
+func (s *studioApp) instrumentTrackParameters(v workspace, csrf string, track project.Track, definition *project.Instrument) []gosx.Node {
+	var parameters []gosx.Node
+	for _, param := range definition.Params {
+		value := strconv.FormatFloat(param.Default, 'f', -1, 64)
+		defaultText := value + instrumentUnit(param.Unit)
+		label := param.ID + " · default"
+		if override, ok := track.Params[param.ID]; ok {
+			label = param.ID + " · track override"
+			if override.Number != nil {
+				value = strconv.FormatFloat(*override.Number, 'f', -1, 64)
+			} else {
+				value = override.Text
+			}
+		}
+		if unit := instrumentUnit(param.Unit); unit != "" {
+			label += " (" + unit + ")"
+		}
+		input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("step", "any"), gosx.Attr("name", "value"), gosx.Attr("value", value)))
+		reset := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "reset-parameter"), gosx.BoolAttr("formnovalidate")), gosx.Text("Use default"))
+		form := s.form(v, csrf, "instruments", "instrument", hidden("track", track.ID), hidden("newName", param.ID), field(label, input), submit("action", "set-parameter", "Apply"), reset)
+		parameters = append(parameters, gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control"), gosx.Attr("data-gosx-key", "parameter-"+param.ID)), form, gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Default: "+defaultText))))
+	}
+	return parameters
 }

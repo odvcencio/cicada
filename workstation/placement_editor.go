@@ -30,10 +30,16 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 	// exact and the horizontally scrolling lanes still show every region.
 	stride := max(int64(1), (bars+63)/64)
 	for bar := int64(0); bar < bars; bar += stride {
-		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-bar"), gosx.Attr("style", "left:"+position(bar*seq.TicksPerBar))), gosx.Text(strconv.FormatInt(bar+1, 10))))
+		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-bar"), gosx.Attr("data-placement-bar", strconv.FormatInt(bar+1, 10)), gosx.Attr("style", "left:"+position(bar*seq.TicksPerBar))), gosx.Text(strconv.FormatInt(bar+1, 10))))
 	}
 	for _, marker := range p.Arrange.Markers {
-		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-marker"), gosx.Attr("style", "left:"+position(marker.AtTick)), gosx.Attr("title", marker.ID+" "+placementPosition(marker.AtTick))), gosx.Text(marker.ID)))
+		room := ticks - marker.AtTick
+		for _, next := range p.Arrange.Markers {
+			if next.AtTick > marker.AtTick {
+				room = min(room, next.AtTick-marker.AtTick)
+			}
+		}
+		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-marker"), gosx.Attr("style", "left:"+position(marker.AtTick)+";max-width:calc("+position(room)+" - 3px)"), gosx.Attr("title", marker.ID+" "+placementPosition(marker.AtTick))), gosx.Text(marker.ID)))
 	}
 	rows := []gosx.Node{gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.Text("BARS")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-ruler")), gosx.Fragment(ruler...)))}
 	for _, track := range p.Tracks {
@@ -53,17 +59,38 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			laneEnds[lane] = placement.AtTick + placement.LengthTicks
 			blocks = append(blocks, gosx.El("div", gosx.Attrs(
 				gosx.Attr("class", "placement-block"), gosx.Attr("data-placement-block", placement.ID),
-				gosx.Attr("data-placement-at", strconv.FormatInt(placement.AtTick, 10)), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
+				gosx.Attr("data-placement-at", strconv.FormatInt(placement.AtTick, 10)),
+				gosx.Attr("data-placement-track", placement.Track), gosx.Attr("data-placement-content", placement.Content), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
 				gosx.Attr("data-placement-selected", strconv.FormatBool(placement.ID == selected)),
 				gosx.Attr("style", fmt.Sprintf("left:%s;width:%s;top:%dpx", position(placement.AtTick), position(placement.LengthTicks), 8+lane*68))),
-				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content))),
+				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", "Drag to move. Arrow keys nudge a sixteenth; Shift changes one bar. Escape cancels."), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content))),
 				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-placement-resize"), gosx.Attr("aria-label", "Resize placement "+placement.ID), gosx.Attr("title", "Drag or use arrow keys to resize")), gosx.El("span", gosx.Attrs(gosx.Attr("aria-hidden", "true")), gosx.Text("⋮")))))
 		}
 		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")),
 			gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}
-	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll placement-scroll"), gosx.Attr("aria-label", "Placement editor")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bars))), gosx.Fragment(rows...)))
+	viewButton := func(action, label string) gosx.Node {
+		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-placement-view", action)), gosx.Text(label))
+	}
+	var zoomOptions []gosx.Node
+	for _, option := range []struct{ value, label string }{{"fit", "Fit song"}, {"48", "1×"}, {"96", "2×"}, {"192", "4×"}, {"384", "8×"}} {
+		attrs := gosx.Attrs(gosx.Attr("value", option.value))
+		if option.value == "48" {
+			attrs = append(attrs, gosx.BoolAttr("selected"))
+		}
+		zoomOptions = append(zoomOptions, gosx.El("option", attrs, gosx.Text(option.label)))
+	}
+	return gosx.El("section", gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10))),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-navigation"), gosx.Attr("aria-label", "Arrangement navigation")),
+			field("Timeline zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
+			viewButton("fit", "Fit song"), viewButton("selected", "Show selected"),
+			gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.BoolAttr("data-studio-view-control"))), gosx.Text("Follow song")),
+			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-playback-status"), gosx.Attr("class", "muted")), gosx.Text("Timeline view")),
+			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-edit-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "muted placement-edit-status")), gosx.Text("Drag to move · edge to trim · hold at timeline edges to scroll · arrows to nudge"))),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll placement-scroll"), gosx.Attr("aria-label", "Placement editor")),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bars))),
+				gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...))))
 }
 
 func (s *studioApp) placementEditors(v workspace, csrf string, placements []project.Placement, selected string, end int64) gosx.Node {
@@ -115,8 +142,13 @@ func (s *studioApp) placementEditors(v workspace, csrf string, placements []proj
 			field("Track", selectInput("track", placement.Track, tracks)), field("Pattern or clip", selectInput("content", placement.Content, contents)),
 			field("Start", textInput("at", placementLiteral(placement.AtTick, true))), field("Length", textInput("length", placementLiteral(placement.LengthTicks, false))), submit("", "", "Update placement"))
 		duplicate := s.placementForm(v, csrf, placement.ID, hidden("action", "duplicate"), hidden("name", placement.ID),
-			field("Copy name", textInput("newName", newName(placement.ID+"-copy"))), field("Copy start", textInput("at", placementLiteral(copyStart, true))), submit("", "", "Duplicate placement"))
-		remove := s.placementForm(v, csrf, "", hidden("name", placement.ID), submit("action", "delete", "Remove placement"))
+			field("Copy name", textInput("newName", newName(placement.ID+"-copy"))), field("Copy start", textInput("at", placementLiteral(copyStart, true))),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("data-placement-command", "duplicate")), gosx.Text("Duplicate placement")))
+		removeAttrs := gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "delete"), gosx.Attr("data-placement-command", "delete"))
+		if len(placements) == 1 {
+			removeAttrs = append(removeAttrs, gosx.BoolAttr("disabled"), gosx.Attr("title", "Keep at least one placement in the arrangement"))
+		}
+		remove := s.placementForm(v, csrf, "", hidden("name", placement.ID), gosx.El("button", removeAttrs, gosx.Text("Remove placement")))
 		attrs := gosx.Attrs(gosx.Attr("class", "placement-inspector"), gosx.Attr("data-placement-inspector", placement.ID), gosx.Attr("id", "placement-"+placement.ID))
 		if placement.ID == selected {
 			attrs = append(attrs, gosx.BoolAttr("open"))
