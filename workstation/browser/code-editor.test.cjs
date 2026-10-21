@@ -224,7 +224,6 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
       while(lines.length<180) lines.push('// '+String(lines.length+1).padStart(3,'0')+' '+('love song phrase '.repeat(6)));
       lines[119]='// 🎵 café 日本語 target '+('long phrase '.repeat(10));
       const navigationSource=lines.join('\n')+'\n';
-      await editor.fill(navigationSource); await visibleText(page);
       const goPanel=page.locator('[data-code-goto-panel]');
       const goQuery=page.getByRole('textbox',{name:'Line and column',exact:true});
       const lineStart=lines.slice(0,119).reduce((offset,line)=>offset+line.length+1,0);
@@ -234,29 +233,54 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
         let observed;
         await until(async()=>{
           observed=await page.evaluate(offset=>{
-          const editor=document.querySelector('#editor-content'),highlight=document.querySelector('#editor-highlight-content');
-          const layer=highlight.closest('.editor-highlight-layer'),gutter=document.querySelector('#editor-line-numbers');
-          const bounds=editor.getBoundingClientRect(),pane=document.querySelector('#studio-code .shell-scroll').getBoundingClientRect();
-          const top=Math.max(bounds.top,pane.top),bottom=Math.min(bounds.bottom,pane.bottom,innerHeight);
-          const walker=document.createTreeWalker(highlight,NodeFilter.SHOW_TEXT);
-          let node,at=0;
-          while((node=walker.nextNode())){
-            if(at+node.textContent.length>offset){
-              const range=document.createRange(); range.setStart(node,offset-at); range.setEnd(node,offset-at+1);
-              const rect=range.getBoundingClientRect();
-              return {visible:rect.height>0 && rect.top>=top-1 && rect.bottom<=bottom+1,
-                synchronized:Math.abs(layer.scrollTop-editor.scrollTop)<=1 && Math.abs(gutter.scrollTop-editor.scrollTop)<=1,
-                target:{top:rect.top,bottom:rect.bottom},clip:{top,bottom},
-                scroll:{source:editor.scrollTop,highlight:layer.scrollTop,gutter:gutter.scrollTop}};
+            const editor=document.querySelector('#editor-content'),highlight=document.querySelector('#editor-highlight-content');
+            const layer=highlight.closest('.editor-highlight-layer'),gutter=document.querySelector('#editor-line-numbers');
+            const bounds=editor.getBoundingClientRect(),dock=document.querySelector('#studio-code').getBoundingClientRect();
+            let top=Math.max(bounds.top,dock.top,0),bottom=Math.min(bounds.bottom,dock.bottom,innerHeight);
+            let left=Math.max(bounds.left,dock.left,0),right=Math.min(bounds.right,dock.right,innerWidth);
+            for(let parent=editor.parentElement;parent;parent=parent.parentElement){
+              const style=getComputedStyle(parent),rect=parent.getBoundingClientRect();
+              if(/^(auto|scroll|hidden|clip)$/.test(style.overflowY)){
+                top=Math.max(top,rect.top+parent.clientTop);
+                bottom=Math.min(bottom,rect.top+parent.clientTop+parent.clientHeight);
+              }
+              if(/^(auto|scroll|hidden|clip)$/.test(style.overflowX)){
+                left=Math.max(left,rect.left+parent.clientLeft);
+                right=Math.min(right,rect.left+parent.clientLeft+parent.clientWidth);
+              }
             }
-            at+=node.textContent.length;
-          }
-          return {visible:false,synchronized:false};
+            const walker=document.createTreeWalker(highlight,NodeFilter.SHOW_TEXT);
+            let node,at=0;
+            while((node=walker.nextNode())){
+              if(at+node.textContent.length>offset){
+                const range=document.createRange(); range.setStart(node,offset-at); range.setEnd(node,offset-at+1);
+                const rect=range.getBoundingClientRect();
+                return {visible:rect.height>0 && rect.top>=top-1 && rect.bottom<=bottom+1 && rect.left>=left-1 && rect.right<=right+1,
+                  synchronized:Math.abs(layer.scrollTop-editor.scrollTop)<=1 && Math.abs(gutter.scrollTop-editor.scrollTop)<=1,
+                  target:{top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right},clip:{top,bottom,left,right},
+                  scroll:{source:editor.scrollTop,highlight:layer.scrollTop,gutter:gutter.scrollTop}};
+              }
+              at+=node.textContent.length;
+            }
+            return {visible:false,synchronized:false};
           },offset);
           return observed.visible && observed.synchronized;
-        },'Go to line did not reveal its target with synchronized highlight and gutter scrolling');
+        },'Go to line did not reveal its target within all clipping ancestors with synchronized highlight and gutter scrolling');
         return observed;
       };
+      await page.setViewportSize({width:1280,height:900});
+      await editor.fill(fixture); await visibleText(page);
+      const shortOffset=fixture.split('\n').slice(0,7).reduce((offset,line)=>offset+line.length+1,0)+2;
+      await editor.press('Control+g');
+      await goPanel.waitFor({state:'visible'});
+      await goQuery.fill(''); await goQuery.pressSequentially('8:3'); await goQuery.press('Enter');
+      await goPanel.waitFor({state:'hidden'});
+      assert.deepEqual(await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),[shortOffset,shortOffset],'short Go must select line8 column3');
+      assert.equal(await editor.inputValue(),fixture,'short Go must not edit the score');
+      const shortObservation=await reveal(shortOffset);
+      proof('Short Go in clipped dock',{viewport:[1280,900],target:'8:3',selection:[shortOffset,shortOffset],visible:true,synchronized:true},{selection:await editor.evaluate(node=>[node.selectionStart,node.selectionEnd]),...shortObservation});
+      await page.setViewportSize({width:1440,height:960});
+      await editor.fill(navigationSource); await visibleText(page);
       await editor.press('Control+g');
       await goPanel.waitFor({state:'visible'});
       await goQuery.fill(''); await goQuery.pressSequentially('120:15'); await goQuery.press('Enter');
