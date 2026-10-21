@@ -143,9 +143,10 @@
         range.setStart(node, offset - at); range.setEnd(node, offset - at + 1);
         const rect = range.getBoundingClientRect();
         return {visible: rect.height > 0 && rect.top >= top - 1 && rect.bottom <= bottom + 1 && rect.left >= left - 1 && rect.right <= right + 1,
+          viewportContained: bounds.top >= top - 1 && bounds.bottom <= bottom + 1 && bounds.left >= left - 1 && bounds.right <= right + 1,
           synchronized: Math.abs(layer.scrollTop - source.scrollTop) <= 1 && Math.abs(gutter.scrollTop - source.scrollTop) <= 1,
           target: {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right}, clip: {top, bottom, left, right},
-          textarea: {top: bounds.top, bottom: bounds.bottom},
+          textarea: {top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right},
           scroll: {source: source.scrollTop, highlight: layer.scrollTop, gutter: gutter.scrollTop}};
       }
       at += node.textContent.length;
@@ -309,7 +310,7 @@
 
     const shortDraft = '// Desktop CI navigation fixture\n// café 🌙 東京\ncicada 2\ntitle "Desktop CI"\n' +
       'track bass acid { cutoff=700Hz }\npattern pulse { 1 . 5 . }\narrange {\n' +
-      '  place one bass pulse { at = @1.1.1 length = 4bars }\n  place two bass pulse { at = @5.1.1 length = 4bars }\n}\n';
+      '  place one bass pulse { at = @1.1.1 length = 4bars }\n  place two bass pulse { at = @5.1.1 length = 4bars }\n}';
     fill(shortDraft);
     await wait(() => [shortDraft, shortDraft + '\n'].includes(document.querySelector('#editor-highlight-content')?.textContent) &&
       document.querySelector('#editor-highlight-content span[class]'), 'short wrapped draft highlight');
@@ -321,9 +322,8 @@
     const shortHistory = [form().dataset.undoDepth, form().dataset.redoDepth].join(':');
     const shortFile = form().querySelector('input[name=file]')?.value;
     const shortMutations = mutations.length, shortSubmissions = submissions.length;
-    if (shortBefore.visible || !shortBefore.target || shortBefore.target.top < shortBefore.clip.bottom ||
-        shortBefore.target.bottom > shortBefore.textarea.bottom + 1)
-      throw new Error('Short native fixture must place its target below the actual dock clip but inside the full textarea: ' + JSON.stringify(shortBefore));
+    if (!shortBefore.viewportContained)
+      throw new Error('Native source viewport extends outside the actual Code dock clip: ' + JSON.stringify(shortBefore));
     key('g', 'KeyG', editor(), {ctrlKey: true});
     await typeField(document.querySelector('#score [data-code-goto=query]'), '8:3');
     key('Enter', 'Enter', document.querySelector('#score [data-code-goto=query]'));
@@ -331,17 +331,31 @@
       throw new Error('Short Go to line did not select line eight column three and close the panel');
     await wait(() => {
       const observed = targetVisibility(shortOffset);
-      return observed.visible && observed.synchronized;
+      return observed.visible && observed.synchronized && observed.viewportContained;
     }, 'short Go target revealed inside every clipping ancestor with synchronized highlight and gutter');
-    const shortAfter = targetVisibility(shortOffset), shortFinal = await state(), shortCapture = await state('capture');
+    const shortAfter = targetVisibility(shortOffset), shortSelection = [editor().selectionStart, editor().selectionEnd];
+    const eofQuery = shortDraft.split('\n').length + ':9999';
+    key('g', 'KeyG', editor(), {ctrlKey: true});
+    await typeField(document.querySelector('#score [data-code-goto=query]'), eofQuery);
+    key('Enter', 'Enter', document.querySelector('#score [data-code-goto=query]'));
+    if (!document.querySelector('#score [data-code-goto-panel]').hidden ||
+        editor().selectionStart !== shortDraft.length || editor().selectionEnd !== shortDraft.length)
+      throw new Error('Go to the final line did not clamp its caret at the actual end of the short score');
+    await wait(() => {
+      const observed = targetVisibility(shortDraft.length - 1);
+      return observed.visible && observed.synchronized && observed.viewportContained;
+    }, 'short score EOF and final character revealed inside every clipping ancestor');
+    const shortEOF = {query: eofQuery, expectedUTF16: shortDraft.length,
+      actualUTF16: [editor().selectionStart, editor().selectionEnd], finalCharacter: targetVisibility(shortDraft.length - 1)};
+    const shortFinal = await state(), shortCapture = await state('capture');
     if (editor().value !== shortDraft || shortFinal.source !== shortState.source || shortFinal.revision !== shortState.revision ||
         [form().dataset.undoDepth, form().dataset.redoDepth].join(':') !== shortHistory || form().querySelector('input[name=file]')?.value !== shortFile ||
         mutations.length !== shortMutations || submissions.length !== shortSubmissions || (await state('transport')).playing ||
         shortCapture.activeCapture || shortCapture.input.enabled)
       throw new Error('Short Go changed draft, module, saved source, history, transport, capture, or sent a mutation request');
-    checks.push(evidence('short Go to line reveals its target within the actual clipped Code dock',
+    checks.push(evidence('short Go to line and EOF remain visible within the contained Code viewport',
       {action: 'short wrapped Go 8:3', viewport: [innerWidth, innerHeight], expectedUTF16: shortOffset,
-        actualUTF16: [editor().selectionStart, editor().selectionEnd], before: shortBefore, after: shortAfter,
+        actualUTF16: shortSelection, before: shortBefore, after: shortAfter, eof: shortEOF,
         mutationRequests: mutations.length - shortMutations, formSubmissions: submissions.length - shortSubmissions}));
     fill(draft);
 
