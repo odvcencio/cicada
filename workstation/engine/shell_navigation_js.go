@@ -45,6 +45,20 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		}
 		releases = append(releases, release)
 	}
+	document := js.Global().Get("document")
+	remember := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) > 0 && root.Get("isConnected").Bool() {
+			rememberPendingShellChoice(root, args[0])
+		}
+		return nil
+	})
+	restore := js.FuncOf(func(js.Value, []js.Value) any {
+		restorePendingShellChoice(host, root)
+		return nil
+	})
+	document.Call("addEventListener", "click", remember, true)
+	document.Call("addEventListener", "gosx:navigate", restore)
+	restorePendingShellChoice(host, root)
 	localClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || !root.Get("isConnected").Bool() {
 			return nil
@@ -96,6 +110,10 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	})
 	root.Call("addEventListener", "click", localClick)
 	return func() {
+		document.Call("removeEventListener", "click", remember, true)
+		document.Call("removeEventListener", "gosx:navigate", restore)
+		remember.Release()
+		restore.Release()
 		for _, release := range releases {
 			release()
 		}

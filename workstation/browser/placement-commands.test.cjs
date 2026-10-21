@@ -255,18 +255,33 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await shellTab('view','session');
     await page.locator('[data-gosx-command="transport.record"]').click();
     await recordingRevealed('context round-trip');
-    await select('two');
-    assert.equal(await page.locator('#view-panel-arrange').isVisible(),true,'placement selection revived a stale Session view');
-    assert.equal(await page.locator('#detail-panel-device').isVisible(),true,'placement selection lost the chosen Device dock');
-    assert.equal(new URL(page.url()).searchParams.get('tab')||'arrange','arrange');
-    assert.equal(new URL(page.url()).searchParams.get('dock')||'clip','device');
+    // Hold the real placement GET so the local choice is newer than the
+    // server-rendered dock defaults. Do not mock its response or add a delay.
+    let releaseSelection, selectionRequested;
+    const selectionGate=new Promise(resolve=>releaseSelection=resolve);
+    const selectionSeen=new Promise(resolve=>selectionRequested=resolve);
+    const selectionURL=url=>url.pathname==='/studio'&&url.searchParams.get('placement')==='two';
+    await page.route(selectionURL,async route=>{selectionRequested();await selectionGate;await route.continue()});
+    await page.getByRole('link',{name:'Edit placement two',exact:true}).click();
+    await selectionSeen;
     await shellTab('detail','automation');
+    await shellTab('view','mixer');
+    releaseSelection();
+    await until(async()=>await page.evaluate(()=>document.documentElement.getAttribute('data-gosx-navigation-state')==='idle'),'placement navigation did not complete');
+    await page.unroute(selectionURL);await ready();
+    assert.equal(await page.locator('#view-panel-mixer').isVisible(),true,'in-flight placement selection replaced the newer Mixer view');
+    assert.equal(await page.locator('#detail-panel-automation').isVisible(),true,'in-flight placement selection replaced the newer Automation dock');
+    assert.equal(new URL(page.url()).searchParams.get('tab'),'mixer');
+    assert.equal(new URL(page.url()).searchParams.get('dock'),'automation');
+    assert.equal((await state()).source,fixture,'local choices during selection changed the score');
+    await shellTab('view','arrange');
     await key('Meta+d'); await block('two-copy').waitFor(); await ready();
     assert.equal(await page.locator('#view-panel-arrange').isVisible(),true,'placement mutation changed the current view');
     assert.equal(await page.locator('#detail-panel-automation').isVisible(),true,'placement mutation revived a stale dock');
     assert.equal(new URL(page.url()).searchParams.get('dock'),'automation');
     await undo(fixture);
     assert.equal(await page.locator('#detail-panel-automation').isVisible(),true,'Undo lost the chosen dock');
+    t.diagnostic('Held real placement GET: newer Mixer and Automation choices survive completion; duplicate and exact Undo retain Automation.');
     await visit('?placement=one');
 
     const before = (await state()).revision;
