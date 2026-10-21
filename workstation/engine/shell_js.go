@@ -28,6 +28,12 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
+	releaseDockFit, err := bindShellDockFit(host, root)
+	if err != nil {
+		releaseNavigation()
+		cancel()
+		return nil, err
+	}
 	releasePlacementEditor := bindShellPlacementEditor(root)
 	releasePlacementCommands := watchPlacementCommands(host, root)
 	var busy atomic.Bool
@@ -110,6 +116,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	return enginewasm.HandleFunc(func() {
 		cancel()
 		releaseNavigation()
+		releaseDockFit()
 		releasePlacementCommands()
 		releasePlacementEditor()
 		releaseAudio()

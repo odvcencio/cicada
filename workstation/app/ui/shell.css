@@ -11,9 +11,9 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell h2 { font-size:14px; }
 .shell h3 { font-size:13px; margin:0 0 8px; }
 
-.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--gsx-dock-left,280px) minmax(0,1fr) var(--gsx-dock-right,360px); grid-template-rows:auto minmax(0,1fr) var(--gsx-dock-bottom,240px); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
+.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--gsx-dock-left,280px) minmax(0,1fr) var(--gsx-dock-right,360px); grid-template-rows:auto minmax(var(--studio-center-min,200px),1fr) minmax(var(--studio-dock-min,120px),var(--gsx-dock-bottom,240px)); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
 .gsx-dock > * { min-width:0; min-height:0; }
-.gsx-dock__top { grid-area:top; }
+.gsx-dock__top { grid-area:top; min-height:min-content; }
 .gsx-dock__left { grid-area:left; display:grid; grid-template-columns:minmax(0,1fr) auto; }
 .gsx-dock__center { grid-area:center; }
 .gsx-dock__right { grid-area:right; display:grid; grid-template-columns:auto minmax(0,1fr); }
