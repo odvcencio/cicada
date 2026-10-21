@@ -181,6 +181,7 @@ func mountCollaboration(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		old, ids := recovery.Replica.Document.Visible()
+		restoreSelection := document.Get("activeElement").Equal(editor)
 		start := runePosition(old, editor.Get("selectionStart").Int())
 		end := runePosition(old, editor.Get("selectionEnd").Int())
 		anchor := func(index int) collab.ID {
@@ -212,7 +213,12 @@ func mountCollaboration(host enginewasm.Context) (enginewasm.Handle, error) {
 			}
 			return fallback
 		}
-		editor.Call("setSelectionRange", utf16Position(text, position(startID, start)), utf16Position(text, position(endID, end)))
+		// WebKit focuses even a background textarea when setting its selection.
+		// Shared snapshots must not take focus from Code, search, or other fields.
+		// Only a changed, actively edited shared draft needs its anchors restored.
+		if restoreSelection && text != old && document.Get("activeElement").Equal(editor) {
+			editor.Call("setSelectionRange", utf16Position(text, position(startID, start)), utf16Position(text, position(endID, end)))
+		}
 		keep()
 		if len(recovery.Replica.Pending) > 0 {
 			flush()
