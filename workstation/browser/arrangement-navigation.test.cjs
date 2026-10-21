@@ -30,7 +30,7 @@ test('arranging zooms, reveals and follows playback without editing the song', {
  const scroller=page.locator('.placement-scroll');
  const width=()=>page.locator('.placement-timeline').evaluate(el=>el.getBoundingClientRect().width);
  const zoom=page.getByLabel('Timeline zoom',{exact:true});
- const follow=page.getByLabel('Follow playback',{exact:true});
+ const follow=page.getByLabel('Follow song',{exact:true});
  try {
   await page.goto(base+'/studio?placement=far-home'); await ready();
   const before=await state(); assert.ok(before.source.includes('cicada-placement-test: disposable fixture'));
