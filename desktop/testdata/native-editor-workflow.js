@@ -142,16 +142,31 @@
         const range = document.createRange();
         range.setStart(node, offset - at); range.setEnd(node, offset - at + 1);
         const rect = range.getBoundingClientRect();
-        return {visible: rect.height > 0 && rect.top >= top - 1 && rect.bottom <= bottom + 1 && rect.left >= left - 1 && rect.right <= right + 1,
+        return {offset, sourceLength: source.value.length, glyph: range.toString(),
+          visible: rect.height > 0 && rect.top >= top - 1 && rect.bottom <= bottom + 1 && rect.left >= left - 1 && rect.right <= right + 1,
           viewportContained: bounds.top >= top - 1 && bounds.bottom <= bottom + 1 && bounds.left >= left - 1 && bounds.right <= right + 1,
           synchronized: Math.abs(layer.scrollTop - source.scrollTop) <= 1 && Math.abs(gutter.scrollTop - source.scrollTop) <= 1,
           target: {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right}, clip: {top, bottom, left, right},
           textarea: {top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right},
-          scroll: {source: source.scrollTop, highlight: layer.scrollTop, gutter: gutter.scrollTop}};
+          scroll: {source: source.scrollTop, highlight: layer.scrollTop, gutter: gutter.scrollTop,
+            clientHeight: source.clientHeight, scrollHeight: source.scrollHeight}};
       }
       at += node.textContent.length;
     }
     return {visible: false, synchronized: false};
+  }
+  async function revealedTarget(offset, label) {
+    let observed;
+    try {
+      await wait(() => {
+        observed = targetVisibility(offset);
+        return observed.visible && observed.synchronized && observed.viewportContained;
+      }, label);
+    } catch (error) {
+      throw new Error(String(error) + ' | geometry=' + JSON.stringify(observed) +
+        ' | sourceTailCodes=' + JSON.stringify(Array.from(editor().value.slice(-4), character => character.codePointAt(0))));
+    }
+    return observed;
   }
   async function unchanged(source, count, label) {
     await pause(160);
@@ -329,11 +344,8 @@
     key('Enter', 'Enter', document.querySelector('#score [data-code-goto=query]'));
     if (!document.querySelector('#score [data-code-goto-panel]').hidden || editor().selectionStart !== shortOffset || editor().selectionEnd !== shortOffset)
       throw new Error('Short Go to line did not select line eight column three and close the panel');
-    await wait(() => {
-      const observed = targetVisibility(shortOffset);
-      return observed.visible && observed.synchronized && observed.viewportContained;
-    }, 'short Go target revealed inside every clipping ancestor with synchronized highlight and gutter');
-    const shortAfter = targetVisibility(shortOffset), shortSelection = [editor().selectionStart, editor().selectionEnd];
+    const shortAfter = await revealedTarget(shortOffset, 'short Go target revealed inside every clipping ancestor with synchronized highlight and gutter');
+    const shortSelection = [editor().selectionStart, editor().selectionEnd];
     const eofQuery = shortDraft.split('\n').length + ':9999';
     key('g', 'KeyG', editor(), {ctrlKey: true});
     await typeField(document.querySelector('#score [data-code-goto=query]'), eofQuery);
@@ -341,12 +353,9 @@
     if (!document.querySelector('#score [data-code-goto-panel]').hidden ||
         editor().selectionStart !== shortDraft.length || editor().selectionEnd !== shortDraft.length)
       throw new Error('Go to the final line did not clamp its caret at the actual end of the short score');
-    await wait(() => {
-      const observed = targetVisibility(shortDraft.length - 1);
-      return observed.visible && observed.synchronized && observed.viewportContained;
-    }, 'short score EOF and final character revealed inside every clipping ancestor');
+    const eofTarget = await revealedTarget(shortDraft.length - 1, 'short score EOF and final character revealed inside every clipping ancestor');
     const shortEOF = {query: eofQuery, expectedUTF16: shortDraft.length,
-      actualUTF16: [editor().selectionStart, editor().selectionEnd], finalCharacter: targetVisibility(shortDraft.length - 1)};
+      actualUTF16: [editor().selectionStart, editor().selectionEnd], finalCharacter: eofTarget};
     const shortFinal = await state(), shortCapture = await state('capture');
     if (editor().value !== shortDraft || shortFinal.source !== shortState.source || shortFinal.revision !== shortState.revision ||
         [form().dataset.undoDepth, form().dataset.redoDepth].join(':') !== shortHistory || form().querySelector('input[name=file]')?.value !== shortFile ||
