@@ -45,7 +45,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		}
 		releases = append(releases, release)
 	}
-	phoneClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
+	localClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || !root.Get("isConnected").Bool() {
 			return nil
 		}
@@ -55,6 +55,26 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		}
 		target := event.Get("target")
 		if !workspacePresent(target) || target.Get("closest").Type() != js.TypeFunction {
+			return nil
+		}
+		// Native fragment navigation emits popstate in WebKit and Chromium.
+		// The navigation host can still remember the URL from before a local
+		// tab switch and mistake that fragment for a different page. Reveal
+		// these mounted workspaces directly, as the Record command does, so
+		// moving within Arrange never disposes engines or unsaved drafts.
+		jump := target.Call("closest", ".arrange-workspace-nav a[href]")
+		if workspacePresent(jump) {
+			href := workspaceAttr(jump, "href")
+			if href == "#arrangement" || href == "#vocals" {
+				pane := root.Call("querySelector", href)
+				if workspacePresent(pane) {
+					event.Call("preventDefault")
+					url := shellCurrentURL()
+					url.Set("hash", href)
+					syncShellLocation(root, url)
+					pane.Call("scrollIntoView", map[string]any{"block": "start", "behavior": "auto"})
+				}
+			}
 			return nil
 		}
 		link := target.Call("closest", ".shell-phone-nav [data-shell-region]")
@@ -74,13 +94,13 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		}
 		return nil
 	})
-	root.Call("addEventListener", "click", phoneClick)
+	root.Call("addEventListener", "click", localClick)
 	return func() {
 		for _, release := range releases {
 			release()
 		}
-		root.Call("removeEventListener", "click", phoneClick)
-		phoneClick.Release()
+		root.Call("removeEventListener", "click", localClick)
+		localClick.Release()
 	}, nil
 }
 
