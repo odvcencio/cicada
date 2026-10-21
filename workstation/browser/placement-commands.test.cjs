@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createRequire} = require('node:module');
 const test = require('node:test');
+const {liveReleaseBeacon} = require('./live-release.cjs');
 
 const fixture = `// cicada-placement-commands-test: disposable fixture
 cicada 2
@@ -44,7 +45,7 @@ async function until(predicate, message) {
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers:{'Content-Type':request.headers()['content-type']}}).formData());
 
-test('Studio views, Record entry and Mac placement commands retain drafts and Undo', {timeout:120000}, async () => {
+test('Studio views, Record entry and Mac placement commands retain drafts and Undo', {timeout:120000}, async t => {
   const base = process.env.CICADA_STUDIO_URL;
   assert.ok(base, 'set CICADA_STUDIO_URL to a fresh disposable Studio');
   assert.ok(['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
@@ -55,19 +56,29 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     Object.defineProperty(navigator, 'platform', {get:()=>'MacIntel'});
     Object.defineProperty(navigator, 'userAgentData', {get:()=>({platform:'macOS'})});
   });
-  const posts = [], navigations = [], errors = [];
+  const posts = [], navigations = [], errors = [], liveReleases = [];
+  const csrfTokens = new Set();
   page.on('request', request => {
     const pathname=new URL(request.url()).pathname;
-    if (request.method()==='POST' && pathname.startsWith('/__actions/')) posts.push(request);
+    if (request.method()==='POST' && pathname.startsWith('/__actions/') && pathname!=='/__actions/live') posts.push(request);
     if (request.isNavigationRequest() || request.method()==='GET' && pathname==='/studio') navigations.push(request);
   });
   page.on('pageerror', error => errors.push(error.message));
+  // Interception exposes Blob Beacon bodies that Chromium's request event
+  // can omit. All non-release Live actions still count as score commands.
+  await page.route('**/__actions/live', async route => {
+    const release=liveReleaseBeacon(route.request(),csrfTokens);
+    if(release) liveReleases.push(release);
+    else if(route.request().method()==='POST') posts.push(route.request());
+    await route.continue();
+  });
   const state = async () => (await page.request.get(new URL('/api/state',base).href)).json();
   const transport = async () => (await page.request.get(new URL('/api/transport',base).href)).json();
   const ready = async () => {
     await page.waitForFunction(()=>!document.querySelector('form[data-gosx-form-state=pending]'));
     await page.waitForFunction(()=>window.__gosx?.ready===true);
     await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+    csrfTokens.add(await page.locator('input[name="csrf_token"]').first().inputValue());
     await until(async()=>await page.locator('#undo-form input[name=revision]').inputValue()===(await state()).revision, 'managed navigation did not refresh revisions');
   };
   const visit = async search => { await page.goto(new URL('/studio'+search,base).href); await ready(); };
@@ -136,7 +147,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await timelineLink.click();
     await until(()=>headingInCenter('#arrangement'),'Song timeline link did not return to the timeline');
     assert.equal(posts.length,beforeLinks.posts,'in-pane navigation must not submit score actions: '+posts.slice(beforeLinks.posts).map(request=>new URL(request.url()).pathname).join(', ')+'; page requests: '+navigations.slice(beforeLinks.navigations).map(request=>new URL(request.url()).search).join(', '));
-    assert.equal(navigations.length,beforeLinks.navigations,'in-pane navigation must not request another page');
+    assert.equal(navigations.length,beforeLinks.navigations,'in-pane navigation must not request another page: '+JSON.stringify(navigations.slice(beforeLinks.navigations).map(request=>({path:new URL(request.url()).pathname,search:new URL(request.url()).search,type:request.resourceType(),document:request.isNavigationRequest()}))));
     assert.equal(await page.evaluate(()=>window.__arrangeNavigationDocument===document),true,'in-pane links replaced the document');
     assert.equal((await state()).source,fixture);
 
@@ -318,7 +329,10 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal((await state()).source,fixture,'stale keyboard edit changed the score');
     assert.equal((await actionValues(posts.at(-1))).revision,'stale-revision');
     assert.deepEqual(errors,[]);
+    assert.ok(liveReleases.length>0,'explicit document visits must release their Live leases');
+    t.diagnostic('Explicit document visits sent validated Live lease releases; in-pane navigation and guarded commands submitted no score actions.');
   } finally {
+    await page.unroute('**/__actions/live');
     await context.close(); await browser.close();
   }
 });

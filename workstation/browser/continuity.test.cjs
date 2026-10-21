@@ -21,6 +21,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createRequire} = require('node:module');
 const test = require('node:test');
+const {liveReleaseBeacon} = require('./live-release.cjs');
 
 const marker = 'cicada-continuity-test: disposable fixture';
 const phrase = degree => [degree, ...Array(62).fill('.'), 'c4'].join(' ');
@@ -97,7 +98,8 @@ async function scenario(t) {
   const {context} = await sharedBrowser();
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
-  const errors = [], warnings = [], requests = [];
+  const errors = [], warnings = [], requests = [], liveReleases = [];
+  const csrfTokens = new Set();
   let armed = false, documentRequests = 0, inFlight = 0, maxInFlight = 0;
   let injectStale = false, delayNextPattern = false, staleRevision = '';
   let injectInterveningSave = false, interveningState;
@@ -135,6 +137,7 @@ async function scenario(t) {
   };
   const ready = async () => {
     await page.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    csrfTokens.add(await page.locator('input[name="csrf_token"]').first().inputValue());
   };
   const nativeAction = async (name, values) => {
     const csrf = await page.locator('input[name="csrf_token"]').first().inputValue();
@@ -218,6 +221,8 @@ async function scenario(t) {
     await watchPage();
     await page.route('**/__actions/**', async route => {
       if (route.request().method() !== 'POST') return route.continue();
+      const release = liveReleaseBeacon(route.request(), csrfTokens);
+      if (release) { liveReleases.push(release); return route.continue(); }
       const contentType = route.request().headers()['content-type'] || '';
       assert.match(contentType, /^application\/json\b/i,
         `${new URL(route.request().url()).pathname} bypassed workspace JSON transport: ${contentType}`);
@@ -574,9 +579,15 @@ async function scenario(t) {
     // updates and dirty drafts follow their respective owners.
     armed = false;
     await collectPage();
+    const beforeLiveRelease = liveReleases.length;
     await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
     await ready();
     await watchPage();
+    await until(() => liveReleases.slice(beforeLiveRelease).some(release => release.lease === held.payload.lease), 'departing Live did not release its active lease');
+    const departedLive = liveReleases.slice(beforeLiveRelease).find(release => release.lease === held.payload.lease);
+    const lastLiveCommand = requests.filter(request => request.action === 'live' && request.payload.lease === held.payload.lease).at(-1);
+    assert.ok(departedLive.sequence > Number(lastLiveCommand.payload.sequence), 'pagehide release must advance its Live sequence');
+    t.diagnostic('Live pagehide sent the exact form-encoded lease release; JSON score-action guards remain active.');
     const textarea = page.locator('#editor-content');
     const beforeCode = await state('/api/state');
     const codeOriginal = beforeCode.source.replace(/\r\n/g, '\n');
