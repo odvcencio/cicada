@@ -315,7 +315,10 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	}
 	// The Go/WASM surface retains its existing selector hook; the pitched
 	// targets include acid, modeled keyboards and authored mono/poly graphs.
-	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-acid", "")), options(pitched))), field("Pitched pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-pattern", "")), options(patternsFor(pitched)))), field("Drum track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drums", "")), options(drums))), field("Drum pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drumpattern", "")), options(patternsFor(drums)))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
+	viewSelect := func(hook string, choices gosx.Node) gosx.Node {
+		return gosx.El("select", gosx.Attrs(gosx.Attr(hook, ""), gosx.BoolAttr("data-studio-view-control")), choices)
+	}
+	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", viewSelect("data-live-acid", options(pitched))), field("Pitched pattern", viewSelect("data-live-pattern", options(patternsFor(pitched)))), field("Drum track", viewSelect("data-live-drums", options(drums))), field("Drum pattern", viewSelect("data-live-drumpattern", options(patternsFor(drums)))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
 	var quantize []gosx.Node
 	for _, q := range []struct{ value, label string }{{"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
 		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "2")), gosx.Text(q.label)))
@@ -324,7 +327,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	for _, mode := range []struct{ value, label string }{{"auto", "Auto · follow controller"}, {"lower", "MPE · lower zone"}, {"upper", "MPE · upper zone"}} {
 		midiModes = append(midiModes, gosx.El("option", gosx.Attrs(gosx.Attr("value", mode.value)), gosx.Text(mode.label)))
 	}
-	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), button("midi", "Enable MIDI"), field("Note expression", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-midimode", "")), gosx.Fragment(midiModes...))), field("Learn target", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-target", "")), options(targets))), field("MIDI launch timing", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-quantize", "")), gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear mappings"))
+	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), button("midi", "Enable MIDI"), field("Note expression", viewSelect("data-live-midimode", gosx.Fragment(midiModes...))), field("Learn target", viewSelect("data-live-target", options(targets))), field("MIDI launch timing", viewSelect("data-live-quantize", gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear mappings"))
 	var preview gosx.Node = gosx.Fragment()
 	previewKey := notePreviewKey(ctx.Request)
 	if d, ok := s.draft(previewKey, workspaceOwner(ctx.Request)); ok && d.Kind == "notes" {

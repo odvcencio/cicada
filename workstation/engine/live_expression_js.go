@@ -32,8 +32,10 @@ func (u *liveUI) midiNote(event midi.NoteMessage, at *control.NoteTime) {
 			}
 		}
 		u.noteInputOnAt(id, track, int(event.Note), int(event.Velocity), event.ID, event.Channel, at)
-		if event.PitchCents == 0 && event.Pressure == 0 && event.Timbre == .5 {
-			return
+		if encoded, ok := u.active[id]; ok && event.Shared != nil && u.gesturePoints < control.MaxExpressionPoints {
+			i, n := encoded/1024, encoded%1024
+			u.capturedPoints(u.takes[i].BindShared(n, *event.Shared, u.pendingShared[event.Shared.ID]...))
+			delete(u.pendingShared, event.Shared.ID)
 		}
 	case "note-off":
 		u.noteOffAt(id, at)
@@ -43,10 +45,19 @@ func (u *liveUI) midiNote(event midi.NoteMessage, at *control.NoteTime) {
 	if !ok {
 		return
 	}
-	if u.props.ExpressionTracks[h.Track] {
-		u.queue("live", map[string]string{"type": "note-expression", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "pitchCents": strconv.FormatFloat(event.PitchCents, 'f', -1, 64), "pressure": strconv.FormatFloat(event.Pressure, 'f', -1, 64), "timbre": strconv.FormatFloat(event.Timbre, 'f', -1, 64)})
-	} else {
-		u.status.Set("This sound plays notes without gesture monitoring. Recorded gestures remain in the retained take; choose acid or an authored synth to apply them.")
+	if event.Type != "note-on" || event.PitchCents != 0 || event.Pressure != 0 || event.Timbre != .5 {
+		if u.props.ExpressionTracks[h.Track] {
+			u.queue("live", map[string]string{"type": "note-expression", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "pitchCents": strconv.FormatFloat(event.PitchCents, 'f', -1, 64), "pressure": strconv.FormatFloat(event.Pressure, 'f', -1, 64), "timbre": strconv.FormatFloat(event.Timbre, 'f', -1, 64)})
+		} else {
+			u.status.Set("This sound plays notes without gesture monitoring. Recorded gestures remain in the retained take; choose acid or an authored synth to apply them.")
+		}
+	}
+	local := midi.NoteControls{PitchCents: event.PitchCents, Pressure: event.Pressure, Timbre: event.Timbre}
+	if event.Local != nil {
+		local = *event.Local
+	}
+	if event.SharedOnly || event.Type == "note-on" && local.PitchCents == 0 && local.Pressure == 0 && local.Timbre == .5 {
+		return
 	}
 	if encoded, ok := u.active[id]; ok && u.gesturePoints < control.MaxExpressionPoints {
 		i, n := encoded/1024, encoded%1024
@@ -54,17 +65,72 @@ func (u *liveUI) midiNote(event midi.NoteMessage, at *control.NoteTime) {
 		if at != nil {
 			tick = at.Tick
 		}
-		u.takes[i].Notes[n].AddExpression(control.NoteExpression{Tick: tick, PitchCents: event.PitchCents, Pressure: event.Pressure, Timbre: event.Timbre})
-		u.gesturePoints++
-		u.takeDirty = true
-		select {
-		case u.checkpointWake <- struct{}{}:
-		default:
+		u.takes[i].Notes[n].AddExpression(control.NoteExpression{Tick: tick, PitchCents: local.PitchCents, Pressure: local.Pressure, Timbre: local.Timbre})
+		u.capturedPoints(1)
+	}
+}
+
+func (u *liveUI) capturedPoints(count int) {
+	u.gesturePoints += count
+	u.takeDirty = true
+	select {
+	case u.checkpointWake <- struct{}{}:
+	default:
+	}
+	if u.gesturePoints >= control.MaxExpressionPoints {
+		u.recording = false
+		u.status.Set("Gesture input limit reached. Finish this take before recording more.")
+		u.syncControls()
+	}
+}
+
+func (u *liveUI) midiShared(value midi.SharedControls, at *control.NoteTime) {
+	if !u.recording {
+		return
+	}
+	tick := u.tick()
+	if at != nil {
+		tick = at.Tick
+	}
+	matched := false
+	for index := range u.takes {
+		if u.gesturePoints >= control.MaxExpressionPoints {
+			return
 		}
-		if u.gesturePoints == control.MaxExpressionPoints {
+		if u.takes[index].AddShared(value, tick) {
+			matched = true
+			u.capturedPoints(1)
+		}
+	}
+	if !matched && u.gesturePoints < control.MaxExpressionPoints {
+		if u.pendingShared == nil {
+			u.pendingShared = map[uint64][]control.NoteExpression{}
+		}
+		if len(u.pendingShared) >= 512 && u.pendingShared[value.ID] == nil {
 			u.recording = false
-			u.status.Set("65,536 gesture points retained. Finish this take before recording more.")
+			u.status.Set("Shared input limit reached. Finish this take before recording more.")
 			u.syncControls()
+			return
 		}
+		points := u.pendingShared[value.ID]
+		if len(points) > 0 {
+			tick = max(tick, points[len(points)-1].Tick)
+		}
+		u.pendingShared[value.ID] = append(points, control.NoteExpression{Tick: tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre})
+		u.capturedPoints(1)
+	}
+}
+
+func (u *liveUI) processMIDIAt(device string, data []byte, at *control.NoteTime) {
+	notes, shared, err := u.midiNotes.ProcessEvents(device, data)
+	if err != nil {
+		u.status.Set(err.Error())
+		return
+	}
+	for _, value := range shared {
+		u.midiShared(value, at)
+	}
+	for _, note := range notes {
+		u.midiNote(note, at)
 	}
 }

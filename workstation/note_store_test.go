@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,46 @@ import (
 	"m31labs.dev/cicada/host/midi"
 	"m31labs.dev/cicada/workstation/control"
 )
+
+func TestSavedSharedControlsRetainTailAndCombinedBudgetAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	store, _, err := openNoteStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := savedNoteFixture()
+	note := &saved.Takes[0].Notes[0]
+	note.Group = 1
+	note.Expressions = []control.NoteExpression{{Tick: note.Tick, PitchCents: 25, Timbre: .5}}
+	group := control.RecordedGroup{ID: 42, Device: "native:surface:g0", Channel: 0}
+	for index := range control.MaxExpressionPoints - 1 {
+		group.Points = append(group.Points, control.NoteExpression{Tick: note.Tick + int64(index), PitchCents: float64(index%9600) + .125, Pressure: .123456789, Timbre: .987654321})
+	}
+	saved.Takes[0].Groups = []control.RecordedGroup{group}
+	if _, err = store.save("player", saved); err != nil {
+		t.Fatal(err)
+	}
+	store, _, err = openNoteStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.get("player", saved.ID)
+	if err != nil || restored.Version != 2 || !reflect.DeepEqual(restored.Takes, saved.Takes) {
+		t.Fatal("private recovery changed shared controls or member data", err)
+	}
+	if restored.Takes[0].Notes[0].EndTick != 4110 || restored.Takes[0].Groups[0].Points[len(group.Points)-1].Tick <= 4110 {
+		t.Fatal("tail capture stretched a gate or lost its final movement")
+	}
+	saved.Sequence++
+	saved.Takes[0].Groups[0].Points = append(saved.Takes[0].Groups[0].Points, group.Points[len(group.Points)-1])
+	if _, err = store.save("player", saved); err == nil {
+		t.Fatal("combined budget overflow replaced the recoverable take")
+	}
+	unchanged, err := store.get("player", saved.ID)
+	if err != nil || !reflect.DeepEqual(unchanged.Takes, restored.Takes) {
+		t.Fatal("refused checkpoint damaged the saved performance", err)
+	}
+}
 
 func savedNoteFixture() savedNotes {
 	return savedNotes{ID: strings.Repeat("a", 32), Sequence: 1, Revision: "score-at-recording", State: "recording", Takes: []control.Recording{{Track: "keys", Pattern: "phrase", Notes: []control.Note{{Tick: 3857, EndTick: 4110, Note: 64, Velocity: 105, EndEstimated: true, Input: &midi.NoteTiming{HostNanos: 1000000, Source: "source", ClockEpoch: 7, Estimated: true}}}}}}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
@@ -13,15 +14,26 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 	if len(recordings) == 0 || len(recordings) > 32 {
 		return fmt.Errorf("a performance needs 1 to 32 destinations")
 	}
-	origin, end, count := int64(1<<60), int64(0), 0
+	origin, end, count, points := int64(1<<60), int64(0), 0, 0
 	seen := map[string]bool{}
 	for _, recording := range recordings {
 		if recording.Track == "" || recording.Pattern == "" || len(recording.Notes) == 0 || seen[recording.Pattern] {
 			return fmt.Errorf("each performed pattern needs one track and at least one note")
 		}
 		seen[recording.Pattern] = true
+		groupPoints, err := validateTakeGroups(recording.Groups)
+		if err != nil {
+			return err
+		}
+		points += groupPoints
+		for _, group := range recording.Groups {
+			if activeTakeGroup(group) {
+				origin = min(origin, group.Points[0].Tick)
+				end = max(end, group.Points[len(group.Points)-1].Tick+1)
+			}
+		}
 		for _, note := range recording.Notes {
-			if note.Tick < 0 || note.EndTick < note.Tick || note.EndTick > 1<<60 || note.Note < 0 || note.Note > 127 || note.Velocity < 1 || note.Velocity > 127 || note.Channel > 15 || note.NoteID == 65535 {
+			if note.Tick < 0 || note.EndTick < note.Tick || note.EndTick > 1<<60 || note.Note < 0 || note.Note > 127 || note.Velocity < 1 || note.Velocity > 127 || note.Channel > 15 || note.NoteID == 65535 || int(note.Group) > len(recording.Groups) {
 				return fmt.Errorf("performed note range or timing is invalid")
 			}
 			if err := validateTakeExpression(note); err != nil {
@@ -29,10 +41,14 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 			}
 			origin, end = min(origin, note.Tick), max(end, max(note.EndTick, note.Tick+1))
 			count++
+			points += len(note.Expressions)
 		}
 	}
 	if count > seq.MaxPerformanceNotes {
 		return fmt.Errorf("a performance may contain at most 512 notes")
+	}
+	if points > seq.MaxPerformanceExpressions {
+		return fmt.Errorf("a performance may contain at most %d gesture points", seq.MaxPerformanceExpressions)
 	}
 	origin = origin / seq.TicksPerBar * seq.TicksPerBar
 	length := ((end - origin + seq.TicksPerBar - 1) / seq.TicksPerBar) * seq.TicksPerBar
@@ -41,8 +57,25 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 	}
 	for _, recording := range recordings {
 		performance := &seq.Performance{LengthTicks: length}
+		groups := make([]uint16, len(recording.Groups)+1)
+		for index, captured := range recording.Groups {
+			if !activeTakeGroup(captured) {
+				continue
+			}
+			group := seq.ControlGroup{Name: fmt.Sprintf("mpe-%d", index+1)}
+			for _, point := range captured.Points {
+				value := seq.GroupPoint{Tick: max(0, point.Tick-origin), Value: expression.Controls{PitchCents: float32(point.PitchCents), Pressure: float32(point.Pressure), Timbre: float32(point.Timbre)}}
+				if last := len(group.Points) - 1; last >= 0 && group.Points[last].Tick == value.Tick {
+					group.Points[last] = value
+				} else {
+					group.Points = append(group.Points, value)
+				}
+			}
+			performance.Groups = append(performance.Groups, group)
+			groups[index+1] = uint16(len(performance.Groups))
+		}
 		for _, note := range recording.Notes {
-			performed := seq.PerformedNote{Tick: note.Tick - origin, EndTick: max(note.EndTick, note.Tick+1) - origin, Note: uint8(note.Note), Velocity: uint8(note.Velocity)}
+			performed := seq.PerformedNote{Tick: note.Tick - origin, EndTick: max(note.EndTick, note.Tick+1) - origin, Note: uint8(note.Note), Velocity: uint8(note.Velocity), Group: groups[note.Group]}
 			for _, point := range note.Expressions {
 				value := seq.PerformedExpression{Tick: point.Tick - note.Tick, Params: seq.Expression{Set: true, PitchCents: float32(point.PitchCents), Pressure: float32(point.Pressure), Timbre: float32(point.Timbre)}}
 				if point.VibratoDepthCents != nil && *point.VibratoDepthCents != 0 {
@@ -80,6 +113,37 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 	}
 	ctx.SetLabel(fmt.Sprintf("Performance kept · %d notes across %d patterns", count, len(recordings)))
 	return nil
+}
+
+func activeTakeGroup(group TakeGroup) bool {
+	for _, point := range group.Points {
+		if point.PitchCents != 0 || point.Pressure != 0 || point.Timbre != .5 {
+			return true
+		}
+	}
+	return false
+}
+
+func validateTakeGroups(groups []TakeGroup) (int, error) {
+	if len(groups) > seq.MaxPerformanceNotes {
+		return 0, fmt.Errorf("a recording may contain at most 512 shared gesture lanes")
+	}
+	count := 0
+	for _, group := range groups {
+		if len(group.Points) == 0 {
+			return 0, fmt.Errorf("shared gesture lanes need controller points")
+		}
+		if err := validateTakeExpression(TakeNote{EndTick: 1 << 60, Expressions: group.Points}); err != nil {
+			return 0, err
+		}
+		for _, point := range group.Points {
+			if point.Tick >= 1<<60 || point.VibratoDepthCents != nil {
+				return 0, fmt.Errorf("shared gesture timing is invalid; vibrato belongs to the individual note")
+			}
+		}
+		count += len(group.Points)
+	}
+	return count, nil
 }
 
 func replacePerformedPattern(ctx *Context, id string, performance *seq.Performance, preserveTranspose bool) error {

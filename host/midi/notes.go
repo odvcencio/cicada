@@ -15,6 +15,22 @@ type NoteMessage struct {
 	ID                           uint16
 	MPE                          bool
 	PitchCents, Pressure, Timbre float64
+	// Local and Shared retain the independent MPE layers. The fields above
+	// remain the combined snapshot used by ordinary live note monitoring.
+	Local      *NoteControls
+	Shared     *SharedControls
+	SharedOnly bool
+}
+
+type NoteControls struct{ PitchCents, Pressure, Timbre float64 }
+
+// SharedControls identifies one device's configured zone for this input
+// session. Reconnects and zone changes receive fresh identities.
+type SharedControls struct {
+	ID      uint64
+	Device  string
+	Channel uint8
+	NoteControls
 }
 
 type noteChannel struct {
@@ -26,6 +42,7 @@ type noteChannel struct {
 type noteDevice struct {
 	channels     [16]noteChannel
 	lower, upper uint8
+	groups       [2]uint64
 }
 type inputNote struct {
 	NoteMessage
@@ -39,10 +56,38 @@ type inputNote struct {
 // range. Lower/upper modes provide a starting zone for controllers which do
 // not send configuration. It never guesses MPE from an ordinary pitch wheel.
 type NoteInput struct {
-	Mode    string // "auto" (default), "lower", or "upper"
-	devices map[string]*noteDevice
-	notes   []inputNote
-	nextID  uint16
+	Mode      string // "auto" (default), "lower", or "upper"
+	devices   map[string]*noteDevice
+	notes     []inputNote
+	nextID    uint16
+	nextGroup uint64
+	shared    []SharedControls
+}
+
+func (m *NoteInput) groupID() uint64 {
+	m.nextGroup++
+	return m.nextGroup
+}
+
+func (m *NoteInput) sharedSnapshot(device string, d *noteDevice, channel uint8) *SharedControls {
+	index := 0
+	if channel == 15 {
+		index = 1
+	} else if channel != 0 {
+		return nil
+	}
+	if d.groups[index] == 0 {
+		return nil
+	}
+	c := d.channels[channel]
+	return &SharedControls{ID: d.groups[index], Device: device, Channel: channel,
+		NoteControls: NoteControls{bendValue(c), c.pressure, c.timbre}}
+}
+
+func (m *NoteInput) publishShared(device string, d *noteDevice, channel uint8) {
+	if value := m.sharedSnapshot(device, d, channel); value != nil {
+		m.shared = append(m.shared, *value)
+	}
 }
 
 // DisconnectPrefix also clears controller state for native MIDI groups.
@@ -88,6 +133,8 @@ func (m *NoteInput) snapshot(n inputNote) NoteMessage {
 		value.PitchCents, value.Pressure, value.Timbre = n.frozen.PitchCents, n.frozen.Pressure, n.frozen.Timbre
 	}
 	if master, ok := d.master(n.Channel); ok && n.MPE {
+		value.Local = &NoteControls{value.PitchCents, value.Pressure, value.Timbre}
+		value.Shared = m.sharedSnapshot(n.Device, d, master)
 		zone := d.channels[master]
 		value.PitchCents += bendValue(zone)
 		value.Pressure = math.Max(value.Pressure, zone.pressure)
@@ -115,8 +162,10 @@ func (m *NoteInput) device(id string) (*noteDevice, error) {
 	}
 	if m.Mode == "lower" {
 		d.lower = 15
+		d.groups[0] = m.groupID()
 	} else if m.Mode == "upper" {
 		d.upper = 15
+		d.groups[1] = m.groupID()
 	}
 	for i := range d.channels {
 		if _, ok := d.master(uint8(i)); ok {
@@ -189,6 +238,7 @@ func (m *NoteInput) freeze(n *inputNote, c noteChannel) {
 // and unrelated CCs do not create notes. Releases pair retriggers in arrival
 // order. Sustain and zone reconfiguration retain no orphaned identities.
 func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
+	m.shared = nil
 	if len(data) < 1 || data[0] < 0x80 || data[0] >= 0xf0 {
 		return nil, nil
 	}
@@ -308,6 +358,13 @@ func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
 						d.lower = uint8(max(0, 14-int(b)))
 					}
 				}
+				for index, count := range []uint8{d.lower, d.upper} {
+					if count == 0 {
+						d.groups[index] = 0
+					} else if d.groups[index] == 0 || index == 0 && channel == 0 || index == 1 && channel == 15 {
+						d.groups[index] = m.groupID()
+					}
+				}
 				affected := [16]bool{}
 				for i := range d.channels {
 					om, okOld := old.master(uint8(i))
@@ -342,6 +399,7 @@ func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
 					d.channels[i].rangeSemitones, d.channels[i].coarse, d.channels[i].fine = previous.rangeSemitones, previous.coarse, previous.fine
 				}
 			}
+			m.publishShared(device, d, channel)
 			releases := m.releaseMatching(func(n inputNote) bool { return zoneAffects(n) && n.released })
 			for i := range m.notes {
 				if zoneAffects(m.notes[i]) {
@@ -361,6 +419,9 @@ func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
 	} else if status != 0xa0 {
 		return nil, nil
 	}
+	if status != 0xa0 {
+		m.publishShared(device, d, channel)
+	}
 	var result []NoteMessage
 	for i := range m.notes {
 		n := &m.notes[i]
@@ -379,7 +440,16 @@ func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
 		if n.released && n.MPE && n.Channel == channel {
 			continue
 		}
-		result = append(result, m.snapshot(*n))
+		value := m.snapshot(*n)
+		value.SharedOnly = n.MPE && n.Channel != channel
+		result = append(result, value)
 	}
 	return result, nil
+}
+
+// ProcessEvents also returns shared master controls when every note is already
+// released. Capture can retain release-tail movement without extending gates.
+func (m *NoteInput) ProcessEvents(device string, data []byte) ([]NoteMessage, []SharedControls, error) {
+	notes, err := m.Process(device, data)
+	return notes, m.shared, err
 }

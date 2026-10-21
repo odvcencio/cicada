@@ -33,6 +33,19 @@ func init() {
 		count := 0
 		patterns := make(map[string]bool)
 		for _, recording := range in.Recordings {
+			if _, err := validateTakeGroups(recording.Groups); err != nil {
+				return err
+			}
+			for _, note := range recording.Notes {
+				if int(note.Group) > len(recording.Groups) {
+					return fmt.Errorf("recorded note refers to an unknown shared gesture lane")
+				}
+			}
+			for _, group := range recording.Groups {
+				if activeTakeGroup(group) {
+					return fmt.Errorf("shared controller gestures need Keep played timing; the retained take is unchanged")
+				}
+			}
 			if patterns[recording.Pattern] {
 				return fmt.Errorf("take targets pattern %q more than once; separate the performances before applying", recording.Pattern)
 			}
@@ -60,6 +73,7 @@ type TakeNote struct {
 	Velocity    int              `json:"velocity"`
 	NoteID      uint16           `json:"noteid,omitempty"`
 	Channel     uint8            `json:"channel,omitempty"`
+	Group       uint16           `json:"group,omitempty"`
 	Expressions []TakeExpression `json:"expressions,omitempty"`
 }
 
@@ -72,9 +86,14 @@ type TakeExpression struct {
 }
 
 type Recording struct {
-	Track   string     `json:"track"`
-	Pattern string     `json:"pattern"`
-	Notes   []TakeNote `json:"notes"`
+	Track   string      `json:"track"`
+	Pattern string      `json:"pattern"`
+	Notes   []TakeNote  `json:"notes"`
+	Groups  []TakeGroup `json:"groups,omitempty"`
+}
+
+type TakeGroup struct {
+	Points []TakeExpression `json:"points"`
 }
 
 type recordedStep struct {

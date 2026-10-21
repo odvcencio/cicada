@@ -347,10 +347,14 @@ copies across restarts; closing a browser tab does not apply a take to the score
 
 **Keep played timing** writes independent note starts, releases, velocities,
 and supported controller gestures as a performance pattern. Chords can have
-different starts, held lengths, bends, pressure, and timbre.
-All destinations use the first played bar as a common origin, and the final
-release rounds the loop up to a whole bar. A zero-length hit gets a one-tick
-gate. Existing pattern transpose, swing, and gate settings do not alter the
+different starts, held lengths, bends, pressure, and timbre. MPE member controls
+remain attached to individual notes; master bend, pressure and timbre become
+shared lanes. Movement after note-off is retained without stretching the gate.
+Finish the take after the release-tail movement you want to keep.
+All destinations use the first note or shared gesture's bar as a common
+origin. The final release or shared movement rounds the loop up to a whole bar.
+A zero-length hit gets a one-tick gate. Existing pattern transpose, swing,
+and gate settings do not alter the
 captured pitches or timings. Scene assignments and the song's lengths stay as
 authored; a short song block can end before a long performance finishes.
 
@@ -361,9 +365,9 @@ values. Select a point to edit its tick after the note starts, bend in cents,
 pressure, timbre, vibrato depth, and rate. Add or remove points with Undo.
 Large takes use a paged table; the overview retains local extrema without
 changing the recorded data. Moving a note carries its gesture offsets.
-Shortening refuses to discard held notes or gesture points. **Loop this
-performance** auditions its full loop independently of the arrangement. It
-uses the first track assigned to the pattern. Each edit has Undo. WAV, stems,
+Shortening refuses to discard held notes or gesture points. Choose **Hear with**
+and **Loop part** to audition its full loop independently of the arrangement.
+Each edit has Undo. WAV, stems,
 MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
@@ -376,8 +380,14 @@ Each note retains its own gestures and vibrato. Bend adds, pressure uses the
 larger value, and timbre adds around its neutral center of 0.5. The curve
 starts neutral on each loop unless a point at tick zero sets its initial
 values. Unbind all member notes before removing a lane. Every edit has Undo.
-These lanes are authored in the editor or source; live MPE capture still
-records combined controller snapshots on individual notes.
+Live MPE capture creates these lanes automatically, with separate identities
+for each input, zone and reconnect. The retained-take review shows each lane's
+membership, point count and final movement. Keeping played timing coalesces
+samples at the same musical tick; private recovery keeps every raw sample.
+Lanes that stayed neutral need no binding in the saved pattern. Shared movement
+requires **Keep played timing**; the step-grid option refuses to discard it.
+During live input, monitoring follows master controls while notes are held.
+The saved shared lane also shapes their release tails during playback and export.
 
 Played timing supports acid, modeled keyboards and piano, and authored pitched
 instruments, using each instrument's existing mono or polyphonic voice policy.

@@ -63,14 +63,23 @@ type Note struct {
 	Velocity     int              `json:"velocity"`
 	NoteID       uint16           `json:"noteId,omitempty"`
 	Channel      uint8            `json:"channel,omitempty"`
+	Group        uint16           `json:"group,omitempty"`
 	Expressions  []NoteExpression `json:"expressions,omitempty"`
 	Input        *midi.NoteTiming `json:"input,omitempty"`
 	EndEstimated bool             `json:"endEstimated,omitempty"`
 }
 type Recording struct {
-	Track   string `json:"track"`
-	Pattern string `json:"pattern"`
-	Notes   []Note `json:"notes"`
+	Track   string          `json:"track"`
+	Pattern string          `json:"pattern"`
+	Notes   []Note          `json:"notes"`
+	Groups  []RecordedGroup `json:"groups,omitempty"`
+}
+
+type RecordedGroup struct {
+	ID      uint64           `json:"id"`
+	Device  string           `json:"device"`
+	Channel uint8            `json:"channel"`
+	Points  []NoteExpression `json:"points"`
 }
 
 func ValidateRecordings(takes []Recording) error {
@@ -84,8 +93,26 @@ func ValidateRecordings(takes []Recording) error {
 			return fmt.Errorf("each recording needs a track, pattern, and notes")
 		}
 		count += len(take.Notes)
+		if len(take.Groups) > 512 {
+			return fmt.Errorf("a recording may contain at most 512 shared gesture lanes")
+		}
+		groups := map[uint64]bool{}
+		for _, group := range take.Groups {
+			if group.ID == 0 || groups[group.ID] || group.Device == "" || len(group.Device) > 512 || group.Channel != 0 && group.Channel != 15 || len(group.Points) == 0 {
+				return fmt.Errorf("shared gestures need unique input identities, a master channel and points")
+			}
+			groups[group.ID] = true
+			previous := int64(0)
+			for _, point := range group.Points {
+				if point.Tick < previous || point.Tick >= 1<<60 || !point.Valid() || point.VibratoDepthCents != nil {
+					return fmt.Errorf("shared gestures must be ordered, finite controller snapshots")
+				}
+				previous = point.Tick
+			}
+			points += len(group.Points)
+		}
 		for _, n := range take.Notes {
-			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 || n.NoteID == 65535 || n.Channel > 15 {
+			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 || n.NoteID == 65535 || n.Channel > 15 || int(n.Group) > len(take.Groups) {
 				return fmt.Errorf("recorded note range or timing is invalid")
 			}
 			previous := n.Tick

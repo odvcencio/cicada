@@ -27,6 +27,10 @@ func (u *liveUI) takeBaseRevision() string {
 func (u *liveUI) checkpointSnapshot() []control.Recording {
 	copy := append([]control.Recording(nil), u.takes...)
 	for i := range copy {
+		copy[i].Groups = append([]control.RecordedGroup(nil), copy[i].Groups...)
+		for j := range copy[i].Groups {
+			copy[i].Groups[j].Points = append([]control.NoteExpression(nil), copy[i].Groups[j].Points...)
+		}
 		copy[i].Notes = append([]control.Note(nil), copy[i].Notes...)
 		for j := range copy[i].Notes {
 			copy[i].Notes[j].Expressions = append([]control.NoteExpression(nil), copy[i].Notes[j].Expressions...)

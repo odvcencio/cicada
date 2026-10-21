@@ -74,6 +74,7 @@ type liveUI struct {
 	midiNotes            midi.NoteInput
 	wireIDs              map[string]uint16
 	gesturePoints        int
+	pendingShared        map[uint64][]control.NoteExpression
 	events               []liveEvent
 	status               *signal.Signal[string]
 	held                 map[string]liveHeld
@@ -98,6 +99,7 @@ type liveUI struct {
 	addresses            map[string]string
 	midi                 js.Value
 	midiEvents           []liveEvent
+	webMIDIPorts         map[string]bool
 	nativeMIDICancel     context.CancelFunc
 	nativeMIDIGeneration uint64
 	midiNames            map[string]string
@@ -666,6 +668,7 @@ func (u *liveUI) bindControls() {
 			u.saveSettings()
 		})
 	}
+	u.on(u.query("[data-live-target]"), "change", func(js.Value) { u.saveSettings() })
 	button := func(name string, fn func()) {
 		u.on(u.query("[data-live-control="+name+"]"), "click", func(js.Value) { fn() })
 	}
@@ -681,6 +684,7 @@ func (u *liveUI) bindControls() {
 		}
 		u.recording = true
 		u.gesturePoints = 0
+		u.pendingShared = nil
 		u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
 		u.takeRevision, u.takeSequence = u.props.Revision, 0
 		u.syncControls()
@@ -755,29 +759,38 @@ func (u *liveUI) loadSettings() {
 		return
 	}
 	var saved struct {
-		Acid     string `json:"acidTrack"`
-		Drums    string `json:"drumTrack"`
-		Quantize int    `json:"quantize"`
-		MIDIMode string `json:"midiMode"`
+		Acid        string `json:"acidTrack"`
+		Drums       string `json:"drumTrack"`
+		Quantize    int    `json:"quantize"`
+		MIDIMode    string `json:"midiMode"`
+		Pattern     string `json:"pitchedPattern"`
+		DrumPattern string `json:"drumPattern"`
+		Target      string `json:"target"`
 	}
 	if json.Unmarshal([]byte(v.String()), &saved) != nil {
 		return
 	}
-	for _, p := range [][2]string{{"[data-live-acid]", saved.Acid}, {"[data-live-drums]", saved.Drums}, {"[data-live-quantize]", strconv.Itoa(saved.Quantize)}, {"[data-live-midimode]", saved.MIDIMode}} {
-		s := u.query(p[0])
+	set := func(selector, value string) {
+		s := u.query(selector)
 		options := s.Get("options")
 		for i := 0; i < options.Length(); i++ {
-			if options.Index(i).Get("value").String() == p[1] {
-				s.Set("value", p[1])
+			if options.Index(i).Get("value").String() == value {
+				s.Set("value", value)
 				break
 			}
 		}
 	}
+	for _, p := range [][2]string{{"[data-live-acid]", saved.Acid}, {"[data-live-drums]", saved.Drums}, {"[data-live-quantize]", strconv.Itoa(saved.Quantize)}, {"[data-live-midimode]", saved.MIDIMode}, {"[data-live-target]", saved.Target}} {
+		set(p[0], p[1])
+	}
+	u.refreshPatterns()
+	set("[data-live-pattern]", saved.Pattern)
+	set("[data-live-drumpattern]", saved.DrumPattern)
 }
 func (u *liveUI) saveSettings() {
 	defer func() { _ = recover() }()
 	q, _ := strconv.Atoi(u.selected("[data-live-quantize]"))
-	data, _ := json.Marshal(map[string]any{"acidTrack": u.selected("[data-live-acid]"), "drumTrack": u.selected("[data-live-drums]"), "quantize": q, "midiMode": u.selected("[data-live-midimode]")})
+	data, _ := json.Marshal(map[string]any{"acidTrack": u.selected("[data-live-acid]"), "drumTrack": u.selected("[data-live-drums]"), "quantize": q, "midiMode": u.selected("[data-live-midimode]"), "pitchedPattern": u.selected("[data-live-pattern]"), "drumPattern": u.selected("[data-live-drumpattern]"), "target": u.selected("[data-live-target]")})
 	u.storage().Call("setItem", "cicada.live.settings.v1", string(data))
 }
 
@@ -832,9 +845,7 @@ func (u *liveUI) restoreTake() {
 	if json.Unmarshal([]byte(v.String()), &saved) == nil && control.ValidateRecordings(saved.Takes) == nil {
 		u.takes = saved.Takes
 		for _, take := range u.takes {
-			for _, note := range take.Notes {
-				u.gesturePoints += len(note.Expressions)
-			}
+			u.gesturePoints += take.ExpressionPointCount()
 		}
 		u.takeRevision, u.takeID, u.takeSequence = saved.Revision, saved.ID, saved.Sequence
 		if u.takeID == "" {
@@ -943,7 +954,7 @@ func (u *liveUI) enableMIDI() {
 		}
 		u.midi = access
 		u.bindMIDI()
-		u.on(access, "statechange", func(js.Value) { u.closeNotes(); u.bindMIDI() })
+		u.on(access, "statechange", func(js.Value) { u.bindMIDI() })
 	}()
 }
 func (u *liveUI) bindMIDI() {
@@ -953,6 +964,7 @@ func (u *liveUI) bindMIDI() {
 	}
 	u.midiEvents = nil
 	iter := u.midi.Get("inputs").Call("values")
+	ports := map[string]bool{}
 	count := 0
 	for {
 		next := iter.Call("next")
@@ -960,7 +972,11 @@ func (u *liveUI) bindMIDI() {
 			break
 		}
 		input := next.Get("value")
+		if input.Get("state").String() == "disconnected" {
+			continue
+		}
 		device := "web:" + input.Get("id").String()
+		ports[device] = true
 		u.midiNames[device] = input.Get("name").String()
 		count++
 		f := js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -972,6 +988,13 @@ func (u *liveUI) bindMIDI() {
 		input.Call("addEventListener", "midimessage", f)
 		u.midiEvents = append(u.midiEvents, liveEvent{input, "midimessage", f})
 	}
+	for device := range u.webMIDIPorts {
+		if !ports[device] {
+			u.midiNotes.Disconnect(device)
+			u.releaseMIDIPrefix("midi:" + device + ":")
+		}
+	}
+	u.webMIDIPorts = ports
 	u.status.Set(fmt.Sprintf("MIDI enabled · %d inputs · no system-exclusive access", count))
 }
 func (u *liveUI) midiMessage(device string, data js.Value) {
@@ -993,14 +1016,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 		if data.Length() != 3 {
 			return
 		}
-		events, err := u.midiNotes.Process(device, []byte{byte(status), byte(a), byte(b)})
-		if err != nil {
-			u.status.Set(err.Error())
-			return
-		}
-		for _, event := range events {
-			u.midiNote(event, at)
-		}
+		u.processMIDIAt(device, []byte{byte(status), byte(a), byte(b)}, at)
 		return
 	}
 	if u.learning && (cc || on) {
@@ -1072,14 +1088,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 	if data.Length() == 3 {
 		bytes = append(bytes, byte(b))
 	}
-	events, err := u.midiNotes.Process(device, bytes)
-	if err != nil {
-		u.status.Set(err.Error())
-		return
-	}
-	for _, event := range events {
-		u.midiNote(event, at)
-	}
+	u.processMIDIAt(device, bytes, at)
 }
 func (u *liveUI) mappedAction(target string) {
 	parts := strings.Split(target, ":")
