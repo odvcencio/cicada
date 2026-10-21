@@ -78,6 +78,14 @@ Small pointer movements are treated as selection, so a click does not shift a
 phrase. Save or discard unsaved Code edits before moving placements; finish
 recording and wait for a pending save before starting another edit.
 
+While dragging or trimming, hold the pointer near either timeline edge to
+scroll through the song. Scrolling starts after a brief pause and gets faster
+closer to the edge; the placement preview follows your held pointer. Move
+back into the middle or outside the visible timeline to stop scrolling.
+Release to save the entire gesture as one edit. Escape restores the placement
+and its original horizontal view. Changing the timeline view, hiding or
+resizing the window, or switching away from the window cancels the gesture safely.
+
 Use **Timeline zoom** for 1×–8× detail, **Fit song** for an overview, and
 **Show selected** to bring the inspected placement into view. The playhead
 shows the native transport position. **Follow song** advances the view
