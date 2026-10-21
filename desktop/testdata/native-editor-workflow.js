@@ -118,6 +118,40 @@
     if (node.value !== value) throw new Error('Query field did not retain typed characters: ' + node.value);
     return typed;
   }
+  function targetVisibility(offset) {
+    const source = editor(), highlight = document.querySelector('#editor-highlight-content');
+    const layer = highlight.closest('.editor-highlight-layer'), gutter = document.querySelector('#editor-line-numbers');
+    const bounds = source.getBoundingClientRect(), dock = document.querySelector('#studio-code').getBoundingClientRect();
+    let top = Math.max(bounds.top, dock.top, 0), bottom = Math.min(bounds.bottom, dock.bottom, innerHeight);
+    let left = Math.max(bounds.left, dock.left, 0), right = Math.min(bounds.right, dock.right, innerWidth);
+    for (let parent = source.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), rect = parent.getBoundingClientRect();
+      if (/^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+        top = Math.max(top, rect.top + parent.clientTop);
+        bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight);
+      }
+      if (/^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+        left = Math.max(left, rect.left + parent.clientLeft);
+        right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth);
+      }
+    }
+    const walker = document.createTreeWalker(highlight, NodeFilter.SHOW_TEXT);
+    let node, at = 0;
+    while ((node = walker.nextNode())) {
+      if (at + node.textContent.length > offset) {
+        const range = document.createRange();
+        range.setStart(node, offset - at); range.setEnd(node, offset - at + 1);
+        const rect = range.getBoundingClientRect();
+        return {visible: rect.height > 0 && rect.top >= top - 1 && rect.bottom <= bottom + 1 && rect.left >= left - 1 && rect.right <= right + 1,
+          synchronized: Math.abs(layer.scrollTop - source.scrollTop) <= 1 && Math.abs(gutter.scrollTop - source.scrollTop) <= 1,
+          target: {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right}, clip: {top, bottom, left, right},
+          textarea: {top: bounds.top, bottom: bounds.bottom},
+          scroll: {source: source.scrollTop, highlight: layer.scrollTop, gutter: gutter.scrollTop}};
+      }
+      at += node.textContent.length;
+    }
+    return {visible: false, synchronized: false};
+  }
   async function unchanged(source, count, label) {
     await pause(160);
     if ((await state()).source !== source || submissions.length !== count)
@@ -272,6 +306,44 @@
       nativeField.remove(); editor().focus();
       checks.push('Mac menu Undo/Redo preserve native history in ordinary text fields');
     }
+
+    const shortDraft = '// Desktop CI navigation fixture\n// café 🌙 東京\ncicada 2\ntitle "Desktop CI"\n' +
+      'track bass acid { cutoff=700Hz }\npattern pulse { 1 . 5 . }\narrange {\n' +
+      '  place one bass pulse { at = @1.1.1 length = 4bars }\n  place two bass pulse { at = @5.1.1 length = 4bars }\n}\n';
+    fill(shortDraft);
+    await wait(() => [shortDraft, shortDraft + '\n'].includes(document.querySelector('#editor-highlight-content')?.textContent) &&
+      document.querySelector('#editor-highlight-content span[class]'), 'short wrapped draft highlight');
+    const shortOffset = shortDraft.split('\n').slice(0, 7).reduce((offset, line) => offset + line.length + 1, 0) + 2;
+    editor().setSelectionRange(0, 0);
+    editor().scrollTop = 0; editor().scrollLeft = 0;
+    await wait(() => targetVisibility(shortOffset).synchronized, 'short draft scrolling settles');
+    const shortBefore = targetVisibility(shortOffset), shortState = await state();
+    const shortHistory = [form().dataset.undoDepth, form().dataset.redoDepth].join(':');
+    const shortFile = form().querySelector('input[name=file]')?.value;
+    const shortMutations = mutations.length, shortSubmissions = submissions.length;
+    if (shortBefore.visible || !shortBefore.target || shortBefore.target.top < shortBefore.clip.bottom ||
+        shortBefore.target.bottom > shortBefore.textarea.bottom + 1)
+      throw new Error('Short native fixture must place its target below the actual dock clip but inside the full textarea: ' + JSON.stringify(shortBefore));
+    key('g', 'KeyG', editor(), {ctrlKey: true});
+    await typeField(document.querySelector('#score [data-code-goto=query]'), '8:3');
+    key('Enter', 'Enter', document.querySelector('#score [data-code-goto=query]'));
+    if (!document.querySelector('#score [data-code-goto-panel]').hidden || editor().selectionStart !== shortOffset || editor().selectionEnd !== shortOffset)
+      throw new Error('Short Go to line did not select line eight column three and close the panel');
+    await wait(() => {
+      const observed = targetVisibility(shortOffset);
+      return observed.visible && observed.synchronized;
+    }, 'short Go target revealed inside every clipping ancestor with synchronized highlight and gutter');
+    const shortAfter = targetVisibility(shortOffset), shortFinal = await state(), shortCapture = await state('capture');
+    if (editor().value !== shortDraft || shortFinal.source !== shortState.source || shortFinal.revision !== shortState.revision ||
+        [form().dataset.undoDepth, form().dataset.redoDepth].join(':') !== shortHistory || form().querySelector('input[name=file]')?.value !== shortFile ||
+        mutations.length !== shortMutations || submissions.length !== shortSubmissions || (await state('transport')).playing ||
+        shortCapture.activeCapture || shortCapture.input.enabled)
+      throw new Error('Short Go changed draft, module, saved source, history, transport, capture, or sent a mutation request');
+    checks.push(evidence('short Go to line reveals its target within the actual clipped Code dock',
+      {action: 'short wrapped Go 8:3', viewport: [innerWidth, innerHeight], expectedUTF16: shortOffset,
+        actualUTF16: [editor().selectionStart, editor().selectionEnd], before: shortBefore, after: shortAfter,
+        mutationRequests: mutations.length - shortMutations, formSubmissions: submissions.length - shortSubmissions}));
+    fill(draft);
 
     const longLines = (draft + Array.from({length: 180}, (_, index) =>
       '// verse ' + (index + 1) + ' ' + 'wide phrase '.repeat(16) + '\n').join('')).split('\n');
