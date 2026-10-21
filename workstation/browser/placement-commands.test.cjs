@@ -350,9 +350,39 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await key('Meta+d'); await rejected;
     assert.equal((await state()).source,fixture,'stale keyboard edit changed the score');
     assert.equal((await actionValues(posts.at(-1))).revision,'stale-revision');
+    // Unload delivery is browser best effort. Exercise the actual pagehide
+    // listener while this fixture document lives, then prove the same mount
+    // releases its known lease with an advancing sequence on the next event.
+    const beforeProducer={releases:liveReleases.length,state:await state()};
+    await page.evaluate(()=>{window.__releaseProducerDocument=document;});
+    const produceRelease=async()=>{
+      const emitted=await page.evaluate(async()=>{
+        const original=navigator.sendBeacon,captured=[];
+        navigator.sendBeacon=function(url,data){
+          const sent=original.apply(this,arguments);
+          if(new URL(url,location.href).pathname==='/__actions/live' && data instanceof Blob){
+            captured.push(data.text().then(text=>{const fields=new URLSearchParams(text);return {lease:fields.get('lease'),sequence:Number(fields.get('sequence')),sent};}));
+          }
+          return sent;
+        };
+        try { window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:false})); }
+        finally { navigator.sendBeacon=original; }
+        return Promise.all(captured);
+      });
+      assert.equal(emitted.length,1,'the current Live pagehide producer must emit one release');
+      assert.equal(emitted[0].sent,true,'the native Beacon transport must accept the fixture release');
+      return emitted[0];
+    };
+    const firstEmission=await produceRelease();
+    await until(()=>liveReleases.slice(beforeProducer.releases).some(release=>release.lease===firstEmission.lease && release.sequence===firstEmission.sequence),'Live pagehide producer did not deliver its exact fixture release');
+    const beforeRepeat=liveReleases.length,repeatedEmission=await produceRelease();
+    assert.ok(repeatedEmission.lease===firstEmission.lease,'the repeated producer must retain its known mount lease');
+    assert.ok(repeatedEmission.sequence>firstEmission.sequence,'the repeated producer must advance its known lease sequence');
+    await until(()=>liveReleases.slice(beforeRepeat).some(release=>release.lease===repeatedEmission.lease && release.sequence===repeatedEmission.sequence),'Live pagehide producer did not deliver its exact repeated release');
+    assert.equal(await page.evaluate(()=>window.__releaseProducerDocument===document),true,'release producer proof must keep the fixture document alive');
+    assert.deepEqual(await state(),beforeProducer.state,'release producer must not mutate the song');
     assert.deepEqual(errors,[]);
-    assert.ok(liveReleases.length>0,'explicit document visits must release their Live leases');
-    t.diagnostic('Explicit document visits sent validated Live lease releases; in-pane navigation and guarded commands submitted no score actions.');
+    t.diagnostic(JSON.stringify({scenario:'deterministic Live pagehide producer',expected:{sameLease:true,sequenceAdvanced:true,documentSame:true,songUnchanged:true},actual:{sameLease:repeatedEmission.lease===firstEmission.lease,sequenceAdvanced:repeatedEmission.sequence>firstEmission.sequence,firstSequence:firstEmission.sequence,repeatedSequence:repeatedEmission.sequence,documentSame:await page.evaluate(()=>window.__releaseProducerDocument===document),songUnchanged:JSON.stringify(await state())===JSON.stringify(beforeProducer.state)}}));
   } finally {
     await page.unroute('**/__actions/live');
     await context.close(); await browser.close();
