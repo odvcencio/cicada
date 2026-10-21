@@ -45,6 +45,15 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell-tabs { display:flex; flex-direction:column; min-height:0; height:100%; }
 .shell-scroll { overflow:auto; min-height:0; padding:8px 12px; }
 .shell-scroll .panel { padding:12px; margin-bottom:12px; }
+/* Details' anonymous content box does not constrain a flex child. Give the
+   Code scroller a definite viewport and let its editor fill the remaining
+   space, so the final source line stays reachable above the detail dock. */
+.shell #studio-code .shell-collapsible { position:relative; }
+.shell #studio-code .shell-collapsible > .shell-scroll { position:absolute; inset:calc(1.4em + 8px) 0 0; }
+.shell #studio-code #score { display:flex; flex-direction:column; height:100%; min-height:340px; }
+.shell #studio-code #score > :not(#source-editor) { flex-shrink:0; }
+.shell #studio-code #score > ul:empty { display:none; }
+.shell #studio-code #source-editor { flex:1 1 0; min-height:160px; height:auto; }
 .shell-section { border-bottom:1px solid var(--border); }
 .shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
 .shell .arrange-workspace-nav { position:sticky; top:-8px; z-index:2; display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 0; margin-bottom:8px; border-bottom:1px solid var(--border); background:var(--bg); }
@@ -70,6 +79,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 	.shell[data-phone-region="center"] .gsx-dock__center, .shell[data-phone-region="browser"] .gsx-dock__left, .shell[data-phone-region="detail"] .gsx-dock__bottom, .shell[data-phone-region="code"] .gsx-dock__right { display:grid; }
 	.shell[data-phone-region="center"] .gsx-dock__center { display:block; }
 	.shell .gsx-split__handle { display:none; }
+	.shell #studio-code { grid-template-columns:minmax(0,1fr); }
 	.shell-phone-nav { display:flex; gap:4px; padding:4px 12px; border-bottom:1px solid var(--border); }
 	.shell-phone-nav a { flex:1; text-align:center; padding:6px 0; text-decoration:none; border-bottom:2px solid transparent; }
 	.shell-phone-nav a[aria-current="page"] { color:var(--amber); border-color:var(--amber); }
