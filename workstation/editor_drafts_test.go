@@ -99,6 +99,9 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 		if got := strings.Contains(page, marker); got != want {
 			t.Fatalf("%s restored %q = %t, want %t", file, marker, got, want)
 		}
+		if got := strings.Contains(page, "Recovered draft. Not saved to disk."); got != want {
+			t.Fatalf("%s recovered draft status = %t, want %t", file, got, want)
+		}
 	}
 
 	apply("main.cicada", "stale", "// main conflict 🎵\n", "")
@@ -167,7 +170,7 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 	checked := applyJSON(map[string]string{
 		"file": "parts/lead.cicada", "fileRevision": "lead-current", "intent": "check", "content": "// JSON checked lead\n",
 	})
-	if checked.Message != "File check passed." {
+	if !checked.OK || checked.Message != "File check passed. Draft is not saved." {
 		t.Fatalf("JSON check: %+v", checked)
 	}
 	assertDraft("parts/lead.cicada", "JSON checked lead", true)

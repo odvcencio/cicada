@@ -71,12 +71,14 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		}
 	}
 	var conflict gosx.Node = gosx.Fragment()
+	var recovery gosx.Node = gosx.Fragment()
 	if v.HasDraft && fileRevision != v.DiskRevision {
 		buttons = []editor.FormButton{{Name: "intent", Value: "merge", Label: "Save combined draft", Class: "primary"}}
 		conflict = gosx.El("details", gosx.Attrs(gosx.BoolAttr("open")), gosx.El("summary", gosx.Text("Current file: combine its changes with your draft below")), gosx.El("pre", gosx.Attrs(gosx.Attr("class", "history-diff")), gosx.Text(v.DiskSource)))
 	}
 	if v.HasDraft {
 		buttons = append(buttons, editor.FormButton{Name: "intent", Value: "discard", Label: "Discard draft"})
+		recovery = gosx.El("p", gosx.Attrs(gosx.Attr("class", "source-draft-note"), gosx.Attr("role", "status")), gosx.Text("Recovered draft. Not saved to disk."))
 	}
 	var highlights []editor.HighlightSpan
 	if spans, err := language.Highlight([]byte(v.Source)); err == nil {
@@ -99,7 +101,7 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		Buttons:          buttons,
 		Panels:           []editor.Panel{},
 	})
-	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Changes validate before saving and land at the next bar."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, e.Render())
+	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Changes validate before saving and land at the next bar."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, recovery, e.Render())
 }
 
 // Map parser byte positions to the editor's UTF-16 positions in one pass.

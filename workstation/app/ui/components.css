@@ -35,6 +35,11 @@ main { padding:24px 28px; }
 .panel-heading p { margin:0; }
 .panel-heading h2 { flex-shrink:0; }
 .panel-heading p { max-width:60ch; text-align:right; }
+.source-draft-note { margin:0 0 8px; color:var(--amber); font-size:13px; }
+/* A restored recovery buffer has not been saved to disk. The editor's
+   initial Saved label describes its own buffer, so show the recovery status
+   until an edit changes that label or a successful save replaces the pane. */
+#score .source-draft-note ~ .editor-page .editor-save-status-saved { display:none; }
 .actions .action-form { align-items:center; flex-wrap:wrap; }
 .actions .action-form .field { min-width:100px; }
 .grid-scroll { overflow-x:auto; }

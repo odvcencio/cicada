@@ -359,6 +359,11 @@ other editors retained. Checking or rejecting a file retains its draft across
 reload and navigation, independently of drafts in other project files.
 These recovery drafts expire after thirty minutes or when Studio closes.
 
+A successful **Check file** says **File check passed. Draft is not saved.**
+It clears validation failure feedback while leaving your song on disk unchanged.
+Reloading a retained draft shows **Recovered draft. Not saved to disk.**;
+**Save file** writes it and clears that recovery status.
+
 ![Code editing beside the arrangement, with Save and Check inside the dock.](screenshots/studio-code-editor-1280.png)
 
 Find and Replace also fit the [Code pane on a phone](screenshots/studio-code-editor-390.png).
