@@ -5,7 +5,13 @@
   if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
-  const checks = [], errors = [], submissions = [], responses = [], mutations = [];
+  const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [];
+  function evidence(label, observed) {
+    const record = {order: interactions.length + 1, ...observed};
+    interactions.push(record);
+    // Existing native hosts retain check strings, including this compact trace.
+    return label + ' | interaction=' + JSON.stringify(record);
+  }
   const originalFetch = window.fetch;
   window.fetch = function(...args) {
     const input = args[0], method = args[1]?.method || input?.method || 'GET';
@@ -92,6 +98,7 @@
     }
   }
   async function typeField(node, value) {
+    const typed = [];
     node.focus();
     node.setSelectionRange(0, node.value.length);
     node.setRangeText('', node.selectionStart, node.selectionEnd, 'end');
@@ -105,8 +112,11 @@
       }
       await pause(0);
       if (document.activeElement !== node) throw new Error('Query field lost focus after typing ' + character);
+      typed.push({value: node.value, focused: node.getAttribute('data-code-find') || node.getAttribute('data-code-goto'),
+        selection: [node.selectionStart, node.selectionEnd]});
     }
     if (node.value !== value) throw new Error('Query field did not retain typed characters: ' + node.value);
+    return typed;
   }
   async function unchanged(source, count, label) {
     await pause(160);
@@ -214,10 +224,11 @@
     editor().setSelectionRange(firstMatch, firstMatch + 'Love song'.length);
     document.querySelector('#score [data-code-command=find]').click();
     const query = document.querySelector('#score [data-code-find=query]');
-    await typeField(query, 'Love song');
+    const findTyping = await typeField(query, 'Love song');
     await wait(() => editor().value.slice(editor().selectionStart, editor().selectionEnd) === 'Love song', 'Find selects real score text');
     if (editor().selectionStart !== firstMatch) throw new Error('Find skipped the currently selected first match');
-    checks.push('Find query accepts characters without moving input focus into the score');
+    checks.push(evidence('Find query accepts characters without moving input focus into the score',
+      {action: 'type Find query', expected: {value: 'Love song', focused: 'query'}, observed: findTyping}));
     const replacement = document.querySelector('#score [data-code-find=replacement]');
     await typeField(replacement, 'Moon song');
     document.querySelector('#score [data-code-find-action=replace]').click();
@@ -225,11 +236,15 @@
     if (editor().value !== replacedOnce || editor().selectionStart !== firstMatch + 'Moon song'.length ||
         editor().selectionEnd !== editor().selectionStart)
       throw new Error('Replace skipped the selected first phrase or left the caret before the inserted phrase');
+    const replacements = [{expected: 'Moon song Love song Love song',
+      actual: editor().value.slice(firstMatch, firstMatch + 'Moon song Love song Love song'.length)}];
     document.querySelector('#score [data-code-find-action=replace]').click();
     const replacedTwice = replacedOnce.replace('Love song', 'Moon song');
     if (editor().value !== replacedTwice || editor().selectionStart !== replacedTwice.lastIndexOf('Moon song') + 'Moon song'.length ||
         editor().selectionEnd !== editor().selectionStart)
       throw new Error('Repeated Replace skipped the next phrase or left the caret before its replacement');
+    replacements.push({expected: 'Moon song Moon song Love song',
+      actual: editor().value.slice(firstMatch, firstMatch + 'Moon song Moon song Love song'.length)});
     editor().focus();
     menuHistory(true);
     if (editor().value !== replacedOnce) throw new Error('Menu Undo did not reverse exactly one replacement');
@@ -243,7 +258,8 @@
     if (!document.querySelector('#score .editor-code-find').hidden) throw new Error('Find did not close');
     fill(draft);
     await unchanged(original, typingPosts, 'Find and repeated Replace');
-    checks.push('Replace edits the selected occurrence then advances; local and menu history restore each replacement');
+    checks.push(evidence('Replace edits the selected occurrence then advances; local and menu history restore each replacement',
+      {action: 'replace selected first match then repeat', replacements, history: 'local and menu Undo/Redo each restore one replacement'}));
     if (modifier === 'meta') {
       checks.push('production Mac menu Undo/Redo operate the editor history after Tab, Enter, and Replace');
       const nativeField = document.createElement('input');
@@ -284,20 +300,29 @@
     gotoButton.click();
     await wait(() => !gotoPanel().hidden && document.activeElement === gotoQuery(), 'Go to line toolbar opens focused query');
     if (gotoQuery().getAttribute('aria-label') !== 'Line and column') throw new Error('Go to line query is missing its accessible name');
+    const invalidPositions = [];
     for (const invalidQuery of ['0', '2:0', '2:1.5', String(longLines.length + 1)]) {
       await typeField(gotoQuery(), invalidQuery);
       key('Enter', 'Enter', gotoQuery());
       const status = document.querySelector('#score [data-code-goto=status]');
       if (gotoPanel().hidden || document.activeElement !== gotoQuery() || !status?.textContent.trim() ||
-          gotoQuery().getAttribute('aria-invalid') !== 'true')
+          gotoQuery().getAttribute('aria-invalid') !== 'true' || navigationEditor.selectionStart !== previousStart ||
+          navigationEditor.selectionEnd !== previousStart + 10 || navigationEditor.selectionDirection !== 'backward')
         throw new Error('Invalid Go to line input did not retain focus and inline error: ' + invalidQuery);
+      invalidPositions.push({query: invalidQuery, expectedSelection: [previousStart, previousStart + 10, 'backward'],
+        actualSelection: [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection],
+        panelOpen: !gotoPanel().hidden, errorPresent: Boolean(status.textContent.trim())});
     }
     key('Escape', 'Escape', gotoQuery());
     if (!gotoPanel().hidden || document.activeElement !== navigationEditor || navigationEditor.selectionStart !== previousStart ||
         navigationEditor.selectionEnd !== previousStart + 10 || navigationEditor.selectionDirection !== 'backward' ||
         Math.abs(navigationEditor.scrollTop - previousScroll[0]) > 1 || Math.abs(navigationEditor.scrollLeft - previousScroll[1]) > 1)
       throw new Error('Go to line Escape did not restore backward selection and both scroll offsets');
-    checks.push('invalid line and column inputs show errors; Escape restores native selection direction and scroll');
+    checks.push(evidence('invalid line and column inputs show errors; Escape restores native selection direction and scroll',
+      {action: 'invalid Go to line then Escape', invalid: invalidPositions,
+        escape: {expected: {selection: [previousStart, previousStart + 10, 'backward'], scroll: previousScroll},
+          actual: {selection: [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection],
+            scroll: [navigationEditor.scrollTop, navigationEditor.scrollLeft]}}}));
 
     const openGoto = () => key('g', 'KeyG', navigationEditor, {ctrlKey: true});
     if (!openGoto().defaultPrevented || gotoPanel().hidden || document.activeElement !== gotoQuery())
@@ -310,12 +335,17 @@
         navigationEditor.selectionStart !== unicodePosition || navigationEditor.selectionEnd !== unicodePosition ||
         navigationEditor.scrollTop <= previousScroll[0] + 100)
       throw new Error('Go to line Enter did not reveal the Unicode scalar column and close the panel');
+    const unicodeJump = {query: targetLine + ':7', expectedUTF16: unicodePosition,
+      actualUTF16: [navigationEditor.selectionStart, navigationEditor.selectionEnd],
+      previousScroll, actualScroll: [navigationEditor.scrollTop, navigationEditor.scrollLeft], panelClosed: gotoPanel().hidden};
     openGoto();
     await typeField(gotoQuery(), targetLine + ':999999');
     document.querySelector('#score [data-code-goto=go]').click();
     const lineEnd = lineStart + longLines[targetLine - 1].length;
     if (!gotoPanel().hidden || navigationEditor.selectionStart !== lineEnd || navigationEditor.selectionEnd !== lineEnd)
       throw new Error('Oversized Unicode column did not clamp to the target line end');
+    const clampedJump = {query: targetLine + ':999999', expectedUTF16: lineEnd,
+      actualUTF16: [navigationEditor.selectionStart, navigationEditor.selectionEnd]};
     openGoto();
     await typeField(gotoQuery(), '2');
     key('Enter', 'Enter', gotoQuery());
@@ -323,7 +353,9 @@
       throw new Error('Line-only navigation did not default to column one');
     if (modifier === 'meta' && (key('g', 'KeyG', navigationEditor, {metaKey: true}).defaultPrevented || !gotoPanel().hidden))
       throw new Error('Go to line intercepted native Mac Cmd+G');
-    checks.push('Ctrl+G navigates and reveals Unicode scalar columns, clamps at line end, and preserves Mac Cmd+G');
+    checks.push(evidence('Ctrl+G navigates and reveals Unicode scalar columns, clamps at line end, and preserves Mac Cmd+G',
+      {action: 'Ctrl+G and Enter', unicodeJump, clampedJump,
+        defaultColumn: {expectedUTF16: longLines[0].length + 1, actualUTF16: navigationEditor.selectionStart}}));
 
     const afterNavigation = await state(), navigationCapture = await state('capture');
     if (afterNavigation.source !== sourceBeforeNavigation.source || afterNavigation.revision !== sourceBeforeNavigation.revision ||
@@ -332,7 +364,10 @@
         navigationHistory !== [form().dataset.undoDepth, form().dataset.redoDepth].join(':') || navigationFields !==
         JSON.stringify(['file', 'revision', 'fileRevision', 'diskRevision'].map(name => form().querySelector('input[name="' + name + '"]')?.value)))
       throw new Error('Go to line changed score, module, history, transport, capture, or sent a mutation request');
-    checks.push('Go to line is local navigation with unchanged draft, module, disk revision, undo history, and zero mutation requests');
+    checks.push(evidence('Go to line is local navigation with unchanged draft, module, disk revision, undo history, and zero mutation requests',
+      {action: 'navigation invariants', mutationRequests: mutations.length - navigationMutations,
+        formSubmissions: submissions.length - navigationSubmissions, sameSource: true, sameModule: true, sameHistory: true,
+        transportPlaying: false, captureActive: false, microphoneEnabled: false}));
     fill(draft);
 
     const draftSelection = [editor().selectionStart, editor().selectionEnd];
@@ -410,7 +445,7 @@
     await saved(original, 'project Undo returns fixture');
     checks.push('project Undo/Redo outside editor restore exact saved score');
     if (errors.length) throw new Error(errors.join('; '));
-    return {type: 'cicada-native-smoke', ok: true, checks};
-  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, error: String(error) + '\n' + String(error.stack || '')}))
+    return {type: 'cicada-native-smoke', ok: true, checks, interactions};
+  })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, interactions, error: String(error) + '\n' + String(error.stack || '')}))
     .then(result => window.chrome.webview.postMessage(JSON.stringify(result)));
 })();
