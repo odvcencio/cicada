@@ -555,8 +555,9 @@
         managedGETObserved: pageRequests.length > checkPages, transportPlaying: false, captureActive: false, microphoneEnabled: false}));
 
     fill(draft + '\nnot valid cicada syntax !!!\n');
-    if (!visible(document.querySelector('#score .editor-save-status-unsaved')))
-      throw new Error('Editing a recovered draft hid the Unsaved status');
+    if (!visible(document.querySelector('#score .source-draft-note')) ||
+        [...document.querySelectorAll('#score .editor-save-status-saved')].some(visible))
+      throw new Error('Editing a recovered draft lost its visible not-saved feedback');
     const rejected = editor().value;
     start = submissions.length; responseStart = responses.length;
     [...form().querySelectorAll('button')].find(node => node.textContent.trim() === 'Save file').click();
