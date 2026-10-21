@@ -72,6 +72,7 @@ a track timeline with section markers. Select a block to open its controls.
 Drag it horizontally to move it, or drag its right edge to resize it. Arrow
 keys on a block or edge change its start or length by a sixteenth; hold Shift
 for a whole bar. Drag previews are saved only when released; Escape cancels.
+Focus stays on the block or edge after saving, so arrow-key nudges can continue.
 These gestures work directly in the Studio shell as well as the panel view.
 Small pointer movements are treated as selection, so a click does not shift a
 phrase. Save or discard unsaved Code edits before moving placements; finish

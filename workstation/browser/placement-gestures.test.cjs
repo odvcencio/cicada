@@ -47,6 +47,17 @@ test('Studio placement gestures save once, cancel cleanly and retain the working
   await once(async()=>{await block().locator('[data-placement-resize]').focus();await page.keyboard.press('ArrowLeft')},()=>length(15120));
   check('keyboard move/trim in sixteenths and whole bars; each is one write and one exact Undo');
 
+  const focused=async resize=>until(()=>block().locator(resize?'[data-placement-resize]':'.placement-select').evaluate(e=>e===document.activeElement),'saved gesture did not retain placement focus');
+  let repeated=arrangePosts();await block().locator('.placement-select').focus();
+  await page.keyboard.press('ArrowRight');await at(16560);await focused(false);
+  await page.keyboard.press('ArrowRight');await at(16800);await focused(false);assert.equal(arrangePosts(),repeated+2);
+  await page.getByRole('button',{name:'Undo',exact:true}).click();await at(16560);await undo();
+  repeated=arrangePosts();await block().locator('[data-placement-resize]').focus();
+  await page.keyboard.press('ArrowLeft');await length(15120);await focused(true);
+  await page.keyboard.press('ArrowLeft');await length(14880);await focused(true);assert.equal(arrangePosts(),repeated+2);
+  await page.getByRole('button',{name:'Undo',exact:true}).click();await length(15120);await undo();
+  check('successive keyboard moves and trims retain their focused control and individual Undo steps');
+
   const n=arrangePosts();await page.getByLabel('Follow song',{exact:true}).check();await gesture({hold:true});
   assert.equal(await page.getByLabel('Follow song',{exact:true}).isChecked(),false);
   assert.equal(await block().getAttribute('data-placement-preview'),'at');assert.equal((await state()).source,baseline);assert.equal(arrangePosts(),n);
@@ -79,8 +90,12 @@ test('Studio placement gestures save once, cancel cleanly and retain the working
   await page.route('**/__actions/arrange',async route=>{entered();await gate;await route.continue()});
   await gesture();await seen;count=arrangePosts();
   await block().locator('.placement-select').focus();await page.keyboard.press('ArrowRight');assert.equal(arrangePosts(),count,'a second action escaped pending admission');
-  release();await at(17280);await page.unroute('**/__actions/arrange');await undo();
-  check('a real pending action prevents a second nudge from racing it');
+  await editor.focus();assert.ok(await page.evaluate(()=>!!document.activeElement?.closest('#studio-code')));
+  release();await at(17280);await page.unroute('**/__actions/arrange');await ready();
+  // Managed navigation can focus MAIN; a completed gesture must not reclaim
+  // its clip after the user deliberately moved focus into another surface.
+  assert.equal(await block().locator('.placement-select').evaluate(e=>e===document.activeElement),false,'returning gesture reclaimed placement focus');await undo();
+  check('a real pending action blocks racing nudges and cancels gesture focus return when focus moves elsewhere');
 
   await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'Center',exact:true}).click();
   await page.getByLabel('Timeline zoom',{exact:true}).selectOption('48');await page.getByRole('button',{name:'Show selected',exact:true}).click();
@@ -98,8 +113,9 @@ test('Studio placement gestures save once, cancel cleanly and retain the working
   // Move across the following pattern: native validation must reject it.
   count=arrangePosts();await gesture({dx:600});await until(()=>responses.includes(422),'overlap did not reach native validation');
   assert.equal((await state()).source,baseline);assert.equal(arrangePosts(),count+1);
+  await block().locator('.placement-select').focus();await page.keyboard.press('ArrowLeft');await at(16080);await length(15360);await undo();
   await page.reload();await ready();
-  check('overlap is rejected by the real backend without changing the source');
+  check('overlap rejection preserves source; a corrected nudge works without reload and keeps canonical length');
 
   const score=process.env.CICADA_GESTURE_SCORE;
   if(score){
@@ -115,6 +131,6 @@ test('Studio placement gestures save once, cancel cleanly and retain the working
   }
   assert.equal((await state()).source,baseline);assert.deepEqual(errors,[]);
   if(proof){await page.screenshot({path:path.join(proof,'placement-gestures-1440.png')});fs.writeFileSync(path.join(proof,'placement-gestures.json'),JSON.stringify({checks,responses,arrangePosts:arrangePosts(),errors},null,2)+'\n')}
- }catch(error){if(proof){fs.mkdirSync(proof,{recursive:true});await page.screenshot({path:path.join(proof,'failure.png')})}throw error}
+ }catch(error){if(proof){fs.mkdirSync(proof,{recursive:true});await page.screenshot({path:path.join(proof,'failure.png')});fs.writeFileSync(path.join(proof,'failure.json'),JSON.stringify({error:error.message,checks,errors,active:await page.evaluate(()=>({tag:document.activeElement?.tagName,id:document.activeElement?.id,classes:document.activeElement?.className}))},null,2)+'\n')}throw error}
  finally{await browser.close()}
 });
