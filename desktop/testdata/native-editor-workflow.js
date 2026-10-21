@@ -6,6 +6,26 @@
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
   const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [], pageRequests = [];
+  const sharedSnapshots = [];
+  const NativeWebSocket = window.WebSocket;
+  // Observe the real transport before the shared engine mounts. Never inject
+  // a snapshot or change its handlers, traffic, or constructor behavior.
+  window.WebSocket = new Proxy(NativeWebSocket, {
+    construct(target, args, newTarget) {
+      const socket = Reflect.construct(target, args, newTarget);
+      const address = new URL(String(args[0]), location.href);
+      if (address.host === location.host && address.pathname === '/collaboration/score') {
+        socket.addEventListener('message', event => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.event === 'state' && message.data?.document && typeof message.data.revision === 'string')
+              sharedSnapshots.push({revision: message.data.revision});
+          } catch { /* Non-state frames are outside this snapshot assertion. */ }
+        });
+      }
+      return socket;
+    },
+  });
   let recoveryNavigationCSRF = '';
   function evidence(label, observed) {
     const record = {order: interactions.length + 1, ...observed};
@@ -443,6 +463,44 @@
     const openGoto = () => key('g', 'KeyG', navigationEditor, {ctrlKey: true});
     if (!openGoto().defaultPrevented || gotoPanel().hidden || document.activeElement !== gotoQuery())
       throw new Error('Ctrl+G did not open Go to line on this platform');
+    const sharedEditor = document.querySelector('textarea[data-collaboration-editor][aria-label="Shared score draft"]');
+    if (!sharedEditor?.isConnected) throw new Error('Background shared score editor did not mount');
+    const snapshotStart = sharedSnapshots.length, queryBeforeSnapshot = gotoQuery().value;
+    const querySelection = [gotoQuery().selectionStart, gotoQuery().selectionEnd, gotoQuery().selectionDirection];
+    const sourceSelection = [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection];
+    const sourceScroll = [navigationEditor.scrollTop, navigationEditor.scrollLeft];
+    const snapshotPages = pageRequests.length;
+    const requireQueryFocus = () => {
+      if (document.activeElement !== gotoQuery())
+        throw new Error('Real shared score snapshot stole Go query focus; active shared editor=' +
+          (document.activeElement === sharedEditor));
+    };
+    await wait(() => {
+      requireQueryFocus();
+      return sharedSnapshots.length > snapshotStart;
+    }, 'incoming real shared score snapshot while Go query stays focused');
+    // The observer runs before the engine's message handler. Allow that same
+    // event turn to finish before checking its selection/focus side effects.
+    await pause(50);
+    requireQueryFocus();
+    const snapshotState = await state(), snapshotCapture = await state('capture');
+    if (gotoQuery().value !== queryBeforeSnapshot || querySelection.join(':') !==
+        [gotoQuery().selectionStart, gotoQuery().selectionEnd, gotoQuery().selectionDirection].join(':') ||
+        sourceSelection.join(':') !== [navigationEditor.selectionStart, navigationEditor.selectionEnd, navigationEditor.selectionDirection].join(':') ||
+        sourceScroll.some((value, index) => Math.abs(value - [navigationEditor.scrollTop, navigationEditor.scrollLeft][index]) > 1) ||
+        navigationEditor !== editor() || navigationEditor.value !== longDraft || snapshotState.source !== sourceBeforeNavigation.source ||
+        snapshotState.revision !== sourceBeforeNavigation.revision || sharedSnapshots.at(-1).revision !== sourceBeforeNavigation.revision ||
+        navigationHistory !== [form().dataset.undoDepth, form().dataset.redoDepth].join(':') || navigationFields !==
+        JSON.stringify(['file', 'revision', 'fileRevision', 'diskRevision'].map(name => form().querySelector('input[name="' + name + '"]')?.value)) ||
+        mutations.length !== navigationMutations || submissions.length !== navigationSubmissions || pageRequests.length !== snapshotPages ||
+        (await state('transport')).playing || snapshotCapture.activeCapture || snapshotCapture.input.enabled)
+      throw new Error('Real shared score snapshot changed Go input, Code draft/selection/module/history, disk, or recording state');
+    checks.push(evidence('a real background shared snapshot preserves Go query focus and all Code draft state without writes',
+      {action: 'wait for real shared WebSocket state with Go query focused', realStateSnapshots: sharedSnapshots.length - snapshotStart,
+        expectedFocusedControl: 'Go query', actualFocusedControl: 'Go query', queryAndSelectionUnchanged: true,
+        exactCodeDraftAndSelectionUnchanged: true, savedSourceAndRevisionUnchanged: true, moduleAndHistoryUnchanged: true,
+        mutationRequests: mutations.length - navigationMutations, formSubmissions: submissions.length - navigationSubmissions,
+        navigationRequests: pageRequests.length - snapshotPages, transportPlaying: false, captureActive: false, microphoneEnabled: false}));
     await typeField(gotoQuery(), targetLine + ':7');
     const lineStart = longLines.slice(0, targetLine - 1).join('\n').length + 1;
     const unicodePosition = lineStart + Array.from(longLines[targetLine - 1]).slice(0, 6).join('').length;
