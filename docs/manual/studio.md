@@ -365,6 +365,10 @@ Reloading a retained draft shows **Recovered draft. Not saved to disk.**
 The editor shows **Unsaved** as you type, including after a successful check.
 **Save file** writes the draft and clears that recovery status.
 
+![Recovered draft with Unsaved status and compact Code controls.](screenshots/studio-code-recovery-1280.png)
+
+Recovery and editing controls also fit the [Code pane on a phone](screenshots/studio-code-recovery-390.png).
+
 ![Code editing beside the arrangement, with Save and Check inside the dock.](screenshots/studio-code-editor-1280.png)
 
 Find and Replace also fit the [Code pane on a phone](screenshots/studio-code-editor-390.png).
