@@ -24,6 +24,33 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
+		case "chord":
+			step, err := integer(f, "step")
+			if err != nil || step < 1 || step > 64 {
+				return nil, fmt.Errorf("step must be 1–64")
+			}
+			root, err := integer(f, "chord_root")
+			if err != nil {
+				return nil, err
+			}
+			octave, err := integer(f, "chord_octave")
+			if err != nil {
+				return nil, err
+			}
+			inversion, err := integer(f, "chord_inversion")
+			if err != nil {
+				return nil, err
+			}
+			hold, err := integer(f, "hold")
+			if err != nil || hold < 1 || hold > 64 {
+				return nil, fmt.Errorf("hold must be 1–64 steps")
+			}
+			notes, err := chordPitches(root, octave, f["chord_shape"], inversion)
+			if err != nil {
+				return nil, err
+			}
+			p["step"], p["chord"] = step-1, map[string]any{"notes": notes, "hold": hold}
+			destination = patternURL(f["pattern"], step, "", f["octave"])
 		case "create":
 			length, err := integer(f, "length")
 			if err != nil || length < 1 || length > 64 {
@@ -310,9 +337,9 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	}
 	base, lowest, highest := 48, 128, 0
 	for _, note := range p.Data {
-		if note != nil && !note.Tie {
-			lowest = min(lowest, int(note.Note))
-			highest = max(highest, int(note.Note))
+		for _, pitch := range stepPitches(note) {
+			lowest = min(lowest, pitch)
+			highest = max(highest, pitch)
 		}
 	}
 	if lowest < 128 {
@@ -328,8 +355,10 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	ceiling := min(127, min(base+47, max(base+11, highest+2)))
 	outside := 0
 	for _, note := range p.Data {
-		if note != nil && !note.Tie && (int(note.Note) < base || int(note.Note) > ceiling) {
-			outside++
+		for _, pitch := range stepPitches(note) {
+			if pitch < base || pitch > ceiling {
+				outside++
+			}
 		}
 	}
 	form := func(name string, children ...gosx.Node) gosx.Node {
@@ -370,7 +399,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 			buttons := []gosx.Node{hidden("action", "pitch"), hidden("pattern", p.ID), hidden("pitch", strconv.Itoa(pitch)), hidden("octave", octave), gosx.El("span", gosx.Attrs(gosx.Attr("class", "roll-label")), gosx.Text(noteName(pitch)))}
 			for i := 0; i < int(p.Steps); i++ {
 				note := p.Data[i]
-				active := note != nil && !note.Tie && int(note.Note) == pitch
+				active := stepHasPitch(note, pitch)
 				text := ""
 				if active {
 					text = "●"
@@ -410,7 +439,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"))
 	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"))
 	tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions"), gosx.BoolAttr("data-workspace-tools"), gosx.BoolAttr("hidden"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Piano-roll tools")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "select"), gosx.Attr("aria-pressed", "true")), gosx.Text("Select")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "draw"), gosx.Attr("aria-pressed", "false"), gosx.Attr("aria-keyshortcuts", "B")), gosx.Text("Draw (B)")))
-	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
+	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
 	newName := nextPatternName(v.Project, p.ID)
 	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("action") == "duplicate" && state.Value("pattern") == p.ID {
 		newName = state.Value("newName")
@@ -452,7 +481,7 @@ func rollButton(step int, label, text string, note *project.Step, active, select
 	return gosx.El("button", attrs, gosx.Text(text))
 }
 
-func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step int, lane, revision string, form func(string, ...gosx.Node) gosx.Node) gosx.Node {
+func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step int, lane, revision string, key project.Key, form func(string, ...gosx.Node) gosx.Node) gosx.Node {
 	mode, pitch, velocity := "rest", 60, "x"
 	var note *project.Step
 	if p.Kind == "drums" && len(p.Lanes[lane]) >= step {
@@ -485,7 +514,9 @@ func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step i
 		}
 	}
 	values := map[string]string{"mode": mode, "pitch": strconv.Itoa(pitch), "velocity": velocity, "ratchet": strconv.Itoa(ratchet), "chance": strconv.Itoa(chance)}
+	articulationFailed := false
 	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("revision") == revision && state.Value("action") == "step" && state.Value("pattern") == p.ID && state.Value("step") == strconv.Itoa(step) && state.Value("lane") == lane {
+		articulationFailed = true
 		for key := range values {
 			values[key] = state.Value(key)
 		}
@@ -495,14 +526,22 @@ func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step i
 	if p.Kind == "drums" {
 		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "hit"})), field("Velocity", selectInput("velocity", values["velocity"], []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "x", "X"})))
 	} else {
-		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "note", "tie"})), field("MIDI pitch", numberInput("pitch", values["pitch"], "0", "127")), field("Accent", checkInput("accent", accent)), field("Slide", checkInput("slide", slide)))
+		pitchLabel := "MIDI pitch"
+		if note != nil && len(note.Notes) > 0 {
+			pitchLabel = "First pitch (moves whole voicing)"
+		}
+		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "note", "tie"})), field(pitchLabel, numberInput("pitch", values["pitch"], "0", "127")), field("Accent", checkInput("accent", accent)), field("Slide", checkInput("slide", slide)))
 	}
 	children = append(children, field("Ratchet", numberInput("ratchet", values["ratchet"], "1", "8")), field("Chance (%)", numberInput("chance", values["chance"], "1", "100")), submit("", "", "Save step"))
 	title := fmt.Sprintf("Step %d", step)
 	if lane != "" {
 		title += " · " + strings.ToUpper(lane)
 	}
-	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "step-inspector"), gosx.Attr("id", "step-inspector")), gosx.El("h3", gosx.Text(title)), form("pattern", children...))
+	articulation := form("pattern", children...)
+	if p.Kind == "notes" {
+		articulation = gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "step-articulation"), gosx.Attr("open", articulationFailed)), gosx.El("summary", gosx.Text("Articulation")), articulation)
+	}
+	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "step-inspector"), gosx.Attr("id", "step-inspector")), gosx.El("h3", gosx.Text(title)), articulation, s.chordEditor(ctx, p, step, revision, key, form))
 }
 
 func nextPatternName(p *project.Project, id string) string {

@@ -294,6 +294,7 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 		}
 		token := steps[index]
 		text := "."
+		chordWritten := false
 		switch edit.Mode {
 		case "rest":
 		case "tie":
@@ -314,6 +315,34 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 			current, err := patternStep(sourceContext(ctx, updated), id, index)
 			if err != nil {
 				return nil, err
+			}
+			if current != nil && len(current.Notes) > 0 {
+				if edit.Slide || edit.Ratchet != 1 {
+					return nil, fmt.Errorf("chords cannot slide or ratchet")
+				}
+				shifted := make([]int, len(current.Notes))
+				for i, pitch := range current.Notes {
+					shifted[i] = pitch + edit.Pitch - int(current.Note) - token.Transpose
+					if shifted[i] < 0 || shifted[i] > 127 || shifted[i]+token.Transpose < 0 || shifted[i]+token.Transpose > 127 {
+						return nil, fmt.Errorf("transposed note would leave MIDI range 0–127")
+					}
+				}
+				suffix := ""
+				if edit.Accent {
+					suffix += "^"
+				}
+				if edit.Chance < 100 {
+					suffix += "?" + strconv.Itoa(edit.Chance)
+				}
+				if edit.Accent == current.Accent && edit.Chance == int(current.Probability) {
+					suffix = token.ChordModifiers
+				}
+				text, err = chordSource(token, shifted, suffix, current)
+				if err != nil {
+					return nil, err
+				}
+				chordWritten = true
+				break
 			}
 			if current != nil && !current.Tie && int(current.Note) == edit.Pitch {
 				text = strings.TrimSuffix(token.Text, noteSuffix(token.Text))
@@ -338,7 +367,7 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 		default:
 			return nil, fmt.Errorf("choose note, hit, tie, or rest")
 		}
-		if edit.Mode == "note" || edit.Mode == "hit" {
+		if !chordWritten && (edit.Mode == "note" || edit.Mode == "hit") {
 			if edit.Ratchet > 1 {
 				text += "*" + strconv.Itoa(edit.Ratchet)
 			}
@@ -401,7 +430,11 @@ func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
 					if err != nil {
 						return nil, err
 					}
-					notes = append(notes, Span{start, start + len(token.Text), sourcePitch(int(note.Note)) + noteSuffix(token.Text), ctx.Options.Path})
+					text, err := shiftedStepSource(token, note, 0)
+					if err != nil {
+						return nil, err
+					}
+					notes = append(notes, Span{start, start + len(token.Text), text, ctx.Options.Path})
 				}
 			}
 			independent, err = PatchSpans(independent, ctx.Options.Path, notes)
@@ -525,15 +558,11 @@ func patternRangeSource(ctx *Context, id, lane string, edit *SetRange) ([]byte, 
 			}
 			for i := range texts {
 				if note := notes[edit.First+i]; note != nil && !note.Tie {
-					pitch := int(note.Note) + edit.Amount
-					if pitch < 0 || pitch > 127 {
-						return nil, fmt.Errorf("transposed note would leave MIDI range 0–127")
+					var err error
+					texts[i], err = shiftedStepSource(tokens[edit.First+i], note, edit.Amount)
+					if err != nil {
+						return nil, err
 					}
-					sourceNote := pitch - tokens[edit.First+i].Transpose
-					if sourceNote < 0 || sourceNote > 127 {
-						return nil, fmt.Errorf("transposed note would leave MIDI range 0–127")
-					}
-					texts[i] = sourcePitch(sourceNote) + noteSuffix(texts[i])
 				}
 			}
 		default:

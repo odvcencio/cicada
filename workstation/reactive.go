@@ -169,7 +169,7 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 				location = target
 			}
 		}
-		followPattern := fields["action"] == "create" || fields["action"] == "bind" || fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate" || fields["action"] == "performed-gesture" || fields["action"] == "performance-group" || fields["action"] == "performance-binding" || fields["action"] == "shared-gesture"
+		followPattern := fields["action"] == "chord" || fields["action"] == "create" || fields["action"] == "bind" || fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate" || fields["action"] == "performed-gesture" || fields["action"] == "performance-group" || fields["action"] == "performance-binding" || fields["action"] == "shared-gesture"
 		if name == "pattern" && followPattern && result.Redirect != "" {
 			location = result.Redirect
 		}

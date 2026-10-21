@@ -60,6 +60,7 @@ type workspaceJob struct {
 	// the earlier location would put that older step back in front of the user.
 	current     bool
 	pitchDelta  int
+	pitchOffset int // Focused voice's offset from the step's first pitch.
 	focusRow    string
 	focusStep   string
 	pendingCell js.Value
@@ -190,7 +191,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	})
 	u.scrolls = workspaceScrolls(root.Get("firstElementChild"))
 	u.listen(document, "scroll", u.scrolled)
-	u.revealInitialNote()
+	u.revealSelectedNote()
 	root.Call("setAttribute", "data-workspace-reactive", "ready")
 	confirmedWorkspaceRevision.Set(props.Revision)
 	go u.run()
@@ -428,9 +429,9 @@ func workspaceStop(event js.Value) {
 	event.Call("stopImmediatePropagation")
 }
 
-// Only mounting can reveal an off-screen authored note. Canonical projections
-// and subsequent selection deliberately retain the user's viewport.
-func (u *workspaceUI) revealInitialNote() {
+// Mounting and explicit chord placement reveal the selected voicing. Other
+// canonical projections and selection retain the user's viewport.
+func (u *workspaceUI) revealSelectedNote() {
 	grid := u.root.Call("querySelector", ".piano-roll[data-pattern-kind=notes]")
 	if !workspacePresent(grid) {
 		return
@@ -640,7 +641,16 @@ func (u *workspaceUI) keyDown(event js.Value) {
 		}
 		if values, ok := u.transposeValues(workspaceAttr(grid, "data-pattern-id"), step, delta); ok {
 			workspaceStop(event)
-			u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pitchDelta: delta, pendingCell: cell})
+			offset := 0
+			if workspaceAttr(cell, "data-active") == "true" {
+				pitch, pitchErr := strconv.Atoi(workspaceFieldValue(form, "pitch"))
+				inspector := u.root.Call("querySelector", "#step-inspector form")
+				first, firstErr := strconv.Atoi(workspaceDefaultValue(workspaceField(inspector, "pitch")))
+				if pitchErr == nil && firstErr == nil {
+					offset = pitch - first
+				}
+			}
+			u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pitchDelta: delta, pitchOffset: offset, pendingCell: cell})
 		}
 	}
 }
@@ -703,7 +713,15 @@ func (u *workspaceUI) focusGesture(job workspaceJob) {
 	}
 	var cell js.Value
 	if job.pitchDelta != 0 {
-		cell = u.root.Call("querySelector", ".roll-cell[data-active=true][value='"+job.values["step"]+"']")
+		// Use the rebased pitch rather than the old cell's row. Several key
+		// presses may have queued before the previous projection arrived.
+		if first, err := strconv.Atoi(job.values["pitch"]); err == nil {
+			selector := ".roll-row[data-gosx-key='pitch-" + strconv.Itoa(first+job.pitchOffset) + "'] .roll-cell[data-active=true][value='" + job.values["step"] + "']"
+			cell = u.root.Call("querySelector", selector)
+		}
+		if !workspacePresent(cell) {
+			cell = u.root.Call("querySelector", ".roll-cell[data-active=true][value='"+job.values["step"]+"']")
+		}
 	} else {
 		rows := u.root.Call("querySelectorAll", ".roll-row")
 		for i := 0; i < rows.Length(); i++ {
@@ -860,6 +878,9 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 	}
 	confirmedWorkspaceRevision.Set(projection.Revision)
 	u.focusGesture(job)
+	if job.method == http.MethodPost && job.values["action"] == "chord" {
+		u.revealSelectedNote()
+	}
 	if job.refresh {
 		u.blocked.Store(false)
 	}

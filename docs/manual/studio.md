@@ -160,6 +160,17 @@ create and assign together in one Undo step, or **Library only** to leave the
 arrangement unchanged. The new grid opens immediately for editing. An authored
 instrument's card also offers **Create pattern** for that track.
 
+In a notes grid, select a step and open **Build a chord** in its inspector.
+Choose the root, chord type, root octave, inversion, and **Hold (steps)**.
+**Place chord** writes the onset and holds in one Undo step. It replaces that
+span; shortening clears its old trailing holds while keeping the next onset.
+Use a polyphonic sound, such as Warm pad, for a chord's two to four voices.
+
+Every chord tone appears in the grid. In Draw mode, click one to remove it or
+another pitch at that step to add a voice, up to four. The inspector's **First
+pitch** moves the whole voicing. Range transposition and variations also retain
+all its voices and shared dynamics.
+
 In **Variations and scene assignment**, **Assign to scene** plays the selected
 pattern on the chosen track. **Stop in this scene** releases that track;
 **Carry previous pattern** keeps its previous selection. Scene choices carry

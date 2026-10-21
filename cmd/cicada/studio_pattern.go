@@ -49,6 +49,15 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	env := edits.Envelope{}
 	var intent edits.Intent
 	switch edit.Action {
+	case "chord":
+		if edit.Chord == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose chord pitches and a hold"})
+			return
+		}
+		in := *edit.Chord
+		in.Entity, in.Shared = studioStepEntity(edit), "pattern"
+		intent = &in
+		edit.Label = fmt.Sprintf("Pattern · %s step %d chord · %d steps", edit.Pattern, edit.Step+1, in.Hold)
 	case "create":
 		intent = &edits.CreatePattern{Name: edit.NewName, Track: edit.Track, Steps: edit.Length, Scene: edit.Scene}
 		edit.Label = fmt.Sprintf("Pattern · %s created for %s", edit.NewName, edit.Track)

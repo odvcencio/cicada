@@ -98,6 +98,23 @@ func TestReactivePatternCreationOpensGridFromInstrumentCard(t *testing.T) {
 	}
 }
 
+func TestReactiveChordPlacementSelectsItsStep(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=patterns"))
+	response, result := reactivePost(t, client, address, "pattern", map[string]string{
+		"csrf_token": csrf, "revision": "current", "action": "chord", "pattern": "harmony", "step": "5", "octave": "3",
+		"chord_root": "9", "chord_octave": "3", "chord_shape": "minor", "chord_inversion": "0", "hold": "4",
+		"__cicada_location": "/?panel=patterns&pattern=harmony&step=1",
+	})
+	var projection workspaceProjection
+	if err := json.Unmarshal(result.Data, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || !result.OK || projection.Location != patternURL("harmony", 5, "", "3") || len(*edits) != 1 {
+		t.Fatalf("chord placement lost its selected step: %d %q", response.StatusCode, projection.Location)
+	}
+}
+
 func TestReactiveSceneControlsRetainChosenTrackAndScene(t *testing.T) {
 	address, client, _ := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=patterns"))
