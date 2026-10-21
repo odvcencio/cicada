@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
+	"m31labs.dev/gosx/engine"
 	"m31labs.dev/gosx/server"
 )
 
@@ -26,7 +28,11 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 			voices = "Monophonic"
 		}
 		form := s.form(v, csrf, "instruments", "instrument", hidden("action", "add-preset"), hidden("pattern", patch.ID), field("Instrument name", textInput("newName", instrumentName)), field("New track name", textInput("track", trackName)), submit("", "", "Add instrument and track"))
-		library = append(library, gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-instrument-patch", patch.ID)), gosx.El("summary", gosx.El("strong", gosx.Text(patch.Name)), gosx.Text(" · "+voices)), gosx.El("p", gosx.Text(patch.Description)), form))
+		listen := gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-preview", patch.ID), gosx.Attr("data-sound-name", patch.Name), gosx.Attr("aria-label", "Listen to "+patch.Name), gosx.Attr("aria-pressed", "false"), gosx.BoolAttr("disabled")), gosx.Text("Listen"))
+		library = append(library, gosx.El("section", gosx.Attrs(gosx.Attr("class", "instrument-patch"), gosx.Attr("data-instrument-patch", patch.ID)),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "instrument-patch-heading")), gosx.El("strong", gosx.Text(patch.Name)), listen),
+			gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(voices)), gosx.El("p", gosx.Text(patch.Description)),
+			gosx.El("details", gosx.El("summary", gosx.Text("Add to song")), form)))
 	}
 	var tracks []gosx.Node
 	for _, track := range p.Tracks {
@@ -59,7 +65,15 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 	if len(tracks) == 0 {
 		tracks = append(tracks, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Add a patch to create your first programmable instrument track.")))
 	}
-	return gosx.Fragment(s.recorded(ctx, v, csrf), s.samplePacks(ctx, v, csrf), ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Instrument library", Description: "Add a voiced starting point, then make it yours. Each patch is saved as an editable instrument graph in your score."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(library...)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Adding an instrument and track is one Undo step. Use Create pattern on its card to start writing notes, or assign an existing notes pattern in the pattern editor."))), ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score")))))
+	props, _ := json.Marshal(map[string]any{"csrf": csrf, "tempo": p.TempoMilli, "root": p.Key.Root, "scale": p.Key.Scale})
+	sounds := meterEngine(ctx, engine.Config{Name: "CicadaSounds", Kind: engine.KindSurface, MountID: "cicada-sounds", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}},
+		gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("data-sound-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Preparing sound previews…")),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-stop", ""), gosx.BoolAttr("disabled")), gosx.Text("Stop preview")),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "instrument-patches")), gosx.Fragment(library...))))
+	return gosx.Fragment(ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Choose a sound", Description: "Try each sound on its own in your song’s key and tempo. Then add it and make it yours."}, sounds,
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Adding an instrument and track is one Undo step. Use Create pattern on its card to start writing notes, or assign an existing notes pattern in the pattern editor."))),
+		ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score")))),
+		s.recorded(ctx, v, csrf), s.samplePacks(ctx, v, csrf))
 }
 
 func instrumentUnit(unit string) string {

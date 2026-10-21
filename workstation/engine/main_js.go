@@ -44,6 +44,9 @@ type meterFrame struct {
 // The engine owns only this meter mount. Tymbal and Cicada's kernel remain in
 // the native service. GoSX owns module boot, registration, remount and disposal.
 func main() {
+	if err := enginewasm.Register("CicadaSounds", mountSounds); err != nil {
+		panic(err)
+	}
 	if err := enginewasm.Register("CicadaShell", mountShell); err != nil {
 		panic(err)
 	}

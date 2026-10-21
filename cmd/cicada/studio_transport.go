@@ -40,6 +40,10 @@ type studioTransport struct {
 	preview           *liveplay.Player
 	previewTimer      *time.Timer
 	previewGeneration uint64
+	previewOutputOnly bool
+	soundPreviewOwner string
+	pendingSoundLease string
+	soundLeases       [32]soundPreviewLease
 	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions

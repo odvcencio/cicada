@@ -1,5 +1,13 @@
 /* Cicada's existing night palette, shared by every workstation panel. */
 :root { color-scheme:dark; --bg:#0f1411; --panel:#19211c; --raised:#202b24; --border:#354439; --text:#e2e9dc; --muted:#a6b5a6; --amber:#f2c66d; --mint:#88d9bb; --coral:#ff936f; }
+.instrument-patches { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:12px; margin-top:16px; }
+.instrument-patch { min-width:0; border:1px solid var(--border); border-radius:6px; padding:14px; background:var(--raised); }
+.instrument-patch-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.instrument-patch-heading strong { font-size:15px; }
+.instrument-patch p { margin:8px 0 12px; font-size:13px; color:var(--muted); }
+.instrument-patch summary { color:var(--mint); cursor:pointer; }
+.instrument-patch [aria-pressed=true] { border-color:var(--mint); color:var(--mint); }
+.instrument-patch .action-form { margin-top:12px; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
 a { color:var(--mint); text-underline-offset:3px; }

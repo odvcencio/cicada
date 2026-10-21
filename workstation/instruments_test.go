@@ -62,7 +62,7 @@ func TestInstrumentLibraryUsesGoSXFormsAndShowsOverrides(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	page := getPage(t, client, app.URL+"/?panel=instruments")
-	for _, text := range []string{"Instrument library", "Soft bell", "Round bass", "8-note polyphony", `action="/__actions/instrument"`, `name="newName" value="warm-pad-2"`, `name="track" value="warm-pad-2"`, "brightness · track override", `name="value" value="1200.25"`, "release · default", "1400ms", "Use default", `aria-label="Create pattern for warm-pad"`, `name="createFor" value="warm-pad"`, `name="newName" value="warm-pad-pattern"`} {
+	for _, text := range []string{"Choose a sound", "Soft bell", "Round bass", "8-note polyphony", `action="/__actions/instrument"`, `name="newName" value="warm-pad-2"`, `name="track" value="warm-pad-2"`, "brightness · track override", `name="value" value="1200.25"`, "release · default", "1400ms", "Use default", `aria-label="Create pattern for warm-pad"`, `name="createFor" value="warm-pad"`, `name="newName" value="warm-pad-pattern"`} {
 		if !strings.Contains(page, text) {
 			t.Fatalf("missing instrument UI %q", text)
 		}

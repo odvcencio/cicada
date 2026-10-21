@@ -42,6 +42,14 @@ async function sharedBrowser() {
     }
     const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--autoplay-policy=no-user-gesture-required']});
     shared = {browser, context: await browser.newContext({viewport: {width: 1440, height: 900}})};
+    // A packaged Studio prints a one-use owner URL. Consume it in this test
+    // context before opening canonical shell URLs, just as the native host does.
+    const startup = new URL(process.env.CICADA_STUDIO_URL);
+    if (startup.pathname.startsWith('/__local/')) {
+      const page = await shared.context.newPage();
+      await page.goto(startup.href);
+      await page.close();
+    }
   }
   return shared;
 }
@@ -159,6 +167,49 @@ test('shell fits a 390 px phone without horizontal scroll and shows one region',
   await page.locator('#studio-browser').waitFor({state: 'visible'});
   assert.ok(!(await page.locator('#studio-center').isVisible()));
   await page.close();
+});
+
+test('factory sound previews own their keys and keep the Browser scrollable', {timeout: 60_000}, async () => {
+  for (const [name, viewport] of [['desktop', {width:1440, height:900}], ['phone', {width:390, height:800}]]) {
+    const {page, errors} = await openShell(name === 'phone' ? 'region=browser' : '', viewport);
+    try {
+      const sounds = page.locator('#cicada-sounds[data-sounds-ready=true]');
+      await sounds.waitFor();
+      const listen = sounds.locator('[data-sound-preview="warm-pad"]');
+      for (const key of ['Enter', 'Space']) {
+        await listen.press(key);
+        await page.waitForFunction(() => document.querySelector('[data-sound-preview="warm-pad"]').textContent === 'Stop');
+        const transport = await (await page.request.get(new URL('/api/transport', process.env.CICADA_STUDIO_URL).href)).json();
+        assert.equal(transport.playing, false, key + ' previews without starting the song');
+        if (key === 'Space' && process.env.CICADA_SHELL_PROOF_DIR) {
+          await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR, {recursive:true});
+          await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR, name + '-listening.png')});
+        }
+        await listen.press('Escape');
+        await page.waitForFunction(() => document.querySelector('[data-sound-preview="warm-pad"]').getAttribute('aria-pressed') === 'false');
+      }
+      const last = sounds.locator('[data-sound-preview="soft-bell"]');
+      await last.focus();
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      const bounds = await page.evaluate(() => {
+        const sidebar = document.querySelector('#studio-browser');
+        const scroller = sidebar.querySelector('.shell-scroll');
+        const button = sidebar.querySelector('[data-sound-preview="soft-bell"]');
+        const s = scroller.getBoundingClientRect(), b = button.getBoundingClientRect();
+        return {outerScroll:sidebar.scrollTop, innerScroll:scroller.scrollTop, canScroll:scroller.scrollHeight > scroller.clientHeight,
+          buttonVisible:b.top >= s.top && b.bottom <= s.bottom, overflow:document.documentElement.scrollWidth > innerWidth};
+      });
+      assert.ok(bounds.canScroll && bounds.innerScroll > 0 && bounds.buttonVisible, JSON.stringify(bounds));
+      assert.equal(bounds.outerScroll, 0, 'focus scrolls the sound list and preserves the Browser header');
+      assert.equal(bounds.overflow, false, 'sounds fit the viewport');
+      await page.locator('#browser-instruments > summary').scrollIntoViewIfNeeded();
+      if (process.env.CICADA_SHELL_PROOF_DIR) {
+        await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR, {recursive:true});
+        await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR, name + '.png')});
+      }
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  }
 });
 
 test('Tab and Shift+Tab move keyboard focus and never switch views', async () => {

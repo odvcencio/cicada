@@ -256,6 +256,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return map[string]any{"revision": f["revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
 		}),
 		"pattern":         s.patternAction,
+		"sound-preview":   s.soundPreviewAction,
 		"sampler":         s.samplerAction,
 		"live":            s.liveAction,
 		"launch":          s.launchAction,

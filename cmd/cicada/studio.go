@@ -287,6 +287,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /studio-transcribe.js", s.transcribeScript)
 	mux.HandleFunc("POST /api/instrument-fit", s.instrumentFit)
 	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
+	mux.HandleFunc("POST /api/sound-preview", s.soundPreview)
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
 	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
 	mux.HandleFunc("POST /api/live", s.liveControl)
