@@ -80,8 +80,7 @@ type workspaceUI struct {
 	drafts      map[string]workspaceDraft
 	scrolls     []workspaceScroll
 	editors     map[string]workspaceEditorBaseline
-	drag        *placementDrag
-	dragClick   bool
+	placements  *placementEditorUI
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -174,11 +173,18 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "click", u.click)
 	u.listen(document, "dblclick", u.doubleClick)
 	u.listen(document, "keydown", u.keyDown)
-	u.listen(document, "pointerdown", u.placementPointerDown)
-	u.listen(document, "pointermove", u.placementPointerMove)
-	u.listen(document, "pointerup", u.placementPointerUp)
-	u.listen(document, "pointercancel", u.placementPointerCancel)
-	u.listen(document, "lostpointercapture", u.placementPointerCancel)
+	u.placements = &placementEditorUI{
+		owned:   u.owned,
+		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
+		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit,
+		refresh: func(js.Value) { u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()}) },
+	}
+	u.listen(document, "change", u.placements.placementViewChanged)
+	u.listen(document, "pointerdown", u.placements.placementPointerDown)
+	u.listen(document, "pointermove", u.placements.placementPointerMove)
+	u.listen(document, "pointerup", u.placements.placementPointerUp)
+	u.listen(document, "pointercancel", u.placements.placementPointerCancel)
+	u.listen(document, "lostpointercapture", u.placements.placementPointerCancel)
 	// Managed navigation retains this engine but reconciles the workspace's
 	// server-authored attributes. Restore its readiness marker after that
 	// reconciliation so enhanced controls keep working on revisited panels.
@@ -204,6 +210,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		u.cancel()
+		u.placements.clearPlacementDrag()
 		releaseAudio()
 		releasePlacementView()
 		root.Call("removeAttribute", "data-workspace-reactive")
@@ -382,8 +389,8 @@ func (u *workspaceUI) click(event js.Value) {
 	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction {
 		return
 	}
-	if u.dragClick && workspacePresent(target.Call("closest", "[data-placement-block]")) {
-		u.dragClick = false
+	if u.placements.dragClick && workspacePresent(target.Call("closest", "[data-placement-block]")) {
+		u.placements.dragClick = false
 		workspaceStop(event)
 		return
 	}
@@ -561,7 +568,7 @@ func (u *workspaceUI) keyDown(event js.Value) {
 	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || workspaceNative(target) || workspaceEngineOwned(target) {
 		return
 	}
-	if u.placementKeyDown(event) {
+	if u.placements.placementKeyDown(event) {
 		return
 	}
 	key := event.Get("key").String()

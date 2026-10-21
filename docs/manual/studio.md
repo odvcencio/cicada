@@ -72,12 +72,17 @@ a track timeline with section markers. Select a block to open its controls.
 Drag it horizontally to move it, or drag its right edge to resize it. Arrow
 keys on a block or edge change its start or length by a sixteenth; hold Shift
 for a whole bar. Drag previews are saved only when released; Escape cancels.
+These gestures work directly in the Studio shell as well as the panel view.
+Small pointer movements are treated as selection, so a click does not shift a
+phrase. Save or discard unsaved Code edits before moving placements; finish
+recording and wait for a pending save before starting another edit.
 
 Use **Timeline zoom** for 1×–8× detail, **Fit song** for an overview, and
 **Show selected** to bring the inspected placement into view. The playhead
 shows the native transport position. **Follow song** advances the view
 near its edge; touching or scrolling the timeline turns Follow off. Zoom and
-Follow stay in place when switching Arrange and Session. These view controls
+Follow stay in place when switching Arrange and Session. Zoom and horizontal
+scroll also survive placement saves and Undo in the current window. These view controls
 leave the score and unsaved Code drafts unchanged.
 
 The placement controls change the track, pattern or clip, exact **Start**,

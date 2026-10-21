@@ -405,3 +405,7 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .placement-playhead[hidden] { display:none; }
 
 .placement-marker { overflow:hidden; text-overflow:ellipsis; }
+
+.placement-edit-status { flex-basis:100%; font-size:11px; }
+#studio-shell:not([data-shell-placement-editor=ready]) [data-placement-resize] { display:none; }
+#studio-shell [data-placement-resize] { display:block; }

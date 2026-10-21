@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -19,7 +20,50 @@ type placementView struct {
 	zoom                string
 	follow              bool
 	root, scroll, world js.Value
-	width               float64
+	width, left         float64
+	stored              placementViewPreference
+}
+
+// Session preferences keep a working viewport through ordinary form returns
+// and Undo. The loopback origin scopes them to this project/window session.
+type placementViewPreference struct {
+	Zoom   string
+	Follow bool
+	Scroll float64
+}
+
+const placementViewStorage = "cicada-placement-view"
+
+func readPlacementViewPreference() (p placementViewPreference) {
+	p.Zoom = "48"
+	defer func() { _ = recover() }()
+	raw := js.Global().Get("sessionStorage").Call("getItem", placementViewStorage)
+	if raw.Type() == js.TypeString {
+		_ = json.Unmarshal([]byte(raw.String()), &p)
+	}
+	switch p.Zoom {
+	case "fit", "48", "96", "192", "384":
+	default:
+		p.Zoom = "48"
+	}
+	if p.Scroll < 0 || math.IsNaN(p.Scroll) || math.IsInf(p.Scroll, 0) {
+		p.Scroll = 0
+	}
+	return
+}
+func (v *placementView) remember() {
+	defer func() { _ = recover() }()
+	if !workspacePresent(v.scroll) || v.scroll.Call("getClientRects").Length() == 0 {
+		return
+	}
+	v.left = v.scroll.Get("scrollLeft").Float()
+	p := placementViewPreference{Zoom: v.zoom, Follow: v.follow, Scroll: v.left}
+	if p == v.stored {
+		return
+	}
+	v.stored = p
+	data, _ := json.Marshal(p)
+	js.Global().Get("sessionStorage").Call("setItem", placementViewStorage, string(data))
 }
 
 func (v *placementView) find() bool {
@@ -45,6 +89,9 @@ func (v *placementView) find() bool {
 	}
 	if changed || v.width != v.scroll.Get("clientWidth").Float() || workspaceAttr(v.world, "data-placement-zoom") != v.zoom {
 		v.scale(false)
+	}
+	if restore {
+		v.scroll.Set("scrollLeft", v.left)
 	}
 	return true
 }
@@ -142,12 +189,14 @@ func (v *placementView) event(event js.Value) {
 			v.stopFollow()
 		}
 	}
+	v.remember()
 }
 
 func (v *placementView) draw() {
 	if !v.find() {
 		return
 	}
+	defer v.remember()
 	update := nativePlayback.Get()
 	line := v.root.Call("querySelector", "[data-placement-playhead]")
 	ready := update.Ready && time.Since(update.At) < time.Second
@@ -190,7 +239,8 @@ func (v *placementView) draw() {
 func runPlacementView(ctx context.Context) {
 	releasePlayback := playbackPublisher.acquire()
 	defer releasePlayback()
-	v := &placementView{zoom: "48"}
+	p := readPlacementViewPreference()
+	v := &placementView{zoom: p.Zoom, follow: p.Follow, left: p.Scroll, stored: p}
 	document := js.Global().Get("document")
 	callback := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if ctx.Err() == nil && len(args) > 0 {
@@ -198,11 +248,11 @@ func runPlacementView(ctx context.Context) {
 		}
 		return nil
 	})
-	for _, name := range []string{"click", "input", "change", "pointerdown", "wheel"} {
+	for _, name := range []string{"click", "input", "change", "pointerdown", "wheel", "scroll"} {
 		document.Call("addEventListener", name, callback, true)
 	}
 	defer func() {
-		for _, name := range []string{"click", "input", "change", "pointerdown", "wheel"} {
+		for _, name := range []string{"click", "input", "change", "pointerdown", "wheel", "scroll"} {
 			document.Call("removeEventListener", name, callback, true)
 		}
 		callback.Release()

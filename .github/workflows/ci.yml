@@ -337,6 +337,17 @@ jobs:
           CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-proof" node --test workstation/browser/arrangement-navigation.test.cjs | tee build/studio-navigation-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          node workstation/browser/placements.test.cjs --write-fixture "$browser_root/gestures.cicada"
+          ./build/cicada studio "$browser_root/gestures.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-gestures-server.log 2>&1 &
+          studio_pid=$!
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          CICADA_GESTURE_SCORE="$browser_root/gestures.cicada" CICADA_GESTURE_PROOF_DIR="$PWD/build/studio-gestures-proof" node --test workstation/browser/placement-gestures.test.cjs | tee build/studio-gestures-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
           node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
           ./build/cicada studio "$browser_root/placement-commands.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-placement-commands-server.log 2>&1 &
           studio_pid=$!
@@ -387,6 +398,9 @@ jobs:
             build/studio-navigation-report.txt
             build/studio-navigation-server.log
             build/studio-arrangement-proof/
+            build/studio-gestures-report.txt
+            build/studio-gestures-server.log
+            build/studio-gestures-proof/
             build/studio-placement-commands-report.txt
             build/studio-placement-commands-server.log
             build/studio-editor-*-report.txt
