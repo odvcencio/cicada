@@ -194,6 +194,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	confirmedWorkspaceRevision.Set(props.Revision)
 	go u.run()
 	go u.watchFiles()
+	releasePlacementView := placementViewPublisher.acquire()
 	releaseAudio := audioPublisher.acquire()
 	busy := func() bool { return u.busy.Load() }
 	captureBusy.Store(&busy)
@@ -204,6 +205,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 		u.cancel()
 		releaseAudio()
+		releasePlacementView()
 		root.Call("removeAttribute", "data-workspace-reactive")
 		for _, event := range u.events {
 			event.target.Call("removeEventListener", event.name, event.callback, true)

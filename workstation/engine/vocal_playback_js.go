@@ -5,34 +5,24 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"syscall/js"
 	"time"
-
-	"m31labs.dev/cicada/workstation/control"
 )
 
 func (u *vocalLanesUI) watchPlayback() {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
-	lastFetch := time.Time{}
 	for {
-		if time.Since(lastFetch) >= 250*time.Millisecond {
-			lastFetch = time.Now()
-			var state control.PlaybackState
-			err := readNativeJSON(u.ctx, "/api/transport", 2*time.Second, 64<<10, &state)
-			if u.closed.Load() {
-				return
-			}
-			if err != nil {
-				u.playback.Playing = false
-			} else {
-				u.playback, u.playbackAt = state.Playhead(), time.Now()
-				u.streamIssue = state.Streaming != nil && (state.Streaming.MissingFrames > 0 || state.Streaming.Error != "")
-			}
-		}
+		update := nativePlayback.Get()
+		u.playback, u.playbackAt = update.State.Playhead(), update.At
+		u.playback.Playing = u.playback.Playing && update.Ready && time.Since(update.At) < time.Second
+		u.streamIssue = update.State.Streaming != nil && (update.State.Streaming.MissingFrames > 0 || update.State.Streaming.Error != "")
 		if u.closed.Load() {
 			return
 		}
-		u.drawPlayback()
+		if !js.Global().Get("document").Get("hidden").Bool() && u.root.Call("getClientRects").Length() > 0 {
+			u.drawPlayback()
+		}
 		select {
 		case <-u.ctx.Done():
 			return

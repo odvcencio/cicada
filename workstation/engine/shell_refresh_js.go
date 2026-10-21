@@ -30,7 +30,7 @@ func holdUnsavedWork(name string, dirty func() bool) (release func()) {
 // a vocal punch, a full-song button) count. Those gestures dispatch a synthetic
 // input event on purpose, so untrusted events count too.
 func markEdited(event js.Value) {
-	if target := event.Get("target"); target.Type() == js.TypeObject && target.Get("setAttribute").Type() == js.TypeFunction {
+	if target := event.Get("target"); target.Type() == js.TypeObject && target.Get("setAttribute").Type() == js.TypeFunction && !target.Call("hasAttribute", "data-studio-view-control").Bool() {
 		target.Call("setAttribute", "data-edited", "true")
 	}
 }

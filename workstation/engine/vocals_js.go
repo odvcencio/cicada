@@ -251,6 +251,7 @@ func mountVocalLanes(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	root.Call("setAttribute", "data-vocal-lanes-ready", "true")
 	go u.loadWaveforms()
+	releasePlayback := playbackPublisher.acquire()
 	go u.watchPlayback()
 	// Earlier, Later and Reset gain change u.gainDB and u.edits without a form
 	// control, so the draft is those values against the accepted ones.
@@ -263,6 +264,7 @@ func mountVocalLanes(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 		releaseUnsaved()
 		u.cancel()
+		releasePlayback()
 		u.cancelDrag()
 		for _, b := range u.bindings {
 			b.node.Call("removeEventListener", b.event, b.fn)
