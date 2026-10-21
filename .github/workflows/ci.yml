@@ -482,8 +482,9 @@ jobs:
       - name: Verify performed gestures in native and browser audio
         run: |
           set -euo pipefail
-          go test ./kernel/seq ./kernel/engine ./host/kernelimage -run 'Performed|Performance|LiveIdentity|SharedGestures' -count=1 -v | tee build/performed-gesture-native.log
-          go test -race ./cmd/cicada -run '^TestStudio(Gesture|PlayedTake|SharedCapture)' -count=1 -v | tee build/performed-gesture-studio.log
+          go test ./kernel/seq ./kernel/cmd ./kernel/engine ./host/kernelimage -run 'Performed|Performance|LiveIdentity|LiveGroup|LiveShared|SharedGestures' -count=1 -v | tee build/performed-gesture-native.log
+          go test -race ./host/liveplay -run 'LiveGroup' -count=1 -v | tee build/live-shared-audio.log
+          go test -race ./cmd/cicada -run '^TestStudio(Gesture|PlayedTake|SharedCapture)|^TestGoSXLiveSharedControls' -count=1 -v | tee build/performed-gesture-studio.log
           make build-kernel-wasm
           CICADA_CHORD_WASM_PATH="$PWD/build/cicada-kernel.wasm" go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -run '^TestChordWASM(Per|LiveIdentity|Shared)' -count=1 -v | tee build/performed-gesture-wasm.log
       - name: Package and launch from a clean checkout
@@ -514,6 +515,7 @@ jobs:
             build/native-audio-determinism.log
             build/ep-wasm-determinism.log
             build/performed-gesture-native.log
+            build/live-shared-audio.log
             build/performed-gesture-studio.log
             build/performed-gesture-wasm.log
 

@@ -63,6 +63,12 @@ test('MPE capture retains independent notes and shared release tails on desktop 
   await web.setViewportSize({width:1440,height:1000});
   const webErrors = [];
   web.on('pageerror',error => webErrors.push(error.message));
+  const liveResponses = [];
+  web.on('response',response => {
+    if (new URL(response.url()).pathname !== '/__actions/live') return;
+    const values = response.request().postDataJSON();
+    if (values.type === 'input-batch') liveResponses.push({status:response.status(),messages:JSON.parse(values.messages)});
+  });
   let patched = 0, nativeRequests = 0;
   await web.route('**/studio*',async route => {
     if (!route.request().isNavigationRequest()) return route.continue();
@@ -111,9 +117,20 @@ test('MPE capture retains independent notes and shared release tails on desktop 
     await web.locator('[data-live-pattern]').selectOption('phrase');
     await web.locator('#transport-form button[value=play]').click();
     await web.waitForFunction(() => !document.querySelector('[data-live-control=record]').disabled);
-    await web.locator('[data-live-control=record]').click();
     await web.locator('[data-live-control=midi]').click();
     await web.waitForFunction(() => /MIDI enabled.*2 inputs/.test(document.querySelector('[data-live-status]').textContent));
+    await web.evaluate(() => __webMIDI.send('b',0x91,72,70));
+    await until(() => liveResponses.some(response => response.messages.some(message => message.type === 'note-group')),'shared monitoring binds without recording');
+    await web.evaluate(() => __webMIDI.send('b',0x81,72,0));
+    await until(() => liveResponses.some(response => response.messages.some(message => message.type === 'note' && message.on === 'false')),'unrecorded note releases');
+    await web.evaluate(() => __webMIDI.send('b',0xd0,10));
+    await until(() => liveResponses.some(response => response.messages.some(message => message.type === 'group-expression' && Number(message.pressure) === 10/127)),'shared tail monitoring works without recording');
+    await web.evaluate(() => {__webMIDI.remove('a');__webMIDI.remove('b');});
+    await new Promise(resolve=>setTimeout(resolve,6100)); // Exceed the live lease timeout with no connected input or held gate.
+    await web.evaluate(() => {__webMIDI.add('a');__webMIDI.add('b');__webMIDI.send('b',0x91,74,70);});
+    await until(() => liveResponses.filter(response => response.status === 200).flatMap(response => response.messages).filter(message => message.type === 'note-group').length === 2,'input resumes after a disconnected musical rest');
+    await web.evaluate(() => __webMIDI.send('b',0x81,74,0));
+    await web.locator('[data-live-control=record]').click();
     await web.evaluate(() => {__webMIDI.send('a',0x91,60,100);__webMIDI.send('b',0x91,64,90);});
     await until(async () => (await webDraft())?.notes?.length===2,'both Web MIDI inputs record');
     await web.evaluate(() => __webMIDI.remove('a'));
@@ -132,6 +149,8 @@ test('MPE capture retains independent notes and shared release tails on desktop 
     await web.evaluate(() => __webMIDI.send('b',0xd0,64));
     await until(async () => (await webDraft()).groups[1].points.length===3,'Web MIDI retains shared movement after release');
     const take=await webDraft();
+    await until(() => liveResponses.some(response => response.status === 200 && response.messages.some(message => message.type === 'group-expression' && message.groupId === String(take.groups[1].id) && Number(message.pressure) === 64/127)),'released Web MIDI master reaches the live service');
+    assert.ok(liveResponses.every(response => response.status === 200),'all shared live commands accepted');
     assert.equal(new Set(take.groups.map(group=>group.id)).size,3);
     assert.equal(take.notes[0].group,1);assert.equal(take.notes[1].group,2);assert.equal(take.notes[2].group,3);
     assert.ok(take.groups[1].points.at(-1).tick>take.notes[1].endTick);
@@ -139,7 +158,7 @@ test('MPE capture retains independent notes and shared release tails on desktop 
     assert.deepEqual(webErrors,[]);
     await web.locator('[data-live-control=panic]').click();
     await web.locator('#transport-form button[value=stop]').click();
-    reports.push({adapter:'Web MIDI',patched,disconnectIsolated:true,reconnectIsolated:true,sharedTailRetained:true,nativeRequests,errors:webErrors});
+    reports.push({adapter:'Web MIDI',patched,disconnectIsolated:true,reconnectIsolated:true,sharedTailRetained:true,sharedTailMonitored:true,monitoringWithoutRecording:true,disconnectedRestResumed:true,nativeRequests,errors:webErrors});
   } finally {await web.close();}
   fs.writeFileSync(path.join(proof,'browser-report.json'),JSON.stringify(reports,null,2)+'\n');
 });

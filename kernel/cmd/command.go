@@ -76,6 +76,11 @@ const (
 	// (mode 0 keep, 1 off, 2 slot, 3 clip) and Arg1=clip index. Unused fields
 	// are zero. The engine faults on a scene, slot or clip it does not have.
 	OpSetSceneBinding Op = 31
+	// OpBindNoteGroup binds a held live identity in Index to Arg0's shared
+	// group (1..65534). OpSetLiveGroup updates that group through release tails.
+	// Hosts negotiate live shared controls (bit 22) before using either opcode.
+	OpBindNoteGroup Op = 32
+	OpSetLiveGroup  Op = 33
 )
 
 type Quantize uint32
@@ -88,7 +93,7 @@ const QuantizePhrase Quantize = 21
 // off=true uses negative infinity to carry the source value off; all other
 // parameters must be finite. OpNoteOn and OpNoteOff use Index as a melodic
 // note identity (drum commands retain their lane index). OpNoteExpression uses
-// all three payload words as float32 controls, as do spatial commands;
+// all three payload words as float32 controls, as do OpSetLiveGroup and spatial commands;
 // other commands require Pad=0.
 type Command struct {
 	Op    Op
@@ -182,7 +187,7 @@ func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > limits.MaxTracks {
 		return validationError("track count exceeds runtime capacity")
 	}
-	if c.Op < OpPlay || c.Op > OpSetSceneBinding || c.Op == OpRetire || c.Op == OpSetLoop {
+	if c.Op < OpPlay || c.Op > OpSetLiveGroup || c.Op == OpRetire || c.Op == OpSetLoop {
 		return validationError("unknown command opcode")
 	}
 	if c.Op == OpCue {
@@ -191,7 +196,7 @@ func (c Command) Validate(tracks uint8) error {
 		// Remove this check when the engine implements cues.
 		return validationError("cue command is not implemented")
 	}
-	if c.Op != OpNoteExpression && !spatialOp(c.Op) && c.Pad != 0 && !(c.Pad == PatternEditNow && patternEditOp(c.Op)) || c.Tick < 0 {
+	if c.Op != OpNoteExpression && c.Op != OpSetLiveGroup && !spatialOp(c.Op) && c.Pad != 0 && !(c.Pad == PatternEditNow && patternEditOp(c.Op)) || c.Tick < 0 {
 		return validationError("nonzero command padding or negative tick")
 	}
 	if globalOp(c.Op) {
@@ -294,7 +299,14 @@ func (c Command) Validate(tracks uint8) error {
 		if c.Arg1 > LiveIdentity || c.Arg1 == LiveIdentity && (c.Index == 0 || c.Arg0 != 0) {
 			return validationError("live note is out of range")
 		}
-	case OpNoteExpression:
+	case OpBindNoteGroup:
+		if c.Index == 0 || c.Index == 65535 || c.Arg0 == 0 || c.Arg0 >= 65535 || c.Arg1 != 0 {
+			return validationError("live group binding is out of range")
+		}
+	case OpNoteExpression, OpSetLiveGroup:
+		if c.Op == OpSetLiveGroup && (c.Index == 0 || c.Index == 65535) {
+			return validationError("live group identity is out of range")
+		}
 		pitch, pressure, timbre := math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad)
 		if math.IsNaN(float64(pitch)) || math.IsInf(float64(pitch), 0) || pitch < -9600 || pitch > 9600 || math.IsNaN(float64(pressure)) || pressure < 0 || pressure > 1 || math.IsNaN(float64(timbre)) || timbre < 0 || timbre > 1 {
 			return validationError("note expression is out of range")

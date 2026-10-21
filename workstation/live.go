@@ -68,15 +68,25 @@ func (s *studioApp) liveAction(ctx *action.Context) error {
 func liveMessage(f map[string]string) (map[string]any, error) {
 	p := map[string]any{"type": f["type"], "track": f["track"], "address": f["address"]}
 	switch f["type"] {
-	case "note", "note-expression":
-		if f["noteId"] != "" || f["type"] == "note-expression" {
+	case "note", "note-expression", "note-group", "group-expression":
+		if f["type"] == "note-group" || f["type"] == "group-expression" {
+			id, err := strconv.ParseUint(f["groupId"], 10, 64)
+			if err != nil || id == 0 {
+				return nil, action.Validation("shared group identity must be a positive integer", nil, nil)
+			}
+			p["groupId"] = strconv.FormatUint(id, 10)
+		}
+		if f["type"] != "group-expression" && (f["noteId"] != "" || f["type"] != "note") {
 			id, e := integer(f, "noteId")
 			if e != nil || id < 1 || id > 65534 {
 				return nil, action.Validation("note identity must be 1 to 65534", nil, nil)
 			}
 			p["noteId"] = id
 		}
-		if f["type"] == "note-expression" {
+		if f["type"] == "note-group" {
+			break
+		}
+		if f["type"] == "note-expression" || f["type"] == "group-expression" {
 			for _, field := range []struct {
 				key       string
 				low, high float64

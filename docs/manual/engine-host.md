@@ -110,7 +110,7 @@ queued scenes, transport changes, and engine errors. See
 note started by `OpNoteOn`; `Arg0`, `Arg1`, and the word at byte 12 carry
 float32 pitch offset in cents, pressure, and timbre respectively. Pitch is
 bounded to −9600…9600 cents; pressure and timbre are 0…1. Spatial commands also
-use `Pad` for their third coordinate; other commands still
+use `Pad` for their third coordinate, as do shared live controls; other commands
 require the byte-12 word to be zero. A note starts with zero bend and pressure
 and centered timbre (0.5). Expression and note-off commands for an old identity
 cannot change its replacement. Identity zero preserves the legacy path, and
@@ -127,13 +127,26 @@ releases only live owners. Score switches preserve held live voices, subject
 to the shared voice limit and stealing; transport Stop releases all voices.
 Do not use the slide bit with identity-mode note-on.
 
+Negotiate `CapabilityLiveGroups` (bit 22) for separate shared live controls.
+`OpBindNoteGroup` (32) binds the held live note in `Index` to the group ID in
+`Arg0`; both IDs are 1…65534 and `Arg1`/`Pad` are zero. It also supports the
+current identity of monophonic acid and graph voices. `OpSetLiveGroup` (33)
+uses `Index` for that group and the same three float32 words as note expression.
+Send a complete group snapshot with each binding. Same-tick application orders
+note-on, member controls/binding, then shared controls. Shared bend adds,
+pressure takes the larger value, and centered timbre adds before clamping.
+Member controls stop at gate release; the shared layer continues through audio
+release. Stolen slots lose their binding, and Stop detaches groups. Keep group
+IDs private to their input session. Reuse an ID only after all its voices are
+gone or detached; the native audio reader can query `Engine.LiveGroupActive`.
+
 GoSX Live records MIDI 1 bend, channel/poly pressure and CC74 snapshots with
 their input ticks and note identity. Ordinary channels default to ±2 semitones;
 RPN 0 sets sensitivity and RPN 6 configures lower/upper MPE zones. Manual zone
 selection supports controllers that omit setup messages. Sustain retains gates
 until pedal release. Member values freeze under sustain after key release;
-zone controls still affect held gates. Master controls do not yet update audio
-release tails after their gate has ended. Modeled keyboards, piano, drums and
+zone controls still affect held gates and audio release tails. Reconnecting an
+input gets a separate shared address. Modeled keyboards, piano, drums and
 samplers still lack gesture monitoring; retained unsupported gestures are
 refused on apply. Raw takes retain up to 65,536 snapshots, including equal-tick
 samples, before the edit service derives playable points. Live sends coalesce

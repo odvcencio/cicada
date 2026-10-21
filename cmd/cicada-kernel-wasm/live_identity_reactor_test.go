@@ -78,8 +78,8 @@ song { main }`))
 					return 0
 				}
 				call("_initialize")
-				if call("gosx_audio_capabilities")&uint64(kernelimage.CapabilityLiveIdentity) == 0 {
-					t.Fatal("live identity capability missing")
+				if call("gosx_audio_capabilities")&uint64(kernelimage.CapabilityLiveIdentity|kernelimage.CapabilityLiveGroups) != uint64(kernelimage.CapabilityLiveIdentity|kernelimage.CapabilityLiveGroups) {
+					t.Fatal("live identity/shared capability missing")
 				}
 				ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
 				bad := append([]byte(nil), image...)
@@ -105,6 +105,16 @@ song { main }`))
 					commands = append(commands, cmd.Command{Op: cmd.OpNoteOn, Index: id, Arg0: uint32(55+id) | 100<<8, Arg1: cmd.LiveIdentity, Tick: tick}, expression(id, tick, float32(id), .5))
 				}
 				commands = append(commands, expression(2, 600, 9600, 1), cmd.Command{Op: cmd.OpNoteOff, Index: 2, Arg1: cmd.LiveIdentity, Tick: 610}, cmd.Command{Op: cmd.OpNoteOff, Index: 65535, Arg1: cmd.LiveIdentity, Tick: 700}, cmd.Command{Op: cmd.OpStop, Track: 255, Tick: 1000})
+				// Shared master controls remain separate from held member controls.
+				// They reach releases, then become inert after stealing or Stop.
+				commands = append(commands,
+					cmd.Command{Op: cmd.OpBindNoteGroup, Index: 1, Arg0: 1},
+					cmd.Command{Op: cmd.OpBindNoteGroup, Index: 2, Arg0: 2, Tick: 1},
+					cmd.Command{Op: cmd.OpSetLiveGroup, Index: 1, Arg1: math.Float32bits(.3), Pad: math.Float32bits(.5)},
+					cmd.Command{Op: cmd.OpSetLiveGroup, Index: 1, Arg0: math.Float32bits(-300), Arg1: math.Float32bits(.8), Pad: math.Float32bits(.9), Tick: 200},
+					cmd.Command{Op: cmd.OpSetLiveGroup, Index: 1, Arg0: math.Float32bits(9600), Arg1: math.Float32bits(1), Pad: math.Float32bits(1), Tick: 800},
+					cmd.Command{Op: cmd.OpSetLiveGroup, Index: 2, Arg1: math.Float32bits(1), Pad: math.Float32bits(1), Tick: 1100},
+				)
 				wire := []byte{}
 				for _, command := range commands {
 					record, err := cmd.EncodeCommand(command, 1)

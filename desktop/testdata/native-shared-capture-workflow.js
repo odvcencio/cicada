@@ -8,10 +8,21 @@
   addEventListener('error', event => errors.push(event.message));
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)+'\n'+String(event.reason?.stack || '')));
   const originalFetch = window.fetch;
+  const liveMessages = [], liveFailures = [];
   let input, inputRequests = retained?.inputRequests || 0;
   window.fetch = function(...args) {
     const request = args[0], options = args[1] || {};
     const path = new URL(typeof request === 'string' ? request : request.url, location.href).pathname;
+    if (path === '/__actions/live') {
+      const body = options.body;
+      const values = JSON.parse(typeof body === 'string' ? body : new TextDecoder().decode(body));
+      const messages = values.type === 'input-batch' ? JSON.parse(values.messages) : [];
+      return originalFetch.apply(this,args).then(response => {
+        if (!response.ok) liveFailures.push(response.status);
+        else liveMessages.push(...messages);
+        return response;
+      });
+    }
     if (path !== '/api/midi/input') return originalFetch.apply(this,args);
     inputRequests++;
     const stream = new ReadableStream({start(controller) { input = controller; }});
@@ -83,6 +94,8 @@
     midi(3840,0xd0,48);
     midi(3857,0x91,60,100);
     midi(3859,0x92,64,90);
+    await wait(() => liveMessages.filter(message => message.type === 'note-group').length === 2,'owned shared bindings reach the live service');
+    await new Promise(resolve => setTimeout(resolve,100));
     midi(3910,0xd1,32);
     midi(3930,0xe1,0,65);
     midi(3977,0xe0,127,127);
@@ -92,7 +105,11 @@
     midi(4150,0xe1,0,0);
     midi(4200,0x82,64,0);
     midi(4500,0xb0,64,0);
+    await wait(() => liveMessages.filter(message => message.type === 'note' && message.on === 'false').length === 2,'both monitored gates release');
+    await new Promise(resolve => setTimeout(resolve,100));
     midi(4600,0xd0,96);
+    await wait(() => liveMessages.some(message => message.type === 'group-expression' && Number(message.pressure) === 96/127),'master monitoring remains addressable after release');
+    checks.push('shared monitoring reaches the live service after both note gates release');
     send({type:'devices',inputs:[],removed:['surface'],position:position(4700)});
     send({type:'devices',inputs:[{id:'surface',name:'Synthetic MPE',epoch:2}],position:position(4800)});
     midi(4800,0xd0,16);
@@ -115,6 +132,7 @@
       return checkpoint.takes?.[0]?.groups?.[1]?.points?.at(-1)?.tick === 8000;
     },'durable shared-tail checkpoint');
     const take = checkpoint.takes[0];
+    if (liveFailures.length || liveMessages.filter(message => message.type === 'note-group').some(message => !message.groupId)) throw new Error('Live shared command failed: '+JSON.stringify({liveFailures,liveMessages}));
     if (checkpoint.version !== 2) throw new Error('Shared controls were stored in a checkpoint format older apps can misread');
     if (take.pattern !== 'phrase' || take.notes.length !== 3 || take.groups.length !== 2 || take.notes[0].group !== 1 || take.notes[1].group !== 1 || take.notes[2].group !== 2 || take.groups[0].id === take.groups[1].id) throw new Error('Input reconnect mixed shared lanes or destinations: '+JSON.stringify(take));
     if (take.notes[0].endTick !== 4500 || take.notes[1].endTick !== 4500 || take.notes[0].expressions[0].pressure !== 32/127 || take.notes[0].expressions.length !== 2 || take.groups[0].points.at(-1).tick !== 4600 || take.groups[1].points.at(-1).tick !== 8000) throw new Error('Shared capture lost local pressure, frozen sustain state, gates, or released master controls: '+JSON.stringify(take));

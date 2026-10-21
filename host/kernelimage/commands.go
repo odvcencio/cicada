@@ -19,6 +19,9 @@ const CapabilitySpatial uint32 = 1 << 17
 // CapabilityLiveIdentity supports independent live notes in graph pools.
 const CapabilityLiveIdentity uint32 = 1 << 20
 
+// CapabilityLiveGroups supports owned live shared control bindings (32/33).
+const CapabilityLiveGroups uint32 = 1 << 22
+
 // PatternCommands uploads one melodic slot through the unchanged 24-byte ABI.
 // A chord requires an advertised capability; no mono fallback is permitted.
 // cfg describes the currently loaded kernel, not the source project. Gate and

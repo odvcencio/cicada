@@ -42,7 +42,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
         if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability');
         const capability = x.capabilities ? x.capabilities() : 0;
-        if ((capability & 0x3fefff) !== capability) invalid('Invalid capabilities');
+        if ((capability & 0x7fefff) !== capability) invalid('Invalid capabilities');
         // Required feature bits for image versions 15 through 18. Initialization
         // may allocate these small tables; render callbacks never enter this path.
         for (let index = 0; index <= version - 15; index++) {
@@ -158,6 +158,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (length > target.d.length) return reject();
       for (let at = start; at < start + length; at += 24) {
         const op = bytes[at];
+        if ((op === 32 || op === 33) && !(target.p & 4194304)) return reject('Unsupported live shared controls');
         if (op === 22 && !(target.p & 1)) return reject('Unsupported chord opcode22');
         if (op >= 26 && op <= 28 && !(target.p & 131072)) return reject('spatial');
         if (pending && !promotes && (op === 10 || op === 9)) queued++;

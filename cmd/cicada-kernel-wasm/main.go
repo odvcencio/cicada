@@ -40,7 +40,7 @@ func allocationCount() uint64 {
 
 //go:wasmexport gosx_audio_capabilities
 func capabilities() uint32 {
-	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | kernelimage.CapabilitySpatial | kernelimage.CapabilityPerformance | kernelimage.CapabilityGestures | kernelimage.CapabilityLiveIdentity | kernelimage.CapabilitySharedControls | uint32(kernelimage.SupportedCapabilities) | keyboardCapabilities
+	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | kernelimage.CapabilitySpatial | kernelimage.CapabilityPerformance | kernelimage.CapabilityGestures | kernelimage.CapabilityLiveIdentity | kernelimage.CapabilityLiveGroups | kernelimage.CapabilitySharedControls | uint32(kernelimage.SupportedCapabilities) | keyboardCapabilities
 }
 
 // gosx_audio_live_edits returns 1 when the kernel applies step, scene-binding

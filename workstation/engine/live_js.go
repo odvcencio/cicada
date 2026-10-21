@@ -44,6 +44,10 @@ type liveHeld struct {
 	Track string
 	Note  int
 }
+type liveMIDIGroup struct {
+	Device string
+	Tracks map[string]bool
+}
 type liveJob struct {
 	Action string
 	Values map[string]string
@@ -75,6 +79,8 @@ type liveUI struct {
 	wireIDs              map[string]uint16
 	gesturePoints        int
 	pendingShared        map[uint64][]control.NoteExpression
+	monitorGroups        map[uint64]liveMIDIGroup
+	sharedLease          bool
 	events               []liveEvent
 	status               *signal.Signal[string]
 	held                 map[string]liveHeld
@@ -185,8 +191,8 @@ func (u *liveUI) queue(action string, values map[string]string) bool {
 		values["sequence"] = strconv.FormatUint(u.sequence, 10)
 	}
 	job := &liveJob{action, values}
-	if action == "live" && values["type"] == "note-expression" {
-		key := values["track"] + ":" + values["noteId"]
+	if action == "live" && (values["type"] == "note-expression" || values["type"] == "group-expression") {
+		key := expressionJobKey(values)
 		if previous := u.expressionJobs[key]; previous != nil {
 			values["sequence"] = previous.Values["sequence"]
 			previous.Values = values
@@ -221,6 +227,8 @@ func (u *liveUI) releaseMount() {
 	}
 	u.midiNotes.Reset(u.midiNotes.Mode)
 	u.saveTake()
+	u.sharedLease = false
+	clear(u.monitorGroups)
 	u.wireIDs = map[string]uint16{}
 	u.held = map[string]liveHeld{}
 	u.counts = map[liveHeld]int{}
@@ -336,10 +344,13 @@ func (u *liveUI) runCommands() {
 	}
 }
 func (u *liveUI) consumeExpression(job *liveJob) {
-	key := job.Values["track"] + ":" + job.Values["noteId"]
+	key := expressionJobKey(job.Values)
 	if u.expressionJobs[key] == job {
 		delete(u.expressionJobs, key)
 	}
+}
+func expressionJobKey(values map[string]string) string {
+	return values["type"] + ":" + values["track"] + ":" + values["noteId"] + ":" + values["groupId"]
 }
 
 func (u *liveUI) poll() {
@@ -373,7 +384,7 @@ func (u *liveUI) poll() {
 			return
 		case <-ticker.C:
 		}
-		if len(u.held) > 0 && time.Since(heartbeat) >= time.Second {
+		if (len(u.held) > 0 || u.sharedLease) && time.Since(heartbeat) >= time.Second {
 			u.queue("live", map[string]string{"type": "heartbeat"})
 			heartbeat = time.Now()
 		}
@@ -560,6 +571,7 @@ func (u *liveUI) noteOffAt(id string, at *control.NoteTime) {
 }
 func (u *liveUI) closeNotes() {
 	u.midiNotes.Reset(u.midiNotes.Mode)
+	clear(u.monitorGroups)
 	for id := range u.held {
 		u.noteOff(id)
 	}

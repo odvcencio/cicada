@@ -397,6 +397,7 @@
       if (node === this.node && this.fault) throw new Error(`${this.fault.message}. Press Play to reload the score`);
       if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
 	  if (records.some(record => (record.op === 12 || record.op === 13) && record.arg1 === 1) && !(this.capabilities & 1048576)) throw new Error('Independent live notes require an updated audio kernel');
+      if (records.some(record => record.op === 32 || record.op === 33) && !(this.capabilities & 4194304)) throw new Error('Live shared controls require an updated audio kernel');
       if (records.some(record => record.op >= 26 && record.op <= 28) && !(this.capabilities & 131072)) throw new Error('Unsupported spatial commands');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
       records.forEach((record, index) => {

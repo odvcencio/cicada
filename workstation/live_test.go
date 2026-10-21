@@ -15,6 +15,29 @@ import (
 	"m31labs.dev/cicada/workstation/control"
 )
 
+func TestLiveSharedMessagesRetainFullInputIdentityAndRejectInvalidControls(t *testing.T) {
+	group := "18446744073709551615"
+	for _, values := range []map[string]string{
+		{"type": "note-group", "track": "keys", "noteId": "7", "groupId": group},
+		{"type": "group-expression", "track": "keys", "groupId": group, "pitchCents": "-123.125", "pressure": "0.12345679", "timbre": "0.9876543"},
+	} {
+		got, err := liveMessage(values)
+		if err != nil || got["groupId"] != group {
+			t.Fatal("shared input identity lost precision", got, err)
+		}
+	}
+	for _, values := range []map[string]string{
+		{"type": "note-group", "track": "keys", "noteId": "7", "groupId": "0"},
+		{"type": "note-group", "track": "keys", "noteId": "0", "groupId": "1"},
+		{"type": "group-expression", "track": "keys", "groupId": "1", "pitchCents": "NaN", "pressure": "0.2", "timbre": "0.5"},
+		{"type": "group-expression", "track": "keys", "groupId": "1", "pitchCents": "0", "pressure": "1.1", "timbre": "0.5"},
+	} {
+		if _, err := liveMessage(values); err == nil {
+			t.Fatal("invalid shared input accepted", values)
+		}
+	}
+}
+
 func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	var revision atomic.Value
 	revision.Store("initial")

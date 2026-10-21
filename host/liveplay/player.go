@@ -158,6 +158,8 @@ type noteInput struct {
 	KernelID                     uint16
 	HasControls                  bool
 	Expression                   bool
+	Group                        string
+	BindGroup                    bool
 	PitchCents, Pressure, Timbre float32
 }
 
@@ -259,6 +261,8 @@ type Player struct {
 	nextLiveIdentity        uint16
 	ownedFinal              [256]ownedNoteCommands
 	ownedFinalCount         int
+	liveGroups              [256]liveControlGroup
+	liveGroupLimit          int
 	events                  chan Event
 	left, right             [blockFrames]float32
 	oldL, oldR              [blockFrames]float32
@@ -798,7 +802,7 @@ func (p *Player) queueOwnedNote(input noteInput, pressEpoch uint64) error {
 			*next = *old
 		}
 		if next.count == uint16(len(next.inputs)) || input.On && next.presses >= 128 {
-			if !input.On && !input.Expression {
+			if !input.On && !input.Expression && input.Group == "" {
 				// Odd epochs release every native live owner and discard presses.
 				// Reader-side epoch checks also reject a producer paused before CAS.
 				if p.noteEpoch.CompareAndSwap(epoch, epoch+1) {
@@ -1551,6 +1555,8 @@ func (p *Player) beginRequestedSong() {
 			p.applyOverrides(next.Engine, next, true)
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
+			p.liveGroups = [256]liveControlGroup{}
+			p.liveGroupLimit = 0
 			p.current = next
 			p.streamEngine.Store(next.Engine)
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
@@ -1643,6 +1649,8 @@ func (p *Player) renderBlock(requestedFrames int) {
 			p.fadeRemaining = p.fadeTotal
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
+			p.liveGroups = [256]liveControlGroup{}
+			p.liveGroupLimit = 0
 			p.current = next
 			p.streamEngine.Store(next.Engine)
 			if next.Range != nil {
@@ -1783,6 +1791,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 
 func (p *Player) queueLiveNotes() {
 	p.ownedFinalCount = 0
+	p.pruneLiveGroups()
 	epoch := p.noteEpoch.Load()
 	batch := p.notes.Swap(nil)
 	releaseAll := epoch&1 != 0
@@ -1828,6 +1837,9 @@ func (p *Player) queueLiveNotes() {
 			final[track][lane], touched[track][lane] = command, true
 		}
 		p.heldNotes, p.heldOrder = [128]noteInput{}, [128]uint64{}
+		for i := range p.liveGroups[:p.liveGroupLimit] {
+			p.liveGroups[i].Owner = "" // Freeze tails until their slots are safe to reuse.
+		}
 		batch = nil
 		p.emit(Event{Name: "live note release overload cleared held inputs and queued presses", Kind: "note-error"})
 	}
@@ -1839,6 +1851,10 @@ func (p *Player) queueLiveNotes() {
 			continue
 		}
 		poly := snapshot.poly[track] || kind == "poly"
+		if input.Group != "" {
+			p.queueLiveGroup(track, input)
+			continue
+		}
 		if input.Expression {
 			if kind == "keys" {
 				p.emit(Event{Track: input.Track, Name: "CICADA-UNSUPPORTED: modeled keyboards do not support per-note expression", Kind: "note-error"})

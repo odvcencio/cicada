@@ -1227,7 +1227,7 @@ func (e *Engine) drainCommands() {
 func (e *Engine) applyPending() {
 	chainPhase := false
 	for {
-		best, priority := -1, 5
+		best, priority := -1, 6
 		// An edit waits while an earlier edit still waits for its tick.
 		editWaiting := false
 		for i := 0; i < e.pendingLen; i++ {
@@ -1275,8 +1275,10 @@ func commandPriority(op cmd.Op) int {
 		return 1
 	case cmd.OpNoteOn:
 		return 3
-	case cmd.OpNoteExpression:
+	case cmd.OpNoteExpression, cmd.OpBindNoteGroup:
 		return 4
+	case cmd.OpSetLiveGroup:
+		return 5
 	default:
 		return 2
 	}
@@ -1501,6 +1503,10 @@ func (e *Engine) apply(c cmd.Command) {
 		v.expressionGroup = expression.Group{}
 		v.noteIdentity, v.noteActive = c.Index, true
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
+	case cmd.OpBindNoteGroup:
+		e.bindLiveGroup(c)
+	case cmd.OpSetLiveGroup:
+		e.setGroupControls(int(c.Track), liveGroup(c.Index), expression.Controls{PitchCents: math.Float32frombits(c.Arg0), Pressure: math.Float32frombits(c.Arg1), Timbre: math.Float32frombits(c.Pad)})
 	case cmd.OpNoteExpression:
 		v := &e.voices[c.Track]
 		if v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys {

@@ -147,6 +147,17 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.equal(mono.counts.renders, before.renders + 2, 'rejected load stopped active playback');
       assert.equal(mono.counts.projectAllocs, before.projectAllocs, 'rejected load uploaded image');
     }
+    for (const op of [32,33]) {
+      const oldShared = await setup(asset,capture,15,65536);
+      const snapshot = new Uint8Array(oldShared.instances[0].memory.buffer).slice();
+      oldShared.send(commands(1,op));
+      assert.match(oldShared.messages.at(-1).e,/live shared controls/);
+      assert.equal(oldShared.counts.commits,0);
+      assert.deepEqual(new Uint8Array(oldShared.instances[0].memory.buffer),snapshot);
+    }
+    const liveShared = await setup(asset,capture,15,65536|4194304);
+    liveShared.send(commands(32,33));
+    assert.equal(liveShared.counts.commits,1,'negotiated shared controls were refused');
     const keys = await setup(asset, capture, 15, 65537 | 512);
     assert.ok(keys.messages.some(m => m.t === 'r'), 'keyboard capability bit9 was rejected');
     const noSpatial = await setup(asset, capture, 15, 66047);

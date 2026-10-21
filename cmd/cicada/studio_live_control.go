@@ -14,6 +14,7 @@ type studioLiveLease struct {
 	Closed   bool
 	Seen     time.Time
 	Notes    map[string]audioClientMessage
+	Groups   map[string]string
 }
 type studioLiveControls struct {
 	mu     sync.Mutex
@@ -94,11 +95,55 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 			_ = s.applyAudioMessage(note)
 		}
 		lease.Notes = nil
+		lease.Groups = nil
 		studioJSON(w, 200, map[string]any{"ok": true})
 		return
 	}
 	for _, message := range request.Messages {
 		key := ""
+		if message.Type == "note-group" || message.Type == "group-expression" {
+			if message.GroupID == "" || len(message.GroupID) > 32 || message.Track == "" || len(message.Track) > 512 {
+				studioJSON(w, 422, map[string]any{"error": "shared controls need a bounded group and track"})
+				return
+			}
+			groupKey := fmt.Sprintf("%d:%s:%s", len(message.Track), message.Track, message.GroupID)
+			if message.Type == "note-group" {
+				identity, id, err := audioNoteKey(message)
+				if err != nil || id == 0 {
+					studioJSON(w, 422, map[string]any{"error": "shared binding needs a valid note identity"})
+					return
+				}
+				held, owned := lease.Notes[identity]
+				if !owned {
+					continue
+				}
+				if lease.Groups == nil {
+					lease.Groups = map[string]string{}
+				}
+				if lease.Groups[groupKey] == "" && len(lease.Groups) >= 512 {
+					studioJSON(w, 429, map[string]any{"error": "shared input limit reached; reopen Live before connecting more inputs"})
+					return
+				}
+				message.owner = held.owner
+				message.GroupID = "live:" + request.Owner + ":group:" + groupKey
+				if err := s.applyAudioMessage(message); err != nil {
+					studioJSON(w, 422, map[string]any{"error": err.Error()})
+					return
+				}
+				lease.Groups[groupKey] = message.GroupID
+			} else {
+				group, owned := lease.Groups[groupKey]
+				if !owned {
+					continue
+				}
+				message.owner, message.GroupID = request.Owner, group
+				if err := s.applyAudioMessage(message); err != nil {
+					studioJSON(w, 422, map[string]any{"error": err.Error()})
+					return
+				}
+			}
+			continue
+		}
 		if message.Type == "note-expression" {
 			identity, id, err := audioNoteKey(message)
 			if err != nil || id == 0 {
@@ -202,7 +247,7 @@ func (s *studio) expireLiveInputs(now time.Time) int {
 	notes := map[string]audioClientMessage{}
 	expired := 0
 	for _, lease := range c.leases {
-		if lease.Closed || len(lease.Notes) == 0 || now.Sub(lease.Seen) < studioLiveLeaseTimeout {
+		if lease.Closed || len(lease.Notes) == 0 && len(lease.Groups) == 0 || now.Sub(lease.Seen) < studioLiveLeaseTimeout {
 			continue
 		}
 		lease.Closed, lease.Seen = true, now
@@ -214,6 +259,7 @@ func (s *studio) expireLiveInputs(now time.Time) int {
 			notes[key] = note
 		}
 		lease.Notes = nil
+		lease.Groups = nil
 	}
 	for key, note := range notes {
 		if note.NoteID == nil && c.heldByAnother("", key) {

@@ -45,16 +45,34 @@ func (u *liveUI) midiNote(event midi.NoteMessage, at *control.NoteTime) {
 	if !ok {
 		return
 	}
-	if event.Type != "note-on" || event.PitchCents != 0 || event.Pressure != 0 || event.Timbre != .5 {
-		if u.props.ExpressionTracks[h.Track] {
-			u.queue("live", map[string]string{"type": "note-expression", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "pitchCents": strconv.FormatFloat(event.PitchCents, 'f', -1, 64), "pressure": strconv.FormatFloat(event.Pressure, 'f', -1, 64), "timbre": strconv.FormatFloat(event.Timbre, 'f', -1, 64)})
-		} else {
-			u.status.Set("This sound plays notes without gesture monitoring. Recorded gestures remain in the retained take; choose acid or an authored synth to apply them.")
-		}
-	}
 	local := midi.NoteControls{PitchCents: event.PitchCents, Pressure: event.Pressure, Timbre: event.Timbre}
 	if event.Local != nil {
 		local = *event.Local
+	}
+	if event.Type == "note-on" && event.Shared != nil && u.props.ExpressionTracks[h.Track] {
+		if u.monitorGroups == nil {
+			u.monitorGroups = map[uint64]liveMIDIGroup{}
+		}
+		group, exists := u.monitorGroups[event.Shared.ID]
+		if !exists && len(u.monitorGroups) >= 512 {
+			u.status.Set("Shared input limit reached. Disconnect MIDI before connecting more inputs.")
+			return
+		}
+		if !exists {
+			group = liveMIDIGroup{Device: event.Device, Tracks: map[string]bool{}}
+			u.monitorGroups[event.Shared.ID] = group
+		}
+		group.Tracks[h.Track] = true
+		u.sharedLease = true // Shared addresses outlive gates and device disconnects.
+		u.queue("live", map[string]string{"type": "note-group", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "groupId": strconv.FormatUint(event.Shared.ID, 10)})
+		u.monitorShared(*event.Shared)
+	}
+	if !event.SharedOnly && (event.Type != "note-on" || local.PitchCents != 0 || local.Pressure != 0 || local.Timbre != .5) {
+		if u.props.ExpressionTracks[h.Track] {
+			u.queue("live", map[string]string{"type": "note-expression", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "pitchCents": strconv.FormatFloat(local.PitchCents, 'f', -1, 64), "pressure": strconv.FormatFloat(local.Pressure, 'f', -1, 64), "timbre": strconv.FormatFloat(local.Timbre, 'f', -1, 64)})
+		} else {
+			u.status.Set("This sound plays notes without gesture monitoring. Recorded gestures remain in the retained take; choose acid or an authored synth to apply them.")
+		}
 	}
 	if event.SharedOnly || event.Type == "note-on" && local.PitchCents == 0 && local.Pressure == 0 && local.Timbre == .5 {
 		return
@@ -85,6 +103,7 @@ func (u *liveUI) capturedPoints(count int) {
 }
 
 func (u *liveUI) midiShared(value midi.SharedControls, at *control.NoteTime) {
+	u.monitorShared(value)
 	if !u.recording {
 		return
 	}
@@ -118,6 +137,12 @@ func (u *liveUI) midiShared(value midi.SharedControls, at *control.NoteTime) {
 		}
 		u.pendingShared[value.ID] = append(points, control.NoteExpression{Tick: tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre})
 		u.capturedPoints(1)
+	}
+}
+
+func (u *liveUI) monitorShared(value midi.SharedControls) {
+	for track := range u.monitorGroups[value.ID].Tracks {
+		u.queue("live", map[string]string{"type": "group-expression", "track": track, "groupId": strconv.FormatUint(value.ID, 10), "pitchCents": strconv.FormatFloat(value.PitchCents, 'f', -1, 64), "pressure": strconv.FormatFloat(value.Pressure, 'f', -1, 64), "timbre": strconv.FormatFloat(value.Timbre, 'f', -1, 64)})
 	}
 }
 

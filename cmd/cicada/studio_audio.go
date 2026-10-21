@@ -75,6 +75,7 @@ type audioClientMessage struct {
 	Velocity   *int            `json:"velocity,omitempty"`
 	On         *bool           `json:"on,omitempty"`
 	NoteID     any             `json:"noteId,omitempty"`
+	GroupID    string          `json:"groupId,omitempty"`
 	Channel    *int            `json:"channel,omitempty"`
 	PitchCents *float32        `json:"pitchCents,omitempty"`
 	Pressure   *float32        `json:"pressure,omitempty"`
@@ -301,6 +302,28 @@ func validateAudioNote(message audioClientMessage) error {
 }
 
 func (s *studio) applyAudioMessage(message audioClientMessage) error {
+	if message.Type == "note-group" || message.Type == "group-expression" {
+		if message.owner == "" || message.GroupID == "" {
+			return fmt.Errorf("shared controls require an owned live input")
+		}
+		s.transport.mu.Lock()
+		stream := s.transport.stream
+		s.transport.mu.Unlock()
+		if stream == nil {
+			return fmt.Errorf("audio transport is not running")
+		}
+		if message.Type == "note-group" {
+			_, id, err := audioNoteIdentity(message.NoteID)
+			if err != nil {
+				return err
+			}
+			return stream.BindNoteGroupOwner(message.Track, id, message.owner, message.GroupID)
+		}
+		if message.PitchCents == nil || message.Pressure == nil || message.Timbre == nil {
+			return fmt.Errorf("shared expression needs pitchCents, pressure, and timbre")
+		}
+		return stream.GroupExpressionOwner(message.Track, message.GroupID, *message.PitchCents, *message.Pressure, *message.Timbre)
+	}
 	if message.Type == "loudness-reset" {
 		s.transport.resetLoudness()
 		return nil

@@ -386,8 +386,10 @@ membership, point count and final movement. Keeping played timing coalesces
 samples at the same musical tick; private recovery keeps every raw sample.
 Lanes that stayed neutral need no binding in the saved pattern. Shared movement
 requires **Keep played timing**; the step-grid option refuses to discard it.
-During live input, monitoring follows master controls while notes are held.
-The saved shared lane also shapes their release tails during playback and export.
+During live input, master controls keep shaping release tails on acid and
+authored synths. Member controls freeze at release. Reconnecting an input starts
+a separate shared address; old tails retain their last controls. The saved lane
+uses the same layering during playback and export.
 
 Played timing supports acid, modeled keyboards and piano, and authored pitched
 instruments, using each instrument's existing mono or polyphonic voice policy.

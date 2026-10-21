@@ -78,6 +78,14 @@ async function start(harness) {
   assert.equal(legacy.stats.posted.length, before, 'client partly posted a rejected command batch');
   assert.throws(() => legacy.client.sendCommands([{op:12,index:7,arg0:60|(100<<8),arg1:1}]), /Independent live notes.*updated audio kernel/);
   assert.equal(legacy.stats.posted.length,before,'cached kernel partly received an owned note');
+  for (const op of [32,33]) {
+    assert.throws(() => legacy.client.sendCommands([{op,index:1,arg0:1}]), /Live shared controls.*updated audio kernel/);
+    assert.equal(legacy.stats.posted.length,before,'cached kernel partly received shared controls');
+  }
+  legacy.client.capabilities |= 4194304;
+  legacy.client.sendCommands([{op:32,index:7,arg0:1},{op:33,index:1,arg1:0x3f000000,pad:0x3f000000}]);
+  assert.equal(legacy.stats.posted.at(-1).bytes.length,48);
+  legacy.stats.posted.pop(); legacy.client.capabilities &= ~4194304;
   legacy.client.capabilities |= 1048576;
   legacy.client.sendCommands([{op:12,index:7,arg0:60|(100<<8),arg1:1}]);
   const owned = new DataView(legacy.stats.posted.at(-1).bytes.buffer);

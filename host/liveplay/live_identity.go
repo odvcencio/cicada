@@ -7,7 +7,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 )
 
-type ownedNoteCommands struct{ gate, controls cmd.Command }
+type ownedNoteCommands struct{ gate, controls, group cmd.Command }
 
 func (p *Player) allocateLiveIdentity() uint16 {
 	for {
@@ -42,6 +42,9 @@ func (p *Player) addOwnedFinal(c cmd.Command) {
 		if previous.Op == 0 {
 			previous = p.ownedFinal[i].controls
 		}
+		if previous.Op == 0 {
+			previous = p.ownedFinal[i].group
+		}
 		if previous.Track == c.Track && previous.Index == c.Index {
 			break
 		}
@@ -56,6 +59,8 @@ func (p *Player) addOwnedFinal(c cmd.Command) {
 	}
 	if c.Op == cmd.OpNoteExpression {
 		p.ownedFinal[i].controls = c
+	} else if c.Op == cmd.OpBindNoteGroup {
+		p.ownedFinal[i].group = c
 	} else {
 		p.ownedFinal[i].gate = c
 	}
@@ -68,6 +73,15 @@ func (p *Player) flushOwnedFinal() {
 			p.fault = io.ErrShortBuffer
 		}
 		if entry.gate.Op != cmd.OpNoteOff && entry.controls.Op != 0 && !p.current.Engine.Push(entry.controls) {
+			p.fault = io.ErrShortBuffer
+		}
+		if entry.gate.Op != cmd.OpNoteOff && entry.group.Op != 0 && !p.current.Engine.Push(entry.group) {
+			p.fault = io.ErrShortBuffer
+		}
+	}
+	for i := range p.liveGroups[:p.liveGroupLimit] {
+		group := &p.liveGroups[i]
+		if group.Dirty && !p.current.Engine.Push(group.Controls) {
 			p.fault = io.ErrShortBuffer
 		}
 	}
