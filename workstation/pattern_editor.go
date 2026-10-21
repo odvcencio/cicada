@@ -24,6 +24,20 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
+		case "create":
+			length, err := integer(f, "length")
+			if err != nil || length < 1 || length > 64 {
+				return nil, fmt.Errorf("pattern length must be 1–64 steps")
+			}
+			p["newName"], p["track"], p["scene"], p["length"] = f["newName"], f["track"], f["scene"], length
+			target, _ := url.Parse(patternURL(f["newName"], 1, "", ""))
+			q := target.Query()
+			q.Set("track", f["track"])
+			if f["scene"] != "" {
+				q.Set("scene", f["scene"])
+			}
+			target.RawQuery = q.Encode()
+			destination = target.String()
 		case "performance-group", "performance-binding", "shared-gesture":
 			n := map[string]any{}
 			keys := []string{"index"}
@@ -191,6 +205,19 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 			p["range"], p["lane"] = selection, f["lane"]
 		case "bind":
 			p["scene"], p["track"] = f["scene"], f["track"]
+			switch f["binding"] {
+			case "off", "keep":
+				p["pattern"] = f["binding"]
+			case "", "play":
+			default:
+				return nil, fmt.Errorf("choose Assign, Stop, or Carry for the scene")
+			}
+			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
+			q := target.Query()
+			q.Set("track", f["track"])
+			q.Set("scene", f["scene"])
+			target.RawQuery = q.Encode()
+			destination = target.String()
 		default:
 			return nil, fmt.Errorf("choose a pattern operation")
 		}
@@ -228,8 +255,11 @@ var noteNames = [...]string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G�
 func noteName(pitch int) string { return fmt.Sprintf("%s%d", noteNames[pitch%12], pitch/12-1) }
 
 func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	if v.Project == nil || len(v.Project.Patterns) == 0 {
-		return failure(fmt.Errorf("save a valid score with a pattern to open the editor"))
+	if v.Project == nil {
+		return failure(fmt.Errorf("save a valid score to open the pattern editor"))
+	}
+	if len(v.Project.Patterns) == 0 {
+		return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Create your first pattern, then draw notes or drum hits in its grid."}, s.patternCreation(ctx, v, csrf, ""))
 	}
 	q := ctx.Request.URL.Query()
 	p := v.Project.Patterns[0]
@@ -392,19 +422,19 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		for _, kit := range v.Project.Kits {
 			drumTrack = drumTrack || kit.ID == track.Kind
 		}
-		if track.Kind != "audio" && drumTrack == (p.Kind == "drums") {
+		if track.Kind != "audio" && drumTrack == (p.Kind == "drums") && (p.Kind != "acid" || track.Kind == "acid") {
 			tracks = append(tracks, track.ID)
 		}
 	}
 	for _, scene := range v.Project.Scenes {
 		scenes = append(scenes, scene.ID)
 	}
-	bind := form("pattern", hidden("action", "bind"), hidden("pattern", p.ID), field("Scene", selectInput("scene", "", scenes)), field("Track", selectInput("track", "", tracks)), submit("", "", "Assign to scene"))
+	bind := form("pattern", hidden("action", "bind"), hidden("pattern", p.ID), field("Scene", selectInput("scene", q.Get("scene"), scenes)), field("Track", selectInput("track", q.Get("track"), tracks)), submit("binding", "play", "Assign to scene"), submit("binding", "off", "Stop in this scene"), submit("binding", "keep", "Carry previous pattern"), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Scene choices carry forward until changed or stopped. Stop releases this track; Carry keeps its earlier selection.")))
 	var phraseNotice gosx.Node = gosx.Fragment()
 	if usesPhrase {
 		phraseNotice = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This pattern uses shared phrases. Editing a cell expands its phrase uses locally; the shared phrases and other patterns keep their music."))
 	}
-	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Reusable patterns, precise notes, and source-backed dynamics."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-editor")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)), roll), phraseNotice, gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Variations and scene assignment")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), variation, bind)))
+	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Reusable patterns, precise notes, and source-backed dynamics."}, s.patternCreation(ctx, v, csrf, ""), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-editor")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)), roll), phraseNotice, gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Variations and scene assignment")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), variation, bind)))
 }
 
 func rollButton(step int, label, text string, note *project.Step, active, selected bool) gosx.Node {

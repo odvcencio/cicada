@@ -162,14 +162,14 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 	status := capture.status
 	if result.OK {
 		location := fields["__cicada_location"]
-		// Pattern commands may intentionally select another step or variation.
+		// Pattern commands may intentionally open a new grid or select another step or variation.
 		// Generic form return targets must not erase the current deep selection.
 		if name == "audio" && fields["__gosx_return_to"] != "" {
 			if target, err := workspaceLocation(fields["__gosx_return_to"]); err == nil {
 				location = target
 			}
 		}
-		followPattern := fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate" || fields["action"] == "performed-gesture" || fields["action"] == "performance-group" || fields["action"] == "performance-binding" || fields["action"] == "shared-gesture"
+		followPattern := fields["action"] == "create" || fields["action"] == "bind" || fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate" || fields["action"] == "performed-gesture" || fields["action"] == "performance-group" || fields["action"] == "performance-binding" || fields["action"] == "shared-gesture"
 		if name == "pattern" && followPattern && result.Redirect != "" {
 			location = result.Redirect
 		}

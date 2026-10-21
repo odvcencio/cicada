@@ -82,6 +82,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 	entry := "cicada 2\n" + strings.Repeat("// entry sentinel "+strings.Repeat("x", 180)+"\n", strings.Count(part, "\n")+5)
 	declaration := "sampler captured { asset=wave root=c4 mode=oneshot voices=4 }"
 	fixtures := map[string]edits.Intent{
+		"createpattern":          &edits.CreatePattern{Name: "new-phrase", Track: "keys", Steps: 16, Scene: "main"},
 		"setperformancegroup":    &edits.SetPerformanceGroup{Entity: "pattern:played", Index: 0, Name: "touch"},
 		"bindperformedgroup":     &edits.BindPerformedGroup{Entity: "pattern:played", NoteIndex: 0, Group: 0},
 		"setsharedexpression":    &edits.SetSharedExpression{Entity: "pattern:played", GroupIndex: 0, Index: 0, Timbre: .5},

@@ -153,6 +153,18 @@ The editor also supports [touch editing on phone screens](screenshots/studio-pro
 
 ## Patterns
 
+Use **Create pattern** in the pattern editor to start a new grid. Choose its
+track, name, and length (1–64 steps). The track supplies the appropriate notes,
+acid, or drum pattern type, including a custom kit's lanes. Choose a scene to
+create and assign together in one Undo step, or **Library only** to leave the
+arrangement unchanged. The new grid opens immediately for editing. An authored
+instrument's card also offers **Create pattern** for that track.
+
+In **Variations and scene assignment**, **Assign to scene** plays the selected
+pattern on the chosen track. **Stop in this scene** releases that track;
+**Carry previous pattern** keeps its previous selection. Scene choices carry
+forward until a later scene changes or stops them. Each assignment has Undo.
+
 Choose a pattern from the library. The piano roll shows pitched patterns;
 drum patterns show their authored lanes.
 
