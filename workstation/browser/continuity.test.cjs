@@ -580,14 +580,17 @@ async function scenario(t) {
     armed = false;
     await collectPage();
     const beforeLiveRelease = liveReleases.length;
-    await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
-    await ready();
-    await watchPage();
-    await until(() => liveReleases.slice(beforeLiveRelease).some(release => release.lease === held.payload.lease), 'departing Live did not release its active lease');
+    // Exercise the real listener and Beacon while this fixture document is
+    // alive; delivery during the following unload is browser best effort.
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false})));
+    await until(() => liveReleases.slice(beforeLiveRelease).some(release => release.lease === held.payload.lease), 'Live pagehide listener did not release its active lease');
     const departedLive = liveReleases.slice(beforeLiveRelease).find(release => release.lease === held.payload.lease);
     const lastLiveCommand = requests.filter(request => request.action === 'live' && request.payload.lease === held.payload.lease).at(-1);
     assert.ok(departedLive.sequence > Number(lastLiveCommand.payload.sequence), 'pagehide release must advance its Live sequence');
-    t.diagnostic('Live pagehide sent the exact form-encoded lease release; JSON score-action guards remain active.');
+    t.diagnostic('The Live pagehide listener sent the exact form-encoded lease release before navigation; JSON score-action guards remain active.');
+    await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
+    await ready();
+    await watchPage();
     const textarea = page.locator('#editor-content');
     const beforeCode = await state('/api/state');
     const codeOriginal = beforeCode.source.replace(/\r\n/g, '\n');
