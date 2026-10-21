@@ -59,10 +59,11 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			laneEnds[lane] = placement.AtTick + placement.LengthTicks
 			blocks = append(blocks, gosx.El("div", gosx.Attrs(
 				gosx.Attr("class", "placement-block"), gosx.Attr("data-placement-block", placement.ID),
-				gosx.Attr("data-placement-at", strconv.FormatInt(placement.AtTick, 10)), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
+				gosx.Attr("data-placement-at", strconv.FormatInt(placement.AtTick, 10)),
+				gosx.Attr("data-placement-track", placement.Track), gosx.Attr("data-placement-content", placement.Content), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
 				gosx.Attr("data-placement-selected", strconv.FormatBool(placement.ID == selected)),
 				gosx.Attr("style", fmt.Sprintf("left:%s;width:%s;top:%dpx", position(placement.AtTick), position(placement.LengthTicks), 8+lane*68))),
-				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content))),
+				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", "Drag to move. Arrow keys nudge a sixteenth; Shift changes one bar. Escape cancels."), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content))),
 				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-placement-resize"), gosx.Attr("aria-label", "Resize placement "+placement.ID), gosx.Attr("title", "Drag or use arrow keys to resize")), gosx.El("span", gosx.Attrs(gosx.Attr("aria-hidden", "true")), gosx.Text("⋮")))))
 		}
 		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")),
@@ -85,7 +86,8 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			field("Timeline zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
 			viewButton("fit", "Fit song"), viewButton("selected", "Show selected"),
 			gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.BoolAttr("data-studio-view-control"))), gosx.Text("Follow song")),
-			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-playback-status"), gosx.Attr("class", "muted")), gosx.Text("Timeline view"))),
+			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-playback-status"), gosx.Attr("class", "muted")), gosx.Text("Timeline view")),
+			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-edit-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "muted placement-edit-status")), gosx.Text("Drag to move · edge to trim · arrows to nudge"))),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll placement-scroll"), gosx.Attr("aria-label", "Placement editor")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bars))),
 				gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...))))

@@ -28,6 +28,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
+	releasePlacementEditor := bindShellPlacementEditor(root)
 	releasePlacementCommands := watchPlacementCommands(host, root)
 	var busy atomic.Bool
 	command := js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -110,6 +111,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		releaseNavigation()
 		releasePlacementCommands()
+		releasePlacementEditor()
 		releaseAudio()
 		releasePlacementView()
 		releaseCapture()
