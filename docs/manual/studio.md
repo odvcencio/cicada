@@ -204,6 +204,14 @@ create and assign together in one Undo step, or **Library only** to leave the
 arrangement unchanged. The new grid opens immediately for editing. An authored
 instrument's card also offers **Create pattern** for that track.
 
+**Start with** keeps the grid empty or fills it with an editable idea: a
+**Pulse**, an **Arpeggio**, **Held chords** for a polyphonic instrument, or a
+drum **Backbeat**. Pitched ideas follow the song's key and the sound's home register,
+including a track octave override. Backbeats use the kit's kick, snare, and
+closed hat when present; other kits receive a pulse on their first lane.
+The notes and any scene assignment share one Undo step. Existing parts and the
+arrangement stay intact unless you choose to assign the new pattern to a scene.
+
 In a notes grid, select a step and open **Build a chord** in its inspector.
 Choose the root, chord type, root octave, inversion, and **Hold (steps)**.
 **Place chord** writes the onset and holds in one Undo step. It replaces that

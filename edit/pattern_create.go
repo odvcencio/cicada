@@ -6,13 +6,14 @@ import (
 	"strings"
 )
 
-// CreatePattern creates an empty grid for a track's instrument. An optional
+// CreatePattern creates a grid for a track's instrument. An optional
 // scene assignment is part of the same edit, validation, and Undo entry.
 type CreatePattern struct {
-	Name  string `json:"name"`
-	Track string `json:"track"`
-	Steps int    `json:"steps"`
-	Scene string `json:"scene,omitempty"`
+	Name    string `json:"name"`
+	Track   string `json:"track"`
+	Steps   int    `json:"steps"`
+	Scene   string `json:"scene,omitempty"`
+	Starter string `json:"starter,omitempty"`
 }
 
 func (CreatePattern) Kind() string { return "createpattern" }
@@ -57,11 +58,13 @@ func createPattern(ctx *Context, intent Intent) error {
 		return err
 	}
 	kind := ""
+	instrumentKind := ""
 	var lanes []string
 	for _, track := range plan.Tracks {
 		if track.ID != in.Track {
 			continue
 		}
+		instrumentKind = track.Kind
 		switch track.Kind {
 		case "audio":
 			return fmt.Errorf("audio tracks use clips; choose an instrument or drum track")
@@ -85,6 +88,17 @@ func createPattern(ctx *Context, intent Intent) error {
 	if kind == "" {
 		return fmt.Errorf("choose an instrument or drum track")
 	}
+	if in.Starter == "chords" {
+		for _, instrument := range score.Instruments {
+			if instrument.Name == instrumentKind && instrument.Mode == "mono" {
+				return fmt.Errorf("held chords need a polyphonic instrument; choose a pulse or arpeggio for this sound")
+			}
+		}
+	}
+	rows, err := patternStarter(in.Starter, kind, lanes, in.Steps)
+	if err != nil {
+		return err
+	}
 	newline := "\n"
 	if bytes.Contains(ctx.Source, []byte("\r\n")) {
 		newline = "\r\n"
@@ -93,10 +107,10 @@ func createPattern(ctx *Context, intent Intent) error {
 	fmt.Fprintf(&body, "pattern %s %s steps=%d {%s", in.Name, kind, in.Steps, newline)
 	if kind == "drums" {
 		for _, lane := range lanes {
-			fmt.Fprintf(&body, "  %s: %s%s", lane, strings.Repeat(".", in.Steps), newline)
+			fmt.Fprintf(&body, "  %s: %s%s", lane, rows[lane], newline)
 		}
 	} else {
-		fmt.Fprintf(&body, "  %s%s", strings.TrimSpace(strings.Repeat(". ", in.Steps)), newline)
+		fmt.Fprintf(&body, "  %s%s", rows[""], newline)
 	}
 	body.WriteString("}" + newline)
 	// Appending leaves all existing declarations and their comments byte-for-

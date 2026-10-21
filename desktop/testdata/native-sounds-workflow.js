@@ -125,6 +125,43 @@
     if ((await state()).source !== initial.source || (await state('transport')).playing || errors.length)
       throw new Error('Unexpected score, transport or global browser errors: ' + JSON.stringify(errors));
     checks.push('disposed sound leases cannot revive after navigation');
+
+    async function saved(check, label) {
+      await wait(async () => {
+        const current = await state();
+        return current.valid && check(current.source) && document.querySelector('#undo-form input[name=revision]')?.value === current.revision;
+      }, label);
+      await ready();
+      checks.push(label);
+      return (await state()).source;
+    }
+    function fill(form, values) {
+      for (const [name,value] of Object.entries(values)) {
+        const input = form.elements.namedItem(name);
+        if (!input) throw new Error('Missing native field '+name);
+        input.value = value;
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+        input.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    }
+    function submit(form) { form.requestSubmit(form.querySelector('button[type=submit]')); }
+    const patch = document.querySelector('[data-instrument-patch="warm-pad"]');
+    patch.querySelector('summary').click();
+    fill(patch.querySelector('form'),{newName:'starter-pad',track:'keys'});
+    submit(patch.querySelector('form'));
+    const beforeCreation = await saved(source => source.includes('track keys starter-pad'), 'chosen sound added without replacing the song');
+    const create = document.querySelector('[data-gosx-key="create-pattern-keys"]');
+    create.querySelector('summary').click();
+    fill(create.querySelector('form'),{newName:'first-part',starter:'chords',length:'16',scene:'main'});
+    submit(create.querySelector('form'));
+    const created = await saved(source => source.includes('pattern first-part notes steps=16') && source.includes('[1 3 5] - - - - - - - [3 5 7]') && source.includes('keys = first-part'),
+      'held-chord idea creates real notes and its scene binding in one native action');
+    await wait(() => new URL(location.href).searchParams.get('pattern') === 'first-part' && !document.querySelector('#detail-panel-clip').hidden, 'created part selected in Clip');
+    document.querySelector('#undo-form').requestSubmit(document.querySelector('#undo-form button'));
+    await saved(source => source === beforeCreation, 'one Undo removes the starting idea and binding exactly');
+    document.querySelector('#redo-form').requestSubmit(document.querySelector('#redo-form button'));
+    await saved(source => source === created, 'one Redo restores the complete musical part');
+    if (errors.length) throw new Error('Global browser errors: '+JSON.stringify(errors));
     return {type:'cicada-native-smoke', ok:true, checks};
   })().catch(error => ({type:'cicada-native-smoke', ok:false, checks,
     error:String(error) + '\n' + String(error.stack || '') + '\nRECEIPTS ' + JSON.stringify(receipts.map(r => ({action:r.request.action, patch:r.request.patch, status:r.status, response:r.response}))) + '\nERRORS ' + JSON.stringify(errors)}))

@@ -58,6 +58,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 				return nil, fmt.Errorf("pattern length must be 1–64 steps")
 			}
 			p["newName"], p["track"], p["scene"], p["length"] = f["newName"], f["track"], f["scene"], length
+			p["starter"] = f["starter"]
 			target, _ := url.Parse(patternURL(f["newName"], 1, "", ""))
 			q := target.Query()
 			q.Set("track", f["track"])

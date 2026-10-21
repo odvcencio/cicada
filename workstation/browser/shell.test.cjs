@@ -621,4 +621,44 @@ test('shell scene keys submit the corresponding launch-matrix scene', async () =
   await page.close();
 });
 
+test('starting a musical part preserves the song and undoes in one step', {timeout:60_000}, async () => {
+  for (const [name,viewport] of [['desktop',{width:1440,height:900}],['phone',{width:390,height:800}]]) {
+    const {page,errors} = await openShell('dock=clip'+(name === 'phone' ? '&region=detail' : ''),viewport);
+    try {
+      const snapshot = async () => (await page.request.get(new URL('/api/state',process.env.CICADA_STUDIO_URL).href)).json();
+      const before = await snapshot();
+      if (name === 'desktop') {
+        const handle = await page.getByRole('separator',{name:'Resize Detail dock',exact:true}).boundingBox();
+        await page.mouse.move(handle.x+handle.width/2,handle.y+4);
+        await page.mouse.down();
+        await page.mouse.move(handle.x+handle.width/2,handle.y-236,{steps:8});
+        await page.mouse.up();
+      }
+      const create = page.locator('#patterns [data-gosx-key="create-pattern-"]');
+      await create.locator('summary').click();
+      const form = create.locator('form');
+      const pattern = 'browser-idea-'+name;
+      await form.locator('[name=newName]').fill(pattern);
+      await form.locator('[name=starter]').selectOption('pulse');
+      await form.locator('[name=length]').fill('16');
+      if (process.env.CICADA_SHELL_PROOF_DIR) {
+        await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR,{recursive:true});
+        await form.locator('[name=starter]').scrollIntoViewIfNeeded();
+        await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-starter-form.png')});
+      }
+      await form.getByRole('button',{name:'Create pattern',exact:true}).click();
+      await page.waitForURL(url => url.searchParams.get('pattern') === pattern);
+      const created = await snapshot();
+      assert.ok(created.valid && created.source.includes('pattern '+pattern+' '),'a real editable pattern was created');
+      assert.ok(created.source.includes(before.source.trimEnd()),'existing music and comments remain intact');
+      assert.notEqual(created.revision,before.revision);
+      if (process.env.CICADA_SHELL_PROOF_DIR) await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-created-part.png')});
+      await page.locator('#undo-form button').click();
+      await page.waitForFunction(async source => (await (await fetch('/api/state')).json()).source === source,before.source);
+      assert.equal((await snapshot()).source,before.source,'one Undo restores the entire original song');
+      assert.deepEqual(errors,[]);
+    } finally { await page.close(); }
+  }
+});
+
 test.after(async () => { if (shared) await shared.browser.close(); });

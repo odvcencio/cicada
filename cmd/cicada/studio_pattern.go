@@ -59,7 +59,7 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		intent = &in
 		edit.Label = fmt.Sprintf("Pattern · %s step %d chord · %d steps", edit.Pattern, edit.Step+1, in.Hold)
 	case "create":
-		intent = &edits.CreatePattern{Name: edit.NewName, Track: edit.Track, Steps: edit.Length, Scene: edit.Scene}
+		intent = &edits.CreatePattern{Name: edit.NewName, Track: edit.Track, Steps: edit.Length, Scene: edit.Scene, Starter: edit.Starter}
 		edit.Label = fmt.Sprintf("Pattern · %s created for %s", edit.NewName, edit.Track)
 	case "performance-group":
 		if edit.PerformanceGroup == nil {
