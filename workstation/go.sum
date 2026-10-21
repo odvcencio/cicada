@@ -56,6 +56,8 @@ github.com/odvcencio/gosx/editor v0.19.12-0.20261020190509-31426aa5d449 h1:u3JNK
 github.com/odvcencio/gosx/editor v0.19.12-0.20261020190509-31426aa5d449/go.mod h1:jKTe3N93vP+YMO8ScMVJgQWUO644aMPhBZkIEZRUkps=
 github.com/odvcencio/gosx/editor v0.19.12-0.20261020234933-df5350f85981 h1:5rR0yGV5L5Sy5GVtNoqQt776O81yJyU7usHJlFuGwDA=
 github.com/odvcencio/gosx/editor v0.19.12-0.20261020234933-df5350f85981/go.mod h1:jKTe3N93vP+YMO8ScMVJgQWUO644aMPhBZkIEZRUkps=
+github.com/odvcencio/gosx/editor v0.19.12-0.20261021000348-fb60c46e8613 h1:YeaDop5ogDZHTFG4v/A+jWeIA96HR/IUCgxK6HZYi4s=
+github.com/odvcencio/gosx/editor v0.19.12-0.20261021000348-fb60c46e8613/go.mod h1:jKTe3N93vP+YMO8ScMVJgQWUO644aMPhBZkIEZRUkps=
 github.com/odvcencio/gotreesitter v0.56.0 h1:2cyxAbG9yAMs1d8xTAxq3HWrKh8m7mi7pAjRBZd1Pp8=
 github.com/odvcencio/gotreesitter v0.56.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
 github.com/odvcencio/turboquant v0.1.3 h1:ec4FowLEwU2us/TderujmxI9nxMbFaLJTsPaa/TRs3o=
