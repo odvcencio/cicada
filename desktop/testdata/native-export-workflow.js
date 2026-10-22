@@ -18,6 +18,15 @@
   const trigger=document.querySelector('[data-gosx-disclosure-target="#export-dialog"]');trigger.focus();const previousFocus=document.activeElement;trigger.click();
   const dialog=()=>document.querySelector('#export-dialog');
   const form=dialog().querySelector('form[action="/__actions/export"]');
+  const sourceRevision=form.elements.namedItem('source_revision').value;
+  if(!/^[a-f0-9]{64}$/.test(sourceRevision))throw new Error('Export omitted the loaded source version');
+  form.elements.namedItem('source_revision').value='unreviewed-test-source';
+  form.requestSubmit(form.querySelector('button[type=submit]'));
+  await wait(()=>dialog().textContent.includes('Saved score files or libraries changed'),'source conflict');
+  const rejected=await read('export');
+  if(rejected.id||rejected.state!=='idle'||dialog().hidden||!document.querySelector('#studio-workbench').inert||editor.value!==draft)throw new Error('Rejected export started a job or lost unsaved work');
+  checks.push('native export rejects an unreviewed saved version and retains its draft');
+  form.elements.namedItem('source_revision').value=sourceRevision;
   form.elements.namedItem('bits').value='16';form.elements.namedItem('bits').dispatchEvent(new Event('change',{bubbles:true}));
   const before=navigations;form.querySelector('button[type=submit]').focus();form.requestSubmit(form.querySelector('button[type=submit]'));
   let job;await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(job.error);return ['succeeded','shortfall'].includes(job.state);},'offline render');
@@ -25,7 +34,9 @@
   if(dialog().hidden||!document.querySelector('#studio-workbench').inert||navigations!==before||editor!==document.querySelector('#score textarea')||editor.value!==draft)throw new Error('Rendering lost its dialog, modal lock, editor or draft');
   if(job.revision!==initial.revision)throw new Error('Export rendered a different saved score');
   if(!job.source_revision||job.current_source_revision!==job.source_revision)throw new Error('Unsaved Code draft changed the saved render version');
+  if(job.source_revision!==sourceRevision||dialog().textContent.includes('Saved score files or libraries changed'))throw new Error('Retry lost the reviewed version or retained its conflict');
   await wait(()=>/matches the saved score/.test(dialog().querySelector('[data-gosx-live-bind=version]')?.textContent),'saved version projection');
+  if(form.querySelector('.form-status')?.textContent!=='Rendering started.')throw new Error('Export acknowledgement did not describe the background render');
   checks.push('offline export retains its open native dialog, modal lock and unsaved score draft');
   const response=await fetch(job.downloadURL,{cache:'no-store'}),bytes=new Uint8Array(await response.arrayBuffer());
   if(!response.ok||response.headers.get('Content-Type')!=='audio/wav'||new TextDecoder().decode(bytes.slice(0,4))!=='RIFF'||new TextDecoder().decode(bytes.slice(8,12))!=='WAVE'||bytes.length<48000)throw new Error('Completed WAV is not downloadable');

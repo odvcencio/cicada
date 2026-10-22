@@ -140,6 +140,11 @@ test-studio-columns:
 test-studio-first-song:
 	node --test workstation/browser/first-song.test.cjs
 
+.PHONY: test-studio-export-sources
+# Requires a disposable examples/studio-project copy and CICADA_EXPORT_PROOF_DIR.
+test-studio-export-sources:
+	node --test workstation/browser/export-sources.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

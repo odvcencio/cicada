@@ -45,6 +45,134 @@ func TestStudioExportRejectsStaleScoreSnapshot(t *testing.T) {
 	}
 }
 
+func TestStudioExportRejectsUnreviewedProjectSources(t *testing.T) {
+	for _, name := range []string{"secondary file", "manifest", "library definition"} {
+		t.Run(name, func(t *testing.T) {
+			path := copyStudioProject(t)
+			changedPath := filepath.Join(filepath.Dir(path), "parts/patterns.cicada")
+			if name == "manifest" {
+				changedPath = filepath.Join(filepath.Dir(path), "cicada.mod")
+			}
+			updatePins := func() {
+				t.Helper()
+				sources, err := project.ReadSources(path, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pins, _, err := sources.UpdateLibraries("")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(filepath.Dir(path), "cicada.sum"), pins, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if name == "library definition" {
+				t.Setenv("CICADA_LIBRARY", t.TempDir())
+				library := filepath.Join(filepath.Dir(path), "lib/demo/tone")
+				if err := project.NewLibrary("demo/tone", library); err != nil {
+					t.Fatal(err)
+				}
+				source, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				source = bytes.Replace(source, []byte("cicada 2\n"), []byte("cicada 2\nimport \"demo/tone\"\n"), 1)
+				if err := os.WriteFile(path, source, 0600); err != nil {
+					t.Fatal(err)
+				}
+				changedPath = filepath.Join(library, "main.cicada")
+				updatePins()
+			}
+			s, err := newStudio(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.shutdown()
+			handler := s.routes()
+			source, _ := os.ReadFile(path)
+			seen, err := project.ReadScoreRevision(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previousWAV := []byte("RIFFpreviousWAVEaccepted-render")
+			previousPath := filepath.Join(filepath.Dir(path), "previous.wav")
+			if err := os.WriteFile(previousPath, previousWAV, 0600); err != nil {
+				t.Fatal(err)
+			}
+			s.exports.status = studioExportStatus{ID: "previous", State: "succeeded", Path: previousPath, SourceRevision: seen}
+			s.exports.render = func(*notation.Score, string, render.Options, renderTargetOptions, func(int)) (loudnessFileReport, error) {
+				return loudnessFileReport{Passes: 1}, nil
+			}
+			changed, err := os.ReadFile(changedPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "manifest" {
+				changed = bytes.Replace(changed, []byte("project studio_project"), []byte("project reviewed_project"), 1)
+			} else {
+				changed = append(changed, []byte("\n// another editor saved a change\n")...)
+			}
+			if err := os.WriteFile(changedPath, changed, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if name == "library definition" {
+				updatePins()
+			}
+			request := studioExportRequest{Revision: studioRevision(source), SourceRevision: seen, TargetLUFS: -16, TruePeakMax: -1, Tolerance: 1, Rate: 48000, Bits: 24}
+			response := studioExportCall(t, handler, request, "http://127.0.0.1:1234")
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "Refresh Studio") {
+				if response.Code == http.StatusAccepted {
+					waitStudioExport(t, handler, "succeeded")
+				}
+				t.Fatalf("unreviewed sources accepted: %d %s", response.Code, response.Body.String())
+			}
+			if status := s.exports.snapshot(); status.ID != "previous" || status.State != "succeeded" {
+				t.Fatalf("rejected export replaced the previous job: %+v", status)
+			}
+			file := studioCall(t, handler, "/api/export/file/previous", nil)
+			if file.Code != http.StatusOK || !bytes.Equal(file.Body.Bytes(), previousWAV) {
+				t.Fatal("rejected export lost the previous WAV", file.Code)
+			}
+			var workspace struct {
+				Revision       string `json:"revision"`
+				SourceRevision string `json:"source_revision"`
+			}
+			fresh := studioCall(t, handler, "/api/workspace", nil)
+			if fresh.Code != http.StatusOK || json.Unmarshal(fresh.Body.Bytes(), &workspace) != nil || workspace.Revision != request.Revision || workspace.SourceRevision == "" || workspace.SourceRevision == seen {
+				t.Fatalf("refresh lost the complete source identity: %d %s", fresh.Code, fresh.Body.String())
+			}
+			request.SourceRevision = workspace.SourceRevision
+			response = studioExportCall(t, handler, request, "http://127.0.0.1:1234")
+			if response.Code != http.StatusAccepted {
+				t.Fatalf("reviewed sources rejected: %d %s", response.Code, response.Body.String())
+			}
+			if status := waitStudioExport(t, handler, "succeeded"); status.SourceRevision != workspace.SourceRevision || status.ID == "previous" {
+				t.Fatalf("render did not capture the reviewed version: %+v", status)
+			}
+		})
+	}
+}
+
+func TestStudioExportRejectsInvalidSavedScoreBeforeReplacingDelivery(t *testing.T) {
+	_, path := studioTestHandler(t)
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.shutdown()
+	if err := os.WriteFile(path, []byte("title \"Broken\"\npattern unfinished {\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.exports.status = studioExportStatus{ID: "previous", State: "succeeded"}
+	// Older API clients can omit the source guard; validation still precedes a job.
+	request := studioExportRequest{TargetLUFS: -16, TruePeakMax: -1, Tolerance: 1, Rate: 48000, Bits: 24}
+	response := studioExportCall(t, s.routes(), request, "http://127.0.0.1:1234")
+	if response.Code != http.StatusUnprocessableEntity || s.exports.snapshot().ID != "previous" {
+		t.Fatalf("invalid source replaced delivery: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestStudioExportStatusComparesCapturedAndSavedVersions(t *testing.T) {
 	for _, name := range []string{"single file", "secondary score file", "library source"} {
 		t.Run(name, func(t *testing.T) {

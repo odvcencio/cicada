@@ -627,46 +627,49 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 }
 
 func compileStudioSourceWithOverrides(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
+	p, _, err := compileStudioSourceSnapshot(path, source, overrides)
+	return p, err
+}
+
+// Keep the source identity and the compiled view on the same captured files.
+func compileStudioSourceSnapshot(path string, source []byte, overrides map[string][]byte) (*project.Project, *project.Sources, error) {
 	if !utf8.Valid(source) {
-		return nil, fmt.Errorf("score is not UTF-8")
+		return nil, nil, fmt.Errorf("score is not UTF-8")
 	}
 	if overrides == nil {
 		overrides = map[string][]byte{}
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	overrides[absolute] = source
-	score, diagnostics, err := project.LoadScore(path, overrides)
+	sources, err := project.ReadSources(path, overrides)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	score, diagnostics := sources.Parse()
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
-			return nil, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 		}
 	}
 	p, extra := project.FromScore(score)
 	for _, d := range extra {
 		if d.Severity == "error" {
-			return nil, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 		}
 	}
 	if p == nil {
-		return nil, fmt.Errorf("score did not compile")
+		return nil, sources, fmt.Errorf("score did not compile")
 	}
 	if err := project.ValidateProject(p); err != nil {
-		return nil, err
+		return nil, sources, err
 	}
-	root, err := studioProjectRoot(path)
-	if err != nil {
-		return nil, err
+	if _, err := schedule.Compile(p, sources.Root, 48000, 128); err != nil {
+		return nil, sources, err
 	}
-	if _, err := schedule.Compile(p, root, 48000, 128); err != nil {
-		return nil, err
-	}
-	return p, nil
+	return p, sources, nil
 }
 
 func studioJSON(w http.ResponseWriter, status int, value any) {

@@ -23,7 +23,7 @@ import (
 type studioExportRequest struct {
 	ProjectDir     string  `json:"-"`
 	Revision       string  `json:"revision,omitempty"`
-	SourceRevision string  `json:"-"`
+	SourceRevision string  `json:"source_revision,omitempty"`
 	TargetLUFS     float64 `json:"target_lufs"`
 	TruePeakMax    float64 `json:"true_peak_max"`
 	Tolerance      float64 `json:"tolerance"`
@@ -228,8 +228,17 @@ func (s *studio) startExport(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed; reload before rendering"})
 		return
 	}
+	sourceRevision := inspection.sources.ScoreRevision()
+	if input.SourceRevision != "" && input.SourceRevision != sourceRevision {
+		studioJSON(w, http.StatusConflict, map[string]string{"error": "Saved score files or libraries changed. Refresh Studio before rendering again."})
+		return
+	}
+	if hasDiagnosticErrors(inspection.diagnostics) {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": diagnosticError(inspection.diagnostics).Error()})
+		return
+	}
 	input.Revision = studioRevision(inspection.source)
-	input.SourceRevision = inspection.sources.ScoreRevision()
+	input.SourceRevision = sourceRevision
 	input.ProjectDir = filepath.Dir(s.path)
 	targetText := studioTargetFilename(input.TargetLUFS)
 	scoreName := strings.TrimSuffix(filepath.Base(s.path), filepath.Ext(s.path))

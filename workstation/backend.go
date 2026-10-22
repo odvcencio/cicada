@@ -156,6 +156,7 @@ type workspace struct {
 	Edition         int              `json:"-"`
 	Source          string           `json:"source"`
 	Revision        string           `json:"revision"`
+	SourceRevision  string           `json:"source_revision"`
 	Filename        string           `json:"filename"`
 	Valid           bool             `json:"valid"`
 	Error           string           `json:"error"`

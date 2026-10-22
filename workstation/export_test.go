@@ -14,14 +14,14 @@ import (
 func TestExportActionsPassTheDisplayedScoreRevision(t *testing.T) {
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
-	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "target_lufs": {"-16"}, "true_peak_max": {"-1"}, "tolerance": {"1"}, "rate": {"48000"}, "bits": {"24"}}
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "source_revision": {"current-sources"}, "target_lufs": {"-16"}, "true_peak_max": {"-1"}, "tolerance": {"1"}, "rate": {"48000"}, "bits": {"24"}}
 	for index, managed := range []bool{false, true} {
 		response := post(t, client, address+"/__actions/export", form, managed, address)
 		want := http.StatusSeeOther
 		if managed {
 			want = http.StatusOK
 		}
-		if response.StatusCode != want || len(*edits) != index+1 || (*edits)[index]["revision"] != "current" {
+		if response.StatusCode != want || len(*edits) != index+1 || (*edits)[index]["revision"] != "current" || (*edits)[index]["source_revision"] != "current-sources" {
 			t.Fatal("export omitted the displayed source revision or used the wrong response contract", managed, response.StatusCode)
 		}
 	}
@@ -30,7 +30,7 @@ func TestExportActionsPassTheDisplayedScoreRevision(t *testing.T) {
 func TestEnhancedExportAcknowledgesWithoutNavigating(t *testing.T) {
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/studio"))
-	fields := map[string]string{"csrf_token": csrf, "revision": "current", "target_lufs": "-16", "true_peak_max": "-1", "tolerance": "1", "rate": "48000", "bits": "24", "__gosx_return_to": "/studio"}
+	fields := map[string]string{"csrf_token": csrf, "revision": "current", "source_revision": "current-sources", "target_lufs": "-16", "true_peak_max": "-1", "tolerance": "1", "rate": "48000", "bits": "24", "__gosx_return_to": "/studio"}
 	body, _ := json.Marshal(fields)
 	request, err := http.NewRequest(http.MethodPost, address+"/__actions/export", bytes.NewReader(body))
 	if err != nil {
@@ -47,12 +47,30 @@ func TestEnhancedExportAcknowledgesWithoutNavigating(t *testing.T) {
 	var result struct {
 		OK       bool   `json:"ok"`
 		Redirect string `json:"redirect"`
+		Message  string `json:"message"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != 200 || !result.OK || result.Redirect != "" || response.Header.Get("Location") != "" || len(*edits) != 1 || (*edits)[0]["revision"] != "current" {
+	if response.StatusCode != 200 || !result.OK || result.Redirect != "" || result.Message != "Rendering started." || response.Header.Get("Location") != "" || len(*edits) != 1 || (*edits)[0]["revision"] != "current" || (*edits)[0]["source_revision"] != "current-sources" {
 		t.Fatal("export redirected or lost its saved revision", response.StatusCode, result, *edits)
+	}
+}
+
+func TestExportRequiresTheLoadedSourceSnapshot(t *testing.T) {
+	address, client, edits := testApp(t)
+	for _, path := range []string{"/studio", "/?panel=export"} {
+		page := getPage(t, client, address+path)
+		if !strings.Contains(page, `name="source_revision" value="current-sources"`) {
+			t.Fatal("export form omitted its complete source identity", path)
+		}
+	}
+	csrf := tokenFromPage(t, getPage(t, client, address+"/studio"))
+	response := post(t, client, address+"/__actions/export", url.Values{"csrf_token": {csrf}, "revision": {"current"}}, true, address)
+	defer response.Body.Close()
+	data, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusUnprocessableEntity || len(*edits) != 0 || !strings.Contains(string(data), "Refresh Studio") {
+		t.Fatal("an export without a loaded source snapshot reached the audio service", response.StatusCode, string(data), *edits)
 	}
 }
 

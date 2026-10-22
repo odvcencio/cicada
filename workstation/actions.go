@@ -89,6 +89,9 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		// score. Acknowledgement must not navigate away from their controls or
 		// replace unrelated drafts. Native forms retain redirect-after-POST.
 		if (path == "/api/transport" || path == "/api/export") && action.WantsJSON(ctx.Request) {
+			if path == "/api/export" {
+				ctx.SetResult(action.Result{OK: true, Message: "Rendering started."})
+			}
 			return nil
 		}
 		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/"), "")
@@ -492,7 +495,10 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"], RecordingOffsetMS: offset, PeriodFrames: period}, nil
 		}),
 		"export": s.mutation("/api/export", func(f map[string]string) (any, error) {
-			p := map[string]any{"revision": f["revision"]}
+			if f["source_revision"] == "" {
+				return nil, fmt.Errorf("Refresh Studio to load the saved song before rendering.")
+			}
+			p := map[string]any{"revision": f["revision"], "source_revision": f["source_revision"]}
 			for _, key := range []string{"target_lufs", "true_peak_max", "tolerance"} {
 				v, e := finiteNumber(f, key)
 				if e != nil {

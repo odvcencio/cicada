@@ -815,8 +815,10 @@ saved score files and library definitions. If you save more edits, its link
 changes to **Download earlier render**;
 the earlier WAV remains available until you start another render. Undoing back
 to the rendered score restores the matching label without rendering again.
-Rendering checks the displayed source revision;
-starting another job invalidates its previous download link. Audio stays outside
+Rendering checks the saved score files and library definitions loaded by Studio.
+If they change before the job starts, refresh Studio and review the saved song
+before rendering again. A rejected request keeps the previous WAV available.
+Starting another job invalidates its previous download link. Audio stays outside
 the public asset bundle, and long downloads stream through the private service.
 Offline rendering uses the same Cicada kernel as Tymbal playback. See
 [exporting](exporting.md) for stems, MIDI, and verification commands.

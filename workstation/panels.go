@@ -344,7 +344,12 @@ func (s *studioApp) export(ctx *server.Context, v workspace, csrf string) gosx.N
 	}
 	status.project()
 	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", status.Busy), gosx.Attr("data-gosx-live-bind-attr", "disabled:busy")), gosx.Text("Render WAV"))
-	form := s.form(v, csrf, "export", "export", field("Target LUFS", numberInput("target_lufs", "-16", "-70", "0")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-24", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0", "10")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), button)
+	message := ""
+	if state, ok := action.States(ctx.Request)["export"]; ok {
+		message = state.Message()
+	}
+	feedback := gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message))
+	form := s.form(v, csrf, "export", "export", hidden("source_revision", v.SourceRevision), field("Target LUFS", numberInput("target_lufs", "-16", "-70", "0")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-24", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0", "10")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), button, feedback)
 	progress := gosx.El("section", gosx.Attrs(gosx.Attr("class", "export-result")),
 		gosx.El("h3", gosx.Text("Render delivery")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "progress"), gosx.Attr("role", "status")), gosx.Text(status.Progress)),
