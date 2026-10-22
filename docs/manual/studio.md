@@ -750,6 +750,11 @@ recorded vocals are not time-stretched.
 A scene-based song becomes ordinary arrangement placements on its first vocal
 selection. Explicit part starts and **Keep** continuity carry over, and block
 boundaries become markers. The original scene definitions remain available.
+If scenes and the song are in separate project files, Studio converts only the
+file containing the song. **Undo** restores its original song block and comments
+together with the entry score. Songs with scene-level parameter changes require
+those changes to be translated to arrangement automation; Studio currently
+refuses that automatic conversion so the changes stay intact.
 Arrangement-only scores keep their existing placements and markers. Original
 PCM and previous comp prints remain on disk for recovery and Undo. Simultaneous
 multitrack input capture is not provided.

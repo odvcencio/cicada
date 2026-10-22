@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	gts "github.com/odvcencio/gotreesitter"
+
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
@@ -151,17 +153,40 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 		return nil, fmt.Errorf("vocal comp tempo differs from the project tempo")
 	}
 	source, file := ctx.Source, ctx.Options.Path
-	var arrangement []byte
+	var arrangement, original []byte
 	owner := file
 	if plan.HasArrange {
 		arrangement, owner, err = arrangementFile(ctx)
 		if err != nil {
 			return nil, err
 		}
+		original = arrangement
 	} else {
-		source, err = vocalArrangementSource(source, file, plan)
+		score, ds, err := ctx.ParseProject()
 		if err != nil {
 			return nil, err
+		}
+		if score == nil || hasErrors(ds) || len(score.Song) == 0 {
+			return nil, fmt.Errorf("full-song recording needs a valid song or arrangement")
+		}
+		if score.SongPosition.File != "" {
+			owner = score.SongPosition.File
+		}
+		var supplied bool
+		original, supplied = ctx.FileSource(owner)
+		if !supplied {
+			return nil, fmt.Errorf("song is outside the editable project sources")
+		}
+		newline := "\n"
+		if owner != file {
+			newline = Newline(original)
+		}
+		arrangement, err = vocalArrangementSource(original, owner, plan, newline)
+		if err != nil {
+			return nil, err
+		}
+		if owner == file {
+			source = arrangement
 		}
 	}
 	// Remove just the managed block and its placement, preserving every other byte.
@@ -198,7 +223,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	if owner == file {
 		source = updated
 	} else {
-		stageProjectSource(ctx, owner, arrangement, updated)
+		stageProjectSource(ctx, owner, original, updated)
 	}
 	asset := in.Asset
 	metadata, _ := json.Marshal(next)
@@ -303,7 +328,7 @@ func removeVocalPrintDeclarations(block []byte, file string, previous VocalComp,
 // continuous vocal can span blocks. Explicit scene bindings restart a part;
 // Keep carries its phase to the next block. A score that already has an
 // arrange block is unchanged.
-func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, error) {
+func vocalArrangementSource(source []byte, file string, plan *Plan, newline string) ([]byte, error) {
 	if plan.HasArrange {
 		return source, nil
 	}
@@ -312,10 +337,12 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 		return nil, err
 	}
 	var start, end int
+	var song *gts.Node
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
 		if w.Type(n) == "song_decl" {
 			start, end = int(n.StartByte()), int(n.EndByte())
+			song = n
 			break
 		}
 	}
@@ -326,8 +353,24 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 	for _, v := range plan.Scenes {
 		scenes[v.ID] = v
 	}
+	for _, entry := range plan.Song {
+		if len(scenes[entry.Scene].Settings) > 0 {
+			return nil, fmt.Errorf("scene %s has settings that a vocal arrangement cannot carry yet", entry.Scene)
+		}
+	}
 	var text strings.Builder
 	text.WriteString("arrange {\n")
+	var comments func(*gts.Node)
+	comments = func(node *gts.Node) {
+		if w.Type(node) == "comment" {
+			text.WriteString("  " + strings.TrimRight(w.Text(node), "\r\n") + "\n")
+			return
+		}
+		for i := 0; i < node.NamedChildCount(); i++ {
+			comments(node.NamedChild(i))
+		}
+	}
+	comments(song)
 	at := int64(0)
 	counter := 0
 	type activePart struct {
@@ -366,5 +409,5 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 		}
 	}
 	text.WriteString("}\n")
-	return ReplaceSpan(source, file, Span{start, end, text.String(), file})
+	return ReplaceSpan(source, file, Span{start, end, strings.ReplaceAll(text.String(), "\n", newline), file})
 }

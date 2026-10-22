@@ -10,7 +10,7 @@ test('printed audio and comp metadata survive WAV export and a fresh process', {
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio']});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
  const read=async name=>{const r=await page.request.get(base+'/api/'+name);assert.equal(r.status(),200);return r.json()};
- const sources=()=>({entry:fs.readFileSync(fixture.score,'utf8'),arrangement:fs.readFileSync(fixture.arrangement,'utf8')});
+ const sources=()=>({entry:fs.readFileSync(fixture.score,'utf8'),arrangement:fs.readFileSync(fixture.arrangement,'utf8'),...(fixture.scenes?{scenes:fs.readFileSync(fixture.scenes,'utf8')}:{})});
  const rawHashes=async()=>{const state=await read('takes');return state.takes.map(take=>{const file=path.resolve(path.dirname(fixture.score),take.asset.path);const actual=hash(fs.readFileSync(file));assert.equal(actual,take.asset.sha256);return {id:take.id,sha256:actual}}).sort((a,b)=>a.id.localeCompare(b.id))};
  await page.goto(startup.href);await page.goto(base+'/studio');await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
  const config=await read('audio/config');assert.equal(config.options.inputEnabled,false);assert.equal(String(config.inventory.backendName||config.inventory.backend).toLowerCase(),'null');

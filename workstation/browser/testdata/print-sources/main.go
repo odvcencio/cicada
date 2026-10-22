@@ -22,7 +22,11 @@ func must(err error) {
 func main() {
 	primary := flag.Bool("primary-arrangement", false, "keep arrangement in entry for compatibility checks")
 	seedBank := flag.Bool("sampler-bank", false, "seed one stored performance for native UI checks")
+	sceneSong := flag.Bool("scene-song", false, "keep scenes and the song in separate project sources")
 	flag.Parse()
+	if *sceneSong && *primary {
+		panic("scene-song and primary-arrangement are separate fixture modes")
+	}
 	root, err := os.MkdirTemp("/tmp", "cicada-print-sources-")
 	must(err)
 	entry := []byte(`cicada 2
@@ -44,7 +48,14 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 	arrangement := []byte("// Keep section notes.\r\narrange {\r\n  place lead lead melody { at = @1.1.1 length = 8bars }\r\n  marker middle { at = @5.1.1 }\r\n}\r\n")
 	score, owner := filepath.Join(root, "main.cicada"), filepath.Join(root, "arrangement.cicada")
 	manifest := "project print-sources\ncicada 2\nentry \"main.cicada\"\n"
-	if *primary {
+	scenesPath := ""
+	if *sceneSong {
+		owner = filepath.Join(root, "song.cicada")
+		scenesPath = filepath.Join(root, "scenes.cicada")
+		must(os.WriteFile(scenesPath, []byte("scene opening { lead=melody vox=off }\nscene held { lead=keep }\nscene quiet { lead=off }\n"), 0600))
+		must(os.WriteFile(owner, []byte("// Keep song notes.\r\nsong { opening*2 // Preserve this song note.\r\nheld*2 opening*2 quiet opening } // Keep this ending.\r\n"), 0600))
+		manifest += "source \"scenes.cicada\"\nsource \"song.cicada\"\n"
+	} else if *primary {
 		entry = append(entry, arrangement...)
 		owner = score
 	} else {
@@ -93,5 +104,5 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 		bank.Performance = padsampler.Performance{Frames: 96000, Hits: []padsampler.Hit{{Sound: prepared.ID, Pad: 1, Velocity: 1, Choke: prepared.Pad.Choke}}}
 		must(bankStore.Write(bankStore.BankPath, padsampler.BankBytes(bank), true))
 	}
-	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"score": score, "arrangement": owner, "primaryArrangement": *primary, "takeIDs": ids}))
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"score": score, "arrangement": owner, "scenes": scenesPath, "sceneSong": *sceneSong, "primaryArrangement": *primary, "takeIDs": ids}))
 }
