@@ -70,13 +70,24 @@ so those comments keep their attachment. Local scene and bar edits preserve them
 For an edition-2 score using `arrange`, **Arrange** shows named placements on
 a track timeline with section markers. Select a block to open its controls.
 Drag it horizontally to move it, or drag its right edge to resize it. Arrow
-keys on a block or edge change its start or length by a sixteenth; hold Shift
-for a whole bar. Drag previews are saved only when released; Escape cancels.
+keys on a block or edge change its start or length by **Snap step**; hold Shift
+for a whole bar. Choose bars, beats, straight or triplet divisions (T), or Off
+for individual ticks. Snap changes the movement amount, preserving any existing
+timing offset. Pattern starts remain on sixteenth boundaries, using the smallest
+increment shared by that grid and Snap step. Audio starts and all trims allow
+exact ticks. Hold Shift while dragging to bypass Snap step within these limits. Drag previews are saved only when released; Escape cancels.
 Focus stays on the block or edge after saving, so arrow-key nudges can continue.
 These gestures work directly in the Studio shell as well as the panel view.
 Small pointer movements are treated as selection, so a click does not shift a
 phrase. Save or discard unsaved Code edits before moving placements; finish
 recording and wait for a pending save before starting another edit.
+
+Option/Alt-drag a block to copy it directly to another position. Enable **Copy
+drag** to do the same with touch or without a modifier. The dashed outline keeps
+the original position visible; release saves one copy and selects it. Escape
+cancels. Edges always trim, including in Copy drag mode. Overlapping pattern
+copies are rejected with the usual form error and no score change. Snap step
+and Copy drag stay in place through saves, Undo, and Arrange/Session switches.
 
 While dragging or trimming, hold the pointer near either timeline edge to
 scroll through the song. Scrolling starts after a brief pause and gets faster
