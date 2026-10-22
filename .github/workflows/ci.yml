@@ -247,9 +247,13 @@ jobs:
       - name: Framework generation, race checks, and production bundle
         run: |
           set -euo pipefail
+          go test -race ./internal/buildaudit -count=1
           make test-workstation
           (cd workstation && go vet ./...)
           make build-workstation-release
+          bash scripts/check-gosx-size.sh --json workstation/dist/build.json > build/workstation-gosx-size.json
+          CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
+          git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
       - name: Windows workstation and desktop
         run: |
@@ -683,7 +687,9 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gosx-workstation-build
-          path: workstation/dist/build.json
+          path: |
+            workstation/dist/build.json
+            build/workstation-gosx-size.json
 
   macos-desktop:
     name: macOS desktop (${{ matrix.arch }})
@@ -727,6 +733,7 @@ jobs:
           go version
           tinygo version
           wasm-opt --version
+          go test -race ./internal/buildaudit -count=1
           (cd desktop && go mod download && go mod verify && go test -race ./... && go vet ./...)
           (cd workstation && go test -race ./... && go vet ./...)
           go test -race ./host/capture ./host/midi ./internal/audiobackend -count=1
@@ -753,6 +760,9 @@ jobs:
           set -euo pipefail
           desktop/package.sh --target darwin --version 0.0.0-ci --output build/macos
           codesign --verify --deep --strict 'build/macos/Cicada Studio.app'
+          bash scripts/check-gosx-size.sh --json 'build/macos/Cicada Studio.app/Contents/MacOS/workstation/build.json' > build/macos-gosx-size.json
+          CICADA_SIZE_AUDIT_MANIFEST="$PWD/build/macos/Cicada Studio.app/Contents/MacOS/workstation/build.json" go test -race ./internal/buildaudit -count=1
+          git diff --exit-code -- tools/gosx-size
           go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
           python3 -m unittest discover -s desktop -p test_smoke.py
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke
@@ -807,6 +817,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/macos-smoke/
+            build/macos-gosx-size.json
             build/native-audio-determinism.log
             build/ep-wasm-determinism.log
             build/performed-gesture-native.log

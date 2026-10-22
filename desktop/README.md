@@ -125,6 +125,32 @@ An existing output app is replaced only after the new bundle passes signature
 verification. Packaging reuses the stripped workstation executable from the
 production runtime build, avoiding a second compilation.
 
+Audit the built GoSX runtime with its canonical measurement environment:
+
+```sh
+mkdir -p build
+bash scripts/check-gosx-size.sh --json \
+  'dist/macos/Cicada Studio.app/Contents/MacOS/workstation/build.json' \
+  > build/macos-gosx-size.json
+```
+
+The audit builds the published GoSX CLI from `tools/gosx-size` with Go 1.26.0
+and Brotli 1.2.1, the exact identities required by its canonical compressor.
+The Go toolchain may download on the first run. The isolated module keeps
+Cicada's compiler and compression dependencies unchanged. Paths remain relative
+to the caller's directory, and the audit works without a local GoSX checkout.
+Its module must match the workstation's GoSX pin; `go test ./internal/buildaudit`
+checks that match. When updating the SDK, update both module pins and resolve
+the audit module with
+`GOWORK=off GOTOOLCHAIN=go1.26.0 go -C tools/gosx-size mod tidy`.
+The build uses a read-only module graph, and the temporary tool is removed on
+success or failure. CI checks the production runtime and final macOS bundle,
+retaining both JSON reports, and rejects deliberately corrupted copies of the
+raw, gzip, and Brotli representations. Run those integration checks locally
+with `CICADA_SIZE_AUDIT_MANIFEST=/absolute/path/to/build.json go test -race ./internal/buildaudit`.
+These reports cover GoSX runtime assets; Cicada's
+custom UI engine keeps its separate build-time byte limit.
+
 CI packages and launches the app on Apple Silicon and Intel macOS runners.
 Run the same native launch and shutdown checks locally with Python 3:
 
