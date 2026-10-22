@@ -227,6 +227,9 @@ type Player struct {
 	closedOnce              sync.Once
 	previous                *engine.Engine
 	clock                   seq.Clock
+	nextClockEngine         *engine.Engine
+	nextClockBar            int64
+	nextClockTempo          int64
 	rate                    int
 	sample                  int64
 	bar                     int64
@@ -1785,7 +1788,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 	p.completeSlotLaunches(endSample)
 	p.sample += int64(frames)
 	p.followLiveTempo()
-	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.clock.BPMMilli, p.current.Engine.Playing())
+	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.clock.BPMMilli, p.current.Engine.Playing(), p.nextTempoStep())
 	p.buffered, p.read = frames*8, 0
 }
 

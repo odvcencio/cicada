@@ -5,6 +5,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // PlaybackRange uses exact, half-open musical ticks. It does not change the
@@ -137,7 +138,7 @@ func (p *Player) finishPlaybackRange() bool {
 	p.rangeFinished.Store(true)
 	p.hostPaused.Store(true)
 	p.position.Store(uint64((r.EndTick/seq.TicksPerBar+1)<<8 | (r.EndTick%seq.TicksPerBar)/seq.TicksPerStep + 1))
-	p.telemetry.storeTransport(p.sample, r.EndTick, p.clock.BPMMilli, false)
+	p.telemetry.storeTransport(p.sample, r.EndTick, p.clock.BPMMilli, false, musictime.ObservedTempoStep{})
 	clear(p.pcm[:])
 	p.buffered, p.read = len(p.pcm), 0
 	return true

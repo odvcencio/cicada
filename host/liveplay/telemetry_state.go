@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // telemetryState hands the latest transport position and meter levels from the
@@ -19,6 +20,9 @@ type telemetryState struct {
 	tick       atomic.Int64
 	wallNanos  atomic.Int64
 	tempoMilli atomic.Int64
+	nextAfter  atomic.Int64
+	nextTick   atomic.Int64
+	nextTempo  atomic.Int64
 	playing    atomic.Bool
 	trackCount atomic.Uint32
 	tracks     [engine.MaxTracks][4]atomic.Uint32 // peak L, peak R, RMS L, RMS R as float32 bits
@@ -31,15 +35,19 @@ type telemetryState struct {
 type telemetryTransport struct {
 	sample, tick, wallNanos, tempoMilli int64
 	playing                             bool
+	nextTempo                           musictime.ObservedTempoStep
 }
 
-func (t *telemetryState) storeTransport(sample, tick, tempoMilli int64, playing bool) {
+func (t *telemetryState) storeTransport(sample, tick, tempoMilli int64, playing bool, next musictime.ObservedTempoStep) {
 	observed := time.Now().UnixNano()
 	t.seq.Add(1)
 	t.sample.Store(sample)
 	t.tick.Store(tick)
 	t.wallNanos.Store(observed)
 	t.tempoMilli.Store(tempoMilli)
+	t.nextAfter.Store(next.AfterNanos)
+	t.nextTick.Store(next.Tick)
+	t.nextTempo.Store(next.BPMMilli)
 	t.playing.Store(playing)
 	t.written.Store(true)
 	t.seq.Add(1)
@@ -73,6 +81,7 @@ func (t *telemetryState) load() (transport telemetryTransport, meters MetersFram
 		}
 		haveTransport = t.written.Load()
 		transport = telemetryTransport{sample: t.sample.Load(), tick: t.tick.Load(), wallNanos: t.wallNanos.Load(), tempoMilli: t.tempoMilli.Load(), playing: t.playing.Load()}
+		transport.nextTempo = musictime.ObservedTempoStep{AfterNanos: t.nextAfter.Load(), Tick: t.nextTick.Load(), BPMMilli: t.nextTempo.Load()}
 		meters = MetersFrame{TrackCount: uint8(t.trackCount.Load())}
 		for i := range t.tracks {
 			meters.Tracks[i] = TrackMeter{
@@ -120,11 +129,11 @@ func (p *Player) PublishTelemetry() {
 	}
 	if haveTransport {
 		tick := transport.tick
-		pub.PublishTransport(TransportFrame{
+		pub.PublishTransportClock(TransportFrame{
 			SampleFrame: transport.sample, SampleRate: uint32(p.rate), WallNanos: transport.wallNanos,
 			TempoMilli: uint32(transport.tempoMilli), Playing: transport.playing && !p.hostPaused.Load(),
 			Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1), Tick: int32(tick % seq.PPQ),
-		})
+		}, transport.nextTempo)
 	}
 	if haveMeters {
 		loud := p.Loudness()

@@ -7,18 +7,20 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // PlaybackState consumes the small native transport projection. The binary
 // layout is TransportFrame v1 in host/liveplay/telemetry.go; keep native audio
 // dependencies out of the browser module.
 type PlaybackState struct {
-	MIDIClockEpoch uint64        `json:"midiClockEpoch"`
-	FrameAgeNanos  *int64        `json:"frameAgeNanos,omitempty"`
-	RoundTrip      time.Duration `json:"-"` // Measured by the client; not a host clock.
-	Playing        bool          `json:"playing"`
-	Bar            int64         `json:"bar"`
-	Step           int64         `json:"step"`
+	MIDIClockEpoch uint64                      `json:"midiClockEpoch"`
+	FrameAgeNanos  *int64                      `json:"frameAgeNanos,omitempty"`
+	RoundTrip      time.Duration               `json:"-"` // Measured by the client; not a host clock.
+	NextTempo      musictime.ObservedTempoStep `json:"nextTempo,omitempty"`
+	Playing        bool                        `json:"playing"`
+	Bar            int64                       `json:"bar"`
+	Step           int64                       `json:"step"`
 	Frames         struct {
 		Transport string `json:"transport"`
 	} `json:"frames"`
@@ -45,10 +47,11 @@ type Playhead struct {
 	Playing     bool
 	Range       *PlaybackRange
 	Age         time.Duration // Render age at receipt, including estimated response transit.
+	NextTempo   musictime.ObservedTempoStep
 }
 
 func (s PlaybackState) Playhead() Playhead {
-	p := Playhead{Tick: max(0, s.Bar-1)*seq.TicksPerBar + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range}
+	p := Playhead{Tick: max(0, s.Bar-1)*seq.TicksPerBar + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range, NextTempo: s.NextTempo}
 	if s.FrameAgeNanos != nil {
 		p.Age = time.Duration(*s.FrameAgeNanos)
 		if p.Age >= 0 {
@@ -89,7 +92,7 @@ func (p Playhead) at(elapsed, limit time.Duration) float64 {
 	if p.Playing && p.Age >= 0 {
 		age := min(p.Age, limit)
 		total := age + min(max(0, elapsed), limit-age)
-		tick += total.Seconds() * float64(p.Tempo) * float64(seq.PPQ) / 60000
+		tick += musictime.ObservedAdvance(p.Tick, p.Tempo, int64(total), p.NextTempo)
 	}
 	if r := p.Range; r != nil && r.End > r.Start {
 		if r.Loop && tick >= float64(r.End) {

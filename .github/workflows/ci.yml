@@ -519,6 +519,17 @@ jobs:
             sleep 0.1
           done
           CICADA_OBSERVATION_PROOF_DIR="$PWD/build/studio-observation-clock-proof" node --test workstation/browser/observation-clock.test.cjs | tee build/studio-observation-clock-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          node workstation/browser/tempo-clock.test.cjs --write-fixture "$browser_root/tempo-clock.cicada"
+          ./build/cicada studio "$browser_root/tempo-clock.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-tempo-clock-server.log 2>&1 &
+          studio_pid=$!
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          CICADA_TEMPO_CLOCK_PROOF_DIR="$PWD/build/studio-tempo-clock-proof" node --test workstation/browser/tempo-clock.test.cjs | tee build/studio-tempo-clock-report.txt
           for print_layout in primary secondary song controls tempo; do
             print_args=()
             print_phases=(sampler producer roundtrip reopen)
@@ -646,6 +657,9 @@ jobs:
             build/studio-observation-clock-report.txt
             build/studio-observation-clock-server.log
             build/studio-observation-clock-proof/
+            build/studio-tempo-clock-report.txt
+            build/studio-tempo-clock-server.log
+            build/studio-tempo-clock-proof/
             build/studio-print-*-report.txt
             build/studio-print-*-server.log
             build/studio-print-*-fixture.json
@@ -753,6 +767,8 @@ jobs:
           go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/native-observation-clock-fixture.json
           observation_score="$(node -e 'process.stdout.write(require("./build/native-observation-clock-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/observation-clock --mode normal --timeout 180 --project-fixture "$observation_score" --workflow desktop/testdata/native-observation-clock-workflow.js
+          node workstation/browser/tempo-clock.test.cjs --write-fixture build/native-tempo-clock/main.cicada
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/tempo-clock --mode normal --timeout 180 --project-fixture build/native-tempo-clock/main.cicada --workflow desktop/testdata/native-tempo-clock-workflow.js
           go -C workstation run ./browser/testdata/print-sources --sampler-bank > build/native-print-sources-fixture.json
           print_score="$(node -e 'process.stdout.write(require("./build/native-print-sources-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/print-sources --mode normal --timeout 180 --project-fixture "$print_score" --workflow desktop/testdata/native-print-sources-workflow.js

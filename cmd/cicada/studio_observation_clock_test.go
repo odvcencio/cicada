@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/musictime"
 )
 
 func TestMIDIObservationUsesRenderTimeAcrossDelayedPollingAndWrap(t *testing.T) {
@@ -14,11 +15,11 @@ func TestMIDIObservationUsesRenderTimeAcrossDelayedPollingAndWrap(t *testing.T) 
 	tpt.playing = true
 	tpt.midiTimeline.Reset(host - 1)
 	f := liveplay.TransportFrame{WallNanos: wall, Bar: 2, Beat: 1, TempoMilli: 120000, Playing: true}
-	tpt.observeMIDIFrameLocked(f, wall+int64(120*time.Millisecond), host+int64(120*time.Millisecond))
+	tpt.observeMIDIFrameLocked(f, musictime.ObservedTempoStep{}, wall+int64(120*time.Millisecond), host+int64(120*time.Millisecond))
 	if p := tpt.midiTimeline.PositionAt(host+int64(100*time.Millisecond), true); !p.Valid || p.Tick != 4032 {
 		t.Fatalf("poll delay shifted queued input: %+v", p)
 	}
-	tpt.observeMIDIFrameLocked(f, wall+int64(200*time.Millisecond), host+int64(200*time.Millisecond))
+	tpt.observeMIDIFrameLocked(f, musictime.ObservedTempoStep{}, wall+int64(200*time.Millisecond), host+int64(200*time.Millisecond))
 	if p := tpt.midiTimeline.PositionAt(host+int64(150*time.Millisecond), true); !p.Valid || p.Tick != 4128 {
 		t.Fatalf("republishing moved the observation: %+v", p)
 	}
@@ -27,12 +28,12 @@ func TestMIDIObservationUsesRenderTimeAcrossDelayedPollingAndWrap(t *testing.T) 
 	// because its source time predates the polling call.
 	f.WallNanos += int64(200 * time.Millisecond)
 	f.Bar, f.TempoMilli = 1, 60000
-	tpt.observeMIDIFrameLocked(f, wall+int64(240*time.Millisecond), host+int64(240*time.Millisecond))
+	tpt.observeMIDIFrameLocked(f, musictime.ObservedTempoStep{}, wall+int64(240*time.Millisecond), host+int64(240*time.Millisecond))
 	if p := tpt.midiTimeline.PositionAt(host+int64(220*time.Millisecond), true); !p.Valid || p.Stale || p.Epoch != 2 || p.Tick != 19 {
 		t.Fatalf("wrapped source event lost its epoch: %+v", p)
 	}
 	f.WallNanos += int64(10 * time.Millisecond)
-	tpt.observeMIDIFrameLocked(f, wall+int64(time.Second), host+int64(time.Second))
+	tpt.observeMIDIFrameLocked(f, musictime.ObservedTempoStep{}, wall+int64(time.Second), host+int64(time.Second))
 	if p := tpt.midiTimeline.PositionAt(host+int64(time.Second), true); p.Valid {
 		t.Fatal("stale render was accepted as a fresh clock")
 	}

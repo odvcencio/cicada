@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // Timeline correlates recent native transport observations with the CoreMIDI
@@ -18,7 +18,10 @@ type Timeline struct {
 	cached      Position
 }
 
-type clockFrame struct{ at, tick, tempo int64 }
+type clockFrame struct {
+	at, tick, tempo int64
+	nextTempo       musictime.ObservedTempoStep
+}
 
 // ObservationHostTime correlates a render observation's wall time with the
 // native input clock. Delayed polling must not assign an old position to now.
@@ -47,6 +50,12 @@ func (t *Timeline) Reset(at int64) {
 // Observe returns false when playback moved backwards. The host starts a new
 // epoch before admitting more input, including when a playback range wraps.
 func (t *Timeline) Observe(at, tick, tempo int64) bool {
+	return t.ObserveClock(at, tick, tempo, musictime.ObservedTempoStep{})
+}
+
+// ObserveClock retains an authored tempo boundary with the observation that
+// measured it. Delayed packets use that boundary even before the next poll.
+func (t *Timeline) ObserveClock(at, tick, tempo int64, next musictime.ObservedTempoStep) bool {
 	if at <= 0 || tick < 0 || tempo < 20000 || tempo > 300000 {
 		return true
 	}
@@ -59,7 +68,7 @@ func (t *Timeline) Observe(at, tick, tempo int64) bool {
 			return false
 		}
 	}
-	t.frames[t.next] = clockFrame{at, tick, tempo}
+	t.frames[t.next] = clockFrame{at: at, tick: tick, tempo: tempo, nextTempo: next}
 	t.next = (t.next + 1) % len(t.frames)
 	t.count = min(t.count+1, len(t.frames))
 	return true
@@ -91,7 +100,7 @@ func (t *Timeline) PositionAt(at int64, playing bool) Position {
 		if elapsed > int64(250*time.Millisecond) {
 			break
 		}
-		advance := float64(elapsed) * float64(f.tempo) * float64(seq.PPQ) / float64(time.Minute*1000)
+		advance := musictime.ObservedAdvance(f.tick, f.tempo, elapsed, f.nextTempo)
 		if advance > float64(math.MaxInt64-f.tick) {
 			break
 		}
