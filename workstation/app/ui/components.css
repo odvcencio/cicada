@@ -414,3 +414,6 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 /* Copy previews retain the source position without another interactive block. */
 .placement-copy-origin { position:absolute; height:56px; box-sizing:border-box; border:1px dashed var(--mint); border-radius:5px; background:var(--raised); opacity:.6; padding:8px; overflow:hidden; pointer-events:none; font-size:12px; }
 .placement-block[data-placement-copy-preview]::after { content:'COPY'; position:absolute; left:8px; top:-12px; padding:0 3px; background:var(--bg); color:var(--amber); font:10px ui-monospace,monospace; pointer-events:none; }
+
+.studio-startup { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:8px 12px; border-bottom:1px solid var(--border); color:var(--mint); background:var(--raised); font-size:12px; }
+.studio-startup[hidden], .studio-startup button[hidden] { display:none; }

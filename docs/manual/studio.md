@@ -17,6 +17,11 @@ edits the selected track's sound and processing, and **Automation** contains
 curve and scene-point editors. The **Code** lens shows the score. Older
 screenshots show these tools as standalone panels.
 
+Studio shows **Opening Studio controls…** while its interactive controls load.
+If loading takes longer or fails, **Reload Studio** offers a fresh attempt.
+Save or copy unsaved edits and finish recording before reloading. Code typed
+during startup remains protected when arranging controls become ready.
+
 Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
 workspace region on a phone keeps your unsaved **Code** text in place.
 

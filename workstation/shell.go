@@ -83,6 +83,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	if !ok {
 		return unavailable, workspace{}, false
 	}
+	ctx.Runtime().ManagedScript("/studio-startup.js", server.ManagedScriptOptions{Role: server.ManagedScriptRoleLifecycle}, gosx.BoolAttr("defer"))
 	csrf := session.Token(ctx.Request)
 	var state transport
 	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
