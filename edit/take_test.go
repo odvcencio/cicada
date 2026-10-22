@@ -1,11 +1,39 @@
 package edit_test
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/notation"
 )
+
+func TestSelectTakeIntentUsesTheProjectSnapshot(t *testing.T) {
+	source := []byte("cicada 2\ntrack vox audio {}\nscene main { vox=off bass=pulse }\nsong { main }\n")
+	files := []notation.SourceFile{{Path: "main.cicada", Source: source}, {Path: "part.cicada", Source: []byte("track bass acid {}\npattern pulse acid { 1 . 5 . }\n")}}
+	compiler := multiFileCompiler{path: "main.cicada", files: files}
+	in := &edits.SelectTake{ID: "take-project", Track: "vox", Scene: "main", Rate: 48000, Channels: 1, Asset: edits.TakeAsset{Name: "take-project", Path: "take.wav", SHA256: strings.Repeat("a", 64), Frames: 48, RateHz: 48000, Channels: 1}}
+	for _, projectParser := range []bool{false, true} {
+		options := edits.Options{Path: "main.cicada", Edition: 2, Sources: files, Compiler: compiler}
+		if projectParser {
+			options.ParseProject = compiler.parse
+		}
+		result, err := edits.Apply(source, edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{in}}, options)
+		if err != nil || !bytes.Contains(result.Source, []byte("vox=take-project-clip")) {
+			t.Fatalf("take intent parsed only the entry file: parser=%v error=%v", projectParser, err)
+		}
+		for _, file := range result.Files {
+			if file.Path == "part.cicada" && !bytes.Equal(file.Before, file.After) {
+				t.Fatal("take selection changed the unrelated source file")
+			}
+		}
+	}
+	files[1].Source = []byte("pattern incomplete {\n")
+	if _, err := edits.Apply(source, edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{in}}, edits.Options{Path: "main.cicada", Edition: 2, Sources: files, ParseProject: compiler.parse, Compiler: compiler}); err == nil {
+		t.Fatal("take selection bypassed project validation")
+	}
+}
 
 func TestSelectTakeExactBytesAndErrors(t *testing.T) {
 	source := "cicada 2\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { vox = off bass = pulse }\nsong { main }\n"

@@ -33,7 +33,21 @@ func (SelectTake) Kind() string { return "selecttake" }
 func init() {
 	Register("selecttake", func() Intent { return &SelectTake{} })
 	Handle("selecttake", func(ctx *Context, intent Intent) error {
-		updated, err := selectTakeSource(ctx.Source, ctx.Options.Path, *intent.(*SelectTake))
+		var score *notation.Score
+		var diagnostics []notation.Diagnostic
+		var err error
+		if ctx.Options.ParseProject != nil || len(ctx.Options.Sources) > 0 {
+			score, diagnostics, err = ctx.ParseProject()
+		} else {
+			score, diagnostics = notation.ParseEdition(ctx.Source, 2)
+		}
+		if err != nil {
+			return err
+		}
+		if err := takeScoreError(score, diagnostics); err != nil {
+			return err
+		}
+		updated, err := selectTakeSource(ctx.Source, ctx.Options.Path, *intent.(*SelectTake), score)
 		if err != nil {
 			return err
 		}
@@ -45,20 +59,40 @@ func init() {
 
 // SelectTakeSource is the pure text half used by the take journal wrapper.
 func SelectTakeSource(source []byte, t SelectTake) ([]byte, error) {
-	return selectTakeSource(source, "", t)
+	score, ds := notation.ParseEdition(source, 2)
+	if err := takeScoreError(score, ds); err != nil {
+		return nil, err
+	}
+	return selectTakeSource(source, "", t, score)
 }
 
-func selectTakeSource(source []byte, targetFile string, t SelectTake) ([]byte, error) {
-	score, ds := notation.ParseEdition(source, 2)
+// SelectTakeSourceInProject edits source using its validated project snapshot.
+// The caller must load score with these exact source bytes and validate the
+// resulting project before publishing the edited file.
+func SelectTakeSourceInProject(source []byte, t SelectTake, score *notation.Score) ([]byte, error) {
+	if err := takeScoreError(score, nil); err != nil {
+		return nil, err
+	}
+	return selectTakeSource(source, "", t, score)
+}
+
+func takeScoreError(score *notation.Score, ds []notation.Diagnostic) error {
 	if score == nil {
-		return nil, errors.New("score cannot be parsed")
+		return errors.New("score cannot be parsed")
 	}
 	for _, d := range ds {
 		if d.Severity == "error" {
-			return nil, errors.New(d.Message)
+			return errors.New(d.Message)
 		}
 	}
-	score, ds = notation.ResolvePresets(score)
+	if score.Version != 2 {
+		return errors.New("audio takes require an edition-2 score")
+	}
+	return nil
+}
+
+func selectTakeSource(source []byte, targetFile string, t SelectTake, score *notation.Score) ([]byte, error) {
+	score, ds := notation.ResolvePresets(score)
 	for _, d := range ds {
 		if d.Severity == "error" {
 			return nil, errors.New(d.Message)

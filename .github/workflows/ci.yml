@@ -334,6 +334,25 @@ jobs:
             wait "$studio_pid" || true
           done
           unset CICADA_SONG_REOPEN
+          export CICADA_PORTABLE_FIXTURE="$PWD/build/studio-portable-fixture.json"
+          export CICADA_PORTABLE_PROOF_DIR="$PWD/build/studio-portable-proof"
+          go -C workstation run ./browser/testdata/portable-song > "$CICADA_PORTABLE_FIXTURE"
+          portable_score="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["score"])' "$CICADA_PORTABLE_FIXTURE")"
+          for phase in select reopen; do
+            ./build/cicada studio "$portable_score" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-portable-$phase-server.log" 2>&1 &
+            studio_pid=$!
+            for _ in $(seq 1 100); do
+              if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+              kill -0 "$studio_pid"
+              sleep 0.1
+            done
+            export CICADA_PORTABLE_REOPEN=0
+            if [[ "$phase" == reopen ]]; then export CICADA_PORTABLE_REOPEN=1; fi
+            make test-studio-portable-song | tee "build/studio-portable-$phase-report.txt"
+            kill "$studio_pid"
+            wait "$studio_pid" || true
+          done
+          unset CICADA_PORTABLE_REOPEN
           cp -R examples/studio-project "$song_root/export-sources"
           export CICADA_EXPORT_PROOF_DIR="$PWD/build/studio-export-proof"
           ./build/cicada studio "$song_root/export-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-export-server.log 2>&1 &
@@ -449,6 +468,10 @@ jobs:
             build/studio-song-*-report.txt
             build/studio-song-*-server.log
             build/studio-song-proof/
+            build/studio-portable-fixture.json
+            build/studio-portable-*-report.txt
+            build/studio-portable-*-server.log
+            build/studio-portable-proof/
             build/studio-export-report.txt
             build/studio-export-server.log
             build/studio-export-proof/

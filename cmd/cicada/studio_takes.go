@@ -97,7 +97,7 @@ func (s *studio) commitTakeWith(id, expected string, candidate []byte, env *edit
 			candidate, built, err = s.vocalTakeEnvelope(current, t, nil)
 			env = &built
 		} else {
-			candidate, err = takejournal.SelectSource(current, t)
+			candidate, err = takejournal.SelectProjectSource(s.path, current, t)
 		}
 		if err != nil {
 			return err

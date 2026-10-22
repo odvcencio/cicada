@@ -145,6 +145,11 @@ test-studio-first-song:
 test-studio-export-sources:
 	node --test workstation/browser/export-sources.test.cjs
 
+.PHONY: test-studio-portable-song
+# Requires a generated portable-song fixture and CICADA_PORTABLE_PROOF_DIR.
+test-studio-portable-song:
+	node --test workstation/browser/portable-song.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

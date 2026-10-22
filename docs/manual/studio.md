@@ -600,6 +600,13 @@ arrange-only scores. The toolbar's **Record** button, **F9**, or
 When recording is available, the same command starts a take or finishes the
 active take. With no audio track, it shows **Recording setup**.
 
+Earlier scene recordings appear under **Scene takes** for the selected audio
+track. Preview a pass, then choose **Use in _scene_** to change that scene's
+recording. The selected pass reads **In _scene_**. Undo and Redo restore the
+selection; the original recordings remain available. Selection resolves imported
+sounds and secondary score files. **Save As** carries both selected and unused
+takes, audio assets, and pinned sound libraries into the copied project.
+
 In **Recording setup**, choose a microphone and output in **Audio**,
 enable input, and add an audio track such as `danilo`. Use headphones and leave
 monitoring muted if the device delay is distracting. Native recording requires
