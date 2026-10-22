@@ -16,6 +16,30 @@ type ScheduleEvent struct {
 	ID            uint32 // Placement identity, or milli-BPM for ScheduleTempo.
 }
 
+// SetPlaybackPlacement restricts scheduled starts and releases to one placement
+// without changing the song's clock, automation, or track identities. Call it
+// before rendering; zero plays every placement. Hosts use it for solo listening.
+func (e *Engine) SetPlaybackPlacement(id uint32) error {
+	if e.transport.Sample() != 0 || e.transport.Playing() {
+		return engineError("placement listening must be configured before rendering")
+	}
+	if id != 0 {
+		found := false
+		for _, event := range e.schedule {
+			found = found || event.ID == id && (event.Kind == SchedulePattern || event.Kind == ScheduleClip)
+		}
+		if !found {
+			return engineError("listening placement is not in the schedule")
+		}
+	}
+	e.playbackPlacement = id
+	return nil
+}
+
+func (e *Engine) playsPlacement(id uint32) bool {
+	return e.playbackPlacement == 0 || e.playbackPlacement == id
+}
+
 // ValidateTempoSchedule checks the tempo records shared by native and image
 // construction. The caller also validates event kinds and placement ownership.
 //
@@ -256,7 +280,7 @@ func (e *Engine) advancePlacementSchedule() {
 // looping schedule hands off to a start at tick 0 of the next cycle.
 func (e *Engine) patternHandoff(v ScheduleEvent) bool {
 	for i := e.songIndex + 1; i < len(e.schedule) && e.schedule[i].Tick == v.Tick; i++ {
-		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track {
+		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track && e.playsPlacement(next.ID) {
 			return true
 		}
 	}
@@ -264,13 +288,16 @@ func (e *Engine) patternHandoff(v ScheduleEvent) bool {
 		return false
 	}
 	for i := 0; i < len(e.schedule) && e.schedule[i].Tick == 0; i++ {
-		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track {
+		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track && e.playsPlacement(next.ID) {
 			return true
 		}
 	}
 	return false
 }
 func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
+	if v.Kind >= SchedulePattern && v.Kind <= ScheduleClipEnd && !e.playsPlacement(v.ID) {
+		return
+	}
 	track := int(v.Track)
 	switch v.Kind {
 	case ScheduleTempo:

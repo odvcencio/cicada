@@ -160,7 +160,10 @@ and can be shorter than a bar.
 
 Each placement offers **Audition solo**, **Audition in song**, **Loop solo**,
 and **Loop in song**. Solo auditions play just that placement; song-context
-auditions play every part active over the same range. Once-through auditions
+auditions play every part active over the same range. Solo listening keeps the
+song's tempo changes and full automation curves, including points after the
+selected phrase; it also isolates overlapping audio clips on the same track.
+Once-through auditions
 stop at the placement's exclusive end. These controls use native playback and
 leave the score, mixer solo/mute settings, and Undo history unchanged.
 

@@ -312,6 +312,7 @@ type Engine struct {
 	scheduleIntervals            []scheduleInterval
 	scheduleDuration, cycleStart int64
 	placementSchedule            bool
+	playbackPlacement            uint32
 	placementID                  [MaxTracks]uint32
 	clipLimit                    int
 	clipTemplates                []sample.Voice

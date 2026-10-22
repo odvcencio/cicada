@@ -979,7 +979,7 @@ func (t *studioTransport) poll() {
 	}
 	var next liveplay.Score
 	if err == nil {
-		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
+		next, err = compileStudioListeningScore(t.path, project, listening, sampleRate)
 		if err == nil && listening != nil {
 			r := listening.playbackRange()
 			next.Range = &r

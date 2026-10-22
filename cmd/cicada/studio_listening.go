@@ -155,12 +155,6 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 			}
 			found = true
 			v.StartTick, v.EndTick = place.AtTick, place.AtTick+place.LengthTicks
-			if v.Mode == "solo" {
-				copy, arrangement := *p, *p.Arrange
-				arrangement.Placements = []project.Placement{place}
-				copy.Arrange = &arrangement
-				p = &copy
-			}
 			break
 		}
 		if !found {
@@ -259,7 +253,7 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 	if err != nil {
 		return http.StatusServiceUnavailable, err
 	}
-	prepared, err := compileLiveProjectAtRate(s.path, p, rate)
+	prepared, err := compileStudioListeningScore(s.path, p, listening, rate)
 	if err != nil {
 		return http.StatusUnprocessableEntity, err
 	}
