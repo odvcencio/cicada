@@ -1141,7 +1141,8 @@ jobs:
           for song_layout in scene placement; do
             song_args=()
             if [[ "$song_layout" == placement ]]; then song_args+=(--placement); fi
-            node workstation/browser/pattern-song.test.cjs --write-fixture "build/native-pattern-song-$song_layout/main.cicada" "${song_args[@]}"
+            # macOS Bash 3.2 treats an empty array as unset under nounset.
+            node workstation/browser/pattern-song.test.cjs --write-fixture "build/native-pattern-song-$song_layout/main.cicada" ${song_args[@]+"${song_args[@]}"}
             python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output "build/macos-smoke/pattern-song-$song_layout" --mode normal --timeout 180 --project-fixture "build/native-pattern-song-$song_layout/main.cicada" --workflow desktop/testdata/native-pattern-song-workflow.js
           done
           node workstation/browser/pattern-grid.test.cjs --write-fixture build/native-pattern-grid/main.cicada
