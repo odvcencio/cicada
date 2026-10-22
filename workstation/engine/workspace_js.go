@@ -57,11 +57,12 @@ type workspaceJob struct {
 	// A current job reads the location when it runs, not when it was queued.
 	// Gestures queued before it can change the step, and a refresh built from
 	// the earlier location would put that older step back in front of the user.
-	current     bool
-	pitchDelta  int
-	focusRow    string
-	focusStep   string
-	pendingCell js.Value
+	current            bool
+	pitchDelta         int
+	focusRow           string
+	focusStep          string
+	pendingCell        js.Value
+	placementSelection string
 }
 
 type workspaceUI struct {
@@ -711,6 +712,20 @@ func (u *workspaceUI) transposeValues(pattern, step string, delta int) (map[stri
 }
 
 func (u *workspaceUI) focusGesture(job workspaceJob) {
+	if job.placementSelection != "" {
+		active := js.Global().Get("document").Get("activeElement")
+		if workspacePresent(active) && !strings.EqualFold(workspaceString(active, "tagName"), "body") && (!workspacePresent(active.Call("closest", "[data-placement-block]")) || workspaceAttr(active.Call("closest", "[data-placement-block]"), "data-placement-block") != job.values["name"]) {
+			return
+		}
+		blocks := u.root.Call("querySelectorAll", "[data-placement-block]")
+		for i := 0; i < blocks.Length(); i++ {
+			if block := blocks.Index(i); workspaceAttr(block, "data-placement-block") == job.placementSelection {
+				block.Call("querySelector", ".placement-select").Call("focus", map[string]any{"preventScroll": true})
+				return
+			}
+		}
+		return
+	}
 	if job.focusStep == "" && job.pitchDelta == 0 {
 		return
 	}
@@ -818,7 +833,15 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		job.values["revision"] = u.revision.Get()
 	}
 	if job.method == http.MethodPost {
-		job.values["__cicada_location"] = workspaceLocation()
+		location := workspaceLocation()
+		if job.placementSelection != "" {
+			parsed, _ := url.Parse(location)
+			query := parsed.Query()
+			query.Set("placement", job.placementSelection)
+			parsed.RawQuery = query.Encode()
+			location = parsed.RequestURI()
+		}
+		job.values["__cicada_location"] = location
 	}
 	if job.current {
 		location, _ := url.Parse(workspaceLocation())

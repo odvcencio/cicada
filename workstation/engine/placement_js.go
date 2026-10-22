@@ -364,8 +364,7 @@ func (u *workspaceUI) placementCopy(block js.Value, at int64) {
 	}
 	values := u.editValues()
 	values["action"], values["name"], values["newName"], values["at"] = "duplicate", workspaceAttr(block, "data-placement-block"), name, strconv.FormatInt(at, 10)+"ticks"
-	values["__cicada_location"] = placementCopyReturn(name)
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block})
+	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
 }
 
 // Pattern scheduling requires sixteenth-aligned starts. Use the smallest
