@@ -103,9 +103,7 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 		assigned := false
 		for _, track := range plan.Tracks {
 			if track.ID == recording.Track {
-				for _, slot := range track.Slots {
-					assigned = assigned || slot != nil && *slot == recording.Pattern
-				}
+				assigned = track.canRecordPattern(recording.Pattern)
 			}
 		}
 		if !assigned {
@@ -115,7 +113,33 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 			return err
 		}
 	}
+	if err := validateRecordedDestinations(ctx, recordings); err != nil {
+		return err
+	}
 	ctx.SetLabel(fmt.Sprintf("Performance kept · %d notes across %d patterns", count, len(recordings)))
+	return nil
+}
+
+// Unused patterns do not have a scene binding for compilation to validate.
+// Recheck the compiler's compatible destinations after writing the take, so
+// unsupported captured pitches, chords or expression cannot bypass that check.
+func validateRecordedDestinations(ctx *Context, recordings []Recording) error {
+	plan, err := ctx.CurrentPlan()
+	if err != nil {
+		return err
+	}
+	for _, recording := range recordings {
+		valid := false
+		for _, track := range plan.Tracks {
+			if track.ID == recording.Track {
+				valid = track.canRecordPattern(recording.Pattern)
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("recorded pattern %q cannot play on track %q; choose a compatible sound or pattern", recording.Pattern, recording.Track)
+		}
+	}
 	return nil
 }
 

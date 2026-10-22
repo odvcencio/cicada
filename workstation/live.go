@@ -12,6 +12,7 @@ import (
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/control"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
@@ -254,29 +255,41 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		return failure(fmt.Errorf("save a valid score before live performance"))
 	}
 	var pitched, drums, targets []string
-	trackPatterns := map[string][]string{}
+	var recordingTracks []project.Track
+	trackPatterns := project.RecordingPatternChoices(v.Project)
+	libraryPatterns := map[string]bool{}
+	for _, pattern := range v.Project.Patterns {
+		libraryPatterns[pattern.ID] = true
+	}
 	expressionTracks := map[string]bool{}
 	for _, t := range v.Project.Tracks {
+		canRecord := false
 		authored := false
 		for _, voice := range v.Project.Instruments {
 			authored = authored || voice.ID == t.Kind
 		}
 		if authored || t.Kind == "acid" || t.Kind == "piano" || keyboard.ID(t.Kind) != 0 {
+			canRecord = true
 			pitched = append(pitched, t.ID)
 			expressionTracks[t.ID] = authored || t.Kind == "acid"
 		}
 		if t.Kind == "drums" {
+			canRecord = true
 			drums = append(drums, t.ID)
 		}
 		for _, k := range v.Project.Kits {
 			if k.ID == t.Kind {
+				canRecord = true
 				drums = append(drums, t.ID)
 			}
+		}
+		if canRecord {
+			recordingTracks = append(recordingTracks, t)
 		}
 		targets = append(targets, "stop-track:"+t.ID)
 		for _, slot := range t.Slots {
 			if slot != nil {
-				trackPatterns[t.ID] = append(trackPatterns[t.ID], *slot)
+				delete(libraryPatterns, *slot)
 				targets = append(targets, "slot:"+t.ID+":"+*slot)
 			}
 		}
@@ -317,18 +330,25 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	button := func(id, label string) gosx.Node {
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("disabled", id == "record" || id == "finish"), gosx.Attr("data-live-control", id)), gosx.Text(label))
 	}
-	patternsFor := func(tracks []string) []string {
+	patternsFor := func(tracks []string) gosx.Node {
+		var choices []gosx.Node
 		if len(tracks) > 0 {
-			return trackPatterns[tracks[0]]
+			for _, id := range trackPatterns[tracks[0]] {
+				label := id
+				if libraryPatterns[id] {
+					label += " · library"
+				}
+				choices = append(choices, gosx.El("option", gosx.Attrs(gosx.Attr("value", id)), gosx.Text(label)))
+			}
 		}
-		return nil
+		return gosx.Fragment(choices...)
 	}
 	// The Go/WASM surface retains its existing selector hook; the pitched
 	// targets include acid, modeled keyboards and authored mono/poly graphs.
 	viewSelect := func(hook string, choices gosx.Node) gosx.Node {
 		return gosx.El("select", gosx.Attrs(gosx.Attr(hook, ""), gosx.BoolAttr("data-studio-view-control")), choices)
 	}
-	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", viewSelect("data-live-acid", options(pitched))), field("Pitched pattern", viewSelect("data-live-pattern", options(patternsFor(pitched)))), field("Drum track", viewSelect("data-live-drums", options(drums))), field("Drum pattern", viewSelect("data-live-drumpattern", options(patternsFor(drums)))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
+	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", viewSelect("data-live-acid", options(pitched))), field("Pitched pattern", viewSelect("data-live-pattern", patternsFor(pitched))), field("Drum track", viewSelect("data-live-drums", options(drums))), field("Drum pattern", viewSelect("data-live-drumpattern", patternsFor(drums))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
 	var quantize []gosx.Node
 	for _, q := range []struct{ value, label string }{{"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
 		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "2")), gosx.Text(q.label)))
@@ -343,12 +363,14 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	if d, ok := s.draft(previewKey, workspaceOwner(ctx.Request)); ok && d.Kind == "notes" {
 		preview = s.noteTakeReview(v, csrf, previewKey, d)
 	}
-	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "expressionTracks": expressionTracks, "nativeMIDI": runtime.GOOS == "darwin", "preview": previewKey, "persistentNotes": s.notes != nil})
+	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "libraryPatterns": libraryPatterns, "expressionTracks": expressionTracks, "nativeMIDI": runtime.GOOS == "darwin", "preview": previewKey, "persistentNotes": s.notes != nil})
 	// SSR controls are the engine's owned subtree. GoSX can preserve that
 	// subtree when props are unchanged without retaining detached listeners.
 	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Bend, pressure and timbre follow individual held notes on acid and authored synths. Auto keeps ordinary keyboard bend ranges and follows MPE setup messages; choose a zone when your controller does not send setup. Sustain holds notes until pedal release.")), gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, piano, modeled keyboards, authored instruments, and drums. Retain a take, then keep played timing or snap starts to a step pattern."}, s.liveLaunch(v, csrf), surface, preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), previewKey, ctx.Request.URL.Query().Get("noteHistory") == "on"))
+	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, piano, modeled keyboards, authored instruments, and drums. Retain a take, then keep played timing or snap starts to a step pattern."}, s.liveLaunch(v, csrf), surface,
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-live-destination-hint")), gosx.Text("Choose a pattern on this track or an unused compatible pattern from the library. Keeping a take replaces that pattern; unused patterns stay in the library until you arrange or assign them.")),
+		s.patternCreationForTracks(ctx, v, csrf, "", recordingTracks, true), preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), previewKey, ctx.Request.URL.Query().Get("noteHistory") == "on"))
 }
 
 // Validate through the same native edit service that will commit the take.

@@ -27,6 +27,7 @@ type liveProps struct {
 	Revision         string              `json:"revision"`
 	BPM              float64             `json:"bpm"`
 	TrackPatterns    map[string][]string `json:"trackPatterns"`
+	LibraryPatterns  map[string]bool     `json:"libraryPatterns"`
 	ExpressionTracks map[string]bool     `json:"expressionTracks"`
 	NativeMIDI       bool                `json:"nativeMIDI"`
 	PersistentNotes  bool                `json:"persistentNotes"`
@@ -757,7 +758,11 @@ func (u *liveUI) refreshPatterns() {
 			seen[pattern] = true
 			o := document.Call("createElement", "option")
 			o.Set("value", pattern)
-			o.Set("textContent", pattern)
+			label := pattern
+			if u.props.LibraryPatterns[pattern] {
+				label += " · library"
+			}
+			o.Set("textContent", label)
 			selectEl.Call("append", o)
 		}
 		if seen[selected] {

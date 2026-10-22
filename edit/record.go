@@ -57,6 +57,9 @@ func init() {
 			ctx.Source, ctx.plan = updated, nil
 			count += len(recording.Notes)
 		}
+		if err := validateRecordedDestinations(ctx, in.Recordings); err != nil {
+			return err
+		}
 		label := fmt.Sprintf("Take committed · %d notes across %d patterns", count, len(in.Recordings))
 		if len(in.Recordings) == 1 {
 			label = fmt.Sprintf("Take committed · %s · %d notes", in.Recordings[0].Pattern, count)
@@ -139,14 +142,7 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	if pattern == nil {
 		return nil, fmt.Errorf("unknown pattern %q", patternID)
 	}
-	usesPattern := false
-	for _, slot := range track.Slots {
-		if slot != nil && *slot == patternID {
-			usesPattern = true
-			break
-		}
-	}
-	if !usesPattern {
+	if !track.canRecordPattern(patternID) {
 		return nil, fmt.Errorf("pattern %q is not on track %q", patternID, trackID)
 	}
 	drumTrack := track.Kind == "drums"

@@ -38,9 +38,24 @@ type Plan struct {
 }
 
 type Track struct {
-	ID, Kind  string
-	Polyphony int
-	Slots     [16]*string
+	ID, Kind          string
+	Polyphony         int
+	Slots             [16]*string
+	RecordingPatterns []string // Compiler-validated destinations, including unused local patterns.
+}
+
+func (t Track) canRecordPattern(id string) bool {
+	for _, slot := range t.Slots {
+		if slot != nil && *slot == id {
+			return true
+		}
+	}
+	for _, pattern := range t.RecordingPatterns {
+		if pattern == id {
+			return true
+		}
+	}
+	return false
 }
 
 type Pattern struct {

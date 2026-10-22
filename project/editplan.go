@@ -39,8 +39,9 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	plan.TempoChanges = SongTempoChanges(p)
 	plan.KeyRoot = p.Key.Root
 	plan.Scale = p.Key.Scale
+	recordingPatterns := RecordingPatternChoices(p)
 	for _, track := range p.Tracks {
-		plan.Tracks = append(plan.Tracks, edit.Track{ID: track.ID, Kind: track.Kind, Polyphony: GraphPolyphony(p, track.Kind), Slots: track.Slots})
+		plan.Tracks = append(plan.Tracks, edit.Track{ID: track.ID, Kind: track.Kind, Polyphony: GraphPolyphony(p, track.Kind), Slots: track.Slots, RecordingPatterns: recordingPatterns[track.ID]})
 		plan.Names[track.ID] = true
 	}
 	for _, pattern := range p.Patterns {

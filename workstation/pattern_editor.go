@@ -21,6 +21,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	}
 	returnTo := ctx.FormData[action.ReturnTargetField]
 	operation := ctx.FormData["action"]
+	createForLive := operation == "create" && ctx.FormData["createFor"] == "@live"
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
@@ -255,6 +256,10 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 		}
 		return p, nil
 	})(ctx)
+	if err == nil && createForLive {
+		ctx.RedirectBackWithMessage("/?panel=live", "")
+		return nil
+	}
 	if err == nil && destination != "" {
 		// The framework captures native return targets before invoking the
 		// handler. Choose the new inspected step explicitly after a success.

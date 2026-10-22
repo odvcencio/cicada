@@ -343,15 +343,14 @@ rejects late commands from that client. Notes held by another connected Live
 client continue sounding.
 
 In browsers with Web MIDI, **Enable MIDI** asks for browser permission without
-system-exclusive access. Both paths read Note On, Note Off, and Control Change
-messages from connected inputs. Notes play the selected pitched track. On channel 10, General
-MIDI drum notes play the selected drum track and other notes are ignored. Live
-honors All Sound Off and All Notes Off for the sending device and channel.
-It ignores other messages, including sustain, pitch bend, channel and polyphonic
-pressure, and MPE zone setup, so an MPE controller plays plain notes without
-per-note expression. The native input requests MIDI 1 protocol conversion
-from CoreMIDI; it does not claim MIDI 2 expression support. Web MIDI also
-supplies MIDI 1 packets. System-exclusive messages are ignored.
+system-exclusive access. Both paths retain note on/off, control changes, pitch bend, channel and
+polyphonic pressure, sustain, and MPE setup. Notes play the selected pitched
+track. On channel 10, General MIDI drum notes play the selected drum track and
+other notes are ignored. Live honors All Sound Off and All Notes Off for the
+sending device and channel. The selected expression mode separates ordinary
+channel controls from MPE member and master controls. The native input requests
+MIDI 1 protocol conversion from CoreMIDI; it does not claim MIDI 2 expression
+support. Web MIDI also supplies MIDI 1 packets. System-exclusive messages are ignored.
 
 #### Record and Arm
 
@@ -361,12 +360,22 @@ messages. **MIDI launch timing** chooses next beat, next bar, or one, two, or fo
 bars. Mapping and track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
-Press **Play**, choose the **Pitched pattern** and **Drum pattern** destinations,
-then select **Record notes**. **Finish note take** retains a private copy for
+Choose the **Pitched pattern** and **Drum pattern** destinations. Each picker
+lists patterns on that track first, then unused compatible local patterns marked
+**library**. Use **Create pattern** in Live to make an empty library pattern
+without assigning a scene. A pattern used only by another track is not offered
+as an unused destination. Imported patterns need a local copy before recording;
+patterns in another project source still require that file's revision receipt.
+
+Press **Play**, then select **Record notes**. **Finish note take** retains a private copy for
 review. The trace shows original note starts, held lengths, and velocities;
 **Inspect notes** shows exact timing at 960 ticks per beat. Estimated releases
 are marked. A local desktop profile also keeps interrupted takes and recovery
 copies across restarts; closing a browser tab does not apply a take to the score.
+Keeping a take replaces its selected patterns. An unused destination stays in
+the library and uses no launch slot until you arrange or assign it. The take is
+checked against the selected sound again before commit; unsupported notes or
+expression leave the retained take available for review.
 
 Transport observations retain the time and tempo of the rendered position.
 Polling an old observation does not refresh its clock. Native MIDI correlates

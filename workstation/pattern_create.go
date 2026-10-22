@@ -61,19 +61,27 @@ func (s *studioApp) patternCreation(ctx *server.Context, v workspace, csrf, trac
 			tracks = append(tracks, track)
 		}
 	}
+	return s.patternCreationForTracks(ctx, v, csrf, trackID, tracks, false)
+}
+
+func (s *studioApp) patternCreationForTracks(ctx *server.Context, v workspace, csrf, trackID string, tracks []project.Track, recording bool) gosx.Node {
 	if len(tracks) == 0 {
 		return gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Add an instrument or drum track to create a pattern."))
 	}
 	values := map[string]string{"newName": availablePatternName(v.Project, trackID), "track": trackID, "scene": "", "length": "16", "starter": "empty"}
+	creationKey := trackID
+	if recording {
+		creationKey = "@live"
+	}
 	failed := false
-	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("action") == "create" && state.Value("createFor") == trackID {
+	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("action") == "create" && state.Value("createFor") == creationKey {
 		failed = true
 		for key := range values {
 			values[key] = state.Value(key)
 		}
 	}
 	var fields []gosx.Node
-	fields = append(fields, hidden("action", "create"), hidden("createFor", trackID))
+	fields = append(fields, hidden("action", "create"), hidden("createFor", creationKey))
 	if trackID != "" {
 		fields = append(fields, hidden("track", trackID), gosx.El("p", gosx.Text("For track "+trackID)))
 	} else {
@@ -101,7 +109,7 @@ func (s *studioApp) patternCreation(ctx *server.Context, v workspace, csrf, trac
 	if trackID != "" {
 		label += " for " + trackID
 	}
-	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "create-pattern-"+trackID), gosx.Attr("aria-label", label), gosx.Attr("open", failed)), gosx.El("summary", gosx.Text("Create pattern")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Start empty or with an editable idea in your song’s key and the sound’s register. Creating and assigning together has one Undo step.")))
+	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "create-pattern-"+creationKey), gosx.Attr("aria-label", label), gosx.Attr("open", failed)), gosx.El("summary", gosx.Text("Create pattern")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Start empty or with an editable idea in your song’s key and the sound’s register. Creating and assigning together has one Undo step.")))
 }
 
 func patternStarterAvailable(p *project.Project, trackID, starter string) bool {
