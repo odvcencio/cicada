@@ -82,15 +82,7 @@ func (u *workspaceUI) captureSource(control js.Value) {
 			node.Set("value", value)
 		}
 	}
-	if location, err := url.Parse(js.Global().Get("location").Get("href").String()); err == nil {
-		query := location.Query()
-		query.Set("codeDraft", copy.id)
-		location.RawQuery = query.Encode()
-		js.Global().Get("history").Call("replaceState", js.Null(), "", location.String())
-		if target := workspaceField(form, "__gosx_return_to"); workspacePresent(target) {
-			target.Set("value", location.RequestURI())
-		}
-	}
+
 	u.sourceStatus("Keeping a private recovery copy… The score file is unchanged.")
 }
 
@@ -178,6 +170,22 @@ func (u *workspaceUI) checkpointSources() {
 				delete(u.sources, file)
 			}
 			if workspacePresent(current.control) && current.control.Get("isConnected").Bool() {
+				// History must reference an acknowledged copy. A quick file switch
+				// and Back can otherwise select a checkpoint not yet on disk.
+				if location, err := url.Parse(js.Global().Get("location").Get("href").String()); err == nil {
+					query := location.Query()
+					if current.clean {
+						query.Del("codeDraft")
+					} else {
+						query.Set("codeDraft", current.id)
+					}
+					location.RawQuery = query.Encode()
+					js.Global().Get("history").Call("replaceState", js.Null(), "", location.String())
+					form := current.control.Call("closest", "form")
+					if target := workspaceField(form, "__gosx_return_to"); workspacePresent(target) {
+						target.Set("value", location.RequestURI())
+					}
+				}
 				if current.clean {
 					u.sourceStatus("No unsaved Code edits.")
 				} else {

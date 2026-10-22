@@ -584,8 +584,11 @@ test('shell Space toggles actual playback, Home returns to start, and Audio unlo
   for (const [chord, action] of [['Space', 'play'], ['Space', 'pause'], ['Home', 'home']]) {
     await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/transport');
+    const responded = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/__actions/transport');
     await page.keyboard.press(chord);
     assert.equal((await actionValues(await sent)).action, action);
+    await responded;
+    await page.waitForFunction(() => !document.querySelector('#studio-shell form[data-gosx-form-state=pending], #studio-shell form[data-gosx-form-state=submitting]'));
     if (action === 'play') {
       playing = true;
       await page.waitForFunction(() => document.querySelector('[data-audio-routing]').disabled);

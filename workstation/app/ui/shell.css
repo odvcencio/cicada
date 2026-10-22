@@ -51,9 +51,14 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell :is(#studio-browser, #studio-code) .shell-collapsible { position:relative; }
 .shell :is(#studio-browser, #studio-code) .shell-collapsible > .shell-scroll { position:absolute; inset:calc(1.4em + 8px) 0 0; }
 .shell #studio-code #score { display:flex; flex-direction:column; height:100%; min-height:340px; }
-.shell #studio-code #score > :not(#source-editor) { flex-shrink:0; }
+.shell #studio-code #score > :not(.editor-surface-code) { flex-shrink:0; }
 .shell #studio-code #score > ul:empty { display:none; }
-.shell #studio-code #source-editor { flex:1 1 0; min-height:160px; height:auto; }
+/* A single file is already named in the editor. Keep recovery feedback compact
+   so status messages leave room to read and edit the source. */
+.shell #studio-code #score > p:empty,
+.shell #studio-code #score > nav[aria-label="Project files"]:has(> a:only-child) { display:none; }
+.shell #studio-code #score > [data-source-recovery-status] { margin:0 0 8px; }
+.shell #studio-code .editor-surface-code { flex:1 1 0; min-height:160px; height:auto; }
 .shell-section { border-bottom:1px solid var(--border); }
 .shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
 .shell .arrange-workspace-nav { position:sticky; top:-8px; z-index:2; display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 0; margin-bottom:8px; border-bottom:1px solid var(--border); background:var(--bg); }
