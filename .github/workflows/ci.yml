@@ -274,7 +274,7 @@ jobs:
           fi
           # Each suite edits its score and may persist assets and shared drafts.
           # A fresh process alone does not reset those durable sidecars.
-          for suite in continuity shell collaboration; do
+          for suite in continuity shell columns collaboration; do
             mkdir -p "$browser_root/$suite"
             node workstation/browser/continuity.test.cjs --write-fixture "$browser_root/$suite/continuity.cicada"
           done
@@ -301,6 +301,17 @@ jobs:
             sleep 0.1
           done
           make test-studio-shell | tee build/studio-shell-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          export CICADA_COLUMN_PROOF_DIR="$PWD/build/studio-column-proof"
+          ./build/cicada studio "$browser_root/columns/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-column-server.log 2>&1 &
+          studio_pid=$!
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          make test-studio-columns | tee build/studio-column-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
           ./build/cicada studio "$browser_root/collaboration/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
@@ -400,6 +411,9 @@ jobs:
             build/studio-continuity-report.txt
             build/studio-shell-report.txt
             build/studio-shell-server.log
+            build/studio-column-report.txt
+            build/studio-column-server.log
+            build/studio-column-proof/
             build/studio-continuity-server.log
             build/studio-collaboration-report.txt
             build/studio-collaboration-server.log
@@ -506,6 +520,7 @@ jobs:
           python3 -c "from pathlib import Path; Path('build/native-channel-capture-workflow.js').write_text('window.__cicadaChannelCapture=true;\n'+Path('desktop/testdata/native-shared-capture-workflow.js').read_text())"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/channel-capture --mode normal --timeout 120 --workflow build/native-channel-capture-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/dock-fit --mode normal --timeout 120 --workflow desktop/testdata/native-dock-fit-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/columns --mode normal --timeout 120 --workflow desktop/testdata/native-columns-workflow.js
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Save macOS validation reports
         if: always()

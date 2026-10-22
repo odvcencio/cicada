@@ -11,7 +11,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell h2 { font-size:14px; }
 .shell h3 { font-size:13px; margin:0 0 8px; }
 
-.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--gsx-dock-left,280px) minmax(0,1fr) var(--gsx-dock-right,360px); grid-template-rows:auto minmax(var(--studio-center-min,200px),1fr) minmax(var(--studio-dock-min,120px),var(--gsx-dock-bottom,240px)); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
+.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--studio-browser-column,var(--gsx-dock-left,280px)) minmax(0,1fr) var(--studio-code-column,var(--gsx-dock-right,360px)); grid-template-rows:auto minmax(var(--studio-center-min,200px),1fr) minmax(var(--studio-dock-min,120px),var(--gsx-dock-bottom,240px)); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
 .gsx-dock > * { min-width:0; min-height:0; }
 .gsx-dock__top { grid-area:top; min-height:min-content; }
 .gsx-dock__left { grid-area:left; display:grid; grid-template-columns:minmax(0,1fr) auto; }
@@ -70,8 +70,17 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shortcut-title { flex:1; }
 .shell kbd { font:12px ui-monospace,monospace; color:var(--mint); }
 
+/* Closing a sidebar returns its space to the song. Keep its native summary
+   as a keyboard-accessible rail so reopening never needs a hidden control. */
+@media (min-width:800px) {
+	.shell .gsx-dock:has(#studio-browser .shell-collapsible:not([open])) { --studio-browser-column:36px; }
+	.shell .gsx-dock:has(#studio-code .shell-collapsible:not([open])) { --studio-code-column:36px; }
+	.shell :is(#studio-browser,#studio-code):has(.shell-collapsible:not([open])) .gsx-split__handle { display:none; }
+	.shell :is(#studio-browser,#studio-code) .shell-collapsible:not([open]) > summary { writing-mode:vertical-rl; padding:10px 8px; min-width:36px; min-height:90px; }
+}
+
 .shell-phone-nav { display:none; }
-@media (max-width:480px) {
+@media (max-width:799px) {
 	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"top" "region"; }
 	.shell .gsx-dock__top { flex-direction:column; align-items:stretch; gap:6px; }
 	.shell .shell-top .score-title { flex:0 0 auto; }

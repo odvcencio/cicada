@@ -28,7 +28,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
-	releaseDockFit, err := bindShellDockFit(host, root)
+	releaseLayoutFit, err := bindShellLayoutFit(host, root)
 	if err != nil {
 		releaseNavigation()
 		cancel()
@@ -116,7 +116,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	return enginewasm.HandleFunc(func() {
 		cancel()
 		releaseNavigation()
-		releaseDockFit()
+		releaseLayoutFit()
 		releasePlacementCommands()
 		releasePlacementEditor()
 		releaseAudio()

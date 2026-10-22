@@ -19,6 +19,11 @@ screenshots show these tools as standalone panels.
 
 Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
 workspace region on a phone keeps your unsaved **Code** text in place.
+Drag the Browser and Code separators to resize the side panels. Their sizes
+fit the current window so the song workspace remains visible. Select either
+panel heading to collapse it into a narrow rail; select the rail to reopen it.
+Below 800 pixels wide, the region bar shows one full-width workspace at a time.
+These view choices preserve your score and unsaved text.
 
 **Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
 effects, and performance resampling. A placement's **Sample into pads** link

@@ -130,6 +130,11 @@ test-studio-continuity:
 test-studio-shell:
 	node --test workstation/browser/shell.test.cjs
 
+.PHONY: test-studio-columns
+# Requires a fresh Studio process and an absolute CICADA_COLUMN_PROOF_DIR.
+test-studio-columns:
+	node --test workstation/browser/columns.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

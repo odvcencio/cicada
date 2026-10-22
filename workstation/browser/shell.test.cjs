@@ -80,6 +80,11 @@ async function openShell(search = '', viewport, platform) {
   return {page, requests, errors};
 }
 
+async function focusWorkspace(page) {
+  await page.evaluate(() => document.activeElement?.blur());
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'global shortcuts start outside native controls');
+}
+
 const actionPosts = requests => requests.filter(request => request.startsWith('POST /__actions/'));
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers: {'Content-Type': request.headers()['content-type']}}).formData());
@@ -107,6 +112,7 @@ test('shell renders every region without a page scrollbar', async () => {
 
 test('shell keyboard: a reserved chord does nothing and is listed as unavailable', {timeout: 45_000}, async () => {
   const {page, requests} = await openShell();
+  const chord = await page.evaluate(() => window.__gosx.commands.platformMod() === 'meta' ? 'Meta+j' : 'Control+j');
   try {
     const before = requests.length;
     // Install the observer before sending either chord. Code owns shortcuts
@@ -121,13 +127,13 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
     });
     const editor = page.locator('#studio-code textarea').first();
     await editor.focus();
-    await page.keyboard.press('Control+j');
+    await page.keyboard.press(chord);
     assert.deepEqual(await page.evaluate(() => window.__reservedChord.unavailable), [], 'the editor retains its shortcut ownership');
     assert.equal(await editor.evaluate(node => document.activeElement === node), true, 'the guarded chord retains editor focus');
     assert.deepEqual(actionPosts(requests.slice(before)), [], 'a chord in the editor submits no shell action');
     await page.evaluate(() => document.activeElement?.blur());
     assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'the global shortcut starts with body focus');
-    await page.keyboard.press('Control+j');
+    await page.keyboard.press(chord);
     try {
       await page.waitForFunction(() => window.__reservedChord.unavailable.length > 0, null, {timeout: 15_000});
     } catch (error) {
@@ -142,7 +148,7 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
           observed: window.__reservedChord,
         };
       });
-      assert.fail('reserved Ctrl+J did not report its unavailable command: ' + JSON.stringify(diagnostic) + '; ' + error.message);
+      assert.fail('reserved '+chord+' did not report its unavailable command: ' + JSON.stringify(diagnostic) + '; ' + error.message);
     }
     assert.deepEqual(await page.evaluate(() => window.__reservedChord.unavailable), ['arrange.consolidate']);
     assert.deepEqual(actionPosts(requests.slice(before)), [], 'a reserved chord submits no action');
@@ -226,7 +232,7 @@ test('Tab and Shift+Tab move keyboard focus and never switch views', async () =>
   const commands = [];
   await page.exposeFunction('recordCommand', id => commands.push(id));
   await page.evaluate(() => document.addEventListener('gosx:command', event => window.recordCommand(event.detail.id)));
-  await page.locator('body').focus();
+  await focusWorkspace(page);
   const seen = new Set();
   for (let step = 0; step < 6; step++) {
     await page.keyboard.press('Tab');
@@ -372,7 +378,7 @@ test('the closed Sampler does not take the Live keyboard', async () => {
   const {page} = await openShell('?tab=session');
   await page.waitForFunction(() => document.querySelector('#browser-sampler') && document.querySelector('[data-live-control]'));
   await page.evaluate(() => { window.__keys = []; window.addEventListener('keydown', event => window.__keys.push(event.key)); });
-  await page.locator('body').focus();
+  await focusWorkspace(page);
   await page.keyboard.press('a');
   assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section closed, a reaches Live');
   await page.locator('#browser-sampler > summary').click();
@@ -381,28 +387,26 @@ test('the closed Sampler does not take the Live keyboard', async () => {
   await page.close();
 });
 
-// The Live note take and sampler resample scenarios drive the engines
-// themselves. They need pads loaded or an armed audio context, which a Studio
-// started with --audio null may not provide; they skip with that reason.
-test('a finished Live note take shows its review and commit controls without a reload', async t => {
+// Live capture needs an active transport even with null audio. Start it
+// explicitly so this scenario exercises the retained-take path in CI.
+test('a finished Live note take shows its review and commit controls without a manual reload', async () => {
   const {page, requests} = await openShell('?tab=session');
   const record = page.locator('[data-live-control="record"]');
-  try {
-    await page.waitForFunction(() => document.querySelector('[data-live-control="record"]:not([disabled])'), null, {timeout: 10_000});
-  } catch {
-    t.skip('Live input is not ready in this environment (no audio or lease)');
-    await page.close();
-    return;
-  }
+  await page.locator('#transport-form button[value=play]').click();
+  await page.waitForFunction(() => document.querySelector('[data-live-control="record"]:not([disabled])'), null, {timeout: 15_000});
   const documents = requests.filter(request => request.startsWith('GET /studio')).length;
   await record.click();
-  await page.keyboard.press('a');
+  await page.keyboard.down('a');
   await page.waitForTimeout(150);
   await page.keyboard.up('a');
   await page.locator('[data-live-control="finish"]').click();
   await page.locator('.note-preview').waitFor({timeout: 15_000});
   assert.ok(await page.locator('.note-preview form[action="/__actions/note-commit"], .note-preview form[action$="note-commit"]').count() > 0, 'review shows the commit form');
   assert.ok(requests.filter(request => request.startsWith('GET /studio')).length > documents, 'shown by a shell refresh, not by hand');
+  await page.locator('#transport-form button[value=stop]').click();
+  await waitUntil(async () => !(await (await page.request.get(new URL('/api/transport', process.env.CICADA_STUDIO_URL).href)).json()).playing, 'capture check stops the disposable transport');
+  await page.locator('.note-preview button[value=discard]').click();
+  await page.locator('.note-preview').waitFor({state: 'hidden'});
   await page.close();
 });
 
@@ -545,7 +549,7 @@ test('Mac Cmd save, undo and redo submit the current score forms and leave text 
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
   await page.route('**/__actions/**', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
   for (const [chord, action] of [['Meta+z', 'undo'], ['Meta+Shift+z', 'redo'], ['Meta+s', 'source']]) {
-    await page.locator('body').focus();
+    await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/' + action);
     await page.keyboard.press(chord);
     const data = await actionValues(await sent);
@@ -575,7 +579,7 @@ test('shell Space toggles actual playback, Home returns to start, and Audio unlo
   await page.route('**/api/audio/config?runtime=1', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, runtime: {}, options: {periodFrames: 128}})}));
   await page.route('**/__actions/transport', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
   for (const [chord, action] of [['Space', 'play'], ['Space', 'pause'], ['Home', 'home']]) {
-    await page.locator('body').focus();
+    await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/transport');
     await page.keyboard.press(chord);
     assert.equal((await actionValues(await sent)).action, action);
@@ -609,7 +613,7 @@ test('Mac record shortcut starts and finishes the chosen vocal take', async () =
       active = 'keyboard-active';
       await page.waitForFunction(() => !document.querySelector('.vocal-record [data-capture-control=stop]').disabled);
     }
-    await page.locator('body').focus();
+    await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/take');
     await page.keyboard.press('Meta+Shift+r');
     const data = await actionValues(await sent);
@@ -624,7 +628,7 @@ test('shell scene keys submit the corresponding launch-matrix scene', async () =
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
   await page.route('**/__actions/launch', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
   const scene = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/launch');
-  await page.locator('body').focus();
+  await focusWorkspace(page);
   await page.keyboard.press('F2');
   assert.deepEqual(JSON.parse((await actionValues(await scene)).command), {action: 'launch', scene: 'alternate'});
   await page.close();

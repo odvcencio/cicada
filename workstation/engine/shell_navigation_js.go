@@ -99,6 +99,12 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		for _, allowed := range []string{"browser", "center", "detail", "code"} {
 			if region == allowed {
 				event.Call("preventDefault")
+				if region == "browser" {
+					_ = host.SetSignal("$layout.browserOpen", true)
+				}
+				if region == "code" {
+					_ = host.SetSignal("$layout.codeOpen", true)
+				}
 				root.Call("setAttribute", "data-phone-region", region)
 				url := shellCurrentURL()
 				url.Get("searchParams").Call("set", "region", region)
@@ -109,6 +115,24 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		return nil
 	})
 	root.Call("addEventListener", "click", localClick)
+	// Native controls own their activation keys. In particular, Space on a
+	// sidebar summary must collapse it instead of toggling song playback.
+	nativeKeys := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) == 0 {
+			return nil
+		}
+		event := args[0]
+		key := event.Get("key").String()
+		if (key != " " && key != "Enter") || event.Get("ctrlKey").Bool() || event.Get("metaKey").Bool() || event.Get("altKey").Bool() || event.Get("shiftKey").Bool() {
+			return nil
+		}
+		target := event.Get("target")
+		if workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "button,summary")) {
+			event.Call("stopPropagation")
+		}
+		return nil
+	})
+	root.Call("addEventListener", "keydown", nativeKeys)
 	return func() {
 		document.Call("removeEventListener", "click", remember, true)
 		document.Call("removeEventListener", "gosx:navigate", restore)
@@ -118,6 +142,8 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			release()
 		}
 		root.Call("removeEventListener", "click", localClick)
+		root.Call("removeEventListener", "keydown", nativeKeys)
+		nativeKeys.Release()
 		localClick.Release()
 	}, nil
 }

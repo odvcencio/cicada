@@ -11,10 +11,10 @@ import (
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
 
-// A restored pixel height is a preference, constrained by the current window.
+// Restored panel sizes are preferences, constrained by the current window.
 // Keep the signal and drag bounds at that visible size so the first pointer or
 // keyboard move responds immediately after a window resize.
-func bindShellDockFit(host enginewasm.Context, root js.Value) (func(), error) {
+func bindShellLayoutFit(host enginewasm.Context, root js.Value) (func(), error) {
 	window := js.Global()
 	workbench := root.Call("querySelector", "#studio-workbench")
 	top := workbench.Call("querySelector", ".gsx-dock__top")
@@ -22,8 +22,11 @@ func bindShellDockFit(host enginewasm.Context, root js.Value) (func(), error) {
 	disposed, queued := false, false
 	frame := 0
 	fit := func() error {
-		if disposed || !root.Get("isConnected").Bool() || window.Get("innerWidth").Float() <= 480 {
+		if disposed || !root.Get("isConnected").Bool() || window.Get("innerWidth").Float() < 800 {
 			return nil // Phone regions fill the window; preserve the desktop preference.
+		}
+		if err := fitShellColumns(host, workbench); err != nil {
+			return err
 		}
 		height := workbench.Call("getBoundingClientRect").Get("height").Float()
 		if height <= 0 || math.IsNaN(height) || math.IsInf(height, 0) {
@@ -75,10 +78,17 @@ func bindShellDockFit(host enginewasm.Context, root js.Value) (func(), error) {
 		queued = true
 		frame = window.Call("requestAnimationFrame", frameFn).Int()
 	}
-	releaseSignal, err := host.SubscribeSignal("$layout.dockHeight", func(json.RawMessage) { schedule() })
-	if err != nil {
-		frameFn.Release()
-		return nil, err
+	var releaseSignals []enginewasm.HandleFunc
+	for _, name := range []string{"dockHeight", "browserWidth", "codeWidth", "browserOpen", "codeOpen"} {
+		release, err := host.SubscribeSignal("$layout."+name, func(json.RawMessage) { schedule() })
+		if err != nil {
+			for _, previous := range releaseSignals {
+				previous()
+			}
+			frameFn.Release()
+			return nil, err
+		}
+		releaseSignals = append(releaseSignals, release)
 	}
 	changed := js.FuncOf(func(js.Value, []js.Value) any { schedule(); return nil })
 	observer := js.Undefined()
@@ -90,7 +100,9 @@ func bindShellDockFit(host enginewasm.Context, root js.Value) (func(), error) {
 	window.Call("addEventListener", "resize", changed)
 	release := func() {
 		disposed = true
-		releaseSignal()
+		for _, release := range releaseSignals {
+			release()
+		}
 		window.Call("removeEventListener", "resize", changed)
 		if workspacePresent(observer) {
 			observer.Call("disconnect")
