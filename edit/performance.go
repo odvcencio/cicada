@@ -178,6 +178,10 @@ func validateTakeGroups(groups []TakeGroup) (int, error) {
 }
 
 func replacePerformedPattern(ctx *Context, id string, performance *seq.Performance, preserveTranspose bool) error {
+	return replaceProjectPerformance(ctx, id, performance, preserveTranspose, false)
+}
+
+func replaceProjectPerformance(ctx *Context, id string, performance *seq.Performance, preserveTranspose, allowAuxiliary bool) error {
 	score, diagnostics, err := ctx.ParseProject()
 	if err != nil {
 		return err
@@ -204,9 +208,10 @@ func replacePerformedPattern(ctx *Context, id string, performance *seq.Performan
 			return fmt.Errorf("copy library pattern %q into the project before keeping a performance", id)
 		}
 	}
-	// Pattern actions carry the entry score's revision. A different file needs
-	// its own revision receipt; do not overwrite imported edits from a stale UI.
-	if file != ctx.Options.Path {
+	// Legacy pattern actions carry only the entry revision. Operations opting
+	// into owned secondary sources require a full-project receipt at their
+	// HTTP boundary, then stage that buffer through the shared transaction.
+	if file != ctx.Options.Path && !allowAuxiliary {
 		return fmt.Errorf("source position belongs to another source file; edit its owning file")
 	}
 	before, ok := ctx.FileSource(file)
@@ -267,6 +272,6 @@ func replacePerformedPattern(ctx *Context, id string, performance *seq.Performan
 	if err != nil {
 		return err
 	}
-	ctx.Source, ctx.plan = after, nil
+	ctx.Source, ctx.plan = stageProjectSource(ctx, file, before, after), nil
 	return nil
 }

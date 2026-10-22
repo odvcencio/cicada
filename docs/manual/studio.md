@@ -418,6 +418,21 @@ MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
+**Shape time** develops a played phrase at a different pace: choose half,
+two thirds, one and a half, or twice its current duration. The loop, note
+starts, gates, individual gestures and shared gesture lanes move together.
+Pitch, velocity, controller levels, vibrato rate and project tempo stay the
+same. **Loop part** auditions the new full loop; one Undo restores the exact
+previous score. Owned secondary score files are supported too.
+
+Times round to the nearest tick. Controller samples that land on the same
+tick keep the later value; every note retains at least a one-tick gate.
+Compression refuses overlapping repeated pitches instead of discarding notes.
+Existing song blocks keep their start and length, so lengthen a block when
+you want to hear a newly expanded phrase in full. Make an independent variation
+first when only one use should change. Imported library patterns remain
+unchanged; their arranged blocks link to the local variation workflow.
+
 Open **Use this pattern** in either the grid or played-timing editor to bring
 the phrase into your song. **Create variation** copies the complete pattern
 without changing its existing uses. For a scene song, choose a compatible

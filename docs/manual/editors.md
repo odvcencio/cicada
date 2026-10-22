@@ -115,6 +115,13 @@ new placement). A dry run of that intent answers `convertible: true` with the di
 or `convertible: false` with a `cause`. A revision conflict returns
 HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
 
+`scaleperformance` takes `entity: "pattern:name"`, `numerator` and
+`denominator` (each 1–16). It scales the loop, gates and both gesture layers
+in musical time, rounding absolute positions to ticks. Colliding controller
+samples retain the later value; gates retain at least one tick. A resulting
+same-pitch overlap is refused. Owned secondary pattern sources are supported;
+libraries remain read-only. The Studio route also requires `source_revision`.
+
 Studio's arrangement panel uses a second set of arrange intents that keep the
 position and length text you type, such as `@5.1.1` or `3bars`:
 `updateplacement` (change `at`, `length`, `track` or `content` together, so a

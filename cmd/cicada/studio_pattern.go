@@ -103,6 +103,18 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		intent = &in
 	case "performance-length":
 		intent = &edits.ResizePerformance{Entity: entity, LengthTicks: edit.PerformanceLength}
+	case "performance-scale":
+		if edit.PerformanceScale == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a phrase duration"})
+			return
+		}
+		if edit.SourceRevision == "" {
+			studioJSON(w, http.StatusConflict, map[string]string{"error": "refresh Studio before shaping this phrase"})
+			return
+		}
+		in := *edit.PerformanceScale
+		in.Entity = entity
+		intent = &in
 	case "settings":
 		in := &edits.SetPatternSettings{Entity: entity}
 		if edit.Settings != nil {

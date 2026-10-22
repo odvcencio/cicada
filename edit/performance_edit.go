@@ -99,6 +99,8 @@ func editPerformance(ctx *Context, intent Intent) error {
 		entity = in.Entity
 	case *ResizePerformance:
 		entity = in.Entity
+	case *ScalePerformance:
+		entity = in.Entity
 	case *SetPerformedExpression:
 		entity = in.Entity
 	case *SetPerformanceGroup:
@@ -136,6 +138,15 @@ func editPerformance(ctx *Context, intent Intent) error {
 		return fmt.Errorf("pattern %q is not a played-timing performance", id)
 	}
 	switch in := intent.(type) {
+	case *ScalePerformance:
+		if err := scalePerformance(performance, in.Numerator, in.Denominator); err != nil {
+			return err
+		}
+		if err := replaceProjectPerformance(ctx, id, performance, true, true); err != nil {
+			return err
+		}
+		ctx.SetLabel(fmt.Sprintf("Performance · %s duration scaled %d/%d", id, in.Numerator, in.Denominator))
+		return nil
 	case *SetPerformanceGroup:
 		if in.Index < 0 || in.Index > len(performance.Groups) || in.Remove && in.Index == len(performance.Groups) {
 			return fmt.Errorf("shared gesture lane is out of range")

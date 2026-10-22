@@ -25,7 +25,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
-		if f["action"] == "bind" || f["action"] == "create" || f["action"] == "duplicate" {
+		if f["action"] == "bind" || f["action"] == "create" || f["action"] == "duplicate" || f["action"] == "performance-scale" {
 			p["source_revision"] = f["source_revision"]
 		}
 		switch f["action"] {
@@ -172,6 +172,17 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 				return nil, fmt.Errorf("loop length must be a whole number of ticks")
 			}
 			p["performanceLength"] = length
+		case "performance-scale":
+			ratio := strings.Split(f["scale"], "/")
+			if len(ratio) != 2 {
+				return nil, fmt.Errorf("choose a phrase duration")
+			}
+			numerator, e1 := strconv.Atoi(ratio[0])
+			denominator, e2 := strconv.Atoi(ratio[1])
+			if e1 != nil || e2 != nil || numerator < 1 || numerator > 16 || denominator < 1 || denominator > 16 {
+				return nil, fmt.Errorf("choose a phrase duration")
+			}
+			p["performanceScale"] = map[string]int{"numerator": numerator, "denominator": denominator}
 		case "settings":
 			swing, err := finiteNumber(f, "swing")
 			if err != nil || swing < 50 || swing > 75 || math.Abs(swing*100-math.Round(swing*100)) > 1e-6 {
