@@ -27,7 +27,10 @@ type vocalLoopCapture struct {
 }
 
 func newVocalLoopCapture(store *takejournal.Store, take takejournal.Take, passes int) *vocalLoopCapture {
-	clock := takeClock(take)
+	clock, err := takeClock(take)
+	if err != nil {
+		return &vocalLoopCapture{store: store, template: take, passes: passes, fault: err}
+	}
 	return &vocalLoopCapture{store: store, template: take, passes: passes,
 		duration: clock.SampleAtTick(take.Timeline.EndTick) - clock.SampleAtTick(take.Timeline.StartTick), ids: []string{take.ID}}
 }

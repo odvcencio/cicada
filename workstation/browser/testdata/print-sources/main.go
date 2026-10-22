@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/padsampler"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/project"
 )
 
 func must(err error) {
@@ -24,7 +25,11 @@ func main() {
 	seedBank := flag.Bool("sampler-bank", false, "seed one stored performance for native UI checks")
 	sceneSong := flag.Bool("scene-song", false, "keep scenes and the song in separate project sources")
 	sceneControls := flag.Bool("scene-controls", false, "include scene changes and a later curve in a fourth source")
+	sceneTempo := flag.Bool("scene-tempo", false, "also retain changing recording tempos across the four sources")
 	flag.Parse()
+	if *sceneTempo {
+		*sceneControls = true
+	}
 	if *sceneControls {
 		*sceneSong = true
 	}
@@ -60,6 +65,9 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 		scenes := "scene opening { lead=melody vox=off }\nscene held { lead=keep }\nscene quiet { lead=off }\n"
 		if *sceneControls {
 			scenes = "scene opening { lead=melody vox=off lead.level=-18dB lead.pan=-0.5 }\nscene held { lead=keep lead.level=-18dB lead.pan=0.5 }\nscene quiet { lead=off lead.pan=0 }\n"
+			if *sceneTempo {
+				scenes = "scene opening { lead=melody vox=off tempo=137.333 lead.level=-18dB lead.pan=-0.5 }\nscene held { lead=keep tempo=96 lead.level=-18dB lead.pan=0.5 }\nscene quiet { lead=off tempo=120 lead.pan=0 }\n"
+			}
 			curvesPath = filepath.Join(root, "curves.cicada")
 			must(os.WriteFile(curvesPath, []byte("// Keep this curve and its notes.\r\nautomate lead.level { @5.1.1 -9dB curve 2 // take over here\r\n @8.1.1 -14dB smooth recall @8.1.1 }\r\n"), 0600))
 			manifest += "source \"curves.cicada\"\n"
@@ -76,6 +84,15 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 	}
 	must(os.WriteFile(filepath.Join(root, "cicada.mod"), []byte(manifest), 0600))
 	must(os.WriteFile(score, entry, 0600))
+	source, diagnostics, err := project.LoadScore(score, nil)
+	must(err)
+	p, more := project.FromScore(source)
+	if p == nil {
+		panic(append(diagnostics, more...))
+	}
+	changes := project.SongTempoChanges(p)
+	clock, err := project.NewTempoMap(48000, int64(p.TempoMilli), changes)
+	must(err)
 	store, err := takejournal.Open(score)
 	must(err)
 	var ids []string
@@ -84,7 +101,8 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 		if pass == 2 {
 			start, end, frames = 7680, 15360, 192000
 		}
-		id, err := store.BeginTimeline("vox", "session", takejournal.Revision(entry), 48000, 1, &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: start, TempoMilli: 120000})
+		frames = int(clock.SampleAtTick(end) - clock.SampleAtTick(start))
+		id, err := store.BeginTimeline("vox", "session", takejournal.Revision(entry), 48000, 1, &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: start, TempoMilli: 120000, TempoChanges: changes})
 		must(err)
 		pcm := make([]float32, frames)
 		for i := range pcm {
@@ -116,5 +134,5 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 		bank.Performance = padsampler.Performance{Frames: 96000, Hits: []padsampler.Hit{{Sound: prepared.ID, Pad: 1, Velocity: 1, Choke: prepared.Pad.Choke}}}
 		must(bankStore.Write(bankStore.BankPath, padsampler.BankBytes(bank), true))
 	}
-	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"score": score, "arrangement": owner, "scenes": scenesPath, "sceneSong": *sceneSong, "sceneControls": *sceneControls, "curves": curvesPath, "primaryArrangement": *primary, "takeIDs": ids}))
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"score": score, "arrangement": owner, "scenes": scenesPath, "sceneSong": *sceneSong, "sceneControls": *sceneControls, "sceneTempo": *sceneTempo, "curves": curvesPath, "primaryArrangement": *primary, "takeIDs": ids}))
 }

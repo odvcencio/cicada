@@ -23,6 +23,10 @@
    const takes = await read('takes'); if (takes.takes.length !== 3) throw new Error('Missing synthetic takes');
    state = {phase: 'pick', source: initial.source, take: takes.takes.find(t => t.timeline.startTick === 0).id, checks: ['three synthetic takes and a secondary arrangement load without hardware']}; persist(state);
   }
+  if (window.__cicadaPortableKernelBase64 && !state.portableKernelCompiled) {
+   await WebAssembly.compile(Uint8Array.from(atob(window.__cicadaPortableKernelBase64), c => c.charCodeAt(0))); state.portableKernelCompiled = true;
+   state.checks.push('portable audio kernel compiles in the native Mac webview'); persist(state);
+  }
    const saved = async predicate => wait(async () => { await ready(); const value = await read('state'); const status = document.querySelector('[data-sampler-status]')?.textContent || ''; if (state.phase === 'sampler-printed' && /retained|could not|failed/i.test(status)) throw new Error(status); return value.valid && predicate(value.source) && document.querySelector('#undo-form [name=revision]')?.value === value.revision; }, state.phase);
   while (true) {
    switch (state.phase) {

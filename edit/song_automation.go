@@ -31,6 +31,9 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 	var tick int64
 	for _, entry := range plan.Song {
 		for _, setting := range scenes[entry.Scene].Settings {
+			if setting.Path == "tempo" {
+				continue
+			} // Preserved as an arrangement tempo step.
 			refuse := func() error {
 				return fmt.Errorf("scene %s setting %s cannot be carried into numeric arrangement automation", entry.Scene, setting.Path)
 			}

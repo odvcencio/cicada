@@ -13,7 +13,31 @@ type ScheduleEvent struct {
 	Kind          ScheduleKind
 	Track         uint8
 	Index         uint16
-	ID            uint32
+	ID            uint32 // Placement identity, or milli-BPM for ScheduleTempo.
+}
+
+// ValidateTempoSchedule checks the tempo records shared by native and image
+// construction. The caller also validates event kinds and placement ownership.
+//
+//go:noinline
+func ValidateTempoSchedule(events []ScheduleEvent) error {
+	last, end := int64(-1), int64(0)
+	var scene bool
+	for _, v := range events {
+		if v.Kind != ScheduleTempo {
+			end = max(end, v.EndTick)
+			scene = scene || v.Kind == ScheduleScene
+			continue
+		}
+		if v.Tick < 0 || v.Tick%seq.TicksPerBar != 0 || v.EndTick != v.Tick || v.Tick <= last || v.ID < 20000 || v.ID > 300000 || uint32(v.Track)|uint32(v.Scene)|uint32(v.Index) != 0 {
+			return engineError("invalid schedule tempo")
+		}
+		last = v.Tick
+	}
+	if last >= 0 && (scene || last >= end) {
+		return engineError("invalid schedule tempo span")
+	}
+	return nil
 }
 
 type scheduleInterval struct {
@@ -67,11 +91,15 @@ func (e *Engine) validateSchedule() error {
 	var scenes, activeClips int
 	var previous int64
 	for i, v := range e.schedule {
-		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleClipEnd {
+		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleTempo {
 			return engineError("schedule event is out of range")
 		}
 		previous = v.Tick
 		e.scheduleDuration = max(e.scheduleDuration, v.Tick, v.EndTick)
+		if v.Kind == ScheduleTempo {
+			e.placementSchedule = true
+			continue
+		}
 		if v.Kind == ScheduleScene {
 			scenes++
 			if int(v.Scene) >= len(e.scenes) || v.EndTick <= v.Tick {
@@ -115,9 +143,10 @@ func (e *Engine) validateSchedule() error {
 			}
 		}
 	}
-	if e.placementSchedule && (scenes > 0 || len(starts) != len(ends)) {
+	if e.placementSchedule && (scenes > 0 || len(starts) == 0 || len(starts) != len(ends)) {
 		return engineError("invalid placement schedule authority or releases")
 	}
+
 	if !e.placementSchedule {
 		var end int64
 		for _, v := range e.schedule {
@@ -126,6 +155,9 @@ func (e *Engine) validateSchedule() error {
 			}
 			end = v.EndTick
 		}
+	}
+	if err := ValidateTempoSchedule(e.schedule); err != nil {
+		return err
 	}
 	e.indexSchedule()
 	return nil
@@ -156,6 +188,10 @@ func (e *Engine) startPlacementSchedule() {
 	}
 	if !e.restoreAuthoredAndCommitted() { // The same restore as a song start.
 		return
+	}
+	if e.songTempo {
+		e.setSceneTempo(e.TempoAtTick(tick))
+		e.liveTempo = false
 	}
 	localTick := tick - e.cycleStart
 	lo, hi := 0, len(e.schedule)
@@ -195,6 +231,9 @@ func (e *Engine) advancePlacementSchedule() {
 				return
 			}
 			e.cycleStart += e.scheduleDuration
+			if e.songTempo {
+				e.setSceneTempo(e.TempoAtTick(0))
+			}
 			if len(e.automation) != 0 && !e.restartAutomationLanes() { // As a song loop does.
 				return
 			}
@@ -234,6 +273,9 @@ func (e *Engine) patternHandoff(v ScheduleEvent) bool {
 func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 	track := int(v.Track)
 	switch v.Kind {
+	case ScheduleTempo:
+		e.setSceneTempo(int64(v.ID))
+		e.liveTempo = false
 	case SchedulePattern:
 		e.placementID[track] = v.ID
 		e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: v.Track, Index: v.Index, Arg1: 1})
@@ -274,6 +316,7 @@ const (
 	SchedulePatternEnd
 	ScheduleClip
 	ScheduleClipEnd
+	ScheduleTempo
 )
 
 // LowerSong preserves scene entry boundaries, including consecutive entries

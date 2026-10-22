@@ -86,7 +86,7 @@ func TestSyncedDelayMustFitTheSlowestSceneTempo(t *testing.T) {
 	}
 }
 
-func TestProjectSceneTempoIsRejectedUnderArrange(t *testing.T) {
+func TestProjectUnusedSceneTempoDoesNotGovernArrange(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "examples", "arrangement", "*.cicada"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("arrangement example: %v", err)
@@ -103,7 +103,7 @@ func TestProjectSceneTempoIsRejectedUnderArrange(t *testing.T) {
 	p.Scenes = []Scene{{ID: "side", Bindings: map[string]string{}}}
 	p.Scenes[0].Settings = append(p.Scenes[0].Settings, SceneSetting{Path: "tempo", Value: SceneValue{Unit: "unit", Number: &tempo}})
 	err = ValidateProject(p)
-	if err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED: scene "+p.Scenes[0].ID+" sets tempo") {
+	if err != nil || len(SongTempoChanges(p)) != 0 {
 		t.Fatalf("got %v", err)
 	}
 }

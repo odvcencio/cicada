@@ -64,3 +64,33 @@ func TestSceneTempoWritesOneMIDITempoEventPerChange(t *testing.T) {
 		t.Fatalf("2-bar export has %d conductor events", count)
 	}
 }
+
+func TestArrangementTempoMIDIRoundTrip(t *testing.T) {
+	source, err := os.ReadFile("../examples/arrangement-tempo.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := placementMIDIProject(t, string(source))
+	f, err := FromProject(p, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data bytes.Buffer
+	if err = Encode(f, &data); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := tempos(decoded)
+	want := []tempoPoint{{0, 500000}, {2 * 3840, 625000}, {4 * 3840, 436894}}
+	if len(points) != len(want) {
+		t.Fatal(points)
+	}
+	for i := range want {
+		if points[i] != want[i] {
+			t.Fatal("MIDI tempo", points[i], want[i])
+		}
+	}
+}

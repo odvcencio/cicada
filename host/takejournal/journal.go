@@ -23,6 +23,7 @@ import (
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -89,14 +90,37 @@ func cloneSourceChanges(files []SourceChange) []SourceChange {
 // Timeline pins the musical origin and tempo of an arrangement recording.
 // Raw PCM includes count-in/pre-roll; StartTick/EndTick define the usable punch.
 type Timeline struct {
-	StartTick         int64 `json:"startTick"`
-	EndTick           int64 `json:"endTick"`
-	PlaybackStartTick int64 `json:"playbackStartTick"`
-	TempoMilli        int64 `json:"tempoMilli"`
+	StartTick         int64                   `json:"startTick"`
+	EndTick           int64                   `json:"endTick"`
+	PlaybackStartTick int64                   `json:"playbackStartTick"`
+	TempoMilli        int64                   `json:"tempoMilli"`
+	TempoChanges      []musictime.TempoChange `json:"tempoChanges,omitempty"`
 }
 
 func (v Timeline) Valid() bool {
-	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40
+	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40 && musictime.ValidateTempoChanges(v.TempoChanges) == nil
+}
+
+func (v *Timeline) Clock(rate int) (*project.TempoMap, error) {
+	if v == nil || !v.Valid() {
+		return nil, errors.New("invalid recording timeline")
+	}
+	return project.NewTempoMap(rate, v.TempoMilli, v.TempoChanges)
+}
+
+// Coverage maps the retained PCM back onto the recording's own musical clock.
+// Invalid or empty takes expose no usable interval.
+func (t Take) Coverage() (int64, int64) {
+	c, err := t.Timeline.Clock(t.Rate)
+	if err != nil {
+		return 0, 0
+	}
+	var origin int64
+	if t.FirstBlock != nil {
+		origin = int64(t.FirstBlock.RawFrame) - t.FirstBlock.Placement.EngineFrame
+	}
+	end := c.TickAtSample(c.SampleAtTick(t.Timeline.PlaybackStartTick) + int64(t.Frames) - origin)
+	return t.Timeline.StartTick, min(t.Timeline.EndTick, end)
 }
 
 type event struct {
@@ -431,6 +455,7 @@ func (s *Store) BeginTimeline(track, scene, expected string, rate, channels int,
 	t := &Take{ID: "take-" + hex.EncodeToString(id[:]), Track: track, Scene: scene, Expected: expected, Rate: rate, Channels: channels, Created: time.Now().UTC()}
 	if timeline != nil {
 		v := *timeline
+		v.TempoChanges = append([]musictime.TempoChange(nil), timeline.TempoChanges...)
 		t.Timeline = &v
 	}
 	f, err := s.root.OpenFile(s.rawPath(t.ID), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
@@ -452,6 +477,7 @@ func clone(t *Take) Take {
 	v := *t
 	if t.Timeline != nil {
 		timeline := *t.Timeline
+		timeline.TempoChanges = append([]musictime.TempoChange(nil), t.Timeline.TempoChanges...)
 		v.Timeline = &timeline
 	}
 	if t.FirstBlock != nil {

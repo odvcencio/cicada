@@ -26,6 +26,7 @@ import (
 type vocalLaneView struct {
 	ID, Label         string
 	Start, End, Tempo int64
+	TempoChanges      []musictime.TempoChange
 }
 type vocalLaneProps struct {
 	End, Start, Stop int64
@@ -397,7 +398,7 @@ func (u *vocalLanesUI) renderSelection(draft bool) {
 			}
 		}
 	}
-	seconds := float64(u.region.End-u.region.Start) * 60000 / float64(max(int64(1), lane.Tempo)*seq.PPQ)
+	seconds := musictime.SecondsBetween(lane.Tempo, lane.TempoChanges, u.region.Start, u.region.End)
 	for _, selector := range []string{"input[name=gainDB]", "[data-vocal-gain-slider]"} {
 		if input := u.root.Call("querySelector", selector); workspacePresent(input) {
 			// Keep the user's decimal entry intact while typing. The slider and

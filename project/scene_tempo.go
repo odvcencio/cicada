@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // SceneTempoPath is the scene setting that changes the song tempo at the
@@ -41,22 +42,35 @@ func SlowestTempoMilli(p *Project) int {
 			slowest = milli
 		}
 	}
+	if p.Arrange != nil {
+		for _, t := range p.Arrange.Tempos {
+			slowest = min(slowest, t.BPMMilli)
+		}
+	}
 	return slowest
 }
 
 // TempoChange is a step in the song tempo: from the start of Bar (counted from
 // the first bar of the song) the tempo is BPMMilli.
-type TempoChange struct {
-	Bar      int
-	BPMMilli int
-}
+type TempoChange = musictime.TempoChange
 
 // SongTempoChanges lists where one pass of the song changes tempo. A scene
 // without a tempo keeps the tempo before it. A scene that repeats the current
-// tempo adds no change. An arrangement has no scenes and so no changes.
+// tempo adds no change. Arrangements use their explicit bar-boundary steps.
 func SongTempoChanges(p *Project) []TempoChange {
-	if p == nil || p.Arrange != nil {
+	if p == nil {
 		return nil
+	}
+	if p.Arrange != nil {
+		var changes []TempoChange
+		current := p.TempoMilli
+		for _, step := range p.Arrange.Tempos {
+			if step.BPMMilli != current {
+				changes = append(changes, step)
+				current = step.BPMMilli
+			}
+		}
+		return changes
 	}
 	scenes := make(map[string]int, len(p.Scenes))
 	for _, scene := range p.Scenes {
@@ -85,6 +99,9 @@ type TempoMap struct {
 
 // NewTempoMap builds the map for a score tempo and its steps in bar order.
 func NewTempoMap(sampleRate int, tempoMilli int64, changes []TempoChange) (*TempoMap, error) {
+	if err := musictime.ValidateTempoChanges(changes); err != nil {
+		return nil, err
+	}
 	clock, err := seq.NewClock(sampleRate, tempoMilli)
 	if err != nil {
 		return nil, err

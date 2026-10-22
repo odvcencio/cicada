@@ -8,6 +8,10 @@ func TestAudioWASMContinuousAutomationParity(t *testing.T) {
 	compareWASMFixture(t, "continuous-automation.cicada", 4)
 }
 
+func TestAudioWASMArrangementTempoParity(t *testing.T) {
+	compareWASMFixture(t, "arrangement-tempo.cicada", 6)
+}
+
 func TestAudioWASMAutomationRecallParity(t *testing.T) {
 	const source = `cicada 2
 tempo 120

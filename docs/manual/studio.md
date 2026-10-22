@@ -760,7 +760,12 @@ file containing the song. **Undo** restores its original song block and comments
 together with the entry score. Numeric scene parameter changes become stepped
 automation. Existing curves keep their shapes and take over at their original
 first points; recall cues retain scene-boundary returns to those curves.
-Tempo changes, toggle or symbolic values such as delay divisions still require
+Tempo changes become bar-boundary steps inside `arrange`. Open **Tempo steps**
+to see the preserved positions and tempos; edit them in Code with
+`tempo @3.1.1 96`. Recordings retain their original tempo map, which governs
+phrase durations, waveform positions and comp printing. Restore that map
+before combining a take with a song whose timing has changed.
+Toggle or symbolic values such as delay divisions still require
 manual arrangement work; Studio refuses a conversion that cannot retain them.
 Selecting a short phrase keeps a quiet song ending intact. Its arrangement span
 can outlast the recorded audio without stretching or padding the recording.

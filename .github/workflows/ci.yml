@@ -473,7 +473,7 @@ jobs:
             fi
           done
           unset CICADA_ARRANGEMENT_REOPEN
-          for print_layout in primary secondary song controls; do
+          for print_layout in primary secondary song controls tempo; do
             print_args=()
             print_phases=(sampler producer roundtrip reopen)
             if [[ "$print_layout" == primary ]]; then print_args+=(--primary-arrangement); fi
@@ -484,6 +484,10 @@ jobs:
             if [[ "$print_layout" == controls ]]; then
               print_args+=(--scene-controls --sampler-bank)
               print_phases=(producer automation-recall roundtrip reopen)
+            fi
+            if [[ "$print_layout" == tempo ]]; then
+              print_args+=(--scene-tempo --sampler-bank)
+              print_phases=(producer automation-recall tempo-arrangement roundtrip reopen)
             fi
             go -C workstation run ./browser/testdata/print-sources "${print_args[@]}" > "build/studio-print-$print_layout-fixture.json"
             export CICADA_PRINT_FIXTURE="$PWD/build/studio-print-$print_layout-fixture.json"
@@ -696,6 +700,10 @@ jobs:
           go -C workstation run ./browser/testdata/print-sources --scene-controls --sampler-bank > build/native-scene-controls-fixture.json
           controls_score="$(node -e 'process.stdout.write(require("./build/native-scene-controls-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/scene-controls --mode normal --timeout 180 --project-fixture "$controls_score" --workflow desktop/testdata/native-print-sources-workflow.js
+          go -C workstation run ./browser/testdata/print-sources --scene-tempo --sampler-bank > build/native-scene-tempo-fixture.json
+          tempo_score="$(node -e 'process.stdout.write(require("./build/native-scene-tempo-fixture.json").score)')"
+          python3 -c "from pathlib import Path; import base64,json; Path('build/native-tempo-workflow.js').write_text('window.__cicadaPortableKernelBase64='+json.dumps(base64.b64encode(Path('build/cicada-kernel.wasm').read_bytes()).decode())+';\n'+Path('desktop/testdata/native-print-sources-workflow.js').read_text())"
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/scene-tempo --mode normal --timeout 180 --project-fixture "$tempo_score" --workflow build/native-tempo-workflow.js
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Save macOS validation reports
         if: always()

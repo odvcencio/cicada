@@ -6,6 +6,7 @@ import (
 
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // Revision is the SHA-256 of the exact source bytes; Studio's studioRevision delegates to it.
@@ -22,6 +23,7 @@ type Plan struct {
 	HasArrange   bool // the score has an arrange block (placements, even if none are listed)
 	Title        string
 	TempoMilli   int
+	TempoChanges []musictime.TempoChange
 	KeyRoot      uint8
 	Scale        string
 	Tracks       []Track

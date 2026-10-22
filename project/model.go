@@ -331,7 +331,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		}
 		p.Kits = append(p.Kits, kit)
 	}
-	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil
+	// Select /2 before lowering mixer fields. A later arrangement/automation
+	// upgrade must not discard levels or routing needed by its JSON wire form.
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.Arrange != nil || len(score.Automation) > 0
 	p.Live = liveFromScore(score.Live)
 	for _, scene := range score.Scenes {
 		needsProject2 = needsProject2 || len(scene.Settings) > 0

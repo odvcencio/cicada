@@ -128,8 +128,9 @@ live_stinger ::= "stinger" , identifier , "=" , identifier , "." , identifier ,
                  [ "quantize" , identifier ] , [ "crossfade" , number ] , [ ";" ] ;
 live_transition ::= "transition" , identifier , "->" , identifier , [ "quantize" , identifier ] ,
                     [ "crossfade" , number ] , [ ";" ] ;
-arrange_decl ::= "arrange" , "{" , { place_decl | marker_decl } , "}" ;
+arrange_decl ::= "arrange" , "{" , { place_decl | marker_decl | arrangement_tempo } , "}" ;
 place_decl ::= "place" , _name , _name , _name , "{" , { param_decl } , "}" ;
 marker_decl ::= "marker" , _name , "{" , { param_decl } , "}" ;
 tick_count ::= /[0-9]+ticks/ ;
 automation_recall ::= "recall" , musical_position ;
+arrangement_tempo ::= "tempo" , musical_position , number ;

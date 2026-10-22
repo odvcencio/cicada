@@ -78,6 +78,24 @@ func TestPlacementPositionRetainsExactTicks(t *testing.T) {
 	}
 }
 
+func TestNamedPlacementTempoStepsShowTheirTiming(t *testing.T) {
+	source, err := os.ReadFile("../examples/arrangement-tempo.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, ds := notation.Parse(source)
+	p, more := project.FromScore(score)
+	if p == nil || len(ds) > 0 || len(more) > 0 {
+		t.Fatal(ds, more)
+	}
+	page := gosx.RenderHTML((&studioApp{}).placementArrangement(workspace{Project: p, Revision: "current", SourceRevision: "sources"}, "csrf", ""))
+	for _, want := range []string{`data-arrangement-tempos`, "Tempo steps · 3", "@3.1.1 · 96 BPM", "@5.1.1 · 137.333 BPM", "tempo changes", "0:12 at 120.0 BPM"} {
+		if !strings.Contains(page, want) {
+			t.Fatal("tempo display missing", want)
+		}
+	}
+}
+
 func TestPlacementTimelineShowsOverlappingAudioOnSeparateRows(t *testing.T) {
 	placements := []project.Placement{
 		{ID: "first", Track: "voice", Content: "take-a", AtTick: 0, LengthTicks: 3840},

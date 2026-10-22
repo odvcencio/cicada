@@ -28,8 +28,9 @@ KERNEL_WASM_BINARYEN_FLAGS ?= -Oz --converge --strip-producers
 WASMOPT ?=
 export WASMOPT
 
-# Set to +simd128 to enable LLVM's WebAssembly vector instructions.
-KERNEL_WASM_LLVM_FEATURES ?=
+# Bulk-memory copies keep the shared schedule inside the existing size budget.
+# Append +simd128 when measuring WebAssembly vector instructions.
+KERNEL_WASM_LLVM_FEATURES ?= +bulk-memory,+bulk-memory-opt
 
 # Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
 ENGINE_METRICS_ARGS ?=
@@ -219,7 +220,7 @@ build-loudness-wasm:
 # Optional keyboard module; same ABI and AudioWorklet, loaded only for keys.
 build-keys-wasm:
 	mkdir -p build
-	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx cicada_reactor' -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx cicada_reactor' -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
 	sh scripts/wasm-opt.sh -Oz build/cicada-keys.wasm -o build/cicada-keys.optimized.wasm
 	mv build/cicada-keys.optimized.wasm build/cicada-keys.wasm
 	go run ./cmd/cicada-wasm-size --report-only build/cicada-keys.wasm

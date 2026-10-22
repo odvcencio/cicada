@@ -119,7 +119,7 @@ func TestVocalPrintConvertsOwningSongSource(t *testing.T) {
 func TestVocalSongConversionRefusesUnsupportedSettings(t *testing.T) {
 	for _, split := range []bool{false, true} {
 		entry := []byte("cicada 2\ntempo 120\ntrack bass acid {}\ntrack vox audio {}\npattern pulse { c3 . }\n")
-		part := []byte("scene first { bass=pulse vox=off tempo=100 }\nsong { first*2 }\n")
+		part := []byte("scene first { bass=pulse vox=off bass.mute=true }\nsong { first*2 }\n")
 		files := []notation.SourceFile{{Path: "main.cicada", Source: entry}, {Path: "song.cicada", Source: part}}
 		if !split {
 			entry = append(entry, part...)

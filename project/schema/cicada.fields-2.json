@@ -260,7 +260,8 @@
       "name": "arrangement",
       "child_roles": [
         "placements",
-        "markers"
+        "markers",
+        "tempos"
       ],
       "variants": [],
       "introduced": "cicada.project/2",
@@ -277,6 +278,14 @@
     },
     {
       "name": "marker",
+      "child_roles": [],
+      "variants": [],
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "tempo_change",
       "child_roles": [],
       "variants": [],
       "introduced": "cicada.project/2",
@@ -2394,6 +2403,20 @@
       "layer": "semantic"
     },
     {
+      "construct": "arrangement",
+      "name": "tempos",
+      "required": false,
+      "type": "array\u003ctempo_change\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Ordered bar-boundary tempo steps",
+      "order": 3,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "construct": "placement",
       "name": "id",
       "required": true,
@@ -2486,6 +2509,34 @@
       "range": null,
       "default": null,
       "meaning": "Absolute marker tick",
+      "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "tempo_change",
+      "name": "bar",
+      "required": true,
+      "type": "integer",
+      "unit": null,
+      "range": "0..1048576",
+      "default": null,
+      "meaning": "Zero-based bar of the tempo step",
+      "order": 1,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "tempo_change",
+      "name": "bpm_milli",
+      "required": true,
+      "type": "integer",
+      "unit": "milli-BPM",
+      "range": "20000..300000",
+      "default": null,
+      "meaning": "Tempo in thousandths of a BPM",
       "order": 2,
       "introduced": "cicada.project/2",
       "profile": "M0",

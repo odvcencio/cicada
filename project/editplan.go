@@ -36,6 +36,7 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	plan.HasArrange = p.Arrange != nil
 	plan.Title = p.Title
 	plan.TempoMilli = p.TempoMilli
+	plan.TempoChanges = SongTempoChanges(p)
 	plan.KeyRoot = p.Key.Root
 	plan.Scale = p.Key.Scale
 	for _, track := range p.Tracks {

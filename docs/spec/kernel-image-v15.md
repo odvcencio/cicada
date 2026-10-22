@@ -53,6 +53,10 @@ chord fields and an empty footer. Feature presence never selects another layout.
    - Each schedule event (26 bytes): `u64 Tick, u64 EndTick, u8 Kind, u8 Track,
      u16 Scene, u16 Index, u32 ID`. Ticks are nonnegative signed-int64-domain
      musical ticks and must satisfy the engine's schedule bounds/ordering.
+     Kind 5 is a bar-boundary tempo step: `Tick == EndTick`, Track/Scene/Index
+     are zero, and the final word carries milli-BPM (20000–300000) instead of
+     a placement ID. Tempo steps must increase within the placement span.
+     Earlier decoders reject this unknown kind; they do not silently omit it.
    - Each resident asset: `u32 SampleRate, u32 Frames, u8 Stereo`, then Frames
      `f32` left samples and, iff Stereo=1, Frames `f32` right samples.
    - Each clip (42 bytes): `u16 Asset, u64 StartFrame, u64 EndFrame,

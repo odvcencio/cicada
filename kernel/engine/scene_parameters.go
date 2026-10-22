@@ -41,7 +41,7 @@ func (e *Engine) captureSceneDefaults() {
 	}
 	// Scene settings and automation lanes both move parameters away from their
 	// authored values, so either one needs the authored snapshot.
-	if len(e.automation) != 0 {
+	if len(e.automation) != 0 || e.songTempo {
 		e.sceneDefaults = &sceneParameterState{layerMask: e.layerAuthored}
 	}
 	for _, scene := range e.scenes {

@@ -895,6 +895,11 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		return err
 	}
 	e.loopSong = cfg.LoopSong
+	for _, event := range e.schedule {
+		if event.Kind == ScheduleTempo {
+			slowest = min(slowest, int64(event.ID))
+		}
+	}
 	if e.delayA != nil && e.delayA.Params().ValidateTempo(slowest) != nil {
 		return engineError("delay division does not fit the slowest scene tempo")
 	}

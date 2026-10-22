@@ -23,25 +23,37 @@ func stepClock(c seq.Clock, tick, bpmMilli int64) seq.Clock {
 }
 
 func (e *Engine) buildTempoChain() error {
-	if len(e.schedule) == 0 || e.placementSchedule {
+	if len(e.schedule) == 0 {
 		return nil
 	}
 	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.bpmMilli}
 	chain := []seq.Clock{clock}
 	for _, entry := range e.schedule {
-		for _, setting := range e.scenes[entry.Scene].Settings {
-			e.songTempo = e.songTempo || setting.ID == kernel.ParamGlobalTempo
-			if milli := sceneTempoMilli(setting); setting.ID == kernel.ParamGlobalTempo && milli != clock.BPMMilli {
-				next := stepClock(clock, entry.Tick, milli)
-				if entry.Tick == clock.AnchorTick {
-					chain[len(chain)-1] = next // the first scene sets the tempo at tick 0
-				} else {
-					chain = append(chain, next)
-				}
-				clock = next
+		var milli int64
+		if e.placementSchedule {
+			if entry.Kind == ScheduleTempo {
+				milli = int64(entry.ID)
 			}
+		} else if settings := e.scenes[entry.Scene].Settings; len(settings) > 0 && settings[0].ID == kernel.ParamGlobalTempo {
+			// Validation requires tempo first, so other settings need no scan.
+			milli = sceneTempoMilli(settings[0])
 		}
+		if milli == 0 {
+			continue
+		}
+		e.songTempo = true
+		if milli == clock.BPMMilli {
+			continue
+		}
+		next := stepClock(clock, entry.Tick, milli)
+		if entry.Tick == clock.AnchorTick {
+			chain[len(chain)-1] = next
+		} else {
+			chain = append(chain, next)
+		}
+		clock = next
 	}
+
 	e.tempoCycleSamples = clock.SampleAtTick(e.scheduleDuration)
 	if len(chain) > 1 || chain[0].BPMMilli != e.bpmMilli {
 		e.tempoChain = chain

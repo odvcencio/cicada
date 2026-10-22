@@ -35,6 +35,7 @@ func writeSchedule(w *writer, cfg *engine.Config) error {
 		w.byte(v.Track)
 		w.u16(v.Scene)
 		w.u16(v.Index)
+		// ID is the placement identity, or milli-BPM for ScheduleTempo.
 		w.u32(v.ID)
 	}
 	for _, a := range cfg.Assets {

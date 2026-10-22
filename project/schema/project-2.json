@@ -1974,6 +1974,13 @@
           "items": {
             "$ref": "#/$defs/marker"
           }
+        },
+        "tempos": {
+          "type": "array",
+          "maxItems": 65535,
+          "items": {
+            "$ref": "#/$defs/tempo_change"
+          }
         }
       }
     },
@@ -2168,6 +2175,26 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        }
+      }
+    },
+    "tempo_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bar",
+        "bpm_milli"
+      ],
+      "properties": {
+        "bar": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "bpm_milli": {
+          "type": "integer",
+          "minimum": 20000,
+          "maximum": 300000
         }
       }
     }

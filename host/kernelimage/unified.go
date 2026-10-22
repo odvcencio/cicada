@@ -66,11 +66,15 @@ func validateUnifiedFields(cfg *engine.Config) error {
 		}
 	}
 	var previous int64
+
 	for i, v := range cfg.Schedule {
-		if v.Tick < 0 || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || i > 0 && v.Tick < previous || v.Kind > engine.ScheduleClipEnd {
+		if v.Tick < 0 || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || i > 0 && v.Tick < previous || v.Kind > engine.ScheduleTempo {
 			return imageError("invalid schedule image event")
 		}
 		previous = v.Tick
+		if v.Kind == engine.ScheduleTempo {
+			continue
+		}
 		if v.Kind == engine.ScheduleScene {
 			if int(v.Scene) >= len(cfg.Scenes) || v.EndTick <= v.Tick {
 				return imageError("invalid schedule scene image")
@@ -87,5 +91,5 @@ func validateUnifiedFields(cfg *engine.Config) error {
 			return imageError("invalid schedule clip image")
 		}
 	}
-	return nil
+	return engine.ValidateTempoSchedule(cfg.Schedule)
 }

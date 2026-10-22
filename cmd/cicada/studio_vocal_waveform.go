@@ -81,13 +81,22 @@ func (s *studio) takeWaveform(w http.ResponseWriter, r *http.Request) {
 func analyzeVocalWaveform(ctx context.Context, dir string, take takejournal.Take, bins int) (vocalWaveform, error) {
 	lo, hi := takeCoverage(take)
 	result := vocalWaveform{Take: take.ID, Start: lo, End: hi}
-	clock := takeClock(take)
+	clock, err := takeClock(take)
+	if err != nil {
+		return result, err
+	}
 	first := takeOrigin(take) + clock.SampleAtTick(lo) - clock.SampleAtTick(take.Timeline.PlaybackStartTick)
 	count := clock.SampleAtTick(hi) - clock.SampleAtTick(lo)
 	if hi <= lo || first < 0 || count <= 0 || first+count > int64(take.Frames) {
 		return result, fmt.Errorf("take has no covered vocal audio")
 	}
-	bins = int(min(int64(bins), count))
+	// Each bin covers equal musical time, so a transient stays under its bar
+	// when the recording crosses a tempo step. Frame-uniform bins drift here.
+	bins = int(min(int64(bins), count, hi-lo))
+	ends := make([]int64, bins)
+	for i := range ends {
+		ends[i] = clock.SampleAtTick(lo+(hi-lo)*int64(i+1)/int64(bins)) - clock.SampleAtTick(lo)
+	}
 	result.Peaks = make([][2]float32, bins)
 	for i := range result.Peaks {
 		result.Peaks[i] = [2]float32{math.MaxFloat32, -math.MaxFloat32}
@@ -98,6 +107,7 @@ func analyzeVocalWaveform(ctx context.Context, dir string, take takejournal.Take
 	}
 	defer stream.Close()
 	var left, right [4096]float32
+	bin := 0
 	for at := int64(0); at < count; {
 		n := min(int64(len(left)), count-at)
 		if err = stream.ReadFrames(ctx, first+at, left[:n], right[:n]); err != nil {
@@ -105,7 +115,9 @@ func analyzeVocalWaveform(ctx context.Context, dir string, take takejournal.Take
 		}
 		for i := int64(0); i < n; i++ {
 			v := left[i]*.5 + right[i]*.5 // same mono signal as the comp print
-			bin := (at + i) * int64(bins) / count
+			for bin+1 < bins && at+i >= ends[bin] {
+				bin++
+			}
 			result.Peaks[bin][0] = min(result.Peaks[bin][0], v)
 			result.Peaks[bin][1] = max(result.Peaks[bin][1], v)
 			result.Peak = max(result.Peak, math.Abs(float64(v)))

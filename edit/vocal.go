@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	gts "github.com/odvcencio/gotreesitter"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -34,10 +36,11 @@ type VocalSegment struct {
 // the printed asset. It is stored in the score as a `// cicada-vocal-comp`
 // comment.
 type VocalComp struct {
-	Track    string         `json:"track"`
-	Tempo    int64          `json:"tempoMilli"`
-	Segments []VocalSegment `json:"segments"`
-	Asset    string         `json:"asset"`
+	Track        string                  `json:"track"`
+	Tempo        int64                   `json:"tempoMilli"`
+	TempoChanges []musictime.TempoChange `json:"tempoChanges,omitempty"`
+	Segments     []VocalSegment          `json:"segments"`
+	Asset        string                  `json:"asset"`
 }
 
 // VocalCompPrefix starts the metadata comment line of a vocal comp.
@@ -101,6 +104,9 @@ func ValidateVocalEdits(offsetMS float64, fadeMS, crossfadeMS *float64) error {
 // it before writing the metadata comment and Studio applies it when reading
 // the comment back, so a comp that Studio would reject is never written.
 func ValidateVocalComp(c VocalComp) error {
+	if err := musictime.ValidateTempoChanges(c.TempoChanges); err != nil {
+		return fmt.Errorf("invalid vocal comp tempo map: %w", err)
+	}
 	if !patternName.MatchString(c.Track) || len(c.Segments) > 4096 || c.Tempo < 20000 || c.Tempo > 300000 {
 		return fmt.Errorf("invalid vocal comp metadata")
 	}
@@ -149,7 +155,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(plan.TempoMilli) != next.Tempo {
+	if int64(plan.TempoMilli) != next.Tempo || !slices.Equal(plan.TempoChanges, next.TempoChanges) {
 		return nil, fmt.Errorf("vocal comp tempo differs from the project tempo")
 	}
 	source, file := ctx.Source, ctx.Options.Path
@@ -411,6 +417,11 @@ func vocalArrangementSource(source []byte, file string, plan *Plan, newline stri
 	for i, entry := range plan.Song {
 		fmt.Fprintf(&text, "  marker block-%d { at = %dticks }\n", i+1, at)
 		scene := scenes[entry.Scene]
+		for _, setting := range scene.Settings {
+			if setting.Path == "tempo" && setting.Number != nil {
+				fmt.Fprintf(&text, "  tempo %s %s\n", FormatPosition(at), strconv.FormatFloat(math.Round(*setting.Number*1000)/1000, 'f', -1, 64))
+			}
+		}
 		for _, track := range plan.Tracks {
 			binding := scene.Bindings[track.ID]
 			if binding == "" || binding == "keep" {
