@@ -51,7 +51,7 @@ test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and exp
  const job=await exportWave('first-light.wav');assert.equal(job.revision,song.revision);
  await projectSettings('First Light',112);
  await page.getByRole('toolbar',{name:'Transport'}).getByRole('button',{name:'Export',exact:true}).click();
- await until(async()=>/score has changed/.test(await page.locator('#export [data-gosx-live-bind=version]').textContent()),'Export identifies the earlier saved song');
+ await until(async()=>/score has changed/.test(await page.locator('#export .export-result [data-gosx-live-bind=version]').textContent()),'Export identifies the earlier saved song');
  const earlier=await(await page.request.get(new URL('/api/export',origin).href)).json();assert.equal(earlier.id,job.id);assert.equal(earlier.revision,song.revision);assert.notEqual(earlier.current_source_revision,job.source_revision);
  const earlierDownload=page.waitForEvent('download');await page.getByRole('link',{name:'Download earlier render',exact:true}).click();await(await earlierDownload).saveAs(path.join(proof,'first-light-earlier.wav'));
  assert.ok(fs.readFileSync(path.join(proof,'first-light.wav')).equals(fs.readFileSync(path.join(proof,'first-light-earlier.wav'))),'editing the song does not alter its earlier WAV');
@@ -65,7 +65,7 @@ test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and exp
  await page.setViewportSize({width:1280,height:840});await page.keyboard.press('Escape');
  await page.locator('#undo-form button').click();await saved(s=>s===song.source,'Undo restores the song version that was rendered');
  await page.getByRole('toolbar',{name:'Transport'}).getByRole('button',{name:'Export',exact:true}).click();
- await until(async()=>/matches the saved score/.test(await page.locator('#export [data-gosx-live-bind=version]').textContent()),'Undo restores the matching-render label');
+ await until(async()=>/matches the saved score/.test(await page.locator('#export .export-result [data-gosx-live-bind=version]').textContent()),'Undo restores the matching-render label');
  assert.equal((await(await page.request.get(new URL('/api/export',origin).href)).json()).id,job.id,'Undo does not rerender the song');
  await page.keyboard.press('Escape');steps.push('saved edits label the earlier WAV, keep its bytes intact and return to a match after Undo');
  // The standalone panel has a separate GoSX workspace owner. It must also
@@ -94,10 +94,10 @@ test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and exp
   assert.equal(await page.evaluate(()=>document.querySelector('#studio-workbench').inert),true,'rendering keeps the modal background locked');
   assert.equal(await page.evaluate(()=>window.__songExportNavigations),0,'rendering never navigates');
   assert.equal(await editor.evaluate(node=>node.isConnected),true,'editor stays mounted during export');
-  const delivery=page.locator('#export a[download]');await delivery.waitFor({state:'visible'});
+  const delivery=page.locator('#export .export-result a[download]');await delivery.waitFor({state:'visible'});
   assert.match(job.source_revision,/^[a-f0-9]{64}$/,'export identifies its captured score files');
   assert.equal(job.current_source_revision,job.source_revision,'export identifies the current saved score');
-  await until(async()=>/matches the saved score/.test(await page.locator('#export [data-gosx-live-bind=version]').textContent()),'completed render identifies the saved song');
+  await until(async()=>/matches the saved score/.test(await page.locator('#export .export-result [data-gosx-live-bind=version]').textContent()),'completed render identifies the saved song');
   const downloadPromise=page.waitForEvent('download');await delivery.click();const download=await downloadPromise;await download.saveAs(path.join(proof,filename));
   steps.push('rendered WAV downloaded through Export');
   await page.screenshot({path:path.join(proof,reopening?'reopened-export.png':'finished-export.png')});

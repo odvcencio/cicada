@@ -88,7 +88,15 @@ func (s *studioApp) exportStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *studioApp) exportAudio(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimSuffix(r.PathValue("id"), ".wav")
+	s.exportDownload(w, r, ".wav", "/api/export/file/", "audio/wav")
+}
+
+func (s *studioApp) exportMIDI(w http.ResponseWriter, r *http.Request) {
+	s.exportDownload(w, r, ".mid", "/api/export/midi/file/", "audio/midi")
+}
+
+func (s *studioApp) exportDownload(w http.ResponseWriter, r *http.Request, extension, backendPath, contentType string) {
+	id := strings.TrimSuffix(r.PathValue("id"), extension)
 	if id == "" || len(id) > 64 || strings.ContainsAny(id, "/\\") {
 		http.Error(w, "choose a completed render", http.StatusBadRequest)
 		return
@@ -99,7 +107,7 @@ func (s *studioApp) exportAudio(w http.ResponseWriter, r *http.Request) {
 	client := *s.backend.client
 	client.Timeout = 0
 	stream.client = &client
-	response, err := stream.request(r.Context(), http.MethodGet, "/api/export/file/"+id, nil)
+	response, err := stream.request(r.Context(), http.MethodGet, backendPath+id, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -113,8 +121,8 @@ func (s *studioApp) exportAudio(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, failure.Error, response.StatusCode)
 		return
 	}
-	if response.Header.Get("Content-Type") != "audio/wav" {
-		http.Error(w, "render service did not return a WAV", http.StatusBadGateway)
+	if response.Header.Get("Content-Type") != contentType {
+		http.Error(w, "the export service returned an unexpected file format", http.StatusBadGateway)
 		return
 	}
 	for _, header := range []string{"Content-Type", "Content-Disposition", "Content-Length", "X-Content-Type-Options"} {

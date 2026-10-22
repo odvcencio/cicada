@@ -76,9 +76,12 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     assert.equal(initial.revision, expected.revision);
     const wav = await render('reopened.wav');
     assert.ok(wav.equals(fs.readFileSync(path.join(proof, 'baseline.wav'))));
+    const notes = await exportNotes('reopened.mid');
+    assert.ok(notes.equals(fs.readFileSync(path.join(proof, 'baseline.mid'))));
     checks.push('a fresh Studio process reproduces the saved song byte for byte');
   } else {
     const baseline = await render('baseline.wav');
+    const baselineNotes = await exportNotes('baseline.mid');
     const part = path.join(path.dirname(fixture.score), 'parts/rhythm.cicada');
     const secondary = fs.readFileSync(part);
     await first.getByRole('button', {name: 'Use in verse', exact: true}).focus();
@@ -89,6 +92,7 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     assert.ok(fs.readFileSync(part).equals(secondary), 'selection preserves the secondary score file');
     const changed = await render('first-pass.wav');
     assert.equal(changed.equals(baseline), false, 'the selected recording changes the rendered song');
+    assert.ok((await exportNotes('first-pass.mid')).equals(baselineNotes), 'changing only the recording leaves exported instrument notes unchanged');
     await page.locator('#undo-form button').click();
     await saved(source => source === initial.source, 'Undo restores the exact saved score');
     await page.locator('#redo-form button').click();
@@ -96,6 +100,7 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     await page.locator('#undo-form button').click();
     await saved(source => source === initial.source, 'Undo returns to the original second pass');
     assert.ok((await render('restored.wav')).equals(baseline), 'Undo restores the exported audio too');
+    await midiSourceConflict(part, secondary, baselineNotes);
     const dock = page.getByRole('separator', {name: 'Resize Detail dock', exact: true});
     await dock.focus();
     await page.keyboard.press('Home');
@@ -137,5 +142,87 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     fs.writeFileSync(path.join(proof, filename), wav);
     await page.keyboard.press('Escape');
     return wav;
+  }
+
+  async function exportNotes(filename) {
+    const wav = await read('export');
+    await page.getByRole('toolbar', {name: 'Transport'}).getByRole('button', {name: 'Export', exact: true}).click();
+    const details = page.locator('#midi-export');
+    if (!await details.evaluate(node => node.open)) await details.locator('summary').click();
+    const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/__actions/export-midi');
+    await details.getByRole('button', {name: 'Prepare MIDI', exact: true}).click();
+    assert.equal((await response).status(), 200);
+    let notes;
+    await until(async () => { notes = await read('export/midi'); return notes.state === 'ready'; }, 'MIDI completes');
+    await until(async () => await details.locator('a[download]').getAttribute('href') === notes.downloadURL, 'the new MIDI link is projected');
+    await details.getByText('These notes match the saved score.', {exact: true}).waitFor();
+    const delivery = page.waitForEvent('download');
+    await details.getByRole('link', {name: 'Download MIDI', exact: true}).click();
+    const download = await delivery;
+    assert.match(download.suggestedFilename(), /-notes\.mid$/);
+    await download.saveAs(path.join(proof, filename));
+    const bytes = fs.readFileSync(path.join(proof, filename));
+    assert.equal(bytes.subarray(0, 4).toString(), 'MThd');
+    assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), fixture.midiSHA256);
+    assert.equal((await read('export')).id, wav.id, 'MIDI preserves the completed WAV');
+    checks.push('MIDI downloads instrument notes and preserves the WAV');
+    await page.keyboard.press('Escape');
+    return bytes;
+  }
+
+  async function midiSourceConflict(part, original, baseline) {
+    const editor = page.locator('#score textarea');
+    const savedCode = await editor.inputValue();
+    const draft = savedCode.replace('tempo 108', 'tempo 114');
+    assert.notEqual(draft, savedCode);
+    await editor.fill(draft);
+    await page.getByRole('toolbar', {name: 'Transport'}).getByRole('button', {name: 'Export', exact: true}).click();
+    const details = page.locator('#midi-export');
+    if (!await details.evaluate(node => node.open)) await details.locator('summary').click();
+    const previous = await read('export/midi'), wav = await read('export');
+    const handle = await editor.elementHandle();
+    try {
+      fs.writeFileSync(part, Buffer.concat([original, Buffer.from('\n// another editor saved this file\n')]));
+      const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/__actions/export-midi');
+      await details.getByRole('button', {name: 'Prepare MIDI', exact: true}).click();
+      assert.equal((await response).status(), 409);
+      await details.getByText('Saved score files or libraries changed. Refresh Studio before exporting notes again.', {exact: true}).waitFor();
+      assert.equal((await read('export/midi')).id, previous.id);
+      assert.equal((await read('export')).id, wav.id);
+      assert.equal(await editor.inputValue(), draft);
+      assert.equal(await handle.evaluate(node => node.isConnected), true);
+      assert.equal(await page.locator('#studio-workbench').evaluate(node => node.inert), true);
+      const delivery = page.waitForEvent('download');
+      await details.getByRole('link', {name: 'Download earlier MIDI', exact: true}).click();
+      await (await delivery).saveAs(path.join(proof, 'earlier.mid'));
+      assert.ok(fs.readFileSync(path.join(proof, 'earlier.mid')).equals(baseline));
+      await details.scrollIntoViewIfNeeded();
+      await page.screenshot({path: path.join(proof, 'midi-conflict.png')});
+      checks.push('an unseen secondary save retains the draft, modal, prior MIDI and WAV');
+    } finally {
+      fs.writeFileSync(part, original);
+    }
+    const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/__actions/export-midi');
+    await details.getByRole('button', {name: 'Prepare MIDI', exact: true}).click();
+    assert.equal((await response).status(), 200);
+    const retry = await read('export/midi');
+    await until(async () => await details.locator('a[download]').getAttribute('href') === retry.downloadURL, 'retry projects its MIDI link');
+    await details.getByText('These notes match the saved score.', {exact: true}).waitFor();
+    assert.equal(await details.locator('.form-status').textContent(), 'MIDI is ready to download.');
+    assert.equal(await editor.inputValue(), draft);
+    await details.scrollIntoViewIfNeeded();
+    await page.screenshot({path: path.join(proof, 'midi-export.png')});
+    await page.setViewportSize({width: 390, height: 840});
+    await details.scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    const delivery = page.waitForEvent('download');
+    await details.getByRole('link', {name: 'Download MIDI', exact: true}).click();
+    await (await delivery).saveAs(path.join(proof, 'phone.mid'));
+    assert.ok(fs.readFileSync(path.join(proof, 'phone.mid')).equals(baseline));
+    await page.screenshot({path: path.join(proof, 'midi-export-phone.png')});
+    await page.setViewportSize({width: 1280, height: 840});
+    await page.keyboard.press('Escape');
+    await editor.fill(savedCode);
+    checks.push('restoring the reviewed saved files allows retry without losing the unsaved draft');
   }
 });

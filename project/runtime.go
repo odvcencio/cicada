@@ -21,25 +21,32 @@ import (
 // configuration. Compilation happens outside the audio callback; New copies
 // every pattern and arrangement table before playback.
 func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) {
-	return compileEngine(p, sampleRate, maxBlock, nil, nil)
+	return compileEngine(p, sampleRate, maxBlock, nil, nil, compilePlayback)
 }
 
 // CompileEngineWithAssets accepts immutable decoded PCM prepared by the host.
 func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset) (engine.Config, error) {
-	return compileEngine(p, sampleRate, maxBlock, assets, nil)
+	return compileEngine(p, sampleRate, maxBlock, assets, nil, compilePlayback)
 }
 
 // CompileEnginePrepared accepts host-verified immutable native audio factories.
 func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engine.StereoVoiceFactory) (engine.Config, error) {
-	return compileEngine(p, sampleRate, maxBlock, nil, prepared)
+	return compileEngine(p, sampleRate, maxBlock, nil, prepared, compilePlayback)
 }
 
-func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory) (engine.Config, error) {
+type engineCompilePurpose uint8
+
+const (
+	compilePlayback engineCompilePurpose = iota
+	compileNotes
+)
+
+func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory, purpose engineCompilePurpose) (engine.Config, error) {
 	var cfg engine.Config
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	if p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
+	if purpose == compilePlayback && p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
 	}
 	if len(prepared) == len(p.Tracks) && p.HasAudio() {

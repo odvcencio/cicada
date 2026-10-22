@@ -88,9 +88,12 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		// Transport and export update their live bindings without changing the
 		// score. Acknowledgement must not navigate away from their controls or
 		// replace unrelated drafts. Native forms retain redirect-after-POST.
-		if (path == "/api/transport" || path == "/api/export") && action.WantsJSON(ctx.Request) {
+		if (path == "/api/transport" || path == "/api/export" || path == "/api/export/midi") && action.WantsJSON(ctx.Request) {
 			if path == "/api/export" {
 				ctx.SetResult(action.Result{OK: true, Message: "Rendering started."})
+			}
+			if path == "/api/export/midi" {
+				ctx.SetResult(action.Result{OK: true, Message: "MIDI is ready to download."})
 			}
 			return nil
 		}
@@ -493,6 +496,12 @@ func (s *studioApp) actions() map[string]action.Handler {
 				}
 			}
 			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"], RecordingOffsetMS: offset, PeriodFrames: period}, nil
+		}),
+		"export-midi": s.mutation("/api/export/midi", func(f map[string]string) (any, error) {
+			if f["source_revision"] == "" {
+				return nil, fmt.Errorf("Refresh Studio to load the saved song before exporting notes.")
+			}
+			return map[string]string{"revision": f["revision"], "source_revision": f["source_revision"]}, nil
 		}),
 		"export": s.mutation("/api/export", func(f map[string]string) (any, error) {
 			if f["source_revision"] == "" {

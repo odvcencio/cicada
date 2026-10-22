@@ -332,6 +332,7 @@ func main() {
 		}
 		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate)
 	case "midi":
+		midiOpts.libraryAliases = score.LibraryAliases
 		if err := midiFile(semantic, midiOpts); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

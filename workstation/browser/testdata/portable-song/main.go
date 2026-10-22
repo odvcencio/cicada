@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
+	"m31labs.dev/cicada/smf"
 )
 
 func must(err error) {
@@ -113,7 +114,33 @@ song { verse*2 break verse }
 		write(base, output, wav.Bytes())
 		return wav.Bytes()
 	}
+	exportNotes := func(scorePath, output string) []byte {
+		score, diagnostics, err := project.LoadScore(scorePath, nil)
+		must(err)
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Severity == "error" {
+				panic(diagnostic.Error())
+			}
+		}
+		p, diagnostics := project.FromScore(score)
+		if p == nil {
+			panic(fmt.Sprint(diagnostics))
+		}
+		file, err := smf.FromProject(p, 0)
+		must(err)
+		var wire bytes.Buffer
+		must(smf.Encode(file, &wire))
+		decoded, err := smf.Decode(bytes.NewReader(wire.Bytes()))
+		must(err)
+		must(smf.MusicalDiff(file, decoded))
+		if len(decoded.Tracks) != 5 || len(decoded.Tracks[1].Notes) != 0 || len(decoded.Tracks[2].Notes) == 0 || len(decoded.Tracks[3].Notes) == 0 || len(decoded.Tracks[4].Notes) == 0 {
+			panic("MIDI lost instrument notes or invented recording notes")
+		}
+		write(base, output, wire.Bytes())
+		return wire.Bytes()
+	}
 	before := renderSong(path, "before.wav")
+	beforeNotes := exportNotes(path, "before.mid")
 	target := filepath.Join(base, "portable", "Carry the song.cicada")
 	must(os.MkdirAll(filepath.Dir(target), 0700))
 	must(projectcopy.SaveAs(path, target))
@@ -123,6 +150,10 @@ song { verse*2 break verse }
 	if !bytes.Equal(before, after) {
 		panic("project copy changed WAV")
 	}
+	afterNotes := exportNotes(target, "after.mid")
+	if !bytes.Equal(beforeNotes, afterNotes) {
+		panic("project copy changed MIDI notes")
+	}
 	copyStore, err := takejournal.Open(target)
 	must(err)
 	must(copyStore.Recover())
@@ -130,6 +161,6 @@ song { verse*2 break verse }
 		panic("take history lost")
 	}
 	must(copyStore.Close())
-	data, _ := json.MarshalIndent(map[string]any{"fixture": base, "score": target, "takeIDs": ids, "originalRemoved": true, "userLibrariesRemoved": true, "wavSHA256": fmt.Sprintf("%x", sha256.Sum256(after)), "wavBytes": len(after), "userLibraries": user}, "", "  ")
+	data, _ := json.MarshalIndent(map[string]any{"fixture": base, "score": target, "takeIDs": ids, "originalRemoved": true, "userLibrariesRemoved": true, "wavSHA256": fmt.Sprintf("%x", sha256.Sum256(after)), "wavBytes": len(after), "midiSHA256": fmt.Sprintf("%x", sha256.Sum256(afterNotes)), "userLibraries": user}, "", "  ")
 	fmt.Println(string(data))
 }

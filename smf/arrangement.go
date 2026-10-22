@@ -9,7 +9,7 @@ import (
 
 // Consume the same start/release regions as playback. Each placement has its
 // own pattern origin, and its exclusive end closes even a tied chord.
-func appendPlacements(file *File, p *project.Project, cfg *engine.Config, channels []uint8, endTick int64) {
+func appendPlacements(file *File, p *project.Project, cfg *project.NoteSchedule, channels []uint8, endTick int64) {
 	for _, marker := range p.Arrange.Markers {
 		if marker.AtTick < endTick {
 			file.Tracks[0].Meta = append(file.Tracks[0].Meta, MetaEvent{Tick: marker.AtTick, Type: 0x06, Data: []byte(marker.ID)})
@@ -22,7 +22,7 @@ func appendPlacements(file *File, p *project.Project, cfg *engine.Config, channe
 		ti, slot := event.Track, uint8(event.Index)
 		track := &file.Tracks[int(ti)+1]
 		end := min(event.EndTick, endTick)
-		isDrum := cfg.Track[ti].Kind == engine.VoiceDrums
+		isDrum := cfg.TrackKinds[ti] == engine.VoiceDrums
 		if isDrum {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				appendPlacementPattern(track, &cfg.Patterns[ti].Drums[slot][lane], event.Tick, end, ti, slot, drum.MIDINotes[lane], true, channels[ti])

@@ -338,6 +338,11 @@ jobs:
           export CICADA_PORTABLE_PROOF_DIR="$PWD/build/studio-portable-proof"
           go -C workstation run ./browser/testdata/portable-song > "$CICADA_PORTABLE_FIXTURE"
           portable_score="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["score"])' "$CICADA_PORTABLE_FIXTURE")"
+          ./build/cicada midi "$portable_score" -o build/studio-portable-notes.mid --report 2> build/studio-portable-midi-report.json
+          python3 -c 'import json; r=json.load(open("build/studio-portable-midi-report.json")); assert r["notes"] > 0 and r["audio_tracks_omitted"] == ["guitar"], r'
+          ./build/cicada verify-midi build/studio-portable-notes.mid --ppq 960 --type 1
+          ./build/cicada midi "$portable_score" -o build/studio-portable-pattern.mid --pattern tone.melody
+          ./build/cicada verify-midi build/studio-portable-pattern.mid --ppq 960 --type 1
           for phase in select reopen; do
             ./build/cicada studio "$portable_score" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-portable-$phase-server.log" 2>&1 &
             studio_pid=$!
@@ -469,6 +474,9 @@ jobs:
             build/studio-song-*-server.log
             build/studio-song-proof/
             build/studio-portable-fixture.json
+            build/studio-portable-notes.mid
+            build/studio-portable-pattern.mid
+            build/studio-portable-midi-report.json
             build/studio-portable-*-report.txt
             build/studio-portable-*-server.log
             build/studio-portable-proof/

@@ -961,7 +961,7 @@ func hasSlot(track Track, patternID string) bool {
 // PatternTrackCompatible reports voice compatibility for an already valid
 // pattern and project. Project validation still checks routing, assets and budgets.
 func PatternTrackCompatible(p *Project, pattern Pattern, track Track) bool {
-	if track.Kind == "audio" {
+	if p.Edition == 2 && track.Kind == "audio" {
 		return false
 	}
 	kind := track.Kind

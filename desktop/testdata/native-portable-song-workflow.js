@@ -82,6 +82,20 @@
           if (!response.ok || String.fromCharCode(...bytes.slice(0, 4)) !== 'RIFF' || job.revision !== state.revision) throw new Error('Export lost the restored song');
           const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join('');
           state.checks.push('restored portable song exports WAV ' + digest);
+          const midi = document.querySelector('#midi-export');
+          if (!midi.open) midi.querySelector('summary').click();
+          midi.querySelector('button[type=submit]').click();
+          let notes;
+          await wait(async () => {
+            notes = await read('export/midi');
+            return notes.state === 'ready' && midi.querySelector('a[download]')?.getAttribute('href') === notes.downloadURL;
+          }, 'native MIDI delivery');
+          const midiResponse = await fetch(notes.downloadURL);
+          const midiBytes = new Uint8Array(await midiResponse.arrayBuffer());
+          if (!midiResponse.ok || String.fromCharCode(...midiBytes.slice(0, 4)) !== 'MThd' || notes.notes !== 52 || notes.audio_tracks_omitted.join(',') !== 'guitar') throw new Error('MIDI lost notes or implied it included recordings');
+          if ((await read('export')).id !== job.id || (await read('state')).source !== state.source) throw new Error('MIDI replaced the WAV or changed the song');
+          const midiDigest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', midiBytes))].map(n => n.toString(16).padStart(2, '0')).join('');
+          state.checks.push('native MIDI preserves the WAV and exports notes ' + midiDigest);
           sessionStorage.removeItem(key);
           return {type: 'cicada-native-smoke', ok: true, checks: state.checks};
         }

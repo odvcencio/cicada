@@ -55,6 +55,7 @@ type studio struct {
 	transport           *studioTransport
 	history             *studioHistory
 	exports             *studioExportController
+	midiExport          studioMIDIExportController
 	liveControls        studioLiveControls
 	nativeMIDI          studioMIDIInput
 	sessionID           string
@@ -319,6 +320,9 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("GET /api/export/file/{id}", s.exportFile)
 	mux.HandleFunc("POST /api/export", s.startExport)
+	mux.HandleFunc("GET /api/export/midi", s.midiExportStatus)
+	mux.HandleFunc("POST /api/export/midi", s.prepareMIDIExport)
+	mux.HandleFunc("GET /api/export/midi/file/{id}", s.midiExportFile)
 	mux.HandleFunc("GET /api/history", s.historyState)
 	mux.HandleFunc("GET /api/library", s.libraryState)
 	mux.HandleFunc("POST /api/library/preview", s.libraryPreview)

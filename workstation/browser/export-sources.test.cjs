@@ -110,7 +110,7 @@ test('an unseen secondary-file save cannot replace the previous export', {timeou
   assert.equal(await handle.evaluate(node => node.isConnected), true);
   assert.equal(await page.locator('#studio-workbench').evaluate(node => node.inert), true);
   assert.equal(await page.evaluate(() => window.__exportReviewNavigations), 0);
-  await until(async () => (await page.locator('#export a[download]').textContent()) === 'Download earlier render', 'the earlier WAV remains identified');
+  await until(async () => (await page.locator('#export .export-result a[download]').textContent()) === 'Download earlier render', 'the earlier WAV remains identified');
   await page.screenshot({path: path.join(proof, 'source-conflict.png')});
   await page.setViewportSize({width: 390, height: 840});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -137,7 +137,7 @@ test('an unseen secondary-file save cannot replace the previous export', {timeou
   const freshWAV = await freshDownload.body();
   assert.equal(freshWAV.equals(firstWAV), false, 'the reviewed melody produces different audio');
   fs.writeFileSync(path.join(proof, 'reviewed.wav'), freshWAV);
-  await until(async () => /matches the saved score/.test(await page.locator('#export [data-gosx-live-bind=version]').textContent()), 'the reviewed song renders');
+  await until(async () => /matches the saved score/.test(await page.locator('#export .export-result [data-gosx-live-bind=version]').textContent()), 'the reviewed song renders');
   await page.screenshot({path: path.join(proof, 'reviewed-export.png')});
   steps.push('reloading supplies the reviewed source version and permits a fresh render');
   assert.deepEqual(errors, []);

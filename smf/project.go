@@ -30,7 +30,7 @@ func FromProject(p *project.Project, bars int) (File, error) {
 
 func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (File, error) {
 	var file File
-	cfg, err := project.CompileEngine(p, 48_000, 128)
+	cfg, err := project.CompileNoteSchedule(p)
 	if err != nil {
 		return file, err
 	}
@@ -75,7 +75,10 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	channels := make([]uint8, len(p.Tracks))
 	nextChannel := uint8(0)
 	for i, track := range p.Tracks {
-		if cfg.Track[i].Kind == engine.VoiceDrums {
+		if cfg.TrackKinds[i] == engine.VoiceAudio {
+			// Retain a named, empty chunk and its duration without consuming a
+			// melodic channel. MIDI cannot carry the recorded waveform.
+		} else if cfg.TrackKinds[i] == engine.VoiceDrums {
 			channels[i] = 9
 		} else {
 			if nextChannel == 9 {
@@ -109,6 +112,9 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		for repeat := 0; repeat < int(entry.Bars) && bar < bars; repeat++ {
 			boundary := int64(bar) * seq.TicksPerBar
 			for ti := range p.Tracks {
+				if cfg.TrackKinds[ti] == engine.VoiceAudio {
+					continue
+				}
 				binding := scene.Track[ti]
 				switch binding.Mode {
 				case engine.SceneOff:
@@ -146,8 +152,11 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 				}
 			}
 			for ti := range p.Tracks {
+				if cfg.TrackKinds[ti] == engine.VoiceAudio {
+					continue
+				}
 				if chained[ti] {
-					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.Track[ti].Kind == engine.VoiceDrums, &held[ti])
+					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.TrackKinds[ti] == engine.VoiceDrums, &held[ti])
 					continue
 				}
 				slot := slots[ti]
@@ -172,7 +181,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 						appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, lane, isDrum, channels[ti], &held[ti][0])
 					}
 				}
-				if cfg.Track[ti].Kind == engine.VoiceDrums {
+				if cfg.TrackKinds[ti] == engine.VoiceDrums {
 					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 						pattern := &cfg.Patterns[ti].Drums[slot][lane]
 						if pattern.Len == 0 {
@@ -228,11 +237,7 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	}
 	if selected < 0 {
 		for i, track := range p.Tracks {
-			isDrum := track.Kind == "drums"
-			for _, kit := range p.Kits {
-				isDrum = isDrum || kit.ID == track.Kind
-			}
-			if pattern.Kind == "drums" && isDrum || pattern.Kind == "acid" && track.Kind == "acid" || pattern.Kind == "notes" && !isDrum {
+			if project.PatternTrackCompatible(p, *pattern, track) {
 				selected = i
 				break
 			}

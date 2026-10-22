@@ -48,7 +48,17 @@ sum of component stems against the bus taps.
 
 ## MIDI
 
-MIDI export writes a Standard MIDI File type 1 at 960 pulses per quarter note:
+MIDI export writes a Standard MIDI File type 1. Note-only exports use 960 pulses
+per quarter note; expressive performances can use a higher resolution, as
+described below.
+
+In Studio, open **Export → Notes and timing (MIDI)**, choose **Prepare MIDI**,
+then **Download MIDI**. It exports saved instrument and sampler notes, tempo,
+and arrangement markers. The completed WAV stays available. Saved edits label
+the previous MIDI file as an earlier export; prepare it again for the new version.
+Unsaved Code changes stay in the editor and are excluded from the file.
+
+From the command line:
 
 ```sh
 cicada midi examples/first-acid.cicada -o first-acid.mid
@@ -59,7 +69,8 @@ The file contains one track per Cicada track, tempo, meter, key signature, and
 General MIDI drum notes. A scene that sets `tempo` adds a tempo event at its
 first bar. Swing and ratchets affect tick positions; a slide
 creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
-instead of the full song. Chance uses the first seeded pass on every
+instead of the full song. Imported patterns accept the alias used in the score,
+such as `--pattern tone.melody`. Chance uses the first seeded pass on every
 repetition.
 
 Named `arrange` pattern placements also export through their shared start/release
@@ -67,8 +78,15 @@ schedule. Each pattern restarts locally; note-offs are bounded by the
 placement's exclusive end, including tied chords. Arrangement markers become
 MIDI marker events. A partial final bar is included, and `--bars` can shorten
 the export. MIDI contains notes and timing, not rendered instruments, effects,
-or continuous sound-parameter automation. Scores containing audio clips require
-audio export; this MIDI path does not prepare clip assets.
+or continuous sound-parameter automation. Songs can combine recordings, sampler
+instruments, and synthesized sounds: MIDI exports their instrument notes without
+decoding the audio files. Recording tracks remain named, empty MIDI tracks and
+do not consume melodic channels. Audio placements still count toward the song's
+length, so a recording after the last note does not shorten the exported timeline.
+The command reports omitted audio tracks; `--report` lists their names in
+`audio_tracks_omitted`. Use WAV or stems to carry the recordings and exact sound.
+Source validation still checks the referenced audio files and pinned libraries;
+missing files or changed library contents remain errors.
 
 Import a type 0 or type 1 MIDI file into a new score:
 
