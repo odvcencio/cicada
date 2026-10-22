@@ -283,13 +283,14 @@ component Browser(props: BrowserProps) {
 }
 
 type BrowserSectionProps struct {
+	Signal string
 	ID    string
 	Title string
 	Open  bool
 }
 
 component BrowserSection(props: BrowserSectionProps) {
-	return <details id={props.ID} class="shell-section" open={props.Open}>
+	return <details id={props.ID} class="shell-section" data-gosx-collapsible={props.Signal} open={props.Open}>
 		<summary>{props.Title}</summary>
 		{children}
 	</details>

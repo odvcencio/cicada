@@ -166,13 +166,14 @@ func Browser(props BrowserProps, children ...gosx.Node) gosx.Node {
 }
 
 type BrowserSectionProps struct {
-	ID    string
-	Title string
-	Open  bool
+	Signal string
+	ID     string
+	Title  string
+	Open   bool
 }
 
 func BrowserSection(props BrowserSectionProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("details", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "shell-section"), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Expr(props.Title)), gosx.Expr(children))
+	return gosx.El("details", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "shell-section"), gosx.Attr("data-gosx-collapsible", props.Signal), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Expr(props.Title)), gosx.Expr(children))
 }
 
 type CenterProps struct {

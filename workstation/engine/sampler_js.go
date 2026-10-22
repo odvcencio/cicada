@@ -42,25 +42,29 @@ type samplerVoice struct {
 	volume, start, end float64
 }
 type samplerUI struct {
-	ctx                                  context.Context
-	cancel                               context.CancelFunc
-	closed                               atomic.Bool
-	loadMu                               sync.Mutex
-	root, panel, audio, canvas, graphics js.Value
-	bindings                             []samplerBinding
-	state                                samplerProjection
-	buffers                              map[string]js.Value
-	voices                               []*samplerVoice
-	perf                                 padsampler.Performance
-	keyPads                              map[int]bool
-	savedPerf                            string
-	initialized, recording, posting      bool
-	origin                               float64
-	recordRevision                       string
-	recordSourceRevision                 string
-	recordTempo                          int
-	waveKey                              string
-	drag                                 string
+	ctx                             context.Context
+	cancel                          context.CancelFunc
+	closed                          atomic.Bool
+	loadMu                          sync.Mutex
+	root, panel, audio, wave        js.Value
+	bindings                        []samplerBinding
+	state                           samplerProjection
+	buffers                         map[string]js.Value
+	voices                          []*samplerVoice
+	perf                            padsampler.Performance
+	keyPads                         map[int]bool
+	savedPerf                       string
+	initialized, recording, posting bool
+	origin                          float64
+	recordRevision                  string
+	recordSourceRevision            string
+	recordTempo                     int
+	waveKey                         string
+	drag                            string
+	dragBefore                      int64
+	dragOffset                      float64
+	dragPointer                     int
+	playingPads                     [16]bool
 }
 
 func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
@@ -75,8 +79,7 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	u := &samplerUI{ctx: ctx, cancel: cancel, root: root, panel: root.Call("closest", "#sampler-panel"), buffers: map[string]js.Value{}}
 	u.audio = constructor.New(map[string]any{"sampleRate": padsampler.Rate, "latencyHint": "interactive"})
-	u.canvas = root.Call("querySelector", "[data-sampler-wave]")
-	u.graphics = u.canvas.Call("getContext", "2d")
+	u.wave = root.Call("querySelector", "[data-sampler-wave]")
 	u.listen(root, "pointerdown", func(e js.Value) {
 		target := e.Get("target").Call("closest", "[data-sampler-pad]")
 		if target.IsNull() {
@@ -209,46 +212,61 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 			}
 		})
 	}
-	u.listen(js.Global(), "blur", func(js.Value) { u.stop() })
+	u.listen(js.Global(), "blur", func(js.Value) { u.finishBoundary(true); u.stop() })
 	watchKeyboardOwner(u.listen, keysSampler, func() {
 		for pad := range u.keyPads {
 			delete(u.keyPads, pad)
 			u.releasePad(pad)
 		}
 	})
-	u.listen(u.canvas, "pointerdown", func(e js.Value) {
-		if u.posting {
-			return
-		}
-		form := u.editor()
-		if form.IsNull() {
+
+	u.listen(u.wave, "pointerdown", func(e js.Value) {
+		if u.posting || e.Get("button").Int() != 0 || !e.Get("isPrimary").Bool() || u.drag != "" {
 			return
 		}
 		src, ok := u.selectedSource()
 		if !ok {
 			return
 		}
-		box := u.canvas.Call("getBoundingClientRect")
-		frame := int64((e.Get("clientX").Float() - box.Get("left").Float()) / box.Get("width").Float() * float64(src.Asset.Frames))
-		start, end := u.bound("start"), u.bound("end")
+		box := u.wave.Call("querySelector", "svg").Call("getBoundingClientRect")
+		if box.Get("width").Float() <= 0 {
+			return
+		}
+		frame := (e.Get("clientX").Float() - box.Get("left").Float()) / box.Get("width").Float() * float64(src.Asset.Frames)
 		u.drag = "start"
-		if math.Abs(float64(frame-end)) < math.Abs(float64(frame-start)) {
+		if math.Abs(frame-float64(u.bound("end"))) < math.Abs(frame-float64(u.bound("start"))) {
 			u.drag = "end"
 		}
-		u.canvas.Call("setPointerCapture", e.Get("pointerId"))
+		u.dragOffset = 0
+		if h := e.Get("target").Call("closest", "[data-sampler-boundary]"); !h.IsNull() {
+			u.drag = h.Call("getAttribute", "data-sampler-boundary").String()
+			u.dragOffset = frame - float64(u.bound(u.drag))
+		}
+		u.dragBefore = u.bound(u.drag)
+		u.dragPointer = e.Get("pointerId").Int()
+		u.wave.Call("querySelector", "[data-sampler-boundary="+u.drag+"]").Call("focus", map[string]any{"preventScroll": true})
+		u.wave.Call("setPointerCapture", u.dragPointer)
 		e.Call("preventDefault")
 		u.moveBoundary(e)
 	})
-	u.listen(u.canvas, "pointermove", func(e js.Value) {
-		if u.drag != "" {
+	u.listen(u.wave, "pointermove", func(e js.Value) {
+		if u.drag != "" && e.Get("pointerId").Int() == u.dragPointer {
 			u.moveBoundary(e)
 		}
 	})
-	for _, event := range []string{"pointerup", "pointercancel"} {
-		u.listen(u.canvas, event, func(e js.Value) {
-			u.drag = ""
-			if u.canvas.Call("hasPointerCapture", e.Get("pointerId")).Bool() {
-				u.canvas.Call("releasePointerCapture", e.Get("pointerId"))
+	for _, event := range []string{"pointerup", "pointercancel", "lostpointercapture"} {
+		event := event
+		u.listen(u.wave, event, func(e js.Value) {
+			if u.drag != "" && e.Get("pointerId").Int() == u.dragPointer {
+				u.finishBoundary(event != "pointerup")
+			}
+		})
+	}
+	u.listen(u.wave, "keydown", u.boundaryKey)
+	for _, event := range []string{"input", "change"} {
+		u.listen(u.panel, event, func(e js.Value) {
+			if !e.Get("target").Call("closest", "#sampler-pad-editor").IsNull() {
+				u.draw()
 			}
 		})
 	}
@@ -413,6 +431,7 @@ func (u *samplerUI) load() error {
 			}
 		}
 	}
+	u.draw()
 	u.root.Call("setAttribute", "data-sampler-bank-revision", state.BankRevision)
 	u.root.Call("setAttribute", "data-sampler-ready", "true")
 	if changed && !u.recording {
@@ -704,63 +723,157 @@ func (u *samplerUI) selectedSource() (padsampler.Source[padsampler.AudioInfo], b
 	}
 	return u.state.Bank.Source(form.Call("querySelector", "[name=source]").Get("value").String())
 }
+func (u *samplerUI) setBoundary(name string, frame int64) {
+	src, ok := u.selectedSource()
+	if !ok || src.Asset.Frames < 1 {
+		return
+	}
+	if name == "start" {
+		frame = max(0, min(frame, u.bound("end")-1))
+	} else {
+		frame = max(u.bound("start")+1, min(frame, src.Asset.Frames))
+	}
+	input := u.editor().Call("querySelector", "[name="+name+"]")
+	value := strconv.FormatInt(frame, 10)
+	if input.Get("value").String() == value {
+		return
+	}
+	input.Set("value", value)
+	input.Call("dispatchEvent", js.Global().Get("Event").New("input", map[string]any{"bubbles": true}))
+	u.draw()
+}
 func (u *samplerUI) moveBoundary(e js.Value) {
 	src, ok := u.selectedSource()
 	if !ok {
 		return
 	}
-	box := u.canvas.Call("getBoundingClientRect")
-	frame := int64(math.Round((e.Get("clientX").Float() - box.Get("left").Float()) / box.Get("width").Float() * float64(src.Asset.Frames)))
-	if u.drag == "start" {
-		frame = max(0, min(frame, u.bound("end")-1))
-	} else {
-		frame = max(u.bound("start")+1, min(frame, src.Asset.Frames))
+	box := u.wave.Call("querySelector", "svg").Call("getBoundingClientRect")
+	if box.Get("width").Float() <= 0 {
+		return
 	}
-	input := u.editor().Call("querySelector", "[name="+u.drag+"]")
-	input.Set("value", strconv.FormatInt(frame, 10))
-	input.Call("dispatchEvent", js.Global().Get("Event").New("input", map[string]any{"bubbles": true}))
-	u.draw()
+	frame := int64(math.Round((e.Get("clientX").Float()-box.Get("left").Float())/box.Get("width").Float()*float64(src.Asset.Frames) - u.dragOffset))
+	u.setBoundary(u.drag, frame)
 }
-func (u *samplerUI) draw() {
-	if u.graphics.IsNull() {
+func (u *samplerUI) finishBoundary(cancel bool) {
+	name := u.drag
+	if name == "" {
+		return
+	}
+	u.drag = ""
+	if cancel {
+		u.setBoundary(name, u.dragBefore)
+	}
+	if u.wave.Call("hasPointerCapture", u.dragPointer).Bool() {
+		u.wave.Call("releasePointerCapture", u.dragPointer)
+	}
+}
+func (u *samplerUI) boundaryKey(e js.Value) {
+	key := e.Get("key").String()
+	if u.drag != "" {
+		if key == "Escape" || strings.HasPrefix(key, "Arrow") || key == "Home" || key == "End" {
+			e.Call("preventDefault")
+			e.Call("stopImmediatePropagation")
+			if key == "Escape" {
+				u.finishBoundary(true)
+			}
+		}
+		return
+	}
+	h := e.Get("target").Call("closest", "[data-sampler-boundary]")
+	if h.IsNull() || u.posting || e.Get("metaKey").Bool() || e.Get("ctrlKey").Bool() {
 		return
 	}
 	src, ok := u.selectedSource()
-	key := fmt.Sprintf("%s:%d:%d", src.ID, u.bound("start"), u.bound("end"))
+	if !ok {
+		return
+	}
+	name := h.Call("getAttribute", "data-sampler-boundary").String()
+	step := int64(max(1, src.Asset.RateHz/1000))
+	if e.Get("shiftKey").Bool() {
+		step *= 10
+	}
+	if e.Get("altKey").Bool() {
+		step = 1
+	}
+	frame := u.bound(name)
+	switch key {
+	case "ArrowLeft", "ArrowDown":
+		frame -= step
+	case "ArrowRight", "ArrowUp":
+		frame += step
+	case "Home":
+		frame = 0
+	case "End":
+		frame = src.Asset.Frames
+	default:
+		return
+	}
+	e.Call("preventDefault")
+	e.Call("stopImmediatePropagation")
+	u.setBoundary(name, frame)
+}
+func (u *samplerUI) draw() {
+	src, ok := u.selectedSource()
+	start, end := u.bound("start"), u.bound("end")
+	key := fmt.Sprintf("%s:%d:%d:%t", src.ID, start, end, u.posting)
 	if key == u.waveKey {
 		return
 	}
 	u.waveKey = key
-	g := u.graphics
-	g.Set("fillStyle", "#101c16")
-	g.Call("fillRect", 0, 0, 900, 180)
-	if !ok {
+	region := u.wave.Call("querySelector", "[data-sampler-range]")
+	peaks := u.wave.Call("querySelector", "[data-sampler-peaks]")
+	edges := u.wave.Call("querySelector", "[data-sampler-edges]")
+	label := u.root.Call("querySelector", "[data-sampler-wave-label]")
+	for _, name := range []string{"start", "end"} {
+		u.wave.Call("querySelector", "[data-sampler-boundary="+name+"]").Set("disabled", !ok || u.posting || src.Asset.Frames < 1)
+	}
+	if !ok || src.Asset.Frames < 1 {
+		region.Call("setAttribute", "width", "0")
+		peaks.Call("setAttribute", "d", "")
+		edges.Call("setAttribute", "d", "")
+		label.Set("textContent", "Load a sample to edit its chop boundaries.")
 		return
 	}
-	start, end := float64(u.bound("start"))*900/float64(src.Asset.Frames), float64(u.bound("end"))*900/float64(src.Asset.Frames)
-	g.Set("fillStyle", "#2f4d37")
-	g.Call("fillRect", start, 0, end-start, 180)
-	g.Set("strokeStyle", "#6cd6ad")
-	g.Call("beginPath")
+	start = max(0, min(start, src.Asset.Frames-1))
+	end = max(start+1, min(end, src.Asset.Frames))
+	x1, x2 := float64(start)*900/float64(src.Asset.Frames), float64(end)*900/float64(src.Asset.Frames)
+	region.Call("setAttribute", "x", fmt.Sprint(x1))
+	region.Call("setAttribute", "width", fmt.Sprint(x2-x1))
+	var path strings.Builder
 	for i, p := range src.Peaks {
 		x := (float64(i) + .5) * 900 / float64(len(src.Peaks))
 		height := float64(p) * 75
-		g.Call("moveTo", x, 90-height)
-		g.Call("lineTo", x, 90+height)
+		fmt.Fprintf(&path, "M%.3f %.3fV%.3f", x, 90-height, 90+height)
 	}
-	g.Call("stroke")
-	g.Set("strokeStyle", "#e6b457")
-	g.Set("lineWidth", 3)
-	for _, x := range []float64{start, end} {
-		g.Call("beginPath")
-		g.Call("moveTo", x, 0)
-		g.Call("lineTo", x, 180)
-		g.Call("stroke")
+	peaks.Call("setAttribute", "d", path.String())
+	edges.Call("setAttribute", "d", fmt.Sprintf("M%f 0V180M%f 0V180", x1, x2))
+	for _, name := range []string{"start", "end"} {
+		h := u.wave.Call("querySelector", "[data-sampler-boundary="+name+"]")
+		frame, low, high := start, int64(0), end-1
+		if name == "end" {
+			frame, low, high = end, start+1, src.Asset.Frames
+		}
+		h.Get("style").Set("left", fmt.Sprintf("clamp(0px, calc(%f%% - 12px), calc(100%% - 24px))", float64(frame)*100/float64(src.Asset.Frames)))
+		h.Get("style").Set("right", "auto")
+		h.Call("setAttribute", "aria-valuemin", strconv.FormatInt(low, 10))
+		h.Call("setAttribute", "aria-valuemax", strconv.FormatInt(high, 10))
+		h.Call("setAttribute", "aria-valuenow", strconv.FormatInt(frame, 10))
+		h.Call("setAttribute", "aria-valuetext", fmt.Sprintf("%.3f seconds (%d frames)", float64(frame)/float64(max(1, src.Asset.RateHz)), frame))
 	}
-	g.Set("lineWidth", 1)
-	g.Set("fillStyle", "#e9e6d6")
-	g.Set("font", "13px monospace")
-	g.Call("fillText", fmt.Sprintf("%s · %.2f s · %d Hz", src.Name, float64(src.Asset.Frames)/float64(src.Asset.RateHz), src.Asset.RateHz), 12, 22)
+	label.Set("textContent", fmt.Sprintf("%s · %.3f–%.3f s · %d Hz · Save pad keeps this chop", src.Name, float64(start)/float64(max(1, src.Asset.RateHz)), float64(end)/float64(max(1, src.Asset.RateHz)), src.Asset.RateHz))
+}
+func (u *samplerUI) paintPlaying(active []*samplerVoice, now float64) {
+	for pad := 1; pad <= 16; pad++ {
+		playing := false
+		for _, v := range active {
+			playing = playing || (v.pad == pad && v.start <= now)
+		}
+		if playing == u.playingPads[pad-1] {
+			continue
+		}
+		u.playingPads[pad-1] = playing
+		u.root.Call("querySelector", fmt.Sprintf("[data-sampler-pad='%d']", pad)).Call("setAttribute", "data-playing", strconv.FormatBool(playing))
+	}
 }
 func (u *samplerUI) clockLoop() {
 	ticker := time.NewTicker(40 * time.Millisecond)
@@ -772,6 +885,9 @@ func (u *samplerUI) clockLoop() {
 		case <-ticker.C:
 			if u.closed.Load() {
 				return
+			}
+			if !u.recording && len(u.voices) == 0 {
+				continue
 			}
 			if u.recording && u.now() >= u.origin+float64(u.perf.Frames)/padsampler.Rate {
 				u.stop()
@@ -787,15 +903,7 @@ func (u *samplerUI) clockLoop() {
 				}
 			}
 			u.voices = active
-			for pad := 1; pad <= 16; pad++ {
-				playing := false
-				for _, v := range active {
-					playing = playing || (v.pad == pad && v.start <= now)
-				}
-				button := u.root.Call("querySelector", fmt.Sprintf("[data-sampler-pad='%d']", pad))
-				button.Call("setAttribute", "data-playing", strconv.FormatBool(playing))
-			}
-			u.draw()
+			u.paintPlaying(active, now)
 		}
 	}
 }
