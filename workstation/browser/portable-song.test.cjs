@@ -84,12 +84,28 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     const baselineNotes = await exportNotes('baseline.mid');
     const part = path.join(path.dirname(fixture.score), 'parts/rhythm.cicada');
     const secondary = fs.readFileSync(part);
+    assert.ok(await first.locator('input[name=source_revision]').inputValue(), 'take selection carries the complete displayed source revision');
+    const external = Buffer.concat([secondary, Buffer.from('\n// Another arrangement editor\n')]);
+    await page.route('**/__actions/take', async route => {
+      fs.writeFileSync(part, external); // The form already captured the displayed snapshot.
+      await route.continue();
+    }, {times: 1});
+    await first.getByRole('button', {name: 'Use in verse', exact: true}).click();
+    await until(async () => (await page.locator('body').innerText()).includes('saved score files or libraries changed'), 'an unseen secondary write rejects take selection');
+    assert.equal((await read('state')).source, initial.source);
+    assert.ok(fs.readFileSync(part).equals(external));
+    fs.writeFileSync(part, secondary);
+    await page.reload();
+    await ready();
+    checks.push('an unseen secondary-source edit refuses stale take selection and retains the external arrangement');
     await first.getByRole('button', {name: 'Use in verse', exact: true}).focus();
     await page.keyboard.press('Enter');
-    await saved(source => source.includes('guitar = ' + fixture.takeIDs[0] + '-clip'), 'keyboard selection uses the retained first pass');
+    await saved(source => source.includes('asset ' + fixture.takeIDs[0] + ' '), 'keyboard selection uses the retained first pass');
+    assert.equal(await first.getByRole('button', {name: 'In verse', exact: true}).isDisabled(), true);
     const selected = (await read('state')).source;
     assert.ok(selected.includes('import "demo/tone"'));
-    assert.ok(fs.readFileSync(part).equals(secondary), 'selection preserves the secondary score file');
+    const expectedPart = fixture.secondaryScenes ? Buffer.from(secondary.toString().replace('guitar = ' + fixture.takeIDs[1] + '-clip', 'guitar = ' + fixture.takeIDs[0] + '-clip')) : secondary;
+    assert.ok(fs.readFileSync(part).equals(expectedPart), 'selection changes only the owning scene assignment and preserves the secondary patterns');
     const changed = await render('first-pass.wav');
     assert.equal(changed.equals(baseline), false, 'the selected recording changes the rendered song');
     assert.ok((await exportNotes('first-pass.mid')).equals(baselineNotes), 'changing only the recording leaves exported instrument notes unchanged');
@@ -99,8 +115,11 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     await saved(source => source === selected, 'Redo restores the selected recording');
     await page.locator('#undo-form button').click();
     await saved(source => source === initial.source, 'Undo returns to the original second pass');
+    assert.ok(fs.readFileSync(part).equals(secondary), 'Undo restores the exact secondary source');
     assert.ok((await render('restored.wav')).equals(baseline), 'Undo restores the exported audio too');
     await midiSourceConflict(part, secondary, baselineNotes);
+    const notices = page.locator('[data-gosx-toast-host] button');
+    while (await notices.count()) await notices.first().click();
     const dock = page.getByRole('separator', {name: 'Resize Detail dock', exact: true});
     await dock.focus();
     await page.keyboard.press('Home');

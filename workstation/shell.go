@@ -90,7 +90,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 
 	returnTo := ctx.Request.URL.RequestURI()
 	file := func(name string) gosx.Node {
-		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: codeView.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: codeView.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
+		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
 	}
 	form := func(id, name string, children ...gosx.Node) gosx.Node {
 		return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: returnTo}, children...)

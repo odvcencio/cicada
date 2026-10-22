@@ -93,6 +93,12 @@ patterns. Click a scene header to play from that block, or a pattern clip to
 open its editor. Expand a block to replace its scene, set its length, duplicate
 it, remove it, or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
+
+Scenes can live in any source listed in `cicada.mod`. Assigning a pattern or
+scene recording, starting a new part, and editing scene automation update the
+file that owns the scene. New part and take declarations stay in the entry
+file. Undo restores every file affected by the edit. If saved sources or
+libraries changed in another editor, refresh Studio before retrying.
 Structural changes to songs with intervening comments require a Score edit
 so those comments keep their attachment. Local scene and bar edits preserve them.
 

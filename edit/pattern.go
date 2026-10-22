@@ -656,24 +656,46 @@ func resizePatternSource(ctx *Context, id string, length int, shared string) ([]
 }
 
 func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte, error) {
-	source := ctx.Source
-	node, walker, err := declaration(source, []string{"scene_decl"}, sceneID)
+	score, source, path, err := sceneSource(ctx, sceneID)
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := declaration(source, []string{"track_decl"}, trackID); err != nil {
-		return nil, err
+	found := false
+	for _, track := range score.Tracks {
+		found = found || track.Name == trackID
+	}
+	if !found {
+		return nil, fmt.Errorf("unknown declaration %q", trackID)
 	}
 	if patternID != "off" && patternID != "keep" {
-		if _, _, err := declaration(source, append(append([]string{}, patternTypes...), "clip_decl"), patternID); err != nil {
-			return nil, err
+		found = false
+		for _, pattern := range score.Patterns {
+			found = found || pattern.Name == patternID
 		}
+		for _, clip := range score.Clips {
+			found = found || clip.Name == patternID
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown declaration %q", patternID)
+		}
+	}
+	updated, err := sceneBindingSource(source, path, sceneID, trackID, patternID)
+	if err != nil {
+		return nil, err
+	}
+	return stageSceneSource(ctx, path, source, updated), nil
+}
+
+func sceneBindingSource(source []byte, path, sceneID, trackID, patternID string) ([]byte, error) {
+	node, walker, err := declaration(source, []string{"scene_decl"}, sceneID)
+	if err != nil {
+		return nil, err
 	}
 	for i := 0; i < node.NamedChildCount(); i++ {
 		binding := node.NamedChild(i)
 		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID && !notation.SceneAssignmentIsSetting(trackID, walker.Text(walker.Field(binding, "value"))) {
 			value := walker.Field(binding, "value")
-			return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), patternID, ctx.Options.Path})
+			return ReplaceSpan(source, path, Span{int(value.StartByte()), int(value.EndByte()), patternID, path})
 		}
 	}
 	newline := "\n"
@@ -681,5 +703,5 @@ func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte
 		newline = "\r\n"
 	}
 	at := int(node.EndByte()) - 1
-	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, newline + "  " + trackID + " = " + patternID + newline, ctx.Options.Path})
+	return ReplaceSpan(source, path, Span{at, at, newline + "  " + trackID + " = " + patternID + newline, path})
 }

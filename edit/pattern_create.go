@@ -48,11 +48,6 @@ func createPattern(ctx *Context, intent Intent) error {
 			return fmt.Errorf("clip %q already exists; choose another pattern name", in.Name)
 		}
 	}
-	// Scene bindings use local declarations, like BindScene. Never interpret
-	// another file's source positions as offsets into this entry file.
-	if _, _, err := declaration(ctx.Source, []string{"track_decl"}, in.Track); err != nil {
-		return err
-	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {
 		return err
@@ -117,7 +112,8 @@ func createPattern(ctx *Context, intent Intent) error {
 	// byte intact. Cicada declarations may appear after the song or arrangement.
 	updated := append(bytes.Clone(ctx.Source), []byte(newline+newline+body.String())...)
 	if in.Scene != "" {
-		updated, err = bindPatternSource(sourceContext(ctx, updated), in.Scene, in.Track, in.Name)
+		ctx.Source, ctx.plan = updated, nil
+		updated, err = bindPatternSource(ctx, in.Scene, in.Track, in.Name)
 		if err != nil {
 			return err
 		}

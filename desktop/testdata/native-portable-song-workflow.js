@@ -50,9 +50,13 @@
           click('selected', '[data-scene-take="' + state.first + '"] button');
           break;
         case 'selected':
-          await saved(source => source.includes('guitar = ' + state.first + '-clip'));
+          await saved(source => source.includes('asset ' + state.first + ' '));
+          await wait(() => {
+            const button = document.querySelector('[data-scene-take="' + state.first + '"] button');
+            return button?.disabled && button.textContent === 'In verse';
+          }, 'selected scene binding');
           state.selected = (await read('state')).source;
-          state.checks.push('native selection resolves imported instruments and secondary patterns');
+          state.checks.push('native selection resolves imported instruments, secondary patterns and the owning scene file');
           click('undone', '#undo-form button');
           break;
         case 'undone':

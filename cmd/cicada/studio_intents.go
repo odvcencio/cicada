@@ -292,6 +292,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current), "playingRevision": studioRevision(s.lastGoodSource)})
 		return
 	}
+	if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	opts, err := s.editOptions(current, nil)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})

@@ -212,6 +212,20 @@ func TestShellUndoRedoFormsAndShortcutsDialog(t *testing.T) {
 	}
 }
 
+func TestShellSongHistoryDoesNotTargetTheSelectedCodeFile(t *testing.T) {
+	reply := &workspace{Revision: "song-current", Filename: "main.cicada", Source: "title \"Song\"\n", Valid: true,
+		Files:   []projectFile{{Name: "main.cicada", Source: "title \"Song\"\n", Revision: "song-current"}, {Name: "parts.cicada", Source: "// secondary Code\n", Revision: "part-current"}},
+		Project: &project.Project{Title: "Song", TempoMilli: 120000, Key: project.Key{Scale: "minor"}}}
+	address, client, _ := testAppWorkspace(t, reply)
+	body := getPage(t, client, address+"/studio?file=parts.cicada")
+	for _, name := range []string{"undo", "redo"} {
+		form := regexp.MustCompile(`(?s)<form[^>]*id="` + name + `-form"[^>]*>.*?</form>`).FindString(body)
+		if !strings.Contains(form, `name="revision" value="song-current"`) || strings.Contains(form, "part-current") || strings.Contains(form, `value="parts.cicada"`) {
+			t.Fatalf("song history followed the Code lens: %s", form)
+		}
+	}
+}
+
 func TestShellAddsNoScriptsOrPolling(t *testing.T) {
 	body := shellBody(t, "")
 	if strings.Contains(body, "setInterval") || regexp.MustCompile(`data-gosx-live-interval="[^"]+"[^>]*data-gosx-live-src="/api/(meters|revision)`).MatchString(body) {

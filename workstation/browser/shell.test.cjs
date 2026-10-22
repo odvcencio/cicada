@@ -323,6 +323,7 @@ test('a refresh request on a clean page reloads the shell', async () => {
 test('a refresh request keeps unsaved Code lens text and shows a notice', async () => {
   const {page, requests} = await openShell('?tab=arrange');
   const editor = page.locator('#studio-code textarea').first();
+  const original = await editor.inputValue();
   await editor.focus();
   await page.keyboard.type(' // unsaved note');
   await page.evaluate(() => { window.__alive = true; });
@@ -333,6 +334,8 @@ test('a refresh request keeps unsaved Code lens text and shows a notice', async 
   assert.match(await editor.inputValue(), /\/\/ unsaved note/, 'the typed text survived');
   assert.equal(requests.filter(request => request === 'GET /studio').length, documents, 'no new shell request');
   assert.ok(await page.locator('#studio-refresh-notice a[href^="/studio"]').count() > 0, 'the notice links to the current page');
+  await editor.fill(original);
+  await page.getByText('No unsaved Code edits.', {exact: true}).waitFor();
   await page.close();
 });
 
@@ -640,6 +643,12 @@ test('starting a musical part preserves the song and undoes in one step', {timeo
     try {
       const snapshot = async () => (await page.request.get(new URL('/api/state',process.env.CICADA_STUDIO_URL).href)).json();
       const before = await snapshot();
+      const privateDraft = before.source.replace(/\r\n/g,'\n')+'\n// Unsaved idea while arranging\n';
+      if (name === 'desktop') {
+        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('#studio-code > details > summary').click();
+        await page.locator('#studio-code textarea').first().fill(privateDraft);
+        await page.getByText('Recovery copy kept on this device. Use Save file to apply edits to the song.', {exact:true}).waitFor();
+      }
       if (name === 'desktop') {
         const handle = await page.getByRole('separator',{name:'Resize Detail dock',exact:true}).boundingBox();
         await page.mouse.move(handle.x+handle.width/2,handle.y+4);
@@ -669,6 +678,12 @@ test('starting a musical part preserves the song and undoes in one step', {timeo
       await page.locator('#undo-form button').click();
       await waitUntil(async () => (await snapshot()).source === before.source,'Undo restores the saved source');
       assert.equal((await snapshot()).source,before.source,'one Undo restores the entire original song');
+      if (name === 'desktop') {
+        assert.equal(await page.locator('#studio-code textarea').first().inputValue(),privateDraft,'song Undo retains the unsaved Code draft');
+        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('#studio-code > details > summary').click();
+        await page.getByRole('button',{name:'Discard draft',exact:true}).click();
+        await waitUntil(async()=>await page.locator('.source-draft-note').count()===0,'the scenario retires its private draft');
+      }
       assert.deepEqual(errors,[]);
     } finally { await page.close(); }
   }

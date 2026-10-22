@@ -237,7 +237,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 				}
 				return map[string]any{"revision": f["revision"], "action": f["action"], "path": f["path"], "value": map[string]any{"oldAt": f["oldAt"], "at": f["at"], "value": f["value"], "shape": f["shape"], "curve": curve}}, nil
 			}
-			return map[string]any{"revision": f["revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
+			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
 		}),
 		"clip": s.mutation("/api/clip", func(f map[string]string) (any, error) {
 			payload := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "scene": f["scene"], "track": f["track"]}
@@ -422,6 +422,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 		}),
 		"take": s.mutation("/api/takes", func(f map[string]string) (any, error) {
 			p := edit(f)
+			p["source_revision"] = f["source_revision"]
 			p["action"] = f["action"]
 			p["track"] = f["track"]
 			p["scene"] = f["scene"]

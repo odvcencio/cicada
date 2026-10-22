@@ -26,7 +26,8 @@ type sourceRecovery struct {
 }
 
 func bindSourceRecovery(ctx context.Context, root js.Value, csrf string) func() {
-	u := &workspaceUI{root: root, ctx: ctx, props: workspaceProps{CSRF: csrf}}
+	u := &workspaceUI{root: root, ctx: ctx, props: workspaceProps{CSRF: csrf}, editors: map[string]workspaceEditorBaseline{}}
+	u.seedEditorBaseline()
 	input := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) > 0 && !u.closed.Load() {
 			u.sourceInput(args[0])

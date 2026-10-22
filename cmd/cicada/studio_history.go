@@ -594,10 +594,13 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	committed, preserved := false, ""
 	if err == nil {
 		var veto func() error
-		if mutation.RenderChecked {
+		if mutation.RenderChecked || edit.SourceRevision != "" {
 			// The approval can expire while the replacement is being staged, so
 			// the publication step rechecks it immediately before the exchange.
 			veto = func() error {
+				if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
+					return err
+				}
 				return s.verifyRenderIdentity(mutation.RenderChecked, mutation.RenderIdentity, mutation.RenderRecheck)
 			}
 		}
@@ -639,6 +642,9 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 			message = fmt.Sprintf("history file write failed: %v; rollback: %v", err, rollbackErr)
 		}
 		return fail(http.StatusConflict, map[string]any{"error": message})
+	}
+	if len(mutation.Files) > 0 && hook.checkpoint != nil {
+		hook.checkpoint(takejournal.AuxiliarySwapped)
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
 	if s.transport != nil {

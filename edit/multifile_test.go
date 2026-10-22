@@ -190,6 +190,26 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
+					case "bindscene", "selecttake", "createpattern", "setscenesetting", "removescenesetting":
+						replacements := map[string][2]string{
+							"bindscene":          {"lead=melody", "lead=empty"},
+							"selecttake":         {"vox=off", "vox=selected-clip"},
+							"createpattern":      {"keys=keys-line", "keys=new-phrase"},
+							"setscenesetting":    {"lead.cutoff=700Hz", "lead.cutoff=900Hz"},
+							"removescenesetting": {"lead.cutoff=700Hz", ""},
+						}
+						change := replacements[kind]
+						wantPart := strings.Replace(string(other), change[0], change[1], 1)
+						if err != nil || result == nil || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || string(result.Files[0].After) != wantPart {
+							t.Fatalf("scene edit changed the wrong source or surrounding bytes: kind=%s result=%v error=%v", kind, result != nil, err)
+						}
+						if kind == "selecttake" || kind == "createpattern" {
+							if !bytes.HasPrefix(result.Source, main) {
+								t.Fatal("new declarations rewrote the entry source")
+							}
+						} else if !bytes.Equal(result.Source, main) {
+							t.Fatal("scene-only edit changed entry source bytes")
+						}
 					case "publishrecorded":
 						wantPart := strings.Replace(string(other), scene, strings.TrimSuffix(scene, "}")+newline+"  captured_track = captured_taps"+newline+"}", 1)
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || string(result.Files[0].After) != wantPart {

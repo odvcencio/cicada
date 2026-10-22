@@ -201,23 +201,38 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--workflow", type=Path, default=Path(__file__).parent / "testdata/native-workflow.js")
+    parser.add_argument("--workflow", type=Path)
+    parser.add_argument("--portable-fixture", type=Path, help="copy a generated portable-song fixture before running the normal workflow")
     parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int", "midi-term", "code-recovery"], default="all")
     parser.add_argument("--timeout", type=int, default=60, help="total workflow timeout in seconds (default: 60)")
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.portable_fixture and args.mode != "normal":
+        parser.error("--portable-fixture requires --mode normal")
     app = args.app.resolve()
     binary = app / "Contents/MacOS/cicada-studio"
     if not binary.is_file():
         parser.error(f"desktop host is missing: {binary}")
-    workflow = args.workflow.resolve()
+    workflow = (args.workflow or Path(__file__).parent / "testdata" / ("native-portable-song-workflow.js" if args.portable_fixture else "native-workflow.js")).resolve()
     if not workflow.is_file():
         parser.error(f"native workflow is missing: {workflow}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     results = []
     with isolated_app(app, output) as binary:
+        if args.portable_fixture:
+            fixture = json.loads(args.portable_fixture.read_text())
+            if not fixture.get("originalRemoved") or not fixture.get("userLibrariesRemoved"):
+                raise RuntimeError("use only a generated portable-song fixture")
+            source = Path(fixture["score"]).resolve()
+            folder = Path(tempfile.mkdtemp(prefix="portable-", dir=output))
+            shutil.copytree(source.parent, folder / "project")
+            result = check_launch(binary, output, "normal", workflow, args.timeout,
+                                  score=folder / "project" / source.name, state=folder / "state")
+            (output / "report.json").write_text(json.dumps([result], indent=2) + "\n")
+            print("portable-song: passed", flush=True)
+            return
         if args.mode == "code-recovery":
             # One disposable score and private profile across three app exits.
             folder = Path(tempfile.mkdtemp(prefix="recovery-", dir=output))

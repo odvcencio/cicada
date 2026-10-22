@@ -118,6 +118,32 @@ class SmokeTimeoutTests(unittest.TestCase):
             self.assertIn("--timeout must be positive", stderr.getvalue())
             self.assertFalse(output.exists())
 
+    def test_portable_workflow_changes_only_a_disposable_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "Test.app/Contents/MacOS/cicada-studio"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            project = root / "fixture"
+            project.mkdir()
+            source = project / "song.cicada"
+            source.write_text("// original fixture\n")
+            fixture = root / "fixture.json"
+            fixture.write_text(json.dumps({"score": str(source), "originalRemoved": True, "userLibrariesRemoved": True}))
+            output = root / "results"
+
+            def launch(*_, score, **__):
+                self.assertNotEqual(score, source)
+                self.assertTrue(score.is_relative_to(output.resolve()))
+                score.write_text("// native workflow edit\n")
+                return {"startup": {"frontend": {"ok": True}}}
+
+            with patch("sys.argv", ["smoke.py", "--app", str(root / "Test.app"), "--output", str(output), "--mode", "normal", "--portable-fixture", str(fixture)]), \
+                    patch.object(smoke, "isolated_app", return_value=contextlib.nullcontext(binary)), \
+                    patch.object(smoke, "check_launch", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                smoke.main()
+            self.assertEqual(source.read_text(), "// original fixture\n")
+
 
 if __name__ == "__main__":
     unittest.main()

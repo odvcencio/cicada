@@ -35,6 +35,7 @@ type workspaceProps struct {
 type workspaceProjection struct {
 	ProjectRevision string `json:"projectRevision"`
 	FileRevision    string `json:"fileRevision"`
+	SourceRevision  string `json:"sourceRevision"`
 	HTML            string `json:"html"`
 	Revision        string `json:"revision"`
 	Location        string `json:"location"`
@@ -1652,6 +1653,13 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 			}
 			control.Set("value", projection.FileRevision)
 			control.Set("defaultValue", projection.FileRevision)
+		}
+	}
+	if projection.SourceRevision != "" {
+		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=source_revision]")
+		for i := 0; i < fields.Length(); i++ {
+			fields.Index(i).Set("value", projection.SourceRevision)
+			fields.Index(i).Set("defaultValue", projection.SourceRevision)
 		}
 	}
 	for _, scroll := range scrolls {

@@ -22,6 +22,7 @@ import (
 type workspaceProjection struct {
 	ProjectRevision string `json:"projectRevision"`
 	FileRevision    string `json:"fileRevision"`
+	SourceRevision  string `json:"sourceRevision"`
 	HTML            string `json:"html"`
 	Revision        string `json:"revision"`
 	Location        string `json:"location"`
@@ -101,7 +102,7 @@ func (s *studioApp) projection(r *http.Request, location string) (workspaceProje
 	if view.Project != nil && view.Project.Title != "" {
 		title = view.Project.Title
 	}
-	return workspaceProjection{ProjectRevision: view.ProjectRevision, FileRevision: view.FileRevision, HTML: gosx.RenderHTML(body), Revision: view.Revision, Location: location, Title: title + " · Cicada Studio"}, nil
+	return workspaceProjection{ProjectRevision: view.ProjectRevision, SourceRevision: view.SourceRevision, FileRevision: view.FileRevision, HTML: gosx.RenderHTML(body), Revision: view.Revision, Location: location, Title: title + " · Cicada Studio"}, nil
 }
 
 func (s *studioApp) workspaceProjection(w http.ResponseWriter, r *http.Request) {

@@ -72,7 +72,8 @@ func publishRecorded(ctx *Context, intent Intent) error {
 	}
 	updated = append(updated, []byte(fmt.Sprintf("\n%s\ntrack %s %s { level = %s }\npattern %s { %s . . . %s . . . }\n", declaration, track, name, in.Level, pattern, in.Note, in.Note))...)
 	if in.ScenePath == "" || in.ScenePath == ctx.Options.Path {
-		updated, err = bindPatternSource(sourceContext(ctx, updated), scene, track, pattern)
+		ctx.Source, ctx.plan = updated, nil
+		updated, err = bindPatternSource(ctx, scene, track, pattern)
 	} else {
 		before, found := ctx.FileSource(in.ScenePath)
 		if !found {

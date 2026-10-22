@@ -322,6 +322,9 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 }
 
 func (s *studioApp) form(view workspace, csrf, panel, name string, children ...gosx.Node) gosx.Node {
+	if name == "pattern" || name == "take" || name == "automation" {
+		children = append([]gosx.Node{hidden("source_revision", view.SourceRevision)}, children...)
+	}
 	return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: "/?panel=" + panel, Class: "action-form"}, children...)
 }
 func hidden(name, value string) gosx.Node {

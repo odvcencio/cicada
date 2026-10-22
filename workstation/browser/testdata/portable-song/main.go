@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -31,6 +32,8 @@ func write(root, name string, data []byte) {
 }
 
 func main() {
+	secondaryScenes := flag.Bool("secondary-scenes", true, "place scene declarations in the secondary score")
+	flag.Parse()
 	base, err := os.MkdirTemp("", "cicada-portable-song-")
 	must(err)
 	fmt.Fprintln(os.Stderr, "fixture:", base)
@@ -98,6 +101,22 @@ song { verse*2 break verse }
 		}
 	}
 	must(store.Close())
+	if *secondaryScenes {
+		current, err := os.ReadFile(path)
+		must(err)
+		var entry, scenes bytes.Buffer
+		for _, line := range bytes.SplitAfter(current, []byte("\n")) {
+			if bytes.HasPrefix(line, []byte("scene ")) {
+				scenes.Write(line)
+			} else {
+				entry.Write(line)
+			}
+		}
+		part, err := os.ReadFile(filepath.Join(root, "parts/rhythm.cicada"))
+		must(err)
+		write(root, "parts/rhythm.cicada", append(part, scenes.Bytes()...))
+		write(root, "scores/main.cicada", entry.Bytes())
+	}
 	renderSong := func(scorePath, output string) []byte {
 		score, ds, err := project.LoadScore(scorePath, nil)
 		must(err)
@@ -161,6 +180,6 @@ song { verse*2 break verse }
 		panic("take history lost")
 	}
 	must(copyStore.Close())
-	data, _ := json.MarshalIndent(map[string]any{"fixture": base, "score": target, "takeIDs": ids, "originalRemoved": true, "userLibrariesRemoved": true, "wavSHA256": fmt.Sprintf("%x", sha256.Sum256(after)), "wavBytes": len(after), "midiSHA256": fmt.Sprintf("%x", sha256.Sum256(afterNotes)), "userLibraries": user}, "", "  ")
+	data, _ := json.MarshalIndent(map[string]any{"fixture": base, "score": target, "takeIDs": ids, "secondaryScenes": *secondaryScenes, "originalRemoved": true, "userLibrariesRemoved": true, "wavSHA256": fmt.Sprintf("%x", sha256.Sum256(after)), "wavBytes": len(after), "midiSHA256": fmt.Sprintf("%x", sha256.Sum256(afterNotes)), "userLibraries": user}, "", "  ")
 	fmt.Println(string(data))
 }

@@ -462,6 +462,7 @@ type studioEdit struct {
 	Recording             *studioRecordingSettings      `json:"recording,omitempty"`
 	Scene                 string                        `json:"scene,omitempty"`
 	Revision              string                        `json:"revision"`
+	SourceRevision        string                        `json:"source_revision,omitempty"`
 	Label                 string                        `json:"label,omitempty"`
 	Author                string                        `json:"author,omitempty"`
 	Session               string                        `json:"session,omitempty"`

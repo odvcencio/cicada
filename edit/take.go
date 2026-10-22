@@ -47,11 +47,37 @@ func init() {
 		if err := takeScoreError(score, diagnostics); err != nil {
 			return err
 		}
-		updated, err := selectTakeSource(ctx.Source, ctx.Options.Path, *intent.(*SelectTake), score)
+		t := *intent.(*SelectTake)
+		score, before, path, err := sceneSource(ctx, t.Scene)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, track := range score.Tracks {
+			found = found || track.Name == t.Track && track.Kind == "audio"
+		}
+		if !found {
+			return errors.New("take target must be an existing audio track")
+		}
+		// A take's assets stay beside the entry declarations; only the scene
+		// assignment belongs in its owning source.
+		updated, err := takeDeclarationsSource(ctx.Source, t, score)
 		if err != nil {
 			return err
 		}
 		ctx.Source, ctx.plan = updated, nil
+		binding, err := sceneBindingSource(before, path, t.Scene, t.Track, t.ID+"-clip")
+		if err != nil {
+			return err
+		}
+		if path == ctx.Options.Path {
+			// Declarations were appended after taking the scene snapshot.
+			binding, err = sceneBindingSource(updated, path, t.Scene, t.Track, t.ID+"-clip")
+			if err != nil {
+				return err
+			}
+		}
+		ctx.Source = stageSceneSource(ctx, path, before, binding)
 		ctx.SetLabel("Select audio take")
 		return nil
 	})
@@ -144,6 +170,10 @@ func selectTakeSource(source []byte, targetFile string, t SelectTake, score *not
 	if updated == nil {
 		return nil, errors.New("take scene no longer exists")
 	}
+	return takeDeclarationsSource(updated, t, score)
+}
+
+func takeDeclarationsSource(source []byte, t SelectTake, score *notation.Score) ([]byte, error) {
 	hasAsset, hasClip := false, false
 	for _, a := range score.Assets {
 		if a.Name == t.ID {
@@ -173,5 +203,5 @@ func selectTakeSource(source []byte, targetFile string, t SelectTake, score *not
 		}
 		fmt.Fprintf(&text, "\nclip %s-clip %s {\n  start = %dframes\n  end = %dframes\n}\n", t.ID, t.ID, start, t.Asset.Frames)
 	}
-	return append(updated, text.Bytes()...), nil
+	return append(bytes.Clone(source), text.Bytes()...), nil
 }
