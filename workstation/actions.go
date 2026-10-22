@@ -351,7 +351,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 		}),
 		"arrange": s.mutation("/api/arrange", func(f map[string]string) (any, error) {
 			return map[string]any{
-				"revision": f["revision"], "action": f["action"], "name": f["name"], "newName": f["newName"],
+				"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "name": f["name"], "newName": f["newName"],
 				"placement": map[string]string{"at": f["at"], "length": f["length"], "track": f["track"], "content": f["content"]},
 			}, nil
 		}),

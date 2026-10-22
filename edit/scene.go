@@ -83,7 +83,7 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 		if err != nil {
 			return nil, err
 		}
-		return stageSceneSource(ctx, file, source, after), nil
+		return stageProjectSource(ctx, file, source, after), nil
 	}
 	// The scene tempo is the one bare path a scene may set. It is not live and
 	// not automatable: it steps at the scene boundary.

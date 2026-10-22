@@ -683,7 +683,7 @@ func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	return stageSceneSource(ctx, path, source, updated), nil
+	return stageProjectSource(ctx, path, source, updated), nil
 }
 
 func sceneBindingSource(source []byte, path, sceneID, trackID, patternID string) ([]byte, error) {

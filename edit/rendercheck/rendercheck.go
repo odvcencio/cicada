@@ -21,6 +21,7 @@ import (
 
 type check struct {
 	path      string
+	target    string
 	overrides map[string][]byte
 }
 
@@ -36,6 +37,44 @@ func NewWith(path string, overrides map[string][]byte) edits.RenderCheck {
 		path = abs
 	}
 	return check{path: path, overrides: overrides}
+}
+
+func (c check) ForSource(path string, files map[string][]byte) (edits.RenderCheck, error) {
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	return check{path: c.path, target: path, overrides: layer(c.overrides, files)}, nil
+}
+
+func (c *cached) ForSource(path string, files map[string][]byte) (edits.RenderCheck, error) {
+	provider, ok := c.inner.(edits.SourceRenderCheck)
+	if !ok {
+		return nil, edits.ErrNoRenderCheck
+	}
+	return provider.ForSource(path, files)
+}
+
+func (c check) sourcePath() string {
+	if c.target != "" {
+		return c.target
+	}
+	return c.path
+}
+
+// Keep the governing project path separate from the buffer being replaced.
+// A listed source can live below another manifest; that manifest must not
+// change which project the split verification renders.
+func (c check) sourceSnapshot(source []byte, files map[string][]byte) (*snapshot, bool) {
+	overrides := merged(layer(c.overrides, files), c.sourcePath(), source)
+	entry, ok := overrides[c.path]
+	if !ok {
+		var err error
+		entry, err = os.ReadFile(c.path)
+		if err != nil {
+			return nil, false
+		}
+	}
+	return take(c.path, entry, overrides)
 }
 
 // layer returns base with staged files laid over it.
@@ -67,7 +106,7 @@ func (c check) Hash(source []byte) (string, error) { return c.HashWith(source, n
 // HashWith renders source with the batch's staged files laid over the
 // buffers; staged files win.
 func (c check) HashWith(source []byte, files map[string][]byte) (string, error) {
-	return c.renderFrom(merged(layer(c.overrides, files), c.path, source))
+	return c.renderFrom(merged(layer(c.overrides, files), c.sourcePath(), source))
 }
 
 // renderFrom renders the project that overrides describe.
@@ -432,17 +471,19 @@ func hashOf(data []byte) string {
 }
 
 // pairIdentity names the project and both candidate sources.
-func pairIdentity(snap *snapshot, after []byte) string { return snap.identity + "|" + hashOf(after) }
+func pairIdentity(snap *snapshot, target string, after []byte) string {
+	return snap.identity + "|" + hashOf([]byte(target)) + "|" + hashOf(after)
+}
 
 // PairIdentity names the inputs of a comparison of before and after as the
 // project is now. A comparison's recorded identity is compared with it before
 // anything is written.
 func (c check) PairIdentity(before, after []byte, files map[string][]byte) (string, bool) {
-	snap, ok := take(c.path, before, layer(c.overrides, files))
+	snap, ok := c.sourceSnapshot(before, files)
 	if !ok {
 		return "", false
 	}
-	return pairIdentity(snap, after), true
+	return pairIdentity(snap, c.sourcePath(), after), true
 }
 
 // Compare renders both candidates from one snapshot of the project, so a file
@@ -450,7 +491,7 @@ func (c check) PairIdentity(before, after []byte, files map[string][]byte) (stri
 // read different inputs. It returns whether they match and the snapshot's pair
 // identity. Assets and packs load from disk and are restated afterwards.
 func (c check) Compare(before, after []byte, files map[string][]byte) (bool, string, error) {
-	snap, ok := take(c.path, before, layer(c.overrides, files))
+	snap, ok := c.sourceSnapshot(before, files)
 	if !ok {
 		return false, "", edits.ErrProjectChanged
 	}
@@ -458,7 +499,7 @@ func (c check) Compare(before, after []byte, files map[string][]byte) (bool, str
 		AfterSnapshot()
 	}
 	render := func(entry []byte) (string, error) {
-		return c.renderPinned(merged(snap.files, c.path, entry), &snap.resolved)
+		return c.renderPinned(merged(snap.files, c.sourcePath(), entry), &snap.resolved)
 	}
 	a, err := render(before)
 	if err != nil {
@@ -474,5 +515,5 @@ func (c check) Compare(before, after []byte, files map[string][]byte) (bool, str
 	if now, ok := snap.assets(); !ok || now != snap.assetID {
 		return false, "", edits.ErrProjectChanged
 	}
-	return a == b, pairIdentity(snap, after), nil
+	return a == b, pairIdentity(snap, c.sourcePath(), after), nil
 }

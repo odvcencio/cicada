@@ -451,6 +451,28 @@ jobs:
             sleep 0.1
           done
           node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          node workstation/browser/arrangement-sources.test.cjs --write-fixture "$browser_root/arrangement-sources" > build/studio-arrangement-sources-fixture.json
+          export CICADA_ARRANGEMENT_FIXTURE="$PWD/build/studio-arrangement-sources-fixture.json"
+          export CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-sources-proof"
+          for phase in edit reopen; do
+            ./build/cicada studio "$browser_root/arrangement-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-arrangement-sources-$phase-server.log" 2>&1 &
+            studio_pid=$!
+            for _ in $(seq 1 100); do
+              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+              kill -0 "$studio_pid"
+              sleep 0.1
+            done
+            export CICADA_ARRANGEMENT_REOPEN=0
+            if [[ "$phase" == reopen ]]; then export CICADA_ARRANGEMENT_REOPEN=1; fi
+            node --test workstation/browser/arrangement-sources.test.cjs | tee "build/studio-arrangement-sources-$phase-report.txt"
+            if [[ "$phase" == edit ]]; then
+              kill "$studio_pid"
+              wait "$studio_pid" || true
+            fi
+          done
+          unset CICADA_ARRANGEMENT_REOPEN
           for editor_mode in buffer project; do
             kill "$studio_pid"
             wait "$studio_pid" || true
@@ -614,6 +636,8 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/export --mode normal --timeout 120 --workflow desktop/testdata/native-export-workflow.js
           go -C workstation run ./browser/testdata/portable-song > build/native-portable-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/portable --mode normal --timeout 120 --portable-fixture build/native-portable-fixture.json
+          node workstation/browser/arrangement-sources.test.cjs --write-fixture build/native-arrangement-sources > build/native-arrangement-sources-fixture.json
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/arrangement-sources --mode normal --timeout 120 --project-fixture build/native-arrangement-sources/main.cicada --workflow desktop/testdata/native-arrangement-sources-workflow.js
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Save macOS validation reports
         if: always()

@@ -203,6 +203,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workflow", type=Path)
     parser.add_argument("--portable-fixture", type=Path, help="copy a generated portable-song fixture before running the normal workflow")
+    parser.add_argument("--project-fixture", type=Path, help="copy a disposable score's containing folder before running a supplied normal workflow")
     parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int", "midi-term", "code-recovery"], default="all")
     parser.add_argument("--timeout", type=int, default=60, help="total workflow timeout in seconds (default: 60)")
     args = parser.parse_args()
@@ -210,6 +211,8 @@ def main():
         parser.error("--timeout must be positive")
     if args.portable_fixture and args.mode != "normal":
         parser.error("--portable-fixture requires --mode normal")
+    if args.project_fixture and (args.mode != "normal" or args.portable_fixture or not args.workflow):
+        parser.error("--project-fixture requires --mode normal and --workflow, without --portable-fixture")
     app = args.app.resolve()
     binary = app / "Contents/MacOS/cicada-studio"
     if not binary.is_file():
@@ -221,17 +224,20 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     results = []
     with isolated_app(app, output) as binary:
-        if args.portable_fixture:
-            fixture = json.loads(args.portable_fixture.read_text())
-            if not fixture.get("originalRemoved") or not fixture.get("userLibrariesRemoved"):
-                raise RuntimeError("use only a generated portable-song fixture")
-            source = Path(fixture["score"]).resolve()
+        if args.portable_fixture or args.project_fixture:
+            if args.portable_fixture:
+                fixture = json.loads(args.portable_fixture.read_text())
+                if not fixture.get("originalRemoved") or not fixture.get("userLibrariesRemoved"):
+                    raise RuntimeError("use only a generated portable-song fixture")
+                source = Path(fixture["score"]).resolve()
+            else:
+                source = args.project_fixture.resolve()
             folder = Path(tempfile.mkdtemp(prefix="portable-", dir=output))
             shutil.copytree(source.parent, folder / "project")
             result = check_launch(binary, output, "normal", workflow, args.timeout,
                                   score=folder / "project" / source.name, state=folder / "state")
             (output / "report.json").write_text(json.dumps([result], indent=2) + "\n")
-            print("portable-song: passed", flush=True)
+            print("project-fixture: passed" if args.project_fixture else "portable-song: passed", flush=True)
             return
         if args.mode == "code-recovery":
             # One disposable score and private profile across three app exits.

@@ -15,6 +15,7 @@ import (
 func placementURL(id string) string { return "/?panel=session&placement=" + url.QueryEscape(id) }
 
 func (s *studioApp) placementForm(v workspace, csrf, id string, children ...gosx.Node) gosx.Node {
+	children = append([]gosx.Node{hidden("source_revision", v.SourceRevision)}, children...)
 	return ui.Form(ui.FormProps{Action: "/__actions/arrange", CSRF: csrf, Revision: v.Revision, ReturnTo: placementURL(id), Class: "action-form"}, children...)
 }
 

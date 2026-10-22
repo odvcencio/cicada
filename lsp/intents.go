@@ -23,6 +23,17 @@ var newRenderCheck = func(path string, overrides map[string][]byte) edits.Render
 	return rendercheck.NewWith(path, overrides)
 }
 
+func (c *cachedCheck) ForSource(path string, files map[string][]byte) (edits.RenderCheck, error) {
+	c.mu.Lock()
+	inner := c.inner
+	c.mu.Unlock()
+	provider, ok := inner.(edits.SourceRenderCheck)
+	if !ok {
+		return nil, edits.ErrNoRenderCheck
+	}
+	return provider.ForSource(path, files)
+}
+
 // lspCompiler compiles the working entry and auxiliary buffers without writes.
 // overrides is the snapshot of open editor buffers (absolute path -> bytes).
 type lspCompiler struct {

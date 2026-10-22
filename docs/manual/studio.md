@@ -109,6 +109,10 @@ keys on a block or edge change its start or length by a sixteenth; hold Shift
 for a whole bar. Drag previews are saved only when released; Escape cancels.
 Focus stays on the block or edge after saving, so arrow-key nudges can continue.
 These gestures work directly in the Studio shell as well as the panel view.
+Placement and marker edits also work when the arrangement is in another score
+file listed by the project. They update that file; Undo and Redo restore its
+exact saved text. If score files or libraries change outside Studio, refresh
+before trying another edit.
 Small pointer movements are treated as selection, so a click does not shift a
 phrase. Save or discard unsaved Code edits before moving placements; finish
 recording and wait for a pending save before starting another edit.

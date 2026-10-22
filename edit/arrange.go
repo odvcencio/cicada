@@ -91,9 +91,12 @@ func resolvePlacement(ctx *Context, id EntityID) (Placement, error) {
 }
 
 func editClipPlacement(ctx *Context, intent Intent) error {
+	source, file, err := arrangementFile(ctx)
+	if err != nil {
+		return err
+	}
 	var updated []byte
 	var label string
-	var err error
 	switch in := intent.(type) {
 	case *MoveClip:
 		var placement Placement
@@ -101,7 +104,7 @@ func editClipPlacement(ctx *Context, intent Intent) error {
 			return err
 		}
 		position := FormatPosition(in.AtTick)
-		if updated, err = notation.SetPlacementField(ctx.Source, placement.ID, "at", position); err != nil {
+		if updated, err = notation.SetPlacementField(source, placement.ID, "at", position); err != nil {
 			return err
 		}
 		label = fmt.Sprintf("Clip %s moved to %s", placement.ID, position)
@@ -111,21 +114,21 @@ func editClipPlacement(ctx *Context, intent Intent) error {
 			return err
 		}
 		length := FormatLength(in.LengthTicks)
-		if updated, err = notation.SetPlacementField(ctx.Source, placement.ID, "length", length); err != nil {
+		if updated, err = notation.SetPlacementField(source, placement.ID, "length", length); err != nil {
 			return err
 		}
 		label = fmt.Sprintf("Clip %s resized to %s", placement.ID, length)
 	case *SplitClip:
-		updated, label, err = splitClip(ctx, in)
+		updated, label, err = splitClip(ctx, in, source, file)
 	case *DuplicateClip:
-		updated, label, err = duplicateClip(ctx, in)
+		updated, label, err = duplicateClip(ctx, in, source, file)
 	case *DeleteClip:
-		updated, label, err = deleteClip(ctx, in)
+		updated, label, err = deleteClip(ctx, in, source, file)
 	}
 	if err != nil {
 		return err
 	}
-	ctx.Source, ctx.plan = updated, nil
+	ctx.Source, ctx.plan = stageProjectSource(ctx, file, source, updated), nil
 	ctx.SetLabel(label)
 	return nil
 }
@@ -219,15 +222,14 @@ func lineIndent(source []byte, at int) string {
 }
 
 // insertAfterPlacement inserts text as a new declaration after decl.
-func insertAfterPlacement(ctx *Context, decl *gts.Node, text string) ([]byte, error) {
-	source := ctx.Source
+func insertAfterPlacement(source []byte, file string, decl *gts.Node, text string) ([]byte, error) {
 	nl := Newline(source)
 	indent := lineIndent(source, int(decl.StartByte()))
 	at := int(decl.EndByte())
-	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, nl + indent + text, ctx.Options.Path})
+	return ReplaceSpan(source, file, Span{at, at, nl + indent + text, file})
 }
 
-func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
+func splitClip(ctx *Context, in *SplitClip, source []byte, file string) ([]byte, string, error) {
 	placement, err := resolvePlacement(ctx, in.Entity)
 	if err != nil {
 		return nil, "", err
@@ -260,11 +262,11 @@ func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	cut, err := splitSource(ctx, plan, placement, in.AtTick)
+	cut, err := splitSource(source, file, plan, placement, in.AtTick)
 	if err != nil {
 		return nil, "", err
 	}
-	same, err := ctx.compareRenders("SplitClip", check, ctx.Source, cut)
+	same, err := ctx.compareSourceRenders("SplitClip", check, file, source, cut)
 	if err != nil {
 		return nil, "", err
 	}
@@ -312,8 +314,28 @@ func (b batchCheck) Hash(source []byte) (string, error) {
 // that snapshots the project renders both from one snapshot and returns its
 // identity; other checks just hash both candidates.
 func (c *Context) compareRenders(intent string, check RenderCheck, before, after []byte) (bool, error) {
-	if snap, ok := c.Options.RenderCheck.(SnapshotRenderCheck); ok {
-		files := c.fileOverrides()
+	return c.compareWithRenderCheck(intent, c.Options.RenderCheck, check, before, after, c.fileOverrides())
+}
+
+func (c *Context) compareSourceRenders(intent string, check RenderCheck, file string, before, after []byte) (bool, error) {
+	if file == c.Options.Path {
+		return c.compareRenders(intent, check, before, after)
+	}
+	provider, ok := c.Options.RenderCheck.(SourceRenderCheck)
+	if !ok {
+		return false, ErrNoRenderCheck
+	}
+	files := c.fileOverrides()
+	files[c.Options.Path] = bytes.Clone(c.Source)
+	scoped, err := provider.ForSource(file, files)
+	if err != nil {
+		return false, err
+	}
+	return c.compareWithRenderCheck(intent, scoped, scoped, before, after, nil)
+}
+
+func (c *Context) compareWithRenderCheck(intent string, base, check RenderCheck, before, after []byte, files map[string][]byte) (bool, error) {
+	if snap, ok := base.(SnapshotRenderCheck); ok {
 		same, identity, err := snap.Compare(before, after, files)
 		if errors.Is(err, ErrProjectChanged) {
 			return false, &RefusalError{Intent: intent, Cause: ErrProjectChanged.Error()}
@@ -349,8 +371,7 @@ func renderCheckFor(ctx *Context) (RenderCheck, error) {
 	return batchCheck{check: ctx.Options.RenderCheck, files: ctx.fileOverrides()}, nil
 }
 
-func splitSource(ctx *Context, plan *Plan, placement Placement, atTick int64) ([]byte, error) {
-	source := ctx.Source
+func splitSource(source []byte, file string, plan *Plan, placement Placement, atTick int64) ([]byte, error) {
 	decl, _, walker, err := placementDecl(source, placement.ID)
 	if err != nil {
 		return nil, err
@@ -367,7 +388,7 @@ func splitSource(ctx *Context, plan *Plan, placement Placement, atTick int64) ([
 		param := decl.NamedChild(k)
 		if walker.Type(param) == "param_decl" && walker.Text(walker.Field(param, "name")) == "length" {
 			value := walker.Field(param, "value")
-			lengthSpan = &Span{int(value.StartByte()), int(value.EndByte()), FormatLength(atTick - placement.AtTick), ctx.Options.Path}
+			lengthSpan = &Span{int(value.StartByte()), int(value.EndByte()), FormatLength(atTick - placement.AtTick), file}
 		}
 	}
 	if lengthSpan == nil {
@@ -376,12 +397,12 @@ func splitSource(ctx *Context, plan *Plan, placement Placement, atTick int64) ([
 	nl := Newline(source)
 	indent := lineIndent(source, int(decl.StartByte()))
 	at := int(decl.EndByte())
-	return PatchSpans(source, ctx.Options.Path, []Span{*lengthSpan, {at, at, nl + indent + copyText, ctx.Options.Path}})
+	return PatchSpans(source, file, []Span{*lengthSpan, {at, at, nl + indent + copyText, file}})
 }
 
 // duplicateClip adds sound by design (a second copy plays after the first), so
 // it needs no render check: the music is meant to change.
-func duplicateClip(ctx *Context, in *DuplicateClip) ([]byte, string, error) {
+func duplicateClip(ctx *Context, in *DuplicateClip, source []byte, file string) ([]byte, string, error) {
 	placement, err := resolvePlacement(ctx, in.Entity)
 	if err != nil {
 		return nil, "", err
@@ -390,27 +411,26 @@ func duplicateClip(ctx *Context, in *DuplicateClip) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	decl, _, walker, err := placementDecl(ctx.Source, placement.ID)
+	decl, _, walker, err := placementDecl(source, placement.ID)
 	if err != nil {
 		return nil, "", err
 	}
-	name := freePlacementName(plan, ctx.Source, placement.ID)
-	text, err := placementCopy(ctx.Source, decl, walker, name, FormatPosition(placement.AtTick+placement.LengthTicks), FormatLength(placement.LengthTicks))
+	name := freePlacementName(plan, source, placement.ID)
+	text, err := placementCopy(source, decl, walker, name, FormatPosition(placement.AtTick+placement.LengthTicks), FormatLength(placement.LengthTicks))
 	if err != nil {
 		return nil, "", err
 	}
-	updated, err := insertAfterPlacement(ctx, decl, text)
+	updated, err := insertAfterPlacement(source, file, decl, text)
 	return updated, fmt.Sprintf("Clip %s duplicated as %s", placement.ID, name), err
 }
 
 // deleteClip removes sound by design, so it needs no render check: the music is
 // meant to change.
-func deleteClip(ctx *Context, in *DeleteClip) ([]byte, string, error) {
+func deleteClip(ctx *Context, in *DeleteClip, source []byte, file string) ([]byte, string, error) {
 	placement, err := resolvePlacement(ctx, in.Entity)
 	if err != nil {
 		return nil, "", err
 	}
-	source := ctx.Source
 	decl, arrange, _, err := placementDecl(source, placement.ID)
 	if err != nil {
 		return nil, "", err
@@ -429,6 +449,6 @@ func deleteClip(ctx *Context, in *DeleteClip) ([]byte, string, error) {
 			end++ // the newline that ended the declaration's line
 		}
 	}
-	updated, err := ReplaceSpan(source, ctx.Options.Path, Span{start, end, "", ctx.Options.Path})
+	updated, err := ReplaceSpan(source, file, Span{start, end, "", file})
 	return updated, fmt.Sprintf("Clip %s deleted", placement.ID), err
 }

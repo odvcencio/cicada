@@ -77,7 +77,7 @@ func init() {
 				return err
 			}
 		}
-		ctx.Source = stageSceneSource(ctx, path, before, binding)
+		ctx.Source = stageProjectSource(ctx, path, before, binding)
 		ctx.SetLabel("Select audio take")
 		return nil
 	})

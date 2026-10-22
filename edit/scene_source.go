@@ -35,9 +35,9 @@ func sceneSource(ctx *Context, name string) (*notation.Score, []byte, string, er
 	return nil, nil, "", fmt.Errorf("unknown declaration %q", name)
 }
 
-// Stage a scene's owning file without changing another declaration's buffer.
+// Stage an owned project file without changing another declaration's buffer.
 // AddFile preserves the original Before across several intents in one batch.
-func stageSceneSource(ctx *Context, path string, before, after []byte) []byte {
+func stageProjectSource(ctx *Context, path string, before, after []byte) []byte {
 	if path == ctx.Options.Path {
 		return after
 	}

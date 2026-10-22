@@ -63,7 +63,7 @@ func TestReactivePlacementEditUsesRevisionCheckedArrangementAction(t *testing.T)
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=session"))
 	response, result := reactivePost(t, client, address, "arrange", map[string]string{
-		"csrf_token": csrf, "revision": "current", "action": "update", "name": "far-in", "at": "@5.3.1", "length": "320ticks",
+		"csrf_token": csrf, "revision": "current", "source_revision": "displayed-sources", "action": "update", "name": "far-in", "at": "@5.3.1", "length": "320ticks",
 		"__cicada_location": "/?panel=session&placement=far-in",
 	})
 	var projection workspaceProjection
@@ -74,7 +74,7 @@ func TestReactivePlacementEditUsesRevisionCheckedArrangementAction(t *testing.T)
 		t.Fatalf("placement action: %d %+v", response.StatusCode, result)
 	}
 	settings := (*edits)[0]["placement"].(map[string]any)
-	if settings["at"] != "@5.3.1" || settings["length"] != "320ticks" || (*edits)[0]["name"] != "far-in" {
+	if (*edits)[0]["source_revision"] != "displayed-sources" || settings["at"] != "@5.3.1" || settings["length"] != "320ticks" || (*edits)[0]["name"] != "far-in" {
 		t.Fatalf("placement fields: %+v", (*edits)[0])
 	}
 }

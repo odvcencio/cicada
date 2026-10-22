@@ -29,6 +29,14 @@ type StagedRenderCheck interface {
 	HashWith(source []byte, files map[string][]byte) (string, error)
 }
 
+// SourceRenderCheck binds the same project render to another owned source.
+// That source's before/after buffers replace its bytes, while files pins the
+// entry and earlier batch edits. Manifest resolution still loads the project.
+type SourceRenderCheck interface {
+	RenderCheck
+	ForSource(path string, files map[string][]byte) (RenderCheck, error)
+}
+
 // SnapshotRenderCheck compares two candidates against one snapshot of the
 // project's source inputs (the files staged by the batch laid over unsaved
 // buffers over disk), so a file changed, or changed and restored, while the

@@ -144,6 +144,36 @@ class SmokeTimeoutTests(unittest.TestCase):
                 smoke.main()
             self.assertEqual(source.read_text(), "// original fixture\n")
 
+    def test_project_workflow_copies_entry_and_secondary_sources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "Test.app/Contents/MacOS/cicada-studio"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            project = root / "fixture"
+            project.mkdir()
+            source = project / "main.cicada"
+            source.write_text("// entry\n")
+            part = project / "arrangement.cicada"
+            part.write_text("// arrangement\n")
+            workflow = root / "workflow.js"
+            workflow.write_text("// synthetic workflow\n")
+            output = root / "results"
+
+            def launch(*_, score, **__):
+                self.assertNotEqual(score, source)
+                self.assertTrue(score.is_relative_to(output.resolve()))
+                score.write_text("// edited copy\n")
+                (score.parent / part.name).write_text("// edited arrangement copy\n")
+                return {"startup": {"frontend": {"ok": True}}}
+
+            with patch("sys.argv", ["smoke.py", "--app", str(root / "Test.app"), "--output", str(output), "--mode", "normal", "--project-fixture", str(source), "--workflow", str(workflow)]), \
+                    patch.object(smoke, "isolated_app", return_value=contextlib.nullcontext(binary)), \
+                    patch.object(smoke, "check_launch", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                smoke.main()
+            self.assertEqual(source.read_text(), "// entry\n")
+            self.assertEqual(part.read_text(), "// arrangement\n")
+
 
 if __name__ == "__main__":
     unittest.main()
