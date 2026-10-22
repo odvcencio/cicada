@@ -15,6 +15,7 @@ import (
 
 type scoreInspection struct {
 	source      []byte
+	sources     *project.Sources
 	score       *notation.Score
 	semantic    *project.Project
 	diagnostics []notation.Diagnostic
@@ -66,7 +67,7 @@ func inspectScore(path string) (scoreInspection, error) {
 		}
 		return a.Code < b.Code
 	})
-	return scoreInspection{source: source, score: score, semantic: semantic, diagnostics: diagnostics}, nil
+	return scoreInspection{source: source, sources: sources, score: score, semantic: semantic, diagnostics: diagnostics}, nil
 }
 
 func checkCommand(args []string, stdout, stderr io.Writer) error {

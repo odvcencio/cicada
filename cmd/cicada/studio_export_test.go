@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
 
@@ -40,6 +42,116 @@ func TestStudioExportRejectsStaleScoreSnapshot(t *testing.T) {
 	response := studioExportCall(t, handler, request, "http://127.0.0.1:1234")
 	if response.Code != 409 || !strings.Contains(response.Body.String(), "score changed") {
 		t.Fatalf("stale render accepted: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestStudioExportStatusComparesCapturedAndSavedVersions(t *testing.T) {
+	for _, name := range []string{"single file", "secondary score file", "library source"} {
+		t.Run(name, func(t *testing.T) {
+			var path string
+			if name == "secondary score file" {
+				path = copyStudioProject(t)
+			} else {
+				_, path = studioTestHandler(t)
+			}
+			changedPath := path
+			if name == "secondary score file" {
+				changedPath = filepath.Join(filepath.Dir(path), "parts/patterns.cicada")
+			}
+			if name == "library source" {
+				t.Setenv("CICADA_LIBRARY", t.TempDir())
+				library := filepath.Join(filepath.Dir(path), "lib/demo/tone")
+				if err := project.NewLibrary("demo/tone", library); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("cicada 2\nimport \"demo/tone\"\n"+studioScore), 0600); err != nil {
+					t.Fatal(err)
+				}
+				sources, err := project.ReadSources(path, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pins, _, err := sources.UpdateLibraries("")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(filepath.Dir(path), "cicada.sum"), pins, 0600); err != nil {
+					t.Fatal(err)
+				}
+				changedPath = filepath.Join(library, "main.cicada")
+			}
+			s, err := newStudio(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.transport.close()
+			source, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original := studioRevision(source)
+			before, err := os.ReadFile(changedPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			started, release := make(chan struct{}), make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			defer unblock()
+			s.exports.render = func(*notation.Score, string, render.Options, renderTargetOptions, func(int)) (loudnessFileReport, error) {
+				close(started)
+				<-release
+				return loudnessFileReport{Passes: 1}, nil
+			}
+			handler := s.routes()
+			read := func() studioExportStatus {
+				t.Helper()
+				response := studioCall(t, handler, "/api/export", nil)
+				var status studioExportStatus
+				if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &status) != nil {
+					t.Fatalf("export status: %d %s", response.Code, response.Body.String())
+				}
+				return status
+			}
+			request := studioExportRequest{Revision: original, TargetLUFS: -16, TruePeakMax: -1, Tolerance: 1, Rate: 48000, Bits: 24}
+			response := studioExportCall(t, handler, request, "http://127.0.0.1:1234")
+			var accepted studioExportStatus
+			if response.Code != http.StatusAccepted || json.Unmarshal(response.Body.Bytes(), &accepted) != nil || accepted.Revision != original || accepted.SourceRevision == "" || accepted.CurrentSourceRevision != accepted.SourceRevision {
+				t.Fatalf("accepted version: %d %s", response.Code, response.Body.String())
+			}
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("render did not start")
+			}
+			changed := append(append([]byte(nil), before...), []byte("\n// saved during render\n")...)
+			if err := os.WriteFile(changedPath, changed, 0600); err != nil {
+				t.Fatal(err)
+			}
+			status := read()
+			editedRevision := status.CurrentSourceRevision
+			if status.Revision != original || status.SourceRevision != accepted.SourceRevision || editedRevision == "" || editedRevision == accepted.SourceRevision || status.State != "rendering" {
+				t.Fatalf("editing changed the captured render version or went unnoticed: %+v", status)
+			}
+			unblock()
+			status = waitStudioExport(t, handler, "succeeded")
+			if status.SourceRevision != accepted.SourceRevision || status.CurrentSourceRevision != editedRevision {
+				t.Fatalf("completion lost the saved-version comparison: %+v", status)
+			}
+			if err := os.Remove(changedPath); err != nil {
+				t.Fatal(err)
+			}
+			status = read()
+			if status.State != "succeeded" || status.SourceRevision != accepted.SourceRevision || status.CurrentSourceRevision != "" {
+				t.Fatalf("unavailable score hid the render or claimed a match: %+v", status)
+			}
+			if err := os.WriteFile(changedPath, before, 0600); err != nil {
+				t.Fatal(err)
+			}
+			status = read()
+			if status.SourceRevision != accepted.SourceRevision || status.CurrentSourceRevision != accepted.SourceRevision {
+				t.Fatalf("restoring the saved score did not restore the match: %+v", status)
+			}
+		})
 	}
 }
 
