@@ -17,6 +17,7 @@
     const method = args[1]?.method || request?.method || 'GET';
     const pathname = new URL(typeof request === 'string' ? request : request.url, location.href).pathname;
     const checkpoint = method.toUpperCase() === 'POST' && ['/__actions/source-checkpoint', '/__actions/note-checkpoint'].includes(pathname);
+    let recovery;
     if (checkpoint) {
       const headers = new Headers(args[1]?.headers || request?.headers);
       const body = args[1]?.body;
@@ -24,13 +25,15 @@
       const csrf = document.querySelector('input[name=csrf_token]')?.value;
       if (!csrf || headers.get('X-CSRF-Token') !== csrf || !Number.isSafeInteger(Number(fields.recoverySequence || fields.sequence)) || Number(fields.recoverySequence || fields.sequence) <= 0)
         throw new Error('Recovery checkpoint lost its CSRF or sequence');
-      checkpoints.push(pathname);
+      recovery = {pathname, content: fields.content, id: fields.recoveryId};
+      checkpoints.push(recovery);
     }
     if (!checkpoint && method.toUpperCase() === 'POST' && pathname.startsWith('/__actions/')) posts.push(pathname);
     if (!checkpoint && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
       (pathname.startsWith('/__actions/') || pathname.startsWith('/api/'))) mutations.push(pathname);
     if (method.toUpperCase() === 'GET' && ['/studio', '/__workspace'].includes(pathname)) navigations.push(pathname);
-    return fetchOriginal.apply(this, args);
+    const pending = fetchOriginal.apply(this, args);
+    return checkpoint ? pending.then(response => { recovery.status = response.status; return response; }) : pending;
   };
   document.addEventListener('submit', event => {
     const form = event.target;
@@ -241,6 +244,10 @@ arrange {
       document.querySelector('#view-tab-' + view).click();
       await wait(() => !document.querySelector('#view-panel-' + view).hidden, view + ' before Arrange pane links');
     }
+    // Recovery publishes its receipt in the URL after the copy reaches disk.
+    // Establish that baseline before attributing URL changes to pane links.
+    await wait(() => checkpoints.some(copy => copy.content === linkDraft && copy.status === 200 &&
+      copy.id === new URL(location.href).searchParams.get('codeDraft')), 'Arrange draft recovery receipt');
     const linkBefore = await state();
     const linkQuery = location.search;
     const linkPosts = posts.length, linkNavigations = navigations.length, linkMutations = mutations.length;

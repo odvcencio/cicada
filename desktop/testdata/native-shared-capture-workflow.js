@@ -143,7 +143,7 @@
     },'durable shared-tail checkpoint');
     const take = checkpoint.takes[0];
     if (liveFailures.length || liveMessages.filter(message => message.type === 'note-group').some(message => !message.groupId)) throw new Error('Live shared command failed: '+JSON.stringify({liveFailures,liveMessages}));
-    if (checkpoint.version !== (channelCapture ? 3 : 2)) throw new Error('Shared controls were stored in a checkpoint format older apps can misread');
+    if (checkpoint.version !== 4 || !/^[a-f0-9]{64}$/.test(checkpoint.sourceRevision) || checkpoint.sourceRevision !== document.querySelector('#undo-form input[name=source_revision]')?.value) throw new Error('Shared checkpoint lost its source-aware version or project receipt');
     if (channelCapture && take.groups.some(group => group.kind !== 'channel' || group.channel !== 2)) throw new Error('Ordinary channel metadata was lost');
     if (take.pattern !== 'phrase' || take.notes.length !== 3 || take.groups.length !== 2 || take.notes[0].group !== 1 || take.notes[1].group !== 1 || take.notes[2].group !== 2 || take.groups[0].id === take.groups[1].id) throw new Error('Input reconnect mixed shared lanes or destinations: '+JSON.stringify(take));
     if (take.notes[0].endTick !== 4500 || take.notes[1].endTick !== 4500 || take.notes[0].expressions[0].pressure !== 32/127 || take.notes[0].expressions.length !== 2 || take.groups[0].points.at(-1).tick !== 4600 || take.groups[1].points.at(-1).tick !== 8000) throw new Error('Shared capture lost local pressure, frozen sustain state, gates, or released master controls: '+JSON.stringify(take));

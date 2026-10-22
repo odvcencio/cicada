@@ -106,7 +106,7 @@ async function scenario(t) {
   const {context} = await sharedBrowser();
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
-  const errors = [], warnings = [], requests = [], liveReleases = [], checkpoints = [];
+  const errors = [], warnings = [], requests = [], liveHeartbeats = [], liveReleases = [], checkpoints = [];
   const csrfTokens = new Set();
   let armed = false, documentRequests = 0, inFlight = 0, maxInFlight = 0;
   let injectStale = false, delayNextPattern = false, staleRevision = '';
@@ -253,7 +253,9 @@ async function scenario(t) {
       assert.equal(Object.hasOwn(payload, 'undefined'), false, 'empty submitter name was corrupted during projection');
       if (payload.action === 'step' && payload.pattern === 'continuity') assert.equal(payload.lane, '', 'note inspector acquired a phantom drum lane');
       const record = {action, payload, delivered: false};
-      requests.push(record);
+      // Lease renewals run independently of the user gesture being awaited.
+      // Keep checking them without shifting the foreground action sequence.
+      (action === 'live' && payload.type === 'heartbeat' ? liveHeartbeats : requests).push(record);
       if (!engineOwned) maxInFlight = Math.max(maxInFlight, ++inFlight);
       if (injectStale && action === 'pattern') { payload.revision = staleRevision; injectStale = false; }
       try {
@@ -536,6 +538,7 @@ async function scenario(t) {
     assert.equal(liveInput(held).on, 'true');
     assert.ok(held.payload.lease.length >= 8);
     assert.equal(await page.locator('[data-live-note="50"]').getAttribute('aria-pressed'), 'true', 'held note feedback was not immediate');
+    await until(() => liveHeartbeats.some(record => record.delivered && record.payload.lease === held.payload.lease), 'held Live note did not renew its lease');
     start = requests.length;
     await page.locator('form[action="/__actions/launch"] thead button').filter({hasText: /^alternate$/}).evaluate(button => button.click());
     await waitRequests(start + 1);
@@ -601,8 +604,11 @@ async function scenario(t) {
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: false})));
     await until(() => liveReleases.slice(beforeLiveRelease).some(release => release.lease === held.payload.lease), 'Live pagehide listener did not release its active lease');
     const departedLive = liveReleases.slice(beforeLiveRelease).find(release => release.lease === held.payload.lease);
-    const lastLiveCommand = requests.filter(request => request.action === 'live' && request.payload.lease === held.payload.lease).at(-1);
+    const lastLiveCommand = [...requests, ...liveHeartbeats].filter(request => request.action === 'live' && request.payload.lease === held.payload.lease)
+      .sort((a, b) => Number(a.payload.sequence) - Number(b.payload.sequence)).at(-1);
     assert.ok(departedLive.sequence > Number(lastLiveCommand.payload.sequence), 'pagehide release must advance its Live sequence');
+    await until(() => liveHeartbeats.every(record => record.delivered), 'Live lease renewals did not settle');
+    for (const heartbeat of liveHeartbeats) assert.equal(heartbeat.status, 200, 'Live lease renewal failed');
     t.diagnostic('The Live pagehide listener sent the exact form-encoded lease release before navigation; JSON score-action guards remain active.');
     await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
     await ready();
@@ -709,7 +715,8 @@ async function scenario(t) {
         chance: document.querySelector('#step-inspector input[name="chance"]')?.value,
       }));
       t.diagnostic(`failure view ${JSON.stringify(view)}`);
-      requests.forEach((record, index) => t.diagnostic(`action ${index} ${record.action} status=${record.status} step=${record.payload.step ?? ''} mode=${record.payload.mode ?? ''} chance=${record.payload.chance ?? ''}`));
+      requests.forEach((record, index) => t.diagnostic(`action ${index} ${record.action} status=${record.status} type=${record.payload.type ?? ''} step=${record.payload.step ?? ''} mode=${record.payload.mode ?? ''} chance=${record.payload.chance ?? ''}`));
+      liveHeartbeats.forEach(record => t.diagnostic(`Live heartbeat status=${record.status} sequence=${record.payload.sequence}`));
       timeline.forEach(entry => t.diagnostic(`${String(entry.at).padStart(6)} ms ${entry.text}`));
     } catch (_) { /* The original assertion remains the failure. */ }
     throw error;
