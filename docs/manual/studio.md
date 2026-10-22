@@ -483,6 +483,15 @@ step-grid commits continue to check for collisions before writing.
 
 ## Score and history
 
+The local Studio profile keeps private Code recovery copies while you type.
+Wait for **Recovery copy kept on this device** before closing or switching
+projects. This keeps a draft; **Save file** applies it to the song. Playback and
+exports continue to use saved music. A restart restores the most recent copy
+for each file, including unfinished syntax. **Other recovery copies** opens
+versions kept by another window. Saving or discarding the selected copy does
+not erase a different window's changes. If the saved file changed, review the
+current file before choosing **Save combined draft**.
+
 The **Code** lens opens a score editor with live syntax highlighting, a gutter,
 and two-space indentation. **Tab** indents and **Shift-Tab** unindents the current
 line or selected lines. **Enter** carries indentation into the new line and

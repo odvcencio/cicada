@@ -81,7 +81,9 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 			session.Current(ctx.Request).Delete("vocal-audition")
 		}
 		if path == "/api/source" || path == "/api/files" {
-			s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
+			if err := s.clearSourceDraft(ctx.Request, ctx.FormData["file"], ctx.FormData); err != nil {
+				return action.Error(503, "The file was saved, but its recovery copy could not be retired. The copy is retained: "+err.Error())
+			}
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}
 		ctx.FormData = nil
@@ -140,7 +142,9 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 	// and JSON callers. Do not decode again after choosing the merge revision.
 	ctx.Payload = nil
 	if ctx.FormData["intent"] == "discard" {
-		s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
+		if err := s.clearSourceDraft(ctx.Request, ctx.FormData["file"], ctx.FormData); err != nil {
+			return action.Error(503, "The recovery copy could not be discarded. It is retained: "+err.Error())
+		}
 		ctx.FormData = nil
 		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/?panel=code"), "Draft discarded. The file is unchanged.")
 		return nil
@@ -192,6 +196,7 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"source-checkpoint":     s.checkpointSource,
 		"transcribe":            s.transcribeMelody,
 		"transcription-apply":   s.applyTranscription,
 		"transcription-discard": s.discardTranscription,

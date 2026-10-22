@@ -150,6 +150,11 @@ test-studio-export-sources:
 test-studio-portable-song:
 	node --test workstation/browser/portable-song.test.cjs
 
+.PHONY: test-studio-code-recovery
+# Requires a disposable studio-project copy; restart it for each recovery phase.
+test-studio-code-recovery:
+	node --test workstation/browser/code-recovery.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

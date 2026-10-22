@@ -153,6 +153,9 @@ type workspace struct {
 	DiskSource      string           `json:"-"`
 	DiskRevision    string           `json:"-"`
 	HasDraft        bool             `json:"-"`
+	SourceDraft     draft            `json:"-"`
+	SourceCopies    []savedSource    `json:"-"`
+	RecoveryError   string           `json:"-"`
 	Edition         int              `json:"-"`
 	Source          string           `json:"source"`
 	Revision        string           `json:"revision"`

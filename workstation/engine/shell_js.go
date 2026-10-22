@@ -23,13 +23,21 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("Studio shell is missing")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	var recoveryProps workspaceProps
+	if err := host.DecodeProps(&recoveryProps); err != nil {
+		cancel()
+		return nil, err
+	}
+	releaseSourceRecovery := bindSourceRecovery(ctx, root, recoveryProps.CSRF)
 	releaseNavigation, err := bindShellNavigation(host, root)
 	if err != nil {
+		releaseSourceRecovery()
 		cancel()
 		return nil, err
 	}
 	releaseLayoutFit, err := bindShellLayoutFit(host, root)
 	if err != nil {
+		releaseSourceRecovery()
 		releaseNavigation()
 		cancel()
 		return nil, err
@@ -115,6 +123,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	releaseCapture := capturePublisher.acquire()
 	return enginewasm.HandleFunc(func() {
 		cancel()
+		releaseSourceRecovery()
 		releaseNavigation()
 		releaseLayoutFit()
 		releasePlacementCommands()

@@ -84,17 +84,19 @@ def descendants(pid):
         found |= children
 
 
-def check_launch(binary, output, mode, workflow, timeout=60):
+def check_launch(binary, output, mode, workflow, timeout=60, score=None, state=None):
     folder = Path(tempfile.mkdtemp(prefix=mode + "-", dir=output))
-    score = folder / "main.cicada"
-    score.write_text(
-        'title "Desktop CI"\ntempo 96\nkey c minor\n'
-        "track bass acid { level = -24dB }\n"
-        "pattern pulse { 1 . 5 . }\nscene main { bass = pulse }\nsong { main*4 }\n"
-    )
+    if score is None:
+        score = folder / "main.cicada"
+        score.write_text(
+            'title "Desktop CI"\ntempo 96\nkey c minor\n'
+            "track bass acid { level = -24dB }\n"
+            "pattern pulse { 1 . 5 . }\nscene main { bass = pulse }\nsong { main*4 }\n"
+        )
     report = folder / "startup.json"
+    data_dir = (state or folder) / "data"
     args = [
-        str(binary), "--audio", "null", "--data-dir", str(folder / "data"),
+        str(binary), "--audio", "null", "--data-dir", str(data_dir),
         "--smoke-out", str(report), "--smoke-timeout", f"{timeout}s", "--smoke-hold", "5s" if mode == "normal" else "60s",
     ]
     if mode == "midi-term":
@@ -111,7 +113,8 @@ def check_launch(binary, output, mode, workflow, timeout=60):
         args += ["--cicada", str(helper)]
     args.append(str(score))
     env = os.environ.copy()
-    env["CICADA_STATE_DIR"] = str(folder / "state")
+    env["CICADA_STATE_DIR"] = str(state or folder / "state")
+    env["CICADA_AUDIO_SETTINGS_DIR"] = str((state or folder) / "audio-settings")
     seen = set()
     with (folder / "stderr.log").open("w") as stderr:
         proc = subprocess.Popen(args, stdout=stderr, stderr=stderr, env=env)
@@ -121,7 +124,7 @@ def check_launch(binary, output, mode, workflow, timeout=60):
         try:
             while proc.poll() is None and time.monotonic() < deadline:
                 seen |= descendants(proc.pid)
-                log = folder / "data/logs/studio.log"
+                log = data_dir / "logs/studio.log"
                 text = log.read_text() if log.exists() else ""
                 match = re.search(r"^Cicada Studio: (http://127\.0\.0\.1:\d+/)(?:__local/[A-Za-z0-9_-]{20,128})?\s*$", text, re.MULTILINE)
                 helper_pid = marker.read_text().strip() if marker.exists() else ""
@@ -176,7 +179,7 @@ def check_launch(binary, output, mode, workflow, timeout=60):
                 raise RuntimeError(f"native workflow failed: {startup.get('frontend')}; see {folder}")
             return {
                 "mode": mode, "pids": sorted(seen), "startup": startup,
-                "artifacts": str(folder), "stateDir": env["CICADA_STATE_DIR"],
+                "artifacts": str(folder), "stateDir": env["CICADA_STATE_DIR"], "dataDir": str(data_dir),
             }
         finally:
             if proc.poll() is None:
@@ -199,7 +202,7 @@ def main():
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workflow", type=Path, default=Path(__file__).parent / "testdata/native-workflow.js")
-    parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int", "midi-term"], default="all")
+    parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int", "midi-term", "code-recovery"], default="all")
     parser.add_argument("--timeout", type=int, default=60, help="total workflow timeout in seconds (default: 60)")
     args = parser.parse_args()
     if args.timeout <= 0:
@@ -215,6 +218,22 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     results = []
     with isolated_app(app, output) as binary:
+        if args.mode == "code-recovery":
+            # One disposable score and private profile across three app exits.
+            folder = Path(tempfile.mkdtemp(prefix="recovery-", dir=output))
+            shutil.copytree(Path(__file__).resolve().parent.parent / "examples/studio-project", folder / "project")
+            workflow = Path(__file__).resolve().parent / "testdata/native-code-recovery-workflow.js"
+            for phase in ["capture", "recover", "verify"]:
+                result = check_launch(binary, output, "normal", workflow, args.timeout,
+                                      score=folder / "project/main.cicada", state=folder / "state")
+                checks = result["startup"]["frontend"].get("checks", [])
+                if not checks or not all(check.startswith(phase + ": ") for check in checks):
+                    raise RuntimeError(f"native recovery skipped {phase}: {result}")
+                result["phase"] = phase
+                results.append(result)
+                (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")
+                print(f"code-recovery {phase}: passed", flush=True)
+            return
         modes = ["normal", "term", "int", "early-term", "early-int", "midi-term"] if args.mode == "all" else [args.mode]
         for mode in modes:
             result = check_launch(binary, output, mode, workflow, args.timeout)

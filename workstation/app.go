@@ -282,9 +282,18 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 		}
 	}
 	if panel == "code" {
-		if saved, ok := s.sourceDraft(ctx.Request, view.File); ok {
+		saved, copies, err := s.sourceDraft(ctx.Request, view.File)
+		view.SourceCopies = copies
+		if err != nil {
+			view.RecoveryError = "Code recovery could not be read. Its files are retained: " + err.Error()
+		}
+		if saved.Kind == "source" {
+			if saved.RecoveryError != "" {
+				view.RecoveryError = "A recovery copy could not be kept on disk. Keep this window open: " + saved.RecoveryError
+			}
 			view.Source, view.FileRevision = saved.Source, saved.Revision
 			view.HasDraft = true
+			view.SourceDraft = saved
 			if !props.HasMessage {
 				props.Message, props.HasMessage = "Unsaved score draft restored. Check or save it to continue.", true
 			}

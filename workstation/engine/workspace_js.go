@@ -83,6 +83,7 @@ type workspaceUI struct {
 	scrolls     []workspaceScroll
 	editors     map[string]workspaceEditorBaseline
 	placements  *placementEditorUI
+	sources     map[string]*sourceRecovery
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -175,6 +176,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "click", u.click)
 	u.listen(document, "dblclick", u.doubleClick)
 	u.listen(document, "keydown", u.keyDown)
+	u.listen(document, "input", u.sourceInput)
 	u.placements = &placementEditorUI{
 		owned:   u.owned,
 		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
@@ -206,6 +208,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	confirmedWorkspaceRevision.Set(props.Revision)
 	go u.run()
 	go u.watchFiles()
+	go u.checkpointSources()
 	releasePlacementView := placementViewPublisher.acquire()
 	releaseAudio := audioPublisher.acquire()
 	busy := func() bool { return u.busy.Load() }
@@ -440,6 +443,15 @@ func (u *workspaceUI) click(event js.Value) {
 	current, _ := url.Parse(workspaceLocation())
 	if !safe || parsed.Path != current.Path || parsed.RawQuery == current.RawQuery || parsed.Query().Get("panel") != current.Query().Get("panel") {
 		return
+	}
+	// A retained local buffer must return with its own receipt, even when
+	// another window has checkpointed the same file more recently.
+	query := parsed.Query()
+	if query.Get("panel") == "code" && query.Get("codeDraft") == "" {
+		if copy := u.sources[query.Get("file")]; copy != nil && !copy.clean {
+			query.Set("codeDraft", copy.id)
+			parsed.RawQuery = query.Encode()
+		}
 	}
 	event.Call("preventDefault")
 	event.Call("stopImmediatePropagation")
@@ -1172,7 +1184,7 @@ func workspaceHTMLIdentity(node *html.Node) string {
 				}
 			}
 		})
-		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "takeId", "timeline"} {
+		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "takeId", "timeline", "file"} {
 			if value, exists := fields[name]; exists {
 				key += "/" + name + ":" + value
 			}
@@ -1815,7 +1827,7 @@ func workspaceIdentity(node js.Value) string {
 		// A step inspector is a different semantic form when its hidden step,
 		// lane or pattern changes, even when its visual container keeps an ID.
 		key += "/form:" + workspaceAttr(node, "action")
-		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad"} {
+		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "file"} {
 			field := node.Call("querySelector", "input[type=hidden][name="+name+"]")
 			if workspacePresent(field) {
 				key += "/" + name + ":" + workspaceString(field, "value")

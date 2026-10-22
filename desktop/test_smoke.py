@@ -31,7 +31,7 @@ class HostProcess:
         self.terminated = False
         budget = int(args[args.index("--smoke-timeout") + 1].removesuffix("s"))
         data = Path(args[args.index("--data-dir") + 1]) / "logs"
-        data.mkdir(parents=True)
+        data.mkdir(parents=True, exist_ok=True)
         (data / "studio.log").write_text("Cicada Studio: http://127.0.0.1:12345/\n")
         report = Path(args[args.index("--smoke-out") + 1])
         report.write_text(json.dumps({"studioLoadedMs": 1, "frontend": {"ok": True}, "timeoutSeconds": budget}))
@@ -93,6 +93,19 @@ class SmokeTimeoutTests(unittest.TestCase):
                 self.assertTrue(process.terminated)
                 self.assertGreaterEqual(clock.now, seconds + 10)
                 self.assertLess(clock.now, seconds + 12)
+
+    def test_recovery_launches_share_the_score_and_private_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            score = folder / "draft.cicada"
+            score.write_text("// unchanged disposable score\n")
+            state = folder / "private-state"
+            for _ in range(2):
+                result, process, _ = self.run_host(folder, score=score, state=state)
+                self.assertEqual(process.args[-1], str(score))
+                self.assertEqual(result["stateDir"], str(state))
+                self.assertEqual(process.args[process.args.index("--data-dir") + 1], str(state / "data"))
+                self.assertEqual(score.read_text(), "// unchanged disposable score\n")
 
     def test_nonpositive_timeout_is_rejected_before_creating_state(self):
         with tempfile.TemporaryDirectory() as temp:

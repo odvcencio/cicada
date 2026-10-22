@@ -169,6 +169,14 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 	status := capture.status
 	if result.OK {
 		location := fields["__cicada_location"]
+		if name == "source" && validNoteID(fields["recoveryId"]) {
+			if target, err := url.Parse(location); err == nil {
+				query := target.Query()
+				query.Set("codeDraft", fields["recoveryId"])
+				target.RawQuery = query.Encode()
+				location = target.String()
+			}
+		}
 		// Pattern commands may intentionally open a new grid or select another step or variation.
 		// Generic form return targets must not erase the current deep selection.
 		if name == "audio" && fields["__gosx_return_to"] != "" {

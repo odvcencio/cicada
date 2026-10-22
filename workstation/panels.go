@@ -62,6 +62,9 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		fileRevision = v.Revision
 	}
 	returnTo := "/?panel=code&file=" + url.QueryEscape(v.File)
+	if v.SourceDraft.ID != "" {
+		returnTo += "&codeDraft=" + url.QueryEscape(v.SourceDraft.ID)
+	}
 	var fileLinks []gosx.Node
 	var diagnostics []gosx.Node
 	for _, file := range v.Files {
@@ -78,7 +81,18 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	}
 	if v.HasDraft {
 		buttons = append(buttons, editor.FormButton{Name: "intent", Value: "discard", Label: "Discard draft"})
-		recovery = gosx.El("p", gosx.Attrs(gosx.Attr("class", "source-draft-note"), gosx.Attr("role", "status")), gosx.Text("Recovered draft. Not saved to disk."))
+		recovery = gosx.El("p", gosx.Attrs(gosx.Attr("class", "source-draft-note"), gosx.Attr("role", "status")), gosx.Text("Recovered draft. The score file is unchanged."))
+	}
+	var copies gosx.Node = gosx.Fragment()
+	if len(v.SourceCopies) > 1 || len(v.SourceCopies) == 1 && v.SourceCopies[0].ID != v.SourceDraft.ID {
+		var links []gosx.Node
+		for _, copy := range v.SourceCopies {
+			if copy.ID != v.SourceDraft.ID {
+				link := "/?panel=code&file=" + url.QueryEscape(v.File) + "&codeDraft=" + url.QueryEscape(copy.ID)
+				links = append(links, gosx.El("li", gosx.El("a", gosx.Attrs(gosx.Attr("href", link)), gosx.Text(copy.Updated.Local().Format("Jan 2, 15:04:05")))))
+			}
+		}
+		copies = gosx.El("details", gosx.El("summary", gosx.Text("Other recovery copies")), gosx.El("p", gosx.Text("Another window or an earlier draft may contain different changes. Open a copy to review it before saving.")), gosx.El("ul", gosx.Fragment(links...)))
 	}
 	var highlights []editor.HighlightSpan
 	if spans, err := language.Highlight([]byte(v.Source)); err == nil {
@@ -95,13 +109,17 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	e := editor.New(id, editor.Options{
 		Surface: editor.SurfaceCode, Content: v.Source, Title: v.Filename, Label: "Cicada score", Language: editor.Lang("cicada"), Theme: editor.ThemeDark,
 		FormAction: "/__actions/source", CSRFToken: csrf,
-		ExtraFields:      map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo},
+		ExtraFields:      map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo, "recoveryId": v.SourceDraft.ID, "recoverySequence": strconv.FormatUint(v.SourceDraft.Sequence, 10), "recoveryParentId": v.SourceDraft.ParentID, "recoveryParentHash": v.SourceDraft.ParentHash, "recoveryHash": sourceFingerprint(v.SourceDraft.Source)},
 		Code:             &editor.CodeOptions{Language: "cicada", TabWidth: 2, InsertSpaces: true, Gutter: true, Highlights: highlights, Unsaved: v.HasDraft},
 		CodeIntelligence: &editor.CodeIntelligence{Language: "cicada", ServerURL: "/__code/analysis"},
 		Buttons:          buttons,
 		Panels:           []editor.Panel{},
 	})
-	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Check or save your score."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, recovery, e.Render())
+	status := gosx.Fragment()
+	if s.notes != nil {
+		status = gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-source-recovery-status"), gosx.Attr("role", "status"), gosx.Attr("class", "muted")), gosx.Text("Code edits can be kept as private recovery copies. Use Save file to apply them to the song."))
+	}
+	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Check or save your score."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, recovery, copies, gosx.El("p", gosx.Attrs(gosx.Attr("role", "status"), gosx.Attr("class", "error")), gosx.Text(v.RecoveryError)), status, e.Render())
 }
 
 // Map parser byte positions to the editor's UTF-16 positions in one pass.
