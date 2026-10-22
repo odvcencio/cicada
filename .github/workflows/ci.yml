@@ -473,6 +473,39 @@ jobs:
             fi
           done
           unset CICADA_ARRANGEMENT_REOPEN
+          for print_layout in primary secondary; do
+            print_args=()
+            if [[ "$print_layout" == primary ]]; then print_args+=(--primary-arrangement); fi
+            go -C workstation run ./browser/testdata/print-sources "${print_args[@]}" > "build/studio-print-$print_layout-fixture.json"
+            export CICADA_PRINT_FIXTURE="$PWD/build/studio-print-$print_layout-fixture.json"
+            export CICADA_PRODUCER_SCORE="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_PRINT_FIXTURE")"
+            export CICADA_PRODUCER_STORAGE="$(dirname "$CICADA_PRODUCER_SCORE")/session.json"
+            export CICADA_PRINT_PROOF_DIR="$PWD/build/studio-print-$print_layout-proof/roundtrip"
+            export CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-print-$print_layout-proof/sampler"
+            export CICADA_PRODUCER_PROOF_DIR="$PWD/build/studio-print-$print_layout-proof/producer"
+            if [[ "$print_layout" == secondary ]]; then
+              export CICADA_SAMPLER_ARRANGEMENT_SOURCE="$(node -e 'process.stdout.write(require(process.argv[1]).arrangement)' "$CICADA_PRINT_FIXTURE")"
+              export CICADA_PRODUCER_ARRANGEMENT_SOURCE="$CICADA_SAMPLER_ARRANGEMENT_SOURCE"
+            fi
+            for print_phase in sampler producer roundtrip reopen; do
+              kill "$studio_pid"
+              wait "$studio_pid" || true
+              ./build/cicada studio "$CICADA_PRODUCER_SCORE" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-print-$print_layout-$print_phase-server.log" 2>&1 &
+              studio_pid=$!
+              for _ in $(seq 1 100); do
+                if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+                kill -0 "$studio_pid"
+                sleep 0.1
+              done
+              export CICADA_PRODUCER_URL="$CICADA_STUDIO_URL" CICADA_PRINT_REOPEN=0
+              print_test="$print_phase"
+              if [[ "$print_phase" == producer ]]; then print_test=producer-workflow; fi
+              if [[ "$print_phase" == roundtrip || "$print_phase" == reopen ]]; then print_test=print-roundtrip; fi
+              if [[ "$print_phase" == reopen ]]; then export CICADA_PRINT_REOPEN=1; fi
+              node --test "workstation/browser/$print_test.test.cjs" | tee "build/studio-print-$print_layout-$print_phase-report.txt"
+            done
+            unset CICADA_SAMPLER_ARRANGEMENT_SOURCE CICADA_PRODUCER_ARRANGEMENT_SOURCE CICADA_PRINT_REOPEN
+          done
           for editor_mode in buffer project; do
             kill "$studio_pid"
             wait "$studio_pid" || true
@@ -542,6 +575,13 @@ jobs:
             build/studio-autoscroll-proof/
             build/studio-placement-commands-report.txt
             build/studio-placement-commands-server.log
+            build/studio-arrangement-sources-*-report.txt
+            build/studio-arrangement-sources-*-server.log
+            build/studio-arrangement-sources-proof/
+            build/studio-print-*-report.txt
+            build/studio-print-*-server.log
+            build/studio-print-*-fixture.json
+            build/studio-print-*-proof/
             build/studio-editor-*-report.txt
             build/studio-editor-*-server.log
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -638,6 +678,9 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/portable --mode normal --timeout 120 --portable-fixture build/native-portable-fixture.json
           node workstation/browser/arrangement-sources.test.cjs --write-fixture build/native-arrangement-sources > build/native-arrangement-sources-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/arrangement-sources --mode normal --timeout 120 --project-fixture build/native-arrangement-sources/main.cicada --workflow desktop/testdata/native-arrangement-sources-workflow.js
+          go -C workstation run ./browser/testdata/print-sources --sampler-bank > build/native-print-sources-fixture.json
+          print_score="$(node -e 'process.stdout.write(require("./build/native-print-sources-fixture.json").score)')"
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/print-sources --mode normal --timeout 180 --project-fixture "$print_score" --workflow desktop/testdata/native-print-sources-workflow.js
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Save macOS validation reports
         if: always()

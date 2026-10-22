@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/cicada/kernel/seq"
 
@@ -89,9 +90,39 @@ func editAutomationPoint(ctx *Context, intent Intent) error {
 // declarations keep their bytes. It ports curvePointSource.
 func automationPointSource(ctx *Context, path string, point automationPoint, remove bool) ([]byte, error) {
 	source, file := ctx.Source, ctx.Options.Path
-	score, ds := ctx.Parse()
+	score, ds, err := ctx.ParseProject()
+	if err != nil {
+		return nil, err
+	}
 	if score == nil || hasErrors(ds) {
 		return nil, fmt.Errorf("score must validate before editing automation")
+	}
+	// Full-project validation must not turn an edit into a second lane for a
+	// declaration or automation block owned by another source.
+	owner, ownerLength := notation.Position{}, 0
+	consider := func(name string, position notation.Position) {
+		if len(name) > ownerLength && strings.HasPrefix(path, name+".") {
+			owner, ownerLength = position, len(name)
+		}
+	}
+	for _, track := range score.Tracks {
+		consider(track.Name, track.Position)
+	}
+	for _, effect := range score.Effects {
+		consider(effect.Name, effect.Position)
+	}
+	for _, bus := range score.Buses {
+		consider(bus.Name, bus.Position)
+	}
+	if _, err := Offset(source, file, owner); err != nil {
+		return nil, err
+	}
+	for _, lane := range score.Automation {
+		if lane.Path == path {
+			if _, err := Offset(source, file, lane.Position); err != nil {
+				return nil, err
+			}
+		}
 	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil || plan == nil || plan.ResolveParam == nil {

@@ -81,3 +81,26 @@ func (s *studio) pendingTakeFiles(t takejournal.Take) ([]edits.File, error) {
 	}
 	return files, nil
 }
+
+// A crash can publish the entry's comp declarations before its placement.
+// If that placement was then edited elsewhere, restore only our own entry
+// write, and only when its verified predecessor fits the current project.
+// The external source and the journal's prepared candidate remain untouched.
+func (s *studio) restoreConflictedTakeEntry(t takejournal.Take, current []byte) error {
+	if len(t.Files) == 0 || t.Before == t.After || studioRevision(current) != t.After {
+		return nil
+	}
+	before, found, err := studioRecoverySource(s.path, t.Before)
+	if err != nil || !found {
+		return err
+	}
+	if _, err := compileStudioSource(s.path, before); err != nil {
+		return nil
+	}
+	info, err := os.Stat(s.path)
+	if err != nil {
+		return err
+	}
+	_, _, err = studioWriteIfRevision(s.path, before, info.Mode().Perm(), t.After, nil)
+	return err
+}

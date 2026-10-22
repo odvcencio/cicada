@@ -24,10 +24,12 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const proof = process.env.CICADA_PRODUCER_PROOF_DIR;
   assert.ok(base && new URL(base).hostname === '127.0.0.1');
   assert.ok(score && path.isAbsolute(score) && score.startsWith('/tmp/'), 'only a disposable /tmp score may be edited');
-  const initialSource = fs.readFileSync(score, 'utf8');
+  const arrangementSource = process.env.CICADA_PRODUCER_ARRANGEMENT_SOURCE;
+  const currentSource = () => fs.readFileSync(score, 'utf8') + (arrangementSource ? '\n' + fs.readFileSync(arrangementSource, 'utf8') : '');
+  const initialSource = currentSource();
   assert.ok(initialSource.includes('// cicada-vocal-test: disposable fixture'));
   const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox', '--mute-audio'] });
   const storage = process.env.CICADA_PRODUCER_STORAGE || '/tmp/cicada-pro2-browser-session.json';
   assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'));
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', ...(fs.existsSync(storage) ? { storageState: storage } : {}) });
@@ -45,13 +47,14 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
     assert.equal(response.status(), 200, route);
     return response.json();
   };
-  const state = () => json('/api/state');
+  const state = async () => { const value = await json('/api/state'); if (arrangementSource) value.source = currentSource(); return value; };
   const takes = () => json('/api/takes');
   const transport = () => json('/api/transport');
   const ready = async (target, vocals = true) => {
     await target.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();
     await target.locator('#cicada-workspace[aria-busy=true]').waitFor({ state: 'hidden' });
     if (vocals) await target.locator('#cicada-vocal-lanes[data-vocal-lanes-ready=true]').waitFor();
+    if (errors.length) console.error('Editor page:', (await target.locator('body').innerText()).slice(-8000));
     assert.deepEqual(errors, [], 'browser/action errors');
   };
   const navigate = async (target, panel) => {

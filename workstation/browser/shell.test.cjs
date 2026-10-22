@@ -40,7 +40,7 @@ async function sharedBrowser() {
       executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
         .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
     }
-    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--autoplay-policy=no-user-gesture-required']});
+    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio']});
     shared = {browser, context: await browser.newContext({viewport: {width: 1440, height: 900}})};
     // A packaged Studio prints a one-use owner URL. Consume it in this test
     // context before opening canonical shell URLs, just as the native host does.

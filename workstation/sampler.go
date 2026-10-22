@@ -35,7 +35,7 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 	}
 	p := state.Bank.Pads[selected-1]
 	form := func(children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/sampler", CSRF: csrf, Revision: v.Revision, ReturnTo: fmt.Sprintf("/?panel=sampler&pad=%d", selected), Class: "action-form"}, append([]gosx.Node{hidden("bankRevision", state.BankRevision)}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/sampler", CSRF: csrf, Revision: v.Revision, ReturnTo: fmt.Sprintf("/?panel=sampler&pad=%d", selected), Class: "action-form"}, append([]gosx.Node{hidden("bankRevision", state.BankRevision), hidden("source_revision", v.SourceRevision)}, children...)...)
 	}
 	var choices []gosx.Node
 	for _, src := range state.Bank.Sources {

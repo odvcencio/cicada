@@ -50,6 +50,11 @@ func (s *studio) recoverTakesOnOpen() error {
 		}
 		files, filesErr := s.pendingTakeFiles(t)
 		if filesErr != nil || studioRevision(source) != t.Before && studioRevision(source) != t.After {
+			if filesErr != nil {
+				if err = s.restoreConflictedTakeEntry(t, source); err != nil {
+					return err
+				}
+			}
 			if err = s.takes.Mark(t.ID, takejournal.Conflict); err != nil {
 				return err
 			}
@@ -107,7 +112,11 @@ func (s *studio) commitTakeFiles(id, expected string, candidate []byte, env *edi
 	if candidate == nil {
 		if t.Timeline != nil {
 			var built edits.Envelope
-			candidate, built, err = s.vocalTakeEnvelope(current, t, nil)
+			var result *edits.Result
+			result, built, err = s.vocalTakeResult(current, t, nil)
+			if err == nil {
+				candidate, files = result.Source, result.Files
+			}
 			env = &built
 		} else {
 			opts, e := s.editOptions(current, nil)
@@ -390,6 +399,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var candidate []byte
+		var files []edits.File
 		var built edits.Envelope
 		var env *edits.Envelope
 		if t.Timeline == nil && (edit.Action == "comp" || edit.Action == "listen" || edit.Action == "listen-loop") {
@@ -406,14 +416,18 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 				fail(errTakeRevision)
 				return
 			}
-			candidate, built, err = s.vocalTakeEnvelope(source, t, edit.Recording)
+			var result *edits.Result
+			result, built, err = s.vocalTakeResult(source, t, edit.Recording)
+			if err == nil {
+				candidate, files = result.Source, result.Files
+			}
 			if err != nil {
 				fail(err)
 				return
 			}
 			env = &built
 			if edit.Action == "listen" || edit.Action == "listen-loop" {
-				if err = s.listenVocalTake(candidate, source, t, edit.Recording, edit.Action == "listen-loop"); err != nil {
+				if err = s.listenVocalTake(candidate, source, t, edit.Recording, edit.Action == "listen-loop", files...); err != nil {
 					fail(err)
 					return
 				}
@@ -421,7 +435,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err = s.commitTakeFiles(edit.TakeID, edit.Revision, candidate, env, nil, edit.SourceRevision); err != nil {
+		if err = s.commitTakeFiles(edit.TakeID, edit.Revision, candidate, env, files, edit.SourceRevision); err != nil {
 			fail(err)
 			return
 		}

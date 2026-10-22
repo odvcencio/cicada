@@ -57,6 +57,7 @@ type samplerUI struct {
 	initialized, recording, posting      bool
 	origin                               float64
 	recordRevision                       string
+	recordSourceRevision                 string
 	recordTempo                          int
 	waveKey                              string
 	drag                                 string
@@ -522,6 +523,7 @@ func (u *samplerUI) record() {
 	}
 	u.origin = u.now() + .1
 	u.recordRevision = u.state.Revision
+	u.recordSourceRevision = workspaceFieldValue(u.root.Call("querySelector", "form"), "source_revision")
 	u.recordTempo = u.state.Tempo
 	u.recording = true
 	u.events()
@@ -617,11 +619,20 @@ func (u *samplerUI) resample(form js.Value) {
 	u.posting = true
 	data, _ := json.Marshal(u.perf)
 	submitted := string(data)
-	values := map[string]string{"action": "resample", "performance": string(data), "revision": u.recordRevision, "bankRevision": u.state.BankRevision, "__cicada_location": workspaceLocation()}
+	sourceRevision := u.recordSourceRevision
+	if sourceRevision == "" {
+		sourceRevision = workspaceFieldValue(form, "source_revision")
+	}
+	revision := u.recordRevision
+	place := form.Call("querySelector", "[name=place]").Get("checked").Bool()
+	if !place {
+		revision = u.state.Revision
+	}
+	values := map[string]string{"place": "", "source_revision": sourceRevision, "action": "resample", "performance": string(data), "revision": revision, "bankRevision": u.state.BankRevision, "__cicada_location": workspaceLocation()}
 	for _, key := range []string{"csrf_token", "newName", "track", "at", "destination"} {
 		values[key] = form.Call("querySelector", "[name="+key+"]").Get("value").String()
 	}
-	if form.Call("querySelector", "[name=place]").Get("checked").Bool() {
+	if place {
 		values["place"] = "on"
 	}
 	u.status("Resampling the recorded pad sounds…")
@@ -655,6 +666,7 @@ func (u *samplerUI) resample(form js.Value) {
 		// refresh back; anything changed since the submit stays unsaved.
 		acknowledgeSubmitted(form, values)
 		u.recordRevision = ""
+		u.recordSourceRevision = ""
 		_ = u.load()
 		u.recordRevision = u.state.Revision
 		workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })

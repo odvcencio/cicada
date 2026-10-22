@@ -185,6 +185,47 @@ func studioRecoveryConflict(path string) error {
 	return nil
 }
 
+// Read a displaced version only when both its receipt and bytes agree. An
+// unresolved write through any displaced handle makes automatic restore unsafe.
+func studioRecoverySource(path, revision string) ([]byte, bool, error) {
+	if err := studioRecoveryConflict(path); err != nil {
+		return nil, false, nil
+	}
+	target, err := filetarget.Resolve(path, filetarget.Existing)
+	if err != nil {
+		return nil, false, err
+	}
+	dir, err := studioRecoveryDir(target.Physical)
+	if err != nil {
+		return nil, false, err
+	}
+	prefix := strings.TrimSuffix(studioRecoveryPattern(target.Physical), "*")
+	for _, directory := range []string{dir, filepath.Dir(target.Physical)} {
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
+				continue
+			}
+			name := filepath.Join(directory, entry.Name())
+			receipt, err := os.ReadFile(name + ".revision")
+			if err != nil || string(receipt) != revision {
+				continue
+			}
+			data, err := os.ReadFile(name)
+			if err != nil {
+				return nil, false, err
+			}
+			if studioRevision(data) == revision {
+				return data, true, nil
+			}
+		}
+	}
+	return nil, false, nil
+}
+
 // Keep linked displaced inodes in app data: late writes through an external
 // editor's open handle remain detectable without littering the project.
 func studioRecoveryDir(path string) (string, error) {

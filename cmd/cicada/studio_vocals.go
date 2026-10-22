@@ -195,6 +195,18 @@ func (s *studio) vocalTakeSource(source []byte, t takejournal.Take, settings *st
 	return candidate, err
 }
 
+// Source-only compatibility helpers must never silently drop an owned file.
+func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, edits.Envelope, error) {
+	result, env, err := s.vocalTakeResult(source, t, settings)
+	if err != nil {
+		return nil, env, err
+	}
+	if len(result.Files) != 0 {
+		return nil, env, fmt.Errorf("vocal comp changes secondary files; use the project result")
+	}
+	return result.Source, env, nil
+}
+
 // vocalSourceCompiler hands the edit service the plan of the score being
 // edited. The candidate is not compiled here: the commit path compiles it with
 // its asset, as it always has.
@@ -214,10 +226,10 @@ func (c vocalSourceCompiler) Compile(source []byte, _ map[string][]byte) (*edits
 // Only this track's generated asset/clip/placement is replaced. Older prints
 // stay on disk so Undo, Redo, recovery and exported projects retain their audio.
 //
-// vocalTakeEnvelope checks the take against the score, prints the comp audio,
-// and applies the PlaceVocalComp intent. It returns the candidate source and
+// vocalTakeResult checks the take against the score, prints the comp audio,
+// and applies the PlaceVocalComp intent. It returns all candidate files and
 // the envelope the commit records in the edit log.
-func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, edits.Envelope, error) {
+func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *studioRecordingSettings) (*edits.Result, edits.Envelope, error) {
 	var env edits.Envelope
 	gainDB, _, err := vocalPhraseSettings(settings)
 	if err != nil {
@@ -301,7 +313,7 @@ func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *
 	if err != nil {
 		return nil, env, err
 	}
-	return result.Source, env, nil
+	return result, env, nil
 }
 
 func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
@@ -658,12 +670,16 @@ func vocalAuditionProject(p *project.Project, track, mode string) (*project.Proj
 	return &copyProject, nil
 }
 
-func (s *studio) listenVocalTake(candidate, original []byte, take takejournal.Take, settings *studioRecordingSettings, loop bool) error {
+func (s *studio) listenVocalTake(candidate, original []byte, take takejournal.Take, settings *studioRecordingSettings, loop bool, files ...edits.File) error {
 	_, mode, err := vocalPhraseSettings(settings)
 	if err != nil {
 		return err
 	}
-	p, err := compileStudioSource(s.path, candidate)
+	overrides := make(map[string][]byte, len(files))
+	for _, file := range files {
+		overrides[file.Path] = file.After
+	}
+	p, err := compileStudioSourceWithOverrides(s.path, candidate, overrides)
 	if err != nil {
 		return err
 	}

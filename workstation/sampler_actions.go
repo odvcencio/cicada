@@ -16,7 +16,7 @@ import (
 
 func (s *studioApp) samplerAction(ctx *action.Context) error {
 	return s.mutation("/api/sampler", func(f map[string]string) (any, error) {
-		p := map[string]any{"action": f["action"], "revision": f["revision"], "bankRevision": f["bankRevision"]}
+		p := map[string]any{"action": f["action"], "revision": f["revision"], "source_revision": f["source_revision"], "bankRevision": f["bankRevision"]}
 		values := map[string]int{}
 		var fields []string
 		switch f["action"] {

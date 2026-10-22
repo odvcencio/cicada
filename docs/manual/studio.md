@@ -754,6 +754,12 @@ Arrangement-only scores keep their existing placements and markers. Original
 PCM and previous comp prints remain on disk for recovery and Undo. Simultaneous
 multitrack input capture is not provided.
 
+When the arrangement lives in a separate project source, a vocal selection
+updates its placement there. Generated audio declarations and comp metadata
+remain in the entry score. Previewing a selection leaves both sources unchanged;
+**Undo** and **Redo** restore the committed sources together. Vocal effects and
+automation remain editable after printing.
+
 **Takes** retains the scene-based recording and sample audition workflow:
 choose an audio track and scene, then **Arm take**, **Record**, and **Finish take**.
 **Select take** commits a selected pass; **Recover take** retries publication

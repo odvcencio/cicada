@@ -22,21 +22,22 @@ import (
 )
 
 type samplerCommand struct {
-	Action       string                 `json:"action"`
-	Revision     string                 `json:"revision"`
-	BankRevision string                 `json:"bankRevision"`
-	Source       string                 `json:"source"`
-	Placement    string                 `json:"placement"`
-	Pad          int                    `json:"pad"`
-	Count        int                    `json:"count"`
-	Settings     *padsampler.Pad        `json:"settings"`
-	Effects      *padsampler.Effects    `json:"effects"`
-	Performance  padsampler.Performance `json:"performance"`
-	NewName      string                 `json:"newName"`
-	Track        string                 `json:"track"`
-	At           string                 `json:"at"`
-	Destination  int                    `json:"destination"`
-	Place        bool                   `json:"place"`
+	SourceRevision string                 `json:"source_revision,omitempty"`
+	Action         string                 `json:"action"`
+	Revision       string                 `json:"revision"`
+	BankRevision   string                 `json:"bankRevision"`
+	Source         string                 `json:"source"`
+	Placement      string                 `json:"placement"`
+	Pad            int                    `json:"pad"`
+	Count          int                    `json:"count"`
+	Settings       *padsampler.Pad        `json:"settings"`
+	Effects        *padsampler.Effects    `json:"effects"`
+	Performance    padsampler.Performance `json:"performance"`
+	NewName        string                 `json:"newName"`
+	Track          string                 `json:"track"`
+	At             string                 `json:"at"`
+	Destination    int                    `json:"destination"`
+	Place          bool                   `json:"place"`
 }
 
 func (s *studio) padStore() (*padsampler.Store, error) {
@@ -226,6 +227,12 @@ func (s *studio) samplerCommand(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 409, map[string]any{"error": "score or pad bank changed; refresh before editing the sampler"})
 		return
 	}
+	if input.Action == "resample" && input.Place {
+		if err := checkStudioSourceRevision(s.path, input.SourceRevision); err != nil {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+	}
 	p, err := compileStudioSource(s.path, source)
 	if err != nil {
 		fail(err)
@@ -403,8 +410,14 @@ func (s *studio) samplerCommand(w http.ResponseWriter, r *http.Request) {
 				fail(err)
 				return
 			}
-			mutation := studioMutation{Source: result.Source, HistoryDetail: "Resample pads into Session", Files: []studioAuxiliaryFile{{Path: filepath.Join(store.Root, store.BankPath), Before: before, After: padsampler.BankBytes(b), Mode: 0600}}, Response: map[string]any{"placement": input.NewName, "bankRevision": padsampler.Revision(b)}}
-			outcome := s.commitMutationLocked(studioEdit{Revision: input.Revision, Label: "Resample pads into Session"}, source, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &env})
+			files, err := auxiliaryFiles(result.Files)
+			if err != nil {
+				fail(err)
+				return
+			}
+			files = append(files, studioAuxiliaryFile{Path: filepath.Join(store.Root, store.BankPath), Before: before, After: padsampler.BankBytes(b), Mode: 0600})
+			mutation := studioMutation{Source: result.Source, HistoryDetail: "Resample pads into Session", Files: files, Response: map[string]any{"placement": input.NewName, "bankRevision": padsampler.Revision(b)}}
+			outcome := s.commitMutationLocked(studioEdit{Revision: input.Revision, SourceRevision: input.SourceRevision, Label: "Resample pads into Session"}, source, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &env})
 			studioJSON(w, outcome.Status, outcome.Response)
 			return
 		}
