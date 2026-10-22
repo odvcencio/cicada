@@ -247,7 +247,7 @@ jobs:
       - name: Framework generation, race checks, and production bundle
         run: |
           set -euo pipefail
-          go test -race ./internal/buildaudit -count=1
+          go test -race ./internal/buildaudit ./internal/studiohttp -count=1
           make test-workstation
           (cd workstation && go vet ./...)
           make build-workstation-release
@@ -283,6 +283,7 @@ jobs:
             node workstation/browser/continuity.test.cjs --write-fixture "$browser_root/$suite/continuity.cicada"
           done
           make build-core
+          python3 scripts/check-studio-shutdown.py --cicada build/cicada --output build/studio-shutdown-proof
           studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
           export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
           ./build/cicada studio "$browser_root/continuity/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-continuity-server.log 2>&1 &
@@ -752,6 +753,7 @@ jobs:
             build/studio-placement-variation-*-server.log
             build/studio-placement-variation-fixture.json
             build/studio-placement-variation-proof/
+            build/studio-shutdown-proof/
             build/studio-print-*-report.txt
             build/studio-print-*-server.log
             build/studio-print-*-fixture.json
@@ -807,7 +809,7 @@ jobs:
           go version
           tinygo version
           wasm-opt --version
-          go test -race ./internal/buildaudit -count=1
+          go test -race ./internal/buildaudit ./internal/studiohttp -count=1
           (cd desktop && go mod download && go mod verify && go test -race ./... && go vet ./...)
           (cd workstation && go test -race ./... && go vet ./...)
           go test -race ./host/capture ./host/midi ./internal/audiobackend -count=1
@@ -833,6 +835,7 @@ jobs:
         run: |
           set -euo pipefail
           desktop/package.sh --target darwin --version 0.0.0-ci --output build/macos
+          python3 scripts/check-studio-shutdown.py --cicada 'build/macos/Cicada Studio.app/Contents/MacOS/cicada' --output build/macos-shutdown-proof
           codesign --verify --deep --strict 'build/macos/Cicada Studio.app'
           bash scripts/check-gosx-size.sh --json 'build/macos/Cicada Studio.app/Contents/MacOS/workstation/build.json' > build/macos-gosx-size.json
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/build/macos/Cicada Studio.app/Contents/MacOS/workstation/build.json" go test -race ./internal/buildaudit -count=1
@@ -901,6 +904,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/macos-smoke/
+            build/macos-shutdown-proof/
             build/macos-gosx-size.json
             build/native-audio-determinism.log
             build/ep-wasm-determinism.log

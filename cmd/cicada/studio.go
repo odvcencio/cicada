@@ -30,6 +30,7 @@ import (
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/filetarget"
+	"m31labs.dev/cicada/internal/studiohttp"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/project"
 )
@@ -142,10 +143,9 @@ func studioCommand(args []string) error {
 		return err
 	}
 	defer listener.Close()
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	server.BaseContext = func(net.Listener) context.Context { return ctx }
+	server := studiohttp.New(ctx, handler)
 	if lspStdio {
 		// Stdout is the LSP wire in this mode. The extension reads the Studio
 		// address from stderr and shows the same views as the browser frame.
