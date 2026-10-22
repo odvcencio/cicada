@@ -350,6 +350,17 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return p, nil
 		}),
 		"arrange": s.mutation("/api/arrange", func(f map[string]string) (any, error) {
+			if f["action"] == "set-tempo" || f["action"] == "remove-tempo" {
+				at := ""
+				if f["action"] == "set-tempo" {
+					bar, err := integer(f, "bar")
+					if err != nil || bar < 1 || bar > 1<<20+1 {
+						return nil, fmt.Errorf("choose a bar from 1 to 1048577")
+					}
+					at = fmt.Sprintf("@%d.1.1", bar)
+				}
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "tempo": map[string]string{"oldat": f["oldat"], "at": at, "value": f["bpm"]}}, nil
+			}
 			return map[string]any{
 				"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "name": f["name"], "newName": f["newName"],
 				"placement": map[string]string{"at": f["at"], "length": f["length"], "track": f["track"], "content": f["content"]},

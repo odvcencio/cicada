@@ -761,8 +761,12 @@ together with the entry score. Numeric scene parameter changes become stepped
 automation. Existing curves keep their shapes and take over at their original
 first points; recall cues retain scene-boundary returns to those curves.
 Tempo changes become bar-boundary steps inside `arrange`. Open **Tempo steps**
-to see the preserved positions and tempos; edit them in Code with
-`tempo @3.1.1 96`. Recordings retain their original tempo map, which governs
+to change a step's **Bar** or **Tempo (BPM)**, add a step, or remove one.
+**Save tempo step** moves and changes it in one edit; Undo restores that edit.
+Steps start at bar boundaries, use 20–300 BPM, and cannot share a bar. The base
+tempo in **Project settings** applies before the first step. Tempo edits change
+the song clock; they do not stretch recorded audio. You can also write
+`tempo @3.1.1 96` in Code. Recordings retain their original tempo map, which governs
 phrase durations, waveform positions and comp printing. Restore that map
 before combining a take with a song whose timing has changed.
 Toggle or symbolic values such as delay divisions still require

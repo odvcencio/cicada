@@ -491,6 +491,7 @@ type studioEdit struct {
 	ConfirmUpgrade        bool                          `json:"confirmUpgrade,omitempty"`
 	ClipSettings          *studioClipSettings           `json:"clipSettings,omitempty"`
 	Placement             *studioPlaceSettings          `json:"placement,omitempty"`
+	Tempo                 *edits.SetArrangementTempo    `json:"tempo,omitempty"`
 	Metadata              *studioProjectSettings        `json:"metadata,omitempty"`
 	Range                 *studioPatternRange           `json:"range,omitempty"`
 	Length                int                           `json:"length,omitempty"`

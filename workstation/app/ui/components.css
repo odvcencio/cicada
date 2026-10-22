@@ -97,6 +97,14 @@ main { padding:24px 28px; }
 .pattern-management { border-top:1px solid var(--border); padding-top:14px; margin-top:16px; }
 .editor-fields { display:grid; gap:14px; padding:10px 0; }
 .editor-fields .field { width:160px; margin:0; }
+.tempo-steps { margin:12px 0; }
+.tempo-steps summary { cursor:pointer; color:var(--amber); }
+.tempo-steps p { margin:0; max-width:76ch; }
+.tempo-steps ol { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
+.tempo-steps li { border-top:1px solid var(--border); padding-top:12px; }
+.tempo-steps li > strong { display:block; margin-bottom:8px; font-size:13px; }
+.tempo-steps .field { width:120px; max-width:100%; }
+.tempo-steps [data-tempo-add] { border-top:1px solid var(--border); padding-top:12px; }
 .pattern-workspace > details { margin:10px 0; }
 .export-result { margin-top:24px; padding:16px; border:1px solid var(--border); border-radius:6px; overflow-wrap:anywhere; }
 .timeline { margin:8px 0; border:1px solid var(--border); border-radius:6px; }

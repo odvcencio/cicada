@@ -87,6 +87,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	var state transport
 	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
 	registerShell(ctx, tab, dock)
+	registerArrangementTempos(ctx)
 
 	returnTo := ctx.Request.URL.RequestURI()
 	file := func(name string) gosx.Node {

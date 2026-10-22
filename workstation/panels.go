@@ -27,6 +27,7 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 	case "collaboration":
 		return s.collaborationPanel(ctx)
 	case "session":
+		registerArrangementTempos(ctx)
 		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(v, csrf, ctx.Request.URL.Query().Get("placement")), s.continuousAutomation(ctx, v, csrf), s.automation(ctx, v, csrf))
 	case "patterns":
 		return s.patterns(ctx, v, csrf)

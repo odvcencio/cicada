@@ -135,6 +135,8 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"setmarker":              &edits.SetMarker{Entity: "marker:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
 		"addmarker":              &edits.AddMarker{Name: "finish", Settings: &edits.PlacementSettings{At: "@9.1.1"}},
 		"removemarker":           &edits.RemoveMarker{Entity: "marker:foreign"},
+		"setarrangementtempo":    &edits.SetArrangementTempo{At: "@2.1.1", Value: "96"},
+		"removearrangementtempo": &edits.RemoveArrangementTempo{At: "@2.1.1"},
 		"setautomationpoint":     &edits.SetAutomationPoint{Entity: "param:lead.level", At: "@2.1.1", Value: "-3dB"},
 		"removeautomationpoint":  &edits.RemoveAutomationPoint{Entity: "param:lead.level", At: "@2.1.1"},
 		"placesamplerprint":      &edits.PlaceSamplerPrint{Name: "print", Track: "vox", At: "@9.1.1", Asset: edits.PrintAsset{Path: "print.wav", SHA256: strings.Repeat("c", 64), Frames: 480, RateHz: 48000}},

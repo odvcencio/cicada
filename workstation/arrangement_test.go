@@ -89,7 +89,7 @@ func TestNamedPlacementTempoStepsShowTheirTiming(t *testing.T) {
 		t.Fatal(ds, more)
 	}
 	page := gosx.RenderHTML((&studioApp{}).placementArrangement(workspace{Project: p, Revision: "current", SourceRevision: "sources"}, "csrf", ""))
-	for _, want := range []string{`data-arrangement-tempos`, "Tempo steps · 3", "@3.1.1 · 96 BPM", "@5.1.1 · 137.333 BPM", "tempo changes", "0:12 at 120.0 BPM"} {
+	for _, want := range []string{`data-arrangement-tempos`, `id="arrangement-tempos"`, `data-gosx-collapsible="$tempoStepsOpen"`, `data-gosx-key="tempo-step-@3.1.1"`, `name="oldat" value="@3.1.1"`, "Save tempo step", "Remove step", "Add tempo step", "Tempo steps · 3", "@3.1.1 · 96 BPM", "@5.1.1 · 137.333 BPM", "tempo changes", "0:12 at 120.0 BPM"} {
 		if !strings.Contains(page, want) {
 			t.Fatal("tempo display missing", want)
 		}

@@ -473,6 +473,28 @@ jobs:
             fi
           done
           unset CICADA_ARRANGEMENT_REOPEN
+          for tempo_layout in primary secondary; do
+            tempo_args=()
+            if [[ "$tempo_layout" == primary ]]; then tempo_args+=(--primary); fi
+            node workstation/browser/tempo-editor.test.cjs --write-fixture "$browser_root/tempo-$tempo_layout" "${tempo_args[@]}" > "build/studio-tempo-$tempo_layout-fixture.json"
+            export CICADA_TEMPO_FIXTURE="$PWD/build/studio-tempo-$tempo_layout-fixture.json"
+            export CICADA_TEMPO_PROOF_DIR="$PWD/build/studio-tempo-$tempo_layout-proof"
+            for tempo_phase in edit reopen; do
+              kill "$studio_pid"
+              wait "$studio_pid" || true
+              ./build/cicada studio "$browser_root/tempo-$tempo_layout/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-tempo-$tempo_layout-$tempo_phase-server.log" 2>&1 &
+              studio_pid=$!
+              for _ in $(seq 1 100); do
+                if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+                kill -0 "$studio_pid"
+                sleep 0.1
+              done
+              export CICADA_TEMPO_REOPEN=0
+              if [[ "$tempo_phase" == reopen ]]; then export CICADA_TEMPO_REOPEN=1; fi
+              node --test workstation/browser/tempo-editor.test.cjs | tee "build/studio-tempo-$tempo_layout-$tempo_phase-report.txt"
+            done
+          done
+          unset CICADA_TEMPO_REOPEN
           for print_layout in primary secondary song controls tempo; do
             print_args=()
             print_phases=(sampler producer roundtrip reopen)
@@ -591,6 +613,9 @@ jobs:
             build/studio-arrangement-sources-*-report.txt
             build/studio-arrangement-sources-*-server.log
             build/studio-arrangement-sources-proof/
+            build/studio-tempo-*-report.txt
+            build/studio-tempo-*-server.log
+            build/studio-tempo-*-proof/
             build/studio-print-*-report.txt
             build/studio-print-*-server.log
             build/studio-print-*-fixture.json
@@ -691,6 +716,8 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/portable --mode normal --timeout 120 --portable-fixture build/native-portable-fixture.json
           node workstation/browser/arrangement-sources.test.cjs --write-fixture build/native-arrangement-sources > build/native-arrangement-sources-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/arrangement-sources --mode normal --timeout 120 --project-fixture build/native-arrangement-sources/main.cicada --workflow desktop/testdata/native-arrangement-sources-workflow.js
+          node workstation/browser/tempo-editor.test.cjs --write-fixture build/native-tempo-editor --primary > build/native-tempo-editor-fixture.json
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/tempo-editor --mode normal --timeout 180 --project-fixture build/native-tempo-editor/main.cicada --workflow desktop/testdata/native-tempo-editor-workflow.js
           go -C workstation run ./browser/testdata/print-sources --sampler-bank > build/native-print-sources-fixture.json
           print_score="$(node -e 'process.stdout.write(require("./build/native-print-sources-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/print-sources --mode normal --timeout 180 --project-fixture "$print_score" --workflow desktop/testdata/native-print-sources-workflow.js

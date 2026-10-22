@@ -152,19 +152,13 @@ func (s *studioApp) placementArrangement(v workspace, csrf, selected string) gos
 	}
 	bars := (end + seq.TicksPerBar - 1) / seq.TicksPerBar
 	description := fmt.Sprintf("%d bars · %d:%02d at %.1f BPM · %d placements", bars, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000, len(placements))
-	var tempoList gosx.Node
 	if len(p.Arrange.Tempos) > 0 {
-		var steps []gosx.Node
-		for _, step := range p.Arrange.Tempos {
-			steps = append(steps, gosx.El("li", gosx.Text(fmt.Sprintf("@%d.1.1 · %s BPM", step.Bar+1, strconv.FormatFloat(float64(step.BPMMilli)/1000, 'f', -1, 64)))))
-		}
-		tempoList = gosx.El("details", gosx.Attrs(gosx.Attr("data-arrangement-tempos", "")), gosx.El("summary", gosx.Text(fmt.Sprintf("Tempo steps · %d", len(steps)))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Each step changes the tempo from that bar. Edit the steps inside arrange in Code.")), gosx.El("ol", gosx.Fragment(steps...)))
 		description += " · tempo changes"
 	}
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: description},
 		markerList,
-		tempoList,
+		s.arrangementTempos(v, csrf, selected, end),
 		placementTimeline(p, placements, selected, end),
 		s.sessionListening(v, csrf, selected, end),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Select a block to edit it. Drag to move; drag its right edge to resize. Arrow keys on a block or edge change it by a sixteenth; hold Shift for a bar. Each placement restarts its pattern; End is exclusive.")),

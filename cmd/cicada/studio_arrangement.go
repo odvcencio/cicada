@@ -23,7 +23,9 @@ func (s *studio) editArrangement(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown placement action"})
 		return
 	}
-	edit.Label = studioEditLabel(edit)
+	if edit.Action != "set-tempo" && edit.Action != "remove-tempo" {
+		edit.Label = studioEditLabel(edit)
+	}
 	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
@@ -36,6 +38,14 @@ func arrangementIntent(edit studioEdit) (edits.Intent, bool) {
 	}
 	placement, marker := edits.EntityID("placement:"+edit.Name), edits.EntityID("marker:"+edit.Name)
 	switch edit.Action {
+	case "set-tempo":
+		if edit.Tempo != nil {
+			return edit.Tempo, true
+		}
+	case "remove-tempo":
+		if edit.Tempo != nil {
+			return &edits.RemoveArrangementTempo{At: edit.Tempo.OldAt}, true
+		}
 	case "update":
 		return &edits.UpdatePlacement{Entity: placement, Settings: settings}, true
 	case "append":

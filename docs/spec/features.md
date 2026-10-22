@@ -280,11 +280,18 @@ playback timeline. Scene-to-arrangement vocal conversion emits recall cues to
 retain the original scene-boundary behavior.
 
 ```cicada
+cicada 2
+tempo 120
+track vox audio {}
+track bass acid {}
+pattern pulse { 1 . 5 . }
 automate vox.level {
   @1.1.1 -9dB
   @5.1.1 -3dB smooth
   recall @7.1.1
 }
+scene main { vox = off bass = pulse }
+song { main*8 }
 ```
 
 ## Pattern grids and tuplets
