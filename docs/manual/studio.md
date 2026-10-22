@@ -418,6 +418,20 @@ MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
+Open **Use this pattern** in either the grid or played-timing editor to bring
+the phrase into your song. **Create variation** copies the complete pattern
+without changing its existing uses. For a scene song, choose a compatible
+track and scene, then **Assign to scene**. The assignment replaces that track's
+part everywhere the scene is used; Stop releases the track and Carry keeps
+its earlier selection.
+
+For a named arrangement, **Place in song** adds a use of the selected pattern.
+Its default start is after the last placement, and its length is the phrase's
+exact loop length. Choose another start or length before placing it. Existing
+uses link to their arrangement blocks. Editing a pattern changes all its uses;
+create a variation first when you want an independent phrase. Assignment,
+placement, and variation each have one Undo step.
+
 **Shared gestures** lets one lane shape several notes and their release
 tails. Create a lane, select each note and choose **Bind note**, then edit
 the lane's bend, pressure and timbre points. Times are measured from the loop
