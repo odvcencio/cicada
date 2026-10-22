@@ -15,6 +15,9 @@ import (
 
 type placementDrag struct {
 	block, scroller  js.Value
+	origin           js.Value
+	snap             int64
+	copyDrag, free   bool
 	pointer          int
 	x, scroll, scale float64
 	clientX, clientY float64
@@ -39,6 +42,7 @@ type placementEditorUI struct {
 	status          func(string)
 	selectPlacement func(js.Value)
 	placementEdit   func(js.Value, string, int64)
+	placementCopy   func(js.Value, int64)
 	refresh         func(js.Value)
 }
 
@@ -69,7 +73,7 @@ func selectPlacement(root, block js.Value) {
 func (u *placementEditorUI) placementPointerDown(event js.Value) {
 	u.dragClick = false
 	target := event.Get("target")
-	if u.drag != nil || !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || event.Get("button").Int() != 0 || event.Get("ctrlKey").Bool() || event.Get("metaKey").Bool() || event.Get("altKey").Bool() || event.Get("shiftKey").Bool() {
+	if u.drag != nil || !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || event.Get("button").Int() != 0 || event.Get("ctrlKey").Bool() || event.Get("metaKey").Bool() {
 		return
 	}
 	control := target.Call("closest", ".placement-select, [data-placement-resize]")
@@ -107,6 +111,12 @@ func (u *placementEditorUI) placementPointerDown(event js.Value) {
 		next = length
 	}
 	u.drag = &placementDrag{block: block, scroller: scroller, pointer: event.Get("pointerId").Int(), x: event.Get("clientX").Float(), scroll: scroller.Get("scrollLeft").Float(), scale: width / float64(ticks), at: at, length: length, next: next, resize: resize, left: block.Get("style").Get("left").String(), width: block.Get("style").Get("width").String()}
+	u.drag.snap = placementSnap(block)
+	u.drag.free = event.Get("shiftKey").Bool()
+	nav := block.Call("closest", "[data-placement-navigation]")
+	copyControl := nav.Call("querySelector", "[name=placementCopy]")
+	u.drag.copyDrag = !resize && (event.Get("altKey").Bool() || copyControl.Get("checked").Bool())
+	block.Call("setAttribute", "data-placement-dragging", "")
 	block.Call("setPointerCapture", u.drag.pointer)
 }
 
@@ -116,6 +126,7 @@ func (u *placementEditorUI) placementPointerMove(event js.Value) {
 		return
 	}
 	workspaceStop(event)
+	drag.free = event.Get("shiftKey").Bool()
 	drag.clientX, drag.clientY = event.Get("clientX").Float(), event.Get("clientY").Float()
 	u.previewPlacementDrag(drag)
 	if u.drag == drag && drag.moved {
@@ -129,7 +140,25 @@ func (u *placementEditorUI) previewPlacementDrag(drag *placementDrag) {
 		return
 	}
 	drag.moved = true
-	delta := int64(math.Round(dx/drag.scale/float64(seq.TicksPerStep))) * seq.TicksPerStep
+	step := drag.snap
+	if drag.free {
+		step = 1
+	}
+	step = placementCompatibleStep(drag.block, drag.resize, step)
+	delta := int64(math.Round(dx/drag.scale/float64(step))) * step
+	if drag.copyDrag && !workspacePresent(drag.origin) {
+		// Keep the original visible without duplicating authored identities or
+		// moving the captured element (which loses capture in WKWebView).
+		drag.origin = js.Global().Get("document").Call("createElement", "div")
+		drag.origin.Set("className", "placement-copy-origin")
+		drag.origin.Call("setAttribute", "aria-hidden", "true")
+		drag.origin.Set("textContent", workspaceAttr(drag.block, "data-placement-block"))
+		for name, value := range map[string]string{"left": drag.left, "width": drag.width, "top": drag.block.Get("style").Get("top").String()} {
+			drag.origin.Get("style").Set(name, value)
+		}
+		drag.block.Get("parentElement").Call("appendChild", drag.origin)
+		drag.block.Call("setAttribute", "data-placement-copy-preview", "")
+	}
 	field, next := "at", max(int64(0), drag.at+delta)
 	if drag.resize {
 		field, next = "length", max(int64(1), drag.length+delta)
@@ -148,6 +177,12 @@ func (u *placementEditorUI) previewPlacementDrag(drag *placementDrag) {
 		value = fmt.Sprintf("@%d.%d.%d", next/seq.TicksPerBar+1, next%seq.TicksPerBar/seq.PPQ+1, next%seq.PPQ/seq.TicksPerStep+1)
 	}
 	message := workspaceAttr(drag.block, "data-placement-block") + " · " + field + " " + value
+	if drag.copyDrag {
+		message = "Copy " + message
+	}
+	if !drag.resize && workspaceAttr(drag.block, "data-placement-kind") != "audio" {
+		message += " · pattern starts on 1/16 grid"
+	}
 	if direction := workspaceAttr(drag.scroller, "data-placement-auto-scroll"); direction != "" {
 		message += " · scrolling " + direction
 	}
@@ -164,6 +199,11 @@ func (u *placementEditorUI) clearPlacementDrag() *placementDrag {
 	drag.block.Get("style").Set("left", drag.left)
 	drag.block.Get("style").Set("width", drag.width)
 	drag.block.Call("removeAttribute", "data-placement-preview")
+	drag.block.Call("removeAttribute", "data-placement-dragging")
+	drag.block.Call("removeAttribute", "data-placement-copy-preview")
+	if workspacePresent(drag.origin) {
+		drag.origin.Call("remove")
+	}
 	if drag.block.Call("hasPointerCapture", drag.pointer).Bool() {
 		drag.block.Call("releasePointerCapture", drag.pointer)
 	}
@@ -183,7 +223,11 @@ func (u *placementEditorUI) placementPointerUp(event js.Value) {
 	if drag.next != before {
 		workspaceStop(event)
 		u.dragClick = true
-		u.placementEdit(drag.block, field, drag.next)
+		if drag.copyDrag {
+			u.placementCopy(drag.block, drag.next)
+		} else {
+			u.placementEdit(drag.block, field, drag.next)
+		}
 	} else {
 		// Pointer capture targets the click at the block rather than its link.
 		// Read the selected view so its defaults and revision also follow edits
@@ -199,6 +243,13 @@ func (u *placementEditorUI) placementPointerCancel(event js.Value) {
 }
 
 func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
+	if u.drag != nil && event.Get("key").String() == "Shift" {
+		u.drag.free = true
+		if u.drag.moved {
+			u.previewPlacementDrag(u.drag)
+		}
+		return true
+	}
 	if u.drag != nil && event.Get("key").String() == "Escape" {
 		workspaceStop(event)
 		u.abortPlacementDrag("Placement edit cancelled.")
@@ -214,7 +265,7 @@ func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 		return false
 	}
 	workspaceStop(event)
-	if u.blocked() {
+	if u.drag != nil || u.blocked() {
 		return true
 	}
 	block := control.Call("closest", "[data-placement-block]")
@@ -222,7 +273,7 @@ func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 	if control.Call("hasAttribute", "data-placement-resize").Bool() {
 		field, attr, minimum = "length", "data-placement-length", 1
 	}
-	delta := int64(seq.TicksPerStep)
+	delta := placementCompatibleStep(block, field == "length", placementSnap(block))
 	if event.Get("shiftKey").Bool() {
 		delta = seq.TicksPerBar
 	}
@@ -266,7 +317,74 @@ func (u *placementEditorUI) placementViewChanged(event js.Value) {
 	target := event.Get("target")
 	name := workspaceAttr(target, "name")
 	viewButton := workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-placement-view]"))
-	if name == "placementZoom" || name == "placementFollow" || viewButton {
+	if name == "placementZoom" || name == "placementFollow" || name == "placementSnap" || name == "placementCopy" || viewButton {
 		u.abortPlacementDrag("Placement edit cancelled after changing the timeline view.")
+	}
+}
+
+// Quantize deltas rather than positions, retaining an authored off-grid offset.
+func normalizedPlacementSnap(value string) string {
+	switch value {
+	case "3840", "960", "480", "320", "240", "160", "120", "1":
+		return value
+	}
+	return "240"
+}
+func placementSnap(block js.Value) int64 {
+	value := block.Call("closest", "[data-placement-navigation]").Call("querySelector", "[name=placementSnap]").Get("value").String()
+	step, _ := strconv.ParseInt(normalizedPlacementSnap(value), 10, 64)
+	return step
+}
+
+func placementCopyForm(root, block js.Value) (form, button js.Value, name string) {
+	inspectors := root.Call("querySelectorAll", "[data-placement-inspector]")
+	for i := 0; i < inspectors.Length(); i++ {
+		if inspector := inspectors.Index(i); workspaceAttr(inspector, "data-placement-inspector") == workspaceAttr(block, "data-placement-block") {
+			button = inspector.Call("querySelector", "[data-placement-command=duplicate]")
+			if workspacePresent(button) {
+				return button.Call("closest", "form"), button, workspaceAttr(button, "data-placement-copy-name")
+			}
+		}
+	}
+	return js.Undefined(), js.Undefined(), ""
+}
+
+func placementCopyReturn(name string) string {
+	location, _ := url.Parse(workspaceLocation())
+	query := location.Query()
+	query.Set("placement", name)
+	location.RawQuery = query.Encode()
+	return location.RequestURI()
+}
+
+func (u *workspaceUI) placementCopy(block js.Value, at int64) {
+	form, _, name := placementCopyForm(u.root, block)
+	if name == "" {
+		return
+	}
+	values := u.editValues()
+	values["action"], values["name"], values["newName"], values["at"] = "duplicate", workspaceAttr(block, "data-placement-block"), name, strconv.FormatInt(at, 10)+"ticks"
+	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
+}
+
+// Pattern scheduling requires sixteenth-aligned starts. Use the smallest
+// increment shared with the chosen grid; audio and all trims allow exact ticks.
+func placementCompatibleStep(block js.Value, resize bool, step int64) int64 {
+	if resize || workspaceAttr(block, "data-placement-kind") == "audio" {
+		return step
+	}
+	a, b := step, int64(seq.TicksPerStep)
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return step / a * seq.TicksPerStep
+}
+
+func (u *placementEditorUI) placementKeyUp(event js.Value) {
+	if u.drag != nil && event.Get("key").String() == "Shift" {
+		u.drag.free = false
+		if u.drag.moved {
+			u.previewPlacementDrag(u.drag)
+		}
 	}
 }

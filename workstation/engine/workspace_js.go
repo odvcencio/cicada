@@ -62,12 +62,13 @@ type workspaceJob struct {
 	// A current job reads the location when it runs, not when it was queued.
 	// Gestures queued before it can change the step, and a refresh built from
 	// the earlier location would put that older step back in front of the user.
-	current     bool
-	pitchDelta  int
-	pitchOffset int // Focused voice's offset from the step's first pitch.
-	focusRow    string
-	focusStep   string
-	pendingCell js.Value
+	current            bool
+	pitchDelta         int
+	pitchOffset        int // Focused voice's offset from the step's first pitch.
+	focusRow           string
+	focusStep          string
+	pendingCell        js.Value
+	placementSelection string
 }
 
 type workspaceUI struct {
@@ -185,7 +186,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.placements = &placementEditorUI{
 		owned:   u.owned,
 		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
-		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit,
+		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit, placementCopy: u.placementCopy,
 		refresh: func(js.Value) { u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()}) },
 	}
 	u.listen(document, "change", u.placements.placementViewChanged)
@@ -194,6 +195,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(js.Global(), "blur", u.placements.placementViewportChanged)
 	u.listen(js.Global(), "resize", u.placements.placementViewportChanged)
 	u.listen(document, "pointerdown", u.placements.placementPointerDown)
+	u.listen(document, "keyup", u.placements.placementKeyUp)
 	u.listen(document, "pointermove", u.placements.placementPointerMove)
 	u.listen(document, "pointerup", u.placements.placementPointerUp)
 	u.listen(document, "pointercancel", u.placements.placementPointerCancel)
@@ -743,6 +745,20 @@ func (u *workspaceUI) transposeValues(pattern, step string, delta int) (map[stri
 }
 
 func (u *workspaceUI) focusGesture(job workspaceJob) {
+	if job.placementSelection != "" {
+		active := js.Global().Get("document").Get("activeElement")
+		if workspacePresent(active) && !strings.EqualFold(workspaceString(active, "tagName"), "body") && (!workspacePresent(active.Call("closest", "[data-placement-block]")) || workspaceAttr(active.Call("closest", "[data-placement-block]"), "data-placement-block") != job.values["name"]) {
+			return
+		}
+		blocks := u.root.Call("querySelectorAll", "[data-placement-block]")
+		for i := 0; i < blocks.Length(); i++ {
+			if block := blocks.Index(i); workspaceAttr(block, "data-placement-block") == job.placementSelection {
+				block.Call("querySelector", ".placement-select").Call("focus", map[string]any{"preventScroll": true})
+				return
+			}
+		}
+		return
+	}
 	if job.focusStep == "" && job.pitchDelta == 0 {
 		return
 	}
@@ -863,7 +879,15 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		job.values["source_revision"] = u.sourceRevision
 	}
 	if job.method == http.MethodPost {
-		job.values["__cicada_location"] = workspaceLocation()
+		location := workspaceLocation()
+		if job.placementSelection != "" {
+			parsed, _ := url.Parse(location)
+			query := parsed.Query()
+			query.Set("placement", job.placementSelection)
+			parsed.RawQuery = query.Encode()
+			location = parsed.RequestURI()
+		}
+		job.values["__cicada_location"] = location
 	}
 	if job.current {
 		location, _ := url.Parse(workspaceLocation())

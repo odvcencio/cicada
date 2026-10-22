@@ -87,6 +87,21 @@ func bindShellPlacementEditor(root js.Value) func() {
 			}
 		}
 	}
+	u.placementCopy = func(block js.Value, at int64) {
+		if blocked() {
+			return
+		}
+		form, button, name := placementCopyForm(root, block)
+		if name == "" {
+			return
+		}
+		workspaceField(form, "newName").Set("value", name)
+		workspaceField(form, "at").Set("value", strconv.FormatInt(at, 10)+"ticks")
+		workspaceField(form, "__gosx_return_to").Set("value", placementCopyReturn(name))
+		js.Global().Set(placementFocusKey, map[string]any{"id": name, "control": ".placement-select", "field": "data-placement-at", "value": strconv.FormatInt(at, 10)})
+		status("Saving copy of " + workspaceAttr(block, "data-placement-block") + "…")
+		form.Call("requestSubmit", button)
+	}
 	var bindings []workspaceEvent
 	listenTo := func(target js.Value, name string, fn func(js.Value)) {
 		callback := js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -104,6 +119,7 @@ func bindShellPlacementEditor(root js.Value) func() {
 		js.Global().Set(placementFocusKey, js.Undefined())
 		u.placementPointerDown(event)
 	})
+	listen("keyup", u.placementKeyUp)
 	listen("pointermove", u.placementPointerMove)
 	listen("pointerup", u.placementPointerUp)
 	listen("pointercancel", u.placementPointerCancel)

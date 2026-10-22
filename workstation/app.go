@@ -173,6 +173,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	app.Mount("GET /media/instrument-hit", http.HandlerFunc(s.instrumentMedia))
 	app.Mount("GET /media/instrument", http.HandlerFunc(s.instrumentMedia))
 	app.Mount("GET /__workspace", http.HandlerFunc(s.workspaceProjection))
+	app.Mount("GET /studio-startup.js", http.HandlerFunc(serveStartupScript))
 	app.Mount("GET /studio.css", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		_, _ = w.Write(ui.CSS)
