@@ -91,10 +91,7 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 	})
 	u.on(u.root, "change", func(e js.Value) {
 		if e.Get("target").Call("matches", "[data-pattern-preview-track]").Bool() {
-			field := js.Global().Get("document").Call("querySelector", `[data-pattern-variation="`+u.props.Pattern+`"] [name=track]`)
-			if workspacePresent(field) {
-				field.Set("value", e.Get("target").Get("value"))
-			}
+			u.syncPatternSound(e.Get("target").Get("value").String(), true)
 			if u.selected != "" {
 				u.stop("Preview stopped. Loop again with the chosen track.")
 			}
@@ -117,6 +114,12 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 		u.beacon(u.lease, "close", u.sequence)
 	})
 	u.root.Call("setAttribute", "data-sounds-ready", "true")
+	if u.props.Pattern != "" {
+		choice := u.root.Call("querySelector", "[data-pattern-preview-track]")
+		if workspacePresent(choice) {
+			u.syncPatternSound(choice.Get("value").String(), false)
+		}
+	}
 	message := "Listen to a sound, then add it to your song."
 	if u.props.Pattern != "" {
 		message = "Preview leaves your song position unchanged."

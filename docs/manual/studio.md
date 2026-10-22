@@ -418,6 +418,12 @@ MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
+**Hear with** stays with the phrase as you select and edit notes, individual
+gestures, shared lanes and timing. Changing the audition sound keeps local
+draft inputs mounted and adds no browser history entry. The choice is carried
+in the editor URL for refresh and reopening; it does not change the song's
+track assignments. Destination pickers remain independent choices.
+
 **Shape time** develops a played phrase at a different pace: choose half,
 two thirds, one and a half, or twice its current duration. The loop, note
 starts, gates, individual gestures and shared gesture lanes move together.
