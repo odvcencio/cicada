@@ -314,6 +314,26 @@ jobs:
           make test-studio-columns | tee build/studio-column-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          song_root="$browser_root/song"
+          mkdir -p "$song_root"
+          song_cli="$PWD/build/cicada"
+          (cd "$song_root" && "$song_cli" new first-light)
+          export CICADA_SONG_PROOF_DIR="$PWD/build/studio-song-proof"
+          for phase in compose reopen; do
+            ./build/cicada studio "$song_root/first-light/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-song-$phase-server.log" 2>&1 &
+            studio_pid=$!
+            for _ in $(seq 1 100); do
+              if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+              kill -0 "$studio_pid"
+              sleep 0.1
+            done
+            export CICADA_SONG_REOPEN=0
+            if [[ "$phase" == reopen ]]; then export CICADA_SONG_REOPEN=1; fi
+            make test-studio-first-song | tee "build/studio-song-$phase-report.txt"
+            kill "$studio_pid"
+            wait "$studio_pid" || true
+          done
+          unset CICADA_SONG_REOPEN
           ./build/cicada studio "$browser_root/collaboration/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
           studio_pid=$!
           for _ in $(seq 1 100); do
@@ -414,6 +434,9 @@ jobs:
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/
+            build/studio-song-*-report.txt
+            build/studio-song-*-server.log
+            build/studio-song-proof/
             build/studio-continuity-server.log
             build/studio-collaboration-report.txt
             build/studio-collaboration-server.log
@@ -521,6 +544,7 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/channel-capture --mode normal --timeout 120 --workflow build/native-channel-capture-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/dock-fit --mode normal --timeout 120 --workflow desktop/testdata/native-dock-fit-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/columns --mode normal --timeout 120 --workflow desktop/testdata/native-columns-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/export --mode normal --timeout 120 --workflow desktop/testdata/native-export-workflow.js
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Save macOS validation reports
         if: always()

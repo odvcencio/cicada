@@ -10,14 +10,16 @@ import (
 )
 
 type exportView struct {
-	ID        string `json:"id"`
-	Revision  string `json:"revision"`
-	State     string `json:"state"`
-	Path      string `json:"path"`
-	Error     string `json:"error"`
-	Pass      int    `json:"pass"`
-	PassLimit int    `json:"pass_limit"`
-	Report    *struct {
+	ID                    string `json:"id"`
+	Revision              string `json:"revision"`
+	SourceRevision        string `json:"source_revision"`
+	CurrentSourceRevision string `json:"current_source_revision"`
+	State                 string `json:"state"`
+	Path                  string `json:"path"`
+	Error                 string `json:"error"`
+	Pass                  int    `json:"pass"`
+	PassLimit             int    `json:"pass_limit"`
+	Report                *struct {
 		Target   float64 `json:"target_lufs"`
 		Achieved float64 `json:"achieved_lufs"`
 		TruePeak float64 `json:"true_peak_dbtp"`
@@ -30,6 +32,7 @@ type exportView struct {
 	DownloadLabel  string `json:"downloadLabel"`
 	Quality        string `json:"quality"`
 	Progress       string `json:"progress"`
+	Version        string `json:"version"`
 }
 
 func (v *exportView) project() {
@@ -49,6 +52,27 @@ func (v *exportView) project() {
 	if v.State == "shortfall" {
 		v.DownloadLabel = "Download shortfall WAV"
 		v.Quality = "Loudness target was not reached. Inspect the shortfall render before delivery. " + v.Quality
+	}
+	v.Version = ""
+	if v.ID != "" {
+		switch {
+		case v.SourceRevision == "" || v.CurrentSourceRevision == "":
+			v.Version = "This render's saved score version cannot be checked."
+			v.DownloadLabel += " (version unverified)"
+		case v.SourceRevision != v.CurrentSourceRevision:
+			v.Version = "The score has changed since this render. Render again to include your latest saved edits."
+			if v.Busy {
+				v.Version = "Rendering an earlier saved version. Render again after this job finishes to include your latest edits."
+			}
+			v.DownloadLabel = "Download earlier render"
+			if v.State == "shortfall" {
+				v.DownloadLabel = "Download earlier shortfall WAV"
+			}
+		case v.Busy:
+			v.Version = "Rendering the saved score."
+		default:
+			v.Version = "This render matches the saved score."
+		}
 	}
 }
 

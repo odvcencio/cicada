@@ -344,6 +344,11 @@ func (u *workspaceUI) submit(event js.Value) {
 	if workspaceEngineOwned(form) && parsed.Path != "/__actions/source" {
 		return
 	}
+	// Export is a background job. GoSX's managed form and live projection own
+	// its acknowledgement; replacing the score view would close its dialog.
+	if method == http.MethodPost && parsed.Path == "/__actions/export" {
+		return
+	}
 	// File uploads keep GoSX's native multipart transport.
 	files := form.Call("querySelectorAll", "input[type=file]")
 	if files.Length() > 0 {

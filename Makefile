@@ -135,6 +135,11 @@ test-studio-shell:
 test-studio-columns:
 	node --test workstation/browser/columns.test.cjs
 
+.PHONY: test-studio-first-song
+# Requires an untouched disposable first-light project and CICADA_SONG_PROOF_DIR.
+test-studio-first-song:
+	node --test workstation/browser/first-song.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

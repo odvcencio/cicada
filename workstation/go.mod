@@ -55,7 +55,7 @@ replace m31labs.dev/cicada => ..
 // Published capture backend with explicit input authorization.
 replace m31labs.dev/tymbal => github.com/jvcencio/tymbal v0.0.0-20261018235149-d90b3551827b
 
-// Native Studio runtime with the published SVG namespace fix.
-replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261021201939-3bb04dd50868
+// Studio runtime with SVG namespaces and focused export progress updates.
+replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261022004401-f316e8c2fee5
 
 replace m31labs.dev/gosx/editor => github.com/odvcencio/gosx/editor v0.19.12-0.20261021030221-303188b38bc6

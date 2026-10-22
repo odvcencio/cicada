@@ -85,10 +85,10 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}
 		ctx.FormData = nil
-		// Transport has no source projection to refresh. Its GoSX live binding
-		// updates in place, so a completed Play/Stop cannot redirect over a
-		// newer panel navigation. Native forms still use redirect-after-POST.
-		if path == "/api/transport" && action.WantsJSON(ctx.Request) {
+		// Transport and export update their live bindings without changing the
+		// score. Acknowledgement must not navigate away from their controls or
+		// replace unrelated drafts. Native forms retain redirect-after-POST.
+		if (path == "/api/transport" || path == "/api/export") && action.WantsJSON(ctx.Request) {
 			return nil
 		}
 		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/"), "")

@@ -802,13 +802,20 @@ non-default registry values into a new declaration in the score. Source edits
 and preset saves support History undo and redo. Pins remain available for redo.
 Studio continues to refuse multi-file source editing.
 
-### History
+### Export
 
-**Export** renders WAV with a target LUFS value, true-peak ceiling, tolerance,
-sample rate, and PCM depth. Progress, measured LUFS, true peak, applied gain,
-limiter reduction, and the output path update through GoSX. **Download WAV**
+**Export** renders the saved song with a target LUFS value, true-peak ceiling,
+tolerance, sample rate, and PCM depth. Save Code changes and keep retained
+performances to include them in the render. Select **Render WAV** to start a
+background job. Export stays open while progress, measured LUFS, true peak,
+applied gain, limiter reduction, and the output path update. **Download WAV**
 appears when the current job completes. A shortfall render is labeled explicitly
-for inspection before delivery. Rendering checks the displayed source revision;
+for inspection before delivery. Export states whether the render matches the
+saved score files and library definitions. If you save more edits, its link
+changes to **Download earlier render**;
+the earlier WAV remains available until you start another render. Undoing back
+to the rendered score restores the matching label without rendering again.
+Rendering checks the displayed source revision;
 starting another job invalidates its previous download link. Audio stays outside
 the public asset bundle, and long downloads stream through the private service.
 Offline rendering uses the same Cicada kernel as Tymbal playback. See
