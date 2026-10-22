@@ -34,15 +34,16 @@ type workspaceProps struct {
 }
 
 type workspaceProjection struct {
-	ProjectRevision string `json:"projectRevision"`
-	FileRevision    string `json:"fileRevision"`
-	SourceRevision  string `json:"sourceRevision"`
-	HTML            string `json:"html"`
-	Revision        string `json:"revision"`
-	Location        string `json:"location"`
-	Title           string `json:"title"`
-	WriteRevision   string `json:"writeRevision"`
-	RefreshRequired bool   `json:"refreshRequired"`
+	ProjectRevision     string `json:"projectRevision"`
+	FileRevision        string `json:"fileRevision"`
+	SourceRevision      string `json:"sourceRevision"`
+	HTML                string `json:"html"`
+	Revision            string `json:"revision"`
+	Location            string `json:"location"`
+	Title               string `json:"title"`
+	WriteRevision       string `json:"writeRevision"`
+	WriteSourceRevision string `json:"writeSourceRevision"`
+	RefreshRequired     bool   `json:"refreshRequired"`
 }
 
 type workspaceControl struct {
@@ -52,6 +53,7 @@ type workspaceControl struct {
 
 type workspaceJob struct {
 	method, target, confirmed string
+	confirmedSource           string
 	values                    map[string]string
 	form                      js.Value
 	controls                  []workspaceControl
@@ -69,23 +71,24 @@ type workspaceJob struct {
 }
 
 type workspaceUI struct {
-	root, patch js.Value
-	props       workspaceProps
-	ctx         context.Context
-	cancel      context.CancelFunc
-	closed      atomic.Bool
-	blocked     atomic.Bool
-	busy        atomic.Bool
-	jobs        chan workspaceJob
-	events      []workspaceEvent
-	revision    *signal.Signal[string]
-	status      *signal.Signal[string]
-	tool        *signal.Signal[string]
-	drafts      map[string]workspaceDraft
-	scrolls     []workspaceScroll
-	editors     map[string]workspaceEditorBaseline
-	placements  *placementEditorUI
-	sources     map[string]*sourceRecovery
+	root, patch    js.Value
+	props          workspaceProps
+	ctx            context.Context
+	cancel         context.CancelFunc
+	closed         atomic.Bool
+	blocked        atomic.Bool
+	busy           atomic.Bool
+	jobs           chan workspaceJob
+	events         []workspaceEvent
+	revision       *signal.Signal[string]
+	sourceRevision string
+	status         *signal.Signal[string]
+	tool           *signal.Signal[string]
+	drafts         map[string]workspaceDraft
+	scrolls        []workspaceScroll
+	editors        map[string]workspaceEditorBaseline
+	placements     *placementEditorUI
+	sources        map[string]*sourceRecovery
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -150,7 +153,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("GoSX DOM patch receiver is unavailable")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
+	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
 	u.projectRevision.Store(props.ProjectRevision)
 	u.seedEditorBaseline()
 	watch := signal.Watch(func() {
@@ -585,7 +588,7 @@ func (u *workspaceUI) selectCell(cell js.Value, step string) {
 }
 
 func (u *workspaceUI) editValues() map[string]string {
-	return map[string]string{"revision": u.revision.Get(), "csrf": u.props.CSRF, "__cicada_reactive": "1", "__cicada_location": workspaceLocation()}
+	return map[string]string{"revision": u.revision.Get(), "source_revision": u.sourceRevision, "csrf": u.props.CSRF, "__cicada_reactive": "1", "__cicada_location": workspaceLocation()}
 }
 
 func (u *workspaceUI) keyDown(event js.Value) {
@@ -794,6 +797,7 @@ func (u *workspaceUI) queue(job workspaceJob) {
 		u.status.Set("Refresh the workspace before editing again. Your drafts are retained.")
 		return
 	}
+	job.confirmedSource = u.sourceRevision
 	workspacePending(job, 1)
 	select {
 	case u.jobs <- job:
@@ -848,11 +852,15 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		}
 		job.values = values
 		job.confirmed = u.revision.Get()
+		job.confirmedSource = u.sourceRevision
 	}
 	if revision, exists := job.values["revision"]; exists && revision == job.confirmed {
 		// Only advance our own queued gestures. A form already stale when
 		// queued keeps its stale revision for authoritative rejection.
 		job.values["revision"] = u.revision.Get()
+	}
+	if source, exists := job.values["source_revision"]; exists && source == job.confirmedSource {
+		job.values["source_revision"] = u.sourceRevision
 	}
 	if job.method == http.MethodPost {
 		job.values["__cicada_location"] = workspaceLocation()
@@ -903,12 +911,13 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
 		return true
 	}
-	if projection.WriteRevision == "" && projection.Revision != u.revision.Get() {
+	if projection.WriteRevision == "" && (projection.Revision != u.revision.Get() || projection.SourceRevision != u.sourceRevision) {
 		// A read can discover somebody else's edit. Queued gestures
 		// based on the old projection must not be rebased over it.
 		u.clearQueue()
 	}
 	u.revision.Set(projection.Revision)
+	u.sourceRevision = projection.SourceRevision
 	if projection.ProjectRevision != "" {
 		u.projectRevision.Store(projection.ProjectRevision)
 	}
@@ -1005,6 +1014,9 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 			result.Message = "Saved. The score changed before the workspace refreshed."
 		}
 		return projection, "", fmt.Errorf("%s", result.Message)
+	}
+	if result.Data.WriteSourceRevision != "" && result.Data.WriteSourceRevision != result.Data.SourceRevision {
+		return projection, "", fmt.Errorf("Saved. Project files changed before the workspace refreshed.")
 	}
 	return result.Data, result.Message, nil
 }

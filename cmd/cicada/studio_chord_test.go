@@ -72,11 +72,11 @@ func TestStudioChordPlacementUndoAndVoicingEdits(t *testing.T) {
 	call(studioEdit{Action: "step", Pattern: "harmony", Step: 0, NoteEdit: &studioStepEdit{Mode: "note", Pitch: 59, Ratchet: 1, Chance: 100}})
 	assertNotes("harmony", []int{59, 62, 66})
 	last := read()
-	r = studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(last), Action: "chord", Pattern: "harmony", Step: 15, Chord: &edit.SetChord{Notes: []int{57, 60, 64}, Hold: 2}})
+	r = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(last), Action: "chord", Pattern: "harmony", Step: 15, Chord: &edit.SetChord{Notes: []int{57, 60, 64}, Hold: 2}})
 	if r.Code != http.StatusUnprocessableEntity || !bytes.Equal(last, read()) {
 		t.Fatal("out-of-range hold changed the project")
 	}
-	r = studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(before), Action: "chord", Pattern: "harmony", Step: 0, Chord: &edit.SetChord{Notes: []int{57, 60, 64}, Hold: 16}})
+	r = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(before), Action: "chord", Pattern: "harmony", Step: 0, Chord: &edit.SetChord{Notes: []int{57, 60, 64}, Hold: 16}})
 	if r.Code != http.StatusConflict || !bytes.Equal(last, read()) {
 		t.Fatal("stale chord changed the project")
 	}

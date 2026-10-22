@@ -95,6 +95,46 @@ func TestRevisionOnlyLibraryReadDoesNotOpenAudio(t *testing.T) {
 	}
 }
 
+func TestCandidateScoreRevisionMatchesPublishedFilesWithoutWriting(t *testing.T) {
+	root := t.TempDir()
+	main, part, manifest := filepath.Join(root, "main.cicada"), filepath.Join(root, "part.cicada"), filepath.Join(root, "cicada.mod")
+	files := map[string][]byte{main: []byte("cicada 2\ntrack lead acid {}\nscene main { lead=line }\nsong { main }\n"), part: []byte("pattern line acid { c4 . }\n"), manifest: []byte("project receipt\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n")}
+	for path, data := range files {
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := ReadScoreRevision(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overrides := map[string][]byte{part: []byte("pattern line acid { d4 . }\r\n"), manifest: []byte("project candidate\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n")}
+	candidate, err := ReadScoreRevisionWithOverrides(main, overrides)
+	if err != nil || candidate == before {
+		t.Fatal("candidate version did not include staged source and manifest", err)
+	}
+	stillBefore, err := ReadScoreRevision(main)
+	if err != nil || stillBefore != before {
+		t.Fatal("reading candidate wrote to disk", err)
+	}
+	for path, data := range overrides {
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	published, err := ReadScoreRevision(main)
+	if err != nil || published != candidate {
+		t.Fatal("receipt did not identify the published source bytes", err)
+	}
+	if err := os.WriteFile(part, []byte("pattern line acid { e4 . }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	outside, err := ReadScoreRevision(main)
+	if err != nil || outside == candidate {
+		t.Fatal("outside source save reused the candidate receipt", err)
+	}
+}
+
 func TestScoreRevisionRetainsLibraryAmbiguityChecks(t *testing.T) {
 	root, user := libraryFixture(t)
 	loaded := pinLibraryFixture(t, root)

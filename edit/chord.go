@@ -20,7 +20,7 @@ func (SetChord) Kind() string { return "setchord" }
 
 func init() {
 	Register("setchord", func() Intent { return &SetChord{} })
-	Handle("setchord", setChord)
+	Handle("setchord", gridSourceEdit(setChord))
 }
 
 func setChord(ctx *Context, intent Intent) error {
@@ -40,9 +40,6 @@ func setChord(ctx *Context, intent Intent) error {
 		seen[pitch] = true
 	}
 	if err := patternPreflight(ctx); err != nil {
-		return err
-	}
-	if _, _, err := declaration(ctx.Source, patternTypes, id); err != nil {
 		return err
 	}
 	initial, err := ctx.CurrentPlan()

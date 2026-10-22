@@ -48,25 +48,29 @@ func Handle(kind string, handler Handler) {
 }
 
 type Context struct {
-	Source      []byte // working source; handlers replace it
-	Options     Options
-	Envelope    Envelope
-	plan        *Plan
-	parseSource func([]byte) (*notation.Score, []notation.Diagnostic)
-	files       []File
-	fileIndex   map[string]int
-	label       string
-	rendered    bool
-	identities  []string                // verified identity of each render comparison
-	rechecks    []func() (string, bool) // recompute each identity from the same inputs
-	response    map[string]any
+	Source       []byte // working source; handlers replace it
+	Options      Options
+	Envelope     Envelope
+	plan         *Plan
+	parseProject func([]byte, map[string][]byte) (*notation.Score, []notation.Diagnostic, error)
+	files        []File
+	fileIndex    map[string]int
+	label        string
+	rendered     bool
+	identities   []string                // verified identity of each render comparison
+	rechecks     []func() (string, bool) // recompute each identity from the same inputs
+	response     map[string]any
 }
 
 // Parse parses the working buffer. Recording token writers can retain the
 // complete project context when the buffer owns only part of the score.
 func (c *Context) Parse() (*notation.Score, []notation.Diagnostic) {
-	if c.parseSource != nil {
-		return c.parseSource(c.Source)
+	if c.parseProject != nil {
+		score, ds, err := c.ParseProject()
+		if err != nil {
+			return nil, []notation.Diagnostic{{Severity: "error", Message: err.Error()}}
+		}
+		return score, ds
 	}
 	if c.Options.Edition == 0 {
 		return notation.Parse(c.Source)
@@ -77,6 +81,9 @@ func (c *Context) Parse() (*notation.Score, []notation.Diagnostic) {
 // ParseProject parses with the other project sources, through
 // Options.ParseProject when the host provides it.
 func (c *Context) ParseProject() (*notation.Score, []notation.Diagnostic, error) {
+	if c.parseProject != nil {
+		return c.parseProject(c.Source, c.fileOverrides())
+	}
 	if c.Options.ParseProject != nil {
 		return c.Options.ParseProject(c.Source, c.fileOverrides())
 	}

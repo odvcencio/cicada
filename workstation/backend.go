@@ -144,6 +144,7 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 			var acknowledgment workspaceWriteReceipt
 			if json.Unmarshal(data, &acknowledgment) == nil && acknowledgment.Revision != "" {
 				receipt.Revision = acknowledgment.Revision
+				receipt.SourceRevision = response.Header.Get("X-Cicada-Write-Source-Revision")
 			}
 		}
 	}

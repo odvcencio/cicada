@@ -66,7 +66,7 @@ func TestStudioHistoryExcludesRejectedWritesAndLabelsGridAndMixerWrites(t *testi
 	if invalid.Code != http.StatusUnprocessableEntity || len(studioHistoryEdits(t, handler)) != 0 {
 		t.Fatalf("rejected edit entered history: %d", invalid.Code)
 	}
-	response := studioCall(t, handler, "/api/toggle", studioEdit{Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
+	response := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
 	if response.Code != http.StatusOK {
 		t.Fatalf("grid edit: %d %s", response.Code, response.Body.String())
 	}
@@ -92,7 +92,7 @@ func TestStudioHistoryExcludesRejectedWritesAndLabelsGridAndMixerWrites(t *testi
 func TestStudioUndoRedoAndRedoClearing(t *testing.T) {
 	handler, path := studioTestHandler(t)
 	initialRevision := studioRevision([]byte(studioScore))
-	edit := studioCall(t, handler, "/api/toggle", studioEdit{Revision: initialRevision, Pattern: "pulse", Step: 0})
+	edit := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: initialRevision, Pattern: "pulse", Step: 0})
 	if edit.Code != http.StatusOK {
 		t.Fatalf("grid edit: %d %s", edit.Code, edit.Body.String())
 	}
@@ -146,7 +146,7 @@ func TestStudioRevertPatchesAnOlderEditWithoutDroppingLaterChanges(t *testing.T)
 	if save.Code != http.StatusOK {
 		t.Fatalf("source save: %d %s", save.Code, save.Body.String())
 	}
-	changedGrid := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision([]byte(changedTitle)), Pattern: "pulse", Step: 0})
+	changedGrid := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision([]byte(changedTitle)), Pattern: "pulse", Step: 0})
 	if changedGrid.Code != http.StatusOK {
 		t.Fatalf("grid edit: %d %s", changedGrid.Code, changedGrid.Body.String())
 	}
@@ -169,7 +169,7 @@ func TestStudioRevertPatchesAnOlderEditWithoutDroppingLaterChanges(t *testing.T)
 
 func TestStudioUndoRejectsStaleRevisionAndKeepsExternalChange(t *testing.T) {
 	handler, path := studioTestHandler(t)
-	edit := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision([]byte(studioScore)), Pattern: "pulse", Step: 0})
+	edit := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision([]byte(studioScore)), Pattern: "pulse", Step: 0})
 	if edit.Code != http.StatusOK {
 		t.Fatalf("grid edit: %d %s", edit.Code, edit.Body.String())
 	}

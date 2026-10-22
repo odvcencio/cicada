@@ -25,7 +25,7 @@ func TestStudioCreatePatternAndAssignmentUndoTogether(t *testing.T) {
 		t.Fatalf("add sound: %d %s", response.Code, response.Body)
 	}
 	before := read()
-	response = studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(before), Action: "create", NewName: "glow", Track: "keys", Scene: "main", Length: 16, Starter: "chords"})
+	response = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(before), Action: "create", NewName: "glow", Track: "keys", Scene: "main", Length: 16, Starter: "chords"})
 	if response.Code != http.StatusOK {
 		t.Fatalf("create and assign: %d %s", response.Code, response.Body)
 	}
@@ -39,11 +39,11 @@ func TestStudioCreatePatternAndAssignmentUndoTogether(t *testing.T) {
 	if response = studioCall(t, handler, "/api/redo", studioEdit{Revision: studioRevision(before)}); response.Code != http.StatusOK || !bytes.Equal(read(), created) {
 		t.Fatalf("Redo did not restore the exact candidate: %d %s", response.Code, response.Body)
 	}
-	response = studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(before), Action: "create", NewName: "other", Track: "keys", Length: 16})
+	response = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(before), Action: "create", NewName: "other", Track: "keys", Length: 16})
 	if response.Code != http.StatusConflict || !bytes.Equal(read(), created) {
 		t.Fatal("stale creation changed the saved score")
 	}
-	response = studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(created), Action: "create", NewName: "glow", Track: "keys", Length: 16})
+	response = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(created), Action: "create", NewName: "glow", Track: "keys", Length: 16})
 	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "already exists") || !bytes.Equal(read(), created) {
 		t.Fatalf("duplicate creation was not refused intact: %d %s", response.Code, response.Body)
 	}

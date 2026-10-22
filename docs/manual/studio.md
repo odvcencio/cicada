@@ -418,7 +418,14 @@ MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
-Note edits, individual and shared gestures, lane creation and binding, and
+Grid notes, chords, drum hits and dynamics, range edits, timing and resizing
+save to the pattern's owning project file. Drum lanes and shared-phrase guidance
+remain visible when their definitions live in another file. Rapid drawing and
+Undo advance through their own confirmed saves; an outside source save stops
+queued gestures for an explicit refresh. Failed grid inputs stay available
+beside the editor's feedback. Imported definitions need a local variation first.
+
+Performed note edits, individual and shared gestures, lane creation and binding, and
 loop-length edits save to the project file that owns the performance. Each
 change has one Undo step, including phrases in secondary files. Studio checks
 the full project version shown by the form; an outside save refuses the edit

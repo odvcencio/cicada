@@ -113,13 +113,26 @@ Studio accepts the same envelope at `POST /api/intents`, with a required
 `revision`. It commits the whole batch as one undoable edit. A dry run returns
 `diff`, the current `revision`, `valid: true`, and `dryRun: true` without saving.
 
-Committing recorded takes, performed-note, gesture, lane, loop-length, pitch or time edits
+Committing grid edits, recorded takes, performed-note, gesture, lane, loop-length, pitch or time edits
 through this HTTP endpoint also requires `X-Cicada-Source-Revision`, using the
 `sourceRevision` from the workspace projection that supplied the edit. This
 checks every project source before writing, including secondary definitions.
 The pattern HTTP endpoint carries the same receipt as `source_revision` in its
 JSON body; Studio's controls supply it automatically. Read-only dry runs do not
 require the header. The local CLI envelope format is unchanged.
+
+Grid cells, articulation, chords, range edits, timing and resizing write their
+owning project source. The existing shared-phrase policies keep their meaning:
+`pattern` expands uses in that pattern's file, `detach` expands one use, and
+`definition` follows the shared token's source. An edit spanning different
+source buffers refuses atomically; choose `pattern` to make the selection local.
+Imported definitions remain read-only. `/api/toggle` also accepts the displayed
+receipt as `source_revision`.
+
+Grid, intent and history edit responses carry `X-Cicada-Write-Source-Revision`, captured
+from the candidate before publication. Studio compares it with the subsequent
+workspace projection before advancing queued gestures. A source-only outside
+save requires a refresh even if the entry file's revision is unchanged.
 
 `POST /api/record` carries the same receipt as `source_revision` in its JSON
 body. Grid and played takes resolve all destination owners before the atomic

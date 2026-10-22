@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,12 +26,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	createForLive := operation == "create" && ctx.FormData["createFor"] == "@live"
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
-		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
-		switch f["action"] {
-		case "bind", "create", "duplicate", "performance-scale", "performance-pitch",
-			"performed-note", "performance-length", "performed-gesture", "performance-group", "performance-binding", "shared-gesture":
-			p["source_revision"] = f["source_revision"]
-		}
+		p := map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
 		case "chord":
 			step, err := integer(f, "step")
@@ -388,7 +384,18 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	}
 	var laneNames []string
 	usesPhrase := false
-	if score, _ := notation.Parse([]byte(v.Source)); score != nil {
+	var sources []notation.SourceFile
+	for _, file := range v.Files {
+		sources = append(sources, notation.SourceFile{Path: file.Name, Source: []byte(file.Source)})
+	}
+	if len(sources) == 0 {
+		sources = []notation.SourceFile{{Source: []byte(v.Source)}}
+	}
+	edition := 1
+	if v.Project.Edition == 2 {
+		edition = 2
+	}
+	if score, _ := notation.ParseFiles(sources, edition); score != nil {
 		for _, authored := range score.Patterns {
 			if authored.Name == p.ID {
 				for _, lane := range authored.Lanes {
@@ -399,6 +406,12 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 				}
 			}
 		}
+	}
+	if p.Kind == "drums" && len(laneNames) == 0 {
+		for name := range p.Lanes {
+			laneNames = append(laneNames, name)
+		}
+		sort.Strings(laneNames)
 	}
 	lane := ""
 	if len(laneNames) > 0 {
@@ -436,11 +449,11 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		}
 	}
 	form := func(name string, children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: v.Revision, ReturnTo: patternURL(p.ID, step, lane, octave), Class: "action-form"}, append([]gosx.Node{hidden("octave", octave)}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: v.Revision, ReturnTo: patternURL(p.ID, step, lane, octave), Class: "action-form"}, append([]gosx.Node{hidden("octave", octave), hidden("source_revision", v.SourceRevision)}, children...)...)
 	}
-	settings := form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), field("Transpose (semitones)", wholeInput("transpose", int(p.Transpose), -24, 24)), submit("", "", "Save timing"))
+	settings := form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), field("Transpose (semitones)", wholeInput("transpose", int(p.Transpose), -24, 24)), submit("", "", "Save timing"), gridFormStatus(ctx, p.ID, "settings"))
 	if p.Kind == "drums" {
-		settings = form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), hidden("transpose", "0"), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), submit("", "", "Save timing"))
+		settings = form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), hidden("transpose", "0"), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), submit("", "", "Save timing"), gridFormStatus(ctx, p.ID, "settings"))
 	}
 	var ruler []gosx.Node
 	ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "roll-label")), gosx.Text("STEP")))
@@ -510,8 +523,8 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		operations = append(operations, "transpose")
 	}
 	span := min(4, max(1, int(p.Steps)/2))
-	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"))
-	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"))
+	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"), gridFormStatus(ctx, p.ID, "range"))
+	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"), gridFormStatus(ctx, p.ID, "resize"))
 	tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions"), gosx.BoolAttr("data-workspace-tools"), gosx.BoolAttr("hidden"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Piano-roll tools")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "select"), gosx.Attr("aria-pressed", "true")), gosx.Text("Select")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "draw"), gosx.Attr("aria-pressed", "false"), gosx.Attr("aria-keyshortcuts", "B")), gosx.Text("Draw (B)")))
 	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), patternGridTiming(p), s.patternPreview(ctx, v, csrf, p), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
 	var phraseNotice gosx.Node = gosx.Fragment()
@@ -587,7 +600,7 @@ func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step i
 		}
 		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "note", "tie"})), field(pitchLabel, numberInput("pitch", values["pitch"], "0", "127")), field("Accent", checkInput("accent", accent)), field("Slide", checkInput("slide", slide)))
 	}
-	children = append(children, field("Ratchet", numberInput("ratchet", values["ratchet"], "1", "8")), field("Chance (%)", numberInput("chance", values["chance"], "1", "100")), submit("", "", "Save step"))
+	children = append(children, field("Ratchet", numberInput("ratchet", values["ratchet"], "1", "8")), field("Chance (%)", numberInput("chance", values["chance"], "1", "100")), submit("", "", "Save step"), gridFormStatus(ctx, p.ID, "step"))
 	title := fmt.Sprintf("Step %d", step)
 	if lane != "" {
 		title += " · " + strings.ToUpper(lane)

@@ -16,7 +16,7 @@ import (
 func TestCommitTailAppendsEditLogAndKeepsHistoryBehaviour(t *testing.T) {
 	handler, path := studioTestHandler(t)
 	revision := studioRevision([]byte(studioScore))
-	if r := studioCall(t, handler, "/api/toggle", studioEdit{Revision: revision, Pattern: "pulse", Step: 0, Author: "tester", Session: "s1"}); r.Code != 200 {
+	if r := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: revision, Pattern: "pulse", Step: 0, Author: "tester", Session: "s1"}); r.Code != 200 {
 		t.Fatalf("%d %s", r.Code, r.Body.String())
 	}
 	records, _, err := editlog.ReadLog(editlog.Path(path))
@@ -44,6 +44,9 @@ func assertRoute(t *testing.T, fixture []byte, route string, body studioEdit, wa
 		t.Fatal(err)
 	}
 	body.Revision = studioRevision(fixture)
+	if (route == "/api/pattern" || route == "/api/toggle") && body.Action != "duplicate" && body.Action != "bind" && body.Action != "create" {
+		body.SourceRevision = studioProjectReceipt(t, path)
+	}
 	response := studioCall(t, handler, route, body)
 	if response.Code != wantStatus {
 		t.Fatalf("%s status %d, want %d: %s", route, response.Code, wantStatus, response.Body.String())

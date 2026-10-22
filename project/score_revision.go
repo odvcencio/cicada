@@ -36,7 +36,14 @@ func (s *Sources) ScoreRevision() string {
 // payloads. Library resolution retains its normal ambiguity checks. The partial
 // source set stays private so callers cannot use it to bypass render validation.
 func ReadScoreRevision(path string) (string, error) {
-	sources, err := readSourcesMode(path, nil, nil, true)
+	return ReadScoreRevisionWithOverrides(path, nil)
+}
+
+// ReadScoreRevisionWithOverrides identifies a candidate's exact source files
+// before publication. It uses the same absolute-path overrides as ReadSources
+// and does not open sample payloads or validate a render.
+func ReadScoreRevisionWithOverrides(path string, overrides map[string][]byte) (string, error) {
+	sources, err := readSourcesMode(path, overrides, nil, true)
 	if err != nil {
 		return "", err
 	}

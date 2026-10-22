@@ -85,7 +85,7 @@ func TestGeneratedIntentBatchesMatchSequentialHTTP(t *testing.T) {
 					}
 					sequentialHandler := s.domainRoutes()
 					for _, intent := range intents {
-						r := studioCall(t, sequentialHandler, "/api/intents", edits.Envelope{Version: 1, Revision: edits.Revision(state[path]), Intents: []edits.Intent{intent}})
+						r := studioIntentWithProjectReceipt(t, sequentialHandler, path, edits.Envelope{Version: 1, Revision: edits.Revision(state[path]), Intents: []edits.Intent{intent}})
 						assertProposalResponseMatchesDisk(t, path, r)
 						for file := range state {
 							var err error
@@ -117,7 +117,11 @@ func TestGeneratedIntentBatchesMatchSequentialHTTP(t *testing.T) {
 					if err != nil {
 						t.Fatalf("batch: %v", err)
 					}
-					if !bytes.Equal(batch.Source, state[path]) || !reflect.DeepEqual(batch.Plan.Scenes, sequentialPlan.Scenes) || !reflect.DeepEqual(batch.Plan.Tracks, sequentialPlan.Tracks) || !reflect.DeepEqual(batch.Plan.Patterns, sequentialPlan.Patterns) {
+					// Compilers create fresh copy callbacks. Their function identity
+					// is not musical state; retain every serializable pattern field.
+					gotPatterns, _ := json.Marshal(batch.Plan.Patterns)
+					wantPatterns, _ := json.Marshal(sequentialPlan.Patterns)
+					if !bytes.Equal(batch.Source, state[path]) || !reflect.DeepEqual(batch.Plan.Scenes, sequentialPlan.Scenes) || !reflect.DeepEqual(batch.Plan.Tracks, sequentialPlan.Tracks) || !bytes.Equal(gotPatterns, wantPatterns) {
 						t.Fatal("batch bytes or compiled music differ from sequential HTTP")
 					}
 					seen := map[string]bool{}
@@ -133,12 +137,12 @@ func TestGeneratedIntentBatchesMatchSequentialHTTP(t *testing.T) {
 					handler := s.domainRoutes()
 					before := noopFiles(t, root)
 					env.DryRun = true
-					r := studioCall(t, handler, "/api/intents", env)
+					r := studioIntentWithProjectReceipt(t, handler, path, env)
 					if r.Code != 200 || !strings.Contains(r.Body.String(), "part0.cicada") || !reflect.DeepEqual(before, noopFiles(t, root)) || len(studioHistoryEdits(t, handler)) != 0 {
 						t.Fatalf("auxiliary dry run: %d %s", r.Code, r.Body.String())
 					}
 					env.DryRun = false
-					r = studioCall(t, handler, "/api/intents", env)
+					r = studioIntentWithProjectReceipt(t, handler, path, env)
 					assertProposalResponseMatchesDisk(t, path, r)
 					records, skipped, err := editlog.ReadLog(editlog.Path(path))
 					if err != nil || skipped != 0 || len(records) != 1 || len(records[0].Intents) != len(intents) || len(studioHistoryEdits(t, handler)) != 1 {

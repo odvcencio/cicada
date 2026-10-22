@@ -85,7 +85,7 @@ func init() {
 	Register("resizepattern", func() Intent { return &ResizePattern{} })
 	Register("bindscene", func() Intent { return &BindScene{} })
 	for _, kind := range []string{"setpatternsettings", "setstep", "duplicatepattern", "setrange", "resizepattern", "bindscene"} {
-		Handle(kind, editPattern)
+		Handle(kind, gridSourceEdit(editPattern))
 	}
 }
 

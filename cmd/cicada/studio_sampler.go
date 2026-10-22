@@ -418,7 +418,7 @@ func (s *studio) samplerCommand(w http.ResponseWriter, r *http.Request) {
 			files = append(files, studioAuxiliaryFile{Path: filepath.Join(store.Root, store.BankPath), Before: before, After: padsampler.BankBytes(b), Mode: 0600})
 			mutation := studioMutation{Source: result.Source, HistoryDetail: "Resample pads into Session", Files: files, Response: map[string]any{"placement": input.NewName, "bankRevision": padsampler.Revision(b)}}
 			outcome := s.commitMutationLocked(studioEdit{Revision: input.Revision, SourceRevision: input.SourceRevision, Label: "Resample pads into Session"}, source, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &env})
-			studioJSON(w, outcome.Status, outcome.Response)
+			outcome.write(w)
 			return
 		}
 	default:

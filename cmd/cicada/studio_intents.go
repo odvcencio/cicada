@@ -251,15 +251,17 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 	s.applyIntents(w, studioEdit{Revision: env.Revision, SourceRevision: r.Header.Get("X-Cicada-Source-Revision"), Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
 }
 
-// Performed edits can replace declarations in owned secondary sources. The
+// Pattern edits can replace declarations in owned secondary sources. The
 // entry revision alone cannot prove that the musician saw those source bytes.
-func performanceReceiptRequired(env edits.Envelope) bool {
+func sourceReceiptRequired(env edits.Envelope) bool {
 	if env.DryRun {
 		return false
 	}
 	for _, intent := range env.Intents {
 		switch intent.(type) {
-		case *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
+		case *edits.ToggleStep, *edits.SetPitch, *edits.ToggleModifier, *edits.CycleStep,
+			*edits.SetDrumVelocity, *edits.SetStep, *edits.SetChord, *edits.SetPatternSettings,
+			*edits.SetRange, *edits.ResizePattern, *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
 			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
 			*edits.ScalePerformance, *edits.ShapePerformancePitch:
 			return true
@@ -268,8 +270,8 @@ func performanceReceiptRequired(env edits.Envelope) bool {
 	return false
 }
 
-func performanceConflictMessage(env edits.Envelope, message string) string {
-	if performanceReceiptRequired(env) && strings.Contains(message, edits.ErrProjectChanged.Error()) {
+func sourceConflictMessage(env edits.Envelope, message string) string {
+	if sourceReceiptRequired(env) && strings.Contains(message, edits.ErrProjectChanged.Error()) {
 		return "Saved project files or libraries changed. Refresh Studio before saving this edit."
 	}
 	return message
@@ -294,7 +296,7 @@ func intentDiff(before []byte, result *edits.Result, name string) string {
 func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, prepare func([]byte, *edits.Options) (edits.Envelope, error), finish func(*edits.Result) error, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if performanceReceiptRequired(env) && edit.SourceRevision == "" {
+	if sourceReceiptRequired(env) && edit.SourceRevision == "" {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "refresh Studio before editing this phrase"})
 		return
 	}
@@ -321,7 +323,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": performanceConflictMessage(env, err.Error())})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": sourceConflictMessage(env, err.Error())})
 		return
 	}
 	opts, err := s.editOptions(current, nil)
@@ -396,14 +398,14 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusConflict {
 		if message, ok := outcome.Response["error"].(string); ok {
-			outcome.Response["error"] = performanceConflictMessage(env, message)
+			outcome.Response["error"] = sourceConflictMessage(env, message)
 		}
 		if latest, err := os.ReadFile(s.path); err == nil {
 			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
 		}
 		outcome.Response["playingRevision"] = studioRevision(s.lastGoodSource)
 	}
-	studioJSON(w, outcome.Status, outcome.Response)
+	outcome.write(w)
 }
 
 type stagedProposal struct {
@@ -609,7 +611,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
 		}
 	}
-	studioJSON(w, outcome.Status, outcome.Response)
+	outcome.write(w)
 }
 
 func (s *studio) discardProposal(w http.ResponseWriter, r *http.Request) {

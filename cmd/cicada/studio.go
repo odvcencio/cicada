@@ -395,11 +395,13 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	source, err := os.ReadFile(s.path)
+	sourceRevision := ""
 	if err == nil {
 		state := s.transport.snapshot()
 		bar, step := historyPosition(state)
 		s.history.observe(source, bar, step)
-		if p, parseErr := compileStudioSource(s.path, source); parseErr == nil {
+		if p, sources, parseErr := compileStudioSourceSnapshot(s.path, source, nil); parseErr == nil {
+			sourceRevision = sources.ScoreRevision()
 			s.lastGoodSource, s.lastGoodProject = bytes.Clone(source), p
 		}
 	}
@@ -417,7 +419,7 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var page bytes.Buffer
-	if err := writeScorePage(&page, p, string(goodSource), filepath.Base(s.path), true, studioRevision(goodSource)); err != nil {
+	if err := writeScorePage(&page, p, string(goodSource), filepath.Base(s.path), true, studioRevision(goodSource), sourceRevision); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

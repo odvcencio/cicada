@@ -337,7 +337,7 @@ func submit(name, value, label string) gosx.Node {
 func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gosx.Node {
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "toolbar")),
 		s.form(view, csrf, panel, "transport", submit("action", "play", "Play"), submit("action", "pause", "Pause"), submit("action", "stop", "Stop"), submit("action", "home", "Return to start")),
-		s.form(view, csrf, panel, "undo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Undo")), s.form(view, csrf, panel, "redo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Redo")),
+		s.form(view, csrf, panel, "undo", hidden("source_revision", view.SourceRevision), hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Undo")), s.form(view, csrf, panel, "redo", hidden("source_revision", view.SourceRevision), hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Redo")),
 		ui.Position(ui.TransportProps{Playing: t.Playing, Bar: t.Bar, Step: t.Step, Backend: t.Backend, Error: t.Error, Listening: t.Listening}),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "transport-capture-hint"), gosx.Attr("data-transport-capture-hint", ""), gosx.BoolAttr("hidden")), gosx.Text("Recording in progress. Stop saves your take; finish it before changing playback.")),
 	)

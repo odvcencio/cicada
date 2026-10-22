@@ -99,7 +99,7 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 				body := c.body
 				body.Source = strings.ReplaceAll(body.Source, "\n", newline)
 				body.Revision = studioRevision([]byte(fixture))
-				if c.route == "/api/record" {
+				if c.route == "/api/record" || c.route == "/api/pattern" || c.route == "/api/toggle" {
 					body.SourceRevision = studioProjectReceipt(t, path)
 				}
 				if c.prime {
@@ -113,7 +113,7 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 					t.Fatal(err)
 				}
 				body.Revision = studioRevision(current)
-				if c.route == "/api/record" {
+				if c.route == "/api/record" || c.route == "/api/pattern" || c.route == "/api/toggle" {
 					body.SourceRevision = studioProjectReceipt(t, path)
 				}
 				if c.name == "file part replace" {

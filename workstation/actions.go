@@ -188,7 +188,11 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 			if f["file"] != "" && f["fileRevision"] != "" {
 				revision = f["fileRevision"]
 			}
-			return map[string]any{"revision": revision, "file": f["file"], "action": command}, nil
+			payload := map[string]any{"revision": revision, "file": f["file"], "action": command}
+			if f["file"] == "" {
+				payload["source_revision"] = f["source_revision"]
+			}
+			return payload, nil
 		})(ctx)
 	}
 }

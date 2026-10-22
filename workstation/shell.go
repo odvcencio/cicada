@@ -113,7 +113,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Keys: keys("transport.loop")}),
 		ui.Placeholder(ui.PlaceholderProps{Label: "Metronome"}),
 		ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
-		form("undo-form", "undo", file("Undo")), form("redo-form", "redo", file("Redo")),
+		form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo")), form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo")),
 		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History"}),
 		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio"}),
 		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),

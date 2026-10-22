@@ -68,6 +68,9 @@ func TestPatternEditsKeepInheritedAudioEditionSource(t *testing.T) {
 						NoteEdit: &studioStepEdit{Mode: "note", Pitch: pitch, Ratchet: 1, Chance: 100},
 						Range:    &studioPatternRange{Operation: "clear", First: 0, Last: 1},
 					}
+					if action != "duplicate" {
+						edit.SourceRevision = studioProjectReceipt(t, path)
+					}
 					response := studioCall(t, handler, "/api/pattern", edit)
 					if response.Code != http.StatusOK {
 						t.Fatalf("inherited edition %s: %d %s", action, response.Code, response.Body.String())

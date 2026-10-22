@@ -737,6 +737,28 @@ jobs:
             fi
           done
           python3 workstation/browser/recording-sources-audio.py --cicada build/cicada --proof build/studio-recording-sources-proof
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          node workstation/browser/grid-sources.test.cjs --write-fixture "$browser_root/grid-sources" > build/studio-grid-sources-fixture.json
+          export CICADA_GRID_SOURCES_FIXTURE="$PWD/build/studio-grid-sources-fixture.json"
+          for grid_sources_phase in journey reopen; do
+            ./build/cicada studio "$browser_root/grid-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-grid-sources-$grid_sources_phase-server.log" 2>&1 &
+            studio_pid=$!
+            for _ in $(seq 1 100); do
+              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+              kill -0 "$studio_pid"
+              sleep 0.1
+            done
+            CICADA_GRID_SOURCES_REOPEN=0
+            if [[ "$grid_sources_phase" == reopen ]]; then CICADA_GRID_SOURCES_REOPEN=1; fi
+            export CICADA_GRID_SOURCES_REOPEN
+            CICADA_GRID_SOURCES_PROOF_DIR="$PWD/build/studio-grid-sources-proof" node --test workstation/browser/grid-sources.test.cjs | tee "build/studio-grid-sources-$grid_sources_phase-report.txt"
+            if [[ "$grid_sources_phase" == journey ]]; then
+              kill "$studio_pid"
+              wait "$studio_pid" || true
+            fi
+          done
+          python3 workstation/browser/grid-sources-audio.py --cicada build/cicada --proof build/studio-grid-sources-proof
           for print_layout in primary secondary song controls tempo; do
             print_args=()
             print_phases=(sampler producer roundtrip reopen)
@@ -905,6 +927,10 @@ jobs:
             build/studio-recording-sources-*-server.log
             build/studio-recording-sources-fixture.json
             build/studio-recording-sources-proof/
+            build/studio-grid-sources-*-report.txt
+            build/studio-grid-sources-*-server.log
+            build/studio-grid-sources-fixture.json
+            build/studio-grid-sources-proof/
             build/studio-print-*-report.txt
             build/studio-print-*-server.log
             build/studio-print-*-fixture.json
@@ -1045,6 +1071,8 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/performance-sources --mode normal --timeout 300 --project-fixture build/native-performance-sources/main.cicada --workflow desktop/testdata/native-performance-sources-workflow.js
           node workstation/browser/recording-sources.test.cjs --write-fixture build/native-recording-sources > build/native-recording-sources-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/recording-sources --mode normal --timeout 300 --project-fixture build/native-recording-sources/main.cicada --workflow desktop/testdata/native-recording-sources-workflow.js
+          node workstation/browser/grid-sources.test.cjs --write-fixture build/native-grid-sources > build/native-grid-sources-fixture.json
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/grid-sources --mode normal --timeout 300 --project-fixture build/native-grid-sources/main.cicada --workflow desktop/testdata/native-grid-sources-workflow.js
           go -C workstation run ./browser/testdata/print-sources --sampler-bank > build/native-print-sources-fixture.json
           print_score="$(node -e 'process.stdout.write(require("./build/native-print-sources-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/print-sources --mode normal --timeout 180 --project-fixture "$print_score" --workflow desktop/testdata/native-print-sources-workflow.js

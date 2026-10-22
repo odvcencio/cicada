@@ -110,6 +110,7 @@ type scoreView struct {
 	SourceHTML                    template.HTML
 	SourceText                    string
 	Revision                      string
+	SourceRevision                string
 	Studio                        bool
 	LineNumbers                   []int
 	Tracks                        []viewTrack
@@ -157,14 +158,18 @@ func writeScoreView(w io.Writer, p *project.Project, source, sourceName string) 
 	return writeScorePage(w, p, source, sourceName, false, "")
 }
 
-func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, studio bool, revision string) error {
+func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, studio bool, revision string, sourceRevisions ...string) error {
 	if p == nil {
 		return fmt.Errorf("nil project")
+	}
+	sourceRevision := ""
+	if len(sourceRevisions) > 0 {
+		sourceRevision = sourceRevisions[0]
 	}
 	view := scoreView{
 		Title: p.Title, Tempo: strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64),
 		Key: pitchNames[p.Key.Root] + " " + p.Key.Scale, SourceName: sourceName,
-		SourceText: source, Revision: revision, Studio: studio,
+		SourceText: source, Revision: revision, SourceRevision: sourceRevision, Studio: studio,
 		Tracks: make([]viewTrack, 0, len(p.Tracks)), Patterns: make([]viewPattern, 0, len(p.Patterns)),
 		Scenes: make([]viewScene, 0, len(p.Scenes)), Song: make([]viewSongEntry, 0, len(p.Song)),
 		MasterCompressor: make([]viewMixerParam, 0),

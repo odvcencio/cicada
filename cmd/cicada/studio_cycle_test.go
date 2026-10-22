@@ -26,7 +26,7 @@ func TestStudioRatchetAndChanceCellsWriteSource(t *testing.T) {
 		{"chance", "{ 1*3?25 . 5 . }"},
 		{"chance", "{ 1*3 . 5 . }"},
 	} {
-		result := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "pulse", Step: 0, Modifier: edit.kind})
+		result := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(source), Pattern: "pulse", Step: 0, Modifier: edit.kind})
 		if result.Code != http.StatusOK {
 			t.Fatalf("%s cycle failed: %d %s", edit.kind, result.Code, result.Body.String())
 		}

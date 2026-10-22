@@ -20,22 +20,24 @@ import (
 // forms retain GoSX's redirect-after-POST contract; the mounted GoSX workspace
 // uses the framework's incremental tree diff and patch receiver instead.
 type workspaceProjection struct {
-	ProjectRevision string `json:"projectRevision"`
-	FileRevision    string `json:"fileRevision"`
-	SourceRevision  string `json:"sourceRevision"`
-	HTML            string `json:"html"`
-	Revision        string `json:"revision"`
-	Location        string `json:"location"`
-	Title           string `json:"title"`
-	WriteRevision   string `json:"writeRevision,omitempty"`
-	Saved           bool   `json:"saved,omitempty"`
-	RefreshRequired bool   `json:"refreshRequired,omitempty"`
+	ProjectRevision     string `json:"projectRevision"`
+	FileRevision        string `json:"fileRevision"`
+	SourceRevision      string `json:"sourceRevision"`
+	HTML                string `json:"html"`
+	Revision            string `json:"revision"`
+	Location            string `json:"location"`
+	Title               string `json:"title"`
+	WriteRevision       string `json:"writeRevision,omitempty"`
+	WriteSourceRevision string `json:"writeSourceRevision,omitempty"`
+	Saved               bool   `json:"saved,omitempty"`
+	RefreshRequired     bool   `json:"refreshRequired,omitempty"`
 }
 
 // Keep the native acknowledgment outside the action result: selecting a
 // redirect replaces that result, and the subsequent read may see another save.
 type workspaceWriteReceipt struct {
-	Revision string `json:"revision"`
+	Revision       string `json:"revision"`
+	SourceRevision string `json:"-"`
 }
 
 type workspaceWriteReceiptKey struct{}
@@ -195,7 +197,7 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 			// The shell does not apply a projection: after a save it reloads. Its
 			// engines read this response through size caps, and the whole shell can
 			// exceed them (the Code lens holds the source), so return a receipt.
-			projection = workspaceProjection{Revision: receipt.Revision, Location: location}
+			projection = workspaceProjection{Revision: receipt.Revision, SourceRevision: receipt.SourceRevision, Location: location}
 		} else {
 			projection, err = s.projection(r, location)
 		}
@@ -205,12 +207,13 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 			result.Data, _ = json.Marshal(map[string]any{"saved": true, "refreshRequired": true, "writeRevision": receipt.Revision})
 		} else {
 			projection.WriteRevision = receipt.Revision
+			projection.WriteSourceRevision = receipt.SourceRevision
 			projection.Saved = receipt.Revision != ""
 			readRevision := projection.Revision
 			if (name == "source" || name == "undo" || name == "redo") && fields["file"] != "" {
 				readRevision = projection.FileRevision
 			}
-			projection.RefreshRequired = receipt.Revision != "" && receipt.Revision != readRevision
+			projection.RefreshRequired = receipt.Revision != "" && (receipt.Revision != readRevision || receipt.SourceRevision != "" && receipt.SourceRevision != projection.SourceRevision)
 			if projection.RefreshRequired {
 				result.Message = "Saved. The score changed before the workspace refreshed."
 			}
