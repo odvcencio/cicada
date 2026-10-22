@@ -78,6 +78,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		s.patternPreview(ctx, v, csrf, p),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%d notes · %s loop", len(notes), performanceDuration(performance.LengthTicks)))),
 		notePerformanceTrace(notes, p.ID), transpose,
+		s.performancePitch(ctx, v, csrf, p, selected),
 		s.performanceTime(ctx, v, csrf, p, selected),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "performance-content")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("tabindex", "0"), gosx.Attr("role", "region"), gosx.Attr("aria-label", "Performed notes")),

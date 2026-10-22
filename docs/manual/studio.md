@@ -424,6 +424,18 @@ draft inputs mounted and adds no browser history entry. The choice is carried
 in the editor URL for refresh and reopening; it does not change the song's
 track assignments. Destination pickers remain independent choices.
 
+**Shape pitch** develops a played melody without editing notes one by one.
+**Shift notes** moves every note by a nonzero −48 to +48 semitones. Select a
+note, then **Mirror around** that pitch to turn rising intervals into falling
+ones and falling intervals into rising ones. Chords mirror with the melody.
+Timing, gates, velocity, shared lanes, vibrato and recorded pitch bends stay
+as played; mirroring note intervals does not reverse a bend's direction.
+The editor refuses a transformation that would put a stored or sounding
+note outside MIDI 0–127, including the pattern's existing transpose. Each
+operation has one Undo step and affects every use of the pattern. Create a
+variation first to keep the original. Imported phrases offer that local-copy
+workflow instead of changing their library.
+
 **Shape time** develops a played phrase at a different pace: choose half,
 two thirds, one and a half, or twice its current duration. The loop, note
 starts, gates, individual gestures and shared gesture lanes move together.

@@ -101,6 +101,8 @@ func editPerformance(ctx *Context, intent Intent) error {
 		entity = in.Entity
 	case *ScalePerformance:
 		entity = in.Entity
+	case *ShapePerformancePitch:
+		entity = in.Entity
 	case *SetPerformedExpression:
 		entity = in.Entity
 	case *SetPerformanceGroup:
@@ -119,6 +121,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 		return err
 	}
 	var performance *seq.Performance
+	var transpose int
 	for _, pattern := range plan.Patterns {
 		if pattern.ID == id && pattern.Performance != nil {
 			copy := *pattern.Performance
@@ -131,6 +134,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 				copy.Notes[i].Expressions = append([]seq.PerformedExpression(nil), copy.Notes[i].Expressions...)
 			}
 			performance = &copy
+			transpose = int(pattern.Transpose)
 			break
 		}
 	}
@@ -138,6 +142,15 @@ func editPerformance(ctx *Context, intent Intent) error {
 		return fmt.Errorf("pattern %q is not a played-timing performance", id)
 	}
 	switch in := intent.(type) {
+	case *ShapePerformancePitch:
+		if err := shapePerformancePitch(performance, transpose, in); err != nil {
+			return err
+		}
+		if err := replaceProjectPerformance(ctx, id, performance, true, true); err != nil {
+			return err
+		}
+		ctx.SetLabel("Performance · " + id + " pitch shaped")
+		return nil
 	case *ScalePerformance:
 		if err := scalePerformance(performance, in.Numerator, in.Denominator); err != nil {
 			return err

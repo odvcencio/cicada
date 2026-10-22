@@ -503,6 +503,7 @@ type studioEdit struct {
 	SharedExpression      *edits.SetSharedExpression    `json:"sharedExpression,omitempty"`
 	PerformanceLength     int64                         `json:"performanceLength,omitempty"`
 	PerformanceScale      *edits.ScalePerformance       `json:"performanceScale,omitempty"`
+	PerformancePitch      *edits.ShapePerformancePitch  `json:"performancePitch,omitempty"`
 	NoteEdit              *studioStepEdit               `json:"noteEdit,omitempty"`
 	Chord                 *edits.SetChord               `json:"chord,omitempty"`
 	NewName               string                        `json:"newName,omitempty"`

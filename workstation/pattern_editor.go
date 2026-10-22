@@ -26,7 +26,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
-		if f["action"] == "bind" || f["action"] == "create" || f["action"] == "duplicate" || f["action"] == "performance-scale" {
+		if f["action"] == "bind" || f["action"] == "create" || f["action"] == "duplicate" || f["action"] == "performance-scale" || f["action"] == "performance-pitch" {
 			p["source_revision"] = f["source_revision"]
 		}
 		switch f["action"] {
@@ -184,6 +184,25 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 				return nil, fmt.Errorf("choose a phrase duration")
 			}
 			p["performanceScale"] = map[string]int{"numerator": numerator, "denominator": denominator}
+		case "performance-pitch":
+			pitch := map[string]any{"operation": f["pitch_operation"]}
+			switch f["pitch_operation"] {
+			case "transpose":
+				amount, err := integer(f, "semitones")
+				if err != nil || amount < -48 || amount > 48 || amount == 0 {
+					return nil, fmt.Errorf("choose a nonzero shift from −48 to +48 semitones")
+				}
+				pitch["semitones"] = amount
+			case "reflect":
+				pivot, err := integer(f, "pivot")
+				if err != nil || pivot < 0 || pivot > 127 {
+					return nil, fmt.Errorf("choose a note to mirror around")
+				}
+				pitch["pivot"] = pivot
+			default:
+				return nil, fmt.Errorf("choose a phrase pitch transformation")
+			}
+			p["performancePitch"] = pitch
 		case "settings":
 			swing, err := finiteNumber(f, "swing")
 			if err != nil || swing < 50 || swing > 75 || math.Abs(swing*100-math.Round(swing*100)) > 1e-6 {

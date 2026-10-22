@@ -91,6 +91,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"setperformednote":       &edits.SetPerformedNote{Entity: "pattern:played", Index: 0, Tick: 19, EndTick: 800, Pitch: 64, Velocity: 101},
 		"resizeperformance":      &edits.ResizePerformance{Entity: "pattern:played", LengthTicks: 7680},
 		"scaleperformance":       &edits.ScalePerformance{Entity: "pattern:played", Numerator: 2, Denominator: 1},
+		"shapeperformancepitch":  &edits.ShapePerformancePitch{Entity: "pattern:played", Operation: "transpose", Semitones: 12},
 		"togglestep":             &edits.ToggleStep{Entity: "step:melody/0", Shared: "definition"},
 		"setpitch":               &edits.SetPitch{Entity: "step:melody/0", Pitch: 62, Shared: "definition"},
 		"togglemodifier":         &edits.ToggleModifier{Entity: "step:melody/0", Modifier: "accent", Shared: "definition"},
@@ -194,6 +195,10 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
+					case "shapeperformancepitch":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("note 72 at=17ticks length=703ticks velocity=82")) {
+							t.Fatalf("pitch shaping did not edit its owning source: candidate=%v error=%v", result != nil, err)
+						}
 					case "scaleperformance":
 						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("note 60 at=34ticks length=1406ticks velocity=82")) {
 							t.Fatalf("time scaling did not edit its owning source: candidate=%v error=%v", result != nil, err)

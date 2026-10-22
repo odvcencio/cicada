@@ -315,6 +315,9 @@ func studioEditLabel(edit studioEdit) string {
 	if edit.Action == "performance-scale" && edit.PerformanceScale != nil {
 		return fmt.Sprintf("Performance · %s duration scaled %d/%d", edit.Pattern, edit.PerformanceScale.Numerator, edit.PerformanceScale.Denominator)
 	}
+	if edit.Action == "performance-pitch" {
+		return "Performance · " + edit.Pattern + " pitch shaped"
+	}
 	if edit.Action == "project" {
 		return "Project title, tempo, and key changed"
 	}

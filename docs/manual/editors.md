@@ -112,6 +112,14 @@ has none. Successful writes append one record to `.cicada/edits.jsonl`.
 Studio accepts the same envelope at `POST /api/intents`, with a required
 `revision`. It commits the whole batch as one undoable edit. A dry run returns
 `diff`, the current `revision`, `valid: true`, and `dryRun: true` without saving.
+`shapeperformancepitch` takes `entity: "pattern:name"` and either
+`operation: "transpose"` with a nonzero `semitones` from −48 to +48, or
+`operation: "reflect"` with a `pivot` MIDI pitch from 0 to 127. The pivot is
+the stored pitch, before the pattern's transpose. It changes all performed
+note pitches while retaining timing, velocities and both gesture layers.
+Out-of-range stored or sounding notes refuse the entire edit. Owned secondary
+sources are supported; imported libraries require a local variation first.
+
 Unknown fields and intent kinds are rejected. The arrange intents are
 `moveclip`, `resizeclip`, `splitclip`, `duplicateclip` and `deleteclip`, each
 with an `entity` such as `placement:intro`, plus `attick` or `lengthticks` where
