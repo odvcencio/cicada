@@ -176,7 +176,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.placements = &placementEditorUI{
 		owned:   u.owned,
 		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
-		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit,
+		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit, placementCopy: u.placementCopy,
 		refresh: func(js.Value) { u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()}) },
 	}
 	u.listen(document, "change", u.placements.placementViewChanged)
@@ -185,6 +185,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(js.Global(), "blur", u.placements.placementViewportChanged)
 	u.listen(js.Global(), "resize", u.placements.placementViewportChanged)
 	u.listen(document, "pointerdown", u.placements.placementPointerDown)
+	u.listen(document, "keyup", u.placements.placementKeyUp)
 	u.listen(document, "pointermove", u.placements.placementPointerMove)
 	u.listen(document, "pointerup", u.placements.placementPointerUp)
 	u.listen(document, "pointercancel", u.placements.placementPointerCancel)

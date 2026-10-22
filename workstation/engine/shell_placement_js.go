@@ -16,7 +16,7 @@ func selectedPlacementInspector(root js.Value) js.Value {
 		return js.Undefined()
 	}
 	arrange := root.Call("querySelector", "#view-panel-arrange")
-	if !workspacePresent(arrange) || arrange.Get("hidden").Bool() || hasUnsavedWork() {
+	if !workspacePresent(arrange) || arrange.Get("hidden").Bool() || workspacePresent(arrange.Call("querySelector", "[data-placement-dragging]")) || hasUnsavedWork() {
 		return js.Undefined()
 	}
 	active := js.Global().Get("document").Get("activeElement")
@@ -51,7 +51,7 @@ func watchPlacementCommands(host enginewasm.Context, root js.Value) func() {
 	}
 	observer := js.Global().Get("MutationObserver").New(callback)
 	if arrange := root.Call("querySelector", "#view-panel-arrange"); workspacePresent(arrange) {
-		observer.Call("observe", arrange, map[string]any{"subtree": true, "attributes": true, "attributeFilter": []any{"hidden", "data-placement-selected"}})
+		observer.Call("observe", arrange, map[string]any{"subtree": true, "attributes": true, "attributeFilter": []any{"hidden", "data-placement-selected", "data-placement-dragging"}})
 	}
 	update()
 	return func() {

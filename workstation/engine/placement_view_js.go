@@ -17,8 +17,8 @@ import (
 var placementViewPublisher = &sharedLoop{start: func(ctx context.Context) { go runPlacementView(ctx) }}
 
 type placementView struct {
-	zoom                string
-	follow              bool
+	zoom, snap          string
+	follow, copyDrag    bool
 	root, scroll, world js.Value
 	width, left         float64
 	stored              placementViewPreference
@@ -28,6 +28,8 @@ type placementView struct {
 // and Undo. The loopback origin scopes them to this project/window session.
 type placementViewPreference struct {
 	Zoom   string
+	Snap   string
+	Copy   bool
 	Follow bool
 	Scroll float64
 }
@@ -36,6 +38,7 @@ const placementViewStorage = "cicada-placement-view"
 
 func readPlacementViewPreference() (p placementViewPreference) {
 	p.Zoom = "48"
+	p.Snap = "240"
 	defer func() { _ = recover() }()
 	raw := js.Global().Get("sessionStorage").Call("getItem", placementViewStorage)
 	if raw.Type() == js.TypeString {
@@ -46,6 +49,7 @@ func readPlacementViewPreference() (p placementViewPreference) {
 	default:
 		p.Zoom = "48"
 	}
+	p.Snap = normalizedPlacementSnap(p.Snap)
 	if p.Scroll < 0 || math.IsNaN(p.Scroll) || math.IsInf(p.Scroll, 0) {
 		p.Scroll = 0
 	}
@@ -57,7 +61,7 @@ func (v *placementView) remember() {
 		return
 	}
 	v.left = v.scroll.Get("scrollLeft").Float()
-	p := placementViewPreference{Zoom: v.zoom, Follow: v.follow, Scroll: v.left}
+	p := placementViewPreference{Zoom: v.zoom, Snap: v.snap, Copy: v.copyDrag, Follow: v.follow, Scroll: v.left}
 	if p == v.stored {
 		return
 	}
@@ -86,6 +90,10 @@ func (v *placementView) find() bool {
 	follow := root.Call("querySelector", "[name=placementFollow]")
 	if restore && follow.Get("checked").Bool() != v.follow {
 		follow.Set("checked", v.follow)
+	}
+	if restore {
+		root.Call("querySelector", "[name=placementSnap]").Set("value", v.snap)
+		root.Call("querySelector", "[name=placementCopy]").Set("checked", v.copyDrag)
 	}
 	if changed || v.width != v.scroll.Get("clientWidth").Float() || workspaceAttr(v.world, "data-placement-zoom") != v.zoom {
 		v.scale(false)
@@ -161,6 +169,11 @@ func (v *placementView) event(event js.Value) {
 			v.zoom = value
 			target.Set("value", value)
 			v.scale(true)
+		case "placementSnap":
+			v.snap = normalizedPlacementSnap(value)
+			target.Set("value", v.snap)
+		case "placementCopy":
+			v.copyDrag = checked.Type() == js.TypeBoolean && checked.Bool()
 		case "placementFollow":
 			v.follow = checked.Type() == js.TypeBoolean && checked.Bool()
 			target.Set("checked", v.follow)
@@ -240,7 +253,7 @@ func runPlacementView(ctx context.Context) {
 	releasePlayback := playbackPublisher.acquire()
 	defer releasePlayback()
 	p := readPlacementViewPreference()
-	v := &placementView{zoom: p.Zoom, follow: p.Follow, left: p.Scroll, stored: p}
+	v := &placementView{zoom: p.Zoom, snap: p.Snap, copyDrag: p.Copy, follow: p.Follow, left: p.Scroll, stored: p}
 	document := js.Global().Get("document")
 	callback := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if ctx.Err() == nil && len(args) > 0 {
