@@ -485,6 +485,7 @@ func (u *samplerUI) startVoice(buffer js.Value, pad, choke int, mode string, vel
 	source.Call("start", when)
 	v := &samplerVoice{source: source, gain: gain, pad: pad, choke: choke, mode: mode, volume: velocity, start: when, end: when + buffer.Get("duration").Float(), hit: hit}
 	u.voices = append(u.voices, v)
+	u.playingPads[pad-1] = true
 	u.root.Call("querySelector", fmt.Sprintf("[data-sampler-pad='%d']", pad)).Call("setAttribute", "data-playing", "true")
 	return v
 }
