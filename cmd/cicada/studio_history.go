@@ -632,7 +632,11 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	if !committed {
 		return fail(http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
 	}
-	if err := studioWriteAuxiliaryFiles(mutation.Files); err != nil {
+	if err := studioWriteAuxiliaryFiles(mutation.Files, func() {
+		if hook.checkpoint != nil {
+			hook.checkpoint(takejournal.AuxiliaryFileSwapped)
+		}
+	}); err != nil {
 		_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
 		message := "source auxiliary write failed: " + err.Error()
 		if rollbackErr != nil {

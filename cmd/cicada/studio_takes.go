@@ -51,7 +51,7 @@ func (s *studio) recoverTakesOnOpen() error {
 		files, filesErr := s.pendingTakeFiles(t)
 		if filesErr != nil || studioRevision(source) != t.Before && studioRevision(source) != t.After {
 			if filesErr != nil {
-				if err = s.restoreConflictedTakeEntry(t, source); err != nil {
+				if err = s.restoreConflictedTakeSources(t, source); err != nil {
 					return err
 				}
 			}

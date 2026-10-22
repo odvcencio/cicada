@@ -72,14 +72,14 @@ func TestPrintsShareSecondaryArrangementAndKeepEntryMetadata(t *testing.T) {
 	}
 }
 
-func TestAutomationRefusesExistingLaneInAnotherSource(t *testing.T) {
+func TestAutomationEditsExistingLaneInItsOwningSource(t *testing.T) {
 	entry := []byte("cicada 2\ntrack vox audio {}\n")
 	part := []byte("track bass acid {}\npattern pulse { c3 . }\narrange { place backing bass pulse { at = @1.1.1 length = 4bars } }\nautomate vox.level { @1.1.1 -6dB linear }\n")
 	files := []notation.SourceFile{{Path: "main.cicada", Source: entry}, {Path: "arrangement.cicada", Source: part}}
 	compiler := multiFileCompiler{path: "main.cicada", files: files}
 	result, err := edits.Apply(entry, edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{&edits.SetAutomationPoint{Entity: "param:vox.level", At: "@2.1.1", Value: "-3dB"}}}, edits.Options{Path: compiler.path, Edition: 2, Compiler: compiler, Sources: files, ParseProject: compiler.parse})
-	if err == nil || result != nil || !strings.Contains(err.Error(), "owning file") {
-		t.Fatalf("foreign lane must be refused without a duplicate: %v %v", result, err)
+	if err != nil || result == nil || !bytes.Equal(result.Source, entry) || len(result.Files) != 1 || result.Files[0].Path != "arrangement.cicada" || !bytes.Equal(result.Files[0].Before, part) || bytes.Count(result.Files[0].After, []byte("automate vox.level")) != 1 || !bytes.Contains(result.Files[0].After, []byte("@2.1.1 -3dB")) {
+		t.Fatalf("automation must update the owning lane without duplication: %v %v", result, err)
 	}
 }
 
@@ -116,10 +116,10 @@ func TestVocalPrintConvertsOwningSongSource(t *testing.T) {
 	}
 }
 
-func TestVocalSongConversionRefusesSceneSettings(t *testing.T) {
+func TestVocalSongConversionRefusesUnsupportedSettings(t *testing.T) {
 	for _, split := range []bool{false, true} {
 		entry := []byte("cicada 2\ntempo 120\ntrack bass acid {}\ntrack vox audio {}\npattern pulse { c3 . }\n")
-		part := []byte("scene first { bass=pulse vox=off bass.level=-3dB }\nsong { first*2 }\n")
+		part := []byte("scene first { bass=pulse vox=off tempo=100 }\nsong { first*2 }\n")
 		files := []notation.SourceFile{{Path: "main.cicada", Source: entry}, {Path: "song.cicada", Source: part}}
 		if !split {
 			entry = append(entry, part...)
@@ -129,7 +129,7 @@ func TestVocalSongConversionRefusesSceneSettings(t *testing.T) {
 		compiler := multiFileCompiler{path: "main.cicada", files: files}
 		in := &edits.PlaceVocalComp{Comp: edits.VocalComp{Track: "vox", Tempo: 120000, Asset: "comp", Segments: []edits.VocalSegment{{Take: "take-a", Start: 0, End: 3840}}}, Asset: edits.PrintAsset{Path: "printed.wav", SHA256: strings.Repeat("ab", 32), Frames: 48000, RateHz: 48000}}
 		result, err := edits.Apply(entry, edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{in}}, edits.Options{Path: compiler.path, Edition: 2, Compiler: compiler, Sources: files, ParseProject: compiler.parse})
-		if err == nil || result != nil || !strings.Contains(err.Error(), "cannot carry") {
+		if err == nil || result != nil || !strings.Contains(err.Error(), "cannot") {
 			t.Fatalf("scene settings must not disappear: %v %v", result, err)
 		}
 	}

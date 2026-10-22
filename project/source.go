@@ -220,6 +220,9 @@ func ToSource(p *Project) ([]byte, error) {
 				out.WriteString(" " + strconv.FormatFloat(point.Curve, 'g', -1, 64))
 			}
 		}
+		for _, tick := range lane.Recalls {
+			out.WriteString("\n  recall " + notation.TickPosition(tick))
+		}
 		out.WriteString("\n}")
 		sections = append(sections, out.String())
 	}

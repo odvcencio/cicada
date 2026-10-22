@@ -233,8 +233,9 @@ song { main }
 **Syntax (EBNF):**
 
 ```ebnf
-automate_decl ::= "automate" , parameter_path , "{" , { automation_point } , "}" ;
+automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
 automation_point ::= position , value , [ shape ] ;
+automation_recall ::= "recall" , position ;
 position ::= "@" , integer , "." , integer , "." , integer ;
 shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
 ```
@@ -265,6 +266,26 @@ song { main*4 }
 **Edition history:** Additive in source editions 1 and 2, using semantic JSON version 2. Kernel images advertise capability bit 15 and append immutable parameter controls. Older readers reject that capability. The renderer remains allocation-free.
 
 The host prepares numeric targets every four ticks at 960 PPQ (2.08 ms at 120 BPM); the existing parameter smoothing connects them continuously. This uses the same float32 controls in native and WASM playback. Limits are 32 lanes, 1024 authored points per lane and 65535 prepared controls per project. Step segments and flat spans need only endpoints. Enum/toggle controls and static master inserts cannot be automated. `smooth` uses smoothstep; `curve n` uses `t^(2^n)` in control space with tension −8 to 8. Frequency/time lanes follow their registered logarithmic curve; other controls follow the registry curve.
+
+
+A lane may also contain `recall @bar.beat.step` cues. A recall reapplies the
+curve's evaluated value at that position, using normal parameter smoothing;
+it does not add a value point or change the curve's interpolation. This lets
+playback return to a held curve value after a live adjustment. Cues may be
+written in any order, must be unique sixteenths at or after the first value
+point, and must lie within the song or arrangement. Each lane supports up to
+1,024 recalls; the combined prepared control limit still applies. Recalls
+survive source and project-JSON round trips and use the same native and portable
+playback timeline. Scene-to-arrangement vocal conversion emits recall cues to
+retain the original scene-boundary behavior.
+
+```cicada
+automate vox.level {
+  @1.1.1 -9dB
+  @5.1.1 -3dB smooth
+  recall @7.1.1
+}
+```
 
 ## Pattern grids and tuplets
 

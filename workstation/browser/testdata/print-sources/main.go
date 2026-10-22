@@ -23,7 +23,11 @@ func main() {
 	primary := flag.Bool("primary-arrangement", false, "keep arrangement in entry for compatibility checks")
 	seedBank := flag.Bool("sampler-bank", false, "seed one stored performance for native UI checks")
 	sceneSong := flag.Bool("scene-song", false, "keep scenes and the song in separate project sources")
+	sceneControls := flag.Bool("scene-controls", false, "include scene changes and a later curve in a fourth source")
 	flag.Parse()
+	if *sceneControls {
+		*sceneSong = true
+	}
 	if *sceneSong && *primary {
 		panic("scene-song and primary-arrangement are separate fixture modes")
 	}
@@ -49,10 +53,18 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 	score, owner := filepath.Join(root, "main.cicada"), filepath.Join(root, "arrangement.cicada")
 	manifest := "project print-sources\ncicada 2\nentry \"main.cicada\"\n"
 	scenesPath := ""
+	curvesPath := ""
 	if *sceneSong {
 		owner = filepath.Join(root, "song.cicada")
 		scenesPath = filepath.Join(root, "scenes.cicada")
-		must(os.WriteFile(scenesPath, []byte("scene opening { lead=melody vox=off }\nscene held { lead=keep }\nscene quiet { lead=off }\n"), 0600))
+		scenes := "scene opening { lead=melody vox=off }\nscene held { lead=keep }\nscene quiet { lead=off }\n"
+		if *sceneControls {
+			scenes = "scene opening { lead=melody vox=off lead.level=-18dB lead.pan=-0.5 }\nscene held { lead=keep lead.level=-18dB lead.pan=0.5 }\nscene quiet { lead=off lead.pan=0 }\n"
+			curvesPath = filepath.Join(root, "curves.cicada")
+			must(os.WriteFile(curvesPath, []byte("// Keep this curve and its notes.\r\nautomate lead.level { @5.1.1 -9dB curve 2 // take over here\r\n @8.1.1 -14dB smooth recall @8.1.1 }\r\n"), 0600))
+			manifest += "source \"curves.cicada\"\n"
+		}
+		must(os.WriteFile(scenesPath, []byte(scenes), 0600))
 		must(os.WriteFile(owner, []byte("// Keep song notes.\r\nsong { opening*2 // Preserve this song note.\r\nheld*2 opening*2 quiet opening } // Keep this ending.\r\n"), 0600))
 		manifest += "source \"scenes.cicada\"\nsource \"song.cicada\"\n"
 	} else if *primary {
@@ -104,5 +116,5 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 		bank.Performance = padsampler.Performance{Frames: 96000, Hits: []padsampler.Hit{{Sound: prepared.ID, Pad: 1, Velocity: 1, Choke: prepared.Pad.Choke}}}
 		must(bankStore.Write(bankStore.BankPath, padsampler.BankBytes(bank), true))
 	}
-	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"score": score, "arrangement": owner, "scenes": scenesPath, "sceneSong": *sceneSong, "primaryArrangement": *primary, "takeIDs": ids}))
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"score": score, "arrangement": owner, "scenes": scenesPath, "sceneSong": *sceneSong, "sceneControls": *sceneControls, "curves": curvesPath, "primaryArrangement": *primary, "takeIDs": ids}))
 }

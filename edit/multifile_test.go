@@ -224,6 +224,15 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						if !bound {
 							t.Fatal("published track has no compiled scene binding")
 						}
+
+					case "setautomationpoint":
+						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 0 || !bytes.Contains(result.Source, []byte("automate lead.level")) {
+							t.Fatalf("new entry automation changed a referenced declaration: %v %v", result != nil, err)
+						}
+					case "placevocalcomp":
+						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("automate lead.cutoff")) || !bytes.Contains(result.Files[0].After, []byte("place vocal-vox")) {
+							t.Fatalf("vocal conversion lost owning source or scene control: %v %v", result != nil, err)
+						}
 					case "replacetext":
 						if err != nil || result == nil || !bytes.Equal(result.Source, want) || len(result.Files) != 0 {
 							t.Fatalf("buffer save did not edit the selected owning file: candidate=%v error=%v", result != nil, err)

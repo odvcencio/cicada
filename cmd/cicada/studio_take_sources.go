@@ -82,19 +82,89 @@ func (s *studio) pendingTakeFiles(t takejournal.Take) ([]edits.File, error) {
 	return files, nil
 }
 
-// A crash can publish the entry's comp declarations before its placement.
-// If that placement was then edited elsewhere, restore only our own entry
-// write, and only when its verified predecessor fits the current project.
-// The external source and the journal's prepared candidate remain untouched.
-func (s *studio) restoreConflictedTakeEntry(t takejournal.Take, current []byte) error {
-	if len(t.Files) == 0 || t.Before == t.After || studioRevision(current) != t.After {
+// On a source conflict, restore only writes whose bytes still match this
+// prepared take. Compile the combined rollback first; outside edits and the
+// prepared journal candidate remain intact. A restart can resume a partial
+// rollback while the take is still Prepared.
+func (s *studio) restoreConflictedTakeSources(t takejournal.Take, current []byte) error {
+	if len(t.Files) == 0 {
 		return nil
 	}
-	before, found, err := studioRecoverySource(s.path, t.Before)
-	if err != nil || !found {
+	revision := studioRevision(current)
+	if revision != t.Before && revision != t.After {
+		return nil
+	}
+	before := current
+	if revision != t.Before {
+		prior, found, err := studioRecoverySource(s.path, t.Before)
+		if err != nil || !found {
+			return err
+		}
+		before = prior
+	}
+	sources, err := project.ReadSources(s.path, nil)
+	if err != nil {
 		return err
 	}
-	if _, err := compileStudioSource(s.path, before); err != nil {
+	owned := map[string]bool{}
+	for _, file := range sources.Files {
+		owned[file.Path] = file.Path != s.path
+	}
+	overrides := map[string][]byte{}
+	var rollback []edits.File
+	seen := map[string]bool{}
+	knownPending := false
+	for _, file := range t.Files {
+		if !filepath.IsLocal(file.Path) || filepath.ToSlash(filepath.Clean(file.Path)) != file.Path || strings.Contains(file.Path, "\\") || seen[file.Path] {
+			return nil
+		}
+		seen[file.Path] = true
+		path := filepath.Join(sources.Root, filepath.FromSlash(file.Path))
+		if !owned[path] {
+			return nil
+		}
+		actual, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(actual, file.Before) && !bytes.Equal(file.Before, file.After) {
+			knownPending = true
+		}
+		if bytes.Equal(actual, file.After) && !bytes.Equal(file.Before, file.After) {
+			rollback = append(rollback, edits.File{Path: path, Before: actual, After: file.Before})
+			overrides[path] = file.Before
+		}
+	}
+
+	// A complete conversion with an outside edit may still be the valid current
+	// song. Keep it intact when its prepared vocal placement is already active.
+	if !knownPending && t.Timeline != nil && revision == t.After {
+		if active, err := compileStudioSource(s.path, current); err == nil && active.Arrange != nil {
+			comps, _ := vocalComps(t.Candidate)
+			for _, comp := range comps {
+				if comp.Track == t.Track {
+					for _, placement := range active.Arrange.Placements {
+						if placement.Track == t.Track && placement.Content == comp.Asset+"-clip" {
+							return nil
+						}
+					}
+				}
+			}
+		}
+	}
+	if _, err := compileStudioSourceWithOverrides(s.path, before, overrides); err != nil {
+		return nil
+	}
+	for _, file := range rollback {
+		info, err := os.Stat(file.Path)
+		if err != nil {
+			return err
+		}
+		if _, _, err := studioWriteIfRevision(file.Path, file.After, info.Mode().Perm(), studioRevision(file.Before), nil); err != nil {
+			return err
+		}
+	}
+	if revision == t.Before {
 		return nil
 	}
 	info, err := os.Stat(s.path)

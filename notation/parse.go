@@ -245,6 +245,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 					point := n.NamedChild(j)
 					if w.Type(point) == "automation_point" {
 						lane.Points = append(lane.Points, AutomationPoint{At: w.Text(w.Field(point, "at")), Value: w.Text(w.Field(point, "value")), Shape: w.Text(w.Field(point, "shape")), Curve: w.Text(w.Field(point, "curve")), Position: w.position(point)})
+					} else if w.Type(point) == "automation_recall" {
+						lane.Recalls = append(lane.Recalls, AutomationRecall{At: w.Text(w.Field(point, "at")), Position: w.position(point)})
 					}
 				}
 				s.Automation = append(s.Automation, lane)

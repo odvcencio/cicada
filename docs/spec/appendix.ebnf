@@ -15,7 +15,7 @@ _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | 
                  drum_pattern | performance_pattern | automate_decl | scene_decl | song_decl |
                  fx_decl | bus_decl | master_decl | export_decl | arrange_decl | asset_decl |
                  clip_decl | sampler_decl | live_decl ;
-automate_decl ::= "automate" , parameter_path , "{" , { automation_point } , "}" ;
+automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
 automation_point ::= musical_position , number , [ identifier , [ number ] ] ;
 musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
 asset_decl ::= "asset" , _name , string , "{" , { param_decl } , "}" ;
@@ -132,3 +132,4 @@ arrange_decl ::= "arrange" , "{" , { place_decl | marker_decl } , "}" ;
 place_decl ::= "place" , _name , _name , _name , "{" , { param_decl } , "}" ;
 marker_decl ::= "marker" , _name , "{" , { param_decl } , "}" ;
 tick_count ::= /[0-9]+ticks/ ;
+automation_recall ::= "recall" , musical_position ;

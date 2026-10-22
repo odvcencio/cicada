@@ -41,7 +41,7 @@ func Cicada() *grammargen.Grammar {
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
 
-	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(sym("automation_point")), str("}")))
+	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(choice(sym("automation_point"), sym("automation_recall"))), str("}")))
 	g.Define("automation_point", seq(field("at", sym("musical_position")), field("value", sym("number")), optional(seq(field("shape", sym("identifier")), optional(field("curve", sym("number")))))))
 	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
 
@@ -290,5 +290,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
 	g.Define("tick_count", token(pat(`[0-9]+ticks`)))
 	g.Test("arrangement", "cicada 2 arrange { place vox-1 vox vocal-a { at = @1.1.1 length = 2bars } marker chorus { at = @5.1.1 } }", "")
+	g.Define("automation_recall", seq(str("recall"), field("at", sym("musical_position"))))
+	g.Test("automation recall", "cicada 2 automate bass.level { @1.1.1 -6dB recall @3.1.1 @5.1.1 0dB smooth }", "")
 	return g
 }

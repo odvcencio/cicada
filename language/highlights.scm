@@ -288,6 +288,7 @@
 (chain_decl (identifier) @function)
 
 (automate_decl "automate" @keyword)
+(automation_recall "recall" @keyword)
 (automation_point shape: (identifier) @attribute)
 
 (velocity_row "velocity" @attribute)

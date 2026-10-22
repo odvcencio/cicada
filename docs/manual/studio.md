@@ -200,6 +200,11 @@ between their neighbors. **Transition** selects linear, smooth, step,
 exponential or tension-controlled curves. **Save point** makes one Undo step;
 **Remove selected point** removes it. Escape cancels a drag. The numerical fields
 retain unit-aware entry, and **All saved curves** shows the complete overview.
+Existing curves are edited in the project file that owns them. **Curve recalls**
+lists positions where playback returns to the curve after a live adjustment.
+In Code, add `recall @7.1.1` inside an `automate` block to set such a cue without
+changing the curve's shape. A recall must fall on a sixteenth at or after the
+lane's first point and within the song. Recall positions must be unique.
 Recording knob/fader movements is not implemented.
 
 ![Continuous automation editor, captured with a test project.](screenshots/studio-producer-automation-1440.png)
@@ -752,9 +757,13 @@ selection. Explicit part starts and **Keep** continuity carry over, and block
 boundaries become markers. The original scene definitions remain available.
 If scenes and the song are in separate project files, Studio converts only the
 file containing the song. **Undo** restores its original song block and comments
-together with the entry score. Songs with scene-level parameter changes require
-those changes to be translated to arrangement automation; Studio currently
-refuses that automatic conversion so the changes stay intact.
+together with the entry score. Numeric scene parameter changes become stepped
+automation. Existing curves keep their shapes and take over at their original
+first points; recall cues retain scene-boundary returns to those curves.
+Tempo changes, toggle or symbolic values such as delay divisions still require
+manual arrangement work; Studio refuses a conversion that cannot retain them.
+Selecting a short phrase keeps a quiet song ending intact. Its arrangement span
+can outlast the recorded audio without stretching or padding the recording.
 Arrangement-only scores keep their existing placements and markers. Original
 PCM and previous comp prints remain on disk for recovery and Undo. Simultaneous
 multitrack input capture is not provided.

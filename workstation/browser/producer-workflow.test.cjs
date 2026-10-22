@@ -240,7 +240,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   assert.equal(await page.getByLabel('Point value', { exact: true }).inputValue(), '-18dB');
   assert.equal((await state()).source, beforeCurve);
   assert.equal(await page.getByRole('button', { name: 'Remove selected point', exact: true }).isDisabled(), true, 'unsaved new point offered canonical deletion');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await curveReady(page);
   await until(async () => (await points(page)).length === 1, 'saved curve point did not reach the canonical UI');
@@ -249,7 +249,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const oldTick = savedPoints[0].tick;
   await page.locator('[data-curve-point]').first().focus();
   for (let move = 0; move < 3; move++) await page.keyboard.press('ArrowRight');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await until(async () => { const values = await points(page); return values.length === 1 && values[0].tick === oldTick + 720; }, 'moved point did not replace its canonical original position');
   savedPoints = await points(page);
@@ -262,7 +262,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   await page.getByLabel('Point value', { exact: true }).fill('-9dB');
   await page.getByLabel('Transition', { exact: true }).selectOption('curve');
   await page.getByLabel('Curve tension', { exact: true }).fill('2');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await until(async () => { const values = await points(page); return values.length === 2 && values[1].shape === 'curve' && values[1].curve === 2; }, 'second saved curve point did not update');
   savedPoints = await points(page);
@@ -286,7 +286,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   assert.equal(await page.getByLabel('Point position', { exact: true }).inputValue(), '@1.1.1', 'New point did not choose the first unused sixteenth');
   assert.equal((await state()).source, curveSource, 'New point committed its draft');
   await page.getByLabel('Point value', { exact: true }).fill('-24dB');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await until(async () => (await points(page)).length === 3, 'New point did not save');
   await page.locator('[data-curve-point]').first().click();
@@ -321,7 +321,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   await touch('touchEnd', 0, 0);
   await until(async () => await phone.getByLabel('Point position', { exact: true }).inputValue() !== positionBefore, 'real touch did not move the automation point');
   assert.equal((await state()).source, beforeTouchSource);
-  await phone.getByRole('button', { name: 'Save point', exact: true }).click();
+  await phone.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(phone);
   await until(async () => (await state()).source !== beforeTouchSource, 'touch-moved point did not commit');
   assert.equal((await points(phone)).length, 2);

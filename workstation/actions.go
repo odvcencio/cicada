@@ -235,7 +235,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 						return nil, fmt.Errorf("curve tension must be −8 to +8")
 					}
 				}
-				return map[string]any{"revision": f["revision"], "action": f["action"], "path": f["path"], "value": map[string]any{"oldAt": f["oldAt"], "at": f["at"], "value": f["value"], "shape": f["shape"], "curve": curve}}, nil
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "path": f["path"], "value": map[string]any{"oldAt": f["oldAt"], "at": f["at"], "value": f["value"], "shape": f["shape"], "curve": curve}}, nil
 			}
 			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
 		}),

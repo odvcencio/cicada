@@ -2045,6 +2045,16 @@
           "items": {
             "$ref": "#/$defs/automation_point"
           }
+        },
+        "recalls": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 1024,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
         }
       }
     },

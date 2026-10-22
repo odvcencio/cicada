@@ -6,6 +6,7 @@ pattern triplet { step = 1/8t 1 3 5 }
 automate bass.cutoff {
   @1.1.1 400Hz
   @5.1.1 2400Hz exponential
+  recall @3.1.1
 }
 automate bass.pan {
   @1.1.1 -0.6

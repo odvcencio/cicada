@@ -30,21 +30,22 @@ import (
 type Stage string
 
 const (
-	WAVWritten       Stage = "wav-written"
-	BlobLinked       Stage = "blob-linked"
-	TakeLinked       Stage = "take-linked"
-	SourceStaged     Stage = "source-staged"
-	SourceSwapped    Stage = "source-swapped"
-	AuxiliarySwapped Stage = "auxiliary-swapped"
-	Begun            Stage = "begun"
-	Chunk            Stage = "chunk"
-	Finalized        Stage = "finalized"
-	Blob             Stage = "blob"
-	Published        Stage = "published"
-	Prepared         Stage = "prepared"
-	Source           Stage = "source"
-	Committed        Stage = "committed"
-	Conflict         Stage = "conflict"
+	WAVWritten           Stage = "wav-written"
+	BlobLinked           Stage = "blob-linked"
+	TakeLinked           Stage = "take-linked"
+	SourceStaged         Stage = "source-staged"
+	SourceSwapped        Stage = "source-swapped"
+	AuxiliarySwapped     Stage = "auxiliary-swapped"
+	AuxiliaryFileSwapped Stage = "auxiliary-file-swapped"
+	Begun                Stage = "begun"
+	Chunk                Stage = "chunk"
+	Finalized            Stage = "finalized"
+	Blob                 Stage = "blob"
+	Published            Stage = "published"
+	Prepared             Stage = "prepared"
+	Source               Stage = "source"
+	Committed            Stage = "committed"
+	Conflict             Stage = "conflict"
 )
 
 // Take keeps all passes, including pending/conflicted takes. Each chunk event

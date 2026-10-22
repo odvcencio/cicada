@@ -172,6 +172,10 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 		if score.SongPosition.File != "" {
 			owner = score.SongPosition.File
 		}
+		if err := carrySongAutomation(ctx, score, plan, owner); err != nil {
+			return nil, err
+		}
+		source = ctx.Source
 		var supplied bool
 		original, supplied = ctx.FileSource(owner)
 		if !supplied {
@@ -216,7 +220,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	if owner == file {
 		newline = "\n"
 	} // Preserve the entry-only writer's output.
-	updated, err := vocalPlacementSource(arrangement, owner, next, in.Previous != nil, newline)
+	updated, err := vocalPlacementSource(arrangement, owner, next, in.Previous != nil, newline, arrangementEnd(plan))
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +238,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	return append(source, []byte(text)...), nil
 }
 
-func vocalPlacementSource(source []byte, file string, next VocalComp, previous bool, newline string) ([]byte, error) {
+func vocalPlacementSource(source []byte, file string, next VocalComp, previous bool, newline string, minimumEnd int64) ([]byte, error) {
 	root, w, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, err
@@ -249,6 +253,7 @@ func vocalPlacementSource(source []byte, file string, next VocalComp, previous b
 			continue
 		}
 		foundArrangement = true
+		var backingEnd int64
 		for j := 0; j < n.NamedChildCount(); j++ {
 			child := n.NamedChild(j)
 			if w.Type(child) == "place_decl" && w.Text(w.Field(child, "name")) == placeID {
@@ -256,9 +261,32 @@ func vocalPlacementSource(source []byte, file string, next VocalComp, previous b
 					return nil, fmt.Errorf("placement name %s already exists", placeID)
 				}
 				spans = append(spans, Span{int(child.StartByte()), int(child.EndByte()), "", file})
+			} else if w.Type(child) == "place_decl" {
+				var at, length int64
+				for k := 0; k < child.NamedChildCount(); k++ {
+					param := child.NamedChild(k)
+					if w.Type(param) != "param_decl" {
+						continue
+					}
+					name, value := w.Text(w.Field(param, "name")), w.Text(w.Field(param, "value"))
+					if name == "at" {
+						at, err = notation.MusicalTicks(value, true)
+					} else if name == "length" {
+						length, err = notation.MusicalTicks(value, false)
+					}
+					if err != nil {
+						return nil, err
+					}
+				}
+				backingEnd = max(backingEnd, at+length)
 			}
 		}
 		first, last := next.Segments[0].Start, next.Segments[len(next.Segments)-1].End
+		// Audio regions stop at their source end; a longer placement retains a
+		// quiet song ending without stretching or padding the recorded audio.
+		if backingEnd < minimumEnd {
+			last = max(last, minimumEnd)
+		}
 		line := fmt.Sprintf("%s  place %s %s %s-clip { at = %dticks length = %dticks }%s", newline, placeID, track, next.Asset, first, last-first, newline)
 		spans = append(spans, Span{int(n.EndByte()) - 1, int(n.EndByte()) - 1, line, file})
 	}
@@ -352,11 +380,6 @@ func vocalArrangementSource(source []byte, file string, plan *Plan, newline stri
 	scenes := map[string]Scene{}
 	for _, v := range plan.Scenes {
 		scenes[v.ID] = v
-	}
-	for _, entry := range plan.Song {
-		if len(scenes[entry.Scene].Settings) > 0 {
-			return nil, fmt.Errorf("scene %s has settings that a vocal arrangement cannot carry yet", entry.Scene)
-		}
 	}
 	var text strings.Builder
 	text.WriteString("arrange {\n")

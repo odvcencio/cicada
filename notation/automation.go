@@ -9,6 +9,12 @@ import (
 type Automation struct {
 	Path     string
 	Points   []AutomationPoint
+	Recalls  []AutomationRecall
+	Position Position
+}
+
+type AutomationRecall struct {
+	At       string
 	Position Position
 }
 

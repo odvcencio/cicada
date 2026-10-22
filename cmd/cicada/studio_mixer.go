@@ -641,7 +641,7 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 	return os.Rename(stagePath, path)
 }
 
-func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile) error {
+func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile, afterWrite ...func()) error {
 	for i, file := range files {
 		if err := studioWriteAuxiliaryFile(file); err != nil {
 			for j := i - 1; j >= 0; j-- {
@@ -652,6 +652,9 @@ func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile) error {
 				}
 			}
 			return err
+		}
+		for _, checkpoint := range afterWrite {
+			checkpoint()
 		}
 	}
 	return nil

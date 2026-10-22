@@ -392,7 +392,8 @@
     {
       "name": "automation_lane",
       "child_roles": [
-        "points"
+        "points",
+        "recalls"
       ],
       "variants": [],
       "introduced": "cicada.project/2",
@@ -3102,6 +3103,20 @@
       "default": null,
       "meaning": "Ordered musical control points",
       "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_lane",
+      "name": "recalls",
+      "required": false,
+      "type": "array\u003cinteger\u003e",
+      "unit": "tick",
+      "range": null,
+      "default": null,
+      "meaning": "Musical positions that reapply the curve without changing its shape",
+      "order": 3,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"

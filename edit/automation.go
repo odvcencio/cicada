@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 
 	"m31labs.dev/cicada/kernel/seq"
 
@@ -97,33 +96,29 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	if score == nil || hasErrors(ds) {
 		return nil, fmt.Errorf("score must validate before editing automation")
 	}
-	// Full-project validation must not turn an edit into a second lane for a
-	// declaration or automation block owned by another source.
-	owner, ownerLength := notation.Position{}, 0
-	consider := func(name string, position notation.Position) {
-		if len(name) > ownerLength && strings.HasPrefix(path, name+".") {
-			owner, ownerLength = position, len(name)
-		}
-	}
-	for _, track := range score.Tracks {
-		consider(track.Name, track.Position)
-	}
-	for _, effect := range score.Effects {
-		consider(effect.Name, effect.Position)
-	}
-	for _, bus := range score.Buses {
-		consider(bus.Name, bus.Position)
-	}
-	if _, err := Offset(source, file, owner); err != nil {
-		return nil, err
-	}
+
 	for _, lane := range score.Automation {
 		if lane.Path == path {
-			if _, err := Offset(source, file, lane.Position); err != nil {
-				return nil, err
+			file = lane.Position.File
+			if file == "" {
+				file = ctx.Options.Path
 			}
+			var supplied bool
+			source, supplied = ctx.FileSource(file)
+			if !supplied {
+				return nil, fmt.Errorf("automation %s is outside the editable project sources", path)
+			}
+			break
 		}
 	}
+	patch := func(span Span) ([]byte, error) {
+		after, err := ReplaceSpan(source, file, span)
+		if err != nil {
+			return nil, err
+		}
+		return stageProjectSource(ctx, file, source, after), nil
+	}
+
 	plan, err := ctx.CurrentPlan()
 	if err != nil || plan == nil || plan.ResolveParam == nil {
 		return nil, fmt.Errorf("score parameters must validate before editing automation")
@@ -187,7 +182,8 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		if remove || point.oldAt != "" {
 			return nil, fmt.Errorf("automation point no longer exists")
 		}
-		return append(append([]byte(nil), source...), []byte(nl+"automate "+path+" {"+nl+"  "+text+nl+"}"+nl)...), nil
+		after := append(append([]byte(nil), source...), []byte(nl+"automate "+path+" {"+nl+"  "+text+nl+"}"+nl)...)
+		return stageProjectSource(ctx, file, source, after), nil
 	}
 	var found *gts.Node
 	count := 0
@@ -215,18 +211,18 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	if found != nil {
 		if remove {
 			if count == 1 {
-				return ReplaceSpan(source, file, Span{int(lane.StartByte()), int(lane.EndByte()), "", file})
+				return patch(Span{int(lane.StartByte()), int(lane.EndByte()), "", file})
 			}
-			return ReplaceSpan(source, file, Span{int(found.StartByte()), int(found.EndByte()), "", file})
+			return patch(Span{int(found.StartByte()), int(found.EndByte()), "", file})
 		}
 		// Moving across neighbors is rejected by project validation; dragging in
 		// Session clamps between them and keeps the lane's authored order.
-		return ReplaceSpan(source, file, Span{int(found.StartByte()), int(found.EndByte()), text, file})
+		return patch(Span{int(found.StartByte()), int(found.EndByte()), text, file})
 	}
 	if remove || point.oldAt != "" {
 		return nil, fmt.Errorf("automation point no longer exists")
 	}
-	return ReplaceSpan(source, file, Span{insert, insert, "  " + text + nl, file})
+	return patch(Span{insert, insert, "  " + text + nl, file})
 }
 
 // arrangementEnd is the last tick of the arrangement: the end of the last

@@ -268,7 +268,9 @@ func TestSecondaryVocalCrashChild(t *testing.T) {
 	}
 	dir := os.Getenv("CICADA_PRINT_CRASH_DIR")
 	var s *studio
-	if os.Getenv("CICADA_PRINT_CRASH_SONG") == "1" {
+	if os.Getenv("CICADA_PRINT_CRASH_CONTROLS") == "1" {
+		s, _, _, _ = sceneControlsStudio(t, dir)
+	} else if os.Getenv("CICADA_PRINT_CRASH_SONG") == "1" {
 		s, _, _, _ = songSourcesStudio(t, dir)
 	} else {
 		s, _, _, _ = printSourcesStudio(t, dir)
