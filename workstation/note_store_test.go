@@ -54,6 +54,38 @@ func TestSavedSharedControlsRetainTailAndCombinedBudgetAcrossRestart(t *testing.
 	}
 }
 
+func TestSavedChannelControlsUseVersionThreeAndSurviveRestart(t *testing.T) {
+	dir := t.TempDir()
+	store, _, err := openNoteStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := savedNoteFixture()
+	saved.Takes[0].Notes[0].Group = 1
+	saved.Takes[0].Groups = []control.RecordedGroup{{ID: 7, Device: "keys", Channel: 2, Kind: midi.SharedChannelKind, Points: []control.NoteExpression{{Tick: 3840, Timbre: .5}, {Tick: 8000, PitchCents: 200, Pressure: .8, Timbre: .9}}}}
+	written, err := store.save("player", saved)
+	if err != nil || written.Version != 3 {
+		t.Fatal("ordinary controls were written in an ambiguous old format", written.Version, err)
+	}
+	store, _, err = openNoteStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.get("player", saved.ID)
+	if err != nil || restored.Version != 3 || !reflect.DeepEqual(restored.Takes, saved.Takes) {
+		t.Fatal("restart changed channel controls", err)
+	}
+	saved.Sequence++
+	saved.Takes[0].Groups[0].Kind = "unknown"
+	if _, err := store.save("player", saved); err == nil {
+		t.Fatal("unknown controls replaced the recoverable take")
+	}
+	unchanged, err := store.get("player", saved.ID)
+	if err != nil || !reflect.DeepEqual(unchanged.Takes, restored.Takes) {
+		t.Fatal("refused metadata damaged the saved take", err)
+	}
+}
+
 func savedNoteFixture() savedNotes {
 	return savedNotes{ID: strings.Repeat("a", 32), Sequence: 1, Revision: "score-at-recording", State: "recording", Takes: []control.Recording{{Track: "keys", Pattern: "phrase", Notes: []control.Note{{Tick: 3857, EndTick: 4110, Note: 64, Velocity: 105, EndEstimated: true, Input: &midi.NoteTiming{HostNanos: 1000000, Source: "source", ClockEpoch: 7, Estimated: true}}}}}}
 }

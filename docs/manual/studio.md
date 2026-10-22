@@ -349,7 +349,10 @@ copies across restarts; closing a browser tab does not apply a take to the score
 and supported controller gestures as a performance pattern. Chords can have
 different starts, held lengths, bends, pressure, and timbre. MPE member controls
 remain attached to individual notes; master bend, pressure and timbre become
-shared lanes. Movement after note-off is retained without stretching the gate.
+shared lanes. Ordinary MIDI channel bend, channel pressure and CC74 use a
+shared lane too; polyphonic aftertouch stays with its note. Channel pressure
+and polyphonic aftertouch remain independent, with the larger value heard.
+Movement after note-off is retained without stretching the gate.
 Finish the take after the release-tail movement you want to keep.
 All destinations use the first note or shared gesture's bar as a common
 origin. The final release or shared movement rounds the loop up to a whole bar.
@@ -380,14 +383,17 @@ Each note retains its own gestures and vibrato. Bend adds, pressure uses the
 larger value, and timbre adds around its neutral center of 0.5. The curve
 starts neutral on each loop unless a point at tick zero sets its initial
 values. Unbind all member notes before removing a lane. Every edit has Undo.
-Live MPE capture creates these lanes automatically, with separate identities
-for each input, zone and reconnect. The retained-take review shows each lane's
+Live MIDI capture creates these lanes automatically, with separate identities
+for each input, ordinary channel or MPE zone, and reconnect. Ordinary channel
+lanes are named `midi-1`, `midi-2`, and so on; MPE lanes use `mpe-1`, `mpe-2`.
+The retained-take review shows each lane's
 membership, point count and final movement. Keeping played timing coalesces
 samples at the same musical tick; private recovery keeps every raw sample.
 Lanes that stayed neutral need no binding in the saved pattern. Shared movement
 requires **Keep played timing**; the step-grid option refuses to discard it.
-During live input, master controls keep shaping release tails on acid and
-authored synths. Member controls freeze at release. Reconnecting an input starts
+During live input, ordinary channel and MPE master controls keep shaping
+release tails on acid and authored synths. Note controls freeze at key release,
+including polyphonic aftertouch under sustain. Reconnecting an input starts
 a separate shared address; old tails retain their last controls. The saved lane
 uses the same layering during playback and export.
 

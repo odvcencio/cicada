@@ -144,13 +144,17 @@ GoSX Live records MIDI 1 bend, channel/poly pressure and CC74 snapshots with
 their input ticks and note identity. Ordinary channels default to ±2 semitones;
 RPN 0 sets sensitivity and RPN 6 configures lower/upper MPE zones. Manual zone
 selection supports controllers that omit setup messages. Sustain retains gates
-until pedal release. Member values freeze under sustain after key release;
-zone controls still affect held gates and audio release tails. Reconnecting an
-input gets a separate shared address. Modeled keyboards, piano, drums and
+until pedal release. Ordinary channel bend, channel pressure and CC74 use a
+shared channel layer; polyphonic aftertouch stays local to each note. Channel
+and polyphonic pressure combine using the larger value. Local values freeze
+under sustain after key release; channel and zone controls still affect held
+gates and audio release tails. Reconnecting an input gets a separate shared address. Modeled keyboards, piano, drums and
 samplers still lack gesture monitoring; retained unsupported gestures are
 refused on apply. Raw takes retain up to 65,536 snapshots, including equal-tick
-samples, before the edit service derives playable points. Live sends coalesce
-controller snapshots between gate/action barriers and batch up to 64 messages.
+samples, before the edit service derives playable points. Private recovery
+checkpoints use version 3 for ordinary channel lanes (`kind: "channel"`);
+existing MPE-only checkpoints retain version 2, with an empty kind. Live sends
+coalesce controller snapshots between gate/action barriers and batch up to 64 messages.
 
 [`host/midi`](../../host/midi) retains
 32-bit MIDI 2.0 pressure and timbre until normalization to the float32 ABI.

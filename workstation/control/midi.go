@@ -79,6 +79,7 @@ type RecordedGroup struct {
 	ID      uint64           `json:"id"`
 	Device  string           `json:"device"`
 	Channel uint8            `json:"channel"`
+	Kind    string           `json:"kind,omitempty"`
 	Points  []NoteExpression `json:"points"`
 }
 
@@ -98,8 +99,8 @@ func ValidateRecordings(takes []Recording) error {
 		}
 		groups := map[uint64]bool{}
 		for _, group := range take.Groups {
-			if group.ID == 0 || groups[group.ID] || group.Device == "" || len(group.Device) > 512 || group.Channel != 0 && group.Channel != 15 || len(group.Points) == 0 {
-				return fmt.Errorf("shared gestures need unique input identities, a master channel and points")
+			if group.ID == 0 || groups[group.ID] || group.Device == "" || len(group.Device) > 512 || group.Channel > 15 || group.Kind != "" && group.Kind != "channel" || group.Kind == "" && group.Channel != 0 && group.Channel != 15 || len(group.Points) == 0 {
+				return fmt.Errorf("shared gestures need unique input identities, a valid channel or MPE master, and points")
 			}
 			groups[group.ID] = true
 			previous := int64(0)

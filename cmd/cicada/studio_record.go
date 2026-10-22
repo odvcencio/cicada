@@ -39,6 +39,7 @@ type studioTakeGroup struct {
 	ID      uint64                 `json:"id,omitempty"`
 	Device  string                 `json:"device,omitempty"`
 	Channel uint8                  `json:"channel,omitempty"`
+	Kind    string                 `json:"kind,omitempty"`
 	Points  []studioTakeExpression `json:"points"`
 }
 
@@ -80,7 +81,7 @@ func editRecordings(recordings []studioTakeRecording) []edits.Recording {
 	for i, recording := range recordings {
 		result[i] = edits.Recording{Track: recording.Track, Pattern: recording.Pattern}
 		for _, group := range recording.Groups {
-			out := edits.TakeGroup{}
+			out := edits.TakeGroup{Kind: group.Kind}
 			for _, value := range group.Points {
 				out.Points = append(out.Points, edits.TakeExpression{Tick: value.Tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents})
 			}

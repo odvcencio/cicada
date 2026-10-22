@@ -93,6 +93,7 @@ type Recording struct {
 }
 
 type TakeGroup struct {
+	Kind   string           `json:"kind,omitempty"`
 	Points []TakeExpression `json:"points"`
 }
 

@@ -3,7 +3,10 @@
 (() => {
   if (location.hostname !== '127.0.0.1' || window.__cicadaSharedCaptureSmoke) return;
   window.__cicadaSharedCaptureSmoke = true;
-  const retained = JSON.parse(sessionStorage.getItem('cicada.shared-capture-proof') || 'null');
+  const channelCapture = window.__cicadaChannelCapture === true;
+  const mode = channelCapture ? 'auto' : 'lower', prefix = channelCapture ? 'midi' : 'mpe';
+  const checkpointKey = 'cicada.shared-capture-proof.'+prefix;
+  const retained = JSON.parse(sessionStorage.getItem(checkpointKey) || 'null');
   const checks = retained?.checks || [], errors = [];
   addEventListener('error', event => errors.push(event.message));
   addEventListener('unhandledrejection', event => errors.push(String(event.reason)+'\n'+String(event.reason?.stack || '')));
@@ -67,7 +70,7 @@
     await wait(() => window.__gosx?.ready && document.querySelector('#studio-shell[data-shell-actions=ready]'),'Studio engines');
     const audio = await state('audio/config');
     if (audio.options.inputEnabled || String(audio.inventory.backendName || audio.inventory.backend).toLowerCase() !== 'null') throw new Error('Use disposable null audio with input disabled');
-    const fixture = 'title "Shared capture proof"\ntempo 96\ninstrument light { voice poly { out=sine(pitch)*adsr(gate,8ms,130ms,0.6,1800ms)*velocity*(0.04+pressure*0.08) } }\ntrack keys light { level=-12dB }\npattern intro notes { . . . . }\npattern phrase notes { . . . . } // original idea\nscene main { keys=intro }\nscene capture { keys=phrase }\nsong { main*8 }\n';
+    const fixture = 'title "Shared capture proof"\ntempo 96\ninstrument light { voice poly { out=sine(pitch)*adsr(gate,8ms,130ms,0.6,1800ms)*velocity*(0.04+pressure*0.08) } }\ntrack keys light { level=-12dB }\ntrack plain piano { level=-24dB }\npattern intro notes { . . . . }\npattern phrase notes { . . . . } // original idea\nscene main { keys=intro }\nscene capture { keys=phrase }\nsong { main*8 }\n';
     if (!retained) {
     const editor = document.querySelector('#score textarea');
     editor.value = fixture;
@@ -78,7 +81,7 @@
     editor.blur();
     navigate('live');
     await wait(() => document.querySelector('[data-live-midimode]') && /Press Play/.test(document.querySelector('[data-live-status]').textContent),'Live engine');
-    change(document.querySelector('[data-live-midimode]'),'lower');
+    change(document.querySelector('[data-live-midimode]'),mode);
     change(document.querySelector('[data-live-pattern]'),'phrase');
     document.querySelector('#transport-form button[value=play]').click();
     await wait(() => !document.querySelector('[data-live-control=record]').disabled,'recording can start');
@@ -90,34 +93,41 @@
     const position = tick => ({epoch,tick,valid:true,playing:true});
     let sequence = 0;
     const midi = (tick,...data) => send({type:'message',device:'surface',group:0,length:data.length,data:[...data,...Array(3-data.length).fill(0)],position:position(tick),hostNanos:1000000000+(++sequence)*1000000,timeSource:'source'});
-    send({type:'devices',inputs:[{id:'surface',name:'Synthetic MPE',epoch:1}],position:position(3840)});
-    midi(3840,0xd0,48);
-    midi(3857,0x91,60,100);
+    send({type:'devices',inputs:[{id:'surface',name:'Synthetic keys',epoch:1}],position:position(3840)});
+    const member = channelCapture ? 2 : 1, master = channelCapture ? 2 : 0;
+    midi(3840,0xd0+master,48);
+    midi(3857,0x90+member,60,100);
     midi(3859,0x92,64,90);
     await wait(() => liveMessages.filter(message => message.type === 'note-group').length === 2,'owned shared bindings reach the live service');
     await new Promise(resolve => setTimeout(resolve,100));
-    midi(3910,0xd1,32);
-    midi(3930,0xe1,0,65);
-    midi(3977,0xe0,127,127);
-    midi(4010,0xb0,74,127);
-    midi(4030,0xb0,64,127);
-    midi(4100,0x81,60,0);
-    midi(4150,0xe1,0,0);
+    if (channelCapture) {
+      midi(3910,0xa2,60,32);
+      midi(3930,0xa2,60,64);
+    } else {
+      midi(3910,0xd1,32);
+      midi(3930,0xe1,0,65);
+    }
+    midi(3977,0xe0+master,127,127);
+    midi(4010,0xb0+master,74,127);
+    midi(4030,0xb0+master,64,127);
+    midi(4100,0x80+member,60,0);
+    if (channelCapture) midi(4150,0xa2,60,127);
+    else midi(4150,0xe1,0,0);
     midi(4200,0x82,64,0);
-    midi(4500,0xb0,64,0);
+    midi(4500,0xb0+master,64,0);
     await wait(() => liveMessages.filter(message => message.type === 'note' && message.on === 'false').length === 2,'both monitored gates release');
     await new Promise(resolve => setTimeout(resolve,100));
-    midi(4600,0xd0,96);
-    await wait(() => liveMessages.some(message => message.type === 'group-expression' && Number(message.pressure) === 96/127),'master monitoring remains addressable after release');
+    midi(4600,0xd0+master,96);
+    await wait(() => liveMessages.some(message => message.type === 'group-expression' && Number(message.pressure) === 96/127),'shared monitoring remains addressable after release');
     checks.push('shared monitoring reaches the live service after both note gates release');
     send({type:'devices',inputs:[],removed:['surface'],position:position(4700)});
-    send({type:'devices',inputs:[{id:'surface',name:'Synthetic MPE',epoch:2}],position:position(4800)});
-    midi(4800,0xd0,16);
-    midi(4817,0x91,67,80);
-    midi(4900,0x81,67,0);
-    midi(5000,0xe0,0,0);
-    midi(8000,0xe0,0,64);
-    midi(8000,0xd0,0);
+    send({type:'devices',inputs:[{id:'surface',name:'Synthetic keys',epoch:2}],position:position(4800)});
+    midi(4800,0xd0+master,16);
+    midi(4817,0x90+member,67,80);
+    midi(4900,0x80+member,67,0);
+    midi(5000,0xe0+master,0,0);
+    midi(8000,0xe0+master,0,64);
+    midi(8000,0xd0+master,0);
     await wait(() => {
       const draft = JSON.parse(sessionStorage.getItem('cicada.note-take') || '{}');
       return draft.takes?.[0]?.groups?.[1]?.points?.at(-1)?.tick === 8000;
@@ -133,19 +143,20 @@
     },'durable shared-tail checkpoint');
     const take = checkpoint.takes[0];
     if (liveFailures.length || liveMessages.filter(message => message.type === 'note-group').some(message => !message.groupId)) throw new Error('Live shared command failed: '+JSON.stringify({liveFailures,liveMessages}));
-    if (checkpoint.version !== 2) throw new Error('Shared controls were stored in a checkpoint format older apps can misread');
+    if (checkpoint.version !== (channelCapture ? 3 : 2)) throw new Error('Shared controls were stored in a checkpoint format older apps can misread');
+    if (channelCapture && take.groups.some(group => group.kind !== 'channel' || group.channel !== 2)) throw new Error('Ordinary channel metadata was lost');
     if (take.pattern !== 'phrase' || take.notes.length !== 3 || take.groups.length !== 2 || take.notes[0].group !== 1 || take.notes[1].group !== 1 || take.notes[2].group !== 2 || take.groups[0].id === take.groups[1].id) throw new Error('Input reconnect mixed shared lanes or destinations: '+JSON.stringify(take));
     if (take.notes[0].endTick !== 4500 || take.notes[1].endTick !== 4500 || take.notes[0].expressions[0].pressure !== 32/127 || take.notes[0].expressions.length !== 2 || take.groups[0].points.at(-1).tick !== 4600 || take.groups[1].points.at(-1).tick !== 8000) throw new Error('Shared capture lost local pressure, frozen sustain state, gates, or released master controls: '+JSON.stringify(take));
-    checks.push('native MIDI keeps independent member controls, pedal releases and shared tail movement');
+    checks.push('native MIDI keeps independent note controls, pedal releases and shared tail movement');
     checks.push('reconnecting the same input creates a separate shared lane');
     checks.push('private checkpoint retains raw same-tick master samples before committing');
-    sessionStorage.setItem('cicada.shared-capture-proof',JSON.stringify({checks,inputRequests}));
+    sessionStorage.setItem(checkpointKey,JSON.stringify({checks,inputRequests}));
     document.querySelector('[data-live-control=finish]').click();
     }
     await wait(() => document.querySelector('.note-preview'),'retained take review');
     if (!document.querySelector('.note-preview button[value=played]:not([disabled])')) throw new Error('Played timing refused: '+document.querySelector('.note-preview').textContent);
     if (!document.querySelector('.take-shared-gestures') || !(document.querySelector('.note-preview button[value=commit]')?.disabled)) throw new Error('Shared review missing or lossy grid commit offered');
-    if (document.querySelector('[data-live-midimode]').value !== 'lower' || document.querySelector('[data-live-pattern]').value !== 'phrase') throw new Error('Input preferences or recording destination changed during review');
+    if (document.querySelector('[data-live-midimode]').value !== mode || document.querySelector('[data-live-pattern]').value !== 'phrase') throw new Error('Input preferences or recording destination changed during review');
     checks.push('local input preferences survive the review refresh without becoming unsaved score edits');
     document.querySelector('.take-shared-gestures summary').click();
     checks.push('retained review shows shared lanes and refuses a lossy step-grid commit');
@@ -153,7 +164,7 @@
     document.querySelector('#transport-form button[value=stop]').click();
     await wait(async () => !(await state('transport')).playing,'paused before commit');
     document.querySelector('.note-preview button[value=played]').click();
-    const captured = await saved(source => source.includes('gesture-group mpe-1') && source.includes('gesture-group mpe-2'),'played timing writes both shared lanes');
+    const captured = await saved(source => source.includes('gesture-group '+prefix+'-1') && source.includes('gesture-group '+prefix+'-2'),'played timing writes both shared lanes');
     if (!captured.includes('length=7680ticks') || !captured.includes('note 60 at=17ticks length=643ticks') || !captured.includes('gesture at=4160ticks')) throw new Error('Committed capture changed original timing or tail extent');
     document.querySelector('#undo-form button').click();
     await saved(source => source === fixture,'one Undo restores the original idea exactly');
@@ -161,12 +172,12 @@
     await saved(source => source === captured,'one Redo restores notes and shared controls exactly');
     navigate('patterns','phrase');
     await wait(() => document.querySelector('#shared-gestures') && document.querySelector('[data-sounds-ready=true]'),'editable captured lanes');
-    if (!document.querySelector('#shared-gestures').textContent.includes('mpe-2')) throw new Error('Captured shared lanes are not editable');
+    if (!document.querySelector('#shared-gestures').textContent.includes(prefix+'-2')) throw new Error('Captured shared lanes are not editable');
     if (typeof window.__cicadaCapturePattern === 'function') await window.__cicadaCapturePattern();
     checks.push('captured lanes reopen in the shared gesture editor');
     try { input.close(); } catch {}
     if (inputRequests !== 1 || errors.length) throw new Error('Unexpected input request or browser errors: '+JSON.stringify({inputRequests,errors}));
-    sessionStorage.removeItem('cicada.shared-capture-proof');
+    sessionStorage.removeItem(checkpointKey);
     return {type:'cicada-native-smoke',ok:true,checks};
   })().catch(error => ({type:'cicada-native-smoke',ok:false,checks,error:String(error)+'\n'+(error.stack || '')+'\nLIVE '+document.querySelector('[data-live-status]')?.textContent+'\nREVIEW '+document.querySelector('.note-preview')?.textContent+'\nERRORS '+JSON.stringify(errors)}))
     .then(result => {

@@ -16,12 +16,24 @@ import (
 )
 
 func TestStudioSharedCaptureSurvivesWriteReopenEditAndUndo(t *testing.T) {
+	testStudioSharedCapture(t, "")
+}
+
+func TestStudioChannelCaptureSurvivesWriteReopenEditAndUndo(t *testing.T) {
+	testStudioSharedCapture(t, "channel")
+}
+
+func testStudioSharedCapture(t *testing.T, kind string) {
+	channel, prefix, proofKey := uint8(15), "mpe", "CICADA_SHARED_CAPTURE_PROOF_DIR"
+	if kind == "channel" {
+		channel, prefix, proofKey = 2, "midi", "CICADA_CHANNEL_CAPTURE_PROOF_DIR"
+	}
 	source := "tempo 96\ninstrument light { voice poly { out=sine(pitch)*adsr(gate,8ms,130ms,0.6,1800ms)*velocity*(0.04+pressure*0.08) } }\ntrack keys light { level=-12dB }\npattern phrase notes { . . . . } // original idea\nscene main { keys=phrase }\nsong { main }\n"
 	_, handler, path := proposalFixture(t, source)
 	take := studioEdit{Revision: studioRevision([]byte(source)), Timing: "played", Recordings: []studioTakeRecording{{Track: "keys", Pattern: "phrase", Notes: []studioTakeNote{
 		{Tick: 3857, EndTick: 4500, Note: 60, Velocity: 100, Group: 1, Expressions: []studioTakeExpression{{Tick: 3857, PitchCents: 25, Pressure: .2, Timbre: .5}}},
 		{Tick: 3859, EndTick: 4500, Note: 64, Velocity: 90, Group: 1},
-	}, Groups: []studioTakeGroup{{ID: 7, Device: "native:surface:g0", Channel: 15, Points: []studioTakeExpression{{Tick: 3857, Pressure: .1, Timbre: .5}, {Tick: 4800, PitchCents: 200, Pressure: .9, Timbre: .8}, {Tick: 8000, Timbre: .5}}}}}}}
+	}, Groups: []studioTakeGroup{{ID: 7, Device: "native:surface:g0", Channel: channel, Kind: kind, Points: []studioTakeExpression{{Tick: 3857, Pressure: .1, Timbre: .5}, {Tick: 4800, PitchCents: 200, Pressure: .9, Timbre: .8}, {Tick: 8000, Timbre: .5}}}}}}}
 	if r := studioCall(t, handler, "/api/record", take); r.Code != 200 {
 		t.Fatal(r.Code, r.Body)
 	}
@@ -31,7 +43,7 @@ func TestStudioSharedCaptureSurvivesWriteReopenEditAndUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	performance := p.Patterns[0].Performance
-	if performance == nil || len(performance.Groups) != 1 || performance.LengthTicks != 7680 || performance.Notes[0].Group != 1 || performance.Notes[0].EndTick != 660 || performance.Notes[0].Expressions[0].Value.PitchCents != 25 || performance.Groups[0].Points[2].Tick != 4160 {
+	if performance == nil || len(performance.Groups) != 1 || performance.Groups[0].Name != prefix+"-1" || performance.LengthTicks != 7680 || performance.Notes[0].Group != 1 || performance.Notes[0].EndTick != 660 || performance.Notes[0].Expressions[0].Value.PitchCents != 25 || performance.Groups[0].Points[2].Tick != 4160 {
 		t.Fatal("record API lost shared or local data", performance)
 	}
 	change := studioEdit{Revision: studioRevision(saved), Action: "shared-gesture", Pattern: "phrase", SharedExpression: &edit.SetSharedExpression{GroupIndex: 0, Index: 1, Tick: 960, PitchCents: 150, Pressure: .8, Timbre: .7}}
@@ -55,7 +67,7 @@ func TestStudioSharedCaptureSurvivesWriteReopenEditAndUndo(t *testing.T) {
 	if !bytes.Equal(reopened, saved) {
 		t.Fatal("Redo changed the shared performance")
 	}
-	if dir := os.Getenv("CICADA_SHARED_CAPTURE_PROOF_DIR"); dir != "" {
+	if dir := os.Getenv(proofKey); dir != "" {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +158,7 @@ func TestStudioSharedCaptureSurvivesWriteReopenEditAndUndo(t *testing.T) {
 	if !masterAfterRelease {
 		t.Fatal("MIDI bytes omitted shared pressure after the note release")
 	}
-	if dir := os.Getenv("CICADA_SHARED_CAPTURE_PROOF_DIR"); dir != "" {
+	if dir := os.Getenv(proofKey); dir != "" {
 		var wav bytes.Buffer
 		if _, err := render.WAV(decode(saved), render.Options{Bits: 24, SampleRate: 48000, Block: 127, TailSec: .1}, &wav); err != nil {
 			t.Fatal(err)

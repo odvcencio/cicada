@@ -62,7 +62,11 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 			if !activeTakeGroup(captured) {
 				continue
 			}
-			group := seq.ControlGroup{Name: fmt.Sprintf("mpe-%d", index+1)}
+			prefix := "mpe"
+			if captured.Kind == "channel" {
+				prefix = "midi"
+			}
+			group := seq.ControlGroup{Name: fmt.Sprintf("%s-%d", prefix, index+1)}
 			for _, point := range captured.Points {
 				value := seq.GroupPoint{Tick: max(0, point.Tick-origin), Value: expression.Controls{PitchCents: float32(point.PitchCents), Pressure: float32(point.Pressure), Timbre: float32(point.Timbre)}}
 				if last := len(group.Points) - 1; last >= 0 && group.Points[last].Tick == value.Tick {
@@ -130,6 +134,9 @@ func validateTakeGroups(groups []TakeGroup) (int, error) {
 	}
 	count := 0
 	for _, group := range groups {
+		if group.Kind != "" && group.Kind != "channel" {
+			return 0, fmt.Errorf("unknown shared gesture lane kind")
+		}
 		if len(group.Points) == 0 {
 			return 0, fmt.Errorf("shared gesture lanes need controller points")
 		}

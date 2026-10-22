@@ -152,7 +152,7 @@ func loadSavedNotes(root *os.Root, owner, id string) (savedNotes, error) {
 	if err = json.Unmarshal(data, &saved); err != nil {
 		return saved, fmt.Errorf("saved note performance is unreadable; its file was preserved: %w", err)
 	}
-	if saved.Version != 1 && saved.Version != 2 || saved.ID != id || saved.Sequence == 0 || saved.Revision == "" || len(saved.Revision) > 128 {
+	if saved.Version < 1 || saved.Version > 3 || saved.ID != id || saved.Sequence == 0 || saved.Revision == "" || len(saved.Revision) > 128 {
 		return saved, fmt.Errorf("saved note performance metadata is invalid; its file was preserved")
 	}
 	switch saved.State {
@@ -203,8 +203,12 @@ func (s *noteStore) save(owner string, saved savedNotes) (savedNotes, error) {
 			if len(take.Groups) > 0 {
 				// Older apps must refuse shared-control checkpoints rather than
 				// decode the notes while silently dropping their shared layer.
-				saved.Version = 2
-				break
+				saved.Version = max(saved.Version, 2)
+				for _, group := range take.Groups {
+					if group.Kind != "" {
+						saved.Version = 3
+					}
+				}
 			}
 		}
 		data, err := json.Marshal(saved)

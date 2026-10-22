@@ -29,7 +29,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 	children := []gosx.Node{
 		gosx.El("h3", gosx.Text("Retained note take")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%s · %s", noteCount(count), destinationCount(len(takes))))),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, velocities and supported note gestures in a looping performance pattern. MPE master controls become shared lanes, independent of each note. Finish after the release-tail movement you want to keep. Acid and authored synths keep bend, pressure, timbre and vibrato. Every destination shares the first captured bar as its origin; the final note or shared movement rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, velocities and supported note gestures in a looping performance pattern. Channel-wide and MPE master controls become shared lanes, independent of each note. Finish after the release-tail movement you want to keep. Acid and authored synths keep bend, pressure, timbre and vibrato. Every destination shares the first captured bar as its origin; the final note or shared movement rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
 	}
 	for _, take := range takes {
 		var pattern *project.Pattern
@@ -151,7 +151,7 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 		var cells []gosx.Node
 		shared := "—"
 		if n.Group != 0 {
-			shared = fmt.Sprintf("MPE %d", n.Group)
+			shared = capturedGroupLabel(take, int(n.Group)-1)
 		}
 		for _, text := range []string{performancePitch(n.Note), performancePosition(n.Tick), duration, strconv.Itoa(n.Velocity), strconv.Itoa(len(n.Expressions)), shared, placement} {
 			cells = append(cells, gosx.El("td", gosx.Text(text)))
@@ -194,6 +194,14 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 	)
 }
 
+func capturedGroupLabel(take control.Recording, index int) string {
+	prefix := "MPE"
+	if index < len(take.Groups) && take.Groups[index].Kind == "channel" {
+		prefix = "MIDI"
+	}
+	return fmt.Sprintf("%s %d", prefix, index+1)
+}
+
 func noteSharedReview(take control.Recording) gosx.Node {
 	if len(take.Groups) == 0 {
 		return gosx.Fragment()
@@ -209,13 +217,13 @@ func noteSharedReview(take control.Recording) gosx.Node {
 		}
 		points += len(group.Points)
 		var cells []gosx.Node
-		for _, text := range []string{fmt.Sprintf("MPE %d", index+1), strconv.Itoa(int(group.Channel) + 1), strconv.Itoa(bound), strconv.Itoa(len(group.Points)), performancePosition(group.Points[len(group.Points)-1].Tick)} {
+		for _, text := range []string{capturedGroupLabel(take, index), strconv.Itoa(int(group.Channel) + 1), strconv.Itoa(bound), strconv.Itoa(len(group.Points)), performancePosition(group.Points[len(group.Points)-1].Tick)} {
 			cells = append(cells, gosx.El("td", gosx.Text(text)))
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
 	var heads []gosx.Node
-	for _, text := range []string{"Lane", "Master channel", "Notes", "Controller points", "Last movement"} {
+	for _, text := range []string{"Lane", "Control channel", "Notes", "Controller points", "Last movement"} {
 		heads = append(heads, gosx.El("th", gosx.Attrs(gosx.Attr("scope", "col")), gosx.Text(text)))
 	}
 	laneUnit, pointUnit := "lanes", "points"
@@ -229,7 +237,7 @@ func noteSharedReview(take control.Recording) gosx.Node {
 		gosx.El("summary", gosx.Text(fmt.Sprintf("Shared controller lanes · %d %s · %d %s", len(take.Groups), laneUnit, points, pointUnit))),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shared controls remain separate from note gestures and include movement after note releases. Neutral lanes need no binding in the saved pattern. Inspect and edit the curves in Patterns after keeping played timing.")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("tabindex", "0"), gosx.Attr("role", "region"), gosx.Attr("aria-label", take.Track+" shared controller lanes")),
-			gosx.El("table", gosx.El("caption", gosx.Text("Captured MPE master controls for "+take.Track)), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...)))))
+			gosx.El("table", gosx.El("caption", gosx.Text("Captured shared MIDI controls for "+take.Track)), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...)))))
 }
 
 func notePerformanceTrace(notes []control.Note, track string) gosx.Node {

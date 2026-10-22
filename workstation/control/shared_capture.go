@@ -16,7 +16,7 @@ func (r *Recording) BindShared(note int, value midi.SharedControls, lead ...Note
 		points = []NoteExpression{{Tick: r.Notes[note].Tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre}}
 		added = 1
 	}
-	r.Groups = append(r.Groups, RecordedGroup{ID: value.ID, Device: value.Device, Channel: value.Channel, Points: points})
+	r.Groups = append(r.Groups, RecordedGroup{ID: value.ID, Device: value.Device, Channel: value.Channel, Kind: value.Kind, Points: points})
 	r.Notes[note].Group = uint16(len(r.Groups))
 	return added
 }

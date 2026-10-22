@@ -74,16 +74,19 @@ func TestMPEInputGroupIdentitySeparatesDevicesZonesAndReconnects(t *testing.T) {
 	}
 }
 
-func TestOrdinaryMIDIInputNeverInventsSharedGestures(t *testing.T) {
+func TestOrdinaryMIDIInputSharedControlsDoNotSelectMPE(t *testing.T) {
 	var input NoteInput
 	for _, data := range [][]byte{{0x90, 60, 100}, {0xe0, 127, 127}, {0xd0, 100}, {0xb0, 74, 127}} {
 		notes, shared, err := input.ProcessEvents("ordinary", data)
-		if err != nil || len(shared) != 0 {
-			t.Fatal(shared, err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if data[0] != 0x90 && (len(shared) != 1 || shared[0].Kind != SharedChannelKind) {
+			t.Fatal(shared)
 		}
 		for _, note := range notes {
-			if note.Local != nil || note.Shared != nil {
-				t.Fatal("ordinary channel acquired an MPE layer", note)
+			if note.MPE || note.Local == nil || note.Shared == nil || note.Shared.Kind != SharedChannelKind || note.Local.PitchCents != 0 {
+				t.Fatal("ordinary channel did not retain separate MIDI 1 layers", note)
 			}
 		}
 	}

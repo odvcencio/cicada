@@ -15,8 +15,8 @@ type NoteMessage struct {
 	ID                           uint16
 	MPE                          bool
 	PitchCents, Pressure, Timbre float64
-	// Local and Shared retain the independent MPE layers. The fields above
-	// remain the combined snapshot used by ordinary live note monitoring.
+	// Local and Shared retain independent note and channel/zone layers. The
+	// fields above remain their combined snapshot for existing adapters.
 	Local      *NoteControls
 	Shared     *SharedControls
 	SharedOnly bool
@@ -24,12 +24,17 @@ type NoteMessage struct {
 
 type NoteControls struct{ PitchCents, Pressure, Timbre float64 }
 
-// SharedControls identifies one device's configured zone for this input
-// session. Reconnects and zone changes receive fresh identities.
+// SharedChannelKind distinguishes ordinary channel controls from the MPE zone
+// controls used by existing recordings (whose kind is empty).
+const SharedChannelKind = "channel"
+
+// SharedControls identifies one device's channel or configured MPE zone for
+// this input session. Reconnects and zone changes receive fresh identities.
 type SharedControls struct {
 	ID      uint64
 	Device  string
 	Channel uint8
+	Kind    string
 	NoteControls
 }
 
@@ -40,15 +45,16 @@ type noteChannel struct {
 	sustain                          bool
 }
 type noteDevice struct {
-	channels     [16]noteChannel
-	lower, upper uint8
-	groups       [2]uint64
+	channels      [16]noteChannel
+	lower, upper  uint8
+	groups        [2]uint64
+	channelGroups [16]uint64
 }
 type inputNote struct {
 	NoteMessage
 	released     bool
 	polyPressure *float64
-	frozen       *NoteMessage
+	frozen       *NoteControls
 }
 
 // NoteInput runs on a host input thread, not the audio callback. Auto follows
@@ -70,17 +76,21 @@ func (m *NoteInput) groupID() uint64 {
 }
 
 func (m *NoteInput) sharedSnapshot(device string, d *noteDevice, channel uint8) *SharedControls {
-	index := 0
-	if channel == 15 {
-		index = 1
-	} else if channel != 0 {
-		return nil
-	}
-	if d.groups[index] == 0 {
-		return nil
+	id, kind := uint64(0), ""
+	if channel == 0 && d.lower > 0 {
+		id = d.groups[0]
+	} else if channel == 15 && d.upper > 0 {
+		id = d.groups[1]
+	} else if _, member := d.master(channel); member {
+		return nil // MPE members keep their controls in the note layer.
+	} else {
+		if d.channelGroups[channel] == 0 {
+			d.channelGroups[channel] = m.groupID()
+		}
+		id, kind = d.channelGroups[channel], SharedChannelKind
 	}
 	c := d.channels[channel]
-	return &SharedControls{ID: d.groups[index], Device: device, Channel: channel,
+	return &SharedControls{ID: id, Device: device, Channel: channel, Kind: kind,
 		NoteControls: NoteControls{bendValue(c), c.pressure, c.timbre}}
 }
 
@@ -125,20 +135,18 @@ func (m *NoteInput) snapshot(n inputNote) NoteMessage {
 	c := d.channels[n.Channel]
 	value := n.NoteMessage
 	value.Type = "note-expression"
-	value.PitchCents, value.Pressure, value.Timbre = bendValue(c), c.pressure, c.timbre
-	if n.polyPressure != nil {
-		value.Pressure = *n.polyPressure
-	}
-	if n.frozen != nil {
-		value.PitchCents, value.Pressure, value.Timbre = n.frozen.PitchCents, n.frozen.Pressure, n.frozen.Timbre
-	}
+	local := noteControls(n, c)
+	sharedChannel := n.Channel
 	if master, ok := d.master(n.Channel); ok && n.MPE {
-		value.Local = &NoteControls{value.PitchCents, value.Pressure, value.Timbre}
-		value.Shared = m.sharedSnapshot(n.Device, d, master)
-		zone := d.channels[master]
-		value.PitchCents += bendValue(zone)
-		value.Pressure = math.Max(value.Pressure, zone.pressure)
-		value.Timbre = max(0, min(1, value.Timbre+zone.timbre-.5))
+		sharedChannel = master
+	}
+	value.Local = &local
+	value.Shared = m.sharedSnapshot(n.Device, d, sharedChannel)
+	value.PitchCents, value.Pressure, value.Timbre = local.PitchCents, local.Pressure, local.Timbre
+	if shared := value.Shared; shared != nil {
+		value.PitchCents += shared.PitchCents
+		value.Pressure = math.Max(value.Pressure, shared.Pressure)
+		value.Timbre = max(0, min(1, value.Timbre+shared.Timbre-.5))
 	}
 	value.PitchCents = max(-9600, min(9600, value.PitchCents))
 	return value
@@ -222,15 +230,22 @@ func (m *NoteInput) Reset(mode string) []NoteMessage {
 	return result
 }
 
-func (m *NoteInput) freeze(n *inputNote, c noteChannel) {
-	if !n.MPE {
-		return
+func noteControls(n inputNote, c noteChannel) NoteControls {
+	value := NoteControls{Timbre: .5}
+	if n.MPE {
+		value = NoteControls{bendValue(c), c.pressure, c.timbre}
 	}
-	value := n.NoteMessage
-	value.PitchCents, value.Pressure, value.Timbre = bendValue(c), c.pressure, c.timbre
 	if n.polyPressure != nil {
 		value.Pressure = *n.polyPressure
 	}
+	if n.frozen != nil {
+		value = *n.frozen
+	}
+	return value
+}
+
+func (m *NoteInput) freeze(n *inputNote, c noteChannel) {
+	value := noteControls(*n, c)
 	n.frozen = &value
 }
 
@@ -369,8 +384,11 @@ func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
 				for i := range d.channels {
 					om, okOld := old.master(uint8(i))
 					nm, okNew := d.master(uint8(i))
-					affected[i] = okOld != okNew || om != nm || channel == uint8(i) || okNew && nm == channel
+					oldMaster := i == 0 && old.lower > 0 || i == 15 && old.upper > 0
+					newMaster := i == 0 && d.lower > 0 || i == 15 && d.upper > 0
+					affected[i] = okOld != okNew || om != nm || oldMaster != newMaster || channel == uint8(i) || okNew && nm == channel
 					if affected[i] {
+						d.channelGroups[i] = 0
 						d.channels[i] = defaultNoteChannel()
 						if okNew {
 							d.channels[i].rangeSemitones, d.channels[i].coarse = 48, 48
@@ -429,25 +447,23 @@ func (m *NoteInput) Process(device string, data []byte) ([]NoteMessage, error) {
 			continue
 		}
 		if status == 0xa0 {
-			if _, member := d.master(channel); member || n.Note != a {
+			if _, member := d.master(channel); member || n.Note != a || n.released {
 				continue
 			}
 			pressure := float64(b) / 127
 			n.polyPressure = &pressure
-		} else if status == 0xd0 && n.Channel == channel {
-			n.polyPressure = nil
 		}
 		if n.released && n.MPE && n.Channel == channel {
 			continue
 		}
 		value := m.snapshot(*n)
-		value.SharedOnly = n.MPE && n.Channel != channel
+		value.SharedOnly = status != 0xa0 && (!n.MPE || n.Channel != channel)
 		result = append(result, value)
 	}
 	return result, nil
 }
 
-// ProcessEvents also returns shared master controls when every note is already
+// ProcessEvents also returns shared channel/zone controls when every note is already
 // released. Capture can retain release-tail movement without extending gates.
 func (m *NoteInput) ProcessEvents(device string, data []byte) ([]NoteMessage, []SharedControls, error) {
 	notes, err := m.Process(device, data)

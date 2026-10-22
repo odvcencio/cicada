@@ -67,6 +67,9 @@ func (u *liveUI) midiNote(event midi.NoteMessage, at *control.NoteTime) {
 		u.queue("live", map[string]string{"type": "note-group", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "groupId": strconv.FormatUint(event.Shared.ID, 10)})
 		u.monitorShared(*event.Shared)
 	}
+	if shared := event.Shared; shared != nil && !u.props.ExpressionTracks[h.Track] && (shared.PitchCents != 0 || shared.Pressure != 0 || shared.Timbre != .5) {
+		u.status.Set("This sound plays notes without gesture monitoring. Recorded gestures remain in the retained take; choose acid or an authored synth to apply them.")
+	}
 	if !event.SharedOnly && (event.Type != "note-on" || local.PitchCents != 0 || local.Pressure != 0 || local.Timbre != .5) {
 		if u.props.ExpressionTracks[h.Track] {
 			u.queue("live", map[string]string{"type": "note-expression", "track": h.Track, "noteId": strconv.Itoa(int(event.ID)), "pitchCents": strconv.FormatFloat(local.PitchCents, 'f', -1, 64), "pressure": strconv.FormatFloat(local.Pressure, 'f', -1, 64), "timbre": strconv.FormatFloat(local.Timbre, 'f', -1, 64)})
