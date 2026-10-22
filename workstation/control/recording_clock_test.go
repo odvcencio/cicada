@@ -51,58 +51,74 @@ func TestNoteClockBoundsFallbackAndAudition(t *testing.T) {
 }
 
 // The input starts on each beat in bar two. Simulate the native audio frame
-// arriving 37 ms before each note, then commit the same JSON that Live sends.
+// with local elapsed time and delayed polling, then commit Live's actual JSON.
 // The old 480-PPQ clock placed these notes on steps 9, 11, 13 and 15 instead.
 func TestNativeNoteClockCommitsBeatsToTheirPlayedSteps(t *testing.T) {
 	for _, bpm := range []int64{60, 120, 180, 240} {
-		t.Run(fmt.Sprint(bpm), func(t *testing.T) {
-			clock, err := seq.NewClock(48000, bpm*1000)
-			if err != nil {
-				t.Fatal(err)
-			}
-			take := Recording{Track: "keys", Pattern: "take"}
-			for beat := int64(0); beat < 4; beat++ {
-				want := (4 + beat) * seq.PPQ
-				sample := clock.SampleAtTick(want) - 1776 // 37 ms at 48 kHz.
-				tick := clock.TickAtSample(sample)
-				frame := liveplay.TransportFrame{
-					Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1),
-					Tick: int32(tick % seq.PPQ), TempoMilli: uint32(bpm * 1000), Playing: true,
+		for _, delivery := range []struct {
+			name                    string
+			age, roundTrip, elapsed time.Duration
+			known                   bool
+		}{
+			{"legacy", 0, 0, 37 * time.Millisecond, false},
+			{"delayed", 80 * time.Millisecond, 40 * time.Millisecond, 0, true},
+			{"jittered", 50 * time.Millisecond, 24 * time.Millisecond, 38 * time.Millisecond, true},
+		} {
+			t.Run(fmt.Sprintf("%d/%s", bpm, delivery.name), func(t *testing.T) {
+				clock, err := seq.NewClock(48000, bpm*1000)
+				if err != nil {
+					t.Fatal(err)
 				}
-				var raw [liveplay.TransportFrameSize]byte
-				frame.Encode(raw[:])
-				state := PlaybackState{Playing: true, Bar: int64(frame.Bar), Step: tick%seq.TicksPerBar/seq.TicksPerStep + 1}
-				state.Frames.Transport = base64.StdEncoding.EncodeToString(raw[:])
-				got := state.Playhead().NoteTick(37*time.Millisecond, 100) // Native tempo wins.
-				if delta := got - want; delta < -1 || delta > 1 {
-					t.Fatalf("beat %d recorded at %d instead of %d", beat+1, got, want)
-				}
-				take.Notes = append(take.Notes, Note{Tick: got, EndTick: got + seq.PPQ/2, Note: 60 + int(beat), Velocity: 100})
-			}
-			data, _ := json.Marshal([]Recording{take})
-			var recordings []edit.Recording
-			if err := json.Unmarshal(data, &recordings); err != nil {
-				t.Fatal(err)
-			}
-			source := []byte("cicada 2\ntrack keys acid {}\npattern take acid steps=16 { . . . . . . . . . . . . . . . . }\nscene main { keys=take }\nsong { main*4 }\n")
-			result, err := edit.Apply(source, edit.Envelope{Version: edit.EnvelopeVersion, Intents: []edit.Intent{&edit.RecordTake{Recordings: recordings}}}, edit.Options{Compiler: noteClockCompiler{}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			p, err := noteClockProject(result.Source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for step, note := range p.Patterns[0].Data {
-				if step%4 == 0 {
-					if note == nil || note.Note != uint8(60+step/4) {
-						t.Fatalf("step %d lost its played beat: %+v\n%s", step+1, note, result.Source)
+				take := Recording{Track: "keys", Pattern: "take"}
+				for beat := int64(0); beat < 4; beat++ {
+					want := (4 + beat) * seq.PPQ
+					age := delivery.age + delivery.roundTrip/2 + delivery.elapsed
+					sample := clock.SampleAtTick(want) - int64(age)*48000/int64(time.Second)
+					tick := clock.TickAtSample(sample)
+					frame := liveplay.TransportFrame{
+						Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1),
+						Tick: int32(tick % seq.PPQ), TempoMilli: uint32(bpm * 1000), Playing: true,
 					}
-				} else if note != nil {
-					t.Fatalf("unexpected note at step %d: %+v", step+1, note)
+					var raw [liveplay.TransportFrameSize]byte
+					frame.Encode(raw[:])
+					state := PlaybackState{Playing: true, Bar: int64(frame.Bar), Step: tick%seq.TicksPerBar/seq.TicksPerStep + 1}
+					state.Frames.Transport = base64.StdEncoding.EncodeToString(raw[:])
+					if delivery.known {
+						age := int64(delivery.age)
+						state.FrameAgeNanos = &age
+						state.RoundTrip = delivery.roundTrip
+					}
+					got := state.Playhead().NoteTick(delivery.elapsed, 100) // Native tempo wins.
+					if delta := got - want; delta < -1 || delta > 1 {
+						t.Fatalf("beat %d recorded at %d instead of %d", beat+1, got, want)
+					}
+					take.Notes = append(take.Notes, Note{Tick: got, EndTick: got + seq.PPQ/2, Note: 60 + int(beat), Velocity: 100})
 				}
-			}
-		})
+				data, _ := json.Marshal([]Recording{take})
+				var recordings []edit.Recording
+				if err := json.Unmarshal(data, &recordings); err != nil {
+					t.Fatal(err)
+				}
+				source := []byte("cicada 2\ntrack keys acid {}\npattern take acid steps=16 { . . . . . . . . . . . . . . . . }\nscene main { keys=take }\nsong { main*4 }\n")
+				result, err := edit.Apply(source, edit.Envelope{Version: edit.EnvelopeVersion, Intents: []edit.Intent{&edit.RecordTake{Recordings: recordings}}}, edit.Options{Compiler: noteClockCompiler{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				p, err := noteClockProject(result.Source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for step, note := range p.Patterns[0].Data {
+					if step%4 == 0 {
+						if note == nil || note.Note != uint8(60+step/4) {
+							t.Fatalf("step %d lost its played beat: %+v\n%s", step+1, note, result.Source)
+						}
+					} else if note != nil {
+						t.Fatalf("unexpected note at step %d: %+v", step+1, note)
+					}
+				}
+			})
+		}
 	}
 }
 

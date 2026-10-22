@@ -368,6 +368,14 @@ review. The trace shows original note starts, held lengths, and velocities;
 are marked. A local desktop profile also keeps interrupted takes and recovery
 copies across restarts; closing a browser tab does not apply a take to the score.
 
+Transport observations retain the time and tempo of the rendered position.
+Polling an old observation does not refresh its clock. Native MIDI correlates
+that time with the input timestamp; browser clocks include the reported render
+age and estimate response transit from half the request's round trip. Note
+timing extrapolates at most 250 ms from the observation. A moving playhead
+becomes unavailable when its audio clock stops updating; a paused position
+remains visible. This software alignment does not measure device latency.
+
 **Keep played timing** writes independent note starts, releases, velocities,
 and supported controller gestures as a performance pattern. Chords can have
 different starts, held lengths, bends, pressure, and timbre. MPE member controls

@@ -1785,7 +1785,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 	p.completeSlotLaunches(endSample)
 	p.sample += int64(frames)
 	p.followLiveTempo()
-	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.current.Engine.Playing())
+	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.clock.BPMMilli, p.current.Engine.Playing())
 	p.buffered, p.read = frames*8, 0
 }
 

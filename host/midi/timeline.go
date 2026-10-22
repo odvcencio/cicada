@@ -20,6 +20,20 @@ type Timeline struct {
 
 type clockFrame struct{ at, tick, tempo int64 }
 
+// ObservationHostTime correlates a render observation's wall time with the
+// native input clock. Delayed polling must not assign an old position to now.
+// Reject future, stale or unavailable clock samples instead of inventing time.
+func ObservationHostTime(observedWall, wallNow, hostNow int64) (int64, bool) {
+	if observedWall <= 0 || wallNow < observedWall || hostNow <= 0 {
+		return 0, false
+	}
+	age := wallNow - observedWall
+	if age > int64(250*time.Millisecond) || age >= hostNow {
+		return 0, false
+	}
+	return hostNow - age, true
+}
+
 func (t *Timeline) Epoch() uint64 { return t.epoch }
 
 func (t *Timeline) Reset(at int64) {

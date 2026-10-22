@@ -101,6 +101,7 @@ type snapshotFrames struct {
 
 type transportSnapshot struct {
 	MIDIClockEpoch      uint64              `json:"midiClockEpoch"`
+	FrameAgeNanos       *int64              `json:"frameAgeNanos,omitempty"`
 	Frames              *snapshotFrames     `json:"frames,omitempty"`
 	Type                string              `json:"type"`
 	Sequence            uint64              `json:"sequence"`
@@ -166,7 +167,6 @@ func (t *studioTransport) snapshot() transportSnapshot {
 			t.scene, t.activeSlots = scene, nil
 		}
 	}
-	t.observeMIDIClockLocked()
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, MIDIClockEpoch: t.midiTimeline.Epoch(), Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if t.stream != nil {
 		stats := t.stream.StreamStats()
@@ -226,6 +226,18 @@ func (t *studioTransport) snapshot() transportSnapshot {
 	}
 	if t.telemetry != nil {
 		latest := t.telemetry.Latest()
+		if frame, err := liveplay.DecodeTransportFrame(latest[liveplay.FrameTransport]); err == nil {
+			now := time.Now().UnixNano()
+			age := int64(-1) // A wall-clock discontinuity cannot be extrapolated.
+			if frame.WallNanos > 0 && frame.WallNanos <= now {
+				age = now - frame.WallNanos
+			}
+			state.FrameAgeNanos = &age
+			if t.stream != nil {
+				t.observeMIDIFrameLocked(frame, now, midi.HostTimeNanos())
+				state.MIDIClockEpoch = t.midiTimeline.Epoch()
+			}
+		}
 		frames := snapshotFrames{
 			Transport: base64.StdEncoding.EncodeToString(latest[liveplay.FrameTransport]),
 			Meters:    base64.StdEncoding.EncodeToString(latest[liveplay.FrameMeters]),

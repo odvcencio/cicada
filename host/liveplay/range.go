@@ -137,7 +137,7 @@ func (p *Player) finishPlaybackRange() bool {
 	p.rangeFinished.Store(true)
 	p.hostPaused.Store(true)
 	p.position.Store(uint64((r.EndTick/seq.TicksPerBar+1)<<8 | (r.EndTick%seq.TicksPerBar)/seq.TicksPerStep + 1))
-	p.telemetry.storeTransport(p.sample, r.EndTick, false)
+	p.telemetry.storeTransport(p.sample, r.EndTick, p.clock.BPMMilli, false)
 	clear(p.pcm[:])
 	p.buffered, p.read = len(p.pcm), 0
 	return true

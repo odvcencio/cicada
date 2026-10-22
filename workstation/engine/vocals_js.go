@@ -84,6 +84,7 @@ type vocalLanesUI struct {
 	writing             bool
 	playback            control.Playhead
 	playbackAt          time.Time
+	playbackClockStale  bool
 	gainDB              float64
 	auditionMode        string
 	edits               control.VocalEdits

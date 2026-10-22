@@ -395,7 +395,9 @@ func (u *liveUI) poll() {
 			ActiveSlots  map[string]string `json:"activeSlots"`
 			PendingSlots map[string]string `json:"pendingSlots"`
 		}
+		requested := time.Now()
 		if read("/api/transport", &t) == nil && !u.closed.Load() {
+			t.RoundTrip = time.Since(requested)
 			if t.MIDIClockEpoch < u.clockEpoch {
 				continue
 			}

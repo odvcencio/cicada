@@ -35,7 +35,8 @@ var le = binary.LittleEndian
 
 // TransportFrame is the playback position. Bar and Beat are 1-based. Tick is
 // the 0-based tick within the beat (0 to 959). LoopStart, LoopEnd and
-// InsertMarker are absolute ticks.
+// InsertMarker are absolute ticks. WallNanos is the Unix time of the original
+// render observation, retained when the same position is republished.
 type TransportFrame struct {
 	SampleFrame                      int64
 	SampleRate                       uint32
