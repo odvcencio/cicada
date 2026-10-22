@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/kernel/seq"
-	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/notation/musicaltime"
 	"m31labs.dev/cicada/workstation/control"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
@@ -431,8 +431,8 @@ func (u *vocalLanesUI) readPositions() {
 	if !workspacePresent(form) {
 		return
 	}
-	a, e1 := notation.MusicalTicks(workspaceFieldValue(form, "recordStart"), true)
-	b, e2 := notation.MusicalTicks(workspaceFieldValue(form, "recordEnd"), true)
+	a, e1 := musicaltime.Parse(workspaceFieldValue(form, "recordStart"), true)
+	b, e2 := musicaltime.Parse(workspaceFieldValue(form, "recordEnd"), true)
 	lane, ok := u.lane(u.selected)
 	if ok && e1 == nil && e2 == nil && a >= lane.Start && b <= min(lane.End, u.props.End) && a < b {
 		u.region = control.VocalRange{Start: a, End: b}

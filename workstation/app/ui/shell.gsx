@@ -25,6 +25,10 @@ type ShellFrameProps struct {
 component ShellFrame(props: ShellFrameProps) {
 	return <div id="studio-shell" class="shell" data-phone-region={props.Region}>
 		<a class="skip" href="#studio-center">Skip to workspace</a>
+		<div class="studio-startup" data-studio-startup-status role="status" aria-live="polite" hidden>
+			<span data-studio-startup-message>Opening Studio controls…</span>
+			<button type="button" data-studio-startup-reload hidden>Reload Studio</button>
+		</div>
 		<p id="studio-refresh-notice" class="notice" role="status" hidden>The score changed while you have unsaved changes here. Save or copy them, then <a href={props.Href}>refresh this page</a>. Saving now is refused because the score moved on.</p>
 		<If cond={props.HasMessage}><p class="notice" role="status">{props.Message}</p></If>
 		<div class="notices" data-gosx-toast-host role="status" aria-live="polite"></div>

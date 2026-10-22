@@ -2,8 +2,6 @@
 // The browser shares these types; audio preparation and storage stay on the host.
 package padsampler
 
-import "m31labs.dev/cicada/project"
-
 const Rate = 48000
 const MaxFrames = 8 << 20
 
@@ -44,10 +42,10 @@ type Performance struct {
 	Frames int64 `json:"frames"`
 }
 type Source struct {
-	ID    string        `json:"id"`
-	Name  string        `json:"name"`
-	Asset project.Asset `json:"asset"`
-	Peaks []float32     `json:"peaks"`
+	ID    string      `json:"id"`
+	Name  string      `json:"name"`
+	Asset sourceAsset `json:"asset"`
+	Peaks []float32   `json:"peaks"`
 }
 type Bank struct {
 	Version     int         `json:"version"`

@@ -359,6 +359,17 @@ jobs:
           CICADA_PRECISION_PROOF_DIR="$PWD/build/studio-precision-proof" node --test workstation/browser/placement-precision.test.cjs | tee build/studio-precision-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          node workstation/browser/placements.test.cjs --write-fixture "$browser_root/startup.cicada"
+          ./build/cicada studio "$browser_root/startup.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-startup-server.log 2>&1 &
+          studio_pid=$!
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          CICADA_STARTUP_PROOF_DIR="$PWD/build/studio-startup-proof" node --test workstation/browser/startup.test.cjs | tee build/studio-startup-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
           node workstation/browser/placement-autoscroll.test.cjs --write-fixture "$browser_root/autoscroll.cicada"
           ./build/cicada studio "$browser_root/autoscroll.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-autoscroll-server.log 2>&1 &
           studio_pid=$!
@@ -426,6 +437,9 @@ jobs:
             build/studio-precision-proof/
             build/studio-precision-report.txt
             build/studio-precision-server.log
+            build/studio-startup-report.txt
+            build/studio-startup-server.log
+            build/studio-startup-proof/
             build/studio-autoscroll-report.txt
             build/studio-autoscroll-server.log
             build/studio-autoscroll-proof/
@@ -488,6 +502,7 @@ jobs:
           go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
           python3 -m unittest discover -s desktop -p test_smoke.py
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/startup --mode normal --workflow desktop/testdata/native-startup-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/recording --mode normal --workflow desktop/testdata/native-recording-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/import --mode normal --workflow desktop/testdata/native-import-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/arrange --mode normal --timeout 120 --workflow desktop/testdata/native-arrange-workflow.js
