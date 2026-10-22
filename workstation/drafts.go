@@ -17,8 +17,11 @@ type draft struct {
 	Sequence                              uint64
 	ParentID, ParentHash                  string
 	Source, Revision, Owner               string
+	SourceRevision                        string
 	CheckRevision, CheckError             string
+	CheckSourceRevision                   string
 	PlayedCheckRevision, PlayedCheckError string
+	PlayedCheckSourceRevision             string
 	File                                  string
 	Kind                                  string
 	Expires                               time.Time

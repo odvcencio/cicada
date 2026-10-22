@@ -45,7 +45,7 @@ func newNoteID() string {
 
 func noteDraft(saved savedNotes, owner string) draft {
 	data, _ := json.Marshal(saved.Takes)
-	return draft{Source: string(data), Revision: saved.Revision, Owner: owner, Kind: "notes", SavedNoteID: saved.ID, Expires: time.Now().Add(30 * time.Minute)}
+	return draft{Source: string(data), Revision: saved.Revision, SourceRevision: saved.SourceRevision, Owner: owner, Kind: "notes", SavedNoteID: saved.ID, Expires: time.Now().Add(30 * time.Minute)}
 }
 
 func (s *studioApp) cacheNoteDraft(saved savedNotes, owner string) {
@@ -73,7 +73,7 @@ func (s *studioApp) saveNoteCheckpoint(ctx *action.Context, state string, takes 
 	if err != nil {
 		return savedNotes{}, action.Validation("Invalid note checkpoint sequence.", nil, nil)
 	}
-	saved, err := s.notes.save(workspaceOwner(ctx.Request), savedNotes{ID: id, Sequence: sequence, Revision: ctx.FormData["revision"], State: state, Takes: takes})
+	saved, err := s.notes.save(workspaceOwner(ctx.Request), savedNotes{ID: id, Sequence: sequence, Revision: ctx.FormData["revision"], SourceRevision: ctx.FormData["source_revision"], State: state, Takes: takes})
 	if errors.Is(err, errNoteCheckpoint) {
 		return saved, action.Error(409, err.Error())
 	}
@@ -129,7 +129,7 @@ func (s *studioApp) restoreNotes(ctx *action.Context) error {
 	}
 	s.cacheNoteDraft(saved, owner)
 	session.Current(ctx.Request).Set("note-preview", saved.ID)
-	s.checkNoteDraft(ctx, saved.ID, ctx.FormData["revision"], saved.Takes)
+	s.checkNoteDraft(ctx, saved.ID, ctx.FormData["revision"], ctx.FormData["source_revision"], saved.Takes)
 	ctx.FormData = nil
 	ctx.RedirectBackWithMessage("/?panel=live", "Saved performance opened for review. The score is unchanged.")
 	return nil
@@ -167,7 +167,7 @@ func (s *studioApp) noteRecovery(v workspace, csrf, owner, current string, histo
 		if take.State == "recording" || take.State == "ready" {
 			controls = append(controls, submit("intent", "discard", "Dismiss saved checkpoint"))
 		}
-		rows = append(rows, gosx.El("li", gosx.Attrs(gosx.Attr("class", "strip")), gosx.El("p", gosx.Text(label)), s.form(v, csrf, "live", "note-restore", controls...)))
+		rows = append(rows, gosx.El("li", gosx.Attrs(gosx.Attr("class", "strip")), gosx.El("p", gosx.Text(label)), s.form(v, csrf, "live", "note-restore", append([]gosx.Node{hidden("source_revision", v.SourceRevision)}, controls...)...)))
 	}
 	link := gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=live&noteHistory=on")), gosx.Text("Previous note performances"))
 	if !history && len(rows) == 0 {

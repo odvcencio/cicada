@@ -195,6 +195,10 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
+					case "recordtake":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("bend: 50ct")) {
+							t.Fatalf("recording did not edit its owned source: candidate=%v error=%v", result != nil, err)
+						}
 					case "setperformednote", "resizeperformance", "setperformedexpression", "setperformancegroup", "bindperformedgroup", "setsharedexpression":
 						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
 							t.Fatalf("performed edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)

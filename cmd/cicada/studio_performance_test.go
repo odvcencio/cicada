@@ -16,7 +16,7 @@ scene main { keys=phrase }
 song { main }
 `
 	_, handler, path := proposalFixture(t, source)
-	take := studioEdit{Revision: studioRevision([]byte(source)), Timing: "played", Recordings: []studioTakeRecording{{Track: "keys", Pattern: "phrase", Notes: []studioTakeNote{{Tick: 17, EndTick: 4107, Note: 60, Velocity: 82}, {Tick: 19, EndTick: 1220, Note: 64, Velocity: 105}}}}}
+	take := studioEdit{Revision: studioRevision([]byte(source)), SourceRevision: studioProjectReceipt(t, path), Timing: "played", Recordings: []studioTakeRecording{{Track: "keys", Pattern: "phrase", Notes: []studioTakeNote{{Tick: 17, EndTick: 4107, Note: 60, Velocity: 82}, {Tick: 19, EndTick: 1220, Note: 64, Velocity: 105}}}}}
 	env := edit.Envelope{Version: 1, Revision: take.Revision, DryRun: true, Intents: []edit.Intent{&edit.RecordTake{Timing: "played", Recordings: editRecordings(take.Recordings)}}}
 	if r := studioCall(t, handler, "/api/intents", env); r.Code != 200 {
 		t.Fatalf("played check: %d %s", r.Code, r.Body.String())

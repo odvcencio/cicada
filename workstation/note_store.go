@@ -23,13 +23,14 @@ const noteFileLimit = 16 << 20
 var errNoteCheckpoint = errors.New("a newer or finished copy of this performance is already saved")
 
 type savedNotes struct {
-	Version  int                 `json:"version"`
-	ID       string              `json:"id"`
-	Sequence uint64              `json:"sequence"`
-	Revision string              `json:"revision"`
-	State    string              `json:"state"`
-	Updated  time.Time           `json:"updated"`
-	Takes    []control.Recording `json:"takes"`
+	Version        int                 `json:"version"`
+	ID             string              `json:"id"`
+	Sequence       uint64              `json:"sequence"`
+	Revision       string              `json:"revision"`
+	SourceRevision string              `json:"sourceRevision,omitempty"`
+	State          string              `json:"state"`
+	Updated        time.Time           `json:"updated"`
+	Takes          []control.Recording `json:"takes"`
 }
 
 type noteStore struct{ dir string }
@@ -152,7 +153,7 @@ func loadSavedNotes(root *os.Root, owner, id string) (savedNotes, error) {
 	if err = json.Unmarshal(data, &saved); err != nil {
 		return saved, fmt.Errorf("saved note performance is unreadable; its file was preserved: %w", err)
 	}
-	if saved.Version < 1 || saved.Version > 3 || saved.ID != id || saved.Sequence == 0 || saved.Revision == "" || len(saved.Revision) > 128 {
+	if saved.Version < 1 || saved.Version > 4 || saved.ID != id || saved.Sequence == 0 || saved.Revision == "" || len(saved.Revision) > 128 || len(saved.SourceRevision) > 128 || saved.Version == 4 && saved.SourceRevision == "" {
 		return saved, fmt.Errorf("saved note performance metadata is invalid; its file was preserved")
 	}
 	switch saved.State {
@@ -173,7 +174,7 @@ func (s *noteStore) get(owner, id string) (savedNotes, error) {
 }
 
 func (s *noteStore) save(owner string, saved savedNotes) (savedNotes, error) {
-	if owner == "" || !validNoteID(saved.ID) || saved.Sequence == 0 || saved.Revision == "" || len(saved.Revision) > 128 || saved.State != "recording" && saved.State != "ready" {
+	if owner == "" || !validNoteID(saved.ID) || saved.Sequence == 0 || saved.Revision == "" || len(saved.Revision) > 128 || len(saved.SourceRevision) > 128 || saved.State != "recording" && saved.State != "ready" {
 		return saved, fmt.Errorf("invalid note checkpoint")
 	}
 	if err := control.ValidateRecordings(saved.Takes); err != nil {
@@ -187,14 +188,14 @@ func (s *noteStore) save(owner string, saved savedNotes) (savedNotes, error) {
 		if err == nil {
 			a, _ := json.Marshal(old.Takes)
 			b, _ := json.Marshal(saved.Takes)
-			if old.Sequence == saved.Sequence && old.State == saved.State && old.Revision == saved.Revision && bytes.Equal(a, b) {
+			if old.Sequence == saved.Sequence && old.State == saved.State && old.Revision == saved.Revision && old.SourceRevision == saved.SourceRevision && bytes.Equal(a, b) {
 				saved = old
 				return nil
 			}
 			if old.State == "ready" && !bytes.Equal(a, b) {
 				return errNoteCheckpoint
 			}
-			if saved.Sequence <= old.Sequence || old.State == "applied" || old.State == "discarded" || old.State == "ready" && saved.State == "recording" || old.Revision != saved.Revision {
+			if saved.Sequence <= old.Sequence || old.State == "applied" || old.State == "discarded" || old.State == "ready" && saved.State == "recording" || old.Revision != saved.Revision || old.SourceRevision != saved.SourceRevision {
 				return errNoteCheckpoint
 			}
 		}
@@ -210,6 +211,9 @@ func (s *noteStore) save(owner string, saved savedNotes) (savedNotes, error) {
 					}
 				}
 			}
+		}
+		if saved.SourceRevision != "" {
+			saved.Version = 4
 		}
 		data, err := json.Marshal(saved)
 		if err != nil {

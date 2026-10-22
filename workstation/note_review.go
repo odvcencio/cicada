@@ -21,7 +21,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 	}
 	count := 0
 	form := func(nodes ...gosx.Node) gosx.Node {
-		return s.form(v, csrf, "live", "note-commit", append([]gosx.Node{hidden("takeId", key)}, nodes...)...)
+		return s.form(v, csrf, "live", "note-commit", append([]gosx.Node{hidden("takeId", key), hidden("source_revision", v.SourceRevision)}, nodes...)...)
 	}
 	for _, take := range takes {
 		count += len(take.Notes)
@@ -41,18 +41,25 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 		}
 		children = append(children, noteRecordingReview(take, pattern))
 	}
-	playedBlocked := d.PlayedCheckRevision == v.Revision && d.PlayedCheckError != ""
+	changed := d.Revision != v.Revision || d.SourceRevision == "" || d.SourceRevision != v.SourceRevision
+	if changed {
+		message := "Project files changed since this take. Review the current destinations before keeping or applying these notes."
+		if d.SourceRevision == "" {
+			message = "This take has no project version. Review the current destinations before keeping or applying these notes."
+		}
+		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text(message)))
+	}
+	playedBlocked := d.PlayedCheckRevision == v.Revision && d.PlayedCheckSourceRevision == v.SourceRevision && d.PlayedCheckError != ""
 	if playedBlocked {
 		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check take-check-error")), gosx.Text("Played timing: "+d.PlayedCheckError+" Your performance is still retained.")))
 	}
 	children = append(children, form(gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", "played"), gosx.Attr("disabled", playedBlocked)), gosx.Text("Keep played timing"))))
 	children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Replaces the destination patterns. Their current sounds and scene assignments stay in use; song and placement lengths stay as authored. Use the pattern view to play the full loop. Undo restores the previous patterns.")))
 	intent, label := "commit", "Commit notes to patterns"
-	if d.Revision != v.Revision {
+	if changed {
 		intent, label = "rebase", "Apply notes to current score"
-		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("The score changed since this take. Check the current patterns before applying.")))
 	}
-	blocked := d.CheckRevision == v.Revision && d.CheckError != ""
+	blocked := d.CheckRevision == v.Revision && d.CheckSourceRevision == v.SourceRevision && d.CheckError != ""
 	var gridCheck gosx.Node = gosx.Fragment()
 	if blocked {
 		reason := strings.TrimSpace(d.CheckError)
@@ -60,7 +67,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 			reason += "."
 		}
 		gridCheck = gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check take-check-error"), gosx.Attr("role", "status")), gosx.Text("Pattern check: "+reason+" Your performance is still retained."))
-	} else if d.CheckRevision == v.Revision {
+	} else if d.CheckRevision == v.Revision && d.CheckSourceRevision == v.SourceRevision {
 		gridCheck = gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("Pattern check passed. The score is unchanged until you apply. Undo restores the previous patterns."))
 	}
 	apply := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", intent), gosx.Attr("disabled", blocked)), gosx.Text(label))

@@ -31,7 +31,7 @@ func TestRecordedKeysRejectUnsupportedExpressionAndRangeAtomically(t *testing.T)
 				if err != nil {
 					t.Fatal(err)
 				}
-				response := studioCall(t, handler, "/api/record", studioEdit{Revision: studioRevision(source), Track: "part", Pattern: "take", Take: []studioTakeNote{test.note}})
+				response := studioCall(t, handler, "/api/record", studioEdit{Revision: studioRevision(source), SourceRevision: studioProjectReceipt(t, path), Track: "part", Pattern: "take", Take: []studioTakeNote{test.note}})
 				got, err := os.ReadFile(path)
 				if err != nil || response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), test.want) || !bytes.Equal(got, source) || len(studioHistoryEdits(t, handler)) != 0 {
 					t.Fatalf("unsupported take changed source/history: %d %s %v", response.Code, response.Body.String(), err)

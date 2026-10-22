@@ -110,7 +110,6 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	if trackID == "" || patternID == "" || len(take) == 0 {
 		return nil, fmt.Errorf("track, pattern, and at least one recorded note are required")
 	}
-	source := ctx.Source
 	score, diagnostics, err := ctx.ParseProject()
 	if err != nil {
 		return nil, err
@@ -226,7 +225,15 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 		if drums {
 			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
 		}
-		return recordedExpressionSource(source, ctx.Options.Path, score, pattern, take)
+		_, source, path, err := recordingSource(ctx, score, patternID)
+		if err != nil {
+			return nil, err
+		}
+		updated, err := recordedExpressionSource(source, path, score, pattern, take)
+		if err != nil {
+			return nil, err
+		}
+		return stageProjectSource(ctx, path, source, updated), nil
 	}
 	if polyphonic && track.Polyphony == 4 {
 		return nil, fmt.Errorf("track %q is not an acid track", trackID)
@@ -269,6 +276,10 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 			}
 		}
 	}
+	working, source, path, err := recordingSource(ctx, score, patternID)
+	if err != nil {
+		return nil, err
+	}
 	updated := append([]byte(nil), source...)
 	for _, captured := range ordered {
 		if drums {
@@ -277,46 +288,46 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", captured.note)
 			}
 			lane := drumLaneName(laneIndex)
-			token, err := drumToken(sourceContext(ctx, updated), patternID, lane, captured.step)
+			token, err := drumToken(sourceContext(working, updated), patternID, lane, captured.step)
 			if err != nil {
 				return nil, err
 			}
 			if token == "." || token == "-" {
-				updated, err = toggledSource(sourceContext(ctx, updated), patternID, lane, captured.step)
+				updated, err = toggledSource(sourceContext(working, updated), patternID, lane, captured.step)
 				if err != nil {
 					return nil, err
 				}
 			}
-			updated, err = drumVelocitySource(sourceContext(ctx, updated), patternID, lane, captured.step, captured.velocity)
+			updated, err = drumVelocitySource(sourceContext(working, updated), patternID, lane, captured.step, captured.velocity)
 			if err != nil {
 				return nil, err
 			}
 			continue
 		}
-		current, err := patternStep(sourceContext(ctx, updated), patternID, captured.step)
+		current, err := patternStep(sourceContext(working, updated), patternID, captured.step)
 		if err != nil {
 			return nil, err
 		}
 		if current == nil || int(current.Note) != captured.note || current.Tie {
-			updated, err = pitchedSource(sourceContext(ctx, updated), patternID, "", captured.step, captured.note)
+			updated, err = pitchedSource(sourceContext(working, updated), patternID, "", captured.step, captured.note)
 			if err != nil {
 				return nil, err
 			}
 		}
 		if captured.slide {
-			token, err := noteToken(sourceContext(ctx, updated), patternID, captured.step)
+			token, err := noteToken(sourceContext(working, updated), patternID, captured.step)
 			if err != nil {
 				return nil, err
 			}
 			if token != "." && token != "-" && !strings.Contains(token, "~") {
-				updated, err = toggledModifierSource(sourceContext(ctx, updated), patternID, "", captured.step, "slide")
+				updated, err = toggledModifierSource(sourceContext(working, updated), patternID, "", captured.step, "slide")
 				if err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
-	return updated, nil
+	return stageProjectSource(ctx, path, source, updated), nil
 }
 
 func noteToken(ctx *Context, patternID string, index int) (string, error) {
@@ -519,7 +530,7 @@ func recordedExpressionSource(source []byte, targetFile string, score *notation.
 			found = true
 		}
 		if !found {
-			additions.WriteString("\n  " + text)
+			additions.WriteString(Newline(source) + "  " + text)
 		}
 	}
 	if additions.Len() > 0 {
@@ -547,7 +558,7 @@ func recordedExpressionSource(source []byte, targetFile string, score *notation.
 			return nil, fmt.Errorf("pattern closing brace is missing")
 		}
 		at := end + closing
-		edits = append(edits, Span{at, at, additions.String() + "\n", targetFile})
+		edits = append(edits, Span{at, at, additions.String() + Newline(source), targetFile})
 	}
 	return PatchSpans(source, targetFile, edits)
 }

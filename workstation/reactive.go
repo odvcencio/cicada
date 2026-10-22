@@ -46,7 +46,7 @@ func (s *studioApp) reactiveWorkspace(ctx *server.Context, view workspace, body 
 		// Engine-only pages do not implicitly load the island patch receiver.
 		// Register GoSX's own standalone asset through its managed script API.
 		ctx.Runtime().ManagedScript("/gosx/patch.js", server.ManagedScriptOptions{Role: server.ManagedScriptRolePatch})
-		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "csrf": session.Token(ctx.Request), "projectRevision": view.ProjectRevision})
+		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "sourceRevision": view.SourceRevision, "csrf": session.Token(ctx.Request), "projectRevision": view.ProjectRevision})
 		runtime = meterEngine(ctx, engine.Config{
 			Name: "CicadaWorkspace", Kind: engine.KindSurface,
 			MountID: "cicada-workspace-runtime", Runtime: engine.RuntimeGoWASM,

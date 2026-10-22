@@ -197,6 +197,9 @@ func m4Route(t *testing.T, c m4RouteCase) gridPatternRouteSnapshot {
 	s, path := m4Session(t, c)
 	body := c.body
 	body.Revision = studioRevision([]byte(c.source))
+	if c.route == "/api/record" {
+		body.SourceRevision = studioProjectReceipt(t, s.path)
+	}
 	response := studioCall(t, s.routes(), c.route, body)
 	reply := gridPatternRouteSnapshot{Code: response.Code}
 	if err := json.Unmarshal(response.Body.Bytes(), &reply.Body); err != nil {

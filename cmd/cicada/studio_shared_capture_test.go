@@ -31,7 +31,7 @@ func testStudioSharedCapture(t *testing.T, kind string) {
 	}
 	source := "tempo 96\ninstrument light { voice poly { out=sine(pitch)*adsr(gate,8ms,130ms,0.6,1800ms)*velocity*(0.04+pressure*0.08) } }\ntrack keys light { level=-12dB }\npattern phrase notes { . . . . } // original idea\nscene main { keys=phrase }\nsong { main }\n"
 	_, handler, path := proposalFixture(t, source)
-	take := studioEdit{Revision: studioRevision([]byte(source)), Timing: "played", Recordings: []studioTakeRecording{{Track: "keys", Pattern: "phrase", Notes: []studioTakeNote{
+	take := studioEdit{Revision: studioRevision([]byte(source)), SourceRevision: studioProjectReceipt(t, path), Timing: "played", Recordings: []studioTakeRecording{{Track: "keys", Pattern: "phrase", Notes: []studioTakeNote{
 		{Tick: 3857, EndTick: 4500, Note: 60, Velocity: 100, Group: 1, Expressions: []studioTakeExpression{{Tick: 3857, PitchCents: 25, Pressure: .2, Timbre: .5}}},
 		{Tick: 3859, EndTick: 4500, Note: 64, Velocity: 90, Group: 1},
 	}, Groups: []studioTakeGroup{{ID: 7, Device: "native:surface:g0", Channel: channel, Kind: kind, Points: []studioTakeExpression{{Tick: 3857, Pressure: .1, Timbre: .5}, {Tick: 4800, PitchCents: 200, Pressure: .9, Timbre: .8}, {Tick: 8000, Timbre: .5}}}}}}}

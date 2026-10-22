@@ -152,8 +152,11 @@ gates and audio release tails. Reconnecting an input gets a separate shared addr
 samplers still lack gesture monitoring; retained unsupported gestures are
 refused on apply. Raw takes retain up to 65,536 snapshots, including equal-tick
 samples, before the edit service derives playable points. Private recovery
-checkpoints use version 3 for ordinary channel lanes (`kind: "channel"`);
-existing MPE-only checkpoints retain version 2, with an empty kind. Live sends
+checkpoints with a capture project receipt use version 4 and retain
+`sourceRevision` unchanged for the life of the take. Legacy version 3 ordinary
+channel lanes (`kind: "channel"`), version 2 MPE lanes (empty kind), and version 1
+note copies remain readable. Their missing project receipt requires reviewing
+the current destinations before applying; it is never inferred during recovery. Live sends
 coalesce controller snapshots between gate/action barriers and batch up to 64 messages.
 
 [`host/midi`](../../host/midi) retains

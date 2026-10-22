@@ -30,6 +30,7 @@ type workspaceProps struct {
 	ProjectRevision string `json:"projectRevision"`
 	CSRF            string `json:"csrf"`
 	Revision        string `json:"revision"`
+	SourceRevision  string `json:"sourceRevision"`
 }
 
 type workspaceProjection struct {
@@ -206,7 +207,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "scroll", u.scrolled)
 	u.revealSelectedNote()
 	root.Call("setAttribute", "data-workspace-reactive", "ready")
-	confirmedWorkspaceRevision.Set(props.Revision)
+	confirmedWorkspaceVersion.Set(workspaceVersion{props.Revision, props.SourceRevision})
 	go u.run()
 	go u.watchFiles()
 	go u.checkpointSources()
@@ -911,7 +912,7 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 	if projection.ProjectRevision != "" {
 		u.projectRevision.Store(projection.ProjectRevision)
 	}
-	confirmedWorkspaceRevision.Set(projection.Revision)
+	confirmedWorkspaceVersion.Set(workspaceVersion{projection.Revision, projection.SourceRevision})
 	u.focusGesture(job)
 	if job.method == http.MethodPost && job.values["action"] == "chord" {
 		u.revealSelectedNote()

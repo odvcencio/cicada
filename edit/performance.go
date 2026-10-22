@@ -109,7 +109,7 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 		if !assigned {
 			return fmt.Errorf("pattern %q is not on track %q", recording.Pattern, recording.Track)
 		}
-		if err := replacePerformedPattern(ctx, recording.Pattern, performance, false); err != nil {
+		if err := replaceProjectPerformance(ctx, recording.Pattern, performance, false); err != nil {
 			return err
 		}
 	}
@@ -177,11 +177,7 @@ func validateTakeGroups(groups []TakeGroup) (int, error) {
 	return count, nil
 }
 
-func replacePerformedPattern(ctx *Context, id string, performance *seq.Performance, preserveTranspose bool) error {
-	return replaceProjectPerformance(ctx, id, performance, preserveTranspose, false)
-}
-
-func replaceProjectPerformance(ctx *Context, id string, performance *seq.Performance, preserveTranspose, allowAuxiliary bool) error {
+func replaceProjectPerformance(ctx *Context, id string, performance *seq.Performance, preserveTranspose bool) error {
 	score, diagnostics, err := ctx.ParseProject()
 	if err != nil {
 		return err
@@ -207,12 +203,6 @@ func replaceProjectPerformance(ctx *Context, id string, performance *seq.Perform
 		if source.Path == file && source.Library != "" {
 			return fmt.Errorf("copy library pattern %q into the project before keeping a performance", id)
 		}
-	}
-	// Legacy pattern actions carry only the entry revision. Operations opting
-	// into owned secondary sources require a full-project receipt at their
-	// HTTP boundary, then stage that buffer through the shared transaction.
-	if file != ctx.Options.Path && !allowAuxiliary {
-		return fmt.Errorf("source position belongs to another source file; edit its owning file")
 	}
 	before, ok := ctx.FileSource(file)
 	if !ok {

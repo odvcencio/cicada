@@ -99,6 +99,9 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 				body := c.body
 				body.Source = strings.ReplaceAll(body.Source, "\n", newline)
 				body.Revision = studioRevision([]byte(fixture))
+				if c.route == "/api/record" {
+					body.SourceRevision = studioProjectReceipt(t, path)
+				}
 				if c.prime {
 					response := studioCall(t, s.routes(), c.route, body)
 					if response.Code != http.StatusOK {
@@ -110,6 +113,9 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 					t.Fatal(err)
 				}
 				body.Revision = studioRevision(current)
+				if c.route == "/api/record" {
+					body.SourceRevision = studioProjectReceipt(t, path)
+				}
 				if c.name == "file part replace" {
 					// Initialize the per-file session before comparing its history.
 					response := studioCall(t, s.routes(), c.route, body)
@@ -181,7 +187,7 @@ func TestRecordRouteRestoresCommitHookAfterConflict(t *testing.T) {
 		staged++
 		raced = os.WriteFile(path, external, 0600)
 	}
-	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision([]byte(studioScore)), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Note: 60, Velocity: 90, EndTick: 60}}})
+	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision([]byte(studioScore)), SourceRevision: studioProjectReceipt(t, path), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Note: 60, Velocity: 90, EndTick: 60}}})
 	if raced != nil || staged != 1 {
 		t.Fatalf("external write at the staging seam: %d calls, %v", staged, raced)
 	}

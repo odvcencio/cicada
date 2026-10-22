@@ -48,21 +48,26 @@ func Handle(kind string, handler Handler) {
 }
 
 type Context struct {
-	Source     []byte // working source; handlers replace it
-	Options    Options
-	Envelope   Envelope
-	plan       *Plan
-	files      []File
-	fileIndex  map[string]int
-	label      string
-	rendered   bool
-	identities []string                // verified identity of each render comparison
-	rechecks   []func() (string, bool) // recompute each identity from the same inputs
-	response   map[string]any
+	Source      []byte // working source; handlers replace it
+	Options     Options
+	Envelope    Envelope
+	plan        *Plan
+	parseSource func([]byte) (*notation.Score, []notation.Diagnostic)
+	files       []File
+	fileIndex   map[string]int
+	label       string
+	rendered    bool
+	identities  []string                // verified identity of each render comparison
+	rechecks    []func() (string, bool) // recompute each identity from the same inputs
+	response    map[string]any
 }
 
-// Parse parses the working source standalone, as today's writers do.
+// Parse parses the working buffer. Recording token writers can retain the
+// complete project context when the buffer owns only part of the score.
 func (c *Context) Parse() (*notation.Score, []notation.Diagnostic) {
+	if c.parseSource != nil {
+		return c.parseSource(c.Source)
+	}
 	if c.Options.Edition == 0 {
 		return notation.Parse(c.Source)
 	}

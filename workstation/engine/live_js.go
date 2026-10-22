@@ -90,6 +90,8 @@ type liveUI struct {
 	takes                []control.Recording
 	takeID               string
 	takeRevision         string
+	sourceRevision       string
+	takeSourceRevision   string
 	takeSequence         uint64
 	takeDirty            bool
 	checkpointWake       chan struct{}
@@ -131,8 +133,8 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.refreshPatterns()
 	watch := signal.Watch(func() { root.Call("querySelector", "[data-live-status]").Set("textContent", u.status.Get()) })
 	revisionWatch := signal.Watch(func() {
-		if revision := confirmedWorkspaceRevision.Get(); revision != "" && !u.closed.Load() {
-			u.props.Revision = revision
+		if version := confirmedWorkspaceVersion.Get(); version.Revision != "" && !u.closed.Load() {
+			u.props.Revision, u.sourceRevision = version.Revision, version.SourceRevision
 		}
 	})
 	u.bindControls()
@@ -327,6 +329,7 @@ func (u *liveUI) runCommands() {
 				}
 				u.takes = nil
 				u.takeID, u.takeRevision = "", ""
+				u.takeSourceRevision = ""
 				u.takeSequence, u.takeDirty, u.finishing = 0, false, false
 				u.active = map[string]int{}
 				u.saveTake()
@@ -702,6 +705,7 @@ func (u *liveUI) bindControls() {
 		u.pendingShared = nil
 		u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
 		u.takeRevision, u.takeSequence = u.props.Revision, 0
+		u.takeSourceRevision = u.sourceRevision
 		u.syncControls()
 		u.status.Set("Recording notes. Finish the take to review it before committing.")
 	})
@@ -718,7 +722,7 @@ func (u *liveUI) bindControls() {
 		data, _ := json.Marshal(u.takes)
 		u.finishing = true
 		u.takeSequence++
-		u.finishing = u.queue("note-preview", map[string]string{"revision": u.takeBaseRevision(), "recordings": string(data), "takeId": u.takeID, "sequence": strconv.FormatUint(u.takeSequence, 10)})
+		u.finishing = u.queue("note-preview", map[string]string{"revision": u.takeBaseRevision(), "source_revision": u.takeSourceRevision, "recordings": string(data), "takeId": u.takeID, "sequence": strconv.FormatUint(u.takeSequence, 10)})
 		u.persistTakeStorage()
 		u.syncControls()
 		if u.finishing {
@@ -842,11 +846,12 @@ func (u *liveUI) saveTake() {
 func (u *liveUI) persistTakeStorage() {
 	defer func() { _ = recover() }()
 	data, _ := json.Marshal(struct {
-		Revision string              `json:"revision"`
-		Takes    []control.Recording `json:"takes"`
-		ID       string              `json:"id"`
-		Sequence uint64              `json:"sequence"`
-	}{u.takeBaseRevision(), u.checkpointSnapshot(), u.takeID, u.takeSequence})
+		Revision       string              `json:"revision"`
+		SourceRevision string              `json:"sourceRevision,omitempty"`
+		Takes          []control.Recording `json:"takes"`
+		ID             string              `json:"id"`
+		Sequence       uint64              `json:"sequence"`
+	}{u.takeBaseRevision(), u.takeSourceRevision, u.checkpointSnapshot(), u.takeID, u.takeSequence})
 	js.Global().Get("sessionStorage").Call("setItem", "cicada.note-take", string(data))
 }
 func (u *liveUI) restoreTake() {
@@ -856,10 +861,11 @@ func (u *liveUI) restoreTake() {
 		return
 	}
 	var saved struct {
-		Revision string              `json:"revision"`
-		Takes    []control.Recording `json:"takes"`
-		ID       string              `json:"id"`
-		Sequence uint64              `json:"sequence"`
+		Revision       string              `json:"revision"`
+		SourceRevision string              `json:"sourceRevision,omitempty"`
+		Takes          []control.Recording `json:"takes"`
+		ID             string              `json:"id"`
+		Sequence       uint64              `json:"sequence"`
 	}
 	if json.Unmarshal([]byte(v.String()), &saved) == nil && control.ValidateRecordings(saved.Takes) == nil {
 		u.takes = saved.Takes
@@ -867,6 +873,7 @@ func (u *liveUI) restoreTake() {
 			u.gesturePoints += take.ExpressionPointCount()
 		}
 		u.takeRevision, u.takeID, u.takeSequence = saved.Revision, saved.ID, saved.Sequence
+		u.takeSourceRevision = saved.SourceRevision
 		if u.takeID == "" {
 			u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
 		}

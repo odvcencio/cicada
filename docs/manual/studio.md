@@ -528,8 +528,9 @@ to playback density limits. Acid keeps pitch and vibrato; authored synths
 also expose pressure and timbre to their graph. Polyphonic authored synths
 with gestures use the four-voice pool and its existing stealing policy.
 Modeled piano and keyboard voices currently accept notes without gestures.
-Pattern actions edit the open entry score; edit
-the owning file for imported patterns. Library sources remain read-only.
+Both timing choices write each destination in its owning project file, including
+takes spanning several files. One Undo restores the whole take. Imported library
+sources remain read-only; create a local variation before recording into them.
 Overlapping gates of the same pitch need separate
 tracks. Drum, sampler, and unsupported expression performances are refused
 with the retained take intact. Values hold between gesture points. Capture
@@ -540,8 +541,12 @@ starts, uses the destination's saved length, and checks for collisions before
 writing. Drum hits retain their separate lanes in this grid workflow.
 
 **Check current patterns** validates both timing choices without changing the
-score. If the score changed, review the current instrument and destination
-before applying. **Undo** restores the previous pattern source;
+score. A take remembers the project version from the start of recording, even
+if another editor saves while a note is held. Review warns when any source has
+changed or an older recovery copy has no project version. Check the current
+instrument and destinations before keeping played timing or choosing
+**Apply notes to current score**. A further save refuses the edit and retains
+the take. **Undo** restores the previous pattern source;
 **Discard note take** closes the retained copy without writing notes. Recovery
 history remains private to the workspace owner.
 

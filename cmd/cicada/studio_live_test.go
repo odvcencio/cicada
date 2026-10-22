@@ -131,7 +131,8 @@ func TestRecordTakeCreatesOneRevisionAndHistoryEntry(t *testing.T) {
 	s.transport.stream = stream
 	handler := s.routes()
 	take := studioEdit{
-		Revision: studioRevision([]byte(studioScore)),
+		Revision:       studioRevision([]byte(studioScore)),
+		SourceRevision: studioProjectReceipt(t, path),
 		Recordings: []studioTakeRecording{{Track: "bass", Pattern: "pulse", Notes: []studioTakeNote{
 			{Tick: 0, EndTick: 100, Note: 60, Velocity: 96},
 			{Tick: 240, EndTick: 340, Note: 64, Velocity: 96},

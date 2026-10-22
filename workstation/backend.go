@@ -42,6 +42,8 @@ type backendError struct {
 	Message string
 }
 
+type expectedProjectSourcesKey struct{}
+
 func (e *backendError) Error() string { return e.Message }
 
 func (b *backend) request(ctx context.Context, method, path string, input any) (*http.Response, error) {
@@ -65,6 +67,9 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 	}
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if receipt, ok := ctx.Value(expectedProjectSourcesKey{}).(string); ok && receipt != "" {
+		req.Header.Set("X-Cicada-Source-Revision", receipt)
 	}
 	if b.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.token)

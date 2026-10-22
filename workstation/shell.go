@@ -161,7 +161,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	// This engine binds the surrounding document, rather than owning its
 	// rendered children. A fresh masked CSRF token gives managed navigation a
 	// fresh binding instead of retaining a listener on the previous shell.
-	shellProps, _ := json.Marshal(map[string]string{"csrf": csrf})
+	shellProps, _ := json.Marshal(map[string]string{"csrf": csrf, "revision": view.Revision, "sourceRevision": view.SourceRevision})
 	dialogs := gosx.Fragment(
 		ui.DialogFrame(ui.DialogFrameProps{ID: "history-dialog", Title: "History"}, panel("history")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, panel("audio")),

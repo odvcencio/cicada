@@ -146,7 +146,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 		if err := shapePerformancePitch(performance, transpose, in); err != nil {
 			return err
 		}
-		if err := replaceProjectPerformance(ctx, id, performance, true, true); err != nil {
+		if err := replaceProjectPerformance(ctx, id, performance, true); err != nil {
 			return err
 		}
 		ctx.SetLabel("Performance · " + id + " pitch shaped")
@@ -155,7 +155,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 		if err := scalePerformance(performance, in.Numerator, in.Denominator); err != nil {
 			return err
 		}
-		if err := replaceProjectPerformance(ctx, id, performance, true, true); err != nil {
+		if err := replaceProjectPerformance(ctx, id, performance, true); err != nil {
 			return err
 		}
 		ctx.SetLabel(fmt.Sprintf("Performance · %s duration scaled %d/%d", id, in.Numerator, in.Denominator))
@@ -261,7 +261,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 	if err := performance.Validate(); err != nil {
 		return err
 	}
-	if err := replaceProjectPerformance(ctx, id, performance, true, true); err != nil {
+	if err := replaceProjectPerformance(ctx, id, performance, true); err != nil {
 		return err
 	}
 	ctx.SetLabel("Performance · " + id + " edited")

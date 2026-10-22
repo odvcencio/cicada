@@ -28,6 +28,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
+	confirmedWorkspaceVersion.Set(workspaceVersion{recoveryProps.Revision, recoveryProps.SourceRevision})
 	releaseSourceRecovery := bindSourceRecovery(ctx, root, recoveryProps.CSRF)
 	releaseNavigation, err := bindShellNavigation(host, root)
 	if err != nil {

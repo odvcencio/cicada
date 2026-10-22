@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -169,9 +170,14 @@ func (s *studioApp) previewNotes(ctx *action.Context) error {
 		if err != nil {
 			return err
 		}
+		s.draftMu.Lock()
+		d := s.drafts[key]
+		d.SourceRevision = ctx.FormData["source_revision"]
+		s.drafts[key] = d
+		s.draftMu.Unlock()
 	}
 	session.Current(ctx.Request).Set("note-preview", key)
-	s.checkNoteDraft(ctx, key, ctx.FormData["revision"], takes)
+	s.checkNoteDraft(ctx, key, ctx.FormData["revision"], ctx.FormData["source_revision"], takes)
 	ctx.FormData = nil
 	if action.WantsJSON(ctx.Request) {
 		return ctx.Success("Take retained for review.", map[string]string{"takeId": key})
@@ -208,19 +214,20 @@ func (s *studioApp) commitNotes(ctx *action.Context) error {
 		return err
 	}
 	if ctx.FormData["intent"] == "check" {
-		s.checkNoteDraft(ctx, key, ctx.FormData["revision"], takes)
+		s.checkNoteDraft(ctx, key, ctx.FormData["revision"], ctx.FormData["source_revision"], takes)
 		ctx.RedirectBackWithMessage("/?panel=live", "Pattern check updated. Your performance is unchanged.")
 		return nil
 	}
-	revision := d.Revision
+	revision, sourceRevision := d.Revision, d.SourceRevision
 	if ctx.FormData["intent"] == "rebase" || ctx.FormData["intent"] == "played" {
 		revision = ctx.FormData["revision"]
+		sourceRevision = ctx.FormData["source_revision"]
 	}
 	timing := "grid"
 	if ctx.FormData["intent"] == "played" {
 		timing = "played"
 	}
-	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/record", map[string]any{"revision": revision, "timing": timing, "recordings": takes}, nil); err != nil {
+	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/record", map[string]any{"revision": revision, "source_revision": sourceRevision, "timing": timing, "recordings": takes}, nil); err != nil {
 		return domainActionError(err)
 	}
 	message := "Recorded notes committed. Undo restores the previous patterns."
@@ -375,7 +382,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 
 // Validate through the same native edit service that will commit the take.
 // A failed check never replaces or discards the retained performance.
-func (s *studioApp) checkNoteDraft(ctx *action.Context, key, revision string, takes []control.Recording) {
+func (s *studioApp) checkNoteDraft(ctx *action.Context, key, revision, sourceRevision string, takes []control.Recording) {
 	data, _ := json.Marshal(takes)
 	var recordings []edit.Recording
 	err := json.Unmarshal(data, &recordings)
@@ -383,7 +390,7 @@ func (s *studioApp) checkNoteDraft(ctx *action.Context, key, revision string, ta
 		var result struct{ Valid bool }
 		checkErr := err
 		if checkErr == nil {
-			checkErr = s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/intents", edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, DryRun: true, Intents: []edit.Intent{&edit.RecordTake{Timing: timing, Recordings: recordings}}}, &result)
+			checkErr = s.backend.call(context.WithValue(ctx.Request.Context(), expectedProjectSourcesKey{}, sourceRevision), http.MethodPost, "/api/intents", edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, DryRun: true, Intents: []edit.Intent{&edit.RecordTake{Timing: timing, Recordings: recordings}}}, &result)
 		}
 		message := ""
 		if checkErr != nil {
@@ -395,8 +402,10 @@ func (s *studioApp) checkNoteDraft(ctx *action.Context, key, revision string, ta
 		if d, ok := s.drafts[key]; ok && d.Owner == workspaceOwner(ctx.Request) && d.Kind == "notes" {
 			if timing == "played" {
 				d.PlayedCheckRevision, d.PlayedCheckError = revision, message
+				d.PlayedCheckSourceRevision = sourceRevision
 			} else {
 				d.CheckRevision, d.CheckError = revision, message
+				d.CheckSourceRevision = sourceRevision
 			}
 			s.drafts[key] = d
 		}

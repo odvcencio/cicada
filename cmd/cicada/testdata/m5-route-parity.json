@@ -690,13 +690,13 @@
   "record/expression comments/crlf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "5e9d9d9fc81855cf8022b6220ed1b49fab028a317d6a47337fa31eb1d83ad985",
+      "playingRevision": "f414c173d74c3cea80700c5d52baef3630190eceaf417c6b9b0e5a84fc98f60a",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "5e9d9d9fc81855cf8022b6220ed1b49fab028a317d6a47337fa31eb1d83ad985",
-      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 .\r\n bend: 50ct -50ct 0ct 10ct // keep\r\n\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "revision": "f414c173d74c3cea80700c5d52baef3630190eceaf417c6b9b0e5a84fc98f60a",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 .\r\n bend: 50ct -50ct 0ct 10ct // keep\r\n\r\n  vibrato: 0ct 0ct 0ct 0ct\r\n  pressure: 0.25 1 0 0\r\n  timbre: 0.75 1 0.5 0.5\r\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
       "valid": true
     },
-    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 .\r\n bend: 50ct -50ct 0ct 10ct // keep\r\n\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 .\r\n bend: 50ct -50ct 0ct 10ct // keep\r\n\r\n  vibrato: 0ct 0ct 0ct 0ct\r\n  pressure: 0.25 1 0 0\r\n  timbre: 0.75 1 0.5 0.5\r\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
     "Labels": [
       "Take committed · pulse · 1 notes"
     ]
@@ -718,13 +718,13 @@
   "record/expression/crlf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "b0525c16c15b8f34198797cb1400df0dae4232569d9ccb7ef229f0238e0d320b",
+      "playingRevision": "cf7304d011eeb4ee4f7b917bb2b2907d6092176187a7d549ccaa1592619afb98",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "b0525c16c15b8f34198797cb1400df0dae4232569d9ccb7ef229f0238e0d320b",
-      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 . \n  bend: 50ct -50ct 0ct 0ct\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "revision": "cf7304d011eeb4ee4f7b917bb2b2907d6092176187a7d549ccaa1592619afb98",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 . \r\n  bend: 50ct -50ct 0ct 0ct\r\n  vibrato: 0ct 0ct 0ct 0ct\r\n  pressure: 0.25 1 0 0\r\n  timbre: 0.75 1 0.5 0.5\r\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
       "valid": true
     },
-    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 . \n  bend: 50ct -50ct 0ct 0ct\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 . \r\n  bend: 50ct -50ct 0ct 0ct\r\n  vibrato: 0ct 0ct 0ct 0ct\r\n  pressure: 0.25 1 0 0\r\n  timbre: 0.75 1 0.5 0.5\r\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
     "Labels": [
       "Take committed · pulse · 1 notes"
     ]

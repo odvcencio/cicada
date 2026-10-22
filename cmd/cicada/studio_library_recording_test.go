@@ -18,7 +18,7 @@ func TestLibraryNoteRecordingChecksAndCommitsWithOneHistoryEntry(t *testing.T) {
 				t.Fatal(err)
 			}
 			h := s.routes()
-			request := studioEdit{Revision: studioRevision(source), Timing: timing, Recordings: []studioTakeRecording{{Track: "keys", Pattern: "fresh", Notes: []studioTakeNote{{Tick: 3857, EndTick: 4200, Note: 60, Velocity: 90}}}}}
+			request := studioEdit{Revision: studioRevision(source), SourceRevision: studioProjectReceipt(t, path), Timing: timing, Recordings: []studioTakeRecording{{Track: "keys", Pattern: "fresh", Notes: []studioTakeNote{{Tick: 3857, EndTick: 4200, Note: 60, Velocity: 90}}}}}
 			r := studioCall(t, h, "/api/record", request)
 			if r.Code != 200 {
 				t.Fatal(r.Code, r.Body.String())

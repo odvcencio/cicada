@@ -259,7 +259,7 @@ func performanceReceiptRequired(env edits.Envelope) bool {
 	}
 	for _, intent := range env.Intents {
 		switch intent.(type) {
-		case *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
+		case *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
 			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
 			*edits.ScalePerformance, *edits.ShapePerformancePitch:
 			return true

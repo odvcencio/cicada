@@ -588,11 +588,12 @@ func TestShellPanelsSurvivePanicsInsideAPanel(t *testing.T) {
 }
 
 func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
-	reply := &workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}}
+	reply := &workspace{Revision: "current", SourceRevision: "sources-current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}}
 	address, client, _ := testAppWorkspace(t, reply)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/studio?tab=arrange"))
 	// An engine saves: the service now holds a new revision and a new placement.
 	reply.Revision = "after"
+	reply.SourceRevision = "sources-after"
 	reply.Source = "title \"Test\"\nplace resampled at @1.1.1\n"
 	reply.Project.Arrange = &project.Arrangement{Placements: []project.Placement{{ID: "pad-print", Track: "sampler", Content: "pad-print"}}}
 	response, result := reactivePost(t, client, address, "sampler", map[string]string{
@@ -610,7 +611,7 @@ func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
 		if strings.Contains(body, `name="revision" value="current"`) {
 			t.Errorf("%s still carries the old revision", name)
 		}
-		for _, want := range []string{`name="revision" value="after"`, "place resampled at", "pad-print"} {
+		for _, want := range []string{`name="revision" value="after"`, `"sourceRevision":"sources-after"`, "place resampled at", "pad-print"} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s lacks %q", name, want)
 			}

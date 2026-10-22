@@ -24,7 +24,7 @@ func TestNoteTakeCheckAndCollisionRefusalLeaveProjectUntouched(t *testing.T) {
 		t.Fatal("checking notes changed project or history")
 	}
 	recording.Notes = append(recording.Notes, studioTakeNote{Tick: 20, EndTick: 80, Note: 64, Velocity: 100})
-	response = studioCall(t, handler, "/api/record", studioEdit{Revision: request.Revision, Recordings: []studioTakeRecording{recording}})
+	response = studioCall(t, handler, "/api/record", studioEdit{Revision: request.Revision, SourceRevision: studioProjectReceipt(t, path), Recordings: []studioTakeRecording{recording}})
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("collision accepted: %d %s", response.Code, response.Body.String())
 	}

@@ -89,7 +89,7 @@ func (u *liveUI) checkpointNotes() {
 		if !u.props.PersistentNotes {
 			continue
 		}
-		_, err = u.post(u.ctx, "note-checkpoint", map[string]string{"takeId": id, "sequence": strconv.FormatUint(sequence, 10), "revision": u.takeBaseRevision(), "recordings": string(data)})
+		_, err = u.post(u.ctx, "note-checkpoint", map[string]string{"takeId": id, "sequence": strconv.FormatUint(sequence, 10), "revision": u.takeBaseRevision(), "source_revision": u.takeSourceRevision, "recordings": string(data)})
 		if u.closed.Load() || u.takeID != id || u.finishing {
 			continue
 		}
@@ -133,9 +133,10 @@ func (u *liveUI) checkRestoredTake() error {
 		return fmt.Errorf("recovery unavailable")
 	}
 	var saved struct {
-		State    string              `json:"state"`
-		Sequence uint64              `json:"sequence"`
-		Takes    []control.Recording `json:"takes"`
+		State          string              `json:"state"`
+		SourceRevision string              `json:"sourceRevision"`
+		Sequence       uint64              `json:"sequence"`
+		Takes          []control.Recording `json:"takes"`
 	}
 	if err = json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&saved); err != nil {
 		return err
@@ -147,7 +148,7 @@ func (u *liveUI) checkRestoredTake() error {
 	local, _ := json.Marshal(u.takes)
 	stored, _ := json.Marshal(saved.Takes)
 	finished := saved.State == "applied" || saved.State == "discarded" || saved.State == "ready"
-	if (finished || saved.Sequence > u.takeSequence) && (!bytes.Equal(local, stored) || u.recording) {
+	if saved.SourceRevision != u.takeSourceRevision || (finished || saved.Sequence > u.takeSequence) && (!bytes.Equal(local, stored) || u.recording) {
 		u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
 		u.takeSequence = 0
 		u.takeDirty = true
@@ -156,6 +157,7 @@ func (u *liveUI) checkRestoredTake() error {
 	} else if finished {
 		u.takes = nil
 		u.takeID, u.takeRevision = "", ""
+		u.takeSourceRevision = ""
 		u.takeDirty = false
 		u.takeSequence = 0
 		u.persistTakeStorage()

@@ -13,7 +13,7 @@ import (
 	"m31labs.dev/cicada/edit/editlog"
 )
 
-func TestRecordRouteRefusesForeignExpressionPositions(t *testing.T) {
+func TestRecordRouteRequiresProjectReceiptForSecondaryDestinations(t *testing.T) {
 	isolateState(t)
 	for _, newline := range []string{"\n", "\r\n"} {
 		t.Run(map[string]string{"\n": "lf", "\r\n": "crlf"}[newline], func(t *testing.T) {
@@ -38,7 +38,7 @@ func TestRecordRouteRefusesForeignExpressionPositions(t *testing.T) {
 			if err := json.Unmarshal(response.Body.Bytes(), &reply); err != nil {
 				t.Fatal(err)
 			}
-			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "another source file") {
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "refresh Studio") {
 				t.Fatalf("foreign expression must be refused: %d %s", response.Code, response.Body.String())
 			}
 			if got := noopFiles(t, dir, isolatedState(t)); !reflect.DeepEqual(before, got) {

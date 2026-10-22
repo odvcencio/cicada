@@ -103,7 +103,7 @@ func TestLibraryRecordingDoesNotNeedAFreeLaunchSlot(t *testing.T) {
 	}
 }
 
-func TestUnusedLibraryRecordingRequiresItsOwningSource(t *testing.T) {
+func TestUnusedLibraryRecordingStagesItsOwnedProjectSource(t *testing.T) {
 	entry := []byte("cicada 2\n// entry stays exactly the same\n")
 	part := []byte("// keep library file\r\ntrack keys piano {}\r\npattern fresh notes steps=4 { . . . . } // keep this comment\r\nscene main {}\r\nsong { main*4 }\r\n")
 	files := []notation.SourceFile{{Path: "main.cicada", Source: entry}, {Path: "parts.cicada", Source: part}}
@@ -119,19 +119,22 @@ func TestUnusedLibraryRecordingRequiresItsOwningSource(t *testing.T) {
 			if !bytes.Equal(input, before) {
 				t.Fatal("recording mutated an input buffer")
 			}
-			if !owner {
-				if err == nil || result != nil {
-					t.Fatal("recording bypassed the owning-file receipt", timing)
-				}
-				continue
-			}
 			if err != nil {
 				t.Fatal(timing, err)
 			}
-			if len(result.Files) != 0 || !bytes.Contains(result.Source, []byte("// keep this comment")) || !bytes.Equal(files[0].Source, entry) {
-				t.Fatal("recording changed file ownership or comments", timing)
+			changed := result.Source
+			if !owner {
+				if !bytes.Equal(result.Source, entry) || len(result.Files) != 1 || result.Files[0].Path != "parts.cicada" || !bytes.Equal(result.Files[0].Before, part) {
+					t.Fatal("recording lost its owning file", timing)
+				}
+				changed = result.Files[0].After
+			} else if len(result.Files) != 0 {
+				t.Fatal("owner recording staged unrelated files", timing)
 			}
-			if bytes.Contains(bytes.ReplaceAll(result.Source, []byte("\r\n"), nil), []byte("\n")) {
+			if !bytes.Contains(changed, []byte("// keep this comment")) || !bytes.Equal(files[0].Source, entry) {
+				t.Fatal("recording lost comments or mutated supplied source", timing)
+			}
+			if bytes.Contains(bytes.ReplaceAll(changed, []byte("\r\n"), nil), []byte("\n")) {
 				t.Fatal("recording lost CRLF source formatting")
 			}
 		}

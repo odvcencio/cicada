@@ -191,7 +191,7 @@ func recordPartTake(t *testing.T, s *studio) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision(entry), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Tick: 0, EndTick: 100, Note: 60, Velocity: 90}}})
+	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision(entry), SourceRevision: studioProjectReceipt(t, s.path), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Tick: 0, EndTick: 100, Note: 60, Velocity: 90}}})
 	if response.Code != http.StatusOK {
 		t.Fatalf("record: %d %s", response.Code, response.Body.String())
 	}
