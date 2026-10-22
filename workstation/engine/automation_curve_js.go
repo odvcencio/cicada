@@ -5,7 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/musictime"
 	"math"
 	"strconv"
 	"strings"
@@ -257,7 +257,7 @@ func (u *curveEditor) fromFields() {
 	if u.selected < 0 {
 		return
 	}
-	at, err := notation.MusicalTicks(workspaceFieldValue(u.root, "at"), true)
+	at, err := musictime.MusicalTicks(workspaceFieldValue(u.root, "at"), true)
 	value := strings.TrimSuffix(workspaceFieldValue(u.root, "value"), u.props.Unit)
 	v, e := strconv.ParseFloat(value, 64)
 	if err != nil || e != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < u.props.Min || v > u.props.Max {

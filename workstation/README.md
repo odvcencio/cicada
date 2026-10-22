@@ -37,6 +37,9 @@ rather than assuming that examples on `main` are supported by the pinned version
   `go generate ./...` transpiles components, includes their stylesheet, and
   builds the content-addressed Go/WASM engine module. Generation is part of the
   GoSX build hook and CI checks that checked-in projections remain reproducible.
+  The shared UI module has a 16 MiB build limit. Keep host compiler and storage
+  dependencies out of it: sampler controls use `host/padsampler/protocol`, and
+  position controls use `musictime` for exact tick conversion.
 - Use GoSX's programmatic `server.Page` API for this private, single-score
   workspace. Navigation changes the selected panel without a client router.
   The framework handles history, managed forms, runtime loading, and disposal.

@@ -12,7 +12,7 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,message){const deadline=Date.now()+25000;while(Date.now()<deadline){if(await fn())return;await pause(40)}assert.fail(message)}
 
 test('sampler imports, performs, chops visually, resamples and restores with Undo', {timeout:180000},async t=>{
- const base=process.env.CICADA_STUDIO_URL; assert.ok(base); assert.equal(new URL(base).hostname,'127.0.0.1');
+ const startup=new URL(process.env.CICADA_STUDIO_URL),base=startup.origin; assert.equal(startup.hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({executablePath:process.env.CICADA_CHROME_PATH,headless:true,args:['--no-sandbox']});
  t.after(()=>browser.close());
@@ -27,7 +27,8 @@ test('sampler imports, performs, chops visually, resamples and restores with Und
  const hits=async()=>JSON.parse(await page.locator('[data-sampler-resample] input[name=performance]').inputValue());
  const selected=async n=>{await page.getByRole('link',{name:`Edit pad ${n}`,exact:true}).click();await page.waitForFunction(n=>document.querySelector('#sampler-pad-editor input[name=pad]')?.value===String(n),n);await until(async()=>await page.locator(`[data-sampler-pad="${n}"]`).evaluate(el=>el.closest('.sampler-pad').dataset.padSelected==='true'),'selected pad did not follow navigation')};
  try {
-  await page.goto(base+'/?panel=sampler',{waitUntil:'networkidle'});await ready();
+  await page.goto(startup.href);
+  await page.goto(base+'/?panel=sampler',{waitUntil:'domcontentloaded'});await ready();
   const original=(await score()).source;assert.ok(original.includes(marker));assert.equal(await page.locator('[data-sampler-pad]').count(),16);
   await page.getByRole('button',{name:'Clean',exact:true}).click();await until(async()=>(await state()).bank.effects.drive===0,'initial bank did not reset to Clean');await ready();
   await page.getByRole('spinbutton',{name:'Placement slices',exact:true}).fill('4');await page.getByRole('button',{name:'Sample placement',exact:true}).click();await until(async()=>(await state()).bank.sources.some(s=>s.name==='lead'&&Math.max(...s.peaks)>.7),'Session sampling did not produce audible audio');await ready();checks.push('Session placement sampling produces nonzero PCM');
@@ -63,7 +64,7 @@ test('sampler imports, performs, chops visually, resamples and restores with Und
   await page.getByRole('link',{name:'Sampler',exact:true}).click();await ready();
   // Native forms and audio previews remain usable with browser WASM disabled.
   const native=await browser.newContext({javaScriptEnabled:false,storageState:await context.storageState()});const nojs=await native.newPage();await nojs.goto(base+'/?panel=sampler&pad=1');await nojs.getByRole('button',{name:'Clean',exact:true}).click();assert.equal((await state()).bank.effects.drive,0);assert.ok(await nojs.locator('audio[controls]').count());await native.close();checks.push('native effect form and selected-pad audio fallback');
-  const mobile=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,storageState:await context.storageState()});const phone=await mobile.newPage();phone.on('pageerror',error=>errors.push(error.message));await phone.goto(base+'/?panel=sampler',{waitUntil:'networkidle'});await phone.locator('#cicada-sampler[data-sampler-ready=true]').waitFor();await phone.getByRole('button',{name:'Play pad 1',exact:true}).tap();
+  const mobile=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,storageState:await context.storageState()});const phone=await mobile.newPage();phone.on('pageerror',error=>errors.push(error.message));await phone.goto(base+'/?panel=sampler',{waitUntil:'domcontentloaded'});await phone.locator('#cicada-sampler[data-sampler-ready=true]').waitFor();await phone.getByRole('button',{name:'Play pad 1',exact:true}).tap();
   assert.equal(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(process.env.CICADA_SAMPLER_PROOF_DIR)await phone.screenshot({path:path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-mobile.png'),fullPage:true});await mobile.close();checks.push('touch pads and 390px layout without overflow');
   assert.deepEqual(errors,[]);if(process.env.CICADA_SAMPLER_PROOF_DIR)fs.writeFileSync(path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-proof.json'),JSON.stringify({checks,errors,desktop:{width:1440,height:1000},mobile:{width:390,height:844}},null,2));console.log(checks.join('\n'));
  } catch(error){if(process.env.CICADA_SAMPLER_PROOF_DIR){await page.screenshot({path:path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-failure.png'),fullPage:true});fs.writeFileSync(path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-failure.html'),await page.content())}console.error(errors);throw error}

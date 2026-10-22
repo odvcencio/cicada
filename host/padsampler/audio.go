@@ -18,23 +18,6 @@ import (
 
 func Clean() Effects { return Effects{Cutoff: 20000, DelayMS: 278, Feedback: .3} }
 
-func (p Pad) Validate(frames int64) error {
-	if len(p.Name) > 64 || p.Start < 0 || p.End <= p.Start || p.End > frames || p.Pitch < -24 || p.Pitch > 24 ||
-		!finite(p.GainDB) || p.GainDB < -60 || p.GainDB > 12 || !finite(p.AttackMS) || p.AttackMS < 0 || p.AttackMS > 500 ||
-		!finite(p.ReleaseMS) || p.ReleaseMS < 2 || p.ReleaseMS > 2000 || (p.Mode != "oneshot" && p.Mode != "gate") || p.Choke < 0 || p.Choke > 4 {
-		return fmt.Errorf("choose a valid source region, pitch −24 to +24, gain −60 to +12 dB, envelope, and choke group 0 to 4")
-	}
-	return nil
-}
-
-func (e Effects) Validate() error {
-	if !finite(e.Cutoff) || e.Cutoff < 80 || e.Cutoff > 20000 || !finite(e.Drive) || e.Drive < 0 || e.Drive > 24 ||
-		!finite(e.DelayMS) || e.DelayMS < 1 || e.DelayMS > 1000 || !finite(e.Feedback) || e.Feedback < 0 || e.Feedback > .7 ||
-		!finite(e.DelayMix) || e.DelayMix < 0 || e.DelayMix > 1 || !finite(e.ReverbMix) || e.ReverbMix < 0 || e.ReverbMix > 1 {
-		return fmt.Errorf("effect settings are outside their supported ranges")
-	}
-	return nil
-}
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 func Decode(data []byte) (audition.Audio, error) {

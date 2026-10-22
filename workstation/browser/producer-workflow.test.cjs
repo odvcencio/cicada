@@ -18,7 +18,8 @@ async function until(fn, message) {
 }
 
 test('Producer workflow edits vocal timing, joins, effect chains and drawn automation with retained raw takes', { timeout: 180000 }, async t => {
-  const base = process.env.CICADA_PRODUCER_URL;
+  const startup = new URL(process.env.CICADA_PRODUCER_URL);
+  const base = startup.origin;
   const score = process.env.CICADA_PRODUCER_SCORE;
   const proof = process.env.CICADA_PRODUCER_PROOF_DIR;
   assert.ok(base && new URL(base).hostname === '127.0.0.1');
@@ -78,6 +79,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
     if (proof) { fs.mkdirSync(proof, { recursive: true }); await target.locator(selector).screenshot({ path: path.join(proof, name) }); }
   };
 
+  await page.goto(startup.href);
   await page.goto(base + '/?panel=session', { waitUntil: 'domcontentloaded' });
   await ready(page);
   assert.equal((await state()).source, initialSource);

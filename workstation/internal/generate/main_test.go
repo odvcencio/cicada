@@ -2,10 +2,27 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestBrowserEngineDoesNotImportCompiler(t *testing.T) {
+	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", "./engine")
+	cmd.Dir = "../.."
+	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0", "GOWORK=off")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("inspect browser dependencies: %v\n%s", err, output)
+	}
+	for _, path := range strings.Fields(string(output)) {
+		switch path {
+		case "m31labs.dev/cicada/host/padsampler", "m31labs.dev/cicada/project", "m31labs.dev/cicada/edit", "m31labs.dev/cicada/notation":
+			t.Errorf("browser engine imports host/compiler package %s; use a portable protocol", path)
+		}
+	}
+}
 
 func TestGenerateMultipleComponentsAndIsland(t *testing.T) {
 	root := t.TempDir()

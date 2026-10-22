@@ -19,16 +19,16 @@ import (
 	"syscall/js"
 	"time"
 
-	"m31labs.dev/cicada/host/padsampler"
+	padsampler "m31labs.dev/cicada/host/padsampler/protocol"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
 
 type samplerProjection struct {
-	Revision     string          `json:"revision"`
-	BankRevision string          `json:"bankRevision"`
-	Bank         padsampler.Bank `json:"bank"`
-	Sounds       []string        `json:"sounds"`
-	Tempo        int             `json:"tempo"`
+	Revision     string                                `json:"revision"`
+	BankRevision string                                `json:"bankRevision"`
+	Bank         padsampler.Bank[padsampler.AudioInfo] `json:"bank"`
+	Sounds       []string                              `json:"sounds"`
+	Tempo        int                                   `json:"tempo"`
 }
 type samplerBinding struct {
 	node  js.Value
@@ -685,10 +685,10 @@ func (u *samplerUI) bound(name string) int64 {
 	n, _ := strconv.ParseInt(form.Call("querySelector", "[name="+name+"]").Get("value").String(), 10, 64)
 	return n
 }
-func (u *samplerUI) selectedSource() (padsampler.Source, bool) {
+func (u *samplerUI) selectedSource() (padsampler.Source[padsampler.AudioInfo], bool) {
 	form := u.editor()
 	if form.IsNull() {
-		return padsampler.Source{}, false
+		return padsampler.Source[padsampler.AudioInfo]{}, false
 	}
 	return u.state.Bank.Source(form.Call("querySelector", "[name=source]").Get("value").String())
 }
