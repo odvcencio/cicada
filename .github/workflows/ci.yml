@@ -276,6 +276,8 @@ jobs:
             unzip -q "$browser_root/chrome.zip" -d "$browser_root"
             mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
           fi
+          node --test workstation/browser/owner-session.test.cjs
+          export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
           # Each suite edits its score and may persist assets and shared drafts.
           # A fresh process alone does not reset those durable sidecars.
           for suite in continuity shell columns collaboration; do
@@ -288,6 +290,7 @@ jobs:
           export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
           ./build/cicada studio "$browser_root/continuity/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-continuity-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           trap 'kill "$studio_pid" 2>/dev/null || true; wait "$studio_pid" 2>/dev/null || true' EXIT
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
@@ -300,6 +303,7 @@ jobs:
           wait "$studio_pid" || true
           ./build/cicada studio "$browser_root/shell/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-shell-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -311,6 +315,7 @@ jobs:
           export CICADA_COLUMN_PROOF_DIR="$PWD/build/studio-column-proof"
           ./build/cicada studio "$browser_root/columns/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-column-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -327,6 +332,7 @@ jobs:
           for phase in compose reopen; do
             ./build/cicada studio "$song_root/first-light/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-song-$phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -351,6 +357,7 @@ jobs:
           for phase in select reopen; do
             ./build/cicada studio "$portable_score" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-portable-$phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -368,6 +375,7 @@ jobs:
           for phase in capture recover verify; do
             ./build/cicada studio "$browser_root/code-recovery/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-code-recovery-$phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -383,6 +391,7 @@ jobs:
           export CICADA_EXPORT_PROOF_DIR="$PWD/build/studio-export-proof"
           ./build/cicada studio "$song_root/export-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-export-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -393,6 +402,7 @@ jobs:
           wait "$studio_pid" || true
           ./build/cicada studio "$browser_root/collaboration/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -406,6 +416,7 @@ jobs:
           export CICADA_PLACEMENT_BUILD="make build-workstation-release"
           ./build/cicada studio "$browser_root/placements.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-placement-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -417,6 +428,7 @@ jobs:
           node workstation/browser/placements.test.cjs --write-fixture "$browser_root/navigation.cicada"
           ./build/cicada studio "$browser_root/navigation.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-navigation-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -428,6 +440,7 @@ jobs:
           node workstation/browser/placements.test.cjs --write-fixture "$browser_root/gestures.cicada"
           ./build/cicada studio "$browser_root/gestures.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-gestures-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -439,6 +452,7 @@ jobs:
           node workstation/browser/placement-precision.test.cjs --write-fixture "$browser_root/precision.cicada"
           ./build/cicada studio "$browser_root/precision.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-precision-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -450,6 +464,7 @@ jobs:
           node workstation/browser/placements.test.cjs --write-fixture "$browser_root/startup.cicada"
           ./build/cicada studio "$browser_root/startup.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-startup-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -461,6 +476,7 @@ jobs:
           node workstation/browser/placement-autoscroll.test.cjs --write-fixture "$browser_root/autoscroll.cicada"
           ./build/cicada studio "$browser_root/autoscroll.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-autoscroll-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -472,6 +488,7 @@ jobs:
           node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
           ./build/cicada studio "$browser_root/placement-commands.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-placement-commands-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -486,6 +503,7 @@ jobs:
           for phase in edit reopen; do
             ./build/cicada studio "$browser_root/arrangement-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-arrangement-sources-$phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -511,6 +529,7 @@ jobs:
               wait "$studio_pid" || true
               ./build/cicada studio "$browser_root/tempo-$tempo_layout/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-tempo-$tempo_layout-$tempo_phase-server.log" 2>&1 &
               studio_pid=$!
+              export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
               for _ in $(seq 1 100); do
                 if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
                 kill -0 "$studio_pid"
@@ -527,6 +546,7 @@ jobs:
           node workstation/browser/solo-clock.test.cjs --write-fixture "$browser_root/solo-clock.cicada"
           ./build/cicada studio "$browser_root/solo-clock.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-solo-clock-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -540,6 +560,7 @@ jobs:
           observation_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_OBSERVATION_FIXTURE")"
           ./build/cicada studio "$observation_score" --audio null --listen "127.0.0.1:$studio_port" > build/studio-observation-clock-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -551,6 +572,7 @@ jobs:
           node workstation/browser/tempo-clock.test.cjs --write-fixture "$browser_root/tempo-clock.cicada"
           ./build/cicada studio "$browser_root/tempo-clock.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-tempo-clock-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -562,6 +584,7 @@ jobs:
           node workstation/browser/library-recording.test.cjs --write-fixture "$browser_root/library-recording.cicada"
           ./build/cicada studio "$browser_root/library-recording.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-library-recording-server.log 2>&1 &
           studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
           for _ in $(seq 1 100); do
             if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
             kill -0 "$studio_pid"
@@ -577,6 +600,7 @@ jobs:
             for song_phase in journey reopen; do
               ./build/cicada studio "$browser_root/pattern-song-$song_layout.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-pattern-song-$song_layout-$song_phase-server.log" 2>&1 &
               studio_pid=$!
+              export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
               for _ in $(seq 1 100); do
                 if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
                 kill -0 "$studio_pid"
@@ -598,6 +622,7 @@ jobs:
           for grid_phase in journey reopen; do
             ./build/cicada studio "$browser_root/pattern-grid.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-pattern-grid-$grid_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -618,6 +643,7 @@ jobs:
           for variation_phase in journey reopen; do
             ./build/cicada studio "$browser_root/placement-variation/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-placement-variation-$variation_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -638,6 +664,7 @@ jobs:
           for time_phase in journey reopen; do
             ./build/cicada studio "$browser_root/performance-time/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-time-$time_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -659,6 +686,7 @@ jobs:
           for direct_phase in journey reopen; do
             ./build/cicada studio "$browser_root/direct-variation/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-direct-variation-$direct_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -680,6 +708,7 @@ jobs:
           for context_phase in journey reopen; do
             ./build/cicada studio "$browser_root/sound-context/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-sound-context-$context_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -700,6 +729,7 @@ jobs:
           for pitch_phase in journey reopen; do
             ./build/cicada studio "$browser_root/performance-pitch/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-pitch-$pitch_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -722,6 +752,7 @@ jobs:
           for sources_phase in journey reopen; do
             ./build/cicada studio "$browser_root/performance-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-sources-$sources_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -744,6 +775,7 @@ jobs:
           for record_sources_phase in journey reopen; do
             ./build/cicada studio "$browser_root/recording-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-recording-sources-$record_sources_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -766,6 +798,7 @@ jobs:
           for grid_sources_phase in journey reopen; do
             ./build/cicada studio "$browser_root/grid-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-grid-sources-$grid_sources_phase-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"
@@ -813,6 +846,7 @@ jobs:
               wait "$studio_pid" || true
               ./build/cicada studio "$CICADA_PRODUCER_SCORE" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-print-$print_layout-$print_phase-server.log" 2>&1 &
               studio_pid=$!
+              export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
               for _ in $(seq 1 100); do
                 if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
                 kill -0 "$studio_pid"
@@ -842,6 +876,7 @@ jobs:
             fi
             ./build/cicada studio "$editor_score" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-editor-$editor_mode-server.log" 2>&1 &
             studio_pid=$!
+            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
             for _ in $(seq 1 100); do
               if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
               kill -0 "$studio_pid"

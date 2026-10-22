@@ -127,6 +127,13 @@ func TestExamplesPCM24Parity(t *testing.T) {
 					for _, entry := range cfg.Song {
 						bars += int(entry.Bars)
 					}
+					endTick := int64(bars) * seq.TicksPerBar
+					if p.Arrange != nil {
+						for _, placement := range p.Arrange.Placements {
+							endTick = max(endTick, placement.AtTick+placement.LengthTicks)
+						}
+						bars = int((endTick + seq.TicksPerBar - 1) / seq.TicksPerBar)
+					}
 					tempo, err := project.NewTempoMap(rate, cfg.BPMMilli, project.SongTempoChanges(p))
 					if err != nil || bars == 0 {
 						t.Fatalf("song clock: %v, bars=%d", err, bars)
@@ -142,7 +149,7 @@ func TestExamplesPCM24Parity(t *testing.T) {
 							}
 						}
 					}
-					frames := int(tempo.SampleAtTick(int64(bars)*seq.TicksPerBar)) + 3*rate
+					frames := int(tempo.SampleAtTick(endTick)) + 3*rate
 					name := fmt.Sprintf("%s-%d.pcm24", filepath.Base(path), rate)
 					file, err := os.Create(filepath.Join(output, name))
 					if err != nil {

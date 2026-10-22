@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // A reader can see ready, get descheduled, and increment only after a worker
@@ -167,6 +168,7 @@ func TestConcurrentWorkerAndReadersKeepPCMGenerationOwnership(t *testing.T) {
 	}()
 	var bad, good atomic.Int64
 	var renderers sync.WaitGroup
+	deadline := time.Now().Add(10 * time.Second)
 	for lane, r := range readers {
 		renderers.Add(1)
 		go func(lane int, r *Reader) {
@@ -177,6 +179,18 @@ func TestConcurrentWorkerAndReadersKeepPCMGenerationOwnership(t *testing.T) {
 				frame := int64((i*7+lane)%31)*PageFrames + int64(i%128)
 				r.SetAsset(id)
 				r.SeekFrame(frame, 1)
+				// Keep occasional demand stable through publication. Otherwise
+				// every fill can be cancelled before a busy worker publishes,
+				// leaving the eviction path untested despite correct PCM.
+				if i%64 == 0 {
+					for !r.WindowReady() {
+						if time.Now().After(deadline) {
+							t.Error("worker did not publish a stable reader window")
+							return
+						}
+						runtime.Gosched()
+					}
+				}
 				l, rr, ok := r.ReadFrame(frame)
 				if ok {
 					good.Add(1)

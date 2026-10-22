@@ -54,9 +54,8 @@ func liveEdits() int32 { return 1 }
 //
 //go:wasmexport gosx_audio_alloc_bytes
 func allocationBytes() uint64 {
-	var stats runtime.MemStats
-	runtime.ReadMemStats(&stats)
-	return stats.TotalAlloc
+	runtime.ReadMemStats(&allocationStats)
+	return allocationStats.TotalAlloc
 }
 
 //go:wasmexport gosx_audio_bank_image_ptr

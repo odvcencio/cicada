@@ -84,7 +84,7 @@ func TestApplyDiffWriteAndStudioParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	env.Revision = edits.Revision(before)
-	r := studioCall(t, s.domainRoutes(), "/api/intents", env)
+	r := studioIntentWithProjectReceipt(t, s.domainRoutes(), path, env)
 	want := assertProposalResponseMatchesDisk(t, path, r)
 	if err := os.WriteFile(path, before, 0644); err != nil {
 		t.Fatal(err)

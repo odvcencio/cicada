@@ -21,7 +21,7 @@ KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 # Size optimization keeps the richer bounded voice engine within its existing
 # download budget. Audio parity and browser callback budgets gate this build.
 KERNEL_WASM_OPT ?= z
-KERNEL_WASM_BINARYEN_FLAGS ?= -Oz --converge --strip-producers
+KERNEL_WASM_BINARYEN_FLAGS ?= -Oz --converge --strip-producers --strip-target-features
 
 # Binaryen may be installed separately from TinyGo. The desktop packager
 # accepts the same override for an executable outside PATH.

@@ -7,7 +7,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     const MESSAGE_BYTES = 512 * 16;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
-    let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
+    let capture, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
     const instances = [];
     let memoryCount = 0;
     const memoryBytes = () => {
@@ -25,7 +25,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       const version = bytes[4] | bytes[5] << 8;
       if (version === 14) invalid('Ambiguous image14; recompile');
       if (version < 8 || version > 18) invalid(`Unsupported image ${version}`);
-      const instance = await WebAssembly.instantiate(module);
+      const instance = await WebAssembly.instantiate(o.m);
       const exports = instance.exports;
       let slot = 0;
       while (instances[slot]) slot++;
@@ -40,8 +40,9 @@ class CicadaKernel extends AudioWorkletProcessor {
         // These are the original exports, never wrappers around realtime calls.
         const x = {};
         for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
-        if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability');
-        const capability = x.capabilities ? x.capabilities() : 0;
+        const query = x.capabilities;
+        if (query !== undefined && typeof query !== 'function') invalid('Invalid capability');
+        const capability = query ? query() : 0;
         if ((capability & 0x7fefff) !== capability) invalid('Invalid capabilities');
         // Required feature bits for image versions 15 through 18. Initialization
         // may allocate these small tables; render callbacks never enter this path.
@@ -68,7 +69,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         if (!bank) {
           const bankPtr = x.bank_image_ptr(), bankLen = x.bank_image_len();
           if (!bankPtr || !bankLen) invalid('bank');
-          bank = new Uint8Array(x.memory.buffer, bankPtr, bankLen).slice().buffer;
+          bank = x.memory.buffer.slice(bankPtr, bankPtr + bankLen);
         }
         const max = 128, out = x.out_ptr();
         const commandBuffer = x.cmd_cap() * 24;
@@ -204,7 +205,9 @@ class CicadaKernel extends AudioWorkletProcessor {
       }
       if (active && count) {
           let length = count * 16;
-          for (let i = 0; i < length; i++) view[i] = target.m[i];
+          // Copy the fixed message page; n bounds the valid records. A sliced
+          // typed-array view would allocate inside the render callback.
+          view.set(target.m);
           message.n = length;
           ready = false;
           post(message, transfer);

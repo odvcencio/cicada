@@ -27,6 +27,7 @@ func TestStudioChordPlacementUndoAndVoicingEdits(t *testing.T) {
 	call := func(in studioEdit) {
 		t.Helper()
 		in.Revision = studioRevision(read())
+		in.SourceRevision = studioProjectReceipt(t, s.path)
 		r := studioCall(t, handler, "/api/pattern", in)
 		if r.Code != 200 {
 			t.Fatalf("%s: %d %s", in.Action, r.Code, r.Body)

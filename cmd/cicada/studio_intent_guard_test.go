@@ -115,11 +115,14 @@ func TestMixerEditsRefusedDuringCaptureOnEveryRoute(t *testing.T) {
 	}
 }
 
-func studioCallRaw(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
+func studioCallRaw(t *testing.T, handler http.Handler, path, body string, sourceRevision ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
 	request.Host = "127.0.0.1:1234"
 	request.Header.Set("Content-Type", "application/json")
+	if len(sourceRevision) > 0 {
+		request.Header.Set("X-Cicada-Source-Revision", sourceRevision[0])
+	}
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder
@@ -289,7 +292,7 @@ func TestAutomationPointEditsRefusedDuringCaptureOnEveryPath(t *testing.T) {
 			s := newTakeStudio(t, t.TempDir())
 			id := activeVocalCapture(t, s)
 			before := snapshotStudioState(t, s)
-			response := studioCallRaw(t, s.routes(), c.route, fmt.Sprintf(c.body, studioRevision(before.source)))
+			response := studioCallRaw(t, s.routes(), c.route, fmt.Sprintf(c.body, studioRevision(before.source)), studioProjectReceipt(t, s.path))
 			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), text) {
 				t.Fatalf("%d %s", response.Code, response.Body)
 			}
