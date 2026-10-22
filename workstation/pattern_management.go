@@ -54,10 +54,7 @@ func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf str
 			}
 		}
 		end = (end + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
-		length := int64(pattern.Steps) * seq.TicksPerStep
-		if pattern.Performance != nil {
-			length = pattern.Performance.LengthTicks
-		}
+		length := pattern.DurationTicks()
 		values := map[string]string{"newName": patternPlacementName(v.Project, pattern.ID), "track": preferred, "at": placementLiteral(end, true), "length": strconv.FormatInt(length, 10) + "ticks"}
 		placeState := action.States(ctx.Request)["arrange"]
 		placeFailed := !placeState.OK() && placeState.Value("action") == "append" && placeState.Value("content") == pattern.ID

@@ -425,10 +425,15 @@ track and scene, then **Assign to scene**. The assignment replaces that track's
 part everywhere the scene is used; Stop releases the track and Carry keeps
 its earlier selection.
 
+The grid editor shows its cell timing and full loop duration. Triplet,
+dotted, and tuplet grids keep their authored timing; fractional beats are shown
+exactly. The step numbers count cells, whose lengths can differ between patterns.
+
 For a named arrangement, **Place in song** adds a use of the selected pattern.
 Its default start is after the last placement, and its length is the phrase's
-exact loop length. Choose another start or length before placing it. Existing
-uses link to their arrangement blocks. Editing a pattern changes all its uses;
+exact loop length, including its authored grid. Choose another start or length
+before placing it. Existing uses link to their arrangement blocks. Editing a
+pattern changes all its uses;
 create a variation first when you want an independent phrase. Assignment,
 placement, and variation each have one Undo step.
 
