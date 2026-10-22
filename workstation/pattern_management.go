@@ -30,17 +30,33 @@ func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf str
 		}
 		return fallback
 	}
-	variation := form("pattern", hidden("action", "duplicate"), hidden("pattern", pattern.ID), field("New pattern name", textInput("newName", value("duplicate", "newName", nextPatternName(v.Project, pattern.ID)))), submit("", "", "Create variation"))
 	var tracks []string
 	preferred := q.Get("track")
 	for _, track := range v.Project.Tracks {
 		if project.PatternTrackCompatible(v.Project, pattern, track) {
 			tracks = append(tracks, track.ID)
+			if preferred == "" {
+				for _, slot := range track.Slots {
+					if slot != nil && *slot == pattern.ID {
+						preferred = track.ID
+					}
+				}
+			}
 		}
 	}
 	if len(tracks) > 0 && !slices.Contains(tracks, preferred) {
 		preferred = tracks[0]
 	}
+	message := ""
+	if failed && state.Value("action") == "duplicate" {
+		message = state.Message()
+		if slices.Contains(tracks, state.Value("track")) {
+			preferred = state.Value("track")
+		}
+	}
+	variation := gosx.El("div", gosx.Attrs(gosx.Attr("id", "pattern-variation"), gosx.Attr("data-pattern-variation", pattern.ID)),
+		form("pattern", hidden("action", "duplicate"), hidden("pattern", pattern.ID), hidden("track", preferred), hidden("scene", q.Get("scene")), field("New pattern name", textInput("newName", value("duplicate", "newName", nextPatternName(v.Project, pattern.ID)))), submit("", "", "Create variation"), gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message))),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Develop an independent local phrase with the sound selected in Hear with. Existing uses keep the original pattern.")))
 	var destination gosx.Node
 	if len(tracks) == 0 {
 		destination = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Add a compatible instrument or drum track to use this pattern in the song."))
@@ -75,7 +91,7 @@ func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf str
 		}
 		destination = form("pattern", hidden("action", "bind"), hidden("pattern", pattern.ID), field("Scene", selectInput("scene", value("bind", "scene", q.Get("scene")), scenes)), field("Track", selectInput("track", value("bind", "track", preferred), tracks)), submit("binding", "play", "Assign to scene"), submit("binding", "off", "Stop in this scene"), submit("binding", "keep", "Carry previous pattern"), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Assign replaces this track’s pattern wherever the scene is used. Scene choices carry forward until changed or stopped. Stop releases this track; Carry keeps its earlier selection. Undo restores the previous assignment.")))
 	}
-	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-pattern-management", pattern.ID), gosx.Attr("data-gosx-key", "pattern-management-"+pattern.ID), gosx.Attr("open", failed)), gosx.El("summary", gosx.Text("Use this pattern")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), variation, destination))
+	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-pattern-management", pattern.ID), gosx.Attr("data-gosx-key", "pattern-management-"+pattern.ID), gosx.Attr("open", failed || strings.Contains(pattern.ID, "."))), gosx.El("summary", gosx.Text("Use this pattern")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), variation, destination))
 }
 
 func patternPlacementName(p *project.Project, pattern string) string {

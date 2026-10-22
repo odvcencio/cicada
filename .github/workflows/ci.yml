@@ -631,6 +631,27 @@ jobs:
             fi
           done
           python3 workstation/browser/performance-time-audio.py --cicada build/cicada --proof build/studio-performance-time-proof
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          go -C workstation run ./browser/testdata/direct-variation "$browser_root/direct-variation" > build/studio-direct-variation-fixture.json
+          for direct_phase in journey reopen; do
+            ./build/cicada studio "$browser_root/direct-variation/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-direct-variation-$direct_phase-server.log" 2>&1 &
+            studio_pid=$!
+            for _ in $(seq 1 100); do
+              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+              kill -0 "$studio_pid"
+              sleep 0.1
+            done
+            CICADA_DIRECT_REOPEN=0
+            if [[ "$direct_phase" == reopen ]]; then CICADA_DIRECT_REOPEN=1; fi
+            export CICADA_DIRECT_REOPEN
+            CICADA_DIRECT_PROOF_DIR="$PWD/build/studio-direct-variation-proof" node --test workstation/browser/direct-variation.test.cjs | tee "build/studio-direct-variation-$direct_phase-report.txt"
+            if [[ "$direct_phase" == journey ]]; then
+              kill "$studio_pid"
+              wait "$studio_pid" || true
+            fi
+          done
+          python3 workstation/browser/direct-variation-audio.py --cicada build/cicada --proof build/studio-direct-variation-proof --fixture build/studio-direct-variation-fixture.json
           for print_layout in primary secondary song controls tempo; do
             print_args=()
             print_phases=(sampler producer roundtrip reopen)
@@ -779,6 +800,10 @@ jobs:
             build/studio-performance-time-*-server.log
             build/studio-performance-time-fixture.json
             build/studio-performance-time-proof/
+            build/studio-direct-variation-*-report.txt
+            build/studio-direct-variation-*-server.log
+            build/studio-direct-variation-fixture.json
+            build/studio-direct-variation-proof/
             build/studio-print-*-report.txt
             build/studio-print-*-server.log
             build/studio-print-*-fixture.json
@@ -909,6 +934,8 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/placement-variation --mode normal --timeout 180 --project-fixture build/native-placement-variation/main.cicada --workflow desktop/testdata/native-placement-variation-workflow.js
           node workstation/browser/performance-time.test.cjs --write-fixture build/native-performance-time > build/native-performance-time-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/performance-time --mode normal --timeout 240 --project-fixture build/native-performance-time/main.cicada --workflow desktop/testdata/native-performance-time-workflow.js
+          go -C workstation run ./browser/testdata/direct-variation "$PWD/build/native-direct-variation" > build/native-direct-variation-fixture.json
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/direct-variation --mode normal --timeout 300 --project-fixture build/native-direct-variation/main.cicada --workflow desktop/testdata/native-direct-variation-workflow.js
           go -C workstation run ./browser/testdata/print-sources --sampler-bank > build/native-print-sources-fixture.json
           print_score="$(node -e 'process.stdout.write(require("./build/native-print-sources-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/print-sources --mode normal --timeout 180 --project-fixture "$print_score" --workflow desktop/testdata/native-print-sources-workflow.js

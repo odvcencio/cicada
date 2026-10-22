@@ -90,8 +90,14 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 		u.queue(soundJob{patch: patch, name: name, sequence: u.sequence, track: track})
 	})
 	u.on(u.root, "change", func(e js.Value) {
-		if e.Get("target").Call("matches", "[data-pattern-preview-track]").Bool() && u.selected != "" {
-			u.stop("Preview stopped. Loop again with the chosen track.")
+		if e.Get("target").Call("matches", "[data-pattern-preview-track]").Bool() {
+			field := js.Global().Get("document").Call("querySelector", `[data-pattern-variation="`+u.props.Pattern+`"] [name=track]`)
+			if workspacePresent(field) {
+				field.Set("value", e.Get("target").Get("value"))
+			}
+			if u.selected != "" {
+				u.stop("Preview stopped. Loop again with the chosen track.")
+			}
 		}
 	})
 	u.on(u.root, "keydown", func(e js.Value) {

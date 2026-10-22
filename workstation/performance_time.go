@@ -13,15 +13,7 @@ import (
 
 func (s *studioApp) performanceTime(ctx *server.Context, v workspace, csrf string, p project.Pattern, selected int) gosx.Node {
 	if strings.Contains(p.ID, ".") {
-		var uses []gosx.Node
-		if v.Project.Arrange != nil {
-			for _, place := range v.Project.Arrange.Placements {
-				if place.Content == p.ID {
-					uses = append(uses, gosx.El("a", gosx.Attrs(gosx.Attr("href", placementURL(place.ID))), gosx.Text("Open "+place.ID+" to make a local variation")))
-				}
-			}
-		}
-		return gosx.El("section", gosx.Attrs(gosx.Attr("class", "performance-time"), gosx.Attr("data-performance-time", p.ID)), gosx.El("h3", gosx.Text("Shape time")), gosx.El("p", gosx.Text("Library patterns stay unchanged. Make an editable local variation before shaping time.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(uses...)))
+		return gosx.El("section", gosx.Attrs(gosx.Attr("class", "performance-time"), gosx.Attr("data-performance-time", p.ID)), gosx.El("h3", gosx.Text("Shape time")), gosx.El("p", gosx.Text("Create a local variation to shape this phrase while keeping the library intact.")), gosx.El("a", gosx.Attrs(gosx.Attr("href", "#pattern-variation")), gosx.Text("Create a local variation")))
 	}
 	var buttons []gosx.Node
 	for _, choice := range []struct {
@@ -36,11 +28,11 @@ func (s *studioApp) performanceTime(ctx *server.Context, v workspace, csrf strin
 	if !state.OK() && state.Value("pattern") == p.ID && state.Value("action") == "performance-scale" {
 		message = state.Message()
 	}
-	returnTo := patternURL(p.ID, 1, "", "") + fmt.Sprintf("&note=%d", selected)
+	returnTo := patternContextURL(patternURL(p.ID, 1, "", "")+fmt.Sprintf("&note=%d", selected), ctx.Request.URL.Query().Get("track"), ctx.Request.URL.Query().Get("scene"))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "performance-time"), gosx.Attr("data-performance-time", p.ID), gosx.Attr("data-gosx-key", "performance-time-"+p.ID)),
 		gosx.El("h3", gosx.Text("Shape time")),
 		gosx.El("p", gosx.Text("Move the notes, gates and gestures together. Pitch and project tempo stay the same.")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"},
-			hidden("pattern", p.ID), hidden("action", "performance-scale"), hidden("source_revision", v.SourceRevision), gosx.Fragment(buttons...), gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message)))),
+			hidden("pattern", p.ID), hidden("action", "performance-scale"), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene")), gosx.Fragment(buttons...), gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message)))),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changes every use of this pattern. Existing song blocks keep their length. Make a variation first to develop one use; Undo restores the original timing.")))
 }

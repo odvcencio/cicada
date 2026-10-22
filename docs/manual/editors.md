@@ -95,6 +95,14 @@ again at the atomic exchange, so a concurrent save is preserved. Auxiliary
 changes, including a confirmed edition upgrade in `cicada.mod`, appear in the
 diff and are saved with the edit. Unchanged edits write nothing.
 
+`duplicatepattern` takes `entity: "pattern:name"`, a new `name`, and an optional
+`track`. The track resolves relative notes in the sound's register. Supplying it,
+or copying from a secondary source or library, creates a resolved local pattern
+in the entry score and requires an unchanged-song render check. Original
+definitions, assignments and library pins remain intact. The copy has no
+explicit slot; Studio supplies its full project receipt and opens the copy with
+the chosen sound and scene context.
+
 The envelope can include `revision`, `author`, `session`, and `dryrun`. A supplied
 revision must match the exact score bytes; omit it to use the current revision.
 `dryrun: true` prevents writes even with `--write`. `--author` and `--session`

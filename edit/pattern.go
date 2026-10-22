@@ -39,6 +39,7 @@ func (SetStep) Kind() string { return "setstep" }
 type DuplicatePattern struct {
 	Entity EntityID `json:"entity"`
 	Name   string   `json:"name"`
+	Track  string   `json:"track,omitempty"`
 }
 
 func (DuplicatePattern) Kind() string { return "duplicatepattern" }
@@ -125,7 +126,7 @@ func editPattern(ctx *Context, intent Intent) error {
 		if e != nil {
 			return e
 		}
-		updated, err = duplicatePatternSource(ctx, id, in.Name)
+		updated, err = duplicatePatternSource(ctx, id, in.Name, in.Track)
 		label = fmt.Sprintf("Pattern · %s duplicated as %s", id, in.Name)
 	case *SetRange:
 		id, e := patternTarget(in.Entity)
@@ -389,19 +390,40 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 
 var patternName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,63}$`)
 
-func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
+func duplicatePatternSource(ctx *Context, id, name, track string) ([]byte, error) {
 	source := ctx.Source
-	if !patternName.MatchString(name) {
-		return nil, fmt.Errorf("name must start with a lowercase letter or underscore and contain at most 64 letters, digits, underscores, or hyphens")
+	plan, err := ctx.CurrentPlan()
+	if err != nil {
+		return nil, err
+	}
+	if err := patternCopyName(plan, name); err != nil {
+		return nil, err
 	}
 	score, diagnostics := ctx.Parse()
-	if score == nil || hasErrors(diagnostics) {
-		return nil, fmt.Errorf("score must validate before duplicating a pattern")
-	}
-	for _, pattern := range score.Patterns {
-		if pattern.Name == name {
-			return nil, fmt.Errorf("pattern %q already exists", name)
+	local := false
+	if score != nil && !hasErrors(diagnostics) {
+		for _, pattern := range score.Patterns {
+			local = local || pattern.Name == id
 		}
+	}
+	if !local || track != "" {
+		clone, err := localPatternCopy(ctx, id, name, track)
+		if err != nil {
+			return nil, err
+		}
+		updated := appendPatternCopy(source, clone)
+		check, err := renderCheckFor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		same, err := ctx.compareRenders("DuplicatePattern", check, source, updated)
+		if err != nil {
+			return nil, err
+		}
+		if !same {
+			return nil, &RefusalError{Intent: "DuplicatePattern", Cause: "creating this variation changes the rendered song"}
+		}
+		return updated, nil
 	}
 	independent, err := independentPatternSource(ctx, id)
 	if err != nil {

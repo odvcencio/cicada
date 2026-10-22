@@ -48,7 +48,7 @@ func TestLibraryPerformanceTimeLinksToIndependentVariations(t *testing.T) {
 	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", Valid: true, Project: p})
 	page := getPage(t, client, address+"/?panel=patterns&pattern=motif.played")
 	section := regexp.MustCompile(`(?s)<section[^>]*data-performance-time="motif.played".*?</section>`).FindString(page)
-	if !strings.Contains(section, "Library patterns stay unchanged") || !strings.Contains(section, "Open return to make a local variation") || strings.Contains(section, "performance-scale") {
+	if !strings.Contains(section, "keeping the library intact") || !strings.Contains(section, `href="#pattern-variation"`) || strings.Contains(section, "performance-scale") {
 		t.Fatal("library performance offered a write instead of a local variation", section)
 	}
 }

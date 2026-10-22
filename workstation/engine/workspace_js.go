@@ -957,7 +957,7 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		request.Header.Set("X-CSRF-Token", u.props.CSRF)
 	}
 	requestClient := client
-	if job.method == http.MethodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary") {
+	if job.method == http.MethodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
 		copy := *client
 		copy.Timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
 		requestClient = &copy

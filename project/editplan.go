@@ -1,6 +1,7 @@
 package project
 
 import (
+	"fmt"
 	"path"
 	"strings"
 
@@ -46,8 +47,7 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	}
 	for _, pattern := range p.Patterns {
 		out := edit.Pattern{ID: pattern.ID, Kind: pattern.Kind, Steps: pattern.Steps, StepTicks: pattern.StepTicks, Transpose: pattern.Transpose, Data: editSteps(pattern.Data)}
-		out.CopySource = func(name string) (string, error) {
-			copy := pattern
+		copySource := func(copy Pattern, name string) (string, error) {
 			copy.ID = name
 			source, err := patternSource(copy, 0, false, false, p.Seed)
 			if copy.Kind == "notes" && copy.Performance == nil {
@@ -56,6 +56,45 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 				source = strings.Replace(source, "pattern "+name+" {", "pattern "+name+" notes {", 1)
 			}
 			return source, err
+		}
+		out.CopySource = func(name string) (string, error) { return copySource(pattern, name) }
+		out.CopyForTrack = func(name, track string) (string, error) {
+			score, ds := notation.ParseFiles(files, p.Edition)
+			for _, diagnostic := range ds {
+				if diagnostic.Severity == "error" {
+					return "", fmt.Errorf("pattern sources must parse before copying: %s", diagnostic.Message)
+				}
+			}
+			if score == nil {
+				return "", fmt.Errorf("pattern sources are unavailable")
+			}
+			score, ds = notation.ResolvePresets(score)
+			for _, diagnostic := range ds {
+				if diagnostic.Severity == "error" {
+					return "", fmt.Errorf("pattern sources must resolve before copying: %s", diagnostic.Message)
+				}
+			}
+			for _, authored := range score.Patterns {
+				if authored.Name != pattern.ID {
+					continue
+				}
+				for _, voice := range score.Tracks {
+					if voice.Name != track {
+						continue
+					}
+					resolved, err := CompileProjectPattern(score, authored, voice)
+					if err != nil {
+						return "", err
+					}
+					for _, compiledTrack := range p.Tracks {
+						if compiledTrack.ID == track && !PatternTrackCompatible(p, resolved, compiledTrack) {
+							return "", fmt.Errorf("pattern %q cannot play on track %q", pattern.ID, track)
+						}
+					}
+					return copySource(resolved, name)
+				}
+			}
+			return "", fmt.Errorf("pattern %q or track %q is unavailable", pattern.ID, track)
 		}
 		out.Performance = pattern.Performance.Kernel()
 		if pattern.Lanes != nil {

@@ -26,13 +26,13 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 		selected = int(p.Performance.Notes[noteIndex].Group) - 1
 	}
 	selected = min(max(0, selected), len(groups))
-	base := patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(noteIndex)
+	base := patternContextURL(patternURL(p.ID, 1, "", "")+"&note="+strconv.Itoa(noteIndex), query.Get("track"), query.Get("scene"))
 	laneURL := func(i int) string { return base + "&group=" + strconv.Itoa(i) + "#shared-gestures" }
 	link := func(i int) string {
 		return base + "&group=" + strconv.Itoa(selected) + "&shared_point=" + strconv.Itoa(i) + "#shared-gestures"
 	}
 	form := func(returnTo string, children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form gesture-inspector"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("note_index", strconv.Itoa(noteIndex))}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form gesture-inspector"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("track", query.Get("track")), hidden("scene", query.Get("scene")), hidden("note_index", strconv.Itoa(noteIndex))}, children...)...)
 	}
 	children := []gosx.Node{
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "gesture-heading")), gosx.El("h3", gosx.Text("Shared gestures")), gosx.El("span", gosx.Text(fmt.Sprintf("%d %s · %d ticks per loop", len(groups), laneUnit, p.Performance.LengthTicks)))),

@@ -129,7 +129,7 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		}
 		intent = in
 	case "duplicate":
-		intent = &edits.DuplicatePattern{Entity: entity, Name: edit.NewName}
+		intent = &edits.DuplicatePattern{Entity: entity, Name: edit.NewName, Track: edit.Track}
 	case "range":
 		in := &edits.SetRange{Entity: entity, Lane: edit.Lane, First: -1, Shared: "pattern"}
 		if edit.Range != nil {

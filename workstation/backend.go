@@ -80,6 +80,11 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 		copy.Timeout = 60 * time.Second // a placement variation checks its rendered sound
 		client = &copy
 	}
+	if payload, ok := input.(map[string]any); ok && method == http.MethodPost && path == "/api/pattern" && payload["action"] == "duplicate" {
+		copy := *client
+		copy.Timeout = 60 * time.Second // material copies check the original song's sound
+		client = &copy
+	}
 	if method == http.MethodPost && resource.Path == "/api/midi/input" {
 		copy := *client
 		copy.Timeout = 0 // The mounted Live panel owns this input stream.

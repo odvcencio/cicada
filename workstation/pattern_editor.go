@@ -21,6 +21,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	}
 	returnTo := ctx.FormData[action.ReturnTargetField]
 	operation := ctx.FormData["action"]
+	contextTrack, contextScene := ctx.FormData["track"], ctx.FormData["scene"]
 	createForLive := operation == "create" && ctx.FormData["createFor"] == "@live"
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
@@ -227,6 +228,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 			destination = patternURL(f["pattern"], step, f["lane"], f["octave"])
 		case "duplicate":
 			p["newName"] = f["newName"]
+			p["track"] = f["track"]
 			destination = patternURL(f["newName"], 1, "", "")
 		case "resize":
 			length, err := integer(f, "length")
@@ -272,10 +274,11 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 		return nil
 	}
 	if err == nil && destination != "" {
+		destination = patternContextURL(destination, contextTrack, contextScene)
 		// The framework captures native return targets before invoking the
 		// handler. Choose the new inspected step explicitly after a success.
 		destination = shellRedirect(ctx.Request, destination)
-		if operation == "create" {
+		if operation == "create" || operation == "duplicate" && contextTrack != "" {
 			if target, err := url.Parse(destination); err == nil && target.Path == "/studio" {
 				query := target.Query()
 				query.Set("dock", "clip")
@@ -298,6 +301,25 @@ func patternURL(id string, step int, lane, octave string) string {
 		q.Set("octave", octave)
 	}
 	return "/?" + q.Encode()
+}
+
+func patternContextURL(raw, track, scene string) string {
+	if track == "" && scene == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	if track != "" {
+		q.Set("track", track)
+	}
+	if scene != "" {
+		q.Set("scene", scene)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func wholeInput(name string, value, low, high int) gosx.Node {
@@ -557,6 +579,7 @@ func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step i
 }
 
 func nextPatternName(p *project.Project, id string) string {
+	id = strings.ReplaceAll(id, ".", "-")
 	if len(id) > 52 {
 		id = id[:52]
 	}
@@ -565,6 +588,9 @@ func nextPatternName(p *project.Project, id string) string {
 		found := false
 		for _, pattern := range p.Patterns {
 			found = found || pattern.ID == candidate
+		}
+		for _, clip := range p.Clips {
+			found = found || clip.Name == candidate
 		}
 		if !found {
 			return candidate

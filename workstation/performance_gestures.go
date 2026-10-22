@@ -36,7 +36,7 @@ func (s *studioApp) performanceGestures(ctx *server.Context, v workspace, csrf s
 	points, duration := note.Expressions, note.EndTick-note.Tick
 	query := ctx.Request.URL.Query()
 	selected := gestureSelection(points, query.Get("gesture"), query.Get("gesture_tick"))
-	base := patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(noteIndex)
+	base := patternContextURL(patternURL(p.ID, 1, "", "")+"&note="+strconv.Itoa(noteIndex), query.Get("track"), query.Get("scene"))
 	link := func(index int) string { return base + "&gesture=" + strconv.Itoa(index) + "#note-gestures" }
 	page := min(selected/gesturePageSize, max(0, (len(points)-1)/gesturePageSize))
 	start, end := page*gesturePageSize, min(len(points), (page+1)*gesturePageSize)
@@ -82,7 +82,7 @@ func (s *studioApp) performanceGestures(ctx *server.Context, v workspace, csrf s
 		}
 		return gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", name), gosx.Attr("value", text), gosx.Attr("min", low), gosx.Attr("max", high), gosx.Attr("step", step)))
 	}
-	children := []gosx.Node{hidden("pattern", p.ID), hidden("action", "performed-gesture"), hidden("note_index", strconv.Itoa(noteIndex)), hidden("index", strconv.Itoa(selected)),
+	children := []gosx.Node{hidden("pattern", p.ID), hidden("track", query.Get("track")), hidden("scene", query.Get("scene")), hidden("action", "performed-gesture"), hidden("note_index", strconv.Itoa(noteIndex)), hidden("index", strconv.Itoa(selected)),
 		field("Tick after note starts", input("tick", float64(point.Tick), "0", strconv.FormatInt(duration, 10))),
 		field("Bend · cents", input("pitch_cents", float64(point.Value.PitchCents), "-9600", "9600")),
 		field("Pressure · 0–1", input("pressure", float64(point.Value.Pressure), "0", "1")),

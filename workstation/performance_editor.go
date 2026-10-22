@@ -16,15 +16,18 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 	performance := p.Performance
 	selected, _ := strconv.Atoi(ctx.Request.URL.Query().Get("note"))
 	selected = min(max(0, selected), len(performance.Notes))
-	returnTo := patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(selected)
+	contextURL := func(raw string) string {
+		return patternContextURL(raw, ctx.Request.URL.Query().Get("track"), ctx.Request.URL.Query().Get("scene"))
+	}
+	returnTo := contextURL(patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(selected))
 	form := func(children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID)}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene"))}, children...)...)
 	}
 	var notes []control.Note
 	var rows []gosx.Node
 	for index, note := range performance.Notes {
 		notes = append(notes, control.Note{Tick: note.Tick, EndTick: note.EndTick, Note: int(note.Note) + int(p.Transpose), Velocity: int(note.Velocity)})
-		url := patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(index)
+		url := contextURL(patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(index))
 		attrs := gosx.Attrs(gosx.Attr("href", url))
 		if selected == index {
 			attrs = append(attrs, gosx.Attr("aria-current", "true"))
@@ -79,7 +82,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "performance-content")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("tabindex", "0"), gosx.Attr("role", "region"), gosx.Attr("aria-label", "Performed notes")),
 				gosx.El("table", gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))),
-				gosx.El("a", gosx.Attrs(gosx.Attr("href", patternURL(p.ID, 1, "", "")+"&note="+strconv.Itoa(len(notes)))), gosx.Text("Add a note"))), inspector),
+				gosx.El("a", gosx.Attrs(gosx.Attr("href", contextURL(patternURL(p.ID, 1, "", "")+"&note="+strconv.Itoa(len(notes))))), gosx.Text("Add a note"))), inspector),
 		s.performanceGestures(ctx, v, csrf, p, selected),
 		s.sharedGestures(ctx, v, csrf, p, selected),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("960 ticks per beat. Each note keeps its own gate, velocity and gestures; changes are saved in the score with Undo. Notes of the same pitch need separate tracks when their gates overlap.")),

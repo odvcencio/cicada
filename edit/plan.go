@@ -61,15 +61,17 @@ func (t Track) canRecordPattern(id string) bool {
 type Pattern struct {
 	// CopySource emits an independent local declaration from the compiled
 	// musical material, without writing or depending on its owning source.
-	CopySource  func(name string) (string, error) `json:"-"`
-	Performance *seq.Performance
-	ID, Kind    string
-	Steps       uint8
-	Transpose   int8
-	StepTicks   uint16 // zero means 240 (project/model.go:147)
-	Data        []*Step
-	Lanes       map[string][]*Step
-	Expression  []NoteExpression // resolved per-step expression (project/model.go:157); used by RecordTake (T32)
+	CopySource func(name string) (string, error) `json:"-"`
+	// CopyForTrack resolves relative notes in the chosen sound's register.
+	CopyForTrack func(name, track string) (string, error) `json:"-"`
+	Performance  *seq.Performance
+	ID, Kind     string
+	Steps        uint8
+	Transpose    int8
+	StepTicks    uint16 // zero means 240 (project/model.go:147)
+	Data         []*Step
+	Lanes        map[string][]*Step
+	Expression   []NoteExpression // resolved per-step expression (project/model.go:157); used by RecordTake (T32)
 }
 
 // StepTicksOrDefault follows project/compile.go:119-125: an explicit

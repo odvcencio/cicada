@@ -431,11 +431,18 @@ Compression refuses overlapping repeated pitches instead of discarding notes.
 Existing song blocks keep their start and length, so lengthen a block when
 you want to hear a newly expanded phrase in full. Make an independent variation
 first when only one use should change. Imported library patterns remain
-unchanged; their arranged blocks link to the local variation workflow.
+unchanged; **Create a local variation** opens their variation form directly.
 
 Open **Use this pattern** in either the grid or played-timing editor to bring
 the phrase into your song. **Create variation** copies the complete pattern
-without changing its existing uses. For a scene song, choose a compatible
+without changing its existing uses. This also works for unused patterns in
+secondary files and pinned libraries. **Hear with** chooses the sound whose
+register resolves the copy's relative notes; that sound stays selected when
+the local copy opens. The copy contains resolved notes, phrases, timing and
+gestures, with absolute pitches and a free slot when assigned. Instrument
+settings remain shared. A sound check confirms that creating the copy leaves
+the existing song intact. The original files and library pins stay unchanged;
+one Undo removes the local copy. For a scene song, choose a compatible
 track and scene, then **Assign to scene**. The assignment replaces that track's
 part everywhere the scene is used; Stop releases the track and Carry keeps
 its earlier selection.
