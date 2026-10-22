@@ -88,7 +88,7 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
   const watch = page => {
     page.setDefaultTimeout(15000);
     page.on('pageerror',error=>errors.push(error.message));
-    page.on('request',request=>{if(request.method()==='POST' && new URL(request.url()).pathname.startsWith('/__actions/')) posts.push(request);});
+    page.on('request',request=>{if(request.method()==='POST' && new URL(request.url()).pathname.startsWith('/__actions/') && !/^\/__actions\/(source|note)-checkpoint$/.test(new URL(request.url()).pathname)) posts.push(request);});
   };
   const select = async (editor,start,end=start,direction='forward') => editor.evaluate((node,{start,end,direction})=>{
     node.focus({preventScroll:true}); node.setSelectionRange(start,end,direction);

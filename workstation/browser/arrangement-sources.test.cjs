@@ -35,7 +35,7 @@ test('secondary arrangement controls, source conflicts, WAV and reopen', {timeou
  const ready=async()=>{await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();await until(async()=>!await page.locator('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]').count(),'managed form finished')};
  const inspector=name=>page.locator(`[data-placement-inspector="${name}"]`);
  const block=name=>page.locator(`[data-placement-block="${name}"]`);
- const action=(kind,name)=>page.locator(`form[action$="/__actions/arrange"]:has(input[name=action][value="${kind}"])${name?`:has(input[name=name][value="${name}"])`:''}`);
+ const action=(kind,name)=>page.locator(`#arrangement form[action$="/__actions/arrange"]:has(input[name=action][value="${kind}"])${name?`:has(input[name=name][value="${name}"])`:''}`);
  const saved=async check=>{await until(()=>check(owner()),'owning arrangement saved');await ready();assert.equal(fs.readFileSync(fixture.score,'utf8'),entry)};
  const undo=async expected=>{await page.locator('#undo-form button').click();await saved(source=>source===expected)};
  const select=async name=>{await page.getByRole('link',{name:'Edit placement '+name,exact:true}).click();await until(async()=>await block(name).getAttribute('data-placement-selected')==='true','placement selected');await ready()};

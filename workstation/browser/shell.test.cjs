@@ -85,7 +85,7 @@ async function focusWorkspace(page) {
   assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'global shortcuts start outside native controls');
 }
 
-const actionPosts = requests => requests.filter(request => request.startsWith('POST /__actions/'));
+const actionPosts = requests => requests.filter(request => request.startsWith('POST /__actions/') && !/^POST \/__actions\/(source|note)-checkpoint$/.test(request));
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers: {'Content-Type': request.headers()['content-type']}}).formData());
 
@@ -285,8 +285,8 @@ test('a reload after an engine save leaves the shell current', async () => {
   const state = async () => (await context.request.get(new URL('/api/state', base).href)).json();
   const before = await state();
   const csrf = await page.locator('input[name="csrf_token"]').first().inputValue();
-  const edit = await context.request.post(new URL('/__actions/pattern', base).href, {
-    form: {csrf_token: csrf, revision: before.revision, action: 'toggle', pattern: 'continuity', step: '2', __gosx_return_to: '/studio'},
+  const edit = await context.request.post(new URL('/__actions/source', base).href, {
+    form: {csrf_token: csrf, revision: before.revision, content: before.source + '\n// shell refresh fixture\n', __gosx_return_to: '/studio'},
     maxRedirects: 0,
   });
   assert.ok(edit.status() < 400, `the behind-the-back edit must save, got ${edit.status()}`);

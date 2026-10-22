@@ -38,7 +38,7 @@ test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and exp
  const create=page.locator('[data-gosx-key="create-pattern-keys"]');await create.locator('summary').click();await create.locator('[name=newName]').fill('light-chords');await create.locator('[name=starter]').selectOption('chords');await create.locator('[name=scene]').selectOption('main');await create.getByRole('button',{name:'Create pattern',exact:true}).click();
  await saved(s=>s.includes('pattern light-chords notes steps=16')&&s.includes('keys = light-chords'),'editable held chords assigned to the first section');
  await page.locator('#detail-tab-clip').click();const h=page.getByRole('separator',{name:'Resize Detail dock',exact:true});await h.focus();await page.keyboard.press('End');
- await page.getByText('Variations and scene assignment',{exact:true}).click();
+ const uses=page.locator('[data-pattern-management="light-chords"]');if(!(await uses.evaluate(node=>node.open)))await uses.locator('summary').click();
  const bind=page.locator('#patterns form:has(input[name=action][value=bind])');await bind.locator('[name=scene]').selectOption('break');await bind.locator('[name=track]').selectOption('keys');await bind.getByRole('button',{name:'Stop in this scene',exact:true}).click();
  await saved(s=>/scene break\s*\{[^}]*keys\s*=\s*off/.test(s),'keys drop out in the middle section');
  await page.locator('#view-tab-arrange').click();await h.focus();await page.keyboard.press('Home');

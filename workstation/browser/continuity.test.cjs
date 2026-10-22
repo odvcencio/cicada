@@ -70,6 +70,14 @@ async function until(predicate, message, timeout = 15_000) {
 // The first browser session to reach a Studio owns it, so repeated runs share
 // one context. Each run still gets its own page.
 let shared;
+function liveInput(record) {
+  if (record.payload.type !== 'input-batch') return record.payload;
+  const messages = JSON.parse(record.payload.messages);
+  assert.equal(messages.length, 1, 'one awaited key edge must deliver one Live input');
+  assert.equal(messages[0].lease, record.payload.lease, 'batch changed the Live mount lease');
+  assert.equal(messages[0].sequence, record.payload.sequence, 'batch changed the input sequence');
+  return messages[0];
+}
 async function sharedBrowser() {
   if (!shared) {
     let executablePath = process.env.CICADA_CHROME_PATH;
@@ -98,7 +106,7 @@ async function scenario(t) {
   const {context} = await sharedBrowser();
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
-  const errors = [], warnings = [], requests = [], liveReleases = [];
+  const errors = [], warnings = [], requests = [], liveReleases = [], checkpoints = [];
   const csrfTokens = new Set();
   let armed = false, documentRequests = 0, inFlight = 0, maxInFlight = 0;
   let injectStale = false, delayNextPattern = false, staleRevision = '';
@@ -228,9 +236,17 @@ async function scenario(t) {
         `${new URL(route.request().url()).pathname} bypassed workspace JSON transport: ${contentType}`);
       const payload = JSON.parse(route.request().postData());
       const action = new URL(route.request().url()).pathname.split('/').pop();
+      if (action === 'source-checkpoint' || action === 'note-checkpoint') {
+        const csrf = route.request().headers()['x-csrf-token'] || payload.csrf_token;
+        assert.ok(csrf && csrfTokens.has(csrf), 'recovery checkpoint must carry the fixture CSRF token');
+        const sequence = Number(payload.recoverySequence || payload.sequence);
+        assert.ok(Number.isSafeInteger(sequence) && sequence > 0, 'recovery checkpoint needs a positive sequence');
+        checkpoints.push(action);
+        return route.continue(); // Recovery is outside the foreground mutation queue.
+      }
       const engineOwned = action === 'live' || action === 'note-preview';
       if (!engineOwned) {
-        assert.equal(payload.__cicada_reactive, '1', 'managed action bypassed the GoSX workspace engine');
+        assert.equal(payload.__cicada_reactive, '1', `action ${action} bypassed the GoSX workspace engine`);
         assert.equal(typeof payload.__cicada_location, 'string');
       }
       for (const [name, value] of Object.entries(payload)) assert.equal(typeof value, 'string', `action field ${name} is not a string`);
@@ -516,8 +532,8 @@ async function scenario(t) {
     const held = requests[start];
     assert.equal(held.action, 'live');
     assert.equal(held.status, 200);
-    assert.equal(held.payload.note, '50');
-    assert.equal(held.payload.on, 'true');
+    assert.equal(liveInput(held).note, '50');
+    assert.equal(liveInput(held).on, 'true');
     assert.ok(held.payload.lease.length >= 8);
     assert.equal(await page.locator('[data-live-note="50"]').getAttribute('aria-pressed'), 'true', 'held note feedback was not immediate');
     start = requests.length;
@@ -534,8 +550,8 @@ async function scenario(t) {
     const released = requests[start];
     assert.equal(released.action, 'live');
     assert.equal(released.status, 200);
-    assert.equal(released.payload.note, '50');
-    assert.equal(released.payload.on, 'false');
+    assert.equal(liveInput(released).note, '50');
+    assert.equal(liveInput(released).on, 'false');
     assert.equal(released.payload.lease, held.payload.lease, 'key-up used a new Live mount lease');
     assert.ok(Number(released.payload.sequence) > Number(held.payload.sequence), 'Live command sequence did not advance');
     assert.equal(await page.locator('[data-live-note="50"]').getAttribute('aria-pressed'), 'false');
@@ -550,8 +566,8 @@ async function scenario(t) {
       const command = requests[start + index];
       assert.equal(command.action, 'live');
       assert.equal(command.status, 200);
-      assert.equal(command.payload.note, '55');
-      assert.equal(command.payload.on, on);
+      assert.equal(liveInput(command).note, '55');
+      assert.equal(liveInput(command).on, on);
       assert.equal(command.payload.lease, held.payload.lease, 'recording used a different Live mount lease');
       assert.ok(Number(command.payload.sequence) > Number(requests[start + index - 1].payload.sequence), 'recording command sequence did not advance');
     }
@@ -616,20 +632,20 @@ async function scenario(t) {
     };
     const codeSnapshot = async () => page.evaluate(() => {
       const editor = document.querySelector('#editor-content');
-      return {value: editor.value, dirty: editor.value !== editor.defaultValue,
+      return {value: editor.value, dirty: editor.value !== editor.defaultValue || editor.closest('form').hasAttribute('data-code-unsaved'),
         selection: [editor.selectionStart, editor.selectionEnd, editor.selectionDirection],
         scroll: {x: scrollX, y: scrollY, left: editor.scrollLeft, top: editor.scrollTop}};
     });
     const assertCodeContinuity = async expected => {
       const actual = await page.evaluate(() => {
         const refs = window.__continuityCode, editor = document.querySelector('#editor-content');
-        return {same: refs.root === document.querySelector('#cicada-workspace') && refs.editor === editor &&
-          refs.form === editor.closest('form') && refs.shell === editor.closest('.editor-source-shell') && refs.document === window.__continuityDocument,
-          focused: document.activeElement === editor, value: editor.value, dirty: editor.value !== editor.defaultValue,
+        return {identities: {root: refs.root === document.querySelector('#cicada-workspace'), editor: refs.editor === editor,
+          form: refs.form === editor.closest('form'), shell: refs.shell === editor.closest('.editor-source-shell'), document: refs.document === window.__continuityDocument},
+          focused: document.activeElement === editor, value: editor.value, dirty: editor.value !== editor.defaultValue || editor.closest('form').hasAttribute('data-code-unsaved'),
           selection: [editor.selectionStart, editor.selectionEnd, editor.selectionDirection],
           scroll: {x: scrollX, y: scrollY, left: editor.scrollLeft, top: editor.scrollTop}};
       });
-      assert.equal(actual.same, true, 'Score projection replaced the first-party editor');
+      for (const [part, same] of Object.entries(actual.identities)) assert.equal(same, true, `Score projection replaced the first-party editor ${part}`);
       assert.equal(actual.focused, true, 'Score projection lost editor focus');
       assert.equal(actual.value, expected.value, 'visible Score buffer diverged from its owner');
       assert.equal(actual.dirty, expected.dirty, 'Score dirty baseline was not updated');
@@ -657,7 +673,10 @@ async function scenario(t) {
     assert.deepEqual(await state('/api/state'), beforeCode, 'Score Undo did not restore the exact saved source');
     await assertCodeContinuity({value: cleanCode, dirty: false});
     const codeUnsaved = `${codeOriginal}${codeOriginal.endsWith('\n') ? '' : '\n'}// cicada-continuity-unsaved-draft\n${'// retained editor draft\n'.repeat(40)}`;
+    const checkpointed = page.waitForResponse(response => new URL(response.url()).pathname === '/__actions/source-checkpoint' &&
+      response.request().postDataJSON()?.content === codeUnsaved && response.status() === 200);
     await prepareCode(codeUnsaved);
+    await checkpointed;
     codeDraft = await codeSnapshot();
     assert.equal(codeDraft.dirty, true);
     start = requests.length;
@@ -675,6 +694,7 @@ async function scenario(t) {
     t.diagnostic('Score Save preserved exact visible text/editor/caret/scroll; Undo restored exact canonical whitespace and a clean visible buffer; unrelated action retained unsaved text and native Ctrl-Z issued no score action.');
     assert.deepEqual(errors, [], 'browser callback errors');
     assert.deepEqual(warnings, [], 'browser callback warnings');
+    t.diagnostic(`${checkpoints.length} authenticated recovery checkpoints ran separately from foreground score writes.`);
     assert.equal(mixerRecord.status, 200, `action mixer: ${mixerRecord.result?.message || 'missing success response'}`);
     t.diagnostic('Select left source/revision unchanged; Draw serialized writes. No document GET, root/grid/cell/timing-input replacements, nested meter or Live remounts, callback errors or warnings; same-step inspector identity and draft/focus/scroll/playback survived422 correction and409 recovery. Held Live lease survived launch; take review and discard stayed in place.');
     assert.ok(latencies[11] < 5000, 'rapid edit queue stalled beyond five seconds');

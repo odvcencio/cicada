@@ -1491,6 +1491,10 @@ func workspaceHTMLTree(root *html.Node) *vm.ResolvedTree {
 		resolved := vm.ResolvedNode{Key: workspaceHTMLIdentity(node)}
 		if resolved.Key == "" {
 			resolved.Key = "position:" + path
+		} else {
+			// Descendant positions belong to this stable parent. A recovery
+			// notice inserted before it must not change its unkeyed children.
+			path = resolved.Key
 		}
 		if node.Type == html.TextNode {
 			resolved.Text = node.Data
