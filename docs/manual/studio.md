@@ -22,6 +22,9 @@ If loading takes longer or fails, **Reload Studio** offers a fresh attempt.
 Save or copy unsaved edits and finish recording before reloading. Code typed
 during startup remains protected when arranging controls become ready.
 
+Browser sections keep their open/closed state through saves, navigation, and
+reopening Studio.
+
 Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
 workspace region on a phone keeps your unsaved **Code** text in place.
 

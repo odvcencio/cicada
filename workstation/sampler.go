@@ -68,12 +68,12 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 	}
 	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-pad-grid")), gosx.Fragment(pads...)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-sampler-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Load a sample, then play pads with the mouse, touch, or keyboard.")),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-wave")), gosx.El("canvas", gosx.Attrs(gosx.Attr("data-sampler-wave", ""), gosx.Attr("width", "900"), gosx.Attr("height", "180"), gosx.Attr("aria-label", "Sample waveform and chop boundaries"), gosx.Attr("role", "img"))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Drag either chop boundary; the source-frame fields below follow your edit."))),
+		samplerWaveform(),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions sampler-performance")), field("Record bars", wholeInput("recordBars", 4, 1, 16)), field("Quantize to sixteenths", checkInput("quantize", true)), button("record", "Record pads"), button("stop", "Stop pads"), button("play", "Play performance")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-event-strip"), gosx.Attr("data-sampler-events", ""), gosx.Attr("aria-label", "Recorded pad hits"))),
 		gosx.El("details", gosx.Attrs(gosx.BoolAttr("open")), gosx.El("summary", gosx.Text("Resample to a pad and Session")), resample), audio)
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "tempo": v.Project.TempoMilli, "revision": v.Revision})
-	surface := meterEngine(ctx, engine.Config{Name: "CicadaSampler", Kind: engine.KindSurface, MountID: "cicada-sampler", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapAudio, engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapCanvas}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch, engine.CapAudio}}, content)
+	surface := meterEngine(ctx, engine.Config{Name: "CicadaSampler", Kind: engine.KindSurface, MountID: "cicada-sampler", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapAudio, engine.CapFetch, engine.CapKeyboard, engine.CapPointer}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch, engine.CapAudio}}, content)
 	var selectedEditor gosx.Node = gosx.El("p", gosx.Text("Import a WAV or sample a Session placement to fill the bank."))
 	if len(state.Bank.Sources) > 0 {
 		src, _ := state.Bank.Source(p.Source)
@@ -116,4 +116,22 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 		load = append(load, form(hidden("action", "undo"), submit("", "", "Undo pad edit")))
 	}
 	return gosx.El("div", gosx.Attrs(gosx.Attr("id", "sampler-panel")), ui.Panel(ui.PanelProps{ID: "sampler-performance", Title: "Sampler", Description: "Play, chop, and print a performance. Pad monitoring uses browser audio; resampled clips play through Session's native mixer."}, surface), gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-editors")), ui.Panel(ui.PanelProps{ID: "sampler-pad-editor", Title: fmt.Sprintf("Pad %02d · chop and voice", selected), Description: "Source files stay intact. End is exclusive; choke 0 allows layering."}, selectedEditor), fxPanel), ui.Panel(ui.PanelProps{ID: "sampler-sources", Title: "Sample sources", Description: "Imports and equal chops fill the first pads. Undo pad edit restores the previous bank during this session."}, gosx.Fragment(load...)))
+}
+
+// SVG shares the page renderer, avoiding a GPU canvas initialization for the
+// hidden Sampler while Studio is starting.
+func samplerWaveform() gosx.Node {
+	handle := func(name, label string) gosx.Node {
+		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "sampler-boundary"), gosx.Attr("data-sampler-boundary", name), gosx.Attr("role", "slider"), gosx.Attr("aria-label", "Sample "+name), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-valuemin", "0"), gosx.Attr("aria-valuemax", "1"), gosx.Attr("aria-valuenow", "0"), gosx.Attr("aria-describedby", "sampler-wave-help"), gosx.BoolAttr("disabled")), gosx.El("span", gosx.Text(label)))
+	}
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-wave")),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-wave-plot"), gosx.Attr("data-sampler-wave", ""), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Sample waveform and chop boundaries")),
+			gosx.El("svg", gosx.Attrs(gosx.Attr("viewBox", "0 0 900 180"), gosx.Attr("preserveAspectRatio", "none"), gosx.Attr("aria-hidden", "true")),
+				gosx.El("rect", gosx.Attrs(gosx.Attr("width", "900"), gosx.Attr("height", "180"), gosx.Attr("fill", "#101c16"))),
+				gosx.El("rect", gosx.Attrs(gosx.Attr("data-sampler-range", ""), gosx.Attr("width", "0"), gosx.Attr("height", "180"), gosx.Attr("fill", "#2f4d37"))),
+				gosx.El("path", gosx.Attrs(gosx.Attr("data-sampler-peaks", ""), gosx.Attr("fill", "none"), gosx.Attr("stroke", "#6cd6ad"), gosx.Attr("vector-effect", "non-scaling-stroke"))),
+				gosx.El("path", gosx.Attrs(gosx.Attr("data-sampler-edges", ""), gosx.Attr("fill", "none"), gosx.Attr("stroke", "#e6b457"), gosx.Attr("stroke-width", "2"), gosx.Attr("vector-effect", "non-scaling-stroke")))),
+			handle("start", "IN"), handle("end", "OUT")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("data-sampler-wave-label", ""), gosx.Attr("class", "muted")), gosx.Text("Load a sample to edit its chop boundaries.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("id", "sampler-wave-help"), gosx.Attr("class", "muted")), gosx.Text("Drag IN or OUT, or focus a handle: arrows move 1 ms; Shift moves 10 ms; Alt moves one frame. Home/End reach the limits. Escape cancels a held drag. Save pad keeps the edit.")))
 }

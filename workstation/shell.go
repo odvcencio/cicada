@@ -140,10 +140,10 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	}
 
 	browser := ui.Browser(ui.BrowserProps{Open: true, Width: strconv.Itoa(shellBrowserWidth)},
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Title: "Instruments", Open: true}, panel("instruments")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Title: "Generate"}, panel("generator")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Title: "Takes"}, panel("takes")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Title: "Sampler"}, panel("sampler")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Signal: "$layout.instrumentsOpen", Title: "Instruments", Open: true}, panel("instruments")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, panel("generator")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes"}, panel("takes")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Signal: "$layout.samplerOpen", Title: "Sampler"}, panel("sampler")),
 	)
 	center := ui.Center(ui.CenterProps{
 		View:        tab,
@@ -223,7 +223,7 @@ func registerShell(ctx *server.Context, tab, dock string) {
 		return controller.Output{Name: name, Signal: "$layout." + name, Initial: initial}
 	}
 	var save, load []controller.StorageSlot
-	for _, name := range []string{"browserWidth", "codeWidth", "dockHeight", "browserOpen", "codeOpen"} {
+	for _, name := range []string{"browserWidth", "codeWidth", "dockHeight", "browserOpen", "codeOpen", "instrumentsOpen", "generateOpen", "takesOpen", "samplerOpen"} {
 		slot := controller.StorageSlot{Key: name, Signal: "$layout." + name}
 		save, load = append(save, slot), append(load, slot)
 	}
@@ -238,6 +238,7 @@ func registerShell(ctx *server.Context, tab, dock string) {
 			{Name: "placementSelectionActive", Signal: "$placementSelectionActive", Initial: false},
 			layout("browserWidth", shellBrowserWidth), layout("codeWidth", shellCodeWidth), layout("dockHeight", shellDockHeight),
 			layout("browserOpen", true), layout("codeOpen", true),
+			layout("instrumentsOpen", true), layout("generateOpen", false), layout("takesOpen", false), layout("samplerOpen", false),
 		},
 		Storage: &controller.Storage{Area: "local", Namespace: "studio:layout", Load: load, Save: save},
 	})
