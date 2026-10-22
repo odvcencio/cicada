@@ -8,7 +8,10 @@
  (async()=>{
   const deadline=performance.now()+30000;
   while(!(window.__gosx?.ready&&document.querySelector('#studio-shell[data-shell-actions=ready]')&&document.querySelector('.editor-page.editor-highlight-ready'))){if(performance.now()>deadline)throw Error('Studio controls did not become ready');await pause()}
-  const controlsReadyMs=performance.now();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const firstReadyFrameMs=performance.now();
+  const controlsReadyMs=performance.now();
+  // WKWebView may suspend animation frames in a background test window.
+  const frameObserved=await Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true)))),new Promise(r=>setTimeout(()=>r(false),1000))]);
+  const firstReadyFrameMs=frameObserved?performance.now():null;
   if(expectStartupUI&&(!window.__cicadaStartup||document.querySelector('#studio-shell')?.dataset.studioStartup!=='ready'||!document.querySelector('[data-studio-startup-status]')?.hidden))throw Error('Startup feedback did not settle');
   checks.push('real WKWebView controls and highlighted Code ready; startup feedback cleared');
   const state=await(await fetch('/api/state')).json(),audio=await(await fetch('/api/audio/config')).json();
