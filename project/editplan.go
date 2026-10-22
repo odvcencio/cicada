@@ -46,6 +46,17 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	}
 	for _, pattern := range p.Patterns {
 		out := edit.Pattern{ID: pattern.ID, Kind: pattern.Kind, Steps: pattern.Steps, StepTicks: pattern.StepTicks, Transpose: pattern.Transpose, Data: editSteps(pattern.Data)}
+		out.CopySource = func(name string) (string, error) {
+			copy := pattern
+			copy.ID = name
+			source, err := patternSource(copy, 0, false, false, p.Seed)
+			if copy.Kind == "notes" && copy.Performance == nil {
+				// Preserve the declared note kind while the copy is still
+				// unassigned; absolute pitches retain its current register.
+				source = strings.Replace(source, "pattern "+name+" {", "pattern "+name+" notes {", 1)
+			}
+			return source, err
+		}
 		out.Performance = pattern.Performance.Kernel()
 		if pattern.Lanes != nil {
 			out.Lanes = make(map[string][]*edit.Step, len(pattern.Lanes))

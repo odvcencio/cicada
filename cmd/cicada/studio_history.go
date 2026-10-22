@@ -309,6 +309,9 @@ func studioEditLabel(edit studioEdit) string {
 	if edit.Label != "" {
 		return edit.Label
 	}
+	if edit.Action == "vary" {
+		return fmt.Sprintf("Placement %s now uses its own pattern %s", edit.Name, edit.NewName)
+	}
 	if edit.Action == "project" {
 		return "Project title, tempo, and key changed"
 	}

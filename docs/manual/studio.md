@@ -437,6 +437,20 @@ pattern changes all its uses;
 create a variation first when you want an independent phrase. Assignment,
 placement, and variation each have one Undo step.
 
+To develop just one block, select it in a named arrangement and use
+**Vary this phrase** → **Make independent variation**. The new local pattern
+replaces that block's content while its start, length, track and other uses
+stay intact. **Edit _name_** then opens the copy in the pattern editor. Its
+notes, velocities, gestures, grid and timing remain editable. Sound settings
+still belong to the same instrument.
+
+The copy includes the resolved musical material, so a phrase in another
+project file or an imported library can become an editable local variation.
+The copied notes use their current absolute pitches.
+The original definitions and library stay unchanged. A render check verifies
+that creating the copy preserves the song's sound; a failed check saves
+nothing. One Undo restores both the pattern and the placement assignment.
+
 **Shared gestures** lets one lane shape several notes and their release
 tails. Create a lane, select each note and choose **Bind note**, then edit
 the lane's bend, pressure and timbre points. Times are measured from the loop

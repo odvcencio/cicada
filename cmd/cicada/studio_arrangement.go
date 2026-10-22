@@ -52,6 +52,8 @@ func arrangementIntent(edit studioEdit) (edits.Intent, bool) {
 		return &edits.AddPlacement{Name: edit.NewName, Settings: settings}, true
 	case "duplicate":
 		return &edits.CopyPlacement{Entity: placement, Name: edit.NewName, Settings: settings}, true
+	case "vary":
+		return &edits.VaryPlacement{Entity: placement, Name: edit.NewName}, true
 	case "delete":
 		return &edits.RemovePlacement{Entity: placement}, true
 	case "marker":

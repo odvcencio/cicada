@@ -122,7 +122,12 @@ move and a trim never pass through an overlap), `addplacement`, `copyplacement`,
 `removeplacement`, `setmarker`, `addmarker` and `removemarker`. Each takes an
 `entity` (`placement:name` or `marker:name`) or a new `name`, and a `settings`
 object with the fields to set. `removeplacement` removes only the declaration;
-`deleteclip` also removes the comment lines above it. Automation lanes use
+`deleteclip` also removes the comment lines above it. `varyplacement` takes
+`entity: "placement:name"` and a new pattern `name`. It makes a local copy of
+the compiled pattern and rebinds only that placement in one atomic edit. A
+render check must confirm unchanged audio; source and library definitions
+remain intact, including when the arrangement lives in another source file.
+Automation lanes use
 `setautomationpoint` and `removeautomationpoint`, with an `entity` such as
 `param:bass.cutoff`, `at`, `oldat` (the point being moved), `value`, `shape`
 and `curve`. `placesamplerprint` and `placevocalcomp` record the two Studio

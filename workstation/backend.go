@@ -75,6 +75,11 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 		copy.Timeout = 30 * time.Second // large retained gesture takes compile before acknowledgment
 		client = &copy
 	}
+	if method == http.MethodPost && path == "/api/arrange" {
+		copy := *client
+		copy.Timeout = 60 * time.Second // a placement variation checks its rendered sound
+		client = &copy
+	}
 	if method == http.MethodPost && resource.Path == "/api/midi/input" {
 		copy := *client
 		copy.Timeout = 0 // The mounted Live panel owns this input stream.

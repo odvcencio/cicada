@@ -59,6 +59,9 @@ func (t Track) canRecordPattern(id string) bool {
 }
 
 type Pattern struct {
+	// CopySource emits an independent local declaration from the compiled
+	// musical material, without writing or depending on its owning source.
+	CopySource  func(name string) (string, error) `json:"-"`
 	Performance *seq.Performance
 	ID, Kind    string
 	Steps       uint8

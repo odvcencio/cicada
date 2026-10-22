@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
+	"m31labs.dev/gosx/server"
 )
 
 func placementURL(id string) string { return "/?panel=session&placement=" + url.QueryEscape(id) }
@@ -94,7 +95,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 				gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...))))
 }
 
-func (s *studioApp) placementEditors(v workspace, csrf string, placements []project.Placement, selected string, end int64) gosx.Node {
+func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf string, placements []project.Placement, selected string, end int64) gosx.Node {
 	p := v.Project
 	var tracks []string
 	var contents []string
@@ -158,6 +159,7 @@ func (s *studioApp) placementEditors(v workspace, csrf string, placements []proj
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), update),
 			s.placementListening(v, csrf, placement.ID),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("a", gosx.Attrs(gosx.Attr("href", contentURL)), gosx.Text("Edit "+placement.Content)), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=sampler&placement="+url.QueryEscape(placement.ID))), gosx.Text("Sample into pads")), remove),
+			s.placementVariation(ctx, v, csrf, placement),
 			gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-copy")), gosx.El("summary", gosx.Text("Make a copy")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), duplicate))))
 	}
 	var markerForms []gosx.Node

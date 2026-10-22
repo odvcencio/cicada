@@ -131,6 +131,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"updateplacement":        &edits.UpdatePlacement{Entity: "placement:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
 		"addplacement":           &edits.AddPlacement{Name: "ending", Settings: &edits.PlacementSettings{At: "@9.1.1", Length: "1bars", Track: "lead", Content: "melody"}},
 		"copyplacement":          &edits.CopyPlacement{Entity: "placement:foreign", Name: "copy", Settings: &edits.PlacementSettings{At: "@9.1.1"}},
+		"varyplacement":          &edits.VaryPlacement{Entity: "placement:foreign", Name: "independent"},
 		"removeplacement":        &edits.RemovePlacement{Entity: "placement:foreign"},
 		"setmarker":              &edits.SetMarker{Entity: "marker:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
 		"addmarker":              &edits.AddMarker{Name: "finish", Settings: &edits.PlacementSettings{At: "@9.1.1"}},

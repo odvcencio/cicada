@@ -28,7 +28,7 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 		return s.collaborationPanel(ctx)
 	case "session":
 		registerArrangementTempos(ctx)
-		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(v, csrf, ctx.Request.URL.Query().Get("placement")), s.continuousAutomation(ctx, v, csrf), s.automation(ctx, v, csrf))
+		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(ctx, v, csrf, ctx.Request.URL.Query().Get("placement")), s.continuousAutomation(ctx, v, csrf), s.automation(ctx, v, csrf))
 	case "patterns":
 		return s.patterns(ctx, v, csrf)
 	case "generator":
@@ -142,13 +142,13 @@ func utf16Offsets(text string) []int {
 	return positions
 }
 
-func (s *studioApp) session(v workspace, csrf, selected string) gosx.Node {
+func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected string) gosx.Node {
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the session"))
 	}
 	p := v.Project
 	if len(p.Scenes) == 0 {
-		return s.arrangement(v, csrf, selected)
+		return s.arrangement(ctx, v, csrf, selected)
 	}
 	var heads []gosx.Node
 	heads = append(heads, gosx.El("th", gosx.Text("Track")))
@@ -172,7 +172,7 @@ func (s *studioApp) session(v workspace, csrf, selected string) gosx.Node {
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
-	return gosx.Fragment(s.arrangement(v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
+	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
