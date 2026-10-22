@@ -20,7 +20,10 @@ sample with **Split across pads**. Imports fill all sixteen pads; other chop
 commands fill the first requested number of pads. Chopping divides the source
 into equal regions. Adjust boundaries manually for attacks or phrase endings.
 
-Select a pad's **Edit** link. Drag either gold waveform boundary, or enter
+Select a pad's **Edit** link. Drag the **IN** or **OUT** waveform handle, or
+focus one and use arrow keys (1 ms), Shift-arrow (10 ms), or Alt-arrow
+(one frame). Home and End reach the allowed limits. Escape cancels a held
+drag. The waveform stays readable in narrow windows. You can also enter
 start and end frames, then **Save pad**. End is exclusive. The original sample
 is preserved. Pad settings include pitch, gain, reverse, attack and release,
 one-shot or gate playback, and choke groups. Pitch changes playback speed and

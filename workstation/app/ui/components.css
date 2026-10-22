@@ -205,12 +205,14 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .session-listening p { margin-bottom: 0; }
 .placement-listening { margin: 12px 0; }
 .listening-status { flex-basis: 100%; color: var(--amber); overflow-wrap: anywhere; }
+#sampler-panel { container:sampler / inline-size; min-width:0; }
 #cicada-sampler { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:18px; align-items:start; }
 .sampler-pad-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; grid-column:1; grid-row:1/5; }
 .sampler-pad { min-width:0; }
 .sampler-pad button { position:relative; display:flex; flex-direction:column; justify-content:center; gap:8px; width:100%; min-height:118px; padding:26px 10px 22px; text-align:left; background:#233c30; border-color:#416956; touch-action:none; }
-.sampler-pad strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; font-size:13px; }
-.sampler-pad small { color:var(--muted); font-size:11px; }
+#sampler-panel .sampler-pad button { min-height:118px; padding:26px 10px 22px; }
+.sampler-pad strong { line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; font-size:13px; }
+.sampler-pad small { color:var(--muted); font-size:11px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .sampler-pad .pad-number { position:absolute; top:8px; left:10px; color:var(--mint); font:12px monospace; }
 .sampler-pad kbd { position:absolute; bottom:7px; right:9px; font:11px monospace; color:var(--muted); }
 .sampler-pad a { display:block; padding:5px 2px; font-size:11px; }
@@ -218,8 +220,16 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .sampler-pad button[data-playing=true] { background:var(--mint); color:var(--bg); }
 .sampler-pad button[data-playing=true] small,.sampler-pad button[data-playing=true] .pad-number { color:var(--bg); }
 .sampler-wave { min-width:0; grid-column:2; grid-row:1; }
-.sampler-wave canvas { display:block; width:100%; height:auto; border:1px solid var(--border); border-radius:6px; touch-action:none; }
-.sampler-wave p { font-size:12px; }
+.sampler-wave-plot { position:relative; height:180px; overflow:hidden; border:1px solid var(--border); border-radius:6px; touch-action:none; }
+.sampler-wave-plot svg { display:block; width:100%; height:100%; }
+.sampler-boundary { position:absolute; top:0; bottom:0; width:24px; padding:0; border:0; border-radius:0; background:transparent; color:var(--amber); cursor:ew-resize; touch-action:none; pointer-events:none; }
+.sampler-boundary[data-sampler-boundary=start] { left:0; }
+.sampler-boundary[data-sampler-boundary=end] { right:0; }
+.sampler-boundary span { position:absolute; top:6px; left:0; width:24px; padding:4px 0; background:var(--amber); color:var(--bg); font:10px monospace; min-height:24px; box-sizing:border-box; pointer-events:auto; }
+.sampler-boundary[data-sampler-boundary=end] span { top:auto; bottom:6px; }
+.sampler-boundary:focus-visible { outline:2px solid var(--mint); outline-offset:-2px; background:#88d9bb26; }
+.sampler-boundary:disabled { visibility:hidden; }
+.sampler-wave p { font-size:12px; overflow-wrap:anywhere; }
 .sampler-performance { grid-column:2; grid-row:2; }
 .sampler-performance input[type=number] { width:76px; }
 .sampler-event-strip { position:relative; min-height:30px; border-bottom:1px solid var(--border); grid-column:2; grid-row:3; overflow:hidden; }
@@ -239,11 +249,11 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 #sampler-sources .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:10px; }
 #sampler-sources label { flex:1 1 140px; min-width:0; }
 #sampler-sources input,#sampler-sources select { max-width:100%; }
-@media (max-width:800px) {
+@container sampler (max-width:800px) {
  #cicada-sampler,.sampler-editors,#sampler-sources { display:block; }
  #sampler-sources .action-form { margin-top:16px; }
  .sampler-pad-grid { margin-bottom:18px; }
- .sampler-pad button { min-height:92px; padding:24px 6px 20px; }
+ #sampler-panel .sampler-pad button { min-height:92px; padding:24px 6px 20px; }
  .sampler-pad strong { font-size:11px; }
  .sampler-pad small { font-size:10px; }
  .sampler-wave,.sampler-performance,.sampler-event-strip,#cicada-sampler > details { margin-bottom:18px; }
