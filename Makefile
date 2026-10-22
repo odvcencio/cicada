@@ -18,6 +18,8 @@ test-wam2: build-wam2
 
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
+# Keep the core's standard library identical across host compilers and runners.
+KERNEL_WASM_GO_VERSION ?= go1.25.6
 # Size optimization keeps the richer bounded voice engine within its existing
 # download budget. Audio parity and browser callback budgets gate this build.
 KERNEL_WASM_OPT ?= z
@@ -191,7 +193,8 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
+	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false GOTOOLCHAIN=$(KERNEL_WASM_GO_VERSION) sh -c '\
+		tinygo version && sh scripts/wasm-opt.sh --version && \
 		tinygo build -tags cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
 		sh scripts/wasm-opt.sh $(KERNEL_WASM_BINARYEN_FLAGS) build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
 		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \

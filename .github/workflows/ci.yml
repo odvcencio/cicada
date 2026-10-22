@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  WASMOPT: wasm-opt
+
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
@@ -49,7 +52,8 @@ jobs:
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
-          install-binaryen: 'false'
+          install-binaryen: 'true'
+          binaryen-version: '133'
       - name: Render all examples with amd64 and WASM
         run: |
           set -euo pipefail
@@ -123,7 +127,8 @@ jobs:
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
-          install-binaryen: 'false'
+          install-binaryen: 'true'
+          binaryen-version: '133'
       - name: Tool versions
         run: |
           go version
@@ -146,7 +151,8 @@ jobs:
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
-          install-binaryen: 'false'
+          install-binaryen: 'true'
+          binaryen-version: '133'
       - name: Tool versions
         run: |
           go version
@@ -238,7 +244,8 @@ jobs:
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
-          install-binaryen: 'false'
+          install-binaryen: 'true'
+          binaryen-version: '133'
       - name: Supported Node for browser checks
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -1189,7 +1196,8 @@ jobs:
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
-          install-binaryen: 'false'
+          install-binaryen: 'true'
+          binaryen-version: '133'
       # The runner's system Node is too old for the demo browser test, which
       # needs the global WebSocket that Node 22 provides.
       - name: Supported Node for browser checks
@@ -1266,7 +1274,8 @@ jobs:
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
-          install-binaryen: 'false'
+          install-binaryen: 'true'
+          binaryen-version: '133'
       - name: Supported Node for browser checks
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
