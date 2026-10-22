@@ -418,6 +418,14 @@ MIDI, and the portable audio kernel retain the performed gates and velocities.
 WAV and stems render the gestures. MIDI exports them as independent MPE
 channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
+Note edits, individual and shared gestures, lane creation and binding, and
+loop-length edits save to the project file that owns the performance. Each
+change has one Undo step, including phrases in secondary files. Studio checks
+the full project version shown by the form; an outside save refuses the edit
+and keeps the outside file intact. Inline feedback keeps failed inputs
+available to review before refreshing. Imported library definitions remain
+protected; create a local variation before editing them.
+
 **Hear with** stays with the phrase as you select and edit notes, individual
 gestures, shared lanes and timing. Changing the audition sound keeps local
 draft inputs mounted and adds no browser history entry. The choice is carried

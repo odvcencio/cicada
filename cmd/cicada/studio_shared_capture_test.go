@@ -11,6 +11,7 @@ import (
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 	"m31labs.dev/cicada/smf"
 )
@@ -46,7 +47,8 @@ func testStudioSharedCapture(t *testing.T, kind string) {
 	if performance == nil || len(performance.Groups) != 1 || performance.Groups[0].Name != prefix+"-1" || performance.LengthTicks != 7680 || performance.Notes[0].Group != 1 || performance.Notes[0].EndTick != 660 || performance.Notes[0].Expressions[0].Value.PitchCents != 25 || performance.Groups[0].Points[2].Tick != 4160 {
 		t.Fatal("record API lost shared or local data", performance)
 	}
-	change := studioEdit{Revision: studioRevision(saved), Action: "shared-gesture", Pattern: "phrase", SharedExpression: &edit.SetSharedExpression{GroupIndex: 0, Index: 1, Tick: 960, PitchCents: 150, Pressure: .8, Timbre: .7}}
+	receipt, _ := project.ReadScoreRevision(path)
+	change := studioEdit{Revision: studioRevision(saved), SourceRevision: receipt, Action: "shared-gesture", Pattern: "phrase", SharedExpression: &edit.SetSharedExpression{GroupIndex: 0, Index: 1, Tick: 960, PitchCents: 150, Pressure: .8, Timbre: .7}}
 	if r := studioCall(t, handler, "/api/pattern", change); r.Code != 200 {
 		t.Fatal(r.Code, r.Body)
 	}

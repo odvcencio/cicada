@@ -45,12 +45,14 @@ song { main }
 	if r := studioCall(t, handler, "/api/record", take); r.Code != 409 {
 		t.Fatal("stale take was applied again", r.Code)
 	}
-	change := studioEdit{Revision: studioRevision(performed), Action: "performed-note", Pattern: "phrase", PerformanceNote: &edit.SetPerformedNote{Index: 1, Tick: 23, EndTick: 1200, Pitch: 67, Velocity: 88}}
+	receipt, _ := project.ReadScoreRevision(path)
+	change := studioEdit{Revision: studioRevision(performed), SourceRevision: receipt, Action: "performed-note", Pattern: "phrase", PerformanceNote: &edit.SetPerformedNote{Index: 1, Tick: 23, EndTick: 1200, Pitch: 67, Velocity: 88}}
 	if r := studioCall(t, handler, "/api/pattern", change); r.Code != 200 {
 		t.Fatalf("performed edit: %d %s", r.Code, r.Body.String())
 	}
 	edited, _ := os.ReadFile(path)
-	if r := studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(edited), Action: "performance-length", Pattern: "phrase", PerformanceLength: 3840}); r.Code != 422 {
+	receipt, _ = project.ReadScoreRevision(path)
+	if r := studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(edited), SourceRevision: receipt, Action: "performance-length", Pattern: "phrase", PerformanceLength: 3840}); r.Code != 422 {
 		t.Fatal("loop shortening discarded held notes", r.Code)
 	}
 	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(edited)}); r.Code != 200 {
@@ -78,7 +80,8 @@ scene main { lead=phrase }
 song { main }
 `
 	_, handler, path := proposalFixture(t, source)
-	change := studioEdit{Revision: studioRevision([]byte(source)), Action: "performed-gesture", Pattern: "phrase", PerformanceExpression: &edit.SetPerformedExpression{Entity: "wrong-pattern", NoteIndex: 0, Index: 1, Tick: 123, PitchCents: -123.5, Pressure: .7, Timbre: .8, VibratoRateHz: 7.25, VibratoDepthCents: 14.5}}
+	receipt, _ := project.ReadScoreRevision(path)
+	change := studioEdit{Revision: studioRevision([]byte(source)), SourceRevision: receipt, Action: "performed-gesture", Pattern: "phrase", PerformanceExpression: &edit.SetPerformedExpression{Entity: "wrong-pattern", NoteIndex: 0, Index: 1, Tick: 123, PitchCents: -123.5, Pressure: .7, Timbre: .8, VibratoRateHz: 7.25, VibratoDepthCents: 14.5}}
 	if r := studioCall(t, handler, "/api/pattern", change); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}

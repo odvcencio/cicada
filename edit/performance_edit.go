@@ -261,7 +261,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 	if err := performance.Validate(); err != nil {
 		return err
 	}
-	if err := replacePerformedPattern(ctx, id, performance, true); err != nil {
+	if err := replaceProjectPerformance(ctx, id, performance, true, true); err != nil {
 		return err
 	}
 	ctx.SetLabel("Performance · " + id + " edited")

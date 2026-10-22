@@ -26,7 +26,9 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
-		if f["action"] == "bind" || f["action"] == "create" || f["action"] == "duplicate" || f["action"] == "performance-scale" || f["action"] == "performance-pitch" {
+		switch f["action"] {
+		case "bind", "create", "duplicate", "performance-scale", "performance-pitch",
+			"performed-note", "performance-length", "performed-gesture", "performance-group", "performance-binding", "shared-gesture":
 			p["source_revision"] = f["source_revision"]
 		}
 		switch f["action"] {

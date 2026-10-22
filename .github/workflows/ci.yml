@@ -693,6 +693,28 @@ jobs:
             fi
           done
           python3 workstation/browser/performance-pitch-audio.py --cicada build/cicada --proof build/studio-performance-pitch-proof
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          node workstation/browser/performance-sources.test.cjs --write-fixture "$browser_root/performance-sources" > build/studio-performance-sources-fixture.json
+          export CICADA_SOURCES_FIXTURE="$PWD/build/studio-performance-sources-fixture.json"
+          for sources_phase in journey reopen; do
+            ./build/cicada studio "$browser_root/performance-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-sources-$sources_phase-server.log" 2>&1 &
+            studio_pid=$!
+            for _ in $(seq 1 100); do
+              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+              kill -0 "$studio_pid"
+              sleep 0.1
+            done
+            CICADA_SOURCES_REOPEN=0
+            if [[ "$sources_phase" == reopen ]]; then CICADA_SOURCES_REOPEN=1; fi
+            export CICADA_SOURCES_REOPEN
+            CICADA_SOURCES_PROOF_DIR="$PWD/build/studio-performance-sources-proof" node --test workstation/browser/performance-sources.test.cjs | tee "build/studio-performance-sources-$sources_phase-report.txt"
+            if [[ "$sources_phase" == journey ]]; then
+              kill "$studio_pid"
+              wait "$studio_pid" || true
+            fi
+          done
+          python3 workstation/browser/performance-sources-audio.py --cicada build/cicada --proof build/studio-performance-sources-proof
           for print_layout in primary secondary song controls tempo; do
             print_args=()
             print_phases=(sampler producer roundtrip reopen)
@@ -853,6 +875,10 @@ jobs:
             build/studio-performance-pitch-*-server.log
             build/studio-performance-pitch-fixture.json
             build/studio-performance-pitch-proof/
+            build/studio-performance-sources-*-report.txt
+            build/studio-performance-sources-*-server.log
+            build/studio-performance-sources-fixture.json
+            build/studio-performance-sources-proof/
             build/studio-print-*-report.txt
             build/studio-print-*-server.log
             build/studio-print-*-fixture.json
@@ -989,6 +1015,8 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/sound-context --mode normal --timeout 240 --project-fixture build/native-sound-context/main.cicada --workflow desktop/testdata/native-sound-context-workflow.js
           node workstation/browser/performance-pitch.test.cjs --write-fixture build/native-performance-pitch > build/native-performance-pitch-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/performance-pitch --mode normal --timeout 240 --project-fixture build/native-performance-pitch/main.cicada --workflow desktop/testdata/native-performance-pitch-workflow.js
+          node workstation/browser/performance-sources.test.cjs --write-fixture build/native-performance-sources > build/native-performance-sources-fixture.json
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/performance-sources --mode normal --timeout 300 --project-fixture build/native-performance-sources/main.cicada --workflow desktop/testdata/native-performance-sources-workflow.js
           go -C workstation run ./browser/testdata/print-sources --sampler-bank > build/native-print-sources-fixture.json
           print_score="$(node -e 'process.stdout.write(require("./build/native-print-sources-fixture.json").score)')"
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/print-sources --mode normal --timeout 180 --project-fixture "$print_score" --workflow desktop/testdata/native-print-sources-workflow.js

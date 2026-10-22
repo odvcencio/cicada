@@ -248,7 +248,31 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "missing revision"})
 		return
 	}
-	s.applyIntents(w, studioEdit{Revision: env.Revision, Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+	s.applyIntents(w, studioEdit{Revision: env.Revision, SourceRevision: r.Header.Get("X-Cicada-Source-Revision"), Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+}
+
+// Performed edits can replace declarations in owned secondary sources. The
+// entry revision alone cannot prove that the musician saw those source bytes.
+func performanceReceiptRequired(env edits.Envelope) bool {
+	if env.DryRun {
+		return false
+	}
+	for _, intent := range env.Intents {
+		switch intent.(type) {
+		case *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
+			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
+			*edits.ScalePerformance, *edits.ShapePerformancePitch:
+			return true
+		}
+	}
+	return false
+}
+
+func performanceConflictMessage(env edits.Envelope, message string) string {
+	if performanceReceiptRequired(env) && strings.Contains(message, edits.ErrProjectChanged.Error()) {
+		return "Saved project files or libraries changed. Refresh Studio before saving this edit."
+	}
+	return message
 }
 
 // intentDiff includes auxiliary changes so a dry run shows the whole batch.
@@ -270,6 +294,10 @@ func intentDiff(before []byte, result *edits.Result, name string) string {
 func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, prepare func([]byte, *edits.Options) (edits.Envelope, error), finish func(*edits.Result) error, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if performanceReceiptRequired(env) && edit.SourceRevision == "" {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "refresh Studio before editing this phrase"})
+		return
+	}
 	if writer == edits.ParamWriterMixer && s.captureID != "" {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": errMixerDuringCapture.Error()})
 		return
@@ -293,7 +321,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": performanceConflictMessage(env, err.Error())})
 		return
 	}
 	opts, err := s.editOptions(current, nil)
@@ -367,6 +395,9 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusConflict {
+		if message, ok := outcome.Response["error"].(string); ok {
+			outcome.Response["error"] = performanceConflictMessage(env, message)
+		}
 		if latest, err := os.ReadFile(s.path); err == nil {
 			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
 		}

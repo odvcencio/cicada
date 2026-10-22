@@ -75,7 +75,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"pattern melody acid steps=4 { c4^ . . . }\npattern beat drums steps=4 { bd: x... }\n" +
 		"pattern keys-line notes steps=4 { c4 . . . }\n" +
 		"pattern empty acid steps=4 { . . . .\n bend: 0ct 0ct 0ct 0ct\n vibrato: 0ct 0ct 0ct 0ct\n pressure: 0 0 0 0\n timbre: 0.5 0.5 0.5 0.5\n}\n" +
-		"pattern played performance length=3840ticks { note 60 at=17ticks length=703ticks velocity=82; }\n" +
+		"pattern played performance length=3840ticks { gesture-group touch { gesture at=0ticks bend=25ct pressure=0.2 timbre=0.5; } note 60 at=17ticks length=703ticks velocity=82 group=touch; }\n" +
 		"scene recording { lead=empty }\n" + scene + "\nscene other { lead=melody }\nsong { main*2 other recording }\n"
 	// Every foreign line/column lands in valid unrelated entry-file comments,
 	// so compilation cannot mask a writer that silently uses those offsets.
@@ -84,9 +84,9 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 	fixtures := map[string]edits.Intent{
 		"setchord":               &edits.SetChord{Entity: "step:keys-line/0", Notes: []int{60, 64, 67}, Hold: 2, Shared: "pattern"},
 		"createpattern":          &edits.CreatePattern{Name: "new-phrase", Track: "keys", Steps: 16, Scene: "main"},
-		"setperformancegroup":    &edits.SetPerformanceGroup{Entity: "pattern:played", Index: 0, Name: "touch"},
+		"setperformancegroup":    &edits.SetPerformanceGroup{Entity: "pattern:played", Index: 0, Name: "swell"},
 		"bindperformedgroup":     &edits.BindPerformedGroup{Entity: "pattern:played", NoteIndex: 0, Group: 0},
-		"setsharedexpression":    &edits.SetSharedExpression{Entity: "pattern:played", GroupIndex: 0, Index: 0, Timbre: .5},
+		"setsharedexpression":    &edits.SetSharedExpression{Entity: "pattern:played", GroupIndex: 0, Index: 0, Pressure: .7, Timbre: .5},
 		"setperformedexpression": &edits.SetPerformedExpression{Entity: "pattern:played", NoteIndex: 0, Index: 0, Tick: 123, PitchCents: 25, Pressure: .7, Timbre: .8},
 		"setperformednote":       &edits.SetPerformedNote{Entity: "pattern:played", Index: 0, Tick: 19, EndTick: 800, Pitch: 64, Velocity: 101},
 		"resizeperformance":      &edits.ResizePerformance{Entity: "pattern:played", LengthTicks: 7680},
@@ -195,6 +195,32 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
+					case "setperformednote", "resizeperformance", "setperformedexpression", "setperformancegroup", "bindperformedgroup", "setsharedexpression":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
+							t.Fatalf("performed edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)
+						}
+						var played *edits.Pattern
+						for i := range result.Plan.Patterns {
+							if result.Plan.Patterns[i].ID == "played" {
+								played = &result.Plan.Patterns[i]
+								break
+							}
+						}
+						if played == nil || played.Performance == nil {
+							t.Fatal("performed edit lost its compiled pattern")
+						}
+						p := played.Performance
+						valid := map[string]bool{
+							"setperformednote":       p.Notes[0].Tick == 19 && p.Notes[0].EndTick == 800 && p.Notes[0].Note == 64 && p.Notes[0].Velocity == 101,
+							"resizeperformance":      p.LengthTicks == 7680,
+							"setperformedexpression": len(p.Notes[0].Expressions) == 1 && p.Notes[0].Expressions[0].Tick == 123,
+							"setperformancegroup":    p.Groups[0].Name == "swell",
+							"bindperformedgroup":     p.Notes[0].Group == 0,
+							"setsharedexpression":    p.Groups[0].Points[0].Value.Pressure == .7,
+						}
+						if !valid[kind] {
+							t.Fatal("performed edit changed its meaning", kind, p)
+						}
 					case "shapeperformancepitch":
 						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("note 72 at=17ticks length=703ticks velocity=82")) {
 							t.Fatalf("pitch shaping did not edit its owning source: candidate=%v error=%v", result != nil, err)

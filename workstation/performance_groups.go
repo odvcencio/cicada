@@ -31,8 +31,9 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 	link := func(i int) string {
 		return base + "&group=" + strconv.Itoa(selected) + "&shared_point=" + strconv.Itoa(i) + "#shared-gestures"
 	}
-	form := func(returnTo string, children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form gesture-inspector"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("track", query.Get("track")), hidden("scene", query.Get("scene")), hidden("note_index", strconv.Itoa(noteIndex))}, children...)...)
+	form := func(returnTo, operation string, children ...gosx.Node) gosx.Node {
+		children = append(children, performanceFormStatus(ctx, p.ID, operation))
+		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form gesture-inspector"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("action", operation), hidden("source_revision", v.SourceRevision), hidden("track", query.Get("track")), hidden("scene", query.Get("scene")), hidden("note_index", strconv.Itoa(noteIndex))}, children...)...)
 	}
 	children := []gosx.Node{
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "gesture-heading")), gosx.El("h3", gosx.Text("Shared gestures")), gosx.El("span", gosx.Text(fmt.Sprintf("%d %s · %d ticks per loop", len(groups), laneUnit, p.Performance.LengthTicks)))),
@@ -54,7 +55,7 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 		for i, group := range groups {
 			options = append(options, option(strconv.Itoa(i+1), group.Name, int(note.Group) == i+1))
 		}
-		children = append(children, form(laneURL(selected), hidden("action", "performance-binding"), field(performancePitch(int(note.Note)+int(p.Transpose))+" · Shared lane", gosx.El("select", gosx.Attrs(gosx.Attr("name", "group")), gosx.Fragment(options...))), submit("", "", "Bind note")))
+		children = append(children, form(laneURL(selected), "performance-binding", field(performancePitch(int(note.Note)+int(p.Transpose))+" · Shared lane", gosx.El("select", gosx.Attrs(gosx.Attr("name", "group")), gosx.Fragment(options...))), submit("", "", "Bind note")))
 	}
 	name, label := "", "Create shared lane"
 	if selected < len(groups) {
@@ -64,11 +65,11 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 	if !state.OK() && state.Value("revision") == v.Revision && state.Value("pattern") == p.ID && state.Value("action") == "performance-group" && state.Value("index") == strconv.Itoa(selected) {
 		name = state.Value("name")
 	}
-	groupFields := []gosx.Node{hidden("action", "performance-group"), hidden("index", strconv.Itoa(selected)), field("Lane name", gosx.El("input", gosx.Attrs(gosx.Attr("name", "name"), gosx.Attr("value", name), gosx.Attr("maxlength", "64"), gosx.Attr("pattern", "[a-z_][a-z0-9_\\-]*"), gosx.Attr("required", true)))), submit("intent", "save", label)}
+	groupFields := []gosx.Node{hidden("index", strconv.Itoa(selected)), field("Lane name", gosx.El("input", gosx.Attrs(gosx.Attr("name", "name"), gosx.Attr("value", name), gosx.Attr("maxlength", "64"), gosx.Attr("pattern", "[a-z_][a-z0-9_\\-]*"), gosx.Attr("required", true)))), submit("intent", "save", label)}
 	if selected < len(groups) {
 		groupFields = append(groupFields, submit("intent", "remove", "Remove shared lane"))
 	}
-	children = append(children, form(laneURL(selected), groupFields...))
+	children = append(children, form(laneURL(selected), "performance-group", groupFields...))
 	if selected == len(groups) {
 		return gosx.El("section", gosx.Attrs(gosx.Attr("id", "shared-gestures"), gosx.Attr("class", "performance-gestures")), gosx.Fragment(children...))
 	}
@@ -118,7 +119,7 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 		}
 		return gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", name), gosx.Attr("value", text), gosx.Attr("min", low), gosx.Attr("max", high), gosx.Attr("step", step)))
 	}
-	fields := []gosx.Node{hidden("action", "shared-gesture"), hidden("group_index", strconv.Itoa(selected)), hidden("index", strconv.Itoa(pointIndex)), field("Tick in loop", input("tick", float64(point.Tick), "0", strconv.FormatInt(p.Performance.LengthTicks-1, 10))), field("Shared bend · cents", input("pitch_cents", float64(point.Value.PitchCents), "-9600", "9600")), field("Shared pressure · 0–1", input("pressure", float64(point.Value.Pressure), "0", "1")), field("Shared timbre · 0–1", input("timbre", float64(point.Value.Timbre), "0", "1")), submit("intent", "save", pointLabel)}
+	fields := []gosx.Node{hidden("group_index", strconv.Itoa(selected)), hidden("index", strconv.Itoa(pointIndex)), field("Tick in loop", input("tick", float64(point.Tick), "0", strconv.FormatInt(p.Performance.LengthTicks-1, 10))), field("Shared bend · cents", input("pitch_cents", float64(point.Value.PitchCents), "-9600", "9600")), field("Shared pressure · 0–1", input("pressure", float64(point.Value.Pressure), "0", "1")), field("Shared timbre · 0–1", input("timbre", float64(point.Value.Timbre), "0", "1")), submit("intent", "save", pointLabel)}
 	if pointIndex < len(points) && len(points) > 1 {
 		fields = append(fields, submit("intent", "remove", "Remove shared point"))
 	}
@@ -128,7 +129,7 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 	}
 	children = append(children,
 		gestureTraceLabeled(points, p.Performance.LengthTicks, pointIndex, group.Name+" · shared values in loop time · release tails follow this lane", "Shared bend, pressure and timbre over the pattern loop"),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "gesture-content")), gosx.El("div", gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("role", "region"), gosx.Attr("tabindex", "0"), gosx.Attr("aria-label", "Shared gesture points")), gosx.El("table", gosx.El("caption", gosx.Text(fmt.Sprintf("Points %d–%d of %d", min(start+1, end), end, len(points)))), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...)))), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Shared gesture pages")), gosx.Fragment(pages...))), form(link(pointIndex), fields...)),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "gesture-content")), gosx.El("div", gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("role", "region"), gosx.Attr("tabindex", "0"), gosx.Attr("aria-label", "Shared gesture points")), gosx.El("table", gosx.El("caption", gosx.Text(fmt.Sprintf("Points %d–%d of %d", min(start+1, end), end, len(points)))), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...)))), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Shared gesture pages")), gosx.Fragment(pages...))), form(link(pointIndex), "shared-gesture", fields...)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Each point holds until the next. A new loop starts with neutral values unless a point sets them at tick 0. Saving, binding and removing have Undo. Unbind a lane’s notes before removing it.")))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "shared-gestures"), gosx.Attr("class", "performance-gestures")), gosx.Fragment(children...))
 }

@@ -20,8 +20,9 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		return patternContextURL(raw, ctx.Request.URL.Query().Get("track"), ctx.Request.URL.Query().Get("scene"))
 	}
 	returnTo := contextURL(patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(selected))
-	form := func(children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene"))}, children...)...)
+	form := func(operation string, children ...gosx.Node) gosx.Node {
+		children = append(children, performanceFormStatus(ctx, p.ID, operation))
+		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("action", operation), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene"))}, children...)...)
 	}
 	var notes []control.Note
 	var rows []gosx.Node
@@ -60,7 +61,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		}
 		return numberInput(name, text, strconv.FormatInt(low, 10), strconv.FormatInt(high, 10))
 	}
-	children := []gosx.Node{hidden("action", "performed-note"), hidden("index", strconv.Itoa(selected)),
+	children := []gosx.Node{hidden("index", strconv.Itoa(selected)),
 		field("MIDI pitch", number("pitch", int64(pitch), 0, 127)),
 		field("Start tick", number("tick", tick, 0, performance.LengthTicks-1)),
 		field("End tick", number("end_tick", end, 1, performance.LengthTicks)),
@@ -68,7 +69,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 	if selected < len(performance.Notes) && len(performance.Notes) > 1 {
 		children = append(children, submit("intent", "remove", "Remove note"))
 	}
-	inspector := gosx.El("section", gosx.Attrs(gosx.Attr("class", "step-inspector performance-inspector")), gosx.El("h3", gosx.Text(label)), form(children...))
+	inspector := gosx.El("section", gosx.Attrs(gosx.Attr("class", "step-inspector performance-inspector")), gosx.El("h3", gosx.Text(label)), form("performed-note", children...))
 	var transpose gosx.Node = gosx.Fragment()
 	if p.Transpose != 0 {
 		transpose = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("The chart includes the pattern’s %+d semitone transpose. MIDI pitch edits use the stored pitch before transpose.", p.Transpose)))
@@ -87,6 +88,6 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		s.performanceGestures(ctx, v, csrf, p, selected),
 		s.sharedGestures(ctx, v, csrf, p, selected),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("960 ticks per beat. Each note keeps its own gate, velocity and gestures; changes are saved in the score with Undo. Notes of the same pitch need separate tracks when their gates overlap.")),
-		gosx.El("details", gosx.El("summary", gosx.Text("Loop length")), form(hidden("action", "performance-length"), field("Length in ticks", number("length_ticks", performance.LengthTicks, 30, 1<<40)), submit("", "", "Save loop length")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("The loop must include every note’s end. Shortening refuses to discard notes."))))
+		gosx.El("details", gosx.El("summary", gosx.Text("Loop length")), form("performance-length", field("Length in ticks", number("length_ticks", performance.LengthTicks, 30, 1<<40)), submit("", "", "Save loop length")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("The loop must include every note’s end. Shortening refuses to discard notes."))))
 	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Played timing, independent gates, and a score you can edit."}, s.patternCreation(ctx, v, csrf, ""), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-editor")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)), workspace), s.patternManagement(ctx, v, csrf, p))
 }

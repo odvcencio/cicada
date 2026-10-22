@@ -112,6 +112,15 @@ has none. Successful writes append one record to `.cicada/edits.jsonl`.
 Studio accepts the same envelope at `POST /api/intents`, with a required
 `revision`. It commits the whole batch as one undoable edit. A dry run returns
 `diff`, the current `revision`, `valid: true`, and `dryRun: true` without saving.
+
+Committing performed-note, gesture, lane, loop-length, pitch or time edits
+through this HTTP endpoint also requires `X-Cicada-Source-Revision`, using the
+`sourceRevision` from the workspace projection that supplied the edit. This
+checks every project source before writing, including secondary definitions.
+The pattern HTTP endpoint carries the same receipt as `source_revision` in its
+JSON body; Studio's controls supply it automatically. Read-only dry runs do not
+require the header. The local CLI envelope format is unchanged.
+
 `shapeperformancepitch` takes `entity: "pattern:name"` and either
 `operation: "transpose"` with a nonzero `semitones` from −48 to +48, or
 `operation: "reflect"` with a `pivot` MIDI pitch from 0 to 127. The pivot is
