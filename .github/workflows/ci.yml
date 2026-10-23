@@ -291,7 +291,7 @@ jobs:
             mkdir -p "$browser_root/$suite"
             node workstation/browser/continuity.test.cjs --write-fixture "$browser_root/$suite/continuity.cicada"
           done
-          make build-core
+          make build-core build-kernel-wasm
           python3 scripts/check-studio-shutdown.py --cicada build/cicada --output build/studio-shutdown-proof
           studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
           export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
