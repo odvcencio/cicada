@@ -25,7 +25,7 @@ func TestStudioPitchEditPreservesOtherChordPitches(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				response := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "chords", Step: 0, Pitch: &pitch})
+				response := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(source), Pattern: "chords", Step: 0, Pitch: &pitch})
 				if response.Code != http.StatusOK {
 					t.Fatalf("chord edit failed: %d %s", response.Code, response.Body.String())
 				}
@@ -54,7 +54,7 @@ func TestStudioPitchGridWritesChosenNoteToSource(t *testing.T) {
 		t.Fatalf("studio did not project editable pitch rows with correct step indices: %d", page.Code)
 	}
 	pitch := 48 // C3, inside the displayed range of the fixture
-	result := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision([]byte(studioScore)), Pattern: "pulse", Step: 1, Pitch: &pitch})
+	result := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision([]byte(studioScore)), Pattern: "pulse", Step: 1, Pitch: &pitch})
 	if result.Code != 200 {
 		t.Fatalf("pitch edit failed: %d %s", result.Code, result.Body.String())
 	}
@@ -62,7 +62,7 @@ func TestStudioPitchGridWritesChosenNoteToSource(t *testing.T) {
 	if err != nil || !bytes.Contains(source, []byte("{ 1 c3 5 . }")) {
 		t.Fatalf("pitch grid did not write C3 into source: %s, %v", source, err)
 	}
-	result = studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "pulse", Step: 1, Pitch: &pitch})
+	result = studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(source), Pattern: "pulse", Step: 1, Pitch: &pitch})
 	if result.Code != 200 {
 		t.Fatalf("pitch clear failed: %d %s", result.Code, result.Body.String())
 	}
@@ -71,7 +71,7 @@ func TestStudioPitchGridWritesChosenNoteToSource(t *testing.T) {
 		t.Fatalf("clicking the active pitch did not restore the rest: %s, %v", source, err)
 	}
 	activePitch := 52 // E3 at step 3
-	result = studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "pulse", Step: 2, Pitch: &activePitch})
+	result = studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(source), Pattern: "pulse", Step: 2, Pitch: &activePitch})
 	if result.Code != 200 {
 		t.Fatalf("active pitch clear failed: %d %s", result.Code, result.Body.String())
 	}

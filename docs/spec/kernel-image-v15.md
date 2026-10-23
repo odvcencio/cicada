@@ -5,7 +5,9 @@ Version 15 extends the `CIC1` format with placements, prepared planar audio, and
 ## Compatibility and negotiation
 
 The magic is `CIC1`. All integers and IEEE floating-point fields use little
-endian. The only accepted versions are 8, 9, 10, 11, 12, 13 and 15. Existing
+endian. Version 16 appends an independent-gate table to this layout; see
+[kernel image version 16](kernel-image-v16.md). Accepted versions are 8–13,
+15, 16 and [17](kernel-image-v17.md). Existing
 8–13 readers retain their validation and layouts. Configurations needing none
 of the new fields are still written as **byte-identical version 13**.
 
@@ -51,6 +53,10 @@ chord fields and an empty footer. Feature presence never selects another layout.
    - Each schedule event (26 bytes): `u64 Tick, u64 EndTick, u8 Kind, u8 Track,
      u16 Scene, u16 Index, u32 ID`. Ticks are nonnegative signed-int64-domain
      musical ticks and must satisfy the engine's schedule bounds/ordering.
+     Kind 5 is a bar-boundary tempo step: `Tick == EndTick`, Track/Scene/Index
+     are zero, and the final word carries milli-BPM (20000–300000) instead of
+     a placement ID. Tempo steps must increase within the placement span.
+     Earlier decoders reject this unknown kind; they do not silently omit it.
    - Each resident asset: `u32 SampleRate, u32 Frames, u8 Stereo`, then Frames
      `f32` left samples and, iff Stereo=1, Frames `f32` right samples.
    - Each clip (42 bytes): `u16 Asset, u64 StartFrame, u64 EndFrame,

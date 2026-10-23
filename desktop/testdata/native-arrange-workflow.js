@@ -5,7 +5,7 @@
   if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
   if (window.__cicadaNativeArrangeSmokeRunning) return;
   window.__cicadaNativeArrangeSmokeRunning = true;
-  const checks = [], errors = [], submissions = [], posts = [], navigations = [], mutations = [];
+  const checks = [], errors = [], submissions = [], posts = [], navigations = [], mutations = [], checkpoints = [];
   let managedNavigations = 0;
   const documentIdentity = document;
   addEventListener('gosx:navigate', () => managedNavigations++);
@@ -16,11 +16,24 @@
     const request = args[0];
     const method = args[1]?.method || request?.method || 'GET';
     const pathname = new URL(typeof request === 'string' ? request : request.url, location.href).pathname;
-    if (method.toUpperCase() === 'POST' && pathname.startsWith('/__actions/')) posts.push(pathname);
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
+    const checkpoint = method.toUpperCase() === 'POST' && ['/__actions/source-checkpoint', '/__actions/note-checkpoint'].includes(pathname);
+    let recovery;
+    if (checkpoint) {
+      const headers = new Headers(args[1]?.headers || request?.headers);
+      const body = args[1]?.body;
+      const fields = JSON.parse(typeof body === 'string' ? body : new TextDecoder().decode(body));
+      const csrf = document.querySelector('input[name=csrf_token]')?.value;
+      if (!csrf || headers.get('X-CSRF-Token') !== csrf || !Number.isSafeInteger(Number(fields.recoverySequence || fields.sequence)) || Number(fields.recoverySequence || fields.sequence) <= 0)
+        throw new Error('Recovery checkpoint lost its CSRF or sequence');
+      recovery = {pathname, content: fields.content, id: fields.recoveryId};
+      checkpoints.push(recovery);
+    }
+    if (!checkpoint && method.toUpperCase() === 'POST' && pathname.startsWith('/__actions/')) posts.push(pathname);
+    if (!checkpoint && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
       (pathname.startsWith('/__actions/') || pathname.startsWith('/api/'))) mutations.push(pathname);
     if (method.toUpperCase() === 'GET' && ['/studio', '/__workspace'].includes(pathname)) navigations.push(pathname);
-    return fetchOriginal.apply(this, args);
+    const pending = fetchOriginal.apply(this, args);
+    return checkpoint ? pending.then(response => { recovery.status = response.status; return response; }) : pending;
   };
   document.addEventListener('submit', event => {
     const form = event.target;
@@ -98,7 +111,7 @@
   async function unchanged(source, count) {
     await pause(200);
     if ((await state()).source !== source || posts.length !== count)
-      throw new Error('Protected keyboard context submitted an action or changed the score');
+      throw new Error('Protected keyboard context submitted an action or changed the score: ' + JSON.stringify({sourceChanged: (await state()).source !== source, requests: posts.slice(count)}));
     if ((await state('transport')).playing) throw new Error('Protected keyboard context started playback');
   }
   function fill(input, value) {
@@ -231,6 +244,10 @@ arrange {
       document.querySelector('#view-tab-' + view).click();
       await wait(() => !document.querySelector('#view-panel-' + view).hidden, view + ' before Arrange pane links');
     }
+    // Recovery publishes its receipt in the URL after the copy reaches disk.
+    // Establish that baseline before attributing URL changes to pane links.
+    await wait(() => checkpoints.some(copy => copy.content === linkDraft && copy.status === 200 &&
+      copy.id === new URL(location.href).searchParams.get('codeDraft')), 'Arrange draft recovery receipt');
     const linkBefore = await state();
     const linkQuery = location.search;
     const linkPosts = posts.length, linkNavigations = navigations.length, linkMutations = mutations.length;
@@ -443,7 +460,7 @@ arrange {
     if (capture.activeCapture || capture.input.enabled || (await state('audio/config')).options.inputEnabled)
       throw new Error('Arrange workflow unexpectedly opened capture');
     if (errors.length) throw new Error(errors.join('; '));
-    return {type: 'cicada-native-smoke', ok: true, checks};
+    return {type: 'cicada-native-smoke', ok: true, checks, recoveryCheckpoints: checkpoints.length};
   })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, error: String(error) + (error.stack ? '\n' + error.stack : ''), errors}))
     .then(result => window.chrome.webview.postMessage(JSON.stringify(result)));
 })();

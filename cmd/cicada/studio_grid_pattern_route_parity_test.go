@@ -189,6 +189,9 @@ func gridPatternRouteWithHandler(t *testing.T, c gridPatternRouteCase, factory f
 	}
 	body := c.body
 	body.Revision = studioRevision([]byte(source))
+	if body.Action != "duplicate" && body.Action != "bind" && body.Action != "create" {
+		body.SourceRevision = studioProjectReceipt(t, path)
+	}
 	if c.revision != "" {
 		body.Revision = c.revision
 	}
@@ -335,6 +338,9 @@ func TestGridPatternRoutesCommitPublicIntents(t *testing.T) {
 			handler, path := studioTestHandler(t)
 			body := c.body
 			body.Revision = studioRevision([]byte(studioScore))
+			if body.Action != "duplicate" && body.Action != "bind" && body.Action != "create" {
+				body.SourceRevision = studioProjectReceipt(t, path)
+			}
 			body.Author = "tester"
 			body.Session = "s1"
 			r := studioCall(t, handler, c.route, body)
@@ -371,11 +377,13 @@ func TestContinuityPatternRouteParity(t *testing.T) {
 	}
 }
 
-// Only these named transposed-chord cases differ from the legacy captures.
-// Byte, response, and label parity still apply everywhere else.
+// These named cases retain already-shipped transposed chords and resolved
+// variations. The four edition-2 variation references were also checked against
+// the preceding packaged app. All other legacy captures stay byte-for-byte.
 func gridPatternParityExpectation(t *testing.T, c gridPatternRouteCase, old gridPatternRouteSnapshot) gridPatternRouteSnapshot {
 	t.Helper()
-	if !strings.HasPrefix(c.name, "pattern/transposed phrase chord ") {
+	variation := strings.HasPrefix(c.name, "pattern/edition2 duplicate ")
+	if !variation && !strings.HasPrefix(c.name, "pattern/transposed phrase chord ") {
 		return old
 	}
 	want := old
@@ -383,11 +391,19 @@ func gridPatternParityExpectation(t *testing.T, c gridPatternRouteCase, old grid
 	for key, value := range old.Body {
 		want.Body[key] = value
 	}
-	for scalar, chord := range map[string]string{"d5^?70": "[d5 f5 a5]^?70", "d6^?70": "[d6 f6 a6]^?70"} {
-		if strings.Count(want.Source, scalar) != 1 {
-			t.Fatalf("parity exception %s lacks the old scalar %q", c.name, scalar)
+	if variation {
+		newline := "\n"
+		if strings.Contains(c.source, "\r\n") {
+			newline = "\r\n"
 		}
-		want.Source = strings.Replace(want.Source, scalar, chord, 1)
+		want.Source = c.source + newline + newline + strings.ReplaceAll("pattern variation acid {\n  swing = 54%\n  a2^ . e3~*2?70 - a3^ . e4~*2?70 -\n}\n", "\n", newline)
+	} else {
+		for scalar, chord := range map[string]string{"d5^?70": "[d5 f5 a5]^?70", "d6^?70": "[d6 f6 a6]^?70"} {
+			if strings.Count(want.Source, scalar) != 1 {
+				t.Fatalf("parity exception %s lacks the old scalar %q", c.name, scalar)
+			}
+			want.Source = strings.Replace(want.Source, scalar, chord, 1)
+		}
 	}
 	want.Body["source"] = want.Source
 	want.Body["revision"] = studioRevision([]byte(want.Source))

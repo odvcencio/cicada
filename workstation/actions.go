@@ -81,14 +81,22 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 			session.Current(ctx.Request).Delete("vocal-audition")
 		}
 		if path == "/api/source" || path == "/api/files" {
-			s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
+			if err := s.clearSourceDraft(ctx.Request, ctx.FormData["file"], ctx.FormData); err != nil {
+				return action.Error(503, "The file was saved, but its recovery copy could not be retired. The copy is retained: "+err.Error())
+			}
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}
 		ctx.FormData = nil
-		// Transport has no source projection to refresh. Its GoSX live binding
-		// updates in place, so a completed Play/Stop cannot redirect over a
-		// newer panel navigation. Native forms still use redirect-after-POST.
-		if path == "/api/transport" && action.WantsJSON(ctx.Request) {
+		// Transport and export update their live bindings without changing the
+		// score. Acknowledgement must not navigate away from their controls or
+		// replace unrelated drafts. Native forms retain redirect-after-POST.
+		if (path == "/api/transport" || path == "/api/export" || path == "/api/export/midi") && action.WantsJSON(ctx.Request) {
+			if path == "/api/export" {
+				ctx.SetResult(action.Result{OK: true, Message: "Rendering started."})
+			}
+			if path == "/api/export/midi" {
+				ctx.SetResult(action.Result{OK: true, Message: "MIDI is ready to download."})
+			}
 			return nil
 		}
 		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/"), "")
@@ -134,7 +142,9 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 	// and JSON callers. Do not decode again after choosing the merge revision.
 	ctx.Payload = nil
 	if ctx.FormData["intent"] == "discard" {
-		s.clearSourceDraft(ctx.Request, ctx.FormData["file"])
+		if err := s.clearSourceDraft(ctx.Request, ctx.FormData["file"], ctx.FormData); err != nil {
+			return action.Error(503, "The recovery copy could not be discarded. It is retained: "+err.Error())
+		}
 		ctx.FormData = nil
 		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/?panel=code"), "Draft discarded. The file is unchanged.")
 		return nil
@@ -178,7 +188,11 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 			if f["file"] != "" && f["fileRevision"] != "" {
 				revision = f["fileRevision"]
 			}
-			return map[string]any{"revision": revision, "file": f["file"], "action": command}, nil
+			payload := map[string]any{"revision": revision, "file": f["file"], "action": command}
+			if f["file"] == "" {
+				payload["source_revision"] = f["source_revision"]
+			}
+			return payload, nil
 		})(ctx)
 	}
 }
@@ -186,6 +200,7 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"source-checkpoint":     s.checkpointSource,
 		"transcribe":            s.transcribeMelody,
 		"transcription-apply":   s.applyTranscription,
 		"transcription-discard": s.discardTranscription,
@@ -224,9 +239,9 @@ func (s *studioApp) actions() map[string]action.Handler {
 						return nil, fmt.Errorf("curve tension must be −8 to +8")
 					}
 				}
-				return map[string]any{"revision": f["revision"], "action": f["action"], "path": f["path"], "value": map[string]any{"oldAt": f["oldAt"], "at": f["at"], "value": f["value"], "shape": f["shape"], "curve": curve}}, nil
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "path": f["path"], "value": map[string]any{"oldAt": f["oldAt"], "at": f["at"], "value": f["value"], "shape": f["shape"], "curve": curve}}, nil
 			}
-			return map[string]any{"revision": f["revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
+			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
 		}),
 		"clip": s.mutation("/api/clip", func(f map[string]string) (any, error) {
 			payload := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "scene": f["scene"], "track": f["track"]}
@@ -255,16 +270,19 @@ func (s *studioApp) actions() map[string]action.Handler {
 			}
 			return map[string]any{"revision": f["revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
 		}),
-		"pattern":        s.patternAction,
-		"sampler":        s.samplerAction,
-		"live":           s.liveAction,
-		"launch":         s.launchAction,
-		"note-preview":   s.previewNotes,
-		"note-commit":    s.commitNotes,
-		"loudness-reset": s.mutation("/api/loudness/reset", func(f map[string]string) (any, error) { return edit(f), nil }),
-		"generate":       s.generatePhrase,
-		"mutate":         s.mutatePhrase,
-		"source":         s.saveSource,
+		"pattern":         s.patternAction,
+		"sound-preview":   s.soundPreviewAction,
+		"sampler":         s.samplerAction,
+		"live":            s.liveAction,
+		"launch":          s.launchAction,
+		"note-preview":    s.previewNotes,
+		"note-commit":     s.commitNotes,
+		"note-checkpoint": s.checkpointNotes,
+		"note-restore":    s.restoreNotes,
+		"loudness-reset":  s.mutation("/api/loudness/reset", func(f map[string]string) (any, error) { return edit(f), nil }),
+		"generate":        s.generatePhrase,
+		"mutate":          s.mutatePhrase,
+		"source":          s.saveSource,
 		"toggle": s.mutation("/api/toggle", func(f map[string]string) (any, error) {
 			step, err := integer(f, "step")
 			if err != nil {
@@ -336,8 +354,19 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return p, nil
 		}),
 		"arrange": s.mutation("/api/arrange", func(f map[string]string) (any, error) {
+			if f["action"] == "set-tempo" || f["action"] == "remove-tempo" {
+				at := ""
+				if f["action"] == "set-tempo" {
+					bar, err := integer(f, "bar")
+					if err != nil || bar < 1 || bar > 1<<20+1 {
+						return nil, fmt.Errorf("choose a bar from 1 to 1048577")
+					}
+					at = fmt.Sprintf("@%d.1.1", bar)
+				}
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "tempo": map[string]string{"oldat": f["oldat"], "at": at, "value": f["bpm"]}}, nil
+			}
 			return map[string]any{
-				"revision": f["revision"], "action": f["action"], "name": f["name"], "newName": f["newName"],
+				"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "name": f["name"], "newName": f["newName"],
 				"placement": map[string]string{"at": f["at"], "length": f["length"], "track": f["track"], "content": f["content"]},
 			}, nil
 		}),
@@ -408,6 +437,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 		}),
 		"take": s.mutation("/api/takes", func(f map[string]string) (any, error) {
 			p := edit(f)
+			p["source_revision"] = f["source_revision"]
 			p["action"] = f["action"]
 			p["track"] = f["track"]
 			p["scene"] = f["scene"]
@@ -488,8 +518,17 @@ func (s *studioApp) actions() map[string]action.Handler {
 			}
 			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"], RecordingOffsetMS: offset, PeriodFrames: period}, nil
 		}),
+		"export-midi": s.mutation("/api/export/midi", func(f map[string]string) (any, error) {
+			if f["source_revision"] == "" {
+				return nil, fmt.Errorf("Refresh Studio to load the saved song before exporting notes.")
+			}
+			return map[string]string{"revision": f["revision"], "source_revision": f["source_revision"]}, nil
+		}),
 		"export": s.mutation("/api/export", func(f map[string]string) (any, error) {
-			p := map[string]any{"revision": f["revision"]}
+			if f["source_revision"] == "" {
+				return nil, fmt.Errorf("Refresh Studio to load the saved song before rendering.")
+			}
+			p := map[string]any{"revision": f["revision"], "source_revision": f["source_revision"]}
 			for _, key := range []string{"target_lufs", "true_peak_max", "tolerance"} {
 				v, e := finiteNumber(f, key)
 				if e != nil {

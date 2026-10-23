@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,19 +24,51 @@ import (
 )
 
 type studioApp struct {
-	backend       *backend
-	collaboration *collaboration
-	draftMu       sync.Mutex
-	drafts        map[string]draft
+	backend        *backend
+	collaboration  *collaboration
+	draftMu        sync.Mutex
+	drafts         map[string]draft
+	notes          *noteStore
+	bootstrapMu    sync.Mutex
+	bootstrapToken string
 }
 
+type workspaceOptions struct {
+	StateDir       string
+	LocalBootstrap bool
+}
+type workspaceHandler struct {
+	http.Handler
+	startupPath string
+}
+
+func (h *workspaceHandler) StartupPath() string { return h.startupPath }
+
 func newApp(b *backend) (http.Handler, error) {
+	return newAppWithState(b, "")
+}
+
+func newAppWithState(b *backend, stateDir string) (http.Handler, error) {
+	return newConfiguredApp(b, workspaceOptions{StateDir: stateDir})
+}
+
+func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error) {
+	stateDir := options.StateDir
 	var key [32]byte
 	if _, err := rand.Read(key[:]); err != nil {
 		return nil, err
 	}
 	cookieName := "cicada-workstation"
-	if b != nil {
+	var notes *noteStore
+	if stateDir != "" {
+		var err error
+		notes, key, err = openNoteStore(stateDir)
+		if err != nil {
+			return nil, fmt.Errorf("open private note recovery: %w", err)
+		}
+		identity := sha256.Sum256([]byte(notes.dir))
+		cookieName += "-" + hex.EncodeToString(identity[:8])
+	} else if b != nil {
 		// Browser cookies share a host across ports. Isolate simultaneous
 		// workspaces by their private service origin, without exposing a key.
 		identity := sha256.Sum256([]byte(b.url.String()))
@@ -47,7 +80,16 @@ func newApp(b *backend) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &studioApp{backend: b, collaboration: newCollaboration(b)}
+	s := &studioApp{backend: b, collaboration: newCollaboration(b), notes: notes}
+	s.collaboration.access = notes
+	startupPath := "/"
+	if options.LocalBootstrap && notes != nil && b != nil {
+		if _, err := notes.localOwner("", ""); err != nil && !errors.Is(err, errLocalOwnerSession) {
+			return nil, err
+		}
+		s.bootstrapToken = rand.Text()
+		startupPath = "/__local/" + s.bootstrapToken
+	}
 	app := server.New()
 	root := runtimeRoot()
 	app.SetPublicDir("")
@@ -80,6 +122,9 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			limit := int64(2 << 20)
+			if r.URL.Path == "/__actions/note-checkpoint" || r.URL.Path == "/__actions/note-preview" {
+				limit = 32 << 20
+			}
 			if r.URL.Path == "/__instrument/import" || r.URL.Path == "/__sampler/import" {
 				limit = 65 << 20
 			}
@@ -96,7 +141,11 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Page("GET /{$}", s.page)
 	app.Page("GET /studio", s.shell)
 	if b == nil {
-		return app.Build(), nil
+		return &workspaceHandler{Handler: app.Build(), startupPath: startupPath}, nil
+	}
+	if s.bootstrapToken != "" {
+		app.Mount("GET /__local/{token}", http.HandlerFunc(s.bootstrapLocalOwner))
+		app.Mount("GET /__local/{token}/studio", http.HandlerFunc(s.bootstrapNativeOwner))
 	}
 	app.Mount("GET /collaboration/score", http.HandlerFunc(s.collaboration.serveHub))
 	app.Mount("POST /api/collaboration/invite", http.HandlerFunc(s.collaboration.invite))
@@ -115,6 +164,8 @@ func newApp(b *backend) (http.Handler, error) {
 	}
 	app.Mount("POST /__instrument/import", http.HandlerFunc(s.importInstrument))
 	app.Mount("POST /__sampler/import", http.HandlerFunc(s.importSampler))
+	app.Mount("POST /api/midi/input", http.HandlerFunc(s.nativeMIDIInput))
+	app.Mount("GET /api/note-recovery/{id}", http.HandlerFunc(s.savedNoteState))
 	app.Mount("GET /media/sampler/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
 		s.samplerMedia(w, r)
@@ -134,11 +185,14 @@ func newApp(b *backend) (http.Handler, error) {
 		s.takeAudio(w, r)
 	}))
 	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
+	app.Mount("GET /media/midi-exports/{id}", http.HandlerFunc(s.exportMIDI))
 	app.Mount("GET /media/transcription", http.HandlerFunc(s.transcriptionAudio))
 	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
+	app.Mount("GET /api/export/midi", http.HandlerFunc(s.midiExportStatus))
 	app.Mount("GET /api/takes/{id}/waveform", http.HandlerFunc(s.vocalWaveform))
 	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params", "/api/sampler"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
 			var data json.RawMessage
 			if err := b.call(r.Context(), http.MethodGet, path, nil, &data); err != nil {
 				http.Error(w, err.Error(), http.StatusBadGateway)
@@ -148,7 +202,7 @@ func newApp(b *backend) (http.Handler, error) {
 			_, _ = w.Write(data)
 		}))
 	}
-	return app.Build(), nil
+	return &workspaceHandler{Handler: app.Build(), startupPath: startupPath}, nil
 }
 
 func (s *studioApp) page(ctx *server.Context) gosx.Node {
@@ -229,9 +283,18 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 		}
 	}
 	if panel == "code" {
-		if saved, ok := s.sourceDraft(ctx.Request, view.File); ok {
+		saved, copies, err := s.sourceDraft(ctx.Request, view.File)
+		view.SourceCopies = copies
+		if err != nil {
+			view.RecoveryError = "Code recovery could not be read. Its files are retained: " + err.Error()
+		}
+		if saved.Kind == "source" {
+			if saved.RecoveryError != "" {
+				view.RecoveryError = "A recovery copy could not be kept on disk. Keep this window open: " + saved.RecoveryError
+			}
 			view.Source, view.FileRevision = saved.Source, saved.Revision
 			view.HasDraft = true
+			view.SourceDraft = saved
 			if !props.HasMessage {
 				props.Message, props.HasMessage = "Unsaved score draft restored. Check or save it to continue.", true
 			}
@@ -260,6 +323,9 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 }
 
 func (s *studioApp) form(view workspace, csrf, panel, name string, children ...gosx.Node) gosx.Node {
+	if name == "pattern" || name == "take" || name == "automation" {
+		children = append([]gosx.Node{hidden("source_revision", view.SourceRevision)}, children...)
+	}
 	return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: "/?panel=" + panel, Class: "action-form"}, children...)
 }
 func hidden(name, value string) gosx.Node {
@@ -272,7 +338,7 @@ func submit(name, value, label string) gosx.Node {
 func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gosx.Node {
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "toolbar")),
 		s.form(view, csrf, panel, "transport", submit("action", "play", "Play"), submit("action", "pause", "Pause"), submit("action", "stop", "Stop"), submit("action", "home", "Return to start")),
-		s.form(view, csrf, panel, "undo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Undo")), s.form(view, csrf, panel, "redo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Redo")),
+		s.form(view, csrf, panel, "undo", hidden("source_revision", view.SourceRevision), hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Undo")), s.form(view, csrf, panel, "redo", hidden("source_revision", view.SourceRevision), hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Redo")),
 		ui.Position(ui.TransportProps{Playing: t.Playing, Bar: t.Bar, Step: t.Step, Backend: t.Backend, Error: t.Error, Listening: t.Listening}),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "transport-capture-hint"), gosx.Attr("data-transport-capture-hint", ""), gosx.BoolAttr("hidden")), gosx.Text("Recording in progress. Stop saves your take; finish it before changing playback.")),
 	)

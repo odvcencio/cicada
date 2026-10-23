@@ -37,6 +37,9 @@ rather than assuming that examples on `main` are supported by the pinned version
   `go generate ./...` transpiles components, includes their stylesheet, and
   builds the content-addressed Go/WASM engine module. Generation is part of the
   GoSX build hook and CI checks that checked-in projections remain reproducible.
+  The shared UI module has a 16 MiB build limit. Keep host compiler and storage
+  dependencies out of it: sampler controls use `host/padsampler/protocol`, and
+  position controls use `musictime` for exact tick conversion.
 - Use GoSX's programmatic `server.Page` API for this private, single-score
   workspace. Navigation changes the selected panel without a client router.
   The framework handles history, managed forms, runtime loading, and disposal.
@@ -86,6 +89,11 @@ rather than assuming that examples on `main` are supported by the pinned version
   Session-owned note previews require explicit commit and retain revision
   conflicts. Native sample audition stays a private, no-store WAV stream,
   rendered by the existing sample voice. GoSX disposal stops its media element.
+  Bend, pressure and timbre retain per-note identity through live polyphonic
+  playing, sustain, take checkpoints and played-timing edits. MIDI 1 input
+  follows RPN bend ranges and MPE zones; a manual zone selector supports
+  controllers without setup messages. Controller sends batch between gates,
+  while raw recordings retain every received snapshot.
   Live performance controls retain their engine mount across workspace edits;
   launch forms and retained-note previews receive canonical projections beside
   it. Takes projects its forms while keeping mounted media and capture polling.
@@ -118,9 +126,19 @@ GoSX sessions, request limits, and loopback host checks apply before actions.
 
 ## Audio and compatibility boundaries
 
-Tymbal is the default on Windows (WASAPI) and Linux (ALSA). `--audio null` permits
+Tymbal is the default on macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). `--audio null` permits
 device-free transport testing; it is not hardware qualification. The existing
-explicit Oto fallback remains available on other platforms.
+explicit Oto fallback remains available. The pinned Core Audio driver exposes
+native output selection, timing, and thread priority; recording input is not
+implemented there yet. Device discovery and recording support are separate
+capabilities: the Audio panel shows native microphones but disables recording
+controls when the driver cannot open an input stream.
+
+The native service saves audio preferences per backend in the computer's app
+data. Desktop `--data-dir` isolates this setup along with the host state;
+`CICADA_AUDIO_SETTINGS_DIR` selects the CLI's settings folder. Restoring a
+setup never starts transport or capture, and monitoring starts muted. A save
+failure is returned to the form instead of acknowledging an unsaved change.
 
 GoSX's production engine API supports canvas, fetch, signals, and Go/WASM.
 Automatic `//gosx:engine` discovery is a preview feature in this version; the
@@ -137,8 +155,9 @@ alternate production recording path: recording uses Tymbal's selected native
 input. Web MIDI is explicitly feature-detected inside the unrestricted
 Go/WASM engine; no nonexistent framework MIDI capability is declared.
 
-The **Collaborate** panel shares a score draft over a GoSX hub. The first active
-session owns the workspace; later sessions start as viewers. The owner can
+The **Collaborate** panel shares a score draft over a GoSX hub. The desktop's
+one-use startup URL restores the local owner, including after browser cookie
+loss. Other sessions start as viewers. The owner can
 create single-use editor or viewer invitation codes that expire after 15 minutes.
 The server checks roles on every score operation, save, and workspace action.
 Presence shows each connected editor's role and cursor line. **Undo my edit**
@@ -150,8 +169,11 @@ private tab storage and merge on reconnect. Studio stores the shared draft in a
 private `.collaboration` file beside the score, including invalid drafts. **Save
 shared score** validates the current synchronized draft and checks the disk
 revision before changing the score. File changes from another editor produce a
-conflict and retain the shared draft. Access remains loopback-only, and roles
-are issued anew after restarting Studio. Shared draft history is bounded to
+conflict and retain the shared draft. Access remains loopback-only. Desktop
+membership and private note performances persist in the local profile across
+restarts; checkpoint recovery opens a review copy and keeps the score unchanged.
+Applied and dismissed performances remain available in Live's history.
+Shared draft history is bounded to
 20,000 operations and 8 MiB of inserted text; automatic compaction is not yet
 available. Run `make test-collaboration` for the seeded convergence, offline
 PCM24, role, undo, and reconnect checks, and `make test-studio-collaboration`

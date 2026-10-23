@@ -13,7 +13,7 @@ type TableOscillator struct {
 
 func NewTableOscillator(sampleRate int) (*TableOscillator, error) {
 	if _, ok := oscillatorBankIndex(sampleRate); !ok {
-		return nil, Error("unsupported oscillator sample rate")
+		return nil, validationError("unsupported oscillator sample rate")
 	}
 	return &TableOscillator{bank: bankForSampleRate(sampleRate)}, nil
 }

@@ -96,7 +96,7 @@ func init() {
 	Register("cyclestep", func() Intent { return &CycleStep{} })
 	Register("setdrumvelocity", func() Intent { return &SetDrumVelocity{} })
 	for _, kind := range []string{"togglestep", "setpitch", "togglemodifier", "cyclestep", "setdrumvelocity"} {
-		Handle(kind, editGrid)
+		Handle(kind, gridSourceEdit(editGrid))
 	}
 }
 

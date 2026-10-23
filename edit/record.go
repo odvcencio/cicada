@@ -6,13 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 )
 
 // RecordTake commits all recorded patterns as one validated edit.
 type RecordTake struct {
+	Timing     string      `json:"timing,omitempty"`
 	Recordings []Recording `json:"recordings"`
 }
 
@@ -21,17 +21,44 @@ func init() {
 	Register("recordtake", func() Intent { return &RecordTake{} })
 	Handle("recordtake", func(ctx *Context, intent Intent) error {
 		in := intent.(*RecordTake)
+		if in.Timing == "played" {
+			return recordPerformedTake(ctx, in.Recordings)
+		}
+		if in.Timing != "" && in.Timing != "grid" {
+			return fmt.Errorf("take timing must be grid or played")
+		}
 		if len(in.Recordings) == 0 {
 			return fmt.Errorf("at least one recorded track and pattern are required")
 		}
 		count := 0
+		patterns := make(map[string]bool)
 		for _, recording := range in.Recordings {
+			if _, err := validateTakeGroups(recording.Groups); err != nil {
+				return err
+			}
+			for _, note := range recording.Notes {
+				if int(note.Group) > len(recording.Groups) {
+					return fmt.Errorf("recorded note refers to an unknown shared gesture lane")
+				}
+			}
+			for _, group := range recording.Groups {
+				if activeTakeGroup(group) {
+					return fmt.Errorf("shared controller gestures need Keep played timing; the retained take is unchanged")
+				}
+			}
+			if patterns[recording.Pattern] {
+				return fmt.Errorf("take targets pattern %q more than once; separate the performances before applying", recording.Pattern)
+			}
+			patterns[recording.Pattern] = true
 			updated, err := recordedTakeSource(ctx, recording.Track, recording.Pattern, recording.Notes)
 			if err != nil {
 				return err
 			}
 			ctx.Source, ctx.plan = updated, nil
 			count += len(recording.Notes)
+		}
+		if err := validateRecordedDestinations(ctx, in.Recordings); err != nil {
+			return err
 		}
 		label := fmt.Sprintf("Take committed · %d notes across %d patterns", count, len(in.Recordings))
 		if len(in.Recordings) == 1 {
@@ -49,6 +76,7 @@ type TakeNote struct {
 	Velocity    int              `json:"velocity"`
 	NoteID      uint16           `json:"noteid,omitempty"`
 	Channel     uint8            `json:"channel,omitempty"`
+	Group       uint16           `json:"group,omitempty"`
 	Expressions []TakeExpression `json:"expressions,omitempty"`
 }
 
@@ -61,9 +89,15 @@ type TakeExpression struct {
 }
 
 type Recording struct {
-	Track   string     `json:"track"`
-	Pattern string     `json:"pattern"`
-	Notes   []TakeNote `json:"notes"`
+	Track   string      `json:"track"`
+	Pattern string      `json:"pattern"`
+	Notes   []TakeNote  `json:"notes"`
+	Groups  []TakeGroup `json:"groups,omitempty"`
+}
+
+type TakeGroup struct {
+	Kind   string           `json:"kind,omitempty"`
+	Points []TakeExpression `json:"points"`
 }
 
 type recordedStep struct {
@@ -76,7 +110,6 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	if trackID == "" || patternID == "" || len(take) == 0 {
 		return nil, fmt.Errorf("track, pattern, and at least one recorded note are required")
 	}
-	source := ctx.Source
 	score, diagnostics, err := ctx.ParseProject()
 	if err != nil {
 		return nil, err
@@ -108,18 +141,11 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	if pattern == nil {
 		return nil, fmt.Errorf("unknown pattern %q", patternID)
 	}
-	usesPattern := false
-	for _, slot := range track.Slots {
-		if slot != nil && *slot == patternID {
-			usesPattern = true
-			break
-		}
-	}
-	if !usesPattern {
+	if !track.canRecordPattern(patternID) {
 		return nil, fmt.Errorf("pattern %q is not on track %q", patternID, trackID)
 	}
 	drumTrack := track.Kind == "drums"
-	modeledKeys := keyboard.ID(track.Kind) != 0
+	modeledKeys := track.Kind == "piano" || keyboard.ID(track.Kind) != 0
 	for _, kit := range score.Kits {
 		if kit.Name == track.Kind {
 			drumTrack = true
@@ -148,11 +174,15 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	if !drums && !pitched {
 		return nil, fmt.Errorf("track %q is not a pitched instrument track", trackID)
 	}
+	if pattern.Performance != nil {
+		return nil, fmt.Errorf("pattern %q uses played timing and has no step grid; keep played timing or edit its notes", patternID)
+	}
 	if pattern.Steps < 1 || pattern.Steps > 64 {
 		return nil, fmt.Errorf("pattern %q has an invalid length", patternID)
 	}
 
 	steps := make(map[int]recordedStep)
+	stepTicks := pattern.StepTicksOrDefault()
 	expressive := false
 	for _, note := range take {
 		if note.Tick < 0 || note.EndTick < note.Tick || note.Tick > 1<<60 || note.EndTick > 1<<60 {
@@ -174,7 +204,7 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 			return nil, err
 		}
 		expressive = expressive || len(note.Expressions) != 0
-		step := int((note.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
+		step := int((note.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 		key := step
 		if drums {
 			lane, ok := GMDrumLane(note.Note)
@@ -182,6 +212,9 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note.Note)
 			}
 			key += int(lane) * 64
+		}
+		if _, exists := steps[key]; exists {
+			return nil, fmt.Errorf("take has multiple notes at pattern %q step %d; this destination holds one pitch per step. Separate the phrases before applying", patternID, step+1)
 		}
 		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
 	}
@@ -192,7 +225,15 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 		if drums {
 			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
 		}
-		return recordedExpressionSource(source, ctx.Options.Path, score, pattern, take)
+		_, source, path, err := recordingSource(ctx, score, patternID)
+		if err != nil {
+			return nil, err
+		}
+		updated, err := recordedExpressionSource(source, path, score, pattern, take)
+		if err != nil {
+			return nil, err
+		}
+		return stageProjectSource(ctx, path, source, updated), nil
 	}
 	if polyphonic && track.Polyphony == 4 {
 		return nil, fmt.Errorf("track %q is not an acid track", trackID)
@@ -210,12 +251,12 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	}
 	if !drums && !polyphonic {
 		for _, prior := range take {
-			priorStep := int((prior.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
+			priorStep := int((prior.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 			for _, next := range take {
 				if prior.Tick >= next.Tick || prior.EndTick <= next.Tick {
 					continue
 				}
-				nextStep := int((next.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
+				nextStep := int((next.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 				if priorStep != nextStep {
 					current := steps[priorStep]
 					current.slide = true
@@ -235,6 +276,10 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 			}
 		}
 	}
+	working, source, path, err := recordingSource(ctx, score, patternID)
+	if err != nil {
+		return nil, err
+	}
 	updated := append([]byte(nil), source...)
 	for _, captured := range ordered {
 		if drums {
@@ -243,46 +288,46 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", captured.note)
 			}
 			lane := drumLaneName(laneIndex)
-			token, err := drumToken(sourceContext(ctx, updated), patternID, lane, captured.step)
+			token, err := drumToken(sourceContext(working, updated), patternID, lane, captured.step)
 			if err != nil {
 				return nil, err
 			}
 			if token == "." || token == "-" {
-				updated, err = toggledSource(sourceContext(ctx, updated), patternID, lane, captured.step)
+				updated, err = toggledSource(sourceContext(working, updated), patternID, lane, captured.step)
 				if err != nil {
 					return nil, err
 				}
 			}
-			updated, err = drumVelocitySource(sourceContext(ctx, updated), patternID, lane, captured.step, captured.velocity)
+			updated, err = drumVelocitySource(sourceContext(working, updated), patternID, lane, captured.step, captured.velocity)
 			if err != nil {
 				return nil, err
 			}
 			continue
 		}
-		current, err := patternStep(sourceContext(ctx, updated), patternID, captured.step)
+		current, err := patternStep(sourceContext(working, updated), patternID, captured.step)
 		if err != nil {
 			return nil, err
 		}
 		if current == nil || int(current.Note) != captured.note || current.Tie {
-			updated, err = pitchedSource(sourceContext(ctx, updated), patternID, "", captured.step, captured.note)
+			updated, err = pitchedSource(sourceContext(working, updated), patternID, "", captured.step, captured.note)
 			if err != nil {
 				return nil, err
 			}
 		}
 		if captured.slide {
-			token, err := noteToken(sourceContext(ctx, updated), patternID, captured.step)
+			token, err := noteToken(sourceContext(working, updated), patternID, captured.step)
 			if err != nil {
 				return nil, err
 			}
 			if token != "." && token != "-" && !strings.Contains(token, "~") {
-				updated, err = toggledModifierSource(sourceContext(ctx, updated), patternID, "", captured.step, "slide")
+				updated, err = toggledModifierSource(sourceContext(working, updated), patternID, "", captured.step, "slide")
 				if err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
-	return updated, nil
+	return stageProjectSource(ctx, path, source, updated), nil
 }
 
 func noteToken(ctx *Context, patternID string, index int) (string, error) {
@@ -393,7 +438,8 @@ func recordedExpressionSource(source []byte, targetFile string, score *notation.
 	copy(values, pattern.Expression)
 	occupied := make([]bool, pattern.Steps)
 	edits := make([]Span, 0, len(take)+4)
-	quantize := func(tick int64) int64 { return (tick + seq.TicksPerStep/2) / seq.TicksPerStep }
+	stepTicks := pattern.StepTicksOrDefault()
+	quantize := func(tick int64) int64 { return (tick + stepTicks/2) / stepTicks }
 	for _, note := range take {
 		start, end := quantize(note.Tick), quantize(note.EndTick)
 		if end <= start {
@@ -484,7 +530,7 @@ func recordedExpressionSource(source []byte, targetFile string, score *notation.
 			found = true
 		}
 		if !found {
-			additions.WriteString("\n  " + text)
+			additions.WriteString(Newline(source) + "  " + text)
 		}
 	}
 	if additions.Len() > 0 {
@@ -512,7 +558,7 @@ func recordedExpressionSource(source []byte, targetFile string, score *notation.
 			return nil, fmt.Errorf("pattern closing brace is missing")
 		}
 		at := end + closing
-		edits = append(edits, Span{at, at, additions.String() + "\n", targetFile})
+		edits = append(edits, Span{at, at, additions.String() + Newline(source), targetFile})
 	}
 	return PatchSpans(source, targetFile, edits)
 }

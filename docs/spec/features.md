@@ -233,8 +233,9 @@ song { main }
 **Syntax (EBNF):**
 
 ```ebnf
-automate_decl ::= "automate" , parameter_path , "{" , { automation_point } , "}" ;
+automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
 automation_point ::= position , value , [ shape ] ;
+automation_recall ::= "recall" , position ;
 position ::= "@" , integer , "." , integer , "." , integer ;
 shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
 ```
@@ -265,6 +266,33 @@ song { main*4 }
 **Edition history:** Additive in source editions 1 and 2, using semantic JSON version 2. Kernel images advertise capability bit 15 and append immutable parameter controls. Older readers reject that capability. The renderer remains allocation-free.
 
 The host prepares numeric targets every four ticks at 960 PPQ (2.08 ms at 120 BPM); the existing parameter smoothing connects them continuously. This uses the same float32 controls in native and WASM playback. Limits are 32 lanes, 1024 authored points per lane and 65535 prepared controls per project. Step segments and flat spans need only endpoints. Enum/toggle controls and static master inserts cannot be automated. `smooth` uses smoothstep; `curve n` uses `t^(2^n)` in control space with tension −8 to 8. Frequency/time lanes follow their registered logarithmic curve; other controls follow the registry curve.
+
+
+A lane may also contain `recall @bar.beat.step` cues. A recall reapplies the
+curve's evaluated value at that position, using normal parameter smoothing;
+it does not add a value point or change the curve's interpolation. This lets
+playback return to a held curve value after a live adjustment. Cues may be
+written in any order, must be unique sixteenths at or after the first value
+point, and must lie within the song or arrangement. Each lane supports up to
+1,024 recalls; the combined prepared control limit still applies. Recalls
+survive source and project-JSON round trips and use the same native and portable
+playback timeline. Scene-to-arrangement vocal conversion emits recall cues to
+retain the original scene-boundary behavior.
+
+```cicada
+cicada 2
+tempo 120
+track vox audio {}
+track bass acid {}
+pattern pulse { 1 . 5 . }
+automate vox.level {
+  @1.1.1 -9dB
+  @5.1.1 -3dB smooth
+  recall @7.1.1
+}
+scene main { vox = off bass = pulse }
+song { main*8 }
+```
 
 ## Pattern grids and tuplets
 
@@ -401,3 +429,80 @@ song { verse }
 **Example:** [Preset circuit](../../examples/presets/main.cicada) binds authored, acid, and imported presets and overrides a value on the track and in a scene. The imported library is vendored from the [library example](../../examples/libraries/main.cicada), with an added mixer preset.
 
 **Limits:** An authored kit lane cannot apply numeric settings to a built-in recipe through the kit binding; use a `drums` track's lane values or a `builtin.bd` preset instead. Existing limits on effect instances still apply. Studio continues to refuse multi-file editing and has no preset save action in this version. Semantic JSON and generated source contain resolved values; formatting the original source retains preset declarations.
+
+## Performed timing and note gestures
+
+**Status:** Implemented in source editions 1 and 2 and semantic formats /1 and /2.
+
+```cicada
+cicada 2
+track lead acid {}
+pattern phrase performance length=3840ticks {
+  note 60 at=17ticks length=703ticks velocity=82 {
+    gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
+    gesture at=123ticks bend=127.5ct pressure=0.7 timbre=0.9 vibrato=14ct rate=7.25Hz;
+  }
+  note 64 at=19ticks length=1201ticks velocity=105;
+}
+scene main { lead=phrase }
+song { main*2 }
+```
+
+**Meaning:** Each note has an independent start, held length, MIDI pitch, and
+velocity. Optional gesture points are relative to its start and hold their
+values until the next point. Moving a note carries its gesture. A plain note
+may end with a semicolon instead of a gesture block. There are 960 ticks per
+beat. Source order does not quantize the performance.
+
+**Defaults:** Bend, pressure, and vibrato depth start at zero; timbre starts at
+0.5. A gesture states `at`, `bend`, `pressure`, and `timbre` in that order.
+`vibrato` and `rate` are optional. Vibrato with no rate uses 5 Hz; an explicit
+zero rate pauses vibrato. A new note starts a fresh vibrato phase.
+
+**Bounds:** A loop is 30…2^40 ticks with 1…512 notes and at most 65,536 gesture
+points. Pitch is MIDI 0…127, velocity 1…127, bend −9600…9600 cents, pressure and
+timbre 0…1, depth 0…9600 cents, and rate 0…100 Hz. Gesture ticks increase
+strictly from zero through the held length. Gates of the same pitch cannot
+overlap in one pattern. Playback also admits controller density before
+rendering; [image version 17](kernel-image-v17.md) specifies the portable limit.
+
+**Voice support:** Acid applies bend and vibrato. Authored synths also expose
+pressure and timbre to their graphs, retaining mono priority or four-voice
+polyphony. Modeled keys and piano accept performed notes without gestures.
+Drum and sampler performances remain unsupported. Unsupported voices,
+non-finite controls, duplicate ticks, and edits that discard held data report
+errors. Studio keeps the raw captured take available when an edit is refused.
+
+### Shared gestures
+
+Declare a named lane inside a performance and bind notes with `group=NAME`:
+
+```cicada
+cicada 2
+track lead acid {}
+pattern phrase performance length=3840ticks {
+  gesture-group breath {
+    gesture at=0ticks bend=0ct pressure=0.1 timbre=0.5;
+    gesture at=960ticks bend=150ct pressure=0.8 timbre=0.9;
+  }
+  note 60 at=17ticks length=703ticks velocity=103 group=breath;
+  note 64 at=19ticks length=1301ticks velocity=87 group=breath;
+}
+scene main { lead=phrase }
+song { main }
+```
+
+Lane times belong to the pattern loop. They continue to shape bound notes
+after their gates close. Bend adds to each note's bend, pressure uses the
+larger value, and centered timbre adds before clamping to 0…1. The note keeps
+its own vibrato. Shared lanes have no vibrato/rate fields. Each new loop
+starts neutral unless a point at tick zero supplies the initial value.
+
+Names use lowercase letters, digits, underscores and hyphens, begin with a
+letter or underscore, and contain at most 64 bytes. A performance may have
+512 unique lanes. Shared points fall strictly before the loop end and share
+the 65,536-point budget with note gestures. Moving a note keeps its binding;
+resizing refuses to discard shared points. Grouped authored performances
+retain eight voices unless another assigned pattern needs the existing
+four-voice cohort mode. See [image version 18](kernel-image-v18.md) and the
+[Held light example](../../examples/shared-gestures/main.cicada).

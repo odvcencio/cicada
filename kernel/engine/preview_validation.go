@@ -34,7 +34,7 @@ func (e *Engine) PreviewParamValidator(track int) PreviewParamValidator {
 func PrepareParamValidators(cfg *Config) ([MaxTracks]PreviewParamValidator, error) {
 	var validators [MaxTracks]PreviewParamValidator
 	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > len(validators) {
-		return validators, Error("parameter validation track count is out of range")
+		return validators, engineError("parameter validation track count is out of range")
 	}
 	for track := 0; track < cfg.Tracks; track++ {
 		if cfg.Track[track].Kind != VoiceDrums {
@@ -64,24 +64,24 @@ func preparedDrumParamValidator(kit *drum.Kit) PreviewParamValidator {
 func (v *PreviewParamValidator) Validate(id kernel.ParamID, value float32) error {
 	spec, ok := kernel.Param(id)
 	if !ok || !spec.Live {
-		return Error("parameter is unknown or not live")
+		return engineError("parameter is unknown or not live")
 	}
 	off := spec.Off && math.IsInf(float64(value), -1)
 	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
-		return Error("parameter value is out of range")
+		return engineError("parameter value is out of range")
 	}
 	if spec.Curve == "toggle" && value != 0 && value != 1 {
-		return Error("toggle parameter must be zero or one")
+		return engineError("toggle parameter must be zero or one")
 	}
 	if kernel.IsInteger(id) && value != float32(int32(value)) {
-		return Error("parameter must be a whole number")
+		return engineError("parameter must be a whole number")
 	}
 	lane, control, ok := drumParamControl(id)
 	if !ok {
 		return nil
 	}
 	if !v.drums {
-		return Error("drum control requires a drum track")
+		return engineError("drum control requires a drum track")
 	}
 	params := drumParamValue(v.targets[lane], control, value, off)
 	return v.lanes[lane].Validate(params)
@@ -108,7 +108,7 @@ func prepareDrumKit(spec *TrackConfig, sampleRate int, seed uint32) (*drum.Kit, 
 			case KitLaneModeled:
 				err = kit.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
 			default:
-				return nil, 0, Error("unknown kit lane kind")
+				return nil, 0, engineError("unknown kit lane kind")
 			}
 			if binding.Kind != KitLaneOff {
 				voices++

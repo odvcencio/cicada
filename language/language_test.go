@@ -165,6 +165,7 @@ func TestEveryLeafHasOneCapture(t *testing.T) {
 // intended query change and review the diff.
 func TestHighlightGolden(t *testing.T) {
 	for source, golden := range map[string]string{
+		"testdata/shared-gestures.cicada":  "testdata/shared-gestures.spans",
 		"../examples/cicada-chorus.cicada": "testdata/cicada-chorus.spans",
 		"testdata/edition1/ahead.cicada":   "testdata/ahead.spans",
 	} {

@@ -19,7 +19,7 @@ import (
 
 // studioReadyLine matches the address line `cicada studio` prints once it
 // listens.
-var studioReadyLine = regexp.MustCompile(`^Cicada Studio: (http://127\.0\.0\.1:\d+/)`)
+var studioReadyLine = regexp.MustCompile(`^Cicada Studio: (http://127\.0\.0\.1:\d+/(?:__local/[A-Za-z0-9_-]{20,128})?)\s*$`)
 
 const maxRecentFiles = 8
 
@@ -118,6 +118,13 @@ func studioArgs(score, audio string) []string {
 		args = append(args, "--audio", audio)
 	}
 	return args
+}
+
+func studioEnvironment(statePath string) []string {
+	if statePath == "" {
+		return nil
+	}
+	return []string{"CICADA_STATE_DIR=" + filepath.Dir(statePath), "CICADA_AUDIO_SETTINGS_DIR="}
 }
 
 // initialScore picks the score to open at launch: a .cicada argument, then

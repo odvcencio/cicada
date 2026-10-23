@@ -12,8 +12,9 @@ import (
 )
 
 type AutomationLane struct {
-	Path   string            `cicada:"Registered parameter path" json:"path" introduced:"cicada.project/2"`
-	Points []AutomationPoint `cicada:"Ordered musical control points" json:"points" introduced:"cicada.project/2"`
+	Path    string            `cicada:"Registered parameter path" json:"path" introduced:"cicada.project/2"`
+	Points  []AutomationPoint `cicada:"Ordered musical control points" json:"points" introduced:"cicada.project/2"`
+	Recalls []int64           `cicada:"Musical positions that reapply the curve without changing its shape" unit:"tick" json:"recalls,omitempty" introduced:"cicada.project/2"`
 }
 
 type AutomationPoint struct {
@@ -60,6 +61,13 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 				return append(ranges, automationDiagnostic("CICADA-PARAM", fmt.Errorf("curve needs tension -8..8"), point.Position)...)
 			}
 			lane.Points = append(lane.Points, AutomationPoint{Tick: tick, Value: sceneValueFrom(value), Shape: shape, Curve: curve})
+		}
+		for _, recall := range source.Recalls {
+			tick, err := notation.PositionTick(recall.At)
+			if err != nil {
+				return append(ranges, automationDiagnostic("CICADA-POSITION", err, recall.Position)...)
+			}
+			lane.Recalls = append(lane.Recalls, tick)
 		}
 		p.Automation = append(p.Automation, lane)
 	}
@@ -115,6 +123,17 @@ func validateAutomation(p *Project) error {
 		if len(lane.Points) == 0 || len(lane.Points) > 1024 {
 			return fmt.Errorf("CICADA-LIMIT: automation needs 1..1024 points")
 		}
+		if len(lane.Recalls) > 1024 {
+			return fmt.Errorf("CICADA-LIMIT: automation supports at most 1024 recalls per lane")
+		}
+		seenRecalls := map[int64]bool{}
+		for _, tick := range lane.Recalls {
+			if tick < lane.Points[0].Tick || tick > end || tick%240 != 0 || seenRecalls[tick] {
+				return fmt.Errorf("CICADA-POSITION: automation recalls must be unique sixteenths after the first point within the song")
+			}
+			seenRecalls[tick] = true
+		}
+
 		for i, point := range lane.Points {
 			if point.Tick < 0 || point.Tick > end || point.Tick%240 != 0 || i > 0 && point.Tick <= lane.Points[i-1].Tick {
 				return fmt.Errorf("CICADA-POSITION: automation points must increase on sixteenths within the song")
@@ -260,6 +279,12 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 				}
 			}
 			boundary += int64(entry.Bars) * 3840
+		}
+		for _, tick := range lane.Recalls {
+			last = math.Float32bits(float32(math.NaN()))
+			if err := emit(tick); err != nil {
+				return nil, err
+			}
 		}
 
 	}

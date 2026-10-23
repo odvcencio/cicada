@@ -35,7 +35,7 @@ func TestControllerCurvesAndOff(t *testing.T) {
 	}
 }
 
-func TestRecordedNoteBoundsAndClockExtrapolation(t *testing.T) {
+func TestRecordedNoteBounds(t *testing.T) {
 	valid := []Recording{{Track: "bass", Pattern: "pulse", Notes: []Note{{Tick: 0, EndTick: 120, Note: 60, Velocity: 100}}}}
 	if err := ValidateRecordings(valid); err != nil {
 		t.Fatal(err)
@@ -43,8 +43,5 @@ func TestRecordedNoteBoundsAndClockExtrapolation(t *testing.T) {
 	valid[0].Notes[0].EndTick = -1
 	if ValidateRecordings(valid) == nil {
 		t.Fatal("accepted inverted note duration")
-	}
-	if Tick(2, 3, 120, 1000, true) != 2400 || Tick(2, 3, 120, 1000, false) != 2160 {
-		t.Fatal("native clock extrapolation was not bounded")
 	}
 }

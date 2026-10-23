@@ -4,16 +4,20 @@ import (
 	"net/http"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/host/midi"
 )
 
 type studioTakeNote struct {
-	Tick        int64                  `json:"tick"`
-	EndTick     int64                  `json:"endTick"`
-	Note        int                    `json:"note"`
-	Velocity    int                    `json:"velocity"`
-	NoteID      uint16                 `json:"noteId,omitempty"`
-	Channel     uint8                  `json:"channel,omitempty"`
-	Expressions []studioTakeExpression `json:"expressions,omitempty"`
+	Tick         int64                  `json:"tick"`
+	EndTick      int64                  `json:"endTick"`
+	Note         int                    `json:"note"`
+	Velocity     int                    `json:"velocity"`
+	NoteID       uint16                 `json:"noteId,omitempty"`
+	Channel      uint8                  `json:"channel,omitempty"`
+	Group        uint16                 `json:"group,omitempty"`
+	Expressions  []studioTakeExpression `json:"expressions,omitempty"`
+	Input        *midi.NoteTiming       `json:"input,omitempty"`
+	EndEstimated bool                   `json:"endEstimated,omitempty"`
 }
 
 type studioTakeExpression struct {
@@ -25,13 +29,22 @@ type studioTakeExpression struct {
 }
 
 type studioTakeRecording struct {
-	Track   string           `json:"track"`
-	Pattern string           `json:"pattern"`
-	Notes   []studioTakeNote `json:"notes"`
+	Track   string            `json:"track"`
+	Pattern string            `json:"pattern"`
+	Notes   []studioTakeNote  `json:"notes"`
+	Groups  []studioTakeGroup `json:"groups,omitempty"`
+}
+
+type studioTakeGroup struct {
+	ID      uint64                 `json:"id,omitempty"`
+	Device  string                 `json:"device,omitempty"`
+	Channel uint8                  `json:"channel,omitempty"`
+	Kind    string                 `json:"kind,omitempty"`
+	Points  []studioTakeExpression `json:"points"`
 }
 
 func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
-	edit, ok := studioRequest(w, r)
+	edit, ok := studioRequestLimit(w, r, 16<<20)
 	if !ok {
 		return
 	}
@@ -59,7 +72,7 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 	// playback fingerprint that poll will compute (entry, every source file and
 	// cicada.mod), so an unrelated edit to another file cannot consume it.
 	edit.recordedTake = true
-	intent := &edits.RecordTake{Recordings: editRecordings(edit.Recordings)}
+	intent := &edits.RecordTake{Timing: edit.Timing, Recordings: editRecordings(edit.Recordings)}
 	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
@@ -67,8 +80,15 @@ func editRecordings(recordings []studioTakeRecording) []edits.Recording {
 	result := make([]edits.Recording, len(recordings))
 	for i, recording := range recordings {
 		result[i] = edits.Recording{Track: recording.Track, Pattern: recording.Pattern}
+		for _, group := range recording.Groups {
+			out := edits.TakeGroup{Kind: group.Kind}
+			for _, value := range group.Points {
+				out.Points = append(out.Points, edits.TakeExpression{Tick: value.Tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents})
+			}
+			result[i].Groups = append(result[i].Groups, out)
+		}
 		for _, note := range recording.Notes {
-			out := edits.TakeNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity, NoteID: note.NoteID, Channel: note.Channel}
+			out := edits.TakeNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity, NoteID: note.NoteID, Channel: note.Channel, Group: note.Group}
 			for _, value := range note.Expressions {
 				out.Expressions = append(out.Expressions, edits.TakeExpression{Tick: value.Tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents})
 			}

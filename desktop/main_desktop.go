@@ -53,6 +53,7 @@ type host struct {
 	smokeHold    time.Duration
 	smokeTimeout time.Duration
 	smokeScript  string
+	smokeMIDI    bool
 	started      time.Time
 	smoke        map[string]any
 }
@@ -74,6 +75,7 @@ func run() error {
 	devTools := flags.Bool("devtools", false, "enable developer tools (F12 on Windows, the context menu on macOS)")
 	smokeOut := flags.String("smoke-out", "", "write a startup report to this JSON file and exit once Studio loads (tests)")
 	smokeHold := flags.Duration("smoke-hold", 1500*time.Millisecond, "with --smoke-out, how long to keep Studio open after it loads")
+	smokeMIDI := flags.Bool("smoke-midi", false, "with --smoke-out, keep an authenticated native MIDI input open for shutdown tests")
 	smokeTimeout := flags.Duration("smoke-timeout", 60*time.Second, "with --smoke-out, maximum time to await the workflow result (tests)")
 	smokeScript := flags.String("smoke-script", "", "with --smoke-out, run this JavaScript workflow and await its result (tests)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
@@ -96,6 +98,9 @@ func run() error {
 			return fmt.Errorf("smoke script is empty")
 		}
 	}
+	if *smokeMIDI && *smokeOut == "" {
+		return fmt.Errorf("--smoke-midi requires --smoke-out")
+	}
 	if *dataDir == "" {
 		dir, err := defaultDataDir()
 		if err != nil {
@@ -103,6 +108,11 @@ func run() error {
 		}
 		*dataDir = dir
 	}
+	absoluteDataDir, err := filepath.Abs(*dataDir)
+	if err != nil {
+		return err
+	}
+	*dataDir = absoluteDataDir
 	if err := os.MkdirAll(filepath.Join(*dataDir, "logs"), 0o755); err != nil {
 		return err
 	}
@@ -117,16 +127,11 @@ func run() error {
 		return err
 	}
 	h := &host{
-		cicada:       cicada,
-		audio:        *audio,
-		logOut:       logFile,
-		statePath:    filepath.Join(*dataDir, "state.json"),
-		smokeOut:     *smokeOut,
-		smokeHold:    *smokeHold,
-		smokeTimeout: *smokeTimeout,
-		smokeScript:  string(script),
-		started:      started,
-		smoke:        map[string]any{"timeoutSeconds": smokeTimeout.Seconds()},
+		cicada: cicada, audio: *audio, logOut: logFile,
+		statePath: filepath.Join(*dataDir, "state.json"),
+		smokeOut:  *smokeOut, smokeHold: *smokeHold, smokeMIDI: *smokeMIDI,
+		smokeTimeout: *smokeTimeout, smokeScript: string(script),
+		started: started, smoke: map[string]any{"timeoutSeconds": smokeTimeout.Seconds()},
 	}
 	h.state = loadState(h.statePath)
 	score, err := resolveInitialScore(flags.Args(), h.state, cicada, filepath.Join(documentsDir(), "Cicada"))
@@ -320,6 +325,7 @@ func (h *host) startSidecar(score string) (*sidecar.Process, error) {
 		Path:         h.cicada,
 		Args:         studioArgs(score, h.audio),
 		Dir:          filepath.Dir(score),
+		Env:          studioEnvironment(h.statePath),
 		Output:       h.logOut,
 		ReadyLine:    studioReadyLine,
 		ReadyTimeout: 30 * time.Second,
@@ -519,6 +525,12 @@ func (h *host) onNavigationCompleted(event desktop.NavigationCompleted) {
 	})
 	h.recordSmoke("score", h.currentScore())
 	h.recordSmoke("sidecarPID", proc.PID())
+	if h.smokeMIDI {
+		if err := h.app.ExecuteScript(midiSmokeScript(proc.Ready())); err != nil {
+			h.recordSmoke("nativeMIDIError", err.Error())
+			h.writeSmoke()
+		}
+	}
 	if h.smokeScript != "" {
 		if err := h.app.ExecuteScript(h.smokeScript); err != nil {
 			h.recordSmoke("frontend", map[string]any{"ok": false, "error": err.Error()})
@@ -570,16 +582,30 @@ func (h *host) appendSmoke(key, value string) {
 
 func (h *host) writeSmoke() {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	data, _ := json.MarshalIndent(h.smoke, "", " ")
-	h.mu.Unlock()
-	_ = os.WriteFile(h.smokeOut, data, 0o644)
+	// The smoke runner can read while the app is still holding a MIDI stream.
+	// Publish a complete report so it never sees a partially written JSON file.
+	if err := os.WriteFile(h.smokeOut+".tmp", data, 0o644); err == nil {
+		_ = os.Rename(h.smokeOut+".tmp", h.smokeOut)
+	}
 }
 
 func openLog(path string) (*os.File, error) {
 	if info, err := os.Stat(path); err == nil && info.Size() > 5<<20 {
 		_ = os.Rename(path, path+".1")
 	}
-	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	// Readiness includes a one-use local owner capability. Restrict an older
+	// log before appending that URL, too.
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return file, nil
 }
 
 func documentsDir() string {

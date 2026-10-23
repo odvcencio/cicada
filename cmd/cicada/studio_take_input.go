@@ -26,7 +26,7 @@ func (t *studioTransport) prepareTakeInput() (int, int, error) {
 	if t.audio == nil {
 		open := t.takeInputOpener
 		if open == nil {
-			open = openStudioAudio
+			open = openStudioRecordingAudio
 		}
 		t.audio, err = open(t.stream, t.audioOptions, t.selectedAudioBackend(), rate)
 		if err != nil {
@@ -39,6 +39,9 @@ func (t *studioTransport) prepareTakeInput() (int, int, error) {
 		if opened {
 			_ = t.audio.Close()
 			t.audio = nil
+		}
+		if actual.InputChannels == 0 && actual.Warning != "" {
+			return 0, 0, fmt.Errorf("%s", actual.Warning)
 		}
 		return 0, 0, fmt.Errorf("capture requires mono/stereo input at the selected %d Hz", rate)
 	}

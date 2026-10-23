@@ -233,7 +233,7 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var env edits.Envelope
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&env); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
@@ -248,7 +248,33 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "missing revision"})
 		return
 	}
-	s.applyIntents(w, studioEdit{Revision: env.Revision, Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+	s.applyIntents(w, studioEdit{Revision: env.Revision, SourceRevision: r.Header.Get("X-Cicada-Source-Revision"), Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+}
+
+// Pattern edits can replace declarations in owned secondary sources. The
+// entry revision alone cannot prove that the musician saw those source bytes.
+func sourceReceiptRequired(env edits.Envelope) bool {
+	if env.DryRun {
+		return false
+	}
+	for _, intent := range env.Intents {
+		switch intent.(type) {
+		case *edits.ToggleStep, *edits.SetPitch, *edits.ToggleModifier, *edits.CycleStep,
+			*edits.SetDrumVelocity, *edits.SetStep, *edits.SetChord, *edits.SetPatternSettings,
+			*edits.SetRange, *edits.ResizePattern, *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
+			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
+			*edits.ScalePerformance, *edits.ShapePerformancePitch:
+			return true
+		}
+	}
+	return false
+}
+
+func sourceConflictMessage(env edits.Envelope, message string) string {
+	if sourceReceiptRequired(env) && strings.Contains(message, edits.ErrProjectChanged.Error()) {
+		return "Saved project files or libraries changed. Refresh Studio before saving this edit."
+	}
+	return message
 }
 
 // intentDiff includes auxiliary changes so a dry run shows the whole batch.
@@ -270,6 +296,10 @@ func intentDiff(before []byte, result *edits.Result, name string) string {
 func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, prepare func([]byte, *edits.Options) (edits.Envelope, error), finish func(*edits.Result) error, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if sourceReceiptRequired(env) && edit.SourceRevision == "" {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "refresh Studio before editing this phrase"})
+		return
+	}
 	if writer == edits.ParamWriterMixer && s.captureID != "" {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": errMixerDuringCapture.Error()})
 		return
@@ -290,6 +320,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	if studioRevision(current) != edit.Revision {
 		// The body also carries the canonical state for clients that queue edits.
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current), "playingRevision": studioRevision(s.lastGoodSource)})
+		return
+	}
+	if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": sourceConflictMessage(env, err.Error())})
 		return
 	}
 	opts, err := s.editOptions(current, nil)
@@ -363,12 +397,15 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusConflict {
+		if message, ok := outcome.Response["error"].(string); ok {
+			outcome.Response["error"] = sourceConflictMessage(env, message)
+		}
 		if latest, err := os.ReadFile(s.path); err == nil {
 			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
 		}
 		outcome.Response["playingRevision"] = studioRevision(s.lastGoodSource)
 	}
-	studioJSON(w, outcome.Status, outcome.Response)
+	outcome.write(w)
 }
 
 type stagedProposal struct {
@@ -574,7 +611,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
 		}
 	}
-	studioJSON(w, outcome.Status, outcome.Response)
+	outcome.write(w)
 }
 
 func (s *studio) discardProposal(w http.ResponseWriter, r *http.Request) {

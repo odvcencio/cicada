@@ -29,8 +29,8 @@ import (
 	"m31labs.dev/cicada/host/recording"
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/internal/filetarget"
+	"m31labs.dev/cicada/internal/studiohttp"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/project"
 )
@@ -56,7 +56,9 @@ type studio struct {
 	transport           *studioTransport
 	history             *studioHistory
 	exports             *studioExportController
+	midiExport          studioMIDIExportController
 	liveControls        studioLiveControls
+	nativeMIDI          studioMIDIInput
 	sessionID           string
 	renderCheck         edits.RenderCheck // caches song-to-arrange renders by source revision
 	samplerUndo         []padsampler.Bank
@@ -76,7 +78,6 @@ func studioCommand(args []string) error {
 	seenPath := false
 	lspStdio := false
 	serviceOnly := false
-	audioNull := backendName == audiobackend.Null
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--service" {
 			serviceOnly = true
@@ -125,11 +126,8 @@ func studioCommand(args []string) error {
 			fmt.Fprintln(os.Stderr, "Cicada take recovery:", err)
 		}
 	}()
-	studio.transport.audioNull = audioNull
-	studio.transport.audioBackend = string(backendName)
-	studio.transport.audioOptions, err = loadStudioAudioPreferences(backendName)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Cicada audio settings: using defaults:", err)
+	if err := studio.transport.initializeAudio(backendName); err != nil {
+		fmt.Fprintln(os.Stderr, "Cicada audio setup:", err)
 	}
 	handler := studio.routes()
 	var serviceToken string
@@ -145,9 +143,9 @@ func studioCommand(args []string) error {
 		return err
 	}
 	defer listener.Close()
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	server := studiohttp.New(ctx, handler)
 	if lspStdio {
 		// Stdout is the LSP wire in this mode. The extension reads the Studio
 		// address from stderr and shows the same views as the browser frame.
@@ -159,6 +157,7 @@ func studioCommand(args []string) error {
 		}()
 	}
 	go studio.watchHistory(ctx)
+	go studio.watchLiveInputs(ctx)
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
 	var appFinished <-chan error
@@ -167,7 +166,12 @@ func studioCommand(args []string) error {
 		if lspStdio {
 			output = os.Stderr
 		}
-		cancelApp, done, launchErr := launchStudioWorkstation(workstationPath, "http://"+listener.Addr().String(), frontAddress, serviceToken, output)
+		stateDir, stateErr := studioWorkstationStateDir(studio.path)
+		if stateErr != nil {
+			_ = server.Close()
+			return stateErr
+		}
+		cancelApp, done, launchErr := launchStudioWorkstation(workstationPath, "http://"+listener.Addr().String(), frontAddress, serviceToken, stateDir, output)
 		if launchErr != nil {
 			_ = server.Close()
 			return launchErr
@@ -192,6 +196,7 @@ func studioCommand(args []string) error {
 		defer cancel()
 		return server.Shutdown(shutdown)
 	case err := <-appFinished:
+		stop() // Cancel native input streams before waiting for HTTP shutdown.
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdown)
@@ -283,10 +288,12 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /studio-transcribe.js", s.transcribeScript)
 	mux.HandleFunc("POST /api/instrument-fit", s.instrumentFit)
 	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
+	mux.HandleFunc("POST /api/sound-preview", s.soundPreview)
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
 	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
 	mux.HandleFunc("POST /api/live", s.liveControl)
 	mux.HandleFunc("GET /api/live", s.liveSocket)
+	mux.HandleFunc("POST /api/midi/input", s.midiInput)
 	mux.HandleFunc("POST /api/loudness/reset", s.resetLiveLoudness)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/arrange", s.editArrangement)
@@ -313,6 +320,9 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("GET /api/export/file/{id}", s.exportFile)
 	mux.HandleFunc("POST /api/export", s.startExport)
+	mux.HandleFunc("GET /api/export/midi", s.midiExportStatus)
+	mux.HandleFunc("POST /api/export/midi", s.prepareMIDIExport)
+	mux.HandleFunc("GET /api/export/midi/file/{id}", s.midiExportFile)
 	mux.HandleFunc("GET /api/history", s.historyState)
 	mux.HandleFunc("GET /api/library", s.libraryState)
 	mux.HandleFunc("POST /api/library/preview", s.libraryPreview)
@@ -385,11 +395,13 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	source, err := os.ReadFile(s.path)
+	sourceRevision := ""
 	if err == nil {
 		state := s.transport.snapshot()
 		bar, step := historyPosition(state)
 		s.history.observe(source, bar, step)
-		if p, parseErr := compileStudioSource(s.path, source); parseErr == nil {
+		if p, sources, parseErr := compileStudioSourceSnapshot(s.path, source, nil); parseErr == nil {
+			sourceRevision = sources.ScoreRevision()
 			s.lastGoodSource, s.lastGoodProject = bytes.Clone(source), p
 		}
 	}
@@ -407,7 +419,7 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var page bytes.Buffer
-	if err := writeScorePage(&page, p, string(goodSource), filepath.Base(s.path), true, studioRevision(goodSource)); err != nil {
+	if err := writeScorePage(&page, p, string(goodSource), filepath.Base(s.path), true, studioRevision(goodSource), sourceRevision); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -442,49 +454,62 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	recordedTake   bool // Set by the record route; arms the playback handoff after the commit.
-	historyFiles   []studioAuxiliaryFile
-	Hits           []int                    `json:"hits,omitempty"`
-	File           string                   `json:"file,omitempty"`
-	Capture        *studioBrowserTake       `json:"capture,omitempty"`
-	Sample         *studioSampleRequest     `json:"sample,omitempty"`
-	TakeID         string                   `json:"takeId,omitempty"`
-	Recording      *studioRecordingSettings `json:"recording,omitempty"`
-	Scene          string                   `json:"scene,omitempty"`
-	Revision       string                   `json:"revision"`
-	Label          string                   `json:"label,omitempty"`
-	Author         string                   `json:"author,omitempty"`
-	Session        string                   `json:"session,omitempty"`
-	Action         string                   `json:"action,omitempty"`
-	Index          int                      `json:"index,omitempty"`
-	Target         int                      `json:"target,omitempty"`
-	Bars           int                      `json:"bars,omitempty"`
-	Source         string                   `json:"source"`
-	Pattern        string                   `json:"pattern"`
-	Track          string                   `json:"track,omitempty"`
-	Count          int                      `json:"count,omitempty"`
-	Take           []studioTakeNote         `json:"take,omitempty"`
-	Recordings     []studioTakeRecording    `json:"recordings,omitempty"`
-	PatternCount   int                      `json:"patternCount,omitempty"`
-	Lane           string                   `json:"lane"`
-	Step           int                      `json:"step"`
-	Pitch          *int                     `json:"pitch,omitempty"`
-	Modifier       string                   `json:"modifier,omitempty"`
-	Path           string                   `json:"path,omitempty"`
-	Item           string                   `json:"item,omitempty"`
-	Name           string                   `json:"name,omitempty"`
-	Mode           string                   `json:"mode,omitempty"`
-	Rate           int                      `json:"rate,omitempty"`
-	Value          json.RawMessage          `json:"value,omitempty"`
-	ConfirmUpgrade bool                     `json:"confirmUpgrade,omitempty"`
-	ClipSettings   *studioClipSettings      `json:"clipSettings,omitempty"`
-	Placement      *studioPlaceSettings     `json:"placement,omitempty"`
-	Metadata       *studioProjectSettings   `json:"metadata,omitempty"`
-	Range          *studioPatternRange      `json:"range,omitempty"`
-	Length         int                      `json:"length,omitempty"`
-	Settings       *studioPatternSettings   `json:"settings,omitempty"`
-	NoteEdit       *studioStepEdit          `json:"noteEdit,omitempty"`
-	NewName        string                   `json:"newName,omitempty"`
+	recordedTake          bool // Set by the record route; arms the playback handoff after the commit.
+	historyFiles          []studioAuxiliaryFile
+	Hits                  []int                         `json:"hits,omitempty"`
+	File                  string                        `json:"file,omitempty"`
+	Capture               *studioBrowserTake            `json:"capture,omitempty"`
+	Sample                *studioSampleRequest          `json:"sample,omitempty"`
+	TakeID                string                        `json:"takeId,omitempty"`
+	Recording             *studioRecordingSettings      `json:"recording,omitempty"`
+	Scene                 string                        `json:"scene,omitempty"`
+	Revision              string                        `json:"revision"`
+	SourceRevision        string                        `json:"source_revision,omitempty"`
+	Label                 string                        `json:"label,omitempty"`
+	Author                string                        `json:"author,omitempty"`
+	Session               string                        `json:"session,omitempty"`
+	Action                string                        `json:"action,omitempty"`
+	Index                 int                           `json:"index,omitempty"`
+	Target                int                           `json:"target,omitempty"`
+	Bars                  int                           `json:"bars,omitempty"`
+	Source                string                        `json:"source"`
+	Pattern               string                        `json:"pattern"`
+	Track                 string                        `json:"track,omitempty"`
+	Count                 int                           `json:"count,omitempty"`
+	Take                  []studioTakeNote              `json:"take,omitempty"`
+	Recordings            []studioTakeRecording         `json:"recordings,omitempty"`
+	Timing                string                        `json:"timing,omitempty"`
+	PatternCount          int                           `json:"patternCount,omitempty"`
+	Lane                  string                        `json:"lane"`
+	Step                  int                           `json:"step"`
+	Pitch                 *int                          `json:"pitch,omitempty"`
+	Modifier              string                        `json:"modifier,omitempty"`
+	Path                  string                        `json:"path,omitempty"`
+	Item                  string                        `json:"item,omitempty"`
+	Name                  string                        `json:"name,omitempty"`
+	Mode                  string                        `json:"mode,omitempty"`
+	Rate                  int                           `json:"rate,omitempty"`
+	Value                 json.RawMessage               `json:"value,omitempty"`
+	ConfirmUpgrade        bool                          `json:"confirmUpgrade,omitempty"`
+	ClipSettings          *studioClipSettings           `json:"clipSettings,omitempty"`
+	Placement             *studioPlaceSettings          `json:"placement,omitempty"`
+	Tempo                 *edits.SetArrangementTempo    `json:"tempo,omitempty"`
+	Metadata              *studioProjectSettings        `json:"metadata,omitempty"`
+	Range                 *studioPatternRange           `json:"range,omitempty"`
+	Length                int                           `json:"length,omitempty"`
+	Settings              *studioPatternSettings        `json:"settings,omitempty"`
+	PerformanceNote       *edits.SetPerformedNote       `json:"performanceNote,omitempty"`
+	PerformanceExpression *edits.SetPerformedExpression `json:"performanceExpression,omitempty"`
+	PerformanceGroup      *edits.SetPerformanceGroup    `json:"performanceGroup,omitempty"`
+	PerformanceBinding    *edits.BindPerformedGroup     `json:"performanceBinding,omitempty"`
+	SharedExpression      *edits.SetSharedExpression    `json:"sharedExpression,omitempty"`
+	PerformanceLength     int64                         `json:"performanceLength,omitempty"`
+	PerformanceScale      *edits.ScalePerformance       `json:"performanceScale,omitempty"`
+	PerformancePitch      *edits.ShapePerformancePitch  `json:"performancePitch,omitempty"`
+	NoteEdit              *studioStepEdit               `json:"noteEdit,omitempty"`
+	Chord                 *edits.SetChord               `json:"chord,omitempty"`
+	NewName               string                        `json:"newName,omitempty"`
+	Starter               string                        `json:"starter,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
@@ -612,46 +637,49 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 }
 
 func compileStudioSourceWithOverrides(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
+	p, _, err := compileStudioSourceSnapshot(path, source, overrides)
+	return p, err
+}
+
+// Keep the source identity and the compiled view on the same captured files.
+func compileStudioSourceSnapshot(path string, source []byte, overrides map[string][]byte) (*project.Project, *project.Sources, error) {
 	if !utf8.Valid(source) {
-		return nil, fmt.Errorf("score is not UTF-8")
+		return nil, nil, fmt.Errorf("score is not UTF-8")
 	}
 	if overrides == nil {
 		overrides = map[string][]byte{}
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	overrides[absolute] = source
-	score, diagnostics, err := project.LoadScore(path, overrides)
+	sources, err := project.ReadSources(path, overrides)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	score, diagnostics := sources.Parse()
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
-			return nil, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 		}
 	}
 	p, extra := project.FromScore(score)
 	for _, d := range extra {
 		if d.Severity == "error" {
-			return nil, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 		}
 	}
 	if p == nil {
-		return nil, fmt.Errorf("score did not compile")
+		return nil, sources, fmt.Errorf("score did not compile")
 	}
 	if err := project.ValidateProject(p); err != nil {
-		return nil, err
+		return nil, sources, err
 	}
-	root, err := studioProjectRoot(path)
-	if err != nil {
-		return nil, err
+	if _, err := schedule.Compile(p, sources.Root, 48000, 128); err != nil {
+		return nil, sources, err
 	}
-	if _, err := schedule.Compile(p, root, 48000, 128); err != nil {
-		return nil, err
-	}
-	return p, nil
+	return p, sources, nil
 }
 
 func studioJSON(w http.ResponseWriter, status int, value any) {

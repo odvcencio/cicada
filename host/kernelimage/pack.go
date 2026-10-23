@@ -7,7 +7,7 @@ import (
 
 func writePack(w *writer, p *engine.PackFactory) error {
 	if len(p.Zones) < 1 || len(p.Zones) > 4096 {
-		return Error("invalid pack zone count")
+		return imageError("invalid pack zone count")
 	}
 	c := p.Config
 	w.u16(uint16(len(p.Zones)))
@@ -51,7 +51,7 @@ func writePack(w *writer, p *engine.PackFactory) error {
 			}
 		}
 		if len(w.data) > MaxImageBytes {
-			return Error("project image exceeds limit")
+			return imageError("project image exceeds limit")
 		}
 	}
 	return nil
@@ -59,12 +59,12 @@ func writePack(w *writer, p *engine.PackFactory) error {
 func readPack(r *reader) (*engine.PackFactory, error) {
 	count, err := r.u16()
 	if err != nil || count == 0 || count > 4096 {
-		return nil, Error("invalid pack zone count")
+		return nil, imageError("invalid pack zone count")
 	}
 	p := &engine.PackFactory{}
 	voices, err := r.byte()
 	if err != nil || voices < 1 || voices > 32 {
-		return nil, Error("invalid pack voice count")
+		return nil, imageError("invalid pack voice count")
 	}
 	p.Config.Voices = int(voices)
 	c := &p.Config
@@ -93,7 +93,7 @@ func readPack(r *reader) (*engine.PackFactory, error) {
 		}
 		for _, i := range []int{1, 2, 11, 13} {
 			if b[i] > 1 {
-				return nil, Error("invalid pack boolean")
+				return nil, imageError("invalid pack boolean")
 			}
 		}
 		z.ChokeGroup, z.OneShot, z.ChokeSustain = b[0], b[1] == 1, b[2] == 1
@@ -110,14 +110,14 @@ func readPack(r *reader) (*engine.PackFactory, error) {
 		for _, v := range []*int{&z.Region.Start, &z.Region.End, &z.Region.LoopStart, &z.Region.LoopEnd, &z.Region.Crossfade} {
 			n, e := r.u32()
 			if e != nil || n > 1<<30 {
-				return nil, Error("invalid pack region")
+				return nil, imageError("invalid pack region")
 			}
 			*v = int(n)
 		}
 	}
 	assets, err := r.u16()
 	if err != nil || assets == 0 || assets > count {
-		return nil, Error("invalid pack asset count")
+		return nil, imageError("invalid pack asset count")
 	}
 	regions := make([]sample.Region, int(assets))
 	for i := range regions {
@@ -131,10 +131,10 @@ func readPack(r *reader) (*engine.PackFactory, error) {
 		}
 		stereo, e := r.byte()
 		if e != nil || stereo > 1 || frames == 0 || frames > MaxImageBytes/4 {
-			return nil, Error("invalid pack PCM")
+			return nil, imageError("invalid pack PCM")
 		}
 		if uint64(frames)*4*uint64(1+stereo) > uint64(len(r.data)-r.at) {
-			return nil, Error("truncated pack PCM")
+			return nil, imageError("truncated pack PCM")
 		}
 		regions[i].SampleRate = int(rate)
 		regions[i].Left = make([]float32, int(frames))
@@ -152,7 +152,7 @@ func readPack(r *reader) (*engine.PackFactory, error) {
 	}
 	for i := range p.Zones {
 		if int(indices[i]) >= len(regions) {
-			return nil, Error("invalid pack asset index")
+			return nil, imageError("invalid pack asset index")
 		}
 		a := regions[indices[i]]
 		p.Zones[i].Region.Left = a.Left

@@ -41,17 +41,17 @@ func (p Params) Validate() error {
 	values := [...]float64{p.Tune, p.Fine, p.Wave, p.PulseWidth, p.Detune, p.Sub, p.Cutoff, p.Resonance, p.EnvMod, p.Decay, p.Accent, p.Drive, p.Release, p.Slide, p.Gate, p.LevelDB}
 	for _, value := range values {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return Error("acid parameter must be finite")
+			return validationError("acid parameter must be finite")
 		}
 	}
 	if p.Tune < -12 || p.Tune > 12 || p.Fine < -100 || p.Fine > 100 || p.Wave < 0 || p.Wave > 1 || p.PulseWidth < .1 || p.PulseWidth > .9 || p.Detune < 0 || p.Detune > 50 || p.Sub < 0 || p.Sub > 1 {
-		return Error("acid oscillator parameter is out of range")
+		return validationError("acid oscillator parameter is out of range")
 	}
 	if p.Cutoff < 20 || p.Cutoff > 8000 || p.Resonance < 0 || p.Resonance > 1 || p.EnvMod < 0 || p.EnvMod > 1 || p.Decay < .1 || p.Decay > 3 || p.Accent < 0 || p.Accent > 1 || p.Drive < 0 || p.Drive > 1 {
-		return Error("acid filter or envelope parameter is out of range")
+		return validationError("acid filter or envelope parameter is out of range")
 	}
 	if p.Release < .005 || p.Release > .5 || p.Slide < .02 || p.Slide > .2 || p.Gate < 10 || p.Gate > 100 || p.LevelDB > 6 || p.Filter > Ladder {
-		return Error("acid voice parameter is out of range")
+		return validationError("acid voice parameter is out of range")
 	}
 	return nil
 }
@@ -93,7 +93,7 @@ type Voice struct {
 
 func New(sampleRate int) (*Voice, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return nil, Error("acid sample rate must be 44100, 48000, or 96000")
+		return nil, validationError("acid sample rate must be 44100, 48000, or 96000")
 	}
 	v := &Voice{sampleRate: float64(sampleRate), up: halfband.New(), down: halfband.New(), oscillator: bankForSampleRate(sampleRate)}
 	v.buildDriveTable()
@@ -144,7 +144,7 @@ func (v *Voice) SetParamsTarget(p Params, alpha float64) error {
 		return err
 	}
 	if math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
-		return Error("acid parameter smoothing is out of range")
+		return validationError("acid parameter smoothing is out of range")
 	}
 	v.targetParams, v.paramAlpha = p, alpha
 	return nil
@@ -230,6 +230,8 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 
 // SetExpression applies per-step pitch expression without changing the gate.
 func (v *Voice) SetExpression(p expression.Params) { v.expression.SetParams(p, float32(v.sampleRate)) }
+
+func (v *Voice) SetGroupControls(c expression.Controls) { v.expression.SetGroupControls(c) }
 
 func (v *Voice) NoteExpression(pitchCents, pressure, timbre float32) {
 	v.expression.SetControls(pitchCents, pressure, timbre)

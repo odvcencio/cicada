@@ -16,12 +16,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -29,20 +31,22 @@ import (
 type Stage string
 
 const (
-	WAVWritten    Stage = "wav-written"
-	BlobLinked    Stage = "blob-linked"
-	TakeLinked    Stage = "take-linked"
-	SourceStaged  Stage = "source-staged"
-	SourceSwapped Stage = "source-swapped"
-	Begun         Stage = "begun"
-	Chunk         Stage = "chunk"
-	Finalized     Stage = "finalized"
-	Blob          Stage = "blob"
-	Published     Stage = "published"
-	Prepared      Stage = "prepared"
-	Source        Stage = "source"
-	Committed     Stage = "committed"
-	Conflict      Stage = "conflict"
+	WAVWritten           Stage = "wav-written"
+	BlobLinked           Stage = "blob-linked"
+	TakeLinked           Stage = "take-linked"
+	SourceStaged         Stage = "source-staged"
+	SourceSwapped        Stage = "source-swapped"
+	AuxiliarySwapped     Stage = "auxiliary-swapped"
+	AuxiliaryFileSwapped Stage = "auxiliary-file-swapped"
+	Begun                Stage = "begun"
+	Chunk                Stage = "chunk"
+	Finalized            Stage = "finalized"
+	Blob                 Stage = "blob"
+	Published            Stage = "published"
+	Prepared             Stage = "prepared"
+	Source               Stage = "source"
+	Committed            Stage = "committed"
+	Conflict             Stage = "conflict"
 )
 
 // Take keeps all passes, including pending/conflicted takes. Each chunk event
@@ -62,21 +66,61 @@ type Take struct {
 	Before     string                 `json:"before,omitempty"`
 	After      string                 `json:"after,omitempty"`
 	Candidate  []byte                 `json:"candidate,omitempty"`
+	Files      []SourceChange         `json:"files,omitempty"`
 	FirstBlock *capture.RecordedBlock `json:"firstBlock,omitempty"`
 	Timeline   *Timeline              `json:"timeline,omitempty"`
+}
+
+// SourceChange pins a project-relative source's exact bytes on both sides of
+// a prepared selection. A restart may find either side, never an arbitrary edit.
+type SourceChange struct {
+	Path   string `json:"path"`
+	Before []byte `json:"before"`
+	After  []byte `json:"after"`
+}
+
+func cloneSourceChanges(files []SourceChange) []SourceChange {
+	result := make([]SourceChange, len(files))
+	for i, file := range files {
+		result[i] = SourceChange{Path: file.Path, Before: bytes.Clone(file.Before), After: bytes.Clone(file.After)}
+	}
+	return result
 }
 
 // Timeline pins the musical origin and tempo of an arrangement recording.
 // Raw PCM includes count-in/pre-roll; StartTick/EndTick define the usable punch.
 type Timeline struct {
-	StartTick         int64 `json:"startTick"`
-	EndTick           int64 `json:"endTick"`
-	PlaybackStartTick int64 `json:"playbackStartTick"`
-	TempoMilli        int64 `json:"tempoMilli"`
+	StartTick         int64                   `json:"startTick"`
+	EndTick           int64                   `json:"endTick"`
+	PlaybackStartTick int64                   `json:"playbackStartTick"`
+	TempoMilli        int64                   `json:"tempoMilli"`
+	TempoChanges      []musictime.TempoChange `json:"tempoChanges,omitempty"`
 }
 
 func (v Timeline) Valid() bool {
-	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40
+	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40 && musictime.ValidateTempoChanges(v.TempoChanges) == nil
+}
+
+func (v *Timeline) Clock(rate int) (*project.TempoMap, error) {
+	if v == nil || !v.Valid() {
+		return nil, errors.New("invalid recording timeline")
+	}
+	return project.NewTempoMap(rate, v.TempoMilli, v.TempoChanges)
+}
+
+// Coverage maps the retained PCM back onto the recording's own musical clock.
+// Invalid or empty takes expose no usable interval.
+func (t Take) Coverage() (int64, int64) {
+	c, err := t.Timeline.Clock(t.Rate)
+	if err != nil {
+		return 0, 0
+	}
+	var origin int64
+	if t.FirstBlock != nil {
+		origin = int64(t.FirstBlock.RawFrame) - t.FirstBlock.Placement.EngineFrame
+	}
+	end := c.TickAtSample(c.SampleAtTick(t.Timeline.PlaybackStartTick) + int64(t.Frames) - origin)
+	return t.Timeline.StartTick, min(t.Timeline.EndTick, end)
 }
 
 type event struct {
@@ -89,6 +133,7 @@ type event struct {
 	Before     string                 `json:"before,omitempty"`
 	After      string                 `json:"after,omitempty"`
 	Candidate  []byte                 `json:"candidate,omitempty"`
+	Files      []SourceChange         `json:"files,omitempty"`
 }
 
 type Store struct {
@@ -356,6 +401,7 @@ func apply(t *Take, e event) {
 	}
 	if e.Candidate != nil {
 		t.Candidate = e.Candidate
+		t.Files = cloneSourceChanges(e.Files)
 		t.Before = e.Before
 		t.After = e.After
 	}
@@ -409,6 +455,7 @@ func (s *Store) BeginTimeline(track, scene, expected string, rate, channels int,
 	t := &Take{ID: "take-" + hex.EncodeToString(id[:]), Track: track, Scene: scene, Expected: expected, Rate: rate, Channels: channels, Created: time.Now().UTC()}
 	if timeline != nil {
 		v := *timeline
+		v.TempoChanges = append([]musictime.TempoChange(nil), timeline.TempoChanges...)
 		t.Timeline = &v
 	}
 	f, err := s.root.OpenFile(s.rawPath(t.ID), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
@@ -430,6 +477,7 @@ func clone(t *Take) Take {
 	v := *t
 	if t.Timeline != nil {
 		timeline := *t.Timeline
+		timeline.TempoChanges = append([]musictime.TempoChange(nil), t.Timeline.TempoChanges...)
 		v.Timeline = &timeline
 	}
 	if t.FirstBlock != nil {
@@ -437,6 +485,7 @@ func clone(t *Take) Take {
 		v.FirstBlock = &b
 	}
 	v.Candidate = bytes.Clone(t.Candidate)
+	v.Files = cloneSourceChanges(t.Files)
 	return v
 }
 func (s *Store) Takes() []Take {
@@ -727,13 +776,24 @@ func (s *Store) copyImmutable(from, to string, a project.Asset) error {
 }
 func tSafeID(name string) string { h := sha256.Sum256([]byte(name)); return fmt.Sprintf("%x", h[:8]) }
 func (s *Store) Prepare(id string, before, after []byte) error {
+	return s.PrepareProject(id, before, after, nil)
+}
+
+func (s *Store) PrepareProject(id string, before, after []byte, files []SourceChange) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := s.takes[id]
 	if t == nil || t.Stage == Begun || t.Stage == Chunk || t.Stage == Finalized || t.Stage == Blob {
 		return errors.New("publish take before preparing source")
 	}
-	return s.append(t, event{Stage: Prepared, Before: Revision(before), After: Revision(after), Candidate: bytes.Clone(after)})
+	seen := make(map[string]bool)
+	for _, file := range files {
+		if !filepath.IsLocal(file.Path) || filepath.ToSlash(filepath.Clean(file.Path)) != file.Path || strings.Contains(file.Path, "\\") || seen[file.Path] {
+			return errors.New("invalid prepared project source")
+		}
+		seen[file.Path] = true
+	}
+	return s.append(t, event{Stage: Prepared, Before: Revision(before), After: Revision(after), Candidate: bytes.Clone(after), Files: cloneSourceChanges(files)})
 }
 func (s *Store) Mark(id string, stage Stage) error {
 	s.mu.Lock()

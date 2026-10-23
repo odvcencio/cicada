@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
 	"strings"
 
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/internal/audiobackend"
 )
 
 type studioAudioOptions struct {
@@ -35,13 +37,16 @@ type studioAudioDeviceInfo struct {
 }
 
 type studioAudioInventory struct {
-	Supported     bool                    `json:"supported"`
-	Backend       string                  `json:"backend"`
-	BackendName   string                  `json:"backendName"`
-	Host          string                  `json:"host,omitempty"`
-	Message       string                  `json:"message,omitempty"`
-	Devices       []studioAudioDeviceInfo `json:"devices"`
-	BufferChoices []int                   `json:"bufferChoices"`
+	Supported        bool                     `json:"supported"`
+	CaptureSupported bool                     `json:"captureSupported"`
+	InputAccess      audiobackend.InputAccess `json:"inputAccess,omitempty"`
+	InputMessage     string                   `json:"inputMessage,omitempty"`
+	Backend          string                   `json:"backend"`
+	BackendName      string                   `json:"backendName"`
+	Host             string                   `json:"host,omitempty"`
+	Message          string                   `json:"message,omitempty"`
+	Devices          []studioAudioDeviceInfo  `json:"devices"`
+	BufferChoices    []int                    `json:"bufferChoices"`
 }
 
 type studioAudioSnapshot struct {
@@ -84,11 +89,12 @@ type studioAudioSnapshot struct {
 }
 
 type studioAudioState struct {
-	Inventory studioAudioInventory `json:"inventory"`
-	Options   studioAudioOptions   `json:"options"`
-	Runtime   studioAudioSnapshot  `json:"runtime"`
-	Playing   bool                 `json:"playing"`
-	Status    string               `json:"status"`
+	Inventory       studioAudioInventory `json:"inventory"`
+	Options         studioAudioOptions   `json:"options"`
+	Runtime         studioAudioSnapshot  `json:"runtime"`
+	Playing         bool                 `json:"playing"`
+	Status          string               `json:"status"`
+	SettingsWarning string               `json:"settingsWarning,omitempty"`
 }
 
 // The active panel refreshes these reports without rediscovering endpoints.
@@ -153,7 +159,7 @@ func (t *studioTransport) audioState() studioAudioState {
 		options = defaultStudioAudioOptions()
 	}
 	options = normalizeStudioAudioOptions(options)
-	state := studioAudioState{Inventory: inventory, Options: options, Playing: t.playing}
+	state := studioAudioState{Inventory: inventory, Options: options, Playing: t.playing, SettingsWarning: t.audioSettingsWarning}
 	if t.audio != nil {
 		state.Runtime = t.audio.Snapshot()
 	} else {
@@ -250,33 +256,65 @@ func studioAudioStatus(state studioAudioState) string {
 }
 
 func (t *studioTransport) configureAudio(options studioAudioOptions) error {
+	return t.configureAudioContext(context.Background(), options)
+}
+
+func (t *studioTransport) configureAudioContext(ctx context.Context, options studioAudioOptions) error {
+	return t.configureAudioAuthorized(ctx, options, enumerateStudioAudio, requestStudioInputAccess)
+}
+
+func (t *studioTransport) configureAudioAuthorized(ctx context.Context, options studioAudioOptions, discover func(string) (studioAudioInventory, error), requestAccess func(context.Context, string) error) error {
+	t.audioConfigMu.Lock()
+	defer t.audioConfigMu.Unlock()
 	options = normalizeStudioAudioOptions(options)
 	if err := validateStudioAudioOptions(options); err != nil {
 		return err
 	}
-	inventory, err := enumerateStudioAudio(t.selectedAudioBackend())
+	inventory, err := discover(t.selectedAudioBackend())
 	if err != nil {
 		return err
 	}
 	if err := validateStudioAudioDevices(inventory, options); err != nil {
 		return err
 	}
+	// Do not hold transport or render locks while the user answers macOS.
+	// Recheck below: playback may have started while the prompt was open.
+	t.mu.Lock()
+	err = t.checkAudioConfigurationLocked(options)
+	t.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if options.InputEnabled {
+		if err := requestAccess(ctx, t.selectedAudioBackend()); err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if err := t.checkAudioConfigurationLocked(options); err != nil {
+		return err
+	}
 	previousOptions := normalizeStudioAudioOptions(t.audioOptions)
 	routeChanged := options.InputEnabled != previousOptions.InputEnabled || options.InputDevice != previousOptions.InputDevice || options.OutputDevice != previousOptions.OutputDevice || options.PeriodFrames != previousOptions.PeriodFrames
-	if t.playing && routeChanged {
-		return fmt.Errorf("stop playback before changing audio devices")
+	if t.audioSettingsErr != nil {
+		return fmt.Errorf("%w: %v", errStudioAudioSettings, t.audioSettingsErr)
 	}
-	if t.audio != nil && t.audio.Armed() && routeChanged {
-		return fmt.Errorf("disarm capture before changing audio devices")
-	}
-	if t.audio != nil && t.audio.Armed() && options.RecordingOffsetMS != t.audioOptions.RecordingOffsetMS {
-		return fmt.Errorf("finish the take before changing recording timing correction")
+	if t.audioSettingsPath != "" {
+		if err := saveStudioAudioSettings(t.audioSettingsPath, options); err != nil {
+			return fmt.Errorf("%w: %v", errStudioAudioSettings, err)
+		}
+		t.audioSettingsWarning = ""
 	}
 	t.audioOptions = options
+	if routeChanged {
+		t.stopPreviewLocked()
+	}
 	if t.audio != nil {
 		t.audio.SetMonitor(studioMonitorOptions(options))
 	}
@@ -309,6 +347,25 @@ func (t *studioTransport) configureAudio(options studioAudioOptions) error {
 	t.activeSlots = nil
 	t.stoppedTracks = nil
 	t.errText = ""
+	return nil
+}
+
+// Caller holds t.mu. Use before and after any native permission wait.
+func (t *studioTransport) checkAudioConfigurationLocked(options studioAudioOptions) error {
+	if t.audioSettingsErr != nil {
+		return fmt.Errorf("%w: %v", errStudioAudioSettings, t.audioSettingsErr)
+	}
+	previous := normalizeStudioAudioOptions(t.audioOptions)
+	routeChanged := options.InputEnabled != previous.InputEnabled || options.InputDevice != previous.InputDevice || options.OutputDevice != previous.OutputDevice || options.PeriodFrames != previous.PeriodFrames
+	if t.playing && routeChanged {
+		return fmt.Errorf("stop playback before changing audio devices")
+	}
+	if t.audio != nil && t.audio.Armed() && routeChanged {
+		return fmt.Errorf("disarm capture before changing audio devices")
+	}
+	if t.audio != nil && t.audio.Armed() && options.RecordingOffsetMS != previous.RecordingOffsetMS {
+		return fmt.Errorf("finish the take before changing recording timing correction")
+	}
 	return nil
 }
 
@@ -368,6 +425,9 @@ func validateStudioAudioOptions(options studioAudioOptions) error {
 }
 
 func validateStudioAudioDevices(inventory studioAudioInventory, options studioAudioOptions) error {
+	if !inventory.CaptureSupported && options.InputEnabled {
+		return fmt.Errorf("recording input is unavailable with this audio backend")
+	}
 	if !inventory.Supported {
 		if options.InputEnabled || options.InputDevice != "" || options.OutputDevice != "" {
 			return fmt.Errorf("this audio backend uses the system default output and does not expose selectable input devices")

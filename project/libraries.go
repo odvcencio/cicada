@@ -62,7 +62,7 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 	s.Libraries = map[string]*Library{}
 	active := map[string]bool{}
 	declarations := map[string]map[string]bool{}
-	if s.Manifest.Library != "" {
+	if s.Manifest.Library != "" && !s.revisionOnly {
 		for _, file := range s.Files {
 			if ds := notation.CheckLibrary(file); len(ds) > 0 {
 				return &SourceError{Diagnostic: ds[0]}
@@ -72,9 +72,14 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 	var visit func([]notation.SourceFile, string) error
 	visit = func(files []notation.SourceFile, scope string) error {
 		bindings := map[string]string{}
-		declarations[scope] = notation.DeclarationNames(files)
+		if !s.revisionOnly {
+			declarations[scope] = notation.DeclarationNames(files)
+		}
 		s.Bindings[scope] = bindings
 		for _, file := range files {
+			if s.revisionOnly && !bytes.Contains(file.Source, []byte("import")) {
+				continue
+			}
 			imports := notation.ReadImports(file)
 			for _, imp := range imports {
 				fail := func(code, message string, cause error) error {
@@ -105,10 +110,10 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 					if scope != "" {
 						ed = s.Libraries[scope].Manifest.Edition
 					}
-					if ed == 0 {
+					if ed == 0 && !s.revisionOnly {
 						ed = notation.SourceEdition(s.Files[0])
 					}
-					if cached.Manifest.Edition > ed {
+					if !s.revisionOnly && cached.Manifest.Edition > ed {
 						return fail("CICADA-VERSION", "library source edition exceeds the score edition", nil)
 					}
 					continue
@@ -131,10 +136,10 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 				if scope != "" {
 					ed = s.Libraries[scope].Manifest.Edition
 				}
-				if ed == 0 {
+				if ed == 0 && !s.revisionOnly {
 					ed = notation.SourceEdition(s.Files[0])
 				}
-				if lib.Manifest.Edition > ed {
+				if !s.revisionOnly && lib.Manifest.Edition > ed {
 					return fail("CICADA-VERSION", "library source edition exceeds the score edition", nil)
 				}
 				s.Libraries[imp.Path] = lib
@@ -219,7 +224,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 			}
 			if pins[name].Kind == "project" {
 				defer child.Close()
-				return readLibrary(name, "project", filepath.Join(base.dir, filepath.FromSlash(name)), child.FS(), overrides)
+				return readLibraryMode(name, "project", filepath.Join(base.dir, filepath.FromSlash(name)), child.FS(), overrides, s.revisionOnly)
 			}
 		}
 	}
@@ -236,6 +241,8 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 	if len(candidates) > 1 {
 		// A project pin explicitly selects a vendored copy. A user pin may
 		// coexist with an identical project copy during an idempotent vendor.
+		// Even revision-only reads must hash assets in this ambiguous case:
+		// source equality alone cannot prove that the two libraries match.
 		pins, err := s.readSum()
 		if err != nil {
 			return nil, err
@@ -260,7 +267,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		return nil, sourceError("", 1, 1, "CICADA-LIB-SHADOW", "library "+name+" exists in more than one search location", nil)
 	}
 	c := candidates[0]
-	return readLibrary(name, c.kind, c.root, c.files, overrides)
+	return readLibraryMode(name, c.kind, c.root, c.files, overrides, s.revisionOnly)
 }
 
 // InspectLibrary resolves and hashes a library without requiring a score.
@@ -276,6 +283,10 @@ func InspectLibrary(projectDir, name string) (*Library, error) {
 }
 
 func readLibrary(name, kind, root string, files fs.FS, overrides map[string][]byte) (*Library, error) {
+	return readLibraryMode(name, kind, root, files, overrides, false)
+}
+
+func readLibraryMode(name, kind, root string, files fs.FS, overrides map[string][]byte, revisionOnly bool) (*Library, error) {
 	data, err := fs.ReadFile(files, "cicada.mod")
 	if err != nil {
 		return nil, err
@@ -297,10 +308,15 @@ func readLibrary(name, kind, root string, files fs.FS, overrides map[string][]by
 		}
 		content[source] = data
 		file := notation.SourceFile{Path: full, Source: data}
-		if ds := notation.CheckLibrary(file); len(ds) != 0 {
-			return nil, &SourceError{Diagnostic: ds[0]}
+		if !revisionOnly {
+			if ds := notation.CheckLibrary(file); len(ds) != 0 {
+				return nil, &SourceError{Diagnostic: ds[0]}
+			}
 		}
 		lib.Files = append(lib.Files, file)
+	}
+	if revisionOnly {
+		return lib, nil
 	}
 	audioFiles := map[string]bool{}
 	if _, err := fs.Stat(files, "audio"); err == nil {

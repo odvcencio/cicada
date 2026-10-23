@@ -80,9 +80,9 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.match(old.messages.find(m => m.t === 'e')?.e || '', /Ambiguous.*image14.*recompile/);
       assert.equal(old.instances.length, 0, 'ambiguous image instantiated a kernel');
     }
-    for (const version of [0, 7, 16, 255, 65535]) {
+    for (const version of [0, 7, 19, 255, 65535]) {
       const unknown = await setup(asset, capture, version, 3);
-      assert.match(unknown.messages.find(m => m.t === 'e')?.e || '', /Unsupported image version/);
+      assert.match(unknown.messages.find(m => m.t === 'e')?.e || '', /Unsupported image /);
       assert.equal(unknown.instances.length, 0);
     }
     for (const capability of [null, 0, 1, 2, 3]) {
@@ -95,15 +95,33 @@ async function setup(asset, capture, version, capability, options = {}) {
       const unified = await setup(asset, capture, 15, capability);
       assert.ok(unified.messages.some(m => m.t === 'r' && m.p === capability));
     }
+    for (const capability of [65536, 258047]) {
+      const missing = await setup(asset, capture, 16, capability);
+      assert.match(missing.messages.find(m => m.t === 'e')?.e || '', /image16.*CapabilityPerformance/);
+      assert.equal(missing.counts.projectAllocs, 0, 'unnegotiated performance mutated old kernel');
+    }
+    const performed = await setup(asset, capture, 16, 65536 | 262144);
+    assert.ok(performed.messages.some(m => m.t === 'r' && m.p === (65536 | 262144)));
+    const missingGestures = await setup(asset, capture, 17, 65536 | 262144);
+    assert.match(missingGestures.messages.find(m => m.t === 'e')?.e || '', /image17.*CapabilityGestures/);
+    assert.equal(missingGestures.counts.projectAllocs, 0, 'unnegotiated gestures mutated the kernel');
+    const gestural = await setup(asset, capture, 17, 65536 | 262144 | 524288);
+    assert.ok(gestural.messages.some(m => m.t === 'r' && m.p === (65536 | 262144 | 524288)));
+    const missingShared = await setup(asset, capture, 18, 65536 | 262144 | 524288);
+    assert.match(missingShared.messages.find(m=>m.t==='e')?.e||'', /image18.*CapabilitySharedControls/);
+    assert.equal(missingShared.counts.projectAllocs,0,'unnegotiated shared lanes mutated the kernel');
+    const shared = await setup(asset,capture,18,65536|262144|524288|2097152);
+    assert.ok(shared.messages.some(m=>m.t==='r' && (m.p&2097152)));
+
     for (const capability of [undefined, -1, 1.5, NaN, Infinity, 4096, 0x100000000]) {
       const malformed = await setup(asset, capture, 13, capability);
       assert.match(malformed.messages.find(m => m.t === 'e')?.e || '', /Invalid capabilities/);
       assert.equal(malformed.counts.projectAllocs, 0);
     }
     for (const [options, diagnostic] of [
-      [{ missingInitializer: true }, /[Rr]eactor initializer missing/],
+      [{ missingInitializer: true }, /Missing audio init/],
       [{ throwInitializer: true }, /reactor initialization failed/],
-      [{ malformedExport: true }, /Invalid capability export/],
+      [{ malformedExport: true }, /Invalid capability/],
       [{ image: new ArrayBuffer(5) }, /Invalid CIC1 header/],
       [{ image: new ArrayBuffer(32) }, /Invalid CIC1 header/]
     ]) {
@@ -129,6 +147,17 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.equal(mono.counts.renders, before.renders + 2, 'rejected load stopped active playback');
       assert.equal(mono.counts.projectAllocs, before.projectAllocs, 'rejected load uploaded image');
     }
+    for (const op of [32,33]) {
+      const oldShared = await setup(asset,capture,15,65536);
+      const snapshot = new Uint8Array(oldShared.instances[0].memory.buffer).slice();
+      oldShared.send(commands(1,op));
+      assert.match(oldShared.messages.at(-1).e,/live shared controls/);
+      assert.equal(oldShared.counts.commits,0);
+      assert.deepEqual(new Uint8Array(oldShared.instances[0].memory.buffer),snapshot);
+    }
+    const liveShared = await setup(asset,capture,15,65536|4194304);
+    liveShared.send(commands(32,33));
+    assert.equal(liveShared.counts.commits,1,'negotiated shared controls were refused');
     const keys = await setup(asset, capture, 15, 65537 | 512);
     assert.ok(keys.messages.some(m => m.t === 'r'), 'keyboard capability bit9 was rejected');
     const noSpatial = await setup(asset, capture, 15, 66047);
@@ -149,7 +178,7 @@ async function setup(asset, capture, version, capability, options = {}) {
     // load must not steal that copy or leave its staging promise unresolved.
     staged.port.onmessage({ data: { t: 'i', i: image(15), r: 'concurrent' } });
     await settle();
-    assert.match(staged.messages.find(m => m.r === 'concurrent')?.e || '', /Image load in progress/);
+    assert.match(staged.messages.find(m => m.r === 'concurrent')?.e || '', /Image loading/);
     staged.render();
     await settle();
     assert.ok(staged.messages.some(m => m.t === 't'));

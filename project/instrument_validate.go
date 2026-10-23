@@ -22,6 +22,34 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 	if program.DelaySamples() == 0 {
 		return nil
 	}
+	if performance := pattern.Performance; performance != nil {
+		if len(performance.Groups) > 0 {
+			return validateSharedDelay(program, sampleRate, pattern)
+		}
+		for _, note := range performance.Notes {
+			if len(note.Expressions) == 0 || note.Expressions[0].Tick > 0 {
+				if err := validateGraphDelayNote(program, sampleRate, int(note.Note)+int(pattern.Transpose)); err != nil {
+					return err
+				}
+			}
+			for _, point := range note.Expressions {
+				if point.Tick == note.EndTick-note.Tick {
+					continue
+				} // A released note cannot consume this value.
+				depth := float32(0)
+				if point.Params.VibratoRateHz != 0 {
+					depth = point.Params.VibratoDepthCents
+				}
+				for _, cents := range [...]float32{point.Params.PitchCents - depth, point.Params.PitchCents + depth} {
+					pitch := float32(440 * math.Exp2(float64(int(note.Note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
+					if err := graph.ValidateDelayPitch(program, sampleRate, pitch); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}
 	var notes [4]uint8
 	count := 0
 	for i := 0; i < int(pattern.Len); i++ {

@@ -13,7 +13,55 @@ type ScheduleEvent struct {
 	Kind          ScheduleKind
 	Track         uint8
 	Index         uint16
-	ID            uint32
+	ID            uint32 // Placement identity, or milli-BPM for ScheduleTempo.
+}
+
+// SetPlaybackPlacement restricts scheduled starts and releases to one placement
+// without changing the song's clock, automation, or track identities. Call it
+// before rendering; zero plays every placement. Hosts use it for solo listening.
+func (e *Engine) SetPlaybackPlacement(id uint32) error {
+	if e.transport.Sample() != 0 || e.transport.Playing() {
+		return engineError("placement listening must be configured before rendering")
+	}
+	if id != 0 {
+		found := false
+		for _, event := range e.schedule {
+			found = found || event.ID == id && (event.Kind == SchedulePattern || event.Kind == ScheduleClip)
+		}
+		if !found {
+			return engineError("listening placement is not in the schedule")
+		}
+	}
+	e.playbackPlacement = id
+	return nil
+}
+
+func (e *Engine) playsPlacement(id uint32) bool {
+	return e.playbackPlacement == 0 || e.playbackPlacement == id
+}
+
+// ValidateTempoSchedule checks the tempo records shared by native and image
+// construction. The caller also validates event kinds and placement ownership.
+//
+//go:noinline
+func ValidateTempoSchedule(events []ScheduleEvent) error {
+	last, end := int64(-1), int64(0)
+	var scene bool
+	for _, v := range events {
+		if v.Kind != ScheduleTempo {
+			end = max(end, v.EndTick)
+			scene = scene || v.Kind == ScheduleScene
+			continue
+		}
+		if v.Tick < 0 || v.Tick%seq.TicksPerBar != 0 || v.EndTick != v.Tick || v.Tick <= last || v.ID < 20000 || v.ID > 300000 || uint32(v.Track)|uint32(v.Scene)|uint32(v.Index) != 0 {
+			return engineError("invalid schedule tempo")
+		}
+		last = v.Tick
+	}
+	if last >= 0 && (scene || last >= end) {
+		return engineError("invalid schedule tempo span")
+	}
+	return nil
 }
 
 type scheduleInterval struct {
@@ -67,47 +115,51 @@ func (e *Engine) validateSchedule() error {
 	var scenes, activeClips int
 	var previous int64
 	for i, v := range e.schedule {
-		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleClipEnd {
-			return Error("schedule event is out of range")
+		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleTempo {
+			return engineError("schedule event is out of range")
 		}
 		previous = v.Tick
 		e.scheduleDuration = max(e.scheduleDuration, v.Tick, v.EndTick)
+		if v.Kind == ScheduleTempo {
+			e.placementSchedule = true
+			continue
+		}
 		if v.Kind == ScheduleScene {
 			scenes++
 			if int(v.Scene) >= len(e.scenes) || v.EndTick <= v.Tick {
-				return Error("schedule scene is invalid")
+				return engineError("schedule scene is invalid")
 			}
 			continue
 		}
 		e.placementSchedule = true
 		if int(v.Track) >= e.tracks || v.ID == 0 {
-			return Error("placement track or identity is invalid")
+			return engineError("placement track or identity is invalid")
 		}
 		switch v.Kind {
 		case SchedulePattern:
 			if v.Index >= 16 || e.patterns[v.Track].slots[v.Index].Len == 0 || v.Tick%seq.TicksPerStep != 0 || v.EndTick <= v.Tick || e.voices[v.Track].kind == VoiceAudio {
-				return Error("placement pattern is invalid")
+				return engineError("placement pattern is invalid")
 			}
 		case ScheduleClip:
 			if int(v.Index) >= len(e.clipTemplates) || e.voices[v.Track].kind != VoiceAudio || v.EndTick <= v.Tick {
-				return Error("placement clip is invalid")
+				return engineError("placement clip is invalid")
 			}
 		}
 		if v.Kind == SchedulePattern || v.Kind == ScheduleClip {
 			if _, exists := starts[v.ID]; exists {
-				return Error("duplicate placement identity")
+				return engineError("duplicate placement identity")
 			}
 			starts[v.ID] = v
 			if v.Kind == ScheduleClip {
 				activeClips++
 				if activeClips > e.clipLimit {
-					return Error("schedule exceeds clip voice capacity")
+					return engineError("schedule exceeds clip voice capacity")
 				}
 			}
 		} else {
 			start, exists := starts[v.ID]
 			if !exists || ends[v.ID] || start.Track != v.Track || start.EndTick != v.Tick || v.Kind != start.Kind+1 || v.EndTick != v.Tick {
-				return Error("unmatched placement release")
+				return engineError("unmatched placement release")
 			}
 			ends[v.ID] = true
 			if v.Kind == ScheduleClipEnd {
@@ -115,17 +167,21 @@ func (e *Engine) validateSchedule() error {
 			}
 		}
 	}
-	if e.placementSchedule && (scenes > 0 || len(starts) != len(ends)) {
-		return Error("invalid placement schedule authority or releases")
+	if e.placementSchedule && (scenes > 0 || len(starts) == 0 || len(starts) != len(ends)) {
+		return engineError("invalid placement schedule authority or releases")
 	}
+
 	if !e.placementSchedule {
 		var end int64
 		for _, v := range e.schedule {
 			if v.Tick != end {
-				return Error("song schedule must be contiguous")
+				return engineError("song schedule must be contiguous")
 			}
 			end = v.EndTick
 		}
+	}
+	if err := ValidateTempoSchedule(e.schedule); err != nil {
+		return err
 	}
 	e.indexSchedule()
 	return nil
@@ -156,6 +212,10 @@ func (e *Engine) startPlacementSchedule() {
 	}
 	if !e.restoreAuthoredAndCommitted() { // The same restore as a song start.
 		return
+	}
+	if e.songTempo {
+		e.setSceneTempo(e.TempoAtTick(tick))
+		e.liveTempo = false
 	}
 	localTick := tick - e.cycleStart
 	lo, hi := 0, len(e.schedule)
@@ -195,6 +255,9 @@ func (e *Engine) advancePlacementSchedule() {
 				return
 			}
 			e.cycleStart += e.scheduleDuration
+			if e.songTempo {
+				e.setSceneTempo(e.TempoAtTick(0))
+			}
 			if len(e.automation) != 0 && !e.restartAutomationLanes() { // As a song loop does.
 				return
 			}
@@ -210,13 +273,14 @@ func (e *Engine) advancePlacementSchedule() {
 		e.setNextScheduleTick()
 	}
 }
+
 // patternHandoff reports whether another pattern placement takes over the
 // track at the release tick, so notes and tails carry across like a scene
 // change. A release followed by a gap still releases. The last release of a
 // looping schedule hands off to a start at tick 0 of the next cycle.
 func (e *Engine) patternHandoff(v ScheduleEvent) bool {
 	for i := e.songIndex + 1; i < len(e.schedule) && e.schedule[i].Tick == v.Tick; i++ {
-		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track {
+		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track && e.playsPlacement(next.ID) {
 			return true
 		}
 	}
@@ -224,15 +288,21 @@ func (e *Engine) patternHandoff(v ScheduleEvent) bool {
 		return false
 	}
 	for i := 0; i < len(e.schedule) && e.schedule[i].Tick == 0; i++ {
-		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track {
+		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track && e.playsPlacement(next.ID) {
 			return true
 		}
 	}
 	return false
 }
 func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
+	if v.Kind >= SchedulePattern && v.Kind <= ScheduleClipEnd && !e.playsPlacement(v.ID) {
+		return
+	}
 	track := int(v.Track)
 	switch v.Kind {
+	case ScheduleTempo:
+		e.setSceneTempo(int64(v.ID))
+		e.liveTempo = false
 	case SchedulePattern:
 		e.placementID[track] = v.ID
 		e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: v.Track, Index: v.Index, Arg1: 1})
@@ -273,6 +343,7 @@ const (
 	SchedulePatternEnd
 	ScheduleClip
 	ScheduleClipEnd
+	ScheduleTempo
 )
 
 // LowerSong preserves scene entry boundaries, including consecutive entries

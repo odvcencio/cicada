@@ -3,6 +3,7 @@ package smf
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 type musicalNote struct {
@@ -10,6 +11,7 @@ type musicalNote struct {
 	Pitch     uint8
 	Velocity  uint8
 	Channel   uint8
+	Port      string
 }
 
 type tempoPoint struct {
@@ -17,9 +19,16 @@ type tempoPoint struct {
 	Micros uint32
 }
 
-// MusicalDiff compares normalized tempo and note events, ignoring track
-// layout, metadata ordering, and legal wire encodings of the same events.
+// MusicalDiff compares tempo, notes, routing, and ordered channel messages,
+// ignoring track layout and legal wire encodings of the same events.
 func MusicalDiff(a, b File) error {
+	var err error
+	if a, err = prepareGestureMIDI(a); err != nil {
+		return err
+	}
+	if b, err = prepareGestureMIDI(b); err != nil {
+		return err
+	}
 	if a.PPQ != b.PPQ {
 		return fmt.Errorf("PPQ differs: %d versus %d", a.PPQ, b.PPQ)
 	}
@@ -36,6 +45,9 @@ func MusicalDiff(a, b File) error {
 			return fmt.Errorf("note event %d differs: %+v versus %+v", i, leftNotes[i], rightNotes[i])
 		}
 	}
+	if !slices.Equal(normalizedControllers(a), normalizedControllers(b)) {
+		return fmt.Errorf("controller events or routing differ")
+	}
 	return nil
 }
 
@@ -43,10 +55,13 @@ func normalizedNotes(file File) []musicalNote {
 	var notes []musicalNote
 	for _, track := range file.Tracks {
 		for _, note := range track.Notes {
-			notes = append(notes, musicalNote{note.Tick, note.Dur, note.Note, note.Vel, note.Chan})
+			notes = append(notes, musicalNote{note.Tick, note.Dur, note.Note, note.Vel, note.Chan, midiPortAt(track, note.Tick)})
 		}
 	}
 	slices.SortFunc(notes, func(a, b musicalNote) int {
+		if cmp := strings.Compare(a.Port, b.Port); cmp != 0 {
+			return cmp
+		}
 		for _, cmp := range []int{
 			cmp64(a.Tick, b.Tick), int(a.Channel) - int(b.Channel),
 			int(a.Pitch) - int(b.Pitch), cmp64(a.Dur, b.Dur), int(a.Velocity) - int(b.Velocity),
@@ -58,6 +73,48 @@ func normalizedNotes(file File) []musicalNote {
 		return 0
 	})
 	return notes
+}
+
+type musicalController struct {
+	Port string
+	ChannelEvent
+}
+
+func normalizedControllers(file File) []musicalController {
+	var result []musicalController
+	for _, track := range file.Tracks {
+		for _, event := range track.Events {
+			result = append(result, musicalController{midiPortAt(track, event.Tick), event})
+		}
+	}
+	// Preserve ordering within each port/channel/tick, including RPN setup.
+	slices.SortStableFunc(result, func(a, b musicalController) int {
+		if cmp := strings.Compare(a.Port, b.Port); cmp != 0 {
+			return cmp
+		}
+		if cmp := int(a.Status&15) - int(b.Status&15); cmp != 0 {
+			return cmp
+		}
+		return cmp64(a.Tick, b.Tick)
+	})
+	return result
+}
+
+func midiPortAt(track TrackChunk, tick int64) string {
+	name, number := "", ""
+	nameTick, numberTick := int64(-1), int64(-1)
+	for _, meta := range track.Meta {
+		if meta.Tick > tick {
+			continue
+		}
+		if meta.Type == 0x09 && meta.Tick >= nameTick {
+			name, nameTick = string(meta.Data), meta.Tick
+		}
+		if meta.Type == 0x21 && meta.Tick >= numberTick {
+			number, numberTick = string(meta.Data), meta.Tick
+		}
+	}
+	return name + "\x00" + number
 }
 
 func tempos(file File) []tempoPoint {

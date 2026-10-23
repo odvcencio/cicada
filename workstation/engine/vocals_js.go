@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/kernel/seq"
-	"m31labs.dev/cicada/notation/musicaltime"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/workstation/control"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
@@ -26,6 +26,7 @@ import (
 type vocalLaneView struct {
 	ID, Label         string
 	Start, End, Tempo int64
+	TempoChanges      []musictime.TempoChange
 }
 type vocalLaneProps struct {
 	End, Start, Stop int64
@@ -83,6 +84,7 @@ type vocalLanesUI struct {
 	writing             bool
 	playback            control.Playhead
 	playbackAt          time.Time
+	playbackClockStale  bool
 	gainDB              float64
 	auditionMode        string
 	edits               control.VocalEdits
@@ -397,7 +399,7 @@ func (u *vocalLanesUI) renderSelection(draft bool) {
 			}
 		}
 	}
-	seconds := float64(u.region.End-u.region.Start) * 60000 / float64(max(int64(1), lane.Tempo)*seq.PPQ)
+	seconds := musictime.SecondsBetween(lane.Tempo, lane.TempoChanges, u.region.Start, u.region.End)
 	for _, selector := range []string{"input[name=gainDB]", "[data-vocal-gain-slider]"} {
 		if input := u.root.Call("querySelector", selector); workspacePresent(input) {
 			// Keep the user's decimal entry intact while typing. The slider and
@@ -431,8 +433,8 @@ func (u *vocalLanesUI) readPositions() {
 	if !workspacePresent(form) {
 		return
 	}
-	a, e1 := musicaltime.Parse(workspaceFieldValue(form, "recordStart"), true)
-	b, e2 := musicaltime.Parse(workspaceFieldValue(form, "recordEnd"), true)
+	a, e1 := musictime.MusicalTicks(workspaceFieldValue(form, "recordStart"), true)
+	b, e2 := musictime.MusicalTicks(workspaceFieldValue(form, "recordEnd"), true)
 	lane, ok := u.lane(u.selected)
 	if ok && e1 == nil && e2 == nil && a >= lane.Start && b <= min(lane.End, u.props.End) && a < b {
 		u.region = control.VocalRange{Start: a, End: b}

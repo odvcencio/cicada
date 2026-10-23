@@ -43,7 +43,9 @@ func publishPlayback(ctx context.Context) {
 	for {
 		if playbackVisible() {
 			var state control.PlaybackState
+			requested := time.Now()
 			err := readNativeJSON(ctx, "/api/transport", 2*time.Second, 64<<10, &state)
+			state.RoundTrip = time.Since(requested)
 			if ctx.Err() != nil {
 				return
 			}

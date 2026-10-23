@@ -18,15 +18,18 @@ async function until(fn, message) {
 }
 
 test('Producer workflow edits vocal timing, joins, effect chains and drawn automation with retained raw takes', { timeout: 180000 }, async t => {
-  const base = process.env.CICADA_PRODUCER_URL;
+  const startup = new URL(process.env.CICADA_PRODUCER_URL);
+  const base = startup.origin;
   const score = process.env.CICADA_PRODUCER_SCORE;
   const proof = process.env.CICADA_PRODUCER_PROOF_DIR;
   assert.ok(base && new URL(base).hostname === '127.0.0.1');
   assert.ok(score && path.isAbsolute(score) && score.startsWith('/tmp/'), 'only a disposable /tmp score may be edited');
-  const initialSource = fs.readFileSync(score, 'utf8');
+  const arrangementSource = process.env.CICADA_PRODUCER_ARRANGEMENT_SOURCE;
+  const currentSource = () => fs.readFileSync(score, 'utf8') + (arrangementSource ? '\n' + fs.readFileSync(arrangementSource, 'utf8') : '');
+  const initialSource = currentSource();
   assert.ok(initialSource.includes('// cicada-vocal-test: disposable fixture'));
   const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox', '--mute-audio'] });
   const storage = process.env.CICADA_PRODUCER_STORAGE || '/tmp/cicada-pro2-browser-session.json';
   assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'));
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', ...(fs.existsSync(storage) ? { storageState: storage } : {}) });
@@ -44,13 +47,14 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
     assert.equal(response.status(), 200, route);
     return response.json();
   };
-  const state = () => json('/api/state');
+  const state = async () => { const value = await json('/api/state'); if (arrangementSource) value.source = currentSource(); return value; };
   const takes = () => json('/api/takes');
   const transport = () => json('/api/transport');
   const ready = async (target, vocals = true) => {
     await target.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();
     await target.locator('#cicada-workspace[aria-busy=true]').waitFor({ state: 'hidden' });
     if (vocals) await target.locator('#cicada-vocal-lanes[data-vocal-lanes-ready=true]').waitFor();
+    if (errors.length) console.error('Editor page:', (await target.locator('body').innerText()).slice(-8000));
     assert.deepEqual(errors, [], 'browser/action errors');
   };
   const navigate = async (target, panel) => {
@@ -78,6 +82,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
     if (proof) { fs.mkdirSync(proof, { recursive: true }); await target.locator(selector).screenshot({ path: path.join(proof, name) }); }
   };
 
+  await page.goto(startup.href);
   await page.goto(base + '/?panel=session', { waitUntil: 'domcontentloaded' });
   await ready(page);
   assert.equal((await state()).source, initialSource);
@@ -235,7 +240,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   assert.equal(await page.getByLabel('Point value', { exact: true }).inputValue(), '-18dB');
   assert.equal((await state()).source, beforeCurve);
   assert.equal(await page.getByRole('button', { name: 'Remove selected point', exact: true }).isDisabled(), true, 'unsaved new point offered canonical deletion');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await curveReady(page);
   await until(async () => (await points(page)).length === 1, 'saved curve point did not reach the canonical UI');
@@ -244,7 +249,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const oldTick = savedPoints[0].tick;
   await page.locator('[data-curve-point]').first().focus();
   for (let move = 0; move < 3; move++) await page.keyboard.press('ArrowRight');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await until(async () => { const values = await points(page); return values.length === 1 && values[0].tick === oldTick + 720; }, 'moved point did not replace its canonical original position');
   savedPoints = await points(page);
@@ -257,7 +262,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   await page.getByLabel('Point value', { exact: true }).fill('-9dB');
   await page.getByLabel('Transition', { exact: true }).selectOption('curve');
   await page.getByLabel('Curve tension', { exact: true }).fill('2');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await until(async () => { const values = await points(page); return values.length === 2 && values[1].shape === 'curve' && values[1].curve === 2; }, 'second saved curve point did not update');
   savedPoints = await points(page);
@@ -281,7 +286,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   assert.equal(await page.getByLabel('Point position', { exact: true }).inputValue(), '@1.1.1', 'New point did not choose the first unused sixteenth');
   assert.equal((await state()).source, curveSource, 'New point committed its draft');
   await page.getByLabel('Point value', { exact: true }).fill('-24dB');
-  await page.getByRole('button', { name: 'Save point', exact: true }).click();
+  await page.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(page);
   await until(async () => (await points(page)).length === 3, 'New point did not save');
   await page.locator('[data-curve-point]').first().click();
@@ -316,7 +321,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   await touch('touchEnd', 0, 0);
   await until(async () => await phone.getByLabel('Point position', { exact: true }).inputValue() !== positionBefore, 'real touch did not move the automation point');
   assert.equal((await state()).source, beforeTouchSource);
-  await phone.getByRole('button', { name: 'Save point', exact: true }).click();
+  await phone.locator('.automation-point-form').getByRole('button', { name: 'Save point', exact: true }).click();
   await ready(phone);
   await until(async () => (await state()).source !== beforeTouchSource, 'touch-moved point did not commit');
   assert.equal((await points(phone)).length, 2);

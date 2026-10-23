@@ -51,14 +51,14 @@ func listeningCall(t *testing.T, s *studio, input studioTransportInput) *httptes
 	return w
 }
 
-func TestSessionListeningResolvesSectionsAndIsolatesOnlySelectedPlacement(t *testing.T) {
+func TestSessionListeningResolvesSectionsAndPreservesSongAuthority(t *testing.T) {
 	s := listeningStudio(t)
 	p, err := compileStudioSource(s.path, []byte(studioListeningScore))
 	if err != nil {
 		t.Fatal(err)
 	}
 	filtered, solo, err := prepareStudioListening(p, studioListening{Kind: "placement", Name: "pickup", Mode: "solo"})
-	if err != nil || len(filtered.Arrange.Placements) != 1 || filtered.Arrange.Placements[0].ID != "pickup" || len(p.Arrange.Placements) != 2 || len(filtered.Tracks) != len(p.Tracks) {
+	if err != nil || filtered != p || len(filtered.Arrange.Placements) != 2 || len(filtered.Tracks) != len(p.Tracks) {
 		t.Fatalf("solo changed the canonical score or track identity: %v", err)
 	}
 	if solo.StartTick != 5*seq.PPQ || solo.EndTick != 6*seq.PPQ {

@@ -4,6 +4,8 @@ package control
 import (
 	"fmt"
 	"math"
+
+	"m31labs.dev/cicada/host/midi"
 )
 
 type Descriptor struct {
@@ -55,15 +57,30 @@ func CCValue(d Descriptor, cc int) (*float64, error) {
 }
 
 type Note struct {
-	Tick     int64 `json:"tick"`
-	EndTick  int64 `json:"endTick"`
-	Note     int   `json:"note"`
-	Velocity int   `json:"velocity"`
+	Tick         int64            `json:"tick"`
+	EndTick      int64            `json:"endTick"`
+	Note         int              `json:"note"`
+	Velocity     int              `json:"velocity"`
+	NoteID       uint16           `json:"noteId,omitempty"`
+	Channel      uint8            `json:"channel,omitempty"`
+	Group        uint16           `json:"group,omitempty"`
+	Expressions  []NoteExpression `json:"expressions,omitempty"`
+	Input        *midi.NoteTiming `json:"input,omitempty"`
+	EndEstimated bool             `json:"endEstimated,omitempty"`
 }
 type Recording struct {
-	Track   string `json:"track"`
-	Pattern string `json:"pattern"`
-	Notes   []Note `json:"notes"`
+	Track   string          `json:"track"`
+	Pattern string          `json:"pattern"`
+	Notes   []Note          `json:"notes"`
+	Groups  []RecordedGroup `json:"groups,omitempty"`
+}
+
+type RecordedGroup struct {
+	ID      uint64           `json:"id"`
+	Device  string           `json:"device"`
+	Channel uint8            `json:"channel"`
+	Kind    string           `json:"kind,omitempty"`
+	Points  []NoteExpression `json:"points"`
 }
 
 func ValidateRecordings(takes []Recording) error {
@@ -71,19 +88,52 @@ func ValidateRecordings(takes []Recording) error {
 		return fmt.Errorf("a take needs 1 to 32 track/pattern recordings")
 	}
 	count := 0
+	points := 0
 	for _, take := range takes {
 		if take.Track == "" || take.Pattern == "" || len(take.Notes) == 0 {
 			return fmt.Errorf("each recording needs a track, pattern, and notes")
 		}
 		count += len(take.Notes)
+		if len(take.Groups) > 512 {
+			return fmt.Errorf("a recording may contain at most 512 shared gesture lanes")
+		}
+		groups := map[uint64]bool{}
+		for _, group := range take.Groups {
+			if group.ID == 0 || groups[group.ID] || group.Device == "" || len(group.Device) > 512 || group.Channel > 15 || group.Kind != "" && group.Kind != "channel" || group.Kind == "" && group.Channel != 0 && group.Channel != 15 || len(group.Points) == 0 {
+				return fmt.Errorf("shared gestures need unique input identities, a valid channel or MPE master, and points")
+			}
+			groups[group.ID] = true
+			previous := int64(0)
+			for _, point := range group.Points {
+				if point.Tick < previous || point.Tick >= 1<<60 || !point.Valid() || point.VibratoDepthCents != nil {
+					return fmt.Errorf("shared gestures must be ordered, finite controller snapshots")
+				}
+				previous = point.Tick
+			}
+			points += len(group.Points)
+		}
 		for _, n := range take.Notes {
-			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 {
+			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 || n.NoteID == 65535 || n.Channel > 15 || int(n.Group) > len(take.Groups) {
 				return fmt.Errorf("recorded note range or timing is invalid")
+			}
+			previous := n.Tick
+			for _, expression := range n.Expressions {
+				if expression.Tick < previous || expression.Tick > n.EndTick || !expression.Valid() {
+					return fmt.Errorf("recorded gestures must be ordered within their note, with finite bend, pressure and timbre")
+				}
+				previous = expression.Tick
+			}
+			points += len(n.Expressions)
+			if n.Input != nil && (n.Input.HostNanos <= 0 || n.Input.EndHostNanos != 0 && n.Input.EndHostNanos < n.Input.HostNanos || n.Input.Source != "source" && n.Input.Source != "arrival" || n.Input.EndSource != "" && n.Input.EndSource != "source" && n.Input.EndSource != "arrival") {
+				return fmt.Errorf("recorded input timing is invalid")
 			}
 		}
 	}
 	if count > 512 {
 		return fmt.Errorf("a take may contain at most 512 notes")
+	}
+	if points > MaxExpressionPoints {
+		return fmt.Errorf("a take may contain at most %d gesture points", MaxExpressionPoints)
 	}
 	return nil
 }
@@ -94,14 +144,4 @@ func GMDrum(note int) bool {
 		return true
 	}
 	return false
-}
-
-// Tick estimates sub-step position between bounded transport samples. Never
-// extrapolate more than 250 ms when the native clock stops being observable.
-func Tick(bar, step int64, bpm, elapsedMS float64, playing bool) int64 {
-	base := float64((bar-1)*1920 + (step-1)*120)
-	if playing {
-		base += math.Max(0, math.Min(250, elapsedMS)) * bpm * 480 / 60000
-	}
-	return int64(math.Round(math.Max(0, base)))
 }

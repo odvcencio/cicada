@@ -7,15 +7,38 @@ import (
 	"fmt"
 	"io"
 	"sort"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 type Note struct {
-	Track uint8
-	Tick  int64
-	Dur   int64
-	Note  uint8
-	Vel   uint8
-	Chan  uint8 // zero-based MIDI channel; drums use 9
+	Track   uint8
+	Tick    int64
+	Dur     int64
+	Note    uint8
+	Vel     uint8
+	Chan    uint8 // zero-based MIDI channel; drums use 9
+	Gesture *NoteGesture
+}
+
+type NoteGesture struct {
+	Points []seq.PerformedExpression
+	Group  int // 1-based lane in the containing track
+}
+
+// SharedGesture keeps master controls in absolute file ticks, including samples
+// after member gates close. Separate lanes use separate logical MPE ports.
+type SharedGesture struct {
+	Name   string
+	Points []seq.GroupPoint
+}
+
+// ChannelEvent retains MIDI controller and program messages through decoding.
+// Status contains the channel; program/pressure messages use Data1 only.
+type ChannelEvent struct {
+	Tick                 int64
+	Status, Data1, Data2 byte
+	BeforeRelease        bool // final member snapshot must precede its note-off
 }
 
 type MetaEvent struct {
@@ -25,10 +48,13 @@ type MetaEvent struct {
 }
 
 type TrackChunk struct {
-	Name    string
-	Notes   []Note
-	Meta    []MetaEvent
-	EndTick int64
+	Name            string
+	Notes           []Note
+	Meta            []MetaEvent
+	Events          []ChannelEvent
+	EndTick         int64
+	Groups          []SharedGesture
+	performedGroups *performedMIDIState
 }
 
 type File struct {
@@ -49,6 +75,11 @@ type wireEvent struct {
 func Encode(file File, writer io.Writer) error {
 	if file.PPQ == 0 || file.PPQ > 0x7fff || len(file.Tracks) == 0 || len(file.Tracks) > 0xffff {
 		return fmt.Errorf("invalid MIDI header")
+	}
+	var err error
+	file, err = prepareGestureMIDI(file)
+	if err != nil {
+		return err
 	}
 	var output bytes.Buffer
 	output.WriteString("MThd")
@@ -72,9 +103,24 @@ func Encode(file File, writer io.Writer) error {
 				return fmt.Errorf("track %d has invalid note", trackIndex)
 			}
 			events = append(events,
-				wireEvent{tick: note.Tick, priority: 2, data: []byte{0x90 | note.Chan, note.Note, note.Vel}},
+				wireEvent{tick: note.Tick, priority: 3, data: []byte{0x90 | note.Chan, note.Note, note.Vel}},
 				wireEvent{tick: note.Tick + note.Dur, priority: 1, data: []byte{0x80 | note.Chan, note.Note, 0}},
 			)
+		}
+		for _, event := range track.Events {
+			kind := event.Status & 0xf0
+			if event.Tick < 0 || kind < 0xa0 || kind > 0xe0 || event.Data1 > 127 || event.Data2 > 127 || (kind == 0xc0 || kind == 0xd0) && event.Data2 != 0 {
+				return fmt.Errorf("track %d has invalid controller event", trackIndex)
+			}
+			data := []byte{event.Status, event.Data1}
+			if kind != 0xc0 && kind != 0xd0 {
+				data = append(data, event.Data2)
+			}
+			priority := 2
+			if event.BeforeRelease {
+				priority = 0
+			}
+			events = append(events, wireEvent{tick: event.Tick, priority: priority, data: data})
 		}
 		sort.SliceStable(events, func(i, j int) bool {
 			if events[i].tick != events[j].tick {

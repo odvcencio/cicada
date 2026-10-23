@@ -72,6 +72,9 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	if !compatible {
 		return nil, fmt.Errorf("pattern %s kind differs from track %s", source.Name, track.Name)
 	}
+	if source.Performance != nil {
+		return compilePerformance(score, source)
+	}
 	// On a monophonic acid track brackets subdivide one cell. Polyphonic
 	// notes patterns retain their existing chord meaning.
 	var groupGrid uint16

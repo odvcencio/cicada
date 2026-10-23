@@ -16,6 +16,12 @@ const CapabilityUnifiedImage uint32 = 1 << 16
 // CapabilitySpatial supports track and listener commands (26 through 28).
 const CapabilitySpatial uint32 = 1 << 17
 
+// CapabilityLiveIdentity supports independent live notes in graph pools.
+const CapabilityLiveIdentity uint32 = 1 << 20
+
+// CapabilityLiveGroups supports owned live shared control bindings (32/33).
+const CapabilityLiveGroups uint32 = 1 << 22
+
 // PatternCommands uploads one melodic slot through the unchanged 24-byte ABI.
 // A chord requires an advertised capability; no mono fallback is permitted.
 // cfg describes the currently loaded kernel, not the source project. Gate and
@@ -23,10 +29,13 @@ const CapabilitySpatial uint32 = 1 << 17
 // commands in one batch before selecting/playing the slot.
 func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8, capabilities uint32) ([]cmd.Command, error) {
 	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > 16 || int(track) >= cfg.Tracks || slot >= 16 || len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks || cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph && (!keysImageEnabled || cfg.Track[track].Kind != engine.VoiceKeys) {
-		return nil, Error("invalid melodic pattern upload target")
+		return nil, imageError("invalid melodic pattern upload target")
 	}
 	if pattern.Expression != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Expression != nil {
-		return nil, Error("step expression requires a complete project image")
+		return nil, imageError("step expression requires a complete project image")
+	}
+	if pattern.Performance != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Performance != nil {
+		return nil, imageError("performed note gates require a complete project image")
 	}
 	gate, seed := uint8(55), cfg.Seed
 	if len(cfg.Patterns) > 0 {
@@ -36,17 +45,17 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 		}
 	}
 	if pattern.StepTicks != 0 && capabilities&uint32(GridCapability) == 0 {
-		return nil, Error("target kernel does not support flexible grids")
+		return nil, imageError("target kernel does not support flexible grids")
 	}
 	if pattern.GatePercent != gate || pattern.Seed != seed {
-		return nil, Error("command upload requires matching preloaded gate and seed metadata; use a complete project image")
+		return nil, imageError("command upload requires matching preloaded gate and seed metadata; use a complete project image")
 	}
 	if err := pattern.Validate(); err != nil {
 		return nil, err
 	}
 	for _, chord := range pattern.Chords {
 		if chord.Count > 0 && (capabilities&CapabilityChords == 0 || cfg.Track[track].Polyphony != 4 && (!keysImageEnabled || cfg.Track[track].Kind != engine.VoiceKeys)) {
-			return nil, Error("target kernel does not support polyphonic chord uploads")
+			return nil, imageError("target kernel does not support polyphonic chord uploads")
 		}
 	}
 	commands := make([]cmd.Command, 0, 66+int(pattern.Len)*2)

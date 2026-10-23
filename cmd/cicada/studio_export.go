@@ -16,29 +16,33 @@ import (
 	"sync"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
 
 type studioExportRequest struct {
-	ProjectDir  string  `json:"-"`
-	Revision    string  `json:"revision,omitempty"`
-	TargetLUFS  float64 `json:"target_lufs"`
-	TruePeakMax float64 `json:"true_peak_max"`
-	Tolerance   float64 `json:"tolerance"`
-	Rate        int     `json:"rate"`
-	Bits        int     `json:"bits"`
+	ProjectDir     string  `json:"-"`
+	Revision       string  `json:"revision,omitempty"`
+	SourceRevision string  `json:"source_revision,omitempty"`
+	TargetLUFS     float64 `json:"target_lufs"`
+	TruePeakMax    float64 `json:"true_peak_max"`
+	Tolerance      float64 `json:"tolerance"`
+	Rate           int     `json:"rate"`
+	Bits           int     `json:"bits"`
 }
 
 type studioExportStatus struct {
-	ID         string              `json:"id"`
-	Revision   string              `json:"revision"`
-	State      string              `json:"state"`
-	Path       string              `json:"path"`
-	TargetLUFS float64             `json:"target_lufs,omitempty"`
-	Pass       int                 `json:"pass,omitempty"`
-	PassLimit  int                 `json:"pass_limit,omitempty"`
-	Report     *loudnessFileReport `json:"report,omitempty"`
-	Error      string              `json:"error"`
+	ID                    string              `json:"id"`
+	Revision              string              `json:"revision"`
+	SourceRevision        string              `json:"source_revision,omitempty"`
+	CurrentSourceRevision string              `json:"current_source_revision,omitempty"`
+	State                 string              `json:"state"`
+	Path                  string              `json:"path"`
+	TargetLUFS            float64             `json:"target_lufs,omitempty"`
+	Pass                  int                 `json:"pass,omitempty"`
+	PassLimit             int                 `json:"pass_limit,omitempty"`
+	Report                *loudnessFileReport `json:"report,omitempty"`
+	Error                 string              `json:"error"`
 }
 
 type studioExportController struct {
@@ -78,7 +82,7 @@ func (c *studioExportController) start(score *notation.Score, path string, reque
 	}
 	c.shortfallPath = shortfallPath
 	c.status = studioExportStatus{
-		ID: rand.Text(), Revision: request.Revision, State: "queued", Path: path, TargetLUFS: request.TargetLUFS, PassLimit: loudnessPassLimit,
+		ID: rand.Text(), Revision: request.Revision, SourceRevision: request.SourceRevision, State: "queued", Path: path, TargetLUFS: request.TargetLUFS, PassLimit: loudnessPassLimit,
 	}
 	runner := c.render
 	c.mu.Unlock()
@@ -143,7 +147,21 @@ func (c *studioExportController) finish(sequence uint64, report *loudnessFileRep
 }
 
 func (s *studio) exportStatus(w http.ResponseWriter, _ *http.Request) {
-	studioJSON(w, http.StatusOK, s.exports.snapshot())
+	studioJSON(w, http.StatusOK, s.exportSnapshot())
+}
+
+func (s *studio) exportSnapshot() studioExportStatus {
+	status := s.exports.snapshot()
+	if status.ID == "" {
+		return status
+	}
+	// Load score files and library pins without compiling the engine on each
+	// progress poll. A missing source must not hide an otherwise completed
+	// render or imply that it matches the saved score.
+	if revision, err := project.ReadScoreRevision(s.path); err == nil {
+		status.CurrentSourceRevision = revision
+	}
+	return status
 }
 
 // A client supplies an opaque completed job ID, never a filesystem path.
@@ -210,16 +228,26 @@ func (s *studio) startExport(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed; reload before rendering"})
 		return
 	}
+	sourceRevision := inspection.sources.ScoreRevision()
+	if input.SourceRevision != "" && input.SourceRevision != sourceRevision {
+		studioJSON(w, http.StatusConflict, map[string]string{"error": "Saved score files or libraries changed. Refresh Studio before rendering again."})
+		return
+	}
+	if hasDiagnosticErrors(inspection.diagnostics) {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": diagnosticError(inspection.diagnostics).Error()})
+		return
+	}
 	input.Revision = studioRevision(inspection.source)
+	input.SourceRevision = sourceRevision
 	input.ProjectDir = filepath.Dir(s.path)
 	targetText := studioTargetFilename(input.TargetLUFS)
 	scoreName := strings.TrimSuffix(filepath.Base(s.path), filepath.Ext(s.path))
 	path := filepath.Join(filepath.Dir(s.path), "exports", scoreName+"-"+targetText+"LUFS.wav")
 	if !s.exports.start(inspection.score, path, input) {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "an export is already running", "job": s.exports.snapshot()})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "an export is already running", "job": s.exportSnapshot()})
 		return
 	}
-	studioJSON(w, http.StatusAccepted, s.exports.snapshot())
+	studioJSON(w, http.StatusAccepted, s.exportSnapshot())
 }
 
 func studioTargetFilename(target float64) string {

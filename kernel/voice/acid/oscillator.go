@@ -47,7 +47,7 @@ func ExportOscillatorBankImage(sampleRate int) ([]byte, error) {
 func ExportOscillatorBankImageInto(sampleRate int, storage []byte) ([]byte, error) {
 	_, ok := oscillatorBankIndex(sampleRate)
 	if !ok {
-		return nil, Error("unsupported oscillator sample rate")
+		return nil, validationError("unsupported oscillator sample rate")
 	}
 	bank := bankForSampleRate(sampleRate)
 	var unique []*oscillatorTable
@@ -62,7 +62,7 @@ func ExportOscillatorBankImageInto(sampleRate int, storage []byte) ([]byte, erro
 	const mappingBytes = oscillatorBins * 2
 	imageBytes := oscillatorBankImageHeaderSize + mappingBytes + len(unique)*oscillatorTableSize*4
 	if len(storage) < imageBytes {
-		return nil, Error("oscillator bank image storage is too small")
+		return nil, validationError("oscillator bank image storage is too small")
 	}
 	image := storage[:imageBytes]
 	clear(image[:oscillatorBankImageHeaderSize])
@@ -86,11 +86,11 @@ func ExportOscillatorBankImageInto(sampleRate int, storage []byte) ([]byte, erro
 func InstallOscillatorBankImage(sampleRate int, image []byte) error {
 	index, ok := oscillatorBankIndex(sampleRate)
 	if !ok {
-		return Error("unsupported oscillator sample rate")
+		return validationError("unsupported oscillator sample rate")
 	}
 	shared := &sharedOscillatorBanks[index]
 	if shared.bank != nil {
-		return Error("oscillator bank is already initialized")
+		return validationError("oscillator bank is already initialized")
 	}
 	bank, err := decodeOscillatorBankImage(image)
 	if err != nil {
@@ -98,23 +98,23 @@ func InstallOscillatorBankImage(sampleRate int, image []byte) error {
 	}
 	shared.once.Do(func() { shared.bank = bank })
 	if shared.bank != bank {
-		return Error("oscillator bank was initialized concurrently")
+		return validationError("oscillator bank was initialized concurrently")
 	}
 	return nil
 }
 
 func decodeOscillatorBankImage(image []byte) (*oscillatorBank, error) {
 	if len(image) < oscillatorBankImageHeaderSize || image[0] != oscillatorBankImageVersion {
-		return nil, Error("invalid oscillator bank image")
+		return nil, validationError("invalid oscillator bank image")
 	}
 	count := int(binary.LittleEndian.Uint16(image[1:3]))
 	if count < 1 || count > oscillatorBins {
-		return nil, Error("invalid oscillator bank table count")
+		return nil, validationError("invalid oscillator bank table count")
 	}
 	const mappingBytes = oscillatorBins * 2
 	dataAt := oscillatorBankImageHeaderSize + mappingBytes
 	if len(image) != dataAt+count*oscillatorTableSize*4 {
-		return nil, Error("invalid oscillator bank image length")
+		return nil, validationError("invalid oscillator bank image length")
 	}
 	unique := make([]*oscillatorTable, count)
 	littleEndian := func() bool {
@@ -138,7 +138,7 @@ func decodeOscillatorBankImage(image []byte) (*oscillatorBank, error) {
 	for bin := range bank.tables {
 		index := int(binary.LittleEndian.Uint16(image[oscillatorBankImageHeaderSize+bin*2:]))
 		if index >= len(unique) {
-			return nil, Error("invalid oscillator bank table reference")
+			return nil, validationError("invalid oscillator bank table reference")
 		}
 		bank.tables[bin] = unique[index]
 	}

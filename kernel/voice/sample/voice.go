@@ -27,17 +27,17 @@ type Region struct {
 
 func (r Region) Validate() error {
 	if r.SampleRate < 8000 || r.SampleRate > 192000 || r.RootKey > 127 {
-		return Error("sample rate or root key is out of range")
+		return validationError("sample rate or root key is out of range")
 	}
 	if r.Start < 0 || r.End <= r.Start || r.End > len(r.Left) || r.End > 1<<30 ||
 		(len(r.Right) != 0 && len(r.Right) != len(r.Left)) {
-		return Error("sample region bounds or channel lengths are invalid")
+		return validationError("sample region bounds or channel lengths are invalid")
 	}
 	if r.Loop && (r.LoopStart < r.Start || r.LoopEnd > r.End || r.LoopStart >= r.LoopEnd) {
-		return Error("sample loop bounds are invalid")
+		return validationError("sample loop bounds are invalid")
 	}
 	if r.Crossfade < 0 || r.Crossfade > 0 && (!r.Loop || r.Crossfade > (r.LoopEnd-r.LoopStart)/2) {
-		return Error("sample loop crossfade is invalid")
+		return validationError("sample loop crossfade is invalid")
 	}
 	return nil
 }
@@ -52,7 +52,7 @@ func DefaultParams() Params { return Params{Gain: 1} }
 func (p Params) Validate() error {
 	if math.IsNaN(p.Gain) || math.IsInf(p.Gain, 0) || p.Gain < 0 || p.Gain > 16 ||
 		math.IsNaN(p.FineTuneCents) || math.IsInf(p.FineTuneCents, 0) || math.Abs(p.FineTuneCents) > 9600 {
-		return Error("sample gain or fine tune is out of range")
+		return validationError("sample gain or fine tune is out of range")
 	}
 	return nil
 }
@@ -92,7 +92,7 @@ func New(sampleRate int, region Region) (*Voice, error) {
 
 func validateRate(rate int) error {
 	if rate != 44100 && rate != 48000 && rate != 96000 {
-		return Error("sample output rate must be 44100, 48000, or 96000")
+		return validationError("sample output rate must be 44100, 48000, or 96000")
 	}
 	return nil
 }
@@ -116,7 +116,7 @@ func (v *Voice) SetParams(p Params) error {
 func (v *Voice) SetGainTarget(gain, alpha float64) error {
 	if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < 0 || gain > 16 ||
 		math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
-		return Error("sample gain smoothing is out of range")
+		return validationError("sample gain smoothing is out of range")
 	}
 	v.params.Gain, v.targetGain, v.gainAlpha = gain, gain*v.velocity, alpha
 	return nil
@@ -124,14 +124,14 @@ func (v *Voice) SetGainTarget(gain, alpha float64) error {
 
 func (v *Voice) playbackRatio(note uint8) (float64, error) {
 	if note > 127 {
-		return 0, Error("sample note is out of range")
+		return 0, validationError("sample note is out of range")
 	}
 	ratio := float64(v.region.SampleRate) / float64(v.rate)
 	if note != v.region.RootKey || v.params.FineTuneCents != 0 {
 		ratio *= math.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
 	}
 	if ratio < .125 || ratio > 8 {
-		return 0, Error("sample playback ratio must be between 0.125 and 8")
+		return 0, validationError("sample playback ratio must be between 0.125 and 8")
 	}
 	return ratio, nil
 }
@@ -144,7 +144,7 @@ func (v *Voice) NoteOn(note, velocity uint8) error {
 		return err
 	}
 	if velocity > 127 {
-		return Error("sample velocity is out of range")
+		return validationError("sample velocity is out of range")
 	}
 	if v.Active() {
 		v.tailL, v.tailR, v.tailRemaining = v.lastL, v.lastR, v.fadeFrames
@@ -193,7 +193,7 @@ func (v *Voice) SeekFrames(frames int64) {
 // constant time; the caller does not render or allocate skipped audio.
 func (v *Voice) NoteOnAt(note, velocity uint8, outputFrame int64) error {
 	if outputFrame < 0 || v.region.Loop {
-		return Error("sample seek needs a nonnegative offset and a non-looping region")
+		return validationError("sample seek needs a nonnegative offset and a non-looping region")
 	}
 	if err := v.NoteOn(note, velocity); err != nil {
 		return err

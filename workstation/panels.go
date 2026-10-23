@@ -27,7 +27,8 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 	case "collaboration":
 		return s.collaborationPanel(ctx)
 	case "session":
-		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(v, csrf, ctx.Request.URL.Query().Get("placement")), s.continuousAutomation(ctx, v, csrf), s.automation(ctx, v, csrf))
+		registerArrangementTempos(ctx)
+		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(ctx, v, csrf, ctx.Request.URL.Query().Get("placement")), s.continuousAutomation(ctx, v, csrf), s.automation(ctx, v, csrf))
 	case "patterns":
 		return s.patterns(ctx, v, csrf)
 	case "generator":
@@ -62,6 +63,9 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		fileRevision = v.Revision
 	}
 	returnTo := "/?panel=code&file=" + url.QueryEscape(v.File)
+	if v.SourceDraft.ID != "" {
+		returnTo += "&codeDraft=" + url.QueryEscape(v.SourceDraft.ID)
+	}
 	var fileLinks []gosx.Node
 	var diagnostics []gosx.Node
 	for _, file := range v.Files {
@@ -78,7 +82,18 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	}
 	if v.HasDraft {
 		buttons = append(buttons, editor.FormButton{Name: "intent", Value: "discard", Label: "Discard draft"})
-		recovery = gosx.El("p", gosx.Attrs(gosx.Attr("class", "source-draft-note"), gosx.Attr("role", "status")), gosx.Text("Recovered draft. Not saved to disk."))
+		recovery = gosx.El("p", gosx.Attrs(gosx.Attr("class", "source-draft-note"), gosx.Attr("role", "status")), gosx.Text("Recovered draft. The score file is unchanged."))
+	}
+	var copies gosx.Node = gosx.Fragment()
+	if len(v.SourceCopies) > 1 || len(v.SourceCopies) == 1 && v.SourceCopies[0].ID != v.SourceDraft.ID {
+		var links []gosx.Node
+		for _, copy := range v.SourceCopies {
+			if copy.ID != v.SourceDraft.ID {
+				link := "/?panel=code&file=" + url.QueryEscape(v.File) + "&codeDraft=" + url.QueryEscape(copy.ID)
+				links = append(links, gosx.El("li", gosx.El("a", gosx.Attrs(gosx.Attr("href", link)), gosx.Text(copy.Updated.Local().Format("Jan 2, 15:04:05")))))
+			}
+		}
+		copies = gosx.El("details", gosx.El("summary", gosx.Text("Other recovery copies")), gosx.El("p", gosx.Text("Another window or an earlier draft may contain different changes. Open a copy to review it before saving.")), gosx.El("ul", gosx.Fragment(links...)))
 	}
 	var highlights []editor.HighlightSpan
 	if spans, err := language.Highlight([]byte(v.Source)); err == nil {
@@ -95,13 +110,17 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	e := editor.New(id, editor.Options{
 		Surface: editor.SurfaceCode, Content: v.Source, Title: v.Filename, Label: "Cicada score", Language: editor.Lang("cicada"), Theme: editor.ThemeDark,
 		FormAction: "/__actions/source", CSRFToken: csrf,
-		ExtraFields:      map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo},
+		ExtraFields:      map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo, "recoveryId": v.SourceDraft.ID, "recoverySequence": strconv.FormatUint(v.SourceDraft.Sequence, 10), "recoveryParentId": v.SourceDraft.ParentID, "recoveryParentHash": v.SourceDraft.ParentHash, "recoveryHash": sourceFingerprint(v.SourceDraft.Source)},
 		Code:             &editor.CodeOptions{Language: "cicada", TabWidth: 2, InsertSpaces: true, Gutter: true, Highlights: highlights, Unsaved: v.HasDraft},
 		CodeIntelligence: &editor.CodeIntelligence{Language: "cicada", ServerURL: "/__code/analysis"},
 		Buttons:          buttons,
 		Panels:           []editor.Panel{},
 	})
-	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Check or save your score."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, recovery, e.Render())
+	status := gosx.Fragment()
+	if s.notes != nil {
+		status = gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-source-recovery-status"), gosx.Attr("role", "status"), gosx.Attr("class", "muted")), gosx.Text("Code edits can be kept as private recovery copies. Use Save file to apply them to the song."))
+	}
+	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Check or save your score."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, recovery, copies, gosx.El("p", gosx.Attrs(gosx.Attr("role", "status"), gosx.Attr("class", "error")), gosx.Text(v.RecoveryError)), status, e.Render())
 }
 
 // Map parser byte positions to the editor's UTF-16 positions in one pass.
@@ -123,13 +142,13 @@ func utf16Offsets(text string) []int {
 	return positions
 }
 
-func (s *studioApp) session(v workspace, csrf, selected string) gosx.Node {
+func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected string) gosx.Node {
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the session"))
 	}
 	p := v.Project
 	if len(p.Scenes) == 0 {
-		return s.arrangement(v, csrf, selected)
+		return s.arrangement(ctx, v, csrf, selected)
 	}
 	var heads []gosx.Node
 	heads = append(heads, gosx.El("th", gosx.Text("Track")))
@@ -153,7 +172,7 @@ func (s *studioApp) session(v workspace, csrf, selected string) gosx.Node {
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
-	return gosx.Fragment(s.arrangement(v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
+	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
@@ -344,7 +363,19 @@ func (s *studioApp) export(ctx *server.Context, v workspace, csrf string) gosx.N
 	}
 	status.project()
 	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", status.Busy), gosx.Attr("data-gosx-live-bind-attr", "disabled:busy")), gosx.Text("Render WAV"))
-	form := s.form(v, csrf, "export", "export", field("Target LUFS", numberInput("target_lufs", "-16", "-70", "0")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-24", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0", "10")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), button)
-	progress := gosx.El("section", gosx.Attrs(gosx.Attr("class", "export-result")), gosx.El("h3", gosx.Text("Render delivery")), gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "progress"), gosx.Attr("role", "status")), gosx.Text(status.Progress)), gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "quality")), gosx.Text(status.Quality)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "path")), gosx.Text(status.Path)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Text(status.Error)), gosx.El("a", gosx.Attrs(gosx.Attr("href", status.DownloadURL), gosx.BoolAttr("download"), gosx.Attr("hidden", status.DownloadHidden), gosx.Attr("data-gosx-live-bind-attr", "href:downloadURL,hidden:downloadHidden"), gosx.Attr("data-gosx-live-bind", "downloadLabel")), gosx.Text(status.DownloadLabel)))
-	return ui.Panel(ui.PanelProps{ID: "export", Title: "Render & export", Description: "Offline rendering uses the same score and kernel as Tymbal playback."}, gosx.El("div", gosx.Attrs(gosx.Attr("data-gosx-live-src", "/api/export"), gosx.Attr("data-gosx-live-interval", "1s")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), progress))
+	message := ""
+	if state, ok := action.States(ctx.Request)["export"]; ok {
+		message = state.Message()
+	}
+	feedback := gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message))
+	form := s.form(v, csrf, "export", "export", hidden("source_revision", v.SourceRevision), field("Target LUFS", numberInput("target_lufs", "-16", "-70", "0")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-24", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0", "10")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), button, feedback)
+	progress := gosx.El("section", gosx.Attrs(gosx.Attr("class", "export-result")),
+		gosx.El("h3", gosx.Text("Render delivery")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "progress"), gosx.Attr("role", "status")), gosx.Text(status.Progress)),
+		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "version"), gosx.Attr("role", "status")), gosx.Text(status.Version)),
+		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "quality")), gosx.Text(status.Quality)),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "path")), gosx.Text(status.Path)),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Text(status.Error)),
+		gosx.El("a", gosx.Attrs(gosx.Attr("href", status.DownloadURL), gosx.BoolAttr("download"), gosx.Attr("hidden", status.DownloadHidden), gosx.Attr("data-gosx-live-bind-attr", "href:downloadURL,hidden:downloadHidden"), gosx.Attr("data-gosx-live-bind", "downloadLabel")), gosx.Text(status.DownloadLabel)))
+	return ui.Panel(ui.PanelProps{ID: "export", Title: "Render & export", Description: "Save your finished sound or export instrument notes."}, gosx.El("div", gosx.Attrs(gosx.Attr("data-gosx-live-src", "/api/export"), gosx.Attr("data-gosx-live-interval", "1s"), gosx.Attr("data-gosx-live-focus", "allow")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Exports use saved music. Save Code changes and keep takes before rendering.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), progress), s.midiExportPanel(ctx, v, csrf))
 }

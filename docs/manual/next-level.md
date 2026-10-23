@@ -115,15 +115,15 @@ connected MIDI device. Choose a **Pitched track** and a **Drum track**, then
 choose the pattern each one records into.
 
 Press **Play**, then select **Record notes**. Play notes, select **Finish note
-take**, and review the **Retained note take**. Choose **Commit notes to
-patterns** to write it, or **Discard note take** to drop it. The take stays in
-the page while you record, and Studio keeps a finished take for thirty minutes
-or until Studio closes. Drum hits keep separate lanes and the nearest supported
-velocity level. Acid notation keeps pitch and slides at its fixed velocity; it
-cannot save arbitrary MIDI velocity. MIDI overdub and replace modes are not
-available. The **Takes** panel records audio input; see
-[Audio, takes, and export](studio.md#audio-takes-and-export) and the
-[recording chapter](recording-instruments.md).
+take**, and review the **Retained note take**. **Keep played timing** preserves
+independent starts, lengths, and velocities, including pitched chords. Open
+**Patterns** to edit those notes or loop the full performance independently of
+the song. **Snap to the existing step grid** retains the grid workflow,
+including drum lanes. Unsupported gates or expression keep the take intact;
+check the message before choosing a timing mode. **Undo** restores the previous
+source. Local desktop profiles retain private recovery copies across restarts.
+See [note recording](studio.md#live-performance) for limits and
+[recording instruments](recording-instruments.md) for audio input.
 
 Open Studio without an audio device for a silent session:
 

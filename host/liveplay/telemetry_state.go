@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // telemetryState hands the latest transport position and meter levels from the
@@ -17,6 +18,11 @@ type telemetryState struct {
 	seq        atomic.Uint64 // odd while the render thread writes
 	sample     atomic.Int64
 	tick       atomic.Int64
+	wallNanos  atomic.Int64
+	tempoMilli atomic.Int64
+	nextAfter  atomic.Int64
+	nextTick   atomic.Int64
+	nextTempo  atomic.Int64
 	playing    atomic.Bool
 	trackCount atomic.Uint32
 	tracks     [engine.MaxTracks][4]atomic.Uint32 // peak L, peak R, RMS L, RMS R as float32 bits
@@ -26,10 +32,22 @@ type telemetryState struct {
 	written    atomic.Bool // set once the render thread has stored a position
 }
 
-func (t *telemetryState) storeTransport(sample, tick int64, playing bool) {
+type telemetryTransport struct {
+	sample, tick, wallNanos, tempoMilli int64
+	playing                             bool
+	nextTempo                           musictime.ObservedTempoStep
+}
+
+func (t *telemetryState) storeTransport(sample, tick, tempoMilli int64, playing bool, next musictime.ObservedTempoStep) {
+	observed := time.Now().UnixNano()
 	t.seq.Add(1)
 	t.sample.Store(sample)
 	t.tick.Store(tick)
+	t.wallNanos.Store(observed)
+	t.tempoMilli.Store(tempoMilli)
+	t.nextAfter.Store(next.AfterNanos)
+	t.nextTick.Store(next.Tick)
+	t.nextTempo.Store(next.BPMMilli)
 	t.playing.Store(playing)
 	t.written.Store(true)
 	t.seq.Add(1)
@@ -54,7 +72,7 @@ func (t *telemetryState) storeMeters(f *MeterFrame) {
 // load returns a consistent snapshot, or ok=false when the render thread held
 // the counter odd or changed it during every try. Callers skip the publish and
 // keep the previous frame.
-func (t *telemetryState) load() (sample, tick int64, playing bool, meters MetersFrame, haveMeters, haveTransport, ok bool) {
+func (t *telemetryState) load() (transport telemetryTransport, meters MetersFrame, haveMeters, haveTransport, ok bool) {
 	for try := 0; try < 8; try++ {
 		before := t.seq.Load()
 		if before&1 != 0 {
@@ -62,7 +80,8 @@ func (t *telemetryState) load() (sample, tick int64, playing bool, meters Meters
 			continue
 		}
 		haveTransport = t.written.Load()
-		sample, tick, playing = t.sample.Load(), t.tick.Load(), t.playing.Load()
+		transport = telemetryTransport{sample: t.sample.Load(), tick: t.tick.Load(), wallNanos: t.wallNanos.Load(), tempoMilli: t.tempoMilli.Load(), playing: t.playing.Load()}
+		transport.nextTempo = musictime.ObservedTempoStep{AfterNanos: t.nextAfter.Load(), Tick: t.nextTick.Load(), BPMMilli: t.nextTempo.Load()}
 		meters = MetersFrame{TrackCount: uint8(t.trackCount.Load())}
 		for i := range t.tracks {
 			meters.Tracks[i] = TrackMeter{
@@ -72,11 +91,11 @@ func (t *telemetryState) load() (sample, tick int64, playing bool, meters Meters
 		}
 		meters.Master = MasterMeter{CompGRDB: math.Float32frombits(t.compGR.Load()), LimiterGRDB: math.Float32frombits(t.limiterGR.Load()), PreLimiterOver: t.over.Load()}
 		if t.seq.Load() == before {
-			return sample, tick, playing, meters, meters.TrackCount != 0, haveTransport, true
+			return transport, meters, meters.TrackCount != 0, haveTransport, true
 		}
 		runtime.Gosched()
 	}
-	return 0, 0, false, MetersFrame{}, false, false, false
+	return telemetryTransport{}, MetersFrame{}, false, false, false
 }
 
 // SetPublisher attaches the publisher that PublishTelemetry feeds. Once it
@@ -104,16 +123,17 @@ func (p *Player) PublishTelemetry() {
 	if pub == nil {
 		return
 	}
-	sample, tick, playing, meters, haveMeters, haveTransport, ok := p.telemetry.load()
+	transport, meters, haveMeters, haveTransport, ok := p.telemetry.load()
 	if !ok {
 		return
 	}
 	if haveTransport {
-		pub.PublishTransport(TransportFrame{
-			SampleFrame: sample, SampleRate: uint32(p.rate), WallNanos: time.Now().UnixNano(),
-			TempoMilli: uint32(p.tempoMilli.Load()), Playing: playing && !p.hostPaused.Load(),
+		tick := transport.tick
+		pub.PublishTransportClock(TransportFrame{
+			SampleFrame: transport.sample, SampleRate: uint32(p.rate), WallNanos: transport.wallNanos,
+			TempoMilli: uint32(transport.tempoMilli), Playing: transport.playing && !p.hostPaused.Load(),
 			Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1), Tick: int32(tick % seq.PPQ),
-		})
+		}, transport.nextTempo)
 	}
 	if haveMeters {
 		loud := p.Loudness()

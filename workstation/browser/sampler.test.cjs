@@ -12,9 +12,9 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,message){const deadline=Date.now()+25000;while(Date.now()<deadline){if(await fn())return;await pause(40)}assert.fail(message)}
 
 test('sampler imports, performs, chops visually, resamples and restores with Undo', {timeout:180000},async t=>{
- const base=process.env.CICADA_STUDIO_URL; assert.ok(base); assert.equal(new URL(base).hostname,'127.0.0.1');
+ const startup=new URL(process.env.CICADA_STUDIO_URL),base=startup.origin; assert.equal(startup.hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({executablePath:process.env.CICADA_CHROME_PATH,headless:true,args:['--no-sandbox']});
+ const browser=await chromium.launch({executablePath:process.env.CICADA_CHROME_PATH,headless:true,args:['--no-sandbox','--mute-audio']});
  t.after(()=>browser.close());
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
  const page=await context.newPage(); page.setDefaultTimeout(20000);
@@ -22,13 +22,16 @@ test('sampler imports, performs, chops visually, resamples and restores with Und
  await page.addInitScript(()=>{const Original=window.AudioContext;window.__samplerContexts=[];window.AudioContext=new Proxy(Original,{construct(target,args){const a=Reflect.construct(target,args);window.__samplerContexts.push(a);return a}})});
  const state=async()=>(await page.request.get(base+'/api/sampler')).json();
  const score=async()=>(await page.request.get(base+'/api/state')).json();
+ const ownerPath=process.env.CICADA_SAMPLER_ARRANGEMENT_SOURCE;
+ const owner=async()=>ownerPath?fs.readFileSync(ownerPath,'utf8'):(await score()).source;
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();const revision=(await state()).bankRevision;await page.waitForFunction(rev=>document.querySelector('#cicada-sampler')?.dataset.samplerReady==='true'&&document.querySelector('#cicada-sampler')?.dataset.samplerBankRevision===rev,revision)};
  const editor=()=>page.locator('#sampler-pad-editor form');
  const hits=async()=>JSON.parse(await page.locator('[data-sampler-resample] input[name=performance]').inputValue());
  const selected=async n=>{await page.getByRole('link',{name:`Edit pad ${n}`,exact:true}).click();await page.waitForFunction(n=>document.querySelector('#sampler-pad-editor input[name=pad]')?.value===String(n),n);await until(async()=>await page.locator(`[data-sampler-pad="${n}"]`).evaluate(el=>el.closest('.sampler-pad').dataset.padSelected==='true'),'selected pad did not follow navigation')};
  try {
-  await page.goto(base+'/?panel=sampler',{waitUntil:'networkidle'});await ready();
-  const original=(await score()).source;assert.ok(original.includes(marker));assert.equal(await page.locator('[data-sampler-pad]').count(),16);
+  await page.goto(startup.href);
+  await page.goto(base+'/?panel=sampler',{waitUntil:'domcontentloaded'});await ready();
+  const original=(await score()).source;let originalOwner=await owner();assert.ok(original.includes(marker));assert.equal(await page.locator('[data-sampler-pad]').count(),16);
   await page.getByRole('button',{name:'Clean',exact:true}).click();await until(async()=>(await state()).bank.effects.drive===0,'initial bank did not reset to Clean');await ready();
   await page.getByRole('spinbutton',{name:'Placement slices',exact:true}).fill('4');await page.getByRole('button',{name:'Sample placement',exact:true}).click();await until(async()=>(await state()).bank.sources.some(s=>s.name==='lead'&&Math.max(...s.peaks)>.7),'Session sampling did not produce audible audio');await ready();checks.push('Session placement sampling produces nonzero PCM');
   // Stereo float WAV exercises the real upload and decoder, with audible regions.
@@ -54,16 +57,32 @@ test('sampler imports, performs, chops visually, resamples and restores with Und
   let performance=await hits();assert.equal(performance.hits[0].sound,cleanID);assert.notEqual(performance.hits[1].sound,cleanID);assert.equal(performance.hits[1].velocity,.65);assert.equal(performance.frames,768000);checks.push('recording retains immutable sound across effect changes');
   await selected(5);assert.equal((await hits()).hits.length,2);checks.push('pad navigation retains recorded performance');
   await page.getByRole('button',{name:'Play performance',exact:true}).click();await pause(80);await page.getByRole('button',{name:'Stop pads',exact:true}).click();await pause(500);assert.equal(await page.locator('[data-sampler-pad][data-playing=true]').count(),0);checks.push('Stop cancels queued replay hits');
+  const resample=page.locator('[data-sampler-resample] form');
+  const receipt=await resample.locator('[name=source_revision]').inputValue();
+  if(ownerPath){
+   const beforeConflict=(await state()).bankRevision;let injected=false;
+   await page.route('**/__actions/sampler',async route=>{if(!injected){injected=true;fs.appendFileSync(ownerPath,'// another editor saved this\r\n')}await route.continue()});
+   await resample.locator('[name=newName]').fill('qa-conflict');await page.getByRole('button',{name:'Resample performance',exact:true}).click();
+   await until(async()=>injected&&/performance is retained/.test(await page.locator('body').innerText()),'stale print did not retain its performance');await page.unroute('**/__actions/sampler');
+   assert.equal((await state()).bankRevision,beforeConflict);assert.deepEqual(await hits(),performance);assert.equal((await score()).source,original);originalOwner=await owner();
+  }
+  await resample.locator('[name=place]').uncheck();await resample.locator('[name=destination]').fill('0');await resample.locator('[name=newName]').fill('qa-saved');
+  await page.getByRole('button',{name:'Resample performance',exact:true}).click();
+  await until(async()=>(await state()).bank.performance.hits.length===2,'bank-only save lost the retained performance');
+  if(ownerPath)await until(async()=>await resample.locator('[name=source_revision]').inputValue()!==receipt,'accepted bank save did not refresh the project receipt');await ready();
+  assert.equal(await owner(),originalOwner);assert.equal((await score()).source,original);
+  await resample.locator('[name=place]').check();await resample.locator('[name=destination]').fill('16');
+  checks.push(ownerPath?'stale source rejects print; bank-only save retains exact hits and permits a reviewed retry':'bank-only save retains exact hits without changing score');
   const bankBeforePrint=(await state()).bankRevision;
-  const resample=page.locator('[data-sampler-resample] form');await resample.locator('[name=newName]').fill('qa-print');await resample.locator('[name=at]').fill('@3.1.1');await page.getByRole('button',{name:'Resample performance',exact:true}).click();
-  await until(async()=>(await score()).source.includes('place qa-print sampler qa-print-clip'),'resample did not reach Session');await ready();s=await state();assert.equal(s.bank.pads[15].bypassEffects,true);assert.equal(s.bank.performance.hits.length,2);checks.push('resample saves a bypassed pad and Session audio placement');
+  await resample.locator('[name=newName]').fill('qa-print');await resample.locator('[name=at]').fill('@3.1.1');await page.getByRole('button',{name:'Resample performance',exact:true}).click();
+  await until(async()=>(await owner()).includes('place qa-print sampler qa-print-clip'),'resample did not reach Session');await ready();s=await state();assert.equal(s.bank.pads[15].bypassEffects,true);assert.equal(s.bank.performance.hits.length,2);checks.push('resample saves a bypassed pad and Session audio placement');
   if(process.env.CICADA_SAMPLER_PROOF_DIR){fs.mkdirSync(process.env.CICADA_SAMPLER_PROOF_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-desktop.png'),fullPage:true})}
   await page.getByRole('link',{name:'Session',exact:true}).click();await page.locator('[data-placement-block=qa-print]').waitFor();
-  await page.getByRole('button',{name:'Undo',exact:true}).click();await until(async()=>(await score()).source===original,'source Undo did not restore fixture');assert.equal((await state()).bankRevision,bankBeforePrint);checks.push('Session Undo restores source and pad bank together');
+  await page.getByRole('button',{name:'Undo',exact:true}).click();await until(async()=>(await score()).source===original,'source Undo did not restore fixture');assert.equal((await state()).bankRevision,bankBeforePrint);assert.equal(await owner(),originalOwner);checks.push('Session Undo restores source and pad bank together');
   await page.getByRole('link',{name:'Sampler',exact:true}).click();await ready();
   // Native forms and audio previews remain usable with browser WASM disabled.
   const native=await browser.newContext({javaScriptEnabled:false,storageState:await context.storageState()});const nojs=await native.newPage();await nojs.goto(base+'/?panel=sampler&pad=1');await nojs.getByRole('button',{name:'Clean',exact:true}).click();assert.equal((await state()).bank.effects.drive,0);assert.ok(await nojs.locator('audio[controls]').count());await native.close();checks.push('native effect form and selected-pad audio fallback');
-  const mobile=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,storageState:await context.storageState()});const phone=await mobile.newPage();phone.on('pageerror',error=>errors.push(error.message));await phone.goto(base+'/?panel=sampler',{waitUntil:'networkidle'});await phone.locator('#cicada-sampler[data-sampler-ready=true]').waitFor();await phone.getByRole('button',{name:'Play pad 1',exact:true}).tap();
+  const mobile=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,storageState:await context.storageState()});const phone=await mobile.newPage();phone.on('pageerror',error=>errors.push(error.message));await phone.goto(base+'/?panel=sampler',{waitUntil:'domcontentloaded'});await phone.locator('#cicada-sampler[data-sampler-ready=true]').waitFor();await phone.getByRole('button',{name:'Play pad 1',exact:true}).tap();
   assert.equal(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(process.env.CICADA_SAMPLER_PROOF_DIR)await phone.screenshot({path:path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-mobile.png'),fullPage:true});await mobile.close();checks.push('touch pads and 390px layout without overflow');
   assert.deepEqual(errors,[]);if(process.env.CICADA_SAMPLER_PROOF_DIR)fs.writeFileSync(path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-proof.json'),JSON.stringify({checks,errors,desktop:{width:1440,height:1000},mobile:{width:390,height:844}},null,2));console.log(checks.join('\n'));
  } catch(error){if(process.env.CICADA_SAMPLER_PROOF_DIR){await page.screenshot({path:path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-failure.png'),fullPage:true});fs.writeFileSync(path.join(process.env.CICADA_SAMPLER_PROOF_DIR,'sampler-failure.html'),await page.content())}console.error(errors);throw error}

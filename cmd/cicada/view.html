@@ -515,7 +515,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
 }
 </style>
 </head>
-<body data-revision="{{.Revision}}"{{if .Studio}} data-studio{{end}}>
+<body data-revision="{{.Revision}}" data-source-revision="{{.SourceRevision}}"{{if .Studio}} data-studio{{end}}>
 <header class="hero">
   <div class="brand">Cicada / {{if .Studio}}studio{{else}}score view{{end}}</div>
   <h1>{{.Title}}</h1>
@@ -908,7 +908,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     busy = true; save.disabled = true;
     idle = new Promise(resolve => { resolveIdle = resolve; });
     try {
-      const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, revision:revision()}) });
+      const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, revision:revision(), source_revision:(path === '/api/toggle' || path === '/api/pattern') ? document.body.dataset.sourceRevision : undefined}) });
       const result = await response.json();
       if (!response.ok) { setStatus(result.error || 'Edit failed', 'error'); return false; }
       if (path === '/api/source') {
@@ -1236,7 +1236,10 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     initGrids();
     const nextRevision = next.body.dataset.revision || hint.revision || state.revision;
     // With an open draft, keep the revision the draft was written against, so saving it still hits the conflict guard.
-    if (nextRevision && !dirty()) document.body.dataset.revision = nextRevision;
+    if (nextRevision && !dirty()) {
+      document.body.dataset.revision = nextRevision;
+      document.body.dataset.sourceRevision = next.body.dataset.sourceRevision || '';
+    }
     if (!dirty()) { original = state.source ?? hint.source ?? original; editor.value = original; }
     for (const [node, top] of scrolls) node.scrollTop = top;
     if (key) {

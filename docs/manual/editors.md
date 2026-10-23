@@ -95,6 +95,14 @@ again at the atomic exchange, so a concurrent save is preserved. Auxiliary
 changes, including a confirmed edition upgrade in `cicada.mod`, appear in the
 diff and are saved with the edit. Unchanged edits write nothing.
 
+`duplicatepattern` takes `entity: "pattern:name"`, a new `name`, and an optional
+`track`. The track resolves relative notes in the sound's register. Supplying it,
+or copying from a secondary source or library, creates a resolved local pattern
+in the entry score and requires an unchanged-song render check. Original
+definitions, assignments and library pins remain intact. The copy has no
+explicit slot; Studio supplies its full project receipt and opens the copy with
+the chosen sound and scene context.
+
 The envelope can include `revision`, `author`, `session`, and `dryrun`. A supplied
 revision must match the exact score bytes; omit it to use the current revision.
 `dryrun: true` prevents writes even with `--write`. `--author` and `--session`
@@ -104,6 +112,42 @@ has none. Successful writes append one record to `.cicada/edits.jsonl`.
 Studio accepts the same envelope at `POST /api/intents`, with a required
 `revision`. It commits the whole batch as one undoable edit. A dry run returns
 `diff`, the current `revision`, `valid: true`, and `dryRun: true` without saving.
+
+Committing grid edits, recorded takes, performed-note, gesture, lane, loop-length, pitch or time edits
+through this HTTP endpoint also requires `X-Cicada-Source-Revision`, using the
+`sourceRevision` from the workspace projection that supplied the edit. This
+checks every project source before writing, including secondary definitions.
+The pattern HTTP endpoint carries the same receipt as `source_revision` in its
+JSON body; Studio's controls supply it automatically. Read-only dry runs do not
+require the header. The local CLI envelope format is unchanged.
+
+Grid cells, articulation, chords, range edits, timing and resizing write their
+owning project source. The existing shared-phrase policies keep their meaning:
+`pattern` expands uses in that pattern's file, `detach` expands one use, and
+`definition` follows the shared token's source. An edit spanning different
+source buffers refuses atomically; choose `pattern` to make the selection local.
+Imported definitions remain read-only. `/api/toggle` also accepts the displayed
+receipt as `source_revision`.
+
+Grid, intent and history edit responses carry `X-Cicada-Write-Source-Revision`, captured
+from the candidate before publication. Studio compares it with the subsequent
+workspace projection before advancing queued gestures. A source-only outside
+save requires a refresh even if the entry file's revision is unchanged.
+
+`POST /api/record` carries the same receipt as `source_revision` in its JSON
+body. Grid and played takes resolve all destination owners before the atomic
+project write. A failure in any destination saves nothing. Owned secondary
+files retain their comments and line endings; library sources require a local
+variation first.
+
+`shapeperformancepitch` takes `entity: "pattern:name"` and either
+`operation: "transpose"` with a nonzero `semitones` from −48 to +48, or
+`operation: "reflect"` with a `pivot` MIDI pitch from 0 to 127. The pivot is
+the stored pitch, before the pattern's transpose. It changes all performed
+note pitches while retaining timing, velocities and both gesture layers.
+Out-of-range stored or sounding notes refuse the entire edit. Owned secondary
+sources are supported; imported libraries require a local variation first.
+
 Unknown fields and intent kinds are rejected. The arrange intents are
 `moveclip`, `resizeclip`, `splitclip`, `duplicateclip` and `deleteclip`, each
 with an `entity` such as `placement:intro`, plus `attick` or `lengthticks` where
@@ -115,6 +159,13 @@ new placement). A dry run of that intent answers `convertible: true` with the di
 or `convertible: false` with a `cause`. A revision conflict returns
 HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
 
+`scaleperformance` takes `entity: "pattern:name"`, `numerator` and
+`denominator` (each 1–16). It scales the loop, gates and both gesture layers
+in musical time, rounding absolute positions to ticks. Colliding controller
+samples retain the later value; gates retain at least one tick. A resulting
+same-pitch overlap is refused. Owned secondary pattern sources are supported;
+libraries remain read-only. The Studio route also requires `source_revision`.
+
 Studio's arrangement panel uses a second set of arrange intents that keep the
 position and length text you type, such as `@5.1.1` or `3bars`:
 `updateplacement` (change `at`, `length`, `track` or `content` together, so a
@@ -122,7 +173,12 @@ move and a trim never pass through an overlap), `addplacement`, `copyplacement`,
 `removeplacement`, `setmarker`, `addmarker` and `removemarker`. Each takes an
 `entity` (`placement:name` or `marker:name`) or a new `name`, and a `settings`
 object with the fields to set. `removeplacement` removes only the declaration;
-`deleteclip` also removes the comment lines above it. Automation lanes use
+`deleteclip` also removes the comment lines above it. `varyplacement` takes
+`entity: "placement:name"` and a new pattern `name`. It makes a local copy of
+the compiled pattern and rebinds only that placement in one atomic edit. A
+render check must confirm unchanged audio; source and library definitions
+remain intact, including when the arrangement lives in another source file.
+Automation lanes use
 `setautomationpoint` and `removeautomationpoint`, with an `entity` such as
 `param:bass.cutoff`, `at`, `oldat` (the point being moved), `value`, `shape`
 and `curve`. `placesamplerprint` and `placevocalcomp` record the two Studio

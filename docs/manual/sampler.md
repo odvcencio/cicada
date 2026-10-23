@@ -67,8 +67,14 @@ Choose a clip name, destination pad (0 skips pad assignment), audio track, and
 musical position. Select **Resample performance**. With **Place in Session**
 enabled, Studio creates an asset, clip, audio track if needed, and named
 placement in **Arrange**. Regular **Undo** restores both the score and bank for
-that print. Already printed pads bypass bank effects by default; uncheck
+that print, including an arrangement kept in a separate project source file.
+Already printed pads bypass bank effects by default; uncheck
 **Bypass bank effects** to process them again deliberately.
+
+If another editor saves the project while you perform, Studio refuses the
+placement and retains your hits. Uncheck **Place in Session**, set the
+destination pad to 0, and resample to save the performance in the bank. Review
+the updated project, then enable **Place in Session** and print again.
 
 Prints end at the chosen loop length, with a short fade at the boundary. Effect
 tails inside that length are included. Excess peaks receive one fixed gain

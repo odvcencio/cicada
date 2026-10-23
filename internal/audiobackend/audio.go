@@ -2,6 +2,7 @@
 package audiobackend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -146,9 +147,52 @@ type Stream interface {
 
 type Backend interface {
 	Name() Name
+	CaptureSupported() bool
 	Devices() ([]Device, bool, error)
 	SampleRate(Config) (int, error)
 	Open(Config, Callback) (Stream, error)
+}
+
+// InputAccess describes permission independently of discovery and playback.
+type InputAccess string
+
+const (
+	InputAccessGranted     InputAccess = "granted"
+	InputAccessPrompt      InputAccess = "prompt"
+	InputAccessDenied      InputAccess = "denied"
+	InputAccessRestricted  InputAccess = "restricted"
+	InputAccessUnavailable InputAccess = "unavailable"
+)
+
+type inputAccessController interface {
+	InputAccess() (InputAccess, error)
+	RequestInputAccess(context.Context) error
+}
+
+// QueryInputAccess never opens an input or displays a system prompt.
+func QueryInputAccess(backend Backend) (InputAccess, error) {
+	if !backend.CaptureSupported() {
+		return InputAccessUnavailable, nil
+	}
+	if controller, ok := backend.(inputAccessController); ok {
+		return controller.InputAccess()
+	}
+	return InputAccessGranted, nil
+}
+
+// RequestInputAccess belongs to an explicit Enable input or Record action.
+// Permission alone does not open, arm, or start a stream.
+func RequestInputAccess(ctx context.Context, backend Backend) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !backend.CaptureSupported() {
+		return fmt.Errorf("recording input is unavailable with this audio backend")
+	}
+	if controller, ok := backend.(inputAccessController); ok {
+		return controller.RequestInputAccess(ctx)
+	}
+	return nil
 }
 
 func New(name Name) (Backend, error) {

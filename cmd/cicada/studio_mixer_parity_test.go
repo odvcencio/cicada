@@ -187,9 +187,25 @@ func TestRouteParity_MixerLooseScoresAndProjects(t *testing.T) {
 	t.Run("project whose tracks live in another source", func(t *testing.T) {
 		path := copyStudioProject(t)
 		before, _ := os.ReadFile(path)
+		sources, err := project.ReadSources(path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 		reply := mixerRoute(t, path, studioEdit{Path: "fx.tape", Value: json.RawMessage(`{"kind":"drive"}`)})
-		if reply.Code != 422 || reply.Body["error"] != "score must validate before a mixer edit" || !bytes.Equal(reply.Score, before) {
+		if reply.Code != 200 || bytes.Equal(reply.Score, before) || !bytes.Contains(reply.Score, []byte("fx tape drive")) {
 			t.Fatalf("%d %v", reply.Code, reply.Body["error"])
+		}
+		for _, file := range sources.Files {
+			if file.Path == path {
+				continue
+			}
+			after, err := os.ReadFile(file.Path)
+			if err != nil || !bytes.Equal(after, file.Source) {
+				t.Fatal("adding an entry effect changed another source", file.Path, err)
+			}
+		}
+		if _, err := compileStudioSource(path, reply.Score); err != nil {
+			t.Fatal(err)
 		}
 	})
 }

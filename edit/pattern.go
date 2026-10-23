@@ -39,6 +39,7 @@ func (SetStep) Kind() string { return "setstep" }
 type DuplicatePattern struct {
 	Entity EntityID `json:"entity"`
 	Name   string   `json:"name"`
+	Track  string   `json:"track,omitempty"`
 }
 
 func (DuplicatePattern) Kind() string { return "duplicatepattern" }
@@ -84,7 +85,7 @@ func init() {
 	Register("resizepattern", func() Intent { return &ResizePattern{} })
 	Register("bindscene", func() Intent { return &BindScene{} })
 	for _, kind := range []string{"setpatternsettings", "setstep", "duplicatepattern", "setrange", "resizepattern", "bindscene"} {
-		Handle(kind, editPattern)
+		Handle(kind, gridSourceEdit(editPattern))
 	}
 }
 
@@ -125,7 +126,7 @@ func editPattern(ctx *Context, intent Intent) error {
 		if e != nil {
 			return e
 		}
-		updated, err = duplicatePatternSource(ctx, id, in.Name)
+		updated, err = duplicatePatternSource(ctx, id, in.Name, in.Track)
 		label = fmt.Sprintf("Pattern · %s duplicated as %s", id, in.Name)
 	case *SetRange:
 		id, e := patternTarget(in.Entity)
@@ -294,6 +295,7 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 		}
 		token := steps[index]
 		text := "."
+		chordWritten := false
 		switch edit.Mode {
 		case "rest":
 		case "tie":
@@ -314,6 +316,34 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 			current, err := patternStep(sourceContext(ctx, updated), id, index)
 			if err != nil {
 				return nil, err
+			}
+			if current != nil && len(current.Notes) > 0 {
+				if edit.Slide || edit.Ratchet != 1 {
+					return nil, fmt.Errorf("chords cannot slide or ratchet")
+				}
+				shifted := make([]int, len(current.Notes))
+				for i, pitch := range current.Notes {
+					shifted[i] = pitch + edit.Pitch - int(current.Note) - token.Transpose
+					if shifted[i] < 0 || shifted[i] > 127 || shifted[i]+token.Transpose < 0 || shifted[i]+token.Transpose > 127 {
+						return nil, fmt.Errorf("transposed note would leave MIDI range 0–127")
+					}
+				}
+				suffix := ""
+				if edit.Accent {
+					suffix += "^"
+				}
+				if edit.Chance < 100 {
+					suffix += "?" + strconv.Itoa(edit.Chance)
+				}
+				if edit.Accent == current.Accent && edit.Chance == int(current.Probability) {
+					suffix = token.ChordModifiers
+				}
+				text, err = chordSource(token, shifted, suffix, current)
+				if err != nil {
+					return nil, err
+				}
+				chordWritten = true
+				break
 			}
 			if current != nil && !current.Tie && int(current.Note) == edit.Pitch {
 				text = strings.TrimSuffix(token.Text, noteSuffix(token.Text))
@@ -338,7 +368,7 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 		default:
 			return nil, fmt.Errorf("choose note, hit, tie, or rest")
 		}
-		if edit.Mode == "note" || edit.Mode == "hit" {
+		if !chordWritten && (edit.Mode == "note" || edit.Mode == "hit") {
 			if edit.Ratchet > 1 {
 				text += "*" + strconv.Itoa(edit.Ratchet)
 			}
@@ -360,19 +390,40 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 
 var patternName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,63}$`)
 
-func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
+func duplicatePatternSource(ctx *Context, id, name, track string) ([]byte, error) {
 	source := ctx.Source
-	if !patternName.MatchString(name) {
-		return nil, fmt.Errorf("name must start with a lowercase letter or underscore and contain at most 64 letters, digits, underscores, or hyphens")
+	plan, err := ctx.CurrentPlan()
+	if err != nil {
+		return nil, err
+	}
+	if err := patternCopyName(plan, name); err != nil {
+		return nil, err
 	}
 	score, diagnostics := ctx.Parse()
-	if score == nil || hasErrors(diagnostics) {
-		return nil, fmt.Errorf("score must validate before duplicating a pattern")
-	}
-	for _, pattern := range score.Patterns {
-		if pattern.Name == name {
-			return nil, fmt.Errorf("pattern %q already exists", name)
+	local := false
+	if score != nil && !hasErrors(diagnostics) {
+		for _, pattern := range score.Patterns {
+			local = local || pattern.Name == id
 		}
+	}
+	if !local || track != "" {
+		clone, err := localPatternCopy(ctx, id, name, track)
+		if err != nil {
+			return nil, err
+		}
+		updated := appendPatternCopy(source, clone)
+		check, err := renderCheckFor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		same, err := ctx.compareRenders("DuplicatePattern", check, source, updated)
+		if err != nil {
+			return nil, err
+		}
+		if !same {
+			return nil, &RefusalError{Intent: "DuplicatePattern", Cause: "creating this variation changes the rendered song"}
+		}
+		return updated, nil
 	}
 	independent, err := independentPatternSource(ctx, id)
 	if err != nil {
@@ -401,7 +452,11 @@ func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
 					if err != nil {
 						return nil, err
 					}
-					notes = append(notes, Span{start, start + len(token.Text), sourcePitch(int(note.Note)) + noteSuffix(token.Text), ctx.Options.Path})
+					text, err := shiftedStepSource(token, note, 0)
+					if err != nil {
+						return nil, err
+					}
+					notes = append(notes, Span{start, start + len(token.Text), text, ctx.Options.Path})
 				}
 			}
 			independent, err = PatchSpans(independent, ctx.Options.Path, notes)
@@ -525,15 +580,11 @@ func patternRangeSource(ctx *Context, id, lane string, edit *SetRange) ([]byte, 
 			}
 			for i := range texts {
 				if note := notes[edit.First+i]; note != nil && !note.Tie {
-					pitch := int(note.Note) + edit.Amount
-					if pitch < 0 || pitch > 127 {
-						return nil, fmt.Errorf("transposed note would leave MIDI range 0–127")
+					var err error
+					texts[i], err = shiftedStepSource(tokens[edit.First+i], note, edit.Amount)
+					if err != nil {
+						return nil, err
 					}
-					sourceNote := pitch - tokens[edit.First+i].Transpose
-					if sourceNote < 0 || sourceNote > 127 {
-						return nil, fmt.Errorf("transposed note would leave MIDI range 0–127")
-					}
-					texts[i] = sourcePitch(sourceNote) + noteSuffix(texts[i])
 				}
 			}
 		default:
@@ -627,24 +678,46 @@ func resizePatternSource(ctx *Context, id string, length int, shared string) ([]
 }
 
 func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte, error) {
-	source := ctx.Source
-	node, walker, err := declaration(source, []string{"scene_decl"}, sceneID)
+	score, source, path, err := sceneSource(ctx, sceneID)
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := declaration(source, []string{"track_decl"}, trackID); err != nil {
-		return nil, err
+	found := false
+	for _, track := range score.Tracks {
+		found = found || track.Name == trackID
+	}
+	if !found {
+		return nil, fmt.Errorf("unknown declaration %q", trackID)
 	}
 	if patternID != "off" && patternID != "keep" {
-		if _, _, err := declaration(source, append(append([]string{}, patternTypes...), "clip_decl"), patternID); err != nil {
-			return nil, err
+		found = false
+		for _, pattern := range score.Patterns {
+			found = found || pattern.Name == patternID
 		}
+		for _, clip := range score.Clips {
+			found = found || clip.Name == patternID
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown declaration %q", patternID)
+		}
+	}
+	updated, err := sceneBindingSource(source, path, sceneID, trackID, patternID)
+	if err != nil {
+		return nil, err
+	}
+	return stageProjectSource(ctx, path, source, updated), nil
+}
+
+func sceneBindingSource(source []byte, path, sceneID, trackID, patternID string) ([]byte, error) {
+	node, walker, err := declaration(source, []string{"scene_decl"}, sceneID)
+	if err != nil {
+		return nil, err
 	}
 	for i := 0; i < node.NamedChildCount(); i++ {
 		binding := node.NamedChild(i)
 		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID && !notation.SceneAssignmentIsSetting(trackID, walker.Text(walker.Field(binding, "value"))) {
 			value := walker.Field(binding, "value")
-			return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), patternID, ctx.Options.Path})
+			return ReplaceSpan(source, path, Span{int(value.StartByte()), int(value.EndByte()), patternID, path})
 		}
 	}
 	newline := "\n"
@@ -652,5 +725,5 @@ func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte
 		newline = "\r\n"
 	}
 	at := int(node.EndByte()) - 1
-	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, newline + "  " + trackID + " = " + patternID + newline, ctx.Options.Path})
+	return ReplaceSpan(source, path, Span{at, at, newline + "  " + trackID + " = " + patternID + newline, path})
 }

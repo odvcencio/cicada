@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -309,6 +310,15 @@ func studioEditLabel(edit studioEdit) string {
 	if edit.Label != "" {
 		return edit.Label
 	}
+	if edit.Action == "vary" {
+		return fmt.Sprintf("Placement %s now uses its own pattern %s", edit.Name, edit.NewName)
+	}
+	if edit.Action == "performance-scale" && edit.PerformanceScale != nil {
+		return fmt.Sprintf("Performance · %s duration scaled %d/%d", edit.Pattern, edit.PerformanceScale.Numerator, edit.PerformanceScale.Denominator)
+	}
+	if edit.Action == "performance-pitch" {
+		return "Performance · " + edit.Pattern + " pitch shaped"
+	}
 	if edit.Action == "project" {
 		return "Project title, tempo, and key changed"
 	}
@@ -510,7 +520,7 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 
 func (s *studio) commitSourceLocked(w http.ResponseWriter, edit studioEdit, current, updated []byte, beforeSwap func(), historyKind studioHistoryWriteKind, targetID uint64) {
 	outcome := s.commitMutationLocked(edit, current, studioMutation{Source: updated, Files: edit.historyFiles}, beforeSwap, historyKind, targetID, commitHook{historyError: true})
-	studioJSON(w, outcome.Status, outcome.Response)
+	outcome.write(w)
 }
 
 type commitHook struct {
@@ -525,9 +535,17 @@ type commitHook struct {
 }
 
 type commitOutcome struct {
-	Status   int
-	Response map[string]any
-	Written  bool
+	Status         int
+	Response       map[string]any
+	Written        bool
+	SourceRevision string
+}
+
+func (o commitOutcome) write(w http.ResponseWriter) {
+	if o.Status == http.StatusOK && o.SourceRevision != "" {
+		w.Header().Set("X-Cicada-Write-Source-Revision", o.SourceRevision)
+	}
+	studioJSON(w, o.Status, o.Response)
 }
 
 // commitMutationLocked is the single commit tail: compile with auxiliary
@@ -567,6 +585,20 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	if studioRevision(latest) != edit.Revision {
 		return fail(http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
 	}
+	// Capture the candidate, never a later disk read. A source-only outside
+	// save after publication must not be mistaken for our acknowledgment.
+	absolute, err := filepath.Abs(s.path)
+	if err != nil {
+		return fail(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+	}
+	overrides[absolute] = updated
+	writeSources, err := project.ReadScoreRevisionWithOverrides(s.path, overrides)
+	if err != nil {
+		return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+	}
+	if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
+		return fail(http.StatusConflict, map[string]any{"error": err.Error()})
+	}
 	if bytes.Equal(current, updated) && len(mutation.Files) == 0 {
 		if s.transport != nil {
 			func() {
@@ -582,7 +614,7 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		}
 		response["source"], response["revision"] = string(current), studioRevision(current)
 		response["playingRevision"] = studioRevision(s.lastGoodSource)
-		return commitOutcome{Status: http.StatusOK, Response: response}
+		return commitOutcome{Status: http.StatusOK, Response: response, SourceRevision: writeSources}
 	}
 	// Keep the watcher outside the entire exchange, auxiliary write/rollback
 	// and activation. All mutation routes use this shared commit tail.
@@ -594,10 +626,13 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	committed, preserved := false, ""
 	if err == nil {
 		var veto func() error
-		if mutation.RenderChecked {
+		if mutation.RenderChecked || edit.SourceRevision != "" {
 			// The approval can expire while the replacement is being staged, so
 			// the publication step rechecks it immediately before the exchange.
 			veto = func() error {
+				if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
+					return err
+				}
 				return s.verifyRenderIdentity(mutation.RenderChecked, mutation.RenderIdentity, mutation.RenderRecheck)
 			}
 		}
@@ -629,7 +664,11 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	if !committed {
 		return fail(http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
 	}
-	if err := studioWriteAuxiliaryFiles(mutation.Files); err != nil {
+	if err := studioWriteAuxiliaryFiles(mutation.Files, func() {
+		if hook.checkpoint != nil {
+			hook.checkpoint(takejournal.AuxiliaryFileSwapped)
+		}
+	}); err != nil {
 		_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
 		message := "source auxiliary write failed: " + err.Error()
 		if rollbackErr != nil {
@@ -639,6 +678,9 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 			message = fmt.Sprintf("history file write failed: %v; rollback: %v", err, rollbackErr)
 		}
 		return fail(http.StatusConflict, map[string]any{"error": message})
+	}
+	if len(mutation.Files) > 0 && hook.checkpoint != nil {
+		hook.checkpoint(takejournal.AuxiliarySwapped)
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
 	if s.transport != nil {
@@ -667,7 +709,7 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	if err := s.appendEditLog(edit, hook.envelope, current, updated); err != nil {
 		response["editLogError"] = err.Error() // the score is already committed; report, do not fail
 	}
-	return commitOutcome{Status: http.StatusOK, Response: response, Written: true}
+	return commitOutcome{Status: http.StatusOK, Response: response, Written: true, SourceRevision: writeSources}
 }
 
 // appendEditLog records one committed edit in .cicada/edits.jsonl. envelope is

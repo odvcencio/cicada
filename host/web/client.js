@@ -1,14 +1,17 @@
 (() => {
-  const CapabilityChords = 1, CapabilityUnifiedImage = 65536;
+  const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144, CapabilityGestures = 524288, CapabilitySharedControls = 2097152;
   // Match the worklet allowlist, including when an older cached worklet runs.
   const imageInfo = (image, capabilities) => {
     const bytes = new Uint8Array(image);
     if (bytes.length < 32 || bytes[0] !== 67 || bytes[1] !== 73 || bytes[2] !== 67 || bytes[3] !== 49) throw new Error('Invalid CIC1 image header');
     const version = bytes[4] | bytes[5] << 8;
     if (version === 14) throw new Error('Ambiguous development image14; recompile source for unified image15');
-    if (![8, 9, 10, 11, 12, 13, 15].includes(version)) throw new Error(`Unsupported image version ${version}`);
+    if (![8, 9, 10, 11, 12, 13, 15, 16, 17, 18].includes(version)) throw new Error(`Unsupported image version ${version}`);
     if (version>=13 && capabilities!==undefined && (new DataView(image).getUint16(30,true)&2048) && !(capabilities&2048)) throw new Error("Track inserts require the vocal audio module; update the audio kernel");
-    if (version === 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
+    if (version >= 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
+    if (version >= 16 && capabilities !== undefined && !(capabilities & CapabilityPerformance)) throw new Error('Played timing requires CapabilityPerformance (bit18); update the audio kernel');
+    if (version >= 17 && capabilities !== undefined && !(capabilities & CapabilityGestures)) throw new Error('Played expression requires CapabilityGestures (bit19); update the audio kernel');
+    if (version === 18 && capabilities !== undefined && !(capabilities & CapabilitySharedControls)) throw new Error('Shared gesture lanes require CapabilitySharedControls (bit21); update the audio kernel');
     return new DataView(image).getUint32(12, true);
   };
   const audioFault = code => new Error(code === 20 ? "Polyphonic tracks require handle-aware live commands; legacy NoteOn/NoteOff are unsupported" : `Audio fault ${code}`);
@@ -393,6 +396,8 @@
       if (!node) throw new Error('Select Browser mode and start audio first');
       if (node === this.node && this.fault) throw new Error(`${this.fault.message}. Press Play to reload the score`);
       if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
+	  if (records.some(record => (record.op === 12 || record.op === 13) && record.arg1 === 1) && !(this.capabilities & 1048576)) throw new Error('Independent live notes require an updated audio kernel');
+      if (records.some(record => record.op === 32 || record.op === 33) && !(this.capabilities & 4194304)) throw new Error('Live shared controls require an updated audio kernel');
       if (records.some(record => record.op >= 26 && record.op <= 28) && !(this.capabilities & 131072)) throw new Error('Unsupported spatial commands');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
       records.forEach((record, index) => {

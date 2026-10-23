@@ -137,11 +137,15 @@ func editArrangement(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	updated, err := arrangementSource(ctx.Source, ctx.Options.Path, op)
+	source, file, err := arrangementFile(ctx)
 	if err != nil {
 		return err
 	}
-	ctx.Source, ctx.plan = updated, nil
+	updated, err := arrangementSource(source, file, op)
+	if err != nil {
+		return err
+	}
+	ctx.Source, ctx.plan = stageProjectSource(ctx, file, source, updated), nil
 	ctx.SetLabel(label)
 	return nil
 }

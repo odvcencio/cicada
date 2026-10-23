@@ -13,12 +13,13 @@ import (
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
+	"m31labs.dev/gosx/server"
 )
 
-func (s *studioApp) arrangement(v workspace, csrf, selected string) gosx.Node {
+func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected string) gosx.Node {
 	p := v.Project
 	if p.Arrange != nil {
-		return s.placementArrangement(v, csrf, selected)
+		return s.placementArrangement(ctx, v, csrf, selected)
 	}
 	scenes := map[string]project.Scene{}
 	var sceneNames []string
@@ -101,7 +102,7 @@ func (s *studioApp) arrangement(v workspace, csrf, selected string) gosx.Node {
 
 // Named placements are a separate arrangement authority. Showing song controls
 // for these projects reports an empty timeline and offers invalid song writes.
-func (s *studioApp) placementArrangement(v workspace, csrf, selected string) gosx.Node {
+func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf, selected string) gosx.Node {
 	p := v.Project
 	placements := slices.Clone(p.Arrange.Placements)
 	sort.SliceStable(placements, func(i, j int) bool { return placements[i].AtTick < placements[j].AtTick })
@@ -147,15 +148,22 @@ func (s *studioApp) placementArrangement(v workspace, csrf, selected string) gos
 		markerList = gosx.El("p", gosx.Attrs(gosx.Attr("aria-label", "Arrangement markers")), gosx.El("strong", gosx.Text("Markers: ")), gosx.Text(strings.Join(labels, " · ")))
 	}
 	seconds := float64(end) * 60000 / (float64(p.TempoMilli) * float64(seq.PPQ))
+	if clock, err := project.NewTempoMap(48000, int64(p.TempoMilli), project.SongTempoChanges(p)); err == nil {
+		seconds = float64(clock.SampleAtTick(end)) / 48000
+	}
 	bars := (end + seq.TicksPerBar - 1) / seq.TicksPerBar
 	description := fmt.Sprintf("%d bars · %d:%02d at %.1f BPM · %d placements", bars, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000, len(placements))
+	if len(p.Arrange.Tempos) > 0 {
+		description += " · tempo changes"
+	}
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: description},
 		markerList,
+		s.arrangementTempos(v, csrf, selected, end),
 		placementTimeline(p, placements, selected, end),
 		s.sessionListening(v, csrf, selected, end),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Select a block to edit it. Drag to move; drag its right edge to resize. Arrow keys on a block or edge change it by a sixteenth; hold Shift for a bar. Each placement restarts its pattern; End is exclusive.")),
-		s.placementEditors(v, csrf, placements, selected, end),
+		s.placementEditors(ctx, v, csrf, placements, selected, end),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-list")), gosx.El("summary", gosx.Text("Placement list")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Named placement timeline")), gosx.El("thead", gosx.El("tr", gosx.Fragment(headers...))), gosx.El("tbody", gosx.Fragment(rows...))))),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings)))
 }

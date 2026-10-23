@@ -396,6 +396,9 @@ func formatDeclaration(source []byte) string {
 			kind := ""
 			if parts := strings.Fields(line); len(parts) > 0 {
 				kind = parts[0]
+				if kind == "pattern" && len(parts) > 2 && parts[2] == "performance" {
+					kind = "performance"
+				}
 			}
 			if i+1 < len(tokens) && tokens[i+1].text == "}" {
 				line = strings.TrimRight(line, " ") + " {}"
@@ -417,6 +420,12 @@ func formatDeclaration(source []byte) string {
 			line = "}"
 			flush()
 		case ";":
+			if len(frames) > 0 {
+				kind := frames[len(frames)-1].kind
+				if kind == "performance" || kind == "note" || kind == "gesture-group" {
+					line = strings.TrimRight(line, " ") + ";"
+				}
+			}
 			flush()
 		case ">=":
 			line = strings.TrimRight(line, " ") + " >= "

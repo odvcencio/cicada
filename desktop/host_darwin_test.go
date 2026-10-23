@@ -13,6 +13,42 @@ import (
 	"time"
 )
 
+func TestOpenLogRestrictsStartupCapability(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "studio.log")
+	if err := os.WriteFile(path, []byte("previous launch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log, err := openLog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	info, err := log.Stat()
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("startup log is not private: %v %v", info, err)
+	}
+}
+
+func TestSidecarReceivesChosenStateFolder(t *testing.T) {
+	t.Setenv("CICADA_AUDIO_SETTINGS_DIR", "/unused/inherited-audio-profile")
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "cicada")
+	script := "#!/bin/sh\nprintf '%s' \"$CICADA_STATE_DIR\" > \"${0%/*}/settings-path\"\necho 'Cicada Studio: http://127.0.0.1:12345/'\nexec sleep 60\n"
+	if err := os.WriteFile(helper, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(t.TempDir(), "Studio profile")
+	h := &host{cicada: helper, statePath: filepath.Join(profile, "state.json"), logOut: io.Discard}
+	t.Cleanup(h.shutdown)
+	if _, err := h.startSidecar(filepath.Join(dir, "main.cicada")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "settings-path"))
+	if err != nil || string(got) != profile {
+		t.Fatalf("sidecar used a different settings folder: %q %v", got, err)
+	}
+}
+
 func TestShutdownStopsSidecarDuringAndAfterStartup(t *testing.T) {
 	for _, ready := range []bool{false, true} {
 		name := "waiting-for-readiness"

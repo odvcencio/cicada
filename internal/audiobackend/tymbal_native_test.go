@@ -38,6 +38,15 @@ func TestTymbalPreservesBlockTimingBeforeRender(t *testing.T) {
 	}
 }
 
+func TestCoreAudioEstimatedPlaybackDoesNotClaimExactTakePlacement(t *testing.T) {
+	timing := &tymbalTiming{estimatedOutput: true, actual: tymbal.Actual{SampleRate: 48000, Period: 256, LatencyIn: time.Millisecond, LatencyOut: 20 * time.Millisecond}}
+	b := timing.block(tymbal.Time{InputNano: 1_000_000_000, OutputNano: 1_020_000_000}, [][]float32{{0}}, [][]float32{{0}, {0}})
+	placed := capture.Place(b)
+	if b.OutputTime.Reference != capture.ReferenceEstimatedFirstFrame || placed.Confidence != capture.TimingReportedLatency || placed.EngineFrame != -960 {
+		t.Fatalf("estimated output claimed exact timing or subtracted latency twice: %+v %+v", b, placed)
+	}
+}
+
 func TestTymbalCaptureAndFaultPathsAllocateZero(t *testing.T) {
 	r, _ := capture.NewRing(1, 256, 2)
 	timing := &tymbalTiming{epoch: 1, actual: tymbal.Actual{SampleRate: 48000, Period: 256}, tap: func(b capture.Block, in [][]float32) { r.Push(b, in) }}

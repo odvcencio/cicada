@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/smf"
@@ -17,6 +18,7 @@ type midiOptions struct {
 	output, pattern string
 	bars            int
 	report          bool
+	libraryAliases  map[string]string
 }
 
 func parseMIDIArgs(args []string) midiOptions {
@@ -36,7 +38,7 @@ func midiFile(p *project.Project, opts midiOptions) error {
 	var file smf.File
 	var err error
 	if opts.pattern != "" {
-		file, err = smf.FromPattern(p, opts.pattern)
+		file, err = smf.FromPattern(p, midiPatternID(p, opts.pattern, opts.libraryAliases))
 	} else {
 		file, err = smf.FromProject(p, opts.bars)
 	}
@@ -75,14 +77,39 @@ func midiFile(p *project.Project, opts midiOptions) error {
 	for _, track := range file.Tracks {
 		notes += len(track.Notes)
 	}
+	var omittedAudio []string
+	if opts.pattern == "" && p.Edition == 2 {
+		for _, track := range p.Tracks {
+			if track.Kind == "audio" {
+				omittedAudio = append(omittedAudio, track.ID)
+			}
+		}
+	}
 	if opts.report {
 		return json.NewEncoder(os.Stderr).Encode(map[string]any{
 			"path": opts.output, "format": file.Format, "ppq": file.PPQ,
 			"tracks": len(file.Tracks), "notes": notes, "tempo_micros": file.TempoMicros,
+			"audio_tracks_omitted": omittedAudio,
 		})
 	}
 	fmt.Printf("%s: SMF type 1, %d PPQ, %d tracks, %d notes\n", opts.output, file.PPQ, len(file.Tracks), notes)
+	if len(omittedAudio) > 0 {
+		fmt.Printf("%s: audio omitted from %s; use WAV or stems for recorded audio\n", opts.output, strings.Join(omittedAudio, ", "))
+	}
 	return nil
+}
+
+func midiPatternID(p *project.Project, name string, aliases map[string]string) string {
+	for _, pattern := range p.Patterns {
+		if pattern.ID == name {
+			return name
+		}
+	}
+	alias, declaration, qualified := strings.Cut(name, ".")
+	if namespace := aliases[alias]; qualified && namespace != "" {
+		return namespace + "." + declaration
+	}
+	return name
 }
 
 func verifyMIDICommand(args []string) error {

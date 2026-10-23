@@ -30,7 +30,11 @@ another goroutine.
 The worker calls `Next` and completes each returned `Work` exactly once through
 `Publish`, `Cancel`, or `Fail`. Only one worker may own these calls. It fills both
 channels, including mono duplication, before publication. The audio owner pins
-a ready page with one atomic attempt per slot. Eviction claims an unpinned page
+a ready page with one atomic increment per ready candidate, followed by a
+publication check. Competing readers never cause a retry or a false miss. A
+worker that claims the slot first keeps any transient reader probes through
+publication, cancellation, and failure, so a late release cannot erase a pin
+or corrupt the page state. Eviction claims an unpinned page
 outside active windows; old pages are recycled in publication order. The worker
 cannot write PCM while a reader holds its pin. Call `Stop` on retired readers to
 release pins and demand before retiring a plan.

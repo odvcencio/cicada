@@ -12,7 +12,7 @@ const enabledTrackEffectsCapability = TrackEffectsCapability
 
 func writeTrackEffects(w *writer, rate int, specs []engine.TrackEffectConfig) error {
 	if len(specs) > engine.MaxTrackInserts {
-		return Error("track insert image exceeds eight stages")
+		return imageError("track insert image exceeds eight stages")
 	}
 	w.byte(byte(len(specs)))
 	for _, p := range specs {
@@ -52,7 +52,7 @@ func readTrackEffects(r *reader, rate int) ([]engine.TrackEffectConfig, error) {
 		return nil, err
 	}
 	if count > engine.MaxTrackInserts {
-		return nil, Error("track insert image exceeds eight stages")
+		return nil, imageError("track insert image exceeds eight stages")
 	}
 	if count == 0 {
 		return nil, nil
@@ -77,7 +77,7 @@ func readTrackEffects(r *reader, rate int) ([]engine.TrackEffectConfig, error) {
 		case engine.TrackEffectEQ:
 			enabled, err := r.byte()
 			if err != nil || enabled > 1 {
-				return nil, Error("invalid EQ enabled flag")
+				return nil, imageError("invalid EQ enabled flag")
 			}
 			kind, err := r.byte()
 			if err != nil {
@@ -92,7 +92,7 @@ func readTrackEffects(r *reader, rate int) ([]engine.TrackEffectConfig, error) {
 			}
 			auto, err := r.byte()
 			if err != nil || auto > 1 {
-				return nil, Error("invalid track compressor makeup flag")
+				return nil, imageError("invalid track compressor makeup flag")
 			}
 			p.Comp = &fx.CompParams{Detect: fx.CompDetector(detect), MakeupAuto: auto == 1}
 			values = []*float64{&p.Comp.Threshold, &p.Comp.Ratio, &p.Comp.Knee, &p.Comp.AttackMs, &p.Comp.ReleaseMs, &p.Comp.MakeupDB, &p.Comp.Mix}
@@ -100,7 +100,7 @@ func readTrackEffects(r *reader, rate int) ([]engine.TrackEffectConfig, error) {
 			p.Deesser = &fx.DeesserParams{}
 			values = []*float64{&p.Deesser.FrequencyHz, &p.Deesser.ThresholdDB, &p.Deesser.Ratio, &p.Deesser.RangeDB, &p.Deesser.AttackMs, &p.Deesser.ReleaseMs, &p.Deesser.Mix}
 		default:
-			return nil, Error("unknown track insert image kind")
+			return nil, imageError("unknown track insert image kind")
 		}
 		for _, dst := range values {
 			v, err := r.f64()

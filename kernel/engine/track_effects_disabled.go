@@ -11,7 +11,7 @@ type trackEffectChain struct {
 
 func newTrackEffectChain(rate int, specs []TrackEffectConfig) (*trackEffectChain, error) {
 	if len(specs) > 0 {
-		return nil, Error("track inserts require the vocal kernel module")
+		return nil, engineError("track inserts require the vocal kernel module")
 	}
 	return nil, nil
 }

@@ -30,17 +30,20 @@ type workspaceProps struct {
 	ProjectRevision string `json:"projectRevision"`
 	CSRF            string `json:"csrf"`
 	Revision        string `json:"revision"`
+	SourceRevision  string `json:"sourceRevision"`
 }
 
 type workspaceProjection struct {
-	ProjectRevision string `json:"projectRevision"`
-	FileRevision    string `json:"fileRevision"`
-	HTML            string `json:"html"`
-	Revision        string `json:"revision"`
-	Location        string `json:"location"`
-	Title           string `json:"title"`
-	WriteRevision   string `json:"writeRevision"`
-	RefreshRequired bool   `json:"refreshRequired"`
+	ProjectRevision     string `json:"projectRevision"`
+	FileRevision        string `json:"fileRevision"`
+	SourceRevision      string `json:"sourceRevision"`
+	HTML                string `json:"html"`
+	Revision            string `json:"revision"`
+	Location            string `json:"location"`
+	Title               string `json:"title"`
+	WriteRevision       string `json:"writeRevision"`
+	WriteSourceRevision string `json:"writeSourceRevision"`
+	RefreshRequired     bool   `json:"refreshRequired"`
 }
 
 type workspaceControl struct {
@@ -50,15 +53,18 @@ type workspaceControl struct {
 
 type workspaceJob struct {
 	method, target, confirmed string
+	confirmedSource           string
 	values                    map[string]string
 	form                      js.Value
 	controls                  []workspaceControl
 	refresh                   bool
+	fragment                  string
 	// A current job reads the location when it runs, not when it was queued.
 	// Gestures queued before it can change the step, and a refresh built from
 	// the earlier location would put that older step back in front of the user.
 	current            bool
 	pitchDelta         int
+	pitchOffset        int // Focused voice's offset from the step's first pitch.
 	focusRow           string
 	focusStep          string
 	pendingCell        js.Value
@@ -66,22 +72,24 @@ type workspaceJob struct {
 }
 
 type workspaceUI struct {
-	root, patch js.Value
-	props       workspaceProps
-	ctx         context.Context
-	cancel      context.CancelFunc
-	closed      atomic.Bool
-	blocked     atomic.Bool
-	busy        atomic.Bool
-	jobs        chan workspaceJob
-	events      []workspaceEvent
-	revision    *signal.Signal[string]
-	status      *signal.Signal[string]
-	tool        *signal.Signal[string]
-	drafts      map[string]workspaceDraft
-	scrolls     []workspaceScroll
-	editors     map[string]workspaceEditorBaseline
-	placements  *placementEditorUI
+	root, patch    js.Value
+	props          workspaceProps
+	ctx            context.Context
+	cancel         context.CancelFunc
+	closed         atomic.Bool
+	blocked        atomic.Bool
+	busy           atomic.Bool
+	jobs           chan workspaceJob
+	events         []workspaceEvent
+	revision       *signal.Signal[string]
+	sourceRevision string
+	status         *signal.Signal[string]
+	tool           *signal.Signal[string]
+	drafts         map[string]workspaceDraft
+	scrolls        []workspaceScroll
+	editors        map[string]workspaceEditorBaseline
+	placements     *placementEditorUI
+	sources        map[string]*sourceRecovery
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -146,7 +154,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("GoSX DOM patch receiver is unavailable")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
+	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
 	u.projectRevision.Store(props.ProjectRevision)
 	u.seedEditorBaseline()
 	watch := signal.Watch(func() {
@@ -174,6 +182,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "click", u.click)
 	u.listen(document, "dblclick", u.doubleClick)
 	u.listen(document, "keydown", u.keyDown)
+	u.listen(document, "input", u.sourceInput)
 	u.placements = &placementEditorUI{
 		owned:   u.owned,
 		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
@@ -201,11 +210,12 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	})
 	u.scrolls = workspaceScrolls(root.Get("firstElementChild"))
 	u.listen(document, "scroll", u.scrolled)
-	u.revealInitialNote()
+	u.revealSelectedNote()
 	root.Call("setAttribute", "data-workspace-reactive", "ready")
-	confirmedWorkspaceRevision.Set(props.Revision)
+	confirmedWorkspaceVersion.Set(workspaceVersion{props.Revision, props.SourceRevision})
 	go u.run()
 	go u.watchFiles()
+	go u.checkpointSources()
 	releasePlacementView := placementViewPublisher.acquire()
 	releaseAudio := audioPublisher.acquire()
 	busy := func() bool { return u.busy.Load() }
@@ -344,6 +354,11 @@ func (u *workspaceUI) submit(event js.Value) {
 	if workspaceEngineOwned(form) && parsed.Path != "/__actions/source" {
 		return
 	}
+	// Export is a background job. GoSX's managed form and live projection own
+	// its acknowledgement; replacing the score view would close its dialog.
+	if method == http.MethodPost && parsed.Path == "/__actions/export" {
+		return
+	}
 	// File uploads keep GoSX's native multipart transport.
 	files := form.Call("querySelectorAll", "input[type=file]")
 	if files.Length() > 0 {
@@ -433,12 +448,21 @@ func (u *workspaceUI) click(event js.Value) {
 	}
 	parsed, safe := workspaceURL(workspaceAttr(anchor, "href"))
 	current, _ := url.Parse(workspaceLocation())
-	if !safe || parsed.Path != current.Path || parsed.RawQuery == current.RawQuery || parsed.Query().Get("panel") != current.Query().Get("panel") || parsed.Fragment != "" {
+	if !safe || parsed.Path != current.Path || parsed.RawQuery == current.RawQuery || parsed.Query().Get("panel") != current.Query().Get("panel") {
 		return
+	}
+	// A retained local buffer must return with its own receipt, even when
+	// another window has checkpointed the same file more recently.
+	query := parsed.Query()
+	if query.Get("panel") == "code" && query.Get("codeDraft") == "" {
+		if copy := u.sources[query.Get("file")]; copy != nil && !copy.clean {
+			query.Set("codeDraft", copy.id)
+			parsed.RawQuery = query.Encode()
+		}
 	}
 	event.Call("preventDefault")
 	event.Call("stopImmediatePropagation")
-	u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + parsed.RawQuery, form: js.Undefined()})
+	u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + parsed.RawQuery, fragment: parsed.Fragment, form: js.Undefined()})
 }
 
 func workspaceStop(event js.Value) {
@@ -446,9 +470,9 @@ func workspaceStop(event js.Value) {
 	event.Call("stopImmediatePropagation")
 }
 
-// Only mounting can reveal an off-screen authored note. Canonical projections
-// and subsequent selection deliberately retain the user's viewport.
-func (u *workspaceUI) revealInitialNote() {
+// Mounting and explicit chord placement reveal the selected voicing. Other
+// canonical projections and selection retain the user's viewport.
+func (u *workspaceUI) revealSelectedNote() {
 	grid := u.root.Call("querySelector", ".piano-roll[data-pattern-kind=notes]")
 	if !workspacePresent(grid) {
 		return
@@ -566,7 +590,7 @@ func (u *workspaceUI) selectCell(cell js.Value, step string) {
 }
 
 func (u *workspaceUI) editValues() map[string]string {
-	return map[string]string{"revision": u.revision.Get(), "csrf": u.props.CSRF, "__cicada_reactive": "1", "__cicada_location": workspaceLocation()}
+	return map[string]string{"revision": u.revision.Get(), "source_revision": u.sourceRevision, "csrf": u.props.CSRF, "__cicada_reactive": "1", "__cicada_location": workspaceLocation()}
 }
 
 func (u *workspaceUI) keyDown(event js.Value) {
@@ -658,7 +682,16 @@ func (u *workspaceUI) keyDown(event js.Value) {
 		}
 		if values, ok := u.transposeValues(workspaceAttr(grid, "data-pattern-id"), step, delta); ok {
 			workspaceStop(event)
-			u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pitchDelta: delta, pendingCell: cell})
+			offset := 0
+			if workspaceAttr(cell, "data-active") == "true" {
+				pitch, pitchErr := strconv.Atoi(workspaceFieldValue(form, "pitch"))
+				inspector := u.root.Call("querySelector", "#step-inspector form")
+				first, firstErr := strconv.Atoi(workspaceDefaultValue(workspaceField(inspector, "pitch")))
+				if pitchErr == nil && firstErr == nil {
+					offset = pitch - first
+				}
+			}
+			u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pitchDelta: delta, pitchOffset: offset, pendingCell: cell})
 		}
 	}
 }
@@ -735,7 +768,15 @@ func (u *workspaceUI) focusGesture(job workspaceJob) {
 	}
 	var cell js.Value
 	if job.pitchDelta != 0 {
-		cell = u.root.Call("querySelector", ".roll-cell[data-active=true][value='"+job.values["step"]+"']")
+		// Use the rebased pitch rather than the old cell's row. Several key
+		// presses may have queued before the previous projection arrived.
+		if first, err := strconv.Atoi(job.values["pitch"]); err == nil {
+			selector := ".roll-row[data-gosx-key='pitch-" + strconv.Itoa(first+job.pitchOffset) + "'] .roll-cell[data-active=true][value='" + job.values["step"] + "']"
+			cell = u.root.Call("querySelector", selector)
+		}
+		if !workspacePresent(cell) {
+			cell = u.root.Call("querySelector", ".roll-cell[data-active=true][value='"+job.values["step"]+"']")
+		}
 	} else {
 		rows := u.root.Call("querySelectorAll", ".roll-row")
 		for i := 0; i < rows.Length(); i++ {
@@ -772,6 +813,7 @@ func (u *workspaceUI) queue(job workspaceJob) {
 		u.status.Set("Refresh the workspace before editing again. Your drafts are retained.")
 		return
 	}
+	job.confirmedSource = u.sourceRevision
 	workspacePending(job, 1)
 	select {
 	case u.jobs <- job:
@@ -826,11 +868,15 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		}
 		job.values = values
 		job.confirmed = u.revision.Get()
+		job.confirmedSource = u.sourceRevision
 	}
 	if revision, exists := job.values["revision"]; exists && revision == job.confirmed {
 		// Only advance our own queued gestures. A form already stale when
 		// queued keeps its stale revision for authoritative rejection.
 		job.values["revision"] = u.revision.Get()
+	}
+	if source, exists := job.values["source_revision"]; exists && source == job.confirmedSource {
+		job.values["source_revision"] = u.sourceRevision
 	}
 	if job.method == http.MethodPost {
 		location := workspaceLocation()
@@ -849,13 +895,28 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 	}
 	u.root.Call("setAttribute", "aria-busy", "true")
 	u.status.Set("Saving…")
+	if job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
+		u.status.Set("Checking microphone permission…")
+	}
 	projection, message, err := u.request(client, job)
 	if u.closed.Load() {
 		workspacePending(job, -1)
 		return false
 	}
 	if err == nil {
+		if job.fragment != "" {
+			if location, parseErr := url.Parse(projection.Location); parseErr == nil {
+				location.Fragment = job.fragment
+				projection.Location = location.String()
+			}
+		}
 		err = u.apply(projection, job)
+		if err == nil && job.fragment != "" {
+			target := js.Global().Get("document").Call("getElementById", job.fragment)
+			if workspacePresent(target) && u.root.Call("contains", target).Bool() {
+				target.Call("scrollIntoView", map[string]any{"block": "start"})
+			}
+		}
 	}
 	workspacePending(job, -1)
 	u.root.Call("removeAttribute", "aria-busy")
@@ -874,17 +935,21 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
 		return true
 	}
-	if projection.WriteRevision == "" && projection.Revision != u.revision.Get() {
+	if projection.WriteRevision == "" && (projection.Revision != u.revision.Get() || projection.SourceRevision != u.sourceRevision) {
 		// A read can discover somebody else's edit. Queued gestures
 		// based on the old projection must not be rebased over it.
 		u.clearQueue()
 	}
 	u.revision.Set(projection.Revision)
+	u.sourceRevision = projection.SourceRevision
 	if projection.ProjectRevision != "" {
 		u.projectRevision.Store(projection.ProjectRevision)
 	}
-	confirmedWorkspaceRevision.Set(projection.Revision)
+	confirmedWorkspaceVersion.Set(workspaceVersion{projection.Revision, projection.SourceRevision})
 	u.focusGesture(job)
+	if job.method == http.MethodPost && job.values["action"] == "chord" {
+		u.revealSelectedNote()
+	}
 	if job.refresh {
 		u.blocked.Store(false)
 	}
@@ -925,7 +990,20 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("X-CSRF-Token", u.props.CSRF)
 	}
-	response, err := client.Do(request)
+	requestClient := client
+	if job.method == http.MethodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
+		copy := *client
+		copy.Timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
+		requestClient = &copy
+	}
+	if job.method == http.MethodPost && job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
+		// Native permission waits for a human response. Closing this workspace
+		// still cancels its context; ordinary edits retain their timeout.
+		permissionClient := *client
+		permissionClient.Timeout = 0
+		requestClient = &permissionClient
+	}
+	response, err := requestClient.Do(request)
 	if err != nil {
 		return projection, "", fmt.Errorf("The workspace request did not complete")
 	}
@@ -960,6 +1038,9 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 			result.Message = "Saved. The score changed before the workspace refreshed."
 		}
 		return projection, "", fmt.Errorf("%s", result.Message)
+	}
+	if result.Data.WriteSourceRevision != "" && result.Data.WriteSourceRevision != result.Data.SourceRevision {
+		return projection, "", fmt.Errorf("Saved. Project files changed before the workspace refreshed.")
 	}
 	return result.Data, result.Message, nil
 }
@@ -1141,7 +1222,7 @@ func workspaceHTMLIdentity(node *html.Node) string {
 				}
 			}
 		})
-		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "takeId", "timeline"} {
+		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "takeId", "timeline", "file"} {
 			if value, exists := fields[name]; exists {
 				key += "/" + name + ":" + value
 			}
@@ -1410,6 +1491,10 @@ func workspaceHTMLTree(root *html.Node) *vm.ResolvedTree {
 		resolved := vm.ResolvedNode{Key: workspaceHTMLIdentity(node)}
 		if resolved.Key == "" {
 			resolved.Key = "position:" + path
+		} else {
+			// Descendant positions belong to this stable parent. A recovery
+			// notice inserted before it must not change its unkeyed children.
+			path = resolved.Key
 		}
 		if node.Type == html.TextNode {
 			resolved.Text = node.Data
@@ -1611,6 +1696,13 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 			control.Set("defaultValue", projection.FileRevision)
 		}
 	}
+	if projection.SourceRevision != "" {
+		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=source_revision]")
+		for i := 0; i < fields.Length(); i++ {
+			fields.Index(i).Set("value", projection.SourceRevision)
+			fields.Index(i).Set("defaultValue", projection.SourceRevision)
+		}
+	}
 	for _, scroll := range scrolls {
 		if scroll.node.Get("isConnected").Bool() {
 			scroll.node.Set("scrollTop", scroll.top)
@@ -1784,7 +1876,7 @@ func workspaceIdentity(node js.Value) string {
 		// A step inspector is a different semantic form when its hidden step,
 		// lane or pattern changes, even when its visual container keeps an ID.
 		key += "/form:" + workspaceAttr(node, "action")
-		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad"} {
+		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "file"} {
 			field := node.Call("querySelector", "input[type=hidden][name="+name+"]")
 			if workspacePresent(field) {
 				key += "/" + name + ":" + workspaceString(field, "value")

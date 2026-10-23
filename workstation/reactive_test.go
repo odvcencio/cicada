@@ -63,7 +63,7 @@ func TestReactivePlacementEditUsesRevisionCheckedArrangementAction(t *testing.T)
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=session"))
 	response, result := reactivePost(t, client, address, "arrange", map[string]string{
-		"csrf_token": csrf, "revision": "current", "action": "update", "name": "far-in", "at": "@5.3.1", "length": "320ticks",
+		"csrf_token": csrf, "revision": "current", "source_revision": "displayed-sources", "action": "update", "name": "far-in", "at": "@5.3.1", "length": "320ticks",
 		"__cicada_location": "/?panel=session&placement=far-in",
 	})
 	var projection workspaceProjection
@@ -74,8 +74,62 @@ func TestReactivePlacementEditUsesRevisionCheckedArrangementAction(t *testing.T)
 		t.Fatalf("placement action: %d %+v", response.StatusCode, result)
 	}
 	settings := (*edits)[0]["placement"].(map[string]any)
-	if settings["at"] != "@5.3.1" || settings["length"] != "320ticks" || (*edits)[0]["name"] != "far-in" {
+	if (*edits)[0]["source_revision"] != "displayed-sources" || settings["at"] != "@5.3.1" || settings["length"] != "320ticks" || (*edits)[0]["name"] != "far-in" {
 		t.Fatalf("placement fields: %+v", (*edits)[0])
+	}
+}
+
+func TestReactivePatternCreationOpensGridFromInstrumentCard(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=instruments"))
+	response, result := reactivePost(t, client, address, "pattern", map[string]string{
+		"csrf_token": csrf, "revision": "current", "action": "create", "newName": "glow", "track": "bass", "scene": "main", "length": "16",
+		"__cicada_location": "/?panel=instruments", "__gosx_return_to": "/?panel=instruments",
+	})
+	var projection workspaceProjection
+	if err := json.Unmarshal(result.Data, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || !result.OK || result.Redirect != "" || projection.Location != "/?panel=patterns&pattern=glow&scene=main&step=1&track=bass" || len(*edits) != 1 {
+		t.Fatalf("created pattern did not open its grid: %d %+v location=%q edits=%+v", response.StatusCode, result, projection.Location, *edits)
+	}
+	if (*edits)[0]["action"] != "create" || (*edits)[0]["newName"] != "glow" || (*edits)[0]["scene"] != "main" {
+		t.Fatalf("creation lost the pattern or scene: %+v", (*edits)[0])
+	}
+}
+
+func TestReactiveChordPlacementSelectsItsStep(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=patterns"))
+	response, result := reactivePost(t, client, address, "pattern", map[string]string{
+		"csrf_token": csrf, "revision": "current", "action": "chord", "pattern": "harmony", "step": "5", "octave": "3",
+		"chord_root": "9", "chord_octave": "3", "chord_shape": "minor", "chord_inversion": "0", "hold": "4",
+		"__cicada_location": "/?panel=patterns&pattern=harmony&step=1",
+	})
+	var projection workspaceProjection
+	if err := json.Unmarshal(result.Data, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || !result.OK || projection.Location != patternURL("harmony", 5, "", "3") || len(*edits) != 1 {
+		t.Fatalf("chord placement lost its selected step: %d %q", response.StatusCode, projection.Location)
+	}
+}
+
+func TestReactiveSceneControlsRetainChosenTrackAndScene(t *testing.T) {
+	address, client, _ := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=patterns"))
+	for _, binding := range []string{"play", "off", "keep"} {
+		response, result := reactivePost(t, client, address, "pattern", map[string]string{
+			"csrf_token": csrf, "revision": "current", "action": "bind", "pattern": "glow", "track": "keys", "scene": "groove", "binding": binding,
+			"__cicada_location": "/?panel=patterns&pattern=glow&step=9", "__gosx_return_to": "/?panel=patterns&pattern=glow&step=9",
+		})
+		var projection workspaceProjection
+		if err := json.Unmarshal(result.Data, &projection); err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != 200 || !result.OK || projection.Location != "/?panel=patterns&pattern=glow&scene=groove&step=1&track=keys" {
+			t.Fatalf("%s reset the chosen scene or track: %d %q", binding, response.StatusCode, projection.Location)
+		}
 	}
 }
 

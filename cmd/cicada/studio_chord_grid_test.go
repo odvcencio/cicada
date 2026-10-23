@@ -181,12 +181,12 @@ func TestChordGridHTTPUndoRedoClearAndRejectedWrites(t *testing.T) {
 		return b
 	}
 	pitch := 74
-	full := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(read()), Pattern: "harmony", Step: 0, Pitch: &pitch})
+	full := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(read()), Pattern: "harmony", Step: 0, Pitch: &pitch})
 	if full.Code != http.StatusUnprocessableEntity || !strings.Contains(full.Body.String(), "remove a pitch before adding another") || string(read()) != source || len(studioHistoryEdits(t, handler)) != 0 {
 		t.Fatalf("fifth pitch must fail visibly and atomically: %d %s", full.Code, full.Body.String())
 	}
 	pitch = 65
-	result := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(read()), Pattern: "harmony", Step: 0, Pitch: &pitch})
+	result := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(read()), Pattern: "harmony", Step: 0, Pitch: &pitch})
 	if result.Code != http.StatusOK {
 		t.Fatal(result.Body.String())
 	}
@@ -194,7 +194,7 @@ func TestChordGridHTTPUndoRedoClearAndRejectedWrites(t *testing.T) {
 	if !bytes.Contains(edited, []byte("[d4 a4 c5]^?70 -")) {
 		t.Fatalf("wrong edited chord: %s", edited)
 	}
-	stale := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision([]byte(source)), Pattern: "harmony", Step: 0, Pitch: &pitch})
+	stale := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision([]byte(source)), Pattern: "harmony", Step: 0, Pitch: &pitch})
 	if stale.Code != http.StatusConflict || !bytes.Equal(read(), edited) {
 		t.Fatal("stale chord edit mutated score")
 	}
@@ -211,7 +211,7 @@ func TestChordGridHTTPUndoRedoClearAndRejectedWrites(t *testing.T) {
 			t.Fatalf("%s changed exact source", action)
 		}
 	}
-	clear := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(read()), Pattern: "harmony", Step: 0})
+	clear := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(read()), Pattern: "harmony", Step: 0})
 	if clear.Code != http.StatusOK || !bytes.Contains(read(), []byte("gate=75 { . - . c4 }")) {
 		t.Fatalf("explicit whole chord clear failed: %s", clear.Body.String())
 	}
@@ -247,7 +247,7 @@ func TestChordGridRecordingOverChordRefusedAtomically(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result := studioCall(t, handler, "/api/record", studioEdit{Revision: studioRevision([]byte(studioChordScore)), Track: "keys", Pattern: "harmony", Take: []studioTakeNote{{Tick: 0, EndTick: 60, Note: pitch, Velocity: 90}}})
+			result := studioCall(t, handler, "/api/record", studioEdit{Revision: studioRevision([]byte(studioChordScore)), SourceRevision: studioProjectReceipt(t, path), Track: "keys", Pattern: "harmony", Take: []studioTakeNote{{Tick: 0, EndTick: 60, Note: pitch, Velocity: 90}}})
 			got, err := os.ReadFile(path)
 			if err != nil || result.Code != http.StatusUnprocessableEntity || !strings.Contains(result.Body.String(), "is not an acid track") || string(got) != studioChordScore || len(studioHistoryEdits(t, handler)) != 0 {
 				t.Fatalf("recording was not refused atomically: %d %s %v", result.Code, result.Body.String(), err)

@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"m31labs.dev/cicada/internal/audiobackend"
@@ -52,17 +53,22 @@ func (s *studio) audioConfig(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := s.transport.configureAudio(options); err != nil {
+	if err := s.transport.configureAudioContext(r.Context(), options); err != nil {
 		status := http.StatusBadRequest
 		if err.Error() == "stop playback before changing audio devices" {
 			status = http.StatusConflict
 		}
+		if errors.Is(err, errStudioAudioSettings) {
+			status = http.StatusInternalServerError
+		}
 		studioJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := saveStudioAudioPreferences(audiobackend.Name(s.transport.selectedAudioBackend()), options); err != nil {
-		studioJSON(w, http.StatusInternalServerError, map[string]string{"error": "Audio settings applied for this session, but could not be saved: " + err.Error()})
-		return
+	if s.transport.audioSettingsPath == "" {
+		if err := saveStudioAudioPreferences(audiobackend.Name(s.transport.selectedAudioBackend()), options); err != nil {
+			studioJSON(w, http.StatusInternalServerError, map[string]string{"error": "Audio settings applied for this session, but could not be saved: " + err.Error()})
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	studioJSON(w, http.StatusOK, s.transport.audioState())

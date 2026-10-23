@@ -212,6 +212,20 @@ func TestShellUndoRedoFormsAndShortcutsDialog(t *testing.T) {
 	}
 }
 
+func TestShellSongHistoryDoesNotTargetTheSelectedCodeFile(t *testing.T) {
+	reply := &workspace{Revision: "song-current", Filename: "main.cicada", Source: "title \"Song\"\n", Valid: true,
+		Files:   []projectFile{{Name: "main.cicada", Source: "title \"Song\"\n", Revision: "song-current"}, {Name: "parts.cicada", Source: "// secondary Code\n", Revision: "part-current"}},
+		Project: &project.Project{Title: "Song", TempoMilli: 120000, Key: project.Key{Scale: "minor"}}}
+	address, client, _ := testAppWorkspace(t, reply)
+	body := getPage(t, client, address+"/studio?file=parts.cicada")
+	for _, name := range []string{"undo", "redo"} {
+		form := regexp.MustCompile(`(?s)<form[^>]*id="` + name + `-form"[^>]*>.*?</form>`).FindString(body)
+		if !strings.Contains(form, `name="revision" value="song-current"`) || strings.Contains(form, "part-current") || strings.Contains(form, `value="parts.cicada"`) {
+			t.Fatalf("song history followed the Code lens: %s", form)
+		}
+	}
+}
+
 func TestShellAddsNoScriptsOrPolling(t *testing.T) {
 	body := shellBody(t, "")
 	if strings.Contains(body, "setInterval") || regexp.MustCompile(`data-gosx-live-interval="[^"]+"[^>]*data-gosx-live-src="/api/(meters|revision)`).MatchString(body) {
@@ -407,6 +421,8 @@ func TestShellPatternEditsStayInTheShell(t *testing.T) {
 	}{
 		{"pitch", url.Values{"action": {"pitch"}, "pattern": {"p"}, "step": {"4"}, "pitch": {"72"}, "octave": {"3"}}, "/studio?dock=automation&file=b.cicada&octave=3&pattern=p&step=4&tab=session", "/?octave=3&panel=patterns&pattern=p&step=4"},
 		{"note", url.Values{"action": {"step"}, "pattern": {"p"}, "step": {"5"}, "mode": {"note"}, "velocity": {"100"}, "pitch": {"60"}, "ratchet": {"1"}, "chance": {"100"}}, "/studio?dock=automation&file=b.cicada&pattern=p&step=5&tab=session", "/?panel=patterns&pattern=p&step=5"},
+		{"create", url.Values{"action": {"create"}, "newName": {"glow"}, "track": {"bass"}, "scene": {"main"}, "length": {"16"}}, "/studio?dock=clip&file=b.cicada&pattern=glow&region=detail&scene=main&step=1&tab=session&track=bass", "/?panel=patterns&pattern=glow&scene=main&step=1&track=bass"},
+		{"chord", url.Values{"action": {"chord"}, "pattern": {"p"}, "step": {"5"}, "chord_root": {"9"}, "chord_octave": {"3"}, "chord_shape": {"minor"}, "chord_inversion": {"0"}, "hold": {"4"}}, "/studio?dock=automation&file=b.cicada&pattern=p&step=5&tab=session", "/?panel=patterns&pattern=p&step=5"},
 		{"duplicate", url.Values{"action": {"duplicate"}, "pattern": {"p"}, "newName": {"q"}}, "/studio?dock=automation&file=b.cicada&pattern=q&step=1&tab=session", "/?panel=patterns&pattern=q&step=1"},
 	}
 	for _, c := range cases {
@@ -572,11 +588,12 @@ func TestShellPanelsSurvivePanicsInsideAPanel(t *testing.T) {
 }
 
 func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
-	reply := &workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}}
+	reply := &workspace{Revision: "current", SourceRevision: "sources-current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}}
 	address, client, _ := testAppWorkspace(t, reply)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/studio?tab=arrange"))
 	// An engine saves: the service now holds a new revision and a new placement.
 	reply.Revision = "after"
+	reply.SourceRevision = "sources-after"
 	reply.Source = "title \"Test\"\nplace resampled at @1.1.1\n"
 	reply.Project.Arrange = &project.Arrangement{Placements: []project.Placement{{ID: "pad-print", Track: "sampler", Content: "pad-print"}}}
 	response, result := reactivePost(t, client, address, "sampler", map[string]string{
@@ -594,7 +611,7 @@ func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
 		if strings.Contains(body, `name="revision" value="current"`) {
 			t.Errorf("%s still carries the old revision", name)
 		}
-		for _, want := range []string{`name="revision" value="after"`, "place resampled at", "pad-print"} {
+		for _, want := range []string{`name="revision" value="after"`, `"sourceRevision":"sources-after"`, "place resampled at", "pad-print"} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s lacks %q", name, want)
 			}

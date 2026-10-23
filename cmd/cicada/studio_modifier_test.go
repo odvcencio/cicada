@@ -24,7 +24,7 @@ func TestStudioAccentAndSlideCellsWriteSource(t *testing.T) {
 		{"accent", "{ 1~ . 5 . }"},
 		{"slide", "{ 1 . 5 . }"},
 	} {
-		result := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "pulse", Step: 0, Modifier: edit.modifier})
+		result := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(source), Pattern: "pulse", Step: 0, Modifier: edit.modifier})
 		if result.Code != http.StatusOK {
 			t.Fatalf("%s toggle failed: %d %s", edit.modifier, result.Code, result.Body.String())
 		}
@@ -38,7 +38,7 @@ func TestStudioAccentAndSlideCellsWriteSource(t *testing.T) {
 		t.Fatalf("modifier round trip changed other source: %s", source)
 	}
 	pitch := 48
-	conflict := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "pulse", Step: 0, Pitch: &pitch, Modifier: "accent"})
+	conflict := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision(source), Pattern: "pulse", Step: 0, Pitch: &pitch, Modifier: "accent"})
 	if conflict.Code != http.StatusBadRequest {
 		t.Fatalf("combined pitch and modifier edit was accepted: %d", conflict.Code)
 	}

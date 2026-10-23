@@ -375,7 +375,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			}
 			outputPtr := uint32(call("gosx_audio_out_ptr"))
 			messagePtr := uint32(call("gosx_audio_msg_ptr"))
-			frames := int(math.Round(float64(bars*4*60*rate*1000) / float64(cfg.BPMMilli)))
+			frames := int(native.FramesBetweenTicks(0, int64(bars)*3840))
 			var nativeL, nativeR [blockSize]float32
 			var wasmEvents, nativeEvents []cmd.Message
 			var peakDifference float64

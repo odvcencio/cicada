@@ -88,10 +88,11 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	var state transport
 	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
 	registerShell(ctx, tab, dock)
+	registerArrangementTempos(ctx)
 
 	returnTo := ctx.Request.URL.RequestURI()
 	file := func(name string) gosx.Node {
-		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: codeView.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: codeView.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
+		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
 	}
 	form := func(id, name string, children ...gosx.Node) gosx.Node {
 		return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: returnTo}, children...)
@@ -113,7 +114,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Keys: keys("transport.loop")}),
 		ui.Placeholder(ui.PlaceholderProps{Label: "Metronome"}),
 		ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
-		form("undo-form", "undo", file("Undo")), form("redo-form", "redo", file("Redo")),
+		form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo")), form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo")),
 		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History"}),
 		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio"}),
 		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
@@ -161,7 +162,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	// This engine binds the surrounding document, rather than owning its
 	// rendered children. A fresh masked CSRF token gives managed navigation a
 	// fresh binding instead of retaining a listener on the previous shell.
-	shellProps, _ := json.Marshal(map[string]string{"csrf": csrf})
+	shellProps, _ := json.Marshal(map[string]string{"csrf": csrf, "revision": view.Revision, "sourceRevision": view.SourceRevision})
 	dialogs := gosx.Fragment(
 		ui.DialogFrame(ui.DialogFrameProps{ID: "history-dialog", Title: "History"}, panel("history")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, panel("audio")),
@@ -392,7 +393,7 @@ func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name stri
 	case "session":
 		// Automation lives in its detail tab in the shell. The standalone
 		// Session panel still renders its editors through panel().
-		timeline := s.session(v, csrf, ctx.Request.URL.Query().Get("placement"))
+		timeline := s.session(ctx, v, csrf, ctx.Request.URL.Query().Get("placement"))
 		vocals := s.vocals(ctx, v, csrf)
 		if v.Project.Edition != 2 {
 			return timeline

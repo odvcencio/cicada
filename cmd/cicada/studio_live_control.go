@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ type studioLiveLease struct {
 	Closed   bool
 	Seen     time.Time
 	Notes    map[string]audioClientMessage
+	Groups   map[string]string
 }
 type studioLiveControls struct {
 	mu     sync.Mutex
@@ -34,6 +36,7 @@ type studioLiveRequest struct {
 	Owner    string               `json:"owner"`
 	Sequence uint64               `json:"sequence"`
 	Release  bool                 `json:"release"`
+	Ping     bool                 `json:"ping,omitempty"`
 	Messages []audioClientMessage `json:"messages"`
 }
 
@@ -44,7 +47,7 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 	var request studioLiveRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || len(request.Owner) < 16 || len(request.Owner) > 128 || request.Sequence == 0 || (!request.Release && len(request.Messages) == 0) || len(request.Messages) > 64 {
+	if err := decoder.Decode(&request); err != nil || len(request.Owner) < 16 || len(request.Owner) > 128 || request.Sequence == 0 || (!request.Release && !request.Ping && len(request.Messages) == 0) || request.Ping && (request.Release || len(request.Messages) != 0) || len(request.Messages) > 64 {
 		studioJSON(w, 400, map[string]any{"error": "live control needs 1 to 64 messages"})
 		return
 	}
@@ -84,7 +87,7 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 	if request.Release {
 		lease.Closed = true
 		for key, note := range lease.Notes {
-			if s.liveControls.heldByAnother(request.Owner, key) {
+			if note.NoteID == nil && s.liveControls.heldByAnother(request.Owner, key) {
 				continue
 			}
 			off, velocity := false, 0
@@ -92,22 +95,99 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 			_ = s.applyAudioMessage(note)
 		}
 		lease.Notes = nil
+		lease.Groups = nil
 		studioJSON(w, 200, map[string]any{"ok": true})
 		return
 	}
 	for _, message := range request.Messages {
 		key := ""
+		if message.Type == "note-group" || message.Type == "group-expression" {
+			if message.GroupID == "" || len(message.GroupID) > 32 || message.Track == "" || len(message.Track) > 512 {
+				studioJSON(w, 422, map[string]any{"error": "shared controls need a bounded group and track"})
+				return
+			}
+			groupKey := fmt.Sprintf("%d:%s:%s", len(message.Track), message.Track, message.GroupID)
+			if message.Type == "note-group" {
+				identity, id, err := audioNoteKey(message)
+				if err != nil || id == 0 {
+					studioJSON(w, 422, map[string]any{"error": "shared binding needs a valid note identity"})
+					return
+				}
+				held, owned := lease.Notes[identity]
+				if !owned {
+					continue
+				}
+				if lease.Groups == nil {
+					lease.Groups = map[string]string{}
+				}
+				if lease.Groups[groupKey] == "" && len(lease.Groups) >= 512 {
+					studioJSON(w, 429, map[string]any{"error": "shared input limit reached; reopen Live before connecting more inputs"})
+					return
+				}
+				message.owner = held.owner
+				message.GroupID = "live:" + request.Owner + ":group:" + groupKey
+				if err := s.applyAudioMessage(message); err != nil {
+					studioJSON(w, 422, map[string]any{"error": err.Error()})
+					return
+				}
+				lease.Groups[groupKey] = message.GroupID
+			} else {
+				group, owned := lease.Groups[groupKey]
+				if !owned {
+					continue
+				}
+				message.owner, message.GroupID = request.Owner, group
+				if err := s.applyAudioMessage(message); err != nil {
+					studioJSON(w, 422, map[string]any{"error": err.Error()})
+					return
+				}
+			}
+			continue
+		}
+		if message.Type == "note-expression" {
+			identity, id, err := audioNoteKey(message)
+			if err != nil || id == 0 {
+				studioJSON(w, 422, map[string]any{"error": "expression needs a valid note identity"})
+				return
+			}
+			key = identity
+			held, owned := lease.Notes[key]
+			if !owned {
+				continue
+			} // Late or foreign controls cannot address another lease.
+			message.owner = held.owner
+			if err := s.applyAudioMessage(message); err != nil {
+				studioJSON(w, 422, map[string]any{"error": err.Error()})
+				return
+			}
+			continue
+		}
 		if message.Type == "note" {
 			if err := validateAudioNote(message); err != nil {
 				studioJSON(w, 422, map[string]any{"error": err.Error()})
 				return
 			}
 			key = fmt.Sprintf("%s:%d", message.Track, *message.Note)
+			identity, _, err := audioNoteIdentity(message.NoteID)
+			if err != nil {
+				studioJSON(w, 422, map[string]any{"error": err.Error()})
+				return
+			}
+			if identity != "" {
+				key, _, _ = audioNoteKey(message)
+				message.owner = "live:" + request.Owner + ":" + key
+				if held, ok := lease.Notes[key]; ok && *held.Note != *message.Note {
+					studioJSON(w, 422, map[string]any{"error": "release the original pitch before reusing its note identity"})
+					return
+				}
+			} else {
+				message.NoteID = nil
+			}
 			if !*message.On {
 				if _, owned := lease.Notes[key]; !owned {
 					continue
 				}
-				if s.liveControls.heldByAnother(request.Owner, key) {
+				if message.NoteID == nil && s.liveControls.heldByAnother(request.Owner, key) {
 					delete(lease.Notes, key)
 					continue
 				}
@@ -120,7 +200,7 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 			}
 			if *message.On {
 				_, held := lease.Notes[key]
-				if held || s.liveControls.heldByAnother(request.Owner, key) {
+				if held || message.NoteID == nil && s.liveControls.heldByAnother(request.Owner, key) {
 					// One sounding voice represents all leases holding this pitch.
 					// Only the final owner sends its matching note-off.
 					lease.Notes[key] = message
@@ -141,4 +221,53 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	studioJSON(w, 200, map[string]any{"ok": true})
+}
+
+const studioLiveLeaseTimeout = 5 * time.Second
+
+func (s *studio) watchLiveInputs(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			s.expireLiveInputs(now)
+		}
+	}
+}
+
+// A crashed or frozen client cannot send a release. Close its lease before
+// releasing pitches, so late queued commands cannot restart those voices.
+func (s *studio) expireLiveInputs(now time.Time) int {
+	c := &s.liveControls
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	notes := map[string]audioClientMessage{}
+	expired := 0
+	for _, lease := range c.leases {
+		if lease.Closed || len(lease.Notes) == 0 && len(lease.Groups) == 0 || now.Sub(lease.Seen) < studioLiveLeaseTimeout {
+			continue
+		}
+		lease.Closed, lease.Seen = true, now
+		expired++
+		for key, note := range lease.Notes {
+			if note.NoteID != nil {
+				key = note.owner + ":" + key
+			}
+			notes[key] = note
+		}
+		lease.Notes = nil
+		lease.Groups = nil
+	}
+	for key, note := range notes {
+		if note.NoteID == nil && c.heldByAnother("", key) {
+			continue
+		}
+		off, velocity := false, 0
+		note.On, note.Velocity = &off, &velocity
+		_ = s.applyAudioMessage(note)
+	}
+	return expired
 }

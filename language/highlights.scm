@@ -288,6 +288,7 @@
 (chain_decl (identifier) @function)
 
 (automate_decl "automate" @keyword)
+(automation_recall "recall" @keyword)
 (automation_point shape: (identifier) @attribute)
 
 (velocity_row "velocity" @attribute)
@@ -301,3 +302,17 @@
 (marker_decl name: (identifier) @constant)
 (musical_position) @number.position
 (tick_count) @number.ticks
+
+(performance_pattern name: (identifier) @function)
+(performance_pattern "performance" @type.builtin)
+(performed_note "note" @keyword)
+(performed_note ["at" "length" "velocity"] @attribute)
+(performed_note "group" @attribute)
+(performed_note group: (identifier) @variable)
+(performed_group "gesture-group" @keyword)
+(performed_group name: (identifier) @variable)
+
+(performed_note pitch: (integer) @number)
+(performed_note velocity: (integer) @number)
+(performed_expression "gesture" @keyword)
+(performed_expression ["at" "bend" "pressure" "timbre" "vibrato" "rate"] @attribute)

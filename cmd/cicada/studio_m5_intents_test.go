@@ -52,6 +52,12 @@ func TestM5RoutesCommitAttributedIntents(t *testing.T) {
 			defer s.shutdown()
 			body := c.body
 			body.Revision = studioRevision([]byte(c.source))
+			if c.route == "/api/pattern" {
+				body.SourceRevision = studioProjectReceipt(t, path)
+			}
+			if c.route == "/api/record" {
+				body.SourceRevision = studioProjectReceipt(t, s.path)
+			}
 			body.Author = "tester"
 			body.Session = "s1"
 			r := studioCall(t, s.routes(), c.route, body)

@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -146,8 +147,8 @@ func sameVocalMapping(a, b vocalSegment) bool {
 		vocalEditValue(a.CrossfadeMS, 0) == vocalEditValue(b.CrossfadeMS, 0)
 }
 
-func takeClock(t takejournal.Take) seq.Clock {
-	return seq.Clock{SampleRate: int64(t.Rate), BPMMilli: t.Timeline.TempoMilli}
+func takeClock(t takejournal.Take) (*project.TempoMap, error) {
+	return t.Timeline.Clock(t.Rate)
 }
 func takeOrigin(t takejournal.Take) int64 {
 	if t.FirstBlock == nil {
@@ -156,9 +157,7 @@ func takeOrigin(t takejournal.Take) int64 {
 	return int64(t.FirstBlock.RawFrame) - t.FirstBlock.Placement.EngineFrame
 }
 func takeCoverage(t takejournal.Take) (int64, int64) {
-	c := takeClock(t)
-	end := c.TickAtSample(c.SampleAtTick(t.Timeline.PlaybackStartTick) + int64(t.Frames) - takeOrigin(t))
-	return t.Timeline.StartTick, min(t.Timeline.EndTick, end)
+	return t.Coverage()
 }
 
 func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*takejournal.Timeline, error) {
@@ -185,7 +184,7 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	if start < 0 || end <= start || end > studioArrangementEnd(p) {
 		return nil, fmt.Errorf("choose a recording range within the full song")
 	}
-	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: int64(p.TempoMilli)}, nil
+	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}, nil
 }
 
 // vocalTakeSource is the candidate source for selecting a take; see
@@ -193,6 +192,18 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 func (s *studio) vocalTakeSource(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, error) {
 	candidate, _, err := s.vocalTakeEnvelope(source, t, settings)
 	return candidate, err
+}
+
+// Source-only compatibility helpers must never silently drop an owned file.
+func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, edits.Envelope, error) {
+	result, env, err := s.vocalTakeResult(source, t, settings)
+	if err != nil {
+		return nil, env, err
+	}
+	if len(result.Files) != 0 {
+		return nil, env, fmt.Errorf("vocal comp changes secondary files; use the project result")
+	}
+	return result.Source, env, nil
 }
 
 // vocalSourceCompiler hands the edit service the plan of the score being
@@ -214,10 +225,10 @@ func (c vocalSourceCompiler) Compile(source []byte, _ map[string][]byte) (*edits
 // Only this track's generated asset/clip/placement is replaced. Older prints
 // stay on disk so Undo, Redo, recovery and exported projects retain their audio.
 //
-// vocalTakeEnvelope checks the take against the score, prints the comp audio,
-// and applies the PlaceVocalComp intent. It returns the candidate source and
+// vocalTakeResult checks the take against the score, prints the comp audio,
+// and applies the PlaceVocalComp intent. It returns all candidate files and
 // the envelope the commit records in the edit log.
-func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, edits.Envelope, error) {
+func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *studioRecordingSettings) (*edits.Result, edits.Envelope, error) {
 	var env edits.Envelope
 	gainDB, _, err := vocalPhraseSettings(settings)
 	if err != nil {
@@ -230,8 +241,8 @@ func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *
 	if t.Timeline == nil {
 		return nil, env, fmt.Errorf("choose a Session arrangement take")
 	}
-	if int64(p.TempoMilli) != t.Timeline.TempoMilli {
-		return nil, env, fmt.Errorf("restore the recording tempo before selecting this take")
+	if int64(p.TempoMilli) != t.Timeline.TempoMilli || !slices.Equal(project.SongTempoChanges(p), t.Timeline.TempoChanges) {
+		return nil, env, fmt.Errorf("restore the recording tempo map before selecting this take")
 	}
 	found := false
 	for _, tr := range p.Tracks {
@@ -265,7 +276,7 @@ func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *
 	if err != nil {
 		return nil, env, err
 	}
-	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli}
+	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli, TempoChanges: slices.Clone(t.Timeline.TempoChanges)}
 	var previous *vocalComp
 	for i := range comps {
 		if comps[i].Track == t.Track {
@@ -274,7 +285,7 @@ func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *
 			break
 		}
 	}
-	if previous != nil && previous.Tempo != next.Tempo {
+	if previous != nil && (previous.Tempo != next.Tempo || !slices.Equal(previous.TempoChanges, next.TempoChanges)) {
 		return nil, env, fmt.Errorf("vocal comp tempo differs from this take")
 	}
 	segment := vocalSegment{Take: t.ID, Start: lo, End: hi, GainDB: gainDB}
@@ -301,7 +312,7 @@ func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *
 	if err != nil {
 		return nil, env, err
 	}
-	return result.Source, env, nil
+	return result, env, nil
 }
 
 func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
@@ -317,7 +328,13 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 			return result, err
 		}
 	}
-	clock := seq.Clock{SampleRate: int64(rate), BPMMilli: c.Tempo}
+	if err := edits.ValidateVocalComp(c); err != nil {
+		return result, err
+	}
+	clock, err := project.NewTempoMap(rate, c.Tempo, c.TempoChanges)
+	if err != nil {
+		return result, err
+	}
 	first, last := c.Segments[0].Start, c.Segments[len(c.Segments)-1].End
 	origin := clock.SampleAtTick(first)
 	frames := clock.SampleAtTick(last) - origin
@@ -358,7 +375,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 		if err != nil {
 			return result, err
 		}
-		if take.Timeline == nil || take.Track != c.Track || take.Rate != rate || take.Timeline.TempoMilli != c.Tempo {
+		if take.Timeline == nil || take.Track != c.Track || take.Rate != rate || take.Timeline.TempoMilli != c.Tempo || !slices.Equal(take.Timeline.TempoChanges, c.TempoChanges) {
 			return result, fmt.Errorf("comp takes must share track, sample rate and tempo")
 		}
 		a, b := takeCoverage(take)
@@ -610,11 +627,14 @@ func (s *studio) startAudioTake() error {
 		return err
 	}
 	s.transport.stop()
-	countIn, err := capture.DefaultCountIn(take.Rate, take.Timeline.TempoMilli)
+	clock, err := takeClock(take)
 	if err != nil {
 		return err
 	}
-	clock := takeClock(take)
+	countIn, err := capture.DefaultCountIn(take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli)
+	if err != nil {
+		return err
+	}
 	duration := clock.SampleAtTick(take.Timeline.EndTick) - clock.SampleAtTick(take.Timeline.PlaybackStartTick)
 	if s.vocalLoop != nil {
 		duration *= int64(s.vocalLoop.passes)
@@ -658,12 +678,16 @@ func vocalAuditionProject(p *project.Project, track, mode string) (*project.Proj
 	return &copyProject, nil
 }
 
-func (s *studio) listenVocalTake(candidate, original []byte, take takejournal.Take, settings *studioRecordingSettings, loop bool) error {
+func (s *studio) listenVocalTake(candidate, original []byte, take takejournal.Take, settings *studioRecordingSettings, loop bool, files ...edits.File) error {
 	_, mode, err := vocalPhraseSettings(settings)
 	if err != nil {
 		return err
 	}
-	p, err := compileStudioSource(s.path, candidate)
+	overrides := make(map[string][]byte, len(files))
+	for _, file := range files {
+		overrides[file.Path] = file.After
+	}
+	p, err := compileStudioSourceWithOverrides(s.path, candidate, overrides)
 	if err != nil {
 		return err
 	}

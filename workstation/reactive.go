@@ -20,21 +20,24 @@ import (
 // forms retain GoSX's redirect-after-POST contract; the mounted GoSX workspace
 // uses the framework's incremental tree diff and patch receiver instead.
 type workspaceProjection struct {
-	ProjectRevision string `json:"projectRevision"`
-	FileRevision    string `json:"fileRevision"`
-	HTML            string `json:"html"`
-	Revision        string `json:"revision"`
-	Location        string `json:"location"`
-	Title           string `json:"title"`
-	WriteRevision   string `json:"writeRevision,omitempty"`
-	Saved           bool   `json:"saved,omitempty"`
-	RefreshRequired bool   `json:"refreshRequired,omitempty"`
+	ProjectRevision     string `json:"projectRevision"`
+	FileRevision        string `json:"fileRevision"`
+	SourceRevision      string `json:"sourceRevision"`
+	HTML                string `json:"html"`
+	Revision            string `json:"revision"`
+	Location            string `json:"location"`
+	Title               string `json:"title"`
+	WriteRevision       string `json:"writeRevision,omitempty"`
+	WriteSourceRevision string `json:"writeSourceRevision,omitempty"`
+	Saved               bool   `json:"saved,omitempty"`
+	RefreshRequired     bool   `json:"refreshRequired,omitempty"`
 }
 
 // Keep the native acknowledgment outside the action result: selecting a
 // redirect replaces that result, and the subsequent read may see another save.
 type workspaceWriteReceipt struct {
-	Revision string `json:"revision"`
+	Revision       string `json:"revision"`
+	SourceRevision string `json:"-"`
 }
 
 type workspaceWriteReceiptKey struct{}
@@ -45,7 +48,7 @@ func (s *studioApp) reactiveWorkspace(ctx *server.Context, view workspace, body 
 		// Engine-only pages do not implicitly load the island patch receiver.
 		// Register GoSX's own standalone asset through its managed script API.
 		ctx.Runtime().ManagedScript("/gosx/patch.js", server.ManagedScriptOptions{Role: server.ManagedScriptRolePatch})
-		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "csrf": session.Token(ctx.Request), "projectRevision": view.ProjectRevision})
+		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "sourceRevision": view.SourceRevision, "csrf": session.Token(ctx.Request), "projectRevision": view.ProjectRevision})
 		runtime = meterEngine(ctx, engine.Config{
 			Name: "CicadaWorkspace", Kind: engine.KindSurface,
 			MountID: "cicada-workspace-runtime", Runtime: engine.RuntimeGoWASM,
@@ -101,7 +104,7 @@ func (s *studioApp) projection(r *http.Request, location string) (workspaceProje
 	if view.Project != nil && view.Project.Title != "" {
 		title = view.Project.Title
 	}
-	return workspaceProjection{ProjectRevision: view.ProjectRevision, FileRevision: view.FileRevision, HTML: gosx.RenderHTML(body), Revision: view.Revision, Location: location, Title: title + " · Cicada Studio"}, nil
+	return workspaceProjection{ProjectRevision: view.ProjectRevision, SourceRevision: view.SourceRevision, FileRevision: view.FileRevision, HTML: gosx.RenderHTML(body), Revision: view.Revision, Location: location, Title: title + " · Cicada Studio"}, nil
 }
 
 func (s *studioApp) workspaceProjection(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +136,9 @@ func (w *actionCapture) Write(data []byte) (int, error) {
 
 func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name string, handler action.Handler) {
 	options := action.ServeHandlerOptions{MaxBodyBytes: 2 << 20}
+	if name == "note-checkpoint" || name == "note-preview" {
+		options.MaxBodyBytes = 32 << 20
+	}
 	if r.Header.Get("X-Cicada-Reactive") != "1" || !action.WantsJSON(r) {
 		action.ServeHandlerWithOptions(w, r, handler, options)
 		return
@@ -166,14 +172,22 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 	status := capture.status
 	if result.OK {
 		location := fields["__cicada_location"]
-		// Pattern commands may intentionally select another step or variation.
+		if name == "source" && validNoteID(fields["recoveryId"]) {
+			if target, err := url.Parse(location); err == nil {
+				query := target.Query()
+				query.Set("codeDraft", fields["recoveryId"])
+				target.RawQuery = query.Encode()
+				location = target.String()
+			}
+		}
+		// Pattern commands may intentionally open a new grid or select another step or variation.
 		// Generic form return targets must not erase the current deep selection.
 		if name == "audio" && fields["__gosx_return_to"] != "" {
 			if target, err := workspaceLocation(fields["__gosx_return_to"]); err == nil {
 				location = target
 			}
 		}
-		followPattern := fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate"
+		followPattern := fields["action"] == "chord" || fields["action"] == "create" || fields["action"] == "bind" || fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate" || fields["action"] == "performed-gesture" || fields["action"] == "performance-group" || fields["action"] == "performance-binding" || fields["action"] == "shared-gesture"
 		if name == "pattern" && followPattern && result.Redirect != "" {
 			location = result.Redirect
 		}
@@ -183,7 +197,7 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 			// The shell does not apply a projection: after a save it reloads. Its
 			// engines read this response through size caps, and the whole shell can
 			// exceed them (the Code lens holds the source), so return a receipt.
-			projection = workspaceProjection{Revision: receipt.Revision, Location: location}
+			projection = workspaceProjection{Revision: receipt.Revision, SourceRevision: receipt.SourceRevision, Location: location}
 		} else {
 			projection, err = s.projection(r, location)
 		}
@@ -193,12 +207,13 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 			result.Data, _ = json.Marshal(map[string]any{"saved": true, "refreshRequired": true, "writeRevision": receipt.Revision})
 		} else {
 			projection.WriteRevision = receipt.Revision
+			projection.WriteSourceRevision = receipt.SourceRevision
 			projection.Saved = receipt.Revision != ""
 			readRevision := projection.Revision
 			if (name == "source" || name == "undo" || name == "redo") && fields["file"] != "" {
 				readRevision = projection.FileRevision
 			}
-			projection.RefreshRequired = receipt.Revision != "" && receipt.Revision != readRevision
+			projection.RefreshRequired = receipt.Revision != "" && (receipt.Revision != readRevision || receipt.SourceRevision != "" && receipt.SourceRevision != projection.SourceRevision)
 			if projection.RefreshRequired {
 				result.Message = "Saved. The score changed before the workspace refreshed."
 			}

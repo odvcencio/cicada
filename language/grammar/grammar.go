@@ -36,12 +36,12 @@ func Cicada() *grammargen.Grammar {
 	g.Define("_declaration", choice(
 		sym("import_decl"), sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
 		sym("instrument_decl"), sym("preset_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
-		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
+		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"), sym("performance_pattern"),
 		sym("automate_decl"), sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
 
-	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(sym("automation_point")), str("}")))
+	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(choice(sym("automation_point"), sym("automation_recall"))), str("}")))
 	g.Define("automation_point", seq(field("at", sym("musical_position")), field("value", sym("number")), optional(seq(field("shape", sym("identifier")), optional(field("curve", sym("number")))))))
 	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
 
@@ -146,7 +146,7 @@ func Cicada() *grammargen.Grammar {
 		str("pattern"), field("name", sym("_name")), str("drums"), repeat(sym("pattern_attr")),
 		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
-	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction")))))
+	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction"), sym("tick_count")))))
 
 	// Expression rows follow the melodic cells. Joined labels delimit rows
 	// even when semicolons and newlines are omitted.
@@ -227,9 +227,33 @@ func Cicada() *grammargen.Grammar {
 
 	g.Define("chord_note", seq(str("["), repeat(sym("chord_pitch")), str("]"), repeat(sym("modifier"))))
 	g.Define("chord_pitch", seq(sym("pitch"), repeat(sym("octave_shift"))))
+	g.Define("performance_pattern", seq(
+		str("pattern"), field("name", sym("_name")), str("performance"), repeat(sym("pattern_attr")),
+		str("{"), repeat(choice(sym("pattern_attr"), sym("performed_note"), sym("performed_group"))), str("}"),
+	))
+	g.Define("performed_group", seq(str("gesture-group"), field("name", sym("identifier")), str("{"), sym("performed_expression"), repeat(sym("performed_expression")), str("}")))
+	g.Define("performed_note", seq(
+		str("note"), field("pitch", sym("integer")),
+		str("at"), str("="), field("at", sym("tick_count")),
+		str("length"), str("="), field("length", sym("tick_count")),
+		str("velocity"), str("="), field("velocity", sym("integer")),
+		optional(seq(str("group"), str("="), field("group", sym("identifier")))),
+		optional(choice(str(";"), seq(str("{"), sym("performed_expression"), repeat(sym("performed_expression")), str("}")))),
+	))
+	g.Define("performed_expression", seq(
+		str("gesture"), str("at"), str("="), field("at", sym("tick_count")),
+		str("bend"), str("="), field("bend", sym("expression_number")),
+		str("pressure"), str("="), field("pressure", sym("expression_number")),
+		str("timbre"), str("="), field("timbre", sym("expression_number")),
+		optional(seq(str("vibrato"), str("="), field("vibrato", sym("expression_number")))),
+		optional(seq(str("rate"), str("="), field("rate", sym("number")))), optional(str(";")),
+	))
 
 	g.SetExtras(pat(`[ \t\r\n]+`), sym("comment"))
 	g.SetWord("identifier")
+	g.Test("performed gates", "pattern played performance length=7680ticks { note 60 at=17ticks length=703ticks velocity=82; note 64 at=19ticks length=1201ticks velocity=105; }", "")
+	g.Test("performed gestures", "pattern played performance length=3840ticks { note 60 at=17ticks length=703ticks velocity=82 { gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5; gesture at=600ticks bend=123.5ct pressure=0.7 timbre=0.9 vibrato=5ct; } }", "")
+	g.Test("shared gestures", "pattern played performance length=3840ticks { gesture-group touch { gesture at=0ticks bend=0ct pressure=0 timbre=0.5; gesture at=960ticks bend=200ct pressure=0.8 timbre=0.6; } note 60 at=0ticks length=480ticks velocity=100 group=touch; }", "")
 
 	g.Test("dense drum rows", "cicada 1 pattern beat drums { bd: Xx..x1x9*2%50; }",
 		"(source_file (integer) (drum_pattern (identifier) (drum_lane (drum_lane_label) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")
@@ -260,11 +284,15 @@ func Cicada() *grammargen.Grammar {
 	g.Test("live controls", "live { land = bar phrase = 8bars macro intensity = 0.3 smooth 400ms layers intensity { drums >= 0.25 attack 1bar release 3bars } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
-	g.Define("arrange_decl", seq(str("arrange"), str("{"), repeat(choice(sym("place_decl"), sym("marker_decl"))), str("}")))
+	g.Define("arrange_decl", seq(str("arrange"), str("{"), repeat(choice(sym("place_decl"), sym("marker_decl"), sym("arrangement_tempo"))), str("}")))
 	g.Define("place_decl", seq(str("place"), field("name", sym("_name")), field("track", sym("_name")), field("content", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
 	g.Define("marker_decl", seq(str("marker"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
 	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
 	g.Define("tick_count", token(pat(`[0-9]+ticks`)))
 	g.Test("arrangement", "cicada 2 arrange { place vox-1 vox vocal-a { at = @1.1.1 length = 2bars } marker chorus { at = @5.1.1 } }", "")
+	g.Define("automation_recall", seq(str("recall"), field("at", sym("musical_position"))))
+	g.Test("automation recall", "cicada 2 automate bass.level { @1.1.1 -6dB recall @3.1.1 @5.1.1 0dB smooth }", "")
+	g.Define("arrangement_tempo", seq(str("tempo"), field("at", sym("musical_position")), field("value", sym("number"))))
+	g.Test("arrangement tempo", "cicada 2 arrange { tempo @1.1.1 96 tempo @3.1.1 120.5 place bass bass riff { at=@1.1.1 length=4bars } }", "")
 	return g
 }

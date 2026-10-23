@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -20,10 +21,186 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 		return err
 	}
 	returnTo := ctx.FormData[action.ReturnTargetField]
+	operation := ctx.FormData["action"]
+	contextTrack, contextScene := ctx.FormData["track"], ctx.FormData["scene"]
+	createForLive := operation == "create" && ctx.FormData["createFor"] == "@live"
 	destination := returnTo
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
-		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
+		p := map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
+		case "chord":
+			step, err := integer(f, "step")
+			if err != nil || step < 1 || step > 64 {
+				return nil, fmt.Errorf("step must be 1–64")
+			}
+			root, err := integer(f, "chord_root")
+			if err != nil {
+				return nil, err
+			}
+			octave, err := integer(f, "chord_octave")
+			if err != nil {
+				return nil, err
+			}
+			inversion, err := integer(f, "chord_inversion")
+			if err != nil {
+				return nil, err
+			}
+			hold, err := integer(f, "hold")
+			if err != nil || hold < 1 || hold > 64 {
+				return nil, fmt.Errorf("hold must be 1–64 steps")
+			}
+			notes, err := chordPitches(root, octave, f["chord_shape"], inversion)
+			if err != nil {
+				return nil, err
+			}
+			p["step"], p["chord"] = step-1, map[string]any{"notes": notes, "hold": hold}
+			destination = patternURL(f["pattern"], step, "", f["octave"])
+		case "create":
+			length, err := integer(f, "length")
+			if err != nil || length < 1 || length > 64 {
+				return nil, fmt.Errorf("pattern length must be 1–64 steps")
+			}
+			p["newName"], p["track"], p["scene"], p["length"] = f["newName"], f["track"], f["scene"], length
+			p["starter"] = f["starter"]
+			target, _ := url.Parse(patternURL(f["newName"], 1, "", ""))
+			q := target.Query()
+			q.Set("track", f["track"])
+			if f["scene"] != "" {
+				q.Set("scene", f["scene"])
+			}
+			target.RawQuery = q.Encode()
+			destination = target.String()
+		case "performance-group", "performance-binding", "shared-gesture":
+			n := map[string]any{}
+			keys := []string{"index"}
+			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
+			query := target.Query()
+			if f["note_index"] != "" {
+				query.Set("note", f["note_index"])
+			}
+			fieldName := "performanceGroup"
+			switch f["action"] {
+			case "performance-group":
+				n["name"], n["remove"] = f["name"], f["intent"] == "remove"
+				query.Set("group", f["index"])
+			case "performance-binding":
+				keys = []string{"note_index", "group"}
+				fieldName = "performanceBinding"
+				if value, err := strconv.Atoi(f["group"]); err == nil && value > 0 {
+					query.Set("group", strconv.Itoa(value-1))
+				}
+			case "shared-gesture":
+				keys = []string{"group_index", "index"}
+				fieldName = "sharedExpression"
+				n["remove"] = f["intent"] == "remove"
+				query.Set("group", f["group_index"])
+				query.Set("shared_point", f["index"])
+				if f["intent"] != "remove" {
+					keys = append(keys, "tick")
+					for _, key := range []string{"pitch_cents", "pressure", "timbre"} {
+						value, err := finiteNumber(f, key)
+						if err != nil {
+							return nil, err
+						}
+						n[key] = value
+					}
+					query.Set("shared_tick", f["tick"])
+					query.Del("shared_point")
+				}
+			}
+			for _, key := range keys {
+				value, err := strconv.ParseInt(f[key], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s must be a whole number", key)
+				}
+				n[key] = value
+			}
+			target.RawQuery, target.Fragment = query.Encode(), "shared-gestures"
+			destination = target.String()
+			p[fieldName] = n
+		case "performed-gesture":
+			n := map[string]any{"remove": f["intent"] == "remove"}
+			keys := []string{"note_index", "index"}
+			if f["intent"] != "remove" {
+				keys = append(keys, "tick")
+			}
+			for _, key := range keys {
+				value, err := strconv.ParseInt(f[key], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s must be a whole number", key)
+				}
+				n[key] = value
+			}
+			// Native GoSX forms consume the reserved return field before this
+			// handler. Derive the selection from the typed edit itself.
+			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
+			query := target.Query()
+			query.Set("note", f["note_index"])
+			query.Set("gesture", f["index"])
+			if f["intent"] != "remove" {
+				for _, key := range []string{"pitch_cents", "pressure", "timbre", "vibrato_depth_cents", "vibrato_rate_hz"} {
+					value, err := finiteNumber(f, key)
+					if err != nil {
+						return nil, err
+					}
+					n[key] = value
+				}
+				query.Set("gesture_tick", f["tick"])
+				query.Del("gesture")
+			}
+			target.RawQuery, target.Fragment = query.Encode(), "note-gestures"
+			destination = target.String()
+			p["performanceExpression"] = n
+		case "performed-note":
+			n := map[string]any{"remove": f["intent"] == "remove"}
+			keys := []string{"index"}
+			if f["intent"] != "remove" {
+				keys = append(keys, "tick", "end_tick", "pitch", "velocity")
+			}
+			for _, key := range keys {
+				value, err := strconv.ParseInt(f[key], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s must be a whole number", key)
+				}
+				n[key] = value
+			}
+			p["performanceNote"] = n
+		case "performance-length":
+			length, err := strconv.ParseInt(f["length_ticks"], 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("loop length must be a whole number of ticks")
+			}
+			p["performanceLength"] = length
+		case "performance-scale":
+			ratio := strings.Split(f["scale"], "/")
+			if len(ratio) != 2 {
+				return nil, fmt.Errorf("choose a phrase duration")
+			}
+			numerator, e1 := strconv.Atoi(ratio[0])
+			denominator, e2 := strconv.Atoi(ratio[1])
+			if e1 != nil || e2 != nil || numerator < 1 || numerator > 16 || denominator < 1 || denominator > 16 {
+				return nil, fmt.Errorf("choose a phrase duration")
+			}
+			p["performanceScale"] = map[string]int{"numerator": numerator, "denominator": denominator}
+		case "performance-pitch":
+			pitch := map[string]any{"operation": f["pitch_operation"]}
+			switch f["pitch_operation"] {
+			case "transpose":
+				amount, err := integer(f, "semitones")
+				if err != nil || amount < -48 || amount > 48 || amount == 0 {
+					return nil, fmt.Errorf("choose a nonzero shift from −48 to +48 semitones")
+				}
+				pitch["semitones"] = amount
+			case "reflect":
+				pivot, err := integer(f, "pivot")
+				if err != nil || pivot < 0 || pivot > 127 {
+					return nil, fmt.Errorf("choose a note to mirror around")
+				}
+				pitch["pivot"] = pivot
+			default:
+				return nil, fmt.Errorf("choose a phrase pitch transformation")
+			}
+			p["performancePitch"] = pitch
 		case "settings":
 			swing, err := finiteNumber(f, "swing")
 			if err != nil || swing < 50 || swing > 75 || math.Abs(swing*100-math.Round(swing*100)) > 1e-6 {
@@ -68,6 +245,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 			destination = patternURL(f["pattern"], step, f["lane"], f["octave"])
 		case "duplicate":
 			p["newName"] = f["newName"]
+			p["track"] = f["track"]
 			destination = patternURL(f["newName"], 1, "", "")
 		case "resize":
 			length, err := integer(f, "length")
@@ -90,15 +268,43 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 			p["range"], p["lane"] = selection, f["lane"]
 		case "bind":
 			p["scene"], p["track"] = f["scene"], f["track"]
+			switch f["binding"] {
+			case "off", "keep":
+				p["pattern"] = f["binding"]
+			case "", "play":
+			default:
+				return nil, fmt.Errorf("choose Assign, Stop, or Carry for the scene")
+			}
+			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
+			q := target.Query()
+			q.Set("track", f["track"])
+			q.Set("scene", f["scene"])
+			target.RawQuery = q.Encode()
+			destination = target.String()
 		default:
 			return nil, fmt.Errorf("choose a pattern operation")
 		}
 		return p, nil
 	})(ctx)
+	if err == nil && createForLive {
+		ctx.RedirectBackWithMessage("/?panel=live", "")
+		return nil
+	}
 	if err == nil && destination != "" {
+		destination = patternContextURL(destination, contextTrack, contextScene)
 		// The framework captures native return targets before invoking the
 		// handler. Choose the new inspected step explicitly after a success.
-		ctx.RedirectWithMessage(shellRedirect(ctx.Request, destination), "")
+		destination = shellRedirect(ctx.Request, destination)
+		if operation == "create" || operation == "duplicate" && contextTrack != "" {
+			if target, err := url.Parse(destination); err == nil && target.Path == "/studio" {
+				query := target.Query()
+				query.Set("dock", "clip")
+				query.Set("region", "detail")
+				target.RawQuery = query.Encode()
+				destination = target.String()
+			}
+		}
+		ctx.RedirectWithMessage(destination, "")
 	}
 	return err
 }
@@ -114,6 +320,25 @@ func patternURL(id string, step int, lane, octave string) string {
 	return "/?" + q.Encode()
 }
 
+func patternContextURL(raw, track, scene string) string {
+	if track == "" && scene == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	if track != "" {
+		q.Set("track", track)
+	}
+	if scene != "" {
+		q.Set("scene", scene)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func wholeInput(name string, value, low, high int) gosx.Node {
 	return gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", name), gosx.Attr("value", strconv.Itoa(value)), gosx.Attr("min", strconv.Itoa(low)), gosx.Attr("max", strconv.Itoa(high)), gosx.Attr("step", "1")))
 }
@@ -127,8 +352,11 @@ var noteNames = [...]string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G�
 func noteName(pitch int) string { return fmt.Sprintf("%s%d", noteNames[pitch%12], pitch/12-1) }
 
 func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	if v.Project == nil || len(v.Project.Patterns) == 0 {
-		return failure(fmt.Errorf("save a valid score with a pattern to open the editor"))
+	if v.Project == nil {
+		return failure(fmt.Errorf("save a valid score to open the pattern editor"))
+	}
+	if len(v.Project.Patterns) == 0 {
+		return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Create your first pattern, then draw notes or drum hits in its grid."}, s.patternCreation(ctx, v, csrf, ""))
 	}
 	q := ctx.Request.URL.Query()
 	p := v.Project.Patterns[0]
@@ -145,11 +373,29 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		if candidate.ID == p.ID {
 			attrs = append(attrs, gosx.Attr("aria-current", "true"))
 		}
-		library = append(library, gosx.El("a", attrs, gosx.El("strong", gosx.Text(candidate.ID)), gosx.El("span", gosx.Text(fmt.Sprintf("%s · %d steps", candidate.Kind, candidate.Steps)))))
+		description := fmt.Sprintf("%s · %d steps", candidate.Kind, candidate.Steps)
+		if candidate.Performance != nil {
+			description = fmt.Sprintf("%d notes · %s", len(candidate.Performance.Notes), performanceDuration(candidate.Performance.LengthTicks))
+		}
+		library = append(library, gosx.El("a", attrs, gosx.El("strong", gosx.Text(candidate.ID)), gosx.El("span", gosx.Text(description))))
+	}
+	if p.Performance != nil {
+		return s.performanceEditor(ctx, v, csrf, p, library)
 	}
 	var laneNames []string
 	usesPhrase := false
-	if score, _ := notation.Parse([]byte(v.Source)); score != nil {
+	var sources []notation.SourceFile
+	for _, file := range v.Files {
+		sources = append(sources, notation.SourceFile{Path: file.Name, Source: []byte(file.Source)})
+	}
+	if len(sources) == 0 {
+		sources = []notation.SourceFile{{Source: []byte(v.Source)}}
+	}
+	edition := 1
+	if v.Project.Edition == 2 {
+		edition = 2
+	}
+	if score, _ := notation.ParseFiles(sources, edition); score != nil {
 		for _, authored := range score.Patterns {
 			if authored.Name == p.ID {
 				for _, lane := range authored.Lanes {
@@ -160,6 +406,12 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 				}
 			}
 		}
+	}
+	if p.Kind == "drums" && len(laneNames) == 0 {
+		for name := range p.Lanes {
+			laneNames = append(laneNames, name)
+		}
+		sort.Strings(laneNames)
 	}
 	lane := ""
 	if len(laneNames) > 0 {
@@ -172,9 +424,9 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	}
 	base, lowest, highest := 48, 128, 0
 	for _, note := range p.Data {
-		if note != nil && !note.Tie {
-			lowest = min(lowest, int(note.Note))
-			highest = max(highest, int(note.Note))
+		for _, pitch := range stepPitches(note) {
+			lowest = min(lowest, pitch)
+			highest = max(highest, pitch)
 		}
 	}
 	if lowest < 128 {
@@ -190,16 +442,18 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	ceiling := min(127, min(base+47, max(base+11, highest+2)))
 	outside := 0
 	for _, note := range p.Data {
-		if note != nil && !note.Tie && (int(note.Note) < base || int(note.Note) > ceiling) {
-			outside++
+		for _, pitch := range stepPitches(note) {
+			if pitch < base || pitch > ceiling {
+				outside++
+			}
 		}
 	}
 	form := func(name string, children ...gosx.Node) gosx.Node {
-		return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: v.Revision, ReturnTo: patternURL(p.ID, step, lane, octave), Class: "action-form"}, append([]gosx.Node{hidden("octave", octave)}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: v.Revision, ReturnTo: patternURL(p.ID, step, lane, octave), Class: "action-form"}, append([]gosx.Node{hidden("octave", octave), hidden("source_revision", v.SourceRevision)}, children...)...)
 	}
-	settings := form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), field("Transpose (semitones)", wholeInput("transpose", int(p.Transpose), -24, 24)), submit("", "", "Save timing"))
+	settings := form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), field("Transpose (semitones)", wholeInput("transpose", int(p.Transpose), -24, 24)), submit("", "", "Save timing"), gridFormStatus(ctx, p.ID, "settings"))
 	if p.Kind == "drums" {
-		settings = form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), hidden("transpose", "0"), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), submit("", "", "Save timing"))
+		settings = form("pattern", hidden("action", "settings"), hidden("pattern", p.ID), hidden("transpose", "0"), field("Swing (%)", numberInput("swing", strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), "50", "75")), field("Gate (%)", wholeInput("gate", int(p.GatePercent), 10, 100)), submit("", "", "Save timing"), gridFormStatus(ctx, p.ID, "settings"))
 	}
 	var ruler []gosx.Node
 	ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "roll-label")), gosx.Text("STEP")))
@@ -232,7 +486,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 			buttons := []gosx.Node{hidden("action", "pitch"), hidden("pattern", p.ID), hidden("pitch", strconv.Itoa(pitch)), hidden("octave", octave), gosx.El("span", gosx.Attrs(gosx.Attr("class", "roll-label")), gosx.Text(noteName(pitch)))}
 			for i := 0; i < int(p.Steps); i++ {
 				note := p.Data[i]
-				active := note != nil && !note.Tie && int(note.Note) == pitch
+				active := stepHasPitch(note, pitch)
 				text := ""
 				if active {
 					text = "●"
@@ -269,34 +523,15 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		operations = append(operations, "transpose")
 	}
 	span := min(4, max(1, int(p.Steps)/2))
-	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"))
-	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"))
+	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"), gridFormStatus(ctx, p.ID, "range"))
+	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"), gridFormStatus(ctx, p.ID, "resize"))
 	tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions"), gosx.BoolAttr("data-workspace-tools"), gosx.BoolAttr("hidden"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Piano-roll tools")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "select"), gosx.Attr("aria-pressed", "true")), gosx.Text("Select")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "draw"), gosx.Attr("aria-pressed", "false"), gosx.Attr("aria-keyshortcuts", "B")), gosx.Text("Draw (B)")))
-	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
-	newName := nextPatternName(v.Project, p.ID)
-	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("action") == "duplicate" && state.Value("pattern") == p.ID {
-		newName = state.Value("newName")
-	}
-	variation := form("pattern", hidden("action", "duplicate"), hidden("pattern", p.ID), field("New pattern name", textInput("newName", newName)), submit("", "", "Create variation"))
-	var tracks, scenes []string
-	for _, track := range v.Project.Tracks {
-		drumTrack := track.Kind == "drums"
-		for _, kit := range v.Project.Kits {
-			drumTrack = drumTrack || kit.ID == track.Kind
-		}
-		if track.Kind != "audio" && drumTrack == (p.Kind == "drums") {
-			tracks = append(tracks, track.ID)
-		}
-	}
-	for _, scene := range v.Project.Scenes {
-		scenes = append(scenes, scene.ID)
-	}
-	bind := form("pattern", hidden("action", "bind"), hidden("pattern", p.ID), field("Scene", selectInput("scene", "", scenes)), field("Track", selectInput("track", "", tracks)), submit("", "", "Assign to scene"))
+	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), patternGridTiming(p), s.patternPreview(ctx, v, csrf, p), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
 	var phraseNotice gosx.Node = gosx.Fragment()
 	if usesPhrase {
 		phraseNotice = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This pattern uses shared phrases. Editing a cell expands its phrase uses locally; the shared phrases and other patterns keep their music."))
 	}
-	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Reusable patterns, precise notes, and source-backed dynamics."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-editor")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)), roll), phraseNotice, gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Variations and scene assignment")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), variation, bind)))
+	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Reusable patterns, precise notes, and source-backed dynamics."}, s.patternCreation(ctx, v, csrf, ""), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-editor")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)), roll), phraseNotice, s.patternManagement(ctx, v, csrf, p))
 }
 
 func rollButton(step int, label, text string, note *project.Step, active, selected bool) gosx.Node {
@@ -314,7 +549,7 @@ func rollButton(step int, label, text string, note *project.Step, active, select
 	return gosx.El("button", attrs, gosx.Text(text))
 }
 
-func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step int, lane, revision string, form func(string, ...gosx.Node) gosx.Node) gosx.Node {
+func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step int, lane, revision string, key project.Key, form func(string, ...gosx.Node) gosx.Node) gosx.Node {
 	mode, pitch, velocity := "rest", 60, "x"
 	var note *project.Step
 	if p.Kind == "drums" && len(p.Lanes[lane]) >= step {
@@ -347,7 +582,9 @@ func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step i
 		}
 	}
 	values := map[string]string{"mode": mode, "pitch": strconv.Itoa(pitch), "velocity": velocity, "ratchet": strconv.Itoa(ratchet), "chance": strconv.Itoa(chance)}
+	articulationFailed := false
 	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("revision") == revision && state.Value("action") == "step" && state.Value("pattern") == p.ID && state.Value("step") == strconv.Itoa(step) && state.Value("lane") == lane {
+		articulationFailed = true
 		for key := range values {
 			values[key] = state.Value(key)
 		}
@@ -357,17 +594,26 @@ func (s *studioApp) stepInspector(ctx *server.Context, p project.Pattern, step i
 	if p.Kind == "drums" {
 		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "hit"})), field("Velocity", selectInput("velocity", values["velocity"], []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "x", "X"})))
 	} else {
-		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "note", "tie"})), field("MIDI pitch", numberInput("pitch", values["pitch"], "0", "127")), field("Accent", checkInput("accent", accent)), field("Slide", checkInput("slide", slide)))
+		pitchLabel := "MIDI pitch"
+		if note != nil && len(note.Notes) > 0 {
+			pitchLabel = "First pitch (moves whole voicing)"
+		}
+		children = append(children, field("Step type", selectInput("mode", values["mode"], []string{"rest", "note", "tie"})), field(pitchLabel, numberInput("pitch", values["pitch"], "0", "127")), field("Accent", checkInput("accent", accent)), field("Slide", checkInput("slide", slide)))
 	}
-	children = append(children, field("Ratchet", numberInput("ratchet", values["ratchet"], "1", "8")), field("Chance (%)", numberInput("chance", values["chance"], "1", "100")), submit("", "", "Save step"))
+	children = append(children, field("Ratchet", numberInput("ratchet", values["ratchet"], "1", "8")), field("Chance (%)", numberInput("chance", values["chance"], "1", "100")), submit("", "", "Save step"), gridFormStatus(ctx, p.ID, "step"))
 	title := fmt.Sprintf("Step %d", step)
 	if lane != "" {
 		title += " · " + strings.ToUpper(lane)
 	}
-	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "step-inspector"), gosx.Attr("id", "step-inspector")), gosx.El("h3", gosx.Text(title)), form("pattern", children...))
+	articulation := form("pattern", children...)
+	if p.Kind == "notes" {
+		articulation = gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "step-articulation"), gosx.Attr("open", articulationFailed)), gosx.El("summary", gosx.Text("Articulation")), articulation)
+	}
+	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "step-inspector"), gosx.Attr("id", "step-inspector")), gosx.El("h3", gosx.Text(title)), articulation, s.chordEditor(ctx, p, step, revision, key, form))
 }
 
 func nextPatternName(p *project.Project, id string) string {
+	id = strings.ReplaceAll(id, ".", "-")
 	if len(id) > 52 {
 		id = id[:52]
 	}
@@ -376,6 +622,9 @@ func nextPatternName(p *project.Project, id string) string {
 		found := false
 		for _, pattern := range p.Patterns {
 			found = found || pattern.ID == candidate
+		}
+		for _, clip := range p.Clips {
+			found = found || clip.Name == candidate
 		}
 		if !found {
 			return candidate

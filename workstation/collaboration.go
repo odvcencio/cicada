@@ -45,6 +45,7 @@ type collaboration struct {
 	storeDirty bool
 	invites    map[string]collaborationInvite
 	presence   map[string]collaborationMember
+	access     *noteStore
 }
 
 func collaborationID() string {
@@ -114,6 +115,25 @@ func (c *collaboration) member(r *http.Request, create bool) (string, string) {
 		return "", ""
 	}
 	actor := store.String("collaboration-user")
+	if c.access != nil {
+		register := actor == "" && create
+		if register {
+			actor = collaborationID()
+		}
+		access, err := c.access.membership(actor, register, r.URL.Query().Get("panel") == "collaboration" || !create)
+		if err != nil {
+			return actor, ""
+		}
+		// A new visitor may wait for the checkpoint writer's file lock.
+		// Keep that wait outside the shared live authorization mutex.
+		c.mu.Lock()
+		c.owner, c.roles = access.Owner, access.Roles
+		c.mu.Unlock()
+		if register {
+			store.Set("collaboration-user", actor)
+		}
+		return actor, access.Roles[actor]
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if actor == "" && create {
@@ -224,7 +244,17 @@ func (c *collaboration) sync(ctx *hub.Context) {
 		c.hub.Send(ctx.Client.ID, "state", c.snapshot)
 		return
 	}
-	if c.roles[user] != "editor" && c.roles[user] != "owner" {
+	role := c.roles[user]
+	if c.access != nil {
+		access, err := c.access.membership(user, false, false)
+		if err != nil {
+			c.hub.Send(ctx.Client.ID, "error", "Workspace access could not be verified. Your local edits are retained.")
+			return
+		}
+		c.owner, c.roles = access.Owner, access.Roles
+		role = c.roles[user]
+	}
+	if role != "editor" && role != "owner" {
 		c.hub.Send(ctx.Client.ID, "error", "Viewers cannot edit the score.")
 		return
 	}
@@ -315,8 +345,17 @@ func (c *collaboration) join(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "The owner already has edit access.", 400)
 		return
 	}
+	if c.access != nil {
+		access, err := c.access.grantMember(actor, invite.Role, c.owner)
+		if err != nil {
+			http.Error(w, "Editor access could not be saved. The invitation is still available.", 503)
+			return
+		}
+		c.owner, c.roles = access.Owner, access.Roles
+	} else {
+		c.roles[actor] = invite.Role
+	}
 	delete(c.invites, request.Token)
-	c.roles[actor] = invite.Role
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"role": invite.Role})
 }

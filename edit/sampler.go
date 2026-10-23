@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/seq"
@@ -69,6 +70,10 @@ func samplerPrintSource(ctx *Context, in PlaceSamplerPrint) ([]byte, error) {
 			found = true
 		}
 	}
+	arrangement, owner, err := arrangementFile(ctx)
+	if err != nil {
+		return nil, err
+	}
 	source, file := ctx.Source, ctx.Options.Path
 	if !found {
 		if source, err = audioTrackSyntax(source, file, in.Track); err != nil {
@@ -79,9 +84,23 @@ func samplerPrintSource(ctx *Context, in PlaceSamplerPrint) ([]byte, error) {
 	a := in.Asset
 	declarations := fmt.Sprintf("\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 2 }\nclip %s %s { start = 0frames end = %dframes fade_in = 240frames fade_out = 240frames }\n", assetName, strconv.Quote(a.Path), strconv.Quote(a.SHA256), a.Frames, a.RateHz, clipName, assetName, a.Frames)
 	// Add declarations without rewriting the musician's existing score.
+	if owner != file {
+		declarations = strings.ReplaceAll(declarations, "\n", Newline(source))
+	}
 	source = append(append([]byte(nil), source...), []byte(declarations)...)
 	length := int64(math.Ceil(float64(a.Frames) * float64(plan.TempoMilli) * float64(seq.PPQ) / (float64(a.RateHz) * 60000)))
-	return arrangementSource(source, file, arrangementOp{action: "append", newName: in.Name, settings: &PlacementSettings{At: in.At, Length: fmt.Sprintf("%dticks", length), Track: in.Track, Content: clipName}})
+	if owner == file {
+		arrangement = source
+	}
+	updated, err := arrangementSource(arrangement, owner, arrangementOp{action: "append", newName: in.Name, settings: &PlacementSettings{At: in.At, Length: fmt.Sprintf("%dticks", length), Track: in.Track, Content: clipName}})
+	if err != nil {
+		return nil, err
+	}
+	if owner == file {
+		return updated, nil
+	}
+	stageProjectSource(ctx, owner, arrangement, updated)
+	return source, nil
 }
 
 // audioTrackSyntax adds an empty audio track before the first scene. Unlike

@@ -11,9 +11,9 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell h2 { font-size:14px; }
 .shell h3 { font-size:13px; margin:0 0 8px; }
 
-.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--gsx-dock-left,280px) minmax(0,1fr) var(--gsx-dock-right,360px); grid-template-rows:auto minmax(0,1fr) var(--gsx-dock-bottom,240px); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
+.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--studio-browser-column,var(--gsx-dock-left,280px)) minmax(0,1fr) var(--studio-code-column,var(--gsx-dock-right,360px)); grid-template-rows:auto minmax(var(--studio-center-min,200px),1fr) minmax(var(--studio-dock-min,120px),var(--gsx-dock-bottom,240px)); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
 .gsx-dock > * { min-width:0; min-height:0; }
-.gsx-dock__top { grid-area:top; }
+.gsx-dock__top { grid-area:top; min-height:min-content; }
 .gsx-dock__left { grid-area:left; display:grid; grid-template-columns:minmax(0,1fr) auto; }
 .gsx-dock__center { grid-area:center; }
 .gsx-dock__right { grid-area:right; display:grid; grid-template-columns:auto minmax(0,1fr); }
@@ -45,15 +45,20 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell-tabs { display:flex; flex-direction:column; min-height:0; height:100%; }
 .shell-scroll { overflow:auto; min-height:0; padding:8px 12px; }
 .shell-scroll .panel { padding:12px; margin-bottom:12px; }
-/* Details' anonymous content box does not constrain a flex child. Give the
-   Code scroller a definite viewport and let its editor fill the remaining
-   space, so the final source line stays reachable above the detail dock. */
-.shell #studio-code .shell-collapsible { position:relative; }
-.shell #studio-code .shell-collapsible > .shell-scroll { position:absolute; inset:calc(1.4em + 8px) 0 0; }
+/* Details' anonymous content box does not constrain a flex child. Give both
+   sidebars a definite scrolling viewport so focus and wheel input keep their
+   headers in place and every sound or source line remains reachable. */
+.shell :is(#studio-browser, #studio-code) .shell-collapsible { position:relative; }
+.shell :is(#studio-browser, #studio-code) .shell-collapsible > .shell-scroll { position:absolute; inset:calc(1.4em + 8px) 0 0; }
 .shell #studio-code #score { display:flex; flex-direction:column; height:100%; min-height:340px; }
-.shell #studio-code #score > :not(#source-editor) { flex-shrink:0; }
+.shell #studio-code #score > :not(.editor-surface-code) { flex-shrink:0; }
 .shell #studio-code #score > ul:empty { display:none; }
-.shell #studio-code #source-editor { flex:1 1 0; min-height:160px; height:auto; }
+/* A single file is already named in the editor. Keep recovery feedback compact
+   so status messages leave room to read and edit the source. */
+.shell #studio-code #score > p:empty,
+.shell #studio-code #score > nav[aria-label="Project files"]:has(> a:only-child) { display:none; }
+.shell #studio-code #score > [data-source-recovery-status] { margin:0 0 8px; }
+.shell #studio-code .editor-surface-code { flex:1 1 0; min-height:160px; height:auto; }
 .shell-section { border-bottom:1px solid var(--border); }
 .shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
 .shell .arrange-workspace-nav { position:sticky; top:-8px; z-index:2; display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 0; margin-bottom:8px; border-bottom:1px solid var(--border); background:var(--bg); }
@@ -70,8 +75,17 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shortcut-title { flex:1; }
 .shell kbd { font:12px ui-monospace,monospace; color:var(--mint); }
 
+/* Closing a sidebar returns its space to the song. Keep its native summary
+   as a keyboard-accessible rail so reopening never needs a hidden control. */
+@media (min-width:800px) {
+	.shell .gsx-dock:has(#studio-browser .shell-collapsible:not([open])) { --studio-browser-column:36px; }
+	.shell .gsx-dock:has(#studio-code .shell-collapsible:not([open])) { --studio-code-column:36px; }
+	.shell :is(#studio-browser,#studio-code):has(.shell-collapsible:not([open])) .gsx-split__handle { display:none; }
+	.shell :is(#studio-browser,#studio-code) .shell-collapsible:not([open]) > summary { writing-mode:vertical-rl; padding:10px 8px; min-width:36px; min-height:90px; }
+}
+
 .shell-phone-nav { display:none; }
-@media (max-width:480px) {
+@media (max-width:799px) {
 	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"top" "region"; }
 	.shell .gsx-dock__top { flex-direction:column; align-items:stretch; gap:6px; }
 	.shell .shell-top .score-title { flex:0 0 auto; }

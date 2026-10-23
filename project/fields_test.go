@@ -25,10 +25,10 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 	if catalog.Format != "cicada.fields/2" || len(catalog.Fields) < 70 {
 		t.Fatalf("incomplete field catalog: %s, %d fields", catalog.Format, len(catalog.Fields))
 	}
-	if len(catalog.Constructs) != 37 {
-		t.Fatalf("expected 37 semantic constructs, got %d", len(catalog.Constructs))
+	if len(catalog.Constructs) != 43 {
+		t.Fatalf("expected 43 semantic constructs, got %d", len(catalog.Constructs))
 	}
-	arrangementConstructs := map[string]bool{"arrangement": false, "placement": false, "marker": false}
+	arrangementConstructs := map[string]bool{"arrangement": false, "placement": false, "marker": false, "tempo_change": false}
 	for _, construct := range catalog.Constructs {
 		if _, ok := arrangementConstructs[construct.Name]; ok {
 			arrangementConstructs[construct.Name] = true
@@ -39,7 +39,7 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		if construct.Name == "project" && len(construct.ChildRoles) == 0 {
 			t.Error("project has no repeatable child roles")
 		}
-		if construct.Name == "scene_setting" || construct.Name == "scene_value" {
+		if construct.Name == "scene_setting" || construct.Name == "scene_value" || construct.Name == "tempo_change" {
 			if construct.Introduced != "cicada.project/2" {
 				t.Errorf("%s construct introduced = %q", construct.Name, construct.Introduced)
 			}
@@ -91,9 +91,21 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		if field.Introduced == "cicada.project/2" {
 			continue
 		}
-		if field.Construct == "pattern" && field.Name == "expression" {
+		if field.Construct == "pattern" && (field.Name == "expression" || field.Name == "performance") {
 			if field.Required {
-				t.Error("pattern expression must remain optional for existing projects")
+				t.Error("pattern expression and performance must remain optional for existing projects")
+			}
+			continue
+		}
+		if field.Construct == "performed_note" && field.Name == "expressions" {
+			if field.Required || field.Range == nil || *field.Range != "0..65536" {
+				t.Errorf("gesture samples must remain optional and bounded: %+v", field)
+			}
+			continue
+		}
+		if field.Construct == "performance" && field.Name == "groups" || field.Construct == "performed_note" && field.Name == "group" {
+			if field.Required || field.Range == nil || *field.Range != "0..512" {
+				t.Errorf("shared gestures must remain optional and bounded: %+v", field)
 			}
 			continue
 		}

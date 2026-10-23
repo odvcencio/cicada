@@ -34,7 +34,7 @@ func advanceRenderChains(tracks []trackRuntime, tick int64) error {
 			pattern = track.active
 		}
 		if pattern != nil {
-			track.chainDue += int64(pattern.Len) * pattern.GridTicks()
+			track.chainDue += pattern.DurationTicks()
 		}
 	}
 	return nil

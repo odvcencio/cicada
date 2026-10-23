@@ -455,7 +455,7 @@ func TestActivationPatchesToggledStepsOfEveryKindWithoutReplacement(t *testing.T
 			s, stream := activationStudio(t, studioScore)
 			handler := s.domainRoutes()
 			renderStudioPreview(t, stream, 256)
-			response := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(s.lastGoodSource), Pattern: test.pattern, Lane: test.lane, Step: 1})
+			response := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(s.lastGoodSource), Pattern: test.pattern, Lane: test.lane, Step: 1})
 			if response.Code != http.StatusOK {
 				t.Fatalf("toggle: %d %s", response.Code, response.Body.String())
 			}

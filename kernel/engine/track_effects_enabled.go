@@ -25,7 +25,7 @@ func newTrackEffectChain(rate int, specs []TrackEffectConfig) (*trackEffectChain
 		return nil, nil
 	}
 	if len(specs) > MaxTrackInserts {
-		return nil, Error("track insert chain exceeds eight stages")
+		return nil, engineError("track insert chain exceeds eight stages")
 	}
 	c := &trackEffectChain{count: len(specs)}
 	for i, p := range specs {

@@ -1,0 +1,8 @@
+cicada 2
+track keys piano {}
+pattern phrase performance length=7680ticks {
+  note 60 at=17ticks length=703ticks velocity=82;
+  note 64 at=19ticks length=1201ticks velocity=105;
+}
+scene main { keys=phrase }
+song { main*2 }

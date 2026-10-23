@@ -12,6 +12,8 @@ type nullBackend struct{}
 
 func (nullBackend) Name() Name { return Null }
 
+func (nullBackend) CaptureSupported() bool { return false }
+
 func (nullBackend) Devices() ([]Device, bool, error) { return nil, false, nil }
 
 func (nullBackend) SampleRate(config Config) (int, error) {

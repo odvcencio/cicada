@@ -247,7 +247,12 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		patterns[p.Name] = p
 		steps := 0
-		if (p.Kind == "acid" || p.Kind == "notes") && len(p.Steps) > 0 {
+		if p.Performance != nil {
+			steps = 1
+			if err := p.Performance.Validate(); err != nil {
+				add("CICADA-PERFORMANCE", err.Error(), "error", p.Position)
+			}
+		} else if (p.Kind == "acid" || p.Kind == "notes") && len(p.Steps) > 0 {
 			steps = len(p.Steps)
 		} else if len(p.Lanes) > 0 {
 			steps = len(p.Lanes[0].Hits)
@@ -284,6 +289,10 @@ func Validate(s *Score) (ds []Diagnostic) {
 			}
 			seenAttrs[a.Name] = true
 			switch a.Name {
+			case "length":
+				if p.Performance == nil || !strings.HasSuffix(a.Value, "ticks") {
+					add("CICADA-PERFORMANCE", "length in ticks belongs to a performance pattern", "error", a.Position)
+				}
 			case "step":
 				if _, err := GridTicks(a.Value); err != nil {
 					add("CICADA-GRID", err.Error(), "error", a.ValuePosition)

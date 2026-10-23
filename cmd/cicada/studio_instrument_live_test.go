@@ -101,7 +101,7 @@ func TestAuthoredNoteTakeKeepsInheritedAudioEditionSource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		edit := studioEdit{Revision: studioRevision(before), Recordings: []studioTakeRecording{{Track: "keys", Pattern: "keys-notes", Notes: []studioTakeNote{{Tick: 0, EndTick: 100, Note: 60, Velocity: 100}, {Tick: 120, EndTick: 220, Note: 64, Velocity: 100}}}}}
+		edit := studioEdit{Revision: studioRevision(before), SourceRevision: studioProjectReceipt(t, path), Recordings: []studioTakeRecording{{Track: "keys", Pattern: "keys-notes", Notes: []studioTakeNote{{Tick: 0, EndTick: 100, Note: 60, Velocity: 100}, {Tick: 120, EndTick: 220, Note: 64, Velocity: 100}}}}}
 		response := studioCall(t, handler, "/api/record", edit)
 		if response.Code != 200 {
 			t.Fatalf("inherited audio edition note take: %d %s", response.Code, response.Body.String())

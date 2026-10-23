@@ -2,14 +2,16 @@ package project
 
 import (
 	"fmt"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 	"strconv"
 	"strings"
 )
 
 type Arrangement struct {
-	Placements []Placement `json:"placements" cicada:"Named regions in source order"`
-	Markers    []Marker    `json:"markers" cicada:"Named musical positions"`
+	Placements []Placement   `json:"placements" cicada:"Named regions in source order"`
+	Markers    []Marker      `json:"markers" cicada:"Named musical positions"`
+	Tempos     []TempoChange `json:"tempos,omitempty" cicada:"Ordered bar-boundary tempo steps" introduced:"cicada.project/2"`
 }
 type Placement struct {
 	ID          string `json:"id" cicada:"Stable placement identity"`
@@ -41,10 +43,18 @@ func lowerArrangement(p *Project, s *notation.Score) {
 	for _, v := range s.Arrange.Markers {
 		p.Arrange.Markers = append(p.Arrange.Markers, Marker{ID: v.Name, AtTick: v.AtTick})
 	}
+	for _, v := range s.Arrange.Tempos {
+		at, _ := notation.MusicalTicks(v.At, true)
+		bpm, _ := strconv.ParseFloat(v.Value, 64)
+		p.Arrange.Tempos = append(p.Arrange.Tempos, TempoChange{Bar: int(at / 3840), BPMMilli: int(CanonicalTempo(bpm)*1000 + 0.5)})
+	}
 }
 func arrangementSource(a *Arrangement) string {
 	var out strings.Builder
 	out.WriteString("arrange {")
+	for _, t := range a.Tempos {
+		fmt.Fprintf(&out, "\n  tempo @%d.1.1 %s", t.Bar+1, strconv.FormatFloat(float64(t.BPMMilli)/1000, 'f', -1, 64))
+	}
 	for _, p := range a.Placements {
 		fmt.Fprintf(&out, "\n  place %s %s %s {\n    at = %dticks\n    length = %dticks\n  }", p.ID, p.Track, p.Content, p.AtTick, p.LengthTicks)
 	}
@@ -60,6 +70,9 @@ func validateArrangementProject(p *Project) error {
 	}
 	if p.Format != FormatID2 || p.Edition != 2 || len(p.Song) != 0 {
 		return fmt.Errorf("CICADA-ARRANGEMENT: arrange requires edition 2 and exclusive arrangement authority")
+	}
+	if err := musictime.ValidateTempoChanges(p.Arrange.Tempos); err != nil {
+		return err
 	}
 	for _, placement := range p.Arrange.Placements {
 		if !validID(placement.ID) {
@@ -97,6 +110,9 @@ func validateArrangementProject(p *Project) error {
 	}
 	for _, v := range p.Arrange.Markers {
 		s.Arrange.Markers = append(s.Arrange.Markers, notation.Marker{Name: v.ID, AtTick: v.AtTick, Params: []notation.Param{{Name: "at", Value: strconv.FormatInt(v.AtTick, 10) + "ticks"}}})
+	}
+	for _, t := range p.Arrange.Tempos {
+		s.Arrange.Tempos = append(s.Arrange.Tempos, notation.ArrangementTempo{At: fmt.Sprintf("@%d.1.1", t.Bar+1), Value: strconv.FormatFloat(float64(t.BPMMilli)/1000, 'f', -1, 64)})
 	}
 	if ds := notation.ValidateArrangement(s); len(ds) > 0 {
 		return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)

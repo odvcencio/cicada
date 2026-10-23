@@ -8,7 +8,7 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-var patternTypes = []string{"acid_pattern", "note_pattern", "drum_pattern"}
+var patternTypes = []string{"acid_pattern", "note_pattern", "drum_pattern", "performance_pattern"}
 
 // stepOrigin follows authored parts rather than the expanded tokens, whose
 // source positions point back to a phrase shared by multiple uses.

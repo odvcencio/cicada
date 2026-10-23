@@ -64,7 +64,7 @@ func CheckLibrary(file SourceFile) []Diagnostic {
 		n := root.NamedChild(i)
 		kind := w.Type(n)
 		switch kind {
-		case "integer", "comment", "import_decl", "instrument_decl", "preset_decl", "kit_decl", "fx_decl", "phrase_decl", "acid_pattern", "note_pattern", "drum_pattern", "sampler_decl", "asset_decl":
+		case "integer", "comment", "import_decl", "instrument_decl", "preset_decl", "kit_decl", "fx_decl", "phrase_decl", "acid_pattern", "note_pattern", "drum_pattern", "performance_pattern", "sampler_decl", "asset_decl":
 		default:
 			ds = append(ds, Diagnostic{Code: "CICADA-LIB-DECL", Severity: "error", Message: strings.TrimSuffix(kind, "_decl") + " cannot be declared in a library", Position: w.position(n)})
 		}

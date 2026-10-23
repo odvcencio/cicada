@@ -16,9 +16,75 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/projectcopy"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/project"
 )
 
 const audioTakeScore = "cicada 2\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\nsong { main }\n"
+
+func TestTakeSelectionWithProjectSources(t *testing.T) {
+	for _, kind := range []string{"imports", "secondary source", "imports and secondary source"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "main.cicada")
+			source := strings.Replace(audioTakeScore, "pattern pulse acid", "pattern pulse notes", 1)
+			if strings.Contains(kind, "imports") {
+				source = strings.Replace(source, "cicada 2\n", "cicada 2\nimport \"std/synth\"\n", 1)
+				source = strings.Replace(source, "track bass acid {}", "track bass synth.glassbass {}", 1)
+			}
+			if strings.Contains(kind, "secondary source") {
+				part := "pattern pulse notes steps=4 { 1 . 5 . }\n"
+				source = strings.Replace(source, part, "", 1)
+				if err := os.WriteFile(filepath.Join(root, "patterns.cicada"), []byte(part), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "cicada.mod"), []byte("project recording\ncicada 2\nentry \"main.cicada\"\nsource \"patterns.cicada\"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			sources, err := project.ReadSources(path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pins, _, err := sources.UpdateLibraries("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "cicada.sum"), pins, 0600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := newStudio(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.openTakes(); err != nil {
+				t.Fatal(err)
+			}
+			defer s.shutdown()
+			id := captureTestTake(t, s)
+			response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "select", TakeID: id, Revision: studioRevision([]byte(source))})
+			if response.Code != http.StatusOK {
+				t.Fatalf("valid project cannot select a recorded take: %d %s", response.Code, response.Body.String())
+			}
+			selected, _ := os.ReadFile(path)
+			if !bytes.Contains(selected, []byte("vox = "+id+"-clip // keep binding comment")) {
+				t.Fatal("selection lost the scene binding comment")
+			}
+			response = studioCall(t, s.routes(), "/api/undo", studioEdit{Revision: studioRevision(selected)})
+			undone, _ := os.ReadFile(path)
+			if response.Code != http.StatusOK || string(undone) != source {
+				t.Fatal("Undo did not restore the complete source", response.Code, response.Body.String())
+			}
+			response = studioCall(t, s.routes(), "/api/redo", studioEdit{Revision: studioRevision(undone)})
+			redone, _ := os.ReadFile(path)
+			if response.Code != http.StatusOK || !bytes.Equal(redone, selected) {
+				t.Fatal("Redo lost the recorded take", response.Code, response.Body.String())
+			}
+		})
+	}
+}
 
 func newTakeStudio(t *testing.T, dir string) *studio {
 	t.Helper()

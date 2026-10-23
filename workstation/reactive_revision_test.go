@@ -88,3 +88,50 @@ func TestReactiveWriteReceiptDetectsInterveningSave(t *testing.T) {
 		})
 	}
 }
+
+func TestReactiveSourceReceiptDetectsEntryIdenticalOutsideSave(t *testing.T) {
+	for _, outside := range []bool{false, true} {
+		t.Run(fmt.Sprintf("outside=%v", outside), func(t *testing.T) {
+			readSources := "own-sources"
+			if outside {
+				readSources = "outside-sources"
+			}
+			audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/pattern":
+					w.Header().Set("X-Cicada-Write-Source-Revision", "own-sources")
+					io.WriteString(w, `{"revision":"same-entry","valid":true}`)
+				case "/api/workspace":
+					json.NewEncoder(w).Encode(workspace{Revision: "same-entry", SourceRevision: readSources, Filename: "main.cicada", Source: "title \"Saved project\"\n", Valid: true})
+				default:
+					io.WriteString(w, `{}`)
+				}
+			}))
+			defer audio.Close()
+			backend, err := newBackend(audio.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := &studioApp{backend: backend}
+			handler := s.mutation("/api/pattern", func(fields map[string]string) (any, error) { return fields, nil })
+			request := httptest.NewRequest(http.MethodPost, "/__actions/pattern", strings.NewReader(`{"revision":"same-entry","source_revision":"displayed-sources","__cicada_location":"/?panel=patterns"}`))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept", "application/json")
+			request.Header.Set("X-Cicada-Reactive", "1")
+			response := httptest.NewRecorder()
+			s.serveAction(response, request, "pattern", handler)
+			var result action.Result
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			var receipt workspaceProjection
+			if err := json.Unmarshal(result.Data, &receipt); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != 200 || !result.OK || !receipt.Saved || receipt.Revision != "same-entry" || receipt.WriteRevision != "same-entry" || receipt.SourceRevision != readSources || receipt.WriteSourceRevision != "own-sources" || receipt.RefreshRequired != outside {
+				t.Fatal("source-only read was confused with our committed project", response.Code, receipt)
+			}
+		})
+	}
+}

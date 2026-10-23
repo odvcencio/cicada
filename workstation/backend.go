@@ -42,6 +42,8 @@ type backendError struct {
 	Message string
 }
 
+type expectedProjectSourcesKey struct{}
+
 func (e *backendError) Error() string { return e.Message }
 
 func (b *backend) request(ctx context.Context, method, path string, input any) (*http.Response, error) {
@@ -66,13 +68,41 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if receipt, ok := ctx.Value(expectedProjectSourcesKey{}).(string); ok && receipt != "" {
+		req.Header.Set("X-Cicada-Source-Revision", receipt)
+	}
 	if b.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}
 	client := b.client
-	if strings.HasPrefix(resource.Path, "/api/sampler") {
+	if method == http.MethodPost && (path == "/api/record" || path == "/api/intents") {
+		copy := *client
+		copy.Timeout = 30 * time.Second // large retained gesture takes compile before acknowledgment
+		client = &copy
+	}
+	if method == http.MethodPost && path == "/api/arrange" {
+		copy := *client
+		copy.Timeout = 60 * time.Second // a placement variation checks its rendered sound
+		client = &copy
+	}
+	if payload, ok := input.(map[string]any); ok && method == http.MethodPost && path == "/api/pattern" && payload["action"] == "duplicate" {
+		copy := *client
+		copy.Timeout = 60 * time.Second // material copies check the original song's sound
+		client = &copy
+	}
+	if method == http.MethodPost && resource.Path == "/api/midi/input" {
+		copy := *client
+		copy.Timeout = 0 // The mounted Live panel owns this input stream.
+		client = &copy
+	}
+	if strings.HasPrefix(resource.Path, "/api/sampler") || method == http.MethodPost && resource.Path == "/api/audio/config" {
 		copy := *client
 		copy.Timeout = 60 * time.Second
+		if resource.Path == "/api/audio/config" {
+			// Wait for the user's native permission response. The browser
+			// request context still cancels if its caller leaves.
+			copy.Timeout = 0
+		}
 		client = &copy
 	}
 	response, err := client.Do(req)
@@ -88,12 +118,16 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 		return err
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, 8<<20+1))
+	limit := int64(8 << 20)
+	if path == "/api/workspace" || path == "/api/intents" || path == "/api/record" {
+		limit = 32 << 20
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
 		return err
 	}
-	if len(data) > 8<<20 {
-		return fmt.Errorf("audio service response exceeds 8 MiB")
+	if int64(len(data)) > limit {
+		return fmt.Errorf("audio service response exceeds %d MiB", limit>>20)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var failure struct {
@@ -110,6 +144,7 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 			var acknowledgment workspaceWriteReceipt
 			if json.Unmarshal(data, &acknowledgment) == nil && acknowledgment.Revision != "" {
 				receipt.Revision = acknowledgment.Revision
+				receipt.SourceRevision = response.Header.Get("X-Cicada-Write-Source-Revision")
 			}
 		}
 	}
@@ -134,9 +169,13 @@ type workspace struct {
 	DiskSource      string           `json:"-"`
 	DiskRevision    string           `json:"-"`
 	HasDraft        bool             `json:"-"`
+	SourceDraft     draft            `json:"-"`
+	SourceCopies    []savedSource    `json:"-"`
+	RecoveryError   string           `json:"-"`
 	Edition         int              `json:"-"`
 	Source          string           `json:"source"`
 	Revision        string           `json:"revision"`
+	SourceRevision  string           `json:"source_revision"`
 	Filename        string           `json:"filename"`
 	Valid           bool             `json:"valid"`
 	Error           string           `json:"error"`
@@ -175,14 +214,18 @@ type audioDevice struct {
 	FundamentalPeriod int    `json:"fundamentalPeriod"`
 }
 type audioState struct {
-	Inventory struct {
-		Supported     bool          `json:"supported"`
-		Backend       string        `json:"backend"`
-		BackendName   string        `json:"backendName"`
-		Host          string        `json:"host"`
-		Message       string        `json:"message"`
-		Devices       []audioDevice `json:"devices"`
-		BufferChoices []int         `json:"bufferChoices"`
+	SettingsWarning string `json:"settingsWarning"`
+	Inventory       struct {
+		Supported        bool          `json:"supported"`
+		CaptureSupported *bool         `json:"captureSupported"`
+		InputAccess      string        `json:"inputAccess"`
+		InputMessage     string        `json:"inputMessage"`
+		Backend          string        `json:"backend"`
+		BackendName      string        `json:"backendName"`
+		Host             string        `json:"host"`
+		Message          string        `json:"message"`
+		Devices          []audioDevice `json:"devices"`
+		BufferChoices    []int         `json:"bufferChoices"`
 	} `json:"inventory"`
 	Options audioOptions         `json:"options"`
 	Runtime control.AudioRuntime `json:"runtime"`

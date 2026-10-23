@@ -87,7 +87,7 @@ func resolveBinding(tags []gts.Tag, ref int) string {
 	at := tags[ref].NameRange.StartByte
 	var within gts.Range
 	for _, tag := range tags[:ref] {
-		if tag.Kind == "definition.instrument" && tag.Range.StartByte <= at && at < tag.Range.EndByte {
+		if (tag.Kind == "definition.instrument" || tag.Kind == "definition.pattern") && tag.Range.StartByte <= at && at < tag.Range.EndByte {
 			within = tag.Range
 		}
 	}

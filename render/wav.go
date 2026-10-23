@@ -358,7 +358,15 @@ func hasResidentSampler(score *notation.Score) bool {
 // engine path rather than the direct WAV mixer. The two paths inject DC
 // correction at different points relative to export gain.
 func UsesScheduledEngine(score *notation.Score, opts Options) bool {
-	return score != nil && (score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline)
+	if score == nil {
+		return false
+	}
+	for _, pattern := range score.Patterns {
+		if pattern.Performance != nil {
+			return true
+		}
+	}
+	return score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline
 }
 
 func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {

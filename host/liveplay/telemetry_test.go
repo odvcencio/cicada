@@ -2,6 +2,25 @@ package liveplay
 
 import "testing"
 
+func TestTelemetryTransportSnapshotNeedsNoMeterCopy(t *testing.T) {
+	var absent *Publisher
+	if _, ok := absent.Transport(); ok {
+		t.Fatal("nil publisher supplied a position")
+	}
+	pub := NewPublisher()
+	if _, ok := pub.Transport(); ok {
+		t.Fatal("unpublished clock supplied a position")
+	}
+	want := TransportFrame{Bar: 3, Beat: 2, Tick: 123, Playing: true, TempoMilli: 120000}
+	pub.PublishTransport(want)
+	if got, ok := pub.Transport(); !ok || got != want {
+		t.Fatalf("transport snapshot=%+v,%v", got, ok)
+	}
+	if n := testing.AllocsPerRun(100, func() { pub.Transport() }); n != 0 {
+		t.Fatalf("transport read allocated %g", n)
+	}
+}
+
 func TestTelemetryFramesRoundTripAndEncodeWithoutAllocating(t *testing.T) {
 	transport := TransportFrame{SampleFrame: 123456, SampleRate: 48000, WallNanos: 99, TempoMilli: 120000, Playing: true, LoopStart: 3840, LoopEnd: 7680, InsertMarker: 960, Bar: 2, Beat: 3, Tick: 480}
 	var buf [TransportFrameSize]byte

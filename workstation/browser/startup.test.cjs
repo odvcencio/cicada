@@ -9,7 +9,7 @@ test('Studio startup explains loading and failures while retaining early drafts'
  const base=process.env.CICADA_STUDIO_URL;assert.ok(base&&['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
  const browser=await playwright().chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
  const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'});page.setDefaultTimeout(20000);
- const checks=[],errors=[],posts=[];const proof=process.env.CICADA_STARTUP_PROOF_DIR;
+ const checks=[],errors=[],posts=[];const proof=process.env.CICADA_STARTUP_PROOF_DIR;let discardedRecoveredDraft=false;
  const check=s=>{checks.push(s);console.log(s)};
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.method()==='POST'&&/^\/__actions\/(source|arrange|pattern|clip)$/.test(new URL(r.url()).pathname))posts.push(r)});
  const state=async()=>(await page.request.get(base+'/api/state')).json();
@@ -34,8 +34,16 @@ test('Studio startup explains loading and failures while retaining early drafts'
   const failedDraft=clean+'\n// keep this during retry\n';await editor().fill(failedDraft);await page.getByRole('button',{name:'Reload Studio',exact:true}).click();assert.equal(await editor().inputValue(),failedDraft);assert.match(await status().innerText(),/unsaved edits/);
   await page.setViewportSize({width:390,height:844});if(proof)await page.screenshot({path:path.join(proof,'startup-error-390.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   check('real HTTP503 engine failure is actionable on desktop and phone; reload keeps unsaved Code and no page overflow');
-  await page.getByRole('link',{name:'Code',exact:true}).click();await editor().fill(clean);mode='normal';await Promise.all([page.waitForEvent('framenavigated'),page.getByRole('button',{name:'Reload Studio',exact:true}).click()]);await until(async()=>await root().getAttribute('data-studio-startup')==='ready','clean retry recovered Studio');assert.equal((await state()).source,baseline.source);assert.equal((await state()).revision,baseline.revision);assert.deepEqual(errors,[]);
+  await page.getByRole('link',{name:'Code',exact:true}).click();
+  await until(async()=>await page.evaluate(()=>document.documentElement.getAttribute('data-gosx-navigation-state')==='idle'),'Code navigation settled');
+  await page.locator('.editor-page.editor-highlight-ready').waitFor();
+  // A checkpoint may have reached the server before navigation. Its restored
+  // buffer stays explicitly unsaved until the user saves or discards it.
+  if(await editor().evaluate(node=>node.closest('form').hasAttribute('data-code-unsaved'))){
+   await page.getByRole('button',{name:'Discard draft',exact:true}).click();discardedRecoveredDraft=true;
+  }else await editor().fill(clean);
+  await until(async()=>await editor().evaluate((node,clean)=>node.value===clean&&!node.closest('form').hasAttribute('data-code-unsaved'),clean),'Code editor acknowledges the clean retry');mode='normal';await Promise.all([page.waitForEvent('framenavigated'),page.getByRole('button',{name:'Reload Studio',exact:true}).click()]);await until(async()=>await root().getAttribute('data-studio-startup')==='ready','clean retry recovered Studio');assert.equal((await state()).source,baseline.source);assert.equal((await state()).revision,baseline.revision);assert.deepEqual(errors,[]);
   check('clean reload fetches the real engine again and restores Studio with exact source/revision and no helper errors');
-  if(proof)fs.writeFileSync(path.join(proof,'report.json'),JSON.stringify({checks,errors,sourceSHA256:crypto.createHash('sha256').update(baseline.source).digest('hex'),finalRevision:(await state()).revision,browser:browser.version(),physicalAudioVerified:false},null,2));
- }catch(error){release();if(proof){fs.mkdirSync(proof,{recursive:true});fs.writeFileSync(path.join(proof,'failure.json'),JSON.stringify({error:String(error),checks,errors},null,2));await page.screenshot({path:path.join(proof,'failure.png')})}throw error}finally{release();await browser.close()}
+  if(proof)fs.writeFileSync(path.join(proof,'report.json'),JSON.stringify({checks,errors,discardedRecoveredDraft,sourceSHA256:crypto.createHash('sha256').update(baseline.source).digest('hex'),finalRevision:(await state()).revision,browser:browser.version(),physicalAudioVerified:false},null,2));
+ }catch(error){release();if(proof){fs.mkdirSync(proof,{recursive:true});const code=await editor().evaluate(node=>({value:node.value,defaultValue:node.defaultValue,unsaved:node.closest('form').hasAttribute('data-code-unsaved')})).catch(()=>null);fs.writeFileSync(path.join(proof,'failure.json'),JSON.stringify({error:String(error),checks,errors,code,url:page.url()},null,2));fs.writeFileSync(path.join(proof,'failure.html'),await page.content());await page.screenshot({path:path.join(proof,'failure.png')})}throw error}finally{release();await browser.close()}
 });

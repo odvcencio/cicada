@@ -220,6 +220,9 @@ func ToSource(p *Project) ([]byte, error) {
 				out.WriteString(" " + strconv.FormatFloat(point.Curve, 'g', -1, 64))
 			}
 		}
+		for _, tick := range lane.Recalls {
+			out.WriteString("\n  recall " + notation.TickPosition(tick))
+		}
 		out.WriteString("\n}")
 		sections = append(sections, out.String())
 	}
@@ -558,6 +561,9 @@ func callOutputType(op string) instrument.Type {
 }
 
 func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, projectSeed uint32) (string, error) {
+	if pattern.Performance != nil {
+		return performanceSource(pattern, slot, assigned, projectSeed), nil
+	}
 	var out strings.Builder
 	out.WriteString("pattern " + pattern.ID)
 	if pattern.Kind == "drums" || pattern.Kind == "acid" && !acidTrackOnly {

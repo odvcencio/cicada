@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	gts "github.com/odvcencio/gotreesitter"
+
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -32,10 +36,11 @@ type VocalSegment struct {
 // the printed asset. It is stored in the score as a `// cicada-vocal-comp`
 // comment.
 type VocalComp struct {
-	Track    string         `json:"track"`
-	Tempo    int64          `json:"tempoMilli"`
-	Segments []VocalSegment `json:"segments"`
-	Asset    string         `json:"asset"`
+	Track        string                  `json:"track"`
+	Tempo        int64                   `json:"tempoMilli"`
+	TempoChanges []musictime.TempoChange `json:"tempoChanges,omitempty"`
+	Segments     []VocalSegment          `json:"segments"`
+	Asset        string                  `json:"asset"`
 }
 
 // VocalCompPrefix starts the metadata comment line of a vocal comp.
@@ -99,6 +104,9 @@ func ValidateVocalEdits(offsetMS float64, fadeMS, crossfadeMS *float64) error {
 // it before writing the metadata comment and Studio applies it when reading
 // the comment back, so a comp that Studio would reject is never written.
 func ValidateVocalComp(c VocalComp) error {
+	if err := musictime.ValidateTempoChanges(c.TempoChanges); err != nil {
+		return fmt.Errorf("invalid vocal comp tempo map: %w", err)
+	}
 	if !patternName.MatchString(c.Track) || len(c.Segments) > 4096 || c.Tempo < 20000 || c.Tempo > 300000 {
 		return fmt.Errorf("invalid vocal comp metadata")
 	}
@@ -147,46 +155,103 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(plan.TempoMilli) != next.Tempo {
+	if int64(plan.TempoMilli) != next.Tempo || !slices.Equal(plan.TempoChanges, next.TempoChanges) {
 		return nil, fmt.Errorf("vocal comp tempo differs from the project tempo")
 	}
 	source, file := ctx.Source, ctx.Options.Path
-	source, err = vocalArrangementSource(source, file, plan)
-	if err != nil {
-		return nil, err
+	var arrangement, original []byte
+	owner := file
+	if plan.HasArrange {
+		arrangement, owner, err = arrangementFile(ctx)
+		if err != nil {
+			return nil, err
+		}
+		original = arrangement
+	} else {
+		score, ds, err := ctx.ParseProject()
+		if err != nil {
+			return nil, err
+		}
+		if score == nil || hasErrors(ds) || len(score.Song) == 0 {
+			return nil, fmt.Errorf("full-song recording needs a valid song or arrangement")
+		}
+		if score.SongPosition.File != "" {
+			owner = score.SongPosition.File
+		}
+		if err := carrySongAutomation(ctx, score, plan, owner); err != nil {
+			return nil, err
+		}
+		source = ctx.Source
+		var supplied bool
+		original, supplied = ctx.FileSource(owner)
+		if !supplied {
+			return nil, fmt.Errorf("song is outside the editable project sources")
+		}
+		newline := "\n"
+		if owner != file {
+			newline = Newline(original)
+		}
+		arrangement, err = vocalArrangementSource(original, owner, plan, newline)
+		if err != nil {
+			return nil, err
+		}
+		if owner == file {
+			source = arrangement
+		}
 	}
 	// Remove just the managed block and its placement, preserving every other byte.
 	if in.Previous != nil {
 		previous := VocalComp{Track: track, Asset: in.Previous.Asset}
-		begin := []byte("// cicada-vocal-begin " + track + "\n")
-		finish := []byte("// cicada-vocal-end " + track + "\n")
-		a := bytes.Index(source, begin)
-		if a < 0 {
-			return nil, fmt.Errorf("vocal comp declarations were edited; restore them before selecting")
-		}
-		b := bytes.Index(source[a:], finish)
-		if b < 0 {
-			return nil, fmt.Errorf("vocal comp declarations are incomplete")
+		a, end, begin, finish, err := vocalPrintBlock(source, track)
+		if err != nil {
+			return nil, err
 		}
 		// Generic score edits can append an effect or another declaration before
 		// the trailing managed comment. Delete only our print declarations and
 		// metadata, retaining those user/application edits byte for byte.
-		block := source[a : a+b+len(finish)]
+		block := source[a:end]
 		kept, e := removeVocalPrintDeclarations(block, file, previous, begin, finish)
 		if e != nil {
 			return nil, e
 		}
-		source, err = ReplaceSpan(source, file, Span{a, a + b + len(finish), string(kept), file})
+		source, err = ReplaceSpan(source, file, Span{a, end, string(kept), file})
 		if err != nil {
 			return nil, err
 		}
 	}
+	if owner == file {
+		arrangement = source
+	}
+	newline := Newline(arrangement)
+	if owner == file {
+		newline = "\n"
+	} // Preserve the entry-only writer's output.
+	updated, err := vocalPlacementSource(arrangement, owner, next, in.Previous != nil, newline, arrangementEnd(plan))
+	if err != nil {
+		return nil, err
+	}
+	if owner == file {
+		source = updated
+	} else {
+		stageProjectSource(ctx, owner, original, updated)
+	}
+	asset := in.Asset
+	metadata, _ := json.Marshal(next)
+	text := fmt.Sprintf("\n// cicada-vocal-begin %s\n%s%s\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 1 source = recorded }\nclip %s-clip %s { start = 0frames end = %dframes }\n// cicada-vocal-end %s\n", track, VocalCompPrefix, metadata, next.Asset, strconv.Quote(asset.Path), strconv.Quote(asset.SHA256), asset.Frames, asset.RateHz, next.Asset, next.Asset, asset.Frames, track)
+	if owner != file {
+		text = strings.ReplaceAll(text, "\n", Newline(source))
+	}
+	return append(source, []byte(text)...), nil
+}
+
+func vocalPlacementSource(source []byte, file string, next VocalComp, previous bool, newline string, minimumEnd int64) ([]byte, error) {
 	root, w, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, err
 	}
 	var spans []Span
 	foundArrangement := false
+	track := next.Track
 	placeID := "vocal-" + track
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
@@ -194,31 +259,72 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 			continue
 		}
 		foundArrangement = true
+		var backingEnd int64
 		for j := 0; j < n.NamedChildCount(); j++ {
 			child := n.NamedChild(j)
 			if w.Type(child) == "place_decl" && w.Text(w.Field(child, "name")) == placeID {
-				if in.Previous == nil {
+				if !previous {
 					return nil, fmt.Errorf("placement name %s already exists", placeID)
 				}
 				spans = append(spans, Span{int(child.StartByte()), int(child.EndByte()), "", file})
+			} else if w.Type(child) == "place_decl" {
+				var at, length int64
+				for k := 0; k < child.NamedChildCount(); k++ {
+					param := child.NamedChild(k)
+					if w.Type(param) != "param_decl" {
+						continue
+					}
+					name, value := w.Text(w.Field(param, "name")), w.Text(w.Field(param, "value"))
+					if name == "at" {
+						at, err = notation.MusicalTicks(value, true)
+					} else if name == "length" {
+						length, err = notation.MusicalTicks(value, false)
+					}
+					if err != nil {
+						return nil, err
+					}
+				}
+				backingEnd = max(backingEnd, at+length)
 			}
 		}
 		first, last := next.Segments[0].Start, next.Segments[len(next.Segments)-1].End
-		line := fmt.Sprintf("\n  place %s %s %s-clip { at = %dticks length = %dticks }\n", placeID, track, next.Asset, first, last-first)
+		// Audio regions stop at their source end; a longer placement retains a
+		// quiet song ending without stretching or padding the recorded audio.
+		if backingEnd < minimumEnd {
+			last = max(last, minimumEnd)
+		}
+		line := fmt.Sprintf("%s  place %s %s %s-clip { at = %dticks length = %dticks }%s", newline, placeID, track, next.Asset, first, last-first, newline)
 		spans = append(spans, Span{int(n.EndByte()) - 1, int(n.EndByte()) - 1, line, file})
 	}
 	if !foundArrangement {
 		return nil, fmt.Errorf("open the score file containing the arrangement before selecting a vocal")
 	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i].Start > spans[j].Start })
-	source, err = PatchSpans(source, file, spans)
-	if err != nil {
-		return nil, err
+	return PatchSpans(source, file, spans)
+}
+
+// Locate whole managed marker lines in either current CRLF or legacy LF text.
+func vocalPrintBlock(source []byte, track string) (start, end int, begin, finish []byte, err error) {
+	start = -1
+	for at := 0; at < len(source); {
+		end = bytes.IndexByte(source[at:], '\n')
+		if end < 0 {
+			end = len(source)
+		} else {
+			end += at + 1
+		}
+		line := bytes.TrimSuffix(bytes.TrimSuffix(source[at:end], []byte("\n")), []byte("\r"))
+		if start < 0 && string(line) == "// cicada-vocal-begin "+track {
+			start, begin = at, bytes.Clone(source[at:end])
+		} else if start >= 0 && string(line) == "// cicada-vocal-end "+track {
+			return start, end, begin, bytes.Clone(source[at:end]), nil
+		}
+		at = end
 	}
-	asset := in.Asset
-	metadata, _ := json.Marshal(next)
-	text := fmt.Sprintf("\n// cicada-vocal-begin %s\n%s%s\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 1 source = recorded }\nclip %s-clip %s { start = 0frames end = %dframes }\n// cicada-vocal-end %s\n", track, VocalCompPrefix, metadata, next.Asset, strconv.Quote(asset.Path), strconv.Quote(asset.SHA256), asset.Frames, asset.RateHz, next.Asset, next.Asset, asset.Frames, track)
-	return append(source, []byte(text)...), nil
+	if start < 0 {
+		return 0, 0, nil, nil, fmt.Errorf("vocal comp declarations were edited; restore them before selecting")
+	}
+	return 0, 0, nil, nil, fmt.Errorf("vocal comp declarations are incomplete")
 }
 
 func removeVocalPrintDeclarations(block []byte, file string, previous VocalComp, begin, finish []byte) ([]byte, error) {
@@ -256,7 +362,7 @@ func removeVocalPrintDeclarations(block []byte, file string, previous VocalComp,
 // continuous vocal can span blocks. Explicit scene bindings restart a part;
 // Keep carries its phase to the next block. A score that already has an
 // arrange block is unchanged.
-func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, error) {
+func vocalArrangementSource(source []byte, file string, plan *Plan, newline string) ([]byte, error) {
 	if plan.HasArrange {
 		return source, nil
 	}
@@ -265,10 +371,12 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 		return nil, err
 	}
 	var start, end int
+	var song *gts.Node
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
 		if w.Type(n) == "song_decl" {
 			start, end = int(n.StartByte()), int(n.EndByte())
+			song = n
 			break
 		}
 	}
@@ -281,6 +389,17 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 	}
 	var text strings.Builder
 	text.WriteString("arrange {\n")
+	var comments func(*gts.Node)
+	comments = func(node *gts.Node) {
+		if w.Type(node) == "comment" {
+			text.WriteString("  " + strings.TrimRight(w.Text(node), "\r\n") + "\n")
+			return
+		}
+		for i := 0; i < node.NamedChildCount(); i++ {
+			comments(node.NamedChild(i))
+		}
+	}
+	comments(song)
 	at := int64(0)
 	counter := 0
 	type activePart struct {
@@ -298,6 +417,11 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 	for i, entry := range plan.Song {
 		fmt.Fprintf(&text, "  marker block-%d { at = %dticks }\n", i+1, at)
 		scene := scenes[entry.Scene]
+		for _, setting := range scene.Settings {
+			if setting.Path == "tempo" && setting.Number != nil {
+				fmt.Fprintf(&text, "  tempo %s %s\n", FormatPosition(at), strconv.FormatFloat(math.Round(*setting.Number*1000)/1000, 'f', -1, 64))
+			}
+		}
 		for _, track := range plan.Tracks {
 			binding := scene.Bindings[track.ID]
 			if binding == "" || binding == "keep" {
@@ -319,5 +443,5 @@ func vocalArrangementSource(source []byte, file string, plan *Plan) ([]byte, err
 		}
 	}
 	text.WriteString("}\n")
-	return ReplaceSpan(source, file, Span{start, end, text.String(), file})
+	return ReplaceSpan(source, file, Span{start, end, strings.ReplaceAll(text.String(), "\n", newline), file})
 }

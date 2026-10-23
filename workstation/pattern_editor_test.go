@@ -6,6 +6,54 @@ import (
 	"testing"
 )
 
+func TestCreatePatternActionSelectsTheNewGridAndPreservesTrackContext(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "action": {"create"}, "newName": {"glow"}, "track": {"keys"}, "scene": {"main"}, "length": {"16"}, "createFor": {"keys"}, "__gosx_return_to": {"/?panel=instruments"}}
+	response := post(t, client, address+"/__actions/pattern", form, false, address)
+	target, _ := url.Parse(response.Header.Get("Location"))
+	if response.StatusCode != 303 || target.Query().Get("pattern") != "glow" || target.Query().Get("track") != "keys" || target.Query().Get("scene") != "main" {
+		t.Fatalf("creation lost the new grid or target: %d %s", response.StatusCode, response.Header.Get("Location"))
+	}
+	if len(*edits) != 1 || (*edits)[0]["newName"] != "glow" || (*edits)[0]["length"] != float64(16) || (*edits)[0]["track"] != "keys" || (*edits)[0]["scene"] != "main" {
+		t.Fatalf("creation command: %+v", *edits)
+	}
+	for _, invalid := range []string{"0", "65", "1.5", ""} {
+		form.Set("length", invalid)
+		response := post(t, client, address+"/__actions/pattern", form, true, address)
+		if response.StatusCode != 422 || len(*edits) != 1 {
+			t.Fatalf("invalid length %q reached the service: %d", invalid, response.StatusCode)
+		}
+	}
+	form.Set("length", "16")
+	form.Set("revision", "stale")
+	if response := post(t, client, address+"/__actions/pattern", form, true, address); response.StatusCode != 409 {
+		t.Fatal("creation ignored the source revision")
+	}
+}
+
+func TestSceneBindingActionSupportsStopAndCarry(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "action": {"bind"}, "pattern": {"glow"}, "track": {"keys"}, "scene": {"breakdown"}}
+	for i, mode := range []string{"play", "off", "keep"} {
+		form.Set("binding", mode)
+		response := post(t, client, address+"/__actions/pattern", form, false, address)
+		want := mode
+		if mode == "play" {
+			want = "glow"
+		}
+		target, _ := url.Parse(response.Header.Get("Location"))
+		if response.StatusCode != 303 || (*edits)[i]["pattern"] != want || (*edits)[i]["action"] != "bind" || target.Query().Get("track") != "keys" || target.Query().Get("scene") != "breakdown" {
+			t.Fatalf("binding %s: %d target=%q %+v", mode, response.StatusCode, response.Header.Get("Location"), *edits)
+		}
+	}
+	form.Set("binding", "invalid")
+	if r := post(t, client, address+"/__actions/pattern", form, true, address); r.StatusCode != 422 || len(*edits) != 3 {
+		t.Fatal("an invalid scene behavior reached the service")
+	}
+}
+
 func TestPatternActionsUseOneBasedControlsAndKeepTheInspectedStep(t *testing.T) {
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
@@ -62,6 +110,25 @@ func TestPatternRangeTimingAndVariationActionContracts(t *testing.T) {
 	}
 	if result.Redirect != patternURL("variation", 1, "", "") {
 		t.Fatalf("new variation was not opened: %s", result.Redirect)
+	}
+}
+
+func TestPerformanceActionsKeepTickPrecisionAndSelection(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
+	target := patternURL("p", 1, "", "") + "&note=2"
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "pattern": {"p"}, "action": {"performed-note"}, "index": {"2"}, "pitch": {"64"}, "tick": {"961"}, "end_tick": {"1099511627775"}, "velocity": {"105"}, "__gosx_return_to": {target}}
+	r := post(t, client, address+"/__actions/pattern", form, false, address)
+	if r.StatusCode != 303 || r.Header.Get("Location") != target || len(*edits) != 1 {
+		t.Fatalf("performance selection lost: %d %s", r.StatusCode, r.Header.Get("Location"))
+	}
+	n := (*edits)[0]["performanceNote"].(map[string]any)
+	if n["tick"] != float64(961) || n["end_tick"] != float64(1099511627775) || n["velocity"] != float64(105) {
+		t.Fatal("performance action changed exact tick positions", n)
+	}
+	form.Set("tick", "1.5")
+	if r := post(t, client, address+"/__actions/pattern", form, true, address); r.StatusCode != 422 || len(*edits) != 1 {
+		t.Fatal("fractional ticks reached the service")
 	}
 }
 

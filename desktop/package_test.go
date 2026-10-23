@@ -152,6 +152,13 @@ func TestPackageDarwinIgnoresLocalWorkspace(t *testing.T) {
 	assertPackageCleanedUp(t, root)
 }
 
+func TestPackageDarwinExplainsMicrophoneUse(t *testing.T) {
+	root,output:=packageFixture(t)
+	if log,err:=runPackage(t,root,output,"1.2.3");err!=nil {t.Fatalf("package: %v\n%s",err,log)}
+	data,err:=os.ReadFile(filepath.Join(output,"Cicada Studio.app","Contents","Info.plist"))
+	if err!=nil || !strings.Contains(string(data),"NSMicrophoneUsageDescription") || !strings.Contains(string(data),"record voices, instruments, and samples") {t.Fatalf("microphone purpose is missing from the bundle: %v",err)}
+}
+
 func TestPackageDarwinFailurePreservesPreviousApp(t *testing.T) {
 	for _, stage := range []string{"backend", "host", "runtime", "signing", "verification", "prerequisite"} {
 		t.Run(stage, func(t *testing.T) {

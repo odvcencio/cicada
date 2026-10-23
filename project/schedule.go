@@ -31,6 +31,10 @@ func CompileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 		clips[c.Name] = uint16(i)
 	}
 	events := make([]engine.ScheduleEvent, 0, 2*len(p.Arrange.Placements))
+	for _, t := range p.Arrange.Tempos {
+		at := int64(t.Bar) * 3840
+		events = append(events, engine.ScheduleEvent{Tick: at, EndTick: at, Kind: engine.ScheduleTempo, ID: uint32(t.BPMMilli)})
+	}
 	for i, v := range p.Arrange.Placements {
 		ti := tracks[v.Track]
 		start := engine.ScheduleEvent{Tick: v.AtTick, EndTick: v.AtTick + v.LengthTicks, Track: uint8(ti), ID: uint32(i + 1)}
@@ -55,6 +59,9 @@ func CompileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 		a, b := events[i], events[j]
 		if a.Tick != b.Tick {
 			return a.Tick < b.Tick
+		}
+		if (a.Kind == engine.ScheduleTempo) != (b.Kind == engine.ScheduleTempo) {
+			return a.Kind == engine.ScheduleTempo
 		}
 		aEnd := a.Kind == engine.SchedulePatternEnd || a.Kind == engine.ScheduleClipEnd
 		bEnd := b.Kind == engine.SchedulePatternEnd || b.Kind == engine.ScheduleClipEnd

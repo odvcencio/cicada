@@ -72,7 +72,7 @@ func TestStudioProjectsAndTogglesSource(t *testing.T) {
 		t.Fatalf("studio page: %d %s", page.Code, page.Body.String())
 	}
 	revision := studioRevision([]byte(studioScore))
-	updated := studioCall(t, handler, "/api/toggle", studioEdit{Revision: revision, Pattern: "pulse", Step: 0})
+	updated := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: revision, Pattern: "pulse", Step: 0})
 	if updated.Code != 200 {
 		t.Fatalf("note toggle: %d %s", updated.Code, updated.Body.String())
 	}
@@ -86,12 +86,12 @@ func TestStudioProjectsAndTogglesSource(t *testing.T) {
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != originalInfo.Mode().Perm() {
 		t.Fatalf("score mode: %v, %v", info, err)
 	}
-	stale := studioCall(t, handler, "/api/toggle", studioEdit{Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
+	stale := studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
 	if stale.Code != http.StatusConflict {
 		t.Fatalf("stale edit accepted: %d", stale.Code)
 	}
 	revision = studioRevision(content)
-	updated = studioCall(t, handler, "/api/toggle", studioEdit{Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
+	updated = studioCall(t, handler, "/api/toggle", studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
 	if updated.Code != 200 {
 		t.Fatalf("drum toggle: %d %s", updated.Code, updated.Body.String())
 	}

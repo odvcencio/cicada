@@ -95,3 +95,15 @@ test('fifth chord pitch rejection reaches the visible error status and retains s
   assert.equal(state.save.disabled,false);
   assert.equal(state.busy,false);
 });
+
+test('qualification grid sends the displayed project receipt without adopting an unseen save',async()=>{
+  for(const path of ['/api/toggle','/api/pattern','/api/source']){
+    const requests=[];
+    const state={busy:false,save:{},document:{body:{dataset:{revision:'entry',sourceRevision:'displayed-project'}}},revision:()=> 'entry',setStatus:()=>{},fetch:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return {ok:false,json:async()=>({error:'changed'})};}};
+    vm.runInNewContext(sendSource,state);
+    assert.equal(await state.send(path,{pattern:'line',step:0}),false);
+    assert.equal(requests.length,1);
+    assert.equal(requests[0].body.source_revision,path==='/api/source'?undefined:'displayed-project');
+    assert.equal(state.document.body.dataset.sourceRevision,'displayed-project');
+  }
+});

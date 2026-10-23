@@ -63,7 +63,7 @@ func TestStudioLateExternalWriteSurvivesSavesAndRestart(t *testing.T) {
 	for _, route := range []string{"/api/state", "/api/source", "/api/toggle"} {
 		var body any
 		if route != "/api/state" {
-			body = studioEdit{Revision: studioRevision([]byte(second)), Source: first, Pattern: "pulse", Step: 0}
+			body = studioEdit{SourceRevision: studioProjectReceipt(t, path), Revision: studioRevision([]byte(second)), Source: first, Pattern: "pulse", Step: 0}
 		}
 		response = studioCall(t, handler, route, body)
 		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), result.Preserved) || !strings.Contains(response.Body.String(), "compare and merge") {

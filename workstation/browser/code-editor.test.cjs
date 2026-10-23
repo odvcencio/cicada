@@ -88,7 +88,7 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
   const watch = page => {
     page.setDefaultTimeout(15000);
     page.on('pageerror',error=>errors.push(error.message));
-    page.on('request',request=>{if(request.method()==='POST' && new URL(request.url()).pathname.startsWith('/__actions/')) posts.push(request);});
+    page.on('request',request=>{if(request.method()==='POST' && new URL(request.url()).pathname.startsWith('/__actions/') && !/^\/__actions\/(source|note)-checkpoint$/.test(new URL(request.url()).pathname)) posts.push(request);});
   };
   const select = async (editor,start,end=start,direction='forward') => editor.evaluate((node,{start,end,direction})=>{
     node.focus({preventScroll:true}); node.setSelectionRange(start,end,direction);
@@ -492,7 +492,7 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
     assert.deepEqual(await state(page),original,'stale source overwrote the score');
     assert.equal(await editor.inputValue(),saved,'409 discarded the corrected draft');
     await visibleText(page);
-    response=await submit(async()=>{await editor.focus();await page.keyboard.press('Control+s');});
+    response=await submit(async()=>{await editor.focus();const mod=await page.evaluate(()=>window.__gosx.commands.platformMod());await page.keyboard.press((mod==='meta'?'Meta':'Control')+'+s');});
     assert.ok([200,303].includes(response.status()),'keyboard Save failed');
     await until(async()=>lf((await state(page)).source)===saved,'keyboard Save did not persist the current buffer');
     await ready(page); await visibleText(page);
@@ -530,6 +530,7 @@ test('Studio Code remounts after managed project file navigation and retains che
     await page.waitForFunction(()=>!document.querySelector('form[data-gosx-form-state=pending]'));
   };
   const editor=page.locator('#editor-content');
+  const documentEnd=process.platform==='darwin'?'Meta+ArrowDown':'Control+End';
   const visible=async()=>until(async()=>{
     const value=await editor.inputValue(),rendered=await page.locator('#editor-highlight-content').textContent();
     return rendered===value || rendered===value+'\n';
@@ -561,7 +562,7 @@ test('Studio Code remounts after managed project file navigation and retains che
     const partID=await page.locator('[data-editor-surface=code]').evaluate(node=>node.closest('.editor-page').id);
     assert.notEqual(partID,mainID,'each project file must mount its own editor identity');
     assert.equal(await editor.inputValue(),projectPart,'main draft leaked into the pattern file');
-    await editor.focus(); await editor.press('Control+End');
+    await editor.focus(); await editor.press(documentEnd);
     await editor.press('Tab'); await page.keyboard.insertText('// file switch input café 🎵');
     const partDraft=projectPart+'  // file switch input café 🎵';
     assert.equal(await editor.inputValue(),partDraft,'newly mounted editor did not accept configured Tab and Unicode');
@@ -575,7 +576,7 @@ test('Studio Code remounts after managed project file navigation and retains che
     assert.deepEqual(await files(),original,'checking either file changed disk');
     await navigate('main.cicada');
     assert.equal(await editor.inputValue(),mainDraft,'returning to entry lost its checked draft');
-    await editor.focus(); await editor.press('Control+End'); await editor.press('Tab');
+    await editor.focus(); await editor.press(documentEnd); await editor.press('Tab');
     assert.equal(await editor.inputValue(),mainDraft+'  ','returning editor lost keyboard handlers');
     await visible();
     await editor.press('Control+z');
@@ -592,7 +593,7 @@ test('Studio Code remounts after managed project file navigation and retains che
     await ready(); await visible();
     assert.equal(await editor.inputValue(),mainDraft,'browser Back lost the entry draft');
     assert.equal(await page.evaluate(()=>window.__editorProjectDocument===document),true,'browser Back replaced the editor document');
-    await editor.focus(); await editor.press('Control+End'); await editor.press('Tab');
+    await editor.focus(); await editor.press(documentEnd); await editor.press('Tab');
     assert.equal(await editor.inputValue(),mainDraft+'  ','browser Back lost editor keyboard handlers');
     await editor.press('Control+z');
     assert.equal(await editor.inputValue(),mainDraft);

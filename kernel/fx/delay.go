@@ -58,7 +58,7 @@ func ParseDelayDivision(name string) (DelayDivision, error) {
 			return DelayDivision(division), nil
 		}
 	}
-	return 0, Error("unknown delay division")
+	return 0, validationError("unknown delay division")
 }
 
 func (division DelayDivision) String() string {
@@ -85,14 +85,14 @@ func DefaultDelayParams() DelayParams {
 func (p DelayParams) Validate() error {
 	if p.Division >= lastDelayDivision || !finite(p.TimeMs) || !finite(p.Feedback) || !finite(p.DampHz) || !finite(p.Width) || !finite(p.Mix) ||
 		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 || p.Width < 0 || p.Width > 1 || p.Mix < 0 || p.Mix > 1 {
-		return Error("delay parameter is invalid or out of range")
+		return validationError("delay parameter is invalid or out of range")
 	}
 	if p.Division == FreeDelay {
 		if p.TimeMs < 1 || p.TimeMs > 2_000 {
-			return Error("free delay time must be 1 to 2000 ms")
+			return validationError("free delay time must be 1 to 2000 ms")
 		}
 	} else if p.TimeMs != 0 {
-		return Error("synced delay time cannot also specify milliseconds")
+		return validationError("synced delay time cannot also specify milliseconds")
 	}
 	return nil
 }
@@ -104,14 +104,14 @@ func (p DelayParams) ValidateTempo(bpmMilli int64) error {
 		return err
 	}
 	if bpmMilli < 20_000 || bpmMilli > 300_000 {
-		return Error("delay tempo must be 20 to 300 BPM")
+		return validationError("delay tempo must be 20 to 300 BPM")
 	}
 	seconds := p.TimeMs / 1000
 	if p.Division != FreeDelay {
 		seconds = p.Division.Beats() * 60_000 / float64(bpmMilli)
 	}
 	if seconds < .001 || seconds > 4 {
-		return Error("delay time exceeds the 4-second buffer or 1 ms minimum")
+		return validationError("delay time exceeds the 4-second buffer or 1 ms minimum")
 	}
 	return nil
 }
@@ -136,7 +136,7 @@ type Delay struct {
 
 func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 || bpmMilli < 20_000 || bpmMilli > 300_000 {
-		return nil, Error("unsupported delay sample rate or tempo")
+		return nil, validationError("unsupported delay sample rate or tempo")
 	}
 	d := &Delay{
 		sampleRate: float64(sampleRate), bpmMilli: float64(bpmMilli),
@@ -164,7 +164,7 @@ func (d *Delay) Silent() bool { return !d.excited && !d.fault }
 // Free times stay in milliseconds when the song tempo changes.
 func (d *Delay) SetTempo(bpmMilli int64) error {
 	if bpmMilli < 20_000 || bpmMilli > 300_000 {
-		return Error("delay tempo must be 20 to 300 BPM")
+		return validationError("delay tempo must be 20 to 300 BPM")
 	}
 	if d.params.Division == FreeDelay {
 		d.bpmMilli = float64(bpmMilli)
@@ -210,7 +210,7 @@ func (d *Delay) timeFrames(p DelayParams, bpmMilli float64) (float64, error) {
 		frames = p.Division.Beats() * 60_000 * d.sampleRate / bpmMilli
 	}
 	if frames < d.sampleRate/1000 || frames > 4*d.sampleRate {
-		return 0, Error("delay time exceeds the 4-second buffer or 1 ms minimum")
+		return 0, validationError("delay time exceeds the 4-second buffer or 1 ms minimum")
 	}
 	return frames, nil
 }

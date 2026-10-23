@@ -189,7 +189,7 @@ func TestStudioIntentsNoopMatchesMixerResponse(t *testing.T) {
 	}
 }
 
-func TestStudioIntentsRefuseForeignOffsets(t *testing.T) {
+func TestStudioIntentsRequireProjectReceiptForSecondaryRecordings(t *testing.T) {
 	entry := strings.Replace(studioScore, "pattern pulse acid steps=4 { 1 . 5 . }\n", "// preserve entry bytes\n", 1)
 	path := studioTestPath(t, entry)
 	root := filepath.Dir(path)
@@ -205,7 +205,7 @@ func TestStudioIntentsRefuseForeignOffsets(t *testing.T) {
 	t.Cleanup(func() { _ = s.shutdown() })
 	before := noopFiles(t, root)
 	r := studioCall(t, s.domainRoutes(), "/api/intents", edits.Envelope{Version: 1, Revision: studioRevision([]byte(entry)), Intents: []edits.Intent{&edits.RecordTake{Recordings: []edits.Recording{{Track: "bass", Pattern: "pulse", Notes: []edits.TakeNote{{Note: 60, Velocity: 90, EndTick: 60, Expressions: []edits.TakeExpression{{PitchCents: 50, Timbre: .5}}}}}}}}})
-	if r.Code != 422 || !strings.Contains(r.Body.String(), "owning file") || !reflect.DeepEqual(before, noopFiles(t, root)) {
+	if r.Code != 409 || !strings.Contains(r.Body.String(), "refresh Studio") || !reflect.DeepEqual(before, noopFiles(t, root)) {
 		t.Fatalf("foreign offsets: %d %s", r.Code, r.Body.String())
 	}
 }

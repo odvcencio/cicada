@@ -25,6 +25,13 @@ WebView2 profile is Windows-only; WKWebView keeps its website data in the
 default store keyed by the bundle identifier. New projects go to
 `Documents\Cicada` or `~/Documents/Cicada`.
 
+Live saves private note checkpoints and finished performances in the desktop
+profile, scoped to the score's path. After a restart, use **Review saved
+performance** to open a copy without changing the score. **Previous note
+performances** also retains applied and dismissed takes. Recovery uses the last
+successful checkpoint; an interrupted held note has an estimated end. Keeping
+the profile and score path preserves this history.
+
 macOS uses CoreAudio for native playback and microphone recording, with input,
 output, and buffer selection in Studio's Audio settings. The first recording
 asks for microphone access; playback and device discovery do not. If access is
@@ -105,7 +112,7 @@ macOS. Both the UI host and its bundled audio helper read that same metadata.
 
 The bundle is self-contained and builds from a clean checkout. The desktop
 host pins the published GoSX Darwin backend at
-[`efb6f4a234d8`](https://github.com/jvcencio/gosx/commit/efb6f4a234d89ec2f48e3ac360dd641f5de932ee)
+[`088e1fe1f18d`](https://github.com/jvcencio/gosx/commit/088e1fe1f18d02b2ca8bccf59f4baf3cfec6fab5)
 through a versioned replacement in `desktop/go.mod`. Go downloads and verifies
 it using `desktop/go.sum`; no local GoSX checkout or `go.work` is needed. This
 replacement can be removed once an upstream GoSX release includes the backend.
@@ -113,10 +120,36 @@ replacement can be removed once an upstream GoSX release includes the backend.
 Packaging sets `GOWORK=off` for every executable and the runtime, so a local
 workspace cannot override release dependencies. It also checks desktop backend
 availability before building the bundle. The workstation runtime retains its
-own pinned GoSX version.
+own matching GoSX pin, including the SVG namespace fix for dynamic note charts.
 An existing output app is replaced only after the new bundle passes signature
 verification. Packaging reuses the stripped workstation executable from the
 production runtime build, avoiding a second compilation.
+
+Audit the built GoSX runtime with its canonical measurement environment:
+
+```sh
+mkdir -p build
+bash scripts/check-gosx-size.sh --json \
+  'dist/macos/Cicada Studio.app/Contents/MacOS/workstation/build.json' \
+  > build/macos-gosx-size.json
+```
+
+The audit builds the published GoSX CLI from `tools/gosx-size` with Go 1.26.0
+and Brotli 1.2.1, the exact identities required by its canonical compressor.
+The Go toolchain may download on the first run. The isolated module keeps
+Cicada's compiler and compression dependencies unchanged. Paths remain relative
+to the caller's directory, and the audit works without a local GoSX checkout.
+Its module must match the workstation's GoSX pin; `go test ./internal/buildaudit`
+checks that match. When updating the SDK, update both module pins and resolve
+the audit module with
+`GOWORK=off GOTOOLCHAIN=go1.26.0 go -C tools/gosx-size mod tidy`.
+The build uses a read-only module graph, and the temporary tool is removed on
+success or failure. CI checks the production runtime and final macOS bundle,
+retaining both JSON reports, and rejects deliberately corrupted copies of the
+raw, gzip, and Brotli representations. Run those integration checks locally
+with `CICADA_SIZE_AUDIT_MANIFEST=/absolute/path/to/build.json go test -race ./internal/buildaudit`.
+These reports cover GoSX runtime assets; Cicada's
+custom UI engine keeps its separate build-time byte limit.
 
 CI packages and launches the app on Apple Silicon and Intel macOS runners.
 Run the same native launch and shutdown checks locally with Python 3:
@@ -125,6 +158,11 @@ Run the same native launch and shutdown checks locally with Python 3:
 python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke
 python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke/arrange --mode normal --timeout 120 --workflow desktop/testdata/native-arrange-workflow.js
 ```
+
+The smoke checks use disposable scores and the null audio backend. Reports
+and app logs are kept in the output directory. The MIDI shutdown check opens
+its input inside the authenticated native window and keeps it open until
+SIGTERM, using the same cookie and CSRF checks as normal MIDI input.
 
 The smoke checks copy the app into a temporary directory, assign a unique
 bundle identifier, and ad-hoc sign the copy. This isolates WKWebView's store
@@ -154,6 +192,7 @@ Gatekeeper may ask the first time: right-click the bundle → **Open**.
 | `--devtools` | Enable the WebView2 developer tools (F12) |
 | `--mute` | Mute the page (tests) |
 | `--smoke-out <file>` | Write a startup report and exit once Studio loads (tests) |
+| `--smoke-midi` | With `--smoke-out`, keep native MIDI input open for shutdown testing |
 
 Linux: run `cicada studio` and open the printed address in a browser. The
 GoSX desktop runtime supports Windows and macOS natively; Linux stays on the

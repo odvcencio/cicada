@@ -8,24 +8,27 @@ const (
 	NoteOn EventKind = iota
 	NoteOff
 	NoteExpression
+	GroupExpression
 )
 
 type Event struct {
-	Kind         EventKind
-	NoteID       int64
-	Tick         int64
-	Sample       int64
-	Offset       int32
-	Track        uint8
-	Slot         uint8
-	StepIndex    uint8
-	RatchetIndex uint8
-	Note         uint8
-	Notes        [4]uint8
-	NoteCount    uint8 // zero means the unchanged mono Note field
-	Velocity     uint8
-	Accent       bool
-	Slide        bool
+	Kind            EventKind
+	NoteID          int64
+	Tick            int64
+	Sample          int64
+	Offset          int32
+	Track           uint8
+	Slot            uint8
+	StepIndex       uint8
+	RatchetIndex    uint8
+	Note            uint8
+	Notes           [4]uint8
+	NoteCount       uint8 // zero means the unchanged mono Note field
+	Velocity        uint8
+	Accent          bool
+	Slide           bool
+	ExpressionIndex uint16 // point within a performed note; ordinary steps use StepIndex
+	Group           uint16 // 1-based shared lane within the performed pattern
 }
 
 // SwingDelayTicks returns the delay of an odd grid step. For example,
@@ -38,7 +41,7 @@ func SwingDelayTicks(permille uint16) int64 {
 // packed pattern field: 5000=50%, 5400=54%, 7500=75%.
 func SwingFromPercent100(percent100 uint16) (uint16, error) {
 	if percent100 < 5000 || percent100 > 7500 {
-		return 0, Error("swing percent must be 50 to 75")
+		return 0, validationError("swing percent must be 50 to 75")
 	}
 	return (percent100 - 5000 + 2) / 5, nil
 }
@@ -84,6 +87,9 @@ func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, 
 func EventsAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOffset, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
+	}
+	if p.Performance != nil {
+		return PerformanceEventsInBlock(p.Performance, clock, track, slot, startTickOffset, startSample, frames, p.Transpose, dst, false)
 	}
 	grid := p.GridTicks()
 	startStep := startTickOffset / grid
@@ -169,6 +175,9 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOffset, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
+	}
+	if p.Performance != nil {
+		return PerformanceEventsInBlock(p.Performance, clock, track, slot, startTickOffset, startSample, frames, p.Transpose, dst, true)
 	}
 	written, overflow = EventsAtTickInBlock(p, clock, track, slot, startTickOffset, startSample, frames, dst)
 	grid := p.GridTicks()
@@ -333,6 +342,9 @@ func eventPriority(kind EventKind) int {
 	}
 	if kind == NoteOn {
 		return 1
+	}
+	if kind == GroupExpression {
+		return 3
 	}
 	return 2
 }

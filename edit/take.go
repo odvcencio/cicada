@@ -33,11 +33,51 @@ func (SelectTake) Kind() string { return "selecttake" }
 func init() {
 	Register("selecttake", func() Intent { return &SelectTake{} })
 	Handle("selecttake", func(ctx *Context, intent Intent) error {
-		updated, err := selectTakeSource(ctx.Source, ctx.Options.Path, *intent.(*SelectTake))
+		var score *notation.Score
+		var diagnostics []notation.Diagnostic
+		var err error
+		if ctx.Options.ParseProject != nil || len(ctx.Options.Sources) > 0 {
+			score, diagnostics, err = ctx.ParseProject()
+		} else {
+			score, diagnostics = notation.ParseEdition(ctx.Source, 2)
+		}
+		if err != nil {
+			return err
+		}
+		if err := takeScoreError(score, diagnostics); err != nil {
+			return err
+		}
+		t := *intent.(*SelectTake)
+		score, before, path, err := sceneSource(ctx, t.Scene)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, track := range score.Tracks {
+			found = found || track.Name == t.Track && track.Kind == "audio"
+		}
+		if !found {
+			return errors.New("take target must be an existing audio track")
+		}
+		// A take's assets stay beside the entry declarations; only the scene
+		// assignment belongs in its owning source.
+		updated, err := takeDeclarationsSource(ctx.Source, t, score)
 		if err != nil {
 			return err
 		}
 		ctx.Source, ctx.plan = updated, nil
+		binding, err := sceneBindingSource(before, path, t.Scene, t.Track, t.ID+"-clip")
+		if err != nil {
+			return err
+		}
+		if path == ctx.Options.Path {
+			// Declarations were appended after taking the scene snapshot.
+			binding, err = sceneBindingSource(updated, path, t.Scene, t.Track, t.ID+"-clip")
+			if err != nil {
+				return err
+			}
+		}
+		ctx.Source = stageProjectSource(ctx, path, before, binding)
 		ctx.SetLabel("Select audio take")
 		return nil
 	})
@@ -45,20 +85,40 @@ func init() {
 
 // SelectTakeSource is the pure text half used by the take journal wrapper.
 func SelectTakeSource(source []byte, t SelectTake) ([]byte, error) {
-	return selectTakeSource(source, "", t)
+	score, ds := notation.ParseEdition(source, 2)
+	if err := takeScoreError(score, ds); err != nil {
+		return nil, err
+	}
+	return selectTakeSource(source, "", t, score)
 }
 
-func selectTakeSource(source []byte, targetFile string, t SelectTake) ([]byte, error) {
-	score, ds := notation.ParseEdition(source, 2)
+// SelectTakeSourceInProject edits source using its validated project snapshot.
+// The caller must load score with these exact source bytes and validate the
+// resulting project before publishing the edited file.
+func SelectTakeSourceInProject(source []byte, t SelectTake, score *notation.Score) ([]byte, error) {
+	if err := takeScoreError(score, nil); err != nil {
+		return nil, err
+	}
+	return selectTakeSource(source, "", t, score)
+}
+
+func takeScoreError(score *notation.Score, ds []notation.Diagnostic) error {
 	if score == nil {
-		return nil, errors.New("score cannot be parsed")
+		return errors.New("score cannot be parsed")
 	}
 	for _, d := range ds {
 		if d.Severity == "error" {
-			return nil, errors.New(d.Message)
+			return errors.New(d.Message)
 		}
 	}
-	score, ds = notation.ResolvePresets(score)
+	if score.Version != 2 {
+		return errors.New("audio takes require an edition-2 score")
+	}
+	return nil
+}
+
+func selectTakeSource(source []byte, targetFile string, t SelectTake, score *notation.Score) ([]byte, error) {
+	score, ds := notation.ResolvePresets(score)
 	for _, d := range ds {
 		if d.Severity == "error" {
 			return nil, errors.New(d.Message)
@@ -110,6 +170,10 @@ func selectTakeSource(source []byte, targetFile string, t SelectTake) ([]byte, e
 	if updated == nil {
 		return nil, errors.New("take scene no longer exists")
 	}
+	return takeDeclarationsSource(updated, t, score)
+}
+
+func takeDeclarationsSource(source []byte, t SelectTake, score *notation.Score) ([]byte, error) {
 	hasAsset, hasClip := false, false
 	for _, a := range score.Assets {
 		if a.Name == t.ID {
@@ -139,5 +203,5 @@ func selectTakeSource(source []byte, targetFile string, t SelectTake) ([]byte, e
 		}
 		fmt.Fprintf(&text, "\nclip %s-clip %s {\n  start = %dframes\n  end = %dframes\n}\n", t.ID, t.ID, start, t.Asset.Frames)
 	}
-	return append(updated, text.Bytes()...), nil
+	return append(bytes.Clone(source), text.Bytes()...), nil
 }

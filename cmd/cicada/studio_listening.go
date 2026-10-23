@@ -22,6 +22,7 @@ type studioTransportInput struct {
 type studioListening struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
+	Track     string `json:"track,omitempty"`
 	Mode      string `json:"mode,omitempty"`
 	Entry     int    `json:"entry,omitempty"`
 	StartTick int64  `json:"startTick"`
@@ -77,6 +78,69 @@ func studioArrangementEnd(p *project.Project) int64 {
 func prepareStudioListening(p *project.Project, v studioListening) (*project.Project, *studioListening, error) {
 	end := studioArrangementEnd(p)
 	switch v.Kind {
+	case "pattern":
+		var pattern *project.Pattern
+		for i := range p.Patterns {
+			if p.Patterns[i].ID == v.Name {
+				pattern = &p.Patterns[i]
+				break
+			}
+		}
+		if pattern == nil {
+			return nil, nil, fmt.Errorf("choose a pattern to audition")
+		}
+		track := v.Track
+		for _, t := range p.Tracks {
+			if track != "" {
+				break
+			}
+			for _, slot := range t.Slots {
+				if slot != nil && *slot == v.Name {
+					track = t.ID
+					break
+				}
+			}
+			if track != "" {
+				break
+			}
+		}
+		if track == "" {
+			return nil, nil, fmt.Errorf("choose a track to hear this pattern")
+		}
+		found := false
+		for _, candidate := range p.Tracks {
+			if candidate.ID != track {
+				continue
+			}
+			found = true
+			if !project.PatternTrackCompatible(p, *pattern, candidate) {
+				return nil, nil, fmt.Errorf("choose a compatible instrument or drum track")
+			}
+		}
+		if !found {
+			return nil, nil, fmt.Errorf("the preview track is no longer in the song")
+		}
+		length := pattern.DurationTicks()
+		names := project.EditPlan(p, nil).Names
+		name := "studio-performance-audition"
+		for names[name] {
+			name += "_"
+		}
+		copy := *p
+		copy.Format, copy.Version, copy.Edition = project.FormatID2, 2, 2
+		copy.Song, copy.Automation = []project.SongEntry{}, nil
+		copy.Scenes = []project.Scene{}
+		copy.Tracks = append([]project.Track(nil), p.Tracks...)
+		for i := range copy.Tracks {
+			copy.Tracks[i].Chain = nil
+			if copy.Tracks[i].ID == track {
+				copy.Tracks[i].Slots = [16]*string{&v.Name}
+			}
+		}
+		copy.Arrange = &project.Arrangement{Markers: []project.Marker{}, Placements: []project.Placement{{ID: name, Track: track, Content: v.Name, LengthTicks: length}}}
+		p = &copy
+		v.Track, v.StartTick, v.EndTick = track, 0, length
+		end = v.EndTick
 	case "placement":
 		if p.Arrange == nil {
 			return nil, nil, fmt.Errorf("named placement audition requires an arrange block")
@@ -91,12 +155,6 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 			}
 			found = true
 			v.StartTick, v.EndTick = place.AtTick, place.AtTick+place.LengthTicks
-			if v.Mode == "solo" {
-				copy, arrangement := *p, *p.Arrange
-				arrangement.Placements = []project.Placement{place}
-				copy.Arrange = &arrangement
-				p = &copy
-			}
 			break
 		}
 		if !found {
@@ -162,6 +220,8 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 	}
 	v := studioListening{Loop: true}
 	switch input.Action {
+	case "patternAudition":
+		v.Kind, v.Name, v.Track, v.Loop = "pattern", input.Pattern, input.Track, input.Loop
 	case "audition":
 		v.Kind, v.Name, v.Mode, v.Loop = "placement", input.Placement, input.Mode, input.Loop
 		if v.Mode == "" {
@@ -193,7 +253,7 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 	if err != nil {
 		return http.StatusServiceUnavailable, err
 	}
-	prepared, err := compileLiveProjectAtRate(s.path, p, rate)
+	prepared, err := compileStudioListeningScore(s.path, p, listening, rate)
 	if err != nil {
 		return http.StatusUnprocessableEntity, err
 	}

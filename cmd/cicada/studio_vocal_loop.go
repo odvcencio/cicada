@@ -27,7 +27,10 @@ type vocalLoopCapture struct {
 }
 
 func newVocalLoopCapture(store *takejournal.Store, take takejournal.Take, passes int) *vocalLoopCapture {
-	clock := takeClock(take)
+	clock, err := takeClock(take)
+	if err != nil {
+		return &vocalLoopCapture{store: store, template: take, passes: passes, fault: err}
+	}
 	return &vocalLoopCapture{store: store, template: take, passes: passes,
 		duration: clock.SampleAtTick(take.Timeline.EndTick) - clock.SampleAtTick(take.Timeline.StartTick), ids: []string{take.ID}}
 }
@@ -135,7 +138,7 @@ func (l *vocalLoopCapture) write(record capture.RecordedBlock, pcm [][]float32) 
 		if block.Timing.InputTime.Valid {
 			block.Timing.InputTime.Nano += advanceNano
 		}
-		if block.Timing.OutputTime.Valid && block.Timing.OutputTime.Reference == capture.ReferenceFirstFrame {
+		if block.Timing.OutputTime.Valid && (block.Timing.OutputTime.Reference == capture.ReferenceFirstFrame || block.Timing.OutputTime.Reference == capture.ReferenceEstimatedFirstFrame) {
 			block.Timing.OutputTime.Nano += advanceNano
 		}
 		block.Placement.RawEngineFrame += int64(at) - int64(l.index)*l.duration

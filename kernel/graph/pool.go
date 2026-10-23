@@ -5,6 +5,9 @@ import "m31labs.dev/cicada/kernel/expression"
 // MaxPolyphony is the experimental per-track limit. Storage is fixed at load.
 const MaxPolyphony = 4
 
+// LiveGeneration is disjoint from the sequencer's uint32 pattern generations.
+const LiveGeneration uint64 = 1 << 63
+
 // Cohort identifies one sequencer onset across pattern generations.
 // All pitches share a gate. A stale release cannot affect a replacement onset.
 type Cohort struct {
@@ -21,6 +24,7 @@ type poolSlot struct {
 	voice            *Voice
 	id               uint64
 	cohort           Cohort
+	group            expression.Group
 	gated            bool
 	release          int
 	last, tail, peak float32
@@ -47,7 +51,7 @@ func NewPool(program Program, sampleRate int) (*Pool, error) {
 // NewPoolFromProgram prepares the fixed voice pool from an immutable program.
 func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
 	if program == nil {
-		return nil, Error("nil graph program")
+		return nil, validationError("nil graph program")
 	}
 	if err := ValidateProgram(program, sampleRate); err != nil {
 		return nil, err
@@ -81,15 +85,15 @@ func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
 func (p *Pool) NoteOn(notes [4]uint8, count, velocity uint8, slide bool, cohort Cohort) ([4]Handle, error) {
 	var handles [4]Handle
 	if count < 1 || count > MaxPolyphony || velocity > 127 || cohort.NoteID <= 0 || p.serial > ^uint64(0)-uint64(count) || slide && count != 1 {
-		return handles, Error("invalid polyphonic cohort")
+		return handles, validationError("invalid polyphonic cohort")
 	}
 	for i := uint8(0); i < count; i++ {
 		if notes[i] > 127 {
-			return handles, Error("polyphonic pitch is out of range")
+			return handles, validationError("polyphonic pitch is out of range")
 		}
 		for j := uint8(0); j < i; j++ {
 			if notes[i] == notes[j] {
-				return handles, Error("polyphonic pitches must be distinct")
+				return handles, validationError("polyphonic pitches must be distinct")
 			}
 		}
 	}
@@ -137,6 +141,7 @@ func (p *Pool) NoteOn(notes [4]uint8, count, velocity uint8, slide bool, cohort 
 		s.voice.NoteOn(notes[n], velocity, carried)
 		p.serial++
 		s.id, s.cohort, s.gated, s.release = p.serial, cohort, true, 0
+		s.group = expression.Group{}
 		s.quietFrames = 0
 		handles[n] = Handle{Slot: uint8(slot), ID: s.id}
 	}
@@ -189,6 +194,22 @@ func (p *Pool) SetExpression(cohort Cohort, params expression.Params) bool {
 func (p *Pool) ReleaseAll() {
 	for i := range p.slots {
 		p.NoteOff(Handle{Slot: uint8(i), ID: p.slots[i].id})
+	}
+}
+
+func (p *Pool) ReleaseLive() {
+	for i := range p.slots {
+		if p.slots[i].cohort.Generation == LiveGeneration {
+			p.NoteOff(Handle{Slot: uint8(i), ID: p.slots[i].id})
+		}
+	}
+}
+
+func (p *Pool) ReleaseSequenced() {
+	for i := range p.slots {
+		if p.slots[i].cohort.Generation != LiveGeneration {
+			p.NoteOff(Handle{Slot: uint8(i), ID: p.slots[i].id})
+		}
 	}
 }
 func (p *Pool) ActiveVoices() int {

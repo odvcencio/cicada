@@ -18,17 +18,26 @@ test-wam2: build-wam2
 
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
+# Keep the core's standard library identical across host compilers and runners.
+KERNEL_WASM_GO_VERSION ?= go1.25.6
 # Size optimization keeps the richer bounded voice engine within its existing
 # download budget. Audio parity and browser callback budgets gate this build.
 KERNEL_WASM_OPT ?= z
+KERNEL_WASM_BINARYEN_FLAGS ?= -Oz --converge --strip-producers --strip-target-features
 
-# Set to +simd128 to enable LLVM's WebAssembly vector instructions.
-KERNEL_WASM_LLVM_FEATURES ?=
+# Binaryen may be installed separately from TinyGo. The desktop packager
+# accepts the same override for an executable outside PATH.
+WASMOPT ?=
+export WASMOPT
+
+# Bulk-memory copies keep the shared schedule inside the existing size budget.
+# Append +simd128 when measuring WebAssembly vector instructions.
+KERNEL_WASM_LLVM_FEATURES ?= +bulk-memory,+bulk-memory-opt
 
 # Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
 ENGINE_METRICS_ARGS ?=
 
-test:
+test: test-build-tools
 	go test ./... -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
@@ -38,11 +47,15 @@ test:
 
 # CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
 # target covers every other package. `make test` still runs everything.
-test-ci-core:
+test-ci-core: test-build-tools
 	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
+
+.PHONY: test-build-tools
+test-build-tools:
+	python3 -B -m unittest discover -s scripts -p 'build_tools_test.py'
 
 # SHARD=k/N runs shard k of N; SHARDS=N checks that N shards cover every test once.
 SHARD ?= 1/3
@@ -120,6 +133,31 @@ test-studio-continuity:
 test-studio-shell:
 	node --test workstation/browser/shell.test.cjs
 
+.PHONY: test-studio-columns
+# Requires a fresh Studio process and an absolute CICADA_COLUMN_PROOF_DIR.
+test-studio-columns:
+	node --test workstation/browser/columns.test.cjs
+
+.PHONY: test-studio-first-song
+# Requires an untouched disposable first-light project and CICADA_SONG_PROOF_DIR.
+test-studio-first-song:
+	node --test workstation/browser/first-song.test.cjs
+
+.PHONY: test-studio-export-sources
+# Requires a disposable examples/studio-project copy and CICADA_EXPORT_PROOF_DIR.
+test-studio-export-sources:
+	node --test workstation/browser/export-sources.test.cjs
+
+.PHONY: test-studio-portable-song
+# Requires a generated portable-song fixture and CICADA_PORTABLE_PROOF_DIR.
+test-studio-portable-song:
+	node --test workstation/browser/portable-song.test.cjs
+
+.PHONY: test-studio-code-recovery
+# Requires a disposable studio-project copy; restart it for each recovery phase.
+test-studio-code-recovery:
+	node --test workstation/browser/code-recovery.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs
@@ -155,9 +193,10 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
-		tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
-		"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
+	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false GOTOOLCHAIN=$(KERNEL_WASM_GO_VERSION) sh -c '\
+		tinygo version && sh scripts/wasm-opt.sh --version && \
+		tinygo build -tags cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
+		sh scripts/wasm-opt.sh $(KERNEL_WASM_BINARYEN_FLAGS) build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
 		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
@@ -171,9 +210,9 @@ build-kernel-wasm:
 # its added bytes are reported separately from the default kernel budget.
 build-vocals-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
-		tinygo build -tags trackfx -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-vocals.wasm ./cmd/cicada-kernel-wasm && \
-		"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-vocals.wasm -o build/cicada-vocals.optimized.wasm && \
+	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
+		tinygo build -tags trackfx,cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-vocals.wasm ./cmd/cicada-kernel-wasm && \
+		sh scripts/wasm-opt.sh -Oz build/cicada-vocals.wasm -o build/cicada-vocals.optimized.wasm && \
 		mv build/cicada-vocals.optimized.wasm build/cicada-vocals.wasm'
 	go run ./cmd/cicada-wasm-size --report-only build/cicada-vocals.wasm
 
@@ -184,8 +223,8 @@ build-loudness-wasm:
 # Optional keyboard module; same ABI and AudioWorklet, loaded only for keys.
 build-keys-wasm:
 	mkdir -p build
-	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx' -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
-	"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-keys.wasm -o build/cicada-keys.optimized.wasm
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx cicada_reactor' -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	sh scripts/wasm-opt.sh -Oz build/cicada-keys.wasm -o build/cicada-keys.optimized.wasm
 	mv build/cicada-keys.optimized.wasm build/cicada-keys.wasm
 	go run ./cmd/cicada-wasm-size --report-only build/cicada-keys.wasm
 	wc -c build/cicada-keys.wasm
@@ -272,7 +311,7 @@ build-worklets:
 .PHONY: build-sampler-wasm test-sampler-wasm
 build-sampler-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-sampler.wasm ./cmd/cicada-sampler-wasm
+	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-sampler.wasm ./cmd/cicada-sampler-wasm
 	@test "$$(wc -c < build/cicada-sampler.wasm)" -le 65536 || { echo 'FAIL sampler kernel exceeds 64 KiB'; exit 1; }
 	@wc -c build/cicada-sampler.wasm
 

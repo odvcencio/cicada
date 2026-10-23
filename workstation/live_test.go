@@ -12,12 +12,38 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/cicada/workstation/control"
 )
+
+func TestLiveSharedMessagesRetainFullInputIdentityAndRejectInvalidControls(t *testing.T) {
+	group := "18446744073709551615"
+	for _, values := range []map[string]string{
+		{"type": "note-group", "track": "keys", "noteId": "7", "groupId": group},
+		{"type": "group-expression", "track": "keys", "groupId": group, "pitchCents": "-123.125", "pressure": "0.12345679", "timbre": "0.9876543"},
+	} {
+		got, err := liveMessage(values)
+		if err != nil || got["groupId"] != group {
+			t.Fatal("shared input identity lost precision", got, err)
+		}
+	}
+	for _, values := range []map[string]string{
+		{"type": "note-group", "track": "keys", "noteId": "7", "groupId": "0"},
+		{"type": "note-group", "track": "keys", "noteId": "0", "groupId": "1"},
+		{"type": "group-expression", "track": "keys", "groupId": "1", "pitchCents": "NaN", "pressure": "0.2", "timbre": "0.5"},
+		{"type": "group-expression", "track": "keys", "groupId": "1", "pitchCents": "0", "pressure": "1.1", "timbre": "0.5"},
+	} {
+		if _, err := liveMessage(values); err == nil {
+			t.Fatal("invalid shared input accepted", values)
+		}
+	}
+}
 
 func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	var revision atomic.Value
 	revision.Store("initial")
 	commands := make(chan map[string]any, 8)
+	var checks atomic.Int32
+	var refuseCheck atomic.Bool
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -34,6 +60,28 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 			_, _ = w.Write([]byte(`{"playing":true,"bar":1,"step":1}`))
 		case "/api/params":
 			_, _ = w.Write([]byte(`{"registry":[],"addresses":[]}`))
+		case "/api/intents":
+			var check struct {
+				Version  int    `json:"version"`
+				Revision string `json:"revision"`
+				DryRun   bool   `json:"dryrun"`
+				Intents  []struct {
+					Kind       string              `json:"kind"`
+					Recordings []control.Recording `json:"recordings"`
+				} `json:"intents"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&check); err != nil || check.Version != 1 || !check.DryRun || len(check.Intents) != 1 || check.Intents[0].Kind != "recordtake" || len(check.Intents[0].Recordings) != 1 || check.Revision == "" {
+				t.Errorf("invalid pattern check: %+v, %v", check, err)
+				w.WriteHeader(400)
+				return
+			}
+			checks.Add(1)
+			if refuseCheck.Load() {
+				w.WriteHeader(503)
+				_, _ = w.Write([]byte(`{"error":"Pattern check temporarily unavailable."}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"valid":true,"dryrun":true}`))
 		case "/api/record", "/api/live":
 			var data map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&data)
@@ -100,36 +148,82 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	// New responses mask CSRF tokens independently. A held note and its
 	// release must retain the same service owner across requests and renders.
 	owner := command["owner"]
+	batch, _ := json.Marshal([]map[string]string{
+		{"type": "note", "track": "bass", "note": "60", "velocity": "100", "on": "true", "noteId": "7"},
+		{"type": "note-expression", "track": "bass", "noteId": "7", "pitchCents": "25.125", "pressure": "0.8", "timbre": "0.5"},
+		{"type": "note", "track": "bass", "note": "60", "velocity": "0", "on": "false", "noteId": "7"},
+	})
+	if r := jsonPost("/__actions/live", map[string]string{"type": "input-batch", "lease": input["lease"], "sequence": "1", "messages": string(batch)}, csrf); r.StatusCode != 200 {
+		t.Fatal("live batch", r.StatusCode)
+	}
+	batched := <-commands
+	values := batched["messages"].([]any)
+	if batched["owner"] != owner || len(values) != 3 || values[1].(map[string]any)["pitchCents"] != 25.125 || values[0].(map[string]any)["noteId"] != float64(7) {
+		t.Fatal("batch lost ordering, identity or controller precision", batched)
+	}
+	invalid := strings.Replace(string(batch), "25.125", "NaN", 1)
+	if r := jsonPost("/__actions/live", map[string]string{"type": "input-batch", "lease": input["lease"], "sequence": "1", "messages": invalid}, csrf); r.StatusCode == 200 || len(commands) != 0 {
+		t.Fatal("invalid batch was partly sent to audio")
+	}
+	if r := jsonPost("/__actions/live", map[string]string{"type": "heartbeat", "lease": input["lease"], "sequence": "2"}, csrf); r.StatusCode != 200 {
+		t.Fatalf("heartbeat: %d", r.StatusCode)
+	}
+	if ping := <-commands; ping["owner"] != owner || ping["ping"] != true || ping["messages"] != nil {
+		t.Fatalf("heartbeat changed ownership or sent a note: %#v", ping)
+	}
 	freshCSRF := tokenFromPage(t, getPage(t, client, app.URL+"/?panel=live"))
 	if freshCSRF == csrf {
 		t.Fatal("CSRF token was not masked per response")
 	}
-	input["sequence"], input["on"] = "2", "false"
+	input["sequence"], input["on"] = "3", "false"
 	if r := jsonPost("/__actions/live", input, freshCSRF); r.StatusCode != 200 {
 		t.Fatalf("note off: %d", r.StatusCode)
 	}
 	if off := <-commands; off["owner"] != owner {
 		t.Fatal("note off changed the live mount owner")
 	}
-	input["sequence"], input["type"] = "3", "release"
+	input["sequence"], input["type"] = "4", "release"
 	if r := jsonPost("/__actions/live", input, freshCSRF); r.StatusCode != 200 {
 		t.Fatalf("release: %d", r.StatusCode)
 	}
 	if release := <-commands; release["owner"] != owner || release["release"] != true {
 		t.Fatal("release did not target the live mount owner")
 	}
-	if r := jsonPost("/__actions/note-preview", map[string]string{"revision": "initial", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":0,"endTick":120,"note":60,"velocity":100}]}]`}, csrf); r.StatusCode != 200 {
-		t.Fatalf("preview: %d", r.StatusCode)
+	origin, _ := url.Parse(app.URL)
+	beforePreview := jar.Cookies(origin)
+	previewResponse := jsonPost("/__actions/note-preview", map[string]string{"revision": "initial", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":0,"endTick":120,"note":60,"velocity":100}]}]`}, csrf)
+	if previewResponse.StatusCode != 200 {
+		t.Fatalf("preview: %d", previewResponse.StatusCode)
+	}
+	var receipt struct {
+		Data struct {
+			TakeID string `json:"takeId"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(previewResponse.Body).Decode(&receipt); err != nil || len(receipt.Data.TakeID) != 32 {
+		t.Fatal("missing explicit review receipt", err)
+	}
+	// A streaming/poll response may restore the cookie captured before Finish.
+	// The returned receipt must still identify this tab's exact private take.
+	staleJar, _ := cookiejar.New(nil)
+	staleJar.SetCookies(origin, beforePreview)
+	staleClient := &http.Client{Jar: staleJar}
+	reviewURL := app.URL + "/?panel=live&notePreview=" + receipt.Data.TakeID
+	if page := getPage(t, staleClient, reviewURL); !strings.Contains(page, "Retained note take") || !strings.Contains(page, `name="takeId" value="`+receipt.Data.TakeID+`"`) {
+		t.Fatal("review depended on a newer cookie snapshot")
 	}
 	if len(commands) != 0 {
 		t.Fatal("preview wrote notes before commit")
 	}
+	if checks.Load() != 2 {
+		t.Fatal("preview skipped the native pattern check")
+	}
 	otherJar, _ := cookiejar.New(nil)
-	if strings.Contains(getPage(t, &http.Client{Jar: otherJar}, app.URL+"/?panel=live"), "Retained note take") {
+	if strings.Contains(getPage(t, &http.Client{Jar: otherJar}, reviewURL), "Retained note take") {
 		t.Fatal("take leaked to another session")
 	}
 	revision.Store("newer")
-	form := url.Values{"csrf_token": {csrf}, "revision": {"newer"}, "intent": {"commit"}, "__gosx_return_to": {"/?panel=live"}}
+	form := url.Values{"csrf_token": {csrf}, "revision": {"newer"}, "intent": {"commit"}, "takeId": {receipt.Data.TakeID}, "__gosx_return_to": {"/?panel=live"}}
 	r := post(t, client, app.URL+"/__actions/note-commit", form, true, app.URL)
 	r.Body.Close()
 	if r.StatusCode != 409 {
@@ -150,5 +244,22 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	}
 	if strings.Contains(getPage(t, client, app.URL+"/?panel=live"), "Retained note take") {
 		t.Fatal("committed note take remained active")
+	}
+	refuseCheck.Store(true)
+	form.Del("takeId") // A new review form replaces the previous receipt.
+	if r := jsonPost("/__actions/note-preview", map[string]string{"revision": "newer", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":20,"endTick":180,"note":64,"velocity":100}]}]`}, csrf); r.StatusCode != 200 {
+		t.Fatalf("failed check discarded take: %d", r.StatusCode)
+	}
+	failed := getPage(t, client, app.URL+"/?panel=live")
+	if !strings.Contains(failed, "temporarily unavailable") || !strings.Contains(failed, "E4") {
+		t.Fatal("failed check lost the original performance or its error")
+	}
+	refuseCheck.Store(false)
+	form.Set("intent", "check")
+	r = post(t, client, app.URL+"/__actions/note-commit", form, false, app.URL)
+	r.Body.Close()
+	checked := getPage(t, client, app.URL+"/?panel=live")
+	if r.StatusCode != 303 || !strings.Contains(checked, "Pattern check passed") || !strings.Contains(checked, "E4") || checks.Load() != 6 || len(commands) != 0 {
+		t.Fatal("rechecking changed the performance or wrote the score")
 	}
 }

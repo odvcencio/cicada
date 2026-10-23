@@ -67,7 +67,7 @@ func (t *studioTransport) armCapture(recorder *capture.Recorder) error {
 	if t.audio == nil {
 		open := t.takeInputOpener
 		if open == nil {
-			open = openStudioAudio
+			open = openStudioRecordingAudio
 		}
 		t.audio, err = open(t.stream, t.audioOptions, t.selectedAudioBackend(), rate)
 		if err != nil {

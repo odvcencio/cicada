@@ -40,8 +40,16 @@ async function sharedBrowser() {
       executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
         .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
     }
-    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--autoplay-policy=no-user-gesture-required']});
+    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio']});
     shared = {browser, context: await browser.newContext({viewport: {width: 1440, height: 900}})};
+    // A packaged Studio prints a one-use owner URL. Consume it in this test
+    // context before opening canonical shell URLs, just as the native host does.
+    const startup = new URL(process.env.CICADA_STUDIO_URL);
+    if (startup.pathname.startsWith('/__local/')) {
+      const page = await shared.context.newPage();
+      await page.goto(startup.href);
+      await page.close();
+    }
   }
   return shared;
 }
@@ -72,9 +80,23 @@ async function openShell(search = '', viewport, platform) {
   return {page, requests, errors};
 }
 
-const actionPosts = requests => requests.filter(request => request.startsWith('POST /__actions/'));
+async function focusWorkspace(page) {
+  await page.evaluate(() => document.activeElement?.blur());
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'global shortcuts start outside native controls');
+}
+
+const actionPosts = requests => requests.filter(request => request.startsWith('POST /__actions/') && !/^POST \/__actions\/(source|note)-checkpoint$/.test(request));
 const actionValues = async request => request.headers()['content-type']?.includes('application/json')
   ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers: {'Content-Type': request.headers()['content-type']}}).formData());
+
+async function waitUntil(check, message) {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.fail(message);
+}
 
 test('shell renders every region without a page scrollbar', async () => {
   const {page, errors} = await openShell();
@@ -90,6 +112,7 @@ test('shell renders every region without a page scrollbar', async () => {
 
 test('shell keyboard: a reserved chord does nothing and is listed as unavailable', {timeout: 45_000}, async () => {
   const {page, requests} = await openShell();
+  const chord = await page.evaluate(() => window.__gosx.commands.platformMod() === 'meta' ? 'Meta+j' : 'Control+j');
   try {
     const before = requests.length;
     // Install the observer before sending either chord. Code owns shortcuts
@@ -104,13 +127,13 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
     });
     const editor = page.locator('#studio-code textarea').first();
     await editor.focus();
-    await page.keyboard.press('Control+j');
+    await page.keyboard.press(chord);
     assert.deepEqual(await page.evaluate(() => window.__reservedChord.unavailable), [], 'the editor retains its shortcut ownership');
     assert.equal(await editor.evaluate(node => document.activeElement === node), true, 'the guarded chord retains editor focus');
     assert.deepEqual(actionPosts(requests.slice(before)), [], 'a chord in the editor submits no shell action');
     await page.evaluate(() => document.activeElement?.blur());
     assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'the global shortcut starts with body focus');
-    await page.keyboard.press('Control+j');
+    await page.keyboard.press(chord);
     try {
       await page.waitForFunction(() => window.__reservedChord.unavailable.length > 0, null, {timeout: 15_000});
     } catch (error) {
@@ -125,7 +148,7 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
           observed: window.__reservedChord,
         };
       });
-      assert.fail('reserved Ctrl+J did not report its unavailable command: ' + JSON.stringify(diagnostic) + '; ' + error.message);
+      assert.fail('reserved '+chord+' did not report its unavailable command: ' + JSON.stringify(diagnostic) + '; ' + error.message);
     }
     assert.deepEqual(await page.evaluate(() => window.__reservedChord.unavailable), ['arrange.consolidate']);
     assert.deepEqual(actionPosts(requests.slice(before)), [], 'a reserved chord submits no action');
@@ -161,12 +184,55 @@ test('shell fits a 390 px phone without horizontal scroll and shows one region',
   await page.close();
 });
 
+test('factory sound previews own their keys and keep the Browser scrollable', {timeout: 60_000}, async () => {
+  for (const [name, viewport] of [['desktop', {width:1440, height:900}], ['phone', {width:390, height:800}]]) {
+    const {page, errors} = await openShell(name === 'phone' ? 'region=browser' : '', viewport);
+    try {
+      const sounds = page.locator('#cicada-sounds[data-sounds-ready=true]');
+      await sounds.waitFor();
+      const listen = sounds.locator('[data-sound-preview="warm-pad"]');
+      for (const key of ['Enter', 'Space']) {
+        await listen.press(key);
+        await page.waitForFunction(() => document.querySelector('[data-sound-preview="warm-pad"]').textContent === 'Stop');
+        const transport = await (await page.request.get(new URL('/api/transport', process.env.CICADA_STUDIO_URL).href)).json();
+        assert.equal(transport.playing, false, key + ' previews without starting the song');
+        if (key === 'Space' && process.env.CICADA_SHELL_PROOF_DIR) {
+          await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR, {recursive:true});
+          await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR, name + '-listening.png')});
+        }
+        await listen.press('Escape');
+        await page.waitForFunction(() => document.querySelector('[data-sound-preview="warm-pad"]').getAttribute('aria-pressed') === 'false');
+      }
+      const last = sounds.locator('[data-sound-preview="soft-bell"]');
+      await last.focus();
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      const bounds = await page.evaluate(() => {
+        const sidebar = document.querySelector('#studio-browser');
+        const scroller = sidebar.querySelector('.shell-scroll');
+        const button = sidebar.querySelector('[data-sound-preview="soft-bell"]');
+        const s = scroller.getBoundingClientRect(), b = button.getBoundingClientRect();
+        return {outerScroll:sidebar.scrollTop, innerScroll:scroller.scrollTop, canScroll:scroller.scrollHeight > scroller.clientHeight,
+          buttonVisible:b.top >= s.top && b.bottom <= s.bottom, overflow:document.documentElement.scrollWidth > innerWidth};
+      });
+      assert.ok(bounds.canScroll && bounds.innerScroll > 0 && bounds.buttonVisible, JSON.stringify(bounds));
+      assert.equal(bounds.outerScroll, 0, 'focus scrolls the sound list and preserves the Browser header');
+      assert.equal(bounds.overflow, false, 'sounds fit the viewport');
+      await page.locator('#browser-instruments > summary').scrollIntoViewIfNeeded();
+      if (process.env.CICADA_SHELL_PROOF_DIR) {
+        await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR, {recursive:true});
+        await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR, name + '.png')});
+      }
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  }
+});
+
 test('Tab and Shift+Tab move keyboard focus and never switch views', async () => {
   const {page} = await openShell();
   const commands = [];
   await page.exposeFunction('recordCommand', id => commands.push(id));
   await page.evaluate(() => document.addEventListener('gosx:command', event => window.recordCommand(event.detail.id)));
-  await page.locator('body').focus();
+  await focusWorkspace(page);
   const seen = new Set();
   for (let step = 0; step < 6; step++) {
     await page.keyboard.press('Tab');
@@ -219,8 +285,8 @@ test('a reload after an engine save leaves the shell current', async () => {
   const state = async () => (await context.request.get(new URL('/api/state', base).href)).json();
   const before = await state();
   const csrf = await page.locator('input[name="csrf_token"]').first().inputValue();
-  const edit = await context.request.post(new URL('/__actions/pattern', base).href, {
-    form: {csrf_token: csrf, revision: before.revision, action: 'toggle', pattern: 'continuity', step: '2', __gosx_return_to: '/studio'},
+  const edit = await context.request.post(new URL('/__actions/source', base).href, {
+    form: {csrf_token: csrf, revision: before.revision, content: before.source + '\n// shell refresh fixture\n', __gosx_return_to: '/studio'},
     maxRedirects: 0,
   });
   assert.ok(edit.status() < 400, `the behind-the-back edit must save, got ${edit.status()}`);
@@ -257,6 +323,7 @@ test('a refresh request on a clean page reloads the shell', async () => {
 test('a refresh request keeps unsaved Code lens text and shows a notice', async () => {
   const {page, requests} = await openShell('?tab=arrange');
   const editor = page.locator('#studio-code textarea').first();
+  const original = await editor.inputValue();
   await editor.focus();
   await page.keyboard.type(' // unsaved note');
   await page.evaluate(() => { window.__alive = true; });
@@ -267,6 +334,8 @@ test('a refresh request keeps unsaved Code lens text and shows a notice', async 
   assert.match(await editor.inputValue(), /\/\/ unsaved note/, 'the typed text survived');
   assert.equal(requests.filter(request => request === 'GET /studio').length, documents, 'no new shell request');
   assert.ok(await page.locator('#studio-refresh-notice a[href^="/studio"]').count() > 0, 'the notice links to the current page');
+  await editor.fill(original);
+  await page.getByText('No unsaved Code edits.', {exact: true}).waitFor();
   await page.close();
 });
 
@@ -312,7 +381,7 @@ test('the closed Sampler does not take the Live keyboard', async () => {
   const {page} = await openShell('?tab=session');
   await page.waitForFunction(() => document.querySelector('#browser-sampler') && document.querySelector('[data-live-control]'));
   await page.evaluate(() => { window.__keys = []; window.addEventListener('keydown', event => window.__keys.push(event.key)); });
-  await page.locator('body').focus();
+  await focusWorkspace(page);
   await page.keyboard.press('a');
   assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section closed, a reaches Live');
   await page.locator('#browser-sampler > summary').click();
@@ -321,28 +390,26 @@ test('the closed Sampler does not take the Live keyboard', async () => {
   await page.close();
 });
 
-// The Live note take and sampler resample scenarios drive the engines
-// themselves. They need pads loaded or an armed audio context, which a Studio
-// started with --audio null may not provide; they skip with that reason.
-test('a finished Live note take shows its review and commit controls without a reload', async t => {
+// Live capture needs an active transport even with null audio. Start it
+// explicitly so this scenario exercises the retained-take path in CI.
+test('a finished Live note take shows its review and commit controls without a manual reload', async () => {
   const {page, requests} = await openShell('?tab=session');
   const record = page.locator('[data-live-control="record"]');
-  try {
-    await page.waitForFunction(() => document.querySelector('[data-live-control="record"]:not([disabled])'), null, {timeout: 10_000});
-  } catch {
-    t.skip('Live input is not ready in this environment (no audio or lease)');
-    await page.close();
-    return;
-  }
+  await page.locator('#transport-form button[value=play]').click();
+  await page.waitForFunction(() => document.querySelector('[data-live-control="record"]:not([disabled])'), null, {timeout: 15_000});
   const documents = requests.filter(request => request.startsWith('GET /studio')).length;
   await record.click();
-  await page.keyboard.press('a');
+  await page.keyboard.down('a');
   await page.waitForTimeout(150);
   await page.keyboard.up('a');
   await page.locator('[data-live-control="finish"]').click();
   await page.locator('.note-preview').waitFor({timeout: 15_000});
   assert.ok(await page.locator('.note-preview form[action="/__actions/note-commit"], .note-preview form[action$="note-commit"]').count() > 0, 'review shows the commit form');
   assert.ok(requests.filter(request => request.startsWith('GET /studio')).length > documents, 'shown by a shell refresh, not by hand');
+  await page.locator('#transport-form button[value=stop]').click();
+  await waitUntil(async () => !(await (await page.request.get(new URL('/api/transport', process.env.CICADA_STUDIO_URL).href)).json()).playing, 'capture check stops the disposable transport');
+  await page.locator('.note-preview button[value=discard]').click();
+  await page.locator('.note-preview').waitFor({state: 'hidden'});
   await page.close();
 });
 
@@ -485,7 +552,7 @@ test('Mac Cmd save, undo and redo submit the current score forms and leave text 
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
   await page.route('**/__actions/**', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
   for (const [chord, action] of [['Meta+z', 'undo'], ['Meta+Shift+z', 'redo'], ['Meta+s', 'source']]) {
-    await page.locator('body').focus();
+    await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/' + action);
     await page.keyboard.press(chord);
     const data = await actionValues(await sent);
@@ -515,10 +582,13 @@ test('shell Space toggles actual playback, Home returns to start, and Audio unlo
   await page.route('**/api/audio/config?runtime=1', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, runtime: {}, options: {periodFrames: 128}})}));
   await page.route('**/__actions/transport', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
   for (const [chord, action] of [['Space', 'play'], ['Space', 'pause'], ['Home', 'home']]) {
-    await page.locator('body').focus();
+    await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/transport');
+    const responded = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/__actions/transport');
     await page.keyboard.press(chord);
     assert.equal((await actionValues(await sent)).action, action);
+    await responded;
+    await page.waitForFunction(() => !document.querySelector('#studio-shell form[data-gosx-form-state=pending], #studio-shell form[data-gosx-form-state=submitting]'));
     if (action === 'play') {
       playing = true;
       await page.waitForFunction(() => document.querySelector('[data-audio-routing]').disabled);
@@ -549,7 +619,7 @@ test('Mac record shortcut starts and finishes the chosen vocal take', async () =
       active = 'keyboard-active';
       await page.waitForFunction(() => !document.querySelector('.vocal-record [data-capture-control=stop]').disabled);
     }
-    await page.locator('body').focus();
+    await focusWorkspace(page);
     const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/take');
     await page.keyboard.press('Meta+Shift+r');
     const data = await actionValues(await sent);
@@ -564,10 +634,125 @@ test('shell scene keys submit the corresponding launch-matrix scene', async () =
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
   await page.route('**/__actions/launch', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
   const scene = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/launch');
-  await page.locator('body').focus();
+  await focusWorkspace(page);
   await page.keyboard.press('F2');
   assert.deepEqual(JSON.parse((await actionValues(await scene)).command), {action: 'launch', scene: 'alternate'});
   await page.close();
+});
+
+test('starting a musical part preserves the song and undoes in one step', {timeout:60_000}, async () => {
+  for (const [name,viewport] of [['desktop',{width:1440,height:900}],['phone',{width:390,height:800}]]) {
+    const {page,errors} = await openShell('dock=clip'+(name === 'phone' ? '&region=detail' : ''),viewport);
+    try {
+      const snapshot = async () => (await page.request.get(new URL('/api/state',process.env.CICADA_STUDIO_URL).href)).json();
+      const before = await snapshot();
+      const privateDraft = before.source.replace(/\r\n/g,'\n')+'\n// Unsaved idea while arranging\n';
+      if (name === 'desktop') {
+        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('#studio-code > details > summary').click();
+        await page.locator('#studio-code textarea').first().fill(privateDraft);
+        await page.getByText('Recovery copy kept on this device. Use Save file to apply edits to the song.', {exact:true}).waitFor();
+      }
+      if (name === 'desktop') {
+        const handle = await page.getByRole('separator',{name:'Resize Detail dock',exact:true}).boundingBox();
+        await page.mouse.move(handle.x+handle.width/2,handle.y+4);
+        await page.mouse.down();
+        await page.mouse.move(handle.x+handle.width/2,handle.y-236,{steps:8});
+        await page.mouse.up();
+      }
+      const create = page.locator('#patterns [data-gosx-key="create-pattern-"]');
+      await create.locator('summary').click();
+      const form = create.locator('form');
+      const pattern = 'browser-idea-'+name;
+      await form.locator('[name=newName]').fill(pattern);
+      await form.locator('[name=starter]').selectOption('pulse');
+      await form.locator('[name=length]').fill('16');
+      if (process.env.CICADA_SHELL_PROOF_DIR) {
+        await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR,{recursive:true});
+        await form.locator('[name=starter]').scrollIntoViewIfNeeded();
+        await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-starter-form.png')});
+      }
+      await form.getByRole('button',{name:'Create pattern',exact:true}).click();
+      await page.waitForURL(url => url.searchParams.get('pattern') === pattern);
+      const created = await snapshot();
+      assert.ok(created.valid && created.source.includes('pattern '+pattern+' '),'a real editable pattern was created');
+      assert.ok(created.source.includes(before.source.trimEnd()),'existing music and comments remain intact');
+      assert.notEqual(created.revision,before.revision);
+      if (process.env.CICADA_SHELL_PROOF_DIR) await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-created-part.png')});
+      await page.locator('#undo-form button').click();
+      await waitUntil(async () => (await snapshot()).source === before.source,'Undo restores the saved source');
+      assert.equal((await snapshot()).source,before.source,'one Undo restores the entire original song');
+      if (name === 'desktop') {
+        assert.equal(await page.locator('#studio-code textarea').first().inputValue(),privateDraft,'song Undo retains the unsaved Code draft');
+        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('#studio-code > details > summary').click();
+        await page.getByRole('button',{name:'Discard draft',exact:true}).click();
+        await waitUntil(async()=>await page.locator('.source-draft-note').count()===0,'the scenario retires its private draft');
+      }
+      assert.deepEqual(errors,[]);
+    } finally { await page.close(); }
+  }
+});
+
+test('part loops preserve paused playback and drafts with keyboard control', {timeout:60_000}, async () => {
+  for (const [name,viewport] of [['desktop',{width:1440,height:900}],['phone',{width:390,height:800}]]) {
+    const {page,errors} = await openShell('dock=clip'+(name === 'phone' ? '&region=detail' : ''),viewport);
+    try {
+      const state = async path => (await page.request.get(new URL('/api/'+path,process.env.CICADA_STUDIO_URL).href)).json();
+      const original = await state('state');
+      if (name === 'desktop') {
+        const handle = await page.getByRole('separator',{name:'Resize Detail dock',exact:true}).boundingBox();
+        await page.mouse.move(handle.x+handle.width/2,handle.y+4);
+        await page.mouse.down();
+        await page.mouse.move(handle.x+handle.width/2,handle.y-236,{steps:8});
+        await page.mouse.up();
+      }
+      await page.locator('#transport-form button[value=play]').click();
+      await waitUntil(async () => { const t = await state('transport'); return t.playing && t.bar>1; },'song advances before preview');
+      await page.locator('#transport-form button[value=pause]').click();
+      await waitUntil(async () => !(await state('transport')).playing,'song pauses before preview');
+      const paused = await state('transport');
+      assert.ok(paused.bar>1 || paused.step>1,'preview proof pauses away from the beginning');
+      await page.waitForFunction(position => ['bar','step'].every(key =>
+        Number(document.querySelector('.position [data-gosx-live-bind='+key+']').textContent) === position[key]),paused);
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Code'}).click();
+      const editor = page.locator('#score textarea');
+      const draft = original.source+'\n// Unsaved part-loop draft\n';
+      await editor.fill(draft);
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Detail'}).click();
+      const preview = page.locator('#cicada-pattern-preview[data-sounds-ready=true]');
+      await preview.waitFor();
+      const selector = preview.locator('[data-pattern-preview-track]');
+      const choices = await selector.locator('option').evaluateAll(nodes => nodes.map(node => node.value));
+      await selector.selectOption(choices.at(-1));
+      const button = preview.locator('[data-sound-preview]');
+      await page.waitForFunction(() => document.documentElement.getAttribute('data-gosx-navigation-state') === 'idle');
+      await page.evaluate(() => {
+        window.__partLoopProof = {editor:document.querySelector('#score textarea'),navigations:0};
+        document.addEventListener('gosx:navigate',() => window.__partLoopProof.navigations++);
+      });
+      for (const key of ['Enter','Space']) {
+        await button.press(key);
+        await page.waitForFunction(() => document.querySelector('#cicada-pattern-preview [data-sound-preview]').textContent === 'Stop');
+        const during = await state('transport'), saved = await state('state');
+        assert.equal(during.playing,false);
+        assert.equal(during.bar,paused.bar);
+        assert.equal(during.step,paused.step);
+        assert.equal(saved.source,original.source);
+        assert.equal(saved.revision,original.revision);
+        assert.equal(await editor.inputValue(),draft);
+        assert.deepEqual(await page.evaluate(() => ({sameEditor:window.__partLoopProof.editor === document.querySelector('#score textarea'),navigations:window.__partLoopProof.navigations})),
+          {sameEditor:true,navigations:0},'preview retains the mounted editor without navigating');
+        if (key === 'Space' && process.env.CICADA_SHELL_PROOF_DIR) {
+          await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR,{recursive:true});
+          await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR,name+'-part-loop.png')});
+        }
+        await button.press('Escape');
+        await page.waitForFunction(() => document.querySelector('#cicada-pattern-preview [data-sound-preview]').textContent === 'Loop part');
+      }
+      assert.deepEqual(errors,[]);
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Code'}).click();
+      await editor.fill(original.source);
+    } finally { await page.close(); }
+  }
 });
 
 test.after(async () => { if (shared) await shared.browser.close(); });

@@ -60,7 +60,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
   const csrfTokens = new Set();
   page.on('request', request => {
     const pathname=new URL(request.url()).pathname;
-    if (request.method()==='POST' && pathname.startsWith('/__actions/') && pathname!=='/__actions/live') posts.push(request);
+    if (request.method()==='POST' && pathname.startsWith('/__actions/') && pathname!=='/__actions/live' && !/^\/__actions\/(source|note)-checkpoint$/.test(pathname)) posts.push(request);
     if (request.isNavigationRequest() || request.method()==='GET' && pathname==='/studio') navigations.push(request);
   });
   page.on('pageerror', error => errors.push(error.message));
@@ -247,6 +247,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal((await state()).source,fixture);
     await page.setViewportSize({width:1600,height:1000});
     await draftEditor.fill(fixture);
+    await page.getByText('No unsaved Code edits.',{exact:true}).waitFor();
     await visit('?placement=one');
 
     // A server-rendered placement link and form must inherit the current local

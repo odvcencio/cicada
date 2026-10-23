@@ -49,6 +49,84 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	env := edits.Envelope{}
 	var intent edits.Intent
 	switch edit.Action {
+	case "chord":
+		if edit.Chord == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose chord pitches and a hold"})
+			return
+		}
+		in := *edit.Chord
+		in.Entity, in.Shared = studioStepEntity(edit), "pattern"
+		intent = &in
+		edit.Label = fmt.Sprintf("Pattern · %s step %d chord · %d steps", edit.Pattern, edit.Step+1, in.Hold)
+	case "create":
+		intent = &edits.CreatePattern{Name: edit.NewName, Track: edit.Track, Steps: edit.Length, Scene: edit.Scene, Starter: edit.Starter}
+		edit.Label = fmt.Sprintf("Pattern · %s created for %s", edit.NewName, edit.Track)
+	case "performance-group":
+		if edit.PerformanceGroup == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a shared gesture lane is required"})
+			return
+		}
+		in := *edit.PerformanceGroup
+		in.Entity = entity
+		intent = &in
+	case "performance-binding":
+		if edit.PerformanceBinding == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a note and shared gesture lane are required"})
+			return
+		}
+		in := *edit.PerformanceBinding
+		in.Entity = entity
+		intent = &in
+	case "shared-gesture":
+		if edit.SharedExpression == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a shared gesture point is required"})
+			return
+		}
+		in := *edit.SharedExpression
+		in.Entity = entity
+		intent = &in
+	case "performed-gesture":
+		if edit.PerformanceExpression == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a performed gesture sample is required"})
+			return
+		}
+		in := *edit.PerformanceExpression
+		in.Entity = entity
+		intent = &in
+	case "performed-note":
+		if edit.PerformanceNote == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a performed note is required"})
+			return
+		}
+		in := *edit.PerformanceNote
+		in.Entity = entity
+		intent = &in
+	case "performance-length":
+		intent = &edits.ResizePerformance{Entity: entity, LengthTicks: edit.PerformanceLength}
+	case "performance-pitch":
+		if edit.PerformancePitch == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a phrase pitch transformation"})
+			return
+		}
+		if edit.SourceRevision == "" {
+			studioJSON(w, http.StatusConflict, map[string]string{"error": "refresh Studio before shaping this phrase"})
+			return
+		}
+		in := *edit.PerformancePitch
+		in.Entity = entity
+		intent = &in
+	case "performance-scale":
+		if edit.PerformanceScale == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a phrase duration"})
+			return
+		}
+		if edit.SourceRevision == "" {
+			studioJSON(w, http.StatusConflict, map[string]string{"error": "refresh Studio before shaping this phrase"})
+			return
+		}
+		in := *edit.PerformanceScale
+		in.Entity = entity
+		intent = &in
 	case "settings":
 		in := &edits.SetPatternSettings{Entity: entity}
 		if edit.Settings != nil {
@@ -63,7 +141,7 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		}
 		intent = in
 	case "duplicate":
-		intent = &edits.DuplicatePattern{Entity: entity, Name: edit.NewName}
+		intent = &edits.DuplicatePattern{Entity: entity, Name: edit.NewName, Track: edit.Track}
 	case "range":
 		in := &edits.SetRange{Entity: entity, Lane: edit.Lane, First: -1, Shared: "pattern"}
 		if edit.Range != nil {

@@ -15,7 +15,7 @@ func TestSamplerPanelShowsPadsChopControlsEffectsAndNativeForms(t *testing.T) {
 	if strings.Count(page, `data-sampler-pad="`) != 16 {
 		t.Fatal("sampler does not have sixteen pads")
 	}
-	for _, want := range []string{`data-pad-selected="true"`, `name="pad" value="3"`, `name="bankRevision" value="bank-current"`, `data-sampler-wave`, `name="start"`, `name="end"`, `name="pitch"`, `name="reverse"`, `name="bypassEffects"`, `name="choke"`, `name="mode"`, `name="performance"`, `name="destination"`, `name="delayMix"`, `name="reverbMix"`, "Record pads", "Resample performance", "Import and chop WAV", "Chop source", "Apply effects"} {
+	for _, want := range []string{`data-pad-selected="true"`, `name="pad" value="3"`, `name="bankRevision" value="bank-current"`, `name="source_revision" value="current-sources"`, `data-sampler-wave`, `name="start"`, `name="end"`, `name="pitch"`, `name="reverse"`, `name="bypassEffects"`, `name="choke"`, `name="mode"`, `name="performance"`, `name="destination"`, `name="delayMix"`, `name="reverbMix"`, "Record pads", "Resample performance", "Import and chop WAV", "Chop source", "Apply effects"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("sampler missing %q", want)
 		}
@@ -25,7 +25,7 @@ func TestSamplerPanelShowsPadsChopControlsEffectsAndNativeForms(t *testing.T) {
 func TestSamplerActionsPreserveBankRevisionAndRejectMalformedFields(t *testing.T) {
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=sampler"))
-	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "bankRevision": {"bank-current"}, "action": {"pad"}, "pad": {"3"}, "name": {"reverse key"}, "source": {strings.Repeat("a", 64)}, "start": {"1000"}, "end": {"2000"}, "pitch": {"-7"}, "gainDB": {"-6"}, "attackMS": {"2"}, "releaseMS": {"5"}, "mode": {"gate"}, "choke": {"2"}, "reverse": {"on"}, "bypassEffects": {"on"}}
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "source_revision": {"displayed-project"}, "bankRevision": {"bank-current"}, "action": {"pad"}, "pad": {"3"}, "name": {"reverse key"}, "source": {strings.Repeat("a", 64)}, "start": {"1000"}, "end": {"2000"}, "pitch": {"-7"}, "gainDB": {"-6"}, "attackMS": {"2"}, "releaseMS": {"5"}, "mode": {"gate"}, "choke": {"2"}, "reverse": {"on"}, "bypassEffects": {"on"}}
 	response := post(t, client, address+"/__actions/sampler", form, true, "")
 	data, _ := io.ReadAll(response.Body)
 	if (response.StatusCode != 200 && response.StatusCode != 303) || !strings.Contains(string(data), `"ok":true`) {
@@ -33,7 +33,7 @@ func TestSamplerActionsPreserveBankRevisionAndRejectMalformedFields(t *testing.T
 	}
 	last := (*edits)[len(*edits)-1]
 	settings := last["settings"].(map[string]any)
-	if last["bankRevision"] != "bank-current" || settings["start"] != float64(1000) || settings["pitch"] != float64(-7) || settings["reverse"] != true || settings["bypassEffects"] != true {
+	if last["source_revision"] != "displayed-project" || last["bankRevision"] != "bank-current" || settings["start"] != float64(1000) || settings["pitch"] != float64(-7) || settings["reverse"] != true || settings["bypassEffects"] != true {
 		t.Fatal(last)
 	}
 	count := len(*edits)

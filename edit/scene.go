@@ -63,10 +63,9 @@ func editSceneSetting(ctx *Context, intent Intent) error {
 // Only the assignment's value or syntax span changes; surrounding comments,
 // bindings, authored whitespace, and newline convention remain intact.
 func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage, remove bool) ([]byte, error) {
-	source := ctx.Source
-	score, ds := ctx.Parse()
-	if score == nil || hasErrors(ds) {
-		return nil, fmt.Errorf("score must validate before editing automation")
+	_, source, file, err := sceneSource(ctx, sceneID)
+	if err != nil {
+		return nil, err
 	}
 	p, err := ctx.CurrentPlan()
 	if err != nil {
@@ -78,6 +77,13 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 	resolved, err := p.ResolveParam(path)
 	if err != nil {
 		return nil, err
+	}
+	patch := func(span Span) ([]byte, error) {
+		after, err := ReplaceSpan(source, file, span)
+		if err != nil {
+			return nil, err
+		}
+		return stageProjectSource(ctx, file, source, after), nil
 	}
 	// The scene tempo is the one bare path a scene may set. It is not live and
 	// not automatable: it steps at the scene boundary.
@@ -106,10 +112,10 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 			continue
 		}
 		if remove {
-			return ReplaceSpan(source, ctx.Options.Path, Span{int(assignment.StartByte()), int(assignment.EndByte()), "", ctx.Options.Path})
+			return patch(Span{int(assignment.StartByte()), int(assignment.EndByte()), "", file})
 		}
 		value := walker.Field(assignment, "value")
-		return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), literal, ctx.Options.Path})
+		return patch(Span{int(value.StartByte()), int(value.EndByte()), literal, file})
 	}
 	if remove {
 		return nil, fmt.Errorf("scene %s has no point for %s", sceneID, path)
@@ -119,5 +125,5 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 		newline = "\r\n"
 	}
 	at := int(node.StartByte()) + bytes.IndexByte(source[node.StartByte():node.EndByte()], '{') + 1
-	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, newline + "  " + path + " = " + literal + newline, ctx.Options.Path})
+	return patch(Span{at, at, newline + "  " + path + " = " + literal + newline, file})
 }

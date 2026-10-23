@@ -59,7 +59,14 @@ TinyGo audio module:
 The image allocation accepts 32 bytes through 2 MiB and happens before audio
 initialization. A new module instance is required to load a different project.
 Legacy projects encode as version 13. Graph chords, schedules, prepared audio,
-and the experimental guitar use version 15. Versions 8–13 remain readable;
+and the experimental guitar use version 15. Independent performed note gates
+use [version 16](../spec/kernel-image-v16.md) and require
+`CapabilityPerformance` (bit 18), together with `CapabilityUnifiedImage`.
+Performed controller gestures use [version 17](../spec/kernel-image-v17.md)
+and additionally require `CapabilityGestures` (bit 19).
+Shared gesture lanes use [version 18](../spec/kernel-image-v18.md) and
+additionally require `CapabilitySharedControls` (bit 21).
+Versions 8–13 remain readable;
 version 14 is rejected. See the [image format](../spec/kernel-image-v15.md). The little-endian image carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,
 and song entries. Use `kernelimage.Encode` instead of constructing the image
@@ -103,7 +110,7 @@ queued scenes, transport changes, and engine errors. See
 note started by `OpNoteOn`; `Arg0`, `Arg1`, and the word at byte 12 carry
 float32 pitch offset in cents, pressure, and timbre respectively. Pitch is
 bounded to −9600…9600 cents; pressure and timbre are 0…1. Spatial commands also
-use `Pad` for their third coordinate; other commands still
+use `Pad` for their third coordinate, as do shared live controls; other commands
 require the byte-12 word to be zero. A note starts with zero bend and pressure
 and centered timbre (0.5). Expression and note-off commands for an old identity
 cannot change its replacement. Identity zero preserves the legacy path, and
@@ -112,7 +119,47 @@ cannot change its replacement. Identity zero preserves the legacy path, and
 Graph instruments expose `pitch_bend` in cents and normalized `pressure` and
 `timbre`. The existing `pitch` input includes bend and score vibrato. Built-in
 acid voices apply pitch expression; pressure and timbre need a graph that uses
-those inputs. Live expression targets monophonic tracks. [`host/midi`](../../host/midi) retains
+those inputs. Authored four-voice pools and eight-voice graphs also support
+independent live notes. Negotiate `CapabilityLiveIdentity` (bit 20) before
+sending note-on/off with `Arg1=1`; `Index` then names a live owner 1…65534,
+separate from sequenced cohorts. An identity-mode off with index 65535
+releases only live owners. Score switches preserve held live voices, subject
+to the shared voice limit and stealing; transport Stop releases all voices.
+Do not use the slide bit with identity-mode note-on.
+
+Negotiate `CapabilityLiveGroups` (bit 22) for separate shared live controls.
+`OpBindNoteGroup` (32) binds the held live note in `Index` to the group ID in
+`Arg0`; both IDs are 1…65534 and `Arg1`/`Pad` are zero. It also supports the
+current identity of monophonic acid and graph voices. `OpSetLiveGroup` (33)
+uses `Index` for that group and the same three float32 words as note expression.
+Send a complete group snapshot with each binding. Same-tick application orders
+note-on, member controls/binding, then shared controls. Shared bend adds,
+pressure takes the larger value, and centered timbre adds before clamping.
+Member controls stop at gate release; the shared layer continues through audio
+release. Stolen slots lose their binding, and Stop detaches groups. Keep group
+IDs private to their input session. Reuse an ID only after all its voices are
+gone or detached; the native audio reader can query `Engine.LiveGroupActive`.
+
+GoSX Live records MIDI 1 bend, channel/poly pressure and CC74 snapshots with
+their input ticks and note identity. Ordinary channels default to ±2 semitones;
+RPN 0 sets sensitivity and RPN 6 configures lower/upper MPE zones. Manual zone
+selection supports controllers that omit setup messages. Sustain retains gates
+until pedal release. Ordinary channel bend, channel pressure and CC74 use a
+shared channel layer; polyphonic aftertouch stays local to each note. Channel
+and polyphonic pressure combine using the larger value. Local values freeze
+under sustain after key release; channel and zone controls still affect held
+gates and audio release tails. Reconnecting an input gets a separate shared address. Modeled keyboards, piano, drums and
+samplers still lack gesture monitoring; retained unsupported gestures are
+refused on apply. Raw takes retain up to 65,536 snapshots, including equal-tick
+samples, before the edit service derives playable points. Private recovery
+checkpoints with a capture project receipt use version 4 and retain
+`sourceRevision` unchanged for the life of the take. Legacy version 3 ordinary
+channel lanes (`kind: "channel"`), version 2 MPE lanes (empty kind), and version 1
+note copies remain readable. Their missing project receipt requires reviewing
+the current destinations before applying; it is never inferred during recovery. Live sends
+coalesce controller snapshots between gate/action barriers and batch up to 64 messages.
+
+[`host/midi`](../../host/midi) retains
 32-bit MIDI 2.0 pressure and timbre until normalization to the float32 ABI.
 It supplies pitch-sensitivity conversion, without a UMP transport or device
 negotiation layer. MIDI 2.0 defines high-resolution controllers and per-note
@@ -166,6 +213,15 @@ fields are in the [semantic reference](../spec/semantic-model.md).
 
 `make test-timing` checks musical boundary timing and block-size invariance.
 `make test-alloc` checks render allocations, including a sixteen-track chain.
+The amp cost check uses per-thread CPU time on Linux and macOS so scheduler
+delays do not count as DSP work during the parallel test suite. `make test-timing`
+also runs the separate 670 µs wall-clock check; run it on a quiet machine.
+
+Audio WASM builds need Go, TinyGo, and Python 3. They use an explicit `WASMOPT`
+executable when set, otherwise TinyGo's bundled `wasm-opt`, then Binaryen on
+`PATH`. The core, vocals, and sampler builds retain their 180-second default
+deadline and five-second termination grace on both Linux and macOS; GNU
+`timeout` is not required. `KERNEL_WASM_BUILD_TIMEOUT` changes the deadline.
 
 ## Fault codes
 

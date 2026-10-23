@@ -212,7 +212,8 @@ func (v *placementView) draw() {
 	defer v.remember()
 	update := nativePlayback.Get()
 	line := v.root.Call("querySelector", "[data-placement-playhead]")
-	ready := update.Ready && time.Since(update.At) < time.Second
+	head := update.State.Playhead()
+	ready := update.Ready && time.Since(update.At) < time.Second && head.ClockFresh(time.Since(update.At), time.Second)
 	line.Set("hidden", !ready)
 	if !ready {
 		status := v.root.Call("querySelector", "[data-placement-playback-status]")
@@ -225,7 +226,6 @@ func (v *placementView) draw() {
 		}
 		return
 	}
-	head := update.State.Playhead()
 	ticks := v.bars() * float64(seq.TicksPerBar)
 	tick := math.Min(ticks, math.Max(0, head.At(time.Since(update.At))))
 	label := v.labelWidth()

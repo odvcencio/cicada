@@ -9,6 +9,7 @@ tool m31labs.dev/gosx/cmd/gosx
 require (
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/net v0.52.0
+	golang.org/x/sys v0.47.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
 	m31labs.dev/gosx v0.57.16
 	m31labs.dev/gosx/editor v0.19.11
@@ -19,6 +20,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
 	github.com/chromedp/chromedp v0.15.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
+	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/evanw/esbuild v0.28.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
@@ -36,7 +38,6 @@ require (
 	github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	golang.org/x/image v0.38.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
@@ -51,8 +52,10 @@ require (
 
 replace m31labs.dev/cicada => ..
 
-replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20261018224641-e5e266c6aaf1
+// Published capture backend with explicit input authorization.
+replace m31labs.dev/tymbal => github.com/jvcencio/tymbal v0.0.0-20261018235149-d90b3551827b
 
-replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.57.17-0.20261020191803-446b04dda9be
+// Studio runtime with SVG namespaces and focused export progress updates.
+replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261022012508-bd6bed6dfdc3
 
 replace m31labs.dev/gosx/editor => github.com/odvcencio/gosx/editor v0.19.12-0.20261021030221-303188b38bc6

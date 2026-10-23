@@ -166,6 +166,16 @@ func decodeTrack(data []byte, trackIndex uint8) (TrackChunk, uint32, error) {
 				return track, 0, fmt.Errorf("nonpositive note duration")
 			}
 			track.Notes = append(track.Notes, Note{Track: trackIndex, Tick: on.tick, Dur: tick - on.tick, Note: first, Vel: on.vel, Chan: channel})
+			// Keep a final controller snapshot before its release when the
+			// decoded file is encoded again. Later resets at this tick remain
+			// after the off, so a reused MPE channel does not alter the old tail.
+			for i := len(track.Events) - 1; i >= 0 && track.Events[i].Tick == tick; i-- {
+				if track.Events[i].Status&15 == channel {
+					track.Events[i].BeforeRelease = true
+				}
+			}
+		} else {
+			track.Events = append(track.Events, ChannelEvent{Tick: tick, Status: status, Data1: first, Data2: second})
 		}
 	}
 	if !ended {

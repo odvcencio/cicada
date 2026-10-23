@@ -40,7 +40,7 @@ func (e *Engine) initStreaming(cfg *Config) error {
 		return nil
 	}
 	if e.clipLimit < 1 {
-		return Error("streamed clips have no voice capacity")
+		return engineError("streamed clips have no voice capacity")
 	}
 	runtime, err := cfg.Streaming.New(e.clipLimit*2, e.sampleRate, e.maxBlock)
 	if err != nil {
@@ -118,14 +118,14 @@ func (e *Engine) StreamStats() StreamingStats {
 // with the same ordering as Render; no audio samples or transport frames pass.
 func (e *Engine) PrepareRender(ctx context.Context, frames int) (int, error) {
 	if frames < 1 || frames > e.maxBlock {
-		return 0, Error("invalid streamed render block")
+		return 0, engineError("invalid streamed render block")
 	}
 	if e.streaming == nil {
 		return frames, nil
 	}
 	e.drainCommands()
 	if e.faulted {
-		return 0, Error("streamed render engine fault")
+		return 0, engineError("streamed render engine fault")
 	}
 	frames = e.prepareStreamWindows(frames)
 	for i := 0; i < e.clipLimit; i++ {
@@ -238,7 +238,7 @@ func (e *Engine) copyClipAssets(cfg *Config) { e.clipAssets = append([]AudioAsse
 func prepareClipVoice(cfg *Config, a AudioAsset, c ClipConfig, region sample.Region) (*sample.Voice, error) {
 	if a.StreamID != 0 {
 		if cfg.Streaming == nil || len(a.Left) != 0 || len(a.Right) != 0 {
-			return nil, Error("streamed clip requires a native streaming factory")
+			return nil, engineError("streamed clip requires a native streaming factory")
 		}
 		return sample.NewStreaming(cfg.SampleRate, a.SampleRate, c.StartFrame, c.EndFrame, a.Frames)
 	}

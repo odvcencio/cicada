@@ -29,7 +29,7 @@ func TestNamedPlacementSessionShowsActualArrangement(t *testing.T) {
 	}
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/workspace" {
-			_ = json.NewEncoder(w).Encode(workspace{Source: string(source), Filename: "tidal-glass.cicada", Revision: "current", Valid: true, Project: p})
+			_ = json.NewEncoder(w).Encode(workspace{Source: string(source), Filename: "tidal-glass.cicada", Revision: "current", SourceRevision: "all-project-sources", Valid: true, Project: p})
 		} else {
 			_, _ = io.WriteString(w, `{}`)
 		}
@@ -46,7 +46,7 @@ func TestNamedPlacementSessionShowsActualArrangement(t *testing.T) {
 	app := httptest.NewServer(handler)
 	t.Cleanup(app.Close)
 	page := getPage(t, app.Client(), app.URL+"/?panel=session")
-	for _, want := range []string{`name="gosx-page-cache" content="no-store"`, `aria-label="Named placement timeline"`, `aria-label="Placement editor"`, "24 bars", "1:12 at 80.0 BPM", "9 placements", `data-placement-id="far-in"`, "@5.2.1", "@9.2.1", "shore @1.1.1", "open-water @9.1.1", `data-placement-block="far-in"`, `data-placement-inspector="far-in"`, `aria-label="Resize placement far-in"`, "Update placement", "Duplicate placement", "Add placement", "Edit markers", "Project settings"} {
+	for _, want := range []string{`name="source_revision" value="all-project-sources"`, `name="gosx-page-cache" content="no-store"`, `aria-label="Named placement timeline"`, `aria-label="Placement editor"`, "24 bars", "1:12 at 80.0 BPM", "9 placements", `data-placement-id="far-in"`, "@5.2.1", "@9.2.1", "shore @1.1.1", "open-water @9.1.1", `data-placement-block="far-in"`, `data-placement-inspector="far-in"`, `aria-label="Resize placement far-in"`, "Update placement", "Duplicate placement", "Add placement", "Edit markers", "Project settings"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("placement session missing %q", want)
 		}
@@ -75,6 +75,24 @@ func TestPlacementPositionRetainsExactTicks(t *testing.T) {
 	}
 	if got := placementPosition(320); got != "320 ticks" {
 		t.Fatalf("triplet position was rounded: %s", got)
+	}
+}
+
+func TestNamedPlacementTempoStepsShowTheirTiming(t *testing.T) {
+	source, err := os.ReadFile("../examples/arrangement-tempo.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, ds := notation.Parse(source)
+	p, more := project.FromScore(score)
+	if p == nil || len(ds) > 0 || len(more) > 0 {
+		t.Fatal(ds, more)
+	}
+	page := gosx.RenderHTML((&studioApp{}).placementArrangement(nil, workspace{Project: p, Revision: "current", SourceRevision: "sources"}, "csrf", ""))
+	for _, want := range []string{`data-arrangement-tempos`, `id="arrangement-tempos"`, `data-gosx-collapsible="$tempoStepsOpen"`, `data-gosx-key="tempo-step-@3.1.1"`, `name="oldat" value="@3.1.1"`, "Save tempo step", "Remove step", "Add tempo step", "Tempo steps · 3", "@3.1.1 · 96 BPM", "@5.1.1 · 137.333 BPM", "tempo changes", "0:12 at 120.0 BPM"} {
+		if !strings.Contains(page, want) {
+			t.Fatal("tempo display missing", want)
+		}
 	}
 }
 

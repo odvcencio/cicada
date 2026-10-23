@@ -19,16 +19,16 @@ import (
 	"syscall/js"
 	"time"
 
-	"m31labs.dev/cicada/host/padsampler"
+	padsampler "m31labs.dev/cicada/host/padsampler/protocol"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
 
 type samplerProjection struct {
-	Revision     string          `json:"revision"`
-	BankRevision string          `json:"bankRevision"`
-	Bank         padsampler.Bank `json:"bank"`
-	Sounds       []string        `json:"sounds"`
-	Tempo        int             `json:"tempo"`
+	Revision     string                                `json:"revision"`
+	BankRevision string                                `json:"bankRevision"`
+	Bank         padsampler.Bank[padsampler.AudioInfo] `json:"bank"`
+	Sounds       []string                              `json:"sounds"`
+	Tempo        int                                   `json:"tempo"`
 }
 type samplerBinding struct {
 	node  js.Value
@@ -57,6 +57,7 @@ type samplerUI struct {
 	initialized, recording, posting bool
 	origin                          float64
 	recordRevision                  string
+	recordSourceRevision            string
 	recordTempo                     int
 	waveKey                         string
 	drag                            string
@@ -484,6 +485,7 @@ func (u *samplerUI) startVoice(buffer js.Value, pad, choke int, mode string, vel
 	source.Call("start", when)
 	v := &samplerVoice{source: source, gain: gain, pad: pad, choke: choke, mode: mode, volume: velocity, start: when, end: when + buffer.Get("duration").Float(), hit: hit}
 	u.voices = append(u.voices, v)
+	u.playingPads[pad-1] = true
 	u.root.Call("querySelector", fmt.Sprintf("[data-sampler-pad='%d']", pad)).Call("setAttribute", "data-playing", "true")
 	return v
 }
@@ -541,6 +543,7 @@ func (u *samplerUI) record() {
 	}
 	u.origin = u.now() + .1
 	u.recordRevision = u.state.Revision
+	u.recordSourceRevision = workspaceFieldValue(u.root.Call("querySelector", "form"), "source_revision")
 	u.recordTempo = u.state.Tempo
 	u.recording = true
 	u.events()
@@ -636,11 +639,20 @@ func (u *samplerUI) resample(form js.Value) {
 	u.posting = true
 	data, _ := json.Marshal(u.perf)
 	submitted := string(data)
-	values := map[string]string{"action": "resample", "performance": string(data), "revision": u.recordRevision, "bankRevision": u.state.BankRevision, "__cicada_location": workspaceLocation()}
+	sourceRevision := u.recordSourceRevision
+	if sourceRevision == "" {
+		sourceRevision = workspaceFieldValue(form, "source_revision")
+	}
+	revision := u.recordRevision
+	place := form.Call("querySelector", "[name=place]").Get("checked").Bool()
+	if !place {
+		revision = u.state.Revision
+	}
+	values := map[string]string{"place": "", "source_revision": sourceRevision, "action": "resample", "performance": string(data), "revision": revision, "bankRevision": u.state.BankRevision, "__cicada_location": workspaceLocation()}
 	for _, key := range []string{"csrf_token", "newName", "track", "at", "destination"} {
 		values[key] = form.Call("querySelector", "[name="+key+"]").Get("value").String()
 	}
-	if form.Call("querySelector", "[name=place]").Get("checked").Bool() {
+	if place {
 		values["place"] = "on"
 	}
 	u.status("Resampling the recorded pad sounds…")
@@ -674,6 +686,7 @@ func (u *samplerUI) resample(form js.Value) {
 		// refresh back; anything changed since the submit stays unsaved.
 		acknowledgeSubmitted(form, values)
 		u.recordRevision = ""
+		u.recordSourceRevision = ""
 		_ = u.load()
 		u.recordRevision = u.state.Revision
 		workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
@@ -704,10 +717,10 @@ func (u *samplerUI) bound(name string) int64 {
 	n, _ := strconv.ParseInt(form.Call("querySelector", "[name="+name+"]").Get("value").String(), 10, 64)
 	return n
 }
-func (u *samplerUI) selectedSource() (padsampler.Source, bool) {
+func (u *samplerUI) selectedSource() (padsampler.Source[padsampler.AudioInfo], bool) {
 	form := u.editor()
 	if form.IsNull() {
-		return padsampler.Source{}, false
+		return padsampler.Source[padsampler.AudioInfo]{}, false
 	}
 	return u.state.Bank.Source(form.Call("querySelector", "[name=source]").Get("value").String())
 }

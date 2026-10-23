@@ -27,6 +27,11 @@ reopening Studio.
 
 Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
 workspace region on a phone keeps your unsaved **Code** text in place.
+Drag the Browser and Code separators to resize the side panels. Their sizes
+fit the current window so the song workspace remains visible. Select either
+panel heading to collapse it into a narrow rail; select the rail to reopen it.
+Below 800 pixels wide, the region bar shows one full-width workspace at a time.
+These view choices preserve your score and unsaved text.
 
 **Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
 effects, and performance resampling. A placement's **Sample into pads** link
@@ -41,9 +46,33 @@ make build
 ```
 
 Open the printed loopback URL. Playback starts only when you select **Play**.
-`--audio null` exercises transport without an output device. On Windows and
-Linux, the default is Tymbal. Use **Audio** to select its devices and input
-monitoring settings while stopped.
+`--audio null` exercises transport without an output device. Tymbal is the
+default on Windows, Linux, and macOS. Use **Audio** to select devices while
+stopped. macOS uses Core Audio for selectable inputs, playback outputs,
+and native timing reports. Windows and Linux also expose native recording
+and monitoring.
+
+On macOS, select **Enable input**, then **Apply audio settings** to request
+microphone access. Device discovery never requests permission or starts
+recording. Input stays closed until playback or a take starts. If access is
+denied, allow Cicada Studio in **System Settings → Privacy & Security →
+Microphone**, then refresh devices. Playback can continue without input;
+recording refuses to arm without microphone access.
+
+Development bundles are signed ad hoc. macOS can reject a microphone grant
+from a previous build when its signature changes, even while the saved
+permission switch remains on. A stable signing identity is needed to retain
+authorization across app updates.
+
+Audio device, input, buffer, and timing choices survive restarts and apply to
+other songs on the same computer. Each backend keeps its own setup. A missing
+saved device remains selected so playback cannot silently move to another
+output. New sessions start stopped with headphone monitoring muted.
+
+The desktop app stores these choices in the `audio` folder under its data
+directory (`--data-dir` selects a separate profile). For the CLI,
+`CICADA_AUDIO_SETTINGS_DIR` can select a different settings folder. Song files
+do not contain machine-specific device IDs.
 
 The null backend is silent. In WSL or on a Linux desktop using PulseAudio,
 select the system output explicitly with `--audio oto`. Rendered WAV and MP3
@@ -72,6 +101,12 @@ patterns. Click a scene header to play from that block, or a pattern clip to
 open its editor. Expand a block to replace its scene, set its length, duplicate
 it, remove it, or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
+
+Scenes can live in any source listed in `cicada.mod`. Assigning a pattern or
+scene recording, starting a new part, and editing scene automation update the
+file that owns the scene. New part and take declarations stay in the entry
+file. Undo restores every file affected by the edit. If saved sources or
+libraries changed in another editor, refresh Studio before retrying.
 Structural changes to songs with intervening comments require a Score edit
 so those comments keep their attachment. Local scene and bar edits preserve them.
 
@@ -86,6 +121,10 @@ increment shared by that grid and Snap step. Audio starts and all trims allow
 exact ticks. Hold Shift while dragging to bypass Snap step within these limits. Drag previews are saved only when released; Escape cancels.
 Focus stays on the block or edge after saving, so arrow-key nudges can continue.
 These gestures work directly in the Studio shell as well as the panel view.
+Placement and marker edits also work when the arrangement is in another score
+file listed by the project. They update that file; Undo and Redo restore its
+exact saved text. If score files or libraries change outside Studio, refresh
+before trying another edit.
 Small pointer movements are treated as selection, so a click does not shift a
 phrase. Save or discard unsaved Code edits before moving placements; finish
 recording and wait for a pending save before starting another edit.
@@ -140,7 +179,10 @@ and can be shorter than a bar.
 
 Each placement offers **Audition solo**, **Audition in song**, **Loop solo**,
 and **Loop in song**. Solo auditions play just that placement; song-context
-auditions play every part active over the same range. Once-through auditions
+auditions play every part active over the same range. Solo listening keeps the
+song's tempo changes and full automation curves, including points after the
+selected phrase; it also isolates overlapping audio clips on the same track.
+Once-through auditions
 stop at the placement's exclusive end. These controls use native playback and
 leave the score, mixer solo/mute settings, and Undo history unchanged.
 
@@ -180,6 +222,11 @@ between their neighbors. **Transition** selects linear, smooth, step,
 exponential or tension-controlled curves. **Save point** makes one Undo step;
 **Remove selected point** removes it. Escape cancels a drag. The numerical fields
 retain unit-aware entry, and **All saved curves** shows the complete overview.
+Existing curves are edited in the project file that owns them. **Curve recalls**
+lists positions where playback returns to the curve after a live adjustment.
+In Code, add `recall @7.1.1` inside an `automate` block to set such a cue without
+changing the curve's shape. A recall must fall on a sixteenth at or after the
+lane's first point and within the song. Recall positions must be unique.
 Recording knob/fader movements is not implemented.
 
 ![Continuous automation editor, captured with a test project.](screenshots/studio-producer-automation-1440.png)
@@ -191,6 +238,45 @@ The editor also supports [touch editing on phone screens](screenshots/studio-pro
 ![Project files open in Studio’s score editor, captured at 1440 px.](screenshots/studio-project-files-1440.png)
 
 ## Patterns
+
+Use **Create pattern** in the pattern editor to start a new grid. Choose its
+track, name, and length (1–64 steps). The track supplies the appropriate notes,
+acid, or drum pattern type, including a custom kit's lanes. Choose a scene to
+create and assign together in one Undo step, or **Library only** to leave the
+arrangement unchanged. The new grid opens immediately for editing. An authored
+instrument's card also offers **Create pattern** for that track.
+
+**Start with** keeps the grid empty or fills it with an editable idea: a
+**Pulse**, an **Arpeggio**, **Held chords** for a polyphonic instrument, or a
+drum **Backbeat**. Pitched ideas follow the song's key and the sound's home register,
+including a track octave override. Backbeats use the kit's kick, snare, and
+closed hat when present; other kits receive a pulse on their first lane.
+The notes and any scene assignment share one Undo step. Existing parts and the
+arrangement stay intact unless you choose to assign the new pattern to a scene.
+
+Pause the song, choose a compatible track under **Hear with**, then press
+**Loop part** to hear the selected grid or played performance on its own.
+Library-only patterns can preview before you assign them to a scene. The
+preview preserves your paused song position, score, Undo history, and unsaved
+Code draft. Press the same button or Escape to stop. Changing **Hear with**
+stops the previous preview; press **Loop part** again for the new sound.
+Saving changes stops the old loop so you can restart with the saved notes.
+
+In a notes grid, select a step and open **Build a chord** in its inspector.
+Choose the root, chord type, root octave, inversion, and **Hold (steps)**.
+**Place chord** writes the onset and holds in one Undo step. It replaces that
+span; shortening clears its old trailing holds while keeping the next onset.
+Use a polyphonic sound, such as Warm pad, for a chord's two to four voices.
+
+Every chord tone appears in the grid. In Draw mode, click one to remove it or
+another pitch at that step to add a voice, up to four. The inspector's **First
+pitch** moves the whole voicing. Range transposition and variations also retain
+all its voices and shared dynamics.
+
+In **Variations and scene assignment**, **Assign to scene** plays the selected
+pattern on the chosen track. **Stop in this scene** releases that track;
+**Carry previous pattern** keeps its previous selection. Scene choices carry
+forward until a later scene changes or stops them. Each assignment has Undo.
 
 Choose a pattern from the library. The piano roll shows pitched patterns;
 drum patterns show their authored lanes.
@@ -263,14 +349,27 @@ The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
-**Enable MIDI** asks for browser permission without system-exclusive access.
-Live then reads Note On, Note Off, and Control Change messages from each
-connected input. Notes play the selected pitched track. On channel 10, General
-MIDI drum notes play the selected drum track and other notes are ignored. Live
-ignores every other message, including pitch bend, channel and polyphonic
-pressure, and MPE zone setup, so an MPE controller plays plain notes without
-per-note expression. Web MIDI supplies MIDI 1 packets; this input does not
-decode MIDI 2 Universal MIDI Packets.
+**Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
+unavailable. Inputs appear automatically when connected and disappear when
+unplugged; their held notes are released. **Disconnect MIDI** closes the input
+port. Leaving Live or closing the app also closes it. Bluetooth MIDI inputs
+already connected in macOS appear through the same CoreMIDI path; Cicada does
+not pair Bluetooth devices.
+
+Held notes keep a short lease in the audio service. If the Live client crashes
+or stops responding, the service releases its notes after five seconds and
+rejects late commands from that client. Notes held by another connected Live
+client continue sounding.
+
+In browsers with Web MIDI, **Enable MIDI** asks for browser permission without
+system-exclusive access. Both paths retain note on/off, control changes, pitch bend, channel and
+polyphonic pressure, sustain, and MPE setup. Notes play the selected pitched
+track. On channel 10, General MIDI drum notes play the selected drum track and
+other notes are ignored. Live honors All Sound Off and All Notes Off for the
+sending device and channel. The selected expression mode separates ordinary
+channel controls from MPE member and master controls. The native input requests
+MIDI 1 protocol conversion from CoreMIDI; it does not claim MIDI 2 expression
+support. Web MIDI also supplies MIDI 1 packets. System-exclusive messages are ignored.
 
 #### Record and Arm
 
@@ -280,27 +379,202 @@ messages. **MIDI launch timing** chooses next beat, next bar, or one, two, or fo
 bars. Mapping and track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
-Press **Play**, choose the **Pitched pattern** and **Drum pattern** to record
-into, then select **Record notes**. Acid and drum recordings use separate
-pattern targets. **Finish note take** retains the notes for review without
-changing the score. Under **Retained note take**, **Commit notes to patterns**
-quantizes the notes to the nearest step and **Discard note take** drops them;
-after a commit, **Undo** restores the previous patterns. While you record, the
-take stays in the page, and an interrupted take is retained in the tab's session
-storage when available. If the score changes after you finish, the preview
-stays and a message asks you to review the notes against the current patterns
-before you choose **Apply notes to current score**. Server previews expire
-after thirty minutes or when Studio closes.
-Take commits support acid, drum, and eight-voice programmable tracks with
-single-note takes. Existing chord patterns are refused without changing the
-score; edit their chords in the grid or source pane. Chord recording is not
-available through the take editor. An acid take turns a note that is still held
-when the next one starts into a slide.
+Choose the **Pitched pattern** and **Drum pattern** destinations. Each picker
+lists patterns on that track first, then unused compatible local patterns marked
+**library**. Use **Create pattern** in Live to make an empty library pattern
+without assigning a scene. A pattern used only by another track is not offered
+as an unused destination. Imported patterns need a local copy before recording;
+patterns in another project source still require that file's revision receipt.
 
-The Live panel records each note's pitch, timing, and velocity. It does not
-record bend, vibrato, pressure, or timbre. To add expression, write `bend:`,
-`vibrato:`, `pressure:`, and `timbre:` rows in **Score**; see [expression
-rows](../spec/features.md#expression-rows).
+Press **Play**, then select **Record notes**. **Finish note take** retains a private copy for
+review. The trace shows original note starts, held lengths, and velocities;
+**Inspect notes** shows exact timing at 960 ticks per beat. Estimated releases
+are marked. A local desktop profile also keeps interrupted takes and recovery
+copies across restarts; closing a browser tab does not apply a take to the score.
+Keeping a take replaces its selected patterns. An unused destination stays in
+the library and uses no launch slot until you arrange or assign it. The take is
+checked against the selected sound again before commit; unsupported notes or
+expression leave the retained take available for review.
+
+Transport observations retain the time and tempo of the rendered position.
+Polling an old observation does not refresh its clock. Native MIDI correlates
+that time with the input timestamp; browser clocks include the reported render
+age and estimate response transit from half the request's round trip. Note
+timing extrapolates at most 250 ms from the observation. An upcoming authored
+bar tempo is carried with the observation when it is within 350 ms, so notes
+and playheads cross that boundary at the new tempo before the next poll. This
+does not predict a later live edit or scene launch. A moving playhead
+becomes unavailable when its audio clock stops updating; a paused position
+remains visible. This software alignment does not measure device latency.
+
+**Keep played timing** writes independent note starts, releases, velocities,
+and supported controller gestures as a performance pattern. Chords can have
+different starts, held lengths, bends, pressure, and timbre. MPE member controls
+remain attached to individual notes; master bend, pressure and timbre become
+shared lanes. Ordinary MIDI channel bend, channel pressure and CC74 use a
+shared lane too; polyphonic aftertouch stays with its note. Channel pressure
+and polyphonic aftertouch remain independent, with the larger value heard.
+Movement after note-off is retained without stretching the gate.
+Finish the take after the release-tail movement you want to keep.
+All destinations use the first note or shared gesture's bar as a common
+origin. The final release or shared movement rounds the loop up to a whole bar.
+A zero-length hit gets a one-tick gate. Existing pattern transpose, swing,
+and gate settings do not alter the
+captured pitches or timings. Scene assignments and the song's lengths stay as
+authored; a short song block can end before a long performance finishes.
+
+In **Patterns**, select the performance to inspect its trace, edit each note's
+MIDI pitch, start tick, end tick, and velocity, add or remove notes, or change
+the loop length. **Note gestures** shows the selected note's held controller
+values. Select a point to edit its tick after the note starts, bend in cents,
+pressure, timbre, vibrato depth, and rate. Add or remove points with Undo.
+Large takes use a paged table; the overview retains local extrema without
+changing the recorded data. Moving a note carries its gesture offsets.
+Shortening refuses to discard held notes or gesture points. Choose **Hear with**
+and **Loop part** to audition its full loop independently of the arrangement.
+Each edit has Undo. WAV, stems,
+MIDI, and the portable audio kernel retain the performed gates and velocities.
+WAV and stems render the gestures. MIDI exports them as independent MPE
+channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
+
+Grid notes, chords, drum hits and dynamics, range edits, timing and resizing
+save to the pattern's owning project file. Drum lanes and shared-phrase guidance
+remain visible when their definitions live in another file. Rapid drawing and
+Undo advance through their own confirmed saves; an outside source save stops
+queued gestures for an explicit refresh. Failed grid inputs stay available
+beside the editor's feedback. Imported definitions need a local variation first.
+
+Performed note edits, individual and shared gestures, lane creation and binding, and
+loop-length edits save to the project file that owns the performance. Each
+change has one Undo step, including phrases in secondary files. Studio checks
+the full project version shown by the form; an outside save refuses the edit
+and keeps the outside file intact. Inline feedback keeps failed inputs
+available to review before refreshing. Imported library definitions remain
+protected; create a local variation before editing them.
+
+**Hear with** stays with the phrase as you select and edit notes, individual
+gestures, shared lanes and timing. Changing the audition sound keeps local
+draft inputs mounted and adds no browser history entry. The choice is carried
+in the editor URL for refresh and reopening; it does not change the song's
+track assignments. Destination pickers remain independent choices.
+
+**Shape pitch** develops a played melody without editing notes one by one.
+**Shift notes** moves every note by a nonzero −48 to +48 semitones. Select a
+note, then **Mirror around** that pitch to turn rising intervals into falling
+ones and falling intervals into rising ones. Chords mirror with the melody.
+Timing, gates, velocity, shared lanes, vibrato and recorded pitch bends stay
+as played; mirroring note intervals does not reverse a bend's direction.
+The editor refuses a transformation that would put a stored or sounding
+note outside MIDI 0–127, including the pattern's existing transpose. Each
+operation has one Undo step and affects every use of the pattern. Create a
+variation first to keep the original. Imported phrases offer that local-copy
+workflow instead of changing their library.
+
+**Shape time** develops a played phrase at a different pace: choose half,
+two thirds, one and a half, or twice its current duration. The loop, note
+starts, gates, individual gestures and shared gesture lanes move together.
+Pitch, velocity, controller levels, vibrato rate and project tempo stay the
+same. **Loop part** auditions the new full loop; one Undo restores the exact
+previous score. Owned secondary score files are supported too.
+
+Times round to the nearest tick. Controller samples that land on the same
+tick keep the later value; every note retains at least a one-tick gate.
+Compression refuses overlapping repeated pitches instead of discarding notes.
+Existing song blocks keep their start and length, so lengthen a block when
+you want to hear a newly expanded phrase in full. Make an independent variation
+first when only one use should change. Imported library patterns remain
+unchanged; **Create a local variation** opens their variation form directly.
+
+Open **Use this pattern** in either the grid or played-timing editor to bring
+the phrase into your song. **Create variation** copies the complete pattern
+without changing its existing uses. This also works for unused patterns in
+secondary files and pinned libraries. **Hear with** chooses the sound whose
+register resolves the copy's relative notes; that sound stays selected when
+the local copy opens. The copy contains resolved notes, phrases, timing and
+gestures, with absolute pitches and a free slot when assigned. Instrument
+settings remain shared. A sound check confirms that creating the copy leaves
+the existing song intact. The original files and library pins stay unchanged;
+one Undo removes the local copy. For a scene song, choose a compatible
+track and scene, then **Assign to scene**. The assignment replaces that track's
+part everywhere the scene is used; Stop releases the track and Carry keeps
+its earlier selection.
+
+The grid editor shows its cell timing and full loop duration. Triplet,
+dotted, and tuplet grids keep their authored timing; fractional beats are shown
+exactly. The step numbers count cells, whose lengths can differ between patterns.
+
+For a named arrangement, **Place in song** adds a use of the selected pattern.
+Its default start is after the last placement, and its length is the phrase's
+exact loop length, including its authored grid. Choose another start or length
+before placing it. Existing uses link to their arrangement blocks. Editing a
+pattern changes all its uses;
+create a variation first when you want an independent phrase. Assignment,
+placement, and variation each have one Undo step.
+
+To develop just one block, select it in a named arrangement and use
+**Vary this phrase** → **Make independent variation**. The new local pattern
+replaces that block's content while its start, length, track and other uses
+stay intact. **Edit _name_** then opens the copy in the pattern editor. Its
+notes, velocities, gestures, grid and timing remain editable. Sound settings
+still belong to the same instrument.
+
+The copy includes the resolved musical material, so a phrase in another
+project file or an imported library can become an editable local variation.
+The copied notes use their current absolute pitches.
+The original definitions and library stay unchanged. A render check verifies
+that creating the copy preserves the song's sound; a failed check saves
+nothing. One Undo restores both the pattern and the placement assignment.
+
+**Shared gestures** lets one lane shape several notes and their release
+tails. Create a lane, select each note and choose **Bind note**, then edit
+the lane's bend, pressure and timbre points. Times are measured from the loop
+start. Moving a note keeps its binding and leaves the shared curve in place.
+Each note retains its own gestures and vibrato. Bend adds, pressure uses the
+larger value, and timbre adds around its neutral center of 0.5. The curve
+starts neutral on each loop unless a point at tick zero sets its initial
+values. Unbind all member notes before removing a lane. Every edit has Undo.
+Live MIDI capture creates these lanes automatically, with separate identities
+for each input, ordinary channel or MPE zone, and reconnect. Ordinary channel
+lanes are named `midi-1`, `midi-2`, and so on; MPE lanes use `mpe-1`, `mpe-2`.
+The retained-take review shows each lane's
+membership, point count and final movement. Keeping played timing coalesces
+samples at the same musical tick; private recovery keeps every raw sample.
+Lanes that stayed neutral need no binding in the saved pattern. Shared movement
+requires **Keep played timing**; the step-grid option refuses to discard it.
+During live input, ordinary channel and MPE master controls keep shaping
+release tails on acid and authored synths. Note controls freeze at key release,
+including polyphonic aftertouch under sustain. Reconnecting an input starts
+a separate shared address; old tails retain their last controls. The saved lane
+uses the same layering during playback and export.
+
+Played timing supports acid, modeled keyboards and piano, and authored pitched
+instruments, using each instrument's existing mono or polyphonic voice policy.
+It supports up to 512 notes and 65,536 gesture samples per pattern, subject
+to playback density limits. Acid keeps pitch and vibrato; authored synths
+also expose pressure and timbre to their graph. Polyphonic authored synths
+with gestures use the four-voice pool and its existing stealing policy.
+Modeled piano and keyboard voices currently accept notes without gestures.
+Both timing choices write each destination in its owning project file, including
+takes spanning several files. One Undo restores the whole take. Imported library
+sources remain read-only; create a local variation before recording into them.
+Overlapping gates of the same pitch need separate
+tracks. Drum, sampler, and unsupported expression performances are refused
+with the retained take intact. Values hold between gesture points. Capture
+coalesces samples at the same musical tick to their final state while the
+private raw take keeps every original sample. For step patterns, expand **Snap to the
+existing step grid** and choose **Commit notes to patterns**. This quantizes
+starts, uses the destination's saved length, and checks for collisions before
+writing. Drum hits retain their separate lanes in this grid workflow.
+
+**Check current patterns** validates both timing choices without changing the
+score. A take remembers the project version from the start of recording, even
+if another editor saves while a note is held. Review warns when any source has
+changed or an older recovery copy has no project version. Check the current
+instrument and destinations before keeping played timing or choosing
+**Apply notes to current score**. A further save refuses the edit and retains
+the take. **Undo** restores the previous pattern source;
+**Discard note take** closes the retained copy without writing notes. Recovery
+history remains private to the workspace owner.
 
 ## Mixer and instruments
 
@@ -354,11 +628,19 @@ Declared parameters show their default and current track override. Apply a
 value to shape just that track; **Use default** removes its override. Values
 use the parameter's declared unit. Each change is revision checked and can be
 undone. Edit the complete graph in **Score**. Notes patterns support two- to
-four-pitch chords, editable in the grid or source. Committed note takes currently
-support single notes; overlapping polyphonic takes explain this limit instead
-of discarding chord notes.
+four-pitch chords, editable in the grid or source. **Keep played timing** stores captured chords with independent note lengths;
+step-grid commits continue to check for collisions before writing.
 
 ## Score and history
+
+The local Studio profile keeps private Code recovery copies while you type.
+Wait for **Recovery copy kept on this device** before closing or switching
+projects. This keeps a draft; **Save file** applies it to the song. Playback and
+exports continue to use saved music. A restart restores the most recent copy
+for each file, including unfinished syntax. **Other recovery copies** opens
+versions kept by another window. Saving or discarding the selected copy does
+not erase a different window's changes. If the saved file changed, review the
+current file before choosing **Save combined draft**.
 
 The **Code** lens opens a score editor with live syntax highlighting, a gutter,
 and two-space indentation. **Tab** indents and **Shift-Tab** unindents the current
@@ -476,6 +758,13 @@ arrange-only scores. The toolbar's **Record** button, **F9**, or
 **Command-Shift-R** on Mac (**Control-Shift-R** elsewhere) reveals these controls.
 When recording is available, the same command starts a take or finishes the
 active take. With no audio track, it shows **Recording setup**.
+
+Earlier scene recordings appear under **Scene takes** for the selected audio
+track. Preview a pass, then choose **Use in _scene_** to change that scene's
+recording. The selected pass reads **In _scene_**. Undo and Redo restore the
+selection; the original recordings remain available. Selection resolves imported
+sounds and secondary score files. **Save As** carries both selected and unused
+takes, audio assets, and pinned sound libraries into the copied project.
 
 In **Recording setup**, choose a microphone and output in **Audio**,
 enable input, and add an audio track such as `danilo`. Use headphones and leave
@@ -601,9 +890,33 @@ recorded vocals are not time-stretched.
 A scene-based song becomes ordinary arrangement placements on its first vocal
 selection. Explicit part starts and **Keep** continuity carry over, and block
 boundaries become markers. The original scene definitions remain available.
+If scenes and the song are in separate project files, Studio converts only the
+file containing the song. **Undo** restores its original song block and comments
+together with the entry score. Numeric scene parameter changes become stepped
+automation. Existing curves keep their shapes and take over at their original
+first points; recall cues retain scene-boundary returns to those curves.
+Tempo changes become bar-boundary steps inside `arrange`. Open **Tempo steps**
+to change a step's **Bar** or **Tempo (BPM)**, add a step, or remove one.
+**Save tempo step** moves and changes it in one edit; Undo restores that edit.
+Steps start at bar boundaries, use 20–300 BPM, and cannot share a bar. The base
+tempo in **Project settings** applies before the first step. Tempo edits change
+the song clock; they do not stretch recorded audio. You can also write
+`tempo @3.1.1 96` in Code. Recordings retain their original tempo map, which governs
+phrase durations, waveform positions and comp printing. Restore that map
+before combining a take with a song whose timing has changed.
+Toggle or symbolic values such as delay divisions still require
+manual arrangement work; Studio refuses a conversion that cannot retain them.
+Selecting a short phrase keeps a quiet song ending intact. Its arrangement span
+can outlast the recorded audio without stretching or padding the recording.
 Arrangement-only scores keep their existing placements and markers. Original
 PCM and previous comp prints remain on disk for recovery and Undo. Simultaneous
 multitrack input capture is not provided.
+
+When the arrangement lives in a separate project source, a vocal selection
+updates its placement there. Generated audio declarations and comp metadata
+remain in the entry score. Previewing a selection leaves both sources unchanged;
+**Undo** and **Redo** restore the committed sources together. Vocal effects and
+automation remain editable after printing.
 
 **Takes** retains the scene-based recording and sample audition workflow:
 choose an audio track and scene, then **Arm take**, **Record**, and **Finish take**.
@@ -679,14 +992,23 @@ non-default registry values into a new declaration in the score. Source edits
 and preset saves support History undo and redo. Pins remain available for redo.
 Studio continues to refuse multi-file source editing.
 
-### History
+### Export
 
-**Export** renders WAV with a target LUFS value, true-peak ceiling, tolerance,
-sample rate, and PCM depth. Progress, measured LUFS, true peak, applied gain,
-limiter reduction, and the output path update through GoSX. **Download WAV**
+**Export** renders the saved song with a target LUFS value, true-peak ceiling,
+tolerance, sample rate, and PCM depth. Save Code changes and keep retained
+performances to include them in the render. Select **Render WAV** to start a
+background job. Export stays open while progress, measured LUFS, true peak,
+applied gain, limiter reduction, and the output path update. **Download WAV**
 appears when the current job completes. A shortfall render is labeled explicitly
-for inspection before delivery. Rendering checks the displayed source revision;
-starting another job invalidates its previous download link. Audio stays outside
+for inspection before delivery. Export states whether the render matches the
+saved score files and library definitions. If you save more edits, its link
+changes to **Download earlier render**;
+the earlier WAV remains available until you start another render. Undoing back
+to the rendered score restores the matching label without rendering again.
+Rendering checks the saved score files and library definitions loaded by Studio.
+If they change before the job starts, refresh Studio and review the saved song
+before rendering again. A rejected request keeps the previous WAV available.
+Starting another job invalidates its previous download link. Audio stays outside
 the public asset bundle, and long downloads stream through the private service.
 Offline rendering uses the same Cicada kernel as Tymbal playback. See
 [exporting](exporting.md) for stems, MIDI, and verification commands.

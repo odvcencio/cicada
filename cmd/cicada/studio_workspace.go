@@ -19,7 +19,7 @@ func (s *studio) workspace(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	p, parseErr := compileStudioSource(s.path, source)
+	p, sources, parseErr := compileStudioSourceSnapshot(s.path, source, nil)
 	if parseErr == nil {
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(source), p
 	}
@@ -29,11 +29,16 @@ func (s *studio) workspace(w http.ResponseWriter, r *http.Request) {
 	}
 	files, _ := s.projectFileList()
 	projectHash, _ := playSourceHash(s.path)
+	sourceRevision := ""
+	if sources != nil {
+		sourceRevision = sources.ScoreRevision()
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	studioJSON(w, http.StatusOK, map[string]any{
 		"files": files, "projectRevision": fmt.Sprintf("%x", projectHash),
 		"source": string(source), "revision": studioRevision(source),
-		"project": s.lastGoodProject, "valid": parseErr == nil,
+		"source_revision": sourceRevision,
+		"project":         s.lastGoodProject, "valid": parseErr == nil,
 		"error": message, "filename": filepath.Base(s.path),
 	})
 }

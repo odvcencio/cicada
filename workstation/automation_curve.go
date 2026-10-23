@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
@@ -74,8 +76,14 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 		return gosx.Fragment()
 	}
 	props := automationCurveProps{Path: selected, Unit: automationUnit(d.Unit), Scale: d.Curve, Min: d.Min, Max: d.Max, End: end, Points: []automationCurvePoint{}}
+	var recallPositions []string
 	for _, lane := range p.Automation {
 		if lane.Path == selected {
+			recallTicks := append([]int64(nil), lane.Recalls...)
+			sort.Slice(recallTicks, func(i, j int) bool { return recallTicks[i] < recallTicks[j] })
+			for _, tick := range recallTicks {
+				recallPositions = append(recallPositions, vocalPosition(tick))
+			}
 			for _, point := range lane.Points {
 				if point.Value.Number != nil {
 					props.Points = append(props.Points, automationCurvePoint{point.Tick, *point.Value.Number, point.Shape, point.Curve})
@@ -101,14 +109,21 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 	returnTo := "/?panel=session&curvePath=" + url.QueryEscape(selected)
 	chooser := gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "action-form automation-parameter-picker")), hidden("panel", "session"), field("Automation parameter", selectInput("curvePath", selected, paths, "Automation parameter")), submit("", "", "Show curve"))
 	pointForm := ui.Form(ui.FormProps{Action: "/__actions/automation", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form automation-point-form"},
-		hidden("path", selected), hidden("oldAt", map[bool]string{true: vocalPosition(at), false: ""}[len(props.Points) > 0]),
+		hidden("source_revision", v.SourceRevision), hidden("path", selected), hidden("oldAt", map[bool]string{true: vocalPosition(at), false: ""}[len(props.Points) > 0]),
 		field("Point position", textInput("at", vocalPosition(at))), field("Point value", textInput("value", strconv.FormatFloat(value, 'f', -1, 64)+props.Unit)),
 		field("Transition", selectInput("shape", shape, []string{"linear", "smooth", "step", "exponential", "curve"}, "Transition")),
 		field("Curve tension", gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", "curve"), gosx.Attr("aria-label", "Curve tension"), gosx.Attr("min", -8), gosx.Attr("max", 8), gosx.Attr("step", "0.25"), gosx.Attr("value", tension)))),
 		submit("action", "automation-point-set", "Save point"), submit("action", "automation-point-remove", "Remove selected point"))
 	graph := gosx.El("div", gosx.Attrs(gosx.Attr("class", "automation-curve-scroll")), gosx.El("svg", gosx.Attrs(gosx.Attr("class", "automation-curve"), gosx.Attr("data-automation-curve", ""), gosx.Attr("viewBox", "0 0 1000 240"), gosx.Attr("preserveAspectRatio", "none"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Automation curve for "+selected), gosx.Attr("tabindex", "0")),
 		gosx.El("path", gosx.Attrs(gosx.Attr("data-automation-line", ""))), gosx.El("g", gosx.Attrs(gosx.Attr("data-automation-points", "")))))
-	content := gosx.Fragment(chooser, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%s · %g to %g %s. Double-click the curve to add a point; drag a point to move it. Arrow keys adjust it; Escape cancels a drag.", selected, d.Min, d.Max, props.Unit))), graph,
+	var recalls gosx.Node
+	if len(recallPositions) > 0 {
+		recalls = gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-recalls"), gosx.Attr("data-automation-recalls", selected)),
+			gosx.El("summary", gosx.Text(fmt.Sprintf("Curve recalls · %d", len(recallPositions)))),
+			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Returns to the curve after a live adjustment, without changing its shape.")),
+			gosx.El("p", gosx.Text(strings.Join(recallPositions, " · "))))
+	}
+	content := gosx.Fragment(chooser, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%s · %g to %g %s. Double-click the curve to add a point; drag a point to move it. Arrow keys adjust it; Escape cancels a drag.", selected, d.Min, d.Max, props.Unit))), graph, recalls,
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-automation-curve-status", ""), gosx.Attr("role", "status")), gosx.Text("Select a point, or add one with the controls below.")),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-new", "")), gosx.Text("New point")), pointForm,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Transitions describe the segment arriving at each point. Save records one Undo step. Curves override scene settings after their first point.")))

@@ -145,6 +145,7 @@ type Export struct {
 }
 
 type Pattern struct {
+	Performance     *Performance       `cicada:"Optional played notes with independent gates" json:"performance,omitempty"`
 	StepTicks       uint16             `cicada:"Cell duration at 960 PPQ; zero means 240 ticks" unit:"ticks" range:"0..3840" json:"step_ticks,omitempty"`
 	ID              string             `cicada:"Pattern identifier" json:"id"`
 	Kind            string             `cicada:"Melodic or drum pattern kind" json:"kind"`
@@ -330,7 +331,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		}
 		p.Kits = append(p.Kits, kit)
 	}
-	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil
+	// Select /2 before lowering mixer fields. A later arrangement/automation
+	// upgrade must not discard levels or routing needed by its JSON wire form.
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.Arrange != nil || len(score.Automation) > 0
 	p.Live = liveFromScore(score.Live)
 	for _, scene := range score.Scenes {
 		needsProject2 = needsProject2 || len(scene.Settings) > 0
@@ -473,31 +476,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	for _, source := range score.Patterns {
 		track := representativeTrack(score, source)
-		compiled, err := CompilePattern(score, source, track)
+		pattern, err := CompileProjectPattern(score, source, track)
 		if err != nil {
 			return nil, append(diagnostics, patternCompileDiagnostic(err, source.Position))
-		}
-		pattern := Pattern{
-			ID: source.Name, Kind: semanticPatternKind(score, source), Steps: compiled[0].Pattern.Len, StepTicks: compiled[0].Pattern.StepTicks,
-			SwingPercent100: 5000, GatePercent: compiled[0].Pattern.GatePercent,
-			Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
-			Data: []*Step{}, Lanes: map[string][]*Step{},
-		}
-		pattern.Expression = projectExpression(compiled[0].Pattern)
-		for _, attr := range source.Attrs {
-			if attr.Name == "swing" {
-				pattern.SwingPercent100, _ = parsePercent100(attr.Value)
-			}
-		}
-		if source.Kind == "drums" {
-			for _, lane := range laneOrder {
-				pattern.Lanes[lane] = make([]*Step, pattern.Steps)
-			}
-			for _, lane := range compiled {
-				pattern.Lanes[lane.Lane] = projectSteps(lane.Pattern)
-			}
-		} else {
-			pattern.Data = projectSteps(compiled[0].Pattern)
 		}
 		p.Patterns = append(p.Patterns, pattern)
 	}
@@ -585,6 +566,39 @@ func projectDiagnosticCode(err error) string {
 		}
 	}
 	return "CICADA-PARAM"
+}
+
+// CompileProjectPattern resolves one authored pattern in the chosen track's
+// register, preserving its gates, chords, timing and expression.
+func CompileProjectPattern(score *notation.Score, source notation.Pattern, track notation.Track) (Pattern, error) {
+	compiled, err := CompilePattern(score, source, track)
+	if err != nil {
+		return Pattern{}, err
+	}
+	pattern := Pattern{
+		ID: source.Name, Kind: semanticPatternKind(score, source), Steps: compiled[0].Pattern.Len, StepTicks: compiled[0].Pattern.StepTicks,
+		SwingPercent100: 5000, GatePercent: compiled[0].Pattern.GatePercent,
+		Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
+		Data: []*Step{}, Lanes: map[string][]*Step{},
+	}
+	pattern.Expression = projectExpression(compiled[0].Pattern)
+	pattern.Performance = projectPerformance(compiled[0].Pattern.Performance)
+	for _, attr := range source.Attrs {
+		if attr.Name == "swing" {
+			pattern.SwingPercent100, _ = parsePercent100(attr.Value)
+		}
+	}
+	if source.Kind == "drums" {
+		for _, lane := range laneOrder {
+			pattern.Lanes[lane] = make([]*Step, pattern.Steps)
+		}
+		for _, lane := range compiled {
+			pattern.Lanes[lane.Lane] = projectSteps(lane.Pattern)
+		}
+	} else {
+		pattern.Data = projectSteps(compiled[0].Pattern)
+	}
+	return pattern, nil
 }
 
 func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string {

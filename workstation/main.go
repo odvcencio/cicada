@@ -12,6 +12,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"m31labs.dev/cicada/internal/studiohttp"
 )
 
 func main() {
@@ -25,6 +27,7 @@ func run(args []string) error {
 	flags := flag.NewFlagSet("cicada-workstation", flag.ContinueOnError)
 	address := flags.String("listen", defaultAddress(), "GoSX workstation listen address")
 	service := flags.String("backend", "", "Tymbal service origin (started by cicada studio)")
+	stateDir := flags.String("state-dir", "", "private workspace session and note recovery directory")
 	watchParent := flags.Bool("parent-watch", false, "exit when the parent closes stdin")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -42,7 +45,7 @@ func run(args []string) error {
 			return err
 		}
 	}
-	handler, err := newApp(b)
+	handler, err := newConfiguredApp(b, workspaceOptions{StateDir: *stateDir, LocalBootstrap: *stateDir != ""})
 	if err != nil {
 		return err
 	}
@@ -51,15 +54,19 @@ func run(args []string) error {
 		return err
 	}
 	defer listener.Close()
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	server := studiohttp.New(ctx, handler)
 	if *watchParent {
 		go func() { _, _ = io.Copy(io.Discard, os.Stdin); stop() }()
 	}
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
-	fmt.Printf("Cicada Studio: http://%s/\n", listener.Addr().String())
+	startupPath := "/"
+	if local, ok := handler.(interface{ StartupPath() string }); ok {
+		startupPath = local.StartupPath()
+	}
+	fmt.Printf("Cicada Studio: http://%s%s\n", listener.Addr().String(), startupPath)
 	select {
 	case err := <-finished:
 		if errors.Is(err, http.ErrServerClosed) {

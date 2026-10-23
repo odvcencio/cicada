@@ -24,6 +24,15 @@ func TestAutomationActionKeepsNativeReturnTargetUnitsAndRevision(t *testing.T) {
 	if (*edits)[0]["value"] != "1.25kHz" || (*edits)[0]["revision"] != "current" {
 		t.Fatalf("point payload: %+v", *edits)
 	}
+
+	form.Set("action", "automation-point-set")
+	form.Set("at", "@2.1.1")
+	form.Set("shape", "step")
+	form.Set("source_revision", "displayed-project-sources")
+	response = post(t, client, address+"/__actions/automation", form, false, address)
+	if response.StatusCode != 303 || len(*edits) != 2 || (*edits)[1]["source_revision"] != "displayed-project-sources" {
+		t.Fatal("point action dropped displayed source receipt", response.StatusCode, *edits)
+	}
 	form.Set("revision", "old")
 	response = post(t, client, address+"/__actions/automation", form, true, address)
 	if response.StatusCode != 409 {
@@ -40,7 +49,7 @@ func TestAutomationLanesShowPointCarryAndCatalogChoices(t *testing.T) {
 	}
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/workspace" {
-			_ = json.NewEncoder(w).Encode(workspace{Source: string(source), Revision: "current", Valid: true, Project: p})
+			_ = json.NewEncoder(w).Encode(workspace{Source: string(source), Revision: "current", SourceRevision: "displayed-project-sources", Valid: true, Project: p})
 		} else {
 			_, _ = io.WriteString(w, `{}`)
 		}
@@ -81,7 +90,7 @@ func TestSceneTempoControlsAddChangeAndRemove(t *testing.T) {
 	}
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/workspace" {
-			_ = json.NewEncoder(w).Encode(workspace{Source: string(source), Revision: "current", Valid: true, Project: p})
+			_ = json.NewEncoder(w).Encode(workspace{Source: string(source), Revision: "current", SourceRevision: "displayed-project-sources", Valid: true, Project: p})
 		} else {
 			_, _ = io.WriteString(w, `{"revision":"current","valid":true}`)
 		}
@@ -126,5 +135,35 @@ func TestSceneTempoControlsAddChangeAndRemove(t *testing.T) {
 	}
 	if len(*edits) != 3 || (*edits)[0]["path"] != "tempo" || (*edits)[0]["value"] != "100" || (*edits)[1]["value"] != "66.5" || (*edits)[2]["action"] != "automation-remove" {
 		t.Fatalf("posted edits: %+v", *edits)
+	}
+}
+
+func TestAutomationRecallPanelShowsMusicalPositions(t *testing.T) {
+	source := []byte("cicada 2\ntrack bass acid {}\npattern riff { c3 . }\narrange { place first bass riff { at=@1.1.1 length=4bars } }\nautomate bass.level { @1.1.1 -6dB recall @4.1.1 recall @2.1.1 }\n")
+	score, ds := notation.Parse(source)
+	p, more := project.FromScore(score)
+	if p == nil || len(ds) > 0 || len(more) > 0 {
+		t.Fatal(ds, more)
+	}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/workspace" {
+			json.NewEncoder(w).Encode(workspace{Source: string(source), Revision: "current", SourceRevision: "displayed-project-sources", Valid: true, Project: p})
+		} else {
+			io.WriteString(w, `{}`)
+		}
+	}))
+	defer backend.Close()
+	b, _ := newBackend(backend.URL)
+	handler, err := newApp(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := httptest.NewServer(handler)
+	defer app.Close()
+	page := getPage(t, app.Client(), app.URL+"/?panel=session&curvePath=bass.level")
+	for _, want := range []string{`data-automation-recalls="bass.level"`, `name="source_revision" value="displayed-project-sources"`, "Curve recalls · 2", "@2.1.1 · @4.1.1", "without changing its shape"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("missing recall detail %q", want)
+		}
 	}
 }

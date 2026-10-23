@@ -75,6 +75,7 @@ type audioClientMessage struct {
 	Velocity   *int            `json:"velocity,omitempty"`
 	On         *bool           `json:"on,omitempty"`
 	NoteID     any             `json:"noteId,omitempty"`
+	GroupID    string          `json:"groupId,omitempty"`
 	Channel    *int            `json:"channel,omitempty"`
 	PitchCents *float32        `json:"pitchCents,omitempty"`
 	Pressure   *float32        `json:"pressure,omitempty"`
@@ -170,13 +171,10 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if message.Type == "note" && message.Note != nil && message.On != nil {
-			id, _, identityErr := audioNoteIdentity(message.NoteID)
+			id, _, identityErr := audioNoteKey(message)
 			if identityErr != nil {
 				s.queueAudioError(ctx, outgoing, audioErrorResponse(message, identityErr))
 				continue
-			}
-			if id == "" {
-				id = message.Track + ":" + strconv.Itoa(*message.Note)
 			}
 			message.owner = session + id
 			if original, ok := held[message.owner]; ok {
@@ -192,6 +190,18 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
+		if message.Type == "note-expression" {
+			key, id, err := audioNoteKey(message)
+			if err != nil || id == 0 {
+				s.queueAudioError(ctx, outgoing, audioErrorResponse(message, fmt.Errorf("invalid expression identity")))
+				continue
+			}
+			original, ok := held[session+key]
+			if !ok {
+				continue
+			}
+			message.owner = original.owner
+		}
 		if err := s.applyAudioMessage(message); err != nil {
 			s.queueAudioError(ctx, outgoing, audioErrorResponse(message, err))
 		} else if message.Type == "note" && message.On != nil {
@@ -202,6 +212,24 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// Keep numeric expressive IDs, legacy owner strings and pitch routes disjoint.
+func audioNoteKey(message audioClientMessage) (string, uint16, error) {
+	identity, id, err := audioNoteIdentity(message.NoteID)
+	if err != nil {
+		return "", 0, err
+	}
+	if id != 0 {
+		return message.Track + ":id:" + strconv.Itoa(int(id)), id, nil
+	}
+	if identity != "" {
+		return message.Track + ":owner:" + identity, 0, nil
+	}
+	if message.Note == nil {
+		return "", 0, fmt.Errorf("note route requires a pitch or identity")
+	}
+	return message.Track + ":" + strconv.Itoa(*message.Note), 0, nil
 }
 
 func audioErrorResponse(message audioClientMessage, err error) audioErrorMessage {
@@ -274,6 +302,28 @@ func validateAudioNote(message audioClientMessage) error {
 }
 
 func (s *studio) applyAudioMessage(message audioClientMessage) error {
+	if message.Type == "note-group" || message.Type == "group-expression" {
+		if message.owner == "" || message.GroupID == "" {
+			return fmt.Errorf("shared controls require an owned live input")
+		}
+		s.transport.mu.Lock()
+		stream := s.transport.stream
+		s.transport.mu.Unlock()
+		if stream == nil {
+			return fmt.Errorf("audio transport is not running")
+		}
+		if message.Type == "note-group" {
+			_, id, err := audioNoteIdentity(message.NoteID)
+			if err != nil {
+				return err
+			}
+			return stream.BindNoteGroupOwner(message.Track, id, message.owner, message.GroupID)
+		}
+		if message.PitchCents == nil || message.Pressure == nil || message.Timbre == nil {
+			return fmt.Errorf("shared expression needs pitchCents, pressure, and timbre")
+		}
+		return stream.GroupExpressionOwner(message.Track, message.GroupID, *message.PitchCents, *message.Pressure, *message.Timbre)
+	}
 	if message.Type == "loudness-reset" {
 		s.transport.resetLoudness()
 		return nil
@@ -298,6 +348,9 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 			s.transport.mu.Unlock()
 			if stream == nil {
 				return fmt.Errorf("audio transport is not running")
+			}
+			if message.owner != "" {
+				return stream.NoteExpressionOwner(message.Track, noteID, message.owner, *message.PitchCents, *message.Pressure, *message.Timbre)
 			}
 			return stream.NoteExpression(message.Track, noteID, *message.PitchCents, *message.Pressure, *message.Timbre)
 		}

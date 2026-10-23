@@ -33,6 +33,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// The UI shares a single module across its mounts. Importing a host package
+	// can retain compiler registries even when the UI never calls them.
+	const maxEngineBytes = 16 << 20
+	if len(wasm) > maxEngineBytes {
+		log.Fatalf("UI engine is %d bytes; exceeds %d-byte budget (check host/compiler imports)", len(wasm), maxEngineBytes)
+	}
+	log.Printf("UI engine: %d bytes (budget %d)", len(wasm), maxEngineBytes)
 	digest := sha256.Sum256(wasm)
 	name := fmt.Sprintf("cicada-meters.%x.wasm", digest[:8])
 	if err := os.MkdirAll("public/engines", 0755); err != nil {

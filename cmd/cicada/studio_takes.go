@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/filetarget"
+	"m31labs.dev/cicada/project"
 )
 
 var errTakeRevision = errors.New("score changed during recording; take retained; reload and recover it against the current revision")
@@ -40,26 +41,38 @@ func (s *studio) recoverTakesOnOpen() error {
 		if t.Stage != takejournal.Prepared && t.Stage != takejournal.Source {
 			continue
 		}
-		if err := s.recoverTakeReceipts(t); err != nil {
-			return err
-		}
 		source, err := os.ReadFile(s.path)
 		if err != nil {
 			return err
 		}
-		if studioRevision(source) == t.After {
-			if err = s.takes.Mark(t.ID, takejournal.Committed); err != nil {
-				return err
-			}
-			continue
+		if err := s.recoverTakeReceipts(t); err != nil {
+			return err
 		}
-		if studioRevision(source) != t.Before {
+		files, filesErr := s.pendingTakeFiles(t)
+		if filesErr != nil || studioRevision(source) != t.Before && studioRevision(source) != t.After {
+			if filesErr != nil {
+				if err = s.restoreConflictedTakeSources(t, source); err != nil {
+					return err
+				}
+			}
 			if err = s.takes.Mark(t.ID, takejournal.Conflict); err != nil {
 				return err
 			}
 			continue
 		}
-		if err = s.commitTake(t.ID, t.Before, t.Candidate); err != nil && !errors.Is(err, errTakeRevision) {
+		for _, file := range t.Files {
+			path := filepath.Join(takeRoot(s.path), filepath.FromSlash(file.Path))
+			if err := recoverTakeFileReceipts(path, studioRevision(file.Before), studioRevision(file.After)); err != nil {
+				return err
+			}
+		}
+		if studioRevision(source) == t.After && len(files) == 0 {
+			if err = s.takes.Mark(t.ID, takejournal.Committed); err != nil {
+				return err
+			}
+			continue
+		}
+		if err = s.commitTakeFiles(t.ID, studioRevision(source), t.Candidate, nil, files, ""); err != nil && !errors.Is(err, errTakeRevision) {
 			return err
 		}
 	}
@@ -77,6 +90,10 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 // edit log records. Without one, a Session take logs no intents: a recovered
 // candidate does not carry the intent that built it.
 func (s *studio) commitTakeWith(id, expected string, candidate []byte, env *edits.Envelope) error {
+	return s.commitTakeFiles(id, expected, candidate, env, nil, "")
+}
+
+func (s *studio) commitTakeFiles(id, expected string, candidate []byte, env *edits.Envelope, files []edits.File, expectedSources string) error {
 	current, err := os.ReadFile(s.path)
 	if err != nil {
 		return err
@@ -91,23 +108,48 @@ func (s *studio) commitTakeWith(id, expected string, candidate []byte, env *edit
 	if err != nil {
 		return err
 	}
+	var p *project.Project
 	if candidate == nil {
 		if t.Timeline != nil {
 			var built edits.Envelope
-			candidate, built, err = s.vocalTakeEnvelope(current, t, nil)
+			var result *edits.Result
+			result, built, err = s.vocalTakeResult(current, t, nil)
+			if err == nil {
+				candidate, files = result.Source, result.Files
+			}
 			env = &built
 		} else {
-			candidate, err = takejournal.SelectSource(current, t)
+			opts, e := s.editOptions(current, nil)
+			if e != nil {
+				return e
+			}
+			built := takeSelectionEnvelope(t, expected)
+			var result *edits.Result
+			result, err = edits.Apply(current, built, opts)
+			if err == nil {
+				candidate, files, env = result.Source, result.Files, &built
+				p = opts.Compiler.(*studioCompiler).compiled(candidate, files)
+			}
 		}
 		if err != nil {
 			return err
 		}
 	}
-	p, err := compileStudioSource(s.path, candidate)
+	overrides := make(map[string][]byte)
+	for _, file := range files {
+		overrides[file.Path] = file.After
+	}
+	if p == nil {
+		p, err = compileStudioSourceWithOverrides(s.path, candidate, overrides)
+		if err != nil {
+			return err
+		}
+	}
+	preparedFiles, err := s.prepareTakeFiles(files)
 	if err != nil {
 		return err
 	}
-	if err = s.takes.Prepare(id, current, candidate); err != nil {
+	if err = s.takes.PrepareProject(id, current, candidate, preparedFiles); err != nil {
 		return err
 	}
 	if err = studioRecoveryConflict(s.path); err != nil {
@@ -116,10 +158,15 @@ func (s *studio) commitTakeWith(id, expected string, candidate []byte, env *edit
 	if env == nil {
 		env = &edits.Envelope{Version: edits.EnvelopeVersion, Revision: expected}
 		if t.Timeline == nil {
-			env.Intents = []edits.Intent{&edits.SelectTake{ID: t.ID, Track: t.Track, Scene: t.Scene, Rate: t.Rate, Channels: t.Channels, StartFrame: t.StartFrame(), Asset: edits.TakeAsset{Name: t.Asset.Name, Path: t.Asset.Path, SHA256: t.Asset.SHA256, Frames: t.Asset.Frames, RateHz: t.Asset.RateHz, Channels: t.Asset.Channels}}}
+			built := takeSelectionEnvelope(t, expected)
+			env = &built
 		}
 	}
-	outcome := s.commitMutationLocked(studioEdit{Revision: expected, Label: "Select audio take"}, current, studioMutation{Source: candidate}, nil, studioHistoryWriteNew, 0, commitHook{checkpoint: s.takes.Checkpoint, envelope: env, compiled: p})
+	auxiliary, err := auxiliaryFiles(files)
+	if err != nil {
+		return err
+	}
+	outcome := s.commitMutationLocked(studioEdit{Revision: expected, SourceRevision: expectedSources, Label: "Select audio take"}, current, studioMutation{Source: candidate, Files: auxiliary}, nil, studioHistoryWriteNew, 0, commitHook{checkpoint: s.takes.Checkpoint, envelope: env, compiled: p})
 	// An already-selected take succeeds without exchanging the source. Both
 	// changed and unchanged successes must complete the journal transition.
 	if outcome.Status != http.StatusOK {
@@ -148,6 +195,7 @@ func (s *studio) takeProjection() []takejournal.Take {
 	takes := s.takes.Takes()
 	for i := range takes {
 		takes[i].Candidate = nil
+		takes[i].Files = nil
 	}
 	return takes
 }
@@ -329,6 +377,10 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	case "recover", "select", "comp", "listen", "listen-loop":
 		responseTake = edit.TakeID
+		if err := checkStudioSourceRevision(s.path, edit.SourceRevision); err != nil {
+			fail(fmt.Errorf("%w: %v", errTakeRevision, err))
+			return
+		}
 		if s.captureID != "" {
 			fail(errors.New("stop capture before selecting a take"))
 			return
@@ -347,6 +399,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var candidate []byte
+		var files []edits.File
 		var built edits.Envelope
 		var env *edits.Envelope
 		if t.Timeline == nil && (edit.Action == "comp" || edit.Action == "listen" || edit.Action == "listen-loop") {
@@ -363,14 +416,18 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 				fail(errTakeRevision)
 				return
 			}
-			candidate, built, err = s.vocalTakeEnvelope(source, t, edit.Recording)
+			var result *edits.Result
+			result, built, err = s.vocalTakeResult(source, t, edit.Recording)
+			if err == nil {
+				candidate, files = result.Source, result.Files
+			}
 			if err != nil {
 				fail(err)
 				return
 			}
 			env = &built
 			if edit.Action == "listen" || edit.Action == "listen-loop" {
-				if err = s.listenVocalTake(candidate, source, t, edit.Recording, edit.Action == "listen-loop"); err != nil {
+				if err = s.listenVocalTake(candidate, source, t, edit.Recording, edit.Action == "listen-loop", files...); err != nil {
 					fail(err)
 					return
 				}
@@ -378,7 +435,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err = s.commitTakeWith(edit.TakeID, edit.Revision, candidate, env); err != nil {
+		if err = s.commitTakeFiles(edit.TakeID, edit.Revision, candidate, env, files, edit.SourceRevision); err != nil {
 			fail(err)
 			return
 		}
@@ -400,7 +457,11 @@ func takeRoot(score string) string { dir, _ := takejournal.ProjectRoot(score); r
 // Only bytes identified by this prepared transaction gain a receipt; a later
 // external write still differs from that receipt and triggers the existing guard.
 func (s *studio) recoverTakeReceipts(t takejournal.Take) error {
-	target, err := filetarget.Resolve(s.path, filetarget.Existing)
+	return recoverTakeFileReceipts(s.path, t.Before, t.After)
+}
+
+func recoverTakeFileReceipts(path, before, after string) error {
+	target, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return err
 	}
@@ -427,7 +488,7 @@ func (s *studio) recoverTakeReceipts(t takejournal.Take) error {
 				return err
 			}
 			rev := studioRevision(data)
-			if rev != t.Before && rev != t.After {
+			if rev != before && rev != after {
 				continue
 			}
 			if err = studioKeepRecovery(path, rev); err != nil {
@@ -435,7 +496,7 @@ func (s *studio) recoverTakeReceipts(t takejournal.Take) error {
 			}
 		}
 	}
-	return takejournal.SyncDirectory(filepath.Dir(s.path))
+	return takejournal.SyncDirectory(filepath.Dir(path))
 }
 
 // shutdown drains the device writer and preserves a short final batch even

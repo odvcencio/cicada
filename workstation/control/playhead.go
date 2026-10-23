@@ -5,16 +5,23 @@ import (
 	"encoding/binary"
 	"math"
 	"time"
+
+	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 )
 
 // PlaybackState consumes the small native transport projection. The binary
 // layout is TransportFrame v1 in host/liveplay/telemetry.go; keep native audio
 // dependencies out of the browser module.
 type PlaybackState struct {
-	Playing bool  `json:"playing"`
-	Bar     int64 `json:"bar"`
-	Step    int64 `json:"step"`
-	Frames  struct {
+	MIDIClockEpoch uint64                      `json:"midiClockEpoch"`
+	FrameAgeNanos  *int64                      `json:"frameAgeNanos,omitempty"`
+	RoundTrip      time.Duration               `json:"-"` // Measured by the client; not a host clock.
+	NextTempo      musictime.ObservedTempoStep `json:"nextTempo,omitempty"`
+	Playing        bool                        `json:"playing"`
+	Bar            int64                       `json:"bar"`
+	Step           int64                       `json:"step"`
+	Frames         struct {
 		Transport string `json:"transport"`
 	} `json:"frames"`
 	Range     *PlaybackRange `json:"listening"`
@@ -39,10 +46,20 @@ type Playhead struct {
 	Tick, Tempo int64
 	Playing     bool
 	Range       *PlaybackRange
+	Age         time.Duration // Render age at receipt, including estimated response transit.
+	NextTempo   musictime.ObservedTempoStep
 }
 
 func (s PlaybackState) Playhead() Playhead {
-	p := Playhead{Tick: max(0, s.Bar-1)*3840 + max(0, s.Step-1)*240, Playing: s.Playing, Range: s.Range}
+	p := Playhead{Tick: max(0, s.Bar-1)*seq.TicksPerBar + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range, NextTempo: s.NextTempo}
+	if s.FrameAgeNanos != nil {
+		p.Age = time.Duration(*s.FrameAgeNanos)
+		if p.Age >= 0 {
+			// Half the measured round trip estimates return transit without
+			// assuming the browser and server have synchronized wall clocks.
+			p.Age = min(p.Age, time.Hour) + max(0, min(s.RoundTrip/2, time.Hour))
+		}
+	}
 	b, err := base64.StdEncoding.DecodeString(s.Frames.Transport)
 	if err != nil || len(b) != 64 || b[0] != 1 || b[1] != 1 {
 		return p
@@ -51,19 +68,31 @@ func (s PlaybackState) Playhead() Playhead {
 	beat := int64(int32(binary.LittleEndian.Uint32(b[56:])))
 	tick := int64(int32(binary.LittleEndian.Uint32(b[60:])))
 	tempo := int64(binary.LittleEndian.Uint32(b[22:]))
-	if bar < 1 || beat < 1 || beat > 4 || tick < 0 || tick >= 960 || tempo < 20000 || tempo > 300000 {
+	if bar < 1 || beat < 1 || beat > 4 || tick < 0 || tick >= seq.PPQ || tempo < 20000 || tempo > 300000 {
 		return p
 	}
-	p.Tick, p.Tempo = (bar-1)*3840+(beat-1)*960+tick, tempo
+	p.Tick, p.Tempo = (bar-1)*seq.TicksPerBar+(beat-1)*seq.PPQ+tick, tempo
 	return p
 }
 
 // Extrapolate only a short interval, so a lost connection never runs the
 // cursor ahead of the audio. The native playing flag overrides stale frames.
 func (p Playhead) At(elapsed time.Duration) float64 {
+	return p.at(elapsed, 350*time.Millisecond)
+}
+
+// ClockFresh distinguishes an old render from a responsive HTTP connection.
+// A stopped position remains useful without a running audio clock.
+func (p Playhead) ClockFresh(elapsed, limit time.Duration) bool {
+	return !p.Playing || p.Age >= 0 && p.Age < limit && max(0, elapsed) < limit-p.Age
+}
+
+func (p Playhead) at(elapsed, limit time.Duration) float64 {
 	tick := float64(p.Tick)
-	if p.Playing {
-		tick += max(0, min(elapsed.Seconds(), .35)) * float64(p.Tempo) * 960 / 60000
+	if p.Playing && p.Age >= 0 {
+		age := min(p.Age, limit)
+		total := age + min(max(0, elapsed), limit-age)
+		tick += musictime.ObservedAdvance(p.Tick, p.Tempo, int64(total), p.NextTempo)
 	}
 	if r := p.Range; r != nil && r.End > r.Start {
 		if r.Loop && tick >= float64(r.End) {
@@ -73,4 +102,14 @@ func (p Playhead) At(elapsed time.Duration) float64 {
 		}
 	}
 	return tick
+}
+
+// NoteTick uses the audio clock's sub-step position and current tempo. Older
+// hosts without transport frames fall back to the score tempo. Stop advancing
+// after 250 ms without a fresh sample, preserving the recording clock's bound.
+func (p Playhead) NoteTick(elapsed time.Duration, fallbackBPM float64) int64 {
+	if p.Tempo == 0 && fallbackBPM >= 20 && fallbackBPM <= 300 {
+		p.Tempo = int64(math.Round(fallbackBPM * 1000))
+	}
+	return int64(math.Round(p.at(elapsed, 250*time.Millisecond)))
 }

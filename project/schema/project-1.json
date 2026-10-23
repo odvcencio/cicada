@@ -153,19 +153,234 @@
       }
     },
     "pattern": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "kind", "steps", "swing_percent100", "gate_percent", "transpose", "seed", "data", "lanes"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "steps",
+        "swing_percent100",
+        "gate_percent",
+        "transpose",
+        "seed",
+        "data",
+        "lanes"
+      ],
       "properties": {
-        "step_ticks": {"type": "integer", "minimum": 0, "maximum": 3840},
-        "id": {"$ref": "#/$defs/id"}, "kind": {"enum": ["acid", "notes", "drums"]},
-        "steps": {"type": "integer", "minimum": 1, "maximum": 64},
-        "swing_percent100": {"type": "integer", "minimum": 5000, "maximum": 7500},
-        "gate_percent": {"type": "integer", "minimum": 10, "maximum": 100},
-        "transpose": {"type": "integer", "minimum": -24, "maximum": 24},
-        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
-        "data": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/cell"}},
-        "lanes": {"$ref": "#/$defs/lane_map"},
-        "expression": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/note_expression"}}
+        "step_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3840
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "acid",
+            "notes",
+            "drums"
+          ]
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "swing_percent100": {
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 7500
+        },
+        "gate_percent": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 100
+        },
+        "transpose": {
+          "type": "integer",
+          "minimum": -24,
+          "maximum": 24
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "data": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/cell"
+          }
+        },
+        "lanes": {
+          "$ref": "#/$defs/lane_map"
+        },
+        "expression": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/note_expression"
+          }
+        },
+        "performance": {
+          "$ref": "#/$defs/performance"
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "length_ticks",
+        "notes"
+      ],
+      "properties": {
+        "length_ticks": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 1099511627776
+        },
+        "notes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/performed_note"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/control_group"
+          }
+        }
+      }
+    },
+    "performed_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "end_tick",
+        "note",
+        "velocity"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627775
+        },
+        "end_tick": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776
+        },
+        "note": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "velocity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 127
+        },
+        "expressions": {
+          "type": "array",
+          "maxItems": 65536,
+          "items": {
+            "$ref": "#/$defs/performed_expression"
+          }
+        },
+        "group": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        }
+      }
+    },
+    "control_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "points"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z_][a-z0-9_-]*$"
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 65536,
+          "items": {
+            "$ref": "#/$defs/group_expression"
+          }
+        }
+      }
+    },
+    "group_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "pitch_cents",
+        "pressure",
+        "timbre"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627775
+        },
+        "pitch_cents": {
+          "type": "number",
+          "minimum": -9600,
+          "maximum": 9600
+        },
+        "pressure": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "timbre": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "performed_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "value",
+        "vibrato_rate_hz"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627776
+        },
+        "value": {
+          "$ref": "#/$defs/note_expression"
+        },
+        "vibrato_rate_hz": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
       }
     },
     "note_expression": {

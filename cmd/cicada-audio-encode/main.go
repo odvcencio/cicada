@@ -86,7 +86,13 @@ func run(args []string, out io.Writer) error {
 	if err := os.WriteFile(source, wave, 0600); err != nil {
 		return err
 	}
-	cmd := exec.Command(*encoder, "-v", "error", "-nostdin", "-threads", "1", "-y", "-i", source, "-map_metadata", "-1", "-c:a", "flac", "-compression_level", "8", "-sample_fmt", sampleFormat, target)
+	encoderArgs := []string{"-v", "error", "-nostdin", "-threads", "1", "-y", "-i", source, "-map_metadata", "-1", "-c:a", "flac", "-compression_level", "8", "-sample_fmt", sampleFormat}
+	if a.Frames < 16 {
+		// FFmpeg can otherwise choose the input length as an invalid FLAC
+		// block size. A legal block size still preserves a shorter final frame.
+		encoderArgs = append(encoderArgs, "-frame_size", "16")
+	}
+	cmd := exec.Command(*encoder, append(encoderArgs, target)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

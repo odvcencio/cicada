@@ -10,17 +10,17 @@ import (
 // encoding as version 13, so old fixtures and consumers stay byte-identical.
 func writeSchedule(w *writer, cfg *engine.Config) error {
 	if len(cfg.Schedule) > 65535 || len(cfg.Clips) > 65535 || len(cfg.Assets) > 65535 || len(cfg.Schedule) > 0 && len(cfg.Song) > 0 {
-		return Error("invalid schedule image counts or authority")
+		return imageError("invalid schedule image counts or authority")
 	}
 	needed := int64(24 + 26*len(cfg.Schedule) + 42*len(cfg.Clips))
 	for _, a := range cfg.Assets {
 		if a.SampleRate < 8000 || a.SampleRate > 192000 || len(a.Left) == 0 || len(a.Right) > 0 && len(a.Right) != len(a.Left) {
-			return Error("invalid audio asset dimensions")
+			return imageError("invalid audio asset dimensions")
 		}
 		needed += 9 + 4*int64(len(a.Left)+len(a.Right))
 	}
 	if needed > int64(MaxImageBytes-len(w.data)) {
-		return Error("project image exceeds 2 MiB")
+		return imageError("project image exceeds 2 MiB")
 	}
 	w.f32(cfg.MasterBiasL)
 	w.f32(cfg.MasterBiasR)
@@ -35,6 +35,7 @@ func writeSchedule(w *writer, cfg *engine.Config) error {
 		w.byte(v.Track)
 		w.u16(v.Scene)
 		w.u16(v.Index)
+		// ID is the placement identity, or milli-BPM for ScheduleTempo.
 		w.u32(v.ID)
 	}
 	for _, a := range cfg.Assets {
@@ -44,7 +45,7 @@ func writeSchedule(w *writer, cfg *engine.Config) error {
 		for _, channel := range [][]float32{a.Left, a.Right} {
 			for _, v := range channel {
 				if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-					return Error("non-finite audio asset")
+					return imageError("non-finite audio asset")
 				}
 				w.f32(v)
 			}
@@ -84,7 +85,7 @@ func readSchedule(r *reader, cfg *engine.Config) error {
 		return err
 	}
 	if count > 65535 || uint64(count)*26+uint64(assets)*9+uint64(clips)*42 > uint64(len(r.data)-r.at) {
-		return Error("invalid schedule image counts")
+		return imageError("invalid schedule image counts")
 	}
 	if count > 0 {
 		cfg.Schedule = make([]engine.ScheduleEvent, int(count))
@@ -137,10 +138,10 @@ func readSchedule(r *reader, cfg *engine.Config) error {
 		}
 		stereo, err := r.byte()
 		if err != nil || stereo > 1 {
-			return Error("invalid asset image channels")
+			return imageError("invalid asset image channels")
 		}
 		if frames == 0 || uint64(frames)*4*uint64(1+stereo) > uint64(len(r.data)-r.at) {
-			return Error("invalid asset image frames")
+			return imageError("invalid asset image frames")
 		}
 		a.SampleRate = int(rate)
 		a.Left = make([]float32, int(frames))
@@ -154,7 +155,7 @@ func readSchedule(r *reader, cfg *engine.Config) error {
 					return err
 				}
 				if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-					return Error("non-finite asset image")
+					return imageError("non-finite asset image")
 				}
 				channel[j] = value
 			}

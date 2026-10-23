@@ -14,6 +14,11 @@ const (
 	MessageSize = 16
 )
 
+// LiveIdentity opts OpNoteOn/OpNoteOff into independent live-note ownership.
+// Arg1=0 retains the legacy routing. In this mode Index is 1..65534, with
+// 65535 on NoteOff releasing live notes only. Hosts negotiate bit 20 first.
+const LiveIdentity uint32 = 1
+
 type Error string
 
 func (e Error) Error() string { return string(e) }
@@ -71,6 +76,11 @@ const (
 	// (mode 0 keep, 1 off, 2 slot, 3 clip) and Arg1=clip index. Unused fields
 	// are zero. The engine faults on a scene, slot or clip it does not have.
 	OpSetSceneBinding Op = 31
+	// OpBindNoteGroup binds a held live identity in Index to Arg0's shared
+	// group (1..65534). OpSetLiveGroup updates that group through release tails.
+	// Hosts negotiate live shared controls (bit 22) before using either opcode.
+	OpBindNoteGroup Op = 32
+	OpSetLiveGroup  Op = 33
 )
 
 type Quantize uint32
@@ -83,7 +93,7 @@ const QuantizePhrase Quantize = 21
 // off=true uses negative infinity to carry the source value off; all other
 // parameters must be finite. OpNoteOn and OpNoteOff use Index as a melodic
 // note identity (drum commands retain their lane index). OpNoteExpression uses
-// all three payload words as float32 controls, as do spatial commands;
+// all three payload words as float32 controls, as do OpSetLiveGroup and spatial commands;
 // other commands require Pad=0.
 type Command struct {
 	Op    Op
@@ -141,7 +151,7 @@ func EncodeCommand(c Command, tracks uint8) ([CommandSize]byte, error) {
 // DecodeCommand rejects malformed records before the engine receives them.
 func DecodeCommand(data []byte, tracks uint8) (Command, error) {
 	if len(data) != CommandSize {
-		return Command{}, Error("command must be exactly 24 bytes")
+		return Command{}, validationError("command must be exactly 24 bytes")
 	}
 	c := Command{
 		Op: Op(data[0]), Track: data[1], Index: get16(data[2:4]),
@@ -154,11 +164,11 @@ func DecodeCommand(data []byte, tracks uint8) (Command, error) {
 // DecodeCommands validates a whole batch before writing any command to dst.
 func DecodeCommands(data []byte, tracks uint8, dst []Command) (int, error) {
 	if len(data)%CommandSize != 0 {
-		return 0, Error("command batch has a partial record")
+		return 0, validationError("command batch has a partial record")
 	}
 	count := len(data) / CommandSize
 	if count > len(dst) {
-		return 0, Error("command batch exceeds destination capacity")
+		return 0, validationError("command batch exceeds destination capacity")
 	}
 	for i := 0; i < count; i++ {
 		if _, err := DecodeCommand(data[i*CommandSize:(i+1)*CommandSize], tracks); err != nil {
@@ -175,26 +185,26 @@ func DecodeCommands(data []byte, tracks uint8, dst []Command) (int, error) {
 // Parameter-specific ranges are checked by the host parameter registry.
 func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > limits.MaxTracks {
-		return Error("track count exceeds runtime capacity")
+		return validationError("track count exceeds runtime capacity")
 	}
-	if c.Op < OpPlay || c.Op > OpSetSceneBinding || c.Op == OpRetire || c.Op == OpSetLoop {
-		return Error("unknown command opcode")
+	if c.Op < OpPlay || c.Op > OpSetLiveGroup || c.Op == OpRetire || c.Op == OpSetLoop {
+		return validationError("unknown command opcode")
 	}
 	if c.Op == OpCue {
 		// Accepting a command that the engine cannot apply would queue it and then
 		// stop the engine with a fault, so refuse it here like any invalid command.
 		// Remove this check when the engine implements cues.
-		return Error("cue command is not implemented")
+		return validationError("cue command is not implemented")
 	}
-	if c.Op != OpNoteExpression && !spatialOp(c.Op) && c.Pad != 0 && !(c.Pad == PatternEditNow && patternEditOp(c.Op)) || c.Tick < 0 {
-		return Error("nonzero command padding or negative tick")
+	if c.Op != OpNoteExpression && c.Op != OpSetLiveGroup && !spatialOp(c.Op) && c.Pad != 0 && !(c.Pad == PatternEditNow && patternEditOp(c.Op)) || c.Tick < 0 {
+		return validationError("nonzero command padding or negative tick")
 	}
 	if globalOp(c.Op) {
 		if c.Track != 0xff {
-			return Error("global command requires track 255")
+			return validationError("global command requires track 255")
 		}
 	} else if c.Track >= tracks && !(c.Op == OpSetParam && c.Track == 0xff) {
-		return Error("command track is out of range")
+		return validationError("command track is out of range")
 	}
 	switch c.Op {
 	case OpSetTrackPosition, OpSetListenerPosition, OpSetListenerRotation:
@@ -205,56 +215,56 @@ func (c Command) Validate(tracks uint8) error {
 		for _, bits := range [3]uint32{c.Arg0, c.Arg1, c.Pad} {
 			value := math.Float32frombits(bits)
 			if math.IsNaN(float64(value)) || value < -limit || value > limit {
-				return Error("spatial coordinate is out of range")
+				return validationError("spatial coordinate is out of range")
 			}
 		}
 		if c.Op == OpSetTrackPosition {
 			if c.Index > 1 || c.Index == 0 && (c.Arg0 != 0 || c.Arg1 != 0 || c.Pad != 0) {
-				return Error("invalid spatial track mode")
+				return validationError("invalid spatial track mode")
 			}
 		} else if c.Index != 0 {
-			return Error("listener command has unexpected index")
+			return validationError("listener command has unexpected index")
 		}
 	case OpPlay, OpStop:
 		if c.Index != 0 || c.Arg0 != 0 || c.Arg1 != 0 {
-			return Error("transport command has unexpected payload")
+			return validationError("transport command has unexpected payload")
 		}
 	case OpSeek:
 		if c.Arg1 >= 3840 {
-			return Error("seek tick must be within one bar")
+			return validationError("seek tick must be within one bar")
 		}
 	case OpSetTempo:
 		if c.Arg0 < 20_000 || c.Arg0 > 300_000 {
-			return Error("tempo must be 20 to 300 BPM")
+			return validationError("tempo must be 20 to 300 BPM")
 		}
 	case OpSetParam:
 		spec, ok := kernel.Param(kernel.ParamID(c.Index))
 		if !ok {
-			return Error("unknown parameter ID")
+			return validationError("unknown parameter ID")
 		}
 		if !spec.Live {
-			return Error("parameter is not live")
+			return validationError("parameter is not live")
 		}
 		value := float64(math.Float32frombits(c.Arg0))
 		off := spec.Off && math.IsInf(value, -1)
 		if math.IsNaN(value) || math.IsInf(value, 0) && !off {
-			return Error("parameter must be finite")
+			return validationError("parameter must be finite")
 		}
 		if !off && (value < float64(spec.Min) || value > float64(spec.Max)) {
-			return Error("parameter is out of range")
+			return validationError("parameter is out of range")
 		}
 		if spec.Curve == "toggle" && value != 0 && value != 1 {
-			return Error("toggle parameter must be zero or one")
+			return validationError("toggle parameter must be zero or one")
 		}
 		if spec.Scope == "global" && c.Track != 0xff || spec.Scope == "track" && c.Track >= tracks {
-			return Error("parameter track scope is invalid")
+			return validationError("parameter track scope is invalid")
 		}
 		if c.Arg1 != 0 {
-			return Error("parameter command has unexpected payload")
+			return validationError("parameter command has unexpected payload")
 		}
 	case OpSetStep:
 		if c.Index >= 64 || c.Arg1 >= 16 || c.Arg0>>28 != 0 || c.Arg0>>14&0x7f > 100 || c.Arg0&(1<<10) != 0 && (c.Arg0&(1<<9) == 0 || c.Arg0>>11&7 != 0) {
-			return Error("step or slot is out of range")
+			return validationError("step or slot is out of range")
 		}
 	case OpSetChordStep:
 		if _, _, err := DecodeChordPayload(c); err != nil {
@@ -262,42 +272,53 @@ func (c Command) Validate(tracks uint8) error {
 		}
 	case OpSetPatternLen:
 		if c.Index < 1 || c.Index > 64 || c.Arg1 >= 16 {
-			return Error("pattern length or slot is out of range")
+			return validationError("pattern length or slot is out of range")
 		}
 	case OpSetPatternMeta:
 		transpose := int16(c.Arg0 >> 16)
 		if c.Index != 0 && (c.Index < 30 || c.Index > 3840) || c.Arg0&0xffff > 500 || transpose < -24 || transpose > 24 || c.Arg1 >= 16 {
-			return Error("pattern metadata is out of range")
+			return validationError("pattern metadata is out of range")
 		}
 	case OpSelectPattern:
 		if c.Index >= 16 || !validQuantize(c.Arg0) || c.Arg1 > 1 {
-			return Error("pattern slot or quantize is out of range")
+			return validationError("pattern slot or quantize is out of range")
 		}
 	case OpLaunchScene, OpCue:
 		if !validQuantize(c.Arg0) {
-			return Error("quantize is out of range")
+			return validationError("quantize is out of range")
 		}
 	case OpSetChain:
 		if c.Index >= 32 || c.Arg0>>16 != 0 || c.Arg0&0xff >= 16 || c.Arg0>>8&0xff == 0 || c.Arg1 != 0 {
-			return Error("chain entry is out of range")
+			return validationError("chain entry is out of range")
 		}
 	case OpNoteOn:
-		if c.Arg0&0xff >= 128 || c.Arg0>>8&0xff >= 128 || c.Arg0>>18 != 0 {
-			return Error("live note is out of range")
+		if c.Arg0&0xff >= 128 || c.Arg0>>8&0xff >= 128 || c.Arg0>>18 != 0 || c.Arg1 > LiveIdentity || c.Arg1 == LiveIdentity && (c.Index == 0 || c.Index == 65535 || c.Arg0&(1<<17) != 0) {
+			return validationError("live note is out of range")
 		}
-	case OpNoteExpression:
+	case OpNoteOff:
+		if c.Arg1 > LiveIdentity || c.Arg1 == LiveIdentity && (c.Index == 0 || c.Arg0 != 0) {
+			return validationError("live note is out of range")
+		}
+	case OpBindNoteGroup:
+		if c.Index == 0 || c.Index == 65535 || c.Arg0 == 0 || c.Arg0 >= 65535 || c.Arg1 != 0 {
+			return validationError("live group binding is out of range")
+		}
+	case OpNoteExpression, OpSetLiveGroup:
+		if c.Op == OpSetLiveGroup && (c.Index == 0 || c.Index == 65535) {
+			return validationError("live group identity is out of range")
+		}
 		pitch, pressure, timbre := math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad)
 		if math.IsNaN(float64(pitch)) || math.IsInf(float64(pitch), 0) || pitch < -9600 || pitch > 9600 || math.IsNaN(float64(pressure)) || pressure < 0 || pressure > 1 || math.IsNaN(float64(timbre)) || timbre < 0 || timbre > 1 {
-			return Error("note expression is out of range")
+			return validationError("note expression is out of range")
 		}
 	case OpSetLayerMask:
 		if (uint64(c.Arg0)|uint64(c.Arg1)<<32)>>tracks != 0 || limits.MaxTracks <= 32 && c.Arg1 != 0 {
-			return Error("layer mask exceeds track count")
+			return validationError("layer mask exceeds track count")
 		}
 	case OpSetLayers:
 		thresholds := c.Arg0
 		if thresholds>>24 != 0 {
-			return Error("at most three layer thresholds")
+			return validationError("at most three layer thresholds")
 		}
 		previous := uint32(0)
 		hasUnused := false
@@ -306,7 +327,7 @@ func (c Command) Validate(tracks uint8) error {
 			if threshold == 0 {
 				hasUnused = true
 			} else if hasUnused || level > 0 && threshold <= previous {
-				return Error("layer thresholds must be strictly ascending")
+				return validationError("layer thresholds must be strictly ascending")
 			}
 			if threshold != 0 {
 				previous = threshold
@@ -314,7 +335,7 @@ func (c Command) Validate(tracks uint8) error {
 			thresholds >>= 8
 		}
 		if c.Index >= 16 || c.Arg1 > 16 {
-			return Error("layer macro ID or release bars are out of range")
+			return validationError("layer macro ID or release bars are out of range")
 		}
 	case OpSetLayerMasks:
 		chunk := int(c.Index >> 4)
@@ -325,36 +346,36 @@ func (c Command) Validate(tracks uint8) error {
 		}
 		if chunk >= (limits.MaxTracks+15)/16 || chunkTracks <= 0 || uint32(uint16(c.Arg0))&^maskLimit != 0 || uint32(uint16(c.Arg0>>16))&^maskLimit != 0 ||
 			uint32(uint16(c.Arg1))&^maskLimit != 0 || uint32(uint16(c.Arg1>>16))&^maskLimit != 0 {
-			return Error("layer mask table exceeds macro or track count")
+			return validationError("layer mask table exceeds macro or track count")
 		}
 	case OpSetState:
 		if c.Index >= 64 || !validDirectorQuantize(c.Arg0>>16) {
-			return Error("state ID or quantize is out of range")
+			return validationError("state ID or quantize is out of range")
 		}
 	case OpTriggerStinger:
 		if c.Index >= 16 || !validDirectorQuantize(c.Arg0) {
-			return Error("stinger slot or quantize is out of range")
+			return validationError("stinger slot or quantize is out of range")
 		}
 	case OpSetPhraseBars:
 		if c.Index != 0 || c.Arg0 < 1 || c.Arg0 > 64 || c.Arg1 != 0 {
-			return Error("phrase length must be 1 to 64 bars")
+			return validationError("phrase length must be 1 to 64 bars")
 		}
 	case OpMeterRate:
 		if c.Arg0 == 0 {
-			return Error("meter rate must be positive")
+			return validationError("meter rate must be positive")
 		}
 	case OpSetSceneBinding:
 		track, mode, slot, spare := c.Arg0&0xff, c.Arg0>>8&0xff, c.Arg0>>16&0xff, c.Arg0>>24
 		if track >= limits.MaxTracks || mode > 3 || slot >= 16 || spare != 0 || c.Arg1 >= 65536 {
-			return Error("scene binding track, mode, slot or clip is out of range")
+			return validationError("scene binding track, mode, slot or clip is out of range")
 		}
 	case OpDefineMacro, OpSetMacro:
 		value := math.Float32frombits(c.Arg0)
 		if c.Index >= 16 || math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) || value < 0 || value > 1 {
-			return Error("macro ID or value is out of range")
+			return validationError("macro ID or value is out of range")
 		}
 		if c.Op == OpDefineMacro && c.Arg1 != 0 {
-			return Error("macro definition has unexpected smoothing")
+			return validationError("macro definition has unexpected smoothing")
 		}
 	}
 	return nil
@@ -400,11 +421,11 @@ func EncodeMessage(m Message) [MessageSize]byte {
 
 func DecodeMessage(data []byte) (Message, error) {
 	if len(data) != MessageSize {
-		return Message{}, Error("message must be exactly 16 bytes")
+		return Message{}, validationError("message must be exactly 16 bytes")
 	}
 	m := Message{Kind: Kind(data[0]), Track: data[1], A: get16(data[2:4]), B: get32(data[4:8]), Tick: int64(get64(data[8:16]))}
 	if m.Kind < Playhead || m.Kind > StingerEnded {
-		return Message{}, Error("unknown message kind")
+		return Message{}, validationError("unknown message kind")
 	}
 	return m, nil
 }
@@ -430,18 +451,18 @@ func get64(src []byte) uint64 { return uint64(get32(src)) | uint64(get32(src[4:]
 // command record. Hosts must negotiate chord capability before use.
 func ChordStepCommand(track, slot, index uint8, notes [4]uint8, count uint8) (Command, error) {
 	if track >= limits.MaxTracks || slot >= 16 || index >= 64 {
-		return Command{}, Error("chord command target is out of range")
+		return Command{}, validationError("chord command target is out of range")
 	}
 	if count < 2 || count > 4 {
-		return Command{}, Error("chord count must be 2 to 4")
+		return Command{}, validationError("chord count must be 2 to 4")
 	}
 	for i, note := range notes {
 		if note > 127 || i >= int(count) && note != 0 {
-			return Command{}, Error("invalid original chord pitch")
+			return Command{}, validationError("invalid original chord pitch")
 		}
 		for j := 0; j < i && i < int(count); j++ {
 			if note == notes[j] {
-				return Command{}, Error("chord pitches must be distinct")
+				return Command{}, validationError("chord pitches must be distinct")
 			}
 		}
 	}
@@ -456,16 +477,16 @@ func ChordStepCommand(track, slot, index uint8, notes [4]uint8, count uint8) (Co
 func DecodeChordPayload(c Command) (notes [4]uint8, count uint8, err error) {
 	count = uint8(c.Arg1 >> 4)
 	if c.Index >= 64 || c.Arg1>>7 != 0 || count < 2 || count > 4 || c.Arg0>>28 != 0 {
-		return notes, count, Error("invalid chord step payload")
+		return notes, count, validationError("invalid chord step payload")
 	}
 	for i := 0; i < 4; i++ {
 		notes[i] = uint8(c.Arg0 >> uint(i*7) & 127)
 		if i >= int(count) && notes[i] != 0 {
-			return notes, count, Error("unused chord pitch must be zero")
+			return notes, count, validationError("unused chord pitch must be zero")
 		}
 		for j := 0; j < i && i < int(count); j++ {
 			if notes[i] == notes[j] {
-				return notes, count, Error("chord pitches must be distinct")
+				return notes, count, validationError("chord pitches must be distinct")
 			}
 		}
 	}

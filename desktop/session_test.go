@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,15 @@ func TestStudioReadyLine(t *testing.T) {
 	}
 	if studioReadyLine.MatchString("Cicada Studio: http://example.com:80/") {
 		t.Fatal("non-loopback address matched")
+	}
+	local := "http://127.0.0.1:52341/__local/" + strings.Repeat("a", 26)
+	if match := studioReadyLine.FindStringSubmatch("Cicada Studio: " + local); len(match) != 2 || match[1] != local {
+		t.Fatal("desktop dropped the local startup capability")
+	}
+	for _, url := range []string{"http://127.0.0.1:52341/__local/short", "http://127.0.0.1:52341/other", "http://127.0.0.1:52341/@example.com"} {
+		if studioReadyLine.MatchString("Cicada Studio: " + url) {
+			t.Fatal("unexpected startup path accepted")
+		}
 	}
 }
 
@@ -30,6 +40,17 @@ func TestStudioArgs(t *testing.T) {
 	}
 	if got := studioArgs("song.cicada", "null"); got[len(got)-2] != "--audio" || got[len(got)-1] != "null" {
 		t.Fatalf("args with audio = %q", got)
+	}
+}
+
+func TestStudioEnvironmentKeepsStateInChosenDataFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Studio profile")
+	got := studioEnvironment(filepath.Join(dir, "state.json"))
+	if len(got) != 2 || got[0] != "CICADA_STATE_DIR="+dir || got[1] != "CICADA_AUDIO_SETTINGS_DIR=" {
+		t.Fatalf("audio settings escaped the chosen profile: %q", got)
+	}
+	if got := studioEnvironment(""); len(got) != 0 {
+		t.Fatalf("host without a data path changed the child environment: %q", got)
 	}
 }
 

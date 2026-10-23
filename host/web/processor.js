@@ -4,10 +4,10 @@ class CicadaKernel extends AudioWorkletProcessor {
     const port = this.port;
     const post = port.postMessage.bind(port);
     // The kernel drains up to engine.MessageCapacity (512) 16-byte messages; a Go test keeps this equal.
-    const CapabilityChords = 1, CapabilityUnifiedImage = 65536, MESSAGE_BYTES = 512 * 16;
+    const MESSAGE_BYTES = 512 * 16;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
-    let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
+    let capture, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
     const instances = [];
     let memoryCount = 0;
     const memoryBytes = () => {
@@ -24,8 +24,8 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 header');
       const version = bytes[4] | bytes[5] << 8;
       if (version === 14) invalid('Ambiguous image14; recompile');
-      if (version < 8 || version > 15) invalid(`Unsupported image version ${version}`);
-      const instance = await WebAssembly.instantiate(module);
+      if (version < 8 || version > 18) invalid(`Unsupported image ${version}`);
+      const instance = await WebAssembly.instantiate(o.m);
       const exports = instance.exports;
       let slot = 0;
       while (instances[slot]) slot++;
@@ -34,16 +34,21 @@ class CicadaKernel extends AudioWorkletProcessor {
       try {
         // TinyGo reactor exports require actual runtime initialization, including
         // the capability query. No image/bank upload occurs before negotiation.
-        if (typeof exports._initialize !== 'function') invalid('Reactor initializer missing');
+        if (typeof exports._initialize !== 'function') invalid('Missing audio init');
         exports._initialize();
         // Short local aliases reduce downloads without changing the export ABI.
         // These are the original exports, never wrappers around realtime calls.
         const x = {};
         for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
-        if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
-        const capability = x.capabilities ? x.capabilities() : 0;
-        if (capability !== (capability >>> 0) || (capability & ~0x3efff)) invalid('Invalid capabilities');
-        if (version === 15 && !(capability & CapabilityUnifiedImage)) invalid('image15 needs CapabilityUnifiedImage');
+        const query = x.capabilities;
+        if (query !== undefined && typeof query !== 'function') invalid('Invalid capability');
+        const capability = query ? query() : 0;
+        if ((capability & 0x7fefff) !== capability) invalid('Invalid capabilities');
+        // Required feature bits for image versions 15 through 18. Initialization
+        // may allocate these small tables; render callbacks never enter this path.
+        for (let index = 0; index <= version - 15; index++) {
+          if (!(capability & (1 << [16,18,19,21][index]))) invalid(`image${version} needs Capability${['UnifiedImage', 'Performance', 'Gestures', 'SharedControls'][index]}`);
+        }
         if (bank) {
           const bankPtr = x.bank_alloc(bank.byteLength);
           if (!bankPtr) invalid('bank');
@@ -64,7 +69,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         if (!bank) {
           const bankPtr = x.bank_image_ptr(), bankLen = x.bank_image_len();
           if (!bankPtr || !bankLen) invalid('bank');
-          bank = new Uint8Array(x.memory.buffer, bankPtr, bankLen).slice().buffer;
+          bank = x.memory.buffer.slice(bankPtr, bankPtr + bankLen);
         }
         const max = 128, out = x.out_ptr();
         const commandBuffer = x.cmd_cap() * 24;
@@ -114,7 +119,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       }
       if (data.t === 'c') return commit(active, data.bytes);
       if (data.t === 'i') {
-        if (pending === true) return reject('Image load in progress', data.r);
+        if (pending === true) return reject('Image loading', data.r);
         const staged = pending;
         pending = true;
         create(data.i).then(next => {
@@ -138,10 +143,9 @@ class CicadaKernel extends AudioWorkletProcessor {
       // Reject the whole batch before writing command memory or changing playback.
       if (!target) return reject('Reload audio');
       if (length % 24 || start + length > bytes.length) return reject();
-      const count = length / 24;
       let seekTick = null, starts = false, stops = false, committed = 0, queued = 0;
-      for (let i = 0; i < count; i++) {
-        const at = start + i * 24, op = bytes[at];
+      for (let at = start; at < start + length; at += 24) {
+        const op = bytes[at];
         if (op === 3) {
           let bar = 0, tick = 0;
           for (let j = 3; j >= 0; j--) { bar = bar * 256 + bytes[at + 4 + j]; tick = tick * 256 + bytes[at + 8 + j]; }
@@ -150,19 +154,20 @@ class CicadaKernel extends AudioWorkletProcessor {
         if (op === 1) starts = true;
         if (op === 2) stops = true;
       }
-      const promotes = pending && pending !== true && (stops || starts && seekTick !== null);
+      const promotes = pending?.x && (stops || starts && seekTick !== null);
       if (promotes) target = pending;
       if (length > target.d.length) return reject();
-      for (let i = 0; i < count; i++) {
-        const op = bytes[start + i * 24];
-        if (op === 22 && !(target.p & CapabilityChords)) return reject('Unsupported chord opcode22');
+      for (let at = start; at < start + length; at += 24) {
+        const op = bytes[at];
+        if ((op === 32 || op === 33) && !(target.p & 4194304)) return reject('Unsupported live shared controls');
+        if (op === 22 && !(target.p & 1)) return reject('Unsupported chord opcode22');
         if (op >= 26 && op <= 28 && !(target.p & 131072)) return reject('spatial');
         if (pending && !promotes && (op === 10 || op === 9)) queued++;
       }
       if (deferredCount + queued > deferred.length / 24) return reject();
       if (promotes) promote(target);
-      for (let i = 0; i < count; i++) {
-        const at = start + i * 24, op = bytes[at];
+      for (let at = start; at < start + length; at += 24) {
+        const op = bytes[at];
         const launch = op === 10 || op === 9;
         const queued = launch && pending;
         const destination = queued ? deferred : target.d;
@@ -183,7 +188,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     // The kernel owns the tempo map, so a scene tempo moves the bar boundary.
     const sampleAtTick = tick => anchorSample + active.x.tick_frames(anchorTick, tick);
     const swapAtBoundary = (tick) => {
-      if (!pending || pending === true) { nextBarTick += 3840; return; }
+      if (!pending?.x) { nextBarTick += 3840; return; }
       const next = pending;
       swapView.setUint32(4, tick / 3840, true);
       next.d.set(swap, 0);
@@ -200,7 +205,9 @@ class CicadaKernel extends AudioWorkletProcessor {
       }
       if (active && count) {
           let length = count * 16;
-          for (let i = 0; i < length; i++) view[i] = target.m[i];
+          // Copy the fixed message page; n bounds the valid records. A sliced
+          // typed-array view would allocate inside the render callback.
+          view.set(target.m);
           message.n = length;
           ready = false;
           post(message, transfer);

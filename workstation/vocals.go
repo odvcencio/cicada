@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/workstation/control"
 	"m31labs.dev/cicada/workstation/ui"
@@ -25,13 +26,14 @@ type vocalCompProjection struct {
 }
 
 type vocalLane struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	Start      int64  `json:"start"`
-	End        int64  `json:"end"`
-	Incomplete bool   `json:"incomplete"`
-	Stamp      string `json:"stamp"`
-	Tempo      int64  `json:"tempo"`
+	ID           string                  `json:"id"`
+	Label        string                  `json:"label"`
+	Start        int64                   `json:"start"`
+	End          int64                   `json:"end"`
+	Incomplete   bool                    `json:"incomplete"`
+	Stamp        string                  `json:"stamp"`
+	Tempo        int64                   `json:"tempo"`
+	TempoChanges []musictime.TempoChange `json:"tempoChanges,omitempty"`
 }
 
 type vocalLanesProps struct {
@@ -153,17 +155,12 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		if take.Timeline == nil || take.Track != chosen || take.Frames == 0 || take.Asset.Path == "" {
 			continue
 		}
-		clock := seq.Clock{SampleRate: int64(take.Rate), BPMMilli: take.Timeline.TempoMilli}
-		origin := int64(0)
-		if take.FirstBlock != nil {
-			origin = int64(take.FirstBlock.RawFrame) - take.FirstBlock.Placement.EngineFrame
-		}
-		coveredEnd := min(take.Timeline.EndTick, clock.TickAtSample(clock.SampleAtTick(take.Timeline.PlaybackStartTick)+int64(take.Frames)-origin))
+		_, coveredEnd := take.Coverage()
 		if coveredEnd <= take.Timeline.StartTick {
 			continue
 		}
 		if take.Timeline.StartTick < end {
-			lanes = append(lanes, vocalLane{ID: take.ID, Label: takeNames[take.ID], Start: take.Timeline.StartTick, End: coveredEnd, Incomplete: take.Incomplete, Stamp: take.Created.Format("Jan 2 15:04 UTC"), Tempo: take.Timeline.TempoMilli})
+			lanes = append(lanes, vocalLane{ID: take.ID, Label: takeNames[take.ID], Start: take.Timeline.StartTick, End: coveredEnd, Incomplete: take.Incomplete, Stamp: take.Created.Format("Jan 2 15:04 UTC"), Tempo: take.Timeline.TempoMilli, TempoChanges: take.Timeline.TempoChanges})
 		}
 	}
 	var current gosx.Node = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Your chosen vocal phrases will appear here. Every pass stays available below."))
@@ -207,7 +204,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		}
 		laneEditor = s.vocalLanes(ctx, v, csrf, chosen, lanes, state.Comps, vocalLanesProps{Revision: v.Revision, End: end, Selected: selected.ID, Start: lo, Stop: hi, Lanes: lanes, Track: chosen, Phrases: phrases}, active, button)
 	}
-	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-record"), gosx.Attr("data-capture-idle", idle)), controls), inputMeter(), gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("One-bar count-in, then backing pre-roll before the punch. Recording stops at Punch out. A clean pass updates that range in your vocal; Undo restores the previous choices.")), setup, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-choices")), gosx.El("h3", gosx.Text("Choose the best phrases")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Vocal tracks")), gosx.Fragment(trackLinks...)), current, laneEditor))
+	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-record"), gosx.Attr("data-capture-idle", idle)), controls), inputMeter(), gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("One-bar count-in, then backing pre-roll before the punch. Recording stops at Punch out. A clean pass updates that range in your vocal; Undo restores the previous choices.")), setup, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-choices")), gosx.El("h3", gosx.Text("Choose the best phrases")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Vocal tracks")), gosx.Fragment(trackLinks...)), current, laneEditor), s.sceneTakes(v, csrf, chosen, state.Takes, active))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaTakes", Kind: engine.KindSurface, MountID: "cicada-vocals", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapAudio}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "vocals", Title: "Record vocals", Description: "Full-song takes, punch-ins and your chosen vocal phrases."}, surface)
 }

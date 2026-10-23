@@ -15,7 +15,9 @@ func (u *vocalLanesUI) watchPlayback() {
 	for {
 		update := nativePlayback.Get()
 		u.playback, u.playbackAt = update.State.Playhead(), update.At
-		u.playback.Playing = u.playback.Playing && update.Ready && time.Since(update.At) < time.Second
+		fresh := update.Ready && time.Since(update.At) < time.Second && u.playback.ClockFresh(time.Since(update.At), time.Second)
+		u.playbackClockStale = u.playback.Playing && !fresh
+		u.playback.Playing = u.playback.Playing && fresh
 		u.streamIssue = update.State.Streaming != nil && (update.State.Streaming.MissingFrames > 0 || update.State.Streaming.Error != "")
 		if u.closed.Load() {
 			return
@@ -39,6 +41,10 @@ func (u *vocalLanesUI) drawPlayback() {
 	}
 	line.Set("hidden", !u.playback.Playing)
 	if !u.playback.Playing {
+		if u.playbackClockStale {
+			status.Set("textContent", "Playback position unavailable. Stop and retry playback.")
+			return
+		}
 		status.Set("textContent", "Hear a phrase once, or loop it until you stop. Space on a waveform hears or stops the selection.")
 		return
 	}

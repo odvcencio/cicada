@@ -6,7 +6,7 @@
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
   const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [], pageRequests = [];
-  const sharedSnapshots = [];
+  const sharedSnapshots = [], checkpoints = [];
   const NativeWebSocket = window.WebSocket;
   // Observe the real transport before the shared engine mounts. Never inject
   // a snapshot or change its handlers, traffic, or constructor behavior.
@@ -37,7 +37,18 @@
   window.fetch = function(...args) {
     const input = args[0], method = args[1]?.method || input?.method || 'GET';
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
+    const checkpoint = method.toUpperCase() === 'POST' && ['/__actions/source-checkpoint', '/__actions/note-checkpoint'].includes(path);
+    if (checkpoint) {
+      const raw = args[1]?.body;
+      const fields = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw));
+      const headers = new Headers(args[1]?.headers || input?.headers);
+      const csrf = document.querySelector('input[name=csrf_token]')?.value;
+      const sequence = Number(fields.recoverySequence || fields.sequence);
+      if (!csrf || headers.get('X-CSRF-Token') !== csrf || !Number.isSafeInteger(sequence) || sequence <= 0)
+        throw new Error('Recovery checkpoint lost its CSRF or sequence');
+      checkpoints.push(path);
+    }
+    if (!checkpoint && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) &&
         (path.startsWith('/__actions/') || path.startsWith('/api/'))) {
       let validRecoveryRelease = false;
       if (recoveryNavigationCSRF && path === '/__actions/live' && method.toUpperCase() === 'POST') {
@@ -598,7 +609,7 @@
     const recoveredNote = document.querySelector('#score .source-draft-note[role=status]');
     const recoveredState = await state(), recoveredCapture = await state('capture');
     if (document !== checkedDocument || editor().value !== draft || form().querySelector('input[name=file]').value !== checkedFile ||
-        !visible(recoveredNote) || recoveredNote.textContent !== 'Recovered draft. Not saved to disk.' ||
+        !visible(recoveredNote) || recoveredNote.textContent !== 'Recovered draft. The score file is unchanged.' ||
         [...document.querySelectorAll('#score .editor-save-status-saved')].some(visible) ||
         recoveredState.source !== original || recoveredState.revision !== beforeCheck.revision ||
         mutations.length !== checkMutations + 1 + recoveryReleases.length || submissions.length !== checkedSubmissions ||
@@ -667,7 +678,7 @@
     await saved(original, 'project Undo returns fixture');
     checks.push('project Undo/Redo outside editor restore exact saved score');
     if (errors.length) throw new Error(errors.join('; '));
-    return {type: 'cicada-native-smoke', ok: true, checks, interactions};
+    return {type: 'cicada-native-smoke', ok: true, checks, interactions, recoveryCheckpoints: checkpoints.length};
   })().catch(error => ({type: 'cicada-native-smoke', ok: false, checks, interactions, error: String(error) + '\n' + String(error.stack || '')}))
     .then(result => window.chrome.webview.postMessage(JSON.stringify(result)));
 })();

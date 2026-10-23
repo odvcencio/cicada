@@ -1,6 +1,9 @@
 package notation
 
-import "fmt"
+import (
+	"fmt"
+	"m31labs.dev/cicada/kernel/seq"
+)
 
 // DefaultAcidOctave is the home octave for acid notes without an octave override.
 const DefaultAcidOctave = 2
@@ -135,15 +138,16 @@ type Param struct {
 }
 
 type Pattern struct {
-	Name       string
-	Kind       string
-	Attrs      []Param
-	Velocity   []StepToken
-	Parts      []PatternPart // source order before expansion
-	Steps      []StepToken
-	Lanes      []Lane
-	Expression []ExpressionRow
-	Position   Position
+	Performance *seq.Performance
+	Name        string
+	Kind        string
+	Attrs       []Param
+	Velocity    []StepToken
+	Parts       []PatternPart // source order before expansion
+	Steps       []StepToken
+	Lanes       []Lane
+	Expression  []ExpressionRow
+	Position    Position
 }
 
 // ExpressionRow keeps source spelling and positions for per-step expression.

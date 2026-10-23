@@ -193,7 +193,7 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	originalScore, _ := files.Parse()
 	selected = resolvePresetSymbols([]language.Symbol{selected}, originalScore)[0]
 	local := selected.Kind == "binding" || selected.Kind == "parameter"
-	scope := instrumentScope(source, scalarOffset(source, selected.Position))
+	scope := localScope(source, scalarOffset(source, selected.Position))
 	changes := map[string]any{}
 	updated := append([]notation.SourceFile(nil), files.Files...)
 	if strings.Contains(selected.Name, ".") {

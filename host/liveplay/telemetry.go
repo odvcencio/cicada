@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"m31labs.dev/cicada/kernel/limits"
+	"m31labs.dev/cicada/musictime"
 	"math"
 	"sync"
 )
@@ -35,7 +36,8 @@ var le = binary.LittleEndian
 
 // TransportFrame is the playback position. Bar and Beat are 1-based. Tick is
 // the 0-based tick within the beat (0 to 959). LoopStart, LoopEnd and
-// InsertMarker are absolute ticks.
+// InsertMarker are absolute ticks. WallNanos is the Unix time of the original
+// render observation, retained when the same position is republished.
 type TransportFrame struct {
 	SampleFrame                      int64
 	SampleRate                       uint32
@@ -222,9 +224,10 @@ type Subscriber struct{ C chan FrameKind }
 // Publisher stores the latest frame of each kind and notifies subscribers.
 // It runs on the watcher goroutine, never on the audio thread.
 type Publisher struct {
-	mu     sync.Mutex
-	latest [4][]byte
-	subs   map[*Subscriber]struct{}
+	mu        sync.Mutex
+	latest    [4][]byte
+	nextTempo musictime.ObservedTempoStep
+	subs      map[*Subscriber]struct{}
 }
 
 // NewPublisher returns an empty publisher.
@@ -251,6 +254,11 @@ func (p *Publisher) publish(kind FrameKind, frame []byte) {
 		return
 	}
 	p.mu.Lock()
+	p.publishLocked(kind, frame)
+	p.mu.Unlock()
+}
+
+func (p *Publisher) publishLocked(kind FrameKind, frame []byte) {
 	p.latest[kind] = frame
 	for s := range p.subs {
 		select {
@@ -258,14 +266,25 @@ func (p *Publisher) publish(kind FrameKind, frame []byte) {
 		default:
 		}
 	}
-	p.mu.Unlock()
 }
 
 // PublishTransport stores and announces a transport frame.
 func (p *Publisher) PublishTransport(f TransportFrame) {
+	p.PublishTransportClock(f, musictime.ObservedTempoStep{})
+}
+
+// PublishTransportClock retains supplemental tempo metadata with its frame.
+// The binary transport ABI remains unchanged.
+func (p *Publisher) PublishTransportClock(f TransportFrame, next musictime.ObservedTempoStep) {
+	if p == nil {
+		return
+	}
 	b := make([]byte, TransportFrameSize)
 	f.Encode(b)
-	p.publish(FrameTransport, b)
+	p.mu.Lock()
+	p.nextTempo = next
+	p.publishLocked(FrameTransport, b)
+	p.mu.Unlock()
 }
 
 // PublishMeters stores and announces a meters frame.
@@ -283,11 +302,37 @@ func (p *Publisher) PublishHealth(f HealthFrame) {
 	p.publish(FrameHealth, b)
 }
 
+// Transport returns the newest transport value without copying meter buffers.
+func (p *Publisher) Transport() (TransportFrame, bool) {
+	f, _, ok := p.TransportClock()
+	return f, ok
+}
+
+// TransportClock returns one observation and its matching tempo metadata.
+func (p *Publisher) TransportClock() (TransportFrame, musictime.ObservedTempoStep, bool) {
+	if p == nil {
+		return TransportFrame{}, musictime.ObservedTempoStep{}, false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.latest[FrameTransport]) != TransportFrameSize {
+		return TransportFrame{}, musictime.ObservedTempoStep{}, false
+	}
+	f, err := DecodeTransportFrame(p.latest[FrameTransport])
+	return f, p.nextTempo, err == nil
+}
+
 // Latest returns copies of the newest frame of each kind, indexed by
 // FrameKind. A kind that was never published is nil.
 func (p *Publisher) Latest() [4][]byte {
+	frames, _ := p.LatestClock()
+	return frames
+}
+
+// LatestClock copies the newest frames with their transport tempo metadata.
+func (p *Publisher) LatestClock() ([4][]byte, musictime.ObservedTempoStep) {
 	if p == nil {
-		return [4][]byte{}
+		return [4][]byte{}, musictime.ObservedTempoStep{}
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -297,5 +342,5 @@ func (p *Publisher) Latest() [4][]byte {
 			out[i] = append([]byte(nil), b...)
 		}
 	}
-	return out
+	return out, p.nextTempo
 }

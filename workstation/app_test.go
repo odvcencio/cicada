@@ -50,7 +50,7 @@ func testAppWorkspace(t *testing.T, reply *workspace) (string, *http.Client, *[]
 				_ = json.NewEncoder(w).Encode(*reply)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
+			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", SourceRevision: "current-sources", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
 		case "/api/transport":
 			if r.Method == http.MethodPost {
 				var edit map[string]any
@@ -58,7 +58,7 @@ func testAppWorkspace(t *testing.T, reply *workspace) (string, *http.Client, *[]
 				edits = append(edits, edit)
 			}
 			_ = json.NewEncoder(w).Encode(transport{Bar: 1, Step: 1})
-		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/clip", "/api/automation":
+		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/export/midi", "/api/clip", "/api/automation":
 			if r.Method == http.MethodGet {
 				// The shell renders the export status; reads carry no edit.
 				_, _ = io.WriteString(w, `{}`)

@@ -43,8 +43,8 @@ song { main }
 		t.Fatalf("combined image: %v", err)
 	}
 	e, err := engine.New(decoded)
-	if err != nil || !e.TrackPolyphonic(0) || e.TrackPolyphonic(1) {
-		t.Fatalf("chord Live restriction affected the eight-voice mode: %v", err)
+	if err != nil || !e.TrackPolyphonic(0) || !e.TrackPolyphonic(1) {
+		t.Fatalf("native host did not discover both polyphonic voice modes: %v", err)
 	}
 	// A chord may disappear during editing without disabling ordinary polyphony.
 	score, ds = notation.Parse([]byte(strings.ReplaceAll(source, "[c4 e4] . [e4 g4] .", "c4 . e4 .")))

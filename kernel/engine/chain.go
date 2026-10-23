@@ -41,7 +41,7 @@ func chainStartTick(p *patternTrack, tick int64) int64 {
 	if tick <= start {
 		return start
 	}
-	length := int64(p.slots[p.active].Len) * p.slots[p.active].GridTicks()
+	length := p.slots[p.active].DurationTicks()
 	return start + ((tick-start+length-1)/length)*length
 }
 
@@ -59,7 +59,7 @@ func (e *Engine) advanceChains() {
 		p.chainRepeat = entry.repeats
 		e.selectPatternNow(track, int(entry.slot), true)
 		p.chainNext = (p.chainNext + 1) % p.chainLen
-		p.chainDue = e.transport.Tick() + int64(p.slots[entry.slot].Len)*p.slots[entry.slot].GridTicks()*int64(entry.repeats)
+		p.chainDue = e.transport.Tick() + p.slots[entry.slot].DurationTicks()*int64(entry.repeats)
 	}
 }
 
@@ -85,12 +85,12 @@ func (e *Engine) restoreSourceChains(tick int64) {
 		for i := uint8(0); i < p.sourceChainLen; i++ {
 			slot := p.sourceChain[i]
 			p.chain[i] = chainEntry{slot: slot, repeats: 1}
-			period += int64(p.slots[slot].Len) * p.slots[slot].GridTicks()
+			period += p.slots[slot].DurationTicks()
 		}
 		position := tick % period
 		for i := uint8(0); i < p.sourceChainLen; i++ {
 			slot := p.sourceChain[i]
-			length := int64(p.slots[slot].Len) * p.slots[slot].GridTicks()
+			length := p.slots[slot].DurationTicks()
 			if position >= length {
 				position -= length
 				continue

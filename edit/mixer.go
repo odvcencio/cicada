@@ -35,10 +35,22 @@ type mixerFXValue struct {
 // mixerSource writes one mixer gesture into the smallest CST span. It
 // returns the prior and canonical new value for the session history entry.
 func mixerSource(source []byte, path string, raw json.RawMessage) ([]byte, string, string, LineRange, error) {
+	return mixerSourceWithParser(source, path, raw, func(candidate []byte) (*notation.Score, []notation.Diagnostic, error) {
+		score, ds := notation.Parse(candidate)
+		return score, ds, nil
+	})
+}
+
+// The host's parser keeps references to other project sources available while
+// the CST patch remains confined to this source.
+func mixerSourceWithParser(source []byte, path string, raw json.RawMessage, parse func([]byte) (*notation.Score, []notation.Diagnostic, error)) ([]byte, string, string, LineRange, error) {
 	if path == "" || len(raw) == 0 {
 		return nil, "", "", LineRange{}, fmt.Errorf("mixer path and value are required")
 	}
-	score, diagnostics := notation.Parse(source)
+	score, diagnostics, parseErr := parse(source)
+	if parseErr != nil {
+		return nil, "", "", LineRange{}, parseErr
+	}
 	if score == nil || hasErrors(diagnostics) {
 		return nil, "", "", LineRange{}, fmt.Errorf("score must validate before a mixer edit")
 	}
@@ -71,7 +83,7 @@ func mixerSource(source []byte, path string, raw json.RawMessage) ([]byte, strin
 			if request.InsertOn != "music" || kind != "comp" {
 				return nil, "", "", LineRange{}, unsupportedMixerRoute("a compressor can only be inserted on bus music")
 			}
-			placed, _, _, insertedRange, insertErr := mixerSource(updated, "music.insert", json.RawMessage(strconv.Quote(name)))
+			placed, _, _, insertedRange, insertErr := mixerSourceWithParser(updated, "music.insert", json.RawMessage(strconv.Quote(name)), parse)
 			if insertErr != nil {
 				return nil, "", "", LineRange{}, insertErr
 			}
@@ -1155,7 +1167,11 @@ func setMixerParam(ctx *Context, path string, raw json.RawMessage, confirm bool)
 		}
 		ctx.Options.Edition = 2
 	}
-	updated, before, after, changedRange, err := mixerSource(working, path, raw)
+	updated, before, after, changedRange, err := mixerSourceWithParser(working, path, raw, func(candidate []byte) (*notation.Score, []notation.Diagnostic, error) {
+		workingContext := *ctx
+		workingContext.Source = candidate
+		return workingContext.ParseProject()
+	})
 	if err != nil {
 		return err
 	}

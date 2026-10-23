@@ -4,13 +4,20 @@ import (
 	"fmt"
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/kernel/seq"
-	"m31labs.dev/cicada/notation/musicaltime"
+	"m31labs.dev/cicada/musictime"
+	"math"
+	"strconv"
 )
 
 type Arrangement struct {
 	Placements []Placement
 	Markers    []Marker
+	Tempos     []ArrangementTempo
 	Position   Position
+}
+type ArrangementTempo struct {
+	At, Value string
+	Position  Position
 }
 type Placement struct {
 	Name, Track, Content string
@@ -28,7 +35,7 @@ type Marker struct {
 // MusicalTicks accepts exact 4/4 positions, bars, ticks, or note divisions.
 // Values outside the fixed tick resolution fail instead of being rounded.
 func MusicalTicks(value string, position bool) (int64, error) {
-	return musicaltime.Parse(value, position)
+	return musictime.MusicalTicks(value, position)
 }
 
 func parseArrangement(w *loweringWalker, n *gts.Node) *Arrangement {
@@ -46,6 +53,8 @@ func parseArrangement(w *loweringWalker, n *gts.Node) *Arrangement {
 			}
 		}
 		switch w.Type(c) {
+		case "arrangement_tempo":
+			a.Tempos = append(a.Tempos, ArrangementTempo{At: w.Text(w.Field(c, "at")), Value: w.Text(w.Field(c, "value")), Position: w.position(c)})
 		case "place_decl":
 			a.Placements = append(a.Placements, Placement{Name: w.Text(w.Field(c, "name")), Track: w.Text(w.Field(c, "track")), Content: w.Text(w.Field(c, "content")), AtTick: at, LengthTicks: length, Params: params, Position: w.position(c)})
 		case "marker_decl":
@@ -152,6 +161,25 @@ func ValidateArrangement(s *Score) []Diagnostic {
 	}
 	for _, m := range a.Markers {
 		fields(m.Name, m.Params, m.AtTick, 0, false, m.Position)
+	}
+	var end int64
+	for _, p := range a.Placements {
+		end = max(end, p.AtTick+p.LengthTicks)
+	}
+	previous := int64(-1)
+	if len(a.Tempos) > 65535 {
+		add("CICADA-LIMIT", "arrangement supports at most 65535 tempo steps", a.Position)
+	}
+	for _, tempo := range a.Tempos {
+		at, err := MusicalTicks(tempo.At, true)
+		if err != nil || at <= previous || at >= end || at%seq.TicksPerBar != 0 || at/seq.TicksPerBar > 1<<20 {
+			add("CICADA-POSITION", "tempo steps must increase at bar starts within the arrangement", tempo.Position)
+		}
+		previous = at
+		value, err := strconv.ParseFloat(tempo.Value, 64)
+		if err != nil || math.IsNaN(value) || value < 20 || value > 300 {
+			add("CICADA-UNIT", "tempo must be a number from 20 to 300 BPM", tempo.Position)
+		}
 	}
 	return ds
 }

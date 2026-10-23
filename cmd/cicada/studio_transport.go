@@ -20,8 +20,10 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/host/midi"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/project"
 )
 
@@ -34,10 +36,17 @@ type studioTransport struct {
 	audioBackend      string
 	mu                sync.Mutex
 	pollMu            sync.Mutex
+	audioConfigMu     sync.Mutex // serialize configuration while native permission waits
 	stream            *liveplay.Player
 	preview           *liveplay.Player
 	previewTimer      *time.Timer
 	previewGeneration uint64
+	previewOutputOnly bool
+	previewLoop       bool
+	previewSourceHash [32]byte
+	soundPreviewOwner string
+	pendingSoundLease string
+	soundLeases       [32]soundPreviewLease
 	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
@@ -58,6 +67,8 @@ type studioTransport struct {
 	pendingSong       string
 	pendingSongID     uint64
 	snapshotSeq       uint64
+	midiTimeline      midi.Timeline
+	midiFrameWall     int64
 	scene             string
 	stoppedTracks     map[string]bool
 	activeSlots       map[string]string
@@ -70,6 +81,10 @@ type studioTransport struct {
 	telemetry         *liveplay.Publisher
 	pendingCapture    *capture.Calibration
 	listening         *studioListening
+
+	audioSettingsPath    string
+	audioSettingsErr     error
+	audioSettingsWarning string
 }
 
 type studioMeterSnapshot struct {
@@ -86,28 +101,31 @@ type snapshotFrames struct {
 }
 
 type transportSnapshot struct {
-	Frames              *snapshotFrames     `json:"frames,omitempty"`
-	Type                string              `json:"type"`
-	Sequence            uint64              `json:"sequence"`
-	ActiveBackend       string              `json:"activeBackend"`
-	BrowserPlaying      bool                `json:"browserPlaying,omitempty"`
-	Playing             bool                `json:"playing"`
-	Bar                 int64               `json:"bar"`
-	Step                int64               `json:"step"`
-	Pending             bool                `json:"pending"`
-	PendingScene        string              `json:"pendingScene,omitempty"`
-	PendingSong         string              `json:"pendingSong,omitempty"`
-	PendingSlots        map[string]string   `json:"pendingSlots,omitempty"`
-	PendingSlotQuantize map[string]uint32   `json:"pendingSlotQuantize,omitempty"`
-	PendingQuantize     uint32              `json:"pendingQuantize,omitempty"`
-	StoppedTracks       []string            `json:"stoppedTracks,omitempty"`
-	ActiveSlots         map[string]string   `json:"activeSlots,omitempty"`
-	Scene               string              `json:"scene,omitempty"`
-	Landed              int64               `json:"landedBar,omitempty"`
-	Error               string              `json:"error"`
-	Listening           *studioListening    `json:"listening,omitempty"`
-	ListeningStatus     string              `json:"listeningStatus"`
-	Streaming           *studioStreamHealth `json:"streaming,omitempty"`
+	MIDIClockEpoch      uint64                       `json:"midiClockEpoch"`
+	FrameAgeNanos       *int64                       `json:"frameAgeNanos,omitempty"`
+	NextTempo           *musictime.ObservedTempoStep `json:"nextTempo,omitempty"`
+	Frames              *snapshotFrames              `json:"frames,omitempty"`
+	Type                string                       `json:"type"`
+	Sequence            uint64                       `json:"sequence"`
+	ActiveBackend       string                       `json:"activeBackend"`
+	BrowserPlaying      bool                         `json:"browserPlaying,omitempty"`
+	Playing             bool                         `json:"playing"`
+	Bar                 int64                        `json:"bar"`
+	Step                int64                        `json:"step"`
+	Pending             bool                         `json:"pending"`
+	PendingScene        string                       `json:"pendingScene,omitempty"`
+	PendingSong         string                       `json:"pendingSong,omitempty"`
+	PendingSlots        map[string]string            `json:"pendingSlots,omitempty"`
+	PendingSlotQuantize map[string]uint32            `json:"pendingSlotQuantize,omitempty"`
+	PendingQuantize     uint32                       `json:"pendingQuantize,omitempty"`
+	StoppedTracks       []string                     `json:"stoppedTracks,omitempty"`
+	ActiveSlots         map[string]string            `json:"activeSlots,omitempty"`
+	Scene               string                       `json:"scene,omitempty"`
+	Landed              int64                        `json:"landedBar,omitempty"`
+	Error               string                       `json:"error"`
+	Listening           *studioListening             `json:"listening,omitempty"`
+	ListeningStatus     string                       `json:"listeningStatus"`
+	Streaming           *studioStreamHealth          `json:"streaming,omitempty"`
 }
 
 type studioStreamHealth struct {
@@ -151,7 +169,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 			t.scene, t.activeSlots = scene, nil
 		}
 	}
-	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, MIDIClockEpoch: t.midiTimeline.Epoch(), Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if t.stream != nil {
 		stats := t.stream.StreamStats()
 		if stats.ArenaBytes > 0 {
@@ -209,7 +227,23 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		}
 	}
 	if t.telemetry != nil {
-		latest := t.telemetry.Latest()
+		latest, next := t.telemetry.LatestClock()
+		if frame, err := liveplay.DecodeTransportFrame(latest[liveplay.FrameTransport]); err == nil {
+			now := time.Now().UnixNano()
+			age := int64(-1) // A wall-clock discontinuity cannot be extrapolated.
+			if frame.WallNanos > 0 && frame.WallNanos <= now {
+				age = now - frame.WallNanos
+			}
+			state.FrameAgeNanos = &age
+			tick := (int64(frame.Bar)-1)*3840 + (int64(frame.Beat)-1)*960 + int64(frame.Tick)
+			if next.Valid(tick, int64(frame.TempoMilli)) {
+				state.NextTempo = &next
+			}
+			if t.stream != nil {
+				t.observeMIDIFrameLocked(frame, next, now, midi.HostTimeNanos())
+				state.MIDIClockEpoch = t.midiTimeline.Epoch()
+			}
+		}
 		frames := snapshotFrames{
 			Transport: base64.StdEncoding.EncodeToString(latest[liveplay.FrameTransport]),
 			Meters:    base64.StdEncoding.EncodeToString(latest[liveplay.FrameMeters]),
@@ -265,6 +299,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.stopPreviewLocked()
+	changeMIDIClock := t.stream == nil || !t.playing || index >= 0 || listening != nil || t.listening != nil
 	if t.stream != nil {
 		wasListening := t.listening != nil
 		if listening != nil {
@@ -345,8 +380,12 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 			}
 		}
 		t.playing, t.errText = true, ""
+		if changeMIDIClock {
+			t.resetMIDIClockLocked()
+		}
 		t.stream.SetTransportPlaying(true)
 		t.stream.PublishTelemetry()
+		t.observeMIDIClockLocked()
 		t.publishHealthLocked()
 		return nil
 	}
@@ -443,7 +482,9 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		t.scene = stream.CurrentScene()
 	}
 	stream.SetPublisher(t.telemetry)
+	t.resetMIDIClockLocked()
 	stream.PublishTelemetry()
+	t.observeMIDIClockLocked()
 	t.publishHealthLocked()
 	healthTicks, stopHealthTicks := t.startHealthTicks()
 	go t.watch(ctx, stream, healthTicks, stopHealthTicks)
@@ -558,6 +599,9 @@ func (t *studioTransport) pause() {
 }
 
 func (t *studioTransport) pauseLocked() {
+	if t.playing {
+		t.resetMIDIClockLocked()
+	}
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
@@ -790,6 +834,11 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player, he
 			}
 			t.mu.Unlock()
 			stream.PublishTelemetry()
+			t.mu.Lock()
+			if t.stream == stream {
+				t.observeMIDIClockLocked()
+			}
+			t.mu.Unlock()
 		case <-healthFrames:
 			t.mu.Lock()
 			t.publishHealthLocked()
@@ -948,7 +997,7 @@ func (t *studioTransport) poll() {
 	}
 	var next liveplay.Score
 	if err == nil {
-		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
+		next, err = compileStudioListeningScore(t.path, project, listening, sampleRate)
 		if err == nil && listening != nil {
 			r := listening.playbackRange()
 			next.Range = &r
@@ -1208,7 +1257,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
 		}
-	case "loop", "loopSection", "audition":
+	case "loop", "loopSection", "audition", "patternAudition":
 		if status, err := s.startListeningLocked(input); err != nil {
 			studioJSON(w, status, map[string]string{"error": err.Error()})
 			return

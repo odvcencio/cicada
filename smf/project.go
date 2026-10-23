@@ -30,7 +30,7 @@ func FromProject(p *project.Project, bars int) (File, error) {
 
 func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (File, error) {
 	var file File
-	cfg, err := project.CompileEngine(p, 48_000, 128)
+	cfg, err := project.CompileNoteSchedule(p)
 	if err != nil {
 		return file, err
 	}
@@ -75,7 +75,10 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	channels := make([]uint8, len(p.Tracks))
 	nextChannel := uint8(0)
 	for i, track := range p.Tracks {
-		if cfg.Track[i].Kind == engine.VoiceDrums {
+		if cfg.TrackKinds[i] == engine.VoiceAudio {
+			// Retain a named, empty chunk and its duration without consuming a
+			// melodic channel. MIDI cannot carry the recorded waveform.
+		} else if cfg.TrackKinds[i] == engine.VoiceDrums {
 			channels[i] = 9
 		} else {
 			if nextChannel == 9 {
@@ -91,12 +94,13 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	}
 	if p.Arrange != nil {
 		appendPlacements(&file, p, &cfg, channels, endTick)
-		return file, nil
+		return prepareGestureMIDI(file)
 	}
 	var slots [engine.MaxTracks]int
 	for i := range slots {
 		slots[i] = -1
 	}
+	var origins [engine.MaxTracks]int64
 	var chained [engine.MaxTracks]bool
 	for ti := range p.Tracks {
 		chained[ti] = len(cfg.Patterns[ti].Chain) > 0
@@ -108,22 +112,51 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		for repeat := 0; repeat < int(entry.Bars) && bar < bars; repeat++ {
 			boundary := int64(bar) * seq.TicksPerBar
 			for ti := range p.Tracks {
+				if cfg.TrackKinds[ti] == engine.VoiceAudio {
+					continue
+				}
 				binding := scene.Track[ti]
 				switch binding.Mode {
 				case engine.SceneOff:
+					old := slots[ti]
+					if chained[ti] {
+						old, _ = chainPosition(&cfg.Patterns[ti], max(int64(0), boundary-1))
+					}
+					if old >= 0 && cfg.Patterns[ti].Slots[old].Performance != nil {
+						closePerformedAt(&file.Tracks[ti+1], boundary)
+					}
 					chained[ti] = false
 					for lane := range held[ti] {
 						closeAt(&file.Tracks[ti+1], &held[ti][lane], boundary)
 					}
 					slots[ti] = -1
 				case engine.SceneSlot:
-					chained[ti] = false
-					slots[ti] = int(binding.Slot)
+					old, origin := slots[ti], origins[ti]
+					if chained[ti] {
+						old, origin = chainPosition(&cfg.Patterns[ti], max(int64(0), boundary-1))
+					}
+					target := &cfg.Patterns[ti].Slots[binding.Slot]
+					if old != int(binding.Slot) {
+						if old >= 0 && cfg.Patterns[ti].Slots[old].Performance != nil {
+							closePerformedAt(&file.Tracks[ti+1], boundary)
+						}
+						origin = 0
+						if target.Performance != nil {
+							for lane := range held[ti] {
+								closeAt(&file.Tracks[ti+1], &held[ti][lane], boundary)
+							}
+							appendPerformedChase(&file.Tracks[ti+1], target, origin, boundary, endTick, uint8(ti), channels[ti])
+						}
+					}
+					chained[ti], slots[ti], origins[ti] = false, int(binding.Slot), origin
 				}
 			}
 			for ti := range p.Tracks {
+				if cfg.TrackKinds[ti] == engine.VoiceAudio {
+					continue
+				}
 				if chained[ti] {
-					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.Track[ti].Kind == engine.VoiceDrums, &held[ti])
+					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.TrackKinds[ti] == engine.VoiceDrums, &held[ti])
 					continue
 				}
 				slot := slots[ti]
@@ -138,13 +171,17 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 					if pattern.Len == 0 {
 						return
 					}
+					if pattern.Performance != nil {
+						appendPerformedRange(&file.Tracks[ti+1], pattern, origins[ti], boundary, boundary+seq.TicksPerBar, endTick, uint8(ti), channels[ti])
+						return
+					}
 					grid := pattern.GridTicks()
 					first := (boundary + grid - 1) / grid
 					for absoluteStep := first; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
 						appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, lane, isDrum, channels[ti], &held[ti][0])
 					}
 				}
-				if cfg.Track[ti].Kind == engine.VoiceDrums {
+				if cfg.TrackKinds[ti] == engine.VoiceDrums {
 					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 						pattern := &cfg.Patterns[ti].Drums[slot][lane]
 						if pattern.Len == 0 {
@@ -165,7 +202,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 			break
 		}
 	}
-	return file, nil
+	return prepareGestureMIDI(file)
 }
 
 // FromPattern exports a selected pattern with its first compatible track.
@@ -200,11 +237,7 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	}
 	if selected < 0 {
 		for i, track := range p.Tracks {
-			isDrum := track.Kind == "drums"
-			for _, kit := range p.Kits {
-				isDrum = isDrum || kit.ID == track.Kind
-			}
-			if pattern.Kind == "drums" && isDrum || pattern.Kind == "acid" && track.Kind == "acid" || pattern.Kind == "notes" && !isDrum {
+			if project.PatternTrackCompatible(p, *pattern, track) {
 				selected = i
 				break
 			}
@@ -224,11 +257,10 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	track.Slots[0] = &patternID
 	clone.Tracks = []project.Track{track}
 	clone.Scenes = []project.Scene{{ID: "midi-pattern", Bindings: map[string]string{track.ID: patternID}}}
-	grid := int64(pattern.StepTicks)
-	if grid == 0 {
-		grid = seq.TicksPerStep
+	bars := int((pattern.DurationTicks() + seq.TicksPerBar - 1) / seq.TicksPerBar)
+	if bars > 256 {
+		return File{}, fmt.Errorf("MIDI export requires 1 to 256 pattern bars")
 	}
-	bars := int((int64(pattern.Steps)*grid + seq.TicksPerBar - 1) / seq.TicksPerBar)
 	clone.Song = []project.SongEntry{{Scene: "midi-pattern", Bars: uint16(bars)}}
 	clone.Title = patternID
 	return fromProject(&clone, bars, &probabilityIdentity{track: uint8(selected), slot: uint8(selectedSlot)})
@@ -313,13 +345,21 @@ func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64,
 	var period int64
 	for _, slot := range bank.Chain {
 		p := &bank.Slots[slot]
-		period += int64(p.Len) * p.GridTicks()
+		period += p.DurationTicks()
 	}
 	for cycle := boundary / period * period; cycle < boundary+seq.TicksPerBar; cycle += period {
 		start := cycle
 		for _, slot := range bank.Chain {
 			p := &bank.Slots[slot]
-			length := int64(p.Len) * p.GridTicks()
+			length := p.DurationTicks()
+			if p.Performance != nil {
+				if start >= boundary {
+					closeAt(track, &held[0], start)
+				}
+				appendPerformedRange(track, p, start, boundary, boundary+seq.TicksPerBar, min(start+length, track.EndTick), trackIndex, channel)
+				start += length
+				continue
+			}
 			for index := int64(0); index < int64(p.Len); index++ {
 				tick := start + index*p.GridTicks()
 				if tick < boundary || tick >= boundary+seq.TicksPerBar {

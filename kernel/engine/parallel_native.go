@@ -52,7 +52,7 @@ type parallelConfig struct{ waitFloor time.Duration }
 
 func (e *Engine) configureParallel(cfg *Config) error {
 	if cfg.ParallelWaitFloor < 0 {
-		return Error("parallel wait floor is out of range")
+		return engineError("parallel wait floor is out of range")
 	}
 	e.parallelConfig.waitFloor = cfg.ParallelWaitFloor
 	return nil
@@ -66,10 +66,10 @@ func (e *Engine) configureParallel(cfg *Config) error {
 // is immutable and all worker startup finishes here.
 func (e *Engine) EnableParallel(workers int) error {
 	if workers < 0 || workers > maxParallelLanes {
-		return Error("parallel DSP requires zero to four render lanes")
+		return engineError("parallel DSP requires zero to four render lanes")
 	}
 	if e.parallel != nil {
-		return Error("parallel DSP is already configured")
+		return engineError("parallel DSP is already configured")
 	}
 	if workers == 0 {
 		if e.tracks < 32 {

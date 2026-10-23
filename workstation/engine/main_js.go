@@ -22,7 +22,9 @@ type pair struct {
 
 // All Studio surfaces share this module. A confirmed workspace revision can
 // advance live commands without disposing their input leases or held notes.
-var confirmedWorkspaceRevision = signal.New("")
+type workspaceVersion struct{ Revision, SourceRevision string }
+
+var confirmedWorkspaceVersion = signal.New(workspaceVersion{})
 
 // A retained Live take changes its server projection, while the input engine
 // keeps its lease and controls mounted. The workspace owns the refresh.
@@ -44,6 +46,12 @@ type meterFrame struct {
 // The engine owns only this meter mount. Tymbal and Cicada's kernel remain in
 // the native service. GoSX owns module boot, registration, remount and disposal.
 func main() {
+	if err := enginewasm.Register("CicadaSounds", mountSounds); err != nil {
+		panic(err)
+	}
+	if err := enginewasm.Register("CicadaPatternPreview", mountSounds); err != nil {
+		panic(err)
+	}
 	if err := enginewasm.Register("CicadaShell", mountShell); err != nil {
 		panic(err)
 	}

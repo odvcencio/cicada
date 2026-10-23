@@ -33,6 +33,7 @@ type Sources struct {
 	Imports      []notation.Import
 	Bindings     map[string]map[string]string
 	librarySum   []byte
+	revisionOnly bool
 }
 
 // ReadSources loads the closest explicit manifest, or the requested loose or
@@ -66,6 +67,10 @@ func LoadScorePinned(path string, overrides map[string][]byte, resolution Resolu
 }
 
 func readSources(path string, overrides map[string][]byte, pin *Resolution) (*Sources, error) {
+	return readSourcesMode(path, overrides, pin, false)
+}
+
+func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, revisionOnly bool) (*Sources, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -83,7 +88,7 @@ func readSources(path string, overrides map[string][]byte, pin *Resolution) (*So
 			return nil, err
 		}
 	}
-	set := &Sources{Root: filepath.Dir(absolute), ManifestPath: manifestPath}
+	set := &Sources{Root: filepath.Dir(absolute), ManifestPath: manifestPath, revisionOnly: revisionOnly}
 	paths := []string{absolute}
 	if manifestPath != "" {
 		set.Root = filepath.Dir(manifestPath)
@@ -110,7 +115,7 @@ func readSources(path string, overrides map[string][]byte, pin *Resolution) (*So
 						return nil, parseErr
 					}
 					if parent.Project != "" && parent.Entry != "" {
-						containing, loadErr := ReadSources(filepath.Join(dir, filepath.FromSlash(parent.Entry)), overrides)
+						containing, loadErr := readSourcesMode(filepath.Join(dir, filepath.FromSlash(parent.Entry)), overrides, nil, revisionOnly)
 						if loadErr != nil {
 							return nil, loadErr
 						}

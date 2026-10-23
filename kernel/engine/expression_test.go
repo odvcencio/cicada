@@ -21,7 +21,7 @@ func expressionCommand(identity uint16, pressure float32) cmd.Command {
 	return cmd.Command{Op: cmd.OpNoteExpression, Track: 0, Index: identity, Arg1: math.Float32bits(pressure), Pad: math.Float32bits(.5)}
 }
 
-func TestPolyLiveExpressionPreservesUnsupportedGuard(t *testing.T) {
+func TestPolyStaleLiveExpressionDoesNotFaultOrTouchScoreVoices(t *testing.T) {
 	e, err := New(polyConfig())
 	if err != nil {
 		t.Fatal(err)
@@ -32,12 +32,10 @@ func TestPolyLiveExpressionPreservesUnsupportedGuard(t *testing.T) {
 	var left, right [128]float32
 	e.Render(left[:], right[:])
 	var message cmd.Message
-	found := false
 	for e.Poll(&message) {
-		found = found || message.Kind == cmd.Fault && message.A == cmd.FaultPolyLive
-	}
-	if !found {
-		t.Fatal("poly live expression did not report unsupported capability")
+		if message.Kind == cmd.Fault {
+			t.Fatal("stale live expression faulted", message)
+		}
 	}
 }
 

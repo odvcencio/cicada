@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
@@ -41,6 +42,38 @@ song { main }
 	}
 	if !bytes.Contains(rewritten, []byte("level = -12dB")) || !bytes.Contains(rewritten, []byte("pan = -1")) {
 		t.Fatalf("mixer disappeared: %s", rewritten)
+	}
+}
+
+func TestTimelineMixerLevelsSurviveProjectJSON(t *testing.T) {
+	for _, timeline := range []string{"arrange { place bass bass riff { at=@1.1.1 length=4bars } }", "scene main { bass=riff }\nsong { main*4 }\nautomate bass.cutoff { @1.1.1 400Hz @5.1.1 1600Hz smooth }"} {
+		score, ds := notation.Parse([]byte("cicada 2\ntrack bass acid { level=-18dB pan=-0.5 }\npattern riff { c2 . g2 . }\n" + timeline))
+		if hasErrors(ds) {
+			t.Fatal(ds)
+		}
+		p, ds := FromScore(score)
+		if p == nil {
+			t.Fatal(ds)
+		}
+		data, err := CanonicalJSON(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := DecodeJSON(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, err := CompileEngine(p, 48000, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := CompileEngine(decoded, 48000, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.Track[0].GainDB != -18 || after.Track[0].GainDB != -18 || after.Track[0].Pan != -.5 || !reflect.DeepEqual(before, after) {
+			t.Fatal("timeline JSON changed mixer sound", before.Track[0].GainDB, after.Track[0].GainDB)
+		}
 	}
 }
 

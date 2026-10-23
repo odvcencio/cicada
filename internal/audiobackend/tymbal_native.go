@@ -3,6 +3,7 @@
 package audiobackend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -24,6 +25,19 @@ func newTymbalBackend() (Backend, error) {
 }
 
 func (tymbalBackend) Name() Name { return Tymbal }
+
+func (b tymbalBackend) CaptureSupported() bool {
+	return b.host.Name() != ""
+}
+
+func (b tymbalBackend) InputAccess() (InputAccess, error) {
+	access, err := b.host.InputAccess()
+	return InputAccess(access), err
+}
+
+func (b tymbalBackend) RequestInputAccess(ctx context.Context) error {
+	return b.host.RequestInputAccess(ctx)
+}
 
 func (b tymbalBackend) Devices() ([]Device, bool, error) {
 	native, err := b.host.Devices()
@@ -135,7 +149,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 	var nativeStream *tymbal.Stream
 	var openErr error
-	timing := &tymbalTiming{tap: config.Capture, epoch: deviceEpoch.Add(1)}
+	timing := &tymbalTiming{tap: config.Capture, epoch: deviceEpoch.Add(1), estimatedOutput: b.host.Name() == "coreaudio"}
 	for _, period := range periods {
 		cfg := tymbal.Config{
 			Output: &output, OutChannels: config.Channels,
@@ -245,9 +259,10 @@ func tymbalHostLabel(goos string) string {
 var deviceEpoch atomic.Uint64
 
 type tymbalTiming struct {
-	tap    func(capture.Block, [][]float32)
-	epoch  uint64
-	actual tymbal.Actual
+	tap             func(capture.Block, [][]float32)
+	epoch           uint64
+	actual          tymbal.Actual
+	estimatedOutput bool
 }
 
 func tymbalCallback(render Callback, callbackErr *atomic.Pointer[audioError]) tymbal.Callback {
@@ -281,6 +296,9 @@ func (s *tymbalTiming) block(t tymbal.Time, input, output [][]float32) capture.B
 		frames = len(input[0])
 	}
 	outRef := capture.ReferenceFirstFrame
+	if s.estimatedOutput {
+		outRef = capture.ReferenceEstimatedFirstFrame
+	}
 	// WASAPI exposes an audio-clock observation, not the queued render frame.
 	if t.OutputFrequency != 0 {
 		outRef = capture.ReferenceClockObservation

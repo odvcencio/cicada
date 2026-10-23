@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -40,10 +41,15 @@ func enumerateStudioAudio(backendName string) (studioAudioInventory, error) {
 	name := audiobackend.Name(backendName)
 	inventory := studioAudioInventory{
 		Backend: studioAudioBackendLabel(name), BackendName: string(name), Host: studioAudioHost(name), Supported: supported,
-		BufferChoices: []int{64, 128, 256, 512, 1024},
+		CaptureSupported: backend.CaptureSupported(),
+		BufferChoices:    []int{64, 128, 256, 512, 1024},
 	}
 	if err != nil {
 		return inventory, err
+	}
+	inventory.InputAccess, err = audiobackend.QueryInputAccess(backend)
+	if err != nil {
+		inventory.InputMessage = err.Error()
 	}
 	if !supported {
 		inventory.Message = "This backend uses the system default output and does not expose selectable devices."
@@ -65,6 +71,14 @@ func enumerateStudioAudio(backendName string) (studioAudioInventory, error) {
 	return inventory, nil
 }
 
+func requestStudioInputAccess(ctx context.Context, backendName string) error {
+	backend, err := audiobackend.New(audiobackend.Name(backendName))
+	if err != nil {
+		return err
+	}
+	return audiobackend.RequestInputAccess(ctx, backend)
+}
+
 func studioAudioSampleRate(backendName string, options studioAudioOptions) (int, error) {
 	options = normalizeStudioAudioOptions(effectiveStudioAudioOptions(backendName, options))
 	if err := validateStudioAudioOptions(options); err != nil {
@@ -75,7 +89,7 @@ func studioAudioSampleRate(backendName string, options studioAudioOptions) (int,
 		return 0, err
 	}
 	captureChannels := 0
-	if options.InputEnabled {
+	if options.InputEnabled && studioInputAccessError(backend) == nil {
 		captureChannels = 2
 	}
 	return backend.SampleRate(audiobackend.Config{
@@ -83,6 +97,36 @@ func studioAudioSampleRate(backendName string, options studioAudioOptions) (int,
 		Device: options.OutputDevice, CaptureDevice: options.InputDevice,
 		CaptureChannels: captureChannels, AllowMissingInput: true,
 	})
+}
+
+func studioInputAccessError(backend audiobackend.Backend) error {
+	access, err := audiobackend.QueryInputAccess(backend)
+	if err != nil {
+		return fmt.Errorf("microphone access could not be checked: %w", err)
+	}
+	switch access {
+	case audiobackend.InputAccessGranted:
+		return nil
+	case audiobackend.InputAccessPrompt:
+		return fmt.Errorf("enable input and apply audio settings to allow microphone access")
+	case audiobackend.InputAccessDenied, audiobackend.InputAccessRestricted:
+		return fmt.Errorf("allow Cicada Studio microphone access in System Settings > Privacy & Security > Microphone")
+	default:
+		return fmt.Errorf("recording input is unavailable with this audio backend")
+	}
+}
+
+// Recording is strict about input. Playback may continue output-only while
+// permission is missing; that must never create or arm a silent take.
+func openStudioRecordingAudio(source io.Reader, options studioAudioOptions, backendName string, sampleRate int) (studioAudioDevice, error) {
+	backend, err := audiobackend.New(audiobackend.Name(backendName))
+	if err != nil {
+		return nil, err
+	}
+	if err := studioInputAccessError(backend); err != nil {
+		return nil, err
+	}
+	return openStudioAudio(source, options, backendName, sampleRate)
 }
 
 func openStudioAudio(source io.Reader, options studioAudioOptions, backendName string, sampleRate int) (studioAudioDevice, error) {
@@ -94,9 +138,18 @@ func openStudioAudio(source io.Reader, options studioAudioOptions, backendName s
 	if err != nil {
 		return nil, err
 	}
+	return openStudioAudioBackend(source, options, backendName, sampleRate, backend)
+}
+
+func openStudioAudioBackend(source io.Reader, options studioAudioOptions, backendName string, sampleRate int, backend audiobackend.Backend) (studioAudioDevice, error) {
 	captureChannels := 0
+	var inputWarning string
 	if options.InputEnabled {
-		captureChannels = 2
+		if err := studioInputAccessError(backend); err != nil {
+			inputWarning = err.Error() + "; playback is running without recording input."
+		} else {
+			captureChannels = 2
+		}
 	}
 	session := &backendStudioAudio{
 		reader:                source,
@@ -104,6 +157,7 @@ func openStudioAudio(source io.Reader, options studioAudioOptions, backendName s
 		outputName:            "System default",
 		rawOutput:             backendName != string(audiobackend.Tymbal),
 		requestedPeriodFrames: options.PeriodFrames,
+		startupWarning:        inputWarning,
 	}
 	session.engineEpoch = studioEngineEpoch.Add(1)
 	monitor := studioMonitorOptions(options)
@@ -127,7 +181,7 @@ func openStudioAudio(source io.Reader, options studioAudioOptions, backendName s
 	if session.actual.CaptureDevice != "" {
 		session.inputName = session.actual.CaptureDevice
 	}
-	if options.InputEnabled && session.actual.CaptureChannels == 0 {
+	if options.InputEnabled && session.actual.CaptureChannels == 0 && session.startupWarning == "" {
 		session.startupWarning = "No default input endpoint is available; running output only."
 	}
 	return session, nil
@@ -330,6 +384,9 @@ func (a *backendStudioAudio) Armed() bool { return a != nil && a.armed.Load() !=
 func (a *backendStudioAudio) ArmCapture(recorder *capture.Recorder) error {
 	a.lifeMu.Lock()
 	defer a.lifeMu.Unlock()
+	if a.actual.CaptureChannels == 0 && a.startupWarning != "" {
+		return fmt.Errorf("%s", a.startupWarning)
+	}
 	if !recorder.FormatFits(a.actual.FramesPerPeriod, a.actual.CaptureChannels) {
 		return fmt.Errorf("capture ring must match the device's mono/stereo input and actual period")
 	}
@@ -440,7 +497,6 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 		InputPeakL: math.Float32frombits(a.inputPeakL.Load()), InputPeakR: math.Float32frombits(a.inputPeakR.Load()),
 		InputHeldL: math.Float32frombits(a.inputHeldL.Load()), InputHeldR: math.Float32frombits(a.inputHeldR.Load()), InputSession: a.inputSession.Load(),
 		OutputPeakL: math.Float32frombits(a.outputPeakL.Load()), OutputPeakR: math.Float32frombits(a.outputPeakR.Load()),
-		Error: a.startupWarning,
 	}
 	if a.stream != nil {
 		format := a.stream.Format()
@@ -463,6 +519,12 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 	}
 	if snapshot.Dropouts > 0 || snapshot.Late > 0 || snapshot.CallbackBudgetPercent >= 100 {
 		snapshot.Warning = "Audio missed its buffer budget; stop and select a larger buffer."
+	}
+	if a.startupWarning != "" {
+		if snapshot.Warning != "" {
+			snapshot.Warning += " "
+		}
+		snapshot.Warning += a.startupWarning
 	}
 	if recorder := a.armed.Load(); recorder != nil {
 		state := recorder.Snapshot()

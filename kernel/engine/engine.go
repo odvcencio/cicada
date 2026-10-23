@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/limits"
@@ -176,6 +177,7 @@ type voiceSlot struct {
 	graph                          *graph.Voice
 	noteIdentity                   uint16
 	noteActive                     bool
+	expressionGroup                expression.Group
 	piano                          *piano.Instrument
 	keys                           keyboard.Voice
 	keysControl                    keyboard.Controller
@@ -270,7 +272,8 @@ type Engine struct {
 	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [MessageCapacity]cmd.Message
-	messageRead, messageWrite    uint16
+	performanceMessages          []cmd.Message
+	messageRead, messageWrite    uint32
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
 	pending                      [CommandCapacity]cmd.Command
@@ -309,6 +312,7 @@ type Engine struct {
 	scheduleIntervals            []scheduleInterval
 	scheduleDuration, cycleStart int64
 	placementSchedule            bool
+	playbackPlacement            uint32
 	placementID                  [MaxTracks]uint32
 	clipLimit                    int
 	clipTemplates                []sample.Voice
@@ -351,7 +355,7 @@ func (e *Engine) TrackVoiceKind(track int) VoiceKind {
 
 // TrackPolyphonic reports an immutable voice-mode capability to native hosts.
 func (e *Engine) TrackPolyphonic(track int) bool {
-	return track >= 0 && track < e.tracks && e.voices[track].poly != nil
+	return track >= 0 && track < e.tracks && (e.voices[track].poly != nil || e.voices[track].legacyPoly != nil)
 }
 
 // MacroValue reports the current and target values for a macro ID. Invalid IDs return zero values.
@@ -378,16 +382,16 @@ func New(cfg Config) (*Engine, error) {
 //go:noinline
 func NewFromConfig(cfg *Config) (*Engine, error) {
 	if cfg == nil {
-		return nil, Error("engine configuration is out of range")
+		return nil, engineError("engine configuration is out of range")
 	}
 	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > MaxTracks || cfg.MaxVoices < 1 || cfg.MaxVoices > MaxVoices {
-		return nil, Error("engine configuration is out of range")
+		return nil, engineError("engine configuration is out of range")
 	}
 	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
-		return nil, Error("master gain is out of range")
+		return nil, engineError("master gain is out of range")
 	}
 	if math.IsNaN(float64(cfg.MasterBiasL)) || math.IsInf(float64(cfg.MasterBiasL), 0) || math.IsNaN(float64(cfg.MasterBiasR)) || math.IsInf(float64(cfg.MasterBiasR), 0) {
-		return nil, Error("invalid master bias")
+		return nil, engineError("invalid master bias")
 	}
 	bpmMilli := cfg.BPMMilli
 	if bpmMilli == 0 {
@@ -430,7 +434,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	e.updateMuteTargets()
 	e.clipLimit = cfg.MaxVoices - voices
 	if voices > cfg.MaxVoices {
-		return nil, Error("engine exceeds maximum voices")
+		return nil, engineError("engine exceeds maximum voices")
 	}
 	if err := e.loadPatterns(cfg); err != nil {
 		return nil, err
@@ -472,7 +476,7 @@ func (e *Engine) initEffects(cfg *Config, bpmMilli int64) error {
 		e.reverbB.Reset()
 	}
 	if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks && cfg.CompSidechainTrack != SFXSidechain || cfg.CompMusic == nil && cfg.CompSidechainTrack != 0 {
-		return Error("invalid compressor sidechain track")
+		return engineError("invalid compressor sidechain track")
 	}
 	if cfg.CompMusic != nil {
 		e.compMusic, err = fx.NewCompressor(cfg.SampleRate)
@@ -493,7 +497,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 	if cfg.MasterProcessor != nil {
 		latency := cfg.MasterProcessor.LatencyFrames()
 		if latency < 0 || latency > cfg.SampleRate {
-			return 0, Error("invalid master processor latency")
+			return 0, engineError("invalid master processor latency")
 		}
 		e.masterProcessor = cfg.MasterProcessor
 		e.masterProcessor.Reset()
@@ -515,17 +519,17 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			gain = -6
 		}
 		if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < -60 || gain > 6 || math.IsNaN(spec.Pan) || math.IsInf(spec.Pan, 0) || spec.Pan < -1 || spec.Pan > 1 {
-			return 0, Error("track mixer parameter is out of range")
+			return 0, engineError("track mixer parameter is out of range")
 		}
 		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil {
-			return 0, Error("track send A is invalid or has no delay return")
+			return 0, engineError("track send A is invalid or has no delay return")
 		}
 		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && e.reverbB == nil {
-			return 0, Error("track send B is invalid or has no reverb return")
+			return 0, engineError("track send B is invalid or has no reverb return")
 		}
 		v := &e.voices[i]
 		if spec.Polyphony != 0 && spec.Polyphony != 4 || spec.Polyphony == 4 && spec.Kind != VoiceGraph {
-			return 0, Error("polyphony requires a graph track and a four-voice limit")
+			return 0, engineError("polyphony requires a graph track and a four-voice limit")
 		}
 		e.director[i].gain = 1
 		v.kind = spec.Kind
@@ -553,11 +557,11 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			e.hasSFX = true
 		}
 		if spec.InsertDrive != nil && len(spec.InsertChain) > 0 {
-			return 0, Error("legacy drive and insert chain cannot be combined")
+			return 0, engineError("legacy drive and insert chain cannot be combined")
 		}
 		if len(spec.InsertChain) > 0 {
 			if spec.Kind == VoiceOff {
-				return 0, Error("silent track cannot have inserts")
+				return 0, engineError("silent track cannot have inserts")
 			}
 			v.chain, err = newTrackEffectChain(cfg.SampleRate, spec.InsertChain)
 			if err != nil {
@@ -566,7 +570,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		}
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
-				return 0, Error("silent track cannot have a drive insert")
+				return 0, engineError("silent track cannot have a drive insert")
 			}
 			v.insert, err = fx.NewDrive(cfg.SampleRate)
 			if err == nil {
@@ -587,7 +591,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceOff:
 		case VoiceGuitar:
 			if !spec.Experimental {
-				return 0, Error("guitar requires explicit experimental opt-in")
+				return 0, engineError("guitar requires explicit experimental opt-in")
 			}
 			voices++
 			v.guitar, err = guitar.New(cfg.SampleRate, spec.Guitar)
@@ -620,7 +624,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			v.modal, err = modal.NewVoice(spec.Modal, cfg.SampleRate)
 		case VoiceSample:
 			if spec.Sample == nil || int(spec.Sample.Asset) >= len(cfg.Assets) || spec.Sample.Voices < 1 || spec.Sample.Voices > 32 {
-				return 0, Error("invalid sampler configuration")
+				return 0, engineError("invalid sampler configuration")
 			}
 			a := cfg.Assets[spec.Sample.Asset]
 			region := sample.Region{Left: a.Left, Right: a.Right, SampleRate: a.SampleRate, RootKey: spec.Sample.RootKey, End: len(a.Left), Loop: spec.Sample.Loop, LoopEnd: len(a.Left)}
@@ -644,23 +648,23 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			}
 		case VoiceKeys:
 			if !keysEnabled {
-				return 0, Error("keyboard module is unavailable")
+				return 0, engineError("keyboard module is unavailable")
 			}
 			if keyboard.Prepare == nil {
-				return 0, Error("keyboard factory is unavailable")
+				return 0, engineError("keyboard factory is unavailable")
 			}
 			if err = spec.Keys.Validate(); err != nil {
 				return 0, err
 			}
 			limit := spec.Keys.Controls[127]
 			if limit < 1 || limit > keyboard.MaxVoices || float32(int(limit)) != limit {
-				return 0, Error("keyboard voice limit must be one to eight")
+				return 0, engineError("keyboard voice limit must be one to eight")
 			}
 			voices += int(limit)
 			v.keys, err = keyboard.Prepare(cfg.SampleRate, spec.Keys)
 			if err == nil {
 				if v.keys == nil {
-					return 0, Error("keyboard factory returned no voice")
+					return 0, engineError("keyboard factory returned no voice")
 				}
 				v.pianoSustain = spec.Keys.Controls[keyboard.SustainControl]
 				err = v.keys.SetSustain(v.pianoSustain)
@@ -671,16 +675,16 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			v.legacyPoly, err = graph.NewPolyFromProgram(&spec.Graph, cfg.SampleRate)
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
-				return 0, Error("prepared audio voice budget is invalid")
+				return 0, engineError("prepared audio voice budget is invalid")
 			}
 			voices += spec.Prepared.VoiceCount()
 			v.preparedClip = spec.PreparedClip
 			v.prepared, err = spec.Prepared.NewStereoVoice(cfg.SampleRate)
 			if err == nil && v.prepared == nil {
-				return 0, Error("prepared audio factory returned no voice")
+				return 0, engineError("prepared audio factory returned no voice")
 			}
 		default:
-			return 0, Error("unknown voice kind")
+			return 0, engineError("unknown voice kind")
 		}
 		if err != nil {
 			return 0, err
@@ -692,62 +696,78 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 //go:noinline
 func (e *Engine) loadPatterns(cfg *Config) error {
 	if len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
-		return Error("pattern bank count must match tracks")
+		return engineError("pattern bank count must match tracks")
 	}
 	// Iterate the fixed banks by address. Copying the bank before validation
 	// makes TinyGo scalarize all 16 chord arrays into a large load routine.
 	for track := range cfg.Patterns {
 		bank := &cfg.Patterns[track]
 		if len(bank.Chain) > 32 {
-			return Error("source chain exceeds 32 entries")
+			return engineError("source chain exceeds 32 entries")
 		}
 		for i, slot := range bank.Chain {
 			if slot >= 16 || bank.Slots[slot].Len == 0 {
-				return Error("source chain references an empty slot")
+				return engineError("source chain references an empty slot")
 			}
 			e.patterns[track].sourceChain[i] = slot
 		}
 		e.patterns[track].sourceChainLen = uint8(len(bank.Chain))
 		isDrum := e.voices[track].kind == VoiceDrums
 		if isDrum != (bank.Drums != nil) {
-			return Error("pattern bank kind differs from track")
+			return engineError("pattern bank kind differs from track")
 		}
 		for slot := range bank.Slots {
 			pattern := &bank.Slots[slot]
 			if e.voices[track].kind == VoicePiano && pattern.Expression != nil {
-				return Error("piano voices do not support per-note expression")
+				return engineError("piano voices do not support per-note expression")
 			}
 			if keysEnabled && e.voices[track].kind == VoiceKeys && pattern.Expression != nil {
-				return Error("keyboard voices do not support per-note expression")
+				return engineError("keyboard voices do not support per-note expression")
 			}
 			if pattern.Len == 0 {
-				if pattern.Chords != [64]seq.ChordStep{} {
-					return Error("unused slot contains chord payload")
+				if pattern.Performance != nil || pattern.Chords != [64]seq.ChordStep{} {
+					return engineError("unused slot contains chord payload")
 				}
 				if isDrum {
 					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 						if bank.Drums[slot][lane].Len != 0 {
-							return Error("unused drum slot contains lane data")
+							return engineError("unused drum slot contains lane data")
 						}
 					}
 				}
 				continue
 			}
 			if pattern.Validate() != nil {
-				return Error("invalid preloaded pattern")
+				return engineError("invalid preloaded pattern")
 			}
 			if e.voices[track].kind == VoicePiano && !validPianoPattern(pattern) {
-				return Error("piano notes must be MIDI 21 to 108")
+				return engineError("piano notes must be MIDI 21 to 108")
 			}
 			if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(pattern) {
-				return Error("keyboard notes must be MIDI 21 to 108")
+				return engineError("keyboard notes must be MIDI 21 to 108")
 			}
 			for step := uint8(0); step < pattern.Len; step++ {
 				if pattern.Chords[step].Count > 0 && e.voices[track].poly == nil && e.voices[track].kind != VoicePiano && (!keysEnabled || e.voices[track].kind != VoiceKeys) {
-					return Error("chord pattern requires a polyphonic graph track")
+					return engineError("chord pattern requires a polyphonic graph track")
 				}
 			}
-			loaded := *pattern
+			if err := e.preparePerformedTrack(track, pattern); err != nil {
+				return err
+			}
+			loaded := &e.patterns[track].slots[slot]
+			*loaded = *pattern
+			if pattern.Performance != nil {
+				cloned := *pattern.Performance
+				cloned.Notes = append([]seq.PerformedNote(nil), pattern.Performance.Notes...)
+				cloned.Groups = append([]seq.ControlGroup(nil), pattern.Performance.Groups...)
+				for i := range cloned.Groups {
+					cloned.Groups[i].Points = append([]seq.GroupPoint(nil), cloned.Groups[i].Points...)
+				}
+				for i := range cloned.Notes {
+					cloned.Notes[i].Expressions = append([]seq.PerformedExpression(nil), cloned.Notes[i].Expressions...)
+				}
+				loaded.Performance = &cloned
+			}
 			// Copy expression once before rendering. Internal pattern revisions and
 			// held gates share this immutable storage, never caller-owned memory.
 			if pattern.Expression != nil {
@@ -755,19 +775,18 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				*cloned = *pattern.Expression
 				loaded.Expression = cloned
 			}
-			e.patterns[track].slots[slot] = loaded
 			if !isDrum {
 				continue
 			}
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				lanePattern := &bank.Drums[slot][lane]
 				if lanePattern.Len != pattern.Len || lanePattern.StepTicks != pattern.StepTicks || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
-					return Error("invalid preloaded drum lane")
+					return engineError("invalid preloaded drum lane")
 				}
 				for step := uint8(0); step < lanePattern.Len; step++ {
 					decoded, _ := seq.UnpackStep(lanePattern.Steps[step])
 					if decoded.Gate && (decoded.Tie || decoded.Note != uint8(lane)) {
-						return Error("drum lane step has wrong routing")
+						return engineError("drum lane step has wrong routing")
 					}
 				}
 				e.patterns[track].drumSlots[slot][lane] = *lanePattern
@@ -779,13 +798,26 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			}
 		}
 	}
+	capacity := 0
+	for track := range cfg.Patterns {
+		if state := e.patterns[track].performed; state != nil {
+			capacity += len(state.events)
+		}
+	}
+	if capacity > 0 {
+		size := len(e.messages)
+		for size < capacity+len(e.messages) {
+			size <<= 1
+		}
+		e.performanceMessages = make([]cmd.Message, size)
+	}
 	return nil
 }
 
 //go:noinline
 func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	if len(cfg.Scenes) > 1<<16 || len(cfg.Song) > 1<<16 {
-		return Error("arrangement exceeds the wire index range")
+		return engineError("arrangement exceeds the wire index range")
 	}
 	// A synced delay must fit its buffer at the slowest tempo the song reaches.
 	slowest := bpmMilli
@@ -800,7 +832,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	for _, scene := range cfg.Scenes {
 		for track, binding := range scene.Track {
 			if binding.Mode > SceneClip || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 || binding.Mode == SceneClip && (int(binding.Clip) >= len(cfg.Clips) || cfg.Track[track].Kind != VoiceAudio) {
-				return Error("scene binding is out of range")
+				return engineError("scene binding is out of range")
 			}
 		}
 		type parameterAddress struct {
@@ -814,13 +846,13 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			// A scene's tempo comes first: launching it applies the tempo before
 			// the patterns and delay division that use it.
 			if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo || seen[address] || setting.ID == kernel.ParamGlobalTempo && position != 0 {
-				return Error("scene parameter setting is invalid")
+				return engineError("scene parameter setting is invalid")
 			}
 			seen[address] = true
 			syncedDelay := setting.Division != fx.FreeDelay
 			if syncedDelay {
 				if setting.ID != kernel.ParamFxDelayTime || e.delayA == nil || setting.Division.String() == "invalid" || setting.Value != 0 {
-					return Error("scene delay division is invalid")
+					return engineError("scene delay division is invalid")
 				}
 				params := e.delayA.Params()
 				params.Division, params.TimeMs = setting.Division, 0
@@ -830,19 +862,19 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			}
 			off := spec.Off && math.IsInf(float64(setting.Value), -1)
 			if spec.Scope == "track" && int(setting.Track) >= cfg.Tracks || spec.Scope == "global" && setting.Track != 0xff {
-				return Error("scene parameter owner is out of range")
+				return engineError("scene parameter owner is out of range")
 			}
 			if math.IsNaN(float64(setting.Value)) || math.IsInf(float64(setting.Value), 0) && !off || !syncedDelay && !off && (setting.Value < spec.Min || setting.Value > spec.Max) {
-				return Error("scene parameter value is out of range")
+				return engineError("scene parameter value is out of range")
 			}
 			if !syncedDelay && spec.Curve == "toggle" && setting.Value != 0 && setting.Value != 1 {
-				return Error("scene toggle value is out of range")
+				return engineError("scene toggle value is out of range")
 			}
 		}
 	}
 	for _, entry := range cfg.Song {
 		if int(entry.Scene) >= len(cfg.Scenes) || entry.Bars < 1 || entry.Bars > 999 {
-			return Error("song entry is out of range")
+			return engineError("song entry is out of range")
 		}
 	}
 	e.scenes = make([]Scene, len(cfg.Scenes))
@@ -851,7 +883,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		e.scenes[i].Settings = append([]SceneSetting(nil), cfg.Scenes[i].Settings...)
 	}
 	if len(cfg.Song) != 0 && len(cfg.Schedule) != 0 {
-		return Error("song and schedule are mutually exclusive")
+		return engineError("song and schedule are mutually exclusive")
 	}
 	e.schedule = append([]ScheduleEvent(nil), cfg.Schedule...)
 	if len(cfg.Song) != 0 {
@@ -864,8 +896,13 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		return err
 	}
 	e.loopSong = cfg.LoopSong
+	for _, event := range e.schedule {
+		if event.Kind == ScheduleTempo {
+			slowest = min(slowest, int64(event.ID))
+		}
+	}
 	if e.delayA != nil && e.delayA.Params().ValidateTempo(slowest) != nil {
-		return Error("delay division does not fit the slowest scene tempo")
+		return engineError("delay division does not fit the slowest scene tempo")
 	}
 	return e.buildTempoChain()
 }
@@ -934,8 +971,10 @@ func (e *Engine) Poll(m *cmd.Message) bool {
 	if m == nil {
 		return false
 	}
+	messages := e.messageStorage()
+	mask := uint32(len(messages) - 1)
 	if e.messageRead != e.messageWrite {
-		*m = e.messages[e.messageRead%uint16(len(e.messages))]
+		*m = messages[e.messageRead&mask]
 		e.messageRead++
 		return true
 	}
@@ -1194,7 +1233,7 @@ func (e *Engine) drainCommands() {
 func (e *Engine) applyPending() {
 	chainPhase := false
 	for {
-		best, priority := -1, 5
+		best, priority := -1, 6
 		// An edit waits while an earlier edit still waits for its tick.
 		editWaiting := false
 		for i := 0; i < e.pendingLen; i++ {
@@ -1242,8 +1281,10 @@ func commandPriority(op cmd.Op) int {
 		return 1
 	case cmd.OpNoteOn:
 		return 3
-	case cmd.OpNoteExpression:
+	case cmd.OpNoteExpression, cmd.OpBindNoteGroup:
 		return 4
+	case cmd.OpSetLiveGroup:
+		return 5
 	default:
 		return 2
 	}
@@ -1278,12 +1319,18 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
 	case cmd.OpStop:
+		for track := 0; track < e.tracks; track++ {
+			if state := e.patterns[track].performed; state != nil {
+				state.chase = true
+			}
+		}
 		e.resetDirector()
 		e.transport.Stop()
 		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
 			e.tapRelease(i, e.transport.Tick())
 			e.noteOff(i, 0xffff)
+			e.releaseLiveIdentities(i)
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
 		}
@@ -1391,6 +1438,10 @@ func (e *Engine) apply(c cmd.Command) {
 		e.liveEvents = true
 		e.phraseBars = c.Arg0
 	case cmd.OpNoteOn:
+		if c.Arg1 == cmd.LiveIdentity {
+			e.liveIdentityNote(c)
+			return
+		}
 		if e.voices[c.Track].poly != nil {
 			e.fault(cmd.FaultPolyLive)
 			return
@@ -1452,16 +1503,24 @@ func (e *Engine) apply(c cmd.Command) {
 			e.fault(FaultVoiceUnsupported)
 			return
 		}
+		if performed := e.patterns[track].performed; performed != nil && (v.kind == VoicePiano || v.kind == VoiceGraphPoly || keysEnabled && v.kind == VoiceKeys) {
+			performed.live[note/64] |= uint64(1) << (note % 64)
+		}
+		v.expressionGroup = expression.Group{}
 		v.noteIdentity, v.noteActive = c.Index, true
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
+	case cmd.OpBindNoteGroup:
+		e.bindLiveGroup(c)
+	case cmd.OpSetLiveGroup:
+		e.setGroupControls(int(c.Track), liveGroup(c.Index), expression.Controls{PitchCents: math.Float32frombits(c.Arg0), Pressure: math.Float32frombits(c.Arg1), Timbre: math.Float32frombits(c.Pad)})
 	case cmd.OpNoteExpression:
 		v := &e.voices[c.Track]
 		if v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys {
 			e.fault(FaultVoiceUnsupported)
 			return
 		}
-		if v.poly != nil {
-			e.fault(cmd.FaultPolyLive)
+		if v.poly != nil || v.legacyPoly != nil {
+			e.liveIdentityExpression(c.Track, c.Index, math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad))
 			return
 		}
 		if !v.noteActive || c.Index != v.noteIdentity {
@@ -1475,6 +1534,10 @@ func (e *Engine) apply(c cmd.Command) {
 			v.acid.NoteExpression(pitch, pressure, timbre)
 		}
 	case cmd.OpNoteOff:
+		if c.Arg1 == cmd.LiveIdentity {
+			e.liveIdentityNote(c)
+			return
+		}
 		if e.voices[c.Track].poly != nil {
 			e.fault(cmd.FaultPolyLive)
 			return
@@ -1917,6 +1980,17 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 
 func (e *Engine) noteOff(track int, lane uint16) {
 	v := &e.voices[track]
+	if performed := e.patterns[track].performed; performed != nil {
+		if lane == 0xffff {
+			e.releasePerformed(track, e.transport.Tick())
+			performed.live = [2]uint64{}
+		} else if lane < 128 && (v.kind == VoicePiano || v.kind == VoiceGraphPoly || keysEnabled && v.kind == VoiceKeys) {
+			performed.live[lane/64] &^= uint64(1) << (lane % 64)
+			if performed.gates[lane].id != 0 {
+				return // a live key release cannot end an independently held performance gate
+			}
+		}
+	}
 	v.noteActive = false
 	switch v.kind {
 	case VoiceAcid:
@@ -1929,7 +2003,7 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		v.sampler.NoteOffAll()
 	case VoiceGraph:
 		if v.poly != nil {
-			v.poly.ReleaseAll()
+			v.poly.ReleaseSequenced()
 		} else {
 			pitchSpecific := lane >= MonoNoteOffPitchFlag && lane < MonoNoteOffPitchFlag+128
 			if !pitchSpecific || v.graphHeld && v.graphNote == uint8(lane&127) {
@@ -1955,7 +2029,7 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		if lane < 128 {
 			v.legacyPoly.NoteOffNote(uint8(lane))
 		} else {
-			v.legacyPoly.NoteOff()
+			v.legacyPoly.ReleaseSequenced()
 		}
 	case VoicePrepared:
 		v.prepared.NoteOff()
@@ -1971,8 +2045,14 @@ func (e *Engine) noteOff(track int, lane uint16) {
 }
 
 func (e *Engine) resetVoice(track int) {
+	e.releasePerformed(track, e.transport.Tick())
+	if performed := e.patterns[track].performed; performed != nil {
+		performed.live = [2]uint64{}
+		performed.chase = true
+	}
 	v := &e.voices[track]
 	v.noteActive = false
+	v.expressionGroup = expression.Group{}
 	if v.chain != nil {
 		v.chain.Reset()
 	}
@@ -2016,33 +2096,35 @@ func (e *Engine) resetVoice(track int) {
 }
 
 func (e *Engine) emit(message cmd.Message) {
+	messages := e.messageStorage()
+	mask := uint32(len(messages) - 1)
 	if message.Kind == cmd.Playhead {
 		for i := e.messageRead; i != e.messageWrite; i++ {
-			if e.messages[i%uint16(len(e.messages))].Kind != cmd.Playhead {
+			if messages[i&mask].Kind != cmd.Playhead {
 				continue
 			}
 			for j := i; j != e.messageWrite-1; j++ {
-				e.messages[j%uint16(len(e.messages))] = e.messages[(j+1)%uint16(len(e.messages))]
+				messages[j&mask] = messages[(j+1)&mask]
 			}
 			e.messageWrite--
 			break
 		}
 	}
-	if e.messageWrite-e.messageRead >= uint16(len(e.messages)) {
+	if e.messageWrite-e.messageRead >= uint32(len(messages)) {
 		if message.Kind == cmd.Meter {
 			return
 		}
 		for i := e.messageRead; i != e.messageWrite; i++ {
-			if e.messages[i%uint16(len(e.messages))].Kind != cmd.Meter {
+			if messages[i&mask].Kind != cmd.Meter {
 				continue
 			}
 			for j := i; j != e.messageWrite-1; j++ {
-				e.messages[j%uint16(len(e.messages))] = e.messages[(j+1)%uint16(len(e.messages))]
+				messages[j&mask] = messages[(j+1)&mask]
 			}
 			e.messageWrite--
 			break
 		}
-		if e.messageWrite-e.messageRead >= uint16(len(e.messages)) {
+		if e.messageWrite-e.messageRead >= uint32(len(messages)) {
 			if e.overflowLen == 0 {
 				e.overflowMessages[0] = message
 				e.overflowLen = 1
@@ -2072,7 +2154,7 @@ func (e *Engine) emit(message cmd.Message) {
 			return
 		}
 	}
-	e.messages[e.messageWrite%uint16(len(e.messages))] = message
+	messages[e.messageWrite&mask] = message
 	e.messageWrite++
 }
 

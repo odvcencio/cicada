@@ -9,6 +9,8 @@ cicada 2
 track bass acid {}
 pattern pulse { c3 . c4 . }
 arrange {
+  tempo @1.1.1 120
+  tempo @3.1.1 96
   place bass-1 bass pulse { at = @2.3.4 length = 1920ticks }
   place bass-2 bass pulse { at = @4.1.1 length = 2bars }
   marker chorus { at = @4.1.1 }
@@ -27,13 +29,31 @@ Project JSON preserves integer `at_tick` and `length_ticks` values under
 all other source bytes. A move followed by its inverse restores the exact
 original source, including comments and authored units.
 
+Tempo steps use `tempo @bar.1.1 BPM` inside `arrange`. They must increase by
+bar, remain within the placements, and use a number from 20 to 300 BPM. Values
+round to the nearest thousandth. The header tempo applies until the first
+step; each step then holds until the next. A step may repeat a value to restore
+it after a live tempo adjustment. Steps do not extend the arrangement's length.
+Project JSON stores them as optional `arrange.tempos` entries with zero-based
+integer `bar` and `bpm_milli` fields. Native and portable playback, seeking,
+looping, WAV timing, stems and MIDI tempo events share those steps. Studio
+shows the resulting duration and tempo list. Scene definitions stay available
+for live launches; their tempo settings do not govern the placement timeline.
+
+Session recordings retain a tempo snapshot with the take and its comp metadata.
+Selecting a vocal from a scene song carries its tempo steps into the arrangement
+alongside supported numeric controls. Raw PCM remains unchanged. Phrase timing,
+waveform geometry and count-in use the recording's saved map; selecting against
+a different current map is refused so the recording is not silently retimed.
+
 Studio's Session timeline moves and resizes placements and offers exact time,
 track, and content fields, plus copy/add/remove and marker controls. These
 commands patch CST fields atomically, compile the complete project, check the
 source revision, and enter the shared Undo history. Rejected overlaps and
 inexact divisions never publish a partial edit. See [Studio](../manual/studio.md#transport-and-session).
 
-Compilation produces immutable start/release events in absolute ticks. Releases
+Compilation produces immutable tempo and start/release events in absolute ticks.
+Tempo steps precede placement events at the same tick. Releases
 precede starts at the same tick; placement identities prevent an old release
 from stopping another instance. When another pattern placement starts on the
 same track at the release tick, including the wrap of a looping arrangement

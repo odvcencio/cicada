@@ -34,8 +34,11 @@ const Capabilities = ModalCapability | ModeledKitCapability
 const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | GridCapability | ChainCapability | AutomationCapability | PackCapability | enabledTrackEffectsCapability
 
 const MaxImageBytes = 2 << 20
-const guitarImageVersion = 15  // experimental guitar in the unified image layout
-const UnifiedImageVersion = 15 // unified chords, schedules, guitar and resident audio
+const guitarImageVersion = 15      // experimental guitar in the unified image layout
+const UnifiedImageVersion = 15     // unified chords, schedules, guitar and resident audio
+const PerformanceImageVersion = 16 // additive independent note gates after the unified payload
+const GestureImageVersion = 17     // additive note-owned controller samples after performance gates
+const SharedImageVersion = 18      // additive shared gesture lanes and note bindings
 const ChordImageVersion = UnifiedImageVersion
 const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
 const masterSoloImageVersion = 13
@@ -106,7 +109,7 @@ type reader struct {
 
 func (r *reader) take(n int) ([]byte, error) {
 	if n < 0 || n > len(r.data)-r.at {
-		return nil, Error("truncated project image")
+		return nil, imageError("truncated project image")
 	}
 	part := r.data[r.at : r.at+n]
 	r.at += n
@@ -155,13 +158,13 @@ func (r *reader) f64() (float64, error) {
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks > limits.PortableMaxTracks || cfg.MaxVoices > limits.PortableMaxVoices {
-		return nil, Error("portable browser/WAM exports support at most 16 tracks and 32 allocated voices; use native playback or WAV/stems for larger projects")
+		return nil, imageError("portable browser/WAM exports support at most 16 tracks and 32 allocated voices; use native playback or WAV/stems for larger projects")
 	}
 	if cfg.Streaming != nil {
-		return nil, Error("native streamed assets require resident compilation for a portable kernel image")
+		return nil, imageError("native streamed assets require resident compilation for a portable kernel image")
 	}
 	if cfg.MasterProcessor != nil {
-		return nil, Error("prepared master processor must be loaded separately from the project image")
+		return nil, imageError("prepared master processor must be loaded separately from the project image")
 	}
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
 		cfg.SampleRate < 1 || uint64(cfg.SampleRate) > math.MaxUint32 ||
@@ -169,24 +172,24 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 ||
 		len(cfg.Scenes) > 65535 || len(cfg.Song) > 65535 ||
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
-		return nil, Error("project image configuration is out of range")
+		return nil, imageError("project image configuration is out of range")
 	}
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		if spec.Kind == engine.VoiceGuitar || keysImageEnabled && spec.Kind == engine.VoiceKeys {
-			version = guitarImageVersion
+			version = max(version, uint16(guitarImageVersion))
 		}
 		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
-			return nil, Error("invalid polyphony image mode")
+			return nil, imageError("invalid polyphony image mode")
 		}
 		if version < UnifiedImageVersion && (spec.Kind == engine.VoiceGraphPoly || graphNeedsQuality(&spec.Graph)) {
-			version = UnifiedImageVersion
+			version = max(version, uint16(UnifiedImageVersion))
 		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
 				if version < UnifiedImageVersion && graphNeedsQuality(&binding.Program) {
-					version = UnifiedImageVersion
+					version = max(version, uint16(UnifiedImageVersion))
 				}
 			}
 		}
@@ -195,12 +198,23 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if len(cfg.Patterns) > 0 {
 			for _, pattern := range cfg.Patterns[track].Slots {
-				if pattern.Len == 0 && pattern.Chords != [64]seq.ChordStep{} {
-					return nil, Error("unused slot contains chord payload")
+				if pattern.Performance != nil {
+					version = max(version, uint16(PerformanceImageVersion))
+					for _, note := range pattern.Performance.Notes {
+						if len(note.Expressions) > 0 {
+							version = max(version, uint16(GestureImageVersion))
+						}
+					}
+					if len(pattern.Performance.Groups) > 0 {
+						version = max(version, uint16(SharedImageVersion))
+					}
+				}
+				if pattern.Len == 0 && (pattern.Performance != nil || pattern.Chords != [64]seq.ChordStep{}) {
+					return nil, imageError("unused slot contains chord payload")
 				}
 				for i, chord := range pattern.Chords {
 					if chord.Count > 0 && (spec.Polyphony != 4 && spec.Kind != engine.VoicePiano && (!keysImageEnabled || spec.Kind != engine.VoiceKeys) || i >= int(pattern.Len)) {
-						return nil, Error("chord payload requires an active polyphonic step")
+						return nil, imageError("chord payload requires an active polyphonic step")
 					}
 					if chord.Count > 0 {
 						version = max(version, uint16(ChordImageVersion))
@@ -217,15 +231,15 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
-		version = UnifiedImageVersion
+		version = max(version, uint16(UnifiedImageVersion))
 	}
 	for _, track := range cfg.Track[:cfg.Tracks] {
 		if track.Kind == engine.VoiceAudio || track.Kind == engine.VoiceSample || track.Kind == engine.VoicePrepared {
-			version = UnifiedImageVersion
+			version = max(version, uint16(UnifiedImageVersion))
 		}
 	}
 
-	if version == UnifiedImageVersion {
+	if version >= UnifiedImageVersion {
 		if err := validateUnifiedFields(&cfg); err != nil {
 			return nil, err
 		}
@@ -336,7 +350,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if cfg.CompMusic == nil {
 		if cfg.CompSidechainTrack != 0 {
-			return nil, Error("compressor sidechain without compressor")
+			return nil, imageError("compressor sidechain without compressor")
 		}
 		w.byte(0)
 	} else {
@@ -344,7 +358,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, err
 		}
 		if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks && cfg.CompSidechainTrack != engine.SFXSidechain {
-			return nil, Error("invalid compressor sidechain track")
+			return nil, imageError("invalid compressor sidechain track")
 		}
 		w.byte(1)
 		w.byte(byte(cfg.CompMusic.Detect))
@@ -385,7 +399,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
-		if version == UnifiedImageVersion {
+		if version >= UnifiedImageVersion {
 			w.byte(spec.Polyphony)
 		}
 		w.byte(boolByte(spec.Mute))
@@ -394,11 +408,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.f64(spec.GainDB)
 		w.f64(spec.Pan)
 		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && cfg.DelayA == nil {
-			return nil, Error("invalid track send A")
+			return nil, imageError("invalid track send A")
 		}
 		w.f64(spec.SendA)
 		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && cfg.ReverbB == nil {
-			return nil, Error("invalid track send B")
+			return nil, imageError("invalid track send B")
 		}
 		w.f64(spec.SendB)
 		w.byte(boolByte(spec.SendPre))
@@ -419,7 +433,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if capabilities&TrackEffectsCapability != 0 {
 			if spec.InsertDrive != nil && len(spec.InsertChain) > 0 {
-				return nil, Error("legacy drive and insert chain cannot be combined")
+				return nil, imageError("legacy drive and insert chain cannot be combined")
 			}
 			if err := writeTrackEffects(&w, cfg.SampleRate, spec.InsertChain); err != nil {
 				return nil, err
@@ -429,7 +443,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		case engine.VoiceOff, engine.VoiceAudio:
 		case engine.VoiceGuitar:
 			if !spec.Experimental {
-				return nil, Error("guitar requires explicit experimental opt-in")
+				return nil, imageError("guitar requires explicit experimental opt-in")
 			}
 			if err := spec.Guitar.Validate(); err != nil {
 				return nil, err
@@ -452,7 +466,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					case engine.KitLaneOff:
 					case engine.KitLaneBuiltin:
 						if binding.Recipe >= drum.LaneCount {
-							return nil, Error("invalid kit recipe")
+							return nil, imageError("invalid kit recipe")
 						}
 						w.byte(byte(binding.Recipe))
 					case engine.KitLaneGraph:
@@ -471,26 +485,26 @@ func Encode(cfg engine.Config) ([]byte, error) {
 						w.f64(binding.ModelLevelDB)
 						w.f64(binding.ModelPan)
 					default:
-						return nil, Error("invalid kit lane kind")
+						return nil, imageError("invalid kit lane kind")
 					}
 				}
 			}
 		case engine.VoiceModal:
 			if spec.Modal >= modal.ProfileCount {
-				return nil, Error("invalid modal profile")
+				return nil, imageError("invalid modal profile")
 			}
 			w.byte(byte(spec.Modal))
 		case engine.VoicePrepared:
 			pack, ok := spec.Prepared.(*engine.PackFactory)
 			if !ok || spec.PreparedClip {
-				return nil, Error("unsupported prepared image voice")
+				return nil, imageError("unsupported prepared image voice")
 			}
 			if err := writePack(&w, pack); err != nil {
 				return nil, err
 			}
 		case engine.VoiceSample:
 			if spec.Sample == nil {
-				return nil, Error("nil sampler image")
+				return nil, imageError("nil sampler image")
 			}
 			w.u16(spec.Sample.Asset)
 			w.byte(spec.Sample.RootKey)
@@ -502,12 +516,12 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			}
 		case engine.VoicePiano:
 			if math.IsNaN(float64(spec.PianoSustain)) || math.IsInf(float64(spec.PianoSustain), 0) || spec.PianoSustain < 0 || spec.PianoSustain > 1 {
-				return nil, Error("invalid piano sustain")
+				return nil, imageError("invalid piano sustain")
 			}
 			w.f32(spec.PianoSustain)
 		case engine.VoiceKeys:
 			if !keysImageEnabled {
-				return nil, Error("keyboard module is unavailable")
+				return nil, imageError("keyboard module is unavailable")
 			}
 			if err := spec.Keys.Validate(); err != nil {
 				return nil, err
@@ -527,7 +541,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				}
 			}
 		default:
-			return nil, Error("invalid track voice kind")
+			return nil, imageError("invalid track voice kind")
 		}
 		for slot := 0; slot < 16; slot++ {
 			var bank engine.PatternBank
@@ -536,10 +550,10 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			}
 			pattern := bank.Slots[slot]
 			if spec.Kind == engine.VoicePiano && pattern.Expression != nil {
-				return nil, Error("piano voices do not support per-note expression")
+				return nil, imageError("piano voices do not support per-note expression")
 			}
 			if keysImageEnabled && spec.Kind == engine.VoiceKeys && pattern.Expression != nil {
-				return nil, Error("keyboard voices do not support per-note expression")
+				return nil, imageError("keyboard voices do not support per-note expression")
 			}
 			w.byte(pattern.Len)
 			w.u16(pattern.SwingPermille)
@@ -550,11 +564,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				w.u16(pattern.StepTicks)
 			}
 			if pattern.Len > 64 {
-				return nil, Error("pattern length exceeds 64")
+				return nil, imageError("pattern length exceeds 64")
 			}
 			if spec.Kind == engine.VoiceDrums {
 				if pattern.Len > 0 && bank.Drums == nil {
-					return nil, Error("missing drum lane bank")
+					return nil, imageError("missing drum lane bank")
 				}
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 					for step := uint8(0); step < pattern.Len; step++ {
@@ -564,7 +578,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			} else {
 				for step := uint8(0); step < pattern.Len; step++ {
 					w.u32(pattern.Steps[step])
-					if version == UnifiedImageVersion {
+					if version >= UnifiedImageVersion {
 						chord := pattern.Chords[step]
 						w.byte(chord.Count)
 						for _, note := range chord.Notes {
@@ -594,12 +608,12 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				chain = cfg.Patterns[track].Chain
 			}
 			if len(chain) > 32 {
-				return nil, Error("source chain exceeds 32 entries")
+				return nil, imageError("source chain exceeds 32 entries")
 			}
 			w.byte(byte(len(chain)))
 			for _, slot := range chain {
 				if slot >= 16 || cfg.Patterns[track].Slots[slot].Len == 0 {
-					return nil, Error("invalid source chain slot")
+					return nil, imageError("invalid source chain slot")
 				}
 				w.byte(slot)
 			}
@@ -608,18 +622,18 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	for _, scene := range cfg.Scenes {
 		if len(scene.Settings) > int(^uint16(0)) {
-			return nil, Error("scene parameter setting count exceeds the image limit")
+			return nil, imageError("scene parameter setting count exceeds the image limit")
 		}
 		for i, setting := range scene.Settings {
 			if setting.ID == kernel.ParamGlobalTempo && i != 0 {
-				return nil, Error("scene tempo must be the first scene setting")
+				return nil, imageError("scene tempo must be the first scene setting")
 			}
 			if err := validateSceneSetting(&cfg, setting); err != nil {
 				return nil, err
 			}
 			for prior := 0; prior < i; prior++ {
 				if scene.Settings[prior].Track == setting.Track && scene.Settings[prior].ID == setting.ID {
-					return nil, Error("duplicate scene parameter setting")
+					return nil, imageError("duplicate scene parameter setting")
 				}
 			}
 		}
@@ -634,11 +648,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				w.byte(1)
 			case engine.SceneSlot:
 				if binding.Slot >= 16 {
-					return nil, Error("invalid scene slot")
+					return nil, imageError("invalid scene slot")
 				}
 				w.byte(binding.Slot + 2)
 			default:
-				return nil, Error("invalid scene binding")
+				return nil, imageError("invalid scene binding")
 			}
 		}
 		w.u16(uint16(len(scene.Settings)))
@@ -655,12 +669,12 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if capabilities&AutomationCapability != 0 {
 		if len(cfg.Automation) > 65535 {
-			return nil, Error("automation exceeds 65535 controls")
+			return nil, imageError("automation exceeds 65535 controls")
 		}
 		w.u16(uint16(len(cfg.Automation)))
 		for i, control := range cfg.Automation {
 			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
-				return nil, Error("invalid automation timeline")
+				return nil, imageError("invalid automation timeline")
 			}
 			data, err := cmd.EncodeCommand(control, uint8(cfg.Tracks))
 			if err != nil {
@@ -669,13 +683,28 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.data = append(w.data, data[:]...)
 		}
 	}
-	if version == UnifiedImageVersion {
+	if version >= UnifiedImageVersion {
 		if err := writeSchedule(&w, &cfg); err != nil {
 			return nil, err
 		}
 	}
+	if version >= PerformanceImageVersion {
+		if err := writePerformances(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	if version >= GestureImageVersion {
+		if err := writePerformedExpressions(&w, &cfg, version >= SharedImageVersion); err != nil {
+			return nil, err
+		}
+	}
+	if version >= SharedImageVersion {
+		if err := writeSharedGroups(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
 	if len(w.data) > MaxImageBytes {
-		return nil, Error("project image exceeds 2 MiB")
+		return nil, imageError("project image exceeds 2 MiB")
 	}
 	return w.data, nil
 }
@@ -692,19 +721,19 @@ func Decode(data []byte, sampleRate, maxBlock int) (engine.Config, error) {
 //go:noinline
 func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error {
 	if cfg == nil {
-		return Error("nil project image destination")
+		return imageError("nil project image destination")
 	}
 	if len(data) < 32 || len(data) > MaxImageBytes {
-		return Error("invalid project image size")
+		return imageError("invalid project image size")
 	}
 	r := reader{data: data}
 	magic, _ := r.take(4)
 	if magic[0] != 'C' || magic[1] != 'I' || magic[2] != 'C' || magic[3] != '1' {
-		return Error("invalid project image magic")
+		return imageError("invalid project image magic")
 	}
 	version, _ := r.u16()
 	if version == 14 {
-		return Error("ambiguous development image version 14; recompile project source for version 15")
+		return imageError("ambiguous development image version 14; recompile project source for version 15")
 	}
 	tracks, _ := r.byte()
 	voices, _ := r.byte()
@@ -716,8 +745,8 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
-		return Error("project image header is incompatible")
+	if (version != SharedImageVersion && version != GestureImageVersion && version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+		return imageError("project image header is incompatible")
 	}
 	*cfg = engine.Config{
 		SampleRate: sampleRate, MaxBlock: maxBlock, Tracks: int(tracks), MaxVoices: int(voices),
@@ -728,7 +757,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	delayPresent, err := r.byte()
 	if err != nil || delayPresent > 1 {
-		return Error("invalid delay image flag")
+		return imageError("invalid delay image flag")
 	}
 	if delayPresent == 1 {
 		division, err := r.byte()
@@ -747,7 +776,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		pingpong, err := r.byte()
 		if err != nil || pingpong > 1 {
-			return Error("invalid delay pingpong flag")
+			return imageError("invalid delay pingpong flag")
 		}
 		params.PingPong = pingpong == 1
 		if params.Width, err = r.f64(); err != nil {
@@ -763,7 +792,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	reverbPresent, err := r.byte()
 	if err != nil || reverbPresent > 1 {
-		return Error("invalid reverb image flag")
+		return imageError("invalid reverb image flag")
 	}
 	if reverbPresent == 1 {
 		params := &fx.ReverbParams{}
@@ -792,7 +821,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	compPresent, err := r.byte()
 	if err != nil || compPresent > 1 {
-		return Error("invalid compressor image flag")
+		return imageError("invalid compressor image flag")
 	}
 	if compPresent == 1 {
 		detect, err := r.byte()
@@ -817,7 +846,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		makeupAuto, err := r.byte()
 		if err != nil || makeupAuto > 1 {
-			return Error("invalid compressor makeup flag")
+			return imageError("invalid compressor makeup flag")
 		}
 		params.MakeupAuto = makeupAuto == 1
 		if params.MakeupDB, err = r.f64(); err != nil {
@@ -828,7 +857,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		sidechain, err := r.byte()
 		if err != nil || int(sidechain) > int(tracks) && int(sidechain) != limits.PortableMaxTracks+1 {
-			return Error("invalid compressor sidechain track")
+			return imageError("invalid compressor sidechain track")
 		}
 		if err := params.Validate(); err != nil {
 			return err
@@ -845,7 +874,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			allowed = 0x3f
 		}
 		if err != nil || busFlags&^allowed != 0 {
-			return Error("invalid bus mixer image flags")
+			return imageError("invalid bus mixer image flags")
 		}
 		cfg.MusicBusMute, cfg.MusicBusSolo = busFlags&1 != 0, busFlags&2 != 0
 		cfg.SFXBusMute, cfg.SFXBusSolo = busFlags&4 != 0, busFlags&8 != 0
@@ -858,10 +887,10 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		if err != nil {
 			return err
 		}
-		if version == UnifiedImageVersion {
+		if version >= UnifiedImageVersion {
 			mode, err := r.byte()
 			if err != nil || mode != 0 && (mode != 4 || engine.VoiceKind(kind) != engine.VoiceGraph) {
-				return Error("invalid polyphony image mode")
+				return imageError("invalid polyphony image mode")
 			}
 			spec.Polyphony = mode
 		}
@@ -875,7 +904,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		busSFX, err := r.byte()
 		if err != nil || mute > 1 || gainSet > 1 || busSFX > 1 {
-			return Error("invalid track image header")
+			return imageError("invalid track image header")
 		}
 		spec.Kind, spec.Mute, spec.GainSet, spec.BusSFX = engine.VoiceKind(kind), mute == 1, gainSet == 1, busSFX == 1
 		if spec.GainDB, err = r.f64(); err != nil {
@@ -892,7 +921,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		sendPre, err := r.byte()
 		if err != nil || sendPre > 1 {
-			return Error("invalid track send-pre flag")
+			return imageError("invalid track send-pre flag")
 		}
 		spec.SendPre = sendPre == 1
 		if version >= sendTapImageVersion {
@@ -906,13 +935,13 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 			solo, err := r.byte()
 			if err != nil || sendAPre > 1 || sendBPre > 1 || solo > 1 {
-				return Error("invalid P2 track mixer flags")
+				return imageError("invalid P2 track mixer flags")
 			}
 			spec.SendAPre, spec.SendBPre, spec.Solo = sendAPre == 1, sendBPre == 1, solo == 1
 		}
 		insertPresent, err := r.byte()
 		if err != nil || insertPresent > 1 {
-			return Error("invalid drive insert image flag")
+			return imageError("invalid drive insert image flag")
 		}
 		if insertPresent == 1 {
 			shape, err := r.byte()
@@ -941,14 +970,14 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			if spec.InsertDrive != nil && len(spec.InsertChain) > 0 {
-				return Error("legacy drive and insert chain cannot be combined")
+				return imageError("legacy drive and insert chain cannot be combined")
 			}
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
 		case engine.VoiceGuitar:
-			if version != guitarImageVersion {
-				return Error("guitar requires image version 15")
+			if version < guitarImageVersion {
+				return imageError("guitar requires image version 15")
 			}
 			spec.Experimental = true
 			spec.Guitar = guitar.DefaultParams()
@@ -962,8 +991,8 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 			}
 		case engine.VoiceAudio:
-			if version != UnifiedImageVersion {
-				return Error("unsupported audio track image")
+			if version < UnifiedImageVersion {
+				return imageError("unsupported audio track image")
 			}
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
@@ -978,7 +1007,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 			kitPresent, err := r.byte()
 			if err != nil || kitPresent > 1 {
-				return Error("invalid kit image flag")
+				return imageError("invalid kit image flag")
 			}
 			if kitPresent == 1 {
 				spec.Kit = new([drum.LaneCount]engine.KitLaneBinding)
@@ -994,7 +1023,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					case engine.KitLaneBuiltin:
 						recipe, err := r.byte()
 						if err != nil || recipe >= byte(drum.LaneCount) {
-							return Error("invalid kit recipe image")
+							return imageError("invalid kit recipe image")
 						}
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
@@ -1003,7 +1032,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 					case engine.KitLaneModeled:
 						if reserved&ModeledKitCapability == 0 {
-							return Error("modeled kit image requires capability")
+							return imageError("modeled kit image requires capability")
 						}
 						profile, err := r.byte()
 						if err != nil {
@@ -1019,22 +1048,22 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 							return err
 						}
 					default:
-						return Error("invalid kit lane image kind")
+						return imageError("invalid kit lane image kind")
 					}
 				}
 			}
 		case engine.VoiceModal:
 			if reserved&ModalCapability == 0 {
-				return Error("modal image requires capability")
+				return imageError("modal image requires capability")
 			}
 			profile, readErr := r.byte()
 			if readErr != nil || profile >= byte(modal.ProfileCount) {
-				return Error("invalid modal profile image")
+				return imageError("invalid modal profile image")
 			}
 			spec.Modal = modal.Profile(profile)
 		case engine.VoicePrepared:
-			if reserved&PackCapability == 0 || version != UnifiedImageVersion {
-				return Error("pack image requires capability")
+			if reserved&PackCapability == 0 || version < UnifiedImageVersion {
+				return imageError("pack image requires capability")
 			}
 			pack, readErr := readPack(&r)
 			if readErr != nil {
@@ -1042,8 +1071,8 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 			spec.Prepared = pack
 		case engine.VoiceSample:
-			if version != UnifiedImageVersion {
-				return Error("unsupported sampler image")
+			if version < UnifiedImageVersion {
+				return imageError("unsupported sampler image")
 			}
 			spec.Sample = &engine.SamplerConfig{}
 			spec.Sample.Asset, err = r.u16()
@@ -1060,7 +1089,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 			loop, err := r.byte()
 			if err != nil || loop > 1 {
-				return Error("invalid sampler image loop")
+				return imageError("invalid sampler image loop")
 			}
 			spec.Sample.Loop = loop == 1
 		case engine.VoiceGraph, engine.VoiceGraphPoly:
@@ -1069,17 +1098,17 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 		case engine.VoicePiano:
 			if reserved&PianoCapability == 0 {
-				return Error("modeled piano requires capability bit 2")
+				return imageError("modeled piano requires capability bit 2")
 			}
 			if spec.PianoSustain, err = r.f32(); err != nil {
 				return err
 			}
 			if math.IsNaN(float64(spec.PianoSustain)) || math.IsInf(float64(spec.PianoSustain), 0) || spec.PianoSustain < 0 || spec.PianoSustain > 1 {
-				return Error("invalid piano sustain")
+				return imageError("invalid piano sustain")
 			}
 		case engine.VoiceKeys:
-			if !keysImageEnabled || reserved&KeysCapability == 0 || version != UnifiedImageVersion {
-				return Error("keyboard voice requires version 15 and capability bit 9")
+			if !keysImageEnabled || reserved&KeysCapability == 0 || version < UnifiedImageVersion {
+				return imageError("keyboard voice requires version 15 and capability bit 9")
 			}
 			spec.Keys = new(keyboard.Spec)
 			if spec.Keys.Patch, err = r.byte(); err != nil {
@@ -1087,20 +1116,20 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 			count, err := r.byte()
 			if err != nil || count > 128 {
-				return Error("invalid keyboard control count")
+				return imageError("invalid keyboard control count")
 			}
 			previous := -1
 			for i := uint8(0); i < count; i++ {
 				index, err := r.byte()
 				if err != nil || index >= 128 || int(index) <= previous {
-					return Error("invalid keyboard control index")
+					return imageError("invalid keyboard control index")
 				}
 				value, err := r.f32()
 				if err != nil {
 					return err
 				}
 				if value == 0 {
-					return Error("keyboard payload contains a zero control")
+					return imageError("keyboard payload contains a zero control")
 				}
 				spec.Keys.Controls[index] = value
 				previous = int(index)
@@ -1109,12 +1138,12 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 		default:
-			return Error("invalid track image kind")
+			return imageError("invalid track image kind")
 		}
 		for slot := 0; slot < 16; slot++ {
 			length, err := r.byte()
 			if err != nil || length > 64 {
-				return Error("invalid pattern image length")
+				return imageError("invalid pattern image length")
 			}
 			swing, err := r.u16()
 			if err != nil {
@@ -1160,7 +1189,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					if pattern.Steps[step], err = r.u32(); err != nil {
 						return err
 					}
-					if version == UnifiedImageVersion {
+					if version >= UnifiedImageVersion {
 						chord := &pattern.Chords[step]
 						if chord.Count, err = r.byte(); err != nil {
 							return err
@@ -1189,20 +1218,20 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 			}
 			if keysImageEnabled && spec.Kind == engine.VoiceKeys && pattern.Expression != nil {
-				return Error("keyboard voices do not support per-note expression")
+				return imageError("keyboard voices do not support per-note expression")
 			}
 		}
 		if reserved&ChainCapability != 0 {
 			count, err := r.byte()
 			if err != nil || count > 32 {
-				return Error("invalid source chain length")
+				return imageError("invalid source chain length")
 			}
 			if count > 0 {
 				chain := make([]uint8, int(count))
 				for i := range chain {
 					slot, err := r.byte()
 					if err != nil || slot >= 16 || cfg.Patterns[track].Slots[slot].Len == 0 {
-						return Error("invalid source chain slot")
+						return imageError("invalid source chain slot")
 					}
 					chain[i] = slot
 				}
@@ -1218,7 +1247,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			switch {
-			case binding == 255 && version == UnifiedImageVersion:
+			case binding == 255 && version >= UnifiedImageVersion:
 				clip, err := r.u16()
 				if err != nil {
 					return err
@@ -1230,7 +1259,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			case binding <= 17:
 				cfg.Scenes[scene].Track[track] = engine.SceneBinding{Mode: engine.SceneSlot, Slot: binding - 2}
 			default:
-				return Error("invalid scene image binding")
+				return imageError("invalid scene image binding")
 			}
 		}
 		if version >= sceneSettingsImageVersion {
@@ -1257,14 +1286,14 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					return err
 				}
 				setting.Division = fx.DelayDivision(division)
-				if version != guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
+				if version < guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
 					if engine.IsKeysControl(setting.ID) {
-						return Error("keyboard controls require image version 15")
+						return imageError("keyboard controls require image version 15")
 					}
-					return Error("guitar controls require image version 15")
+					return imageError("guitar controls require image version 15")
 				}
 				if setting.ID == kernel.ParamGlobalTempo && i != 0 {
-					return Error("scene tempo must be the first scene setting")
+					return imageError("scene tempo must be the first scene setting")
 				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
@@ -1284,7 +1313,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if reserved&AutomationCapability != 0 {
 		count, err := r.u16()
 		if err != nil || count == 0 || len(r.data)-r.at < int(count)*cmd.CommandSize {
-			return Error("invalid automation control count")
+			return imageError("invalid automation control count")
 		}
 		cfg.Automation = make([]cmd.Command, int(count))
 		for i := range cfg.Automation {
@@ -1293,14 +1322,29 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
-				return Error("invalid automation timeline")
+				return imageError("invalid automation timeline")
 			}
 			cfg.Automation[i] = control
 			r.at += cmd.CommandSize
 		}
 	}
-	if version == UnifiedImageVersion {
+	if version >= UnifiedImageVersion {
 		if err := readSchedule(&r, cfg); err != nil {
+			return err
+		}
+	}
+	if version >= PerformanceImageVersion {
+		if err := readPerformances(&r, cfg); err != nil {
+			return err
+		}
+	}
+	if version >= GestureImageVersion {
+		if err := readPerformedExpressions(&r, cfg, version >= SharedImageVersion); err != nil {
+			return err
+		}
+	}
+	if version >= SharedImageVersion {
+		if err := readSharedGroups(&r, cfg); err != nil {
 			return err
 		}
 	}
@@ -1310,13 +1354,13 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			found = found || len(track.InsertChain) > 0
 		}
 		if !found {
-			return Error("empty track insert image capability")
+			return imageError("empty track insert image capability")
 		}
 	}
 	if r.at != len(r.data) {
-		return Error("project image has trailing bytes")
+		return imageError("project image has trailing bytes")
 	}
-	if version == UnifiedImageVersion {
+	if version >= UnifiedImageVersion {
 		return validateUnifiedFields(cfg)
 	}
 	return nil
@@ -1331,10 +1375,10 @@ func boolByte(value bool) byte {
 
 func writeGraph(w *writer, program graph.Program) error {
 	if program.Len == 0 || program.Len > graph.MaxNodes || program.Output >= program.Len {
-		return Error("invalid graph program length or output")
+		return imageError("invalid graph program length or output")
 	}
 	if math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-		return Error("invalid graph glide time")
+		return imageError("invalid graph glide time")
 	}
 	w.byte(program.Len)
 	w.byte(program.Output)
@@ -1412,15 +1456,15 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 func readGraphInto(r *reader, version uint16, capabilities uint16, program *graph.Program) error {
 	length, err := r.byte()
 	if err != nil || length == 0 || length > graph.MaxNodes {
-		return Error("invalid graph image length")
+		return imageError("invalid graph image length")
 	}
 	program.Len = length
 	if program.Output, err = r.byte(); err != nil || program.Output >= length {
-		return Error("invalid graph image output")
+		return imageError("invalid graph image output")
 	}
 	if version >= priorImageVersion {
 		if program.GlideMS, err = r.f64(); err != nil || math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-			return Error("invalid graph glide time image")
+			return imageError("invalid graph glide time image")
 		}
 	}
 	for i := uint8(0); i < length; i++ {
@@ -1456,7 +1500,7 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 		if graph.Op(op) == graph.ADSR {
 			if version < qualityImageVersion {
-				return Error("ADSR needs project image version 15")
+				return imageError("ADSR needs project image version 15")
 			}
 			if program.Nodes[i].D, err = r.byte(); err != nil {
 				return err
@@ -1467,20 +1511,20 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 		}
 	}
 	if graphNeedsExpression(program) && capabilities&ExpressionCapability == 0 {
-		return Error("graph expression inputs require capability bit 3")
+		return imageError("graph expression inputs require capability bit 3")
 	}
 	required := graphCapabilities(program)
 	if required&DelayCapability != 0 && capabilities&DelayCapability == 0 {
-		return Error("graph delay operations require capability bit 1")
+		return imageError("graph delay operations require capability bit 1")
 	}
 	if graphNeedsNeuralAmp(program) && capabilities&NeuralAmpCapability == 0 {
-		return Error("neural amp operation requires capability bit 4")
+		return imageError("neural amp operation requires capability bit 4")
 	}
 	if required&PMCapability != 0 && capabilities&PMCapability == 0 {
-		return Error("graph phase modulation requires capability bit 5")
+		return imageError("graph phase modulation requires capability bit 5")
 	}
 	if graphNeedsDDSP(program) && capabilities&DDSPCapability == 0 {
-		return Error("DDSP operations require capability bit 7")
+		return imageError("DDSP operations require capability bit 7")
 	}
 	return nil
 }
@@ -1491,25 +1535,25 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	// settings record already stores an ID and a float, so the image layout and
 	// version are unchanged. Decoders from before scene tempo reject the ID.
 	if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo {
-		return Error("scene parameter setting is not live")
+		return imageError("scene parameter setting is not live")
 	}
 	if spec.Scope == "track" {
 		if int(setting.Track) >= cfg.Tracks {
-			return Error("scene parameter track is out of range")
+			return imageError("scene parameter track is out of range")
 		}
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
-			return Error("guitar setting requires a guitar track")
+			return imageError("guitar setting requires a guitar track")
 		}
 		if engine.IsKeysControl(setting.ID) && !engine.KeysControlFits(&cfg.Track[setting.Track], setting.ID) {
-			return Error("keyboard setting requires a keyboard track of its family")
+			return imageError("keyboard setting requires a keyboard track of its family")
 		}
 	} else if setting.Track != 0xff {
-		return Error("global scene parameter needs the global owner")
+		return imageError("global scene parameter needs the global owner")
 	}
 	syncedDelay := setting.Division != fx.FreeDelay
 	if syncedDelay {
 		if setting.ID != kernel.ParamFxDelayTime || cfg.DelayA == nil || setting.Division.String() == "invalid" || setting.Value != 0 {
-			return Error("scene delay division is invalid")
+			return imageError("scene delay division is invalid")
 		}
 		params := *cfg.DelayA
 		params.Division, params.TimeMs = setting.Division, 0
@@ -1519,13 +1563,13 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	}
 	off := spec.Off && math.IsInf(float64(setting.Value), -1)
 	if math.IsNaN(float64(setting.Value)) || math.IsInf(float64(setting.Value), 0) && !off || !syncedDelay && !off && (setting.Value < spec.Min || setting.Value > spec.Max) {
-		return Error("scene parameter value is out of range")
+		return imageError("scene parameter value is out of range")
 	}
 	if !syncedDelay && spec.Curve == "toggle" && setting.Value != 0 && setting.Value != 1 {
-		return Error("scene toggle value is out of range")
+		return imageError("scene toggle value is out of range")
 	}
 	if !syncedDelay && !off && kernel.IsInteger(setting.ID) && setting.Value != float32(int32(setting.Value)) {
-		return Error("scene whole-number value is not whole")
+		return imageError("scene whole-number value is not whole")
 	}
 	return nil
 }
@@ -1553,7 +1597,7 @@ func readAcid(r *reader) (acid.Params, error) {
 	}
 	savage, err := r.byte()
 	if err != nil || savage > 1 {
-		return p, Error("invalid acid image flags")
+		return p, imageError("invalid acid image flags")
 	}
 	p.Filter, p.Savage = acid.FilterModel(filter), savage == 1
 	return p, nil
@@ -1576,7 +1620,7 @@ func readDrum(r *reader) (drum.Params, error) {
 	}
 	metal, err := r.byte()
 	if err != nil || metal > 1 {
-		return p, Error("invalid drum image flags")
+		return p, imageError("invalid drum image flags")
 	}
 	p.Metal = metal == 1
 	return p, nil
@@ -1584,7 +1628,7 @@ func readDrum(r *reader) (drum.Params, error) {
 
 func validateModeledBinding(binding engine.KitLaneBinding) error {
 	if binding.Model >= modeledkit.ProfileCount {
-		return Error("invalid modeled kit profile")
+		return imageError("invalid modeled kit profile")
 	}
 	if err := binding.ModelParams.Validate(); err != nil {
 		return err
@@ -1592,7 +1636,7 @@ func validateModeledBinding(binding engine.KitLaneBinding) error {
 	if math.IsNaN(binding.ModelLevelDB) || math.IsInf(binding.ModelLevelDB, 0) ||
 		(binding.ModelLevelDB != -1000 && binding.ModelLevelDB < -60) || binding.ModelLevelDB > 6 ||
 		math.IsNaN(binding.ModelPan) || math.IsInf(binding.ModelPan, 0) || binding.ModelPan < -1 || binding.ModelPan > 1 {
-		return Error("invalid modeled kit mixer controls")
+		return imageError("invalid modeled kit mixer controls")
 	}
 	return nil
 }
@@ -1616,7 +1660,7 @@ func readExpression(r *reader) (seq.Expression, error) {
 		return expression, err
 	}
 	if record[0] > 1 {
-		return expression, Error("invalid note expression presence")
+		return expression, imageError("invalid note expression presence")
 	}
 	expression.Set = record[0] == 1
 	values := [...]*float32{&expression.PitchCents, &expression.Pressure, &expression.Timbre, &expression.VibratoRateHz, &expression.VibratoDepthCents}

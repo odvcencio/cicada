@@ -14,6 +14,16 @@ import (
 type audioReadiness struct {
 	Title, Detail, Input, Output string
 	Ready                        bool
+	PlaybackReady                bool
+}
+
+func audioCaptureSupported(state audioState) bool {
+	if state.Inventory.CaptureSupported != nil {
+		return *state.Inventory.CaptureSupported
+	}
+	// Older domain services did not publish a capability flag. Their Tymbal
+	// backends were WASAPI/ALSA, both of which support recording input.
+	return state.Inventory.BackendName == "tymbal"
 }
 
 func audioDeviceName(state audioState, input bool) (string, bool) {
@@ -50,7 +60,8 @@ func recordingReadiness(state audioState) audioReadiness {
 		return r
 	}
 	if backend != "tymbal" {
-		r.Title, r.Detail, r.Input, r.Output = "Microphone unavailable", "Playback is available. Reopen this song in Cicada Studio with native audio to record vocals.", "Recording unavailable", "System default"
+		r.Title, r.Detail, r.Input, r.Output = "Microphone unavailable", "This audio backend supports playback only. Recording input is unavailable.", "Recording unavailable", "System default"
+		r.PlaybackReady = backend == "oto" && state.Runtime.Error == ""
 		return r
 	}
 	if !state.Inventory.Supported || state.Inventory.Message != "" {
@@ -71,8 +82,22 @@ func recordingReadiness(state audioState) audioReadiness {
 		r.Title, r.Detail = "Audio needs attention", "Stop playback, check your input and output, then apply the settings to try again."
 		return r
 	}
+	r.PlaybackReady = true
+	if !audioCaptureSupported(state) {
+		r.Title, r.Detail, r.Input = "Playback configured", "You can choose a native playback device. This audio driver does not support recording input yet.", "Recording unavailable"
+		return r
+	}
 	if !state.Options.InputEnabled {
 		r.Title, r.Detail, r.Input = "Microphone off", "Choose your microphone and enable input before recording. Playback is available.", "Off"
+		return r
+	}
+	if access := state.Inventory.InputAccess; access != "" && access != "granted" {
+		r.Title, r.Detail = "Allow microphone access", "Enable input and apply the settings to allow microphone access. Playback is available."
+		if access == "denied" || access == "restricted" {
+			r.Detail = "Allow microphone access for Cicada Studio in System Settings > Privacy & Security > Microphone, then refresh devices. Playback is available."
+		} else if access == "unavailable" {
+			r.Title, r.Detail = "Input access unavailable", "Microphone permission could not be checked. Refresh devices and check Audio details. Playback is available."
+		}
 		return r
 	}
 	if !input {
@@ -82,6 +107,27 @@ func recordingReadiness(state audioState) audioReadiness {
 
 	r.Title, r.Detail, r.Ready = "Microphone configured", "Record a vocal pass. Use headphones to keep the backing out of your microphone.", true
 	return r
+}
+
+func audioConnections(state audioState) gosx.Node {
+	r := recordingReadiness(state)
+	connection := func(kind, name, detail string) gosx.Node {
+		return gosx.El("section", gosx.Attrs(gosx.Attr("class", "audio-connection")),
+			gosx.El("span", gosx.Attrs(gosx.Attr("class", "audio-connection-kind")), gosx.Text(kind)),
+			gosx.El("h3", gosx.Text(name)), gosx.El("p", gosx.Text(detail)))
+	}
+	input := "Recording stays off until you enable it."
+	if !audioCaptureSupported(state) {
+		input = "Recording input is not available with this driver."
+	} else if r.Ready {
+		input = "Configured for recording. Your raw takes are retained."
+	} else if state.Options.InputEnabled && state.Inventory.InputAccess != "" && state.Inventory.InputAccess != "granted" {
+		input = "Microphone permission is needed before recording."
+	}
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "audio-connections"), gosx.Attr("aria-label", "Audio connections"), gosx.Attr("data-input-ready", r.Ready), gosx.Attr("data-output-ready", r.PlaybackReady)),
+		connection("INPUT", r.Input, input),
+		connection("MUSIC", "Cicada", "Play, capture, reshape. The score keeps your decisions."),
+		connection("OUTPUT", r.Output, "Your selected listening destination. Change it below."))
 }
 
 func audioSummary(state audioState) gosx.Node {
@@ -172,9 +218,11 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 		backControl = gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-gosx-disclosure-close", "#audio-dialog")), gosx.Text("Back to recording"))
 	}
 	locked := state.Playing || state.Runtime.Armed
+	captureSettings := gosx.El("fieldset", gosx.Attrs(gosx.Attr("class", "audio-input-settings"), gosx.Attr("disabled", !audioCaptureSupported(state))),
+		gosx.El("legend", gosx.Text("Recording input")), field("Input", audioChoices(state, true)), checkbox("inputEnabled", "Enable input", state.Options.InputEnabled),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Apply with input enabled to allow microphone access. Input stays closed until you play or record.")))
 	fields := gosx.El("fieldset", gosx.Attrs(gosx.Attr("class", "audio-settings"), gosx.Attr("data-audio-routing", ""), gosx.Attr("disabled", locked)),
-		gosx.El("legend", gosx.Text("Input and playback")), field("Input", audioChoices(state, true)), field("Output", audioChoices(state, false)),
-		checkbox("inputEnabled", "Enable input", state.Options.InputEnabled),
+		gosx.El("legend", gosx.Text("Input and playback")), field("Output", audioChoices(state, false)), captureSettings,
 		field("Buffer size", audioBufferChoices(state)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Smaller buffers reduce monitoring delay. Choose more headroom if playback drops out. Your device may grant a larger buffer; sample rate and sound quality stay the same.")),
 		gosx.El("details", gosx.El("summary", gosx.Text("Recording timing")), field("Recording timing correction (ms)", numberInput("recordingOffsetMS", strconv.FormatFloat(state.Options.RecordingOffsetMS, 'f', -1, 64), "-500", "500")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Device timing is already applied. If recorded phrases consistently land late, a positive correction advances them; a negative correction delays them. This corrects remaining input timing, not headphone monitoring latency."))),
@@ -182,14 +230,16 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 			checkbox("monitorMuted", "Mute monitoring", state.Options.MonitorMuted), field("Monitor gain", numberInput("monitorGain", strconv.FormatFloat(state.Options.MonitorGain, 'f', -1, 64), "0", "2")), field("Monitor mode", selectInput("monitorMode", state.Options.MonitorMode, []string{"stereo", "mono1", "mono2"}, "Monitor mode"))),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit")), gosx.Text(apply)))
 	form := ui.Form(ui.FormProps{Action: "/__actions/audio", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, fields)
+	setup := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Device, input, buffer, and timing choices are saved for this computer. New sessions start stopped, with headphone monitoring muted."))
+	settingsWarning := gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("role", "status"), gosx.Attr("hidden", state.SettingsWarning == "")), gosx.Text(state.SettingsWarning))
 	notice := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-audio-lock-notice", ""), gosx.Attr("hidden", !locked)), gosx.Text("Stop playback or finish the take before changing audio devices or buffer size."))
 
 	refresh := gosx.El("a", gosx.Attrs(gosx.Attr("href", ctx.Request.URL.RequestURI()), gosx.Attr("data-workspace-refresh", ""), gosx.Attr("class", "button-link")), gosx.Text("Refresh devices"))
-	details := gosx.El("details", gosx.Attrs(gosx.Attr("class", "audio-details")), gosx.El("summary", gosx.Text("Audio details")), gosx.El("p", gosx.Text(state.Status)), gosx.El("p", gosx.Text(state.Inventory.Message)))
+	details := gosx.El("details", gosx.Attrs(gosx.Attr("class", "audio-details")), gosx.El("summary", gosx.Text("Audio details")), gosx.El("p", gosx.Text(state.Status)), gosx.El("p", gosx.Text(state.Inventory.Message)), gosx.El("p", gosx.Text(state.Inventory.InputMessage)))
 	var permission gosx.Node = gosx.Fragment()
 	if strings.EqualFold(state.Inventory.Host, "coreaudio") || strings.Contains(strings.ToLower(state.Inventory.Backend), "coreaudio") {
 		permission = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("macOS will ask for microphone access when you enable input and apply. If access was denied, open System Settings → Privacy & Security → Microphone, allow Cicada Studio, then reopen the app. Use headphones while recording with the built-in microphone."))
 	}
-	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Microphone and playback", Description: "Choose where you record and listen."}, audioSummary(state),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, backControl), notice, form, permission, audioPerformance(state), details)
+	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Microphone and playback", Description: "Choose where you record and listen."}, audioConnections(state), audioSummary(state),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, backControl), settingsWarning, setup, notice, form, permission, audioPerformance(state), details)
 }

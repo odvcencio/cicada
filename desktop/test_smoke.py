@@ -31,7 +31,7 @@ class HostProcess:
         self.terminated = False
         budget = int(args[args.index("--smoke-timeout") + 1].removesuffix("s"))
         data = Path(args[args.index("--data-dir") + 1]) / "logs"
-        data.mkdir(parents=True)
+        data.mkdir(parents=True, exist_ok=True)
         (data / "studio.log").write_text("Cicada Studio: http://127.0.0.1:12345/\n")
         report = Path(args[args.index("--smoke-out") + 1])
         report.write_text(json.dumps({"studioLoadedMs": 1, "frontend": {"ok": True}, "timeoutSeconds": budget}))
@@ -94,6 +94,19 @@ class SmokeTimeoutTests(unittest.TestCase):
                 self.assertGreaterEqual(clock.now, seconds + 10)
                 self.assertLess(clock.now, seconds + 12)
 
+    def test_recovery_launches_share_the_score_and_private_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            score = folder / "draft.cicada"
+            score.write_text("// unchanged disposable score\n")
+            state = folder / "private-state"
+            for _ in range(2):
+                result, process, _ = self.run_host(folder, score=score, state=state)
+                self.assertEqual(process.args[-1], str(score))
+                self.assertEqual(result["stateDir"], str(state))
+                self.assertEqual(process.args[process.args.index("--data-dir") + 1], str(state / "data"))
+                self.assertEqual(score.read_text(), "// unchanged disposable score\n")
+
     def test_nonpositive_timeout_is_rejected_before_creating_state(self):
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "not-created"
@@ -104,6 +117,62 @@ class SmokeTimeoutTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 2)
             self.assertIn("--timeout must be positive", stderr.getvalue())
             self.assertFalse(output.exists())
+
+    def test_portable_workflow_changes_only_a_disposable_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "Test.app/Contents/MacOS/cicada-studio"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            project = root / "fixture"
+            project.mkdir()
+            source = project / "song.cicada"
+            source.write_text("// original fixture\n")
+            fixture = root / "fixture.json"
+            fixture.write_text(json.dumps({"score": str(source), "originalRemoved": True, "userLibrariesRemoved": True}))
+            output = root / "results"
+
+            def launch(*_, score, **__):
+                self.assertNotEqual(score, source)
+                self.assertTrue(score.is_relative_to(output.resolve()))
+                score.write_text("// native workflow edit\n")
+                return {"startup": {"frontend": {"ok": True}}}
+
+            with patch("sys.argv", ["smoke.py", "--app", str(root / "Test.app"), "--output", str(output), "--mode", "normal", "--portable-fixture", str(fixture)]), \
+                    patch.object(smoke, "isolated_app", return_value=contextlib.nullcontext(binary)), \
+                    patch.object(smoke, "check_launch", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                smoke.main()
+            self.assertEqual(source.read_text(), "// original fixture\n")
+
+    def test_project_workflow_copies_entry_and_secondary_sources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "Test.app/Contents/MacOS/cicada-studio"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            project = root / "fixture"
+            project.mkdir()
+            source = project / "main.cicada"
+            source.write_text("// entry\n")
+            part = project / "arrangement.cicada"
+            part.write_text("// arrangement\n")
+            workflow = root / "workflow.js"
+            workflow.write_text("// synthetic workflow\n")
+            output = root / "results"
+
+            def launch(*_, score, **__):
+                self.assertNotEqual(score, source)
+                self.assertTrue(score.is_relative_to(output.resolve()))
+                score.write_text("// edited copy\n")
+                (score.parent / part.name).write_text("// edited arrangement copy\n")
+                return {"startup": {"frontend": {"ok": True}}}
+
+            with patch("sys.argv", ["smoke.py", "--app", str(root / "Test.app"), "--output", str(output), "--mode", "normal", "--project-fixture", str(source), "--workflow", str(workflow)]), \
+                    patch.object(smoke, "isolated_app", return_value=contextlib.nullcontext(binary)), \
+                    patch.object(smoke, "check_launch", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                smoke.main()
+            self.assertEqual(source.read_text(), "// entry\n")
+            self.assertEqual(part.read_text(), "// arrangement\n")
 
 
 if __name__ == "__main__":

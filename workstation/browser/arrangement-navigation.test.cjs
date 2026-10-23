@@ -93,7 +93,7 @@ test('arranging zooms, reveals and follows playback without editing the song', {
   await until(async()=>(await page.locator('[data-gosx-live-bind=bar]').first().innerText())==='1' && (await page.locator('[data-gosx-live-bind=step]').first().innerText())==='1','toolbar position did not settle after Home');
   if(proof)await page.screenshot({path:path.join(proof,'arrangement-navigation-1440.png')});
   assert.equal(await editor.inputValue(),draft); assert.equal((await state()).revision,before.revision); assert.equal((await state()).source,before.source);
-  assert.ok(posts.every(p=>p==='/__actions/transport'),'view controls issued a write: '+posts.join(','));
+  assert.ok(posts.every(p=>['/__actions/transport','/__actions/source-checkpoint','/__actions/note-checkpoint'].includes(p)),'view controls issued a write: '+posts.join(','));
   assert.deepEqual(errors,[]);
   if(proof)fs.writeFileSync(path.join(proof,'arrangement-navigation.json'),JSON.stringify({checks,posts,errors,revision:before.revision},null,2)+'\n');
  }catch(error){

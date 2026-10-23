@@ -239,7 +239,9 @@ func (i *Instrument) NoteOn(note, velocity uint8) error {
 			if i.params.Model == Tine {
 				excitation = 1.85 - i.params.HammerFelt
 			}
-			brightness = float32(.06) + float32(x*x)*float32(excitation)
+			// Round before adding the bias so an arm64 FMA cannot change
+			// the strike from the same float32 excitation rendered in WASM.
+			brightness = float32(.06) + float32(float32(x*x)*float32(excitation))
 		}
 		v.modes[m].p = float32(strike * brightness)
 	}

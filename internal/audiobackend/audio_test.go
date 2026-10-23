@@ -71,6 +71,18 @@ func TestAudioDefaultsByCommandAndOS(t *testing.T) {
 	}
 }
 
+func TestOutputOnlyBackendsDoNotAdvertiseCapture(t *testing.T) {
+	for _, name := range []Name{Oto, Null} {
+		backend, err := New(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if backend.CaptureSupported() {
+			t.Fatalf("%s advertised recording input", name)
+		}
+	}
+}
+
 func TestNullPeriodIsSilentAndAllocationFree(t *testing.T) {
 	render := Callback(func(_ [][]float32, output [][]float32) error {
 		for _, channel := range output {

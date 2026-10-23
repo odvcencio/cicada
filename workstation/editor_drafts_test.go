@@ -99,7 +99,7 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 		if got := strings.Contains(page, marker); got != want {
 			t.Fatalf("%s restored %q = %t, want %t", file, marker, got, want)
 		}
-		if got := strings.Contains(page, "Recovered draft. Not saved to disk."); got != want {
+		if got := strings.Contains(page, "Recovered draft. The score file is unchanged."); got != want {
 			t.Fatalf("%s recovered draft status = %t, want %t", file, got, want)
 		}
 		if got := strings.Contains(page, "data-code-unsaved"); got != want {

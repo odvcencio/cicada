@@ -22,7 +22,7 @@ type Pool struct {
 
 func NewPool(sampleRate, maximum int, region Region) (*Pool, error) {
 	if maximum < 1 || maximum > MaxVoices {
-		return nil, Error("sample pool maximum must be between 1 and 64")
+		return nil, validationError("sample pool maximum must be between 1 and 64")
 	}
 	if err := validateRate(sampleRate); err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func (p *Pool) NoteOn(note, velocity uint8) (Handle, error) {
 		return Handle{}, err
 	}
 	if velocity > 127 || p.serial == ^uint64(0) {
-		return Handle{}, Error("sample velocity or note ID is out of range")
+		return Handle{}, validationError("sample velocity or note ID is out of range")
 	}
 	slot, releasing := -1, false
 	var quietest float64

@@ -193,18 +193,18 @@ func Validate(program Program, sampleRate int) error {
 // ValidateProgram checks a program without passing its fixed node array by value.
 func ValidateProgram(program *Program, sampleRate int) error {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
-		return Error("invalid graph program")
+		return validationError("invalid graph program")
 	}
 	if math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-		return Error("invalid graph glide time")
+		return validationError("invalid graph glide time")
 	}
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return Error("unsupported sample rate")
+		return validationError("unsupported sample rate")
 	}
 	for i := 0; i < int(program.Len); i++ {
 		n := program.Nodes[i]
 		if int(n.A) >= MaxNodes || int(n.B) >= MaxNodes || int(n.C) >= MaxNodes {
-			return Error("invalid graph input index")
+			return validationError("invalid graph input index")
 		}
 		var inputs int
 		switch n.Op {
@@ -220,20 +220,20 @@ func ValidateProgram(program *Program, sampleRate int) error {
 		case Comb:
 			inputs = 3
 			if n.Value < 0 || n.Value >= float32(i) || n.Value != float32(uint8(n.Value)) {
-				return Error("invalid comb damping input")
+				return validationError("invalid comb damping input")
 			}
 		default:
-			return Error("unknown graph operation")
+			return validationError("unknown graph operation")
 		}
 		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) || (inputs > 3 && int(n.D) >= i) || (inputs > 4 && int(n.E) >= i) {
-			return Error("graph input must precede its node")
+			return validationError("graph input must precede its node")
 		}
 		if n.Op == Constant && (math.IsNaN(float64(n.Value)) || math.IsInf(float64(n.Value), 0)) {
-			return Error("non-finite graph constant")
+			return validationError("non-finite graph constant")
 		}
 	}
 	if delaySamples(program) > MaxVoiceDelaySamples {
-		return Error("voice graph exceeds 8192 delay samples (two delay nodes)")
+		return validationError("voice graph exceeds 8192 delay samples (two delay nodes)")
 	}
 	return validateDelayPitch(program, sampleRate, 0)
 }
@@ -276,6 +276,8 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 
 // SetExpression applies resolved score controls without retriggering the voice.
 func (v *Voice) SetExpression(p expression.Params) { v.expression.SetParams(p, v.sampleRate) }
+
+func (v *Voice) SetGroupControls(c expression.Controls) { v.expression.SetGroupControls(c) }
 
 // NoteExpression updates the three live controls, preserving vibrato phase.
 func (v *Voice) NoteExpression(pitchCents, pressure, timbre float32) {

@@ -8,6 +8,22 @@ import (
 	webhost "m31labs.dev/cicada/host/web"
 )
 
+func TestStudioNativeCaptureCapabilityCannotBeBypassedBySavedSettings(t *testing.T) {
+	inventory := studioAudioInventory{Supported: true, CaptureSupported: false, Host: "coreaudio", Devices: []studioAudioDeviceInfo{{ID: "headphones", Outputs: 2}, {ID: "mic", Inputs: 1}}}
+	options := studioAudioOptions{OutputDevice: "headphones", InputDevice: "mic"}
+	if err := validateStudioAudioDevices(inventory, options); err != nil {
+		t.Fatalf("selected native playback was rejected: %v", err)
+	}
+	options.InputEnabled = true
+	if err := validateStudioAudioDevices(inventory, options); err == nil || !strings.Contains(err.Error(), "recording input") {
+		t.Fatalf("unsupported capture reached the driver: %v", err)
+	}
+	options.InputEnabled, options.OutputDevice = false, "disconnected"
+	if err := validateStudioAudioDevices(inventory, options); err == nil || !strings.Contains(err.Error(), "no longer available") {
+		t.Fatalf("saved output silently changed to the default: %v", err)
+	}
+}
+
 func TestStudioKernelImageCarriesSourceRevision(t *testing.T) {
 	handler, path := studioTestHandler(t)
 	source, err := os.ReadFile(path)

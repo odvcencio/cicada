@@ -75,61 +75,75 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"pattern melody acid steps=4 { c4^ . . . }\npattern beat drums steps=4 { bd: x... }\n" +
 		"pattern keys-line notes steps=4 { c4 . . . }\n" +
 		"pattern empty acid steps=4 { . . . .\n bend: 0ct 0ct 0ct 0ct\n vibrato: 0ct 0ct 0ct 0ct\n pressure: 0 0 0 0\n timbre: 0.5 0.5 0.5 0.5\n}\n" +
+		"pattern played performance length=3840ticks { gesture-group touch { gesture at=0ticks bend=25ct pressure=0.2 timbre=0.5; } note 60 at=17ticks length=703ticks velocity=82 group=touch; }\n" +
 		"scene recording { lead=empty }\n" + scene + "\nscene other { lead=melody }\nsong { main*2 other recording }\n"
 	// Every foreign line/column lands in valid unrelated entry-file comments,
 	// so compilation cannot mask a writer that silently uses those offsets.
 	entry := "cicada 2\n" + strings.Repeat("// entry sentinel "+strings.Repeat("x", 180)+"\n", strings.Count(part, "\n")+5)
 	declaration := "sampler captured { asset=wave root=c4 mode=oneshot voices=4 }"
 	fixtures := map[string]edits.Intent{
-		"togglestep":            &edits.ToggleStep{Entity: "step:melody/0", Shared: "definition"},
-		"setpitch":              &edits.SetPitch{Entity: "step:melody/0", Pitch: 62, Shared: "definition"},
-		"togglemodifier":        &edits.ToggleModifier{Entity: "step:melody/0", Modifier: "accent", Shared: "definition"},
-		"cyclestep":             &edits.CycleStep{Entity: "step:melody/0", Field: "chance", Shared: "definition"},
-		"setdrumvelocity":       &edits.SetDrumVelocity{Entity: "step:beat/bd/0", Velocity: 80, Shared: "definition"},
-		"setpatternsettings":    &edits.SetPatternSettings{Entity: "pattern:melody", Swing100: 5400, Gate: 50},
-		"setstep":               &edits.SetStep{Entity: "step:melody/0", Mode: "note", Pitch: 62, Ratchet: 1, Chance: 100, Shared: "pattern"},
-		"duplicatepattern":      &edits.DuplicatePattern{Entity: "pattern:melody", Name: "copy"},
-		"setrange":              &edits.SetRange{Entity: "pattern:melody", Operation: "clear", First: 0, Last: 0, Shared: "pattern"},
-		"resizepattern":         &edits.ResizePattern{Entity: "pattern:melody", Length: 8, Shared: "pattern"},
-		"bindscene":             &edits.BindScene{Scene: "main", Track: "lead", Pattern: "empty"},
-		"movesongentry":         &edits.MoveSongEntry{Entity: "song:0", Target: 1},
-		"setsongbars":           &edits.SetSongBars{Entity: "song:0", Bars: 4},
-		"appendsongentry":       &edits.AppendSongEntry{Scene: "other", Bars: 2},
-		"duplicatesongentry":    &edits.DuplicateSongEntry{Entity: "song:0"},
-		"deletesongentry":       &edits.DeleteSongEntry{Entity: "song:0"},
-		"setsongscene":          &edits.SetSongScene{Entity: "song:0", Scene: "other"},
-		"setscenesetting":       &edits.SetSceneSetting{Entity: "setting:main/lead.cutoff", Value: json.RawMessage(`900`)},
-		"removescenesetting":    &edits.RemoveSceneSetting{Entity: "setting:main/lead.cutoff"},
-		"setclipsettings":       &edits.SetClipSettings{Entity: "clip:hit", Start: 10, End: 400, GainDB: -2},
-		"addaudiotrack":         &edits.AddAudioTrack{Name: "vox"},
-		"setparam":              &edits.SetParam{Entity: "param:lead.level", Value: json.RawMessage(`-3`)},
-		"addeffect":             &edits.AddEffect{Name: "grit", EffectKind: "drive"},
-		"addpreset":             &edits.AddPreset{Preset: "warm-pad", Instrument: "voice", Track: "new-keys"},
-		"insertlibraryitem":     &edits.InsertLibraryItem{Track: "lead", ImportPath: "part.cicada", Reference: "voice", ItemKind: "instrument"},
-		"savepreset":            &edits.SavePreset{Track: "lead", Name: "bright", Declaration: "\npreset bright { instrument=acid cutoff=900Hz }\n"},
-		"recordtake":            &edits.RecordTake{Recordings: []edits.Recording{{Track: "lead", Pattern: "empty", Notes: []edits.TakeNote{{Note: 60, Velocity: 90, EndTick: 120, Expressions: []edits.TakeExpression{{PitchCents: 50, Timbre: .5}}}}}}},
-		"selecttake":            &edits.SelectTake{ID: "selected", Track: "vox", Scene: "main", Rate: 48000, Channels: 1, Asset: edits.TakeAsset{Name: "selected", Path: "selected.wav", SHA256: strings.Repeat("b", 64), Frames: 480, RateHz: 48000, Channels: 1}},
-		"publishrecorded":       &edits.PublishRecorded{Name: "captured", Declaration: declaration, Scene: "main", ScenePath: "part.cicada", Level: "-6dB", Note: "c4"},
-		"setprojectsettings":    &edits.SetProjectSettings{Title: "Edited", TempoMilli: 130000, Root: "a", Scale: "minor"},
-		"replacedeclaration":    &edits.ReplaceDeclaration{Declaration: "pattern", Name: "melody", Text: "pattern melody acid steps=4 { d4 . . . }"},
-		"replacetext":           &edits.ReplaceText{},
-		"moveclip":              &edits.MoveClip{Entity: "placement:foreign", AtTick: 3840},
-		"resizeclip":            &edits.ResizeClip{Entity: "placement:foreign", LengthTicks: 3840},
-		"splitclip":             &edits.SplitClip{Entity: "placement:foreign", AtTick: 3840},
-		"duplicateclip":         &edits.DuplicateClip{Entity: "placement:foreign"},
-		"deleteclip":            &edits.DeleteClip{Entity: "placement:foreign"},
-		"convertsongtoarrange":  &edits.ConvertSongToArrange{},
-		"updateplacement":       &edits.UpdatePlacement{Entity: "placement:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
-		"addplacement":          &edits.AddPlacement{Name: "ending", Settings: &edits.PlacementSettings{At: "@9.1.1", Length: "1bars", Track: "lead", Content: "melody"}},
-		"copyplacement":         &edits.CopyPlacement{Entity: "placement:foreign", Name: "copy", Settings: &edits.PlacementSettings{At: "@9.1.1"}},
-		"removeplacement":       &edits.RemovePlacement{Entity: "placement:foreign"},
-		"setmarker":             &edits.SetMarker{Entity: "marker:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
-		"addmarker":             &edits.AddMarker{Name: "finish", Settings: &edits.PlacementSettings{At: "@9.1.1"}},
-		"removemarker":          &edits.RemoveMarker{Entity: "marker:foreign"},
-		"setautomationpoint":    &edits.SetAutomationPoint{Entity: "param:lead.level", At: "@2.1.1", Value: "-3dB"},
-		"removeautomationpoint": &edits.RemoveAutomationPoint{Entity: "param:lead.level", At: "@2.1.1"},
-		"placesamplerprint":     &edits.PlaceSamplerPrint{Name: "print", Track: "vox", At: "@9.1.1", Asset: edits.PrintAsset{Path: "print.wav", SHA256: strings.Repeat("c", 64), Frames: 480, RateHz: 48000}},
-		"placevocalcomp":        &edits.PlaceVocalComp{Comp: edits.VocalComp{Track: "vox", Tempo: 120000, Segments: []edits.VocalSegment{{Take: "t", Start: 0, End: 3840}}, Asset: "comp"}, Asset: edits.PrintAsset{Path: "comp.wav", SHA256: strings.Repeat("d", 64), Frames: 480, RateHz: 48000}},
+		"setchord":               &edits.SetChord{Entity: "step:keys-line/0", Notes: []int{60, 64, 67}, Hold: 2, Shared: "pattern"},
+		"createpattern":          &edits.CreatePattern{Name: "new-phrase", Track: "keys", Steps: 16, Scene: "main"},
+		"setperformancegroup":    &edits.SetPerformanceGroup{Entity: "pattern:played", Index: 0, Name: "swell"},
+		"bindperformedgroup":     &edits.BindPerformedGroup{Entity: "pattern:played", NoteIndex: 0, Group: 0},
+		"setsharedexpression":    &edits.SetSharedExpression{Entity: "pattern:played", GroupIndex: 0, Index: 0, Pressure: .7, Timbre: .5},
+		"setperformedexpression": &edits.SetPerformedExpression{Entity: "pattern:played", NoteIndex: 0, Index: 0, Tick: 123, PitchCents: 25, Pressure: .7, Timbre: .8},
+		"setperformednote":       &edits.SetPerformedNote{Entity: "pattern:played", Index: 0, Tick: 19, EndTick: 800, Pitch: 64, Velocity: 101},
+		"resizeperformance":      &edits.ResizePerformance{Entity: "pattern:played", LengthTicks: 7680},
+		"scaleperformance":       &edits.ScalePerformance{Entity: "pattern:played", Numerator: 2, Denominator: 1},
+		"shapeperformancepitch":  &edits.ShapePerformancePitch{Entity: "pattern:played", Operation: "transpose", Semitones: 12},
+		"togglestep":             &edits.ToggleStep{Entity: "step:melody/0", Shared: "definition"},
+		"setpitch":               &edits.SetPitch{Entity: "step:melody/0", Pitch: 62, Shared: "definition"},
+		"togglemodifier":         &edits.ToggleModifier{Entity: "step:melody/0", Modifier: "accent", Shared: "definition"},
+		"cyclestep":              &edits.CycleStep{Entity: "step:melody/0", Field: "chance", Shared: "definition"},
+		"setdrumvelocity":        &edits.SetDrumVelocity{Entity: "step:beat/bd/0", Velocity: 80, Shared: "definition"},
+		"setpatternsettings":     &edits.SetPatternSettings{Entity: "pattern:melody", Swing100: 5400, Gate: 50},
+		"setstep":                &edits.SetStep{Entity: "step:melody/0", Mode: "note", Pitch: 62, Ratchet: 1, Chance: 100, Shared: "pattern"},
+		"duplicatepattern":       &edits.DuplicatePattern{Entity: "pattern:melody", Name: "copy"},
+		"setrange":               &edits.SetRange{Entity: "pattern:melody", Operation: "clear", First: 0, Last: 0, Shared: "pattern"},
+		"resizepattern":          &edits.ResizePattern{Entity: "pattern:melody", Length: 8, Shared: "pattern"},
+		"bindscene":              &edits.BindScene{Scene: "main", Track: "lead", Pattern: "empty"},
+		"movesongentry":          &edits.MoveSongEntry{Entity: "song:0", Target: 1},
+		"setsongbars":            &edits.SetSongBars{Entity: "song:0", Bars: 4},
+		"appendsongentry":        &edits.AppendSongEntry{Scene: "other", Bars: 2},
+		"duplicatesongentry":     &edits.DuplicateSongEntry{Entity: "song:0"},
+		"deletesongentry":        &edits.DeleteSongEntry{Entity: "song:0"},
+		"setsongscene":           &edits.SetSongScene{Entity: "song:0", Scene: "other"},
+		"setscenesetting":        &edits.SetSceneSetting{Entity: "setting:main/lead.cutoff", Value: json.RawMessage(`900`)},
+		"removescenesetting":     &edits.RemoveSceneSetting{Entity: "setting:main/lead.cutoff"},
+		"setclipsettings":        &edits.SetClipSettings{Entity: "clip:hit", Start: 10, End: 400, GainDB: -2},
+		"addaudiotrack":          &edits.AddAudioTrack{Name: "vox"},
+		"setparam":               &edits.SetParam{Entity: "param:lead.level", Value: json.RawMessage(`-3`)},
+		"addeffect":              &edits.AddEffect{Name: "grit", EffectKind: "drive"},
+		"addpreset":              &edits.AddPreset{Preset: "warm-pad", Instrument: "voice", Track: "new-keys"},
+		"insertlibraryitem":      &edits.InsertLibraryItem{Track: "lead", ImportPath: "part.cicada", Reference: "voice", ItemKind: "instrument"},
+		"savepreset":             &edits.SavePreset{Track: "lead", Name: "bright", Declaration: "\npreset bright { instrument=acid cutoff=900Hz }\n"},
+		"recordtake":             &edits.RecordTake{Recordings: []edits.Recording{{Track: "lead", Pattern: "empty", Notes: []edits.TakeNote{{Note: 60, Velocity: 90, EndTick: 120, Expressions: []edits.TakeExpression{{PitchCents: 50, Timbre: .5}}}}}}},
+		"selecttake":             &edits.SelectTake{ID: "selected", Track: "vox", Scene: "main", Rate: 48000, Channels: 1, Asset: edits.TakeAsset{Name: "selected", Path: "selected.wav", SHA256: strings.Repeat("b", 64), Frames: 480, RateHz: 48000, Channels: 1}},
+		"publishrecorded":        &edits.PublishRecorded{Name: "captured", Declaration: declaration, Scene: "main", ScenePath: "part.cicada", Level: "-6dB", Note: "c4"},
+		"setprojectsettings":     &edits.SetProjectSettings{Title: "Edited", TempoMilli: 130000, Root: "a", Scale: "minor"},
+		"replacedeclaration":     &edits.ReplaceDeclaration{Declaration: "pattern", Name: "melody", Text: "pattern melody acid steps=4 { d4 . . . }"},
+		"replacetext":            &edits.ReplaceText{},
+		"moveclip":               &edits.MoveClip{Entity: "placement:foreign", AtTick: 3840},
+		"resizeclip":             &edits.ResizeClip{Entity: "placement:foreign", LengthTicks: 3840},
+		"splitclip":              &edits.SplitClip{Entity: "placement:foreign", AtTick: 3840},
+		"duplicateclip":          &edits.DuplicateClip{Entity: "placement:foreign"},
+		"deleteclip":             &edits.DeleteClip{Entity: "placement:foreign"},
+		"convertsongtoarrange":   &edits.ConvertSongToArrange{},
+		"updateplacement":        &edits.UpdatePlacement{Entity: "placement:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
+		"addplacement":           &edits.AddPlacement{Name: "ending", Settings: &edits.PlacementSettings{At: "@9.1.1", Length: "1bars", Track: "lead", Content: "melody"}},
+		"copyplacement":          &edits.CopyPlacement{Entity: "placement:foreign", Name: "copy", Settings: &edits.PlacementSettings{At: "@9.1.1"}},
+		"varyplacement":          &edits.VaryPlacement{Entity: "placement:foreign", Name: "independent"},
+		"removeplacement":        &edits.RemovePlacement{Entity: "placement:foreign"},
+		"setmarker":              &edits.SetMarker{Entity: "marker:foreign", Settings: &edits.PlacementSettings{At: "@2.1.1"}},
+		"addmarker":              &edits.AddMarker{Name: "finish", Settings: &edits.PlacementSettings{At: "@9.1.1"}},
+		"removemarker":           &edits.RemoveMarker{Entity: "marker:foreign"},
+		"setarrangementtempo":    &edits.SetArrangementTempo{At: "@2.1.1", Value: "96"},
+		"removearrangementtempo": &edits.RemoveArrangementTempo{At: "@2.1.1"},
+		"setautomationpoint":     &edits.SetAutomationPoint{Entity: "param:lead.level", At: "@2.1.1", Value: "-3dB"},
+		"removeautomationpoint":  &edits.RemoveAutomationPoint{Entity: "param:lead.level", At: "@2.1.1"},
+		"placesamplerprint":      &edits.PlaceSamplerPrint{Name: "print", Track: "vox", At: "@9.1.1", Asset: edits.PrintAsset{Path: "print.wav", SHA256: strings.Repeat("c", 64), Frames: 480, RateHz: 48000}},
+		"placevocalcomp":         &edits.PlaceVocalComp{Comp: edits.VocalComp{Track: "vox", Tempo: 120000, Segments: []edits.VocalSegment{{Take: "t", Start: 0, End: 3840}}, Asset: "comp"}, Asset: edits.PrintAsset{Path: "comp.wav", SHA256: strings.Repeat("d", 64), Frames: 480, RateHz: 48000}},
 	}
 	var kinds []string
 	for _, kind := range edits.Kinds() {
@@ -181,6 +195,68 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
+					case "togglestep", "setpitch", "togglemodifier", "cyclestep", "setdrumvelocity", "setstep", "setpatternsettings", "setrange", "resizepattern", "setchord":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
+							t.Fatalf("grid edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)
+						}
+					case "recordtake":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("bend: 50ct")) {
+							t.Fatalf("recording did not edit its owned source: candidate=%v error=%v", result != nil, err)
+						}
+					case "setperformednote", "resizeperformance", "setperformedexpression", "setperformancegroup", "bindperformedgroup", "setsharedexpression":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
+							t.Fatalf("performed edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)
+						}
+						var played *edits.Pattern
+						for i := range result.Plan.Patterns {
+							if result.Plan.Patterns[i].ID == "played" {
+								played = &result.Plan.Patterns[i]
+								break
+							}
+						}
+						if played == nil || played.Performance == nil {
+							t.Fatal("performed edit lost its compiled pattern")
+						}
+						p := played.Performance
+						valid := map[string]bool{
+							"setperformednote":       p.Notes[0].Tick == 19 && p.Notes[0].EndTick == 800 && p.Notes[0].Note == 64 && p.Notes[0].Velocity == 101,
+							"resizeperformance":      p.LengthTicks == 7680,
+							"setperformedexpression": len(p.Notes[0].Expressions) == 1 && p.Notes[0].Expressions[0].Tick == 123,
+							"setperformancegroup":    p.Groups[0].Name == "swell",
+							"bindperformedgroup":     p.Notes[0].Group == 0,
+							"setsharedexpression":    p.Groups[0].Points[0].Value.Pressure == .7,
+						}
+						if !valid[kind] {
+							t.Fatal("performed edit changed its meaning", kind, p)
+						}
+					case "shapeperformancepitch":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("note 72 at=17ticks length=703ticks velocity=82")) {
+							t.Fatalf("pitch shaping did not edit its owning source: candidate=%v error=%v", result != nil, err)
+						}
+					case "scaleperformance":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("note 60 at=34ticks length=1406ticks velocity=82")) {
+							t.Fatalf("time scaling did not edit its owning source: candidate=%v error=%v", result != nil, err)
+						}
+					case "bindscene", "selecttake", "createpattern", "setscenesetting", "removescenesetting":
+						replacements := map[string][2]string{
+							"bindscene":          {"lead=melody", "lead=empty"},
+							"selecttake":         {"vox=off", "vox=selected-clip"},
+							"createpattern":      {"keys=keys-line", "keys=new-phrase"},
+							"setscenesetting":    {"lead.cutoff=700Hz", "lead.cutoff=900Hz"},
+							"removescenesetting": {"lead.cutoff=700Hz", ""},
+						}
+						change := replacements[kind]
+						wantPart := strings.Replace(string(other), change[0], change[1], 1)
+						if err != nil || result == nil || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || string(result.Files[0].After) != wantPart {
+							t.Fatalf("scene edit changed the wrong source or surrounding bytes: kind=%s result=%v error=%v", kind, result != nil, err)
+						}
+						if kind == "selecttake" || kind == "createpattern" {
+							if !bytes.HasPrefix(result.Source, main) {
+								t.Fatal("new declarations rewrote the entry source")
+							}
+						} else if !bytes.Equal(result.Source, main) {
+							t.Fatal("scene-only edit changed entry source bytes")
+						}
 					case "publishrecorded":
 						wantPart := strings.Replace(string(other), scene, strings.TrimSuffix(scene, "}")+newline+"  captured_track = captured_taps"+newline+"}", 1)
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || string(result.Files[0].After) != wantPart {
@@ -194,6 +270,15 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						}
 						if !bound {
 							t.Fatal("published track has no compiled scene binding")
+						}
+
+					case "setautomationpoint":
+						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 0 || !bytes.Contains(result.Source, []byte("automate lead.level")) {
+							t.Fatalf("new entry automation changed a referenced declaration: %v %v", result != nil, err)
+						}
+					case "placevocalcomp":
+						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("automate lead.cutoff")) || !bytes.Contains(result.Files[0].After, []byte("place vocal-vox")) {
+							t.Fatalf("vocal conversion lost owning source or scene control: %v %v", result != nil, err)
 						}
 					case "replacetext":
 						if err != nil || result == nil || !bytes.Equal(result.Source, want) || len(result.Files) != 0 {

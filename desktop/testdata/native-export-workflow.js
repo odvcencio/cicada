@@ -1,0 +1,54 @@
+// Disposable WKWebView only. Render the fixture offline with null audio.
+(() => {
+ if(location.hostname!=='127.0.0.1'||window.__cicadaExportSmoke)return;
+ window.__cicadaExportSmoke=true;
+ const checks=[],errors=[],visibility=[document.visibilityState];let navigations=0;
+ document.addEventListener('visibilitychange',()=>visibility.push(document.visibilityState));
+ addEventListener('error',e=>errors.push(e.message));addEventListener('unhandledrejection',e=>errors.push(String(e.reason)));
+ document.addEventListener('gosx:navigate',()=>navigations++);
+ const pause=()=>new Promise(r=>setTimeout(r,50));
+ async function wait(check,label, timeout = 70000){const end=performance.now()+timeout;while(performance.now()<end){if(await check())return;await pause();}throw new Error('Timed out: '+label);}
+ const read=async path=>{const r=await fetch('/api/'+path,{cache:'no-store'});if(!r.ok)throw new Error(path+': '+r.status);return r.json();};
+ (async()=>{
+  await wait(()=>window.__gosx?.ready&&document.querySelector('#studio-shell[data-shell-actions=ready]'),'shell');
+  await wait(()=>!document.hidden,'visible native window');
+  const initial=await read('state'),audio=await read('audio/config');
+  if(!initial.source.includes('title "Desktop CI"')||audio.options.inputEnabled||String(audio.inventory.backendName||audio.inventory.backend).toLowerCase()!=='null')throw new Error('Use disposable smoke score and null audio');
+  const editor=document.querySelector('#score textarea'),draft=editor.value+'\n// unsaved export draft\n';editor.value=draft;editor.dispatchEvent(new Event('input',{bubbles:true}));
+  const trigger=document.querySelector('[data-gosx-disclosure-target="#export-dialog"]');trigger.focus();const previousFocus=document.activeElement;trigger.click();
+  const dialog=()=>document.querySelector('#export-dialog');
+  const form=dialog().querySelector('form[action="/__actions/export"]');
+  const sourceRevision=form.elements.namedItem('source_revision').value;
+  if(!/^[a-f0-9]{64}$/.test(sourceRevision))throw new Error('Export omitted the loaded source version');
+  form.elements.namedItem('source_revision').value='unreviewed-test-source';
+  form.requestSubmit(form.querySelector('button[type=submit]'));
+  await wait(()=>dialog().textContent.includes('Saved score files or libraries changed'),'source conflict');
+  const rejected=await read('export');
+  if(rejected.id||rejected.state!=='idle'||dialog().hidden||!document.querySelector('#studio-workbench').inert||editor.value!==draft)throw new Error('Rejected export started a job or lost unsaved work');
+  checks.push('native export rejects an unreviewed saved version and retains its draft');
+  form.elements.namedItem('source_revision').value=sourceRevision;
+  form.elements.namedItem('bits').value='16';form.elements.namedItem('bits').dispatchEvent(new Event('change',{bubbles:true}));
+  const before=navigations;form.querySelector('button[type=submit]').focus();form.requestSubmit(form.querySelector('button[type=submit]'));
+  let job;await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(job.error);return ['succeeded','shortfall'].includes(job.state);},'offline render', 90000);
+  await wait(()=>dialog().querySelector('a[download]')?.getAttribute('href')===job.downloadURL,'completed delivery projection');
+  if(dialog().hidden||!document.querySelector('#studio-workbench').inert||navigations!==before||editor!==document.querySelector('#score textarea')||editor.value!==draft)throw new Error('Rendering lost its dialog, modal lock, editor or draft');
+  if(job.revision!==initial.revision)throw new Error('Export rendered a different saved score');
+  if(!job.source_revision||job.current_source_revision!==job.source_revision)throw new Error('Unsaved Code draft changed the saved render version');
+  if(job.source_revision!==sourceRevision||dialog().textContent.includes('Saved score files or libraries changed'))throw new Error('Retry lost the reviewed version or retained its conflict');
+  await wait(()=>/matches the saved score/.test(dialog().querySelector('[data-gosx-live-bind=version]')?.textContent),'saved version projection');
+  if(form.querySelector('.form-status')?.textContent!=='Rendering started.')throw new Error('Export acknowledgement did not describe the background render');
+  checks.push('offline export retains its open native dialog, modal lock and unsaved score draft');
+  const response=await fetch(job.downloadURL,{cache:'no-store'}),bytes=new Uint8Array(await response.arrayBuffer());
+  if(!response.ok||response.headers.get('Content-Type')!=='audio/wav'||new TextDecoder().decode(bytes.slice(0,4))!=='RIFF'||new TextDecoder().decode(bytes.slice(8,12))!=='WAVE'||bytes.length<48000)throw new Error('Completed WAV is not downloadable');
+  checks.push('native export exposes a completed WAV for the confirmed saved revision');
+  dialog().querySelector('[data-gosx-disclosure-close]').click();
+  if(!dialog().hidden||document.querySelector('#studio-workbench').inert||document.activeElement!==previousFocus)throw new Error('Closing Export did not unlock the workspace and restore focus: '+JSON.stringify({hidden:dialog().hidden,inert:document.querySelector('#studio-workbench').inert,active:document.activeElement?.id||document.activeElement?.tagName,expected:previousFocus?.id||previousFocus?.tagName}));
+  checks.push('Close restores the focused native trigger and unlocks the song workspace');
+  trigger.click();await wait(()=>!dialog().hidden&&dialog().querySelector('a[download]').getAttribute('href')===job.downloadURL,'reopened delivery');
+  dialog().querySelector('[data-gosx-disclosure-close]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  if(!dialog().hidden||document.querySelector('#studio-workbench').inert)throw new Error('Escape did not retire the modal');
+  const final=await read('state');if(final.source!==initial.source||final.revision!==initial.revision||errors.length)throw new Error('Export changed the score or raised browser errors: '+JSON.stringify(errors));
+  checks.push('reopening and Escape preserve the saved song and completed export');
+  return{type:'cicada-native-smoke',ok:true,checks,renderState:job.state,wavBytes:bytes.length};
+ })().catch(error=>({type:'cicada-native-smoke',ok:false,checks,error:String(error)+'\n'+error.stack+'\n'+JSON.stringify({visibility,focused:document.activeElement?.id||document.activeElement?.tagName,focusPolicy:document.querySelector('#export [data-gosx-live-src]')?.getAttribute('data-gosx-live-focus'),progress:document.querySelector('#export [role=status]')?.textContent,download:document.querySelector('#export .export-result a[download]')?.getAttribute('href'),errors})})).then(result=>{window.__cicadaExportResult=result;if(window.chrome?.webview)window.chrome.webview.postMessage(JSON.stringify(result));});
+})();

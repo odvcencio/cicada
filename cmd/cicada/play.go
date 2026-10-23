@@ -154,6 +154,10 @@ func compileLiveProject(path string, p *project.Project) (liveplay.Score, error)
 }
 
 func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (liveplay.Score, error) {
+	return compileLiveProjectLoopAtRate(path, p, sampleRate, true)
+}
+
+func compileLiveProjectLoopAtRate(path string, p *project.Project, sampleRate int, loop bool) (liveplay.Score, error) {
 	if sampleRate <= 0 {
 		return liveplay.Score{}, fmt.Errorf("audio sample rate must be positive")
 	}
@@ -165,7 +169,7 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	if err != nil {
 		return liveplay.Score{}, err
 	}
-	cfg.LoopSong = true
+	cfg.LoopSong = loop
 	created, err := engine.New(cfg)
 	if err != nil {
 		return liveplay.Score{}, err
