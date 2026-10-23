@@ -8,8 +8,8 @@
     if (!response.ok) throw new Error(name + ': ' + response.status);
     return response.json();
   };
-  async function wait(check, label) {
-    const end = performance.now() + 45000;
+  async function wait(check, label, timeout = 45000) {
+    const end = performance.now() + timeout;
     while (performance.now() < end) { if (await check()) return; await new Promise(resolve => setTimeout(resolve,50)); }
     throw new Error('Timed out: ' + label);
   }
@@ -22,7 +22,7 @@
     document.querySelector('[data-gosx-disclosure-target="#export-dialog"]').click();
     const previous = (await read('export')).id;
     document.querySelector('#export button[type=submit]').click(); let job;
-    await wait(async () => { job=await read('export'); if(job.state==='failed')throw new Error(job.error); return job.id!==previous && ['succeeded','shortfall'].includes(job.state); },'WAV export');
+    await wait(async () => { job=await read('export'); if(job.state==='failed')throw new Error(job.error); return job.id!==previous && ['succeeded','shortfall'].includes(job.state); },'WAV export', 90000);
     const response=await fetch(job.downloadURL), bytes=new Uint8Array(await response.arrayBuffer());
     if(!response.ok || new TextDecoder().decode(bytes.slice(0,4))!=='RIFF')throw new Error('Invalid WAV');
     const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');

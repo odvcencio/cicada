@@ -7,7 +7,7 @@
  addEventListener('error',e=>errors.push(e.message));addEventListener('unhandledrejection',e=>errors.push(String(e.reason)));
  document.addEventListener('gosx:navigate',()=>navigations++);
  const pause=()=>new Promise(r=>setTimeout(r,50));
- async function wait(check,label){const end=performance.now()+70000;while(performance.now()<end){if(await check())return;await pause();}throw new Error('Timed out: '+label);}
+ async function wait(check,label, timeout = 70000){const end=performance.now()+timeout;while(performance.now()<end){if(await check())return;await pause();}throw new Error('Timed out: '+label);}
  const read=async path=>{const r=await fetch('/api/'+path,{cache:'no-store'});if(!r.ok)throw new Error(path+': '+r.status);return r.json();};
  (async()=>{
   await wait(()=>window.__gosx?.ready&&document.querySelector('#studio-shell[data-shell-actions=ready]'),'shell');
@@ -29,7 +29,7 @@
   form.elements.namedItem('source_revision').value=sourceRevision;
   form.elements.namedItem('bits').value='16';form.elements.namedItem('bits').dispatchEvent(new Event('change',{bubbles:true}));
   const before=navigations;form.querySelector('button[type=submit]').focus();form.requestSubmit(form.querySelector('button[type=submit]'));
-  let job;await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(job.error);return ['succeeded','shortfall'].includes(job.state);},'offline render');
+  let job;await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(job.error);return ['succeeded','shortfall'].includes(job.state);},'offline render', 90000);
   await wait(()=>dialog().querySelector('a[download]')?.getAttribute('href')===job.downloadURL,'completed delivery projection');
   if(dialog().hidden||!document.querySelector('#studio-workbench').inert||navigations!==before||editor!==document.querySelector('#score textarea')||editor.value!==draft)throw new Error('Rendering lost its dialog, modal lock, editor or draft');
   if(job.revision!==initial.revision)throw new Error('Export rendered a different saved score');

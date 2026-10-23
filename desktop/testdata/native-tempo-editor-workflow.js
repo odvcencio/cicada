@@ -3,7 +3,7 @@
  if (location.hostname !== '127.0.0.1' || window.__cicadaTempoEditorSmoke) return;
  window.__cicadaTempoEditorSmoke = true;
  const read = async name => { const response = await fetch('/api/'+name, {cache:'no-store'}); if (!response.ok) throw new Error(name+': '+response.status); return response.json(); };
- const wait = async (check,label) => { const end=performance.now()+60000; while(performance.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Timed out: '+label); };
+ const wait = async (check,label, timeout = 60000) => { const end=performance.now()+timeout; while(performance.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Timed out: '+label); };
  const ready = () => wait(()=>window.__gosx?.ready && document.querySelector('#studio-shell[data-shell-actions=ready]') && !document.querySelector('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]'),'managed forms');
  const button = (label,scope=document) => [...scope.querySelectorAll('button')].find(n=>n.textContent.trim()===label && !n.disabled);
  const open = () => { const node=document.querySelector('[data-arrangement-tempos]'); if(!node.open)node.querySelector('summary').click(); };
@@ -26,7 +26,7 @@
     case 'restored': await saved(source=>source===state.moved);state.checks.push('native removal and Undo restore the tempo step');state.previousExport=(await read('export')).id;phase('export');button('Export').click();break;
     case 'export': await wait(()=>button('Render WAV'),'export controls');phase('render');button('Render WAV').click();break;
     case 'render': {
-     let job;await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(JSON.stringify(job));return job.id!==state.previousExport&&['succeeded','shortfall'].includes(job.state)},'edited WAV');
+     let job;await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(JSON.stringify(job));return job.id!==state.previousExport&&['succeeded','shortfall'].includes(job.state)},'edited WAV', 90000);
      const response=await fetch(job.downloadURL),bytes=new Uint8Array(await response.arrayBuffer());if(!response.ok||String.fromCharCode(...bytes.slice(0,4))!=='RIFF'||bytes.length<100000)throw new Error('Invalid WAV');
      const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');state.checks.push('native edited tempo exports WAV '+sha);sessionStorage.removeItem(key);return {type:'cicada-native-smoke',ok:true,checks:state.checks};
     }

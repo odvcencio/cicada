@@ -10,7 +10,7 @@
    catch (error) { if (!(error instanceof TypeError) || performance.now() >= end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); }
   }
  };
- const wait = async (check, label) => { const end = performance.now() + 60000; while (performance.now() < end) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error('Timed out: ' + label); };
+ const wait = async (check, label, timeout = 60000) => { const end = performance.now() + timeout; while (performance.now() < end) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error('Timed out: ' + label); };
  const ready = () => wait(() => window.__gosx?.ready && document.querySelector('#studio-shell[data-shell-actions=ready]') && !document.querySelector('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]'), 'managed forms');
  const button = (label, scope = document) => [...scope.querySelectorAll('button')].find(node => node.textContent.trim() === label && !node.disabled);
  const persist = state => sessionStorage.setItem(key, JSON.stringify(state));
@@ -64,7 +64,7 @@
      state.previousExport = (await read('export')).id; click(state, 'export', button('Export')); break;
     case 'export': await wait(() => button('Render WAV'), 'WAV controls'); click(state, 'render', button('Render WAV')); break;
     case 'render': {
-     let job; await wait(async () => { job = await read('export'); if (job.state === 'failed') throw new Error(JSON.stringify(job)); return job.id !== state.previousExport && ['succeeded', 'shortfall'].includes(job.state); }, 'WAV export');
+     let job; await wait(async () => { job = await read('export'); if (job.state === 'failed') throw new Error(JSON.stringify(job)); return job.id !== state.previousExport && ['succeeded', 'shortfall'].includes(job.state); }, 'WAV export', 90000);
      const response = await fetch(job.downloadURL); const bytes = new Uint8Array(await response.arrayBuffer());
      if (!response.ok || String.fromCharCode(...bytes.slice(0,4)) !== 'RIFF' || bytes.length < 100000) throw new Error('Invalid printed WAV');
      const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2,'0')).join('');

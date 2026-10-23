@@ -8,8 +8,8 @@
     if (!response.ok) throw new Error(name + ': ' + response.status);
     return response.json();
   };
-  async function wait(check, label) {
-    const end = performance.now() + 60000;
+  async function wait(check, label, timeout = 60000) {
+    const end = performance.now() + timeout;
     while (performance.now() < end) {
       if (await check()) return;
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -80,7 +80,7 @@
             job = await read('export');
             if (job.state === 'failed') throw new Error(JSON.stringify(job));
             return job.id !== previous && ['succeeded', 'shortfall'].includes(job.state);
-          }, 'portable WAV export');
+          }, 'portable WAV export', 90000);
           const response = await fetch(job.downloadURL);
           const bytes = new Uint8Array(await response.arrayBuffer());
           if (!response.ok || String.fromCharCode(...bytes.slice(0, 4)) !== 'RIFF' || job.revision !== state.revision) throw new Error('Export lost the restored song');

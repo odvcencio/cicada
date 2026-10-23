@@ -1032,8 +1032,8 @@ jobs:
   macos-desktop:
     name: macOS desktop (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    # A cold Intel package build needs time for the full native workflow matrix.
-    timeout-minutes: 60
+    # Allow cold Intel compilation and the complete isolated export/reopen suite.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:

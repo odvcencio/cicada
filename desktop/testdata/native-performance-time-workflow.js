@@ -9,7 +9,7 @@
     if(!r.ok)throw new Error('source projection: '+r.status);const projection=await r.json(),doc=new DOMParser().parseFromString(projection.html,'text/html'),editor=doc.querySelector('textarea');
     if(!editor)throw new Error('source projection has no editor');return {...state,peer:editor.value,source_revision:projection.sourceRevision};
   };
-  const wait=async(check,label)=>{const end=performance.now()+45000;while(performance.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,50));}throw new Error('Timed out: '+label);};
+  const wait=async(check,label, timeout = 45000)=>{const end=performance.now()+timeout;while(performance.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,50));}throw new Error('Timed out: '+label);};
   const ready=()=>wait(()=>window.__gosx?.ready && document.querySelector('#studio-shell[data-shell-actions=ready]') && !document.querySelector('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]'),'Studio ready');
   const peer=view=>view.peer;
   // Read the saved fixture through the public code projection. The note
@@ -20,7 +20,7 @@
   async function render(label){
     document.querySelector('[data-gosx-disclosure-target="#export-dialog"]').click();const previous=(await read('export')).id;
     document.querySelector('#export button[type=submit]').click();let job;
-    await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(job.error);return job.id!==previous && ['succeeded','shortfall'].includes(job.state);},'WAV export');
+    await wait(async()=>{job=await read('export');if(job.state==='failed')throw new Error(job.error);return job.id!==previous && ['succeeded','shortfall'].includes(job.state);},'WAV export', 90000);
     const r=await fetch(job.downloadURL),bytes=new Uint8Array(await r.arrayBuffer());if(!r.ok || new TextDecoder().decode(bytes.slice(0,4))!=='RIFF')throw new Error('Invalid WAV');
     const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(x=>x.toString(16).padStart(2,'0')).join('');
     if(typeof window.__cicadaTimeAudio==='function'){let binary='';for(const b of bytes)binary+=String.fromCharCode(b);await window.__cicadaTimeAudio(label,btoa(binary));}

@@ -9,8 +9,8 @@
     if (!response.ok) throw new Error(name + ': ' + response.status);
     return response.json();
   };
-  async function wait(check, label) {
-    const end = performance.now() + 30000;
+  async function wait(check, label, timeout = 30000) {
+    const end = performance.now() + timeout;
     while (performance.now() < end) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
     throw new Error('Timed out: ' + label);
   }
@@ -18,14 +18,23 @@
   const saved = source => wait(async () => (await read()).source === source && document.querySelector('#undo-form input[name=revision]')?.value === (await read()).revision, 'source and projection saved');
   async function render(label) {
     document.querySelector('[data-gosx-disclosure-target="#export-dialog"]').click();
+    await wait(async () => {
+      const state = await read(), status = await read('export'), form = document.querySelector('#export form');
+      return form?.querySelector('[name=revision]')?.value === state.revision &&
+        (!status.current_source_revision || form.querySelector('[name=source_revision]')?.value === status.current_source_revision);
+    }, 'current export receipts');
     const previous = (await read('export')).id;
     document.querySelector('#export button[type=submit]').click();
     let job;
     await wait(async () => {
       job = await read('export');
+      const form = document.querySelector('#export form');
+      if (form?.dataset.gosxFormState === 'error') throw new Error('Export rejected: ' + form.textContent.trim());
       if (job.state === 'failed') throw new Error(job.error);
       return job.id !== previous && ['succeeded','shortfall'].includes(job.state);
-    }, 'exported WAV');
+    }, 'exported WAV', 90000).catch(error => {
+      throw new Error(error.message + ': ' + JSON.stringify({previous, job, formState:document.querySelector('#export form')?.dataset.gosxFormState}));
+    });
     const response = await fetch(job.downloadURL), bytes = new Uint8Array(await response.arrayBuffer());
     if (!response.ok || new TextDecoder().decode(bytes.slice(0, 4)) !== 'RIFF') throw new Error('Invalid WAV');
     const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(x => x.toString(16).padStart(2, '0')).join('');
