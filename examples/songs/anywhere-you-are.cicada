@@ -1,5 +1,6 @@
 // Anywhere You Are — Draco Skysong, for Danilo.
-// An original love song: warm electronic soul with a late-night dance pulse.
+// An original love song: layered electronic soul with a late-night dance pulse.
+// Piano and reed in front; moving strings and a wide wordless synth choir behind.
 // 80 bars at 108 BPM. The guide is a suggested vocal melody, not a vocal recording.
 cicada 2
 
@@ -13,17 +14,17 @@ seed 861025
 
 fx room reverb {
   size = 1.08
-  decay = 2.2s
-  damp = 6800Hz
-  highpass = 180Hz
-  predelay = 22ms
+  decay = 3.35s
+  damp = 5100Hz
+  highpass = 320Hz
+  predelay = 34ms
   mix = 1
 }
 
 fx echo delay {
   time = 1/8.
-  feedback = 0.29
-  damp = 4600Hz
+  feedback = 0.34
+  damp = 3500Hz
   pingpong = on
   width = 1
   mix = 1
@@ -37,13 +38,13 @@ fx air eq {
 }
 
 fx glue comp {
-  threshold = -18dB
-  ratio = 1.8
+  threshold = -16dB
+  ratio = 1.5
   knee = 6dB
-  attack = 25ms
-  release = 160ms
-  makeup = 9dB
-  mix = 0.65
+  attack = 32ms
+  release = 190ms
+  makeup = 8dB
+  mix = 0.5
 }
 
 fx ceiling limiter {
@@ -52,10 +53,49 @@ fx ceiling limiter {
   release = 140ms
 }
 
+// Separate frequency windows leave the dry vocal and bass in the center.
+fx piano_floor eq {
+  type = highpass
+  frequency = 125Hz
+  q = 0.65
+}
+
+fx piano_space eq {
+  type = peak
+  frequency = 2400Hz
+  q = 0.75
+  gain = -1.7dB
+}
+
+fx reed_floor eq {
+  type = highpass
+  frequency = 210Hz
+  q = 0.707
+}
+
+fx reed_shade eq {
+  type = lowpass
+  frequency = 4100Hz
+  q = 0.65
+}
+
+fx strings_floor eq {
+  type = highpass
+  frequency = 260Hz
+  q = 0.65
+}
+
+fx pluck_shade eq {
+  type = high_shelf
+  frequency = 4200Hz
+  q = 0.707
+  gain = -2.2dB
+}
+
 instrument roundheart {
   voice mono {
     let amp = adsr(gate, 8ms, 180ms, 0.72, 150ms)
-    out = lowpass(sine(pitch) *0.8+saw(pitch) *0.12, 720Hz) *amp*velocity*0.52
+    out = lowpass(sine(pitch) *0.8+saw(pitch) *0.12, 560Hz) *amp*velocity*0.52
   }
 }
 
@@ -63,12 +103,12 @@ instrument satin {
   voice poly {
     let amp = adsr(gate, 260ms, 900ms, 0.62, 1200ms)
     let body = (saw(pitch) +saw(pitch*1.0025)) *0.5
-    out = svf(body, 1700Hz, 0.15) *amp*velocity*0.19
+    out = highpass(svf(body, 1550Hz, 0.15), 230Hz) *amp*velocity*0.19
   }
 }
 
 instrument porcelain {
-  voice mono {
+  voice poly {
     let strike = noise() *env(gate, 2ms) *velocity
     let string = comb(strike, 1/pitch, 0.987, 0.6)
     out = (lowpass(string, 3400Hz) *0.25+sine(pitch) *env(gate, 480ms) *0.13) *env(gate, 1300ms)
@@ -90,11 +130,32 @@ instrument glowbell {
   }
 }
 
+// Two differently voiced, softly breathed parts form one distant ensemble.
+// These are original synthesizers, not sampled human singers.
+instrument afterimage {
+  param throat = 1150Hz
+  param air = 0.016
+  voice poly {
+    let amp = adsr(gate, 420ms, 1100ms, 0.76, 1650ms)
+    let harmonics = sine(pitch) *0.52+ (saw(pitch*0.9992) +saw(pitch*1.0013)) *0.115
+    let vowel = lowpass(harmonics, throat) *0.82+ (lowpass(harmonics, 2800Hz) -lowpass(harmonics, 1500Hz)) *0.2
+    let body = highpass(vowel+lowpass(noise(), 4300Hz) *air, 290Hz)
+    out = (body+delay(body, 11ms) *0.13+delay(body, 19ms) *0.055) *amp*velocity*0.36
+  }
+}
+
 track keys tine_ep {
-  level = -9dB
-  send room = -17dB
-  voices = 4
-  release = 220ms
+  level = -4dB
+  pan = -0.12
+  insert = piano_floor -> piano_space
+  send room = -12dB
+  voices = 8
+  release = 520ms
+  hammer_felt = 0.72
+  pickup_distance = 0.86
+  tremolo = 0.13
+  tremolo_rate = 0.83Hz
+  auto_pan = 0.18
 }
 
 track bass roundheart {
@@ -102,23 +163,24 @@ track bass roundheart {
 }
 
 track silk satin {
-  level = -18dB
-  pan = 0.13
-  send room = -16dB
+  level = -10dB
+  pan = 0.08
+  send room = -4dB
 }
 
 track guitar porcelain {
-  level = -15dB
-  pan = -0.27
-  send echo = -19dB
-  send room = -19dB
+  level = -9dB
+  pan = -0.38
+  insert = pluck_shade
+  send echo = -9dB
+  send room = -8dB
 }
 
 track answer glowbell {
-  level = -20dB
-  pan = 0.31
-  send echo = -15dB
-  send room = -16dB
+  level = -15dB
+  pan = 0.48
+  send echo = -8dB
+  send room = -6dB
 }
 
 track guide lanternvoice {
@@ -129,9 +191,62 @@ track guide lanternvoice {
 
 track drums drums {
   level = -13dB
+  send room = -22dB
   bd_decay = 190ms
-  sd_decay = 120ms
-  ch_decay = 30ms
+  sd_decay = 155ms
+  ch_decay = 38ms
+}
+
+// Reed replies are close and percussive; strings carry a separate singing line.
+track ember reed_ep {
+  level = -3dB
+  pan = 0.36
+  insert = reed_floor -> reed_shade
+  send echo = -17dB
+  send room = -12dB
+  voices = 6
+  pickup_distance = 0.92
+  hammer_felt = 0.78
+  decay = 2.8s
+  release = 420ms
+  drive = 0.08
+  tremolo = 0.18
+  tremolo_rate = 2.7Hz
+  auto_pan = 0.16
+}
+
+track strings string_machine {
+  level = -8dB
+  pan = 0.24
+  insert = strings_floor
+  send room = -3dB
+  voices = 8
+  octave16 = 0.06
+  octave8 = 0.83
+  octave4 = 0.17
+  attack = 140ms
+  release = 950ms
+  cutoff = 3100Hz
+  velocity = 0.72
+  ensemble = 0.46
+  ensemble_rate = 0.53
+}
+
+track choir_left afterimage {
+  level = -12dB
+  pan = -0.64
+  send room = -1dB
+  throat = 1080Hz
+  air = 0.014
+}
+
+track choir_right afterimage {
+  level = -13dB
+  pan = 0.64
+  send echo = -21dB
+  send room = -2dB
+  throat = 1460Hz
+  air = 0.021
 }
 
 track danilo audio {
@@ -180,13 +295,13 @@ pattern bridge-bass {
 pattern verse-pad notes {
   step = 1/2
   gate = 96%
-  [d3 a3 e4] - [c#3 a3 e4] - [b2 f#3 c#4] - [g2 d3 a3] -
+  [a3 e4] - [a3 e4] - [f#3 c#4] - [d3 a3] -
 }
 
 pattern chorus-pad notes {
   step = 1/2
   gate = 96%
-  [g3 b3 f#4] - [f#3 a3 e4] - [e3 b3 f#4] - [a3 c#4 g4] -
+  [b3 f#4] - [a3 e4] - [b3 f#4] - [c#4 g4] -
 }
 
 pattern guitar-verse {
@@ -242,6 +357,115 @@ pattern breath drums {
   rs: .... x3... .... x3...
 }
 
+// Each new part has its own contour rather than doubling the keyboard chord.
+pattern ember-verse notes {
+  step = 1/8
+  gate = 46%
+  . . [a3 e4] . . . [f#3 a3] . | . . [a3 c#4] . . . [b3 e4] . | . . [f#3 a3] . . . [a3 c#4] . | . . [b3 d4] . . . [a3 d4] .
+  velocity: 55 . 57 . . . 43 . . . 59 . . . 45 . . . 62 . . . 46 . . . 54 . . . 41 .
+}
+
+pattern ember-chorus notes {
+  step = 1/8
+  gate = 44%
+  . [b3 d4] . . . [d4 f#4] . . | . [a3 d4] . . . [c#4 e4] . . | . [g3 b3] . . . [b3 d4] . . | . [c#4 e4] . . . [e4 g4] . .
+  velocity: 60 66 . . . 51 . . . 64 . . . 49 . . . 68 . . . 54 . . . 65 . . . 48 . .
+}
+
+pattern strings-verse {
+  step = 1/4
+  gate = 82%
+  . . a4 - | . e5 d5 - | . . f#4 a4 | . b4 a4 -
+  velocity: 60 . 66 . . 63 55 . . . 67 58 . 65 57 .
+}
+
+pattern strings-chorus {
+  step = 1/4
+  gate = 86%
+  . d5 - b4 | . a4 - f#4 | . b4 d5 - | . c#5 b4 a4
+  velocity: 70 77 . 64 . 72 . 61 . 78 65 . . 73 62 56
+}
+
+pattern strings-rise {
+  step = 1/4
+  gate = 88%
+  . f#5 e5 d5 | . e5 d5 a4 | . g5 f#5 d5 | c#5 - b4 a4
+  velocity: 70 78 64 60 . 73 63 59 . 80 67 62 75 . 62 55
+}
+
+pattern strings-bridge {
+  step = 1/2
+  gate = 94%
+  f#4 - | a4 c#5 | b4 - | e5 c#5
+  velocity: 64 . 61 55 67 . 64 54
+}
+
+pattern choir-near notes {
+  step = 1/2
+  gate = 93%
+  [d4 f#4] - | [c#4 e4] - | [d4 f#4] - | [b3 d4] -
+  velocity: 66 . 62 . 68 . 63 .
+}
+
+pattern choir-far notes {
+  step = 1/2
+  gate = 92%
+  [a4 e5] - | [a4 b4] - | [a4 c#5] - | [a4 d5] -
+  velocity: 59 . 55 . 62 . 57 .
+}
+
+pattern choir-chorus-left notes {
+  step = 1/2
+  gate = 94%
+  [g4 b4] - | [f#4 a4] - | [e4 g4] - | [g4 c#5] -
+  velocity: 70 . 65 . 72 . 66 .
+}
+
+pattern choir-chorus-right notes {
+  step = 1/2
+  gate = 93%
+  [d5 f#5] - | [d5 e5] - | [b4 f#5] - | [e5 f#5] -
+  velocity: 63 . 58 . 66 . 60 .
+}
+
+pattern choir-bridge-left notes {
+  step = 1/2
+  gate = 94%
+  [d4 f#4] - | [c#4 e4] - | [b3 d4] - | [c#4 g4] -
+}
+
+pattern choir-bridge-right notes {
+  step = 1/2
+  gate = 94%
+  [a4 d5] - | [a4 c#5] - | [d5 f#5] - | [e5 b5] -
+}
+
+pattern coda-keys notes {
+  step = 1/2
+  gate = 98%
+  [g2 b2 d3 f#3] - | [a2 c#3 e3 g3] - | [d3 f#3 a3 e4] - | [d3 f#3 a3 e4] -
+  velocity: 69 . 65 . 77 . 51 .
+}
+
+pattern coda-strings {
+  step = 1/4
+  gate = 92%
+  b4 a4 - . | c#5 b4 a4 - | f#4 a4 e5 - | d5 - - -
+  velocity: 64 53 . . 65 54 50 . 65 54 68 . 58 . . .
+}
+
+pattern coda-choir-left notes {
+  step = 1/2
+  gate = 95%
+  [b3 f#4] - | [c#4 g4] - | [d4 f#4] - | [d4 f#4] -
+}
+
+pattern coda-choir-right notes {
+  step = 1/2
+  gate = 95%
+  [d5 a5] - | [e5 b5] - | [a4 e5] - | [a4 e5] -
+}
+
 scene doorway {
   keys = verse-keys
   guitar = guitar-verse
@@ -251,6 +475,10 @@ scene doorway {
   answer = off
   guide = off
   danilo = off
+  ember = off
+  strings = off
+  choir_left = choir-near
+  choir_right = choir-far
 }
 
 scene verse {
@@ -262,6 +490,10 @@ scene verse {
   answer = off
   guide = off
   danilo = off
+  ember = off
+  strings = strings-verse
+  choir_left = off
+  choir_right = off
 }
 
 scene closer {
@@ -273,6 +505,10 @@ scene closer {
   answer = little-answer
   guide = off
   danilo = off
+  ember = ember-verse
+  strings = strings-verse
+  choir_left = choir-near
+  choir_right = off
 }
 
 scene lift {
@@ -284,6 +520,10 @@ scene lift {
   answer = off
   guide = off
   danilo = off
+  ember = ember-chorus
+  strings = strings-chorus
+  choir_left = choir-chorus-left
+  choir_right = choir-chorus-right
 }
 
 scene together {
@@ -295,6 +535,10 @@ scene together {
   answer = little-answer
   guide = love-hook
   danilo = off
+  ember = ember-chorus
+  strings = strings-chorus
+  choir_left = choir-chorus-left
+  choir_right = choir-chorus-right
 }
 
 scene air {
@@ -306,6 +550,10 @@ scene air {
   answer = little-answer
   guide = off
   danilo = off
+  ember = off
+  strings = strings-bridge
+  choir_left = off
+  choir_right = off
 }
 
 scene bridge {
@@ -317,6 +565,10 @@ scene bridge {
   answer = little-answer
   guide = last-line
   danilo = off
+  ember = off
+  strings = strings-bridge
+  choir_left = choir-bridge-left
+  choir_right = choir-bridge-right
 }
 
 scene home {
@@ -328,6 +580,10 @@ scene home {
   answer = little-answer
   guide = last-line
   danilo = off
+  ember = ember-chorus
+  strings = strings-rise
+  choir_left = choir-chorus-left
+  choir_right = choir-chorus-right
 }
 
 scene afterglow {
@@ -339,6 +595,55 @@ scene afterglow {
   answer = little-answer
   guide = off
   danilo = off
+  ember = off
+  strings = strings-verse
+  choir_left = choir-near
+  choir_right = choir-far
+}
+
+scene verse-lit {
+  keys = verse-keys
+  bass = verse-bass
+  guitar = guitar-verse
+  drums = pulse
+  silk = verse-pad
+  answer = off
+  guide = off
+  danilo = off
+  ember = ember-verse
+  strings = strings-verse
+  choir_left = off
+  choir_right = off
+}
+
+scene together-wide {
+  keys = chorus-keys
+  bass = chorus-bass
+  guitar = guitar-chorus
+  drums = lift
+  silk = chorus-pad
+  answer = little-answer
+  guide = love-hook
+  danilo = off
+  ember = ember-chorus
+  strings = strings-rise
+  choir_left = choir-chorus-left
+  choir_right = choir-chorus-right
+}
+
+scene with-you {
+  keys = coda-keys
+  bass = off
+  guitar = off
+  drums = off
+  silk = off
+  answer = off
+  guide = off
+  danilo = off
+  ember = off
+  strings = coda-strings
+  choir_left = coda-choir-left
+  choir_right = coda-choir-right
 }
 
 song {
@@ -348,35 +653,56 @@ song {
   lift*8
   together*12
   air*4
-  verse*8
+  verse-lit*8
   closer*4
   bridge*8
-  together*8
+  together-wide*8
   home*4
-  afterglow*8
+  afterglow*4
+  with-you*4
 }
 
 automate guitar.level {
-  @1.1.1 -20dB @5.1.1 -15dB smooth @65.1.1 -13dB smooth @73.1.1 -18dB smooth @81.1.1 -60dB smooth
-}
-
-automate silk.level {
-  @1.1.1 -25dB @21.1.1 -18dB smooth @25.1.1 -15dB smooth @37.1.1 -23dB smooth @57.1.1 -17dB smooth @65.1.1 -14dB smooth @73.1.1 -21dB smooth @81.1.1 -60dB smooth
+  @1.1.1 -14dB @5.1.1 -9dB smooth @65.1.1 -7dB smooth @73.1.1 -12dB smooth @81.1.1 -60dB smooth
 }
 
 automate keys.level {
-  @1.1.1 -14dB @5.1.1 -9dB smooth @73.1.1 -11dB smooth @81.1.1 -60dB smooth
+  @1.1.1 -10dB @5.1.1 -5.5dB smooth @17.1.1 -6dB smooth @25.1.1 -5dB smooth @37.1.1 -8dB smooth @41.1.1 -6dB smooth @61.1.1 -5dB smooth @73.1.1 -7dB smooth @77.1.1 -6dB smooth @80.3.1 -13dB smooth @81.1.1 -60dB smooth
 }
 
 automate answer.level {
-  @1.1.1 -24dB @25.1.1 -20dB smooth @65.1.1 -18dB smooth @73.1.1 -23dB smooth @81.1.1 -60dB smooth
+  @1.1.1 -22dB @25.1.1 -18dB smooth @65.1.1 -16dB smooth @73.1.1 -20dB smooth @77.1.1 -27dB smooth @81.1.1 -60dB smooth
 }
 
 automate drums.level {
   @1.1.1 -18dB @5.1.1 -13dB smooth @73.1.1 -16dB smooth @81.1.1 -60dB smooth
 }
 
+// Foreground stays stable; the supporting voices bloom and retreat with the form.
+automate ember.level {
+  @1.1.1 -12dB @13.1.1 -5dB smooth @25.1.1 -4dB smooth @37.1.1 -11dB smooth @41.1.1 -5dB smooth @49.1.1 -3dB smooth @61.1.1 -1dB smooth @69.1.1 -4dB smooth @73.1.1 -12dB smooth @81.1.1 -60dB smooth
+}
+
+automate strings.level {
+  @1.1.1 -21dB @5.1.1 -17dB smooth @9.1.1 -10dB smooth @17.1.1 -9dB smooth @25.1.1 -6dB smooth @37.1.1 -10dB smooth @41.1.1 -14dB smooth @45.1.1 -9dB smooth @53.1.1 -8dB smooth @61.1.1 -4dB smooth @69.1.1 -6dB smooth @73.1.1 -10dB smooth @77.1.1 -7dB smooth @80.3.1 -12dB smooth @81.1.1 -60dB smooth
+}
+
+automate strings.pan {
+  @1.1.1 0.24 @37.1.1 0.1 smooth @53.1.1 -0.16 smooth @61.1.1 0.22 smooth @77.1.1 -0.1 smooth
+}
+
+automate choir_left.level {
+  @1.1.1 -22dB @5.1.1 -27dB smooth @13.1.1 -17dB smooth @21.1.1 -13dB smooth @25.1.1 -11dB smooth @37.1.1 -19dB smooth @49.1.1 -17dB smooth @53.1.1 -14dB smooth @61.1.1 -10dB smooth @65.1.1 -9dB smooth @69.1.1 -12dB smooth @73.1.1 -16dB smooth @77.1.1 -14dB smooth @81.1.1 -60dB smooth
+}
+
+automate choir_right.level {
+  @1.1.1 -23dB @5.1.1 -29dB smooth @17.1.1 -17dB smooth @25.1.1 -12dB smooth @37.1.1 -21dB smooth @53.1.1 -15dB smooth @61.1.1 -11dB smooth @65.1.1 -10dB smooth @69.1.1 -13dB smooth @73.1.1 -17dB smooth @77.1.1 -15dB smooth @81.1.1 -60dB smooth
+}
+
+automate silk.level {
+  @1.1.1 -20dB @17.1.1 -15dB smooth @25.1.1 -13dB smooth @37.1.1 -19dB smooth @53.1.1 -16dB smooth @61.1.1 -12dB smooth @73.1.1 -19dB smooth @77.1.1 -26dB smooth @81.1.1 -60dB smooth
+}
+
 master {
-  insert = air
-  -> glue -> ceiling
+  insert = air -> glue -> ceiling
 }
