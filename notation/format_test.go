@@ -395,3 +395,64 @@ func TestGraphPluckExampleIsFormatted(t *testing.T) {
 		t.Fatal("pluck example needs formatting")
 	}
 }
+
+func TestFormatRetainsSerialInsertChains(t *testing.T) {
+	source := []byte(`cicada 2
+fx floor eq { type=highpass frequency=150Hz q=0.707 }
+fx shade eq { type=lowpass frequency=5kHz q=0.707 }
+fx glue comp { ratio=1.5 }
+fx room reverb {}
+track keys tine_ep {
+  pan=-0.2
+  insert=floor ->shade -> glue
+  // Keep the room send after the complete insert chain.
+  send room=-15dB
+  voices=8
+}
+bus music { insert=glue }
+master { insert=floor ->
+ shade -> glue level=-1dB }
+pattern p notes { [c4 e4] . }
+scene main { keys=p }
+song { main }
+`)
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, ds := Parse(formatted)
+	if score == nil || len(ds) != 0 {
+		t.Fatalf("formatted chain did not parse: %+v\n%s", ds, formatted)
+	}
+	var inserts []string
+	for _, p := range score.Tracks[0].Params {
+		if p.Name == "insert" {
+			inserts = append(inserts, p.Value)
+		}
+	}
+	if strings.Join(inserts, " ") != "floor -> shade -> glue" {
+		t.Fatalf("insert order changed: %v\n%s", inserts, formatted)
+	}
+	if bytes.Count(formatted, []byte("insert = floor -> shade -> glue")) != 2 {
+		t.Fatalf("chain broke across statements:\n%s", formatted)
+	}
+	master := make(map[string]string)
+	for _, p := range score.Master {
+		master[p.Name] = p.Value
+	}
+	if len(score.Master) != 2 || master["insert"] != "floor -> shade -> glue" || master["level"] != "-1dB" {
+		t.Fatalf("master chain swallowed the following assignment: %+v", score.Master)
+	}
+	againDoc, err := ParseDocument(formatted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := Format(againDoc)
+	if err != nil || !bytes.Equal(formatted, again) {
+		t.Fatalf("chain format not idempotent: %v\n%s", err, again)
+	}
+}

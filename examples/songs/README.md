@@ -6,7 +6,7 @@ folder. No audio packs or library downloads are needed.
 
 | Song | Form | Musical focus | Cicada features |
 | --- | --- | --- | --- |
-| [Anywhere You Are](anywhere-you-are.cicada) | 80 bars at 108 BPM; about 178 seconds | Original D-major electronic soul love song for Danilo; optional vocal melody guide | Bespoke bass, pad, plucked string and bell, tine EP, full-song dynamics, empty vocal recording track |
+| [Anywhere You Are](anywhere-you-are.cicada) | 80 bars at 108 BPM; about 178 seconds | Original D-major electronic soul love song for Danilo; optional vocal melody guide | Tine and reed EPs, moving strings, two-part synth choir, bespoke bass, pad, plucked string and bell, empty vocal recording track |
 | [Neon Causeway](neon-causeway.cicada) | 40 bars at 126 BPM; about 76 seconds | Acid groove with a melodic hook, breakdown, return, and fade | Phrases, slides, drum dynamics, PM synthesis, delay/reverb, continuous cutoff and level lanes |
 | [Lanterns After Rain](lanterns-after-rain.cicada) | 40 bars at 104 BPM; about 92 seconds | D-minor keyboard groove with extended chords and an A7 turnaround | Modeled tine EP, four-note chords, quarter/eighth/sixteenth grids, velocity rows, two- and four-bar patterns |
 | [Tidal Glass](tidal-glass.cicada) | 24 bars at 80 BPM; 72 seconds | Sparse Dorian plucks, slow harmony, and an offbeat answering voice | Graph comb synthesis, polyphonic pad, triplet grid, named placements, markers, stereo space |
@@ -121,11 +121,18 @@ For a method you can apply to your own song, read
 ## Anywhere You Are
 
 Draco Skysong's original love-song backing for Danilo has a spacious verse,
-a rising pre-chorus, a wider chorus, a half-time bridge, and an extended outro.
+a rising pre-chorus, a wider chorus, a half-time bridge, and a resolved outro.
 The harmony moves through Dmaj9, A/C#, Bm9 and Gmaj9, with Em9/A13 in the chorus.
-The `guide` track suggests a melody in A3–F#4; mute it for a clean backing.
+The `guide` track suggests a melody in F#3–F#4; mute it for a clean backing.
 A possible hook is “Anywhere you are / I can find my way back home.”
 The guide is synthesized and contains no recorded human vocal.
+
+The 12-track arrangement adds syncopated reed replies, a moving string line,
+and two complementary wordless synth voices. Eight piano voices and polyphonic
+plucks let notes overlap. Serial EQ inserts separate the foreground instruments;
+a dark echo and predelayed room place the ensemble behind them. The second verse
+and final chorus introduce different parts, then bar 77 begins a four-bar coda
+that resolves to D. Allow six seconds of render tail for the room to decay.
 
 Open Session, select the empty `danilo` audio track, choose your microphone,
 and record the full song or punch a phrase. Keep **Follow song tempo (keep pitch)**

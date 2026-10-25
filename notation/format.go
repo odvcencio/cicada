@@ -304,6 +304,11 @@ func lexFormat(source []byte) []formatToken {
 			tokens = append(tokens, formatToken{text: string(source[start:i])})
 			continue
 		}
+		if c == '-' && i+1 < len(source) && source[i+1] == '>' {
+			i += 2
+			tokens = append(tokens, formatToken{text: "->"})
+			continue
+		}
 		if c == '>' && i+1 < len(source) && source[i+1] == '=' {
 			i += 2
 			tokens = append(tokens, formatToken{text: ">="})
@@ -315,7 +320,7 @@ func lexFormat(source []byte) []formatToken {
 			continue
 		}
 		for i < len(source) {
-			if source[i] == ' ' || source[i] == '\t' || source[i] == '\r' || source[i] == '\n' || (strings.ContainsRune("{}:;=(),|", rune(source[i])) || source[i] == '>' && i+1 < len(source) && source[i+1] == '=') || (source[i] == '/' && i+1 < len(source) && source[i+1] == '/') {
+			if source[i] == ' ' || source[i] == '\t' || source[i] == '\r' || source[i] == '\n' || (strings.ContainsRune("{}:;=(),|", rune(source[i])) || source[i] == '>' && i+1 < len(source) && source[i+1] == '=' || source[i] == '-' && i+1 < len(source) && source[i+1] == '>') || (source[i] == '/' && i+1 < len(source) && source[i+1] == '/') {
 				break
 			}
 			i++
@@ -379,7 +384,7 @@ func formatDeclaration(source []byte) string {
 			if frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == "=" && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "use ") {
 				flush()
 			}
-			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" || frame.kind == "asset" || frame.kind == "clip" || frame.kind == "sampler") && frame.assignment == 3 && value != "}" && !(strings.HasPrefix(strings.TrimSpace(line), "send ") && value == "pre") {
+			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" || frame.kind == "asset" || frame.kind == "clip" || frame.kind == "sampler") && frame.assignment == 3 && value != "}" && value != "->" && !(strings.HasPrefix(strings.TrimSpace(line), "send ") && value == "pre") {
 				flush()
 				frame.assignment = 0
 			}
@@ -427,6 +432,11 @@ func formatDeclaration(source []byte) string {
 				}
 			}
 			flush()
+		case "->":
+			line = strings.TrimRight(line, " ") + " -> "
+			if len(frames) > 0 {
+				frames[len(frames)-1].assignment = 2
+			}
 		case ">=":
 			line = strings.TrimRight(line, " ") + " >= "
 		case "=":
