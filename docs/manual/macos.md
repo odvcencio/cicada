@@ -140,3 +140,17 @@ Use the packaged app's normal CoreAudio mode for recording.
 Settings and logs live in `~/Library/Application Support/Cicada Studio`.
 The desktop log is `logs/studio.log`. When reporting a problem, include the
 selected devices, buffer size, and the error shown in Audio details.
+
+## Continuous validation
+
+Pull requests build and sign the current revision on both Apple Silicon and
+Intel Macs. Each Mac job has a ten-minute maximum, restores Go compiler and
+module caches, and checks native MIDI, audio permission/callback contracts,
+startup, shutdown, recording controls, editor menus, and saving a stems ZIP.
+The packaged app and generated UI always come from the current revision.
+
+The full native workflow sweep, broad Mac race/vet tests, and repeated DSP/WASM
+and size-audit checks run nightly and through **CI → Run workflow**. Linux PR
+jobs retain the broad browser, race, audio parity, and size checks. Native smoke
+uses disposable projects and null audio; physical microphone and output-device
+qualification remains a separate hardware check.
