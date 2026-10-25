@@ -407,6 +407,19 @@ jobs:
           make test-studio-export-sources | tee build/studio-export-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          cp -R examples/studio-project "$song_root/export-stems"
+          export CICADA_STEMS_PROOF_DIR="$PWD/build/studio-stems-proof"
+          ./build/cicada studio "$song_root/export-stems/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-stems-server.log 2>&1 &
+          studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          make test-studio-export-stems | tee build/studio-stems-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
           ./build/cicada studio "$browser_root/collaboration/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
           studio_pid=$!
           export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
@@ -933,6 +946,9 @@ jobs:
             build/studio-export-report.txt
             build/studio-export-server.log
             build/studio-export-proof/
+            build/studio-stems-report.txt
+            build/studio-stems-server.log
+            build/studio-stems-proof/
             build/studio-continuity-server.log
             build/studio-collaboration-report.txt
             build/studio-collaboration-server.log
@@ -1124,6 +1140,7 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/dock-fit --mode normal --timeout 120 --workflow desktop/testdata/native-dock-fit-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/columns --mode normal --timeout 120 --workflow desktop/testdata/native-columns-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/export --mode normal --timeout 120 --workflow desktop/testdata/native-export-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/stems-export --mode normal --download-test --timeout 150 --workflow desktop/testdata/native-stems-export-workflow.js
           go -C workstation run ./browser/testdata/portable-song > build/native-portable-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/portable --mode normal --timeout 120 --portable-fixture build/native-portable-fixture.json
           node workstation/browser/arrangement-sources.test.cjs --write-fixture build/native-arrangement-sources > build/native-arrangement-sources-fixture.json

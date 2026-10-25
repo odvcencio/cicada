@@ -58,7 +58,7 @@ func testAppWorkspace(t *testing.T, reply *workspace) (string, *http.Client, *[]
 				edits = append(edits, edit)
 			}
 			_ = json.NewEncoder(w).Encode(transport{Bar: 1, Step: 1})
-		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/export/midi", "/api/clip", "/api/automation":
+		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/export/midi", "/api/export/stems", "/api/clip", "/api/automation":
 			if r.Method == http.MethodGet {
 				// The shell renders the export status; reads carry no edit.
 				_, _ = io.WriteString(w, `{}`)

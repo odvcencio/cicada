@@ -3,6 +3,7 @@
 
 import argparse
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -84,7 +85,7 @@ def descendants(pid):
         found |= children
 
 
-def check_launch(binary, output, mode, workflow, timeout=60, score=None, state=None):
+def check_launch(binary, output, mode, workflow, timeout=60, score=None, state=None, download_test=False):
     folder = Path(tempfile.mkdtemp(prefix=mode + "-", dir=output))
     if score is None:
         score = folder / "main.cicada"
@@ -103,6 +104,8 @@ def check_launch(binary, output, mode, workflow, timeout=60, score=None, state=N
         args.append("--smoke-midi")
     if mode == "normal":
         args += ["--smoke-script", str(workflow)]
+        if download_test:
+            args += ["--smoke-download-dir", str(folder / "downloads")]
     marker = folder / "helper.pid"
     if mode.startswith("early-"):
         helper = folder / "slow-cicada"
@@ -177,6 +180,19 @@ def check_launch(binary, output, mode, workflow, timeout=60, score=None, state=N
                 raise RuntimeError(f"native window never loaded Studio: {startup}")
             if mode == "normal" and not startup.get("frontend", {}).get("ok"):
                 raise RuntimeError(f"native workflow failed: {startup.get('frontend')}; see {folder}")
+            if download_test:
+                receipt = startup.get("nativeExportSave", {})
+                expected = startup.get("frontend", {}).get("archive", {})
+                saved = Path(receipt.get("path", "")).resolve()
+                if not receipt.get("pickerBypassed") or saved.parent != (folder / "downloads").resolve() or not saved.is_file():
+                    raise RuntimeError("native export did not save below its isolated test destination")
+                digest = hashlib.sha256()
+                with saved.open("rb") as content:
+                    for block in iter(lambda: content.read(1024 * 1024), b""):
+                        digest.update(block)
+                if saved.stat().st_size != receipt.get("bytes") or receipt.get("bytes") != expected.get("bytes") or digest.hexdigest() != receipt.get("sha256") or receipt.get("sha256") != expected.get("sha256"):
+                    raise RuntimeError("native saved export does not match the browser's completed artifact")
+                startup["nativeExportSave"]["verifiedAgainstBrowser"] = True
             return {
                 "mode": mode, "pids": sorted(seen), "startup": startup,
                 "artifacts": str(folder), "stateDir": env["CICADA_STATE_DIR"], "dataDir": str(data_dir),
@@ -206,9 +222,12 @@ def main():
     parser.add_argument("--project-fixture", type=Path, help="copy a disposable score's containing folder before running a supplied normal workflow")
     parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int", "midi-term", "code-recovery"], default="all")
     parser.add_argument("--timeout", type=int, default=60, help="total workflow timeout in seconds (default: 60)")
+    parser.add_argument("--download-test", action="store_true", help="save native export bytes below the smoke report, bypassing the native picker (normal mode only)")
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.download_test and args.mode != "normal":
+        parser.error("--download-test requires --mode normal")
     if args.portable_fixture and args.mode != "normal":
         parser.error("--portable-fixture requires --mode normal")
     if args.project_fixture and (args.mode != "normal" or args.portable_fixture or not args.workflow):
@@ -235,7 +254,7 @@ def main():
             folder = Path(tempfile.mkdtemp(prefix="portable-", dir=output))
             shutil.copytree(source.parent, folder / "project")
             result = check_launch(binary, output, "normal", workflow, args.timeout,
-                                  score=folder / "project" / source.name, state=folder / "state")
+                                  score=folder / "project" / source.name, state=folder / "state", download_test=args.download_test)
             (output / "report.json").write_text(json.dumps([result], indent=2) + "\n")
             print("project-fixture: passed" if args.project_fixture else "portable-song: passed", flush=True)
             return
@@ -257,7 +276,7 @@ def main():
             return
         modes = ["normal", "term", "int", "early-term", "early-int", "midi-term"] if args.mode == "all" else [args.mode]
         for mode in modes:
-            result = check_launch(binary, output, mode, workflow, args.timeout)
+            result = check_launch(binary, output, mode, workflow, args.timeout, download_test=args.download_test)
             results.append(result)
             (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")
             print(f"{mode}: passed", flush=True)

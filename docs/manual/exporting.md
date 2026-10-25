@@ -3,6 +3,11 @@
 The renderer and exporters use the same validated project model as Studio.
 Choose the format that fits your next step.
 
+In the Mac app, a WAV, MIDI, or stems download opens **Save Cicada export**.
+Choose a filename and folder, then save. Canceling the dialog leaves the export
+available to download again. When using Studio in a browser, downloads follow
+that browser's download settings.
+
 ## WAV
 
 Render stereo PCM16 or PCM24 (the default), or IEEE float32:
@@ -31,8 +36,21 @@ DC offset, finite float data, and full-scale integer samples.
 
 ## Stems
 
-Stems are stereo float32 WAV files rendered in one pass. The destination
-directory must not already exist:
+Stems are stereo float32 WAV files rendered in one pass. In Studio, open
+**Export → Individual tracks (stems)**, choose a sample rate, and select
+**Render stems**. **Download stems ZIP** delivers the whole saved song with a
+three-second effects tail. Every file begins at the same song position and has
+the same duration, so the tracks line up when imported into another DAW.
+
+Stems retain the track effects, fader levels, and pan without applying a separate
+loudness target to each track. Save Code edits and keep recorded takes before
+rendering. Studio checks all saved score files and library definitions; review
+the saved song again if they changed elsewhere. The previous successful ZIP
+remains downloadable during another render or after a failed attempt. Saved
+edits label it as an earlier export. WAV and MIDI deliveries remain available
+independently.
+
+From the command line, the destination directory must not already exist:
 
 ```sh
 cicada stems examples/sfx-bus.cicada -o sfx-stems --bars 4
@@ -45,6 +63,13 @@ The directory contains numbered `01-<track>.wav` files, then `return-a.wav`,
 The music stem is tapped before the music-bus compressor; the master includes
 compression and limiting. The verifier checks timing, finite samples, and the
 sum of component stems against the bus taps.
+
+For a new mix, import the numbered tracks and both effect returns at the same
+start position. `music.wav` and `sfx.wav` are grouped alternatives, and
+`master.wav` is the processed reference mix: do not add those files on top of
+the individual tracks. The pre-compressor stems do not include the master's
+nonlinear compression and limiting, so their sum need not sound identical to
+the processed reference.
 
 ## MIDI
 
