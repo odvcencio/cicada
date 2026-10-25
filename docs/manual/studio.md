@@ -933,8 +933,9 @@ to change a step's **Bar** or **Tempo (BPM)**, add a step, or remove one.
 Steps start at bar boundaries, use 20–300 BPM, and cannot share a bar. The base
 tempo in **Project settings** applies before the first step. Chosen vocals with
 **Follow song tempo** enabled are reprinted for these edits. You can also write
-`tempo @3.1.1 96` in Studio's Code editor and save it. External file edits and
-standalone CLI tempo changes do not automatically reprint a vocal; select its
+`tempo @3.1.1 96` in the entry score in Studio's Code editor and save it.
+Tempo edits in auxiliary Code files, external editors, and the standalone CLI
+do not automatically reprint a vocal; select its
 phrase again in Studio before playback/export. Recordings retain their original
 tempo map for recovery and waveform analysis.
 Toggle or symbolic values such as delay divisions still require

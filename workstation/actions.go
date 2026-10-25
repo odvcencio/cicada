@@ -166,7 +166,7 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 		if revision == "" {
 			revision = f["revision"]
 		}
-		payload := map[string]any{"revision": revision, "source": f["content"]}
+		payload := map[string]any{"revision": revision, "source_revision": f["source_revision"], "source": f["content"]}
 		if path == "/api/files" {
 			payload["file"] = f["file"]
 			if f["intent"] == "check" {

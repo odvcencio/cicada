@@ -115,9 +115,24 @@
           click('#transport-form button[value=stop]');
           if ((await read('state')).source !== state.recorded) throw new Error('Discard changed the saved song');
           state.checks.push('existing curve replacement is explicit; discard preserves saved song');
+          phase(9); break;
+        }
+        case 9: {
+          await saved(source => source === state.recorded);
+          const form = document.querySelector('#score form[action$="/__actions/source"]');
+          if (!form?.querySelector('[name=source_revision]')?.value) throw new Error('Code save missing project revision');
+          input(form.querySelector('textarea'), state.recorded.replace(/^tempo 116$/m, 'tempo 112'));
+          phase(10); click('button[type=submit]', form); break;
+        }
+        case 10:
+          await saved(source => /^tempo 112$/m.test(source));
+          if ((await read('takes')).comps[0].tempoMilli !== 112000) throw new Error('Code save left elastic audio stale');
+          phase(11); click('#undo-form button'); break;
+        case 11:
+          await saved(source => source === state.recorded);
+          state.checks.push('entry Code save carries the full source revision, reprints elastic vocal at 112 BPM, and undoes exactly');
           sessionStorage.removeItem(key);
           return {type: 'cicada-native-smoke', ok: true, checks: state.checks, timings: state.timings, physicalAudioVerified: false, microphoneOpened: false, syntheticGuide: true};
-        }
         default: throw new Error('Unknown phase ' + state.phase);
       }
     }

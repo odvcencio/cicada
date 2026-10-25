@@ -120,3 +120,37 @@ func TestElasticSelectionUsesCurrentTempoWithoutChangingJournal(t *testing.T) {
 		t.Fatal("original tempo metadata changed", err)
 	}
 }
+
+func TestElasticCodeBaseTempoSaveKeepsCompMetadataAndUndoTogether(t *testing.T) {
+	isolateState(t)
+	s, source, _ := tempoVocalStudio(t)
+	take, _ := mappedVocalTake(t, s, 0, 4*3840, false)
+	follow := true
+	selection, env, err := s.vocalTakeResult(source, take, &studioRecordingSettings{Elastic: &follow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.commitTakeFiles(take.ID, studioRevision(source), selection.Source, &env, selection.Files, ""); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(s.path)
+	comps, _ := vocalComps(before)
+	// Code changes the base tempo without using the Project settings form.
+	candidate := bytes.Replace(before, []byte("tempo 120"), []byte("tempo 112"), 1)
+
+	revision, _ := project.ReadScoreRevision(s.path)
+	r := studioCall(t, s.routes(), "/api/source", studioEdit{Revision: studioRevision(before), SourceRevision: revision, Source: string(candidate)})
+	if r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	after, _ := os.ReadFile(s.path)
+	comps, _ = vocalComps(after)
+	if comps[0].Tempo != 112000 {
+		t.Fatal("Code tempo save did not reprint", comps[0])
+	}
+	r = studioCall(t, s.routes(), "/api/undo", studioEdit{Revision: studioRevision(after)})
+	undone, _ := os.ReadFile(s.path)
+	if r.Code != 200 || !bytes.Equal(before, undone) {
+		t.Fatal("Code tempo Undo did not restore print", r.Body.String())
+	}
+}
