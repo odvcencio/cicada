@@ -38,11 +38,12 @@ name="${0##*/}"
 case "$name" in
 go)
   [[ "$GOOS" == darwin && "$CGO_ENABLED" == 0 && "$GOWORK" == off ]] || exit 1
-  if [[ "$1" == run && "$2" == */check-platform.go ]]; then
+  [[ "$2" == -trimpath ]] || exit 1
+  if [[ "$1" == run && "$3" == */check-platform.go && "$#" == 3 ]]; then
     [[ "${FAIL_AT:-}" != backend ]] || exit 1
-  elif [[ "$1" == run && "$2" == -mod=mod ]]; then
-    [[ "$GOWORK" == off && "$3" == m31labs.dev/gosx/cmd/gosx ]] || exit 1
-    [[ "$4 $5 $6" == 'build --prod .' ]] || exit 1
+  elif [[ "$1" == run && "$3" == -mod=mod ]]; then
+    [[ "$GOWORK" == off && "$4" == m31labs.dev/gosx/cmd/gosx ]] || exit 1
+    [[ "$5 $6 $7" == 'build --prod .' && "$#" == 7 ]] || exit 1
     [[ "${FAIL_AT:-}" != runtime ]] || exit 1
     mkdir -p dist/server dist/assets/runtime dist/public
     printf 'generated server\n' > dist/server/app
