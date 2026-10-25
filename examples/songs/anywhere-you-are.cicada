@@ -1,0 +1,382 @@
+// Anywhere You Are — Draco Skysong, for Danilo.
+// An original love song: warm electronic soul with a late-night dance pulse.
+// 80 bars at 108 BPM. The guide is a suggested vocal melody, not a vocal recording.
+cicada 2
+
+title "Anywhere You Are"
+
+tempo 108
+
+key d major
+
+seed 861025
+
+fx room reverb {
+  size = 1.08
+  decay = 2.2s
+  damp = 6800Hz
+  highpass = 180Hz
+  predelay = 22ms
+  mix = 1
+}
+
+fx echo delay {
+  time = 1/8.
+  feedback = 0.29
+  damp = 4600Hz
+  pingpong = on
+  width = 1
+  mix = 1
+}
+
+fx air eq {
+  type = high_shelf
+  frequency = 9kHz
+  q = 0.707
+  gain = 0.5dB
+}
+
+fx glue comp {
+  threshold = -18dB
+  ratio = 1.8
+  knee = 6dB
+  attack = 25ms
+  release = 160ms
+  makeup = 9dB
+  mix = 0.65
+}
+
+fx ceiling limiter {
+  ceiling = -1dBTP
+  lookahead = 4ms
+  release = 140ms
+}
+
+instrument roundheart {
+  voice mono {
+    let amp = adsr(gate, 8ms, 180ms, 0.72, 150ms)
+    out = lowpass(sine(pitch) *0.8+saw(pitch) *0.12, 720Hz) *amp*velocity*0.52
+  }
+}
+
+instrument satin {
+  voice poly {
+    let amp = adsr(gate, 260ms, 900ms, 0.62, 1200ms)
+    let body = (saw(pitch) +saw(pitch*1.0025)) *0.5
+    out = svf(body, 1700Hz, 0.15) *amp*velocity*0.19
+  }
+}
+
+instrument porcelain {
+  voice mono {
+    let strike = noise() *env(gate, 2ms) *velocity
+    let string = comb(strike, 1/pitch, 0.987, 0.6)
+    out = (lowpass(string, 3400Hz) *0.25+sine(pitch) *env(gate, 480ms) *0.13) *env(gate, 1300ms)
+  }
+}
+
+instrument lanternvoice {
+  voice mono {
+    let amp = adsr(gate, 35ms, 220ms, 0.7, 180ms)
+    let tone = sine(pitch) *0.62+sine(pitch*2) *0.23+sine(pitch*3) *0.09
+    out = lowpass(tone, 2100Hz) *amp*velocity*0.3
+  }
+}
+
+instrument glowbell {
+  voice mono {
+    let amp = env(gate, 850ms)
+    out = pm(pitch, sine(pitch*2), amp*1.1) *amp*velocity*0.16
+  }
+}
+
+track keys tine_ep {
+  level = -9dB
+  send room = -17dB
+  voices = 4
+  release = 220ms
+}
+
+track bass roundheart {
+  level = -10dB
+}
+
+track silk satin {
+  level = -18dB
+  pan = 0.13
+  send room = -16dB
+}
+
+track guitar porcelain {
+  level = -15dB
+  pan = -0.27
+  send echo = -19dB
+  send room = -19dB
+}
+
+track answer glowbell {
+  level = -20dB
+  pan = 0.31
+  send echo = -15dB
+  send room = -16dB
+}
+
+track guide lanternvoice {
+  level = -17dB
+  send echo = -24dB
+  send room = -20dB
+}
+
+track drums drums {
+  level = -13dB
+  bd_decay = 190ms
+  sd_decay = 120ms
+  ch_decay = 30ms
+}
+
+track danilo audio {
+  level = -9dB
+}
+
+// Spacious inversions leave the middle register for a real lead vocal.
+pattern verse-keys notes {
+  step = 1/4
+  gate = 80%
+  [d3 f#3 a3 e4] - . [f#3 a3 c#4 e4] | [c#3 e3 a3 b3] - . [e3 a3 b3 c#4] | [b2 d3 f#3 a3] - . [d3 f#3 a3 c#4] | [g2 b2 d3 a3] - . [b2 d3 f#3 a3]
+  velocity: 82 . . 63 78 . . 66 84 . . 67 81 . . 64
+}
+
+pattern chorus-keys notes {
+  step = 1/4
+  gate = 85%
+  [g2 b2 d3 f#3] - [b2 d3 f#3 a3] . | [f#2 a2 d3 e3] - [a2 d3 e3 f#3] . | [e2 g2 b2 f#3] - [g2 b2 d3 f#3] . | [a2 c#3 f#3 g3] - [c#3 e3 f#3 b3] .
+  velocity: 96 . 76 . 92 . 72 . 94 . 78 . 98 . 82 .
+}
+
+pattern bridge-keys notes {
+  step = 1/2
+  gate = 94%
+  [b2 d3 f#3 a3] - | [f#2 a2 c#3 e3] - | [g2 b2 d3 f#3] - | [a2 c#3 e3 g3] -
+}
+
+pattern verse-bass {
+  step = 1/8
+  gate = 76%
+  d2 . . a2 . d2 . c#2 | c#2 . . e2 . a1 . . | b1 . . f#2 . b1 . a1 | g1 . . d2 . a1 c#2 .
+}
+
+pattern chorus-bass {
+  step = 1/8
+  gate = 82%
+  g1 . d2 . . g2 . f#2 | f#1 . a1 . . d2 . c#2 | e2 . b1 . . e2 f#2 . | a1 . e2 . g2 . e2 c#2
+}
+
+pattern bridge-bass {
+  step = 1/2
+  gate = 94%
+  b1 - f#1 - g1 - a1 -
+}
+
+pattern verse-pad notes {
+  step = 1/2
+  gate = 96%
+  [d3 a3 e4] - [c#3 a3 e4] - [b2 f#3 c#4] - [g2 d3 a3] -
+}
+
+pattern chorus-pad notes {
+  step = 1/2
+  gate = 96%
+  [g3 b3 f#4] - [f#3 a3 e4] - [e3 b3 f#4] - [a3 c#4 g4] -
+}
+
+pattern guitar-verse {
+  step = 1/8
+  gate = 52%
+  . a3 . e4 . f#4 . e4 | . a3 . c#4 . e4 . c#4 | . f#3 . c#4 . d4 . c#4 | . d3 . a3 . b3 . a3
+}
+
+pattern guitar-chorus {
+  step = 1/8
+  gate = 58%
+  . d4 . f#4 . a4 . f#4 | . a3 . e4 . f#4 . e4 | . b3 . f#4 . g4 . f#4 | . c#4 . e4 . g4 . e4
+}
+
+pattern little-answer {
+  step = 1/8
+  gate = 60%
+  . . . . a4 f#4 e4 . | . . . . . e4 c#4 . | . . . . f#4 e4 d4 . | . . . . . c#4 b3 a3
+}
+
+// "Anywhere you are / I can find my way back home."
+// Let the held notes breathe; replace or mute this guide when recording.
+pattern love-hook {
+  step = 1/8
+  gate = 85%
+  a3 b3 d4 - f#4 - e4 . | d4 - b3 a3 - . . . | f#3 a3 b3 - d4 - e4 . | f#4 - e4 d4 - - . .
+}
+
+pattern last-line {
+  step = 1/8
+  gate = 88%
+  d4 - e4 f#4 - e4 d4 . | b3 - a3 - . . . . | a3 b3 d4 - e4 - f#4 . | e4 - d4 - - - . .
+}
+
+pattern pulse drums {
+  swing = 55%
+  bd: X... .... ..x5. .... X... ..x4. .... ..x5.
+  sd: .... x6... .... x6... .... x6... ..x2. x6...
+  ch: x3.x2. x4.x2. x3.x2. x4.x3. x3.x2. x4.x2. x3.x2. x5.x3.
+  rs: .... .... ..x2. .... .... .... ..x3. ....
+}
+
+pattern lift drums {
+  swing = 55%
+  bd: X... ..x4. .... ..x4. X... .... ..x5. ....
+  sd: .... x7... .... x7... .... x7... ..x2. x7...
+  ch: x4.x2. x5.x2. x4.x2. x5.x3. x4.x2. x5.x2. x4.x3. x6.x3.
+  oh: .... .... ..x3. .... .... .... ..x4. ....
+}
+
+pattern breath drums {
+  ch: x2... .... x3... ....
+  rs: .... x3... .... x3...
+}
+
+scene doorway {
+  keys = verse-keys
+  guitar = guitar-verse
+  silk = verse-pad
+  drums = breath
+  bass = off
+  answer = off
+  guide = off
+  danilo = off
+}
+
+scene verse {
+  keys = verse-keys
+  bass = verse-bass
+  guitar = guitar-verse
+  drums = pulse
+  silk = off
+  answer = off
+  guide = off
+  danilo = off
+}
+
+scene closer {
+  keys = verse-keys
+  bass = verse-bass
+  guitar = guitar-verse
+  drums = pulse
+  silk = verse-pad
+  answer = little-answer
+  guide = off
+  danilo = off
+}
+
+scene lift {
+  keys = chorus-keys
+  bass = chorus-bass
+  guitar = guitar-verse
+  drums = lift
+  silk = chorus-pad
+  answer = off
+  guide = off
+  danilo = off
+}
+
+scene together {
+  keys = chorus-keys
+  bass = chorus-bass
+  guitar = guitar-chorus
+  drums = lift
+  silk = chorus-pad
+  answer = little-answer
+  guide = love-hook
+  danilo = off
+}
+
+scene air {
+  keys = bridge-keys
+  bass = off
+  guitar = off
+  drums = breath
+  silk = verse-pad
+  answer = little-answer
+  guide = off
+  danilo = off
+}
+
+scene bridge {
+  keys = bridge-keys
+  bass = bridge-bass
+  guitar = off
+  drums = breath
+  silk = chorus-pad
+  answer = little-answer
+  guide = last-line
+  danilo = off
+}
+
+scene home {
+  keys = chorus-keys
+  bass = chorus-bass
+  guitar = guitar-chorus
+  drums = lift
+  silk = chorus-pad
+  answer = little-answer
+  guide = last-line
+  danilo = off
+}
+
+scene afterglow {
+  keys = verse-keys
+  bass = off
+  guitar = guitar-verse
+  drums = breath
+  silk = verse-pad
+  answer = little-answer
+  guide = off
+  danilo = off
+}
+
+song {
+  doorway*4
+  verse*8
+  closer*4
+  lift*8
+  together*12
+  air*4
+  verse*8
+  closer*4
+  bridge*8
+  together*8
+  home*4
+  afterglow*8
+}
+
+automate guitar.level {
+  @1.1.1 -20dB @5.1.1 -15dB smooth @65.1.1 -13dB smooth @73.1.1 -18dB smooth @81.1.1 -60dB smooth
+}
+
+automate silk.level {
+  @1.1.1 -25dB @21.1.1 -18dB smooth @25.1.1 -15dB smooth @37.1.1 -23dB smooth @57.1.1 -17dB smooth @65.1.1 -14dB smooth @73.1.1 -21dB smooth @81.1.1 -60dB smooth
+}
+
+automate keys.level {
+  @1.1.1 -14dB @5.1.1 -9dB smooth @73.1.1 -11dB smooth @81.1.1 -60dB smooth
+}
+
+automate answer.level {
+  @1.1.1 -24dB @25.1.1 -20dB smooth @65.1.1 -18dB smooth @73.1.1 -23dB smooth @81.1.1 -60dB smooth
+}
+
+automate drums.level {
+  @1.1.1 -18dB @5.1.1 -13dB smooth @73.1.1 -16dB smooth @81.1.1 -60dB smooth
+}
+
+master {
+  insert = air
+  -> glue -> ceiling
+}

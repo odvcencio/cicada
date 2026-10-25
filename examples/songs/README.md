@@ -1,11 +1,12 @@
 # Demo songs
 
-Three complete, editable compositions for exploring Cicada beyond a single
+Complete, editable compositions for exploring Cicada beyond a single
 loop. Each score is self-contained and uses the edition-2 manifest in this
 folder. No audio packs or library downloads are needed.
 
 | Song | Form | Musical focus | Cicada features |
 | --- | --- | --- | --- |
+| [Anywhere You Are](anywhere-you-are.cicada) | 80 bars at 108 BPM; about 178 seconds | Original D-major electronic soul love song for Danilo; optional vocal melody guide | Bespoke bass, pad, plucked string and bell, tine EP, full-song dynamics, empty vocal recording track |
 | [Neon Causeway](neon-causeway.cicada) | 40 bars at 126 BPM; about 76 seconds | Acid groove with a melodic hook, breakdown, return, and fade | Phrases, slides, drum dynamics, PM synthesis, delay/reverb, continuous cutoff and level lanes |
 | [Lanterns After Rain](lanterns-after-rain.cicada) | 40 bars at 104 BPM; about 92 seconds | D-minor keyboard groove with extended chords and an A7 turnaround | Modeled tine EP, four-note chords, quarter/eighth/sixteenth grids, velocity rows, two- and four-bar patterns |
 | [Tidal Glass](tidal-glass.cicada) | 24 bars at 80 BPM; 72 seconds | Sparse Dorian plucks, slow harmony, and an offbeat answering voice | Graph comb synthesis, polyphonic pad, triplet grid, named placements, markers, stereo space |
@@ -30,7 +31,7 @@ output explicitly with `--audio oto`. Substitute either other score to open it. 
 keyboard voice in Lanterns; the legacy portable host needs its keyboard module.
 
 With the binary on your PATH, `cicada check` and `cicada fmt --check` from this
-folder check all three independent scores.
+folder check the independent scores.
 
 To keep a personal version, use Save As:
 
@@ -116,3 +117,20 @@ does not tell you how much energy a part contributes across the phrase.
 
 For a method you can apply to your own song, read
 [Composing a complete song](../../docs/manual/composing-songs.md).
+
+## Anywhere You Are
+
+Draco Skysong's original love-song backing for Danilo has a spacious verse,
+a rising pre-chorus, a wider chorus, a half-time bridge, and an extended outro.
+The harmony moves through Dmaj9, A/C#, Bm9 and Gmaj9, with Em9/A13 in the chorus.
+The `guide` track suggests a melody in A3–F#4; mute it for a clean backing.
+A possible hook is “Anywhere you are / I can find my way back home.”
+The guide is synthesized and contains no recorded human vocal.
+
+Open Session, select the empty `danilo` audio track, choose your microphone,
+and record the full song or punch a phrase. Keep **Follow song tempo (keep pitch)**
+enabled to try different tempos after comping. In Automation, select
+`danilo.level` and record a level ride while playing the song. Raw takes remain
+available when either edit is undone. The disposable album workflow test also
+records four bars of the synthesized guide to exercise this path without opening
+a microphone.

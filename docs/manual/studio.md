@@ -227,7 +227,30 @@ lists positions where playback returns to the curve after a live adjustment.
 In Code, add `recall @7.1.1` inside an `automate` block to set such a cue without
 changing the curve's shape. A recall must fall on a sixteenth at or after the
 lane's first point and within the song. Recall positions must be unique.
-Recording knob/fader movements is not implemented.
+To record a movement, choose the parameter, start native playback, and click
+**Record movements**. Move **Perform** with a pointer or the keyboard, then
+**Keep recorded curve**. The saved points use the sixteenth-note grid and remain
+editable; one Undo restores the previous curve. Replacing an existing lane
+requires **Replace saved curve**. Only the selected parameter is replaced.
+**Discard pass** releases its temporary live adjustment without changing source.
+A loop restart, backwards seek, or changed playback ends the pass. Keep or
+discard it before starting another. A retained pass survives reopening Studio;
+a conflicting source edit leaves it available for recovery. This is one-parameter
+Write recording; Touch/Latch modes and simultaneous audio/automation recording
+are not yet supported.
+
+![Recorded vocal level curve in the Studio Detail dock, using the original Anywhere You Are test project.](screenshots/studio-elastic-automation-1280.png)
+
+The controls also wrap in the [phone Detail view](screenshots/studio-elastic-automation-390.png).
+[Verification report](verification/studio-elastic-automation.json) records the
+synthetic-fixture checks and physical-audio limits. To reproduce the native check,
+create a fresh fixture with `CICADA_ELASTIC_ALBUM_FIXTURE=/absolute/new/directory
+go test ./cmd/cicada -run '^TestElasticAlbumWorkflow$' -count=1`, then use
+`desktop/smoke.py --mode normal --app /path/to/Cicada\ Studio.app --output /path/to/proof
+--project-fixture /absolute/new/directory/anywhere-you-are.cicada
+--workflow desktop/testdata/native-elastic-automation-workflow.js --timeout 90`.
+The smoke app uses null audio, isolated browser/state directories, and a disposable
+project copy. It never opens a microphone or edits the original project.
 
 ![Continuous automation editor, captured with a test project.](screenshots/studio-producer-automation-1440.png)
 
@@ -884,8 +907,17 @@ sample budget. Short sampler assets retain a 64 MiB resident limit. A mono comp
 print can contain up to 16,777,216 frames, about 5 minutes 49 seconds at 48 kHz.
 Long takes are verified and read in bounded chunks when
 printing the comp. Failed or conflicting passes remain available for selection.
-Changing tempo requires restoring the take's recording tempo before comping;
-recorded vocals are not time-stretched.
+**Follow song tempo (keep pitch)** is enabled for new Session recordings. It
+keeps the raw recording and its journal unchanged, and prints a pitch-preserving
+elastic version when you change the song's tempo or tempo steps in Studio.
+The tempo and replacement vocal print save as one edit and undo together.
+You can enable it on an existing chosen vocal in its phrase controls. With it
+disabled, restore the recording's tempo map before combining mismatched takes.
+Elastic processing runs outside the audio callback and supports mono vocal
+prints at 8–192 kHz and half to double duration within the same frame limit as ordinary comps. It is intended
+for vocal timing; extreme stretching, dense polyphonic material, and transient
+percussion need listening checks. Per-syllable warp markers and pitch correction
+are not included.
 
 A scene-based song becomes ordinary arrangement placements on its first vocal
 selection. Explicit part starts and **Keep** continuity carry over, and block
@@ -899,11 +931,13 @@ Tempo changes become bar-boundary steps inside `arrange`. Open **Tempo steps**
 to change a step's **Bar** or **Tempo (BPM)**, add a step, or remove one.
 **Save tempo step** moves and changes it in one edit; Undo restores that edit.
 Steps start at bar boundaries, use 20–300 BPM, and cannot share a bar. The base
-tempo in **Project settings** applies before the first step. Tempo edits change
-the song clock; they do not stretch recorded audio. You can also write
-`tempo @3.1.1 96` in Code. Recordings retain their original tempo map, which governs
-phrase durations, waveform positions and comp printing. Restore that map
-before combining a take with a song whose timing has changed.
+tempo in **Project settings** applies before the first step. Chosen vocals with
+**Follow song tempo** enabled are reprinted for these edits. You can also write
+`tempo @3.1.1 96` in the entry score in Studio's Code editor and save it.
+Tempo edits in auxiliary Code files, external editors, and the standalone CLI
+do not automatically reprint a vocal; select its
+phrase again in Studio before playback/export. Recordings retain their original
+tempo map for recovery and waveform analysis.
 Toggle or symbolic values such as delay divisions still require
 manual arrangement work; Studio refuses a conversion that cannot retain them.
 Selecting a short phrase keeps a quiet song ending intact. Its arrangement span

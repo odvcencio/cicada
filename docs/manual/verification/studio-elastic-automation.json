@@ -1,0 +1,83 @@
+{
+  "fixture": "Anywhere You Are: original 80-bar D-major song at 108 BPM; four bars of synthesized melody guide retained as a Session take. No human vocal or microphone input.",
+  "sourceSHA256": {
+    "host/elastic/stretch.go": "cfa8d87c0f6d3cc1f040032e0dc16833ec7aa2176afe233d1d10027fe1568cb5",
+    "cmd/cicada/studio_automation_record.go": "87866f0985875a0ca0d5c63a21575430921fa14efb1f6e6fa47c1fdceab0734b",
+    "cmd/cicada/studio_elastic.go": "2eed5482b9feb49d2f48633e4c6df6009ba47243fa5084090fe4d31356768056",
+    "cmd/cicada/studio_takes.go": "1befaf8c05379fff75f90f4ab77685ebe303336ae5b61dee2c86bcf87ad7a389",
+    "cmd/cicada/studio_vocals.go": "3a6081a1886db01d6b9ef5f16c710c6c88f01bdf949d174f3b8344f882ec5b3e",
+    "workstation/automation_curve.go": "334b71e3ea0843cd0e15537c4a47e7ccbbacf00d306683850367c85c7f749970",
+    "workstation/engine/automation_record_js.go": "e219554a9289805078e0bd6be30d55c34b123e2d6ddfc4b326e69d18789d98d2",
+    "workstation/app/ui/components.css": "4a10be2ec298359fd9c683fb96b0d306a651a31fc68aea0a86f706a7ebd748c5",
+    "examples/songs/anywhere-you-are.cicada": "4b009a50ddcc3674a340382989dafc7592189ec38f0d2e328e477eb2369eac1f",
+    "workstation/actions.go": "7e8f940065b057de438ea1c8a89f79c25e01c7c8efad7c65b8cb44ba9356bba4",
+    "workstation/panels.go": "e0f26f32e753b0cccabe504c829b8e702640508b9c66635e02696f81c79f8ff8"
+  },
+  "browser": {
+    "type": "cicada-native-smoke",
+    "ok": true,
+    "checks": [
+      "new 80-bar album song: elastic 108\u2192116 BPM and exact source/print Undo/Redo; raw journal unchanged",
+      "native playback: visible slider records real clocked points, Keep saves editable curve, one Undo/Redo restores exact source",
+      "existing curve replacement is explicit; discard preserves saved song"
+    ],
+    "timings": {
+      "elasticTempoEditMs": 6693
+    },
+    "physicalAudioVerified": false,
+    "microphoneOpened": false,
+    "syntheticGuide": true,
+    "errors": []
+  },
+  "native": {
+    "platform": "Jorge MacBook, arm64, macOS 26.6.2",
+    "app": "Ad hoc signed isolated test bundle; final compiled source plus existing native desktop host",
+    "output": "null",
+    "physicalAudioVerified": false,
+    "checks": [
+      "108 to 116 BPM reprints chosen vocal without changing raw journal",
+      "Exact source and print Undo/Redo",
+      "Live control slider records clocked points; Keep saves editable curve; exact Undo/Redo",
+      "Existing-curve replacement requires an explicit choice; Discard preserves source",
+      "Entry Code editor carries the full project revision, reprints elastic vocal at 112 BPM, and undoes exactly"
+    ],
+    "ok": true
+  },
+  "validation": {
+    "dsp": "Identity preserves every PCM bit; pitch/level checks at 44.1/48/96 kHz for 0.5/0.8/1.2/2 duration ratios; piecewise tempo anchors within 35 ms",
+    "backend": "Focused elastic/automation race suite passed, including recovery, conflicts, stop retention, per-entry isolation, and replacement Undo",
+    "regressions": "Workstation, control, engine and edit packages passed; focused vocal regression race suite passed",
+    "size": {
+      "uiEngineBytes": 15439276,
+      "uiEngineBudgetBytes": 16777216,
+      "frameworkColdStartBrotliBytes": 715171
+    },
+    "visual": "1280\u00d7720 expanded Detail dock and 390\u00d7900 phone Detail view, real Chromium; no horizontal overflow",
+    "code": "Entry Code tempo transaction and Undo passed under the race detector; HTML/JSON per-file recovery check includes source-revision forwarding"
+  },
+  "audio": {
+    "durationFrames": 8677334,
+    "sampleRate": 48000,
+    "musicBars": 80,
+    "tailSeconds": 3,
+    "instrumental": {
+      "integratedLUFS": -14.01,
+      "truePeakDBTP": -1.79,
+      "largestLimiterReductionDB": 3.35
+    },
+    "melodyGuide": {
+      "integratedLUFS": -14.01,
+      "truePeakDBTP": -1.79,
+      "largestLimiterReductionDB": 2.67
+    },
+    "acousticListeningVerified": false
+  },
+  "limits": [
+    "Mono vocal comps; half to double duration",
+    "One-parameter sixteenth-grid Write automation",
+    "No Touch/Latch, warp-marker editing or pitch correction",
+    "Simultaneous audio and automation recording is rejected",
+    "Tempo changes in auxiliary Code files or external-file/CLI edits require selecting a phrase again in Studio",
+    "Physical microphone and speaker quality remain unverified"
+  ]
+}

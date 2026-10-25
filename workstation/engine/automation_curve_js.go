@@ -101,6 +101,7 @@ func mountAutomationCurve(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 	})
 	u.root.Call("setAttribute", "data-automation-ready", "true")
+	releaseRecording := bindAutomationRecording(u)
 	// The draft is the editor's points. Gestures, arrow keys and field edits
 	// all change them without a form edit event, so compare the points
 	// themselves with what the server rendered. A confirmed save re-renders the
@@ -109,6 +110,7 @@ func mountAutomationCurve(host enginewasm.Context) (enginewasm.Handle, error) {
 		return !u.closed && curvePointsDiffer(u.points, u.props.Points)
 	})
 	return enginewasm.HandleFunc(func() {
+		releaseRecording()
 		releaseUnsaved()
 		u.closed = true
 		for _, b := range u.bindings {

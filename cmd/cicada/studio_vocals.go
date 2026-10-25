@@ -25,6 +25,7 @@ import (
 )
 
 type studioRecordingSettings struct {
+	Elastic      *bool    `json:"elastic,omitempty"`
 	Start        string   `json:"start"`
 	End          string   `json:"end"`
 	GainDB       *float64 `json:"gainDB,omitempty"`
@@ -241,8 +242,21 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	if t.Timeline == nil {
 		return nil, env, fmt.Errorf("choose a Session arrangement take")
 	}
-	if int64(p.TempoMilli) != t.Timeline.TempoMilli || !slices.Equal(project.SongTempoChanges(p), t.Timeline.TempoChanges) {
-		return nil, env, fmt.Errorf("restore the recording tempo map before selecting this take")
+	comps, err := vocalComps(source)
+	if err != nil {
+		return nil, env, err
+	}
+	follow := false
+	for _, comp := range comps {
+		if comp.Track == t.Track {
+			follow = comp.Elastic
+		}
+	}
+	if settings != nil && settings.Elastic != nil {
+		follow = *settings.Elastic
+	}
+	if !follow && (int64(p.TempoMilli) != t.Timeline.TempoMilli || !slices.Equal(project.SongTempoChanges(p), t.Timeline.TempoChanges)) {
+		return nil, env, fmt.Errorf("enable Follow song tempo or restore the recording tempo map before selecting this take")
 	}
 	found := false
 	for _, tr := range p.Tracks {
@@ -272,11 +286,10 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	if lo < from || hi > to || hi <= lo || hi > studioArrangementEnd(p) {
 		return nil, env, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(from), listeningPosition(to))
 	}
-	comps, err := vocalComps(source)
-	if err != nil {
-		return nil, env, err
+	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli, TempoChanges: slices.Clone(t.Timeline.TempoChanges), Elastic: follow}
+	if follow {
+		next.Tempo, next.TempoChanges = int64(p.TempoMilli), project.SongTempoChanges(p)
 	}
-	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli, TempoChanges: slices.Clone(t.Timeline.TempoChanges)}
 	var previous *vocalComp
 	for i := range comps {
 		if comps[i].Track == t.Track {
@@ -285,7 +298,7 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 			break
 		}
 	}
-	if previous != nil && (previous.Tempo != next.Tempo || !slices.Equal(previous.TempoChanges, next.TempoChanges)) {
+	if previous != nil && !follow && (previous.Tempo != next.Tempo || !slices.Equal(previous.TempoChanges, next.TempoChanges)) {
 		return nil, env, fmt.Errorf("vocal comp tempo differs from this take")
 	}
 	segment := vocalSegment{Take: t.ID, Start: lo, End: hi, GainDB: gainDB}
@@ -317,6 +330,9 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 
 func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	var result project.Asset
+	if err := s.openTakes(); err != nil {
+		return result, err
+	}
 	if len(c.Segments) == 0 {
 		return result, fmt.Errorf("choose a vocal phrase before printing")
 	}
@@ -341,19 +357,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	if frames <= 0 || frames > 16<<20 {
 		return result, fmt.Errorf("vocal comp exceeds the 64 MiB mono PCM budget")
 	}
-	data := make([]byte, 44+frames*4)
-	copy(data, "RIFF")
-	binary.LittleEndian.PutUint32(data[4:], uint32(len(data)-8))
-	copy(data[8:], "WAVEfmt ")
-	binary.LittleEndian.PutUint32(data[16:], 16)
-	binary.LittleEndian.PutUint16(data[20:], 3)
-	binary.LittleEndian.PutUint16(data[22:], 1)
-	binary.LittleEndian.PutUint32(data[24:], uint32(rate))
-	binary.LittleEndian.PutUint32(data[28:], uint32(rate*4))
-	binary.LittleEndian.PutUint16(data[32:], 4)
-	binary.LittleEndian.PutUint16(data[34:], 32)
-	copy(data[36:], "data")
-	binary.LittleEndian.PutUint32(data[40:], uint32(frames*4))
+	data := monoVocalWAV(rate, frames)
 	var left, right [4096]float32
 	streams := map[string]*sampleasset.WAVSource{}
 	defer func() {
@@ -374,6 +378,12 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 		take, err := s.takes.Get(seg.Take)
 		if err != nil {
 			return result, err
+		}
+		if c.Elastic {
+			take, err = s.elasticVocalTake(take, c)
+			if err != nil {
+				return result, err
+			}
 		}
 		if take.Timeline == nil || take.Track != c.Track || take.Rate != rate || take.Timeline.TempoMilli != c.Tempo || !slices.Equal(take.Timeline.TempoChanges, c.TempoChanges) {
 			return result, fmt.Errorf("comp takes must share track, sample rate and tempo")
@@ -468,14 +478,19 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 			at += n
 		}
 	}
+	return s.storeVocalPCM(data, rate, frames, "comps")
+}
+
+func (s *studio) storeVocalPCM(data []byte, rate int, frames int64, directory string) (project.Asset, error) {
+	var result project.Asset
 	hash := fmt.Sprintf("%x", sha256.Sum256(data))
-	result = project.Asset{Name: "vocal-" + hash[:16], Path: "audio/comps/" + hash + ".wav", SHA256: hash, Format: "wav", Frames: frames, RateHz: rate, Channels: 1, Source: "recorded"}
+	result = project.Asset{Name: "vocal-" + hash[:16], Path: "audio/" + directory + "/" + hash + ".wav", SHA256: hash, Format: "wav", Frames: frames, RateHz: rate, Channels: 1, Source: "recorded"}
 	root, err := os.OpenRoot(takeRoot(s.path))
 	if err != nil {
 		return result, err
 	}
 	defer root.Close()
-	if err = root.MkdirAll("audio/comps", 0700); err != nil {
+	if err = root.MkdirAll("audio/"+directory, 0700); err != nil {
 		return result, err
 	}
 	if _, err := root.Stat(result.Path); err == nil {
@@ -483,7 +498,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	} else if !os.IsNotExist(err) {
 		return result, err
 	}
-	temporary := fmt.Sprintf("audio/comps/.print-%d.tmp", time.Now().UnixNano())
+	temporary := fmt.Sprintf("audio/%s/.print-%d.tmp", directory, time.Now().UnixNano())
 	file, err := root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return result, err
@@ -506,7 +521,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	if err = root.Rename(temporary, result.Path); err != nil {
 		return result, err
 	}
-	for _, dir := range []string{"audio/comps", "audio", "."} {
+	for _, dir := range []string{"audio/" + directory, "audio", "."} {
 		if err = takejournal.SyncDirectory(filepath.Join(takeRoot(s.path), dir)); err != nil {
 			return result, err
 		}
@@ -518,6 +533,7 @@ func (s *studio) finishVocalCapture(id string) error {
 	if s.captureID != id || s.captureRecorder == nil {
 		return nil
 	}
+	defer func() { s.captureElastic = nil }()
 	s.transport.stop()
 	drainErr := s.transport.disarmCapture()
 	// A failed audio start may already have released its device.

@@ -110,7 +110,7 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	e := editor.New(id, editor.Options{
 		Surface: editor.SurfaceCode, Content: v.Source, Title: v.Filename, Label: "Cicada score", Language: editor.Lang("cicada"), Theme: editor.ThemeDark,
 		FormAction: "/__actions/source", CSRFToken: csrf,
-		ExtraFields:      map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo, "recoveryId": v.SourceDraft.ID, "recoverySequence": strconv.FormatUint(v.SourceDraft.Sequence, 10), "recoveryParentId": v.SourceDraft.ParentID, "recoveryParentHash": v.SourceDraft.ParentHash, "recoveryHash": sourceFingerprint(v.SourceDraft.Source)},
+		ExtraFields:      map[string]string{"revision": v.Revision, "source_revision": v.SourceRevision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo, "recoveryId": v.SourceDraft.ID, "recoverySequence": strconv.FormatUint(v.SourceDraft.Sequence, 10), "recoveryParentId": v.SourceDraft.ParentID, "recoveryParentHash": v.SourceDraft.ParentHash, "recoveryHash": sourceFingerprint(v.SourceDraft.Source)},
 		Code:             &editor.CodeOptions{Language: "cicada", TabWidth: 2, InsertSpaces: true, Gutter: true, Highlights: highlights, Unsaved: v.HasDraft},
 		CodeIntelligence: &editor.CodeIntelligence{Language: "cicada", ServerURL: "/__code/analysis"},
 		Buttons:          buttons,

@@ -1110,6 +1110,8 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/recording --mode normal --timeout 60 --workflow desktop/testdata/native-recording-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/editor --mode normal --timeout 60 --workflow build/native-editor-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/stems-export --mode normal --download-test --timeout 60 --workflow desktop/testdata/native-stems-export-workflow.js
+          CICADA_ELASTIC_ALBUM_FIXTURE="$PWD/build/macos-elastic-album" go test ./cmd/cicada -run '^TestElasticAlbumWorkflow$' -count=1
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/elastic-automation --mode normal --project-fixture build/macos-elastic-album/anywhere-you-are.cicada --timeout 90 --workflow desktop/testdata/native-elastic-automation-workflow.js
       - name: Compile Intel app components from the exact revision
         if: matrix.arch == 'amd64'
         run: |

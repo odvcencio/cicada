@@ -361,6 +361,25 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	if !env.DryRun {
+		elastic, elasticErr := s.elasticTempoIntents(result)
+		if elasticErr != nil {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": elasticErr.Error()})
+			return
+		}
+		if len(elastic) > 0 {
+			if edit.SourceRevision == "" {
+				studioJSON(w, http.StatusConflict, map[string]any{"error": "refresh Studio before changing an elastic vocal's tempo"})
+				return
+			}
+			env.Intents = append(env.Intents, elastic...)
+			result, err = edits.Apply(current, env, opts)
+			if err != nil {
+				studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+				return
+			}
+		}
+	}
 	if env.DryRun && result.RenderChecked {
 		// A dry run reports that the change is safe, so it needs the same freshness.
 		if err := s.verifyRenderIdentity(true, result.RenderIdentity, result.RenderRecheck); err != nil {

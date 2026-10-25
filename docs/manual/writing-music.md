@@ -200,7 +200,7 @@ song {
 
 The tempo is a plain number from 20 to 300 beats per minute. It carries into later scenes until another scene sets it, so a run of short scenes with falling values gives a stepped slow-down. Playing from the start, seeking, and each pass of a looped song begin at the score's `tempo`. Synced delay times follow the tempo. The [scene-tempo example](../../examples/scene-tempo.cicada) steps from 120 down to 66 BPM, and `cicada midi` writes one tempo event for each step.
 
-There are no tempo ramps or automation lanes, and audio clips are not time-stretched, so a clip keeps its recorded speed at any tempo. Count-in and recording assume one tempo. See [scene tempo](../spec/edition-1.md#scene-tempo).
+Scene tempo changes are steps; tempo ramps are not supported. Edition 2 also provides continuous `automate` lanes. Ordinary audio clips keep their recorded speed. In [Studio](studio.md), Session vocal comps with **Follow song tempo (keep pitch)** enabled are reprinted for tempo edits while preserving raw takes. Session count-in, punch recording, and comp placement follow the song's tempo map. See [scene tempo](../spec/edition-1.md#scene-tempo).
 
 ## Shape a note
 

@@ -123,12 +123,23 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Returns to the curve after a live adjustment, without changing its shape.")),
 			gosx.El("p", gosx.Text(strings.Join(recallPositions, " · "))))
 	}
-	content := gosx.Fragment(chooser, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%s · %g to %g %s. Double-click the curve to add a point; drag a point to move it. Arrow keys adjust it; Escape cancels a drag.", selected, d.Min, d.Max, props.Unit))), graph, recalls,
+	recorder := ui.Form(ui.FormProps{Action: "/__actions/automation-record", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form automation-recording"},
+		hidden("source_revision", v.SourceRevision), hidden("path", selected),
+		field("Perform "+selected, gosx.El("input", gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("name", "number"), gosx.Attr("min", d.Min), gosx.Attr("max", d.Max), gosx.Attr("step", "any"), gosx.Attr("value", value), gosx.Attr("data-automation-record-value", ""), gosx.Attr("data-studio-view-control", ""), gosx.Attr("aria-label", "Perform "+selected), gosx.Attr("disabled", true)))),
+		gosx.El("output", gosx.Attrs(gosx.Attr("data-automation-record-readout", "")), gosx.Text(fmt.Sprintf("%g%s", value, props.Unit))),
+		field("Replace saved curve", gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "replace"), gosx.Attr("data-studio-view-control", "")))),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-record-command", "start")), gosx.Text("Record movements")),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-record-command", "keep"), gosx.Attr("disabled", true)), gosx.Text("Keep recorded curve")),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-record-command", "discard"), gosx.Attr("disabled", true)), gosx.Text("Discard pass"))),
+		gosx.El("p", gosx.Attrs(gosx.Attr("data-automation-record-status", ""), gosx.Attr("role", "status")), gosx.Text("Ready. Start playback to record a movement.")),
+		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-record-help")), gosx.El("summary", gosx.Text("How to record movements")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Play the song, record a pass, and move Perform. Keep writes an editable curve in one Undo step. Movements use the song's sixteenth-note grid."))))
+	content := gosx.Fragment(chooser, recorder, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%s · %g to %g %s. Double-click the curve to add a point; drag a point to move it. Arrow keys adjust it; Escape cancels a drag.", selected, d.Min, d.Max, props.Unit))), graph, recalls,
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-automation-curve-status", ""), gosx.Attr("role", "status")), gosx.Text("Select a point, or add one with the controls below.")),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-new", "")), gosx.Text("New point")), pointForm,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Transitions describe the segment arriving at each point. Save records one Undo step. Curves override scene settings after their first point.")))
 	encoded, _ := json.Marshal(props)
-	surface := meterEngine(ctx, engine.Config{Name: "CicadaAutomationCurve", Kind: engine.KindSurface, MountID: "cicada-automation-curve", Runtime: engine.RuntimeGoWASM, Props: encoded, Capabilities: []engine.Capability{engine.CapPointer, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM}}, gosx.El("div", gosx.Attrs(gosx.Attr("data-automation-curve-props", string(encoded))), content))
+	surface := meterEngine(ctx, engine.Config{Name: "CicadaAutomationCurve", Kind: engine.KindSurface, MountID: "cicada-automation-curve", Runtime: engine.RuntimeGoWASM, Props: encoded, Capabilities: []engine.Capability{engine.CapPointer, engine.CapKeyboard, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.Attr("data-automation-curve-props", string(encoded))), content))
 	return ui.Panel(ui.PanelProps{ID: "automation-editor", Title: "Automation curves", Description: "Draw vocal rides, filter sweeps and effect movement across the full song."}, surface,
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-overview")), gosx.El("summary", gosx.Text("All saved curves")), continuousAutomation(p)))
 }

@@ -199,6 +199,28 @@ func TestLiveBlockIsOptional(t *testing.T) {
 			if err != nil {
 				return err
 			}
+			// Prepared master processors own mutable DSP state. Compressors start
+			// with a NaN cache sentinel, which DeepEqual considers unequal even
+			// for identical configurations. Exercise both processors with the
+			// same nonzero signal first: this also verifies their actual PCM,
+			// latency and fault behavior instead of skipping prepared state.
+			if cfg.MasterProcessor != nil && decodedCfg.MasterProcessor != nil {
+				a, b := cfg.MasterProcessor, decodedCfg.MasterProcessor
+				if a.LatencyFrames() != b.LatencyFrames() {
+					t.Fatalf("%s changed master latency", path)
+				}
+				for i := 0; i < max(1024, 2*a.LatencyFrames()+32); i++ {
+					left, right := float32(.6*math.Sin(float64(i)*.017)), float32(.4*math.Cos(float64(i)*.031))
+					al, ar := a.Process(left, right)
+					bl, br := b.Process(left, right)
+					if math.IsNaN(float64(al)) || math.IsInf(float64(al), 0) || math.IsNaN(float64(ar)) || math.IsInf(float64(ar), 0) || math.Float32bits(al) != math.Float32bits(bl) || math.Float32bits(ar) != math.Float32bits(br) {
+						t.Fatalf("%s changed master PCM at frame %d", path, i)
+					}
+				}
+				if a.Fault() || b.Fault() {
+					t.Fatalf("%s faulted during master round trip", path)
+				}
+			}
 			// Config contains program pointers; DeepEqual compares their compiled contents.
 			if !reflect.DeepEqual(cfg, decodedCfg) {
 				t.Fatalf("%s changed engine configuration", path)

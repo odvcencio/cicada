@@ -26,7 +26,7 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/workspace":
 			_ = json.NewEncoder(w).Encode(workspace{
-				Revision: "project-current", Filename: "main.cicada", Source: files["main.cicada"], Valid: true,
+				Revision: "project-current", SourceRevision: "all-sources-current", Filename: "main.cicada", Source: files["main.cicada"], Valid: true,
 				Files: []projectFile{
 					{Name: "main.cicada", Source: files["main.cicada"], Revision: "main-current"},
 					{Name: "parts/lead.cicada", Source: files["parts/lead.cicada"], Revision: "lead-current"},
@@ -34,9 +34,15 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 				Project: &project.Project{Title: "Draft recovery", TempoMilli: 110000, Key: project.Key{Scale: "minor"}},
 			})
 		case r.URL.Path == "/api/files" && r.Method == http.MethodPost:
-			var edit struct{ File, Revision, Source, Action string }
+			var edit struct {
+				File, Revision, Source, Action string
+				SourceRevision                 string `json:"source_revision"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 				t.Error(err)
+			}
+			if edit.SourceRevision != "all-sources-current" {
+				t.Errorf("Code save lost project revision: %q", edit.SourceRevision)
 			}
 			if edit.Action == "check" {
 				_ = json.NewEncoder(w).Encode(map[string]any{"valid": true})
@@ -79,11 +85,15 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	pageURL := func(file string) string { return app.URL + "/?panel=code&file=" + url.QueryEscape(file) }
-	csrf := tokenFromPage(t, getPage(t, client, pageURL("main.cicada")))
+	initialPage := getPage(t, client, pageURL("main.cicada"))
+	if !strings.Contains(initialPage, `name="source_revision" value="all-sources-current"`) {
+		t.Fatal("Code editor omitted the full project revision")
+	}
+	csrf := tokenFromPage(t, initialPage)
 	apply := func(file, revision, source, intent string) {
 		t.Helper()
 		form := url.Values{
-			"csrf_token": {csrf}, "revision": {"project-current"}, "fileRevision": {revision},
+			"csrf_token": {csrf}, "revision": {"project-current"}, "source_revision": {"all-sources-current"}, "fileRevision": {revision},
 			"file": {file}, "content": {source}, "intent": {intent},
 			"__gosx_return_to": {"/?panel=code&file=" + url.QueryEscape(file)},
 		}
@@ -148,6 +158,7 @@ func TestEditorDraftRecoveryIsIndependentForEachFile(t *testing.T) {
 	applyJSON := func(fields map[string]string) action.Result {
 		t.Helper()
 		fields["csrf_token"] = csrf
+		fields["source_revision"] = "all-sources-current"
 		data, err := json.Marshal(fields)
 		if err != nil {
 			t.Fatal(err)
