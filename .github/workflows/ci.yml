@@ -1049,8 +1049,9 @@ jobs:
     name: macOS desktop (${{ matrix.arch }})
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
-    # Build and exercise the app without waiting on another build job.
-    # Exhaustive UI/DSP/race coverage runs below on the nightly/manual lane.
+    # Full Studio on arm64; Intel compiles the app and exercises the native
+    # host/bridge without rebuilding portable WASM. Neither waits on another job.
+    # Both architectures retain the full Studio sweep in the nightly/manual lane.
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -1078,6 +1079,7 @@ jobs:
             desktop/go.sum
             workstation/go.sum
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        if: matrix.arch == 'arm64'
         with:
           tinygo-version: '0.41.1'
           install-binaryen: 'true'
@@ -1086,6 +1088,7 @@ jobs:
         with:
           node-version: '22.23.2'
       - name: Build and sign the exact revision
+        if: matrix.arch == 'arm64'
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
@@ -1097,15 +1100,32 @@ jobs:
           go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
           git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
       - name: Exercise the signed app in WKWebView
+        if: matrix.arch == 'arm64'
         run: |
           set -euo pipefail
           python3 scripts/check-studio-shutdown.py --cicada 'build/macos/Cicada Studio.app/Contents/MacOS/cicada' --output build/macos-shutdown-proof
-          python3 -m unittest discover -s desktop -p test_smoke.py
+          python3 -m unittest discover -s desktop -p 'test*smoke.py'
           (cd desktop && CICADA_TEST_EDITOR_MENU_WORKFLOW="$PWD/../build/native-editor-workflow.js" go test -mod=readonly -trimpath -run '^TestMac(MenusKeepHistoryShortcutsInWorkstation|EditorMenuWorkflow)$' -count=1 .)
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/startup --mode normal --timeout 60 --workflow desktop/testdata/native-startup-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/recording --mode normal --timeout 60 --workflow desktop/testdata/native-recording-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/editor --mode normal --timeout 60 --workflow build/native-editor-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/stems-export --mode normal --download-test --timeout 60 --workflow desktop/testdata/native-stems-export-workflow.js
+      - name: Compile Intel app components from the exact revision
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = amd64
+          mkdir -p build/macos-host
+          go -C desktop build -mod=readonly -trimpath -o ../build/macos-host/cicada-studio .
+          go build -mod=readonly -trimpath -o build/macos-host/cicada ./cmd/cicada
+          go -C workstation build -mod=readonly -trimpath -o ../build/macos-host/cicada-workstation .
+          go version -m build/macos-host/cicada-studio
+          git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
+      - name: Exercise Intel WKWebView and native export saving
+        if: matrix.arch == 'amd64'
+        run: |
+          python3 -m unittest discover -s desktop -p 'test*smoke.py'
+          python3 desktop/host_smoke.py --host build/macos-host/cicada-studio --output build/macos-host-smoke
       - name: Save focused macOS validation reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -1116,6 +1136,7 @@ jobs:
           path: |
             build/macos-smoke/
             build/macos-shutdown-proof/
+            build/macos-host-smoke/
 
   macos-native-contracts:
     name: macOS platform contracts (${{ matrix.arch }})
