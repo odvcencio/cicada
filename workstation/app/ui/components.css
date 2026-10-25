@@ -372,6 +372,15 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 [data-curve-point]:focus-visible { outline:2px solid var(--amber); }
 .automation-point-form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:12px 0; }
 .automation-point-form .field { margin:0; width:150px; max-width:100%; }
+.automation-recording { display:flex; flex-wrap:wrap; align-items:end; gap:8px 12px; margin:8px 0; }
+.automation-recording .field { margin:0; min-width:0; }
+.automation-recording .field:has([data-automation-record-value]) { flex:1 1 220px; }
+.automation-recording .field:has([name=replace]) { display:flex; align-items:center; gap:6px; }
+.automation-recording .field:has([name=replace]) input { width:auto; }
+.automation-recording output { align-self:center; min-width:5ch; font-variant-numeric:tabular-nums; }
+.automation-recording .actions { gap:6px; }
+.automation-recording [data-automation-record-status],.automation-record-help { flex:1 0 100%; margin:0; }
+.automation-record-help summary { color:var(--mint); cursor:pointer; }
 .automation-overview { margin-top:16px; }
 @media(max-width:600px) { .automation-point-form .field { width:calc(50% - 6px); min-width:0; } }
 .vocal-exact { flex:1 0 100%; }

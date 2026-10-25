@@ -36,6 +36,7 @@ import (
 )
 
 type studio struct {
+	automationRecording *studioAutomationRecording
 	recordingPreview    string
 	recordedSampled     string
 	recordedModeled     string
@@ -44,6 +45,7 @@ type studio struct {
 	recordedModels      map[string]modalfit.Model
 	recordedInstruments map[string]*recording.Pack
 	takes               *takejournal.Store
+	captureElastic      *bool
 	captureID           string
 	captureRecorder     *capture.Recorder
 	vocalLoop           *vocalLoopCapture
@@ -306,6 +308,8 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("POST /api/sampler/import", s.samplerImport)
 	mux.HandleFunc("GET /api/sampler/sound/{id}", s.samplerSound)
 	mux.HandleFunc("POST /api/automation", s.editAutomation)
+	mux.HandleFunc("GET /api/automation/recording", s.automationRecordingState)
+	mux.HandleFunc("POST /api/automation/recording", s.automationRecordingCommand)
 	mux.HandleFunc("POST /api/instrument", s.editInstrument)
 	mux.HandleFunc("POST /api/instrument-pack/download", s.downloadInstrumentPack)
 	mux.HandleFunc("POST /api/undo", s.undo)

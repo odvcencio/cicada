@@ -36,6 +36,7 @@ type VocalSegment struct {
 // the printed asset. It is stored in the score as a `// cicada-vocal-comp`
 // comment.
 type VocalComp struct {
+	Elastic      bool                    `json:"elastic,omitempty"`
 	Track        string                  `json:"track"`
 	Tempo        int64                   `json:"tempoMilli"`
 	TempoChanges []musictime.TempoChange `json:"tempoChanges,omitempty"`

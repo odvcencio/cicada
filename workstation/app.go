@@ -197,7 +197,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	app.Mount("GET /api/export/midi", http.HandlerFunc(s.midiExportStatus))
 	app.Mount("GET /api/export/stems", http.HandlerFunc(s.stemsExportStatus))
 	app.Mount("GET /api/takes/{id}/waveform", http.HandlerFunc(s.vocalWaveform))
-	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params", "/api/sampler"} {
+	for _, path := range []string{"/api/automation/recording", "/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params", "/api/sampler"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			var data json.RawMessage
@@ -330,7 +330,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 }
 
 func (s *studioApp) form(view workspace, csrf, panel, name string, children ...gosx.Node) gosx.Node {
-	if name == "pattern" || name == "take" || name == "automation" {
+	if name == "pattern" || name == "take" || name == "automation" || name == "project" {
 		children = append([]gosx.Node{hidden("source_revision", view.SourceRevision)}, children...)
 	}
 	return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: "/?panel=" + panel, Class: "action-form"}, children...)

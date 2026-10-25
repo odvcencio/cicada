@@ -113,7 +113,7 @@ func (s *studio) commitTakeFiles(id, expected string, candidate []byte, env *edi
 		if t.Timeline != nil {
 			var built edits.Envelope
 			var result *edits.Result
-			result, built, err = s.vocalTakeResult(current, t, nil)
+			result, built, err = s.vocalTakeResult(current, t, &studioRecordingSettings{Elastic: s.captureElastic})
 			if err == nil {
 				candidate, files = result.Source, result.Files
 			}
@@ -271,6 +271,10 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	case "arm", "record":
+		if s.automationRecording != nil && s.automationRecording.Active {
+			fail(errors.New("keep or discard the automation pass before recording audio"))
+			return
+		}
 		if s.captureID != "" {
 			fail(errors.New("finish the current take before arming another"))
 			return
@@ -343,6 +347,10 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.captureID, s.captureRecorder, s.vocalLoop = id, recorder, loop
+		s.captureElastic = nil
+		if edit.Recording != nil {
+			s.captureElastic = edit.Recording.Elastic
+		}
 		if edit.Action == "record" {
 			if err := s.startAudioTake(); err != nil {
 				fail(err)

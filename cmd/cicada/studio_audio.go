@@ -372,6 +372,16 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 	if err != nil {
 		return err
 	}
+	return s.applyProjectControl(p, message)
+}
+
+// applyProjectControl also serves automation capture against its pinned project.
+// Callers may hold s.mu; native parameter delivery does not compile or do IO.
+func (s *studio) applyProjectControl(p *project.Project, message audioClientMessage) error {
+	return s.applyProjectControlPreview(p, message, nil)
+}
+
+func (s *studio) applyProjectControlPreview(p *project.Project, message audioClientMessage, preview *studioAutomationPreview) error {
 	var id kernel.ParamID
 	var track uint8
 	trackName := ""
@@ -456,7 +466,11 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 	if message.Type == "solo" {
 		return stream.SetSolo(track, *message.On)
 	}
-	return stream.SetParam(track, id, value)
+	version, err := stream.SetPreview(track, id, value)
+	if err == nil && preview != nil {
+		preview.Player, preview.Version = stream, version
+	}
+	return err
 }
 
 func (s *studio) resetLiveLoudness(w http.ResponseWriter, r *http.Request) {

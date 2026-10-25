@@ -72,7 +72,7 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 			// arrives, so Hear in song -> Use this range uses the same interval.
 			session.Current(ctx.Request).Set("vocal-range", map[string]string{"takeId": ctx.FormData["takeId"], "start": ctx.FormData["recordStart"], "end": ctx.FormData["recordEnd"]})
 			if command := ctx.FormData["action"]; command == "listen" || command == "listen-loop" {
-				session.Current(ctx.Request).Set("vocal-audition", map[string]string{"revision": ctx.FormData["revision"], "takeId": ctx.FormData["takeId"], "start": ctx.FormData["recordStart"], "end": ctx.FormData["recordEnd"], "gainDB": ctx.FormData["gainDB"], "auditionMode": ctx.FormData["auditionMode"], "offsetMS": ctx.FormData["offsetMS"], "fadeMS": ctx.FormData["fadeMS"], "crossfadeMS": ctx.FormData["crossfadeMS"]})
+				session.Current(ctx.Request).Set("vocal-audition", map[string]string{"revision": ctx.FormData["revision"], "takeId": ctx.FormData["takeId"], "start": ctx.FormData["recordStart"], "end": ctx.FormData["recordEnd"], "gainDB": ctx.FormData["gainDB"], "auditionMode": ctx.FormData["auditionMode"], "offsetMS": ctx.FormData["offsetMS"], "fadeMS": ctx.FormData["fadeMS"], "crossfadeMS": ctx.FormData["crossfadeMS"], "elasticPresent": ctx.FormData["elasticPresent"], "elastic": ctx.FormData["elastic"]})
 			} else {
 				session.Current(ctx.Request).Delete("vocal-audition")
 			}
@@ -90,7 +90,7 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		// Transport and export update their live bindings without changing the
 		// score. Acknowledgement must not navigate away from their controls or
 		// replace unrelated drafts. Native forms retain redirect-after-POST.
-		if (path == "/api/transport" || path == "/api/export" || path == "/api/export/midi" || path == "/api/export/stems") && action.WantsJSON(ctx.Request) {
+		if (path == "/api/automation/recording" || path == "/api/transport" || path == "/api/export" || path == "/api/export/midi" || path == "/api/export/stems") && action.WantsJSON(ctx.Request) {
 			if path == "/api/export" {
 				ctx.SetResult(action.Result{OK: true, Message: "Rendering started."})
 			}
@@ -232,6 +232,17 @@ func (s *studioApp) actions() map[string]action.Handler {
 		"instrument": s.mutation("/api/instrument", func(f map[string]string) (any, error) {
 			return map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "track": f["track"], "value": f["value"]}, nil
 		}),
+		"automation-record": s.mutation("/api/automation/recording", func(f map[string]string) (any, error) {
+			number := 0.0
+			if f["command"] == "value" {
+				var err error
+				number, err = finiteNumber(f, "number")
+				if err != nil {
+					return nil, err
+				}
+			}
+			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["command"], "path": f["path"], "name": f["takeId"], "value": map[string]any{"number": number, "replace": f["replace"] == "on"}}, nil
+		}),
 		"automation": s.mutation("/api/automation", func(f map[string]string) (any, error) {
 			if f["action"] == "automation-point-set" || f["action"] == "automation-point-remove" {
 				curve := 0.0
@@ -271,7 +282,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 			if err != nil || tempo < 20 || tempo > 300 || math.Abs(tempo*1000-math.Round(tempo*1000)) > 1e-6 {
 				return nil, fmt.Errorf("tempo must be 20–300 BPM with up to three decimal places")
 			}
-			return map[string]any{"revision": f["revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
+			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
 		}),
 		"pattern":         s.patternAction,
 		"sound-preview":   s.soundPreviewAction,
@@ -447,6 +458,9 @@ func (s *studioApp) actions() map[string]action.Handler {
 			p["takeId"] = f["takeId"]
 			if f["timeline"] == "on" {
 				settings := map[string]any{"start": f["recordStart"], "end": f["recordEnd"]}
+				if f["elasticPresent"] == "on" {
+					settings["elastic"] = f["elastic"] == "on"
+				}
 				if f["passes"] != "" {
 					n, err := integer(f, "passes")
 					if err != nil || n < 1 || n > 8 {
