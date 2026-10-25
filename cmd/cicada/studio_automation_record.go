@@ -15,6 +15,7 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/project"
 )
 
@@ -49,8 +50,11 @@ type studioAutomationRecording struct {
 	Written        time.Time                 `json:"-"`
 }
 
+func (s *studio) automationDraftRelative() string {
+	return takejournal.Namespace(s.path) + "/automation-take.json"
+}
 func (s *studio) automationDraftPath() string {
-	return filepath.Join(takeRoot(s.path), ".cicada", "automation-take.json")
+	return filepath.Join(takeRoot(s.path), filepath.FromSlash(s.automationDraftRelative()))
 }
 
 func (s *studio) removeAutomationDraft() error {
@@ -59,7 +63,7 @@ func (s *studio) removeAutomationDraft() error {
 		return err
 	}
 	defer root.Close()
-	err = root.Remove(".cicada/automation-take.json")
+	err = root.Remove(s.automationDraftRelative())
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -80,10 +84,10 @@ func (s *studio) persistAutomationRecording(force bool) error {
 		return err
 	}
 	defer root.Close()
-	if err = root.MkdirAll(".cicada", 0700); err != nil {
+	if err = root.MkdirAll(filepath.Dir(s.automationDraftRelative()), 0700); err != nil {
 		return err
 	}
-	temporary := fmt.Sprintf(".cicada/.automation-%s-%d.tmp", r.ID, time.Now().UnixNano())
+	temporary := fmt.Sprintf("%s/.automation-%s-%d.tmp", filepath.ToSlash(filepath.Dir(s.automationDraftRelative())), r.ID, time.Now().UnixNano())
 	f, err := root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
@@ -100,7 +104,10 @@ func (s *studio) persistAutomationRecording(force bool) error {
 	if err != nil {
 		return err
 	}
-	if err = root.Rename(temporary, ".cicada/automation-take.json"); err != nil {
+	if err = root.Rename(temporary, s.automationDraftRelative()); err != nil {
+		return err
+	}
+	if err = takejournal.SyncDirectory(filepath.Dir(s.automationDraftPath())); err != nil {
 		return err
 	}
 	r.Written = time.Now()
@@ -116,7 +123,7 @@ func (s *studio) restoreAutomationRecording() {
 		return
 	}
 	defer root.Close()
-	f, err := root.Open(".cicada/automation-take.json")
+	f, err := root.Open(s.automationDraftRelative())
 	if err != nil {
 		return
 	}
@@ -235,6 +242,10 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 					initial = v
 				}
 			}
+		}
+		if err = s.openTakes(); err != nil {
+			fail(409, err)
+			return
 		}
 		var id [16]byte
 		if _, err = rand.Read(id[:]); err != nil {

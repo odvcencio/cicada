@@ -239,6 +239,19 @@ a conflicting source edit leaves it available for recovery. This is one-paramete
 Write recording; Touch/Latch modes and simultaneous audio/automation recording
 are not yet supported.
 
+![Recorded vocal level curve in the Studio Detail dock, using the original Anywhere You Are test project.](screenshots/studio-elastic-automation-1280.png)
+
+The controls also wrap in the [phone Detail view](screenshots/studio-elastic-automation-390.png).
+[Verification report](verification/studio-elastic-automation.json) records the
+synthetic-fixture checks and physical-audio limits. To reproduce the native check,
+create a fresh fixture with `CICADA_ELASTIC_ALBUM_FIXTURE=/absolute/new/directory
+go test ./cmd/cicada -run '^TestElasticAlbumWorkflow$' -count=1`, then use
+`desktop/smoke.py --mode normal --app /path/to/Cicada\ Studio.app --output /path/to/proof
+--project-fixture /absolute/new/directory/anywhere-you-are.cicada
+--workflow desktop/testdata/native-elastic-automation-workflow.js --timeout 90`.
+The smoke app uses null audio, isolated browser/state directories, and a disposable
+project copy. It never opens a microphone or edits the original project.
+
 ![Continuous automation editor, captured with a test project.](screenshots/studio-producer-automation-1440.png)
 
 The editor also supports [touch editing on phone screens](screenshots/studio-producer-automation-390.png).
@@ -901,7 +914,7 @@ The tempo and replacement vocal print save as one edit and undo together.
 You can enable it on an existing chosen vocal in its phrase controls. With it
 disabled, restore the recording's tempo map before combining mismatched takes.
 Elastic processing runs outside the audio callback and supports mono vocal
-prints at 8–192 kHz within the same frame limit as ordinary comps. It is intended
+prints at 8–192 kHz and half to double duration within the same frame limit as ordinary comps. It is intended
 for vocal timing; extreme stretching, dense polyphonic material, and transient
 percussion need listening checks. Per-syllable warp markers and pitch correction
 are not included.

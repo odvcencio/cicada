@@ -121,6 +121,9 @@ func TestRecordedAutomationRecoveryAndConflictRetainsDraft(t *testing.T) {
 	if err := s.persistAutomationRecording(true); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.shutdown(); err != nil {
+		t.Fatal(err)
+	}
 	reopened, err := newStudio(s.path)
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +168,7 @@ func TestRecordedAutomationRejectsReplacementAndInvalidValues(t *testing.T) {
 	if !bytes.Equal(actual, source) {
 		t.Fatal("invalid movement changed score")
 	}
-	if _, err := os.Stat(filepath.Join(takeRoot(s.path), ".cicada", "automation-take.json")); err != nil {
+	if _, err := os.Stat(s.automationDraftPath()); err != nil {
 		t.Fatal("no recovery checkpoint", err)
 	}
 }
@@ -205,5 +208,27 @@ func TestRecordedAutomationStopRetainsReplacementUntilKept(t *testing.T) {
 	undone, _ := os.ReadFile(s.path)
 	if r.Code != 200 || !bytes.Equal(undone, source) {
 		t.Fatal("one Undo did not restore replaced curve", r.Body.String())
+	}
+}
+
+func TestRecordedAutomationRecoveryIsScopedToEntryScore(t *testing.T) {
+	s, _, _ := automationRecordStudio(t)
+	beginAutomation(t, s, "bass.level", false)
+	other := &studio{path: filepath.Join(filepath.Dir(s.path), "other.cicada")}
+	if err := os.WriteFile(other.path, []byte(curveScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s.automationDraftPath() == other.automationDraftPath() {
+		t.Fatal("different scores share a draft path")
+	}
+	other.restoreAutomationRecording()
+	if other.automationRecording != nil {
+		t.Fatal("another score recovered this score's draft")
+	}
+	if err := other.removeAutomationDraft(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.automationDraftPath()); err != nil {
+		t.Fatal("discarding another score removed the retained pass", err)
 	}
 }
