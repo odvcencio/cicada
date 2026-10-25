@@ -144,9 +144,10 @@ selected devices, buffer size, and the error shown in Audio details.
 ## Continuous validation
 
 Pull requests build and sign the current revision on both Apple Silicon and
-Intel Macs. Each Mac job has a ten-minute maximum, restores Go compiler and
-module caches, and checks native MIDI, audio permission/callback contracts,
-startup, shutdown, recording controls, editor menus, and saving a stems ZIP.
+Intel Macs. Packaging and native contract jobs run independently in parallel;
+each has a ten-minute maximum and restores Go compiler and module caches.
+Together they check native MIDI, audio permission/callback contracts, startup,
+shutdown, recording controls, editor menus, and saving a stems ZIP.
 The packaged app and generated UI always come from the current revision.
 
 The full native workflow sweep, broad Mac race/vet tests, and repeated DSP/WASM
