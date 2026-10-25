@@ -45,6 +45,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	releasePlacementEditor := bindShellPlacementEditor(root)
 	releasePlacementCommands := watchPlacementCommands(host, root)
+	releaseExportBusy := watchExportBusy(root)
 	var busy atomic.Bool
 	command := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || ctx.Err() != nil {
@@ -129,6 +130,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		releaseLayoutFit()
 		releasePlacementCommands()
 		releasePlacementEditor()
+		releaseExportBusy()
 		releaseAudio()
 		releasePlacementView()
 		releaseCapture()

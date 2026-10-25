@@ -407,6 +407,19 @@ jobs:
           make test-studio-export-sources | tee build/studio-export-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          cp -R examples/studio-project "$song_root/export-stems"
+          export CICADA_STEMS_PROOF_DIR="$PWD/build/studio-stems-proof"
+          ./build/cicada studio "$song_root/export-stems/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-stems-server.log 2>&1 &
+          studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          make test-studio-export-stems | tee build/studio-stems-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
           ./build/cicada studio "$browser_root/collaboration/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
           studio_pid=$!
           export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
@@ -933,6 +946,9 @@ jobs:
             build/studio-export-report.txt
             build/studio-export-server.log
             build/studio-export-proof/
+            build/studio-stems-report.txt
+            build/studio-stems-server.log
+            build/studio-stems-proof/
             build/studio-continuity-server.log
             build/studio-collaboration-report.txt
             build/studio-collaboration-server.log
@@ -1031,6 +1047,155 @@ jobs:
 
   macos-desktop:
     name: macOS desktop (${{ matrix.arch }})
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ${{ matrix.runner }}
+    # Full Studio on arm64; Intel compiles the app and exercises the native
+    # host/bridge without rebuilding portable WASM. Neither waits on another job.
+    # Both architectures retain the full Studio sweep in the nightly/manual lane.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    env:
+      GOWORK: 'off'
+      CGO_ENABLED: '0'
+      CICADA_TEST_NATIVE_MIDI: '1'
+      CICADA_COREMIDI_TEST: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+            workstation/go.sum
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        if: matrix.arch == 'arm64'
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+      - name: Build and sign the exact revision
+        if: matrix.arch == 'arm64'
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOWORK)" = off
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          desktop/package.sh --target darwin --version 0.0.0-ci --output build/macos
+          codesign --verify --deep --strict 'build/macos/Cicada Studio.app'
+          go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
+          git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
+      - name: Exercise the signed app in WKWebView
+        if: matrix.arch == 'arm64'
+        run: |
+          set -euo pipefail
+          python3 scripts/check-studio-shutdown.py --cicada 'build/macos/Cicada Studio.app/Contents/MacOS/cicada' --output build/macos-shutdown-proof
+          python3 -m unittest discover -s desktop -p 'test*smoke.py'
+          (cd desktop && CICADA_TEST_EDITOR_MENU_WORKFLOW="$PWD/../build/native-editor-workflow.js" go test -mod=readonly -trimpath -run '^TestMac(MenusKeepHistoryShortcutsInWorkstation|EditorMenuWorkflow)$' -count=1 .)
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/startup --mode normal --timeout 60 --workflow desktop/testdata/native-startup-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/recording --mode normal --timeout 60 --workflow desktop/testdata/native-recording-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/editor --mode normal --timeout 60 --workflow build/native-editor-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/stems-export --mode normal --download-test --timeout 60 --workflow desktop/testdata/native-stems-export-workflow.js
+      - name: Compile Intel app components from the exact revision
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = amd64
+          mkdir -p build/macos-host
+          go -C desktop build -mod=readonly -trimpath -o ../build/macos-host/cicada-studio .
+          go build -mod=readonly -trimpath -o build/macos-host/cicada ./cmd/cicada
+          go -C workstation build -mod=readonly -trimpath -o ../build/macos-host/cicada-workstation .
+          go version -m build/macos-host/cicada-studio
+          git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
+      - name: Exercise Intel WKWebView and native export saving
+        if: matrix.arch == 'amd64'
+        run: |
+          python3 -m unittest discover -s desktop -p 'test*smoke.py'
+          python3 desktop/host_smoke.py --host build/macos-host/cicada-studio --output build/macos-host-smoke
+      - name: Save focused macOS validation reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: macos-desktop-${{ matrix.arch }}-reports
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            build/macos-smoke/
+            build/macos-shutdown-proof/
+            build/macos-host-smoke/
+
+  macos-native-contracts:
+    name: macOS platform contracts (${{ matrix.arch }})
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ${{ matrix.runner }}
+    # Independent of packaging: both Mac checks start together and are bounded.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    env:
+      GOWORK: 'off'
+      CGO_ENABLED: '0'
+      CICADA_TEST_NATIVE_MIDI: '1'
+      CICADA_COREMIDI_TEST: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+            workstation/go.sum
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+      - name: Verify native platform contracts
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          mkdir -p build
+          # Match production compilation; broad race/vet coverage stays in Linux
+          # PR checks and the exhaustive Mac lane.
+          (cd desktop && go test -mod=readonly -trimpath -timeout=90s -count=1 ./...) | tee build/native-desktop.log
+          go test -mod=readonly -trimpath -timeout=90s -count=1 ./host/capture ./host/midi ./internal/audiobackend | tee build/native-platform.log
+          CICADA_AUDIO_CALLBACK_NOALLOC=1 go test -mod=readonly -trimpath -timeout=90s ./cmd/cicada -run '^Test(StudioNativeCaptureCapabilityCannotBeBypassedBySavedSettings|AudioSetup.*|InputAuthorization.*|MissingInputPermission.*|NativeMIDI.*|StudioAudioRenderCallbackDoesNotAllocate)$' -count=1 | tee build/native-studio.log
+      - name: Save native platform reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: macos-platform-${{ matrix.arch }}-reports
+          if-no-files-found: warn
+          retention-days: 7
+          path: build/native-*.log
+
+  macos-desktop-full:
+    name: macOS desktop exhaustive (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     # Allow cold Intel compilation and the complete isolated export/reopen suite.
     timeout-minutes: 75
@@ -1051,7 +1216,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26.5'
-          cache: false
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+            workstation/go.sum
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:
           tinygo-version: '0.41.1'
@@ -1124,6 +1293,7 @@ jobs:
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/dock-fit --mode normal --timeout 120 --workflow desktop/testdata/native-dock-fit-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/columns --mode normal --timeout 120 --workflow desktop/testdata/native-columns-workflow.js
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/export --mode normal --timeout 120 --workflow desktop/testdata/native-export-workflow.js
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/stems-export --mode normal --download-test --timeout 150 --workflow desktop/testdata/native-stems-export-workflow.js
           go -C workstation run ./browser/testdata/portable-song > build/native-portable-fixture.json
           python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke/portable --mode normal --timeout 120 --portable-fixture build/native-portable-fixture.json
           node workstation/browser/arrangement-sources.test.cjs --write-fixture build/native-arrangement-sources > build/native-arrangement-sources-fixture.json

@@ -90,12 +90,15 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		// Transport and export update their live bindings without changing the
 		// score. Acknowledgement must not navigate away from their controls or
 		// replace unrelated drafts. Native forms retain redirect-after-POST.
-		if (path == "/api/transport" || path == "/api/export" || path == "/api/export/midi") && action.WantsJSON(ctx.Request) {
+		if (path == "/api/transport" || path == "/api/export" || path == "/api/export/midi" || path == "/api/export/stems") && action.WantsJSON(ctx.Request) {
 			if path == "/api/export" {
 				ctx.SetResult(action.Result{OK: true, Message: "Rendering started."})
 			}
 			if path == "/api/export/midi" {
 				ctx.SetResult(action.Result{OK: true, Message: "MIDI is ready to download."})
+			}
+			if path == "/api/export/stems" {
+				ctx.SetResult(action.Result{OK: true, Message: "Stem rendering started."})
 			}
 			return nil
 		}
@@ -517,6 +520,16 @@ func (s *studioApp) actions() map[string]action.Handler {
 				}
 			}
 			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"], RecordingOffsetMS: offset, PeriodFrames: period}, nil
+		}),
+		"export-stems": s.mutation("/api/export/stems", func(f map[string]string) (any, error) {
+			if f["source_revision"] == "" {
+				return nil, fmt.Errorf("Refresh Studio to load the saved song before rendering stems.")
+			}
+			rate, err := integer(f, "rate")
+			if err != nil || rate != 44100 && rate != 48000 && rate != 96000 {
+				return nil, fmt.Errorf("Choose a sample rate of 44100, 48000, or 96000 Hz.")
+			}
+			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "rate": rate}, nil
 		}),
 		"export-midi": s.mutation("/api/export/midi", func(f map[string]string) (any, error) {
 			if f["source_revision"] == "" {

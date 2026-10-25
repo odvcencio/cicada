@@ -362,20 +362,20 @@ func (s *studioApp) export(ctx *server.Context, v workspace, csrf string) gosx.N
 		return failure(err)
 	}
 	status.project()
-	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", status.Busy), gosx.Attr("data-gosx-live-bind-attr", "disabled:busy")), gosx.Text("Render WAV"))
+	button := gosx.El("button", gosx.Attrs(gosx.Attr("id", "export-render-button"), gosx.Attr("type", "submit"), gosx.Attr("disabled", status.Busy)), gosx.Text("Render WAV"))
 	message := ""
 	if state, ok := action.States(ctx.Request)["export"]; ok {
 		message = state.Message()
 	}
 	feedback := gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message))
 	form := s.form(v, csrf, "export", "export", hidden("source_revision", v.SourceRevision), field("Target LUFS", numberInput("target_lufs", "-16", "-70", "0")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-24", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0", "10")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), button, feedback)
-	progress := gosx.El("section", gosx.Attrs(gosx.Attr("class", "export-result")),
+	progress := gosx.El("section", gosx.Attrs(gosx.Attr("id", "export-result"), gosx.Attr("class", "export-result"), gosx.Attr("data-gosx-live-src", "/api/export"), gosx.Attr("data-gosx-live-interval", "1s"), gosx.Attr("data-gosx-live-focus", "allow"), gosx.Attr("aria-busy", strconv.FormatBool(status.Busy)), gosx.Attr("data-gosx-live-bind-attr", "aria-busy:busy")),
 		gosx.El("h3", gosx.Text("Render delivery")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "progress"), gosx.Attr("role", "status")), gosx.Text(status.Progress)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "version"), gosx.Attr("role", "status")), gosx.Text(status.Version)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "quality")), gosx.Text(status.Quality)),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "path")), gosx.Text(status.Path)),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "fileName")), gosx.Text(status.FileName)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Text(status.Error)),
 		gosx.El("a", gosx.Attrs(gosx.Attr("href", status.DownloadURL), gosx.BoolAttr("download"), gosx.Attr("hidden", status.DownloadHidden), gosx.Attr("data-gosx-live-bind-attr", "href:downloadURL,hidden:downloadHidden"), gosx.Attr("data-gosx-live-bind", "downloadLabel")), gosx.Text(status.DownloadLabel)))
-	return ui.Panel(ui.PanelProps{ID: "export", Title: "Render & export", Description: "Save your finished sound or export instrument notes."}, gosx.El("div", gosx.Attrs(gosx.Attr("data-gosx-live-src", "/api/export"), gosx.Attr("data-gosx-live-interval", "1s"), gosx.Attr("data-gosx-live-focus", "allow")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Exports use saved music. Save Code changes and keep takes before rendering.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), progress), s.midiExportPanel(ctx, v, csrf))
+	return ui.Panel(ui.PanelProps{ID: "export", Title: "Render & export", Description: "Deliver your finished mix, individual tracks, or instrument notes."}, gosx.El("div", gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Exports use saved music. Save Code changes and keep takes before rendering.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), progress), s.stemsExportPanel(ctx, v, csrf), s.midiExportPanel(ctx, v, csrf))
 }

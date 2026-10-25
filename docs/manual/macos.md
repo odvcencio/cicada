@@ -140,3 +140,22 @@ Use the packaged app's normal CoreAudio mode for recording.
 Settings and logs live in `~/Library/Application Support/Cicada Studio`.
 The desktop log is `logs/studio.log`. When reporting a problem, include the
 selected devices, buffer size, and the error shown in Audio details.
+
+## Continuous validation
+
+Mac PR jobs have a ten-minute maximum and run independently. Native contract
+checks exercise CoreMIDI, audio permission/callback behavior, and desktop host
+logic on both Apple Silicon and Intel. Go compiler and module caches are reused.
+
+Apple Silicon also builds and signs the full Studio app from the current
+revision, then tests startup, shutdown, recording controls, editor menus, and
+saving a stems ZIP. Intel compiles all three native app components and runs the
+real WKWebView host and native download bridge against a small fixture server.
+This avoids rebuilding the same portable GoSX/WASM runtime on Intel for each PR;
+the Intel host check does not claim to test the full Studio UI or render a song.
+
+The complete signed Studio workflow sweep on **both architectures**, broad Mac
+race/vet tests, and repeated DSP/WASM and size audits run nightly and through
+**CI → Run workflow**. Linux PR jobs retain the broad browser, race, audio parity,
+and size checks. Native smoke uses disposable projects and null audio; physical
+microphone and output-device qualification remains a separate hardware check.

@@ -157,6 +157,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
 	u.projectRevision.Store(props.ProjectRevision)
 	u.seedEditorBaseline()
+	releaseExportBusy := watchExportBusy(root)
 	watch := signal.Watch(func() {
 		if u.closed.Load() {
 			return
@@ -227,6 +228,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 		u.cancel()
 		u.placements.clearPlacementDrag()
+		releaseExportBusy()
 		releaseAudio()
 		releasePlacementView()
 		root.Call("removeAttribute", "data-workspace-reactive")
@@ -356,7 +358,7 @@ func (u *workspaceUI) submit(event js.Value) {
 	}
 	// Export is a background job. GoSX's managed form and live projection own
 	// its acknowledgement; replacing the score view would close its dialog.
-	if method == http.MethodPost && parsed.Path == "/__actions/export" {
+	if method == http.MethodPost && (parsed.Path == "/__actions/export" || parsed.Path == "/__actions/export-midi" || parsed.Path == "/__actions/export-stems") {
 		return
 	}
 	// File uploads keep GoSX's native multipart transport.

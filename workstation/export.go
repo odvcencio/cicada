@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -15,7 +16,8 @@ type exportView struct {
 	SourceRevision        string `json:"source_revision"`
 	CurrentSourceRevision string `json:"current_source_revision"`
 	State                 string `json:"state"`
-	Path                  string `json:"path"`
+	Path                  string `json:"path,omitempty"`
+	FileName              string `json:"fileName"`
 	Error                 string `json:"error"`
 	Pass                  int    `json:"pass"`
 	PassLimit             int    `json:"pass_limit"`
@@ -36,11 +38,34 @@ type exportView struct {
 }
 
 func (v *exportView) project() {
+	// The private render service needs a local path, but the browser only
+	// needs the delivered file name. Do not expose workstation directories.
+	v.FileName = ""
+	if v.Path != "" {
+		v.FileName = path.Base(strings.ReplaceAll(v.Path, "\\", "/"))
+		v.Path = ""
+	}
 	v.Busy = v.State == "queued" || v.State == "rendering"
 	v.DownloadHidden = v.ID == "" || v.State != "succeeded" && v.State != "shortfall"
 	v.DownloadLabel, v.DownloadURL, v.Progress = "Download WAV", "", v.State
 	if v.Busy && v.Pass > 0 {
 		v.Progress = fmt.Sprintf("Rendering · pass %d of %d", v.Pass, v.PassLimit)
+	}
+	switch v.State {
+	case "", "idle":
+		v.Progress = "Ready to render"
+	case "queued":
+		v.Progress = "Render queued"
+	case "rendering":
+		if v.Pass == 0 {
+			v.Progress = "Rendering WAV"
+		}
+	case "succeeded":
+		v.Progress = "Render complete · WAV ready"
+	case "shortfall":
+		v.Progress = "Render complete · loudness target not reached"
+	case "failed":
+		v.Progress = "Render failed"
 	}
 	if !v.DownloadHidden {
 		v.DownloadURL = "/media/exports/" + url.PathEscape(v.ID) + ".wav"

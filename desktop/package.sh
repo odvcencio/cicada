@@ -115,7 +115,8 @@ func main() {
 	}
 }
 GO
-	(cd "$repo/desktop" && GOOS=darwin CGO_ENABLED=0 go run "$work/check-platform.go")
+	# Match the release builds so the tools reuse their compiled dependencies.
+	(cd "$repo/desktop" && GOOS=darwin CGO_ENABLED=0 go run -trimpath "$work/check-platform.go")
 
 	local out app
 	out="${output:-$repo/dist/macos}"
@@ -146,7 +147,7 @@ GO
 	# so the workstation executable includes the same UI as its runtime assets.
 	# The production build also compiles the server with trimpath and the
 	# configured symbol stripping. Reuse it instead of compiling it twice.
-	(cd "$repo/workstation" && GOWORK=off GOOS=darwin CGO_ENABLED=0 go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
+	(cd "$repo/workstation" && GOWORK=off GOOS=darwin CGO_ENABLED=0 go run -trimpath -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
 	cp "$repo/workstation/dist/server/app" "$app/Contents/MacOS/cicada-workstation"
 	mkdir -p "$app/Contents/MacOS/workstation"
 	cp "$repo/workstation/dist/build.json" "$app/Contents/MacOS/workstation/"

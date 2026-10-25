@@ -998,7 +998,7 @@ Studio continues to refuse multi-file source editing.
 tolerance, sample rate, and PCM depth. Save Code changes and keep retained
 performances to include them in the render. Select **Render WAV** to start a
 background job. Export stays open while progress, measured LUFS, true peak,
-applied gain, limiter reduction, and the output path update. **Download WAV**
+applied gain, limiter reduction, and the output filename update. **Download WAV**
 appears when the current job completes. A shortfall render is labeled explicitly
 for inspection before delivery. Export states whether the render matches the
 saved score files and library definitions. If you save more edits, its link
@@ -1012,6 +1012,26 @@ Starting another job invalidates its previous download link. Audio stays outside
 the public asset bundle, and long downloads stream through the private service.
 Offline rendering uses the same Cicada kernel as Tymbal playback. See
 [exporting](exporting.md) for stems, MIDI, and verification commands.
+
+On Mac, selecting a WAV, MIDI, or stems download opens **Save Cicada export**.
+Choose the destination and filename; canceling keeps the export available.
+Studio in a browser uses the browser's download settings.
+
+**Individual tracks (stems)** prepares the song for collaboration or a new mix
+in another DAW. Choose 44.1, 48, or 96 kHz, select **Render stems**, and download
+the ZIP when it completes. It contains aligned stereo float32 WAVs for every
+track, both shared effects returns, the music and SFX buses, and a master
+reference, plus a routing manifest. All files include the whole song and a
+three-second tail. Track effects, levels, and pan are retained; stems do not
+receive separate loudness normalization. Import the numbered tracks and effect
+returns together; use the bus and master files as alternatives or references,
+so the mix is not doubled.
+
+The previous successful stems ZIP stays available while a new job runs or if
+it fails. Saved edits mark the old ZIP as an earlier export. As with WAV, Studio
+requires the saved project version you reviewed; a change in another score
+file rejects the request and preserves the earlier download. WAV and MIDI
+exports remain independent of the stems job.
 
 ## Browser support
 

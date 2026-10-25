@@ -148,6 +148,11 @@ test-studio-first-song:
 test-studio-export-sources:
 	node --test workstation/browser/export-sources.test.cjs
 
+.PHONY: test-studio-export-stems
+# Requires a disposable examples/studio-project copy and CICADA_STEMS_PROOF_DIR.
+test-studio-export-stems:
+	node --test workstation/browser/export-stems.test.cjs
+
 .PHONY: test-studio-portable-song
 # Requires a generated portable-song fixture and CICADA_PORTABLE_PROOF_DIR.
 test-studio-portable-song:

@@ -138,6 +138,11 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 		})
 	})
 	app.Use(sessions.Protect)
+	// Studio has no separate app icon yet. Answer the browser's implicit probe
+	// without a spurious missing-resource error in a healthy local workspace.
+	app.Mount("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	app.Page("GET /{$}", s.page)
 	app.Page("GET /studio", s.shell)
 	if b == nil {
@@ -186,9 +191,11 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	}))
 	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
 	app.Mount("GET /media/midi-exports/{id}", http.HandlerFunc(s.exportMIDI))
+	app.Mount("GET /media/stem-exports/{id}", http.HandlerFunc(s.exportStems))
 	app.Mount("GET /media/transcription", http.HandlerFunc(s.transcriptionAudio))
 	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
 	app.Mount("GET /api/export/midi", http.HandlerFunc(s.midiExportStatus))
+	app.Mount("GET /api/export/stems", http.HandlerFunc(s.stemsExportStatus))
 	app.Mount("GET /api/takes/{id}/waveform", http.HandlerFunc(s.vocalWaveform))
 	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params", "/api/sampler"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

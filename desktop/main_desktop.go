@@ -34,28 +34,30 @@ const (
 var buildVersion = "dev"
 
 type host struct {
-	mu          sync.Mutex
-	app         *desktop.App
-	cicada      string
-	audio       string
-	logOut      io.Writer
-	statePath   string
-	state       hostState
-	score       string
-	scoreKey    string
-	proc        *sidecar.Process
-	queue       openQueue
-	closing     bool
-	starting    sync.WaitGroup
-	startCancel context.CancelFunc
+	mu           sync.Mutex
+	app          *desktop.App
+	cicada       string
+	audio        string
+	logOut       io.Writer
+	statePath    string
+	state        hostState
+	score        string
+	scoreKey     string
+	proc         *sidecar.Process
+	queue        openQueue
+	closing      bool
+	starting     sync.WaitGroup
+	startCancel  context.CancelFunc
+	exportCancel context.CancelFunc
 
-	smokeOut     string
-	smokeHold    time.Duration
-	smokeTimeout time.Duration
-	smokeScript  string
-	smokeMIDI    bool
-	started      time.Time
-	smoke        map[string]any
+	smokeOut         string
+	smokeHold        time.Duration
+	smokeTimeout     time.Duration
+	smokeScript      string
+	smokeMIDI        bool
+	smokeDownloadDir string
+	started          time.Time
+	smoke            map[string]any
 }
 
 func main() {
@@ -78,11 +80,16 @@ func run() error {
 	smokeMIDI := flags.Bool("smoke-midi", false, "with --smoke-out, keep an authenticated native MIDI input open for shutdown tests")
 	smokeTimeout := flags.Duration("smoke-timeout", 60*time.Second, "with --smoke-out, maximum time to await the workflow result (tests)")
 	smokeScript := flags.String("smoke-script", "", "with --smoke-out, run this JavaScript workflow and await its result (tests)")
+	smokeDownloadDir := flags.String("smoke-download-dir", "", "with --smoke-out, bypass the native export picker into this child directory (tests)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
 	if *smokeTimeout <= 0 {
 		return fmt.Errorf("--smoke-timeout must be positive")
+	}
+	validatedDownloadDir, err := nativeSmokeDownloadDir(*smokeOut, *smokeDownloadDir)
+	if err != nil {
+		return err
 	}
 	var script []byte
 	if *smokeScript != "" {
@@ -131,7 +138,8 @@ func run() error {
 		statePath: filepath.Join(*dataDir, "state.json"),
 		smokeOut:  *smokeOut, smokeHold: *smokeHold, smokeMIDI: *smokeMIDI,
 		smokeTimeout: *smokeTimeout, smokeScript: string(script),
-		started: started, smoke: map[string]any{"timeoutSeconds": smokeTimeout.Seconds()},
+		smokeDownloadDir: validatedDownloadDir,
+		started:          started, smoke: map[string]any{"timeoutSeconds": smokeTimeout.Seconds()},
 	}
 	h.state = loadState(h.statePath)
 	score, err := resolveInitialScore(flags.Args(), h.state, cicada, filepath.Join(documentsDir(), "Cicada"))
@@ -173,6 +181,11 @@ func run() error {
 		return fmt.Errorf("configure native MIDI: %w", err)
 	}
 	defer closeMIDI()
+	closeDownloads, err := h.attachNativeDownloads()
+	if err != nil {
+		return fmt.Errorf("configure native export saving: %w", err)
+	}
+	defer closeDownloads()
 	if err := h.optionalChrome("minimum window size", h.app.SetMinSize(800, 560)); err != nil {
 		return err
 	}
@@ -314,7 +327,11 @@ func (h *host) startSidecar(score string) (*sidecar.Process, error) {
 	h.starting.Add(1)
 	previous := h.proc
 	h.proc = nil
+	downloadCancel := h.exportCancel
 	h.mu.Unlock()
+	if downloadCancel != nil {
+		downloadCancel()
+	}
 	defer h.starting.Done()
 	defer cancel()
 	if previous != nil {
@@ -367,7 +384,11 @@ func (h *host) shutdown() {
 	cancel := h.startCancel
 	proc := h.proc
 	h.proc = nil
+	downloadCancel := h.exportCancel
 	h.mu.Unlock()
+	if downloadCancel != nil {
+		downloadCancel()
+	}
 	if cancel != nil {
 		cancel()
 	}
@@ -549,10 +570,11 @@ func (h *host) onSmokeMessage(message string) {
 		return
 	}
 	var result struct {
-		Type   string   `json:"type"`
-		OK     bool     `json:"ok"`
-		Checks []string `json:"checks"`
-		Error  string   `json:"error,omitempty"`
+		Type    string          `json:"type"`
+		OK      bool            `json:"ok"`
+		Checks  []string        `json:"checks"`
+		Error   string          `json:"error,omitempty"`
+		Archive json.RawMessage `json:"archive,omitempty"`
 	}
 	if json.Unmarshal([]byte(message), &result) != nil || result.Type != "cicada-native-smoke" {
 		return
