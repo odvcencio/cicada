@@ -14,6 +14,7 @@ from pathlib import Path
 import platform
 import plistlib
 import shutil
+from socketserver import TCPServer
 import sys
 import tempfile
 import time
@@ -28,6 +29,15 @@ PAGE = b'''<!doctype html><html lang="en"><meta charset="utf-8">
 <p>This fixture tests the desktop bridge, not the Studio renderer.</p>
 <div><a id="host-download" href="/media/stem-exports/host-fixture.zip"
 download="host-fixture.zip">Save fixture ZIP</a></div></body></html>'''
+
+
+class FixtureHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer resolves the bound address with getfqdn. This private
+        # loopback fixture needs no DNS, including on cold macOS CI runners.
+        TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
 
 
 def fixture_bytes():
@@ -78,7 +88,7 @@ def fixture_main(argv):
     if args.listen != "127.0.0.1:0" or args.audio != "null" or not args.score.is_file():
         parser.error("fixture requires an existing score, loopback ephemeral port and null audio")
     # The fixture never opens an audio device or writes the supplied score.
-    with ThreadingHTTPServer(("127.0.0.1", 0), fixture_handler()) as server:
+    with FixtureHTTPServer(("127.0.0.1", 0), fixture_handler()) as server:
         print(f"Cicada Studio: http://127.0.0.1:{server.server_port}/", flush=True)
         server.serve_forever()
 

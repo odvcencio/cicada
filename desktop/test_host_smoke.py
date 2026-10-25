@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 import zipfile
@@ -16,7 +17,24 @@ import zipfile
 import host_smoke
 
 
+def stop_fixture(process):
+    if process.poll() is None:
+        process.terminate()
+    try:
+        return process.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return process.communicate(timeout=3)
+
+
 class HostFixtureTests(unittest.TestCase):
+    def test_loopback_fixture_binds_without_dns(self):
+        with patch("socket.getfqdn", side_effect=AssertionError("fixture must not resolve DNS")):
+            with host_smoke.FixtureHTTPServer(("127.0.0.1", 0), host_smoke.fixture_handler()) as server:
+                self.assertEqual(server.server_name, "localhost")
+                self.assertEqual(server.server_address[0], "127.0.0.1")
+                self.assertGreater(server.server_port, 0)
+
     def test_private_http_fixture_matches_saved_zip_contract(self):
         with tempfile.TemporaryDirectory() as temporary:
             score = Path(temporary) / "main.cicada"
@@ -26,11 +44,15 @@ class HostFixtureTests(unittest.TestCase):
                 "--listen", "127.0.0.1:0", "--audio", "null",
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
-                self.assertTrue(select.select([process.stdout], [], [], 3)[0], "fixture readiness timed out")
+                if not select.select([process.stdout], [], [], 15)[0]:
+                    status = process.poll()
+                    _, error = stop_fixture(process)
+                    self.fail(f"fixture readiness timed out: status={status}; stderr={error[-2000:]!r}")
                 ready = process.stdout.readline().strip()
                 if not ready:
-                    _, error = process.communicate(timeout=3)
-                    self.fail("fixture did not start: " + error)
+                    status = process.poll()
+                    _, error = stop_fixture(process)
+                    self.fail(f"fixture did not start: status={status}; stderr={error[-2000:]!r}")
                 self.assertRegex(ready, r"^Cicada Studio: http://127\.0\.0\.1:\d+/$")
                 origin = ready.removeprefix("Cicada Studio: ").rstrip("/")
                 with urllib.request.urlopen(origin + "/studio", timeout=2) as response:
@@ -53,8 +75,7 @@ class HostFixtureTests(unittest.TestCase):
                 self.assertEqual(error.exception.code, 404)
                 self.assertEqual(score.read_text(), host_smoke.SCORE)
             finally:
-                process.terminate()
-                process.communicate(timeout=5)
+                stop_fixture(process)
 
     def test_fixture_rejects_non_private_launches(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -65,7 +86,7 @@ class HostFixtureTests(unittest.TestCase):
                     result = subprocess.run([
                         sys.executable, str(Path(host_smoke.__file__).resolve()), "studio", str(score),
                         "--listen", listen, "--audio", audio,
-                    ], capture_output=True, text=True, timeout=3)
+                    ], capture_output=True, text=True, timeout=10)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("loopback ephemeral port and null audio", result.stderr)
 
