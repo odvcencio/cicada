@@ -10,6 +10,30 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+func BenchmarkCompileAutomationAlbum(b *testing.B) {
+	source, err := os.ReadFile("../examples/songs/anywhere-you-are.cicada")
+	if err != nil {
+		b.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if hasErrors(diagnostics) {
+		b.Fatal(diagnostics)
+	}
+	p, diagnostics := FromScore(score)
+	if hasErrors(diagnostics) {
+		b.Fatal(diagnostics)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		controls, err := CompileAutomation(p)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(len(controls)), "controls/op")
+	}
+}
+
 func automationProject(t *testing.T) *Project {
 	t.Helper()
 	source, err := os.ReadFile("../examples/continuous-automation.cicada")

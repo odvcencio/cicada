@@ -164,6 +164,17 @@ func validateAutomation(p *Project) error {
 // AutomationValue evaluates the same control-space curve used for playback and
 // the Studio display. Before the first point a lane contributes no value.
 func AutomationValue(p *Project, lane AutomationLane, tick int64) (float64, bool) {
+	logarithmic := false
+	if len(lane.Points) > 1 && tick >= lane.Points[0].Tick && tick < lane.Points[len(lane.Points)-1].Tick {
+		resolved, err := ResolveParameterPath(p, lane.Path)
+		logarithmic = err == nil && resolved.Descriptor.Curve == "log"
+	}
+	return automationValue(lane, tick, logarithmic)
+}
+
+// Grid compilation already resolved the lane; reuse its control space rather
+// than looking up the same registry metadata for every sample and emission.
+func automationValue(lane AutomationLane, tick int64, logarithmic bool) (float64, bool) {
 	if len(lane.Points) == 0 || tick < lane.Points[0].Tick {
 		return 0, false
 	}
@@ -183,8 +194,7 @@ func AutomationValue(p *Project, lane AutomationLane, tick int64) (float64, bool
 		t = math.Pow(t, math.Exp2(b.Curve))
 	}
 	x, y := *a.Value.Number, *b.Value.Number
-	resolved, err := ResolveParameterPath(p, lane.Path)
-	if err == nil && resolved.Descriptor.Curve == "log" {
+	if logarithmic {
 		return math.Exp(math.Log(x) + (math.Log(y)-math.Log(x))*t), true
 	}
 	return x + (y-x)*t, true
@@ -218,6 +228,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 			return nil, err
 		}
 		last := uint32(0)
+		logarithmic := resolved.Descriptor.Curve == "log"
 		measure := func(v float64) float64 { return v }
 		step := (resolved.Descriptor.Max - resolved.Descriptor.Min) / automationResolution
 		if resolved.Descriptor.Curve == "log" && resolved.Descriptor.Min > 0 {
@@ -227,7 +238,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 		var lastMeasure float64
 		var lastTick int64
 		emit := func(tick int64) error {
-			value, _ := AutomationValue(p, lane, tick)
+			value, _ := automationValue(lane, tick, logarithmic)
 			compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, value)
 			if err != nil {
 				return err
@@ -255,7 +266,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 				continue
 			}
 			for tick := a.Tick + automationGridTicks; tick < b.Tick; tick += automationGridTicks {
-				value, _ := AutomationValue(p, lane, tick)
+				value, _ := automationValue(lane, tick, logarithmic)
 				if math.Abs(measure(value)-lastMeasure) < step && tick-lastTick < automationMaxGapTicks {
 					continue
 				}
