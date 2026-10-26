@@ -18,7 +18,15 @@ type FIR struct {
 
 // New generates the decision-0002 half-band kernel once, outside the audio loop.
 func New() FIR {
-	f := FIR{zeroStuffed: true}
+	var f FIR
+	Init(&f)
+	return f
+}
+
+// Init prepares the coefficients in place, avoiding large temporary FIR copies.
+// It must run outside the audio callback.
+func Init(f *FIR) {
+	*f = FIR{zeroStuffed: true}
 	denominator := besselI0(beta)
 	var sum float64
 	for n := 0; n < Taps; n++ {
@@ -42,7 +50,6 @@ func New() FIR {
 	for n := range f.coefficients {
 		f.coefficients[n] /= sum
 	}
-	return f
 }
 
 func besselI0(x float64) float64 {

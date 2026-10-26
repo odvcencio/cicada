@@ -76,14 +76,15 @@ func New(rate int, params Params) (*Processor, error) {
 			p.ir[i][j] /= sum
 		}
 	}
-	p.left = makeChannel()
-	p.right = makeChannel()
+	for _, c := range []*channel{&p.left, &p.right} {
+		halfband.Init(&c.up1)
+		halfband.Init(&c.up2)
+		halfband.Init(&c.down1)
+		halfband.Init(&c.down2)
+	}
 	p.SetParams(params)
 	p.Reset()
 	return p, nil
-}
-func makeChannel() channel {
-	return channel{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New()}
 }
 func (p *Processor) SetParams(v Params) error {
 	if err := v.Validate(); err != nil {
