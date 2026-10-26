@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"math"
 )
 
@@ -38,6 +39,49 @@ func DeesserParamsFromValues(values map[string]Value) (fx.DeesserParams, error) 
 	}
 	return p, p.Validate()
 }
+
+// AmpCabParamsFromValues parses saved track-insert controls.
+func AmpCabParamsFromValues(values map[string]Value) (ampcab.Params, error) {
+	p := ampcab.DefaultParams()
+	for _, name := range sortedKeys(values) {
+		v := values[name]
+		if name == "bypass" {
+			if v.Unit != "enum" || (v.Text != "on" && v.Text != "off" && v.Text != "true" && v.Text != "false") {
+				return p, fmt.Errorf("ampcab bypass requires on or off")
+			}
+			p.Bypass = v.Text == "on" || v.Text == "true"
+			continue
+		}
+		if v.Number == nil || v.Text != "" || math.IsNaN(*v.Number) || math.IsInf(*v.Number, 0) {
+			return p, fmt.Errorf("invalid ampcab %s", name)
+		}
+		switch name {
+		case "drive":
+			if v.Unit != "unit" {
+				return p, fmt.Errorf("ampcab drive requires unitless value")
+			}
+			p.Drive = *v.Number
+		case "tone":
+			if v.Unit != "unit" {
+				return p, fmt.Errorf("ampcab tone requires unitless value")
+			}
+			p.Tone = *v.Number
+		case "output":
+			if v.Unit != "db" {
+				return p, fmt.Errorf("ampcab output requires dB")
+			}
+			p.Output = *v.Number
+		case "cabinet":
+			if v.Unit != "unit" || math.Trunc(*v.Number) != *v.Number {
+				return p, fmt.Errorf("ampcab cabinet requires integer")
+			}
+			p.Cabinet = int(*v.Number)
+		default:
+			return p, fmt.Errorf("unknown ampcab parameter %s", name)
+		}
+	}
+	return p, p.Validate()
+}
 func compileTrackEffect(effect Effect, rate int) (engine.TrackEffectConfig, error) {
 	var p engine.TrackEffectConfig
 	switch semanticEffectKind(effect) {
@@ -61,6 +105,10 @@ func compileTrackEffect(effect Effect, rate int) (engine.TrackEffectConfig, erro
 		if err == nil && sidechain != "" {
 			err = fmt.Errorf("CICADA-UNSUPPORTED: track compressor uses its own input; external sidechain is unavailable")
 		}
+		return p, err
+	case "ampcab":
+		v, err := AmpCabParamsFromValues(effect.Params)
+		p.Kind, p.AmpCab = engine.TrackEffectAmpCab, &v
 		return p, err
 	case "deesser":
 		v, err := DeesserParamsFromValues(effect.Params)

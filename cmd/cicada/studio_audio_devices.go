@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 )
 
 type studioAudioOptions struct {
@@ -20,6 +21,11 @@ type studioAudioOptions struct {
 	MonitorMode       string  `json:"monitorMode"`
 	RecordingOffsetMS float64 `json:"recordingOffsetMS"`
 	PeriodFrames      int     `json:"periodFrames"`
+	AmpEnabled        bool    `json:"ampEnabled"`
+	AmpDrive          float32 `json:"ampDrive"`
+	AmpTone           float32 `json:"ampTone"`
+	AmpOutput         float32 `json:"ampOutput"`
+	AmpCabinet        int     `json:"ampCabinet"`
 }
 
 type studioAudioDeviceInfo struct {
@@ -79,6 +85,7 @@ type studioAudioSnapshot struct {
 	DevicePeriods          int               `json:"devicePeriods"`
 	ReportedRoundTripMS    float64           `json:"reportedRoundTripMs"`
 	ReportedRoundTripKnown bool              `json:"reportedRoundTripKnown"`
+	MonitorFXLatencyFrames int               `json:"monitorFXLatencyFrames"`
 	AudioPriority          string            `json:"audioPriority,omitempty"`
 	DeadlineKnown          bool              `json:"deadlineKnown"`
 	CallbackBudgetPercent  float64           `json:"callbackBudgetPercent"`
@@ -301,6 +308,11 @@ func (t *studioTransport) configureAudioAuthorized(ctx context.Context, options 
 		return err
 	}
 	previousOptions := normalizeStudioAudioOptions(t.audioOptions)
+	if options.AmpEnabled && t.audio != nil {
+		if _, err := ampcab.New(t.audio.Snapshot().SampleRate, studioAmpParams(studioMonitorOptions(options))); err != nil {
+			return fmt.Errorf("amp monitor: %w", err)
+		}
+	}
 	routeChanged := options.InputEnabled != previousOptions.InputEnabled || options.InputDevice != previousOptions.InputDevice || options.OutputDevice != previousOptions.OutputDevice || options.PeriodFrames != previousOptions.PeriodFrames
 	if t.audioSettingsErr != nil {
 		return fmt.Errorf("%w: %v", errStudioAudioSettings, t.audioSettingsErr)
@@ -366,13 +378,20 @@ func (t *studioTransport) checkAudioConfigurationLocked(options studioAudioOptio
 	if t.audio != nil && t.audio.Armed() && options.RecordingOffsetMS != previous.RecordingOffsetMS {
 		return fmt.Errorf("finish the take before changing recording timing correction")
 	}
+	if t.audio != nil && t.audio.Armed() && (options.AmpEnabled != previous.AmpEnabled || options.AmpEnabled && options.MonitorMode != previous.MonitorMode) {
+		return fmt.Errorf("finish the take before changing the amp input channel")
+	}
 	return nil
 }
 
 type studioAudioMonitor struct {
-	Muted bool
-	Gain  float32
-	Mode  string
+	Muted                        bool
+	Gain                         float32
+	Mode                         string
+	AmpEnabled                   bool
+	AmpDrive, AmpTone, AmpOutput float32
+	AmpCabinet                   int
+	amp                          *ampcab.Processor
 }
 
 type studioAudioDevice interface {
@@ -401,7 +420,8 @@ func normalizeStudioAudioOptions(options studioAudioOptions) studioAudioOptions 
 }
 
 func studioMonitorOptions(options studioAudioOptions) studioAudioMonitor {
-	return studioAudioMonitor{Muted: options.MonitorMuted, Gain: options.MonitorGain, Mode: options.MonitorMode}
+	return studioAudioMonitor{Muted: options.MonitorMuted, Gain: options.MonitorGain, Mode: options.MonitorMode,
+		AmpEnabled: options.AmpEnabled, AmpDrive: options.AmpDrive, AmpTone: options.AmpTone, AmpOutput: options.AmpOutput, AmpCabinet: options.AmpCabinet}
 }
 
 func validateStudioAudioOptions(options studioAudioOptions) error {
@@ -415,6 +435,9 @@ func validateStudioAudioOptions(options studioAudioOptions) error {
 	}
 	if math.IsNaN(float64(options.MonitorGain)) || math.IsInf(float64(options.MonitorGain), 0) || options.MonitorGain < 0 || options.MonitorGain > 2 {
 		return fmt.Errorf("input monitor gain must be between 0 and 2")
+	}
+	if err := studioAmpParams(studioMonitorOptions(options)).Validate(); err != nil {
+		return fmt.Errorf("invalid amp settings: %w", err)
 	}
 	switch options.MonitorMode {
 	case "stereo", "mono1", "mono2":
@@ -544,6 +567,9 @@ func mixStudioMonitor(input, output [][]float32, monitor studioAudioMonitor) {
 			} else {
 				inRight = inLeft
 			}
+		}
+		if monitor.amp != nil {
+			inLeft, inRight = monitor.amp.Process(inLeft, inRight)
 		}
 		if len(output) == 1 {
 			output[0][frame] = clampStudioAudioSample(output[0][frame] + (inLeft+inRight)*0.5*monitor.Gain)

@@ -35,6 +35,13 @@ func (t *studioTransport) prepareTakeInput() (int, int, error) {
 		opened = true
 	}
 	actual := t.audio.Snapshot()
+	if t.audioOptions.AmpEnabled && t.audioOptions.MonitorMode == "mono2" && actual.InputChannels < 2 {
+		if opened {
+			_ = t.audio.Close()
+			t.audio = nil
+		}
+		return 0, 0, fmt.Errorf("instrument input 2 is unavailable on this device")
+	}
 	if actual.InputChannels < 1 || actual.InputChannels > 2 || actual.SampleRate != rate || actual.PeriodFrames < 1 || actual.PeriodFrames > 8192 {
 		if opened {
 			_ = t.audio.Close()

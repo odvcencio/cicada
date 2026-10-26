@@ -336,7 +336,7 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 				if kind == "" {
 					kind = effect.Name
 				}
-				if kind == "eq" || kind == "comp" || kind == "deesser" {
+				if kind == "eq" || kind == "comp" || kind == "deesser" || kind == "ampcab" {
 					return true
 				}
 			}

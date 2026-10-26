@@ -139,3 +139,61 @@ func TestVocalLanesProjectWaveformsAndKeepAuditionRange(t *testing.T) {
 		t.Fatalf("waveform failure lost status: %d", response.StatusCode)
 	}
 }
+
+func TestGuitarSoundAppliesSavedControlsToSelectedTrack(t *testing.T) {
+	var command map[string]any
+	posts := 0
+	number := func(v float64) *float64 { return &v }
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/workspace":
+			_ = json.NewEncoder(w).Encode(workspace{Revision: "rev", SourceRevision: "src", Project: &project.Project{Edition: 2, TempoMilli: 120000, Tracks: []project.Track{{ID: "guitar", Kind: "audio", Mixer: project.Mixer{Insert: "guitar_live_amp"}}}, Effects: []project.Effect{{ID: "guitar_live_amp", Kind: "ampcab", Params: map[string]project.Value{"drive": {Unit: "scalar", Number: number(.2)}, "tone": {Unit: "scalar", Number: number(.3)}, "output": {Unit: "dB", Number: number(-6)}, "cabinet": {Unit: "scalar", Number: number(1)}}}}}})
+		case "/api/audio/config":
+			io.WriteString(w, `{"options":{"ampEnabled":true,"ampDrive":0.7,"ampTone":0.6,"ampOutput":-3,"ampCabinet":2}}`)
+		case "/api/mixer":
+			if r.Method == "POST" {
+				posts++
+				_ = json.NewDecoder(r.Body).Decode(&command)
+			}
+			io.WriteString(w, `{}`)
+		default:
+			io.WriteString(w, `{}`)
+		}
+	}))
+	defer backend.Close()
+	b, _ := newBackend(backend.URL)
+	handler, err := newApp(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := httptest.NewServer(handler)
+	defer app.Close()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	page := getPage(t, client, app.URL+"/?panel=session&vocalTrack=guitar")
+	for _, want := range []string{"Saved monitor sound: drive 0.70", "guitar playback amp: drive 0.20", "reapply after changing the monitor sound", "Apply saved amp to track", `name="source_revision" value="src"`} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	form := url.Values{"csrf_token": {tokenFromPage(t, page)}, "revision": {"rev"}, "source_revision": {"src"}, "action": {"amp-chain"}, "track": {"guitar"}, "ampDrive": {"0.7"}, "ampTone": {"0.6"}, "ampOutput": {"-3"}, "ampCabinet": {"2"}}
+	response, err := client.PostForm(app.URL+"/__actions/mixer", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusSeeOther || command["action"] != "amp-chain" || command["track"] != "guitar" || command["source_revision"] != "src" || command["ampDrive"] != .7 || command["ampCabinet"] != float64(2) {
+		t.Fatalf("unexpected command %d %#v", response.StatusCode, command)
+	}
+	form.Set("ampOutput", "13")
+	before := command
+	response, err = client.PostForm(app.URL+"/__actions/mixer", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if posts != 1 || command["ampOutput"] != before["ampOutput"] {
+		t.Fatalf("invalid output accepted: %d %#v", response.StatusCode, command)
+	}
+}

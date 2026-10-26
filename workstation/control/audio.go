@@ -17,6 +17,7 @@ type AudioRuntime struct {
 	OutputLatencyKnown     bool    `json:"outputLatencyKnown"`
 	ReportedRoundTripMS    float64 `json:"reportedRoundTripMs"`
 	ReportedRoundTripKnown bool    `json:"reportedRoundTripKnown"`
+	MonitorFXLatencyFrames int     `json:"monitorFXLatencyFrames"`
 	AudioPriority          string  `json:"audioPriority"`
 	DeadlineKnown          bool    `json:"deadlineKnown"`
 	CallbackBudgetPercent  float64 `json:"callbackBudgetPercent"`
@@ -58,12 +59,17 @@ func AudioRuntimeRows(runtime AudioRuntime, requested int) []AudioRuntimeRow {
 	if runtime.DeadlineKnown {
 		deadline = fmt.Sprintf("Reported · %d late commits", runtime.Late)
 	}
+	monitorFX := "Device closed"
+	if runtime.SampleRate > 0 {
+		monitorFX = fmt.Sprintf("%d frames · %.2f ms", runtime.MonitorFXLatencyFrames, float64(runtime.MonitorFXLatencyFrames)*1000/float64(runtime.SampleRate))
+	}
 	return []AudioRuntimeRow{
 		{"requested", "Requested buffer", fmt.Sprintf("%d frames", requested)},
 		{"granted", "Granted buffer", granted},
 		{"input", "Reported input latency", latency(runtime.InputLatencyMS, runtime.InputLatencyKnown)},
 		{"output", "Reported output latency", latency(runtime.OutputLatencyMS, runtime.OutputLatencyKnown)},
 		{"roundtrip", "Reported round trip", latency(runtime.ReportedRoundTripMS, runtime.ReportedRoundTripKnown)},
+		{"monitorFX", "Monitor processing latency", monitorFX},
 		{"priority", "Audio thread priority", priority},
 		{"callback", "Peak callback", callback},
 		{"deadline", "Device deadlines", deadline},

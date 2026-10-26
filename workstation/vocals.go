@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/kernel/seq"
@@ -137,6 +138,64 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		setupControl = ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Choose microphone and output"})
 	}
 	setup := gosx.El("details", gosx.Attrs(gosx.Attr("class", "vocal-setup"), gosx.Attr("open", len(tracks) == 0 || !readiness.Ready)), gosx.El("summary", gosx.Text("Recording setup")), summary, setupControl, add)
+	var guitar gosx.Node = gosx.Fragment()
+	if audioError == nil && len(tracks) > 0 {
+		cabinet := []string{"Open", "Warm", "Bright"}
+		cab := audio.Options.AmpCabinet
+		if cab < 0 || cab >= len(cabinet) {
+			cab = 0
+		}
+		trackSound := "No saved guitar amp on " + chosen + "."
+		var playbackEditor gosx.Node = gosx.Fragment()
+		if v.Project != nil {
+			for _, track := range v.Project.Tracks {
+				if track.ID != chosen {
+					continue
+				}
+				inserts := append([]string(nil), track.Mixer.Inserts...)
+				if len(inserts) == 0 && track.Mixer.Insert != "" && track.Mixer.Insert != "none" {
+					inserts = append(inserts, track.Mixer.Insert)
+				}
+				for _, name := range inserts {
+					for _, fx := range v.Project.Effects {
+						if fx.ID != name || fx.Kind != "ampcab" {
+							continue
+						}
+						number := func(key string, fallback float64) float64 {
+							if v := fx.Params[key].Number; v != nil {
+								return *v
+							}
+							return fallback
+						}
+						fxCab := int(number("cabinet", 0))
+						if fxCab < 0 || fxCab >= len(cabinet) {
+							fxCab = 0
+						}
+						trackSound = fmt.Sprintf("%s playback amp: drive %.2f, tone %.2f, output %.1f dB, %s cabinet.", chosen, number("drive", .35), number("tone", .5), number("output", 0), cabinet[fxCab])
+						base := chosen
+						if len(base) > 42 {
+							base = base[:42]
+						}
+						base += "_live_amp"
+						if name == base || strings.HasPrefix(name, base+"_") {
+							fmtNum := func(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
+							playbackEditor = gosx.El("details", gosx.El("summary", gosx.Text("Edit playback amp on "+chosen)),
+								gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("These settings belong to the song. Saving enables this amp; monitor settings remain separate.")),
+								s.form(v, csrf, "session", "mixer", hidden("source_revision", v.SourceRevision), hidden("action", "amp-chain"), hidden("track", chosen),
+									field("Playback drive", numberInput("ampDrive", fmtNum(number("drive", .35)), "0", "1")), field("Playback tone", numberInput("ampTone", fmtNum(number("tone", .5)), "0", "1")), field("Playback output (dB)", numberInput("ampOutput", fmtNum(number("output", 0)), "-24", "12")), field("Playback cabinet", ampCabinetChoices("ampCabinet", fxCab)), submit("", "", "Save playback amp")),
+								s.form(v, csrf, "session", "mixer", hidden("source_revision", v.SourceRevision), hidden("path", name+".bypass"), hidden("valueType", "bool"), field("Playback amp bypass", selectInput("value", map[bool]string{true: "true", false: "false"}[fx.Params["bypass"].Text == "true" || fx.Params["bypass"].Text == "on"], []string{"false", "true"}, "Playback amp bypass")), submit("", "", "Set playback bypass")))
+						}
+						break
+					}
+				}
+			}
+		}
+		guitar = gosx.El("details", gosx.El("summary", gosx.Text("Guitar playback sound")),
+			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("Saved monitor sound: drive %.2f, tone %.2f, output %.1f dB, %s cabinet. Takes stay dry. Apply this sound to a track to hear it on playback; reapply after changing the monitor sound.", audio.Options.AmpDrive, audio.Options.AmpTone, audio.Options.AmpOutput, cabinet[cab]))),
+			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(trackSound)), playbackEditor,
+			s.form(v, csrf, "session", "mixer", hidden("source_revision", v.SourceRevision), hidden("action", "amp-chain"), field("Recording track", selectInput("track", chosen, tracks, "Recording track for guitar sound")),
+				hidden("ampDrive", strconv.FormatFloat(audio.Options.AmpDrive, 'f', -1, 64)), hidden("ampTone", strconv.FormatFloat(audio.Options.AmpTone, 'f', -1, 64)), hidden("ampOutput", strconv.FormatFloat(audio.Options.AmpOutput, 'f', -1, 64)), hidden("ampCabinet", strconv.Itoa(cab)), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", !audio.Options.AmpEnabled)), gosx.Text("Apply saved amp to track"))))
+	}
 
 	var trackLinks []gosx.Node
 	for _, track := range tracks {
@@ -223,7 +282,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		}
 		laneEditor = s.vocalLanes(ctx, v, csrf, chosen, lanes, state.Comps, vocalLanesProps{Revision: v.Revision, End: end, Selected: selected.ID, Start: lo, Stop: hi, Lanes: lanes, Track: chosen, Phrases: phrases}, active, button)
 	}
-	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-record"), gosx.Attr("data-capture-idle", idle)), controls), inputMeter(), gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("One-bar count-in, then backing pre-roll before the punch. Recording stops at Punch out. A clean pass updates that range in your vocal; Undo restores the previous choices.")), setup, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-choices")), gosx.El("h3", gosx.Text("Choose the best phrases")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Vocal tracks")), gosx.Fragment(trackLinks...)), current, laneEditor), s.sceneTakes(v, csrf, chosen, state.Takes, active))
+	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-record"), gosx.Attr("data-capture-idle", idle)), controls), inputMeter(), gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("One-bar count-in, then backing pre-roll before the punch. Recording stops at Punch out. A clean pass updates that range in your vocal; Undo restores the previous choices.")), setup, guitar, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-choices")), gosx.El("h3", gosx.Text("Choose the best phrases")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Vocal tracks")), gosx.Fragment(trackLinks...)), current, laneEditor), s.sceneTakes(v, csrf, chosen, state.Takes, active))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaTakes", Kind: engine.KindSurface, MountID: "cicada-vocals", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapAudio}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "vocals", Title: "Record vocals", Description: "Full-song takes, punch-ins and your chosen vocal phrases."}, surface)
 }

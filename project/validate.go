@@ -93,7 +93,7 @@ func ValidateProject(p *Project) error {
 	var compSidechain string
 	for _, effect := range p.Effects {
 		kind := semanticEffectKind(effect)
-		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" {
+		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" && kind != "ampcab" {
 			return fmt.Errorf("CICADA-UNSUPPORTED: effect kind %s is not implemented", kind)
 		}
 		if effect.ID == "music" || effect.ID == "sfx" || !validID(effect.ID) {
@@ -125,6 +125,10 @@ func ValidateProject(p *Project) error {
 			}
 		} else if kind == "reverb" {
 			if _, err := ReverbParamsFromValues(effect.Params); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else if kind == "ampcab" {
+			if _, err := AmpCabParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 		} else if kind == "deesser" {

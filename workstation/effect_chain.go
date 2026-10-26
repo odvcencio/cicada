@@ -20,7 +20,7 @@ func (s *studioApp) effectChain(v workspace, csrf string, strip mixerStrip) gosx
 	var names []string
 	if v.Project != nil {
 		for _, fx := range v.Project.Effects {
-			if fx.Kind == "drive" || fx.Kind == "eq" || fx.Kind == "comp" || fx.Kind == "deesser" {
+			if fx.Kind == "drive" || fx.Kind == "eq" || fx.Kind == "comp" || fx.Kind == "deesser" || fx.Kind == "ampcab" {
 				names = append(names, fx.ID)
 			}
 		}

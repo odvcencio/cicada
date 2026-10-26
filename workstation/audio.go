@@ -183,6 +183,14 @@ func audioBufferChoices(state audioState) gosx.Node {
 	return gosx.El("select", gosx.Attrs(gosx.Attr("name", "periodFrames"), gosx.Attr("aria-label", "Buffer size")), gosx.Fragment(options...))
 }
 
+func ampCabinetChoices(name string, selected int) gosx.Node {
+	var options []gosx.Node
+	for i, label := range []string{"Open", "Warm", "Bright"} {
+		options = append(options, gosx.El("option", gosx.Attrs(gosx.Attr("value", i), gosx.Attr("selected", selected == i)), gosx.Text(label)))
+	}
+	return gosx.El("select", gosx.Attrs(gosx.Attr("name", name)), gosx.Fragment(options...))
+}
+
 func audioPerformance(state audioState) gosx.Node {
 	var rows []gosx.Node
 	for _, row := range control.AudioRuntimeRows(state.Runtime, state.Options.PeriodFrames) {
@@ -192,7 +200,7 @@ func audioPerformance(state audioState) gosx.Node {
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "audio-readiness"), gosx.Attr("data-audio-runtime", "")),
 		gosx.El("strong", gosx.Text("Buffer and timing")),
 		gosx.El("dl", gosx.Fragment(rows...)),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Round trip is the sum of device-reported input and output latency. A hardware loopback measurement is needed to confirm microphone-to-headphone delay.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Round trip is the sum of device-reported input and output latency. Monitor processing latency is extra, including when the amp is bypassed. A hardware loopback measurement is needed to confirm input-to-headphone delay.")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("role", "status"), gosx.Attr("data-audio-runtime-warning", ""), gosx.Attr("hidden", warning == "")), gosx.Text(warning)))
 }
 
@@ -228,6 +236,13 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 		gosx.El("details", gosx.El("summary", gosx.Text("Recording timing")), field("Recording timing correction (ms)", numberInput("recordingOffsetMS", strconv.FormatFloat(state.Options.RecordingOffsetMS, 'f', -1, 64), "-500", "500")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Device timing is already applied. If recorded phrases consistently land late, a positive correction advances them; a negative correction delays them. This corrects remaining input timing, not headphone monitoring latency."))),
 		gosx.El("details", gosx.El("summary", gosx.Text("Headphone monitoring")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Monitoring only changes what you hear. Your microphone is recorded even when monitoring is muted.")),
 			checkbox("monitorMuted", "Mute monitoring", state.Options.MonitorMuted), field("Monitor gain", numberInput("monitorGain", strconv.FormatFloat(state.Options.MonitorGain, 'f', -1, 64), "0", "2")), field("Monitor mode", selectInput("monitorMode", state.Options.MonitorMode, []string{"stereo", "mono1", "mono2"}, "Monitor mode"))),
+		gosx.El("details", gosx.El("summary", gosx.Text("Guitar amp and cabinet")),
+			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Connect your guitar to an instrument input. Enable input and unmute headphone monitoring to hear the amp. Start at a low monitor level. To practice while stopped, open Takes, select an audio track and scene, then choose Arm take. The input also runs during playback or recording. With the amp enabled, mono 1 or mono 2 selects the input for both monitoring and the dry take; stereo keeps both channels. Apply these settings to the recording track for playback. The amp supports 44.1, 48 and 96 kHz.")),
+			checkbox("ampEnabled", "Enable guitar amp for monitoring", state.Options.AmpEnabled),
+			field("Drive", numberInput("ampDrive", strconv.FormatFloat(state.Options.AmpDrive, 'f', -1, 64), "0", "1")),
+			field("Tone", numberInput("ampTone", strconv.FormatFloat(state.Options.AmpTone, 'f', -1, 64), "0", "1")),
+			field("Amp output (dB)", numberInput("ampOutput", strconv.FormatFloat(state.Options.AmpOutput, 'f', -1, 64), "-24", "12")),
+			field("Cabinet", ampCabinetChoices("ampCabinet", state.Options.AmpCabinet))),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit")), gosx.Text(apply)))
 	form := ui.Form(ui.FormProps{Action: "/__actions/audio", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, fields)
 	setup := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Device, input, buffer, and timing choices are saved for this computer. New sessions start stopped, with headphone monitoring muted."))

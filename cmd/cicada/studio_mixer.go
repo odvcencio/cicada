@@ -119,6 +119,10 @@ func (s *studio) editMixer(w http.ResponseWriter, r *http.Request) {
 		s.addVocalChain(w, edit)
 		return
 	}
+	if edit.Action == "amp-chain" {
+		s.applyAmpChain(w, edit)
+		return
+	}
 	if edit.Path == "" || len(edit.Value) == 0 {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "mixer path and value are required"})
 		return
@@ -551,7 +555,7 @@ func mixerInsertCapability(kind, owner string, names []string, score *notation.S
 		if effect == nil {
 			return unsupported("insert references undeclared effect " + name)
 		}
-		if kind == "track" && effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" {
+		if kind == "track" && effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" && effect.Kind != "ampcab" {
 			return unsupported(effect.Kind + " as a track insert is not implemented")
 		}
 		if kind == "bus" && (owner != "music" || effect.Kind != "comp") {

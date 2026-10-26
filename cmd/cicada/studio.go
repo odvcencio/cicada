@@ -518,6 +518,10 @@ type studioEdit struct {
 	Chord                 *edits.SetChord               `json:"chord,omitempty"`
 	NewName               string                        `json:"newName,omitempty"`
 	Starter               string                        `json:"starter,omitempty"`
+	AmpDrive              *float64                      `json:"ampDrive,omitempty"`
+	AmpTone               *float64                      `json:"ampTone,omitempty"`
+	AmpOutput             *float64                      `json:"ampOutput,omitempty"`
+	AmpCabinet            *int                          `json:"ampCabinet,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
