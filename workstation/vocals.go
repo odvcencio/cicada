@@ -191,10 +191,10 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 			}
 		}
 		guitar = gosx.El("details", gosx.El("summary", gosx.Text("Guitar playback sound")),
-			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("Saved monitor sound: drive %.2f, tone %.2f, output %.1f dB, %s cabinet. Takes stay dry. Apply this sound to a track to hear it on playback; reapply after changing the monitor sound.", audio.Options.AmpDrive, audio.Options.AmpTone, audio.Options.AmpOutput, cabinet[cab]))),
+			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-guitar-monitor-summary", "")), gosx.Text(fmt.Sprintf("Saved monitor sound: drive %.2f, tone %.2f, output %.1f dB, %s cabinet. Takes stay dry. Apply this sound to a track to hear it on playback; reapply after changing the monitor sound.", audio.Options.AmpDrive, audio.Options.AmpTone, audio.Options.AmpOutput, cabinet[cab]))),
 			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(trackSound)), playbackEditor,
-			s.form(v, csrf, "session", "mixer", hidden("source_revision", v.SourceRevision), hidden("action", "amp-chain"), field("Recording track", selectInput("track", chosen, tracks, "Recording track for guitar sound")),
-				hidden("ampDrive", strconv.FormatFloat(audio.Options.AmpDrive, 'f', -1, 64)), hidden("ampTone", strconv.FormatFloat(audio.Options.AmpTone, 'f', -1, 64)), hidden("ampOutput", strconv.FormatFloat(audio.Options.AmpOutput, 'f', -1, 64)), hidden("ampCabinet", strconv.Itoa(cab)), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", !audio.Options.AmpEnabled)), gosx.Text("Apply saved amp to track"))))
+			gosx.El("div", gosx.Attrs(gosx.Attr("data-guitar-monitor", "")), s.form(v, csrf, "session", "mixer", hidden("source_revision", v.SourceRevision), hidden("action", "amp-chain"), field("Recording track", selectInput("track", chosen, tracks, "Recording track for guitar sound")),
+				hidden("ampDrive", strconv.FormatFloat(audio.Options.AmpDrive, 'f', -1, 64)), hidden("ampTone", strconv.FormatFloat(audio.Options.AmpTone, 'f', -1, 64)), hidden("ampOutput", strconv.FormatFloat(audio.Options.AmpOutput, 'f', -1, 64)), hidden("ampCabinet", strconv.Itoa(cab)), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", !audio.Options.AmpEnabled)), gosx.Text("Apply saved amp to track")))))
 	}
 
 	var trackLinks []gosx.Node

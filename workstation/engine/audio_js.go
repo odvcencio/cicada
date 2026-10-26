@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	"m31labs.dev/cicada/workstation/control"
@@ -24,18 +26,49 @@ func publishAudio(ctx context.Context) {
 		if !workspacePresent(root) {
 			return
 		}
-		if node := root.Call("querySelector", "[data-audio-routing]"); workspacePresent(node) && !workspacePresent(node.Call("closest", "[hidden]")) {
+		node := root.Call("querySelector", "[data-audio-routing]")
+		guitar := root.Call("querySelector", "[data-guitar-monitor]")
+		if workspacePresent(guitar) || workspacePresent(node) && !workspacePresent(node.Call("closest", "[hidden]")) {
 			var state struct {
 				Playing bool                 `json:"playing"`
 				Runtime control.AudioRuntime `json:"runtime"`
 				Options struct {
-					PeriodFrames int `json:"periodFrames"`
+					PeriodFrames int     `json:"periodFrames"`
+					AmpEnabled   bool    `json:"ampEnabled"`
+					AmpDrive     float64 `json:"ampDrive"`
+					AmpTone      float64 `json:"ampTone"`
+					AmpOutput    float64 `json:"ampOutput"`
+					AmpCabinet   int     `json:"ampCabinet"`
 				} `json:"options"`
 			}
 			capture := nativeCapture.Get()
-			if readNativeProjection(ctx, "/api/audio/config?runtime=1", &state) && ctx.Err() == nil && node.Get("isConnected").Bool() {
+			if readNativeProjection(ctx, "/api/audio/config?runtime=1", &state) && ctx.Err() == nil {
 				locked := state.Playing || state.Runtime.Armed || capture.Ready && !capture.Error && capture.State.Active != ""
-				node.Set("disabled", locked)
+				if workspacePresent(node) && node.Get("isConnected").Bool() {
+					node.Set("disabled", locked)
+				}
+				if workspacePresent(guitar) && guitar.Get("isConnected").Bool() {
+					for name, value := range map[string]string{
+						"ampDrive":   strconv.FormatFloat(state.Options.AmpDrive, 'f', -1, 64),
+						"ampTone":    strconv.FormatFloat(state.Options.AmpTone, 'f', -1, 64),
+						"ampOutput":  strconv.FormatFloat(state.Options.AmpOutput, 'f', -1, 64),
+						"ampCabinet": strconv.Itoa(state.Options.AmpCabinet),
+					} {
+						if input := guitar.Call("querySelector", "input[name="+name+"]"); workspacePresent(input) {
+							input.Set("value", value)
+						}
+					}
+					if button := guitar.Call("querySelector", "button[type=submit]"); workspacePresent(button) {
+						button.Set("disabled", !state.Options.AmpEnabled)
+					}
+					cab := "Unknown"
+					if state.Options.AmpCabinet >= 0 && state.Options.AmpCabinet < 3 {
+						cab = []string{"Open", "Warm", "Bright"}[state.Options.AmpCabinet]
+					}
+					if summary := root.Call("querySelector", "[data-guitar-monitor-summary]"); workspacePresent(summary) {
+						summary.Set("textContent", fmt.Sprintf("Saved monitor sound: drive %.2f, tone %.2f, output %.1f dB, %s cabinet. Takes stay dry. Apply this sound to a track to hear it on playback; reapply after changing the monitor sound.", state.Options.AmpDrive, state.Options.AmpTone, state.Options.AmpOutput, cab))
+					}
+				}
 				if notice := root.Call("querySelector", "[data-audio-lock-notice]"); workspacePresent(notice) {
 					notice.Set("hidden", !locked)
 				}
