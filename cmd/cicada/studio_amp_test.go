@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"net/http"
 	"os"
@@ -383,5 +384,27 @@ func BenchmarkAmpMonitorPeriod128(b *testing.B) {
 		if err := a.renderPeriod(input, output); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestAmpApplyRejectsSharedTrackEffect(t *testing.T) {
+	path := mixerProject(t, "project test\ncicada 2\n", audioTakeScore)
+	drive, tone, output, cab := .7, .4, -3., 1
+	request := studioEdit{Action: "amp-chain", Track: "vox", AmpDrive: &drive, AmpTone: &tone, AmpOutput: &output, AmpCabinet: &cab}
+	first := mixerRoute(t, path, request)
+	if first.Code != http.StatusOK {
+		t.Fatalf("initial apply: %d %+v", first.Code, first.Body)
+	}
+	shared := bytes.Replace(first.Score, []byte("track bass acid {}"), []byte("track bass acid { insert = vox_live_amp }"), 1)
+	if bytes.Equal(first.Score, shared) {
+		t.Fatal("fixture did not share amp")
+	}
+	if err := os.WriteFile(path, shared, 0600); err != nil {
+		t.Fatal(err)
+	}
+	drive = .2
+	result := mixerRoute(t, path, request)
+	if result.Code < 400 || !bytes.Equal(result.Score, shared) || !strings.Contains(fmt.Sprint(result.Body), "shared by another track") {
+		t.Fatalf("shared amp changed: %d %+v", result.Code, result.Body)
 	}
 }

@@ -177,7 +177,23 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 							base = base[:42]
 						}
 						base += "_live_amp"
-						if name == base || strings.HasPrefix(name, base+"_") {
+						shared := false
+						for _, other := range v.Project.Tracks {
+							if other.ID == chosen {
+								continue
+							}
+							entries := append([]string(nil), other.Mixer.Inserts...)
+							entries = append(entries, strings.Fields(strings.ReplaceAll(other.Mixer.Insert, "->", " "))...)
+							for _, entry := range entries {
+								if entry == name {
+									shared = true
+									break
+								}
+							}
+						}
+						if shared {
+							playbackEditor = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This amp is shared with another track. Give this track its own amp before editing or bypassing it."))
+						} else if name == base || strings.HasPrefix(name, base+"_") {
 							fmtNum := func(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
 							playbackEditor = gosx.El("details", gosx.El("summary", gosx.Text("Edit playback amp on "+chosen)),
 								gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("These settings belong to the song. Saving enables this amp; monitor settings remain separate.")),

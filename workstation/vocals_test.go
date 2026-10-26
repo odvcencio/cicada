@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"m31labs.dev/cicada/host/takejournal"
@@ -143,12 +144,17 @@ func TestVocalLanesProjectWaveformsAndKeepAuditionRange(t *testing.T) {
 func TestGuitarSoundAppliesSavedControlsToSelectedTrack(t *testing.T) {
 	var command map[string]any
 	posts := 0
+	var shared atomic.Bool
 	number := func(v float64) *float64 { return &v }
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/workspace":
-			_ = json.NewEncoder(w).Encode(workspace{Revision: "rev", SourceRevision: "src", Project: &project.Project{Edition: 2, TempoMilli: 120000, Tracks: []project.Track{{ID: "guitar", Kind: "audio", Mixer: project.Mixer{Insert: "guitar_live_amp"}}}, Effects: []project.Effect{{ID: "guitar_live_amp", Kind: "ampcab", Params: map[string]project.Value{"drive": {Unit: "scalar", Number: number(.2)}, "tone": {Unit: "scalar", Number: number(.3)}, "output": {Unit: "dB", Number: number(-6)}, "cabinet": {Unit: "scalar", Number: number(1)}}}}}})
+			tracks := []project.Track{{ID: "guitar", Kind: "audio", Mixer: project.Mixer{Insert: "guitar_live_amp"}}}
+			if shared.Load() {
+				tracks = append(tracks, project.Track{ID: "other", Kind: "audio", Mixer: project.Mixer{Insert: "guitar_live_amp"}})
+			}
+			_ = json.NewEncoder(w).Encode(workspace{Revision: "rev", SourceRevision: "src", Project: &project.Project{Edition: 2, TempoMilli: 120000, Tracks: tracks, Effects: []project.Effect{{ID: "guitar_live_amp", Kind: "ampcab", Params: map[string]project.Value{"drive": {Unit: "scalar", Number: number(.2)}, "tone": {Unit: "scalar", Number: number(.3)}, "output": {Unit: "dB", Number: number(-6)}, "cabinet": {Unit: "scalar", Number: number(1)}}}}}})
 		case "/api/audio/config":
 			io.WriteString(w, `{"options":{"ampEnabled":true,"ampDrive":0.7,"ampTone":0.6,"ampOutput":-3,"ampCabinet":2}}`)
 		case "/api/mixer":
@@ -196,4 +202,10 @@ func TestGuitarSoundAppliesSavedControlsToSelectedTrack(t *testing.T) {
 	if posts != 1 || command["ampOutput"] != before["ampOutput"] {
 		t.Fatalf("invalid output accepted: %d %#v", response.StatusCode, command)
 	}
+	shared.Store(true)
+	page = getPage(t, client, app.URL+"/?panel=session&vocalTrack=guitar")
+	if !strings.Contains(page, "This amp is shared with another track") || strings.Contains(page, "Set playback bypass") || strings.Contains(page, "Save playback amp") {
+		t.Fatal("shared amp exposed track-local editing controls")
+	}
+
 }
