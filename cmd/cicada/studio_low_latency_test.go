@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 )
 
 func TestStudioBufferChoiceDefaultsAndValidation(t *testing.T) {
@@ -143,10 +144,9 @@ func TestArmedInputMonitoringHasNoSoftwareQueueAndRetainsCountInRaw(t *testing.T
 			defer a.Close()
 			input, output := [][]float32{make([]float32, frames), make([]float32, frames)}, [][]float32{make([]float32, frames), make([]float32, frames)}
 			input[0][0], input[1][0] = .75, -.5
-			input[0][40], input[1][40] = .75, -.5
 			simulatedCapturePeriod(t, a, 0, input, output)
-			if output[0][0] != .375 || output[1][0] != -.25 || a.engineFrame != 0 || r.Snapshot().WrittenFrames != 0 {
-				t.Fatal("armed monitor advanced/recorded score or delayed input")
+			if output[0][ampcab.Latency] != .375 || output[1][ampcab.Latency] != -.25 || output[0][0] != 0 || output[1][0] != 0 || a.engineFrame != 0 || r.Snapshot().WrittenFrames != 0 {
+				t.Fatal("armed monitor advanced/recorded score or had unexpected bypass latency")
 			}
 			countIn, _ := capture.NewCountIn(48000, 120000, 1)
 			if err := a.BeginCapture(countIn, capture.Calibration{}); err != nil {
@@ -156,7 +156,8 @@ func TestArmedInputMonitoringHasNoSoftwareQueueAndRetainsCountInRaw(t *testing.T
 				t.Fatal(err)
 			}
 			simulatedCapturePeriod(t, a, uint64(frames), input, output)
-			if output[0][40] != .375 || output[1][40] != -.25 || a.engineFrame != 0 {
+			// Frame 31 also contains the negative 0.2 count-in click.
+			if output[0][ampcab.Latency] != float32(.375)-float32(.2) || output[1][ampcab.Latency] != float32(-.25)-float32(.2) || a.engineFrame != 0 {
 				t.Fatal("count-in lost direct monitoring or advanced score")
 			}
 			if err := a.DisarmCapture(); err != nil {

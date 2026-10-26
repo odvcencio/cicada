@@ -65,6 +65,24 @@ monitor settings, and recording timing correction are remembered between songs
 and app launches. A disconnected saved device remains selected so you can
 reconnect it or choose a replacement.
 
+For guitar, connect an instrument input on your audio interface. In Audio,
+open **Guitar amp and cabinet**, enable the amp, and set drive, tone, output,
+and cabinet. Enable input and unmute headphone monitoring to hear it; start
+with a low monitor gain. The take is recorded dry. In Arrange's recording
+setup, use **Apply saved amp to track** to save that sound on the selected
+recording track for playback. Edit or bypass the saved amp under **Guitar
+playback sound** in the recording panel;
+changes to monitor settings and the saved track are separate, so reapply if
+you change the monitor sound. The Audio panel shows the effect's extra delay
+separately from device-reported timing; neither is a physical loopback test.
+The amp and three cabinet responses are original Cicada models, not captures
+of commercial equipment; third-party impulse responses and NAM models are
+not supported. The amp adds 31 samples of processing delay in addition to
+device and buffering delays.
+To practice while stopped, open **Takes**, choose an audio track and scene,
+and select **Arm take**. This opens input monitoring without recording; choose
+**Record** to start a take, or **Finish take** to close the armed input.
+
 ## Record and choose takes
 
 In **Arrange → Record vocals**, choose a vocal track or add one. Record over

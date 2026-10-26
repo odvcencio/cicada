@@ -504,7 +504,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		if !onMaster {
 			kindCounts[effect.Kind]++
 		}
-		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" && effect.Kind != "deesser" {
+		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" && effect.Kind != "deesser" && effect.Kind != "ampcab" {
 			add("CICADA-UNSUPPORTED", "effect kind "+effect.Kind+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
@@ -777,7 +777,7 @@ func validateTrackMixer(score *Score, track Track, effects map[string]Effect, na
 				effect, ok := effects[name]
 				if !ok {
 					add("CICADA-REFERENCE", "track references undeclared insert "+name, "error", param.ValuePosition)
-				} else if effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" {
+				} else if effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" && effect.Kind != "ampcab" {
 					add("CICADA-UNSUPPORTED", effect.Kind+" as a track insert is not implemented", "error", param.ValuePosition)
 				}
 			}

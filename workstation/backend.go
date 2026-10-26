@@ -198,6 +198,11 @@ type audioOptions struct {
 	MonitorMuted      bool    `json:"monitorMuted"`
 	MonitorGain       float64 `json:"monitorGain"`
 	MonitorMode       string  `json:"monitorMode"`
+	AmpEnabled        bool    `json:"ampEnabled"`
+	AmpDrive          float64 `json:"ampDrive"`
+	AmpTone           float64 `json:"ampTone"`
+	AmpOutput         float64 `json:"ampOutput"`
+	AmpCabinet        int     `json:"ampCabinet"`
 	RecordingOffsetMS float64 `json:"recordingOffsetMS"`
 	PeriodFrames      int     `json:"periodFrames"`
 }

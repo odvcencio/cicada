@@ -134,3 +134,15 @@ func TestDecision0002HalfbandResponseGate(t *testing.T) {
 		}
 	}
 }
+
+func TestInitReplacesExistingState(t *testing.T) {
+	reference := New()
+	reused := New()
+	for i := 0; i < 100; i++ {
+		reused.Push(float64(i))
+	}
+	Init(&reused)
+	if reused != reference {
+		t.Fatal("in-place initialization differs from a fresh FIR")
+	}
+}

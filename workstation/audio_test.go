@@ -85,7 +85,7 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 				json.NewDecoder(r.Body).Decode(&applied)
 				io.WriteString(w, `{}`)
 			} else {
-				io.WriteString(w, `{"settingsWarning":"Saved audio setup is unreadable. Defaults are in use.","inventory":{"supported":true,"backend":"Tymbal CoreAudio","backendName":"tymbal","host":"coreaudio","devices":[{"id":"mic-live","name":"Webcam microphone","inputs":1,"defaultInput":true},{"id":"speakers-live","name":"Headphones","outputs":2}]},"options":{"inputDevice":"mic-unplugged","outputDevice":"","inputEnabled":true,"monitorMuted":true,"monitorMode":"mono1","monitorGain":0.5,"recordingOffsetMS":17.5,"periodFrames":128},"runtime":{"requestedPeriodFrames":128,"periodFrames":240,"sampleRate":48000,"inputLatencyMs":3,"inputLatencyKnown":true,"outputLatencyMs":4,"outputLatencyKnown":true,"reportedRoundTripMs":7,"reportedRoundTripKnown":true,"audioPriority":"mmcss","deadlineKnown":true,"callbacks":42,"callbackMaxUs":2000,"callbackBudgetPercent":40,"warning":"Device negotiated 240 frames for the requested 128-frame buffer."}}`)
+				io.WriteString(w, `{"settingsWarning":"Saved audio setup is unreadable. Defaults are in use.","inventory":{"supported":true,"backend":"Tymbal CoreAudio","backendName":"tymbal","host":"coreaudio","devices":[{"id":"mic-live","name":"Webcam microphone","inputs":1,"defaultInput":true},{"id":"speakers-live","name":"Headphones","outputs":2}]},"options":{"inputDevice":"mic-unplugged","outputDevice":"","inputEnabled":true,"monitorMuted":true,"monitorMode":"mono1","monitorGain":0.5,"ampEnabled":true,"ampDrive":0.4,"ampTone":0.6,"ampOutput":-3,"ampCabinet":2,"recordingOffsetMS":17.5,"periodFrames":128},"runtime":{"requestedPeriodFrames":128,"periodFrames":240,"sampleRate":48000,"inputLatencyMs":3,"inputLatencyKnown":true,"outputLatencyMs":4,"outputLatencyKnown":true,"reportedRoundTripMs":7,"reportedRoundTripKnown":true,"audioPriority":"mmcss","deadlineKnown":true,"callbacks":42,"callbackMaxUs":2000,"callbackBudgetPercent":40,"warning":"Device negotiated 240 frames for the requested 128-frame buffer."}}`)
 			}
 			return
 		}
@@ -102,7 +102,7 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	page := getPage(t, client, app.URL+"/?panel=audio&returnTo=session&vocalTrack=danilo")
-	for _, want := range []string{"Saved audio setup is unreadable. Defaults are in use.", "New sessions start stopped", "Choose a playback output", "Headphones", "Webcam microphone", "Saved device (disconnected)", "Apply and return to recording", "Back to recording", "Refresh devices", "Audio details", "Buffer size", "Requested buffer", "Granted buffer", "240 frames", "Reported round trip", "7.00 ms", "mmcss", "40.0%", "hardware loopback measurement", "Device negotiated 240 frames", "macOS will ask for microphone access", "Privacy &amp; Security", "allow Cicada Studio"} {
+	for _, want := range []string{"Saved audio setup is unreadable. Defaults are in use.", "New sessions start stopped", "Choose a playback output", "Headphones", "Webcam microphone", "Saved device (disconnected)", "Apply and return to recording", "Guitar amp and cabinet", "Enable guitar amp for monitoring", "Amp output (dB)", "Bright", "Back to recording", "Refresh devices", "Audio details", "Buffer size", "Requested buffer", "Granted buffer", "240 frames", "Reported round trip", "7.00 ms", "mmcss", "40.0%", "hardware loopback measurement", "Device negotiated 240 frames", "macOS will ask for microphone access", "Privacy &amp; Security", "allow Cicada Studio"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("missing audio setup guidance %q", want)
 		}
@@ -110,13 +110,13 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 	if !strings.Contains(page, `value="mic-unplugged" selected`) && !strings.Contains(page, `selected value="mic-unplugged"`) {
 		t.Fatal("unplugged microphone silently became the default")
 	}
-	form := url.Values{"csrf_token": {tokenFromPage(t, page)}, "revision": {"current"}, "inputDevice": {"mic-live"}, "outputDevice": {"speakers-live"}, "inputEnabled": {"on"}, "monitorMuted": {"on"}, "monitorGain": {"0.5"}, "monitorMode": {"mono1"}, "recordingOffsetMS": {"17.5"}, "periodFrames": {"64"}, "__gosx_return_to": {"/?panel=session&vocalTrack=danilo"}}
+	form := url.Values{"csrf_token": {tokenFromPage(t, page)}, "revision": {"current"}, "inputDevice": {"mic-live"}, "outputDevice": {"speakers-live"}, "inputEnabled": {"on"}, "monitorMuted": {"on"}, "monitorGain": {"0.5"}, "monitorMode": {"mono1"}, "recordingOffsetMS": {"17.5"}, "ampEnabled": {"on"}, "ampDrive": {"0.4"}, "ampTone": {"0.6"}, "ampOutput": {"-3"}, "ampCabinet": {"2"}, "periodFrames": {"64"}, "__gosx_return_to": {"/?panel=session&vocalTrack=danilo"}}
 	response, err := client.PostForm(app.URL+"/__actions/audio", form)
 	if err != nil {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != 303 || !strings.Contains(response.Header.Get("Location"), "vocalTrack=danilo") || applied.InputDevice != "mic-live" || applied.OutputDevice != "speakers-live" || !applied.InputEnabled || !applied.MonitorMuted || applied.PeriodFrames != 64 || applied.RecordingOffsetMS != 17.5 {
+	if response.StatusCode != 303 || !strings.Contains(response.Header.Get("Location"), "vocalTrack=danilo") || applied.InputDevice != "mic-live" || applied.OutputDevice != "speakers-live" || !applied.InputEnabled || !applied.MonitorMuted || applied.PeriodFrames != 64 || applied.RecordingOffsetMS != 17.5 || !applied.AmpEnabled || applied.AmpDrive != .4 || applied.AmpTone != .6 || applied.AmpOutput != -3 || applied.AmpCabinet != 2 {
 		t.Fatalf("audio return/settings lost: %d %s %+v", response.StatusCode, response.Header.Get("Location"), applied)
 	}
 	// Enhanced forms must honor the same explicit destination, instead of

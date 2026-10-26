@@ -5,6 +5,7 @@ package kernelimage
 import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/fx/pro"
 )
 
@@ -36,6 +37,12 @@ func writeTrackEffects(w *writer, rate int, specs []engine.TrackEffectConfig) er
 			w.byte(byte(p.Comp.Detect))
 			w.byte(boolByte(p.Comp.MakeupAuto))
 			for _, v := range []float64{p.Comp.Threshold, p.Comp.Ratio, p.Comp.Knee, p.Comp.AttackMs, p.Comp.ReleaseMs, p.Comp.MakeupDB, p.Comp.Mix} {
+				w.f64(v)
+			}
+		case engine.TrackEffectAmpCab:
+			w.byte(byte(p.AmpCab.Cabinet))
+			w.byte(boolByte(p.AmpCab.Bypass))
+			for _, v := range []float64{p.AmpCab.Drive, p.AmpCab.Tone, p.AmpCab.Output} {
 				w.f64(v)
 			}
 		case engine.TrackEffectDeesser:
@@ -96,6 +103,17 @@ func readTrackEffects(r *reader, rate int) ([]engine.TrackEffectConfig, error) {
 			}
 			p.Comp = &fx.CompParams{Detect: fx.CompDetector(detect), MakeupAuto: auto == 1}
 			values = []*float64{&p.Comp.Threshold, &p.Comp.Ratio, &p.Comp.Knee, &p.Comp.AttackMs, &p.Comp.ReleaseMs, &p.Comp.MakeupDB, &p.Comp.Mix}
+		case engine.TrackEffectAmpCab:
+			cabinet, err := r.byte()
+			if err != nil {
+				return nil, err
+			}
+			bypass, err := r.byte()
+			if err != nil || bypass > 1 {
+				return nil, imageError("invalid amp bypass")
+			}
+			p.AmpCab = &ampcab.Params{Cabinet: int(cabinet), Bypass: bypass == 1}
+			values = []*float64{&p.AmpCab.Drive, &p.AmpCab.Tone, &p.AmpCab.Output}
 		case engine.TrackEffectDeesser:
 			p.Deesser = &fx.DeesserParams{}
 			values = []*float64{&p.Deesser.FrequencyHz, &p.Deesser.ThresholdDB, &p.Deesser.Ratio, &p.Deesser.RangeDB, &p.Deesser.AttackMs, &p.Deesser.ReleaseMs, &p.Deesser.Mix}

@@ -51,6 +51,7 @@ func (s *studioApp) takes(ctx *server.Context, v workspace, csrf string) gosx.No
 	}
 	recording := state.Capture != nil && state.Capture.Recording
 	controls := s.form(v, csrf, "takes", "take", field("Audio track", selectInput("track", "", tracks)), field("Scene", selectInput("scene", "", scenes)), button("arm", "Arm take", state.Active != "" || len(tracks) == 0), button("start", "Record", state.Active == "" || recording), button("stop", "Finish take", state.Active == ""))
+	practice := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Arm take opens the input for monitoring while stopped; recording begins only when you press Record. Enable input and unmute monitoring in Audio first. Finish take closes the armed input."))
 	var rows []gosx.Node
 	selected := ctx.Request.URL.Query().Get("take")
 	var audition gosx.Node = gosx.Fragment()
@@ -98,5 +99,5 @@ func (s *studioApp) takes(ctx *server.Context, v workspace, csrf string) gosx.No
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "projection": fmt.Sprintf("%x", sha256.Sum256(projection)), "take": selected, "audition": ctx.Request.URL.RawQuery, "hasAudioTracks": len(tracks) > 0})
 	content := gosx.Fragment(controls, gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), audition, gosx.El("ul", gosx.Attrs(gosx.Attr("class", "take-list")), gosx.Fragment(rows...)))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaTakes", Kind: engine.KindSurface, MountID: "cicada-takes", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapAudio}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return gosx.Fragment(s.transcription(ctx, v, csrf), ui.Panel(ui.PanelProps{ID: "takes", Title: "Recorded takes", Description: "Tymbal records the selected native input with a one-bar count-in. Completed takes are saved through the durable journal."}, surface), s.audioClips(ctx, v, csrf))
+	return gosx.Fragment(s.transcription(ctx, v, csrf), ui.Panel(ui.PanelProps{ID: "takes", Title: "Recorded takes", Description: "Tymbal records the selected native input with a one-bar count-in. Completed takes are saved through the durable journal."}, practice, surface), s.audioClips(ctx, v, csrf))
 }

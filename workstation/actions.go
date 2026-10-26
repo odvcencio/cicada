@@ -386,6 +386,29 @@ func (s *studioApp) actions() map[string]action.Handler {
 		}),
 		"mixer": s.mutation("/api/mixer", func(f map[string]string) (any, error) {
 			p := edit(f)
+			if f["action"] == "amp-chain" {
+				if f["track"] == "" {
+					return nil, fmt.Errorf("choose a recording track")
+				}
+				p["action"], p["track"] = "amp-chain", f["track"]
+				p["source_revision"] = f["source_revision"]
+				for _, setting := range []struct {
+					key      string
+					min, max float64
+				}{{"ampDrive", 0, 1}, {"ampTone", 0, 1}, {"ampOutput", -24, 12}} {
+					value, err := finiteNumber(f, setting.key)
+					if err != nil || value < setting.min || value > setting.max {
+						return nil, fmt.Errorf("invalid guitar amp setting %s", setting.key)
+					}
+					p[setting.key] = value
+				}
+				cab, err := integer(f, "ampCabinet")
+				if err != nil || cab < 0 || cab > 2 {
+					return nil, fmt.Errorf("choose a guitar cabinet")
+				}
+				p["ampCabinet"] = cab
+				return p, nil
+			}
 			if f["action"] == "vocal-chain" {
 				p["action"], p["track"], p["confirmUpgrade"] = "vocal-chain", f["track"], f["confirmUpgrade"] == "on"
 				return p, nil
@@ -428,6 +451,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 				return p, nil
 			}
 			p["confirmUpgrade"] = f["confirmUpgrade"] == "on"
+			p["source_revision"] = f["source_revision"]
 			p["path"] = f["path"]
 			var value any
 			switch f["valueType"] {
@@ -525,6 +549,30 @@ func (s *studioApp) actions() map[string]action.Handler {
 			if e != nil {
 				return nil, fmt.Errorf("monitor gain must be a number")
 			}
+			amp := audioOptions{AmpDrive: .35, AmpTone: .5}
+			for _, setting := range []struct {
+				key      string
+				dst      *float64
+				min, max float64
+			}{
+				{"ampDrive", &amp.AmpDrive, 0, 1}, {"ampTone", &amp.AmpTone, 0, 1}, {"ampOutput", &amp.AmpOutput, -24, 12},
+			} {
+				if f[setting.key] == "" {
+					continue
+				}
+				value, err := finiteNumber(f, setting.key)
+				if err != nil || value < setting.min || value > setting.max {
+					return nil, fmt.Errorf("invalid guitar amp setting %s", setting.key)
+				}
+				*setting.dst = value
+			}
+			if f["ampCabinet"] != "" {
+				cab, err := integer(f, "ampCabinet")
+				if err != nil || cab < 0 || cab > 2 {
+					return nil, fmt.Errorf("choose a guitar cabinet")
+				}
+				amp.AmpCabinet = cab
+			}
 			offset := 0.
 			if f["recordingOffsetMS"] != "" {
 				var err error
@@ -533,7 +581,10 @@ func (s *studioApp) actions() map[string]action.Handler {
 					return nil, fmt.Errorf("recording timing correction must be −500 to +500 ms")
 				}
 			}
-			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"], RecordingOffsetMS: offset, PeriodFrames: period}, nil
+			amp.InputDevice, amp.OutputDevice, amp.InputEnabled = f["inputDevice"], f["outputDevice"], f["inputEnabled"] == "on"
+			amp.MonitorMuted, amp.MonitorGain, amp.MonitorMode = f["monitorMuted"] == "on", gain, f["monitorMode"]
+			amp.AmpEnabled, amp.RecordingOffsetMS, amp.PeriodFrames = f["ampEnabled"] == "on", offset, period
+			return amp, nil
 		}),
 		"export-stems": s.mutation("/api/export/stems", func(f map[string]string) (any, error) {
 			if f["source_revision"] == "" {

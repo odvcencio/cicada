@@ -12,6 +12,7 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 )
 
 var studioMutedMonitor = studioAudioMonitor{Muted: true}
@@ -29,6 +30,7 @@ func defaultStudioAudioOptionsForOS(name audiobackend.Name, goos string) studioA
 		InputEnabled: goos == "windows" && name == audiobackend.Tymbal,
 		MonitorMuted: true, MonitorGain: 0.5, MonitorMode: "stereo",
 		PeriodFrames: liveBlockFrames,
+		AmpDrive:     .35, AmpTone: .5,
 	}
 }
 
@@ -161,6 +163,13 @@ func openStudioAudioBackend(source io.Reader, options studioAudioOptions, backen
 	}
 	session.engineEpoch = studioEngineEpoch.Add(1)
 	monitor := studioMonitorOptions(options)
+	{
+		var err error
+		monitor.amp, err = ampcab.New(sampleRate, studioAmpParams(monitor))
+		if err != nil && monitor.AmpEnabled {
+			return nil, fmt.Errorf("amp monitor: %w", err)
+		}
+	}
 	session.monitorState.Store(&monitor)
 	config := audiobackend.Config{
 		SampleRate: sampleRate, Channels: 2, FramesPerPeriod: options.PeriodFrames,
@@ -174,6 +183,14 @@ func openStudioAudioBackend(source io.Reader, options studioAudioOptions, backen
 	}
 	session.stream = stream
 	session.actual = stream.Format()
+	if monitor.AmpEnabled && session.actual.SampleRate != sampleRate {
+		_ = stream.Close()
+		return nil, fmt.Errorf("amp monitor needs the requested %d Hz; device granted %d Hz", sampleRate, session.actual.SampleRate)
+	}
+	if !monitor.AmpEnabled && session.actual.SampleRate != sampleRate {
+		monitor.amp, _ = ampcab.New(session.actual.SampleRate, studioAmpParams(monitor))
+		session.monitorState.Store(&monitor)
+	}
 	session.pcm = make([]byte, session.actual.FramesPerPeriod*8)
 	if session.actual.Device != "" {
 		session.outputName = session.actual.Device
@@ -219,6 +236,7 @@ type backendStudioAudio struct {
 	lifeMu                sync.Mutex // control side only
 	active                bool
 	armed                 atomic.Pointer[capture.Recorder]
+	captureChannel        atomic.Uint32 // 0 = device layout; 1/2 = selected mono
 	source                atomic.Pointer[studioRenderSource]
 	rendering             atomic.Int64
 	engineEpoch           uint64 // callback owned
@@ -256,7 +274,16 @@ func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
 	a.periodCapture = a.armed.Load()
 	b.EngineEpoch, b.EngineFrame = a.engineEpoch, a.engineFrame
 	if a.periodCapture != nil && a.periodPlaying {
-		a.periodCapture.Capture(b, input)
+		// Keep the selected instrument input dry. A mono selection is duplicated
+		// in the retained stereo take so its reamp matches the monitored source.
+		mode := a.captureChannel.Load()
+		if mode > 0 && len(input) >= 2 {
+			ch := int(mode - 1)
+			selected := [2][]float32{input[ch], input[ch]}
+			a.periodCapture.Capture(b, selected[:])
+		} else {
+			a.periodCapture.Capture(b, input)
+		}
 	}
 }
 
@@ -287,6 +314,11 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	monitor := a.monitorState.Load()
 	if monitor == nil {
 		monitor = &studioMutedMonitor
+	}
+	if monitor.amp != nil {
+		// The callback exclusively owns processor state; control changes arrive
+		// as immutable snapshots and the processor smooths its parameters.
+		_ = monitor.amp.SetParams(studioAmpParams(*monitor))
 	}
 	if !playing {
 		clearStudioAudioOutput(output)
@@ -396,6 +428,19 @@ func (a *backendStudioAudio) ArmCapture(recorder *capture.Recorder) error {
 	if err := a.Err(); err != nil {
 		return err
 	}
+	channel := uint32(0)
+	if m := a.monitorState.Load(); m != nil && m.AmpEnabled {
+		switch m.Mode {
+		case "mono1":
+			channel = 1
+		case "mono2":
+			channel = 2
+		}
+	}
+	if channel == 2 && a.actual.CaptureChannels < 2 {
+		return fmt.Errorf("instrument input 2 is unavailable on this device")
+	}
+	a.captureChannel.Store(channel)
 	a.armed.Store(recorder)
 	if err := a.startDevice(); err != nil {
 		a.armed.Store(nil)
@@ -478,8 +523,18 @@ func (a *backendStudioAudio) SetMonitor(monitor studioAudioMonitor) {
 	if a == nil {
 		return
 	}
+	previous := a.monitorState.Load()
+	if previous != nil && previous.amp != nil {
+		monitor.amp = previous.amp
+	} else {
+		monitor.amp, _ = ampcab.New(a.actual.SampleRate, studioAmpParams(monitor))
+	}
 	copy := monitor
 	a.monitorState.Store(&copy)
+}
+
+func studioAmpParams(m studioAudioMonitor) ampcab.Params {
+	return ampcab.Params{Drive: float64(m.AmpDrive), Tone: float64(m.AmpTone), Output: float64(m.AmpOutput), Cabinet: m.AmpCabinet, Bypass: !m.AmpEnabled}
 }
 
 func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
@@ -497,6 +552,9 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 		InputPeakL: math.Float32frombits(a.inputPeakL.Load()), InputPeakR: math.Float32frombits(a.inputPeakR.Load()),
 		InputHeldL: math.Float32frombits(a.inputHeldL.Load()), InputHeldR: math.Float32frombits(a.inputHeldR.Load()), InputSession: a.inputSession.Load(),
 		OutputPeakL: math.Float32frombits(a.outputPeakL.Load()), OutputPeakR: math.Float32frombits(a.outputPeakR.Load()),
+	}
+	if m := a.monitorState.Load(); m != nil && m.amp != nil && !a.rawOutput && a.actual.CaptureChannels > 0 {
+		snapshot.MonitorFXLatencyFrames = ampcab.Latency
 	}
 	if a.stream != nil {
 		format := a.stream.Format()

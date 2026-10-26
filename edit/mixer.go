@@ -841,6 +841,29 @@ func topLevelAppendOffset(source []byte, root *gts.Node, walker *walk.Walker) in
 }
 
 func mixerFXDescriptor(kind, field string) (paramdefs.Descriptor, bool) {
+	if kind == "ampcab" {
+		d := paramdefs.Descriptor{Source: field, DisplayStep: 0.01}
+		switch field {
+		case "drive", "tone":
+			d.Min = 0
+			d.Max = 1
+		case "output":
+			d.Min = -24
+			d.Max = 12
+			d.Unit = "dB"
+			d.DisplayStep = 0.1
+		case "cabinet":
+			d.Min = 0
+			d.Max = 2
+			d.DisplayStep = 1
+		case "bypass":
+			d.Curve = "toggle"
+		default:
+			return paramdefs.Descriptor{}, false
+		}
+		return d, true
+	}
+
 	for _, descriptor := range paramdefs.Registry {
 		if descriptor.Scope == "global" && strings.HasPrefix(descriptor.ID, "fx."+kind+".") && strings.TrimPrefix(descriptor.Path, kind+".") == field {
 			return descriptor, true
@@ -904,7 +927,7 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 }
 
 func knownMixerEffectKind(kind string) bool {
-	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser"
+	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser" || kind == "ampcab"
 }
 
 func ValidMixerIdentifier(name string) bool {

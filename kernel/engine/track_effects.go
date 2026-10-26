@@ -2,6 +2,7 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/fx/pro"
 	"math"
 )
@@ -15,6 +16,7 @@ const (
 	TrackEffectEQ
 	TrackEffectComp
 	TrackEffectDeesser
+	TrackEffectAmpCab
 )
 
 // TrackEffectConfig is copied into independent, bounded audio-thread state.
@@ -25,11 +27,12 @@ type TrackEffectConfig struct {
 	EQ      *pro.Band         `json:",omitempty"`
 	Comp    *fx.CompParams    `json:",omitempty"`
 	Deesser *fx.DeesserParams `json:",omitempty"`
+	AmpCab  *ampcab.Params    `json:",omitempty"`
 }
 
 func (p TrackEffectConfig) Validate(rate int) error {
 	count := 0
-	for _, present := range []bool{p.Drive != nil, p.EQ != nil, p.Comp != nil, p.Deesser != nil} {
+	for _, present := range []bool{p.Drive != nil, p.EQ != nil, p.Comp != nil, p.Deesser != nil, p.AmpCab != nil} {
 		if present {
 			count++
 		}
@@ -58,6 +61,10 @@ func (p TrackEffectConfig) Validate(rate int) error {
 		if p.Deesser != nil {
 			return p.Deesser.Validate()
 		}
+	case TrackEffectAmpCab:
+		if p.AmpCab != nil {
+			return p.AmpCab.Validate()
+		}
 	}
 	return engineError("track effect kind and parameters do not match")
 }
@@ -70,6 +77,9 @@ func trackInsertLatency(p *TrackConfig) int {
 	for _, s := range p.InsertChain {
 		if s.Kind == TrackEffectDrive {
 			n += fx.DriveLatencyFrames
+		}
+		if s.Kind == TrackEffectAmpCab {
+			n += ampcab.Latency
 		}
 	}
 	return n

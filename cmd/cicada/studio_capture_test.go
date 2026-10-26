@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 )
 
 type simulatedCaptureStream struct {
@@ -214,18 +215,35 @@ func TestCaptureCountInSplitsDevicePeriodAndRetainsRaw(t *testing.T) {
 func TestCaptureTapsRawBeforeMonitoring(t *testing.T) {
 	a, _ := simulatedCaptureAudio(8, zeroAudioSource{})
 	a.SetMonitor(studioAudioMonitor{Gain: 0.5, Mode: "stereo"})
-	var raw float32
-	r, _ := capture.NewRecorder(4, 8, 2, func(_ capture.RecordedBlock, in [][]float32) error { raw = in[0][0]; return nil })
+	var raw []float32
+	r, _ := capture.NewRecorder(16, 8, 2, func(_ capture.RecordedBlock, in [][]float32) error { raw = append(raw, in[0]...); return nil })
 	a.ArmCapture(r)
 	c, _ := capture.NewCountIn(48000, 120000, 0)
 	r.Begin(c, capture.Calibration{})
 	a.Play()
 	in, out := [][]float32{{0.75, 0, 0, 0, 0, 0, 0, 0}, make([]float32, 8)}, [][]float32{make([]float32, 8), make([]float32, 8)}
-	simulatedCapturePeriod(t, a, 0, in, out)
+	var monitored []float32
+	for frame := 0; frame < 40; frame += 8 {
+		simulatedCapturePeriod(t, a, uint64(frame), in, out)
+		monitored = append(monitored, out[0]...)
+		clear(in[0])
+	}
 	a.Pause()
 	a.DisarmCapture()
-	if raw != 0.75 || out[0][0] != 0.375 {
-		t.Fatalf("raw %g, monitored %g", raw, out[0][0])
+	if len(raw) != 40 || len(monitored) != 40 {
+		t.Fatalf("lost capture or monitor frames: %d / %d", len(raw), len(monitored))
+	}
+	for i := range raw {
+		wantRaw, wantMonitor := float32(0), float32(0)
+		if i == 0 {
+			wantRaw = .75
+		}
+		if i == ampcab.Latency {
+			wantMonitor = .375
+		}
+		if raw[i] != wantRaw || monitored[i] != wantMonitor {
+			t.Fatalf("frame %d: raw %g (want %g), monitored %g (want %g)", i, raw[i], wantRaw, monitored[i], wantMonitor)
+		}
 	}
 }
 
