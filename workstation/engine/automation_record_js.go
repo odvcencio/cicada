@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,9 +33,16 @@ type curveRecordingUI struct {
 	pending              *float64
 	saving               bool
 	awaitingRefresh      bool
+	refreshUncertain     bool
 	jobs                 chan string
 	historyButtons       []historyButtonState
 }
+
+// A structured validation/conflict response is a rejection candidate. A
+// timeout, lost response or server failure can arrive after a commit.
+type automationActionRejected struct{ message string }
+
+func (e *automationActionRejected) Error() string { return e.message }
 
 type historyButtonState struct {
 	button   js.Value
@@ -169,6 +177,9 @@ func (r *curveRecordingUI) post(command string, number float64) error {
 		if result.Message == "" {
 			result.Message = "Automation action failed"
 		}
+		if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusUnprocessableEntity {
+			return &automationActionRejected{message: result.Message}
+		}
 		return fmt.Errorf("%s", result.Message)
 	}
 	return nil
@@ -208,6 +219,11 @@ func (r *curveRecordingUI) run() {
 		case <-r.ctx.Done():
 			return
 		case command := <-r.jobs:
+			keepVersion := confirmedWorkspaceVersion.Get()
+			keepID := ""
+			if command == "keep" && r.take != nil {
+				keepID = r.take.ID
+			}
 			if command == "keep" && r.pending != nil {
 				v := *r.pending
 				r.pending = nil
@@ -226,7 +242,21 @@ func (r *curveRecordingUI) run() {
 			r.saving = false
 			r.refresh()
 			if err != nil {
-				r.unlockHistory()
+				var rejected *automationActionRejected
+				var state struct {
+					Revision string `json:"revision"`
+				}
+				var retained struct {
+					Recording *recordedCurve `json:"recording"`
+				}
+				verified := command == "keep" && keepVersion.Revision != "" && keepID != "" && readNativeProjection(r.ctx, "/api/state", &state) && state.Revision == keepVersion.Revision && readNativeProjection(r.ctx, "/api/automation/recording", &retained) && retained.Recording != nil && retained.Recording.ID == keepID
+				unchanged := verified && errors.As(err, &rejected)
+				if command != "keep" || unchanged {
+					r.unlockHistory()
+				} else {
+					r.awaitingRefresh = true
+					r.refreshUncertain = true
+				}
 				r.errorMessage = err.Error()
 				r.draw()
 			} else if command == "keep" {
@@ -323,6 +353,9 @@ func (r *curveRecordingUI) draw() {
 	}
 	if r.awaitingRefresh {
 		message = "Curve kept. Waiting for refreshed controls. If they do not update, save or copy any unsaved edits and reload Studio."
+		if r.refreshUncertain {
+			message = "Could not confirm whether the curve was kept. Save or copy any unsaved edits and reload Studio before using Undo or Redo."
+		}
 	}
 	state := "idle"
 	if r.take != nil {
