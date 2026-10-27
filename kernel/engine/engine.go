@@ -1618,6 +1618,10 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			return
 		}
 		switch kernel.ParamID(c.Index) {
+		case kernel.ParamAmpDrive, kernel.ParamAmpTone, kernel.ParamAmpOutput:
+			if v.chain.setAmpParam(kernel.ParamID(c.Index), value, immediate) != nil {
+				e.fault(FaultParam)
+			}
 		case kernel.ParamMixGain:
 			positioned := &e.spatial.tracks[c.Track]
 			positioned.target = float32(math.Pow(10, float64(value)/20))

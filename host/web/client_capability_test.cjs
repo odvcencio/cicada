@@ -39,7 +39,7 @@ function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8'), context);
   const client = context.window.cicadaBrowserAudio;
   client.onError(error => stats.errors.push(error));
-  return { client, stats, setImage: (version, bpm = 140000) => { nextImage = image(version, bpm); nextRevision = 'edited'; } };
+  return { client, stats, setImage: (version, bpm = 140000, required = 0) => { nextImage = image(version, bpm); new DataView(nextImage).setUint16(30, required, true); nextRevision = 'edited'; } };
 }
 async function start(harness) {
   let outcome;
@@ -102,6 +102,12 @@ async function start(harness) {
   }
   assert.throws(() => legacy.client.sendCommands([{ op: 1 }, { op: 26 }]), /spatial/);
   assert.equal(legacy.stats.posted.length, before);
+  const oldTrackFX = setup(13, { t: 'r', p: 2048, c: true });
+  assert.ok((await start(oldTrackFX)).result);
+  oldTrackFX.setImage(13, 140000, 2048 | 4096);
+  const ampPosts = oldTrackFX.stats.posted.filter(item => item.t === 'i').length;
+  await assert.rejects(oldTrackFX.client.stageCurrentScore('edited'), /Amp automation requires an updated audio kernel/);
+  assert.equal(oldTrackFX.stats.posted.filter(item => item.t === 'i').length, ampPosts, 'unnegotiated amp image reached old kernel');
   const spatial = setup(15, { t: 'r', p: 197119, r: 'initial', c: true });
   assert.ok((await start(spatial)).result);
   spatial.client.sendCommands([{ op: 26, track: 0, index: 1, arg0: 0x3f800000, pad: 0x3f000000 }]);

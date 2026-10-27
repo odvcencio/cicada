@@ -3423,5 +3423,77 @@
     "automatable": true,
     "persist": "source",
     "type": "number"
+  },
+  {
+    "id": "amp.drive",
+    "path": "amp_drive",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument",
+      "piano",
+      "guitar"
+    ],
+    "source": "amp_drive",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0.35,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "amp.tone",
+    "path": "amp_tone",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument",
+      "piano",
+      "guitar"
+    ],
+    "source": "amp_tone",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0.5,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "amp.output",
+    "path": "amp_output",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument",
+      "piano",
+      "guitar"
+    ],
+    "source": "amp_output",
+    "unit": "dB",
+    "min": -24,
+    "max": 12,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.1,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
   }
 ]

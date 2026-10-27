@@ -7,6 +7,7 @@
     const version = bytes[4] | bytes[5] << 8;
     if (version === 14) throw new Error('Ambiguous development image14; recompile source for unified image15');
     if (![8, 9, 10, 11, 12, 13, 15, 16, 17, 18].includes(version)) throw new Error(`Unsupported image version ${version}`);
+    if (version>=13 && capabilities!==undefined && (new DataView(image).getUint16(30,true)&4096) && !(capabilities&4096)) throw new Error("Amp automation requires an updated audio kernel");
     if (version>=13 && capabilities!==undefined && (new DataView(image).getUint16(30,true)&2048) && !(capabilities&2048)) throw new Error("Track inserts require the vocal audio module; update the audio kernel");
     if (version >= 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
     if (version >= 16 && capabilities !== undefined && !(capabilities & CapabilityPerformance)) throw new Error('Played timing requires CapabilityPerformance (bit18); update the audio kernel');

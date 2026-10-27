@@ -10,21 +10,25 @@ import (
 // PreviewParamValidator holds detached validation context for prepared drums.
 // Other track controls use the registry's float32 bounds directly.
 type PreviewParamValidator struct {
-	drums   bool
-	targets [drum.LaneCount]drum.Params
-	lanes   [drum.LaneCount]drum.LiveParamValidator
+	drums    bool
+	ampValid bool
+	targets  [drum.LaneCount]drum.Params
+	lanes    [drum.LaneCount]drum.LiveParamValidator
 }
 
 // PreviewParamValidator must be captured before the engine starts rendering.
 // Hosts may then validate previews without reading the playing engine.
 func (e *Engine) PreviewParamValidator(track int) PreviewParamValidator {
 	var validator PreviewParamValidator
-	if track < 0 || track >= e.tracks || e.voices[track].drums == nil {
+	if track < 0 || track >= e.tracks {
 		return validator
 	}
 	v := &e.voices[track]
-	validator = preparedDrumParamValidator(v.drums)
-	validator.targets = v.drumTargets
+	if v.drums != nil {
+		validator = preparedDrumParamValidator(v.drums)
+		validator.targets = v.drumTargets
+	}
+	validator.ampValid = v.chain.hasAmp()
 	return validator
 }
 
@@ -37,6 +41,14 @@ func PrepareParamValidators(cfg *Config) ([MaxTracks]PreviewParamValidator, erro
 		return validators, engineError("parameter validation track count is out of range")
 	}
 	for track := 0; track < cfg.Tracks; track++ {
+		spec := &cfg.Track[track]
+		count := 0
+		for _, stage := range spec.InsertChain {
+			if stage.Kind == TrackEffectAmpCab {
+				count++
+			}
+		}
+		validators[track].ampValid = count == 1
 		if cfg.Track[track].Kind != VoiceDrums {
 			continue
 		}
@@ -76,6 +88,10 @@ func (v *PreviewParamValidator) Validate(id kernel.ParamID, value float32) error
 	if kernel.IsInteger(id) && value != float32(int32(value)) {
 		return engineError("parameter must be a whole number")
 	}
+	if id >= kernel.ParamAmpDrive && id <= kernel.ParamAmpOutput && !v.ampValid {
+		return engineError("amp controls require exactly one amp insert")
+	}
+
 	lane, control, ok := drumParamControl(id)
 	if !ok {
 		return nil

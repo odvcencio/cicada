@@ -97,6 +97,14 @@ func previewRestoreSource(fixture previewRestoreFixture, descriptor paramdefs.De
 		source = "send reverb"
 	}
 	body := source + "=" + authoredPreviewRestoreValue(descriptor, value)
+	ampDefinition := ""
+	if strings.HasPrefix(descriptor.ID, "amp.") {
+		// Amp controls are track-owned automation targets backed by one named
+		// insert, not synthesis fields authored directly on the track.
+		field := strings.TrimPrefix(descriptor.ID, "amp.")
+		ampDefinition = "fx ampfx ampcab { " + field + "=" + authoredPreviewRestoreValue(descriptor, value) + " }\n"
+		body = "insert=ampfx"
+	}
 	sceneSetting := ""
 	if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
 		body = "" // Named-kit synthesis settings are authored on the scene.
@@ -113,7 +121,7 @@ func previewRestoreSource(fixture previewRestoreFixture, descriptor paramdefs.De
 		witness = "instrument witness { voice mono { out=sine(pitch)*env(gate,80ms) } }\ntrack other witness {}\npattern second notes { step=1/64 gate=25% g5 . }\n"
 		scene += " other=second"
 	}
-	return "cicada 2\ntempo 120\nseed 17\nfx delay delay { time=5ms feedback=0 }\nfx reverb reverb { predelay=0ms size=0.5 }\n" + fixture.declaration + "\ntrack bass " + fixture.kind + " {" + body + "}\n" + pattern + "\n" + witness + "scene main { " + scene + " }\nsong { main }\n"
+	return "cicada 2\ntempo 120\nseed 17\nfx delay delay { time=5ms feedback=0 }\nfx reverb reverb { predelay=0ms size=0.5 }\n" + ampDefinition + fixture.declaration + "\ntrack bass " + fixture.kind + " {" + body + "}\n" + pattern + "\n" + witness + "scene main { " + scene + " }\nsong { main }\n"
 }
 
 func TestPreviewCompiledParameterLifecycleMatrix(t *testing.T) {

@@ -43,7 +43,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         const query = x.capabilities;
         if (query !== undefined && typeof query !== 'function') invalid('Invalid capability');
         const capability = query ? query() : 0;
-        if ((capability & 0x7fefff) !== capability) invalid('Invalid capabilities');
+        if ((capability & 0x7fffff) !== capability) invalid('Invalid capabilities');
         // Required feature bits for image versions 15 through 18. Initialization
         // may allocate these small tables; render callbacks never enter this path.
         for (let index = 0; index <= version - 15; index++) {

@@ -71,6 +71,13 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		if !workspacePresent(target) || target.Get("closest").Type() != js.TypeFunction {
 			return nil
 		}
+		// Managed navigation retains the shell controller, so an explicit URL
+		// alone does not switch the existing dock signal. Reveal Automation
+		// before following the catalog-selected amp curve link.
+		if workspacePresent(target.Call("closest", "[data-amp-automation-link]")) {
+			_ = host.SetSignal("$dock", "automation")
+			return nil
+		}
 		// Native fragment navigation emits popstate in WebKit and Chromium.
 		// The navigation host can still remember the URL from before a local
 		// tab switch and mistake that fragment for a different page. Reveal

@@ -119,6 +119,20 @@ func (r *curveRecordingUI) refresh() {
 		Recording *recordedCurve `json:"recording"`
 	}
 	if readNativeProjection(r.ctx, "/api/automation/recording", &state) && r.ctx.Err() == nil {
+		// Seed once from the authoritative grid-aligned start of a new pass.
+		// Never overwrite a movement while later polling updates arrive.
+		previousID := ""
+		if r.take != nil {
+			previousID = r.take.ID
+		}
+		if state.Recording != nil {
+			value, seed := recordingSeed(previousID, state.Recording.ID, state.Recording.Path, r.editor.props.Path, state.Recording.Active, r.pending != nil, state.Recording.Points)
+			if seed {
+				r.slider.Set("value", strconv.FormatFloat(value, 'f', -1, 64))
+				r.slider.Call("setAttribute", "aria-valuetext", fmt.Sprintf("%g%s", value, r.editor.props.Unit))
+				r.form.Call("querySelector", "[data-automation-record-readout]").Set("textContent", fmt.Sprintf("%.3g%s", value, r.editor.props.Unit))
+			}
+		}
 		r.take = state.Recording
 	}
 	r.draw()

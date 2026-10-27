@@ -33,6 +33,8 @@ type sceneTrackParameters struct {
 	drums                     [drum.LaneCount]drum.Params
 	guitar                    guitar.Params
 	drive                     fx.DriveParams
+	amp                       [3]float64
+	hasAmp                    bool
 }
 
 func (e *Engine) captureSceneDefaults() {
@@ -70,6 +72,7 @@ func (e *Engine) captureSceneDefaults() {
 		if v.insert != nil {
 			p.drive = v.insert.Params()
 		}
+		p.amp, p.hasAmp = v.chain.ampControls()
 	}
 	if e.delayA != nil {
 		e.sceneDefaults.delay = e.delayA.Params()
@@ -172,6 +175,9 @@ func (e *Engine) restoreVoiceState(v *voiceSlot, p *sceneTrackParameters) bool {
 	}
 	failed = failed || v.guitar != nil && v.guitar.SetParams(p.guitar) != nil || v.acid != nil && v.acid.SetParams(p.acid) != nil ||
 		v.insert != nil && v.insert.SetParams(p.drive) != nil
+	if p.hasAmp {
+		failed = failed || v.chain.setAmpControls(p.amp, true) != nil
+	}
 	if v.drums != nil {
 		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 			failed = failed || v.drums.SetParams(lane, p.drums[lane]) != nil

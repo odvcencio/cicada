@@ -113,7 +113,9 @@ async function setup(asset, capture, version, capability, options = {}) {
     const shared = await setup(asset,capture,18,65536|262144|524288|2097152);
     assert.ok(shared.messages.some(m=>m.t==='r' && (m.p&2097152)));
 
-    for (const capability of [undefined, -1, 1.5, NaN, Infinity, 4096, 0x100000000]) {
+    const amp = await setup(asset, capture, 13, 4096);
+    assert.ok(amp.messages.some(m => m.t === 'r' && m.p === 4096));
+    for (const capability of [undefined, -1, 1.5, NaN, Infinity, 8388608, 0x100000000]) {
       const malformed = await setup(asset, capture, 13, capability);
       assert.match(malformed.messages.find(m => m.t === 'e')?.e || '', /Invalid capabilities/);
       assert.equal(malformed.counts.projectAllocs, 0);

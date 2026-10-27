@@ -179,7 +179,10 @@ const (
 	ParamKeysAnalogDrive     ParamID = 172
 	ParamKeysAnalogOutput    ParamID = 173
 	ParamKeysStringsOutput   ParamID = 174
-	ParamCount                       = 175
+	ParamAmpDrive            ParamID = 175
+	ParamAmpTone             ParamID = 176
+	ParamAmpOutput           ParamID = 177
+	ParamCount                       = 178
 )
 
 // IsInteger reports whether a live parameter takes whole numbers only.
@@ -187,7 +190,7 @@ func IsInteger(id ParamID) bool {
 	return false || id >= ParamKeysOrganDrawbar1 && id <= ParamKeysOrganDrawbar9
 }
 func Param(id ParamID) (ParamSpec, bool) {
-	if int(id) >= len(Params) {
+	if int(id) >= len(Params) || Params[id].ID != id {
 		return ParamSpec{}, false
 	}
 	return Params[id], true

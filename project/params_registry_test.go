@@ -37,7 +37,7 @@ func TestParameterRegistryGeneratedFilesAreCurrent(t *testing.T) {
 	if string(gotKernel) != string(wantKernel) {
 		t.Fatal("kernel/params_table.go is stale; run go run ./cmd/paramgen")
 	}
-	for file, generate := range map[string]func() ([]byte, error){"params_keys.go": paramdefs.GenerateKernelKeys, "params_core.go": paramdefs.GenerateKernelCore} {
+	for file, generate := range map[string]func() ([]byte, error){"params_keys.go": paramdefs.GenerateKernelKeys, "params_core.go": paramdefs.GenerateKernelCore, "params_trackfx.go": paramdefs.GenerateKernelTrackFX} {
 		want, err := generate()
 		if err != nil {
 			t.Fatal(err)
@@ -149,6 +149,10 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 	value := Value{Unit: unit, Number: &numberValue}
 	values := map[string]Value{descriptor.Source: value}
 	switch {
+	case strings.HasPrefix(descriptor.ID, "amp."):
+		values = map[string]Value{strings.TrimPrefix(descriptor.Source, "amp_"): value}
+		_, err := AmpCabParamsFromValues(values)
+		return err == nil
 	case strings.HasPrefix(descriptor.ID, "keys."):
 		_, err := KeysSpecFromValues(sceneRegistryKeysPatch(descriptor), values)
 		return err == nil

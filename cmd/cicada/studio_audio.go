@@ -453,7 +453,8 @@ func (s *studio) applyProjectControlPreview(p *project.Project, message audioCli
 	if stream == nil {
 		return fmt.Errorf("audio transport is not running")
 	}
-	if trackName != "" {
+	ampTrackParam := message.Type == "param" && trackName != "" && (id == kernel.ParamAmpDrive || id == kernel.ParamAmpTone || id == kernel.ParamAmpOutput)
+	if trackName != "" && !ampTrackParam {
 		var ok bool
 		track, ok = stream.TrackIndex(trackName)
 		if !ok {
@@ -466,7 +467,15 @@ func (s *studio) applyProjectControlPreview(p *project.Project, message audioCli
 	if message.Type == "solo" {
 		return stream.SetSolo(track, *message.On)
 	}
-	version, err := stream.SetPreview(track, id, value)
+	var version uint64
+	var err error
+	if ampTrackParam {
+		// Resolve the playing track and publish against the same identity. A
+		// concurrent score activation may reorder or replace track indexes.
+		version, err = stream.SetTrackPreview(trackName, id, value)
+	} else {
+		version, err = stream.SetPreview(track, id, value)
+	}
 	if err == nil && preview != nil {
 		preview.Player, preview.Version = stream, version
 	}

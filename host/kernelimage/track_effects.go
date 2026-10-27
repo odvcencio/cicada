@@ -10,6 +10,7 @@ import (
 )
 
 const enabledTrackEffectsCapability = TrackEffectsCapability
+const enabledAmpAutomationCapability = AmpAutomationCapability
 
 func writeTrackEffects(w *writer, rate int, specs []engine.TrackEffectConfig) error {
 	if len(specs) > engine.MaxTrackInserts {

@@ -29,6 +29,7 @@ func TestLiveNotesValidateAndReachTheEngine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(p.Close)
 	for _, input := range []struct {
 		track          string
 		note, velocity int
@@ -94,6 +95,7 @@ func TestLiveNotesRejectInvalidTracksAndRangesWithoutFaulting(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(p.Close)
 		if err := p.Note("bass", 60, 100, true); err == nil {
 			t.Fatal("accepted a note for a non-acid or unknown track")
 		}
@@ -105,6 +107,7 @@ func TestLiveNotesRejectInvalidTracksAndRangesWithoutFaulting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(p.Close)
 	for _, input := range []struct {
 		track          string
 		note, velocity int
