@@ -70,7 +70,10 @@ game.Handle(message)
 an error. A real game's bounded queue transfers records to the goroutine that
 owns `Engine.Push` and `Engine.Render`; do not call them concurrently. Keep SDK
 calls and `Handle` on one goroutine too. Setup installs macros, layers, and phrase
-length before playback. If setup fails partway, reset and set up a fresh engine.
+length before playback. The first state request may reach the engine in the same
+render block: the kernel applies the phrase length before state and stinger
+requests that are due with it, so `land = phrase` needs no block in between. If
+setup fails partway, reset and set up a fresh engine.
 
 Run [the complete Go game loop](../../examples/game-director/main.go):
 
