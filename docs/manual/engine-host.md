@@ -249,7 +249,7 @@ text.
 | 10 | `FaultUnhandledCommand` | The engine accepted a command that it cannot run. Validation must refuse such a command, so this signals an engine bug. |
 | 11 | `FaultMessageOverflow` | The status queue filled with messages that cannot be dropped. Drain messages more often. |
 | 20 | `cmd.FaultPolyLive` | A legacy `OpNoteOn`, `OpNoteExpression` or `OpNoteOff` went to a polyphonic track. Use the handle-aware commands. |
-| 21 | `cmd.FaultDirectorQuantize` | A director state or stinger asked for phrase quantize before a phrase length was set (a length counts as set when it applies at the same tick as the request or earlier, whichever the host sent first; a length stamped for a later tick does not), or used a quantize value the sequencer rejects. |
+| 21 | `cmd.FaultDirectorQuantize` | A director state or stinger asked for phrase quantize before a phrase length was set, or used a quantize value the sequencer rejects. A length counts as set when it applies no later than the request. If the two are due together (both `Tick=0` in one render block, or both stamped for one tick), the engine applies the length first, so the order in which the host sent them does not matter. A length that applies later is too late: the host rendered a block between a `Tick=0` request and its length, or stamped the length for a later tick. |
 | 22 | `cmd.FaultDirectorStinger` | A stinger targeted an off track, or a track that is playing a pattern that is not a stinger. |
 | 23 | `FaultDriveInsert` | A track's drive insert reported a fault. |
 | 24 | `FaultDelayTempo` | The delay send could not follow a tempo change. |
