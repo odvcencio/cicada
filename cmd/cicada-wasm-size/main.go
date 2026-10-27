@@ -9,9 +9,13 @@ import (
 	"github.com/andybalholm/brotli"
 )
 
-// 320 KiB: raised from 300 KiB on 2026-10-04 by owner decision so the graph delay/comb,
+// 322 KiB: raised from 320 KiB on 2026-10-27 by owner decision for the modal sustain pedal
+// and the modeled-kit brushes. With both, the kernel is 328,793 bytes raw when built with
+// Binaryen 133, the version CI pins. Built with the wasm-opt that TinyGo 0.41.1 bundles
+// (version 116, which scripts/wasm-opt.sh uses when WASMOPT is unset) it is 329,264.
+// Raised from 300 KiB to 320 KiB on 2026-10-04 by owner decision so the graph delay/comb,
 // experimental guitar and phase-modulation voices fit together (about 321.7 KB raw).
-const rawLimit = 320 * 1024
+const rawLimit = 322 * 1024
 const brotliLimit = 120 * 1024
 const processorLimit = 5 * 1024
 
