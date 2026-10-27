@@ -1,0 +1,170 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/internal/testpack"
+)
+
+func TestParseByteSize(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want int64
+	}{
+		{"1GiB", 1 << 30},
+		{"512MiB", 512 << 20},
+		{"512mib", 512 << 20},
+		{" 64 MiB ", 64 << 20},
+		{"1024KiB", 1 << 20},
+		{"1TiB", 1 << 40},
+		{"1073741824", 1 << 30},
+		{"4096B", 4096},
+		{"2GB", 2_000_000_000},
+		{"500MB", 500_000_000},
+		{"9007199254740991", 9007199254740991},
+	} {
+		if got, err := parseByteSize(tc.text); err != nil || got != tc.want {
+			t.Errorf("parseByteSize(%q) = %d, %v; want %d", tc.text, got, err, tc.want)
+		}
+	}
+	for _, tc := range []struct{ text, want string }{
+		{"", "not a whole number"},
+		{"MiB", "not a whole number"},
+		{"-1GiB", "not a whole number"},
+		{"1.5GiB", "not a whole number"},
+		{"1,000MiB", "not a whole number"},
+		{"1 2 MiB", "not a whole number"},
+		{"1XiB", "unknown unit"},
+		{"1GiBs", "unknown unit"},
+		{"0", "more than zero"},
+		{"0MiB", "more than zero"},
+		{"99999999999999999999", "too large"},
+		{"9223372036854775807KiB", "too large"},
+	} {
+		if got, err := parseByteSize(tc.text); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("parseByteSize(%q) = %d, %v; want an error containing %q", tc.text, got, err, tc.want)
+		}
+	}
+}
+
+func TestParseMaxResidentPCMTakesTheOptionOutOfTheArguments(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		rest  []string
+		limit int64
+	}{
+		{[]string{"song.cicada"}, []string{"song.cicada"}, 0},
+		{[]string{"song.cicada", "--max-resident-pcm", "512MiB", "--audio", "null"}, []string{"song.cicada", "--audio", "null"}, 512 << 20},
+		{[]string{"--max-resident-pcm=1GiB", "song.cicada"}, []string{"song.cicada"}, 1 << 30},
+		{[]string{"-max-resident-pcm", "2GiB"}, []string{}, 2 << 30},
+		{[]string{"-max-resident-pcm=2GiB"}, []string{}, 2 << 30},
+		{[]string{"--max-resident-pcm", "1GiB", "--max-resident-pcm=256MiB"}, []string{}, 256 << 20}, // the last wins
+	} {
+		rest, limit, err := parseMaxResidentPCM(tc.args)
+		if err != nil || !reflect.DeepEqual(rest, tc.rest) || limit != tc.limit {
+			t.Errorf("parseMaxResidentPCM(%q) = %q, %d, %v; want %q, %d", tc.args, rest, limit, err, tc.rest, tc.limit)
+		}
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"song.cicada", "--max-resident-pcm"}, "--max-resident-pcm needs a size"},
+		{[]string{"--max-resident-pcm", "lots"}, "--max-resident-pcm: size \"lots\" is not a whole number"},
+		{[]string{"--max-resident-pcm=0"}, "--max-resident-pcm: size \"0\" must be more than zero"},
+	} {
+		if _, _, err := parseMaxResidentPCM(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("parseMaxResidentPCM(%q) = %v; want an error containing %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+func TestRenderArgsCarryTheResidentPCMCap(t *testing.T) {
+	_, options, _ := renderArgs([]string{"-o", "out.wav", "--max-resident-pcm", "512MiB", "--bars", "4"}, 24)
+	if options.MaxResidentPCM != 512<<20 || options.Bars != 4 {
+		t.Fatalf("render options: %+v", options)
+	}
+	_, options, _ = renderArgs([]string{"-o", "out.wav"}, 24)
+	if options.MaxResidentPCM != 0 {
+		t.Fatalf("without the option the cap must stay at the default: %+v", options)
+	}
+	_, options, _ = renderArgs([]string{"-o", "out", "--max-resident-pcm=1GiB"}, 32)
+	if options.MaxResidentPCM != 1<<30 {
+		t.Fatalf("stems options: %+v", options)
+	}
+}
+
+// liveCapScore writes a score with one 400,000-byte pack and returns its path.
+func liveCapScore(t *testing.T) (string, testpack.Pack) {
+	t.Helper()
+	dir := t.TempDir()
+	pack := testpack.Write(t, dir, testpack.Options{Frames: 100_000})
+	path := filepath.Join(dir, "main.cicada")
+	source := "cicada 2\ntempo 120\n" + pack.Sampler("sound", 2) + "track lead sound {}\npattern melody notes steps=4 { c4 . . . }\nscene main { lead = melody }\nsong { main*8 }\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, pack
+}
+
+func TestPlayCompilesSamplerPacksUnderTheResidentCap(t *testing.T) {
+	path, pack := liveCapScore(t)
+	if pack.PCMBytes != 400_000 {
+		t.Fatalf("fixture holds %d bytes, want 400000", pack.PCMBytes)
+	}
+	if _, err := compileLiveScoreAtRateCapped(path, liveSampleRate, 0); err != nil {
+		t.Fatalf("the default cap refused a 400 KB pack: %v", err)
+	}
+	if _, err := compileLiveScoreAtRateCapped(path, liveSampleRate, 400_000); err != nil {
+		t.Fatalf("a cap equal to the pack refused it: %v", err)
+	}
+	_, err := compileLiveScoreAtRateCapped(path, liveSampleRate, 399_999)
+	if err == nil {
+		t.Fatal("a cap a byte below the pack admitted it")
+	}
+	for _, want := range []string{"--max-resident-pcm", "399999 bytes", "400000 bytes", pack.Manifest} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal lacks %q: %v", want, err)
+		}
+	}
+}
+
+// A reload while playing is compiled again, so it meets the same cap.
+func TestLiveWatchAppliesTheResidentCapToAnEdit(t *testing.T) {
+	path, pack := liveCapScore(t)
+	const limit = 500_000
+	initialHash, err := playSourceHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := compileLiveScoreAtRateCapped(path, liveSampleRate, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	var log bytes.Buffer
+	watcher := liveScoreWatcher{path: path, last: initialHash, stream: stream, output: &log, maxResidentPCM: limit}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second sampler on the same pack holds a second copy: 800,000 bytes.
+	edited := strings.Replace(string(source), "track lead sound {}", pack.Sampler("echo", 2)+"track lead sound {}", 1)
+	if err := os.WriteFile(path, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	watcher.poll()
+	if got := log.String(); !strings.Contains(got, "--max-resident-pcm") || !strings.Contains(got, "continuing previous score") {
+		t.Fatalf("an edit over the cap was not refused with the previous score kept: %q", got)
+	}
+}
