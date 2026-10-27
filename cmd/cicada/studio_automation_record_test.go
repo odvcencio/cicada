@@ -200,8 +200,15 @@ func TestRecordedAutomationStopRetainsReplacementUntilKept(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, lane := range p.Automation {
-		if lane.Path == "bass.cutoff" && (len(lane.Points) != 2 || *lane.Points[1].Value.Number != 1200) {
-			t.Fatal("replacement retained the old curve", lane)
+		if lane.Path == "bass.cutoff" {
+			if len(lane.Points) != 2 || *lane.Points[1].Value.Number != 1200 {
+				t.Fatal("replacement retained the old curve", lane)
+			}
+			// The old curve had a later point at bar 5; the replacement must
+			// hold the last movement instead of resuming that old point.
+			if got, ok := project.AutomationValue(p, lane, 19200); !ok || got != 1200 {
+				t.Fatalf("replacement did not hold its last movement: %g %v", got, ok)
+			}
 		}
 	}
 	r = studioCall(t, s.routes(), "/api/undo", studioEdit{Revision: studioRevision(after)})

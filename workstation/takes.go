@@ -50,8 +50,12 @@ func (s *studioApp) takes(ctx *server.Context, v workspace, csrf string) gosx.No
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", name), gosx.Attr("data-capture-control", name), gosx.Attr("disabled", disabled)), gosx.Text(label))
 	}
 	recording := state.Capture != nil && state.Capture.Recording
-	controls := s.form(v, csrf, "takes", "take", field("Audio track", selectInput("track", "", tracks)), field("Scene", selectInput("scene", "", scenes)), button("arm", "Arm take", state.Active != "" || len(tracks) == 0), button("start", "Record", state.Active == "" || recording), button("stop", "Finish take", state.Active == ""))
-	practice := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Arm take opens the input for monitoring while stopped; recording begins only when you press Record. Enable input and unmute monitoring in Audio first. Finish take closes the armed input."))
+	returnTo := "/?panel=takes"
+	if ctx.Request.URL.Path == "/studio" {
+		returnTo = ctx.Request.URL.RequestURI()
+	}
+	controls := ui.Form(ui.FormProps{Action: "/__actions/take", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, field("Audio track", selectInput("track", "", tracks)), field("Scene", selectInput("scene", "", scenes)), button("arm", "Arm take", state.Active != "" || len(tracks) == 0), button("start", "Record", state.Active == "" || recording), button("stop", "Finish take", state.Active == ""))
+	practice := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Arm take opens the input for monitoring while stopped; recording begins only when you press Record. Enable input and unmute monitoring in Audio first. To link amp movement, prepare it in Automation, then use Record take in Session with one pass. Finish take closes the armed input."))
 	var rows []gosx.Node
 	selected := ctx.Request.URL.Query().Get("take")
 	var audition gosx.Node = gosx.Fragment()

@@ -50,6 +50,8 @@ type studioTransport struct {
 	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
+	monitorWrite      bool
+	preparedCapture   bool
 	lastInput         studioAudioSnapshot
 	sampleRate        int
 	cancel            context.CancelFunc
@@ -283,7 +285,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	return t.startPrepared(index, scene, prepared, preparedHash, nil)
 }
 
-func (t *studioTransport) startPrepared(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte, listening *studioListening) error {
+func (t *studioTransport) startPrepared(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte, listening *studioListening, beforePlay ...func(*liveplay.Player, studioAudioDevice) error) error {
 	preparedConsumed := false
 	defer func() {
 		if prepared != nil && !preparedConsumed && prepared.Engine != nil {
@@ -301,6 +303,9 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	t.stopPreviewLocked()
 	changeMIDIClock := t.stream == nil || !t.playing || index >= 0 || listening != nil || t.listening != nil
 	if t.stream != nil {
+		if len(beforePlay) != 0 {
+			return fmt.Errorf("stop playback before preparing live amp Write")
+		}
 		wasListening := t.listening != nil
 		if listening != nil {
 			offered := *prepared
@@ -460,6 +465,21 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		}
 	}
 	audio.SetMonitor(studioMonitorOptions(t.audioOptions))
+	bound := false
+	defer func() {
+		if bound && !streamAdopted {
+			if device, ok := audio.(studioAmpFollowDevice); ok {
+				_ = device.SetAmpFollower(nil)
+			}
+			t.monitorWrite = false
+		}
+	}()
+	if len(beforePlay) > 0 {
+		if err := beforePlay[0](stream, audio); err != nil {
+			return err
+		}
+		bound = true
+	}
 	if audio != nil {
 		if err := t.prepareCaptureLocked(audio, initial.BPMMilli); err != nil {
 			return err
@@ -637,6 +657,12 @@ func (t *studioTransport) stop() {
 }
 
 func (t *studioTransport) stopLocked() {
+	if t.monitorWrite {
+		if device, ok := t.audio.(studioAmpFollowDevice); ok {
+			_ = device.SetAmpFollower(nil)
+		}
+		t.monitorWrite = false
+	}
 	t.stopPreviewLocked()
 	t.pauseLocked()
 	if t.stream != nil {

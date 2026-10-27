@@ -161,7 +161,7 @@ func (l *vocalLoopCapture) write(record capture.RecordedBlock, pcm [][]float32) 
 	return nil
 }
 
-func (s *studio) finishVocalLoop(l *vocalLoopCapture, snapshot capture.Snapshot, drainErr error) error {
+func (s *studio) finishVocalLoop(l *vocalLoopCapture, snapshot capture.Snapshot, drainErr error, options ...automationTakeCommit) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.complete {
@@ -188,6 +188,9 @@ func (s *studio) finishVocalLoop(l *vocalLoopCapture, snapshot capture.Snapshot,
 	start, end := takeCoverage(take)
 	if end <= start {
 		return fmt.Errorf("loop pass retained without a usable vocal phrase")
+	}
+	if len(options) > 0 {
+		return s.commitTakeFiles(id, take.Expected, nil, nil, nil, options[0].sourceRevision, options[0].receipt)
 	}
 	return s.commitTake(id, take.Expected, nil)
 }

@@ -22,8 +22,9 @@ func newTrackEffectChain(rate int, specs []TrackEffectConfig) (*trackEffectChain
 func (c *trackEffectChain) Process(l, r float32) (float32, float32) { return l, r }
 func (c *trackEffectChain) Reset()                                  {}
 
-func (c *trackEffectChain) hasAmp() bool                    { return false }
-func (c *trackEffectChain) ampControls() ([3]float64, bool) { return [3]float64{}, false }
+func (c *trackEffectChain) monitorAmpTargets() (AmpTargets, bool) { return AmpTargets{}, false }
+func (c *trackEffectChain) hasAmp() bool                          { return false }
+func (c *trackEffectChain) ampControls() ([3]float64, bool)       { return [3]float64{}, false }
 func (c *trackEffectChain) setAmpControls([3]float64, bool) error {
 	return engineError("amp controls require the track FX kernel")
 }

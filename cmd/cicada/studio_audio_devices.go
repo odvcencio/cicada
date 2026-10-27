@@ -368,6 +368,9 @@ func (t *studioTransport) checkAudioConfigurationLocked(options studioAudioOptio
 		return fmt.Errorf("%w: %v", errStudioAudioSettings, t.audioSettingsErr)
 	}
 	previous := normalizeStudioAudioOptions(t.audioOptions)
+	if t.monitorWrite && (options.AmpEnabled != previous.AmpEnabled || options.AmpDrive != previous.AmpDrive || options.AmpTone != previous.AmpTone || options.AmpOutput != previous.AmpOutput || options.AmpCabinet != previous.AmpCabinet || options.MonitorMode != previous.MonitorMode) {
+		return fmt.Errorf("finish or discard the bound automation pass before changing amp settings")
+	}
 	routeChanged := options.InputEnabled != previous.InputEnabled || options.InputDevice != previous.InputDevice || options.OutputDevice != previous.OutputDevice || options.PeriodFrames != previous.PeriodFrames
 	if t.playing && routeChanged {
 		return fmt.Errorf("stop playback before changing audio devices")
@@ -377,6 +380,9 @@ func (t *studioTransport) checkAudioConfigurationLocked(options studioAudioOptio
 	}
 	if t.audio != nil && t.audio.Armed() && options.RecordingOffsetMS != previous.RecordingOffsetMS {
 		return fmt.Errorf("finish the take before changing recording timing correction")
+	}
+	if t.audio != nil && t.audio.Armed() && t.preparedCapture && options.MonitorMode != previous.MonitorMode {
+		return fmt.Errorf("finish the take before changing the prepared input channel")
 	}
 	if t.audio != nil && t.audio.Armed() && (options.AmpEnabled != previous.AmpEnabled || options.AmpEnabled && options.MonitorMode != previous.MonitorMode) {
 		return fmt.Errorf("finish the take before changing the amp input channel")

@@ -894,6 +894,25 @@ func (p *Player) ResolvePreviewTrack(trackID string) (PreviewTarget, error) {
 	return PreviewTarget{player: p, names: names, track: track}, nil
 }
 
+// MonitorAmpTargets reads a bound track's current render targets. Call only on
+// the audio thread immediately after this Player's Read; concurrent control
+// goroutines must not use it. The original track incarnation must still play.
+func (p *Player) MonitorAmpTargets(target PreviewTarget) (engine.AmpTargets, bool) {
+	if target.player != p || target.names == nil || target.track >= target.names.count {
+		return engine.AmpTargets{}, false
+	}
+	identity := target.names.overrideTrack(target.track)
+	names := p.current.trackNames
+	if names == nil {
+		return engine.AmpTargets{}, false
+	}
+	index, ok := names.trackIndex(identity.id)
+	if !ok || names.incarnations[index] != identity.incarnation {
+		return engine.AmpTargets{}, false
+	}
+	return p.current.Engine.TrackAmpTargets(int(index))
+}
+
 // SetResolvedPreview publishes only to the player that resolved the target.
 // Read retires stale incarnations without applying them to a replacement track.
 func (p *Player) SetResolvedPreview(target PreviewTarget, id kernel.ParamID, value float32) (uint64, error) {

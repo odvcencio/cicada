@@ -237,7 +237,9 @@ type backendStudioAudio struct {
 	active                bool
 	armed                 atomic.Pointer[capture.Recorder]
 	captureChannel        atomic.Uint32 // 0 = device layout; 1/2 = selected mono
+	preparedCaptureMode   atomic.Uint32 // 0 = default; 1 = stereo; 2/3 = mono input
 	source                atomic.Pointer[studioRenderSource]
+	ampFollower           atomic.Pointer[studioAmpFollower]
 	rendering             atomic.Int64
 	engineEpoch           uint64 // callback owned
 	engineFrame           int64  // callback owned
@@ -259,6 +261,17 @@ type studioRenderSource struct {
 // next block boundary, including a new engine epoch when Stop returns to home.
 func (a *backendStudioAudio) SetSource(reader io.Reader) {
 	a.source.Store(&studioRenderSource{reader: reader, epoch: studioEngineEpoch.Add(1)})
+}
+
+func (a *backendStudioAudio) SetAmpFollower(follower *studioAmpFollower) error {
+	if follower != nil {
+		monitor := a.monitorState.Load()
+		if a.rawOutput || monitor == nil || monitor.amp == nil {
+			return fmt.Errorf("this audio backend cannot process the bound amp monitor")
+		}
+	}
+	a.ampFollower.Store(follower)
+	return nil
 }
 
 func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
@@ -315,7 +328,8 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	if monitor == nil {
 		monitor = &studioMutedMonitor
 	}
-	if monitor.amp != nil {
+	follower := a.ampFollower.Load()
+	if monitor.amp != nil && (follower == nil || !playing) {
 		// The callback exclusively owns processor state; control changes arrive
 		// as immutable snapshots and the processor smooths its parameters.
 		_ = monitor.amp.SetParams(studioAmpParams(*monitor))
@@ -350,12 +364,30 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	} else if frames > 0 {
 		err = renderStudioAudioPeriod(reader, a.pcm, nil, tail[:min(len(output), 2)], studioMutedMonitor)
 	}
+	if follower != nil && frames == 0 && monitor.amp != nil {
+		_ = monitor.amp.SetParams(follower.initial)
+	}
 	if err != nil {
 		if a.periodCapture != nil {
 			a.periodCapture.MarkIncomplete()
 		}
 		clearStudioAudioOutput(output)
 		return err
+	}
+	if follower != nil && frames > 0 {
+		bound := *monitor
+		if reader == follower.player {
+			if params, ok := follower.player.MonitorAmpTargets(follower.target); ok {
+				_ = bound.amp.SetParams(ampcab.Params{Drive: params.Drive, Tone: params.Tone, Output: params.Output, Cabinet: params.Cabinet, Bypass: params.Bypass})
+			} else {
+				follower.broken.Store(true)
+				bound.Muted = true
+			}
+		} else {
+			follower.broken.Store(true)
+			bound.Muted = true
+		}
+		monitor = &bound
 	}
 	if !a.rawOutput {
 		// Monitor all input, including warmup and count-in, without moving the
@@ -429,7 +461,9 @@ func (a *backendStudioAudio) ArmCapture(recorder *capture.Recorder) error {
 		return err
 	}
 	channel := uint32(0)
-	if m := a.monitorState.Load(); m != nil && m.AmpEnabled {
+	if mode := a.preparedCaptureMode.Load(); mode != 0 {
+		channel = mode - 1
+	} else if m := a.monitorState.Load(); m != nil && m.AmpEnabled {
 		switch m.Mode {
 		case "mono1":
 			channel = 1
@@ -447,6 +481,19 @@ func (a *backendStudioAudio) ArmCapture(recorder *capture.Recorder) error {
 		return err
 	}
 	return nil
+}
+
+func (a *backendStudioAudio) SetPreparedCaptureMode(mode string) {
+	switch mode {
+	case "stereo":
+		a.preparedCaptureMode.Store(1)
+	case "mono1":
+		a.preparedCaptureMode.Store(2)
+	case "mono2":
+		a.preparedCaptureMode.Store(3)
+	default:
+		a.preparedCaptureMode.Store(0)
+	}
 }
 
 func (a *backendStudioAudio) DisarmCapture() error {

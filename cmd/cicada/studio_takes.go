@@ -93,7 +93,7 @@ func (s *studio) commitTakeWith(id, expected string, candidate []byte, env *edit
 	return s.commitTakeFiles(id, expected, candidate, env, nil, "")
 }
 
-func (s *studio) commitTakeFiles(id, expected string, candidate []byte, env *edits.Envelope, files []edits.File, expectedSources string) error {
+func (s *studio) commitTakeFiles(id, expected string, candidate []byte, env *edits.Envelope, files []edits.File, expectedSources string, receipt ...func([]byte, string, *project.Project)) error {
 	current, err := os.ReadFile(s.path)
 	if err != nil {
 		return err
@@ -184,7 +184,13 @@ func (s *studio) commitTakeFiles(id, expected string, candidate []byte, env *edi
 	if err = s.takes.Mark(id, takejournal.Source); err != nil {
 		return err
 	}
-	return s.takes.Mark(id, takejournal.Committed)
+	if err = s.takes.Mark(id, takejournal.Committed); err != nil {
+		return err
+	}
+	if len(receipt) > 0 {
+		receipt[0](candidate, outcome.SourceRevision, p)
+	}
+	return nil
 }
 
 // Prepared source remains in the durable journal, never in browser metadata.
@@ -279,6 +285,16 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(errors.New("finish the current take before arming another"))
 			return
 		}
+		if pass := s.automationRecording; pass != nil && pass.Prepared {
+			if edit.Recording == nil || edit.Recording.Passes > 1 || !strings.HasPrefix(pass.Path, edit.Track+".") {
+				fail(errors.New("prepared live amp Write needs the matching audio track and a single-pass recording range"))
+				return
+			}
+			if err := checkStudioSourceRevision(s.path, pass.SourceRevision); err != nil || edit.Revision != pass.Revision {
+				fail(errTakeRevision)
+				return
+			}
+		}
 		source, err := os.ReadFile(s.path)
 		if err != nil {
 			fail(err)
@@ -341,7 +357,13 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(err)
 			return
 		}
-		if err = s.transport.armCapture(recorder); err != nil {
+		var preparedMode []string
+		if s.automationRecording != nil && s.automationRecording.Prepared {
+			s.transport.mu.Lock()
+			preparedMode = append(preparedMode, normalizeStudioAudioOptions(s.transport.audioOptions).MonitorMode)
+			s.transport.mu.Unlock()
+		}
+		if err = s.transport.armCapture(recorder, preparedMode...); err != nil {
 			recorder.Close()
 			fail(err)
 			return

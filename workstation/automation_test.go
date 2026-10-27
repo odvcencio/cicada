@@ -40,6 +40,20 @@ func TestAutomationActionKeepsNativeReturnTargetUnitsAndRevision(t *testing.T) {
 	}
 }
 
+func TestAutomationRecordingPassesExplicitMonitorBinding(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "source_revision": {"current-sources"}, "command": {"prepare"}, "path": {"guitar.amp_drive"}, "monitor": {"on"}, "replace": {"on"}}
+	response := post(t, client, address+"/__actions/automation-record", form, false, address)
+	if response.StatusCode != http.StatusSeeOther || len(*edits) != 1 {
+		t.Fatalf("record start: status=%d edits=%+v", response.StatusCode, *edits)
+	}
+	value, ok := (*edits)[0]["value"].(map[string]any)
+	if !ok || value["monitor"] != true || value["replace"] != true || (*edits)[0]["action"] != "prepare" || (*edits)[0]["path"] != "guitar.amp_drive" {
+		t.Fatalf("record start payload: %+v", (*edits)[0])
+	}
+}
+
 func TestAutomationLanesShowPointCarryAndCatalogChoices(t *testing.T) {
 	source := []byte("tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main { bass = riff bass.cutoff = 900Hz }\nscene hold { bass = keep }\nsong { main hold main }\n")
 	score, _ := notation.Parse(source)

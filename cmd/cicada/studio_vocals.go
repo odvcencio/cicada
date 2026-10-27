@@ -17,8 +17,11 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -529,9 +532,30 @@ func (s *studio) storeVocalPCM(data []byte, rate int, frames int64, directory st
 	return result, nil
 }
 
+type automationTakeCommit struct {
+	sourceRevision string
+	receipt        func([]byte, string, *project.Project)
+}
+
 func (s *studio) finishVocalCapture(id string) error {
 	if s.captureID != id || s.captureRecorder == nil {
 		return nil
+	}
+	// A concurrent automation pass belongs to this capture's playback player.
+	// Freeze it before stopping that player and retain its own recovery draft.
+	pass := s.automationRecording
+	var draftErr error
+	rebase := false
+	if pass != nil && pass.CaptureID == id {
+		pass.Active = false
+		if pass.MonitorFollower != nil && pass.MonitorFollower.broken.Load() {
+			pass.Invalid = true
+		}
+		s.releaseAutomationMonitor(pass)
+		draftErr = s.persistAutomationRecording(true)
+		if take, err := s.takes.Get(id); err == nil && take.Expected == pass.Revision && checkStudioSourceRevision(s.path, pass.SourceRevision) == nil {
+			rebase = true
+		}
 	}
 	defer func() { s.captureElastic = nil }()
 	s.transport.stop()
@@ -545,20 +569,51 @@ func (s *studio) finishVocalCapture(id string) error {
 	s.captureID = ""
 	s.captureRecorder = nil
 	s.vocalLoop = nil
+	// Guard the project sources as well as the main file when the draft may be
+	// advanced. An outside edit must never be mistaken for our take commit.
+	var commitErr error
+	var committedSource []byte
+	var committedRevision string
+	var committedProject *project.Project
+	receipt := func(source []byte, revision string, p *project.Project) {
+		committedSource, committedRevision, committedProject = source, revision, p
+	}
 	if loop != nil {
-		return s.finishVocalLoop(loop, snapshot, drainErr)
+		if rebase {
+			commitErr = s.finishVocalLoop(loop, snapshot, drainErr, automationTakeCommit{pass.SourceRevision, receipt})
+		} else {
+			commitErr = s.finishVocalLoop(loop, snapshot, drainErr)
+		}
+	} else {
+		if err := s.finalizeCaptureTake(id, snapshot, drainErr); err != nil {
+			return err
+		}
+		if err := s.takes.Publish(id); err != nil {
+			return err
+		}
+		take, _ := s.takes.Get(id)
+		if take.Timeline != nil && (snapshot.Incomplete || drainErr != nil) {
+			return fmt.Errorf("take retained with input gaps; audition it before choosing a comp region")
+		}
+		if rebase {
+			commitErr = s.commitTakeFiles(id, take.Expected, nil, nil, nil, pass.SourceRevision, receipt)
+		} else {
+			commitErr = s.commitTake(id, take.Expected, nil)
+		}
 	}
-	if err := s.finalizeCaptureTake(id, snapshot, drainErr); err != nil {
-		return err
+	if commitErr != nil {
+		return commitErr
 	}
-	if err := s.takes.Publish(id); err != nil {
-		return err
+	if rebase {
+		if committedRevision == "" || committedProject == nil {
+			return fmt.Errorf("audio take committed but automation draft remains at its original revision")
+		}
+		pass.Revision, pass.SourceRevision, pass.Project, pass.CaptureID = studioRevision(committedSource), committedRevision, committedProject, ""
+		if err := s.persistAutomationRecording(true); err != nil {
+			return err
+		}
 	}
-	take, _ := s.takes.Get(id)
-	if take.Timeline != nil && (snapshot.Incomplete || drainErr != nil) {
-		return fmt.Errorf("take retained with input gaps; audition it before choosing a comp region")
-	}
-	return s.commitTake(id, take.Expected, nil)
+	return draftErr
 }
 
 func (s *studio) watchVocalCapture(id string, r *capture.Recorder) {
@@ -589,6 +644,9 @@ func (s *studio) startAudioTake() error {
 		return err
 	}
 	if take.Timeline == nil {
+		if pass := s.automationRecording; pass != nil && pass.Prepared {
+			return fmt.Errorf("prepared live amp Write needs a single-pass recording range; choose a range or discard the preparation")
+		}
 		return s.transport.startCapture(capture.Calibration{})
 	}
 	source, err := os.ReadFile(s.path)
@@ -601,6 +659,20 @@ func (s *studio) startAudioTake() error {
 	p, err := compileStudioSource(s.path, source)
 	if err != nil {
 		return err
+	}
+	pass := s.automationRecording
+	var initialTargets ampcab.Params
+	if pass != nil && pass.Prepared {
+		if s.vocalLoop != nil || !strings.HasPrefix(pass.Path, take.Track+".") || pass.Revision != take.Expected {
+			return fmt.Errorf("prepared live amp Write needs its matching track and one recording pass")
+		}
+		if err := checkStudioSourceRevision(s.path, pass.SourceRevision); err != nil {
+			return err
+		}
+		initialTargets, err = initialAmpTargets(p, take.Track, take.Timeline.PlaybackStartTick)
+		if err != nil {
+			return err
+		}
 	}
 	// The armed track's previous comp must not mask the new input.
 	copyProject := *p
@@ -663,7 +735,70 @@ func (s *studio) startAudioTake() error {
 		return err
 	}
 	owned = false // startPrepared consumes the engine on success and failure.
-	if err = s.transport.startPrepared(-1, "", &prepared, fingerprint, listening); err != nil {
+	var beforePlay []func(*liveplay.Player, studioAudioDevice) error
+	if pass != nil && pass.Prepared {
+		beforePlay = append(beforePlay, func(player *liveplay.Player, audio studioAudioDevice) error {
+			device, ok := audio.(studioAmpFollowDevice)
+			if !ok {
+				return fmt.Errorf("this audio backend cannot bind the live amp monitor")
+			}
+			target, err := player.ResolvePreviewTrack(take.Track)
+			if err != nil {
+				return err
+			}
+			follower := &studioAmpFollower{player: player, target: target, initial: initialTargets}
+			if err = device.SetAmpFollower(follower); err != nil {
+				return err
+			}
+			initial := 0.0
+			for _, address := range project.ParamAddresses(p) {
+				if address.Address == pass.Path {
+					if n, ok := address.Value.(float64); ok {
+						initial = n
+					}
+				}
+			}
+			for _, lane := range p.Automation {
+				if lane.Path == pass.Path {
+					if n, ok := project.AutomationValue(p, lane, take.Timeline.StartTick); ok {
+						initial = n
+					}
+				}
+			}
+			param := kernel.ParamAmpDrive
+			if strings.HasSuffix(pass.Path, ".amp_tone") {
+				param = kernel.ParamAmpTone
+			} else if strings.HasSuffix(pass.Path, ".amp_output") {
+				param = kernel.ParamAmpOutput
+			}
+			version, err := player.SetResolvedPreview(target, param, float32(initial))
+			if err != nil {
+				_ = device.SetAmpFollower(nil)
+				return err
+			}
+			pass.Project, pass.CaptureID, pass.MonitorFollower = p, take.ID, follower
+			pass.Preview = studioAutomationPreview{Player: player, Version: version}
+			pass.Points = []recordedAutomationPoint{{take.Timeline.StartTick, initial}}
+			pass.Prepared, pass.Active, pass.Epoch = false, true, 0
+			s.transport.monitorWrite = true
+			if err = s.persistAutomationRecording(true); err != nil {
+				_ = device.SetAmpFollower(nil)
+				s.transport.monitorWrite = false
+				return err
+			}
+			return nil
+		})
+	}
+	if err = s.transport.startPrepared(-1, "", &prepared, fingerprint, listening, beforePlay...); err != nil {
+		if pass != nil && pass.Monitor {
+			pass.Prepared, pass.Active, pass.CaptureID, pass.MonitorFollower = true, false, "", nil
+			pass.Preview = studioAutomationPreview{}
+			_ = s.persistAutomationRecording(true)
+			s.transport.stop()
+			_ = s.transport.disarmCapture()
+			_ = s.captureRecorder.Close()
+			s.captureID, s.captureRecorder, s.vocalLoop = "", nil, nil
+		}
 		return err
 	}
 	go s.watchVocalCapture(take.ID, s.captureRecorder)

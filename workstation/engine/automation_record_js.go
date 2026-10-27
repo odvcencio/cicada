@@ -18,6 +18,9 @@ import (
 type recordedCurve struct {
 	ID, Path string
 	Active   bool
+	Monitor  bool
+	Invalid  bool
+	Prepared bool
 	Points   []curveEditorPoint
 }
 type curveRecordingUI struct {
@@ -28,7 +31,51 @@ type curveRecordingUI struct {
 	take                 *recordedCurve
 	pending              *float64
 	saving               bool
+	awaitingRefresh      bool
 	jobs                 chan string
+	historyButtons       []historyButtonState
+}
+
+type historyButtonState struct {
+	button   js.Value
+	disabled bool
+	form     js.Value
+	inert    bool
+}
+
+// A successful Keep changes the score before the shell's refreshed forms
+// arrive. Prevent Undo/Redo from submitting the prior revision in that gap.
+func (r *curveRecordingUI) lockHistory() {
+	r.historyButtons = nil
+	for _, selector := range []string{"#undo-form button", "#redo-form button"} {
+		button := js.Global().Get("document").Call("querySelector", selector)
+		if workspacePresent(button) {
+			form := button.Call("closest", "form")
+			state := historyButtonState{button: button, disabled: button.Get("disabled").Bool(), form: form}
+			if workspacePresent(form) {
+				state.inert = form.Call("hasAttribute", "inert").Bool()
+				form.Call("setAttribute", "inert", "")
+				form.Call("setAttribute", "data-history-refresh-pending", "")
+			}
+			r.historyButtons = append(r.historyButtons, state)
+			button.Set("disabled", true)
+		}
+	}
+}
+
+func (r *curveRecordingUI) unlockHistory() {
+	for _, state := range r.historyButtons {
+		if state.button.Get("isConnected").Bool() {
+			state.button.Set("disabled", state.disabled)
+		}
+		if workspacePresent(state.form) && state.form.Get("isConnected").Bool() {
+			state.form.Call("removeAttribute", "data-history-refresh-pending")
+			if !state.inert {
+				state.form.Call("removeAttribute", "inert")
+			}
+		}
+	}
+	r.historyButtons = nil
 }
 
 func bindAutomationRecording(u *curveEditor) func() {
@@ -50,15 +97,25 @@ func bindAutomationRecording(u *curveEditor) func() {
 			r.status.Set("textContent", "Save or discard your pending edits before recording automation.")
 			return
 		}
+		if monitor := workspaceField(r.form, "monitor"); command == "start" && workspacePresent(monitor) && monitor.Get("checked").Bool() {
+			command = "prepare"
+		}
 		r.errorMessage = ""
 		r.saving = true
+		if command == "keep" {
+			r.lockHistory()
+		}
 		r.draw()
 		select {
 		case r.jobs <- command:
 		default:
 			r.saving = false
+			r.unlockHistory()
 		}
 	})
+	if monitor := workspaceField(r.form, "monitor"); workspacePresent(monitor) {
+		u.listen(monitor, "change", func(js.Value) { r.draw() })
+	}
 	u.listen(r.slider, "input", func(js.Value) {
 		if r.saving || r.take == nil || !r.take.Active || r.take.Path != u.props.Path {
 			return
@@ -84,6 +141,9 @@ func (r *curveRecordingUI) post(command string, number float64) error {
 	}
 	if workspaceField(r.form, "replace").Get("checked").Bool() {
 		values["replace"] = "on"
+	}
+	if monitor := workspaceField(r.form, "monitor"); command == "prepare" && workspacePresent(monitor) && monitor.Get("checked").Bool() {
+		values["monitor"] = "on"
 	}
 	data, _ := json.Marshal(values)
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, js.Global().Get("location").Get("origin").String()+"/__actions/automation-record", bytes.NewReader(data))
@@ -153,6 +213,7 @@ func (r *curveRecordingUI) run() {
 				r.pending = nil
 				if err := r.post("value", v); err != nil {
 					r.saving = false
+					r.unlockHistory()
 					r.errorMessage = err.Error()
 					r.draw()
 					continue
@@ -165,10 +226,12 @@ func (r *curveRecordingUI) run() {
 			r.saving = false
 			r.refresh()
 			if err != nil {
+				r.unlockHistory()
 				r.errorMessage = err.Error()
 				r.draw()
 			} else if command == "keep" {
-				r.status.Set("textContent", "Recorded curve kept. Undo restores the previous curve.")
+				r.awaitingRefresh = true
+				r.draw()
 				workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 			}
 		case <-ticker.C:
@@ -198,17 +261,59 @@ func (r *curveRecordingUI) draw() {
 	}
 	active := r.take != nil && r.take.Active && r.take.Path == r.editor.props.Path
 	r.slider.Set("disabled", !active || r.saving)
+	if monitor := workspaceField(r.form, "monitor"); workspacePresent(monitor) {
+		monitor.Set("disabled", r.saving || r.take != nil)
+		if r.take != nil {
+			monitor.Set("checked", r.take.Monitor)
+		}
+	}
+	capture := nativeCapture.Get()
+	captureActive := capture.Ready && !capture.Error && capture.State.Active != ""
+	monitor := workspaceField(r.form, "monitor")
+	prepare := workspacePresent(monitor) && monitor.Get("checked").Bool()
 	for _, command := range []string{"start", "keep", "discard"} {
 		button := r.form.Call("querySelector", "[data-automation-record-command="+command+"]")
-		button.Set("disabled", r.saving || (command == "start" && r.take != nil) || (command != "start" && r.take == nil))
+		button.Set("disabled", r.saving || r.awaitingRefresh || (command == "start" && (r.take != nil || prepare && captureActive)) || (command != "start" && r.take == nil) || (command == "keep" && (captureActive || r.take != nil && (r.take.Invalid || r.take.Prepared))))
+		if command == "start" {
+			label := "Record movements"
+			if monitor := workspaceField(r.form, "monitor"); workspacePresent(monitor) && monitor.Get("checked").Bool() {
+				label = "Prepare linked recording"
+			}
+			button.Set("textContent", label)
+		}
+		if command == "discard" {
+			label := "Discard pass"
+			if r.take != nil && r.take.Prepared {
+				label = "Cancel preparation"
+			}
+			button.Set("textContent", label)
+		}
 	}
 	message := "Ready. Start playback, then record a movement."
+	if r.take == nil && prepare {
+		message = "Prepare before arming or recording the destination audio track."
+		if captureActive {
+			message = "Finish the current take before preparing linked recording."
+		}
+	}
 	if r.take != nil {
 		mode := "Retained pass"
 		if r.take.Active {
 			mode = "Recording"
 		}
 		message = fmt.Sprintf("%s · %s · %d points. Keep or discard this pass.", mode, r.take.Path, len(r.take.Points))
+		if r.take.Monitor {
+			message += " Live input amp linked for this pass."
+		}
+		if captureActive {
+			message += " Stop and save the audio take before keeping the curve."
+		}
+		if r.take.Invalid {
+			message = "This linked pass was interrupted and cannot be kept. Discard the pass; the audio take remains separate."
+		}
+		if r.take.Prepared {
+			message = "Linked recording prepared. Use Record take in Session on the destination track; movements begin with recording."
+		}
 	}
 	if r.saving {
 		message = "Saving automation…"
@@ -216,11 +321,17 @@ func (r *curveRecordingUI) draw() {
 	if r.errorMessage != "" {
 		message = r.errorMessage
 	}
+	if r.awaitingRefresh {
+		message = "Curve kept. Waiting for refreshed controls. If they do not update, save or copy any unsaved edits and reload Studio."
+	}
 	state := "idle"
 	if r.take != nil {
 		state = "pending"
 		if r.take.Active {
 			state = "recording"
+		}
+		if r.take.Prepared {
+			state = "prepared"
 		}
 	}
 	if r.saving {

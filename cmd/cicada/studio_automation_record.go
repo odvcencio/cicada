@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
@@ -35,19 +36,24 @@ type recordedAutomationPoint struct {
 	Value float64 `json:"value"`
 }
 type studioAutomationRecording struct {
-	Preview        studioAutomationPreview   `json:"-"`
-	ID             string                    `json:"id"`
-	Path           string                    `json:"path"`
-	Revision       string                    `json:"revision"`
-	SourceRevision string                    `json:"sourceRevision"`
-	Unit           string                    `json:"unit"`
-	Active         bool                      `json:"active"`
-	Saving         bool                      `json:"-"`
-	End            int64                     `json:"end"`
-	Epoch          uint64                    `json:"epoch"`
-	Points         []recordedAutomationPoint `json:"points"`
-	Project        *project.Project          `json:"-"`
-	Written        time.Time                 `json:"-"`
+	Preview         studioAutomationPreview   `json:"-"`
+	ID              string                    `json:"id"`
+	Path            string                    `json:"path"`
+	Revision        string                    `json:"revision"`
+	SourceRevision  string                    `json:"sourceRevision"`
+	CaptureID       string                    `json:"captureId,omitempty"`
+	Monitor         bool                      `json:"monitor,omitempty"`
+	MonitorFollower *studioAmpFollower        `json:"-"`
+	Invalid         bool                      `json:"invalid,omitempty"`
+	Prepared        bool                      `json:"prepared,omitempty"`
+	Unit            string                    `json:"unit"`
+	Active          bool                      `json:"active"`
+	Saving          bool                      `json:"-"`
+	End             int64                     `json:"end"`
+	Epoch           uint64                    `json:"epoch"`
+	Points          []recordedAutomationPoint `json:"points"`
+	Project         *project.Project          `json:"-"`
+	Written         time.Time                 `json:"-"`
 }
 
 func (s *studio) automationDraftRelative() string {
@@ -141,6 +147,9 @@ func (s *studio) restoreAutomationRecording() {
 		}
 		previous = p.Tick
 	}
+	if draft.Active && draft.Monitor {
+		draft.Invalid = true
+	}
 	draft.Active = false
 	s.automationRecording = &draft
 }
@@ -151,15 +160,34 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	s.restoreAutomationRecording()
 	if recording := s.automationRecording; recording != nil && recording.Active && !recording.Saving {
 		state := s.transport.snapshot()
-		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(state, recording.End) < recording.Points[len(recording.Points)-1].Tick {
+		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
 			recording.Active = false
+			if recording.Monitor && s.captureID != "" {
+				recording.Invalid = true
+			}
+			s.releaseAutomationMonitor(recording)
 			if err := s.persistAutomationRecording(true); err != nil {
 				studioJSON(w, 500, map[string]any{"error": err.Error()})
 				return
 			}
 		}
 	}
-	studioJSON(w, 200, map[string]any{"recording": s.automationRecording})
+	var projected any
+	if recording := s.automationRecording; recording != nil {
+		state := "draft"
+		if recording.Invalid {
+			state = "invalid"
+		} else if recording.Prepared {
+			state = "prepared"
+		} else if recording.Active {
+			state = "capturing"
+		}
+		projected = struct {
+			*studioAutomationRecording
+			State string `json:"state"`
+		}{recording, state}
+	}
+	studioJSON(w, 200, map[string]any{"recording": projected})
 }
 
 func automationTick(state transportSnapshot, end int64) int64 {
@@ -180,18 +208,28 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 	var value struct {
 		Number  float64 `json:"number"`
 		Replace bool    `json:"replace"`
+		Monitor bool    `json:"monitor"`
 	}
 	if len(request.Value) > 0 && json.Unmarshal(request.Value, &value) != nil {
 		fail(400, fmt.Errorf("choose an automation value"))
 		return
 	}
-	if request.Action == "start" {
+	if request.Action == "start" || request.Action == "prepare" {
+		preparing := request.Action == "prepare"
 		if s.automationRecording != nil {
 			fail(409, fmt.Errorf("keep or discard the retained automation take first"))
 			return
 		}
-		if s.captureID != "" {
-			fail(409, fmt.Errorf("finish the audio take before recording mixer automation"))
+		if preparing && (!value.Monitor || s.captureID != "") {
+			fail(409, fmt.Errorf("prepare live amp Write before arming or recording audio"))
+			return
+		}
+		if !preparing && value.Monitor {
+			fail(409, fmt.Errorf("prepare live amp Write before starting the audio take"))
+			return
+		}
+		if s.captureID != "" && (s.captureRecorder == nil || !s.captureRecorder.Snapshot().Recording) {
+			fail(409, fmt.Errorf("start the audio take before recording automation"))
 			return
 		}
 		source, err := os.ReadFile(s.path)
@@ -218,7 +256,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		state := s.transport.snapshot()
-		if !state.Playing || state.BrowserPlaying {
+		if !preparing && (!state.Playing || state.BrowserPlaying) {
 			fail(409, fmt.Errorf("play the song with the native engine before recording movements"))
 			return
 		}
@@ -252,8 +290,29 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			fail(500, err)
 			return
 		}
-		s.automationRecording = &studioAutomationRecording{ID: hex.EncodeToString(id[:]), Path: request.Path, Revision: request.Revision, SourceRevision: request.SourceRevision, Unit: resolved.Descriptor.Unit, Active: true, End: end, Epoch: state.MIDIClockEpoch, Points: []recordedAutomationPoint{{tick, initial}}, Project: p}
+		s.automationRecording = &studioAutomationRecording{ID: hex.EncodeToString(id[:]), Path: request.Path, Revision: request.Revision, SourceRevision: request.SourceRevision, CaptureID: s.captureID, Unit: resolved.Descriptor.Unit, Active: true, End: end, Epoch: state.MIDIClockEpoch, Points: []recordedAutomationPoint{{tick, initial}}, Project: p}
+		if preparing {
+			if !strings.HasSuffix(request.Path, ".amp_drive") && !strings.HasSuffix(request.Path, ".amp_tone") && !strings.HasSuffix(request.Path, ".amp_output") {
+				s.automationRecording = nil
+				fail(422, fmt.Errorf("choose an audio track's amp Drive, Tone, or Output"))
+				return
+			}
+			trackID := strings.Split(request.Path, ".")[0]
+			valid := false
+			for _, track := range p.Tracks {
+				if track.ID == trackID && track.Kind == "audio" {
+					valid = true
+				}
+			}
+			if !valid {
+				s.automationRecording = nil
+				fail(422, fmt.Errorf("choose an audio track's amp parameter"))
+				return
+			}
+			s.automationRecording.Monitor, s.automationRecording.Prepared, s.automationRecording.Active = true, true, false
+		}
 		if err = s.persistAutomationRecording(true); err != nil {
+			s.releaseAutomationMonitor(s.automationRecording)
 			s.automationRecording = nil
 			fail(500, err)
 			return
@@ -273,8 +332,16 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		if recording.Epoch == 0 {
 			recording.Epoch = state.MIDIClockEpoch
 		}
-		if !recording.Active || !state.Playing || state.MIDIClockEpoch != recording.Epoch {
+		if !recording.Active {
+			fail(409, fmt.Errorf("this pass has ended; keep or discard its movements"))
+			return
+		}
+		if !state.Playing || state.MIDIClockEpoch != recording.Epoch || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
 			recording.Active = false
+			if recording.Monitor && s.captureID != "" {
+				recording.Invalid = true
+			}
+			s.releaseAutomationMonitor(recording)
 			_ = s.persistAutomationRecording(true)
 			fail(409, fmt.Errorf("playback changed; keep or discard this automation pass"))
 			return
@@ -282,8 +349,20 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		tick := automationTick(state, recording.End)
 		if tick < recording.Points[len(recording.Points)-1].Tick {
 			recording.Active = false
+			if recording.Monitor && s.captureID != "" {
+				recording.Invalid = true
+			}
+			s.releaseAutomationMonitor(recording)
 			_ = s.persistAutomationRecording(true)
 			fail(409, fmt.Errorf("loop or seek ended this pass; keep or discard its movements"))
+			return
+		}
+		if tick > recording.Points[len(recording.Points)-1].Tick && len(recording.Points) == 1024 {
+			recording.Active = false
+			// A bound pass keeps its last preview audible until capture ends;
+			// do not apply a 1025th value that cannot be saved.
+			_ = s.persistAutomationRecording(true)
+			fail(422, fmt.Errorf("automation take is full; finish recording before keeping this pass"))
 			return
 		}
 		if err := s.applyProjectControlPreview(recording.Project, audioClientMessage{Type: "param", Address: recording.Path, Value: json.RawMessage(strconv.FormatFloat(value.Number, 'g', -1, 64))}, &recording.Preview); err != nil {
@@ -294,12 +373,6 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		if tick == recording.Points[len(recording.Points)-1].Tick {
 			recording.Points[len(recording.Points)-1] = point
 		} else {
-			if len(recording.Points) == 1024 {
-				recording.Active = false
-				_ = s.persistAutomationRecording(true)
-				fail(422, fmt.Errorf("automation take is full; keep it before recording another pass"))
-				return
-			}
 			recording.Points = append(recording.Points, point)
 			// Remove exact constant/straight runs without changing their curve.
 			if n := len(recording.Points); n >= 3 {
@@ -324,12 +397,26 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		releaseAutomationPreview(recording.Preview)
+		s.releaseAutomationMonitor(recording)
 		s.automationRecording = nil
 		s.mu.Unlock()
 		studioJSON(w, 200, map[string]any{"ok": true})
 		return
 	case "keep":
+		if recording.Prepared {
+			fail(409, fmt.Errorf("start the prepared recording or discard this preparation"))
+			return
+		}
+		if recording.Invalid {
+			fail(409, fmt.Errorf("the input monitor or playback changed during this pass; discard it before recording again"))
+			return
+		}
+		if s.captureID != "" {
+			fail(409, fmt.Errorf("finish the audio take before keeping automation"))
+			return
+		}
 		recording.Active = false
+		s.releaseAutomationMonitor(recording)
 		if err := s.persistAutomationRecording(true); err != nil {
 			fail(500, err)
 			return
