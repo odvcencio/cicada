@@ -59,3 +59,33 @@ Destroy the GUI with `destroyGui(gui)` and the audio node with
 Run `make test-wam2` for packaging and worklet checks. Run
 `go test -tags browser ./cmd/cicada -run '^TestBrowserWAM2$' -count=1`
 for Chrome verification with the SDK reference host.
+
+## Check the browser limits
+
+A browser image holds at most 16 tracks, 32 allocated voices and 2 MiB, and it
+cannot carry a `master` insert. The default `cicada check` applies the desktop
+limits of 64 tracks and 256 voices, so a score can pass it and still be refused
+by `cicada wam2`, whose error names the limit but not the tracks that use it.
+
+Run `cicada check --profile browser` first. It builds the images the export
+writes, lists the voices each track reserves, and fails with the same reason
+`cicada wam2` gives when a limit is exceeded. It needs no SDK or kernel file.
+
+```text
+$ cicada check --profile browser band.cicada
+band.cicada
+  browser profile: 4 of 16 tracks, 15 of 32 voices reserved, image 2674 of 2097152 bytes
+    track  kind              voices
+    lead   acid                   1
+    vibes  model_vibraphone       4
+    harp   harp                   4
+    drums  drums                  6
+```
+
+A poly graph instrument reserves four voices when a pattern with a chord step
+is assigned to one of its tracks, and eight otherwise.
+
+When the image is over its 2 MiB limit, the encoder returns no image to
+measure. The report then gives the audio the image holds, at 4 bytes per sample
+per channel, as `image at least N of 2097152 bytes`, and suggests shortening or
+removing audio assets and samples.

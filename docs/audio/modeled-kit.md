@@ -28,7 +28,7 @@ scene groove { kit = beat }
 song { groove*4 }
 ```
 
-Use the checked examples under `examples/modeled-kit/` for full scores. Any drum source lane may select any `model.` articulation; omitted lanes remain silent.
+Use the checked examples under `examples/modeled-kit/` for full scores. Any drum source lane may select any `model.` articulation; omitted lanes remain silent. A kit in a library binds `model.` pieces the same way, and a score with imports needs no import for them.
 
 | Piece | Model suffixes |
 | --- | --- |

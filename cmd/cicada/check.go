@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -70,12 +71,41 @@ func inspectScore(path string) (scoreInspection, error) {
 	return scoreInspection{source: source, sources: sources, score: score, semantic: semantic, diagnostics: diagnostics}, nil
 }
 
-func checkCommand(args []string, stdout, stderr io.Writer) error {
-	if len(args) > 1 || len(args) == 1 && filepath.Ext(args[0]) != ".cicada" {
-		return fmt.Errorf("usage: cicada check [score.cicada]")
+// parseCheckArgs reads the optional profile and score path. The score may come
+// before or after the flags.
+func parseCheckArgs(args []string) (profile, path string, err error) {
+	errUsage := fmt.Errorf("usage: cicada check [--profile desktop|browser] [score.cicada]")
+	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	name := flags.String("profile", profileDesktop, "limits to check: desktop or browser")
+	var scores []string
+	rest := args
+	if len(rest) > 0 && len(rest[0]) > 0 && rest[0][0] != '-' {
+		scores, rest = []string{rest[0]}, rest[1:]
 	}
-	if len(args) == 1 {
-		return checkPaths([]string{args[0]}, stdout, stderr)
+	if err := flags.Parse(rest); err != nil {
+		return "", "", errUsage
+	}
+	scores = append(scores, flags.Args()...)
+	if len(scores) > 1 || len(scores) == 1 && filepath.Ext(scores[0]) != ".cicada" {
+		return "", "", errUsage
+	}
+	if *name != profileDesktop && *name != profileBrowser {
+		return "", "", fmt.Errorf("unknown profile %q (valid: desktop, browser)", *name)
+	}
+	if len(scores) == 1 {
+		path = scores[0]
+	}
+	return *name, path, nil
+}
+
+func checkCommand(args []string, stdout, stderr io.Writer) error {
+	profile, path, err := parseCheckArgs(args)
+	if err != nil {
+		return err
+	}
+	if path != "" {
+		return checkPathsProfile([]string{path}, profile, stdout, stderr)
 	}
 	root, err := projectRoot()
 	if err != nil {
@@ -97,10 +127,14 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 			paths = paths[:1]
 		}
 	}
-	return checkPaths(paths, stdout, stderr)
+	return checkPathsProfile(paths, profile, stdout, stderr)
 }
 
 func checkPaths(paths []string, stdout, stderr io.Writer) error {
+	return checkPathsProfile(paths, profileDesktop, stdout, stderr)
+}
+
+func checkPathsProfile(paths []string, profile string, stdout, stderr io.Writer) error {
 	failed := 0
 	for _, path := range paths {
 		inspection, err := inspectScore(path)
@@ -115,9 +149,16 @@ func checkPaths(paths []string, stdout, stderr io.Writer) error {
 				failed++
 			}
 		}
-		if !hasDiagnosticErrors(inspection.diagnostics) {
-			fmt.Fprintln(stdout, path)
+		if hasDiagnosticErrors(inspection.diagnostics) {
+			continue
 		}
+		if profile == profileBrowser {
+			if !checkBrowserScore(path, inspection, stdout, stderr) {
+				failed++
+			}
+			continue
+		}
+		fmt.Fprintln(stdout, path)
 	}
 	if failed != 0 {
 		return fmt.Errorf("%d error(s) across %d score(s)", failed, len(paths))
@@ -162,6 +203,12 @@ func checkSuggestion(d notation.Diagnostic) string {
 		return "use a declared pattern name in this scene"
 	case d.Code == "CICADA-PARAM" && strings.Contains(d.Message, "steps attribute must equal"):
 		return "remove steps= to infer the length from the cells"
+	case d.Code == "CICADA-LIMIT" && strings.Contains(d.Message, "allocated voices"):
+		return "remove tracks or lower voices on the tracks listed below"
+	case d.Code == "CICADA-LIMIT" && strings.Contains(d.Message, "master processor"):
+		return "a browser image cannot carry a master insert; put a compressor on bus music, or move other effects to track inserts (a track insert processes only its own track)"
+	case d.Code == "CICADA-LIMIT" && strings.Contains(d.Message, imageTooLarge):
+		return "shorten or remove audio assets and samples; the image stores their audio at 4 bytes per sample per channel"
 	}
 	return ""
 }

@@ -456,38 +456,46 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 func runtimeVoiceCapacity(cfg *engine.Config) int {
 	voices := 0
 	for ti := 0; ti < cfg.Tracks; ti++ {
-		v := &cfg.Track[ti]
-		switch v.Kind {
-		case engine.VoiceOff:
-		case engine.VoiceDrums:
-			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				if v.Kit != nil {
-					if v.Kit[lane].Kind != engine.KitLaneOff {
-						voices++
-					}
-				} else if lane < drum.LT || v.Drums[lane] != (drum.Params{}) {
-					voices++
-				}
-			}
-		case engine.VoicePiano:
-			voices += piano.MaxVoices
-		case engine.VoiceModal:
-			voices += modal.MaxVoices
-		case engine.VoiceGraphPoly:
-			voices += graph.PolyVoices
-		case engine.VoiceGraph:
-			voices += max(1, int(v.Polyphony))
-		case engine.VoiceKeys:
-			voices += int(v.Keys.Controls[127])
-		case engine.VoiceSample:
-			voices += int(v.Sample.Voices)
-		case engine.VoicePrepared:
-			voices += v.Prepared.VoiceCount()
-		default:
-			voices++
-		}
+		voices += TrackVoices(&cfg.Track[ti])
 	}
 	return max(limits.PortableMaxVoices, voices)
+}
+
+// TrackVoices is the number of voices a compiled track reserves, whether or not
+// it is sounding. runtimeVoiceCapacity sums it, so the portable image's voice
+// limit and any report of per-track reservations count the same voices.
+func TrackVoices(v *engine.TrackConfig) int {
+	voices := 0
+	switch v.Kind {
+	case engine.VoiceOff:
+	case engine.VoiceDrums:
+		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+			if v.Kit != nil {
+				if v.Kit[lane].Kind != engine.KitLaneOff {
+					voices++
+				}
+			} else if lane < drum.LT || v.Drums[lane] != (drum.Params{}) {
+				voices++
+			}
+		}
+	case engine.VoicePiano:
+		voices += piano.MaxVoices
+	case engine.VoiceModal:
+		voices += modal.MaxVoices
+	case engine.VoiceGraphPoly:
+		voices += graph.PolyVoices
+	case engine.VoiceGraph:
+		voices += max(1, int(v.Polyphony))
+	case engine.VoiceKeys:
+		voices += int(v.Keys.Controls[127])
+	case engine.VoiceSample:
+		voices += int(v.Sample.Voices)
+	case engine.VoicePrepared:
+		voices += v.Prepared.VoiceCount()
+	default:
+		voices++
+	}
+	return voices
 }
 
 // CompileSceneSettings resolves scene settings in source order to the same

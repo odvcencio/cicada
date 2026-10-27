@@ -385,7 +385,7 @@ author "Cicada contributors"
 
 The entry is included automatically, even if it has no `source` line. Repeating it once in the source list is allowed. Repeated `source` directives for the same path are rejected. An explicit source list requires an entry. Existing manifests without `entry` or `source` keep loading each requested score independently. Source headers are optional and must match the manifest when present. Names retain their existing declaration-kind rules across all files; a track and pattern may share a spelling.
 
-`check`, `fmt`, `fix --all`, `explain`, `play`, and `render` load the project from any listed score. Project-wide `check` compiles it once; `fmt` formats each listed file separately. The language server resolves diagnostics, definitions, renames, parameter hover, completion, and notation fixes across files, including unsaved buffers. Studio refuses projects with more than one source file before opening recovery, editing, or undo history. Save As copies every listed source and updates the manifest if the requested score is renamed.
+`check`, `fmt`, `fix --all`, `explain`, `play`, and `render` load the project from any listed score. Project-wide `check` compiles it once; `fmt` formats each listed file separately. The language server resolves diagnostics, definitions, renames, parameter hover, completion, and notation fixes across files, including unsaved buffers. Studio opens a multi-file project from any listed score. Edits in its Code lens keep recovery drafts and undo history for each file, and grid and scene edits share one project history. Save As copies every listed source and updates the manifest if the requested score is renamed.
 
 **Library imports:** [Library circuit](../../examples/libraries/main.cicada) imports a project library. Library manifests declare `library PATH`, `cicada`, `source`, `license`, and `author`, with optional `engine` minimum edition and `capabilities` bit mask. `std/` is an embedded namespace; project `lib/` and the per-OS user config directory plus `cicada/lib` are also searched. `$CICADA_LIBRARY` overrides the user location. Duplicate paths across locations are errors. Direct user imports are hash-pinned. See [the library manual](../manual/writing-music.md#import-a-library) for rules and update commands.
 
@@ -428,7 +428,7 @@ song { verse }
 
 **Example:** [Preset circuit](../../examples/presets/main.cicada) binds authored, acid, and imported presets and overrides a value on the track and in a scene. The imported library is vendored from the [library example](../../examples/libraries/main.cicada), with an added mixer preset.
 
-**Limits:** An authored kit lane cannot apply numeric settings to a built-in recipe through the kit binding; use a `drums` track's lane values or a `builtin.bd` preset instead. Existing limits on effect instances still apply. Studio continues to refuse multi-file editing and has no preset save action in this version. Semantic JSON and generated source contain resolved values; formatting the original source retains preset declarations.
+**Limits:** An authored kit lane cannot apply numeric settings to a built-in recipe through the kit binding; use a `drums` track's lane values or a `builtin.bd` preset instead. Existing limits on effect instances still apply. Studio's Library panel can save a track's stored values as a preset. Semantic JSON and generated source contain resolved values; formatting the original source retains preset declarations.
 
 ## Performed timing and note gestures
 
