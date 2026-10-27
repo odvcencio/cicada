@@ -7,14 +7,25 @@ const fs = require('node:fs');
 // tick, so a block that spans a tick can pick up a whole tick (1 ms at 1000 Hz, 4 ms at
 // 250 Hz) of that thread's time. The Go test therefore starts this script with
 // --single-threaded --no-liftoff --no-wasm-lazy-compilation: V8 compiles the whole kernel
-// before the timed loop and runs no background task. A block more than EXCESS_BLOCK_MS
-// above the median shows that a tick still got in; the Go test turns too many of them into
-// an inconclusive CPU verdict. Do not switch to process.threadCpuUsage(): on Linux it
-// advances only once per tick (7 to 10 times in 40 ms on a 250 Hz kernel), too coarse for
-// a 0.2 ms block.
+// before the timed loop and starts no background thread. With no background thread, V8
+// also compiles this script's own JavaScript on the timed thread; warmCPUClock moves the
+// compile of the clock reads out of the timed loop.
+// An excess block is a measured block more than EXCESS_BLOCK_MS above the median. Another
+// thread's CPU time and slow render work both make one, so the report keeps the count, the
+// share and the first indices, and the Go test adds them to a failed CPU budget. Do not
+// switch to process.threadCpuUsage(): Linux updates a thread's own time only about once per
+// scheduler tick, too coarse for a block of 0.2 ms.
 const EXCESS_BLOCK_MS = 0.9;
-// Keep the first few indices so a periodic cause (a bar boundary) can be told from random ticks.
+// Keep the first few indices: evenly spaced ones (one per tick) suggest another thread's
+// CPU time, ones at note or bar starts suggest render work.
 const FIRST_EXCESS_BLOCKS = 16;
+// Pairs of clock readings (one at the start of a block, one at its end) to make before the
+// timed loop. V8 compiles process.cpuUsage() and the helper it calls with its optimizing
+// compiler after some thousands of calls. With --single-threaded that compile runs on the
+// timed thread. On Node 24 and 26 it made one slow block of 1 to 2 ms at a fixed place in
+// most runs (measured block 5187 on Node 24, 8605 on Node 26; --trace-opt shows the compile
+// there). Node 22, which CI pins, does not show it.
+const CLOCK_WARMUP_PAIRS = 100000;
 
 function calibrateCPUClockResolutionMs(cpuUsage = process.cpuUsage, sampleCount = 4096) {
   // Calibrate the user CPU clock used below, not the units in its report label.
@@ -30,8 +41,15 @@ function calibrateCPUClockResolutionMs(cpuUsage = process.cpuUsage, sampleCount 
   return Number.isFinite(smallest) ? smallest / 1000 : null;
 }
 
+// Read the CPU clock the way the timed loop does, so V8 has compiled it before the loop
+// starts. Returns the number of pairs read, which the report records.
+function warmCPUClock(cpuUsage = process.cpuUsage, pairs = CLOCK_WARMUP_PAIRS) {
+  for (let pair = 0; pair < pairs; pair++) cpuUsage(cpuUsage());
+  return pairs;
+}
+
 // Count the blocks that ran more than excessMs above the median. blockMs is in timing
-// order, so the kept indices show whether the slow blocks are periodic or random.
+// order, so the kept indices show when the excess blocks happened.
 function excessBlocks(blockMs, medianMs, excessMs = EXCESS_BLOCK_MS, keep = FIRST_EXCESS_BLOCKS) {
   const thresholdMs = medianMs + excessMs;
   const first = [];
@@ -42,6 +60,28 @@ function excessBlocks(blockMs, medianMs, excessMs = EXCESS_BLOCK_MS, keep = FIRS
     if (first.length < keep) first.push(index);
   }
   return {thresholdMs, count, share: blockMs.length ? count / blockMs.length : 0, first};
+}
+
+// Summarize the timed blocks (milliseconds, in timing order). The first warmupBlocks are
+// dropped; the percentiles come from the sorted rest, and the excess blocks are counted
+// in timing order against the median, so their indices count from the first measured block.
+function summarizeBlocks(samples, warmupBlocks) {
+  const inOrder = Float32Array.from(samples).subarray(warmupBlocks);
+  const measured = inOrder.slice().sort();
+  const percentile = p => measured[Math.min(measured.length - 1, Math.floor((measured.length - 1) * p))] || 0;
+  const p50 = percentile(0.50);
+  const excess = excessBlocks(inOrder, p50);
+  return {
+    measuredBlocks: measured.length,
+    p50,
+    p95: percentile(0.95),
+    p99: percentile(0.99),
+    max: measured[measured.length - 1] || 0,
+    excessBlockThresholdMs: excess.thresholdMs,
+    excessBlocks: excess.count,
+    excessBlockShare: excess.share,
+    firstExcessBlocks: excess.first
+  };
 }
 
 async function main() {
@@ -78,6 +118,7 @@ async function main() {
   let blocksOverDeadlineCpuTime = 0;
   const warmupBlocks = Math.min(256, blockCount);
   const cpuClockResolutionMs = calibrateCPUClockResolutionMs();
+  const clockWarmupPairs = warmCPUClock();
 
   for (let block = 0; block < blockCount; block++) {
     const started = process.cpuUsage();
@@ -94,26 +135,15 @@ async function main() {
     if (block + 1 === warmupBlocks) warmMemoryBytes = x.memory.buffer.byteLength;
   }
 
-  const inOrder = samples.subarray(warmupBlocks);
-  const measured = inOrder.slice().sort();
-  const percentile = p => measured[Math.min(measured.length - 1, Math.floor((measured.length - 1) * p))] || 0;
-  const excess = excessBlocks(inOrder, percentile(0.50));
   const report = {
     engine: 'Node V8 WebAssembly',
     clock: 'process.cpuUsage() user milliseconds',
     cpuClockResolutionMs,
+    clockWarmupPairs,
     blockFrames: 128,
     blocks: blockCount,
     warmupBlocks,
-    measuredBlocks: measured.length,
-    p50: percentile(0.50),
-    p95: percentile(0.95),
-    p99: percentile(0.99),
-    max: measured[measured.length - 1] || 0,
-    excessBlockThresholdMs: excess.thresholdMs,
-    excessBlocks: excess.count,
-    excessBlockShare: excess.share,
-    firstExcessBlocks: excess.first,
+    ...summarizeBlocks(samples, warmupBlocks),
     blocksOverDeadlineCpuTime,
     faults,
     initialMemoryBytes,
@@ -128,7 +158,7 @@ async function main() {
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 
-module.exports = {calibrateCPUClockResolutionMs, excessBlocks, EXCESS_BLOCK_MS};
+module.exports = {calibrateCPUClockResolutionMs, warmCPUClock, excessBlocks, summarizeBlocks, EXCESS_BLOCK_MS, FIRST_EXCESS_BLOCKS};
 if (require.main === module) {
   main().catch(error => {
     process.stderr.write(`${error.stack || error}\n`);

@@ -71,14 +71,10 @@ func TestBrowserSoak(t *testing.T) {
 	if err := json.Unmarshal(cpuData, &cpuReport); err != nil || cpuReport.Engine != expectedCPUEngine {
 		t.Fatalf("invalid browser CPU report: expected %q, got %s (%v)", expectedCPUEngine, cpuData, err)
 	}
-	// The Node counter can include other threads' CPU time. Its report must say how much
-	// (share of blocks well above the median), or the cached p99 cannot be judged.
-	cpuForeignShare := 0.0
-	if cpuReport.Engine == "Node V8 WebAssembly" {
-		if cpuReport.ExcessBlockShare == nil {
-			t.Fatalf("browser CPU report has no excessBlockShare; rerun budget-browser with the current browser_cpu_node.js: %s", cpuData)
-		}
-		cpuForeignShare = *cpuReport.ExcessBlockShare
+	// The Node report says how many blocks ran well above the median, which explains a failed p99.
+	cpuExcessShare, err := browserSoakCPUExcessBlockShare(cpuReport)
+	if err != nil {
+		t.Fatalf("%v: %s", err, cpuData)
 	}
 
 	type snapshot struct {
@@ -263,7 +259,7 @@ func TestBrowserSoak(t *testing.T) {
 	cpuClockResolutionMs := browserSoakCPUClockResolutionMs(cpuReport.Engine, cpuReport.Clock, cpuReport.ClockResolutionMs)
 	verdict := browserSoakVerdict(browserSoakChecks{
 		EditsComplete: editsComplete, Faults: current.Faults, TransportAdvanced: transportAdvanced,
-		MemoryStable: memoryStable, Underruns: soakUnderruns, CPUUsedMs: cpuBudgetMs, CPUForeignShare: cpuForeignShare,
+		MemoryStable: memoryStable, Underruns: soakUnderruns, CPUUsedMs: cpuBudgetMs, CPUExcessBlockShare: cpuExcessShare,
 		HighResolutionClock: current.Clock, QuantumMs: current.QuantumMs,
 	}, hostSamples, cpuReport.HostLoadSamples, cpuClockResolutionMs)
 	soakPass := verdict.GatePass
@@ -344,7 +340,7 @@ func TestBrowserSoak(t *testing.T) {
 		"browserCPUBudgetMetric":         cpuBudgetMetric,
 		"browserCPUClock":                cpuReport.Clock,
 		"browserCPUClockResolutionMs":    cpuClockResolutionMs,
-		"browserCPUExcessBlockShare":     cpuForeignShare,
+		"browserCPUExcessBlockShare":     cpuExcessShare,
 	}
 	bytes, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -381,6 +377,6 @@ func TestBrowserSoak(t *testing.T) {
 		t.Errorf("WASM instances did not settle or exceeded the transient bound: warmup=%d peak=%d final=%d instances=%d limit=%d", afterWarmup.MemoryBytes, memoryPeak, current.MemoryBytes, current.InstanceCount, memoryLimit)
 	}
 	if verdict.CPUTiming.TimingVerdict != "inconclusive" && !cpuWithinLimit {
-		t.Errorf("browser CPU metric %.4f ms/callback exceeds 0.67 ms budget", cpuBudgetMs)
+		t.Error(browserSoakCPUBudgetError(cpuBudgetMs, verdict.CPUTiming))
 	}
 }

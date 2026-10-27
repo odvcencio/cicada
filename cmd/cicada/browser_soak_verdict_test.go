@@ -206,33 +206,41 @@ func TestBrowserCPUSoakTiming(t *testing.T) {
 	}
 }
 
-func TestBrowserSoakForeignCPUVerdict(t *testing.T) {
+// The share of excess blocks explains a failed CPU budget. It never excuses one: a run with
+// many excess blocks and a p99 over the budget fails, and one under the budget passes.
+func TestBrowserSoakExcessBlockVerdict(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		share   float64
-		cpuMs   float64
+		name  string
+		share float64
+		cpuMs float64
+		// The note about excess blocks is on the CPU verdict of a failure over the share limit.
 		verdict string
 		pass    bool
+		note    bool
 	}{
-		{"clean counter over budget fails", 0, 0.8, "fail", false},
-		{"share at the limit is clean", soaktiming.ForeignCPUShareLimit, 0.8, "fail", false},
-		{"clean counter within budget passes", 0.001, 0.3, "pass", true},
-		{"contaminated counter over budget is inconclusive", 0.0051, 1.231, "inconclusive", true},
-		{"contaminated counter within budget is inconclusive too", 0.02, 0.3, "inconclusive", true},
+		{"clean counter over budget fails", 0, 0.8, "fail", false, false},
+		{"share at the limit is clean", soaktiming.ExcessBlockShareLimit, 0.8, "fail", false, false},
+		{"clean counter within budget passes", 0.001, 0.3, "pass", true, false},
+		{"excess blocks and a p99 over budget still fail", 0.0051, 1.231, "fail", false, true},
+		{"many excess blocks and a p99 near the tick still fail", 0.05, 1.235, "fail", false, true},
+		{"excess blocks and a p99 within budget still pass", 0.02, 0.3, "pass", true, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			checks := browserSoakChecks{
 				EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
-				CPUUsedMs: test.cpuMs, CPUForeignShare: test.share,
+				CPUUsedMs: test.cpuMs, CPUExcessBlockShare: test.share,
 				HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
 			}
 			samples := []browserSoakHostSample{{Load1: 1, CPUCount: 8}}
 			result := browserSoakVerdict(checks, samples, samples, 0.001)
-			if result.CPUTiming.TimingVerdict != test.verdict || result.GatePass != test.pass {
-				t.Errorf("CPU timing = %+v, want %s pass=%v", result.CPUTiming, test.verdict, test.pass)
+			if result.CPUTiming.TimingVerdict != test.verdict || result.GatePass != test.pass || result.TimingVerdict != test.verdict {
+				t.Errorf("verdict = %+v, want %s pass=%v", result, test.verdict, test.pass)
 			}
-			if got := strings.Contains(result.CPUTiming.TimingReason, "foreign CPU in counter"); got != (test.share > soaktiming.ForeignCPUShareLimit) {
-				t.Errorf("foreign CPU reason present = %v for share %g: %q", got, test.share, result.CPUTiming.TimingReason)
+			if got := strings.Contains(result.CPUTiming.TimingReason, "firstExcessBlocks"); got != test.note {
+				t.Errorf("excess block note present = %v for share %g: %q", got, test.share, result.CPUTiming.TimingReason)
+			}
+			if got := strings.Contains(result.TimingReason, "CPU budget: "); got != test.note {
+				t.Errorf("combined reason %q: CPU note present = %v, want %v", result.TimingReason, got, test.note)
 			}
 			if result.UnderrunTiming.TimingVerdict != "pass" {
 				t.Errorf("the CPU counter must not change the underrun verdict: %+v", result.UnderrunTiming)
@@ -241,67 +249,113 @@ func TestBrowserSoakForeignCPUVerdict(t *testing.T) {
 	}
 }
 
-// Foreign CPU time belongs to the CPU measurement only. Underruns stay a hard gate.
-func TestBrowserSoakUnderrunsFailWithContaminatedCPU(t *testing.T) {
+// Excess blocks belong to the CPU measurement only. Underruns stay a hard gate.
+func TestBrowserSoakUnderrunsFailWithExcessBlocks(t *testing.T) {
 	checks := browserSoakChecks{
 		EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
-		Underruns: 3, CPUUsedMs: 1.231, CPUForeignShare: 0.05,
+		Underruns: 3, CPUUsedMs: 0.3, CPUExcessBlockShare: 0.05,
 		HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
 	}
 	samples := []browserSoakHostSample{{Load1: 1, CPUCount: 8}}
 	result := browserSoakVerdict(checks, samples, samples, 0.001)
-	if result.UnderrunTiming.TimingVerdict != "fail" || result.CPUTiming.TimingVerdict != "inconclusive" || result.GatePass {
-		t.Errorf("underruns must fail whatever the CPU counter held: %+v", result)
+	if result.UnderrunTiming.TimingVerdict != "fail" || result.CPUTiming.TimingVerdict != "pass" || result.GatePass {
+		t.Errorf("underruns must fail whatever the CPU report held: %+v", result)
 	}
 }
 
-func TestBrowserCPUSoakTimingForeignCPU(t *testing.T) {
+// A busy host or a coarse clock still excuses a failed budget, as before; excess blocks do not add to that.
+func TestBrowserSoakExcessBlocksKeepOtherReasons(t *testing.T) {
+	checks := browserSoakChecks{
+		EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
+		CPUUsedMs: 1.231, CPUExcessBlockShare: 0.05,
+		HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
+	}
+	busy := []browserSoakHostSample{{Load1: 5, CPUCount: 8}}
+	result := browserSoakVerdict(checks, busy, busy, 0.001)
+	if result.CPUTiming.TimingVerdict != "inconclusive" || !result.GatePass || !strings.Contains(result.CPUTiming.TimingReason, "host busy") || strings.Contains(result.CPUTiming.TimingReason, "firstExcessBlocks") {
+		t.Errorf("a busy host keeps its own reason and verdict: %+v", result.CPUTiming)
+	}
+}
+
+func TestBrowserCPUSoakTimingExcessBlocks(t *testing.T) {
 	quiet := func() []browserSoakHostSample { return []browserSoakHostSample{{Load1: 1, CPUCount: 8}} }
 	const engine, clock = "Node V8 WebAssembly", "process.cpuUsage() user milliseconds"
 	for _, test := range []struct {
-		name     string
-		report   map[string]any
-		verdict  string
-		enforced bool
-		gatePass bool
+		name       string
+		report     map[string]any
+		timingPass bool
+		verdict    string
+		note       bool
+		gatePass   bool
 	}{
-		{"clean counter keeps its budget", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.0}, "fail", true, false},
-		{"contaminated counter is inconclusive", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.02}, "inconclusive", false, true},
-		{"a report without a share is not treated as contaminated", map[string]any{"cpuClockResolutionMs": 0.001}, "fail", true, false},
+		{"clean counter keeps its budget", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.0}, false, "fail", false, false},
+		{"excess blocks do not excuse a failed budget", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.02}, false, "fail", true, false},
+		{"excess blocks do not change a pass", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.02}, true, "pass", false, true},
+		{"a report without a share is treated as clean", map[string]any{"cpuClockResolutionMs": 0.001}, false, "fail", false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if enforced := browserCPUSoakTiming(t, quiet, test.report, false, true, engine, clock); enforced != test.enforced {
-				t.Errorf("CPU timing enforced = %v, want %v", enforced, test.enforced)
+			// A pass or a fail is enforced: only an inconclusive timing skips the check.
+			if enforced := browserCPUSoakTiming(t, quiet, test.report, test.timingPass, true, engine, clock); !enforced {
+				t.Error("CPU timing was not enforced")
 			}
 			if test.report["timingVerdict"] != test.verdict || test.report["gatePass"] != test.gatePass {
 				t.Errorf("report verdict = %v gatePass = %v, want %s %v", test.report["timingVerdict"], test.report["gatePass"], test.verdict, test.gatePass)
 			}
 			reason, _ := test.report["timingReason"].(string)
-			if strings.Contains(reason, "foreign CPU in counter") != (test.verdict == "inconclusive") {
-				t.Errorf("timing reason = %q", reason)
+			if strings.Contains(reason, "firstExcessBlocks") != test.note {
+				t.Errorf("timing reason = %q, want the excess block note: %v", reason, test.note)
 			}
 		})
 	}
 }
 
-func TestBrowserSoakCPUReportShare(t *testing.T) {
+func TestBrowserSoakCPUExcessBlockShare(t *testing.T) {
+	share := func(value float64) *float64 { return &value }
 	for _, test := range []struct {
-		name string
-		json string
-		want *float64
+		name    string
+		report  browserSoakCPUReport
+		want    float64
+		wantErr string
 	}{
-		{"absent", `{"engine":"Node V8 WebAssembly"}`, nil},
-		{"zero is a measurement", `{"engine":"Node V8 WebAssembly","excessBlockShare":0}`, new(float64)},
+		{"Node report with excess blocks", browserSoakCPUReport{Engine: "Node V8 WebAssembly", ExcessBlockShare: share(0.02)}, 0.02, ""},
+		{"zero is a measurement", browserSoakCPUReport{Engine: "Node V8 WebAssembly", ExcessBlockShare: share(0)}, 0, ""},
+		{"Node report from an older script is refused", browserSoakCPUReport{Engine: "Node V8 WebAssembly"}, 0, "rerun budget-browser"},
+		{"Windows Chrome reports none", browserSoakCPUReport{Engine: "Windows Chrome AudioWorklet"}, 0, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var report browserSoakCPUReport
-			if err := json.Unmarshal([]byte(test.json), &report); err != nil {
-				t.Fatal(err)
-			}
-			if (report.ExcessBlockShare == nil) != (test.want == nil) || (test.want != nil && *report.ExcessBlockShare != *test.want) {
-				t.Errorf("share = %v, want %v", report.ExcessBlockShare, test.want)
+			got, err := browserSoakCPUExcessBlockShare(test.report)
+			if got != test.want || (err == nil) != (test.wantErr == "") || (err != nil && !strings.Contains(err.Error(), test.wantErr)) {
+				t.Errorf("share = %g, error = %v; want %g, error containing %q", got, err, test.want, test.wantErr)
 			}
 		})
+	}
+	// The report file spells the key excessBlockShare; a zero must not read as absent.
+	for _, test := range []struct {
+		json    string
+		present bool
+	}{
+		{`{"engine":"Node V8 WebAssembly"}`, false},
+		{`{"engine":"Node V8 WebAssembly","excessBlockShare":0}`, true},
+	} {
+		var report browserSoakCPUReport
+		if err := json.Unmarshal([]byte(test.json), &report); err != nil {
+			t.Fatal(err)
+		}
+		if (report.ExcessBlockShare != nil) != test.present {
+			t.Errorf("%s: share present = %v, want %v", test.json, report.ExcessBlockShare != nil, test.present)
+		}
+	}
+}
+
+func TestBrowserSoakCPUBudgetError(t *testing.T) {
+	clean := soaktiming.EvaluateCPU(false, true, []soaktiming.HostSample{{Load1: 1, CPUCount: 8}}, 0.001, browserSoakCPUBudgetMs, 0)
+	if got, want := browserSoakCPUBudgetError(1.235, clean), "browser CPU metric 1.2350 ms/callback exceeds 0.67 ms budget"; got != want {
+		t.Errorf("message = %q, want %q", got, want)
+	}
+	noted := soaktiming.EvaluateCPU(false, true, []soaktiming.HostSample{{Load1: 1, CPUCount: 8}}, 0.001, browserSoakCPUBudgetMs, 0.0231)
+	got := browserSoakCPUBudgetError(1.235, noted)
+	if !strings.HasPrefix(got, "browser CPU metric 1.2350 ms/callback exceeds 0.67 ms budget; 2.31% of measured blocks") || !strings.Contains(got, "firstExcessBlocks") {
+		t.Errorf("message = %q, want the budget failure followed by the excess block note", got)
 	}
 }
 
@@ -317,13 +371,13 @@ func TestBrowserCPUNodeCommand(t *testing.T) {
 
 // The reporter and the verdict must agree on how far above the median a block is
 // counted. The reporter is a script, so compare the source.
-func TestNodeCPUReporterUsesTheForeignCPUExcess(t *testing.T) {
+func TestNodeCPUReporterUsesTheExcessBlockThreshold(t *testing.T) {
 	source, err := os.ReadFile("browser_cpu_node.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf("const EXCESS_BLOCK_MS = %v;", soaktiming.ForeignCPUExcessMs)
+	want := fmt.Sprintf("const EXCESS_BLOCK_MS = %v;", soaktiming.ExcessBlockMs)
 	if !strings.Contains(string(source), want) {
-		t.Errorf("browser_cpu_node.js must declare %q to match soaktiming.ForeignCPUExcessMs", want)
+		t.Errorf("browser_cpu_node.js must declare %q to match soaktiming.ExcessBlockMs", want)
 	}
 }

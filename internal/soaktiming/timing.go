@@ -13,15 +13,16 @@ import (
 const CPUBudgetMs = 0.67
 const HostSampleInterval = 30 * time.Second
 
-// The Node fallback times each block with process.cpuUsage(), which adds up the CPU
-// time of every thread in the process. Linux credits a thread other than the caller
-// only at a scheduler tick, so a tick inside a block adds a whole tick (1 ms at
-// 1000 Hz) of another thread's time. cmd/cicada/browser_cpu_node.js counts the
-// measured blocks that ran more than ForeignCPUExcessMs above the median (a Go test
-// keeps the two constants equal). A share above ForeignCPUShareLimit means the p99
-// may be another thread's time, so the budget cannot be judged from it.
-const ForeignCPUExcessMs = 0.9
-const ForeignCPUShareLimit = 0.005
+// Excess blocks. The Node fallback times each block with process.cpuUsage(), which adds
+// up the CPU time of every thread in the process. Linux credits a thread other than the
+// caller only at a scheduler tick, so a tick inside a block can add a whole tick (1 ms at
+// 1000 Hz) of another thread's time. cmd/cicada/browser_cpu_node.js counts the excess
+// blocks, the measured blocks that ran more than ExcessBlockMs above the median (a Go test
+// keeps the two constants equal). Another thread's time and slow render work both make
+// them, so the count cannot tell the causes apart. It explains a failed budget
+// (EvaluateCPU) and never excuses one.
+const ExcessBlockMs = 0.9
+const ExcessBlockShareLimit = 0.005
 
 type HostSample struct {
 	SampledAt         time.Time `json:"sampledAt"`
@@ -134,19 +135,7 @@ func ClockCanResolveBudget(resolutionMs, budgetMs float64) bool {
 	return resolutionMs > 0 && budgetMs > 0 && resolutionMs <= budgetMs
 }
 
-// ForeignCPUReason returns the reason to pass to Evaluate when the share of
-// measured blocks above the median by ForeignCPUExcessMs is over the limit, and
-// "" when the counter is clean enough to judge.
-func ForeignCPUReason(share float64) string {
-	if !(share > ForeignCPUShareLimit) {
-		return ""
-	}
-	return fmt.Sprintf("foreign CPU in counter: %.2f%% of measured blocks ran more than %.1f ms above the median (limit %.2f%%)", 100*share, ForeignCPUExcessMs, 100*ForeignCPUShareLimit)
-}
-
-// Evaluate returns the timing verdict. Each non-empty extraReasons entry makes the
-// timing inconclusive, like a busy host or a clock too coarse for the budget.
-func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResolutionMs, budgetMs float64, extraReasons ...string) Result {
+func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResolutionMs, budgetMs float64) Result {
 	var reasons []string
 	if HostBusy(samples) {
 		reasons = append(reasons, "host busy: 1-minute load exceeded half the available CPU count")
@@ -164,11 +153,6 @@ func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResol
 	if !ClockCanResolveBudget(clockResolutionMs, budgetMs) {
 		reasons = append(reasons, fmt.Sprintf("clock resolution %.2f ms cannot resolve %.2f ms budget", clockResolutionMs, budgetMs))
 	}
-	for _, reason := range extraReasons {
-		if reason != "" {
-			reasons = append(reasons, reason)
-		}
-	}
 	result := Result{TimingVerdict: "pass", TimingReason: strings.Join(reasons, "; ")}
 	if len(reasons) != 0 {
 		result.TimingVerdict = "inconclusive"
@@ -176,5 +160,31 @@ func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResol
 		result.TimingVerdict = "fail"
 	}
 	result.GatePass = correctnessPass && (timingPass || result.TimingVerdict == "inconclusive")
+	return result
+}
+
+// ExcessBlockNote returns the sentence to add to a failed CPU timing when the share of
+// excess blocks is over ExcessBlockShareLimit, and "" when it is not.
+func ExcessBlockNote(share float64) string {
+	if !(share > ExcessBlockShareLimit) {
+		return ""
+	}
+	return fmt.Sprintf("%.2f%% of measured blocks ran more than %.1f ms above the median, over the %.2f%% limit for a clean counter; firstExcessBlocks in the CPU report lists them: evenly spaced indices suggest another thread's CPU time in the counter, indices at note or bar starts suggest render work", 100*share, ExcessBlockMs, 100*ExcessBlockShareLimit)
+}
+
+// EvaluateCPU is Evaluate for the CPU budget of the Node fallback. excessBlockShare is the
+// share of excess blocks in the same report (0 when the engine reports none). It fails
+// closed: over ExcessBlockShareLimit it adds ExcessBlockNote to a failed verdict and
+// changes nothing else. Another thread's time can only add to a block, so it can turn a
+// pass into a failure but not the reverse, and a pass stays a pass. The count cannot show
+// that the excess blocks were not render work, so a failure stays a failure.
+func EvaluateCPU(timingPass, correctnessPass bool, samples []HostSample, clockResolutionMs, budgetMs, excessBlockShare float64) Result {
+	result := Evaluate(timingPass, correctnessPass, samples, clockResolutionMs, budgetMs)
+	if note := ExcessBlockNote(excessBlockShare); note != "" && result.TimingVerdict == "fail" {
+		if result.TimingReason != "" {
+			result.TimingReason += "; "
+		}
+		result.TimingReason += note
+	}
 	return result
 }
