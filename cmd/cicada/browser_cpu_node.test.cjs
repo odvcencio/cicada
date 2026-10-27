@@ -41,7 +41,7 @@ test('counts every excess block but keeps only the first indices', () => {
   assert.deepEqual(result.first, Array.from({length: 16}, (_, i) => 10 + i));
 });
 
-test('a series with no slow block, or no block at all, has no excess', () => {
+test('a series with no excess block, or no block at all, counts none', () => {
   assert.deepEqual(excessBlocks(Float32Array.from([0.25, 0.25]), 0.25), {thresholdMs: 1.15, count: 0, share: 0, first: []});
   assert.deepEqual(excessBlocks(new Float32Array(0), 0), {thresholdMs: 0.9, count: 0, share: 0, first: []});
 });

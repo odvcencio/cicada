@@ -578,7 +578,7 @@ func TestBrowserCPUReport(t *testing.T) {
 	}
 	// Without these flags the counter includes V8's background threads (see browserCPUNodeFlags).
 	if !slices.Equal(report.ExecArgv, browserCPUNodeFlags) || report.ExcessBlockShare == nil {
-		t.Fatalf("Node CPU report lacks its contamination evidence: node flags %q (want %q), excessBlockShare present=%v", report.ExecArgv, browserCPUNodeFlags, report.ExcessBlockShare != nil)
+		t.Fatalf("Node CPU report lacks the evidence of how it was measured: node flags %q (want %q), excessBlockShare present=%v", report.ExecArgv, browserCPUNodeFlags, report.ExcessBlockShare != nil)
 	}
 	// With them, V8 compiles the script's own clock reads on the timed thread unless the
 	// script has made enough of them first (warmCPUClock).

@@ -22,7 +22,7 @@ const FIRST_EXCESS_BLOCKS = 16;
 // Pairs of clock readings (one at the start of a block, one at its end) to make before the
 // timed loop. V8 compiles process.cpuUsage() and the helper it calls with its optimizing
 // compiler after some thousands of calls. With --single-threaded that compile runs on the
-// timed thread. On Node 24 and 26 it made one slow block of 1 to 2 ms at a fixed place in
+// timed thread. On Node 24 and 26 it made one excess block of 1 to 2 ms at a fixed place in
 // most runs (measured block 5187 on Node 24, 8605 on Node 26; --trace-opt shows the compile
 // there). Node 22, which CI pins, does not show it.
 const CLOCK_WARMUP_PAIRS = 100000;
