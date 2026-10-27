@@ -21,15 +21,22 @@ import (
 // as a full render. Loudness targeting relies on this, because each of its
 // passes changes only the export gain and the DC correction.
 //
-// The signal lives in a temporary file of 8 bytes per frame. Only the direct
-// renderer with a master chain uses the cache; the scheduled engine, stem
-// renders and renders that set NoteTap ignore it. A render with another score,
-// range, sample rate or block size replaces what the cache holds. If the file
-// cannot be written, for example because the disk is full, the cache turns
-// itself off and renders continue without it. A MasterCache is not safe for
-// concurrent use. Close removes the file.
+// The signal lives in a temporary file of 8 bytes per frame, from the start of
+// the song to the end of the rendered range and its tail, even when the render
+// starts at a later bar. Only the direct renderer with a master chain uses the
+// cache; the scheduled engine, stem renders and renders that set NoteTap ignore
+// it. A render whose score, range (From, Bars, TailSec), SampleRate, Block,
+// AssetRoot, AssetDir or SamplerBaseline differs from the stored capture
+// replaces that capture. If the file cannot be written, for example because the
+// disk is full, the cache turns itself off, empties its file to give the space
+// back, and renders continue without it.
+//
+// The cache matches a score by its pointer, not by its contents. Do not modify
+// a score between renders that share a cache: a changed score would replay the
+// signal of the old one. A copy of a score starts a new capture. A MasterCache
+// is not safe for concurrent use. Close removes the file.
 type MasterCache struct {
-	file     *os.File
+	file     cacheFile
 	key      masterCacheKey
 	frames   int64 // frames the stored capture holds, or the current capture will hold
 	ready    bool  // the file holds a complete capture of key
@@ -40,8 +47,19 @@ type MasterCache struct {
 	scratch  []byte
 }
 
+// cacheFile is the part of *os.File that a MasterCache uses. Tests wrap it to
+// fail the way a full disk does.
+type cacheFile interface {
+	io.ReadWriteSeeker
+	Truncate(size int64) error
+	Name() string
+	Close() error
+}
+
 // masterCacheKey is everything besides the export gain and the DC correction
-// that changes the signal entering the master stage.
+// that changes the signal entering the master stage. It holds the score
+// pointer, so the score stays alive while the cache refers to it and no other
+// score can take its address.
 type masterCacheKey struct {
 	score      *notation.Score
 	sampleRate int
@@ -151,10 +169,19 @@ func (c *MasterCache) endBlock() {
 		binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(sample))
 	}
 	if _, err := c.file.Write(data); err != nil {
-		c.disabled, c.ready = true, false
+		c.fail()
 		return
 	}
 	c.position += int64(len(c.block) / 2)
+}
+
+// fail turns the cache off for the rest of its life and empties its file. A
+// write fails mostly when the disk is full, and the render still has its own
+// output to write there; the partial capture would keep the space that output
+// needs. Close removes the file. If it cannot be emptied, the cache is still off.
+func (c *MasterCache) fail() {
+	c.disabled, c.ready = true, false
+	_ = c.file.Truncate(0)
 }
 
 // finishCapture marks a completed capture ready for replay.

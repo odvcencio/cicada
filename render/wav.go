@@ -49,9 +49,13 @@ type Options struct {
 	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
 	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
 	// MasterCache, when set, lets repeated direct renders of one score skip
-	// synthesis: later renders replay the signal that entered the master stage.
-	// Only MasterInputGainDB, MasterGainDB, MasterBiasL, MasterBiasR, Bits,
-	// Dither and Normalize may differ between renders that share a cache. See
+	// synthesis: a render replays the signal that entered the master stage when
+	// it differs from the stored capture only in MasterInputGainDB,
+	// MasterGainDB, MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A
+	// difference in anything else (the score, From, Bars, TailSec, SampleRate,
+	// Block, AssetRoot, AssetDir or SamplerBaseline) makes the render capture a
+	// new signal in place of the stored one. The cache matches scores by
+	// pointer, so do not modify a score between renders that share a cache. See
 	// MasterCache.
 	MasterCache *MasterCache
 	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits

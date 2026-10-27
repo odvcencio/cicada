@@ -238,6 +238,38 @@ func TestMasterCacheFailedCaptureIsRetried(t *testing.T) {
 	}
 }
 
+// A capture that fails after an earlier capture succeeded must not leave the
+// cache claiming it holds the new signal. The first capture's flag has to go
+// when the second capture begins, not when it ends.
+func TestMasterCacheFailedRecaptureIsNotReplayed(t *testing.T) {
+	cache := newTestMasterCache(t)
+	first, second := cacheScoreVariant(t), cacheScoreVariant(t, "pattern riff { 1 5 1 3 }", "pattern riff { 5 3 1 5 }")
+	opts := Options{SampleRate: 48000, TailSec: .1}
+	want, wantReport := renderCacheBytes(t, second, opts)
+	opts.MasterCache = cache
+	renderCacheBytes(t, first, opts)
+	if !cache.ready {
+		t.Fatal("the first capture is not ready")
+	}
+	if _, err := WAV(second, opts, &failAfter{limit: len(want) / 2}); !errors.Is(err, errCacheTestWrite) {
+		t.Fatalf("render with a failing writer: %v", err)
+	}
+	if cache.ready {
+		t.Fatal("a failed second capture left the cache ready")
+	}
+	replays := cache.Replays()
+	got, gotReport := renderCacheBytes(t, second, opts)
+	if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
+		t.Fatal("render after the failed capture differs from a full render")
+	}
+	if cache.Replays() != replays {
+		t.Fatalf("render after the failed capture replayed %d times from half a capture", cache.Replays()-replays)
+	}
+	if got, gotReport = renderCacheBytes(t, second, opts); !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) || cache.Replays() != replays+1 {
+		t.Fatalf("the repeated render did not replay the new capture: %d replays, want %d", cache.Replays(), replays+1)
+	}
+}
+
 var errCacheTestWrite = errors.New("test writer failed")
 
 type failAfter struct {
@@ -252,9 +284,9 @@ func (w *failAfter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// A cache whose file cannot be written, for example on a full disk, must not
-// fail the render. It stays off for the rest of its life.
-func TestMasterCacheWriteFailureDisablesTheCache(t *testing.T) {
+// A cache whose file is unusable before the render starts (here it is closed)
+// must not fail the render. It stays off for the rest of its life.
+func TestMasterCacheUnusableFileDisablesTheCache(t *testing.T) {
 	cache := newTestMasterCache(t)
 	score := cacheScoreVariant(t)
 	opts := Options{SampleRate: 48000, TailSec: .1}
@@ -271,6 +303,57 @@ func TestMasterCacheWriteFailureDisablesTheCache(t *testing.T) {
 	}
 	if !cache.disabled || cache.ready || cache.Replays() != 0 {
 		t.Fatalf("broken cache state: disabled=%v ready=%v replays=%d", cache.disabled, cache.ready, cache.Replays())
+	}
+}
+
+var errNoSpace = errors.New("no space left on device")
+
+// fullDiskFile is a cache file on a disk with limited room. A write that does
+// not fit stores the part that does and then fails, as a full disk does.
+type fullDiskFile struct {
+	*os.File
+	room int64 // bytes the file may still take
+}
+
+func (f *fullDiskFile) Write(p []byte) (int, error) {
+	n, err := f.File.Write(p[:min(int64(len(p)), f.room)])
+	f.room -= int64(n)
+	if err == nil && n < len(p) {
+		err = errNoSpace
+	}
+	return n, err
+}
+
+// A write that fails part way must not leave the partial capture on the disk:
+// the render still has its own output to write there. The render finishes with
+// the bytes a render without a cache gives, and the cache stays off.
+func TestMasterCacheFullDiskGivesItsSpaceBack(t *testing.T) {
+	cache := newTestMasterCache(t)
+	score := cacheScoreVariant(t)
+	opts := Options{SampleRate: 48000, TailSec: .1}
+	want, wantReport := renderCacheBytes(t, score, opts)
+	opts.MasterCache = cache
+	// Room for three 4096-frame blocks and a part of the fourth.
+	disk := &fullDiskFile{File: cache.file.(*os.File), room: 3*4096*8 + 100}
+	cache.file = disk
+	for i := range 2 {
+		got, gotReport := renderCacheBytes(t, score, opts)
+		if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
+			t.Fatalf("render %d on a full disk differs from a full render", i)
+		}
+		if i == 0 && disk.room != 0 {
+			t.Fatalf("the disk did not fill: %d bytes of room left", disk.room)
+		}
+	}
+	if !cache.disabled || cache.ready || cache.Replays() != 0 {
+		t.Fatalf("cache state after the disk filled: disabled=%v ready=%v replays=%d", cache.disabled, cache.ready, cache.Replays())
+	}
+	info, err := os.Stat(disk.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("the cache that failed still holds %d bytes of disk space", info.Size())
 	}
 }
 
@@ -353,7 +436,7 @@ func TestMasterCacheStoresEightBytesPerFrame(t *testing.T) {
 	cache := newTestMasterCache(t)
 	opts := Options{SampleRate: 48000, Bars: 2, TailSec: .1, MasterCache: cache}
 	_, report := renderCacheBytes(t, cacheScoreVariant(t), opts)
-	info, err := cache.file.Stat()
+	info, err := os.Stat(cache.file.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,5 +444,17 @@ func TestMasterCacheStoresEightBytesPerFrame(t *testing.T) {
 	// delay, which a render discards from the front of its output.
 	if info.Size() < report.Frames*8 || info.Size() > (report.Frames+8192)*8 || info.Size() != cache.frames*8 {
 		t.Fatalf("cache file is %d bytes for %d output frames and %d stored", info.Size(), report.Frames, cache.frames)
+	}
+}
+
+// The capture starts at bar 0, whatever bar the render starts at, so an excerpt
+// stores as much as a render of the song up to the same end.
+func TestMasterCacheExcerptStoresTheSongFromTheStart(t *testing.T) {
+	score := cacheScoreVariant(t)
+	whole, excerpt := newTestMasterCache(t), newTestMasterCache(t)
+	renderCacheBytes(t, score, Options{SampleRate: 48000, Bars: 2, TailSec: .1, MasterCache: whole})
+	_, report := renderCacheBytes(t, score, Options{SampleRate: 48000, From: 1, Bars: 1, TailSec: .1, MasterCache: excerpt})
+	if excerpt.frames != whole.frames || excerpt.frames <= report.Frames {
+		t.Fatalf("excerpt stored %d frames for %d output frames; a render of bars 1-2 stored %d", excerpt.frames, report.Frames, whole.frames)
 	}
 }
