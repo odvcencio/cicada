@@ -136,8 +136,14 @@ func recipeSyntax(data []byte, err error) error {
 	case errors.As(err, &syntax):
 		return fmt.Errorf("line %d: %s", lineOf(data, syntax.Offset), syntax.Error())
 	case errors.As(err, &typed):
+		line := lineOf(data, typed.Offset)
 		want := typed.Type.String()
 		switch typed.Type.Kind() {
+		case reflect.Struct:
+			if typed.Field == "" {
+				return fmt.Errorf("line %d: the recipe should be an object, not %s", line, typed.Value)
+			}
+			return fmt.Errorf("line %d: every entry of %q should be an object, not %s", line, typed.Field, typed.Value)
 		case reflect.Int:
 			want = "a whole number"
 		case reflect.String:
@@ -149,7 +155,7 @@ func recipeSyntax(data []byte, err error) error {
 		case reflect.Slice:
 			want = "a list"
 		}
-		return fmt.Errorf("line %d: %q should be %s, not %s", lineOf(data, typed.Offset), typed.Field, want, typed.Value)
+		return fmt.Errorf("line %d: %q should be %s, not %s", line, typed.Field, want, typed.Value)
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return fmt.Errorf("the recipe is empty or ends early; it must be one JSON object")
 	}
