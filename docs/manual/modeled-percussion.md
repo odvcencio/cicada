@@ -6,7 +6,9 @@ profiles are `model_steelpan`, `model_marimba`, `model_vibraphone`,
 `model_marble`. Notes set the pitch and, through velocity, how hard the bar is
 struck. Each track reserves four voices, so four struck bars ring at once; a
 fifth strike takes over the quietest. A track accepts `octave`, `sustain` and
-the usual mixer settings (`level`, `pan`, sends, inserts). The
+the usual mixer settings (`level`, `pan`, sends, inserts). The profile names
+are reserved for these tracks: an instrument, a kit or a sampler cannot take
+one, and the check reports `CICADA-DUPLICATE`. The
 [modeled instruments reference](../audio/modeled-instruments.md) describes the
 physical models.
 

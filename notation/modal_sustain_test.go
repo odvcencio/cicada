@@ -48,3 +48,21 @@ func TestSceneCanSetTheModalPedal(t *testing.T) {
 		t.Errorf("acid is %q", got)
 	}
 }
+
+func TestSamplerCannotTakeAModalProfileName(t *testing.T) {
+	// A sampler is built as a sampler even when its name is a model_ profile, so
+	// a pedal setting on its track would pass the check and then fault the
+	// engine. Instrument and kit names already reserve the profiles.
+	source := strings.NewReplacer(
+		"sampler hit {", "sampler model_vibraphone {",
+		"track chops hit {}", "track chops model_vibraphone {}",
+		"chops = hits", "chops = hits chops.sustain = 1",
+	).Replace(audioTestScore)
+	_, diagnostics := ParseEdition([]byte(source), 2)
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-DUPLICATE" && d.Severity == "error" && d.Position.Line > 0 && strings.Contains(d.Message, "unreserved sampler name") && strings.Contains(d.Message, "model_vibraphone") {
+			return
+		}
+	}
+	t.Fatalf("a sampler named model_vibraphone was accepted: %+v", diagnostics)
+}

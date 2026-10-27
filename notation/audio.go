@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
 
 // Asset identifies immutable WAV bytes. Dimensions describe source frames,
@@ -317,7 +319,10 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 				add("CICADA-DUPLICATE", "unique instrument name", sampler.Name, sampler.Position)
 			}
 		}
-		if sampler.Name == "acid" || sampler.Name == "drums" || sampler.Name == "guitar" || sampler.Name == "audio" {
+		// Instrument and kit names reserve the model_ profiles too. A sampler
+		// that took one would be built as a sampler, not as a modal track.
+		_, isModal := modal.ParseTrackKind(sampler.Name)
+		if isModal || sampler.Name == "acid" || sampler.Name == "drums" || sampler.Name == "guitar" || sampler.Name == "audio" {
 			add("CICADA-DUPLICATE", "unreserved sampler name", sampler.Name, sampler.Position)
 		}
 		samplers = append(samplers, sampler)
