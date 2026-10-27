@@ -50,7 +50,7 @@ func (t *studioTransport) captureRunningLocked() bool {
 // armCapture admits a prepared ring/writer and opens the device without starting
 // the score. The native take writer supplies this Recorder; browser capture is
 // a separate host. Mono/stereo input must use the existing duplex device clock.
-func (t *studioTransport) armCapture(recorder *capture.Recorder) error {
+func (t *studioTransport) armCapture(recorder *capture.Recorder, preparedMode ...string) error {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
 	rate, err := t.ensureSampleRate()
@@ -75,6 +75,18 @@ func (t *studioTransport) armCapture(recorder *capture.Recorder) error {
 		}
 		opened = true
 	}
+	if len(preparedMode) > 0 {
+		device, ok := t.audio.(interface{ SetPreparedCaptureMode(string) })
+		if !ok {
+			if opened {
+				_ = t.audio.Close()
+				t.audio = nil
+			}
+			return fmt.Errorf("this audio backend cannot select the prepared input channel")
+		}
+		device.SetPreparedCaptureMode(preparedMode[0])
+		defer device.SetPreparedCaptureMode("")
+	}
 	if err := t.audio.ArmCapture(recorder); err != nil {
 		if opened {
 			_ = t.audio.Close()
@@ -82,6 +94,7 @@ func (t *studioTransport) armCapture(recorder *capture.Recorder) error {
 		}
 		return err
 	}
+	t.preparedCapture = len(preparedMode) > 0
 	return nil
 }
 
@@ -135,6 +148,7 @@ func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli
 func (t *studioTransport) disarmCapture() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.preparedCapture = false
 	if t.audio == nil {
 		return nil
 	}

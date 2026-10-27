@@ -134,6 +134,14 @@ func (c *trackEffectChain) ampStage() *ampcab.Processor {
 	return amp
 }
 
+func (c *trackEffectChain) monitorAmpTargets() (AmpTargets, bool) {
+	amp := c.ampStage()
+	if amp == nil {
+		return AmpTargets{}, false
+	}
+	p := amp.Params()
+	return AmpTargets{Drive: p.Drive, Tone: p.Tone, Output: p.Output, Cabinet: p.Cabinet, Bypass: p.Bypass}, true
+}
 func (c *trackEffectChain) hasAmp() bool { return c.ampStage() != nil }
 func (c *trackEffectChain) ampControls() ([3]float64, bool) {
 	amp := c.ampStage()

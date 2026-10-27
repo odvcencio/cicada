@@ -58,6 +58,20 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	})
 	document.Call("addEventListener", "click", remember, true)
 	document.Call("addEventListener", "gosx:navigate", restore)
+	// Keep can commit before the refreshed history forms arrive. Block direct
+	// form submits as well as disabled buttons until those forms are replaced.
+	historyPending := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) > 0 {
+			event := args[0]
+			form := event.Get("target")
+			if workspacePresent(form) && form.Get("hasAttribute").Type() == js.TypeFunction && form.Call("hasAttribute", "data-history-refresh-pending").Bool() {
+				event.Call("preventDefault")
+				event.Call("stopImmediatePropagation")
+			}
+		}
+		return nil
+	})
+	document.Call("addEventListener", "submit", historyPending, true)
 	restorePendingShellChoice(host, root)
 	localClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || !root.Get("isConnected").Bool() {
@@ -143,6 +157,8 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	return func() {
 		document.Call("removeEventListener", "click", remember, true)
 		document.Call("removeEventListener", "gosx:navigate", restore)
+		document.Call("removeEventListener", "submit", historyPending, true)
+		historyPending.Release()
 		remember.Release()
 		restore.Release()
 		for _, release := range releases {

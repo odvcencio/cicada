@@ -107,8 +107,10 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 		value, at, shape, tension = first.Value, first.Tick, first.Shape, first.Curve
 	}
 	var ampNote gosx.Node = gosx.Fragment()
+	var monitorWrite gosx.Node = gosx.Fragment()
 	if strings.HasPrefix(d.ID, "amp.") {
-		ampNote = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This curve changes the track's playback amp. Input monitoring uses separate settings. Record automation during playback; finish any audio take first."))
+		ampNote = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This curve changes the track's playback amp. Input monitoring uses separate settings unless you link it while recording an audio take. The link monitors the amp and cabinet; other track effects remain playback only. For linked input, choose one recording pass."))
+		monitorWrite = field("Link Perform to the live input amp", gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "monitor"), gosx.Attr("data-studio-view-control", ""))))
 	}
 	returnTo := "/?panel=session&curvePath=" + url.QueryEscape(selected)
 	chooser := gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "action-form automation-parameter-picker")), hidden("panel", "session"), field("Automation parameter", selectInput("curvePath", selected, paths, "Automation parameter")), submit("", "", "Show curve"))
@@ -132,12 +134,13 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 		field("Perform "+selected, gosx.El("input", gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("name", "number"), gosx.Attr("min", d.Min), gosx.Attr("max", d.Max), gosx.Attr("step", "any"), gosx.Attr("value", value), gosx.Attr("data-automation-record-value", ""), gosx.Attr("data-studio-view-control", ""), gosx.Attr("aria-label", "Perform "+selected), gosx.Attr("disabled", true)))),
 		gosx.El("output", gosx.Attrs(gosx.Attr("data-automation-record-readout", "")), gosx.Text(fmt.Sprintf("%g%s", value, props.Unit))),
 		field("Replace saved curve", gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "replace"), gosx.Attr("data-studio-view-control", "")))),
+		monitorWrite,
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")),
 			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-record-command", "start"), gosx.Attr("disabled", true)), gosx.Text("Record movements")),
 			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-record-command", "keep"), gosx.Attr("disabled", true)), gosx.Text("Keep recorded curve")),
 			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-record-command", "discard"), gosx.Attr("disabled", true)), gosx.Text("Discard pass"))),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-automation-record-status", ""), gosx.Attr("role", "status")), gosx.Text("Ready. Start playback to record a movement.")),
-		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-record-help")), gosx.El("summary", gosx.Text("How to record movements")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Play the song, record a pass, and move Perform. Keep writes an editable curve in one Undo step. Movements use the song's sixteenth-note grid. A new pass starts at the saved value at its grid position; the control shows that starting value and your movements, not a continuous playback meter. Audio and automation cannot be recorded at the same time."))))
+		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-record-help")), gosx.El("summary", gosx.Text("How to record movements")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("For playback movement, play the song or start an audio take, then record a pass and move Perform. To hear amp movements on the input, select the destination track's amp parameter, link Perform and prepare before arming or recording. Then start the audio take and move Perform. Finish the take before keeping the curve; keeping the curve is one Undo step. Movements use the song's sixteenth-note grid. A new pass starts at the saved value at its grid position; the control shows that starting value and your movements, not a continuous playback meter."))))
 	content := gosx.Fragment(chooser, ampNote, recorder, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%s · %g to %g %s. Double-click the curve to add a point; drag a point to move it. Arrow keys adjust it; Escape cancels a drag.", selected, d.Min, d.Max, props.Unit))), graph, recalls,
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-automation-curve-status", ""), gosx.Attr("role", "status")), gosx.Text("Select a point, or add one with the controls below.")),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-new", "")), gosx.Text("New point")), pointForm,

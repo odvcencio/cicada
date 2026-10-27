@@ -236,18 +236,31 @@ requires **Replace saved curve**. Only the selected parameter is replaced.
 A loop restart, backwards seek, or changed playback ends the pass. Keep or
 discard it before starting another. A retained pass survives reopening Studio;
 a conflicting source edit leaves it available for recovery. This is one-parameter
-Write recording; Touch/Latch modes and simultaneous audio/automation recording
-are not yet supported.
+Write recording; Touch/Latch modes are not yet supported. To record a movement
+while recording audio, start the audio take first, then start the automation
+pass. Finish the take before keeping the curve. Keeping the curve is one Undo
+step; the recorded take remains separately available.
 
 On a track with exactly one amp insert, the playback amp's
 Drive, Tone and Output are available in the parameter picker. **Automate Drive**,
 **Automate Tone**, and **Automate Output** in the track's guitar sound controls
 open the matching curve. Automation belongs to the track even if its amp
 declaration is shared; changing the declaration itself affects its users.
-These curves change the track's playback, not the separate input
-monitoring sound. Start the pass during playback and finish any audio take
-first. The movement control starts from the saved value at the pass's grid
-position; it is not a continuous meter of playback changes.
+These curves normally change the track's playback, while input monitoring uses
+separate settings. To hear the movement on the input while recording, select
+the destination track's amp parameter and choose **Link Perform to the live
+input amp**, then choose **Prepare linked recording** before starting the
+audio take. Use **Record take** in Session and move **Perform**; the linked pass begins
+with recording. The monitor temporarily follows the track amp and cabinet and
+its other saved amp curves; other track effects are
+heard only on playback. The monitor's previous settings return after
+the pass. Choose one recording pass; linked Write is unavailable during
+multi-pass loop recording. The take stays dry and uses the selected mono or
+stereo input. Changes
+follow at the device period and through
+the amp's smoothing, so this does not promise sample-identical monitoring or
+physical input latency. The movement control starts from the saved value at the
+pass's grid position; it is not a continuous meter of playback changes.
 
 ![Recorded vocal level curve in the Studio Detail dock, using the original Anywhere You Are test project.](screenshots/studio-elastic-automation-1280.png)
 

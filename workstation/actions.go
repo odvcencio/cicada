@@ -241,7 +241,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 					return nil, err
 				}
 			}
-			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["command"], "path": f["path"], "name": f["takeId"], "value": map[string]any{"number": number, "replace": f["replace"] == "on"}}, nil
+			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["command"], "path": f["path"], "name": f["takeId"], "value": map[string]any{"number": number, "replace": f["replace"] == "on", "monitor": f["monitor"] == "on"}}, nil
 		}),
 		"automation": s.mutation("/api/automation", func(f map[string]string) (any, error) {
 			if f["action"] == "automation-point-set" || f["action"] == "automation-point-remove" {
