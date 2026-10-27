@@ -3,15 +3,24 @@ package recording
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 )
 
 // Options controls automatic slicing. Root is the fallback for unpitched hits;
 // detected musical notes get individual roots when AutoPitch is enabled.
+//
+// Ringing is for drums and cymbals, whose tails outlast the usual 120 ms
+// minimum between hits and swell again after the first impact. Hits must then
+// be at least half a second apart, and a hit starts only where the energy
+// rises 2.5 times above its quietest level in the previous 10 ms. Each hit
+// keeps its tail until the energy is 60 dB below the take's loudest hit, or
+// twice the noise floor when that is higher.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
 	AutoPitch bool `json:"autoPitch"`
+	Ringing   bool `json:"ringing,omitempty"`
 }
 
 func DefaultOptions() Options { return Options{Root: 60, Layers: 3} }
@@ -73,7 +82,19 @@ func Analyze(inputs []Audio, options Options) ([]Hit, error) {
 		ordered := append([]float64(nil), energy...)
 		sort.Float64s(ordered)
 		noise := ordered[len(ordered)/5]
+		if options.Ringing {
+			// Tails fill much of a ringing take, so read its floor lower.
+			noise = ordered[len(ordered)/20]
+		}
 		threshold := max(.0008, max(noise*6, ordered[len(ordered)-1]*.10))
+		quietLevel := max(threshold*.3, noise*2)
+		if options.Ringing {
+			quietLevel = max(threshold*.01, noise*2)
+		}
+		gap := a.Rate * 120 / 1000
+		if options.Ringing {
+			gap = a.Rate / 2
+		}
 		var onsets []int
 		last := -a.Rate
 		for w, e := range energy {
@@ -82,7 +103,15 @@ func Analyze(inputs []Audio, options Options) ([]Hit, error) {
 			if w > 0 {
 				previous = energy[w-1]
 			}
-			if e > threshold && (previous < threshold || e > max(threshold, previous*2.5)) && frame-last >= a.Rate*120/1000 {
+			rises := previous < threshold || e > max(threshold, previous*2.5)
+			if options.Ringing {
+				floor := 0.0
+				if w > 0 {
+					floor = slices.Min(energy[max(0, w-5):w])
+				}
+				rises = e > floor*2.5
+			}
+			if e > threshold && rises && frame-last >= gap {
 				onsets = append(onsets, frame)
 				last = frame
 			}
@@ -91,12 +120,16 @@ func Analyze(inputs []Audio, options Options) ([]Hit, error) {
 			limit := len(a.PCM)
 			if j+1 < len(onsets) {
 				limit = onsets[j+1]
+				if options.Ringing {
+					// Leave out the lead-in of the next hit.
+					limit -= a.Rate * 3 / 1000
+				}
 			}
 			start := max(0, onset-a.Rate*3/1000)
 			end := limit
 			quiet := 0
 			for w := onset / hop; w < len(energy) && w*hop < limit; w++ {
-				if energy[w] < max(threshold*.3, noise*2) {
+				if energy[w] < quietLevel {
 					quiet++
 				} else {
 					quiet = 0
