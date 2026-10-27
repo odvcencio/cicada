@@ -13,6 +13,16 @@ import (
 const CPUBudgetMs = 0.67
 const HostSampleInterval = 30 * time.Second
 
+// The Node fallback times each block with process.cpuUsage(), which adds up the CPU
+// time of every thread in the process. Linux credits a thread other than the caller
+// only at a scheduler tick, so a tick inside a block adds a whole tick (1 ms at
+// 1000 Hz) of another thread's time. cmd/cicada/browser_cpu_node.js counts the
+// measured blocks that ran more than ForeignCPUExcessMs above the median (a Go test
+// keeps the two constants equal). A share above ForeignCPUShareLimit means the p99
+// may be another thread's time, so the budget cannot be judged from it.
+const ForeignCPUExcessMs = 0.9
+const ForeignCPUShareLimit = 0.005
+
 type HostSample struct {
 	SampledAt         time.Time `json:"sampledAt"`
 	Load1             float64   `json:"loadAverage1Minute"`
@@ -124,7 +134,19 @@ func ClockCanResolveBudget(resolutionMs, budgetMs float64) bool {
 	return resolutionMs > 0 && budgetMs > 0 && resolutionMs <= budgetMs
 }
 
-func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResolutionMs, budgetMs float64) Result {
+// ForeignCPUReason returns the reason to pass to Evaluate when the share of
+// measured blocks above the median by ForeignCPUExcessMs is over the limit, and
+// "" when the counter is clean enough to judge.
+func ForeignCPUReason(share float64) string {
+	if !(share > ForeignCPUShareLimit) {
+		return ""
+	}
+	return fmt.Sprintf("foreign CPU in counter: %.2f%% of measured blocks ran more than %.1f ms above the median (limit %.2f%%)", 100*share, ForeignCPUExcessMs, 100*ForeignCPUShareLimit)
+}
+
+// Evaluate returns the timing verdict. Each non-empty extraReasons entry makes the
+// timing inconclusive, like a busy host or a clock too coarse for the budget.
+func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResolutionMs, budgetMs float64, extraReasons ...string) Result {
 	var reasons []string
 	if HostBusy(samples) {
 		reasons = append(reasons, "host busy: 1-minute load exceeded half the available CPU count")
@@ -141,6 +163,11 @@ func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResol
 	}
 	if !ClockCanResolveBudget(clockResolutionMs, budgetMs) {
 		reasons = append(reasons, fmt.Sprintf("clock resolution %.2f ms cannot resolve %.2f ms budget", clockResolutionMs, budgetMs))
+	}
+	for _, reason := range extraReasons {
+		if reason != "" {
+			reasons = append(reasons, reason)
+		}
 	}
 	result := Result{TimingVerdict: "pass", TimingReason: strings.Join(reasons, "; ")}
 	if len(reasons) != 0 {

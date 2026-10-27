@@ -3,11 +3,30 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/internal/soaktiming"
 )
+
+// browserCPUNodeFlags keep other threads' CPU time out of process.cpuUsage(), which
+// browser_cpu_node.js reads once per block. By default V8 compiles the kernel with
+// Liftoff and tiers it up on background threads while the timed loop runs, and Linux
+// credits those threads to the process counter at scheduler ticks. These flags
+// compile the whole kernel with the optimizing compiler before the loop and start no
+// background task. Use all three: --single-threaded alone disables tier-up and leaves
+// slow Liftoff code in the loop, and the two compile flags alone leave background
+// threads running.
+var browserCPUNodeFlags = []string{"--single-threaded", "--no-liftoff", "--no-wasm-lazy-compilation"}
+
+// browserCPUNodeCommand times the kernel in Node. Run it from cmd/cicada. Node reads
+// its own flags only before the script name.
+func browserCPUNodeCommand(wasmPath, imagePath string, blocks int) *exec.Cmd {
+	args := append(append([]string{}, browserCPUNodeFlags...), "browser_cpu_node.js", wasmPath, imagePath, strconv.Itoa(blocks))
+	return exec.Command("node", args...)
+}
 
 const browserSoakCPUBudgetMs = soaktiming.CPUBudgetMs
 const browserSoakHostSampleInterval = soaktiming.HostSampleInterval
@@ -26,6 +45,7 @@ type browserSoakChecks struct {
 	MemoryStable        bool
 	Underruns           int
 	CPUUsedMs           float64
+	CPUForeignShare     float64 // share of blocks well above the median, 0 if the engine lacks it
 	HighResolutionClock bool
 	QuantumMs           float64
 }
@@ -38,6 +58,7 @@ type browserSoakCPUReport struct {
 	CPUMsPerCallback  float64                 `json:"cpuMsPerCallback"`
 	BudgetMs          float64                 `json:"cpuBudgetMs"`
 	BudgetMetric      string                  `json:"cpuBudgetMetric"`
+	ExcessBlockShare  *float64                `json:"excessBlockShare"` // nil unless the Node fallback wrote it
 	HostLoadSamples   []browserSoakHostSample `json:"hostLoadSamples"`
 }
 
@@ -55,7 +76,9 @@ func browserSoakVerdict(checks browserSoakChecks, soakSamples, cpuSamples []brow
 	// The CPU value is cached from budget-browser. Only that report's load
 	// samples describe its measurement window; later soak samples cannot
 	// establish whether that earlier CPU measurement was quiet.
-	cpu := soaktiming.Evaluate(checks.CPUUsedMs <= browserSoakCPUBudgetMs, correctnessPass, cpuSamples, cpuClockResolutionMs, browserSoakCPUBudgetMs)
+	// The same report's share of blocks above the median says whether other threads'
+	// CPU time reached the counter that produced the cached value.
+	cpu := soaktiming.Evaluate(checks.CPUUsedMs <= browserSoakCPUBudgetMs, correctnessPass, cpuSamples, cpuClockResolutionMs, browserSoakCPUBudgetMs, soaktiming.ForeignCPUReason(checks.CPUForeignShare))
 	result := browserSoakResult{UnderrunTiming: underruns, CPUTiming: cpu}
 	result.TimingVerdict = "pass"
 	result.GatePass = underruns.GatePass && cpu.GatePass
@@ -97,7 +120,8 @@ func browserCPUSoakTiming(t *testing.T, stop func() []browserSoakHostSample, rep
 	samples := stop()
 	observedMs, _ := report["cpuClockResolutionMs"].(float64)
 	resolution := browserSoakCPUClockResolutionMs(engine, clock, observedMs)
-	verdict := soaktiming.Evaluate(timingPass, correctnessPass, samples, resolution, browserSoakCPUBudgetMs)
+	foreignShare, _ := report["excessBlockShare"].(float64)
+	verdict := soaktiming.Evaluate(timingPass, correctnessPass, samples, resolution, browserSoakCPUBudgetMs, soaktiming.ForeignCPUReason(foreignShare))
 	report["timingVerdict"], report["timingReason"], report["gatePass"] = verdict.TimingVerdict, verdict.TimingReason, verdict.GatePass
 	report["hostLoadSamples"], report["hostBusy"] = samples, browserSoakHostBusy(samples)
 	report["hostLoadSampleIntervalSeconds"] = int(browserSoakHostSampleInterval.Seconds())

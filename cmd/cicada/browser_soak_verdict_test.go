@@ -1,8 +1,14 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"slices"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/internal/soaktiming"
 )
 
 func TestBrowserSoakHostBusy(t *testing.T) {
@@ -197,5 +203,127 @@ func TestBrowserCPUSoakTiming(t *testing.T) {
 				t.Errorf("ordinary CPU report unexpectedly changed: %v", report)
 			}
 		})
+	}
+}
+
+func TestBrowserSoakForeignCPUVerdict(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		share   float64
+		cpuMs   float64
+		verdict string
+		pass    bool
+	}{
+		{"clean counter over budget fails", 0, 0.8, "fail", false},
+		{"share at the limit is clean", soaktiming.ForeignCPUShareLimit, 0.8, "fail", false},
+		{"clean counter within budget passes", 0.001, 0.3, "pass", true},
+		{"contaminated counter over budget is inconclusive", 0.0051, 1.231, "inconclusive", true},
+		{"contaminated counter within budget is inconclusive too", 0.02, 0.3, "inconclusive", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			checks := browserSoakChecks{
+				EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
+				CPUUsedMs: test.cpuMs, CPUForeignShare: test.share,
+				HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
+			}
+			samples := []browserSoakHostSample{{Load1: 1, CPUCount: 8}}
+			result := browserSoakVerdict(checks, samples, samples, 0.001)
+			if result.CPUTiming.TimingVerdict != test.verdict || result.GatePass != test.pass {
+				t.Errorf("CPU timing = %+v, want %s pass=%v", result.CPUTiming, test.verdict, test.pass)
+			}
+			if got := strings.Contains(result.CPUTiming.TimingReason, "foreign CPU in counter"); got != (test.share > soaktiming.ForeignCPUShareLimit) {
+				t.Errorf("foreign CPU reason present = %v for share %g: %q", got, test.share, result.CPUTiming.TimingReason)
+			}
+			if result.UnderrunTiming.TimingVerdict != "pass" {
+				t.Errorf("the CPU counter must not change the underrun verdict: %+v", result.UnderrunTiming)
+			}
+		})
+	}
+}
+
+// Foreign CPU time belongs to the CPU measurement only. Underruns stay a hard gate.
+func TestBrowserSoakUnderrunsFailWithContaminatedCPU(t *testing.T) {
+	checks := browserSoakChecks{
+		EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
+		Underruns: 3, CPUUsedMs: 1.231, CPUForeignShare: 0.05,
+		HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
+	}
+	samples := []browserSoakHostSample{{Load1: 1, CPUCount: 8}}
+	result := browserSoakVerdict(checks, samples, samples, 0.001)
+	if result.UnderrunTiming.TimingVerdict != "fail" || result.CPUTiming.TimingVerdict != "inconclusive" || result.GatePass {
+		t.Errorf("underruns must fail whatever the CPU counter held: %+v", result)
+	}
+}
+
+func TestBrowserCPUSoakTimingForeignCPU(t *testing.T) {
+	quiet := func() []browserSoakHostSample { return []browserSoakHostSample{{Load1: 1, CPUCount: 8}} }
+	const engine, clock = "Node V8 WebAssembly", "process.cpuUsage() user milliseconds"
+	for _, test := range []struct {
+		name     string
+		report   map[string]any
+		verdict  string
+		enforced bool
+		gatePass bool
+	}{
+		{"clean counter keeps its budget", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.0}, "fail", true, false},
+		{"contaminated counter is inconclusive", map[string]any{"cpuClockResolutionMs": 0.001, "excessBlockShare": 0.02}, "inconclusive", false, true},
+		{"a report without a share is not treated as contaminated", map[string]any{"cpuClockResolutionMs": 0.001}, "fail", true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if enforced := browserCPUSoakTiming(t, quiet, test.report, false, true, engine, clock); enforced != test.enforced {
+				t.Errorf("CPU timing enforced = %v, want %v", enforced, test.enforced)
+			}
+			if test.report["timingVerdict"] != test.verdict || test.report["gatePass"] != test.gatePass {
+				t.Errorf("report verdict = %v gatePass = %v, want %s %v", test.report["timingVerdict"], test.report["gatePass"], test.verdict, test.gatePass)
+			}
+			reason, _ := test.report["timingReason"].(string)
+			if strings.Contains(reason, "foreign CPU in counter") != (test.verdict == "inconclusive") {
+				t.Errorf("timing reason = %q", reason)
+			}
+		})
+	}
+}
+
+func TestBrowserSoakCPUReportShare(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		json string
+		want *float64
+	}{
+		{"absent", `{"engine":"Node V8 WebAssembly"}`, nil},
+		{"zero is a measurement", `{"engine":"Node V8 WebAssembly","excessBlockShare":0}`, new(float64)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var report browserSoakCPUReport
+			if err := json.Unmarshal([]byte(test.json), &report); err != nil {
+				t.Fatal(err)
+			}
+			if (report.ExcessBlockShare == nil) != (test.want == nil) || (test.want != nil && *report.ExcessBlockShare != *test.want) {
+				t.Errorf("share = %v, want %v", report.ExcessBlockShare, test.want)
+			}
+		})
+	}
+}
+
+// Node reads its own flags only before the script name, and it needs all three
+// (see browserCPUNodeFlags), so pin the whole command line.
+func TestBrowserCPUNodeCommand(t *testing.T) {
+	command := browserCPUNodeCommand("kernel.wasm", "kernel.image", 11264)
+	want := []string{"node", "--single-threaded", "--no-liftoff", "--no-wasm-lazy-compilation", "browser_cpu_node.js", "kernel.wasm", "kernel.image", "11264"}
+	if !slices.Equal(command.Args, want) {
+		t.Errorf("Node command = %q, want %q", command.Args, want)
+	}
+}
+
+// The reporter and the verdict must agree on how far above the median a block is
+// counted. The reporter is a script, so compare the source.
+func TestNodeCPUReporterUsesTheForeignCPUExcess(t *testing.T) {
+	source, err := os.ReadFile("browser_cpu_node.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("const EXCESS_BLOCK_MS = %v;", soaktiming.ForeignCPUExcessMs)
+	if !strings.Contains(string(source), want) {
+		t.Errorf("browser_cpu_node.js must declare %q to match soaktiming.ForeignCPUExcessMs", want)
 	}
 }

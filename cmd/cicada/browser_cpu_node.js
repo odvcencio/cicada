@@ -2,6 +2,20 @@
 const MESSAGE_BYTES = 512 * 16;
 const fs = require('node:fs');
 
+// process.cpuUsage() adds up the CPU time of every thread in the process. Linux reads
+// the calling thread exactly, but credits another running thread only at a scheduler
+// tick, so a block that spans a tick can pick up a whole tick (1 ms at 1000 Hz, 4 ms at
+// 250 Hz) of that thread's time. The Go test therefore starts this script with
+// --single-threaded --no-liftoff --no-wasm-lazy-compilation: V8 compiles the whole kernel
+// before the timed loop and runs no background task. A block more than EXCESS_BLOCK_MS
+// above the median shows that a tick still got in; the Go test turns too many of them into
+// an inconclusive CPU verdict. Do not switch to process.threadCpuUsage(): on Linux it
+// advances only once per tick (7 to 10 times in 40 ms on a 250 Hz kernel), too coarse for
+// a 0.2 ms block.
+const EXCESS_BLOCK_MS = 0.9;
+// Keep the first few indices so a periodic cause (a bar boundary) can be told from random ticks.
+const FIRST_EXCESS_BLOCKS = 16;
+
 function calibrateCPUClockResolutionMs(cpuUsage = process.cpuUsage, sampleCount = 4096) {
   // Calibrate the user CPU clock used below, not the units in its report label.
   // cpuUsage reports microseconds; retain the smallest observed nonzero tick.
@@ -14,6 +28,20 @@ function calibrateCPUClockResolutionMs(cpuUsage = process.cpuUsage, sampleCount 
     previous = current;
   }
   return Number.isFinite(smallest) ? smallest / 1000 : null;
+}
+
+// Count the blocks that ran more than excessMs above the median. blockMs is in timing
+// order, so the kept indices show whether the slow blocks are periodic or random.
+function excessBlocks(blockMs, medianMs, excessMs = EXCESS_BLOCK_MS, keep = FIRST_EXCESS_BLOCKS) {
+  const thresholdMs = medianMs + excessMs;
+  const first = [];
+  let count = 0;
+  for (let index = 0; index < blockMs.length; index++) {
+    if (!(blockMs[index] > thresholdMs)) continue;
+    count++;
+    if (first.length < keep) first.push(index);
+  }
+  return {thresholdMs, count, share: blockMs.length ? count / blockMs.length : 0, first};
 }
 
 async function main() {
@@ -66,8 +94,10 @@ async function main() {
     if (block + 1 === warmupBlocks) warmMemoryBytes = x.memory.buffer.byteLength;
   }
 
-  const measured = samples.slice(warmupBlocks).sort();
+  const inOrder = samples.subarray(warmupBlocks);
+  const measured = inOrder.slice().sort();
   const percentile = p => measured[Math.min(measured.length - 1, Math.floor((measured.length - 1) * p))] || 0;
+  const excess = excessBlocks(inOrder, percentile(0.50));
   const report = {
     engine: 'Node V8 WebAssembly',
     clock: 'process.cpuUsage() user milliseconds',
@@ -80,18 +110,25 @@ async function main() {
     p95: percentile(0.95),
     p99: percentile(0.99),
     max: measured[measured.length - 1] || 0,
+    excessBlockThresholdMs: excess.thresholdMs,
+    excessBlocks: excess.count,
+    excessBlockShare: excess.share,
+    firstExcessBlocks: excess.first,
     blocksOverDeadlineCpuTime,
     faults,
     initialMemoryBytes,
     warmMemoryBytes,
     finalMemoryBytes: x.memory.buffer.byteLength,
     memoryGrowthAfterWarmupBytes: x.memory.buffer.byteLength - warmMemoryBytes,
-    outputChecksum: copiedLeft[127] + copiedRight[127]
+    outputChecksum: copiedLeft[127] + copiedRight[127],
+    nodeVersion: process.version,
+    v8Version: process.versions.v8,
+    execArgv: process.execArgv
   };
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 
-module.exports = {calibrateCPUClockResolutionMs};
+module.exports = {calibrateCPUClockResolutionMs, excessBlocks, EXCESS_BLOCK_MS};
 if (require.main === module) {
   main().catch(error => {
     process.stderr.write(`${error.stack || error}\n`);
