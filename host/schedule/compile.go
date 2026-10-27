@@ -10,16 +10,52 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+// residentBudget is the resident PCM that sampler assets and unstreamed clips
+// may hold together. On the resident path (the browser image and the WAM2
+// export) sampler packs count against it too.
+const residentBudget = 64 << 20
+
+var errResidentBudget = fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget")
+
+// Options tune a native compile.
+type Options struct {
+	// MaxResidentPCM caps the decoded float32 PCM, in bytes, of all sampler
+	// packs in the project. Zero selects instrumentpack.DefaultMaxResidentPCM
+	// (1 GiB). A pack whose PCM takes the total past the cap is refused with an
+	// *instrumentpack.ResidentPCMError that names the cap and the size measured.
+	// The cap does not apply to CompileResident.
+	MaxResidentPCM int64
+}
+
+// Compile prepares a project for native playback and offline export. Sampler
+// pack PCM does not count against the 64 MiB resident budget. The packs share
+// one cap instead, which Compile leaves at instrumentpack.DefaultMaxResidentPCM;
+// CompileWithOptions sets it.
 func Compile(p *project.Project, root string, rate, block int) (engine.Config, error) {
-	return compile(p, root, rate, block, false)
+	return CompileWithOptions(p, root, rate, block, Options{})
+}
+
+// CompileWithOptions is Compile with a chosen cap on sampler pack PCM.
+func CompileWithOptions(p *project.Project, root string, rate, block int, opts Options) (engine.Config, error) {
+	packCap, err := instrumentpack.NewResidentCap(opts.MaxResidentPCM)
+	if err != nil {
+		return engine.Config{}, err
+	}
+	return compile(p, root, rate, block, false, packCap)
 }
 
 // CompileResident retains the bounded PCM kernel-image/browser path. Native
-// playback and offline exports use Compile to page long arrangement clips.
+// playback and offline exports use Compile to page long arrangement clips and
+// to hold sampler packs outside the 64 MiB budget. Here the assets and the
+// packs share that budget.
 func CompileResident(p *project.Project, root string, rate, block int) (engine.Config, error) {
-	return compile(p, root, rate, block, true)
+	return compile(p, root, rate, block, true, nil)
 }
-func compile(p *project.Project, root string, rate, block int, forceResident bool) (engine.Config, error) {
+
+// compile counts each sampler pack against packCap on the native path. When
+// forceResident is set, packCap is nil and the packs count against
+// residentBudget together with the assets.
+func compile(p *project.Project, root string, rate, block int, forceResident bool, packCap *instrumentpack.ResidentCap) (engine.Config, error) {
 	if err := project.ValidateProject(p); err != nil {
 		return engine.Config{}, err
 	}
@@ -41,15 +77,15 @@ func compile(p *project.Project, root string, rate, block int, forceResident boo
 	var streamIDs []uint32
 	for i, a := range p.Assets {
 		bytes := a.Frames * int64(a.Channels) * 4
-		if !forceResident && clipAssets[a.Name] && !samplerAssets[a.Name] && (bytes > 1<<20 || a.Frames > sampleasset.FrameLimit(a) || bytes > 64<<20-resident) {
+		if !forceResident && clipAssets[a.Name] && !samplerAssets[a.Name] && (bytes > 1<<20 || a.Frames > sampleasset.FrameLimit(a) || bytes > residentBudget-resident) {
 			id := uint32(i + 1)
 			assets[i] = engine.AudioAsset{SampleRate: a.RateHz, Frames: a.Frames, StreamID: id}
 			streamAssets = append(streamAssets, a)
 			streamIDs = append(streamIDs, id)
 			continue
 		}
-		if a.Frames > sampleasset.FrameLimit(a) || bytes <= 0 || bytes > 64<<20-resident {
-			return engine.Config{}, fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget")
+		if a.Frames > sampleasset.FrameLimit(a) || bytes <= 0 || bytes > residentBudget-resident {
+			return engine.Config{}, errResidentBudget
 		}
 		region, err := sampleasset.LoadRegion(root, a, 0, a.Frames, 60, false)
 		if err != nil {
@@ -83,18 +119,14 @@ func compile(p *project.Project, root string, rate, block int, forceResident boo
 		config := prepared.Manifest.Config
 		config.Voices = sampler.Voices
 		factory := &engine.PackFactory{Zones: prepared.Zones, Config: config}
-		// Count immutable regions once even when several zones share an asset.
-		seen := map[*float32]bool{}
-		for _, z := range prepared.Zones {
-			for _, pcm := range [][]float32{z.Region.Left, z.Region.Right} {
-				if len(pcm) > 0 && !seen[&pcm[0]] {
-					resident += int64(len(pcm)) * 4
-					seen[&pcm[0]] = true
-				}
+		if forceResident {
+			// Immutable regions count once even when several zones share an asset.
+			resident += prepared.ResidentPCMBytes()
+			if resident > residentBudget {
+				return engine.Config{}, errResidentBudget
 			}
-		}
-		if resident > 64<<20 {
-			return engine.Config{}, fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget")
+		} else if err := packCap.Add(sampler.Pack, prepared); err != nil {
+			return engine.Config{}, err
 		}
 		packs[sampler.Name] = factory
 	}
