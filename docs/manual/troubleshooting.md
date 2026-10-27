@@ -29,6 +29,27 @@ valid but still fail a name, type, unit, range, or engine check.
   cells; drum rows in a pattern must have equal lengths. A declared `steps`
   value is a check and must match the expanded pattern.
 
+## Browser export is refused
+
+A score can pass `cicada check` against the desktop limits (64 tracks, 256
+voices) and still be refused for a browser image. Run
+`cicada check --profile browser` to see which limit it reaches. The report lists
+the voices each track reserves.
+
+- **`portable browser/WAM exports support at most 16 tracks and 32 allocated
+  voices`** — remove or merge tracks, or lower `voices` on keys tracks and
+  sampler packs.
+- **`project image exceeds 2 MiB`** or **`project image exceeds limit`** — the
+  image stores audio at 4 bytes per sample per channel. Shorten or remove audio
+  assets and samples. The report shows the audio as `image at least N of
+  2097152 bytes`; the whole image is that size or larger.
+- **`prepared master processor must be loaded separately`** — a browser image
+  cannot carry a `master` insert. The `bus music` insert takes one compressor and
+  no other effect, so put a compressor there and move any other effect to a track
+  insert, which processes only that track. A track insert makes the image need
+  the processing kernel `cicada-vocals.wasm`; see the
+  [mix chain](../audio/mix-chain.md).
+
 ## Studio does not start
 
 - **`GoSX workstation executable is missing`** — Studio runs as two programs,

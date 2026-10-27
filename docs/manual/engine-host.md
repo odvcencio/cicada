@@ -184,6 +184,9 @@ their parameters. Native playback supports up to 64 tracks and 256 allocated
 voices; browser and WAM images retain 16 tracks and 32 voices. Small native
 projects keep the portable 32-voice configuration. Larger projects export as
 WAV or stems; portable export rejects them before writing an image.
+`cicada check --profile browser` applies the portable limits to a score and
+lists the voices each track reserves; see
+[Check the browser limits](wam2.md#check-the-browser-limits).
 
 The engine can queue scene changes at a quantized boundary. Pattern-end
 quantization waits until active patterns reach a shared end. With different

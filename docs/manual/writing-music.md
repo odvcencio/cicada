@@ -78,7 +78,7 @@ A command given any listed source loads the whole project. `check` reports error
 
 Multi-file migration requires atomic file exchange, available on supported Linux and Windows filesystems. It refuses before writing project files when that operation is unavailable. Editor saves made during publication cause a revision conflict and rollback. Displaced versions and their `.revision` receipts remain in the project directory so writes through already-open editor handles can be recovered. If a later command reports an external write or incomplete save in a recovery file, close other editors, compare and merge that version with the project file, then move the recovery file and its receipt out of the project directory before retrying.
 
-The language server uses unsaved buffers alongside the other listed files. Go to definition and rename work across files. Save As copies all sources and their assets. Studio currently refuses projects with more than one source file with a message directing you to a text editor, check, play, or render. Its editing and undo history remain available for single-file projects.
+The language server uses unsaved buffers alongside the other listed files. Go to definition and rename work across files. Save As copies all sources and their assets. Studio opens a multi-file project from any listed score. Its Code lens lists every source file; edits there are checked, saved and undone for each file on its own, and the other files keep their exact bytes. Grid, scene and recording edits are written to the file that owns the pattern or scene, and grid and scene edits share one project history. See [Score and history](studio.md#score-and-history).
 
 ## Import a library
 
@@ -554,4 +554,4 @@ Presets cannot add DSP expressions, change routing, replace an asset, or inherit
 
 The language server completes preset targets and their parameters, including imported instrument parameters. `cicada fmt` preserves preset declarations; conversion to semantic JSON or generated source writes their resolved values. Try [Preset circuit](../../examples/presets/main.cicada) for an authored instrument preset, an acid preset, and a preset imported from the vendored examples library.
 
-Studio has no “save as preset” action in this version. Write the declaration in the score editor. Studio refuses multi-file projects; use the [library commands](libraries.md) to manage declarations in libraries.
+Studio's Library panel can save a track's stored values as a preset; see [Library](studio.md#library). You can also write the declaration in the score editor. Use the [library commands](libraries.md) to manage declarations in libraries.

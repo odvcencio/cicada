@@ -85,6 +85,23 @@ It logs eight bars, enters combat, raises intensity, and triggers a pickup cue.
 The output JSON is the control manifest for JS. Compile the same project to a
 kernel image with `project.CompileEngine` and `kernelimage.Encode` for the browser.
 
+A host that does not run Go can write the manifest with `cicada director`,
+which makes the same file from a score without building the example:
+
+```sh
+cicada director examples/game-director.cicada -o build/game-director.json
+```
+
+A browser host needs the project image as well as the manifest, and `cicada
+director` writes only the manifest. Build the image as above, or take
+`score-48000.bin` from a `cicada wam2` export of the same score.
+
+`--rate` sets the manifest's sample rate to 44100, 48000 (the default) or 96000
+Hz. Create the audio context at that rate, because the manifest holds frame
+counts for smoothing and crossfades. The command refuses a score that has no
+`live` block or that has more than 16 tracks, and it replaces an existing
+output file.
+
 ## JavaScript and TypeScript
 
 The MIT package in [`sdk/js`](../../sdk/js) is `@cicada/game-director`, version
@@ -104,6 +121,8 @@ game.triggerStinger('pickup');
 
 for (const message of decodeMessages(messageBytes)) game.handle(message);
 ```
+
+Here `manifest` is the parsed JSON that `cicada director` writes.
 
 [The browser game example](../../examples/game-director/game.mjs) initializes a
 worklet, returns its reusable message buffer, starts playback, and exposes

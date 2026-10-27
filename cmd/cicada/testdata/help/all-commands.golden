@@ -33,13 +33,15 @@ Flags:
 With --all, the score path is optional; run the command from the project folder.
 
 ### check
-cicada check [score.cicada]
+cicada check [--profile desktop|browser] [score.cicada]
 
 validate one score or the current project
 
 Flags:
-  (no command flags)
-  --help      show this help
+  --profile <name>  limits to check against: desktop (default) or browser
+  --help            show this help
+
+The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded.
 
 ### fmt
 cicada fmt [--check|-w] [score.cicada]
@@ -283,6 +285,18 @@ Flags:
   --sdk <directory> WAM SDK directory (default build/wam2-sdk/node_modules/@webaudiomodules/sdk)
   --midi-track <id> MIDI instrument track (default first supported track)
   --help          show this help
+
+### director
+cicada director <score.cicada> -o <director.json> [--rate <Hz>]
+
+write the Game Director manifest for browser hosts
+
+Flags:
+  -o <file>    required output JSON path
+  --rate <Hz>  manifest sample rate: 44100, 48000 or 96000 (default 48000)
+  --help       show this help
+
+Resolves the score's live block (states, macros, stingers and transitions) to the kernel IDs and frame counts that @cicada/game-director and the Go sdk/director package read. The audio context must run at the manifest's rate. A score without a live block, or with more than 16 tracks, is refused. An existing output file is replaced.
 
 ### midi
 cicada midi <score.cicada> [flags]

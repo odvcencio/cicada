@@ -718,14 +718,16 @@ Navigation never saves or changes the score.
 
 Jump controls and validation also fit the [Code pane on a phone](screenshots/studio-code-navigation-390.png).
 
-Select a project file, edit it, then use **Check file** to review diagnostics
-without saving or **Save file** (**Command-S** / **Control-S**) to validate and
-write that file. Other score files retain their exact bytes. External changes
-refresh clean editors and project views; unsaved drafts remain available for an
-explicit merge. Saved revision files live in app data, with late writes from
-other editors retained. Checking or rejecting a file retains its draft across
-reload and navigation, independently of drafts in other project files.
-These recovery drafts expire after thirty minutes or when Studio closes.
+A project with several source files opens from any listed score, and the Code
+lens lists every file. Select a project file, edit it, then use **Check file**
+to review diagnostics without saving or **Save file** (**Command-S** /
+**Control-S**) to validate and write that file. Other score files retain their
+exact bytes. External changes refresh clean editors and project views; unsaved
+drafts remain available for an explicit merge. Saved revision files live in app
+data, with late writes from other editors retained. Checking or rejecting a file
+retains its draft across reload and navigation, independently of drafts in other
+project files. These recovery drafts expire after thirty minutes or when Studio
+closes.
 
 A successful **Check file** says **File check passed. Draft is not saved.**
 It clears validation failure feedback while leaving your song on disk unchanged.
@@ -1047,7 +1049,6 @@ To save a selected track's stored values, enter a preset name and choose
 **Save as preset**. Studio resolves any existing preset and writes the current
 non-default registry values into a new declaration in the score. Source edits
 and preset saves support History undo and redo. Pins remain available for redo.
-Studio continues to refuse multi-file source editing.
 
 ### Export
 
