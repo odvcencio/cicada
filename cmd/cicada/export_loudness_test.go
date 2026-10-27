@@ -6,10 +6,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -236,6 +238,52 @@ func TestExportLoudnessLimiterShortfallStopsEarlyAtTheLoudestSafeRender(t *testi
 	result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "reach.wav"), opts, target, nil)
 	if err != nil || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > target.Tolerance {
 		t.Fatalf("reachable target -8 LUFS: %v (%+v)", err, result)
+	}
+}
+
+// Passes after the first replay its mix instead of synthesizing it again. The
+// search must still find the same gain and write the same bytes as one that
+// renders every pass in full.
+func TestExportLoudnessMasterCacheKeepsTheSearchResultIdentical(t *testing.T) {
+	defer func(previous func(*notation.Score, render.Options, io.Writer) (render.Report, error)) {
+		loudnessRenderPass = previous
+	}(loudnessRenderPass)
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	if render.UsesScheduledEngine(inspection.score, opts) {
+		t.Fatal("the fixture must use the direct renderer")
+	}
+	search := func(cached bool, lufs float64) (result loudnessFileReport, wav []byte, replays int, err error) {
+		var cache *render.MasterCache
+		loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+			if cached {
+				cache = opts.MasterCache
+			} else {
+				opts.MasterCache = nil
+			}
+			return render.WAV(score, opts, w)
+		}
+		path := filepath.Join(t.TempDir(), "search.wav")
+		target.LoudnessTarget = lufs
+		result, err = renderLoudnessFileReport(inspection.score, path, opts, target, nil)
+		wav, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return result, wav, cache.Replays(), err
+	}
+	for _, lufs := range []float64{-12, -9, -8, -4} {
+		full, fullWAV, _, fullErr := search(false, lufs)
+		cached, cachedWAV, replays, cachedErr := search(true, lufs)
+		t.Logf("METRIC EXPORT-MASTER-CACHE target=%g passes=%d replays=%d lufs=%.3f gain=%+.3f", lufs, cached.Passes, replays, cached.AchievedLUFS, cached.AppliedGainDB)
+		if fmt.Sprint(fullErr) != fmt.Sprint(cachedErr) || !reflect.DeepEqual(full, cached) {
+			t.Fatalf("target %g LUFS: cached search differs:\n got %+v (%v)\nwant %+v (%v)", lufs, cached, cachedErr, full, fullErr)
+		}
+		if !bytes.Equal(fullWAV, cachedWAV) {
+			t.Fatalf("target %g LUFS: cached search wrote different audio", lufs)
+		}
+		if replays != cached.Passes-1 {
+			t.Fatalf("target %g LUFS: %d of %d passes replayed, want every pass after the first", lufs, replays, cached.Passes)
+		}
 	}
 }
 

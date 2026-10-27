@@ -731,6 +731,17 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
 		}
 	}
+	// Every pass differs only in export gain and DC correction. When a master
+	// chain follows the direct renderer's mix, later passes replay the first
+	// pass's mix instead of synthesizing it again; the scheduled engine renders
+	// in full each time.
+	var masterCache *render.MasterCache
+	if hasMasterChain && !render.UsesScheduledEngine(score, opts) {
+		if masterCache, err = render.NewMasterCache(dir); err != nil {
+			return report, err
+		}
+		defer masterCache.Close()
+	}
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
 	safeGain, hasSafe, lowestUnsafe, prevUnsafe := 0.0, false, math.Inf(1), false
@@ -748,6 +759,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			passOptions.MasterGainDB = gain
 		}
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
+		passOptions.MasterCache = masterCache
 		passOptions.Normalize = false
 		file, err := os.OpenFile(candidatePath, os.O_WRONLY|os.O_TRUNC, 0)
 		if err != nil {

@@ -81,6 +81,13 @@ passes. The render summary reports the applied gain, the gain stage (`master_inp
 chain limiter's largest gain reduction, and the largest gain reduction of any
 limiter. Review these numbers and run `cicada verify-wav` on the result.
 
+When a master chain follows the direct renderer, only the first pass
+synthesizes the mix. It stores the signal that enters the chain in a temporary
+file next to the output (about 23 MB per minute of audio at 48 kHz, removed
+when the export ends), and later passes play that signal back through the chain
+with the new gain. The result matches rendering every pass in full. The
+scheduled renderer renders each pass in full.
+
 The same renderer serves `cicada render --export`, `--loudness`, and Studio's
 export. `cicada stems` does not apply loudness targets. The built-in safety
 limiter (ceiling -0.3 dBFS) still follows the chain in both modes.
