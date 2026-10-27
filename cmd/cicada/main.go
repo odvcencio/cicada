@@ -578,6 +578,10 @@ const loudnessPassLimit = 6
 // DC offsets the fixtures do not produce.
 var loudnessRenderPass = render.WAV
 
+// newLoudnessMasterCache creates the temporary file that lets later passes
+// replay the first pass's mix; tests replace it to fail the way a full disk does.
+var newLoudnessMasterCache = render.NewMasterCache
+
 // When the score's master chain holds a limiter, loudness targeting applies its
 // gain at the master input and lets that limiter hold the true-peak ceiling.
 // Two guard rails keep the search from crushing the mix:
@@ -734,13 +738,14 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	// Every pass differs only in export gain and DC correction. When a master
 	// chain follows the direct renderer's mix, later passes replay the first
 	// pass's mix instead of synthesizing it again; the scheduled engine renders
-	// in full each time.
+	// in full each time. The cache only saves time: if its file cannot be
+	// created, every pass renders in full.
 	var masterCache *render.MasterCache
 	if hasMasterChain && !render.UsesScheduledEngine(score, opts) {
-		if masterCache, err = render.NewMasterCache(dir); err != nil {
-			return report, err
+		if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
+			masterCache = cache
+			defer masterCache.Close()
 		}
-		defer masterCache.Close()
 	}
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false

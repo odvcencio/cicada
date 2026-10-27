@@ -287,6 +287,50 @@ func TestExportLoudnessMasterCacheKeepsTheSearchResultIdentical(t *testing.T) {
 	}
 }
 
+// The cache only saves time. When its file cannot be created, for example on a
+// full disk, the search renders every pass in full instead of failing, and
+// returns the report and the audio that it returns with a cache.
+func TestExportLoudnessRunsInFullWhenTheMasterCacheCannotBeCreated(t *testing.T) {
+	defer func(pass func(*notation.Score, render.Options, io.Writer) (render.Report, error), create func(string) (*render.MasterCache, error)) {
+		loudnessRenderPass, newLoudnessMasterCache = pass, create
+	}(loudnessRenderPass, newLoudnessMasterCache)
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	var cachedPasses []bool
+	loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+		cachedPasses = append(cachedPasses, opts.MasterCache != nil)
+		return render.WAV(score, opts, w)
+	}
+	search := func() (loudnessFileReport, []byte, error) {
+		cachedPasses = nil
+		path := filepath.Join(t.TempDir(), "search.wav")
+		result, err := renderLoudnessFileReport(inspection.score, path, opts, target, nil)
+		wav, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("the search wrote no audio: %v (search error: %v)", readErr, err)
+		}
+		return result, wav, err
+	}
+	want, wantWAV, wantErr := search()
+	if len(cachedPasses) < 2 || !cachedPasses[0] {
+		t.Fatalf("passes of the search with a cache, by whether they had one: %v; want several, the first with one", cachedPasses)
+	}
+	newLoudnessMasterCache = func(string) (*render.MasterCache, error) {
+		return nil, errors.New("no space left on device")
+	}
+	got, gotWAV, gotErr := search()
+	if len(cachedPasses) != got.Passes || got.Passes < 2 {
+		t.Fatalf("the search without a cache rendered %d passes and reported %d", len(cachedPasses), got.Passes)
+	}
+	for pass, cached := range cachedPasses {
+		if cached {
+			t.Fatalf("pass %d used a cache that could not be created", pass+1)
+		}
+	}
+	if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !reflect.DeepEqual(got, want) || !bytes.Equal(gotWAV, wantWAV) {
+		t.Fatalf("search without a cache differs:\n got %+v (%v)\nwant %+v (%v)", got, gotErr, want, wantErr)
+	}
+}
+
 func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-limiter.cicada"))
 	if err != nil {

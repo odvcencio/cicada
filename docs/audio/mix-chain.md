@@ -83,10 +83,14 @@ limiter. Review these numbers and run `cicada verify-wav` on the result.
 
 When a master chain follows the direct renderer, only the first pass
 synthesizes the mix. It stores the signal that enters the chain in a temporary
-file next to the output (about 23 MB per minute of audio at 48 kHz, removed
-when the export ends), and later passes play that signal back through the chain
-with the new gain. The result matches rendering every pass in full. The
-scheduled renderer renders each pass in full.
+file next to the output, and later passes play that signal back through the
+chain with the new gain. The result matches rendering every pass in full. The
+file takes about 23 MB per minute at 48 kHz, counted from the start of the song
+to the end of the exported range plus its tail, so an export of the last bars of
+a long song stores the whole song up to them. The export removes the file when
+it ends. If the file cannot be created or written, for example because the disk
+is full, the export continues without it. The scheduled renderer renders each
+pass in full.
 
 The same renderer serves `cicada render --export`, `--loudness`, and Studio's
 export. `cicada stems` does not apply loudness targets. The built-in safety
