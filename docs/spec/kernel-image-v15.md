@@ -82,3 +82,22 @@ The unified footer retains the existing engine MasterGainDB as well as the new
 DC-bias values, so direct and image playback cannot lose master gain. Legacy
 v13 writing is unchanged, including its historical absence of a master-gain
 field; a master-gain value alone does not select version 15.
+
+## Modal damper pedal
+
+A modal track (a `model_` voice) writes one `u8` profile in its voice-specific
+record. Bit 7 (`0x80`) of that byte marks a pedal value: the profile is the low
+seven bits, and an `f32` sustain from 0 to 1 follows the byte. A value from 0.5
+holds the vibraphone's dampers up.
+
+The writer marks a record only when the track has a nonzero pedal, or when a
+scene setting or automation control addresses its pedal (parameter 131,
+`piano.sustain`). Every other modal record keeps its bytes, so images that do
+not use the pedal are unchanged, and no capability bit or version is added.
+The decoder reads the value of a marked record and does not insist on the mark;
+the engine refuses a value that is not finite or lies outside 0 to 1 when it
+builds the voice, so the image fails to load.
+
+A decoder from before the pedal reads the marked byte as a profile number beyond
+the nine profiles and refuses the whole image: `gosx_audio_init` returns -1 and
+creates no engine.

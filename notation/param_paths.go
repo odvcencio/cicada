@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
 
 // validateSceneSettings resolves the edition-1 path namespace and rejects any
@@ -193,6 +194,9 @@ func notationParameterVoiceKind(score *Score, kind string) string {
 	}
 	if notationModeledKeys(score, kind) {
 		return keyboard.FamilyOf(keyboard.ID(kind)).String()
+	}
+	if _, ok := modal.ParseTrackKind(kind); ok {
+		return "modal"
 	}
 	return "instrument"
 }

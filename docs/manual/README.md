@@ -67,6 +67,8 @@ together.
   voice chords, align grids, shape transitions, and study three demo songs.
 - [Studio](studio.md) — edit source and grids, launch scenes, arrange the song,
   and inspect edit history.
+- [Modeled percussion](modeled-percussion.md) — play struck bars, drums and
+  plates, and work the vibraphone's damper pedal.
 - [Pad sampler](sampler.md) — chop samples, play sixteen pads, apply effects,
   record performances, and resample them into Session.
 - [Editors and notation tools](editors.md) — use the LSP, VS Code extension,

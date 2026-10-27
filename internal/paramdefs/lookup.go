@@ -14,11 +14,12 @@ func Lookup(id string) (Descriptor, bool) {
 // Compiler path resolution and live preview admission share this rule.
 // A keyboard family ("ep", "clav", "organ", "fm", "analog", "strings") also
 // takes every row listed for "piano", which holds the controls all keyboards
-// share, such as sustain and the mixer.
+// share, such as sustain and the mixer. So does "modal", the modeled
+// percussion, whose vibraphone has a damper pedal.
 func HasVoice(descriptor Descriptor, kind string) bool {
 	family := false
 	switch kind {
-	case "ep", "clav", "organ", "fm", "analog", "strings":
+	case "ep", "clav", "organ", "fm", "analog", "strings", "modal":
 		family = true
 	}
 	for _, voice := range descriptor.Voices {

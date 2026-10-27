@@ -127,6 +127,7 @@ type strike struct {
 	age, contact, excitation, count  int
 	note                             uint8
 	active                           bool
+	keyUp                            bool // a key-up whose damper has not fallen yet
 	noise                            uint32
 	pulseX, pulseY, pulseC, pulseS   float64
 	noiseMix, force                  float64
@@ -143,6 +144,9 @@ type Voice struct {
 	latest    int
 	stealTail float64
 	stealLeft int
+	pedal     bool    // the damper pedal is down
+	pending   bool    // some bar has a key-up and no damper yet
+	damper    float64 // pole radius of a damped mode: 60 dB in 70 ms
 }
 
 func NewVoice(profile Profile, sampleRate int) (*Voice, error) {
@@ -153,14 +157,17 @@ func NewVoice(profile Profile, sampleRate int) (*Voice, error) {
 		return nil, Error("modal sample rate must be 44100, 48000, or 96000")
 	}
 	v := &Voice{profile: profile, rate: float64(sampleRate)}
+	v.damper = math.Exp(-math.Log(1000) / (.07 * v.rate))
 	v.Reset()
 	return v, nil
 }
 
-// Reset also resets the deterministic four-strike variation sequence.
+// Reset also resets the deterministic four-strike variation sequence and
+// lifts the damper pedal.
 func (v *Voice) Reset() {
 	v.strikes = [MaxVoices]strike{}
 	v.sequence, v.latest, v.stealTail, v.stealLeft = 0, -1, 0, 0
+	v.pedal, v.pending = false, false
 }
 
 func (v *Voice) ActiveVoices() int {
@@ -283,6 +290,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 }
 
 func (v *Voice) retune(s *strike, note uint8) {
+	v.settle(s) // a key-up before the slide damps this bar first, as it always has
 	oldFrequency, newFrequency := v.pitch(s.note), v.pitch(note)
 	ratio := newFrequency / oldFrequency
 	s.glide = max(1, int(.003*v.rate))
@@ -299,23 +307,62 @@ func (v *Voice) retune(s *strike, note uint8) {
 		m.dc = (m.radius*cos - m.c) / float64(s.glide)
 		m.ds = (m.radius*sin - m.s) / float64(s.glide)
 	}
-	s.note = note
+	s.note, s.keyUp = note, false
 }
 
-// NoteOff models a vibraphone damper. Other surfaces continue ringing.
+// NoteOff models a vibraphone damper. The key-up carries no pitch, so it lets
+// go of every bar. A damper falls on each at the next sample, or when the pedal
+// lifts if the pedal is down. Other surfaces continue ringing.
 func (v *Voice) NoteOff() {
 	if v.profile != Vibraphone {
 		return
 	}
-	radius := math.Exp(-math.Log(1000) / (.07 * v.rate))
 	for i := range v.strikes {
-		s := &v.strikes[i]
-		s.excitation, s.glide = 0, 0
-		for j := 0; j < s.count; j++ {
-			m := &s.modes[j]
-			m.c, m.s = m.c*radius/m.radius, m.s*radius/m.radius
-			m.radius, m.dc, m.ds = radius, 0, 0
+		v.strikes[i].keyUp = true
+	}
+	v.pending = true
+}
+
+// SetSustain works the vibraphone's damper pedal with MIDI semantics: from 0.5
+// the pedal is down and a key-up leaves its bar ringing until the pedal lifts.
+// A damper falls once the key is up and the pedal is up, in whichever order the
+// two happen, so a key-up and a pedal change in one sample sound the same in
+// either order. The other profiles have no dampers and ignore the pedal.
+func (v *Voice) SetSustain(value float32) error {
+	if math.IsNaN(float64(value)) || value < 0 || value > 1 {
+		return Error("modal sustain must be between zero and one")
+	}
+	v.pedal = value >= .5
+	return nil
+}
+
+// settle lets the damper fall on a bar whose key went up, unless the pedal holds
+// it off.
+func (v *Voice) settle(s *strike) {
+	if s.keyUp && !v.pedal {
+		v.damp(s)
+		s.keyUp = false
+	}
+}
+
+// settleAll settles every ringing bar. Next calls it only while a key-up is
+// pending, so a sample costs one flag check and not one check for each bar.
+func (v *Voice) settleAll() {
+	for i := range v.strikes {
+		if v.strikes[i].active {
+			v.settle(&v.strikes[i])
 		}
+	}
+	v.pending = false
+}
+
+// damp drops the damper on a bar, which then loses 60 dB in 70 ms.
+func (v *Voice) damp(s *strike) {
+	s.excitation, s.glide = 0, 0
+	for j := 0; j < s.count; j++ {
+		m := &s.modes[j]
+		m.c, m.s = m.c*v.damper/m.radius, m.s*v.damper/m.radius
+		m.radius, m.dc, m.ds = v.damper, 0, 0
 	}
 }
 
@@ -354,6 +401,9 @@ func (v *Voice) drive(s *strike) float64 {
 
 func (v *Voice) Next() float32 {
 	output := 0.0
+	if v.pending && !v.pedal {
+		v.settleAll()
+	}
 	for i := range v.strikes {
 		s := &v.strikes[i]
 		if !s.active {

@@ -581,6 +581,8 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 				family = score.Engine.TrackKeysFamily(index).String()
 			case engine.VoiceGuitar:
 				family = "guitar"
+			case engine.VoiceModal:
+				family = "modal"
 			}
 			for _, spec := range kernel.Params {
 				if descriptor, ok := paramdefs.Lookup(spec.Name); ok && spec.Live && spec.Scope == "track" {

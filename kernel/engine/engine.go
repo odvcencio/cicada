@@ -622,6 +622,11 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceModal:
 			voices += modal.MaxVoices
 			v.modal, err = modal.NewVoice(spec.Modal, cfg.SampleRate)
+			if err == nil {
+				// The vibraphone's damper pedal is the piano pedal's control.
+				err = v.modal.SetSustain(spec.PianoSustain)
+				v.pianoSustain = spec.PianoSustain
+			}
 		case VoiceSample:
 			if spec.Sample == nil || int(spec.Sample.Asset) >= len(cfg.Assets) || spec.Sample.Voices < 1 || spec.Sample.Voices > 32 {
 				return 0, engineError("invalid sampler configuration")
@@ -1693,6 +1698,11 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 					e.fault(FaultParam)
 					return
 				}
+			} else if v.kind == VoiceModal {
+				if v.modal.SetSustain(value) != nil {
+					e.fault(FaultParam)
+					return
+				}
 			} else if v.kind != VoicePiano || v.piano.SetSustain(value) != nil {
 				e.fault(FaultParam)
 				return
@@ -2080,6 +2090,7 @@ func (e *Engine) resetVoice(track int) {
 		v.guitar.Reset()
 	case VoiceModal:
 		v.modal.Reset()
+		_ = v.modal.SetSustain(v.pianoSustain)
 	case VoiceSample:
 		v.sampler.Reset()
 	case VoiceGraph:

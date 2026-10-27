@@ -23,6 +23,14 @@ import (
 // ModalCapability requires the four-strike modeled percussion voice.
 const ModalCapability uint16 = 1 << 6
 
+// modalPedalFlag marks a modal track record that carries a damper pedal value
+// after its profile byte. Profile numbers stop at 8, so a decoder from before
+// the pedal rejects the flagged byte as an invalid profile and refuses the
+// image. The header's 16 capability bits are all taken and bit 0 is reserved
+// for chords, so the flag costs the image no capability and no version, and a
+// track without a pedal keeps its bytes.
+const modalPedalFlag = 0x80
+
 // ModeledKitCapability opts version 13 images into modeled kit lane bindings.
 const ModeledKitCapability uint16 = 1 << 8
 
@@ -506,7 +514,15 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			if spec.Modal >= modal.ProfileCount {
 				return nil, imageError("invalid modal profile")
 			}
-			w.byte(byte(spec.Modal))
+			if !carriesModalPedal(&cfg, track) {
+				w.byte(byte(spec.Modal))
+				break
+			}
+			if math.IsNaN(float64(spec.PianoSustain)) || math.IsInf(float64(spec.PianoSustain), 0) || spec.PianoSustain < 0 || spec.PianoSustain > 1 {
+				return nil, imageError("invalid modal sustain")
+			}
+			w.byte(byte(spec.Modal) | modalPedalFlag)
+			w.f32(spec.PianoSustain)
 		case engine.VoicePrepared:
 			pack, ok := spec.Prepared.(*engine.PackFactory)
 			if !ok || spec.PreparedClip {
@@ -1070,10 +1086,17 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return imageError("modal image requires capability")
 			}
 			profile, readErr := r.byte()
+			flagged := profile&modalPedalFlag != 0
+			profile &^= modalPedalFlag
 			if readErr != nil || profile >= byte(modal.ProfileCount) {
 				return imageError("invalid modal profile image")
 			}
 			spec.Modal = modal.Profile(profile)
+			if flagged {
+				if spec.PianoSustain, err = r.f32(); err != nil {
+					return err
+				}
+			}
 		case engine.VoicePrepared:
 			if reserved&PackCapability == 0 || version < UnifiedImageVersion {
 				return imageError("pack image requires capability")
@@ -1546,6 +1569,34 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 		return imageError("DDSP operations require capability bit 7")
 	}
 	return nil
+}
+
+// modalSustainTarget reports whether a parameter is the pedal of a modal track.
+func modalSustainTarget(cfg *engine.Config, track uint8, id kernel.ParamID) bool {
+	return id == kernel.ParamPianoSustain && int(track) < cfg.Tracks && cfg.Track[track].Kind == engine.VoiceModal
+}
+
+// carriesModalPedal reports whether a modal track needs the pedal in its
+// record: it has a pedal value, or a scene setting or automation control moves
+// its pedal, so that a decoder without the pedal refuses the image up front
+// and does not fault when the first control arrives.
+func carriesModalPedal(cfg *engine.Config, track int) bool {
+	if cfg.Track[track].PianoSustain != 0 {
+		return true
+	}
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			if int(setting.Track) == track && modalSustainTarget(cfg, setting.Track, setting.ID) {
+				return true
+			}
+		}
+	}
+	for _, control := range cfg.Automation {
+		if int(control.Track) == track && modalSustainTarget(cfg, control.Track, kernel.ParamID(control.Index)) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
