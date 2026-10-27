@@ -13,6 +13,21 @@ loudness. With `-o` it writes `spectrogram.png`, `chroma.png` and
 `rhythm.png`. See [Audition](manual/audition.md) for each field and the JSON
 schema.
 
+## Sampler pack memory
+
+`cicada render SCORE -o FILE`, `cicada stems SCORE -o DIR` and `cicada play
+[SCORE]` take `--max-resident-pcm SIZE`. It caps the decoded PCM of all sampler
+packs the score loads, 1 GiB by default. SIZE is a whole number with a unit:
+`KiB`, `MiB`, `GiB` or `TiB`, or `KB`, `MB`, `GB` or `TB`. A score over the cap
+is refused before it renders, and the message names the cap and the size
+measured. `cicada check` loads the packs and reports a note outside every zone
+of its pack, but it does not apply the cap. See
+[instrument packs](sampler/packs.md#memory-limits).
+
+```sh
+cicada render song.cicada -o song.wav --max-resident-pcm 2GiB
+```
+
 ## Libraries
 
 Run library commands from the project folder, except `new`, which needs no

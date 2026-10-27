@@ -93,6 +93,13 @@ WAV imports are limited to 64 MiB and 8,388,608 frames. A performance holds up t
 and long effect tails use more space. Shorten regions or record fewer bars
 when a limit is reached.
 
+These limits belong to the pad sampler. A `sampler` declaration with
+`pack = ...` loads a multisampled instrument pack instead, and a pack is not
+counted against them. A native render or `cicada play` holds all of a project's
+packs under one cap of 1 GiB, which `--max-resident-pcm` changes, and
+`cicada check` reports a note that no zone of the pack covers. See
+[instrument packs](../sampler/packs.md#memory-limits).
+
 Pad monitoring uses browser audio, even when the workstation's native output
 device is unavailable. Browser WASM and Web Audio are required for pad playing,
 waveform dragging, and recording. Without them, native forms still edit the

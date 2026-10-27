@@ -28,6 +28,29 @@ valid but still fail a name, type, unit, range, or engine check.
 - **Too many or mismatched steps** — each pitch pattern has 1–64 expanded
   cells; drum rows in a pattern must have equal lengths. A declared `steps`
   value is a check and must match the expanded pattern.
+- **`CICADA-SAMPLER-ZONE`** — a note falls outside every zone of its track's
+  sampler pack. `cicada check` shows the note's place in the source, its track
+  and pattern, and the keys the pack covers. Move the note, change the
+  sampler's `root` or the pattern's `transpose`, or use a pack that covers it.
+  Without the check, the render stops with engine fault 29.
+- **`CICADA-SAMPLER-PACK`** — a pack does not load: its manifest or an audio
+  file is missing or damaged, or the manifest differs from the `sha256` pin in
+  the `sampler` declaration. Build the pack again, or update the pin if you
+  changed the pack on purpose.
+
+## Sampler packs use too much memory
+
+- **`sampler packs exceed the native resident PCM cap`** — the packs of a
+  `render`, `stems` or `play` decode to more audio than `--max-resident-pcm`
+  allows, 1 GiB by default. The message gives the cap and the size measured.
+  Raise the cap, for example `cicada render song.cicada -o song.wav
+  --max-resident-pcm 2GiB`, or use smaller packs. Studio uses the default
+  cap.
+- **`project audio exceeds the 64 MiB resident PCM budget`** — sampler assets
+  and clips held in memory together, or the packs and assets of a browser image
+  or WAM2 export, pass 64 MiB. A native render does not count packs in this
+  budget. For a browser score, use a smaller pack; see
+  [instrument packs](../sampler/packs.md#memory-limits).
 
 ## Browser export is refused
 

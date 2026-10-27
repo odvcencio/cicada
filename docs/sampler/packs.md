@@ -20,6 +20,40 @@ song { main*4 }
 
 `cicada render score.cicada -o after.wav` resolves packs inside the score directory, including confined symlink traversal. `--sampler-baseline` renders the same events through the existing single-region DSP using the same key maps, one fixed recorded dynamic, the first take and the original 2 ms release. The baseline has a separate pool for each key map and is an offline listening reference, not a performance comparison. Stems retain stereo sampler output. The host refuses missing/corrupt packs instead of substituting a synth.
 
+## Memory limits
+
+A host keeps a pack's audio in memory as decoded float32 PCM, four bytes per sample and channel. For the catalog's six CC0 packs that is 461.8 MB, about six times their 75.8 MB PCM16 FLAC download. The limit depends on where the pack plays:
+
+| Where | Limit on pack audio in memory |
+| --- | --- |
+| `cicada render`, `cicada stems`, `cicada play` and Studio | One cap shared by every pack in the project, 1 GiB by default. `--max-resident-pcm <size>` sets it on `render`, `stems` and `play`; Studio uses the default. |
+| Browser image and WAM2 export (`cicada wam2`, `cicada check --profile browser`) | 64 MiB for all packs and sampler assets together. The image that holds them is limited to 2 MiB. |
+| `cmd/cicada-sampler-wasm` | 256 MiB for the one bank an instance holds. |
+
+Each pack also stays under the 256 MiB limit described below, so the default cap holds up to four packs of that size. Sampler assets that are not packs keep their own 64 MiB limit.
+
+```sh
+cicada render song.cicada -o song.wav --max-resident-pcm 2GiB
+```
+
+A size is a whole number with `B`, `KiB`, `MiB`, `GiB` or `TiB` (powers of 1024), or `KB`, `MB`, `GB` or `TB` (powers of 1000). A project whose packs decode to more than the cap is refused before it renders. The message names the cap and the size measured when the cap was crossed:
+
+```text
+sampler packs exceed the native resident PCM cap (--max-resident-pcm): 139.35 MiB (146117712 bytes) decoded after loading packs/bass/manifest.json, cap 100 MiB (104857600 bytes)
+```
+
+`cicada play` reloads the packs when you save an edit, and the new copy sits beside the old one until it takes over at the next bar. A reload can therefore hold up to twice the cap for a short time.
+
+## Checking a score against its packs
+
+`cicada check` loads every pack that a score declares, as `render` does. It reports a pack that does not load (a missing file or a manifest that differs from its `sha256` pin) as `CICADA-SAMPLER-PACK`, at the `sampler` declaration. It also reports each scored note that falls outside every zone of its track's pack as `CICADA-SAMPLER-ZONE`, at the note in the source:
+
+```text
+song.cicada:24:8: error CICADA-SAMPLER-ZONE: pitch c0 (MIDI 12) on track lead, pattern demo, is outside every zone of the pack for sampler sound (packs/bass/manifest.json, which covers MIDI 23-66)
+```
+
+Without this check the note stops the render later, with engine fault 29, and stops the music in a browser. The check applies the pattern's `transpose` and each step's velocity, and a note can be outside every zone because of its velocity when the pack's zones leave a gap there (the message then adds `at velocity N`). Release zones do not start a sound, so they do not count. A pattern that no scene, arrangement placement, chain or live stinger plays on the track is not checked. `check` does not apply `--max-resident-pcm`; `render` and `play` do.
+
 ## Manifest version 1
 
 `format` is `cicada.instrument-pack/1`. `config` holds `sample.InstrumentConfig`; `Humanize.Seed` is an exact uint64 decimal string. `assets` declare unique IDs, relative audio paths, byte counts and SHA-256 hashes, source URLs/hashes, source rate/frame/channel dimensions, SPDX licence, licence URL and any required attribution. Accepted licences are CC0-1.0 and CC-BY-4.0; CC-BY needs attribution. Each pack is limited to 256 MiB decoded planar float32 PCM, 4096 assets/zones and 2 MiB JSON. Each asset is limited to 8 million frames. Code remains MIT; audio retains its own licence.

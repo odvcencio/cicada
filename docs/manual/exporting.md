@@ -34,6 +34,12 @@ The render summary reports duration, pre-limiter peak, limiter activity, and
 output clipping. `verify-wav` checks sample rate, bit depth, duration, peak,
 DC offset, finite float data, and full-scale integer samples.
 
+A score that plays instrument packs (a `sampler` with `pack = ...`) keeps their
+audio in memory as decoded float32 PCM. `--max-resident-pcm` caps the total at
+1 GiB unless you give another size, such as `--max-resident-pcm 2GiB`. A
+project over the cap is refused before it renders; see
+[instrument packs](../sampler/packs.md#memory-limits).
+
 ## Stems
 
 Stems are stereo float32 WAV files rendered in one pass. In Studio, open
