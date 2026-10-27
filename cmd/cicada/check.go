@@ -152,6 +152,17 @@ func checkPathsProfile(paths []string, profile string, stdout, stderr io.Writer)
 		if hasDiagnosticErrors(inspection.diagnostics) {
 			continue
 		}
+		// Check loads the sampler packs, which inspectScore leaves to render.
+		packDiagnostics := checkSamplerPacks(path, inspection)
+		for _, diagnostic := range packDiagnostics {
+			printCheckDiagnostic(stderr, path, inspection.source, diagnostic)
+			if diagnostic.Severity == "error" {
+				failed++
+			}
+		}
+		if hasDiagnosticErrors(packDiagnostics) {
+			continue
+		}
 		if profile == profileBrowser {
 			if !checkBrowserScore(path, inspection, stdout, stderr) {
 				failed++
@@ -199,6 +210,8 @@ func checkSuggestion(d notation.Diagnostic) string {
 	switch {
 	case d.Code == "CICADA-SCALE-DEGREE":
 		return "choose a degree in the score's scale or use an absolute letter pitch"
+	case d.Code == samplerZoneCode:
+		return "move the note into the pack's key range, change the sampler's root or the pattern's transpose, or use a pack that covers it"
 	case d.Code == "CICADA-REFERENCE" && strings.Contains(d.Message, "unknown pattern"):
 		return "use a declared pattern name in this scene"
 	case d.Code == "CICADA-PARAM" && strings.Contains(d.Message, "steps attribute must equal"):
