@@ -1162,6 +1162,9 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				if pattern.Kind != "notes" {
 					continue
 				}
+				if !patternBoundToTrack(score, pattern.Name, source.Name) {
+					continue
+				}
 				compiled, err := project.CompilePattern(score, pattern, source)
 				if err != nil {
 					return nil, err
