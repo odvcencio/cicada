@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{performance}=require('node:perf_hooks');
 test('one placement develops an independent local variation of an imported performance',{timeout:180000},async t=>{
  const base=new URL(process.env.CICADA_STUDIO_URL),proof=process.env.CICADA_VARIATION_PROOF_DIR;
  assert.equal(base.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
@@ -15,9 +15,11 @@ test('one placement develops an independent local variation of an imported perfo
   else if(type.includes('application/x-www-form-urlencoded'))values=Object.fromEntries(new URLSearchParams(body));
   else values={action:body.match(/name="action"\r\n\r\n([^\r]*)/)?.[1],newName:body.match(/name="newName"\r\n\r\n([^\r]*)/)?.[1]};
   if(!delayedMutationMs && values.action==='vary' && values.newName==='reply'){
-   const started=Date.now();delayedMutationMs=-1;
-   await new Promise(resolve=>setTimeout(resolve,16000));
-   delayedMutationMs=Date.now()-started;
+   const started=performance.now();delayedMutationMs=-1;
+   // Timer and wall-clock rounding can otherwise report 15,999 ms for a
+   // nominal 16-second wait. Keep the full delay using a monotonic clock.
+   while(performance.now()-started<16000)await new Promise(resolve=>setTimeout(resolve,Math.ceil(16000-(performance.now()-started))));
+   delayedMutationMs=Math.floor(performance.now()-started);
   }
   await route.continue();
  });
