@@ -176,7 +176,12 @@ func sceneRegistryScore(descriptor paramdefs.Descriptor, value string) string {
 			fmt.Fprintln(&source, "instrument voice { voice mono { out = sine(pitch) * env(gate, 120ms) } }")
 		}
 	}
-	fmt.Fprintf(&source, "track lane %s {}\n", trackKind)
+	if strings.HasPrefix(descriptor.ID, "amp.") {
+		fmt.Fprintln(&source, "fx rig ampcab {}")
+		fmt.Fprintf(&source, "track lane %s { insert = rig }\n", trackKind)
+	} else {
+		fmt.Fprintf(&source, "track lane %s {}\n", trackKind)
+	}
 	if patternKind == "drums" {
 		lane := strings.Split(descriptor.ID, ".")[1]
 		fmt.Fprintf(&source, "pattern riff drums steps=1 { %s: X }\n", lane)
