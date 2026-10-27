@@ -48,6 +48,9 @@ type Options struct {
 	MasterInputGainDB float64
 	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
 	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
+	// MaxResidentPCM caps, in bytes, the decoded PCM of all sampler packs the
+	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
+	MaxResidentPCM int64
 	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
 	// included) and release (seq.NoteOff) that the render plays, in render
 	// order, from either render path. The events are the scheduler's own, so

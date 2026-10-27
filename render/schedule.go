@@ -37,7 +37,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if root == "" {
 		root = "."
 	}
-	cfg, err := schedule.Compile(p, root, opts.SampleRate, opts.Block)
+	cfg, err := schedule.CompileWithOptions(p, root, opts.SampleRate, opts.Block, schedule.Options{MaxResidentPCM: opts.MaxResidentPCM})
 	if err != nil {
 		return report, err
 	}

@@ -62,6 +62,10 @@ func (v *packVoice) NextStereo() (float32, float32) {
 
 func preparePackVoices(score *notation.Score, opts Options) (map[string]*instrumentpack.Prepared, error) {
 	banks := map[string]*instrumentpack.Prepared{}
+	packCap, err := instrumentpack.NewResidentCap(opts.MaxResidentPCM)
+	if err != nil {
+		return nil, err
+	}
 	for _, s := range score.Samplers {
 		if s.Pack == "" {
 			continue
@@ -72,6 +76,9 @@ func preparePackVoices(score *notation.Score, opts Options) (map[string]*instrum
 		}
 		p, err := instrumentpack.LoadAtRate(dir, s.Pack, s.SHA256, opts.SampleRate)
 		if err != nil {
+			return nil, fmt.Errorf("sampler %s: %w", s.Name, err)
+		}
+		if err = packCap.Add(s.Pack, p); err != nil {
 			return nil, fmt.Errorf("sampler %s: %w", s.Name, err)
 		}
 		p.Manifest.Config.Voices = s.Voices
