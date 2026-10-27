@@ -213,6 +213,49 @@ song { hold free }
 	}
 }
 
+func TestModalSustainLiveAddressStartsAtTheAuthoredPedal(t *testing.T) {
+	// The live control is a number, whether the score wrote on, off or 0.75.
+	for _, tc := range []struct {
+		written string
+		want    float64
+	}{{"0.75", .75}, {"on", 1}, {"off", 0}} {
+		_, p, diagnostics := modalPedalScore(t, "track vibes model_vibraphone { sustain = "+tc.written+" }", modalPedalArrange)
+		if p == nil {
+			t.Fatalf("sustain = %s: %+v", tc.written, diagnostics)
+		}
+		found := false
+		for _, a := range ParamAddresses(p) {
+			if a.Address == "vibes.sustain" {
+				found = true
+				if a.Value != tc.want {
+					t.Errorf("sustain = %s: live pedal starts at %v (%T), want %v", tc.written, a.Value, a.Value, tc.want)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("sustain = %s: no live pedal address", tc.written)
+		}
+	}
+}
+
+func TestKeysTrackWrittenSustainOnStartsItsLiveAddressAtOne(t *testing.T) {
+	// The live value is shared by every track whose pedal is written on: a
+	// keyboard's used to start as the text on.
+	_, p, diagnostics := modalPedalScore(t, "track keys tine_ep { sustain = on }", "arrange { place a keys line { at = @1.1.1 length = 1bar } }\n")
+	if p == nil || modalHasError(diagnostics) {
+		t.Fatalf("%+v", diagnostics)
+	}
+	for _, a := range ParamAddresses(p) {
+		if a.Address == "keys.sustain" {
+			if a.Value != float64(1) {
+				t.Fatalf("keys.sustain starts at %#v, want 1", a.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("no live pedal address for the keyboard")
+}
+
 func TestModalSceneSettingOutsideTheRangeIsReported(t *testing.T) {
 	_, _, diagnostics := modalPedalScore(t, "track vibes model_vibraphone { }", "scene hold { vibes = line vibes.sustain = 2 }\nsong { hold }\n")
 	for _, d := range diagnostics {
