@@ -15,13 +15,17 @@ import (
 // browserCPUNodeFlags keep other threads' CPU time out of process.cpuUsage(), which
 // browser_cpu_node.js reads twice per block. By default V8 compiles the kernel with
 // Liftoff and tiers it up on background threads while the timed loop runs, and Linux
-// credits those threads to the process counter at scheduler ticks. These flags
-// compile the whole kernel with the optimizing compiler before the loop and start no
-// background thread. Use all three: --single-threaded alone disables tier-up and leaves
-// slow Liftoff code in the loop, and the two compile flags alone leave background
-// threads running. With no background thread, V8 also compiles the script's own
-// JavaScript on the timed thread, and a compile there adds to a block. The script reads
-// its clock before the loop for that reason (warmCPUClock).
+// credits those threads to the process counter at scheduler ticks. With all three flags
+// V8 compiles the whole kernel with the optimizing compiler before the loop, and Node's
+// worker threads exist but get no work. Use all three. On Node 22.23.4, --single-threaded
+// alone leaves Liftoff, lazy compilation and dynamic tier-up on (node --single-threaded
+// --print-flag-values shows liftoff, wasm-lazy-compilation and wasm-dynamic-tiering
+// still on), and V8 still runs that work on one background thread, so that thread's CPU
+// time still reaches the counter at scheduler ticks. The two compile flags alone compile
+// on background threads that are still running when the loop starts. With
+// --single-threaded, V8 also compiles the script's own JavaScript on the timed thread,
+// and a compile there adds to a block. The script reads its clock before the loop for
+// that reason (warmCPUClock).
 var browserCPUNodeFlags = []string{"--single-threaded", "--no-liftoff", "--no-wasm-lazy-compilation"}
 
 // browserCPUNodeCommand times the kernel in Node. Run it from cmd/cicada. Node reads
