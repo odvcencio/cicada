@@ -121,6 +121,7 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 			if insert, ok := strip.Fields["insert"]; ok && insert.Supported {
 				effects = append(effects, s.effectChain(v, csrf, strip))
 			}
+			effects = append(effects, ampAutomationLinks(ctx, v.Project, track.ID))
 			if track.Kind == "audio" {
 				effects = append(effects, s.form(v, csrf, "mixer", "mixer", hidden("action", "vocal-chain"), hidden("track", track.ID), submit("", "", "Add vocal chain")))
 			}
@@ -184,7 +185,7 @@ func (s *studioApp) builtinTrackParameters(v workspace, csrf string, track proje
 	var groups [3][]gosx.Node
 	seen := map[string]bool{}
 	for _, address := range project.ParamAddresses(v.Project) {
-		if address.Track != track.ID || strings.HasPrefix(address.Param, "mix.") {
+		if address.Track != track.ID || strings.HasPrefix(address.Param, "mix.") || strings.HasPrefix(address.Param, "amp.") {
 			continue
 		}
 		descriptor, ok := project.LookupParamDescriptor(address.Param)

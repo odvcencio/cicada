@@ -16,6 +16,7 @@ func main() {
 		{"kernel/params_table.go", paramdefs.GenerateKernel},
 		{"kernel/params_keys.go", paramdefs.GenerateKernelKeys},
 		{"kernel/params_core.go", paramdefs.GenerateKernelCore},
+		{"kernel/params_trackfx.go", paramdefs.GenerateKernelTrackFX},
 		{"project/params.json", paramdefs.GenerateJSON},
 		{"docs/manual/parameter-ranges.md", paramdefs.GenerateRangesDoc},
 	}

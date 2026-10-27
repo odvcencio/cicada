@@ -5,12 +5,14 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -81,11 +83,11 @@ func restoreTarget(d paramdefs.Descriptor) (track uint8, value float32, ok bool)
 // target, so a restore that misses one shows up as a difference.
 func engineState(e *Engine) string {
 	type track struct {
-		Mix, Target                                 any
-		Gain, Pan, SendA, SendB, TSendA, TSendB     float32
-		Off, Muted, Soloed                          bool
-		MuteGain, MuteTarget, Sustain, PosG, PosT   float32
-		Acid, Guitar, Drive, KeyValues, Keys, Drums any
+		Mix, Target                                      any
+		Gain, Pan, SendA, SendB, TSendA, TSendB          float32
+		Off, Muted, Soloed                               bool
+		MuteGain, MuteTarget, Sustain, PosG, PosT        float32
+		Acid, Guitar, Drive, Amp, KeyValues, Keys, Drums any
 	}
 	var all []track
 	for i := 0; i < e.tracks; i++ {
@@ -102,6 +104,9 @@ func engineState(e *Engine) string {
 		}
 		if v.insert != nil {
 			s.Drive = v.insert.Params()
+		}
+		if amp := v.chain.ampStage(); amp != nil {
+			s.Amp = amp.Params()
 		}
 		if f, ok := v.keys.(*controlKeys); ok {
 			s.Keys = f.values
@@ -160,6 +165,11 @@ func TestEveryLiveParameterRestoresLikeAFreshEngine(t *testing.T) {
 					name := fmt.Sprintf("%s/%s/%s/loop=%v", d.ID, variant, scheduleKindName(placement), loop)
 					t.Run(name, func(t *testing.T) {
 						cfg := restoreBase(t)
+						if strings.HasPrefix(d.ID, "amp.") {
+							amp := ampcab.DefaultParams()
+							cfg.Track[track].InsertDrive = nil
+							cfg.Track[track].InsertChain = []TrackEffectConfig{{Kind: TrackEffectAmpCab, AmpCab: &amp}}
+						}
 						cfg.LoopSong = loop
 						movedAfter := 9600
 						switch {

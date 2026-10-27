@@ -31,7 +31,7 @@ const PackCapability uint16 = 1 << 10
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | GridCapability | ChainCapability | AutomationCapability | PackCapability | enabledTrackEffectsCapability
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | GridCapability | ChainCapability | AutomationCapability | PackCapability | enabledTrackEffectsCapability | enabledAmpAutomationCapability
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15      // experimental guitar in the unified image layout
@@ -228,6 +228,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			}
 		}
 	}
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			if setting.ID >= kernel.ParamAmpDrive && setting.ID <= kernel.ParamAmpOutput {
+				version = max(version, uint16(UnifiedImageVersion))
+			}
+		}
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -316,6 +323,12 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for _, track := range cfg.Track[:cfg.Tracks] {
 		if len(track.InsertChain) > 0 {
 			capabilities |= TrackEffectsCapability
+		}
+		for _, stage := range track.InsertChain {
+			if stage.Kind == engine.TrackEffectAmpCab {
+				capabilities |= AmpAutomationCapability
+				break
+			}
 		}
 	}
 	w.u16(capabilities)
@@ -1278,6 +1291,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					return err
 				}
 				setting.ID = kernel.ParamID(id)
+				if enabledAmpAutomationCapability != 0 && setting.ID >= kernel.ParamAmpDrive && setting.ID <= kernel.ParamAmpOutput && reserved&AmpAutomationCapability == 0 {
+					return imageError("amp automation requires capability")
+				}
 				if setting.Value, err = r.f32(); err != nil {
 					return err
 				}
@@ -1320,6 +1336,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			control, err := cmd.DecodeCommand(r.data[r.at:r.at+cmd.CommandSize], tracks)
 			if err != nil {
 				return err
+			}
+			if enabledAmpAutomationCapability != 0 && control.Index >= uint16(kernel.ParamAmpDrive) && control.Index <= uint16(kernel.ParamAmpOutput) && reserved&AmpAutomationCapability == 0 {
+				return imageError("amp automation requires capability")
 			}
 			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
 				return imageError("invalid automation timeline")
@@ -1540,6 +1559,17 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	if spec.Scope == "track" {
 		if int(setting.Track) >= cfg.Tracks {
 			return imageError("scene parameter track is out of range")
+		}
+		if enabledAmpAutomationCapability != 0 && setting.ID >= kernel.ParamAmpDrive && setting.ID <= kernel.ParamAmpOutput {
+			count := 0
+			for _, stage := range cfg.Track[setting.Track].InsertChain {
+				if stage.Kind == engine.TrackEffectAmpCab {
+					count++
+				}
+			}
+			if count != 1 {
+				return imageError("amp setting requires exactly one amp insert")
+			}
 		}
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
 			return imageError("guitar setting requires a guitar track")

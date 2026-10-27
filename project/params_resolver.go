@@ -113,6 +113,11 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		if !found {
 			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
 		}
+		if strings.HasPrefix(descriptor.ID, "amp.") {
+			if _, err := trackAmpParams(p, p.Tracks[trackIndex]); err != nil {
+				return fail("CICADA-UNSUPPORTED", err.Error())
+			}
+		}
 		if strings.HasPrefix(descriptor.ID, "drum.") {
 			laneControl := strings.SplitN(descriptor.Source, "_", 2)
 			if len(laneControl) == 2 && laneControl[1] != "level" && laneControl[1] != "pan" {

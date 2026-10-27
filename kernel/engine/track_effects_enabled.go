@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/fx/pro"
@@ -16,6 +17,9 @@ type trackEffectStage struct {
 	deesser *fx.Deesser
 	amp     *ampcab.Processor
 }
+
+const ampControlsEnabled = true
+
 type trackEffectChain struct {
 	stages         [MaxTrackInserts]trackEffectStage
 	count, latency int
@@ -111,4 +115,55 @@ func (c *trackEffectChain) Reset() {
 			s.amp.Reset()
 		}
 	}
+}
+
+// ampStage resolves the only amp on this track, refusing ambiguous chains.
+func (c *trackEffectChain) ampStage() *ampcab.Processor {
+	if c == nil {
+		return nil
+	}
+	var amp *ampcab.Processor
+	for i := 0; i < c.count; i++ {
+		if c.stages[i].amp != nil {
+			if amp != nil {
+				return nil
+			}
+			amp = c.stages[i].amp
+		}
+	}
+	return amp
+}
+
+func (c *trackEffectChain) hasAmp() bool { return c.ampStage() != nil }
+func (c *trackEffectChain) ampControls() ([3]float64, bool) {
+	amp := c.ampStage()
+	if amp == nil {
+		return [3]float64{}, false
+	}
+	v := amp.Params()
+	return [3]float64{v.Drive, v.Tone, v.Output}, true
+}
+func (c *trackEffectChain) setAmpControls(v [3]float64, immediate bool) error {
+	amp := c.ampStage()
+	if amp == nil {
+		return engineError("amp controls require exactly one amp insert")
+	}
+	p := amp.Params()
+	p.Drive, p.Tone, p.Output = v[0], v[1], v[2]
+	if immediate {
+		return amp.SetParamsImmediate(p)
+	}
+	return amp.SetParams(p)
+}
+func (c *trackEffectChain) setAmpParam(id kernel.ParamID, value float32, immediate bool) error {
+	v, ok := c.ampControls()
+	if !ok {
+		return engineError("amp controls require exactly one amp insert")
+	}
+	i := int(id - kernel.ParamAmpDrive)
+	if i < 0 || i >= len(v) {
+		return engineError("unknown amp control")
+	}
+	v[i] = float64(value)
+	return c.setAmpControls(v, immediate)
 }

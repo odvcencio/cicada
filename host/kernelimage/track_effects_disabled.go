@@ -5,6 +5,7 @@ package kernelimage
 import "m31labs.dev/cicada/kernel/engine"
 
 const enabledTrackEffectsCapability uint16 = 0
+const enabledAmpAutomationCapability uint16 = 0
 
 func writeTrackEffects(w *writer, rate int, specs []engine.TrackEffectConfig) error {
 	return imageError("track inserts require the vocal kernel module")

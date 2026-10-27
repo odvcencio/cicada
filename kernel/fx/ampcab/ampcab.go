@@ -95,6 +95,18 @@ func (p *Processor) SetParams(v Params) error {
 	p.targetOut = math.Pow(10, v.Output/20)
 	return nil
 }
+
+// Params returns the current targets. Controls are owned by the audio thread.
+func (p *Processor) Params() Params { return p.params }
+
+// SetParamsImmediate snaps continuous targets without clearing audio history.
+func (p *Processor) SetParamsImmediate(v Params) error {
+	if err := p.SetParams(v); err != nil {
+		return err
+	}
+	p.drive, p.tone, p.out = v.Drive, p.targetTone, p.targetOut
+	return nil
+}
 func (p *Processor) LatencyFrames() int { return Latency }
 func (p *Processor) Reset() {
 	p.left.up1.Reset()

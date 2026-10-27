@@ -256,3 +256,26 @@ func TestDCInputIsRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestImmediateControlsPreserveHistory(t *testing.T) {
+	a, err := New(48000, DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := New(48000, DefaultParams())
+	for i := 0; i < 128; i++ {
+		x := float32(math.Sin(float64(i)*.17) * .2)
+		a.Process(x, x)
+		b.Process(x, x)
+	}
+	if err := a.SetParamsImmediate(a.Params()); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 128; i++ {
+		al, ar := a.Process(0, 0)
+		bl, br := b.Process(0, 0)
+		if al != bl || ar != br {
+			t.Fatalf("history changed at %d", i)
+		}
+	}
+}

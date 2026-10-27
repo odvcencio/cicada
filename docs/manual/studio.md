@@ -239,6 +239,16 @@ a conflicting source edit leaves it available for recovery. This is one-paramete
 Write recording; Touch/Latch modes and simultaneous audio/automation recording
 are not yet supported.
 
+On a track with exactly one amp insert, the playback amp's
+Drive, Tone and Output are available in the parameter picker. **Automate Drive**,
+**Automate Tone**, and **Automate Output** in the track's guitar sound controls
+open the matching curve. Automation belongs to the track even if its amp
+declaration is shared; changing the declaration itself affects its users.
+These curves change the track's playback, not the separate input
+monitoring sound. Start the pass during playback and finish any audio take
+first. The movement control starts from the saved value at the pass's grid
+position; it is not a continuous meter of playback changes.
+
 ![Recorded vocal level curve in the Studio Detail dock, using the original Anywhere You Are test project.](screenshots/studio-elastic-automation-1280.png)
 
 The controls also wrap in the [phone Detail view](screenshots/studio-elastic-automation-390.png).

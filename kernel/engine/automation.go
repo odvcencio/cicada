@@ -15,6 +15,20 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 		if int(c.Index) >= len(kernel.Params) || !kernel.Params[c.Index].Automatable || c.Op != cmd.OpSetParam || c.Tick < 0 || i > 0 && c.Tick < cfg.Automation[i-1].Tick || int(c.Track) >= cfg.Tracks && c.Track != 0xff || c.Validate(uint8(cfg.Tracks)) != nil {
 			return engineError("invalid automation timeline")
 		}
+		if ampControlsEnabled && c.Index >= uint16(kernel.ParamAmpDrive) && c.Index <= uint16(kernel.ParamAmpOutput) {
+			if int(c.Track) >= cfg.Tracks {
+				return engineError("amp automation requires a track")
+			}
+			count := 0
+			for _, stage := range cfg.Track[c.Track].InsertChain {
+				if stage.Kind == TrackEffectAmpCab {
+					count++
+				}
+			}
+			if count != 1 {
+				return engineError("amp automation requires exactly one amp insert")
+			}
+		}
 		if keysEnabled && isKeysControl(kernel.ParamID(c.Index)) && (c.Track == 0xff || !KeysControlFits(&cfg.Track[c.Track], kernel.ParamID(c.Index))) {
 			return engineError("keyboard automation needs a keyboard track of its family")
 		}

@@ -44,6 +44,20 @@ func ParamAddresses(p *Project) []ParamAddress {
 				continue
 			}
 			value := trackParamValue(track, descriptor)
+			if strings.HasPrefix(descriptor.ID, "amp.") {
+				amp, err := trackAmpParams(p, track)
+				if err != nil {
+					continue
+				}
+				switch descriptor.ID {
+				case "amp.drive":
+					value = amp.Drive
+				case "amp.tone":
+					value = amp.Tone
+				case "amp.output":
+					value = amp.Output
+				}
+			}
 			if keysSpec != nil && strings.HasPrefix(descriptor.ID, "keys.") {
 				// The patch supplies the value of a control the score leaves unset.
 				for _, parameter := range keyboard.Parameters(track.Kind) {

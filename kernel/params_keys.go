@@ -200,6 +200,9 @@ var paramsKeys = [...]ParamSpec{
 	{172, "keys.analog.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
 	{173, "keys.analog.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
 	{174, "keys.strings.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
+	{175, "amp.drive", "amp_drive", "track", "amp_drive", "", "linear", "source", 0, 1, 0.35, 0.01, 20, true, true, false},
+	{176, "amp.tone", "amp_tone", "track", "amp_tone", "", "linear", "source", 0, 1, 0.5, 0.01, 20, true, true, false},
+	{177, "amp.output", "amp_output", "track", "amp_output", "dB", "linear", "source", -24, 12, 0, 0.1, 20, true, true, false},
 }
 
 // Params lists every registry row in ParamID order.

@@ -10,6 +10,15 @@ type curveEditorPoint struct {
 	OriginalAt string
 }
 
+// recordingSeed changes the slider only for a newly observed active pass.
+// Later polls must never replace the user's in-progress movement.
+func recordingSeed(previousID, id, path, target string, active, pending bool, points []curveEditorPoint) (float64, bool) {
+	if !active || pending || id == "" || id == previousID || path != target || len(points) == 0 {
+		return 0, false
+	}
+	return points[0].Value, true
+}
+
 // curvePointsDiffer reports whether the editor's points differ from the saved
 // ones in position, value, shape or curve. It ignores OriginalAt, which only
 // the editor sets.

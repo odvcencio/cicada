@@ -97,6 +97,11 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 	}
 	p := &base.tracks[lane.track]
 	switch {
+	case id >= kernel.ParamAmpDrive && id <= kernel.ParamAmpOutput:
+		if !p.hasAmp {
+			return 0, false
+		}
+		return float32(p.amp[id-kernel.ParamAmpDrive]), true
 	case id == kernel.ParamMixGain && p.sourceOff:
 		return float32(math.Inf(-1)), true
 	case id >= kernel.ParamMixGain && id <= kernel.ParamMixSendB:

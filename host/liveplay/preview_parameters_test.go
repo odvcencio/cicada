@@ -15,6 +15,7 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -109,6 +110,10 @@ func previewParameterConfig(t *testing.T, kind engine.VoiceKind) engine.Config {
 		Sample: &engine.SamplerConfig{Voices: 1, RootKey: 60}, Keys: &keys, Prepared: previewPreparedFactory{},
 		GainDB: -6, GainSet: true, Pan: -1, BusSFX: true,
 	}
+	if kind != engine.VoiceOff {
+		amp := ampcab.DefaultParams()
+		cfg.Track[0].InsertChain = []engine.TrackEffectConfig{{Kind: engine.TrackEffectAmpCab, AmpCab: &amp}}
+	}
 	for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 		cfg.Track[0].Drums[lane] = drum.DefaultParams(lane)
 	}
@@ -173,6 +178,9 @@ func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
 					t.Fatalf("kernel parameter %s is absent from the registry", spec.Name)
 				}
 				want := spec.Live && spec.Scope == "track" && paramdefs.HasVoice(descriptor, family)
+				if strings.HasPrefix(spec.Name, "amp.") && voice.kind == engine.VoiceOff {
+					want = false
+				}
 				before := p.overrides.Load()
 				version, err := p.SetPreview(0, spec.ID, spec.Default)
 				if (err == nil) != want {
