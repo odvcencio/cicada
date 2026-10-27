@@ -37,8 +37,11 @@ func jsonError(data []byte, code, pointer string, offset int, cause error) error
 	}
 	var syntax *json.SyntaxError
 	switch {
-	case errors.As(cause, &syntax), errors.Is(cause, io.EOF), errors.Is(cause, io.ErrUnexpectedEOF):
-		// The decoder's own offsets depend on the Go version; see json_scan.go.
+	case code == "CICADA-SYNTAX", errors.As(cause, &syntax), errors.Is(cause, io.EOF), errors.Is(cause, io.ErrUnexpectedEOF):
+		// The decoder's own offsets depend on the Go version, and it reads a
+		// second value after the document before it reports it, so the offset it
+		// gives is past the value's first byte. Every syntax diagnostic points at
+		// the scanner's byte instead; see json_scan.go.
 		if located, found := jsonSyntaxOffset(data); found {
 			offset = located
 		}

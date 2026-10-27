@@ -54,6 +54,7 @@ func TestJSONSyntaxOffset(t *testing.T) {
 		{"escape at end", `"a\`, 3},
 		{"bad unicode escape digit", `"\u12g4"`, 5},
 		{"short unicode escape", `"\u12"`, 5},
+		{"short unicode escape before quote", `"\u123"`, 6},
 		{"unicode escape at end", `"\u12`, 5},
 		{"after multibyte text", "[\"é🎵\", !]", 11},
 		{"newline then bad byte", "{\n  \"x\": }", 9},
@@ -98,6 +99,7 @@ func TestJSONSyntaxOffsetAgreesWithStandardLibraryValidity(t *testing.T) {
 		`{"a":[1,2,{"b":"c"}],"d":true,"e":null,"f":"xé\n"}`,
 		"{\n  \"title\": \"é🎵\",\n  \"x\": [1.5, -2e3, 0]\n}\n",
 		`[[[],[1],{"k":[{"z":-1.5e3}]}],false,"\"\\\/\b\f\n\r\t"]`,
+		`{"name":"caf\u00e9 \ud83c\udfb5","k\u00e9y":["\u00E9",1]}`,
 	}
 	inserts := []string{"!", "}", "]", "{", "[", ",", ":", `"`, `\`, " ", "\n", "x", "0", "-", ".", "e", "+", "t", "n", "\x01", "u"}
 	count := 0

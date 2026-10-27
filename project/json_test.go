@@ -449,6 +449,12 @@ func TestJSONDiagnosticLocations(t *testing.T) {
 		{"syntax after multibyte text", "[\"é🎵\", !]", "CICADA-SYNTAX", "/1", 1, 8},
 		{"invalid escape", `{"x":"\q"}`, "CICADA-SYNTAX", "/x", 1, 8},
 		{"stray byte after the value", "{\"x\":1}\n}", "CICADA-SYNTAX", "", 2, 1},
+		// A second value is an error at its first byte, not after it.
+		{"second object after the value", "{\"x\":1}\n{}", "CICADA-SYNTAX", "", 2, 1},
+		{"second number after the value", "1 2", "CICADA-SYNTAX", "", 1, 3},
+		{"second string after the value", "{\"a\":1}\n\"s\"", "CICADA-SYNTAX", "", 2, 1},
+		{"unfinished second object", "{}{", "CICADA-SYNTAX", "", 1, 3},
+		{"second value after multibyte text", "[\"é🎵\"] 7", "CICADA-SYNTAX", "", 1, 8},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := DecodeJSON([]byte(test.input))
