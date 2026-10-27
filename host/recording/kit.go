@@ -86,12 +86,13 @@ type rawKitPiece struct {
 
 // ParseKitRecipe reads and validates a recipe. Unknown fields are refused so a
 // misspelled option cannot be ignored. Layers defaults to 3 and one_shot to
-// true.
+// true. A UTF-8 byte order mark, which some Windows editors add, is skipped.
 func ParseKitRecipe(data []byte) (KitRecipe, error) {
 	var recipe KitRecipe
 	if len(data) > MaxKitRecipeBytes {
 		return recipe, fmt.Errorf("the recipe is larger than %d bytes", MaxKitRecipeBytes)
 	}
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	var raw rawKitRecipe
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()

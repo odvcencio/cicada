@@ -94,6 +94,20 @@ func TestParseKitRecipe(t *testing.T) {
 	}
 }
 
+// Windows editors may save JSON with a byte order mark, and with CRLF lines.
+func TestParseKitRecipeAcceptsByteOrderMarkAndCRLF(t *testing.T) {
+	text := "{\r\n  \"format\": \"cicada.kit-recipe/1\",\r\n  \"pieces\": [\r\n    {\"name\": \"kick\", \"note\": 36, \"takes\": [\"kick.wav\"]}\r\n  ]\r\n}\r\n"
+	recipe, err := ParseKitRecipe(append([]byte("\xef\xbb\xbf"), text...))
+	if err != nil || len(recipe.Pieces) != 1 || recipe.Pieces[0].Name != "kick" {
+		t.Fatalf("recipe %+v, error %v", recipe, err)
+	}
+	// An error still points at the right line.
+	_, err = ParseKitRecipe(append([]byte("\xef\xbb\xbf"), strings.Replace(text, `"note": 36`, `"note": }`, 1)...))
+	if err == nil || !strings.Contains(err.Error(), "line 4") {
+		t.Fatalf("error %v; want it to name line 4", err)
+	}
+}
+
 func TestKitRecipeValidation(t *testing.T) {
 	piece := func(fields string) string {
 		return `{"name":"kick","note":36,"takes":["kick.wav"]` + fields + `}`
