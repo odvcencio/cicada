@@ -169,7 +169,7 @@ func TestRecordKitHelp(t *testing.T) {
 		"cicada record-kit -o <pack-directory> [flags] <recipe.json>",
 		"build one drum-kit sampler pack from your own recorded takes",
 		"-o <directory>", "--name <id>", "--help", "Put flags before the recipe", "owner recording",
-		"Warns about takes to record again", "provenance and grants no redistribution rights",
+		"Warns about takes to record again: tails cut off, hits that merged or clipped, and takes with no room tone at the start", "provenance and grants no redistribution rights",
 	} {
 		if !strings.Contains(byHelp.String(), want) {
 			t.Errorf("help lacks %q:\n%s", want, byHelp.String())
