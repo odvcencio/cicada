@@ -649,15 +649,18 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 	pieceTakes := make([][]KitTakeReport, len(recipe.Pieces))
 	for i, piece := range recipe.Pieces {
 		inputs := make([]Audio, 0, len(piece.Takes))
+		room := MaxFrames // the frames that the takes still to read may hold
 		for _, take := range piece.Takes {
-			audio, err := readKitTake(takes, take)
+			audio, err := readKitTake(takes, take, room)
+			var over overBudget
+			if errors.As(err, &over) {
+				return nil, report, kitBudgetError(piece.Name, takes, piece.Takes, inputs, over)
+			}
 			if err != nil {
 				return nil, report, fmt.Errorf("piece %q: take %q: %w", piece.Name, take, err)
 			}
+			room -= len(audio.PCM)
 			inputs = append(inputs, audio)
-		}
-		if err := checkKitBudget(piece.Name, inputs); err != nil {
-			return nil, report, err
 		}
 		found, notes, err := AnalyzeTakes(inputs, Options{Root: piece.Note, Layers: piece.Layers, Ringing: true})
 		if err != nil {
@@ -817,8 +820,17 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 	return pack, report, nil
 }
 
-// readKitTake reads one take, refusing anything over the input limit.
-func readKitTake(takes fs.FS, name string) (Audio, error) {
+// overBudget reports that a take would take its piece past the frame limit.
+// It carries the frames and rate of the take that did not fit.
+type overBudget struct{ frames, rate int }
+
+func (overBudget) Error() string { return "the take is more than the frames left in its piece" }
+
+// readKitTake reads one take, refusing anything over the input limit. room is
+// the number of frames that the piece may still take. A take that holds more is
+// refused with an overBudget error, as soon as the length is known: from the
+// header of a file that can seek, so that none of the take is read.
+func readKitTake(takes fs.FS, name string, room int) (Audio, error) {
 	f, err := takes.Open(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Audio{}, fmt.Errorf("not found; takes are looked up next to the recipe")
@@ -832,27 +844,64 @@ func readKitTake(takes fs.FS, name string) (Audio, error) {
 		return Audio{}, err
 	}
 	defer f.Close()
+	if seeker, ok := f.(io.ReadSeeker); ok {
+		if h, err := audioasset.ReadWAVHeader(seeker); err == nil {
+			if err := checkKitTakeLength(h, room); err != nil {
+				return Audio{}, err
+			}
+		}
+		// A header that does not read is for DecodeWAV to describe.
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			return Audio{}, err
+		}
+	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxInputBytes+1))
 	if err != nil {
 		return Audio{}, err
 	}
-	if h, err := audioasset.ReadWAVHeader(bytes.NewReader(data)); err == nil && h.Frames > MaxFrames {
-		return Audio{}, fmt.Errorf("the file holds %.0f s of audio (%d frames at %d Hz), more than the %d frames a piece allows in all its takes (%.0f s at 44.1 kHz, %.0f s at 48 kHz); record fewer hits, or cut the silence out of it", float64(h.Frames)/float64(h.RateHz), h.Frames, h.RateHz, MaxFrames, float64(MaxFrames)/44100, float64(MaxFrames)/48000)
+	if h, err := audioasset.ReadWAVHeader(bytes.NewReader(data)); err == nil {
+		if err := checkKitTakeLength(h, room); err != nil {
+			return Audio{}, err
+		}
 	}
 	return DecodeWAV(data)
 }
 
-// checkKitBudget refuses a piece whose takes together hold more frames than a
+// checkKitTakeLength refuses a take that holds more frames than a piece may in
+// all its takes, or than are left of them.
+func checkKitTakeLength(h audioasset.WAVHeader, room int) error {
+	if h.Frames > MaxFrames {
+		return fmt.Errorf("the file holds %.0f s of audio (%d frames at %d Hz), more than the %d frames a piece allows in all its takes (%.0f s at 44.1 kHz, %.0f s at 48 kHz); record fewer hits, or cut the silence out of it", float64(h.Frames)/float64(h.RateHz), h.Frames, h.RateHz, MaxFrames, float64(MaxFrames)/44100, float64(MaxFrames)/48000)
+	}
+	if h.Frames > int64(room) {
+		return overBudget{frames: int(h.Frames), rate: h.RateHz}
+	}
+	return nil
+}
+
+// kitBudgetError refuses a piece whose takes together hold more frames than a
 // piece may. It says how much they hold and what to do, where Analyze can only
-// say that a limit was passed.
-func checkKitBudget(piece string, inputs []Audio) error {
-	frames, seconds := 0, 0.0
-	for _, a := range inputs {
+// say that a limit was passed. The takes already read are in read; over is the
+// one that did not fit; the takes after it add their lengths from their headers,
+// without being read.
+func kitBudgetError(piece string, takes fs.FS, names []string, read []Audio, over overBudget) error {
+	frames, seconds := over.frames, float64(over.frames)/float64(max(1, over.rate))
+	for _, a := range read {
 		frames += len(a.PCM)
 		seconds += float64(len(a.PCM)) / float64(max(1, a.Rate))
 	}
-	if frames <= MaxFrames {
-		return nil
+	for _, name := range names[len(read)+1:] {
+		f, err := takes.Open(name)
+		if err != nil {
+			continue
+		}
+		if seeker, ok := f.(io.ReadSeeker); ok {
+			if h, err := audioasset.ReadWAVHeader(seeker); err == nil {
+				frames += int(h.Frames)
+				seconds += float64(h.Frames) / float64(max(1, h.RateHz))
+			}
+		}
+		f.Close()
 	}
 	return fmt.Errorf("piece %q: the takes hold %.0f s of audio (%d frames), more than the %d frames a piece allows in all its takes (%.0f s at 44.1 kHz, %.0f s at 48 kHz); record fewer hits per dynamic, or cut the silence out of the takes", piece, seconds, frames, MaxFrames, float64(MaxFrames)/44100, float64(MaxFrames)/48000)
 }

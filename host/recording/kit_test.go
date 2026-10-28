@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -1270,6 +1272,68 @@ func TestKitWarningsReadAsSentences(t *testing.T) {
 	got := report.Warnings()
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("warnings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// countingFS counts the bytes read from each file, to show what a build reads.
+type countingFS struct {
+	fs.FS
+	read map[string]*int
+}
+
+func (c countingFS) Open(name string) (fs.File, error) {
+	f, err := c.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	n := new(int)
+	c.read[name] = n
+	return &countingFile{File: f, n: n}, nil
+}
+
+type countingFile struct {
+	fs.File
+	n *int
+}
+
+func (f *countingFile) Read(p []byte) (int, error) {
+	n, err := f.File.Read(p)
+	*f.n += n
+	return n, err
+}
+
+func (f *countingFile) Seek(offset int64, whence int) (int64, error) {
+	return f.File.(io.Seeker).Seek(offset, whence)
+}
+
+// A piece over the frame budget is refused when the takes read so far use it
+// up, before the rest are read and decoded. Four takes of 5 million frames each
+// would otherwise be four 20 MB tables of samples in memory at once, and a piece
+// of 32 takes of a long file, which takes gigabytes, before the first word of
+// the refusal.
+func TestKitRefusesAPieceOverTheFrameBudgetBeforeReadingTheRestOfItsTakes(t *testing.T) {
+	long := testwav.Bytes(44100, 1, 24, 5_000_000, 1)
+	names := []string{"crash-a.wav", "crash-b.wav", "crash-c.wav", "crash-d.wav"}
+	files := fstest.MapFS{}
+	for _, name := range names {
+		files[name] = &fstest.MapFile{Data: long}
+	}
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{{Name: "crash", Note: 49, Layers: 1, OneShot: true, Takes: names}}}
+	counted := countingFS{FS: files, read: map[string]*int{}}
+	_, _, err := BuildKit("long", recipe, counted)
+	want := `piece "crash": the takes hold 454 s of audio (20000000 frames), more than the 8388608 frames a piece allows in all its takes (190 s at 44.1 kHz, 175 s at 48 kHz); record fewer hits per dynamic, or cut the silence out of the takes`
+	if err == nil || err.Error() != want {
+		t.Fatalf("error %v\nwant   %s", err, want)
+	}
+	// The first take fits, so it is read. The second does not, and neither it
+	// nor the takes after it are read past their headers.
+	if got := *counted.read["crash-a.wav"]; got < len(long) {
+		t.Errorf("the first take was read for %d of its %d bytes", got, len(long))
+	}
+	for _, name := range names[1:] {
+		if got := counted.read[name]; got != nil && *got > 4096 {
+			t.Errorf("%s was read for %d bytes after the piece was over budget", name, *got)
+		}
 	}
 }
 
