@@ -21,6 +21,46 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  native-go127:
+    name: Native Go 1.27.3 (core minimum remains 1.25)
+    runs-on: ubuntu-24.04
+    # One cold build of every package plus the whole test suite on one runner;
+    # the other jobs split the same work across runners. The cmd/cicada tests
+    # run in the three shards the Studio CLI jobs use: as one binary they took
+    # 996 s of a 1,200 s limit in this job's first run.
+    timeout-minutes: 45
+    env:
+      GOWORK: off
+      GOTOOLCHAIN: go1.27.3
+      # The limit for every go test below, including those that make and
+      # scripts/cmdshard start. go test's default is 10 minutes, and the phrase
+      # package took 506 s of it in this job's first run, so use twice that.
+      GOFLAGS: -timeout=20m
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Tool versions
+        run: go version
+      - name: Shards cover every test once
+        run: make test-cmd-shard-check SHARDS=3
+      - name: Native tests, every package but cmd/cicada
+        run: make test-ci-core
+      - name: Native tests, cmd/cicada in three shards
+        run: |
+          set -euo pipefail
+          for shard in 1 2 3; do
+            make test-cmd-shard SHARD="$shard/3"
+          done
+      - name: Vet (no TinyGo override)
+        run: go vet ./...
+
   commit-hygiene:
     name: Commit metadata hygiene
     if: github.event_name == 'pull_request'

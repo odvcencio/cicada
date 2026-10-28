@@ -138,8 +138,8 @@ func mountVocalLanes(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.zoom(false)
 	u.scroll.Set("scrollLeft", pref.Scroll)
 	u.listen(root, "pointerdown", u.pointerDown)
-	u.listen(js.Global().Get("document"), "cicada:workspace-updated", func(js.Value) {
-		if !u.root.Get("isConnected").Bool() {
+	releaseUpdated := workspaceUpdated.add(func() {
+		if u.closed.Load() || !u.root.Get("isConnected").Bool() {
 			return
 		}
 		data := u.root.Call("querySelector", "[data-vocal-lane-props]")
@@ -264,6 +264,7 @@ func mountVocalLanes(host enginewasm.Context) (enginewasm.Handle, error) {
 		if u.closed.Swap(true) {
 			return
 		}
+		releaseUpdated()
 		releaseUnsaved()
 		u.cancel()
 		releasePlayback()

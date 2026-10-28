@@ -74,8 +74,10 @@ With a limiter in the chain, the renderer keeps two guard rails:
 
 A target that needs more than either limit stops short and returns a shortfall
 error that names the limit that bound. The WAV from the best pass is still
-written (Studio keeps it as a separate shortfall file). The render summary
-reports the applied gain, the gain stage (`master_input` when the gain runs ahead of the master chain, `post_chain` when it runs after it or there is no chain), the
+written (Studio keeps it as a separate shortfall file). When even a render
+that breaks a limit is too quiet for the target, and the best render is within
+0.5 dB of the reduction maximum, the search stops instead of using all six
+passes. The render summary reports the applied gain, the gain stage (`master_input` when the gain runs ahead of the master chain, `post_chain` when it runs after it or there is no chain), the
 chain limiter's largest gain reduction, and the largest gain reduction of any
 limiter. Review these numbers and run `cicada verify-wav` on the result.
 
