@@ -54,7 +54,7 @@ func auditionCommand(args []string, stdout, stderr io.Writer) error {
 	if failed {
 		return fmt.Errorf("%s has errors", path)
 	}
-	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: filepath.Dir(path)})
+	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path)})
 	if err != nil {
 		return err
 	}

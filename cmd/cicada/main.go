@@ -281,7 +281,9 @@ func main() {
 		os.Exit(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
-	renderOptions.AssetDir = filepath.Dir(path)
+	// Audio assets and sampler packs resolve from the project folder, where
+	// check looks, not from the folder of the score that was named.
+	renderOptions.AssetDir = inspection.root(path)
 	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
 		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -323,15 +325,15 @@ func main() {
 		}
 		writeJSON(program)
 	case "render":
-		renderOptions.AssetRoot = filepath.Dir(path)
-		renderOptions.AssetDir = filepath.Dir(path)
+		renderOptions.AssetRoot = inspection.root(path)
+		renderOptions.AssetDir = inspection.root(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	case "stems":
-		renderOptions.AssetRoot = filepath.Dir(path)
-		renderOptions.AssetDir = filepath.Dir(path)
+		renderOptions.AssetRoot = inspection.root(path)
+		renderOptions.AssetDir = inspection.root(path)
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

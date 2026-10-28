@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"m31labs.dev/cicada/host/wam2"
 	"m31labs.dev/cicada/project"
@@ -40,7 +39,11 @@ func wam2Command(args []string, stdout io.Writer) error {
 			return fmt.Errorf("%s: %s", d.Code, d.Message)
 		}
 	}
-	if err := wam2.Export(p, filepath.Dir(args[0]), *output, wam2.Options{KernelPath: *kernel, SDKPath: *sdk, MIDITrack: *track}); err != nil {
+	root, err := studioProjectRoot(args[0])
+	if err != nil {
+		return err
+	}
+	if err := wam2.Export(p, root, *output, wam2.Options{KernelPath: *kernel, SDKPath: *sdk, MIDITrack: *track}); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "Exported WAM2 instrument. Serve the directory over HTTP and import index.js in a WAM2 host.")
