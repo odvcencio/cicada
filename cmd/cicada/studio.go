@@ -24,6 +24,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/padsampler"
 	"m31labs.dev/cicada/host/recording"
@@ -70,6 +71,23 @@ type studio struct {
 	afterStage          func() // Test seam: nil in production; see commitMutationLocked.
 }
 
+// applyStudioResidentPCM takes --max-resident-pcm out of Studio's arguments and
+// makes it, or CICADA_MAX_RESIDENT_PCM, the default cap of the process. Studio
+// compiles in too many places to hand each one a cap, so its play, render and
+// export paths all build their sampler-pack tally from the default.
+func applyStudioResidentPCM(args []string) ([]string, error) {
+	rest, limit, err := parseMaxResidentPCM(args)
+	if err != nil {
+		return nil, err
+	}
+	if err = instrumentpack.SetDefaultMaxResidentPCM(limit); err != nil {
+		return nil, err
+	}
+	return rest, nil
+}
+
+const studioUsage = "usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm <size>]"
+
 func studioCommand(args []string) error {
 	args, backendName, _, err := selectCommandAudio("studio", args)
 	if err != nil {
@@ -77,6 +95,9 @@ func studioCommand(args []string) error {
 	}
 	restoreThreads := raiseAudioProcessThreads(backendName)
 	defer restoreThreads()
+	if args, err = applyStudioResidentPCM(args); err != nil {
+		return err
+	}
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
 	lspStdio := false
@@ -92,14 +113,14 @@ func studioCommand(args []string) error {
 		}
 		if args[i] == "--listen" {
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]")
+				return fmt.Errorf("%s", studioUsage)
 			}
 			address = args[i+1]
 			i++
 			continue
 		}
 		if strings.HasPrefix(args[i], "-") || seenPath {
-			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]")
+			return fmt.Errorf("%s", studioUsage)
 		}
 		path = args[i]
 		seenPath = true

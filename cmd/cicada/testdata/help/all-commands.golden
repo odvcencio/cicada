@@ -33,15 +33,16 @@ Flags:
 With --all, the score path is optional; run the command from the project folder.
 
 ### check
-cicada check [--profile desktop|browser] [score.cicada]
+cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]
 
 validate one score or the current project
 
 Flags:
-  --profile <name>  limits to check against: desktop (default) or browser
-  --help            show this help
+  --profile <name>           limits to check against: desktop (default) or browser
+  --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)
+  --help                     show this help
 
-The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded.
+The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted.
 
 ### fmt
 cicada fmt [--check|-w] [score.cicada]
@@ -63,20 +64,21 @@ Flags:
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)
   --help                     show this help
 
-CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a score whose packs decode to more is refused, with the cap and the size measured in the message. A reloaded score holds its own copy of the packs until it takes over at the next bar. Sizes are whole numbers with KiB, MiB, GiB, KB, MB or GB, such as 512MiB.
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a score whose packs decode to more is refused, with the cap and the size measured in the message. A reloaded score reuses the packs already in memory; a reload that points a sampler at another pack holds both until the new score takes over at the next bar. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB.
 
 ### studio
-cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]
+cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm <size>]
 
 open the local workstation
 
 Flags:
-  --listen <addr>  loopback address; default 127.0.0.1:0
-  --audio <name>   select tymbal, oto, or null
-  --lsp-stdio      serve LSP on stdin/stdout and Studio on stderr
-  --help           show this help
+  --listen <addr>            loopback address; default 127.0.0.1:0
+  --audio <name>             select tymbal, oto, or null
+  --lsp-stdio                serve LSP on stdin/stdout and Studio on stderr
+  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --help                     show this help
 
-CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when --max-resident-pcm is omitted.
 
 ### lsp
 cicada lsp
@@ -210,7 +212,7 @@ Flags:
   --export <name>              use a named export profile
   --help                       show this help
 
-Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. Sizes are whole numbers with KiB, MiB, GiB, KB, MB or GB, such as 512MiB.
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB.
 
 ### stems
 cicada stems <score.cicada> -o <directory> [flags]
@@ -238,13 +240,14 @@ cicada audition <score.cicada> [flags]
 report what a score sounds like
 
 Flags:
-  -o <directory>   write spectrogram.png, chroma.png and rhythm.png
-  --from <bar>     one-based start bar (default 1)
-  --bars <n>       bars to analyze; 0 means through song end
-  --json           write the report as JSON (format cicada.audition/1)
-  --help           show this help
+  -o <directory>             write spectrogram.png, chroma.png and rhythm.png
+  --from <bar>               one-based start bar (default 1)
+  --bars <n>                 bars to analyze; 0 means through song end
+  --json                     write the report as JSON (format cicada.audition/1)
+  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --help                     show this help
 
-Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md.
+Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted.
 
 ### verify-wav
 cicada verify-wav <file.wav> [flags]

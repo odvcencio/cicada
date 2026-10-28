@@ -1,11 +1,12 @@
-cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]
+cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm <size>]
 
 open the local workstation
 
 Flags:
-  --listen <addr>  loopback address; default 127.0.0.1:0
-  --audio <name>   select tymbal, oto, or null
-  --lsp-stdio      serve LSP on stdin/stdout and Studio on stderr
-  --help           show this help
+  --listen <addr>            loopback address; default 127.0.0.1:0
+  --audio <name>             select tymbal, oto, or null
+  --lsp-stdio                serve LSP on stdin/stdout and Studio on stderr
+  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --help                     show this help
 
-CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when --max-resident-pcm is omitted.

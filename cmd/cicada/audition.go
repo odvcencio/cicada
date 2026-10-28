@@ -11,7 +11,13 @@ import (
 	"m31labs.dev/cicada/host/scoreaudition"
 )
 
+const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--json] [--max-resident-pcm <size>]"
+
 func auditionCommand(args []string, stdout, stderr io.Writer) error {
+	args, residentPCM, err := parseMaxResidentPCM(args)
+	if err != nil {
+		return err
+	}
 	flags := flag.NewFlagSet("audition", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	output := flags.String("o", "", "directory for spectrogram.png, chroma.png and rhythm.png")
@@ -25,12 +31,12 @@ func auditionCommand(args []string, stdout, stderr io.Writer) error {
 		path, rest = rest[0], rest[1:]
 	}
 	if err := flags.Parse(rest); err != nil {
-		return fmt.Errorf("usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--json]")
+		return fmt.Errorf("%s", auditionUsage)
 	}
 	if path == "" && len(flags.Args()) == 1 {
 		path = flags.Args()[0]
 	} else if len(flags.Args()) != 0 || path == "" {
-		return fmt.Errorf("usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--json]")
+		return fmt.Errorf("%s", auditionUsage)
 	}
 	fromBar, err := cliBarOffset(*from, flags, stderr)
 	if err != nil {
@@ -54,7 +60,7 @@ func auditionCommand(args []string, stdout, stderr io.Writer) error {
 	if failed {
 		return fmt.Errorf("%s has errors", path)
 	}
-	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path)})
+	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM})
 	if err != nil {
 		return err
 	}

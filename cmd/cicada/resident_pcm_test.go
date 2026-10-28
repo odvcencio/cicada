@@ -245,3 +245,54 @@ func TestLiveWatchReloadReusesThePacksOfThePlayingScore(t *testing.T) {
 		t.Errorf("the reload allocated %d bytes for a pack of %d bytes of PCM (a tiny pack: %d): it decoded the pack again", second, pcm, tiny)
 	}
 }
+
+func TestStudioTakesTheResidentPCMCapAsTheProcessDefault(t *testing.T) {
+	t.Cleanup(func() { instrumentpack.SetDefaultMaxResidentPCM(0) })
+	limit := func() int64 {
+		tally, err := instrumentpack.NewResidentCap(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tally.Limit()
+	}
+	rest, err := applyStudioResidentPCM([]string{"score.cicada", "--max-resident-pcm", "3GiB", "--lsp-stdio"})
+	if err != nil || !reflect.DeepEqual(rest, []string{"score.cicada", "--lsp-stdio"}) || limit() != 3<<30 {
+		t.Fatalf("with the option: %q, %v, cap %d", rest, err, limit())
+	}
+	t.Setenv(maxResidentPCMEnv, "2GiB")
+	if _, err = applyStudioResidentPCM([]string{"score.cicada"}); err != nil || limit() != 2<<30 {
+		t.Fatalf("from the environment: %v, cap %d", err, limit())
+	}
+	t.Setenv(maxResidentPCMEnv, "")
+	if _, err = applyStudioResidentPCM([]string{"score.cicada"}); err != nil || limit() != instrumentpack.DefaultMaxResidentPCM {
+		t.Fatalf("without either the cap must return to the default: %v, cap %d", err, limit())
+	}
+	if _, err = applyStudioResidentPCM([]string{"--max-resident-pcm", "lots"}); err == nil || !strings.Contains(err.Error(), "--max-resident-pcm") {
+		t.Fatalf("a bad size: %v", err)
+	}
+}
+
+func TestAuditionTakesTheResidentPCMCap(t *testing.T) {
+	dir := t.TempDir()
+	pack := testpack.Write(t, dir, testpack.Options{Frames: 4000}) // 16,000 bytes
+	path := filepath.Join(dir, "main.cicada")
+	source := "cicada 2\ntempo 120\n" + pack.Sampler("sound", 2) + "track lead sound {}\npattern melody notes steps=4 { c4 . . . }\nscene main { lead = melody }\nsong { main*2 }\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(instrumentpack.ReleaseShared)
+	if err := auditionCommand([]string{path, "--json", "--max-resident-pcm", "16000"}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("a cap equal to the pack refused it: %v", err)
+	}
+	err := auditionCommand([]string{path, "--json", "--max-resident-pcm=15999"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "15999 bytes") || !strings.Contains(err.Error(), "--max-resident-pcm") {
+		t.Fatalf("a cap a byte below the pack: %v", err)
+	}
+	t.Setenv(maxResidentPCMEnv, "15999")
+	if err = auditionCommand([]string{path, "--json"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "15999 bytes") {
+		t.Fatalf("the cap from the environment: %v", err)
+	}
+	if err = auditionCommand([]string{path, "--max-resident-pcm"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "needs a size") {
+		t.Fatalf("a flag with no size: %v", err)
+	}
+}
