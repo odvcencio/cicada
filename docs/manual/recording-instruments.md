@@ -171,7 +171,9 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    An attack that comes sooner than half a second is kept inside the hit before
    it, which then plays as a double strike, and the command warns you. Leave a
    second after drums. Leave cymbals and the open hi-hat all the time they need
-   to die away, often 5 to 10 seconds, and keep the room quiet until then.
+   to die away, often 5 to 10 seconds, and keep the room quiet until then. A soft
+   hit that lands on the ring of a louder one can go unseen, so check the hit
+   count in step 8.
 
    A hit keeps its tail until the tail is 60 dB below the loudest hit in its
    file, or twice the room's noise level if that is higher. If the next hit, or
