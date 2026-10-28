@@ -28,6 +28,9 @@ func TestParseByteSize(t *testing.T) {
 		{"4096B", 4096},
 		{"2GB", 2_000_000_000},
 		{"500MB", 500_000_000},
+		{"1mb", 1_000_000}, // all lower case is a byte unit
+		{"1GIB", 1 << 30},  // so is all in capitals
+		{"3KB", 3000},
 		{"9007199254740991", 9007199254740991},
 	} {
 		if got, err := parseByteSize(tc.text); err != nil || got != tc.want {
@@ -47,9 +50,30 @@ func TestParseByteSize(t *testing.T) {
 		{"0MiB", "more than zero"},
 		{"99999999999999999999", "too large"},
 		{"9223372036854775807KiB", "too large"},
+		// A mixed-case spelling can read as bits ("Mb" is megabits); the message offers both byte units.
+		{"1Mb", "write MB for powers of 1000 or MiB for powers of 1024"},
+		{"2Gb", "write GB for powers of 1000 or GiB for powers of 1024"},
+		{"1mB", "can read as bits or as bytes"},
+		{"1gIb", "can read as bits or as bytes"},
 	} {
 		if got, err := parseByteSize(tc.text); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("parseByteSize(%q) = %d, %v; want an error containing %q", tc.text, got, err, tc.want)
+		}
+	}
+}
+
+// The message for an unknown unit lists every unit that the parser accepts.
+func TestParseByteSizeNamesEveryAcceptedUnitInTheUnknownUnitError(t *testing.T) {
+	_, err := parseByteSize("1k")
+	if err == nil {
+		t.Fatal("the unit k was accepted")
+	}
+	for _, unit := range byteUnits {
+		if !strings.Contains(err.Error(), unit.name) {
+			t.Errorf("the error does not offer %s: %v", unit.name, err)
+		}
+		if _, err := parseByteSize("1" + unit.name); err != nil {
+			t.Errorf("the unit %s that the error offers was refused: %v", unit.name, err)
 		}
 	}
 }

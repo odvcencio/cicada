@@ -2,6 +2,7 @@ package instrumentpack
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"m31labs.dev/cicada/kernel/voice/sample"
@@ -181,18 +182,39 @@ func (e *ResidentPCMError) Error() string {
 }
 
 // FormatBytes spells a byte count in binary units and, above 1 MiB, in bytes
-// too, such as "1 GiB (1073741824 bytes)" or "68.66 MiB (72000000 bytes)".
+// too, such as "1 GiB (1073741824 bytes)" or "68.66 MiB (72000000 bytes)". A
+// size within a hundredth of a unit of a whole number of units, but not equal to
+// it, says "just under" or "just over", so that two sizes which differ by a
+// byte do not print alike: "just under 256 MiB (268435455 bytes)".
 func FormatBytes(n int64) string {
 	const mib, gib = 1 << 20, 1 << 30
 	switch {
 	case n >= gib && n%gib == 0:
 		return fmt.Sprintf("%d GiB (%d bytes)", n/gib, n)
 	case n >= gib:
-		return fmt.Sprintf("%.2f GiB (%d bytes)", float64(n)/gib, n)
+		return approximateBytes(n, gib, "GiB")
 	case n >= mib && n%mib == 0:
 		return fmt.Sprintf("%d MiB (%d bytes)", n/mib, n)
 	case n >= mib:
-		return fmt.Sprintf("%.2f MiB (%d bytes)", float64(n)/mib, n)
+		return approximateBytes(n, mib, "MiB")
 	}
 	return fmt.Sprintf("%d bytes", n)
+}
+
+// approximateBytes spells n, which is not a whole number of units, in units to
+// two decimals.
+func approximateBytes(n, unit int64, name string) string {
+	spelled := fmt.Sprintf("%.2f", float64(n)/float64(unit))
+	if strings.HasSuffix(spelled, ".00") {
+		whole := (n + unit/2) / unit
+		relation := "just over"
+		if n < whole*unit {
+			relation = "just under"
+		}
+		if name == "MiB" && whole == 1024 {
+			whole, name = 1, "GiB"
+		}
+		return fmt.Sprintf("%s %d %s (%d bytes)", relation, whole, name, n)
+	}
+	return fmt.Sprintf("%s %s (%d bytes)", spelled, name, n)
 }

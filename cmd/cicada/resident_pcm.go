@@ -19,15 +19,41 @@ const maxResidentPCMFlag = "max-resident-pcm"
 // option, such as Studio started from a launcher that passes no flags.
 const maxResidentPCMEnv = "CICADA_MAX_RESIDENT_PCM"
 
-var byteUnits = map[string]int64{
-	"": 1, "b": 1,
-	"kib": 1 << 10, "mib": 1 << 20, "gib": 1 << 30, "tib": 1 << 40,
-	"kb": 1000, "mb": 1000 * 1000, "gb": 1000 * 1000 * 1000, "tb": 1000 * 1000 * 1000 * 1000,
+// byteUnits are the canonical spellings of a size's unit. A unit may also be
+// written all in lower case or all in capitals ("mib", "GIB"); a mixed spelling
+// that is not canonical is refused, because "Mb" reads as megabits.
+var byteUnits = []struct {
+	name       string
+	multiplier int64
+}{
+	{"B", 1},
+	{"KiB", 1 << 10}, {"MiB", 1 << 20}, {"GiB", 1 << 30}, {"TiB", 1 << 40},
+	{"KB", 1000}, {"MB", 1000 * 1000}, {"GB", 1000 * 1000 * 1000}, {"TB", 1000 * 1000 * 1000 * 1000},
+}
+
+const byteUnitList = "B, KiB, MiB, GiB, TiB, KB, MB, GB or TB"
+
+// byteMultiplier returns the multiplier of a unit spelling, and whether the
+// spelling is a known unit written in mixed case that is not canonical.
+func byteMultiplier(unit string) (multiplier int64, ambiguous bool) {
+	if unit == "" {
+		return 1, false
+	}
+	for _, known := range byteUnits {
+		switch {
+		case unit == known.name || unit == strings.ToLower(known.name) || unit == strings.ToUpper(known.name):
+			return known.multiplier, false
+		case strings.EqualFold(unit, known.name):
+			ambiguous = true
+		}
+	}
+	return 0, ambiguous
 }
 
 // parseByteSize reads a size: a whole number of bytes with an optional unit.
 // KiB, MiB, GiB and TiB are powers of 1024, KB, MB, GB and TB are powers of
-// 1000, and no unit (or B) means bytes. Units ignore case. A size is positive.
+// 1000, and no unit (or B) means bytes. A unit is written as above, in lower
+// case or in capitals. A size is positive.
 func parseByteSize(text string) (int64, error) {
 	spelled := strings.TrimSpace(text)
 	digits, unit := spelled, ""
@@ -39,10 +65,13 @@ func parseByteSize(text string) (int64, error) {
 	if digits == "" || err != nil && !tooLarge || strings.IndexFunc(unit, func(r rune) bool { return !unicode.IsLetter(r) }) >= 0 {
 		return 0, fmt.Errorf("size %q is not a whole number of bytes with an optional unit, such as 512MiB or 1GiB", text)
 	}
-	multiplier, known := byteUnits[strings.ToLower(unit)]
+	multiplier, ambiguous := byteMultiplier(unit)
 	switch {
-	case !known:
-		return 0, fmt.Errorf("size %q has the unknown unit %q (use B, KiB, MiB, GiB or TiB)", text, unit)
+	case ambiguous:
+		return 0, fmt.Errorf("size %q has the unit %q, which can read as bits or as bytes; write %s for powers of 1000 or %s for powers of 1024",
+			text, unit, strings.ToUpper(unit[:1])+"B", strings.ToUpper(unit[:1])+"iB")
+	case multiplier == 0:
+		return 0, fmt.Errorf("size %q has the unknown unit %q (use %s)", text, unit, byteUnitList)
 	case tooLarge || int64(count) > math.MaxInt64/multiplier:
 		return 0, fmt.Errorf("size %q is too large", text)
 	case count == 0:

@@ -197,6 +197,12 @@ func TestFormatBytes(t *testing.T) {
 		{72_000_000, "68.66 MiB (72000000 bytes)"},
 		{1 << 30, "1 GiB (1073741824 bytes)"},
 		{3 << 29, "1.50 GiB (1610612736 bytes)"},
+		// Two decimals must not make a size a byte short of a whole number look whole.
+		{1<<28 - 1, "just under 256 MiB (268435455 bytes)"},
+		{1<<28 + 1, "just over 256 MiB (268435457 bytes)"},
+		{1<<30 - 1, "just under 1 GiB (1073741823 bytes)"},
+		{1<<30 + 1, "just over 1 GiB (1073741825 bytes)"},
+		{1<<30 + 10<<20, "1.01 GiB (1084227584 bytes)"}, // ten MiB over shows in two decimals
 	} {
 		if got := FormatBytes(tc.bytes); got != tc.want {
 			t.Errorf("FormatBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
