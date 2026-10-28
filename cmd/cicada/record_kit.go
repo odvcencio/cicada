@@ -45,8 +45,14 @@ func recordKitCommand(args []string, output io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
-	// Takes are looked up in the recipe's own folder.
-	pack, report, err := recording.BuildKit(*name, recipe, os.DirFS(filepath.Dir(path)))
+	// Takes are looked up in the recipe's own folder. A root keeps a take that
+	// is a link out of the folder from reaching a file outside it.
+	folder, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer folder.Close()
+	pack, report, err := recording.BuildKit(*name, recipe, folder.FS())
 	if err != nil {
 		return err
 	}

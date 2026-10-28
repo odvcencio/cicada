@@ -245,3 +245,40 @@ func TestRecordKitPrintsWarningsForTakesToRecordAgain(t *testing.T) {
 		t.Errorf("clean session: %v\n%s", err, clean.String())
 	}
 }
+
+// A take that is a link to a file outside the recipe's folder is not read, and
+// the error says why. A link to a file inside the folder is fine.
+func TestRecordKitDoesNotFollowATakeLinkedOutsideItsFolder(t *testing.T) {
+	root := t.TempDir()
+	session := filepath.Join(root, "session")
+	if err := os.MkdirAll(session, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "outside.wav")
+	hits := testwav.Take(48000, testwav.Kick, .5, .52, .51)
+	for path, data := range map[string][]byte{outside: hits, filepath.Join(session, "inside.wav"): hits} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("../outside.wav", filepath.Join(session, "linked-out.wav")); err != nil {
+		t.Skipf("this system does not allow symbolic links: %v", err)
+	}
+	if err := os.Symlink("inside.wav", filepath.Join(session, "linked-in.wav")); err != nil {
+		t.Fatal(err)
+	}
+	build := func(take string) error {
+		recipe := filepath.Join(session, take+".json")
+		if err := os.WriteFile(recipe, []byte(`{"format": "cicada.kit-recipe/1", "pieces": [{"name": "kick", "note": 36, "layers": 1, "takes": ["`+take+`"]}]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return recordKitCommand([]string{"-o", filepath.Join(t.TempDir(), "pack"), recipe}, &bytes.Buffer{})
+	}
+	err := build("linked-out.wav")
+	if err == nil || !strings.Contains(err.Error(), `piece "kick": take "linked-out.wav": `) || !strings.Contains(err.Error(), "a take cannot be a link to a file outside the recipe's folder") {
+		t.Fatalf("a link out of the folder was followed or refused without a reason: %v", err)
+	}
+	if err := build("linked-in.wav"); err != nil {
+		t.Fatalf("a link to a file inside the folder was refused: %v", err)
+	}
+}

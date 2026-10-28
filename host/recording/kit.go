@@ -8,7 +8,9 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"path"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -86,8 +88,10 @@ type rawKitPiece struct {
 }
 
 // ParseKitRecipe reads and validates a recipe. Unknown fields are refused so a
-// misspelled option cannot be ignored. Layers defaults to 3 and one_shot to
-// true. A UTF-8 byte order mark, which some Windows editors add, is skipped.
+// misspelled option cannot be ignored, and so are a field written twice and a
+// field name with capitals, which the JSON decoder would take for the field
+// anyway. Layers defaults to 3 and one_shot to true. A UTF-8 byte order mark,
+// which some Windows editors add, is skipped.
 func ParseKitRecipe(data []byte) (KitRecipe, error) {
 	var recipe KitRecipe
 	if len(data) > MaxKitRecipeBytes {
@@ -102,6 +106,9 @@ func ParseKitRecipe(data []byte) (KitRecipe, error) {
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		return recipe, fmt.Errorf("unexpected text after the recipe's closing brace")
+	}
+	if err := checkRecipeKeys(data); err != nil {
+		return recipe, err
 	}
 	recipe.Format = raw.Format
 	for i, p := range raw.Pieces {
@@ -169,6 +176,98 @@ func lineOf(data []byte, offset int64) int {
 	return 1 + bytes.Count(data[:offset], []byte("\n"))
 }
 
+// The fields of the recipe and of each piece.
+var (
+	recipeFields = []string{"format", "pieces"}
+	pieceFields  = []string{"name", "note", "takes", "layers", "choke", "choke_note", "one_shot", "gain_db"}
+)
+
+// checkRecipeKeys reads the recipe once more as a stream of tokens and refuses
+// what encoding/json accepts quietly: a field written twice, where the last
+// would win, and a field spelled with other capitals than ours. The recipe has
+// already decoded, so its syntax and types are known to be sound.
+func checkRecipeKeys(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	// skip reads one value of any kind, to its end.
+	skip := func() error {
+		depth := 0
+		for {
+			tok, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			if d, ok := tok.(json.Delim); ok {
+				if d == '{' || d == '[' {
+					depth++
+				} else {
+					depth--
+				}
+			}
+			if depth == 0 {
+				return nil
+			}
+		}
+	}
+	// object reads the members of an object whose "{" has been read. Only the
+	// recipe's "pieces" member is read further, for the fields of each piece.
+	var object func(where string, fields []string) error
+	object = func(where string, fields []string) error {
+		seen := map[string]bool{}
+		for dec.More() {
+			tok, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			key, _ := tok.(string)
+			line := lineOf(data, dec.InputOffset())
+			if !slices.Contains(fields, key) {
+				if i := slices.IndexFunc(fields, func(f string) bool { return strings.EqualFold(f, key) }); i >= 0 {
+					return fmt.Errorf("line %d: write %q in lower case, not %q", line, fields[i], key)
+				}
+			}
+			if seen[key] {
+				return fmt.Errorf("line %d: %q appears twice %s; keep one", line, key, where)
+			}
+			seen[key] = true
+			if key != "pieces" || len(fields) != len(recipeFields) {
+				if err := skip(); err != nil {
+					return err
+				}
+				continue
+			}
+			open, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			if open != json.Delim('[') {
+				continue
+			}
+			for dec.More() {
+				entry, err := dec.Token()
+				if err != nil {
+					return err
+				}
+				if entry != json.Delim('{') {
+					continue
+				}
+				if err := object("in this piece", pieceFields); err != nil {
+					return err
+				}
+			}
+			if _, err := dec.Token(); err != nil { // the closing "]"
+				return err
+			}
+		}
+		_, err := dec.Token() // the closing "}"
+		return err
+	}
+	first, err := dec.Token()
+	if err != nil || first != json.Delim('{') {
+		return nil
+	}
+	return object("in the recipe", recipeFields)
+}
+
 func pieceLabel(index int, name string) string {
 	if name == "" {
 		return fmt.Sprintf("piece %d", index+1)
@@ -223,8 +322,8 @@ func (r KitRecipe) Validate() error {
 		}
 		seen := map[string]bool{}
 		for _, take := range piece.Takes {
-			if take == "" || !fs.ValidPath(take) || take == "." || strings.ContainsAny(take, "\\\x00") {
-				return fmt.Errorf(`%s: take %q must be a path inside the recipe's folder, with forward slashes and no leading "/" or ".."`, label, take)
+			if problem := takePathProblem(take); problem != "" {
+				return fmt.Errorf("%s: take %q must be a path inside the recipe's folder; %s", label, take, problem)
 			}
 			if seen[take] {
 				return fmt.Errorf("%s: take %q is listed twice; each hit would count twice", label, take)
@@ -253,6 +352,30 @@ func (r KitRecipe) Validate() error {
 		}
 	}
 	return nil
+}
+
+// takePathProblem says what is wrong with a take's path, or returns "" when it
+// is a plain relative path with forward slashes.
+func takePathProblem(take string) string {
+	switch {
+	case take == "":
+		return "this one is empty"
+	case take == ".":
+		return "this one names the folder itself, not a file"
+	case strings.ContainsAny(take, "\\\x00"):
+		return `separate folders with "/", not "\"`
+	case strings.HasPrefix(take, "/"):
+		return `this one starts with "/"; write it relative to the recipe's folder`
+	case fs.ValidPath(take):
+		return ""
+	}
+	if cleaned := path.Clean(take); cleaned != take && fs.ValidPath(cleaned) {
+		if strings.HasPrefix(take, "./") {
+			return fmt.Sprintf(`write %q, without the leading "./"`, cleaned)
+		}
+		return fmt.Sprintf("write %q", cleaned)
+	}
+	return `it may not start with "/" or "./", contain "..", or have empty parts`
 }
 
 // KitLayerReport describes one velocity layer of a piece. MinDB and MaxDB are
@@ -577,6 +700,9 @@ func readKitTake(takes fs.FS, name string) (Audio, error) {
 		return Audio{}, fmt.Errorf("not found; takes are looked up next to the recipe")
 	}
 	if err != nil {
+		if strings.Contains(err.Error(), "escapes from parent") {
+			return Audio{}, fmt.Errorf("%w; a take cannot be a link to a file outside the recipe's folder", err)
+		}
 		return Audio{}, err
 	}
 	defer f.Close()
