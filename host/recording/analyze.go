@@ -16,11 +16,13 @@ import (
 // 2.5 times above its quietest level in the previous 10 ms and 1.5 times
 // above its loudest level between 100 and 10 ms before, so that a tail beating
 // against itself does not look like a new hit. The room's noise is read from
-// the quietest 200 ms of each recording. A hit keeps its tail until the energy
-// is 60 dB below the recording's loudest hit, or twice the noise floor when
-// that is higher. If the next hit or the end of the recording comes first, the
-// tail is cut there and fades out over 5 ms; the hit is marked Cut when the
-// tail was still more than 6 dB above that level.
+// the quietest 200 ms of each recording; TakeReport.NoRoomTone says when the
+// recording does not open with room tone, where that stretch may be a tail. A
+// hit keeps its tail until the energy is 60 dB below the recording's loudest
+// hit, or twice the noise floor when that is higher. If the next hit or the end
+// of the recording comes first, the tail is cut there and fades out over 5 ms;
+// the hit is marked Cut when the tail was still more than 6 dB above that
+// level.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
@@ -60,6 +62,12 @@ type TakeReport struct {
 	// 200 ms of the recording, so it reads the tail of the last hit when the
 	// recording has no quiet stretch.
 	NoiseDB float64
+	// NoRoomTone is set in ringing mode when the recording does not open with
+	// 200 ms of room tone: a stretch as quiet as the quietest 200 ms, before
+	// the first sound that stands clear of the room. The quietest 200 ms then
+	// stands in for the room, and it may be a tail that was still ringing when
+	// the recording stopped.
+	NoRoomTone bool
 	// NoQuiet is set in ringing mode when the quietest 200 ms lies within
 	// 26 dB of the loudest sound and the recording does not open with room
 	// tone as quiet. The command then cannot tell the room's noise from a ring
@@ -156,10 +164,11 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 			room := max(1, ringRoomMS*a.Rate/1000/hop)
 			noise = quietestStretch(energy, room)
 			report.NoiseDB = dB(noise)
+			report.NoRoomTone = !startsWithRoomTone(energy, loudest, room, noise)
 			// A quietest stretch within 26 dB of the loudest sound may be a tail
 			// that never faded. It is the room all the same when the recording
 			// starts as quiet: the room tone before the first hit.
-			if limit := loudest * ringNoiseCap; noise > limit && !startsWithRoomTone(energy, loudest, room, noise) {
+			if limit := loudest * ringNoiseCap; noise > limit && report.NoRoomTone {
 				noise, report.NoQuiet = limit, true
 			}
 		} else {

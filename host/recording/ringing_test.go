@@ -197,6 +197,43 @@ func TestRingingSoftTakeThatOpensWithRoomToneIsNotFlaggedAsQuietless(t *testing.
 	}
 }
 
+// The room's noise can only be read from the take's own opening when that
+// holds 200 ms of room tone. The report says whether it does, for takes whose
+// quietest stretch lies far below the loudest sound as well as for those whose
+// does not.
+func TestRingingReportsWhetherTheTakeOpensWithRoomTone(t *testing.T) {
+	levels := []float64{.55, .50, .60}
+	for _, test := range []struct {
+		name                 string
+		lead, spacing, after float64
+		none                 bool // want NoRoomTone
+		quiet                bool // want NoQuiet
+	}{
+		{"hit at the very start", 0, 6, 8, true, false},
+		{"100 ms of room tone", .1, 6, 8, true, false},
+		{"150 ms of room tone", .15, 6, 16, true, false},
+		{"250 ms of room tone", .25, 6, 8, false, false},
+		{"3 s of room tone", 3, 6, 8, false, false},
+		{"no room tone, and tails that fill the take", 0, 4, 1, true, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			audio := spaced(t, testwav.LongCrash, testwav.Layout{Lead: test.lead, Spacing: test.spacing, After: test.after, RoomDB: -70}, levels...)
+			_, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 49, Layers: 1, Ringing: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := reports[0]; got.NoRoomTone != test.none || got.NoQuiet != test.quiet {
+				t.Errorf("no room tone %v, no quiet stretch %v; want %v and %v (quietest 200 ms at %.1f dBFS, loudest sound at %.1f dBFS)", got.NoRoomTone, got.NoQuiet, test.none, test.quiet, got.NoiseDB, got.LoudestDB)
+			}
+		})
+	}
+	// The tap detector reads no room tone, so it reports none missing.
+	audio := spaced(t, testwav.Kick, testwav.Layout{Spacing: 1, After: 1}, .5, .6)
+	if _, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1}); err != nil || reports[0].NoRoomTone {
+		t.Errorf("the tap detector reported no room tone: %+v, %v", reports, err)
+	}
+}
+
 // A cut-off tail fades out over about 5 ms. The first hit here is noise held at
 // -24 dBFS until the second hit, which attacks at once, cuts it off.
 func TestRingingCutHitFadesOutOverFiveMilliseconds(t *testing.T) {

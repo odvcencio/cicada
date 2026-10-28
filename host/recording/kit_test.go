@@ -1116,6 +1116,53 @@ func TestKitReportsTakesToRecordAgain(t *testing.T) {
 	}
 }
 
+// A take with no room tone before its first hit gives the command nothing to
+// read the room from but the quietest 200 ms of the take. When the recording
+// stops while a cymbal still rings, that stretch is a tail, 20 to 30 dB above
+// the room, and every hit ends where the tail passes it: 36 dB down, and no
+// cut is reported. The command cannot tell, so it says that the take must start
+// with silence, whatever the quietest stretch is.
+func TestKitWarnsThatATakeWithNoRoomToneCannotBeTrusted(t *testing.T) {
+	levels := []float64{.55, .50, .60, .52, .58}
+	for _, test := range []struct {
+		name  string
+		lead  float64
+		after float64
+		warns bool
+	}{
+		{"no lead-in, the recording stops at the ring", 0, 8, true},
+		{"100 ms of lead-in, the recording stops at the ring", .1, 8, true},
+		{"no lead-in, the ring fades out before the end", 0, 16, true},
+		{"200 ms of lead-in, the recording stops at the ring", .25, 8, false},
+		{"3 seconds of lead-in", 3, 8, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			takes := fstest.MapFS{"crash.wav": {Data: testwav.Spaced(48000, testwav.LongCrash, testwav.Layout{Lead: test.lead, Spacing: 6, After: test.after, RoomDB: -70}, levels...)}}
+			recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{{Name: "crash", Note: 49, Layers: 1, OneShot: true, Takes: []string{"crash.wav"}}}}
+			_, report, err := BuildKit("room", recipe, takes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got string
+			for _, w := range report.Warnings() {
+				if strings.Contains(w, "room tone") {
+					got = w
+				}
+			}
+			if test.warns != (got != "") {
+				t.Fatalf("lead-in %.2f s, %.0f s after the last hit: room tone warning %q; want one: %v\nwarnings:\n%s", test.lead, test.after, got, test.warns, strings.Join(report.Warnings(), "\n"))
+			}
+			if test.warns {
+				for _, want := range []string{"crash: crash.wav does not start with room tone", "start every take with 3 seconds of silence"} {
+					if !strings.Contains(got, want) {
+						t.Errorf("warning %q lacks %q", got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
 // The warnings are plain sentences. A single fault reads in the singular, and a
 // piece with the same fault in several takes names each take once.
 func TestKitWarningsReadAsSentences(t *testing.T) {

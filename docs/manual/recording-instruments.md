@@ -164,8 +164,11 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    again.
 5. **Leave room tone, and let every hit ring out.** Start every take with about
    three seconds of silence. The command reads the room's noise from the
-   quietest 200 ms of each take, and it warns you when no part of a take is
-   quiet. Hits must start at least half a second apart. That is stricter than
+   quietest 200 ms of each take. It warns you when a take does not open with
+   200 ms of room tone, because the quietest stretch may then be a tail that
+   was still ringing when you stopped recording, and every hit would end where
+   that tail passes it. It also warns when no part of a take is quiet. Hits
+   must start at least half a second apart. That is stricter than
    `record-pack`'s 120 ms rule, because bass drums and toms swell again after
    the first impact, and the command must not count the swell as a second hit.
    An attack that comes sooner than half a second is kept inside the hit before
@@ -257,7 +260,8 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    | Hits were cut off while still ringing | The next hit, or the end of the file, came while the tail was still more than 6 dB above the level where tails end. The line gives the level at the cut and the level where a finished tail ends. | Leave more time after each hit, and keep recording until the last one has died away. |
    | Attacks within 0.5 s of an earlier hit | The take holds a double strike, or hits that are too close together. | Leave 0.5 s or more between hits. |
    | Hits clip at full scale | The input gain was too high. | Lower the gain and record the take again. |
-   | A take has no quiet stretch | No 200 ms of the take is quiet next to its loudest sound, and the take does not open with room tone, so the command cannot tell the room's noise from a ring that never faded. It ends tails early and may miss the softer hits. | Start the take with three seconds of silence. If it already does, play harder, move the microphone closer, or record in a quieter room. |
+   | A take does not start with room tone | The take's first 200 ms are not as quiet as its quietest 200 ms, so the command read the room's noise from the quietest stretch elsewhere in the take. If a tail was still ringing there, every hit ended too soon, and no cut was reported. | Start the take with three seconds of silence. |
+   | A take has no quiet stretch | No 200 ms of the take is more than 26 dB below its loudest sound, and the take does not open with room tone, so the command cannot tell the room's noise from a ring that never faded. It ends tails 20 dB below the loudest sound and may miss the softer hits. | Start the take with three seconds of silence. If it already does, play harder, move the microphone closer, or record in a quieter room. |
 
    `analysis.json` records, for each hit, whether it was cut off and at what
    level, and how many of its frames clipped.

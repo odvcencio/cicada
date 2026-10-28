@@ -518,8 +518,9 @@ type KitTakeReport struct {
 	// Merged counts the attacks that came within half a second of an earlier
 	// hit and so play inside it.
 	Merged int
-	// NoQuiet is set when the take has no quiet stretch: see TakeReport.
-	NoQuiet bool
+	// NoQuiet is set when the take has no quiet stretch, and NoRoomTone when
+	// it does not start with room tone: see TakeReport.
+	NoQuiet, NoRoomTone bool
 	// LoudestDB is the loudest 10 ms of the take, NoiseDB its quietest 200 ms
 	// and QuietDB the level below which a tail counts as finished.
 	LoudestDB, NoiseDB, QuietDB float64
@@ -547,8 +548,9 @@ type KitReport struct {
 
 // Warnings lists, one plain sentence each, the takes that should be recorded
 // again. It is empty when every take is clean. For each piece it names first
-// the takes with no quiet stretch and the attacks that merged, take by take,
-// then the hits that were cut off and the hits that clipped, for the piece.
+// the takes with no quiet stretch or no room tone and the attacks that merged,
+// take by take, then the hits that were cut off and the hits that clipped, for
+// the piece.
 func (r KitReport) Warnings() []string {
 	var out []string
 	for _, piece := range r.Pieces {
@@ -558,8 +560,11 @@ func (r KitReport) Warnings() []string {
 		low, high := math.Inf(1), math.Inf(-1)
 		for _, take := range piece.Takes {
 			hits += take.Hits
-			if take.NoQuiet {
+			switch {
+			case take.NoQuiet:
 				out = append(out, fmt.Sprintf("%s: %s has no quiet stretch (its quietest 200 ms is only %.0f dB below its loudest sound), so tails end where they fall %.0f dB below that sound and the softer hits may be missed; start every take with 3 seconds of silence, and play louder or closer to the microphone if it already does", piece.Name, take.Name, take.LoudestDB-take.NoiseDB, take.LoudestDB-take.QuietDB))
+			case take.NoRoomTone:
+				out = append(out, fmt.Sprintf("%s: %s does not start with room tone, so the room's noise was read from its quietest 200 ms, at %.0f dBFS; if a tail was still ringing there, every hit ends too soon; start every take with 3 seconds of silence", piece.Name, take.Name, take.NoiseDB))
 			}
 			if take.Merged > 0 {
 				out = append(out, fmt.Sprintf("%s: %s holds %s within 0.5 s of an earlier hit; %s kept inside that hit, which plays as a double strike; leave 0.5 s or more between hits", piece.Name, take.Name, count(take.Merged, "attack", "attacks"), plural(take.Merged, "it was", "each was")))
@@ -658,7 +663,7 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 		}
 		reports := make([]KitTakeReport, len(piece.Takes))
 		for n, name := range piece.Takes {
-			reports[n] = KitTakeReport{Name: name, Merged: notes[n].Merged, NoQuiet: notes[n].NoQuiet, LoudestDB: notes[n].LoudestDB, NoiseDB: notes[n].NoiseDB, QuietDB: notes[n].QuietDB}
+			reports[n] = KitTakeReport{Name: name, Merged: notes[n].Merged, NoQuiet: notes[n].NoQuiet, NoRoomTone: notes[n].NoRoomTone, LoudestDB: notes[n].LoudestDB, NoiseDB: notes[n].NoiseDB, QuietDB: notes[n].QuietDB}
 		}
 		for _, h := range found {
 			// Each piece plays at its recorded pitch, so the pack must resample
