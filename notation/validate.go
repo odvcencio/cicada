@@ -227,6 +227,9 @@ func Validate(s *Score) (ds []Diagnostic) {
 					add("CICADA-PARAM", "piano sustain must be a unitless value from 0 to 1", "error", param.ValuePosition)
 				}
 			}
+			if isModal && param.Name == "sustain" && !validModalSustain(param.Value) {
+				add("CICADA-PARAM", "modal sustain must be on, off or a unitless value from 0 to 1", "error", param.ValuePosition)
+			}
 		}
 	}
 	for _, phrase := range s.Phrases {
@@ -667,6 +670,16 @@ func Validate(s *Score) (ds []Diagnostic) {
 	return ds
 }
 
+// validModalSustain accepts a modal track's damper pedal as on, off or a
+// unitless value from 0 to 1.
+func validModalSustain(source string) bool {
+	if source == "on" || source == "off" {
+		return true
+	}
+	value, unit, err := notationBaseValue(source)
+	return err == nil && unit == "unit" && finiteMixerNumber(value) && value >= 0 && value <= 1
+}
+
 func validTrackParam(kind, name string, instruments map[string]Instrument, kits map[string]Kit) bool {
 	if mixerParams[name] {
 		return true
@@ -679,7 +692,7 @@ func validTrackParam(kind, name string, instruments map[string]Instrument, kits 
 		}
 	}
 	if _, ok := modal.ParseTrackKind(kind); ok {
-		return name == "octave"
+		return name == "octave" || name == "sustain"
 	}
 	if kind == "acid" {
 		return acidParams[name]

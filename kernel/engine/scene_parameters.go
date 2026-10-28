@@ -173,6 +173,10 @@ func (e *Engine) restoreVoiceState(v *voiceSlot, p *sceneTrackParameters) bool {
 		v.pianoSustain = p.pianoSustain
 		failed = failed || v.keys.SetSustain(p.pianoSustain) != nil || v.keysControl != nil && !e.restoreKeysControls(v, &p.keysValues)
 	}
+	if v.modal != nil {
+		v.pianoSustain = p.pianoSustain
+		failed = failed || v.modal.SetSustain(p.pianoSustain) != nil
+	}
 	failed = failed || v.guitar != nil && v.guitar.SetParams(p.guitar) != nil || v.acid != nil && v.acid.SetParams(p.acid) != nil ||
 		v.insert != nil && v.insert.SetParams(p.drive) != nil
 	if p.hasAmp {

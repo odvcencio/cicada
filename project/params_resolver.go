@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
 
 // ResolvedParam names the registry row and concrete kernel slot for one P1
@@ -196,6 +197,9 @@ func parameterVoiceKind(p *Project, kind string) string {
 	}
 	if isModeledKeys(p, kind) {
 		return keyboard.FamilyName(kind)
+	}
+	if _, ok := modal.ParseTrackKind(kind); ok {
+		return "modal"
 	}
 	return "instrument"
 }

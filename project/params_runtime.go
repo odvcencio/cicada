@@ -245,6 +245,16 @@ func registryValue(descriptor paramdefs.Descriptor, value Value) any {
 		}
 		return float64(0)
 	}
+	if descriptor.ID == "piano.sustain" && (value.Text == "on" || value.Text == "off") {
+		// A modeled percussion track or a keyboard writes its pedal as on or
+		// off. The live plans (cmd/cicada/play.go, studio_liveplan.go) skip a
+		// text value, so the address takes the number the word stands for,
+		// 1 for on and 0 for off.
+		if value.Text == "on" {
+			return float64(1)
+		}
+		return float64(0)
+	}
 	return value.Text
 }
 

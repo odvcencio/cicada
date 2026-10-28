@@ -4,6 +4,7 @@ package modeledkit
 
 import "math"
 
+// Profile numbers are stored in kernel images, so a new piece goes at the end.
 type Profile uint8
 
 const (
@@ -22,12 +23,15 @@ const (
 	RideBell
 	Crash
 	Splash
+	BrushTap
+	BrushSweep
 	ProfileCount
 )
 
 var Names = [ProfileCount]string{
 	"kick", "snare", "rimshot", "cross_stick", "tom_low", "tom_mid", "tom_high",
 	"hat_closed", "hat_pedal", "hat_half_open", "hat_open", "ride_bow", "ride_bell", "crash", "splash",
+	"brush_tap", "brush_sweep",
 }
 
 func ParseProfile(name string) (Profile, bool) {
@@ -40,6 +44,12 @@ func ParseProfile(name string) (Profile, bool) {
 }
 
 func IsHat(profile Profile) bool { return profile >= HatClosed && profile <= HatOpen }
+
+// isMetal reports the pieces struck as a plate: the hats, ride and cymbals.
+func isMetal(profile Profile) bool { return profile >= HatClosed && profile <= Splash }
+
+// isBrush reports the pieces played with a brush instead of a stick.
+func isBrush(profile Profile) bool { return profile == BrushTap || profile == BrushSweep }
 
 type Error string
 
@@ -103,7 +113,21 @@ var recipes = [ProfileCount]recipe{
 	RideBell:    {620, 3.5, 1.12, .17, .6, 3200, 15000, .00024, 0, 16},
 	Crash:       {310, 4.8, 1.12, .85, 3.1, 1300, 15500, .00037, 0, 16},
 	Splash:      {620, 1.55, 1.15, .94, 1.12, 2300, 16500, .00025, 0, 16},
+	BrushTap:    {200, .22, .36, 1.55, .13, 1400, 5200, .0036, 0, 6},
+	BrushSweep:  {210, .22, .12, .78, .24, 1200, 4400, .045, 0, 4},
 }
+
+// A brush sweep keeps rubbing while its gate is held, so its noise holds level
+// instead of ringing down, and Choke closes the gate. sweepHold is the longest
+// it holds at Decay 1, in seconds; a score row has no gate end, so a sweep in
+// a score always holds that long. The recipe's noise T60 is the fade after the
+// hold. strokeHz and strokeDepth give the slow swell of a circling brush: its
+// rate and its share of the level.
+const (
+	sweepHold   = 1.6
+	strokeHz    = 1.9
+	strokeDepth = .22
+)
 
 type mode struct {
 	x, y, c, s, targetC, targetS float64
@@ -135,10 +159,13 @@ type strike struct {
 	filter                  bandFilter
 	age, contact, remaining int
 	count                   int
+	hold                    int
 	noise                   uint32
 	noiseAmp, noisePole     float64
 	bendAlpha, bodyCoupling float64
 	wireFollower, followerA float64
+	stroke                  mode
+	swell                   float64
 	active                  bool
 }
 
@@ -186,6 +213,7 @@ func (v *Voice) Active() bool { return v.current.active || v.fadeLeft > 0 }
 
 // Choke damps all ringing state in 5 ms. Repeated choke commands cannot extend
 // a fade already in progress. Hat-family coordination belongs to the kit mixer.
+// It also closes a brush sweep's gate, which holds until it is choked.
 func (v *Voice) Choke() {
 	if v.Active() && v.chokeLeft == 0 {
 		v.chokeLeft = v.chokeFrames
@@ -210,6 +238,7 @@ func (v *Voice) Hit(velocity uint8) {
 	if velocity == 0 {
 		return
 	}
+	carry := 0.0
 	if v.current.active {
 		v.old = v.current
 		// Preserve a choke already applied to the predecessor when retriggering.
@@ -222,6 +251,10 @@ func (v *Voice) Hit(velocity uint8) {
 			v.old.noiseAmp *= gain
 		}
 		v.fadeLeft = v.fadeFrames
+		if v.profile == BrushSweep {
+			// The level the predecessor has reached, swell included.
+			carry = v.old.noiseAmp * min(1, float64(v.old.age)/float64(v.old.contact))
+		}
 	}
 	v.chokeLeft = 0
 	s := &v.current
@@ -238,19 +271,48 @@ func (v *Voice) Hit(velocity uint8) {
 	level := r.level * strength
 	tune := v.params.Tune * (1 + .015*v.params.Humanize*jitter)
 	s.contact = max(2, int(r.contact*(1.7-1.1*hardness)*(1+.055*jitter)*v.rate))
-	s.remaining = int(max(r.t60, r.noiseT60)*v.params.Decay*3*v.rate) + s.contact
+	if v.profile == BrushSweep {
+		s.hold = int(sweepHold * v.params.Decay * v.rate)
+	}
+	s.remaining = int(max(r.t60, r.noiseT60)*v.params.Decay*3*v.rate) + s.contact + s.hold
 	s.noiseAmp = r.noise * strength * (.28 + .72*hardness)
 	s.noisePole = math.Exp(-math.Log(1000) / (r.noiseT60 * v.params.Decay * v.rate))
-	s.filter.configure(r.low*(.72+.4*hardness), r.high*(.55+.45*hardness), v.rate)
+	low, high := r.low*(.72+.4*hardness), r.high*(.55+.45*hardness)
+	if v.profile == BrushSweep {
+		// Only the bristle band rings in a sweep, so tune and strike
+		// position move that band. The stroke starts at a varied phase.
+		band := tune * (.8 + .4*position)
+		low, high = low*band, high*band
+		s.stroke.y, s.stroke.x = math.Sincos(2.1 * jitter)
+		s.stroke.s, s.stroke.c = math.Sincos(2 * math.Pi * strokeHz * (1 + .08*jitter) / v.rate)
+		s.swell = strokeDepth
+	}
+	s.filter.configure(low, high, v.rate)
 	s.followerA = 1 - math.Exp(-1/(.0008*v.rate))
 	s.bendAlpha = 1 - math.Exp(-1/(.024*v.rate))
 	if v.profile == Snare || v.profile == Rimshot {
 		// The wire contact is driven by both its own strike and membrane
 		// displacement. Soft ghost notes excite much less wire energy.
 		s.bodyCoupling = .7 * vel * vel
+	} else if v.profile == BrushTap {
+		// Brush bristles stir the wires less than a stick does.
+		s.bodyCoupling = .45 * vel * vel
+	}
+	if isBrush(v.profile) {
+		// A brush is mostly noise, so keep its density rather than its
+		// per-sample level the same at every rate. Older pieces keep theirs.
+		trim := math.Sqrt(v.rate / 48_000)
+		s.noiseAmp *= trim
+		s.bodyCoupling *= trim
+	}
+	if carry > 0 {
+		// A sweep that replaces a sweep takes over at the level the old one has
+		// reached and swells on from there. Its own swell would open at zero
+		// while the old one fades in 1 ms, a dip of 12 dB or more in the swish.
+		s.age = int(min(1, carry/s.noiseAmp) * float64(s.contact))
 	}
 	ratios, weights := &membraneRatios, &membraneWeights
-	metal := v.profile >= HatClosed
+	metal := isMetal(v.profile)
 	if metal {
 		ratios, weights = &plateRatios, &plateWeights
 	} else if v.profile == Rimshot {
@@ -345,10 +407,20 @@ func (v *Voice) nextStrike(s *strike) float64 {
 	}
 	s.wireFollower += s.followerA * (math.Abs(body) - s.wireFollower)
 	noiseLevel := s.noiseAmp + s.bodyCoupling*s.wireFollower
+	if s.swell != 0 {
+		x := s.stroke.c*s.stroke.x - s.stroke.s*s.stroke.y
+		s.stroke.y = s.stroke.s*s.stroke.x + s.stroke.c*s.stroke.y
+		s.stroke.x = x
+		noiseLevel *= 1 + s.swell*s.stroke.y
+	}
 	noise := 0.0
 	if noiseLevel > 1e-9 {
 		noise = s.filter.next(random(&s.noise) * noiseLevel)
-		s.noiseAmp *= s.noisePole
+		if s.hold > 0 {
+			s.hold-- // a held sweep keeps rubbing at level
+		} else {
+			s.noiseAmp *= s.noisePole
+		}
 	} else {
 		// Flush the short filter tail before retiring a finished strike.
 		noise = s.filter.next(0)

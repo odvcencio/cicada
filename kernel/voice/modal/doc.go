@@ -8,7 +8,9 @@
 // linear after excitation and allocates no memory.
 //
 // One Voice holds at most MaxVoices ringing strikes. NoteOff leaves a natural
-// tail except for Vibraphone, whose damper shortens the tail. A slide retunes
+// tail except for Vibraphone, whose damper shortens the tail. SetSustain works
+// the vibraphone's damper pedal: while it is down a key-up leaves the bars
+// ringing, and lifting it damps the bars whose keys are up. A slide retunes
 // the latest strike while preserving its state and without another contact.
 // These behaviours are candidates for listening evaluation, not a claim of
 // spectral or perceptual equivalence to recorded instruments.

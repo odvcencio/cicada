@@ -207,6 +207,9 @@ func (p *sceneParameters) set(setting engine.SceneSetting) error {
 		state.solo = value == 1
 		p.updateMuteTargets()
 	case kernel.ParamPianoSustain:
+		if voice, ok := track.voice.(modalVoice); ok {
+			return voice.SetSustain(value)
+		}
 		voice, ok := track.voice.(*pianoVoice)
 		if !ok {
 			return fmt.Errorf("piano voice is missing")
