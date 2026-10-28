@@ -98,11 +98,18 @@ func ParseKitRecipe(data []byte) (KitRecipe, error) {
 		return recipe, fmt.Errorf("the recipe is larger than %d bytes", MaxKitRecipeBytes)
 	}
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	// The offset in a type error counts from the first byte of the file before
+	// Go 1.27 and from the first byte of the value from Go 1.27, so a recipe that
+	// opens with a space or a blank line gets a different offset on each. The
+	// decoder reads the recipe without that opening, which gives every version the
+	// same offsets, and recipeSyntax adds the length of the opening back.
+	body := bytes.TrimLeft(data, " \t\r\n")
+	skipped := int64(len(data) - len(body))
 	var raw rawKitRecipe
-	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&raw); err != nil {
-		return recipe, recipeSyntax(data, raw, err)
+		return recipe, recipeSyntax(data, skipped, raw, err)
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		return recipe, fmt.Errorf("unexpected text after the recipe's closing brace")
@@ -138,14 +145,17 @@ func ParseKitRecipe(data []byte) (KitRecipe, error) {
 	return recipe, nil
 }
 
-func recipeSyntax(data []byte, raw rawKitRecipe, err error) error {
+// recipeSyntax words an error from decoding the recipe. The decoder read the
+// recipe without the skipped bytes that open it, so every offset it reports is
+// that many bytes short of a position in data.
+func recipeSyntax(data []byte, skipped int64, raw rawKitRecipe, err error) error {
 	var syntax *json.SyntaxError
 	var typed *json.UnmarshalTypeError
 	switch {
 	case errors.As(err, &syntax):
-		return fmt.Errorf("line %d: %s", lineOf(data, syntax.Offset), syntax.Error())
+		return fmt.Errorf("line %d: %s", lineOf(data, syntax.Offset+skipped), syntax.Error())
 	case errors.As(err, &typed):
-		return recipeTypeError(data, raw, typed)
+		return recipeTypeError(data, typed.Offset+skipped, raw, typed)
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return fmt.Errorf("the recipe is empty or ends early; it must be one JSON object")
 	}
@@ -158,10 +168,10 @@ func recipeSyntax(data []byte, raw rawKitRecipe, err error) error {
 // the Go version: from Go 1.27 the path holds the position of each list entry
 // ("pieces.0.takes"), and earlier versions leave it out ("pieces.takes"). The
 // message must read the same on both, so it uses only the field names, with
-// the position dropped, and finds the piece from the error's offset, which
-// every version reports alike.
-func recipeTypeError(data []byte, raw rawKitRecipe, typed *json.UnmarshalTypeError) error {
-	line := lineOf(data, typed.Offset)
+// the position dropped, and finds the piece from offset, the place of the error
+// in data. ParseKitRecipe gives every version the same offset.
+func recipeTypeError(data []byte, offset int64, raw rawKitRecipe, typed *json.UnmarshalTypeError) error {
+	line := lineOf(data, offset)
 	var path []string
 	for _, step := range strings.Split(typed.Field, ".") {
 		if strings.Trim(step, "0123456789") != "" {
@@ -188,7 +198,7 @@ func recipeTypeError(data []byte, raw rawKitRecipe, typed *json.UnmarshalTypeErr
 		return fmt.Errorf("line %d: %q should be %s, not %s", line, path[0], want, typed.Value)
 	}
 	label := ""
-	if index, found := pieceAt(data, typed.Offset); found {
+	if index, found := pieceAt(data, offset); found {
 		name := ""
 		if index < len(raw.Pieces) {
 			name = raw.Pieces[index].Name

@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -240,6 +242,73 @@ func TestKitRecipeTypeErrorsNameThePieceOnEveryGoVersion(t *testing.T) {
 				t.Fatalf("error %v\nwant  %s", err, test.want)
 			}
 		})
+	}
+}
+
+// A recipe may open with a space, a tab or blank lines, and Windows editors add
+// CRLF lines. From Go 1.27 the offset that encoding/json reports for a wrong type
+// counts from the first byte of the value, where earlier versions count from the
+// first byte of the file. The same recipe, with such an opening before it, must
+// get the same message, with only its line number moved down by the lines of the
+// opening: not the message for another piece, no piece at all, or another line.
+func TestKitRecipeErrorsDoNotDependOnHowTheRecipeOpens(t *testing.T) {
+	kick := `{"name":"kick","note":36,"takes":["kick.wav"]}`
+	snare := `{"name":"snare","note":38,"takes":["snare.wav"]}`
+	wrap := func(pieces ...string) string {
+		return `{"format":"cicada.kit-recipe/1","pieces":[` + strings.Join(pieces, ",") + `]}`
+	}
+	recipes := []struct{ name, recipe string }{
+		{"first piece is a number", wrap(`1`)},
+		{"second piece is a number", wrap(kick, `7`)},
+		{"piece is a list", wrap(kick, snare, `["x"]`)},
+		{"piece is a list in a short recipe", wrap(`["x"]`)},
+		{"named piece has the wrong type", wrap(kick, `{"name":"snare","note":"38","takes":["b.wav"]}`)},
+		{"takes is text", wrap(kick, `{"name":"snare","note":38,"takes":"snare.wav"}`)},
+		{"a take is a number", wrap(kick, snare, `{"name":"hat","note":42,"takes":["a.wav",2]}`)},
+		{"pieces is text", `{"format":"cicada.kit-recipe/1","pieces":"kick"}`},
+		{"format is a number", `{"format":5,"pieces":[` + kick + `]}`},
+		{"recipe is a list", `[]`},
+		{"later lines", "{\n\"format\": \"cicada.kit-recipe/1\",\n\"pieces\": [\n" + kick + ",\n{\"name\": \"snare\",\n\"note\": \"38\",\n\"takes\": [\"b.wav\"]}\n]\n}"},
+		{"syntax error", "{\n\"format\": }"},
+		{"syntax error at the start of a line", "{\n\"format\": \"cicada.kit-recipe/1\",\n}"},
+		{"field written twice", "{\n\"format\": \"cicada.kit-recipe/1\",\n\"pieces\": [\n{\"name\": \"kick\", \"note\": 36,\n\"takes\": [\"a.wav\"],\n\"layers\": 3, \"layers\": 2}\n]\n}"},
+		{"field with capitals", wrap(kick, `{"Name":"snare","note":38,"takes":["a.wav"]}`)},
+		{"text after the recipe", wrap(kick) + ` {}`},
+	}
+	openings := []struct {
+		name, text string
+		lines      int // line feeds in text
+	}{
+		{"a space", " ", 0},
+		{"a tab", "\t", 0},
+		{"a line feed", "\n", 1},
+		{"a CRLF", "\r\n", 1},
+		{"three blank lines", "\n\n\n", 3},
+		{"blank lines and indentation", "\r\n\r\n  \t\n", 3},
+		{"a byte order mark and a blank line", "\xef\xbb\xbf\n", 1},
+	}
+	line := regexp.MustCompile(`^line (\d+):`)
+	for _, recipe := range recipes {
+		_, plain := ParseKitRecipe([]byte(recipe.recipe))
+		if plain == nil {
+			t.Fatalf("%s: the recipe is accepted", recipe.name)
+		}
+		for _, opening := range openings {
+			t.Run(recipe.name+" after "+opening.name, func(t *testing.T) {
+				_, err := ParseKitRecipe([]byte(opening.text + recipe.recipe))
+				if err == nil {
+					t.Fatal("the recipe is accepted")
+				}
+				want := plain.Error()
+				if m := line.FindStringSubmatch(want); m != nil {
+					n, _ := strconv.Atoi(m[1])
+					want = fmt.Sprintf("line %d:", n+opening.lines) + want[len(m[0]):]
+				}
+				if err.Error() != want {
+					t.Errorf("error %q\nwant  %q", err, want)
+				}
+			})
+		}
 	}
 }
 
