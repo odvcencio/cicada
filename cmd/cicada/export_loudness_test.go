@@ -132,7 +132,111 @@ func TestExportLoudnessLimiterReductionMaximumReportsShortfall(t *testing.T) {
 	if !strings.Contains(err.Error(), "maximum master limiter gain reduction") {
 		t.Fatalf("shortfall does not name the limiter reduction maximum: %v", err)
 	}
+	if result.Passes > 3 {
+		t.Fatalf("limiter-cap shortfall used %d full renders, want at most 3", result.Passes)
+	}
 	t.Logf("METRIC EXPORT-REDUCTION-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
+}
+
+func TestLimiterTargetOutOfReach(t *testing.T) {
+	target := renderTargetOptions{LoudnessTarget: -9, Tolerance: .5}
+	for _, test := range []struct {
+		name                                           string
+		bestLUFS, bestChainReduction, lowestUnsafeLUFS float64
+		want                                           bool
+	}{
+		{"both renders below the band at the reduction maximum", -10, 6, -9.6, true},
+		{"safe render 0.5 dB short of the maximum", -10, maxExportLimiterReductionDB - .5, -9.6, true},
+		{"safe render has more than 0.5 dB of reduction left", -10, maxExportLimiterReductionDB - .51, -9.6, false},
+		{"safe render inside the band", -9.5, 6, -9.2, false},
+		{"unsafe render inside the band", -10, 6, -9.5, false},
+		{"unsafe render above the band", -10, 6, -8.4, false},
+		{"no unsafe render yet", -10, 6, math.Inf(1), false},
+		{"unmeasurable unsafe render", -10, 6, math.NaN(), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := limiterTargetOutOfReach(target, test.bestLUFS, test.bestChainReduction, test.lowestUnsafeLUFS); got != test.want {
+				t.Fatalf("limiterTargetOutOfReach(best %.2f LUFS at %.2f dB, unsafe %.2f LUFS) = %v, want %v", test.bestLUFS, test.bestChainReduction, test.lowestUnsafeLUFS, got, test.want)
+			}
+		})
+	}
+}
+
+// loudestCompliantLUFS bisects the input gain for the loudest render that keeps
+// the master limiter at or below its reduction maximum and the true peak at or
+// below the ceiling. It does not use the export search, so it can check it.
+func loudestCompliantLUFS(t *testing.T, inspection scoreInspection, opts render.Options, target renderTargetOptions) float64 {
+	t.Helper()
+	measure := func(gain float64) (lufs float64, compliant bool) {
+		path := filepath.Join(t.TempDir(), "oracle.wav")
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts.MasterInputGainDB = gain
+		report, err := render.WAV(inspection.score, opts, file)
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		measured, err := render.VerifyWAV(path, render.VerifyOptions{SampleRate: report.SampleRate, Bits: opts.Bits, Bars: report.Bars, From: report.From, TailSec: opts.TailSec, PeakMaxDB: 100, DCMaxDB: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return measured.IntegratedLUFS, report.MaxMasterChainLimiterReductionDB <= maxExportLimiterReductionDB && measured.TruePeakDBTP <= target.TruePeakMaxDBTP
+	}
+	low, high := 0.0, maxExportInputGainDB
+	lufs, compliant := measure(low)
+	if !compliant {
+		t.Fatal("the fixture breaks a guard rail without any gain")
+	}
+	if _, ok := measure(high); ok {
+		t.Fatalf("the fixture stays compliant at the +%.0f dB input gain cap", maxExportInputGainDB)
+	}
+	for high-low > .02 {
+		mid := (low + high) / 2
+		if l, ok := measure(mid); ok {
+			low, lufs = mid, l
+		} else {
+			high = mid
+		}
+	}
+	return lufs
+}
+
+// A target the limiter maximum rules out used to run all six passes. The search
+// now stops once no safe gain can reach it, and the file it keeps must stay
+// close to the loudest render that obeys the guard rails.
+func TestExportLoudnessLimiterShortfallStopsEarlyAtTheLoudestSafeRender(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	ceiling := loudestCompliantLUFS(t, inspection, opts, target)
+	for _, lufs := range []float64{-4, -7} {
+		target.LoudnessTarget = lufs
+		result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "short.wav"), opts, target, nil)
+		var shortfall *loudnessShortfallError
+		if !errors.As(err, &shortfall) || !strings.Contains(err.Error(), "maximum master limiter gain reduction") {
+			t.Fatalf("target %g LUFS: want a limiter shortfall, got %v", lufs, err)
+		}
+		t.Logf("METRIC EXPORT-EARLY-EXIT target=%g passes=%d lufs=%.3f loudest_compliant=%.3f chain_reduction=%.2f", lufs, result.Passes, result.AchievedLUFS, ceiling, result.MasterLimiterReductionDB)
+		if result.Passes >= loudnessPassLimit {
+			t.Fatalf("target %g LUFS used %d of %d passes; the search did not stop early", lufs, result.Passes, loudnessPassLimit)
+		}
+		if result.MasterLimiterReductionDB > maxExportLimiterReductionDB || result.TruePeakDBTP > target.TruePeakMaxDBTP {
+			t.Fatalf("target %g LUFS: kept a render that breaks a guard rail: %+v", lufs, result)
+		}
+		if result.AchievedLUFS > ceiling+.01 || result.AchievedLUFS < ceiling-.25 {
+			t.Fatalf("target %g LUFS: kept %.3f LUFS, want within 0.25 LU below the loudest compliant render at %.3f LUFS", lufs, result.AchievedLUFS, ceiling)
+		}
+	}
+	// A reachable target near the maximum is unaffected: it still finishes
+	// inside its tolerance band.
+	target.LoudnessTarget = -8
+	result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "reach.wav"), opts, target, nil)
+	if err != nil || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > target.Tolerance {
+		t.Fatalf("reachable target -8 LUFS: %v (%+v)", err, result)
+	}
 }
 
 func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {

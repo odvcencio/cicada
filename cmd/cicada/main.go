@@ -748,6 +748,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
 	safeGain, hasSafe, lowestUnsafe, prevUnsafe := 0.0, false, math.Inf(1), false
+	lowestUnsafeLUFS := math.Inf(1)
 	var bestChainReduction, fallbackChainReduction float64
 	for pass := 1; pass <= loudnessPassLimit; pass++ {
 		passes = pass
@@ -818,6 +819,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				break
 			}
 		}
+		if limiterMode && hasBest && limiterTargetOutOfReach(target, bestMeasure.IntegratedLUFS, bestChainReduction, lowestUnsafeLUFS) {
+			break
+		}
 		pendingDC := !dcSafe
 		if !dcSafe {
 			// Both renderers add the bias after the master chain and every
@@ -832,8 +836,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				if !hasSafe || gain > safeGain {
 					safeGain, hasSafe = gain, true
 				}
-			} else {
-				lowestUnsafe = math.Min(lowestUnsafe, gain)
+			} else if gain <= lowestUnsafe {
+				lowestUnsafe = gain
+				lowestUnsafeLUFS = measurement.IntegratedLUFS
 			}
 			switch {
 			case !gainOK:
@@ -970,6 +975,21 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		return report, shortfallErr
 	}
 	return report, nil
+}
+
+// limiterTargetOutOfReach reports whether a limiter search can stop because no
+// safe gain reaches the loudness target.
+//
+// The loudest safe render and the quietest render that broke a guard rail (true
+// peak or limiter reduction) are both still below the tolerance band. Loudness
+// and limiter reduction only rise with the input gain, so every safe gain
+// renders no louder than the unsafe one, and the target is out of reach. The
+// safe render also sits within 0.5 dB of the reduction maximum, the margin that
+// already makes the final report a limiter shortfall, so more bisection steps
+// would add little loudness and only repeat that shortfall.
+func limiterTargetOutOfReach(target renderTargetOptions, bestLUFS, bestChainReduction, lowestUnsafeLUFS float64) bool {
+	band := target.LoudnessTarget - target.Tolerance
+	return bestLUFS < band && lowestUnsafeLUFS < band && bestChainReduction >= maxExportLimiterReductionDB-0.5
 }
 
 func copyRenderFile(source, destination string) error {

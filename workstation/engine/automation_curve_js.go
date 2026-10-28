@@ -82,8 +82,8 @@ func mountAutomationCurve(host enginewasm.Context) (enginewasm.Handle, error) {
 			u.fromFields()
 		}
 	})
-	u.listen(js.Global().Get("document"), "cicada:workspace-updated", func(e js.Value) {
-		if !u.root.Get("isConnected").Bool() {
+	releaseUpdated := workspaceUpdated.add(func() {
+		if u.closed || !u.root.Get("isConnected").Bool() {
 			return
 		}
 		data := u.root.Call("querySelector", "[data-automation-curve-props]")
@@ -110,6 +110,7 @@ func mountAutomationCurve(host enginewasm.Context) (enginewasm.Handle, error) {
 		return !u.closed && curvePointsDiffer(u.points, u.props.Points)
 	})
 	return enginewasm.HandleFunc(func() {
+		releaseUpdated()
 		releaseRecording()
 		releaseUnsaved()
 		u.closed = true
