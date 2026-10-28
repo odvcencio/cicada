@@ -165,6 +165,22 @@ func TestMasterCacheReplacesCaptureForOtherInputs(t *testing.T) {
 	check("other tail replaces it", first, Options{SampleRate: 44100, From: 1, Bars: 1, TailSec: .2}, 3)
 	check("other block size replaces it", first, Options{SampleRate: 44100, From: 1, Bars: 1, TailSec: .2, Block: 512}, 3)
 	check("other block size, replay", first, Options{SampleRate: 44100, From: 1, Bars: 1, TailSec: .2, Block: 512}, 4)
+	// A render treats an empty AssetRoot as AssetDir and the reverse, so these
+	// steps start from a capture that sets both and then change one field of the
+	// key at a time. The score has no files to load, so the output stays the
+	// same; the replay count shows whether the cache served the render.
+	assets := Options{SampleRate: 44100, From: 1, Bars: 1, TailSec: .2, AssetRoot: t.TempDir(), AssetDir: t.TempDir()}
+	check("asset root and directory replace it", first, assets, 4)
+	check("asset root and directory, replay", first, assets, 5)
+	assets.AssetDir = t.TempDir()
+	check("other asset directory replaces it", first, assets, 5)
+	check("other asset directory, replay", first, assets, 6)
+	assets.AssetRoot = t.TempDir()
+	check("other asset root replaces it", first, assets, 6)
+	check("other asset root, replay", first, assets, 7)
+	assets.SamplerBaseline = true
+	check("other sampler baseline replaces it", first, assets, 7)
+	check("other sampler baseline, replay", first, assets, 8)
 }
 
 // Renders the cache cannot serve must run in full and leave it untouched.
