@@ -74,11 +74,11 @@ func preparePackVoices(score *notation.Score, opts Options) (map[string]*instrum
 		if dir == "" {
 			dir = "."
 		}
-		p, err := instrumentpack.LoadAtRate(dir, s.Pack, s.SHA256, opts.SampleRate)
+		// The cap counts the manifest's figure before the audio is read. The PCM
+		// is the copy that every native compile in the process shares; the
+		// Prepared is this sampler's own, so its voice count and seed stay here.
+		p, err := packCap.Load(dir, s.Pack, s.SHA256, opts.SampleRate)
 		if err != nil {
-			return nil, fmt.Errorf("sampler %s: %w", s.Name, err)
-		}
-		if err = packCap.Add(s.Pack, p); err != nil {
 			return nil, fmt.Errorf("sampler %s: %w", s.Name, err)
 		}
 		p.Manifest.Config.Voices = s.Voices

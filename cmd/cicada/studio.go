@@ -688,7 +688,10 @@ func compileStudioSourceSnapshot(path string, source []byte, overrides map[strin
 	if err := project.ValidateProject(p); err != nil {
 		return nil, sources, err
 	}
-	if _, err := schedule.Compile(p, sources.Root, 48000, 128); err != nil {
+	// Studio asks this on every request and every edit. It applies the compile's
+	// rules without reading the project's audio; the engine that plays the score
+	// decodes it, once, when it builds its plan.
+	if err := schedule.Validate(p, sources.Root, 48000, 128, schedule.Options{}); err != nil {
 		return nil, sources, err
 	}
 	return p, sources, nil

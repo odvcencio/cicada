@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/testpack"
 )
@@ -137,7 +138,7 @@ func TestPlayCompilesSamplerPacksUnderTheResidentCap(t *testing.T) {
 
 // A reload while playing is compiled again, so it meets the same cap.
 func TestLiveWatchAppliesTheResidentCapToAnEdit(t *testing.T) {
-	path, pack := liveCapScore(t)
+	path, _ := liveCapScore(t)
 	const limit = 500_000
 	initialHash, err := playSourceHash(path)
 	if err != nil {
@@ -158,13 +159,66 @@ func TestLiveWatchAppliesTheResidentCapToAnEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A second sampler on the same pack holds a second copy: 800,000 bytes.
-	edited := strings.Replace(string(source), "track lead sound {}", pack.Sampler("echo", 2)+"track lead sound {}", 1)
+	// A second sampler on another pack of 400,000 bytes makes 800,000 bytes.
+	second := testpack.Write(t, filepath.Dir(path), testpack.Options{ID: "second", Frames: 100_000})
+	edited := strings.Replace(string(source), "track lead sound {}", second.Sampler("echo", 2)+"track lead sound {}", 1)
 	if err := os.WriteFile(path, []byte(edited), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	watcher.poll()
 	if got := log.String(); !strings.Contains(got, "--max-resident-pcm") || !strings.Contains(got, "continuing previous score") {
 		t.Fatalf("an edit over the cap was not refused with the previous score kept: %q", got)
+	}
+}
+
+// An edit that leaves the packs alone reloads them from memory. The playing
+// score, the score waiting for the next bar and the score being compiled would
+// otherwise hold three copies of every pack.
+func TestLiveWatchReloadReusesThePacksOfThePlayingScore(t *testing.T) {
+	// reload plays a score with one pack of the given length, edits a comment
+	// and returns the heap that the first compile and the reload allocated.
+	reload := func(frames int) (first, second uint64, pcm int64) {
+		dir := t.TempDir()
+		pack := testpack.Write(t, dir, testpack.Options{Frames: frames})
+		path := filepath.Join(dir, "main.cicada")
+		source := "cicada 2\ntempo 120\n" + pack.Sampler("sound", 2) + "track lead sound {}\npattern melody notes steps=4 { c4 . . . }\nscene main { lead = melody }\nsong { main*8 }\n"
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(instrumentpack.ReleaseShared)
+		initialHash, err := playSourceHash(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var initial liveplay.Score
+		first = allocatedBytes(func() { initial, err = compileLiveScoreAtRateCapped(path, liveSampleRate, 0) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, err := liveplay.New(initial, liveSampleRate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stream.Close()
+		var log bytes.Buffer
+		watcher := liveScoreWatcher{path: path, last: initialHash, stream: stream, output: &log}
+		if err := os.WriteFile(path, []byte(source+"// an edit\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		second = allocatedBytes(watcher.poll)
+		if !strings.Contains(log.String(), "queued for next bar") {
+			t.Fatalf("the edit was not queued: %q", log.String())
+		}
+		return first, second, pack.PCMBytes
+	}
+	// The engine allocates for itself whatever the pack is. Measure that on a
+	// tiny pack, and look for the 32 MB of PCM above it.
+	_, tiny, _ := reload(1000)
+	first, second, pcm := reload(8_000_000)
+	if first < uint64(pcm) {
+		t.Fatalf("fixture: the first compile allocated %d bytes for %d bytes of PCM", first, pcm)
+	}
+	if second > tiny+uint64(pcm)/2 {
+		t.Errorf("the reload allocated %d bytes for a pack of %d bytes of PCM (a tiny pack: %d): it decoded the pack again", second, pcm, tiny)
 	}
 }

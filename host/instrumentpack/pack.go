@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync/atomic"
 
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/host/audioencoding"
@@ -161,8 +162,28 @@ func Load(dir, manifestPath, pin string) (*Prepared, error) {
 	return LoadAtRate(dir, manifestPath, pin, 48000)
 }
 
-// LoadAtRate admits a pack for the requested output rate before playback.
+// LoadAtRate admits a pack for the requested output rate before playback. It
+// decodes the audio on every call. A native host that compiles one project more
+// than once uses ResidentCap.Load instead, which shares one decoded copy.
 func LoadAtRate(dir, manifestPath, pin string, rate int) (*Prepared, error) {
+	pack, err := Open(dir, manifestPath, pin)
+	if err != nil {
+		return nil, err
+	}
+	return pack.Decode(rate)
+}
+
+// Pack is a pack whose manifest has been read and checked, and whose audio has
+// not been read. Its manifest says how much PCM the audio decodes to, so a host
+// can refuse a pack that is too large before it allocates any of it.
+type Pack struct {
+	dir, manifestPath, digest string
+	manifest                  Manifest
+}
+
+// Open reads the manifest at manifestPath inside dir, checks it against the
+// optional pin and validates it. It reads no audio.
+func Open(dir, manifestPath, pin string) (*Pack, error) {
 	if !ValidPath(manifestPath) || pin != "" && !validHash(pin) {
 		return nil, fmt.Errorf("invalid pack path or pin")
 	}
@@ -180,17 +201,102 @@ func LoadAtRate(dir, manifestPath, pin string, rate int) (*Prepared, error) {
 	if err != nil {
 		return nil, err
 	}
-	if pin != "" && digest(data) != pin {
+	sum := digest(data)
+	if pin != "" && sum != pin {
 		return nil, fmt.Errorf("instrument manifest hash mismatch")
 	}
 	m, err := DecodeManifest(data)
 	if err != nil {
 		return nil, err
 	}
+	return &Pack{dir: dir, manifestPath: manifestPath, digest: sum, manifest: m}, nil
+}
+
+// Path is the manifest path as the caller spelled it to Open.
+func (pk *Pack) Path() string { return pk.manifestPath }
+
+// Manifest is the validated manifest. Treat its slices as read-only.
+func (pk *Pack) Manifest() Manifest { return pk.manifest }
+
+// ResidentPCMBytes is the float32 PCM that decoding the pack leaves in memory,
+// from the manifest alone.
+func (pk *Pack) ResidentPCMBytes() int64 { return pk.manifest.ResidentPCMBytes() }
+
+// ResidentPCMBytes is the float32 PCM that decoding the pack leaves in memory:
+// four bytes per sample and channel of each asset that a zone plays. An asset
+// that no zone plays is decoded to verify it and then dropped, so it does not
+// count. Zones that share an asset share its PCM, so the asset counts once.
+func (m Manifest) ResidentPCMBytes() int64 {
+	played := make(map[string]bool, len(m.Zones))
+	for _, z := range m.Zones {
+		played[z.Asset] = true
+	}
+	var total int64
+	for _, a := range m.Assets {
+		if played[a.ID] {
+			total += int64(a.Frames) * int64(a.Channels) * 4
+		}
+	}
+	return total
+}
+
+// CheckFiles confirms, without reading any audio, that each asset is a regular
+// file in the pack's folder at the size its manifest declares. It catches a
+// missing or truncated file, not a damaged one: Decode checks the hashes.
+func (pk *Pack) CheckFiles() error {
+	root, err := os.OpenRoot(pk.dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, a := range pk.manifest.Assets {
+		info, err := root.Stat(path.Join(path.Dir(pk.manifestPath), a.Path))
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Size() != a.Bytes {
+			return fmt.Errorf("compressed sample hash/size mismatch: %s", a.ID)
+		}
+	}
+	return nil
+}
+
+var decodes atomic.Uint64
+
+// Decodes counts the times this process has decoded a pack's audio, whether for
+// one caller (Decode, DecodeUnadmitted, LoadAtRate) or on a miss of the shared
+// cache. It lets a test or a diagnostic tell a reused pack from a decoded one.
+func Decodes() uint64 { return decodes.Load() }
+
+// Decode reads, verifies and decodes the pack's audio, and admits the pack for
+// the output rate. Every call decodes a new copy of the PCM.
+func (pk *Pack) Decode(rate int) (*Prepared, error) {
+	p, err := pk.DecodeUnadmitted()
+	if err != nil {
+		return nil, err
+	}
+	// Validate maps, PCM bounds and ratios before returning any prepared bank.
+	if err = p.Admit(rate); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// DecodeUnadmitted is Decode without the check that the pack can play at an
+// output rate. A caller that admits several rates decodes once and calls Admit
+// for each.
+func (pk *Pack) DecodeUnadmitted() (*Prepared, error) {
+	decodes.Add(1)
+	root, err := os.OpenRoot(pk.dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	m := pk.manifest
 	p := &Prepared{Manifest: m}
 	regions := map[string]sample.Region{}
 	for _, a := range m.Assets {
-		f, err := root.Open(path.Join(path.Dir(manifestPath), a.Path))
+		f, err := root.Open(path.Join(path.Dir(pk.manifestPath), a.Path))
 		if err != nil {
 			return nil, err
 		}
@@ -219,11 +325,21 @@ func LoadAtRate(dir, manifestPath, pin string, rate int) (*Prepared, error) {
 		r.Crossfade = z.Crossfade
 		p.Zones = append(p.Zones, sample.Zone{ChokeGroup: uint8(z.ChokeGroup), OneShot: z.OneShot, ChokeSustain: z.ChokeSustain, Region: r, KeyLow: uint8(z.KeyLow), KeyHigh: uint8(z.KeyHigh), VelocityLow: uint8(z.VelocityLow), VelocityHigh: uint8(z.VelocityHigh), Layer: uint8(z.Layer), Group: uint8(z.Group), Position: uint8(z.Position), Count: uint8(z.Count), Release: z.Release, Gain: z.Gain, TuneCents: z.TuneCents})
 	}
-	// Validate maps, PCM bounds and ratios before returning any prepared bank.
-	if _, err = p.New(rate); err != nil {
-		return nil, err
+	// A host reserves the manifest's figure against its memory cap before it
+	// decodes, so the PCM must be what the manifest says.
+	if held, declared := p.ResidentPCMBytes(), m.ResidentPCMBytes(); held != declared {
+		return nil, fmt.Errorf("pack %s decodes to %d bytes of PCM, but its manifest declares %d", m.ID, held, declared)
 	}
 	return p, nil
+}
+
+// Admit checks that the pack can play at the output rate: the zone maps are
+// unambiguous, the PCM bounds hold and every playback ratio stays within the
+// voice's range. Decoding admits the pack at one rate; Admit asks again for
+// another.
+func (p *Prepared) Admit(rate int) error {
+	_, err := p.New(rate)
+	return err
 }
 
 func DecodeAsset(a Asset, compressed []byte) (sample.Region, error) {
