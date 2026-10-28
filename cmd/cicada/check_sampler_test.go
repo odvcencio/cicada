@@ -12,8 +12,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/metrics"
+	"slices"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -305,22 +306,31 @@ func declareFrames(t *testing.T, dir string, pack testpack.Pack, frames, channel
 	return pack
 }
 
-// peakHeap runs f and returns the most heap that was in use at any moment it
-// sampled, less the heap in use when it started.
-func peakHeap(f func()) uint64 {
-	sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
-	metrics.Read(sample)
-	base := sample[0].Value.Uint64()
-	var peak atomic.Uint64
+// medianLiveHeap runs f and returns the median of the heap that was reachable
+// at the moments it sampled, less what was reachable when it started. Each
+// sample collects first, so garbage that the collector has not swept does not
+// count. The median, not the largest sample: what a collection finds reachable
+// includes whatever the program allocated while it ran, so single samples spike
+// with the timing of the collector, while a program that keeps every pack it
+// has loaded is high for most of its run.
+func medianLiveHeap(f func()) uint64 {
+	live := func() uint64 {
+		runtime.GC()
+		sample := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+		metrics.Read(sample)
+		return sample[0].Value.Uint64()
+	}
+	base := live()
+	var mu sync.Mutex
+	var samples []uint64
 	stop, done := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(done)
-		sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
 		for {
-			metrics.Read(sample)
-			if v := sample[0].Value.Uint64(); v > peak.Load() {
-				peak.Store(v)
-			}
+			v := live()
+			mu.Lock()
+			samples = append(samples, v)
+			mu.Unlock()
 			select {
 			case <-stop:
 				return
@@ -331,25 +341,28 @@ func peakHeap(f func()) uint64 {
 	f()
 	close(stop)
 	<-done
-	return max(peak.Load(), base) - base
+	mu.Lock()
+	defer mu.Unlock()
+	slices.Sort(samples)
+	return max(samples[len(samples)/2], base) - base
 }
 
 // The check proves that each pack loads, but it keeps only the zone table.
 // Holding every pack until the end would make its memory grow with the number
 // of packs a score names.
 func TestCheckHoldsOnePackAtATime(t *testing.T) {
-	const packs, frames = 6, 4_000_000 // six packs of 16 MB of PCM
+	const packs, frames = 32, 1_000_000 // thirty-two packs of 4 MB of PCM
 	dir := t.TempDir()
 	var source strings.Builder
 	source.WriteString("cicada 2\ntempo 120\n")
 	for i := range packs {
-		pack := testpack.Write(t, dir, testpack.Options{ID: fmt.Sprintf("p%d", i), Frames: frames})
-		source.WriteString(pack.Sampler(fmt.Sprintf("s%d", i), 2))
-		fmt.Fprintf(&source, "track t%d s%d {}\n", i, i)
+		pack := testpack.Write(t, dir, testpack.Options{ID: fmt.Sprintf("p%02d", i), Frames: frames})
+		source.WriteString(pack.Sampler(fmt.Sprintf("s%02d", i), 2))
+		fmt.Fprintf(&source, "track t%02d s%02d {}\n", i, i)
 	}
 	source.WriteString("pattern hit notes steps=4 { c4 . . . }\nscene main {")
 	for i := range packs {
-		fmt.Fprintf(&source, " t%d = hit", i)
+		fmt.Fprintf(&source, " t%02d = hit", i)
 	}
 	source.WriteString(" }\nsong { main }\n")
 	path := filepath.Join(dir, "main.cicada")
@@ -357,18 +370,24 @@ func TestCheckHoldsOnePackAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 	instrumentpack.ReleaseShared()
-	runtime.GC()
+	// The first check in a process builds tables that every later check reuses.
+	// Run one on a small score so that they are not part of the measurement.
+	warm, _, _ := writeSamplerProject(t, testpack.Options{}, "pattern melody notes { c4 . . . }\n")
+	if err := checkPaths([]string{warm}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
 	var err error
-	peak := peakHeap(func() { err = checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}) })
+	median := medianLiveHeap(func() { err = checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	// One pack is 16 MB of PCM, and decoding it holds up to as much again in
-	// buffers. Six packs held together would be 96 MB before any buffer.
-	t.Logf("check peaked at %d MB of heap for %d packs of %d MB", peak>>20, packs, frames*4>>20)
-	if limit := uint64(4 * frames * 4); peak > limit {
-		t.Fatalf("check peaked at %d MB of heap for %d packs of %d MB; one pack at a time stays under %d MB",
-			peak>>20, packs, frames*4>>20, limit>>20)
+	// One pack is 4 MB of PCM, and decoding it holds its 2 MB WAV beside it.
+	// All thirty-two packs held together would be 128 MB of PCM before any buffer.
+	const pcm = frames * 4
+	t.Logf("check kept a median of %d MB reachable for %d packs of %d MB of PCM", median>>20, packs, pcm>>20)
+	if limit := uint64(8 * pcm); median > limit {
+		t.Fatalf("check kept a median of %d MB reachable for %d packs of %d MB of PCM; one pack at a time stays under %d MB",
+			median>>20, packs, pcm>>20, limit>>20)
 	}
 }
 
