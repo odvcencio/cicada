@@ -74,8 +74,8 @@ See the [recorded desktop](screenshots/recorded-instrument-1440.png) and [mobile
 ## Record your own drum kit
 
 `record-pack` makes one instrument per pack. A drum kit needs one pack for all
-its pieces, each on its own MIDI note, so that a single sampler track plays the
-whole kit and a closed hi-hat can cut off an open one. `cicada record-kit`
+its pieces, each on its own MIDI note, so that a sampler can play any piece by
+its note and a closed hi-hat can cut off an open one. `cicada record-kit`
 builds that pack from your own takes and a short recipe. Louder hits play louder
 takes, repeated hits cycle through your round robins, and the pack carries the
 **owner recording** license label.
@@ -101,15 +101,18 @@ written for one kit also plays on another. Record the pieces you play.
 Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
 (57) fits too.
 
-1. **Dry the room.** For the dry sound of a 1970s studio, use a small room with
-   carpet and blankets over the hard walls, and record no room sound: no room
-   microphones and no reverb. Use old heads tuned low. Shorten the ring
-   of the snare and toms with tape or a folded cloth on the head. Press a
-   folded blanket against the kick's beater-side head and play it with a felt
-   beater.
-2. **Put one close microphone on each piece and record one piece at a time.**
-   These are starting points; move a microphone a few centimetres until the hit
-   sounds as you want.
+1. **Choose the sound.** This step is a matter of taste; skip it for a roomier
+   kit. For the dry sound of a 1970s studio, use a small room with carpet and
+   blankets over the hard walls, and record no room sound: no room microphones
+   and no reverb. Use old heads tuned low. Shorten the ring of the snare and
+   toms with tape or a folded cloth on the head. Press a folded blanket against
+   the kick's beater-side head and play it with a felt beater. A damped kit also
+   suits the command, because short rings are easy to tell apart from the next
+   hit.
+2. **Choose the microphones.** Use one close microphone on each piece if you
+   have the inputs, or move one microphone from piece to piece. These are
+   starting points; move a microphone a few centimetres until the hit sounds as
+   you want.
    - Kick: a dynamic microphone inside the shell, 10 to 15 cm from the beater
      head, or just outside the port hole.
    - Snare and toms: a dynamic microphone 3 to 5 cm above the rim, aimed at the
@@ -118,15 +121,36 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
      the snare.
    - Crash and ride: a condenser 40 to 60 cm above the cymbal.
 
-   Record flat, with no compression, EQ, gate or reverb. You can shape the
-   sound later, in the score.
-3. **Set the level once.** Record 48 kHz, 24-bit WAV files. Stereo files are
-   mixed down to mono. Strike the loudest piece, usually the crash, as hard as
-   you ever will and set the input gain so it peaks near -6 dBFS. Then leave the
-   gain alone for the whole session. The kit keeps the levels you recorded: the
-   loudest hit anywhere plays at full scale, and every other hit keeps its
-   recorded level against it. If one piece has to be recorded at another gain,
-   correct it later with `gain_db` in the recipe.
+   With one microphone, dynamic or condenser, use it for every piece and move it
+   to the distances above. Record flat, with no compression, EQ, gate or reverb.
+   You can shape the sound later, in the score.
+3. **Set the levels.** Record 48 kHz, 24-bit WAV files. Stereo files are mixed
+   down to mono. The kit keeps the levels you record: the loudest hit anywhere
+   plays at full scale, every other hit keeps its recorded level against it, and
+   then the piece's `gain_db` applies. Choose one of two ways to get the balance
+   between pieces.
+   - **One gain for the whole session.** Record every piece through the same
+     input at the same gain. Strike the piece that records loudest as hard as
+     you ever will, and set the gain so that it peaks near -6 dBFS. With close
+     microphones that piece is usually the snare or the kick, not the crash.
+     Then leave the gain alone. The balance between pieces is the balance the
+     microphone heard, distance included: the same sound is about 22 dB quieter
+     from 50 cm than from 4 cm. A soft hit on a quiet piece can end up near the
+     room noise. If it does, move the microphone closer or use the second way.
+   - **One gain per input.** Give each piece its own input. Set each input so
+     that its piece's hardest hit peaks near -6 dBFS, and write down each gain
+     in dB. Choose one input as the reference. In the recipe, set each piece's
+     `gain_db` to the reference gain minus the piece's own gain. With the crash
+     at +10 dB as the reference, a kick recorded at +28 dB gets a `gain_db` of
+     -18. A knob is rarely exact, so step 9 finishes the job by ear. A trim must
+     stay within -24 to +12 dB; if a piece needs more, move its microphone or
+     use the first way.
+
+   Either way, watch the meter on the hardest hit of every piece, not only the
+   loudest. A hit that reaches full scale clips, and nothing later can repair
+   it. The command finds clipped hits, which are runs of samples stuck at full
+   scale, and warns about them after the build. Lower the gain and record that
+   take again.
 4. **Record three dynamics of each piece, five hits each.** Soft, medium and
    hard: a light tap, a normal hit and full force. Fifteen hits make three
    velocity layers of five round robins. Put each dynamic in its own WAV file.
@@ -134,16 +158,36 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    splits them into equal layers, so overlapping dynamics make overlapping
    layers. It also ignores any hit about 20 dB quieter than the loudest hit in
    the same file, and any hit under six times the noise floor; separate files
-   keep soft hits from being ignored. If you play a wrong hit, record that take
+   keep soft hits from being ignored. If a soft take is lost in the room noise,
+   the command says that the take has no hits: record it closer to the
+   microphone or in a quieter room. If you play a wrong hit, record that take
    again.
-5. **Let every hit ring out.** Hits must start at least half a second apart.
-   That is stricter than `record-pack`'s 120 ms rule, because bass drums and
-   toms swell again after the first impact, and the command must not count the
-   swell as a second hit. Leave a second after drums. Leave cymbals and the open
-   hi-hat all the time they need to die away, often 5 to 10 seconds, and keep
-   the room quiet until then. Each hit keeps its tail until it is 60 dB below
-   the loudest hit in its file, or twice the room's noise level if that is
-   higher.
+5. **Leave room tone, and let every hit ring out.** Start every take with about
+   three seconds of silence. The command reads the room's noise from the
+   quietest 200 ms of each take, and it warns you when no part of a take is
+   quiet. Hits must start at least half a second apart. That is stricter than
+   `record-pack`'s 120 ms rule, because bass drums and toms swell again after
+   the first impact, and the command must not count the swell as a second hit.
+   An attack that comes sooner than half a second is kept inside the hit before
+   it, which then plays as a double strike, and the command warns you. Leave a
+   second after drums. Leave cymbals and the open hi-hat all the time they need
+   to die away, often 5 to 10 seconds, and keep the room quiet until then.
+
+   A hit keeps its tail until the tail is 60 dB below the loudest hit in its
+   file, or twice the room's noise level if that is higher. If the next hit, or
+   the end of the file, comes first, the command cuts the hit there and fades it
+   out over 5 ms. If the tail was still more than 6 dB above the level where
+   tails end, the command warns you and gives the level at the cut. Leave more
+   time and record that take again.
+
+   A piece's takes together may hold 8,388,608 frames, which is 175 seconds at
+   48 kHz or 190 seconds at 44.1 kHz. For a long cymbal, multiply the seconds
+   each hit needs by the hits per dynamic and by the dynamics, room tone
+   included, and keep the product under the limit for your sample rate. At
+   48 kHz, a crash that needs 12 seconds a hit, played 5 times in each of 3
+   dynamics, takes 180 seconds, which is too long. Four hits per dynamic take
+   144 seconds and fit. The command refuses a piece over the limit and says how
+   much its takes hold.
 6. **Name and gather the files.** Name each file for its piece and dynamic, such
    as `kick-soft.wav`, `kick-medium.wav` and `kick-hard.wav`, and put them in one
    folder with the recipe. The names appear only in the recipe; no file name or
@@ -172,15 +216,16 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    | --- | --- |
    | `name` | A lowercase name: letters, digits and underscores, starting with a letter. |
    | `note` | The MIDI note the piece plays, 12 to 95. No two pieces, or a piece and a choke note, may share a note. |
-   | `takes` | The WAV files, written relative to the recipe's folder. A piece takes up to 32 files. Two pieces may name the same file, so one recorded tom can play on two notes. |
+   | `takes` | The WAV files, written relative to the recipe's folder, such as `takes/kick-soft.wav` with no leading `./`. A piece takes up to 32 files. Two pieces may name the same file, so one recorded tom can play on two notes. A file may be a link to another file in the folder, but not to a file outside it. |
    | `layers` | Velocity layers, 1 to 8. The default is 3; set it to the number of dynamics you recorded. The piece needs at least this many hits. |
    | `choke` | A group name. A hit on any piece in the group cuts off the group's older hits within 2 ms. Give the closed, pedal and open hi-hats the same name. |
-   | `choke_note` | For a cymbal: its hits ring together, and this note, which plays no sound, cuts them all off. Use it instead of `choke`, and pick a note no piece uses, such as 26 (`d1`). A browser host needs a sampler module from the same release for a pack that uses it; older modules refuse it. |
+   | `choke_note` | For a cymbal: its hits ring together, and this note, which plays no sound, cuts them all off. Use it instead of `choke`, and pick a note no piece uses, such as 26 (`d1`). Play it on the cymbal's own track. A browser host needs a sampler module from the same release for a pack that uses it; older modules refuse it. |
    | `one_shot` | `true` (the default) plays each hit through, whatever the note length. `false` stops the hit, with a short fade, when its note ends. |
-   | `gain_db` | A level trim for the piece, -24 to 12 dB. The default is 0. |
+   | `gain_db` | A level trim for the piece, -24 to 12 dB. The default is 0. Step 3 says how to work it out, and step 9 how to adjust it by ear. |
 
-   The command refuses a misspelled field, two pieces on one note, a take that
-   is missing or holds no hits, and a piece with fewer hits than layers.
+   The command refuses a misspelled field, a field written twice or with
+   capital letters, two pieces on one note, a take that is missing or holds no
+   hits, and a piece with fewer hits than layers.
 8. **Build the kit.** Put flags before the recipe:
 
    ```sh
@@ -188,8 +233,8 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    ```
 
    The command prints a table with the hits and layers it found for each piece,
-   then the exact sampler declaration and the path of the starter score. For a
-   three-piece session of 15 hits each it prints:
+   then any warnings, then the exact sampler declaration and the path of the
+   starter score. For a three-piece session of 15 hits each it prints:
 
    ```text
    3 pieces · 45 hits · 46 zones · owner recording
@@ -202,6 +247,19 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    Check that each piece shows the hits you played and that its layers sit at
    clearly different levels. The 46th zone is the silent choke note.
 
+   A warning names a piece and the takes to record again, and the pack is
+   written anyway. A clean session prints none.
+
+   | Warning | What happened | What to do |
+   | --- | --- | --- |
+   | Hits were cut off while still ringing | The next hit, or the end of the file, came while the tail was still more than 6 dB above the level where tails end. The line gives the level at the cut and the level where a finished tail ends. | Leave more time after each hit, and keep recording until the last one has died away. |
+   | Attacks within 0.5 s of an earlier hit | The take holds a double strike, or hits that are too close together. | Leave 0.5 s or more between hits. |
+   | Hits clip at full scale | The input gain was too high. | Lower the gain and record the take again. |
+   | A take has no quiet stretch | No 200 ms of the take is quiet next to its loudest sound, and the take does not open with room tone, so the command cannot tell the room's noise from a ring that never faded. It ends tails early and may miss the softer hits. | Start the take with three seconds of silence. If it already does, play harder, move the microphone closer, or record in a quieter room. |
+
+   `analysis.json` records, for each hit, whether it was cut off and at what
+   level, and how many of its frames clipped.
+
    Like `record-pack`, the command writes an immutable pack. An existing
    directory is reused only when every generated file is identical; a changed
    take needs a new directory. The pack holds `manifest.json`, `analysis.json`,
@@ -211,51 +269,67 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    redistribution rights.
 
    A kit holds up to 64 pieces. A piece takes up to 32 files, 256 hits, 8 layers
-   and 32 hits per layer, and 8,388,608 source frames (about three minutes at
-   48 kHz). The pack limits also apply: 256 MiB of audio after trimming and a
-   2 MiB map.
-9. **Play the kit.** The pack includes a starter score, `instrument.cicada`,
-   with one sampler track and a two-bar groove. Render it, then copy its
-   `sampler` block into your own score:
+   and 32 hits per layer, and 8,388,608 source frames (175 seconds at 48 kHz;
+   see step 5). The pack limits also apply: 256 MiB of audio after trimming and
+   a 2 MiB map.
+9. **Listen and balance.** Render the starter score that the build wrote, and
+   listen to it at the loudness you will use:
 
    ```sh
    cicada render assets/kits/studio/instrument.cicada -o studio-groove.wav --bars 4
    ```
 
-   One sampler track plays every piece. Write each hit as its note name from
-   the table, and let the velocity choose the layer: with three layers,
-   velocities 1 to 42 play the soft takes, 43 to 84 the medium ones and 85 to
-   127 the hard ones.
+   Compare the pieces. A piece that is too loud or too quiet against the rest
+   gets a `gain_db` in the recipe: -3 is a little quieter, +3 a little louder,
+   and 6 dB halves or doubles the level. A pack never changes once it is
+   written, so build into a new folder, such as `assets/kits/studio-2`, and
+   render again. Repeat until the groove sounds balanced. The table from step 8
+   shows where each piece sits before any trim. With one gain for the whole
+   session it shows the balance the microphones heard. With a gain per input,
+   the arithmetic of step 3 gets you close and your ears do the rest.
+10. **Play the kit in your score.** The starter score, `instrument.cicada`, has
+    one sampler track and a two-bar groove. To use the kit in your own score,
+    copy the `sampler` block that the build printed, not the one inside the
+    starter: the starter's `pack` path is relative to the kit folder, and the
+    printed one points at the folder you built into.
 
-   ```cicada
-   cicada 2
-   tempo 100
-   sampler studio {
-     pack = "assets/kits/studio/manifest.json"
-     sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-     root = c2
-     voices = 16
-   }
+    A sampler track plays one piece at a time. Write each hit as its note name
+    from the table, and let the velocity choose the layer: with three layers,
+    velocities 1 to 42 play the soft takes, 43 to 84 the medium ones and 85 to
+    127 the hard ones. Velocity also sets the level, in proportion to
+    velocity/127, so a hit at velocity 34 plays about 11 dB below the same take
+    at velocity 127.
 
-   track drums studio { level = -3dB }
-   pattern groove notes {
-     c2 . gb2 . d2 . gb2 . c2 . gb2 . d2 d2 bb2 .
-     c2 . gb2 . d2 c2 gb2 . c2 . gb2 . d2 . gb2 gb2
-     velocity: 112 . 72 . 104 . 60 . 100 . 72 . 108 34 84 . 112 . 72 . 104 90 60 . 100 . 72 . 108 . 70 40
-   }
-   scene main { drums = groove }
-   song { main*4 }
-   ```
+    ```cicada
+    cicada 2
+    tempo 100
+    sampler studio {
+      pack = "assets/kits/studio/manifest.json"
+      sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      root = c2
+      voices = 16
+    }
 
-   Replace `sha256` with the pin the command printed. This is the starter groove.
-   The open hi-hat (`bb2`) ends bar one, and the closed hi-hat (`gb2`) that
-   follows it in bar two cuts it off, as a hi-hat pedal would. The soft snare
-   (`d2` at velocity 34) is a ghost note from the soft layer.
+    track drums studio { level = -3dB }
+    pattern groove notes {
+      c2 . gb2 . d2 . gb2 . c2 . gb2 . d2 d2 bb2 .
+      c2 . gb2 . d2 c2 gb2 . c2 . gb2 . d2 . gb2 gb2
+      velocity: 112 . 72 . 104 . 60 . 100 . 72 . 108 34 84 . 112 . 72 . 104 90 60 . 100 . 72 . 108 . 70 40
+    }
+    scene main { drums = groove }
+    song { main*4 }
+    ```
+
+    Replace `sha256` with the pin the command printed. This is the starter groove.
+    The open hi-hat (`bb2`) ends bar one, and the closed hi-hat (`gb2`) that
+    follows it in bar two cuts it off, as a hi-hat pedal would. The soft snare
+    (`d2` at velocity 34) is a ghost note from the soft layer.
 
 A sampler track plays one note per step, so a groove on one track never hits
 two pieces at once. To play the kick and a hi-hat together, add a second track
 that names the same sampler. Keep the closed, pedal and open hi-hats on one
-track, because a choke cuts only the notes of its own track.
+track, because a choke cuts only the notes of its own track. For the same
+reason, play a cymbal's choke note on the cymbal's own track.
 
 ## Fit a playable model
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,7 +38,8 @@ func manualSection(t *testing.T) []string {
 }
 
 // manualBlock returns the first fenced block of the given language in the
-// section, without the indentation of the list item that holds it.
+// section, without the indentation of the list item that holds it. The fence
+// shows how far the item is indented, which is more for step 10 than step 9.
 func manualBlock(t *testing.T, language string) string {
 	t.Helper()
 	lines := manualSection(t)
@@ -45,9 +47,10 @@ func manualBlock(t *testing.T, language string) string {
 		if strings.TrimSpace(lines[i]) != "```"+language {
 			continue
 		}
+		indent := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " "))]
 		var block []string
 		for i++; i < len(lines) && strings.TrimSpace(lines[i]) != "```"; i++ {
-			block = append(block, strings.TrimPrefix(lines[i], "   "))
+			block = append(block, strings.TrimPrefix(lines[i], indent))
 		}
 		return strings.Join(block, "\n") + "\n"
 	}
@@ -105,5 +108,34 @@ func TestRecordKitManualMatchesTheCommand(t *testing.T) {
 	}
 	if got, want := score(string(pack.Files["instrument.cicada"])), score(manualBlock(t, "cicada")); got != want {
 		t.Fatalf("the starter score differs from the manual's:\n%s\nmanual:\n%s", got, want)
+	}
+}
+
+// The guide gives the frame budget of a piece in frames and in seconds. The
+// seconds must be what the limit comes to, or a player plans a take that the
+// command then refuses.
+func TestRecordKitManualStatesTheFrameBudget(t *testing.T) {
+	text := strings.Join(manualSection(t), "\n")
+	flat := strings.Join(strings.Fields(text), " ")
+	for _, want := range []string{
+		"8,388,608 frames, which is " + strconv.Itoa(int(math.Round(float64(recording.MaxFrames)/48000))) + " seconds at 48 kHz or " + strconv.Itoa(int(math.Round(float64(recording.MaxFrames)/44100))) + " seconds at 44.1 kHz",
+		"8,388,608 source frames (" + strconv.Itoa(int(math.Round(float64(recording.MaxFrames)/48000))) + " seconds at 48 kHz",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the guide lacks %q", want)
+		}
+	}
+	if recording.MaxFrames != 8388608 {
+		t.Errorf("the limit is %d frames; the guide says 8,388,608", recording.MaxFrames)
+	}
+	// The worked example: a crash of 12 seconds, 5 hits in each of 3 dynamics.
+	limit := float64(recording.MaxFrames) / 48000
+	if float64(12*5*3) <= limit || float64(12*4*3) >= limit {
+		t.Errorf("the guide's worked example (180 s, or 144 s with 4 hits) does not straddle the limit of %.1f s", limit)
+	}
+	for _, want := range []string{"takes 180 seconds, which is too long", "Four hits per dynamic take 144 seconds and fit"} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the guide lacks %q", want)
+		}
 	}
 }
