@@ -139,3 +139,51 @@ func TestRecordKitManualStatesTheFrameBudget(t *testing.T) {
 		}
 	}
 }
+
+// The guide says which attacks the command warns about. A strike less than
+// 0.12 s after a hit, such as a flam, is part of that hit and is not counted; an
+// attack between 0.12 and 0.5 s after one is kept inside it and is. The numbers
+// in the guide must be the ones the analysis uses.
+func TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout(t *testing.T) {
+	flat := strings.Join(strings.Fields(strings.Join(manualSection(t), "\n")), " ")
+	for _, want := range []string{
+		"An attack that comes between 0.12 and 0.5 seconds after a hit is kept inside that hit, which then plays as a double strike, and the command warns you.",
+		"A strike within 0.12 seconds of a hit, such as a flam or a beater bounce, counts as part of that hit, and the command does not warn about it.",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the guide lacks %q", want)
+		}
+	}
+	// A louder strike 0.1 s after a soft one is part of it; one 0.14 s after is
+	// an attack kept inside it. A half second apart they are two hits.
+	for _, test := range []struct {
+		apart  float64
+		merged int
+		hits   int
+	}{{.10, 0, 1}, {.14, 1, 1}, {.45, 1, 1}, {.55, 0, 2}} {
+		audio := recording.Audio{Rate: 48000}
+		one := testwav.Take(48000, testwav.Snare, .2)
+		soft, err := recording.DecodeWAV(one)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loud, err := recording.DecodeWAV(testwav.Take(48000, testwav.Snare, .8))
+		if err != nil {
+			t.Fatal(err)
+		}
+		audio.PCM = make([]float32, 48000*3)
+		first, second := 9600, 9600+int(test.apart*48000)
+		for i, x := range soft.PCM[9600:] {
+			audio.PCM[first+i] += x
+		}
+		for i, x := range loud.PCM[9600:] {
+			if second+i < len(audio.PCM) {
+				audio.PCM[second+i] += x
+			}
+		}
+		hits, reports, err := recording.AnalyzeTakes([]recording.Audio{audio}, recording.Options{Root: 38, Layers: 1, Ringing: true})
+		if err != nil || len(hits) != test.hits || reports[0].Merged != test.merged {
+			t.Errorf("a strike %.2f s after the first: %d hits and %d merged attacks (%v); the guide's numbers say %d and %d", test.apart, len(hits), reports[0].Merged, err, test.hits, test.merged)
+		}
+	}
+}

@@ -173,12 +173,14 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    room is within 20 dB of the loudest sound. Hits must start at least half a
    second apart. That is stricter than `record-pack`'s 120 ms rule, because
    bass drums and toms swell again after the first impact, and the command must
-   not count the swell as a second hit. An attack that comes sooner than half a
-   second is kept inside the hit before it, which then plays as a double strike,
-   and the command warns you. Leave a second after drums. Leave cymbals and the
-   open hi-hat all the time they need to die away, often 5 to 10 seconds, and
-   keep the room quiet until then. A hit that lands on a loud ring, such as a
-   soft hit on the ring of a louder one or a tom struck again within a second,
+   not count the swell as a second hit. An attack that comes between 0.12 and
+   0.5 seconds after a hit is kept inside that hit, which then plays as a double
+   strike, and the command warns you. A strike within 0.12 seconds of a hit,
+   such as a flam or a beater bounce, counts as part of that hit, and the
+   command does not warn about it. Leave a second after drums. Leave cymbals and
+   the open hi-hat all the time they need to die away, often 5 to 10 seconds,
+   and keep the room quiet until then. A hit that lands on a loud ring, such as
+   a soft hit on the ring of a louder one or a tom struck again within a second,
    can go unseen, so check the hit count in step 8.
 
    A hit keeps its tail until the tail is 60 dB below the loudest hit in its
@@ -261,7 +263,7 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    | Warning | What happened | What to do |
    | --- | --- | --- |
    | Hits were cut off while still ringing | The next hit, or the end of the file, came while the tail was still more than 6 dB above the level where tails end. The line gives the level at the cut and the level where a finished tail ends. | Leave more time after each hit, and keep recording until the last one has died away. |
-   | Attacks within 0.5 s of an earlier hit | The take holds a double strike, or hits that are too close together. | Leave 0.5 s or more between hits. |
+   | Attacks within 0.5 s of an earlier hit | The take holds a double strike, or hits that are too close together. A strike within 0.12 s of a hit counts as part of it and is not reported. | Leave 0.5 s or more between hits. |
    | Hits clip at full scale | A hit holds a flat top: three or more samples in a row stuck at the same full-scale value. The input gain was too high. | Lower the gain and record the take again. |
    | A take does not start with room tone | The take's first 200 ms are not as quiet as its quietest 200 ms, so the command read the room's noise from the quietest stretch elsewhere in the take. If a tail was still ringing there, every hit ended too soon, and no cut was reported. | Start the take with three seconds of silence. |
    | A take has no quiet stretch | No 200 ms of the take is more than 26 dB below its loudest sound, and the take does not open with room tone, so the command cannot tell the room's noise from a ring that never faded. It ends tails 20 dB below the loudest sound and may miss the softer hits. | Start the take with three seconds of silence. If it already does, play harder, move the microphone closer, or record in a quieter room. |
