@@ -167,8 +167,9 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    quietest 200 ms of each take. It warns you when a take does not open with
    200 ms of room tone, because the quietest stretch may then be a tail that
    was still ringing when you stopped recording, and every hit would end where
-   that tail passes it. It also warns when no part of a take is quiet. Hits
-   must start at least half a second apart. That is stricter than
+   that tail passes it. It also warns when no part of a take is quiet, or the
+   room is within 20 dB of the loudest sound. Hits must start at least half a
+   second apart. That is stricter than
    `record-pack`'s 120 ms rule, because bass drums and toms swell again after
    the first impact, and the command must not count the swell as a second hit.
    An attack that comes sooner than half a second is kept inside the hit before
@@ -262,6 +263,7 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    | Hits clip at full scale | The input gain was too high. | Lower the gain and record the take again. |
    | A take does not start with room tone | The take's first 200 ms are not as quiet as its quietest 200 ms, so the command read the room's noise from the quietest stretch elsewhere in the take. If a tail was still ringing there, every hit ended too soon, and no cut was reported. | Start the take with three seconds of silence. |
    | A take has no quiet stretch | No 200 ms of the take is more than 26 dB below its loudest sound, and the take does not open with room tone, so the command cannot tell the room's noise from a ring that never faded. It ends tails 20 dB below the loudest sound and may miss the softer hits. | Start the take with three seconds of silence. If it already does, play harder, move the microphone closer, or record in a quieter room. |
+   | A take was recorded in a room only so many dB below its loudest sound | The take opens with room tone, but the room is less than 20 dB below its loudest sound. The command finds the hits against an assumed floor, ends each tail where it reaches the room, and may miss the softer hits. | Play louder, move the microphone closer, or record in a quieter room. |
 
    `analysis.json` records, for each hit, whether it was cut off and at what
    level, and how many of its frames clipped.

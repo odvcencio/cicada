@@ -561,8 +561,10 @@ func (r KitReport) Warnings() []string {
 		for _, take := range piece.Takes {
 			hits += take.Hits
 			switch {
-			case take.NoQuiet:
+			case take.NoQuiet && take.NoRoomTone:
 				out = append(out, fmt.Sprintf("%s: %s has no quiet stretch (its quietest 200 ms is only %.0f dB below its loudest sound), so tails end where they fall %.0f dB below that sound and the softer hits may be missed; start every take with 3 seconds of silence, and play louder or closer to the microphone if it already does", piece.Name, take.Name, take.LoudestDB-take.NoiseDB, take.LoudestDB-take.QuietDB))
+			case take.NoQuiet:
+				out = append(out, fmt.Sprintf("%s: %s was recorded in a room only %.0f dB below its loudest sound, so tails end where they fall %.0f dB below that sound and the softer hits may be missed; play louder or move the microphone closer", piece.Name, take.Name, take.LoudestDB-take.NoiseDB, take.LoudestDB-take.QuietDB))
 			case take.NoRoomTone:
 				out = append(out, fmt.Sprintf("%s: %s does not start with room tone, so the room's noise was read from its quietest 200 ms, at %.0f dBFS; if a tail was still ringing there, every hit ends too soon; start every take with 3 seconds of silence", piece.Name, take.Name, take.NoiseDB))
 			}

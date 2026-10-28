@@ -234,6 +234,30 @@ func TestRingingReportsWhetherTheTakeOpensWithRoomTone(t *testing.T) {
 	}
 }
 
+// Hits only 13 dB above a room of -50 dBFS, with 3 s of room tone first: the
+// room is the floor, tails finish 6 dB above it, and the room is never taken
+// for a tail that was cut off.
+func TestRingingLoudRoomWithRoomToneIsReadAsTheRoom(t *testing.T) {
+	audio := spaced(t, testwav.Snare, testwav.Layout{Lead: 3, Spacing: 1.2, After: 2, RoomDB: -50}, .03, .033, .027, .031, .03)
+	hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 38, Layers: 1, Ringing: true})
+	if err != nil || len(hits) != 5 {
+		t.Fatalf("found %d hits, played 5 (%v)", len(hits), err)
+	}
+	report := reports[0]
+	if report.NoRoomTone || !report.NoQuiet || math.Abs(report.NoiseDB+50) > 1 {
+		t.Errorf("no room tone %v, no quiet stretch %v, noise %.1f dBFS (room -50)", report.NoRoomTone, report.NoQuiet, report.NoiseDB)
+	}
+	// A tail has finished when it is 6 dB above the room, and not before.
+	if math.Abs(report.QuietDB-report.NoiseDB-6) > 1 {
+		t.Errorf("tails finish at %.1f dBFS, %.1f dB above the room; want 6 dB", report.QuietDB, report.QuietDB-report.NoiseDB)
+	}
+	for i, h := range hits {
+		if h.Cut {
+			t.Errorf("hit %d was reported as cut off at %.1f dBFS; that is the room, at %.1f dBFS", i+1, h.CutDB, report.NoiseDB)
+		}
+	}
+}
+
 // A cut-off tail fades out over about 5 ms. The first hit here is noise held at
 // -24 dBFS until the second hit, which attacks at once, cuts it off.
 func TestRingingCutHitFadesOutOverFiveMilliseconds(t *testing.T) {

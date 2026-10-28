@@ -1163,6 +1163,33 @@ func TestKitWarnsThatATakeWithNoRoomToneCannotBeTrusted(t *testing.T) {
 	}
 }
 
+// Soft hits in a loud room, recorded as the guide asks with room tone first:
+// the room is 13 dB below the loudest sound, which is the fault. The command
+// must not ask for the silence the take already has, and it must not report
+// the room itself as a tail that was cut off while ringing.
+func TestKitWarnsThatTheRoomIsLoudWhenTheTakeHasRoomTone(t *testing.T) {
+	takes := fstest.MapFS{"snare-soft.wav": {Data: testwav.Spaced(48000, testwav.Snare, testwav.Layout{Lead: 3, Spacing: 1.2, After: 2, RoomDB: -50}, .03, .033, .027, .031, .03)}}
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{{Name: "snare", Note: 38, Layers: 1, OneShot: true, Takes: []string{"snare-soft.wav"}}}}
+	_, report, err := BuildKit("loud", recipe, takes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if take := report.Pieces[0].Takes[0]; take.Hits != 5 {
+		t.Fatalf("found %d hits, played 5: %+v", take.Hits, take)
+	}
+	warnings := strings.Join(report.Warnings(), "\n")
+	for _, want := range []string{"snare: snare-soft.wav was recorded in a room only 13 dB below its loudest sound", "play louder or move the microphone closer"} {
+		if !strings.Contains(warnings, want) {
+			t.Errorf("no warning contains %q:\n%s", want, warnings)
+		}
+	}
+	for _, unwanted := range []string{"start every take", "no quiet stretch", "cut off", "does not start with room tone"} {
+		if strings.Contains(warnings, unwanted) {
+			t.Errorf("a take with 3 s of room tone and no ringing tail was told %q:\n%s", unwanted, warnings)
+		}
+	}
+}
+
 // The warnings are plain sentences. A single fault reads in the singular, and a
 // piece with the same fault in several takes names each take once.
 func TestKitWarningsReadAsSentences(t *testing.T) {
