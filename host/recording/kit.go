@@ -102,7 +102,7 @@ func ParseKitRecipe(data []byte) (KitRecipe, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&raw); err != nil {
-		return recipe, recipeSyntax(data, err)
+		return recipe, recipeSyntax(data, raw, err)
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		return recipe, fmt.Errorf("unexpected text after the recipe's closing brace")
@@ -138,37 +138,154 @@ func ParseKitRecipe(data []byte) (KitRecipe, error) {
 	return recipe, nil
 }
 
-func recipeSyntax(data []byte, err error) error {
+func recipeSyntax(data []byte, raw rawKitRecipe, err error) error {
 	var syntax *json.SyntaxError
 	var typed *json.UnmarshalTypeError
 	switch {
 	case errors.As(err, &syntax):
 		return fmt.Errorf("line %d: %s", lineOf(data, syntax.Offset), syntax.Error())
 	case errors.As(err, &typed):
-		line := lineOf(data, typed.Offset)
-		want := typed.Type.String()
-		switch typed.Type.Kind() {
-		case reflect.Struct:
-			if typed.Field == "" {
-				return fmt.Errorf("line %d: the recipe should be an object, not %s", line, typed.Value)
-			}
-			return fmt.Errorf("line %d: every entry of %q should be an object, not %s", line, typed.Field, typed.Value)
-		case reflect.Int:
-			want = "a whole number"
-		case reflect.String:
-			want = "text"
-		case reflect.Bool:
-			want = "true or false"
-		case reflect.Float64:
-			want = "a number"
-		case reflect.Slice:
-			want = "a list"
-		}
-		return fmt.Errorf("line %d: %q should be %s, not %s", line, typed.Field, want, typed.Value)
+		return recipeTypeError(data, raw, typed)
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return fmt.Errorf("the recipe is empty or ends early; it must be one JSON object")
 	}
 	return fmt.Errorf("%s", strings.TrimPrefix(err.Error(), "json: "))
+}
+
+// recipeTypeError says which value of the recipe has the wrong type, and where.
+//
+// encoding/json names the place in typed.Field, but how it does so depends on
+// the Go version: from Go 1.27 the path holds the position of each list entry
+// ("pieces.0.takes"), and earlier versions leave it out ("pieces.takes"). The
+// message must read the same on both, so it uses only the field names, with
+// the position dropped, and finds the piece from the error's offset, which
+// every version reports alike.
+func recipeTypeError(data []byte, raw rawKitRecipe, typed *json.UnmarshalTypeError) error {
+	line := lineOf(data, typed.Offset)
+	var path []string
+	for _, step := range strings.Split(typed.Field, ".") {
+		if strings.Trim(step, "0123456789") != "" {
+			path = append(path, fieldName(step))
+		}
+	}
+	want := typed.Type.String()
+	switch typed.Type.Kind() {
+	case reflect.Int:
+		want = "a whole number"
+	case reflect.String:
+		want = "text"
+	case reflect.Bool:
+		want = "true or false"
+	case reflect.Float64:
+		want = "a number"
+	case reflect.Slice:
+		want = "a list"
+	}
+	switch {
+	case len(path) == 0:
+		return fmt.Errorf("line %d: the recipe should be an object, not %s", line, typed.Value)
+	case path[0] != "pieces":
+		return fmt.Errorf("line %d: %q should be %s, not %s", line, path[0], want, typed.Value)
+	}
+	label := ""
+	if index, found := pieceAt(data, typed.Offset); found {
+		name := ""
+		if index < len(raw.Pieces) {
+			name = raw.Pieces[index].Name
+		}
+		label = pieceLabel(index, name)
+	}
+	switch {
+	case len(path) == 1 && typed.Type.Kind() == reflect.Struct:
+		// An entry of the list that is not an object has no fields to name.
+		if label == "" {
+			return fmt.Errorf("line %d: every entry of %q should be an object, not %s", line, "pieces", typed.Value)
+		}
+		return fmt.Errorf("line %d: %s should be an object, not %s", line, label, typed.Value)
+	case len(path) == 1:
+		return fmt.Errorf("line %d: %q should be %s, not %s", line, "pieces", want, typed.Value)
+	}
+	where := ""
+	if label != "" {
+		where = label + ": "
+	}
+	if path[1] == "takes" && typed.Type.Kind() == reflect.String {
+		// The list is fine; one of its entries is not text.
+		return fmt.Errorf("line %d: %severy entry of %q should be %s, not %s", line, where, path[1], want, typed.Value)
+	}
+	return fmt.Errorf("line %d: %s%q should be %s, not %s", line, where, path[1], want, typed.Value)
+}
+
+// fieldName gives the recipe's own spelling of a field. The decoder accepts any
+// capitals in a key, and Go 1.27 names the field as the recipe spells it, where
+// earlier versions use ours; checkRecipeKeys refuses the capitals later.
+func fieldName(step string) string {
+	for _, field := range slices.Concat(recipeFields, pieceFields) {
+		if strings.EqualFold(field, step) {
+			return field
+		}
+	}
+	return step
+}
+
+// pieceAt finds which entry of the recipe's "pieces" list holds the byte before
+// offset, counting from zero. It reads the recipe as tokens, as checkRecipeKeys
+// does, so it does not depend on how a Go version words its errors.
+func pieceAt(data []byte, offset int64) (int, bool) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if first, err := dec.Token(); err != nil || first != json.Delim('{') {
+		return 0, false
+	}
+	var skip json.RawMessage
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return 0, false
+		}
+		name, _ := key.(string)
+		if !strings.EqualFold(name, "pieces") || !listFollows(data, dec.InputOffset()) {
+			if err := dec.Decode(&skip); err != nil {
+				return 0, false
+			}
+			continue
+		}
+		if _, err := dec.Token(); err != nil { // the "["
+			return 0, false
+		}
+		opened := dec.InputOffset()
+		var starts []int64
+		for dec.More() {
+			starts = append(starts, dec.InputOffset())
+			if err := dec.Decode(&skip); err != nil {
+				return 0, false
+			}
+		}
+		if _, err := dec.Token(); err != nil { // the "]"
+			return 0, false
+		}
+		if offset <= opened || offset > dec.InputOffset() {
+			continue // a "pieces" written twice: look at the next one
+		}
+		for index := len(starts) - 1; index >= 0; index-- {
+			if starts[index] < offset {
+				return index, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// listFollows reports whether the value that starts after a key, which ends at
+// pos, is a list.
+func listFollows(data []byte, pos int64) bool {
+	for ; pos < int64(len(data)); pos++ {
+		switch data[pos] {
+		case ' ', '\t', '\r', '\n', ':':
+		default:
+			return data[pos] == '['
+		}
+	}
+	return false
 }
 
 func lineOf(data []byte, offset int64) int {

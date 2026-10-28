@@ -140,9 +140,9 @@ func TestKitRecipeValidation(t *testing.T) {
 		{"text note", wrap(`{"name":"kick","note":"36","takes":["a.wav"]}`), `should be a whole number, not string`},
 		{"recipe is a list", `[]`, "the recipe should be an object, not array"},
 		{"pieces is an object", `{"format":"cicada.kit-recipe/1","pieces":{}}`, `"pieces" should be a list, not object`},
-		{"piece is a number", `{"format":"cicada.kit-recipe/1","pieces":[1]}`, `every entry of "pieces" should be an object, not number`},
-		{"takes is text", wrap(`{"name":"kick","note":36,"takes":"kick.wav"}`), `"pieces.takes" should be a list, not string`},
-		{"one_shot is text", wrap(piece(`,"one_shot":"yes"`)), `"pieces.one_shot" should be true or false, not string`},
+		{"piece is a number", `{"format":"cicada.kit-recipe/1","pieces":[1]}`, `piece 1 should be an object, not number`},
+		{"takes is text", wrap(`{"name":"kick","note":36,"takes":"kick.wav"}`), `piece 1 (kick): "takes" should be a list, not string`},
+		{"one_shot is text", wrap(piece(`,"one_shot":"yes"`)), `piece 1 (kick): "one_shot" should be true or false, not string`},
 		{"fractional note", wrap(`{"name":"kick","note":36.5,"takes":["a.wav"]}`), `should be a whole number, not number 36.5`},
 		{"low note", wrap(`{"name":"kick","note":11,"takes":["a.wav"]}`), `"note" 11 is outside 12 to 95`},
 		{"high note", wrap(`{"name":"kick","note":96,"takes":["a.wav"]}`), `"note" 96 is outside 12 to 95`},
@@ -188,6 +188,56 @@ func TestKitRecipeValidation(t *testing.T) {
 	}
 	if _, err := ParseKitRecipe(bytes.Repeat([]byte(" "), MaxKitRecipeBytes+1)); err == nil {
 		t.Fatal("oversized recipe accepted")
+	}
+}
+
+// encoding/json names the place of a wrong type in Field. From Go 1.27 that path
+// holds the position of each list entry ("pieces.0.takes"), and earlier
+// versions leave it out ("pieces.takes"). The recipe's messages name the piece
+// the way every other message does, whichever Go version built the command, and
+// the line is the one that holds the value.
+func TestKitRecipeTypeErrorsNameThePieceOnEveryGoVersion(t *testing.T) {
+	kick := `{"name":"kick","note":36,"takes":["kick.wav"]}`
+	snare := `{"name":"snare","note":38,"takes":["snare.wav"]}`
+	wrap := func(pieces ...string) string {
+		return `{"format":"cicada.kit-recipe/1","pieces":[` + strings.Join(pieces, ",") + `]}`
+	}
+	var many []string
+	for i := 0; i < 40; i++ {
+		many = append(many, fmt.Sprintf(`{"name":"p%d","note":%d,"takes":["a.wav"]}`, i, MinKitNote+i))
+	}
+	many = append(many, `{"name":"late","note":90,"takes":"late.wav"}`)
+	for _, test := range []struct{ name, recipe, want string }{
+		{"first piece is a number", wrap(`1`), `line 1: piece 1 should be an object, not number`},
+		{"second piece is a number", wrap(kick, `7`), `line 1: piece 2 should be an object, not number`},
+		{"piece is a list", wrap(kick, snare, `["x"]`), `line 1: piece 3 should be an object, not array`},
+		{"takes is text", wrap(kick, `{"name":"snare","note":38,"takes":"snare.wav"}`), `line 1: piece 2 (snare): "takes" should be a list, not string`},
+		{"takes is an object", wrap(`{"name":"kick","note":36,"takes":{"a":1}}`), `line 1: piece 1 (kick): "takes" should be a list, not object`},
+		{"a take is a number", wrap(kick, snare, `{"name":"hat","note":42,"takes":["a.wav",2]}`), `line 1: piece 3 (hat): every entry of "takes" should be text, not number`},
+		{"a take is a list", wrap(`{"name":"kick","note":36,"takes":[["a.wav"]]}`), `line 1: piece 1 (kick): every entry of "takes" should be text, not array`},
+		{"name is a number", wrap(kick, `{"name":5,"note":38,"takes":["a.wav"]}`), `line 1: piece 2: "name" should be text, not number`},
+		{"note is text", wrap(kick, `{"name":"snare","note":"38","takes":["a.wav"]}`), `line 1: piece 2 (snare): "note" should be a whole number, not string`},
+		{"layers is text", wrap(`{"name":"kick","note":36,"takes":["a.wav"],"layers":"3"}`), `line 1: piece 1 (kick): "layers" should be a whole number, not string`},
+		{"gain is text", wrap(`{"name":"kick","note":36,"takes":["a.wav"],"gain_db":"loud"}`), `line 1: piece 1 (kick): "gain_db" should be a number, not string`},
+		{"choke is a number", wrap(`{"name":"kick","note":36,"takes":["a.wav"],"choke":1}`), `line 1: piece 1 (kick): "choke" should be text, not number`},
+		{"one_shot is a number", wrap(`{"name":"kick","note":36,"takes":["a.wav"],"one_shot":1}`), `line 1: piece 1 (kick): "one_shot" should be true or false, not number`},
+		{"a late piece", wrap(many...), `line 1: piece 41 (late): "takes" should be a list, not string`},
+		{"pieces is an object", `{"format":"cicada.kit-recipe/1","pieces":{}}`, `line 1: "pieces" should be a list, not object`},
+		{"pieces is text", `{"format":"cicada.kit-recipe/1","pieces":"kick"}`, `line 1: "pieces" should be a list, not string`},
+		{"format is a number", `{"format":5,"pieces":[` + kick + `]}`, `line 1: "format" should be text, not number`},
+		{"recipe is a list", `[]`, `line 1: the recipe should be an object, not array`},
+		{"the line of a later piece", "{\n\"format\": \"cicada.kit-recipe/1\",\n\"pieces\": [\n{\"name\": \"kick\", \"note\": 36,\n\"takes\": [\"a.wav\"]},\n{\"name\": \"snare\",\n\"note\": \"38\",\n\"takes\": [\"b.wav\"]}\n]\n}", `line 7: piece 2 (snare): "note" should be a whole number, not string`},
+		{"pieces after the format on another line", "{\"pieces\": [\n1\n],\n\"format\": \"cicada.kit-recipe/1\"}", `line 2: piece 1 should be an object, not number`},
+		{"keys written with capitals", `{"format":"cicada.kit-recipe/1","PIECES":[{"name":"kick","NOTE":"36","takes":["a.wav"]}]}`, `line 1: piece 1 (kick): "note" should be a whole number, not string`},
+		{"format written with a capital", `{"Format":5,"pieces":[` + kick + `]}`, `line 1: "format" should be text, not number`},
+		{"pieces written first", `{"pieces":[` + kick + `,{"name":"snare","note":"x","takes":["a.wav"]}],"format":"cicada.kit-recipe/1"}`, `line 1: piece 2 (snare): "note" should be a whole number, not string`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseKitRecipe([]byte(test.recipe))
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("error %v\nwant  %s", err, test.want)
+			}
+		})
 	}
 }
 
