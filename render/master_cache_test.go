@@ -373,6 +373,45 @@ func TestMasterCacheFullDiskGivesItsSpaceBack(t *testing.T) {
 	}
 }
 
+// A stored signal that cannot be read back fails the render that replays it,
+// because that render has already written part of its output. The cache turns
+// itself off and gives its space back, and the next render runs in full.
+func TestMasterCacheReadFailureTurnsTheCacheOff(t *testing.T) {
+	cache := newTestMasterCache(t)
+	score := cacheScoreVariant(t)
+	opts := Options{SampleRate: 48000, TailSec: .1}
+	want, wantReport := renderCacheBytes(t, score, opts)
+	opts.MasterCache = cache
+	renderCacheBytes(t, score, opts)
+	if !cache.ready {
+		t.Fatal("the capture is not ready")
+	}
+	// Cut the stored signal short, as a failing disk or another process could.
+	if err := cache.file.Truncate(cache.frames * 8 / 3); err != nil {
+		t.Fatal(err)
+	}
+	var partial bytes.Buffer
+	if _, err := WAV(score, opts, &partial); err == nil || !strings.Contains(err.Error(), "read master cache") {
+		t.Fatalf("replay of a cut cache: %v", err)
+	}
+	if partial.Len() == 0 || partial.Len() >= len(want) {
+		t.Fatalf("the failed replay wrote %d of %d bytes; it should fail part way", partial.Len(), len(want))
+	}
+	if !cache.disabled || cache.ready {
+		t.Fatalf("cache state after a failed read: disabled=%v ready=%v", cache.disabled, cache.ready)
+	}
+	if info, err := os.Stat(cache.file.Name()); err != nil || info.Size() != 0 {
+		t.Fatalf("the cache that failed still holds its file: %v (%v)", info, err)
+	}
+	got, gotReport := renderCacheBytes(t, score, opts)
+	if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
+		t.Fatal("render after the failed read differs from a full render")
+	}
+	if cache.Replays() != 1 {
+		t.Fatalf("%d replays, want only the one that failed", cache.Replays())
+	}
+}
+
 // endBlock is the one place a capture can fail after rendering has started.
 func TestMasterCacheEndBlockFailureTurnsTheCacheOff(t *testing.T) {
 	cache := newTestMasterCache(t)
@@ -445,6 +484,35 @@ func TestMasterCacheCloseRemovesTheFile(t *testing.T) {
 	got, _ := renderCacheBytes(t, score, Options{SampleRate: 48000, Bars: 1, TailSec: .05, MasterCache: cache})
 	if !bytes.Equal(got, want) {
 		t.Fatal("render with a closed cache differs")
+	}
+}
+
+// unremovableFile reports the folder that holds the cache file as its name.
+// Remove cannot delete a folder that is not empty, as it cannot delete a file
+// that another program holds open.
+type unremovableFile struct{ *os.File }
+
+func (f unremovableFile) Name() string { return filepath.Dir(f.File.Name()) }
+
+// Close empties the file before it removes it, so a file that cannot be removed
+// still gives its space back.
+func TestMasterCacheCloseEmptiesAFileItCannotRemove(t *testing.T) {
+	cache := newTestMasterCache(t)
+	renderCacheBytes(t, cacheScoreVariant(t), Options{SampleRate: 48000, Bars: 1, TailSec: .05, MasterCache: cache})
+	file := cache.file.(*os.File)
+	if info, err := file.Stat(); err != nil || info.Size() == 0 {
+		t.Fatalf("the capture left a file of %v (%v)", info, err)
+	}
+	cache.file = unremovableFile{file}
+	if err := cache.Close(); err == nil {
+		t.Fatal("Close removed a folder that holds the cache file")
+	}
+	info, err := os.Stat(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("the file that could not be removed still holds %d bytes", info.Size())
 	}
 }
 

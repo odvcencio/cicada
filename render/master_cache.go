@@ -29,12 +29,19 @@ import (
 // AssetRoot, AssetDir or SamplerBaseline differs from the stored capture
 // replaces that capture. If the file cannot be written, for example because the
 // disk is full, the cache turns itself off, empties its file to give the space
-// back, and renders continue without it.
+// back, and renders continue without it. If the stored signal cannot be read
+// back, the replaying render fails, because it has already written part of its
+// output; the cache turns itself off and empties its file in the same way, and
+// the caller renders again without it.
+//
+// A completed capture keeps its file until Close, and the file takes disk space
+// that the caller's own output may need. A caller that runs short of space
+// closes the cache and repeats the failed step without it.
 //
 // The cache matches a score by its pointer, not by its contents. Do not modify
 // a score between renders that share a cache: a changed score would replay the
 // signal of the old one. A copy of a score starts a new capture. A MasterCache
-// is not safe for concurrent use. Close removes the file.
+// is not safe for concurrent use. Close empties the file and removes it.
 type MasterCache struct {
 	file     cacheFile
 	key      masterCacheKey
@@ -80,13 +87,15 @@ func NewMasterCache(dir string) (*MasterCache, error) {
 	return &MasterCache{file: file}, nil
 }
 
-// Close removes the temporary file. It is safe to call on a nil or closed
+// Close empties the temporary file and removes it, so a file that cannot be
+// removed still holds no disk space. It is safe to call on a nil or closed
 // cache.
 func (c *MasterCache) Close() error {
 	if c == nil || c.file == nil {
 		return nil
 	}
 	name := c.file.Name()
+	_ = c.file.Truncate(0)
 	err := c.file.Close()
 	c.file, c.ready = nil, false
 	if removeErr := os.Remove(name); err == nil && !os.IsNotExist(removeErr) {
@@ -95,7 +104,8 @@ func (c *MasterCache) Close() error {
 	return err
 }
 
-// Replays reports how many renders have played back from the cache.
+// Replays reports how many renders have started to play back from the cache,
+// including one that failed part way.
 func (c *MasterCache) Replays() int {
 	if c == nil {
 		return 0
@@ -145,6 +155,7 @@ func (c *MasterCache) beginBlock(frames int, replay bool) error {
 	}
 	data := c.scratch[:frames*8]
 	if _, err := io.ReadFull(c.file, data); err != nil {
+		c.fail()
 		return fmt.Errorf("read master cache: %w", err)
 	}
 	if cap(c.block) < frames*2 {
@@ -178,7 +189,9 @@ func (c *MasterCache) endBlock() {
 // fail turns the cache off for the rest of its life and empties its file. A
 // write fails mostly when the disk is full, and the render still has its own
 // output to write there; the partial capture would keep the space that output
-// needs. Close removes the file. If it cannot be emptied, the cache is still off.
+// needs. A read that fails leaves a stored signal that cannot be trusted, so it
+// turns the cache off in the same way. Close removes the file. If it cannot be
+// emptied, the cache is still off.
 func (c *MasterCache) fail() {
 	c.disabled, c.ready = true, false
 	_ = c.file.Truncate(0)
