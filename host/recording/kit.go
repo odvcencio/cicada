@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/host/instrumentpack"
 )
 
@@ -261,6 +262,29 @@ type KitLayerReport struct {
 	MinDB, MaxDB float64
 }
 
+// KitTakeReport describes what BuildKit found in one take. Levels are in dBFS
+// of the take as recorded.
+type KitTakeReport struct {
+	// Name is the take as the recipe names it.
+	Name string
+	Hits int
+	// Cut counts the hits that the next hit or the end of the take ended while
+	// their tails were still more than 6 dB above QuietDB. CutLowDB and
+	// CutHighDB are the lowest and highest levels the tails had at the cut.
+	Cut                 int
+	CutLowDB, CutHighDB float64
+	// Clipped counts the hits that hold a run of samples at full scale.
+	Clipped int
+	// Merged counts the attacks that came within half a second of an earlier
+	// hit and so play inside it.
+	Merged int
+	// NoQuiet is set when the take has no quiet stretch: see TakeReport.
+	NoQuiet bool
+	// LoudestDB is the loudest 10 ms of the take, NoiseDB its quietest 200 ms
+	// and QuietDB the level below which a tail counts as finished.
+	LoudestDB, NoiseDB, QuietDB float64
+}
+
 // KitPieceReport describes what BuildKit found for one piece.
 type KitPieceReport struct {
 	Name      string
@@ -269,6 +293,8 @@ type KitPieceReport struct {
 	Layers    []KitLayerReport
 	Choke     string
 	ChokeNote int
+	// Takes lists what was found in each take, in the recipe's order.
+	Takes []KitTakeReport
 }
 
 // KitReport summarizes a build for the command's receipt.
@@ -279,12 +305,78 @@ type KitReport struct {
 	Zones int
 }
 
+// Warnings lists, one plain sentence each, the takes that should be recorded
+// again. It is empty when every take is clean. For each piece it names first
+// the takes with no quiet stretch and the attacks that merged, take by take,
+// then the hits that were cut off and the hits that clipped, for the piece.
+func (r KitReport) Warnings() []string {
+	var out []string
+	for _, piece := range r.Pieces {
+		var cutTakes, clipTakes []string
+		cut, clipped, hits := 0, 0, 0
+		quiet := math.Inf(-1)
+		low, high := math.Inf(1), math.Inf(-1)
+		for _, take := range piece.Takes {
+			hits += take.Hits
+			if take.NoQuiet {
+				out = append(out, fmt.Sprintf("%s: %s has no quiet stretch (its quietest 200 ms is only %.0f dB below its loudest sound), so tails end where they fall %.0f dB below that sound and the softer hits may be missed; start every take with 3 seconds of silence, and play louder or closer to the microphone if it already does", piece.Name, take.Name, take.LoudestDB-take.NoiseDB, take.LoudestDB-take.QuietDB))
+			}
+			if take.Merged > 0 {
+				out = append(out, fmt.Sprintf("%s: %s holds %s within 0.5 s of an earlier hit; %s kept inside that hit, which plays as a double strike; leave 0.5 s or more between hits", piece.Name, take.Name, count(take.Merged, "attack", "attacks"), plural(take.Merged, "it was", "each was")))
+			}
+			if take.Cut > 0 {
+				cut += take.Cut
+				cutTakes = append(cutTakes, take.Name)
+				quiet = max(quiet, take.QuietDB)
+				low, high = min(low, take.CutLowDB), max(high, take.CutHighDB)
+			}
+			if take.Clipped > 0 {
+				clipped += take.Clipped
+				clipTakes = append(clipTakes, take.Name)
+			}
+		}
+		if cut > 0 {
+			levels := fmt.Sprintf("%.0f dBFS", low)
+			if math.Round(low) != math.Round(high) {
+				levels = fmt.Sprintf("%.0f to %.0f dBFS", low, high)
+			}
+			out = append(out, fmt.Sprintf("%s: %d of %s %s cut off while still ringing (%s), at %s where a finished tail is below %.0f dBFS; leave more time after each hit", piece.Name, cut, count(hits, "hit", "hits"), plural(cut, "was", "were"), strings.Join(cutTakes, ", "), levels, quiet))
+		}
+		if clipped > 0 {
+			out = append(out, fmt.Sprintf("%s: %d of %s %s at full scale (%s); lower the input gain and record those takes again", piece.Name, clipped, count(hits, "hit", "hits"), plural(clipped, "clips", "clip"), strings.Join(clipTakes, ", ")))
+		}
+	}
+	return out
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+func count(n int, one, many string) string { return fmt.Sprintf("%d %s", n, plural(n, one, many)) }
+
 // kitAnalysis adds the piece and asset to a hit's analysis record. No take file
 // names are kept: Input is the take's position in the piece's list.
 type kitAnalysis struct {
 	Piece string `json:"piece"`
 	Asset string `json:"asset"`
+	// Clipped counts the frames of the hit that lie in a run of full-scale
+	// samples.
+	Clipped int `json:"clipped,omitempty"`
 	Hit
+}
+
+// stable rounds a measurement to a millionth. The Go math library can end a
+// logarithm in another last digit on another kind of processor, and the record
+// is compared byte for byte before a pack folder is reused.
+func stable(x float64) float64 {
+	if r := math.Round(x*1e6) / 1e6; r != 0 {
+		return r
+	}
+	return 0
 }
 
 const kitPCMLimit = instrumentpack.MaxPCMBytes
@@ -305,7 +397,9 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 		return nil, report, err
 	}
 	var hits []Hit
+	var clipped []int // each hit's clipped frames, in hits' order
 	first := make([]int, len(recipe.Pieces)+1)
+	pieceTakes := make([][]KitTakeReport, len(recipe.Pieces))
 	for i, piece := range recipe.Pieces {
 		inputs := make([]Audio, 0, len(piece.Takes))
 		for _, take := range piece.Takes {
@@ -315,22 +409,41 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 			}
 			inputs = append(inputs, audio)
 		}
-		found, err := Analyze(inputs, Options{Root: piece.Note, Layers: piece.Layers, Ringing: true})
+		if err := checkKitBudget(piece.Name, inputs); err != nil {
+			return nil, report, err
+		}
+		found, notes, err := AnalyzeTakes(inputs, Options{Root: piece.Note, Layers: piece.Layers, Ringing: true})
 		if err != nil {
 			return nil, report, fmt.Errorf("piece %q: %w", piece.Name, err)
 		}
-		perTake := make([]int, len(piece.Takes))
+		reports := make([]KitTakeReport, len(piece.Takes))
+		for n, name := range piece.Takes {
+			reports[n] = KitTakeReport{Name: name, Merged: notes[n].Merged, NoQuiet: notes[n].NoQuiet, LoudestDB: notes[n].LoudestDB, NoiseDB: notes[n].NoiseDB, QuietDB: notes[n].QuietDB}
+		}
 		for _, h := range found {
-			perTake[h.Input]++
 			// Each piece plays at its recorded pitch, so the pack must resample
 			// at 44.1, 48 and 96 kHz output within the sampler's ratio limits.
 			if !supportedRatio(piece.Note, h) {
 				return nil, report, fmt.Errorf("piece %q: take %q is sampled at %d Hz, too low to play at every output rate; record at 44.1 kHz or higher", piece.Name, piece.Takes[h.Input], h.Rate)
 			}
+			take := &reports[h.Input]
+			take.Hits++
+			frames := inputs[h.Input].ClippedFrames(h.Start, h.End)
+			clipped = append(clipped, frames)
+			if frames > 0 {
+				take.Clipped++
+			}
+			if h.Cut {
+				if take.Cut == 0 {
+					take.CutLowDB, take.CutHighDB = h.CutDB, h.CutDB
+				}
+				take.Cut++
+				take.CutLowDB, take.CutHighDB = min(take.CutLowDB, h.CutDB), max(take.CutHighDB, h.CutDB)
+			}
 		}
-		for n, count := range perTake {
-			if count == 0 {
-				return nil, report, fmt.Errorf("piece %q: take %q has no hits above the noise floor; play it louder or closer to the microphone, or remove it from the recipe", piece.Name, piece.Takes[n])
+		for _, take := range reports {
+			if take.Hits == 0 {
+				return nil, report, fmt.Errorf("piece %q: take %q has no hits above the noise floor; play it louder or closer to the microphone, or remove it from the recipe", piece.Name, take.Name)
 			}
 		}
 		if len(found) < piece.Layers {
@@ -338,6 +451,7 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 		}
 		first[i] = len(hits)
 		hits = append(hits, found...)
+		pieceTakes[i] = reports
 	}
 	first[len(recipe.Pieces)] = len(hits)
 	var frames int64
@@ -393,7 +507,7 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 		}
 		sort.SliceStable(order, func(a, b int) bool { return hits[order[a]].LoudnessDB < hits[order[b]].LoudnessDB })
 		trim := math.Round(math.Pow(10, piece.GainDB/20)*1e6) / 1e6
-		summary := KitPieceReport{Name: piece.Name, Note: piece.Note, Hits: len(order), Choke: piece.Choke, ChokeNote: piece.ChokeNote}
+		summary := KitPieceReport{Name: piece.Name, Note: piece.Note, Hits: len(order), Choke: piece.Choke, ChokeNote: piece.ChokeNote, Takes: pieceTakes[i]}
 		start := len(pack.Manifest.Zones)
 		for layer := 0; layer < piece.Layers; layer++ {
 			from, to := layer*len(order)/piece.Layers, (layer+1)*len(order)/piece.Layers
@@ -441,7 +555,9 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 	records := make([]kitAnalysis, len(hits))
 	for i, piece := range recipe.Pieces {
 		for n := first[i]; n < first[i+1]; n++ {
-			records[n] = kitAnalysis{Piece: piece.Name, Asset: ids[n], Hit: hits[n]}
+			h := hits[n]
+			h.LoudnessDB, h.TuneCents, h.CutDB = stable(h.LoudnessDB), stable(h.TuneCents), stable(h.CutDB)
+			records[n] = kitAnalysis{Piece: piece.Name, Asset: ids[n], Clipped: clipped[n], Hit: h}
 		}
 	}
 	analysis, err := json.MarshalIndent(records, "", "  ")
@@ -468,5 +584,23 @@ func readKitTake(takes fs.FS, name string) (Audio, error) {
 	if err != nil {
 		return Audio{}, err
 	}
+	if h, err := audioasset.ReadWAVHeader(bytes.NewReader(data)); err == nil && h.Frames > MaxFrames {
+		return Audio{}, fmt.Errorf("the file holds %.0f s of audio (%d frames at %d Hz), more than the %d frames a piece allows in all its takes (%.0f s at 44.1 kHz, %.0f s at 48 kHz); record fewer hits, or cut the silence out of it", float64(h.Frames)/float64(h.RateHz), h.Frames, h.RateHz, MaxFrames, float64(MaxFrames)/44100, float64(MaxFrames)/48000)
+	}
 	return DecodeWAV(data)
+}
+
+// checkKitBudget refuses a piece whose takes together hold more frames than a
+// piece may. It says how much they hold and what to do, where Analyze can only
+// say that a limit was passed.
+func checkKitBudget(piece string, inputs []Audio) error {
+	frames, seconds := 0, 0.0
+	for _, a := range inputs {
+		frames += len(a.PCM)
+		seconds += float64(len(a.PCM)) / float64(max(1, a.Rate))
+	}
+	if frames <= MaxFrames {
+		return nil
+	}
+	return fmt.Errorf("piece %q: the takes hold %.0f s of audio (%d frames), more than the %d frames a piece allows in all its takes (%.0f s at 44.1 kHz, %.0f s at 48 kHz); record fewer hits per dynamic, or cut the silence out of the takes", piece, seconds, frames, MaxFrames, float64(MaxFrames)/44100, float64(MaxFrames)/48000)
 }

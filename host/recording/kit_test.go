@@ -464,7 +464,7 @@ func TestKitBuildRefusals(t *testing.T) {
 		{"over the frame limit", func(r *KitRecipe, f fstest.MapFS) string {
 			f["kick-soft.wav"] = &fstest.MapFile{Data: testwav.Bytes(48000, 1, 24, MaxFrames+1, 1)}
 			return "session"
-		}, `piece "kick": take "kick-soft.wav": recording exceeds frame or sample-rate limit`},
+		}, `piece "kick": take "kick-soft.wav": the file holds 175 s of audio (8388609 frames at 48000 Hz), more than the 8388608 frames a piece allows in all its takes (190 s at 44.1 kHz, 175 s at 48 kHz); record fewer hits, or cut the silence out of it`},
 		{"more than 32 hits in a layer", func(r *KitRecipe, f fstest.MapFS) string {
 			levels := make([]float64, 33)
 			for i := range levels {
@@ -934,5 +934,171 @@ func TestKitStarterFallsBackToATourOfThePieces(t *testing.T) {
 	var out bytes.Buffer
 	if report, err := render.WAV(score, render.Options{AssetDir: dir, SampleRate: 48000, Bits: 32, Bars: 1, TailSec: .5}, &out); err != nil || report.OutputPeak < .05 {
 		t.Fatalf("render: %v, peak %g", err, report.OutputPeak)
+	}
+}
+
+// Clean takes, spaced as the manual asks, must not raise any warning: a warning
+// that cries wolf teaches people to ignore the real ones.
+func TestKitSessionOfCleanTakesHasNoWarnings(t *testing.T) {
+	_, report, recipe, _ := buildSession(t)
+	if warnings := report.Warnings(); len(warnings) != 0 {
+		t.Fatalf("clean takes raised warnings:\n%s", strings.Join(warnings, "\n"))
+	}
+	for i, piece := range report.Pieces {
+		if len(piece.Takes) != len(recipe.Pieces[i].Takes) {
+			t.Fatalf("%s: %d take reports for %d takes", piece.Name, len(piece.Takes), len(recipe.Pieces[i].Takes))
+		}
+		for n, take := range piece.Takes {
+			if take.Name != recipe.Pieces[i].Takes[n] || take.Hits == 0 || take.Cut != 0 || take.Clipped != 0 || take.Merged != 0 || take.NoQuiet {
+				t.Errorf("%s: take report %+v", piece.Name, take)
+			}
+		}
+	}
+}
+
+// One session with each fault the guide warns about. The takes that need
+// recording again are named, with numbers, and the clean piece is not.
+func TestKitReportsTakesToRecordAgain(t *testing.T) {
+	takes := fstest.MapFS{
+		// Six kicks 0.4 s apart: three are folded into the one before.
+		"kick.wav": {Data: testwav.Spaced(48000, testwav.Kick, testwav.Layout{Lead: .5, Spacing: .4, After: 1.5, RoomDB: -80}, .8, .82, .81, .8, .79, .83)},
+		// Three hits recorded with the gain too high, and one soft hit.
+		"tom.wav": {Data: testwav.Take(48000, testwav.Kick, 1.6, 1.7, 1.65, .5)},
+		// A crash that rings 14 s, hit every 4 s.
+		"crash.wav": {Data: testwav.Spaced(48000, testwav.LongCrash, testwav.Layout{Lead: .5, Spacing: 4, After: 2, RoomDB: -80}, .5, .52, .51, .5)},
+		// The same with no room tone before the first hit and little after the last.
+		"ride.wav": {Data: testwav.Spaced(48000, testwav.LongCrash, testwav.Layout{Spacing: 4, After: 1, RoomDB: -80}, .5, .52, .51, .5)},
+		"hat.wav":  {Data: testwav.Take(48000, testwav.ClosedHat, .35, .38, .36)},
+	}
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{
+		{Name: "kick", Note: 36, Layers: 1, OneShot: true, Takes: []string{"kick.wav"}},
+		{Name: "tom", Note: 45, Layers: 1, OneShot: true, Takes: []string{"tom.wav"}},
+		{Name: "crash", Note: 49, Layers: 1, OneShot: true, ChokeNote: 26, Takes: []string{"crash.wav"}},
+		{Name: "ride", Note: 51, Layers: 1, OneShot: true, Takes: []string{"ride.wav"}},
+		{Name: "hat", Note: 42, Layers: 1, OneShot: true, Takes: []string{"hat.wav"}},
+	}}
+	pack, report, err := BuildKit("faults", recipe, takes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	take := func(piece int) KitTakeReport { return report.Pieces[piece].Takes[0] }
+	// The folded strikes also ring on when the next hit starts, so some kicks are cut.
+	if k := take(0); k.Hits != 3 || k.Merged != 3 || k.Clipped != 0 {
+		t.Errorf("kick: %+v; want 3 hits and 3 merged attacks", k)
+	}
+	if k := take(1); k.Hits != 4 || k.Clipped != 3 || k.Merged != 0 {
+		t.Errorf("tom: %+v; want 4 hits, 3 clipped", k)
+	}
+	if k := take(2); k.Hits != 4 || k.Cut != 4 || k.NoQuiet || k.CutHighDB < k.CutLowDB || k.CutHighDB > k.LoudestDB-6 || k.CutLowDB < k.QuietDB+10 {
+		t.Errorf("crash: %+v; want 4 hits, all cut at a level above the quiet level", k)
+	}
+	if k := take(3); k.Hits != 4 || !k.NoQuiet || k.LoudestDB-k.NoiseDB > 26 {
+		t.Errorf("ride: %+v; want 4 hits and no quiet stretch", k)
+	}
+	if k := take(4); k.Hits != 3 || k.Cut != 0 || k.Clipped != 0 || k.Merged != 0 || k.NoQuiet {
+		t.Errorf("hat: %+v; want a clean take", k)
+	}
+
+	warnings := report.Warnings()
+	for _, want := range []string{
+		"kick: kick.wav holds 3 attacks within 0.5 s of an earlier hit; each was kept inside that hit, which plays as a double strike; leave 0.5 s or more between hits",
+		"tom: 3 of 4 hits clip at full scale (tom.wav); lower the input gain and record those takes again",
+		"ride: ride.wav has no quiet stretch (its quietest 200 ms is only ",
+		"start every take with 3 seconds of silence",
+		"crash: 4 of 4 hits were cut off while still ringing (crash.wav), at ",
+		" where a finished tail is below ",
+		"; leave more time after each hit",
+	} {
+		found := false
+		for _, w := range warnings {
+			found = found || strings.Contains(w, want)
+		}
+		if !found {
+			t.Errorf("no warning contains %q:\n%s", want, strings.Join(warnings, "\n"))
+		}
+	}
+	for _, w := range warnings {
+		if strings.HasPrefix(w, "hat:") {
+			t.Errorf("the clean hat piece raised a warning: %s", w)
+		}
+	}
+
+	// The analysis record keeps what the receipt said about each hit.
+	var analysis []struct {
+		Piece   string  `json:"piece"`
+		Clipped int     `json:"clipped"`
+		Cut     bool    `json:"cut"`
+		CutDB   float64 `json:"cutDB"`
+	}
+	if err := json.Unmarshal(pack.Files["analysis.json"], &analysis); err != nil {
+		t.Fatal(err)
+	}
+	clipped, cut := 0, 0
+	for _, a := range analysis {
+		if a.Clipped > 0 {
+			clipped++
+			if a.Piece != "tom" {
+				t.Errorf("a %s hit is recorded as clipped", a.Piece)
+			}
+		}
+		if a.Cut {
+			cut++
+			if a.CutDB == 0 || (a.Piece != "crash" && a.Piece != "ride" && a.Piece != "kick") {
+				t.Errorf("a %s hit is recorded as cut at %g dBFS", a.Piece, a.CutDB)
+			}
+		}
+	}
+	if clipped != 3 || cut < 4 {
+		t.Errorf("analysis.json records %d clipped and %d cut hits", clipped, cut)
+	}
+}
+
+// The warnings are plain sentences. A single fault reads in the singular, and a
+// piece with the same fault in several takes names each take once.
+func TestKitWarningsReadAsSentences(t *testing.T) {
+	report := KitReport{Pieces: []KitPieceReport{
+		{Name: "snare", Takes: []KitTakeReport{{Name: "snare-soft.wav", Hits: 5, Merged: 1}, {Name: "snare-hard.wav", Hits: 5, Merged: 2}}},
+		{Name: "crash", Takes: []KitTakeReport{
+			{Name: "crash-soft.wav", Hits: 5, Cut: 2, CutLowDB: -41.2, CutHighDB: -40.6, QuietDB: -64},
+			{Name: "crash-medium.wav", Hits: 5},
+			{Name: "crash-hard.wav", Hits: 5, Cut: 5, CutLowDB: -33.4, CutHighDB: -27.4, QuietDB: -62, Clipped: 1},
+		}},
+		{Name: "ride", Takes: []KitTakeReport{{Name: "ride.wav", Hits: 1, Cut: 1, CutLowDB: -30.2, CutHighDB: -30.2, QuietDB: -66}}},
+		{Name: "tom", Takes: []KitTakeReport{{Name: "tom.wav", Hits: 4}}},
+	}}
+	want := []string{
+		"snare: snare-soft.wav holds 1 attack within 0.5 s of an earlier hit; it was kept inside that hit, which plays as a double strike; leave 0.5 s or more between hits",
+		"snare: snare-hard.wav holds 2 attacks within 0.5 s of an earlier hit; each was kept inside that hit, which plays as a double strike; leave 0.5 s or more between hits",
+		"crash: 7 of 15 hits were cut off while still ringing (crash-soft.wav, crash-hard.wav), at -41 to -27 dBFS where a finished tail is below -62 dBFS; leave more time after each hit",
+		"crash: 1 of 15 hits clips at full scale (crash-hard.wav); lower the input gain and record those takes again",
+		"ride: 1 of 1 hit was cut off while still ringing (ride.wav), at -30 dBFS where a finished tail is below -66 dBFS; leave more time after each hit",
+	}
+	got := report.Warnings()
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("warnings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The error for a piece over the frame budget says how much the takes hold, what
+// the limit is and what to do, so no one has to count frames.
+func TestKitRefusesAPieceOverTheFrameBudgetWithNumbers(t *testing.T) {
+	// Each take is under the limit; together they hold 10 million frames.
+	long := testwav.Bytes(44100, 1, 24, 5_000_000, 1)
+	takes := fstest.MapFS{"crash-a.wav": {Data: long}, "crash-b.wav": {Data: long}}
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{
+		{Name: "crash", Note: 49, Layers: 1, OneShot: true, Takes: []string{"crash-a.wav", "crash-b.wav"}},
+	}}
+	_, _, err := BuildKit("long", recipe, takes)
+	want := `piece "crash": the takes hold 227 s of audio (10000000 frames), more than the 8388608 frames a piece allows in all its takes (190 s at 44.1 kHz, 175 s at 48 kHz); record fewer hits per dynamic, or cut the silence out of the takes`
+	if err == nil || err.Error() != want {
+		t.Fatalf("error %v\nwant   %s", err, want)
+	}
+	// Analyze says the same in fewer words, for the callers that have no pieces.
+	a, err := DecodeWAV(long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Analyze([]Audio{a, a}, Options{Root: 49, Layers: 1, Ringing: true}); err == nil || !strings.Contains(err.Error(), "hold 10000000 frames (227 s), over the limit of 8388608 frames in all (190 s at 44.1 kHz, 175 s at 48 kHz)") {
+		t.Fatalf("Analyze error: %v", err)
 	}
 }

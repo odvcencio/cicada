@@ -73,6 +73,9 @@ func recordKitCommand(args []string, output io.Writer) error {
 	if err = table.Flush(); err != nil {
 		return err
 	}
+	for _, warning := range report.Warnings() {
+		fmt.Fprintf(output, "warning: %s\n", warning)
+	}
 	_, err = fmt.Fprintf(output, "%sstarter score: %s\n", pack.Source(filepath.Join(*dir, "manifest.json"), recipe.Pieces[0].Note), filepath.Join(*dir, "instrument.cicada"))
 	return err
 }

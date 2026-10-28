@@ -169,14 +169,79 @@ func TestRecordKitHelp(t *testing.T) {
 		"cicada record-kit -o <pack-directory> [flags] <recipe.json>",
 		"build one drum-kit sampler pack from your own recorded takes",
 		"-o <directory>", "--name <id>", "--help", "Put flags before the recipe", "owner recording",
+		"Warns about takes to record again", "provenance and grants no redistribution rights",
 	} {
 		if !strings.Contains(byHelp.String(), want) {
 			t.Errorf("help lacks %q:\n%s", want, byHelp.String())
 		}
 	}
+	if strings.Contains(byHelp.String(), "owner recording license") {
+		t.Errorf("the help calls the owner recording label a license, which grants rights it does not:\n%s", byHelp.String())
+	}
 	var global bytes.Buffer
 	handleCLIHelp([]string{"--help"}, &global, &stderr)
 	if !strings.Contains(global.String(), "record-pack, record-kit, fit-model") {
 		t.Errorf("the command list lacks record-kit:\n%s", global.String())
+	}
+}
+
+// The receipt tells the player which takes to record again, between the table
+// and the sampler declaration, and the pack is still written.
+func TestRecordKitPrintsWarningsForTakesToRecordAgain(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "session")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"kick.wav":  testwav.Spaced(48000, testwav.Kick, testwav.Layout{Lead: .5, Spacing: .4, After: 1.5, RoomDB: -80}, .8, .82, .81, .8, .79, .83),
+		"tom.wav":   testwav.Take(48000, testwav.Kick, 1.6, 1.7, 1.65, .5),
+		"crash.wav": testwav.Spaced(48000, testwav.LongCrash, testwav.Layout{Lead: .5, Spacing: 4, After: 2, RoomDB: -80}, .5, .52, .51, .5),
+		"hat.wav":   testwav.Take(48000, testwav.ClosedHat, .35, .38, .36),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recipe := `{"format": "cicada.kit-recipe/1", "pieces": [
+  {"name": "kick", "note": 36, "layers": 1, "takes": ["kick.wav"]},
+  {"name": "tom", "note": 45, "layers": 1, "takes": ["tom.wav"]},
+  {"name": "crash", "note": 49, "layers": 1, "choke_note": 26, "takes": ["crash.wav"]},
+  {"name": "hat", "note": 42, "layers": 1, "takes": ["hat.wav"]}
+]}`
+	path := filepath.Join(dir, "kit.json")
+	if err := os.WriteFile(path, []byte(recipe), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := filepath.Join(t.TempDir(), "faults")
+	var output bytes.Buffer
+	if err := recordKitCommand([]string{"-o", pack, "--name", "faults", path}, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, want := range []string{
+		"warning: kick: kick.wav holds 3 attacks within 0.5 s of an earlier hit",
+		"warning: tom: 3 of 4 hits clip at full scale (tom.wav); lower the input gain and record those takes again",
+		"warning: crash: 4 of 4 hits were cut off while still ringing (crash.wav), at -",
+		"where a finished tail is below -",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("receipt lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "warning: hat:") {
+		t.Errorf("the clean hat piece raised a warning:\n%s", text)
+	}
+	// Warnings come after the table and before the declaration to copy.
+	table, warning, declaration := strings.Index(text, "piece "), strings.Index(text, "warning:"), strings.Index(text, "sampler faults {")
+	if !(table >= 0 && table < warning && warning < declaration) {
+		t.Errorf("order of table %d, warnings %d, declaration %d:\n%s", table, warning, declaration, text)
+	}
+	if _, err := os.Stat(filepath.Join(pack, "manifest.json")); err != nil {
+		t.Errorf("warnings stopped the pack from being written: %v", err)
+	}
+	// A clean session prints no warning at all.
+	var clean bytes.Buffer
+	if err := recordKitCommand([]string{"-o", filepath.Join(t.TempDir(), "clean"), writeKitSession(t)}, &clean); err != nil || strings.Contains(clean.String(), "warning") {
+		t.Errorf("clean session: %v\n%s", err, clean.String())
 	}
 }
