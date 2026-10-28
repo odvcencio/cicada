@@ -13,6 +13,17 @@ import (
 const CPUBudgetMs = 0.67
 const HostSampleInterval = 30 * time.Second
 
+// Excess blocks. The Node fallback times each block with process.cpuUsage(), which adds
+// up the CPU time of every thread in the process. Linux credits a thread other than the
+// caller only at a scheduler tick, so a tick inside a block can add a whole tick (1 ms at
+// 1000 Hz) of another thread's time. cmd/cicada/browser_cpu_node.js counts the excess
+// blocks, the measured blocks that ran more than ExcessBlockMs above the median (a Go test
+// keeps the two constants equal). Another thread's time and slow render work both make
+// them, so the count cannot tell the causes apart. It explains a failed budget
+// (EvaluateCPU) and never excuses one.
+const ExcessBlockMs = 0.9
+const ExcessBlockShareLimit = 0.005
+
 type HostSample struct {
 	SampledAt         time.Time `json:"sampledAt"`
 	Load1             float64   `json:"loadAverage1Minute"`
@@ -149,5 +160,31 @@ func Evaluate(timingPass, correctnessPass bool, samples []HostSample, clockResol
 		result.TimingVerdict = "fail"
 	}
 	result.GatePass = correctnessPass && (timingPass || result.TimingVerdict == "inconclusive")
+	return result
+}
+
+// ExcessBlockNote returns the sentence to add to a failed CPU timing when the share of
+// excess blocks is over ExcessBlockShareLimit, and "" when it is not.
+func ExcessBlockNote(share float64) string {
+	if !(share > ExcessBlockShareLimit) {
+		return ""
+	}
+	return fmt.Sprintf("%.2f%% of measured blocks ran more than %.1f ms above the median, over the %.2f%% limit for a clean counter; firstExcessBlocks in the CPU report lists them: evenly spaced indices suggest another thread's CPU time in the counter, indices at note or bar starts suggest render work", 100*share, ExcessBlockMs, 100*ExcessBlockShareLimit)
+}
+
+// EvaluateCPU is Evaluate for the CPU budget of the Node fallback. excessBlockShare is the
+// share of excess blocks in the same report (0 when the engine reports none). It fails
+// closed: over ExcessBlockShareLimit it adds ExcessBlockNote to a failed verdict and
+// changes nothing else. Another thread's time can only add to a block, so it can turn a
+// pass into a failure but not the reverse, and a pass stays a pass. The count cannot show
+// that the excess blocks were not render work, so a failure stays a failure.
+func EvaluateCPU(timingPass, correctnessPass bool, samples []HostSample, clockResolutionMs, budgetMs, excessBlockShare float64) Result {
+	result := Evaluate(timingPass, correctnessPass, samples, clockResolutionMs, budgetMs)
+	if note := ExcessBlockNote(excessBlockShare); note != "" && result.TimingVerdict == "fail" {
+		if result.TimingReason != "" {
+			result.TimingReason += "; "
+		}
+		result.TimingReason += note
+	}
 	return result
 }

@@ -1273,9 +1273,16 @@ func (e *Engine) applyPending() {
 	}
 }
 
+// commandPriority orders the commands that are due together: a lower number
+// applies first, and commands of one priority keep their arrival order. (A
+// pattern edit still waits behind an earlier edit that is not yet due.)
 func commandPriority(op cmd.Op) int {
 	switch op {
 	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek, cmd.OpPlay:
+		return 0
+	case cmd.OpSetPhraseBars:
+		// A phrase-quantized state or stinger (priority 1) reads the length, so a
+		// host may send both in one render block, in either order.
 		return 0
 	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger, cmd.OpSetSceneBinding:
 		return 1

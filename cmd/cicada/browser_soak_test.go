@@ -71,6 +71,11 @@ func TestBrowserSoak(t *testing.T) {
 	if err := json.Unmarshal(cpuData, &cpuReport); err != nil || cpuReport.Engine != expectedCPUEngine {
 		t.Fatalf("invalid browser CPU report: expected %q, got %s (%v)", expectedCPUEngine, cpuData, err)
 	}
+	// The Node report says how many blocks ran well above the median, which explains a failed p99.
+	cpuExcessShare, err := browserSoakCPUExcessBlockShare(cpuReport)
+	if err != nil {
+		t.Fatalf("%v: %s", err, cpuData)
+	}
 
 	type snapshot struct {
 		CallbackSamples            int     `json:"callbackSamples"`
@@ -254,7 +259,7 @@ func TestBrowserSoak(t *testing.T) {
 	cpuClockResolutionMs := browserSoakCPUClockResolutionMs(cpuReport.Engine, cpuReport.Clock, cpuReport.ClockResolutionMs)
 	verdict := browserSoakVerdict(browserSoakChecks{
 		EditsComplete: editsComplete, Faults: current.Faults, TransportAdvanced: transportAdvanced,
-		MemoryStable: memoryStable, Underruns: soakUnderruns, CPUUsedMs: cpuBudgetMs,
+		MemoryStable: memoryStable, Underruns: soakUnderruns, CPUUsedMs: cpuBudgetMs, CPUExcessBlockShare: cpuExcessShare,
 		HighResolutionClock: current.Clock, QuantumMs: current.QuantumMs,
 	}, hostSamples, cpuReport.HostLoadSamples, cpuClockResolutionMs)
 	soakPass := verdict.GatePass
@@ -335,6 +340,7 @@ func TestBrowserSoak(t *testing.T) {
 		"browserCPUBudgetMetric":         cpuBudgetMetric,
 		"browserCPUClock":                cpuReport.Clock,
 		"browserCPUClockResolutionMs":    cpuClockResolutionMs,
+		"browserCPUExcessBlockShare":     cpuExcessShare,
 	}
 	bytes, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -371,6 +377,6 @@ func TestBrowserSoak(t *testing.T) {
 		t.Errorf("WASM instances did not settle or exceeded the transient bound: warmup=%d peak=%d final=%d instances=%d limit=%d", afterWarmup.MemoryBytes, memoryPeak, current.MemoryBytes, current.InstanceCount, memoryLimit)
 	}
 	if verdict.CPUTiming.TimingVerdict != "inconclusive" && !cpuWithinLimit {
-		t.Errorf("browser CPU metric %.4f ms/callback exceeds 0.67 ms budget", cpuBudgetMs)
+		t.Error(browserSoakCPUBudgetError(cpuBudgetMs, verdict.CPUTiming))
 	}
 }

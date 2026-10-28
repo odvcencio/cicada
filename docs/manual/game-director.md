@@ -70,7 +70,10 @@ game.Handle(message)
 an error. A real game's bounded queue transfers records to the goroutine that
 owns `Engine.Push` and `Engine.Render`; do not call them concurrently. Keep SDK
 calls and `Handle` on one goroutine too. Setup installs macros, layers, and phrase
-length before playback. If setup fails partway, reset and set up a fresh engine.
+length before playback. The first state request may reach the engine in the same
+render block: the kernel applies the phrase length before state and stinger
+requests that are due with it, so `land = phrase` needs no block in between. If
+setup fails partway, reset and set up a fresh engine.
 
 Run [the complete Go game loop](../../examples/game-director/main.go):
 
@@ -81,6 +84,23 @@ GOWORK=off go run ./examples/game-director -manifest build/game-director.json
 It logs eight bars, enters combat, raises intensity, and triggers a pickup cue.
 The output JSON is the control manifest for JS. Compile the same project to a
 kernel image with `project.CompileEngine` and `kernelimage.Encode` for the browser.
+
+A host that does not run Go can write the manifest with `cicada director`,
+which makes the same file from a score without building the example:
+
+```sh
+cicada director examples/game-director.cicada -o build/game-director.json
+```
+
+A browser host needs the project image as well as the manifest, and `cicada
+director` writes only the manifest. Build the image as above, or take
+`score-48000.bin` from a `cicada wam2` export of the same score.
+
+`--rate` sets the manifest's sample rate to 44100, 48000 (the default) or 96000
+Hz. Create the audio context at that rate, because the manifest holds frame
+counts for smoothing and crossfades. The command refuses a score that has no
+`live` block or that has more than 16 tracks, and it replaces an existing
+output file.
 
 ## JavaScript and TypeScript
 
@@ -101,6 +121,8 @@ game.triggerStinger('pickup');
 
 for (const message of decodeMessages(messageBytes)) game.handle(message);
 ```
+
+Here `manifest` is the parsed JSON that `cicada director` writes.
 
 [The browser game example](../../examples/game-director/game.mjs) initializes a
 worklet, returns its reusable message buffer, starts playback, and exposes

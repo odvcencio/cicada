@@ -121,6 +121,11 @@ func (w *loweringWalker) referenceText(name string, position Position) string {
 			}
 			return namespace + "." + rest
 		}
+		// model.<piece> names an engine modeled kit piece, which no import supplies,
+		// so it resolves in every scope. An import bound to model still owns the name.
+		if first == "model" {
+			return name
+		}
 		// Flattened source may contain fully qualified declarations. Only sources
 		// loaded with an import scope require explicit import bindings.
 		if w.bindings != nil {

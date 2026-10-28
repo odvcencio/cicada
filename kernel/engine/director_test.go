@@ -188,3 +188,149 @@ func TestDirectorInitialLayerObservation(t *testing.T) {
 	}
 	t.Fatal("first bar did not report the actual layer mask")
 }
+
+// A host may send the phrase length and a phrase-quantized request in one render
+// block, in either order, or queue both for one tick. The length applies first,
+// so the request waits for the next boundary of that length instead of faulting
+// or using an earlier length.
+func TestDirectorPhraseLengthPrecedesRequestsInTheSameBlock(t *testing.T) {
+	phrase := uint32(cmd.QuantizePhrase)
+	state := cmd.Command{Op: cmd.OpSetState, Track: 255, Index: 1, Arg0: 1 | phrase<<16}
+	stinger := cmd.Command{Op: cmd.OpTriggerStinger, Track: 2, Arg0: phrase, Arg1: 10}
+	clock, _ := seq.NewClock(48000, 120000)
+	const now = 3 * seq.TicksPerBar / 2 // the middle of a two-bar phrase
+	for _, tc := range []struct {
+		name    string
+		earlier uint32 // a phrase length set in an earlier block, or zero
+		bars    uint32
+		request cmd.Command
+		first   bool  // the request arrives ahead of the length
+		tick    int64 // queue both for this tick instead of sending them at now
+		kind    cmd.Kind
+		landing int64
+	}{
+		{"state after length", 0, 2, state, false, 0, cmd.StateChanged, 2 * seq.TicksPerBar},
+		{"state before length", 0, 2, state, true, 0, cmd.StateChanged, 2 * seq.TicksPerBar},
+		{"stinger after length", 0, 2, stinger, false, 0, cmd.StingerStarted, 2 * seq.TicksPerBar},
+		{"both queued for one tick", 0, 2, state, false, now, cmd.StateChanged, 2 * seq.TicksPerBar},
+		{"new length replaces an earlier one", 2, 4, state, false, 0, cmd.StateChanged, 4 * seq.TicksPerBar},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := directorEngine(t, 128)
+			push := func(commands ...cmd.Command) {
+				t.Helper()
+				if !e.PushBatch(commands) {
+					t.Fatal("push")
+				}
+			}
+			if tc.earlier != 0 {
+				push(cmd.Command{Op: cmd.OpSetPhraseBars, Track: 255, Arg0: tc.earlier})
+			}
+			push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+			batch := []cmd.Command{{Op: cmd.OpSetPhraseBars, Track: 255, Arg0: tc.bars}, tc.request}
+			if tc.first {
+				batch[0], batch[1] = batch[1], batch[0]
+			}
+			if tc.tick != 0 {
+				batch[0].Tick, batch[1].Tick = tc.tick, tc.tick
+				push(batch...)
+			}
+			renderDirector(t, e, int(clock.SampleAtTick(now)))
+			if tc.tick == 0 {
+				push(batch...)
+			}
+			var landed []cmd.Message
+			for _, m := range renderDirector(t, e, int(clock.SampleAtTick(tc.landing)-clock.SampleAtTick(now))+1) {
+				if m.Kind == tc.kind {
+					landed = append(landed, m)
+				}
+			}
+			if len(landed) != 1 || landed[0].Tick != tc.landing {
+				t.Fatalf("landing %+v, want one at tick %d", landed, tc.landing)
+			}
+		})
+	}
+}
+
+// The length counts only when it applies no later than the request. One stamped
+// for a later tick has not applied when the request is due, so the request still
+// faults, as the manual says.
+func TestDirectorPhraseLengthForALaterTickDoesNotCount(t *testing.T) {
+	e := directorEngine(t, 128)
+	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255}) {
+		t.Fatal("push")
+	}
+	clock, _ := seq.NewClock(48000, 120000)
+	const now = 3 * seq.TicksPerBar / 2 // the middle of a two-bar phrase
+	renderDirector(t, e, int(clock.SampleAtTick(now)))
+	if !e.PushBatch([]cmd.Command{
+		{Op: cmd.OpSetPhraseBars, Track: 255, Arg0: 2, Tick: now + seq.PPQ},
+		{Op: cmd.OpSetState, Track: 255, Index: 1, Arg0: 1 | uint32(cmd.QuantizePhrase)<<16},
+	}) {
+		t.Fatal("push")
+	}
+	l, r := make([]float32, 128), make([]float32, 128)
+	e.Render(l, r)
+	var m cmd.Message
+	for e.Poll(&m) {
+		if m.Kind == cmd.Fault && m.A == cmd.FaultDirectorQuantize {
+			return
+		}
+	}
+	t.Fatal("a phrase length stamped for a later tick counted as set")
+}
+
+// Only the phrase length is read by a state request; the other live setup
+// commands fill tables that the bar line reads. So the whole setup and the first
+// state may share a block in any order, and the messages and the state in force
+// equal those of a host that renders a block between setup and state.
+func TestDirectorLiveSetupAndFirstStateShareABlock(t *testing.T) {
+	all := []cmd.Command{
+		{Op: cmd.OpDefineMacro, Track: 255, Arg0: math.Float32bits(.9)},
+		{Op: cmd.OpSetLayers, Track: 255, Arg0: 128, Arg1: 3},
+		{Op: cmd.OpSetLayerMasks, Track: 255, Arg0: 5 | 7<<16, Arg1: 7 | 7<<16},
+		{Op: cmd.OpSetPhraseBars, Track: 255, Arg0: 2},
+		{Op: cmd.OpSetState, Track: 255, Index: 1, Arg0: 1 | uint32(cmd.QuantizePhrase)<<16},
+	}
+	type result struct {
+		messages []cmd.Message
+		mask     trackMask
+		scene    int
+		macro    float32
+	}
+	clock, _ := seq.NewClock(48000, 120000)
+	run := func(batches ...[]cmd.Command) result {
+		e := directorEngine(t, 128)
+		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+		frames := int(clock.SampleAtTick(3 * seq.TicksPerBar / 2))
+		messages := renderDirector(t, e, frames)
+		for _, batch := range batches {
+			if !e.PushBatch(batch) {
+				t.Fatal("push")
+			}
+			messages = append(messages, renderDirector(t, e, 128)...)
+			frames += 128
+		}
+		messages = append(messages, renderDirector(t, e, int(clock.SampleAtTick(2*seq.TicksPerBar))+256-frames)...)
+		return result{messages, e.layerMask, e.currentScene, e.macroCurrent[0]}
+	}
+	want := run(all[:4], all[4:])
+	landing := int64(-1)
+	for _, m := range want.messages {
+		if m.Kind == cmd.StateChanged {
+			landing = m.Tick
+		}
+	}
+	if landing != 2*seq.TicksPerBar || want.mask != 7 || want.scene != 1 || want.macro != .9 {
+		t.Fatalf("separate blocks: landing %d, %+v", landing, want)
+	}
+	for _, order := range [][]int{{0, 1, 2, 3, 4}, {4, 0, 1, 2, 3}, {3, 4, 0, 1, 2}, {0, 1, 2, 4, 3}, {4, 3, 2, 1, 0}} {
+		batch := make([]cmd.Command, len(order))
+		for i, k := range order {
+			batch[i] = all[k]
+		}
+		if got := run(batch); !reflect.DeepEqual(got, want) {
+			t.Fatalf("order %v differs from setup and state in separate blocks", order)
+		}
+	}
+}

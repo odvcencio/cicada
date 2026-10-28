@@ -4,14 +4,19 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"m31labs.dev/cicada/internal/soaktiming"
 )
 
 func TestBrowserParity(t *testing.T) {
@@ -536,30 +541,67 @@ func TestBrowserCPUReport(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	command := exec.Command("node", "browser_cpu_node.js", filepath.Join(temp, "kernel.wasm"), filepath.Join(temp, "kernel.image"), "11264")
+	command := browserCPUNodeCommand(filepath.Join(temp, "kernel.wasm"), filepath.Join(temp, "kernel.image"), 11264)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Node V8 kernel timing failed: %v\n%s", err, output)
 	}
 	var report struct {
-		Engine            string  `json:"engine"`
-		Clock             string  `json:"clock"`
-		ClockResolutionMs float64 `json:"cpuClockResolutionMs"`
-		Blocks            int     `json:"blocks"`
-		Measured          int     `json:"measuredBlocks"`
-		P50               float64 `json:"p50"`
-		P95               float64 `json:"p95"`
-		P99               float64 `json:"p99"`
-		Max               float64 `json:"max"`
-		Faults            int     `json:"faults"`
-		MemoryBytes       int     `json:"finalMemoryBytes"`
-		MemoryGrowth      int     `json:"memoryGrowthAfterWarmupBytes"`
+		Engine            string   `json:"engine"`
+		Clock             string   `json:"clock"`
+		ClockResolutionMs float64  `json:"cpuClockResolutionMs"`
+		ClockWarmupPairs  int      `json:"clockWarmupPairs"`
+		Blocks            int      `json:"blocks"`
+		Measured          int      `json:"measuredBlocks"`
+		P50               float64  `json:"p50"`
+		P95               float64  `json:"p95"`
+		P99               float64  `json:"p99"`
+		Max               float64  `json:"max"`
+		ExcessThresholdMs float64  `json:"excessBlockThresholdMs"`
+		ExcessBlocks      int      `json:"excessBlocks"`
+		ExcessBlockShare  *float64 `json:"excessBlockShare"`
+		FirstExcessBlocks []int    `json:"firstExcessBlocks"`
+		ExecArgv          []string `json:"execArgv"`
+		Faults            int      `json:"faults"`
+		MemoryBytes       int      `json:"finalMemoryBytes"`
+		MemoryGrowth      int      `json:"memoryGrowthAfterWarmupBytes"`
 	}
 	if err := json.Unmarshal(output, &report); err != nil {
 		t.Fatalf("decode Node CPU report %s: %v", output, err)
 	}
 	if report.Engine != "Node V8 WebAssembly" || report.Measured != report.Blocks-256 || report.MemoryGrowth != 0 || report.Faults != 0 {
 		t.Fatalf("incomplete Node CPU timing or kernel soak: %+v", report)
+	}
+	// Spec section 9 takes the 99th percentile over at least 10,000 blocks.
+	if report.Measured < 10_000 {
+		t.Fatalf("Node CPU timing measured %d blocks, want at least 10,000", report.Measured)
+	}
+	// Without these flags the counter includes V8's background threads (see browserCPUNodeFlags).
+	if !slices.Equal(report.ExecArgv, browserCPUNodeFlags) || report.ExcessBlockShare == nil {
+		t.Fatalf("Node CPU report lacks the evidence of how it was measured: node flags %q (want %q), excessBlockShare present=%v", report.ExecArgv, browserCPUNodeFlags, report.ExcessBlockShare != nil)
+	}
+	// With them, V8 compiles the script's own clock reads on the timed thread unless the
+	// script has made enough of them first (warmCPUClock).
+	if report.ClockWarmupPairs < 10_000 {
+		t.Fatalf("Node CPU timing warmed the clock with %d reading pairs, want at least 10,000", report.ClockWarmupPairs)
+	}
+	excessShare := *report.ExcessBlockShare
+	excessPercent := 100 * excessShare
+	// The excess-block summary must agree with itself whatever the blocks were, so a wrong
+	// threshold, share or index list fails here even when no block is slow.
+	if math.Abs(report.ExcessThresholdMs-(report.P50+soaktiming.ExcessBlockMs)) > 1e-9 {
+		t.Fatalf("excess block threshold %.9f ms is not p50 %.9f ms + %.1f ms", report.ExcessThresholdMs, report.P50, soaktiming.ExcessBlockMs)
+	}
+	if want := int(math.Round(excessShare * float64(report.Measured))); report.ExcessBlocks != want {
+		t.Fatalf("excessBlocks = %d, but excessBlockShare %.6f of %d measured blocks is %d", report.ExcessBlocks, excessShare, report.Measured, want)
+	}
+	if len(report.FirstExcessBlocks) > report.ExcessBlocks || (report.ExcessBlocks > 0) != (len(report.FirstExcessBlocks) > 0) {
+		t.Fatalf("firstExcessBlocks %v does not match %d excess blocks", report.FirstExcessBlocks, report.ExcessBlocks)
+	}
+	for position, index := range report.FirstExcessBlocks {
+		if index < 0 || index >= report.Measured || (position > 0 && index <= report.FirstExcessBlocks[position-1]) {
+			t.Fatalf("firstExcessBlocks %v must be increasing block numbers below %d", report.FirstExcessBlocks, report.Measured)
+		}
 	}
 	var fullReport map[string]any
 	if err := json.Unmarshal(output, &fullReport); err != nil {
@@ -574,16 +616,21 @@ func TestBrowserCPUReport(t *testing.T) {
 	if err := os.WriteFile(path, append(reportBytes, '\n'), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Browser AudioWorklet clock unavailable; Node V8 WASM fallback (%s), measured clock resolution=%.4f ms, milliseconds per 128-frame block: blocks=%d measured=%d p50=%.4f p95=%.4f p99=%.4f max=%.4f kernel_faults=%d memory=%d growth=%d report=%s", report.Clock, report.ClockResolutionMs, report.Blocks, report.Measured, report.P50, report.P95, report.P99, report.Max, report.Faults, report.MemoryBytes, report.MemoryGrowth, path)
-	// The Node fallback runs on shared CI runners, where one block in a hundred can take
-	// several times longer from OS scheduling. It counts user CPU time only, and the 0.67 ms
-	// budget gates p95; p99 and max are logged, and a p99 above three times the budget
-	// (2.01 ms) still fails, so a pathological tail is caught.
+	t.Logf("Browser AudioWorklet clock unavailable; Node V8 WASM fallback (%s), measured clock resolution=%.4f ms, milliseconds per 128-frame block: blocks=%d measured=%d p50=%.4f p95=%.4f p99=%.4f max=%.4f excess_blocks=%d excess_share=%.3f%% (blocks more than %.1f ms above p50) node_flags=%q kernel_faults=%d memory=%d growth=%d report=%s", report.Clock, report.ClockResolutionMs, report.Blocks, report.Measured, report.P50, report.P95, report.P99, report.Max, report.ExcessBlocks, excessPercent, soaktiming.ExcessBlockMs, report.ExecArgv, report.Faults, report.MemoryBytes, report.MemoryGrowth, path)
+	// The 0.67 ms budget gates p95 here; p99 and max are logged, and a p99 above three times
+	// the budget (2.01 ms) still fails, so a pathological tail is caught. The nightly soak
+	// gates this same p99 at 0.67 ms. Before browserCPUNodeFlags, V8's background threads
+	// reached the process-wide counter at scheduler ticks and put p99 about 1 ms above p50.
+	// A failure here names the share of excess blocks to help find the cause.
 	// The real p99 check is the Windows Chrome CPU report (p99 against 0.67 ms, the real
 	// page clock). Record it with `make release-cpu-report` before any release that changes
 	// the kernel or the AudioWorklet processor.
 	if timingEnforced && (report.P95 > 0.67 || report.P99 > 3*0.67) {
-		t.Fatalf("Node V8 WASM p95 %.4f ms (budget 0.67 ms) or p99 %.4f ms (ceiling 2.01 ms) exceeded; max %.4f ms", report.P95, report.P99, report.Max)
+		excess := fmt.Sprintf("%d blocks (%.3f%%) ran more than %.1f ms above p50", report.ExcessBlocks, excessPercent, soaktiming.ExcessBlockMs)
+		if note := soaktiming.ExcessBlockNote(excessShare); note != "" {
+			excess = note
+		}
+		t.Fatalf("Node V8 WASM p95 %.4f ms (budget 0.67 ms) or p99 %.4f ms (ceiling 2.01 ms) exceeded; max %.4f ms; %s", report.P95, report.P99, report.Max, excess)
 	}
 }
 
