@@ -6,10 +6,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -132,7 +134,444 @@ func TestExportLoudnessLimiterReductionMaximumReportsShortfall(t *testing.T) {
 	if !strings.Contains(err.Error(), "maximum master limiter gain reduction") {
 		t.Fatalf("shortfall does not name the limiter reduction maximum: %v", err)
 	}
+	if result.Passes > 3 {
+		t.Fatalf("limiter-cap shortfall used %d full renders, want at most 3", result.Passes)
+	}
 	t.Logf("METRIC EXPORT-REDUCTION-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
+}
+
+func TestLimiterTargetOutOfReach(t *testing.T) {
+	target := renderTargetOptions{LoudnessTarget: -9, Tolerance: .5}
+	for _, test := range []struct {
+		name                                           string
+		bestLUFS, bestChainReduction, lowestUnsafeLUFS float64
+		want                                           bool
+	}{
+		{"both renders below the band at the reduction maximum", -10, 6, -9.6, true},
+		{"safe render 0.5 dB short of the maximum", -10, maxExportLimiterReductionDB - .5, -9.6, true},
+		{"safe render has more than 0.5 dB of reduction left", -10, maxExportLimiterReductionDB - .51, -9.6, false},
+		{"safe render inside the band", -9.5, 6, -9.2, false},
+		{"unsafe render inside the band", -10, 6, -9.5, false},
+		{"unsafe render above the band", -10, 6, -8.4, false},
+		{"no unsafe render yet", -10, 6, math.Inf(1), false},
+		{"unmeasurable unsafe render", -10, 6, math.NaN(), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := limiterTargetOutOfReach(target, test.bestLUFS, test.bestChainReduction, test.lowestUnsafeLUFS); got != test.want {
+				t.Fatalf("limiterTargetOutOfReach(best %.2f LUFS at %.2f dB, unsafe %.2f LUFS) = %v, want %v", test.bestLUFS, test.bestChainReduction, test.lowestUnsafeLUFS, got, test.want)
+			}
+		})
+	}
+}
+
+// loudestCompliantLUFS bisects the input gain for the loudest render that keeps
+// the master limiter at or below its reduction maximum and the true peak at or
+// below the ceiling. It does not use the export search, so it can check it.
+func loudestCompliantLUFS(t *testing.T, inspection scoreInspection, opts render.Options, target renderTargetOptions) float64 {
+	t.Helper()
+	measure := func(gain float64) (lufs float64, compliant bool) {
+		path := filepath.Join(t.TempDir(), "oracle.wav")
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts.MasterInputGainDB = gain
+		report, err := render.WAV(inspection.score, opts, file)
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		measured, err := render.VerifyWAV(path, render.VerifyOptions{SampleRate: report.SampleRate, Bits: opts.Bits, Bars: report.Bars, From: report.From, TailSec: opts.TailSec, PeakMaxDB: 100, DCMaxDB: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return measured.IntegratedLUFS, report.MaxMasterChainLimiterReductionDB <= maxExportLimiterReductionDB && measured.TruePeakDBTP <= target.TruePeakMaxDBTP
+	}
+	low, high := 0.0, maxExportInputGainDB
+	lufs, compliant := measure(low)
+	if !compliant {
+		t.Fatal("the fixture breaks a guard rail without any gain")
+	}
+	if _, ok := measure(high); ok {
+		t.Fatalf("the fixture stays compliant at the +%.0f dB input gain cap", maxExportInputGainDB)
+	}
+	for high-low > .02 {
+		mid := (low + high) / 2
+		if l, ok := measure(mid); ok {
+			low, lufs = mid, l
+		} else {
+			high = mid
+		}
+	}
+	return lufs
+}
+
+// A target the limiter maximum rules out used to run all six passes. The search
+// now stops once no safe gain can reach it, and the file it keeps must stay
+// close to the loudest render that obeys the guard rails.
+func TestExportLoudnessLimiterShortfallStopsEarlyAtTheLoudestSafeRender(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	ceiling := loudestCompliantLUFS(t, inspection, opts, target)
+	for _, lufs := range []float64{-4, -7} {
+		target.LoudnessTarget = lufs
+		result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "short.wav"), opts, target, nil)
+		var shortfall *loudnessShortfallError
+		if !errors.As(err, &shortfall) || !strings.Contains(err.Error(), "maximum master limiter gain reduction") {
+			t.Fatalf("target %g LUFS: want a limiter shortfall, got %v", lufs, err)
+		}
+		t.Logf("METRIC EXPORT-EARLY-EXIT target=%g passes=%d lufs=%.3f loudest_compliant=%.3f chain_reduction=%.2f", lufs, result.Passes, result.AchievedLUFS, ceiling, result.MasterLimiterReductionDB)
+		if result.Passes >= loudnessPassLimit {
+			t.Fatalf("target %g LUFS used %d of %d passes; the search did not stop early", lufs, result.Passes, loudnessPassLimit)
+		}
+		if result.MasterLimiterReductionDB > maxExportLimiterReductionDB || result.TruePeakDBTP > target.TruePeakMaxDBTP {
+			t.Fatalf("target %g LUFS: kept a render that breaks a guard rail: %+v", lufs, result)
+		}
+		if result.AchievedLUFS > ceiling+.01 || result.AchievedLUFS < ceiling-.25 {
+			t.Fatalf("target %g LUFS: kept %.3f LUFS, want within 0.25 LU below the loudest compliant render at %.3f LUFS", lufs, result.AchievedLUFS, ceiling)
+		}
+	}
+	// A reachable target near the maximum is unaffected: it still finishes
+	// inside its tolerance band.
+	target.LoudnessTarget = -8
+	result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "reach.wav"), opts, target, nil)
+	if err != nil || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > target.Tolerance {
+		t.Fatalf("reachable target -8 LUFS: %v (%+v)", err, result)
+	}
+}
+
+// Passes after the first replay its mix instead of synthesizing it again. The
+// search must still find the same gain and write the same bytes as one that
+// renders every pass in full.
+func TestExportLoudnessMasterCacheKeepsTheSearchResultIdentical(t *testing.T) {
+	defer func(previous func(*notation.Score, render.Options, io.Writer) (render.Report, error)) {
+		loudnessRenderPass = previous
+	}(loudnessRenderPass)
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	if render.UsesScheduledEngine(inspection.score, opts) {
+		t.Fatal("the fixture must use the direct renderer")
+	}
+	search := func(cached bool, lufs float64) (result loudnessFileReport, wav []byte, replays int, err error) {
+		var cache *render.MasterCache
+		loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+			if cached {
+				cache = opts.MasterCache
+			} else {
+				opts.MasterCache = nil
+			}
+			return render.WAV(score, opts, w)
+		}
+		path := filepath.Join(t.TempDir(), "search.wav")
+		target.LoudnessTarget = lufs
+		result, err = renderLoudnessFileReport(inspection.score, path, opts, target, nil)
+		wav, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return result, wav, cache.Replays(), err
+	}
+	for _, lufs := range []float64{-12, -9, -8, -4} {
+		full, fullWAV, _, fullErr := search(false, lufs)
+		cached, cachedWAV, replays, cachedErr := search(true, lufs)
+		t.Logf("METRIC EXPORT-MASTER-CACHE target=%g passes=%d replays=%d lufs=%.3f gain=%+.3f", lufs, cached.Passes, replays, cached.AchievedLUFS, cached.AppliedGainDB)
+		if fmt.Sprint(fullErr) != fmt.Sprint(cachedErr) || !reflect.DeepEqual(full, cached) {
+			t.Fatalf("target %g LUFS: cached search differs:\n got %+v (%v)\nwant %+v (%v)", lufs, cached, cachedErr, full, fullErr)
+		}
+		if !bytes.Equal(fullWAV, cachedWAV) {
+			t.Fatalf("target %g LUFS: cached search wrote different audio", lufs)
+		}
+		if replays != cached.Passes-1 {
+			t.Fatalf("target %g LUFS: %d of %d passes replayed, want every pass after the first", lufs, replays, cached.Passes)
+		}
+	}
+}
+
+// The cache only saves time. When its file cannot be created, for example on a
+// full disk, the search renders every pass in full instead of failing, and
+// returns the report and the audio that it returns with a cache.
+func TestExportLoudnessRunsInFullWhenTheMasterCacheCannotBeCreated(t *testing.T) {
+	defer func(pass func(*notation.Score, render.Options, io.Writer) (render.Report, error), create func(string) (*render.MasterCache, error)) {
+		loudnessRenderPass, newLoudnessMasterCache = pass, create
+	}(loudnessRenderPass, newLoudnessMasterCache)
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	var cachedPasses []bool
+	loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+		cachedPasses = append(cachedPasses, opts.MasterCache != nil)
+		return render.WAV(score, opts, w)
+	}
+	search := func() (loudnessFileReport, []byte, error) {
+		cachedPasses = nil
+		path := filepath.Join(t.TempDir(), "search.wav")
+		result, err := renderLoudnessFileReport(inspection.score, path, opts, target, nil)
+		wav, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("the search wrote no audio: %v (search error: %v)", readErr, err)
+		}
+		return result, wav, err
+	}
+	want, wantWAV, wantErr := search()
+	if len(cachedPasses) < 2 || !cachedPasses[0] {
+		t.Fatalf("passes of the search with a cache, by whether they had one: %v; want several, the first with one", cachedPasses)
+	}
+	newLoudnessMasterCache = func(string) (*render.MasterCache, error) {
+		return nil, errors.New("no space left on device")
+	}
+	got, gotWAV, gotErr := search()
+	if len(cachedPasses) != got.Passes || got.Passes < 2 {
+		t.Fatalf("the search without a cache rendered %d passes and reported %d", len(cachedPasses), got.Passes)
+	}
+	for pass, cached := range cachedPasses {
+		if cached {
+			t.Fatalf("pass %d used a cache that could not be created", pass+1)
+		}
+	}
+	if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !reflect.DeepEqual(got, want) || !bytes.Equal(gotWAV, wantWAV) {
+		t.Fatalf("search without a cache differs:\n got %+v (%v)\nwant %+v (%v)", got, gotErr, want, wantErr)
+	}
+}
+
+var errTestNoSpace = errors.New("no space left on device")
+
+// cacheFilesIn lists the master cache files in dir.
+func cacheFilesIn(t *testing.T, dir string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, ".cicada-master-cache-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// fullDiskWriter takes room bytes and then fails, as a file on a full disk does.
+type fullDiskWriter struct {
+	w    io.Writer
+	room int
+}
+
+func (f *fullDiskWriter) Write(p []byte) (int, error) {
+	if len(p) <= f.room {
+		f.room -= len(p)
+		return f.w.Write(p)
+	}
+	n, err := f.w.Write(p[:f.room])
+	f.room = 0
+	if err == nil {
+		err = errTestNoSpace
+	}
+	return n, err
+}
+
+// diskFaults makes one step of the loudness search fail the way a nearly full
+// disk makes it fail, and records what the search does.
+//
+// The step fails from its from-th call on, but only while a master cache file
+// exists: the cache holds the space that the step needs, so the failure ends
+// once the search has removed the cache. With always set the failure stays
+// after the cache is gone, as it does on a disk that is full without a cache.
+// The steps are "render" (the disk fills part way through a pass), "sync" and
+// "close" (of the pass's file), "copy" (of the pass to the best-render file)
+// and "read" (the stored mix is cut short before a pass replays it).
+type diskFaults struct {
+	t      *testing.T
+	dir    string
+	step   string
+	from   int
+	always bool
+
+	cached     []bool // for each call of the render pass, whether it had a cache
+	failures   int    // failures injected so far
+	failedPass int    // the pass the first failure came in, counting from 1
+	calls      map[string]int
+}
+
+func installDiskFaults(t *testing.T, dir, step string, from int, always bool) *diskFaults {
+	t.Helper()
+	pass, create, open, copyFile := loudnessRenderPass, newLoudnessMasterCache, openLoudnessPassFile, copyLoudnessFile
+	t.Cleanup(func() {
+		loudnessRenderPass, newLoudnessMasterCache, openLoudnessPassFile, copyLoudnessFile = pass, create, open, copyFile
+	})
+	d := &diskFaults{t: t, dir: dir, step: step, from: from, always: always, calls: map[string]int{}}
+	loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+		d.cached = append(d.cached, opts.MasterCache != nil)
+		if d.failures > 0 && opts.MasterCache == nil && len(cacheFilesIn(t, dir)) > 0 {
+			t.Errorf("pass %d renders without the cache, but its file is still on the disk", len(d.cached))
+		}
+		if step == "read" && len(d.cached) >= from {
+			for _, name := range cacheFilesIn(t, dir) {
+				if info, err := os.Stat(name); err == nil && info.Size() > 0 {
+					if err := os.Truncate(name, info.Size()/3); err != nil {
+						t.Fatal(err)
+					}
+					d.fail()
+				}
+			}
+		}
+		if d.fires("render") {
+			w = &fullDiskWriter{w: w, room: 20_000}
+		}
+		return render.WAV(score, opts, w)
+	}
+	openLoudnessPassFile = func(path string) (loudnessPassFile, error) {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+		if err != nil {
+			return nil, err
+		}
+		return &faultyPassFile{File: file, faults: d}, nil
+	}
+	copyLoudnessFile = func(source, destination string) error {
+		if d.fires("copy") {
+			data, err := os.ReadFile(source)
+			if err != nil {
+				return err
+			}
+			// Half of the file arrives before the disk is full.
+			if err := os.WriteFile(destination, data[:len(data)/2], 0o600); err != nil {
+				return err
+			}
+			return errTestNoSpace
+		}
+		return copyRenderFile(source, destination)
+	}
+	return d
+}
+
+// fires counts a call of step and reports whether this call fails.
+func (d *diskFaults) fires(step string) bool {
+	d.calls[step]++
+	if step != d.step || d.calls[step] < d.from || !d.always && len(cacheFilesIn(d.t, d.dir)) == 0 {
+		return false
+	}
+	d.fail()
+	return true
+}
+
+func (d *diskFaults) fail() {
+	d.failures++
+	if d.failedPass == 0 {
+		d.failedPass = len(d.cached)
+	}
+}
+
+// faultyPassFile is a pass's candidate file whose sync or close can fail.
+type faultyPassFile struct {
+	*os.File
+	faults *diskFaults
+}
+
+func (f *faultyPassFile) Sync() error {
+	if f.faults.fires("sync") {
+		return errTestNoSpace
+	}
+	return f.File.Sync()
+}
+
+func (f *faultyPassFile) Close() error {
+	err := f.File.Close()
+	if f.faults.fires("close") {
+		return errTestNoSpace
+	}
+	return err
+}
+
+// A finished capture keeps its file for the rest of the search, so on a nearly
+// full disk the cache can take the space that a later step needs. A pass, its
+// sync or close, the copy to the best-render file, and the read of the stored
+// mix must each give the cache up and repeat without it, and the search must
+// then return the report and the audio that it returns when nothing fails.
+func TestExportLoudnessFreesTheMasterCacheWhenAStepFails(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	search := func(t *testing.T, step string, from int) (faults *diskFaults, result loudnessFileReport, wav []byte, err error) {
+		dir := t.TempDir()
+		faults = installDiskFaults(t, dir, step, from, false)
+		path := filepath.Join(dir, "search.wav")
+		result, err = renderLoudnessFileReport(inspection.score, path, opts, target, nil)
+		wav, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("the search wrote no audio: %v (search error: %v)", readErr, err)
+		}
+		return faults, result, wav, err
+	}
+	base, want, wantWAV, wantErr := search(t, "", 0)
+	if want.Passes < 3 || len(base.cached) != want.Passes || !base.cached[0] || !base.cached[1] || base.calls["copy"] < 2 {
+		t.Fatalf("the search must replay from a finished capture and copy twice: %d passes, cached %v, %d copies", want.Passes, base.cached, base.calls["copy"])
+	}
+	for _, test := range []struct {
+		step string
+		from int // the call of the step that fails first
+	}{
+		{"render", 1}, {"render", 2},
+		{"sync", 1}, {"sync", 2},
+		{"close", 1}, {"close", 2},
+		{"copy", 1}, {"copy", 2},
+		{"read", 2},
+	} {
+		t.Run(fmt.Sprintf("%s call %d", test.step, test.from), func(t *testing.T) {
+			faults, got, gotWAV, gotErr := search(t, test.step, test.from)
+			if faults.failures == 0 {
+				t.Fatal("the test injected no failure")
+			}
+			if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !reflect.DeepEqual(got, want) || !bytes.Equal(gotWAV, wantWAV) {
+				t.Fatalf("search after a failed %s differs:\n got %+v (%v)\nwant %+v (%v)", test.step, got, gotErr, want, wantErr)
+			}
+			// Only a pass that failed is rendered twice. Passes up to the failure
+			// had the cache; the repeat and every later pass run without it.
+			wantPasses := want.Passes + 1
+			if test.step == "copy" {
+				wantPasses = want.Passes
+			}
+			if len(faults.cached) != wantPasses {
+				t.Fatalf("rendered %d passes, want %d; by cache: %v", len(faults.cached), wantPasses, faults.cached)
+			}
+			for i, cached := range faults.cached {
+				if cached != (i < faults.failedPass) {
+					t.Fatalf("passes by cache: %v; the failure came in pass %d, so only the passes up to it can have the cache", faults.cached, faults.failedPass)
+				}
+			}
+			if files := cacheFilesIn(t, faults.dir); len(files) != 0 {
+				t.Fatalf("the search left cache files behind: %v", files)
+			}
+		})
+	}
+}
+
+// A step that still fails without the cache is repeated once and then fails the
+// search. A search that never had a cache does not repeat anything.
+func TestExportLoudnessMasterCacheFallbackRepeatsAStepOnce(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	run := func(t *testing.T, faults *diskFaults) error {
+		t.Helper()
+		_, err := renderLoudnessFileReport(inspection.score, filepath.Join(faults.dir, "full.wav"), opts, target, nil)
+		if err == nil || !strings.Contains(err.Error(), errTestNoSpace.Error()) {
+			t.Fatalf("want the disk-full error, got %v", err)
+		}
+		if files := cacheFilesIn(t, faults.dir); len(files) != 0 {
+			t.Fatalf("the search left cache files behind: %v", files)
+		}
+		return err
+	}
+	t.Run("pass", func(t *testing.T) {
+		faults := installDiskFaults(t, t.TempDir(), "render", 2, true)
+		run(t, faults)
+		if want := []bool{true, true, false}; !reflect.DeepEqual(faults.cached, want) {
+			t.Fatalf("passes by cache: %v, want %v: pass 2 with the cache, then once without it", faults.cached, want)
+		}
+	})
+	t.Run("copy", func(t *testing.T) {
+		faults := installDiskFaults(t, t.TempDir(), "copy", 1, true)
+		run(t, faults)
+		if faults.calls["copy"] != 2 || !reflect.DeepEqual(faults.cached, []bool{true}) {
+			t.Fatalf("%d copies after passes by cache %v, want 2 after one pass with the cache", faults.calls["copy"], faults.cached)
+		}
+	})
+	t.Run("no cache", func(t *testing.T) {
+		faults := installDiskFaults(t, t.TempDir(), "render", 1, true)
+		newLoudnessMasterCache = func(string) (*render.MasterCache, error) { return nil, errTestNoSpace }
+		run(t, faults)
+		if !reflect.DeepEqual(faults.cached, []bool{false}) {
+			t.Fatalf("passes by cache: %v, want one pass without a cache and no repeat", faults.cached)
+		}
+	})
 }
 
 func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {

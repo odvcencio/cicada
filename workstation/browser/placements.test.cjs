@@ -38,30 +38,77 @@ async function until(predicate, message) {
   assert.fail(message);
 }
 
+// The Studio engine is one Go/WebAssembly program. When goroutines made Go-to-JavaScript calls that ran Go code inside
+// the call (a Promise executor, a dispatched event), Go's runtime could lose track of which goroutine to resume. The
+// engine then stopped with "traceback did not unwind completely", and the workspace stayed busy ("Saving…") for good.
+// This counts how deeply the engine's calls into JavaScript nest. The Studio loops and the refresh job must keep it at
+// one. The GoSX TinyGo runtime also has a gojs namespace; it is left alone (it imports wasi_snapshot_preview1).
+const reentryProbe = `(() => {
+  const probe = window.__goReentry = {hooked: false, max: 0, nested: [], reset() { this.max = 0; this.nested = []; }};
+  for (const name of ['instantiate', 'instantiateStreaming']) {
+    const original = WebAssembly[name];
+    if (typeof original !== 'function') continue;
+    WebAssembly[name] = function (source, imports) {
+      if (imports && imports.gojs && !imports.wasi_snapshot_preview1) {
+        let depth = 0;
+        for (const key of ['syscall/js.valueCall', 'syscall/js.valueNew', 'syscall/js.valueInvoke']) {
+          const call = imports.gojs[key];
+          if (typeof call !== 'function' || call.__reentryProbe) continue;
+          probe.hooked = true;
+          imports.gojs[key] = Object.assign(function () {
+            depth++;
+            if (depth > probe.max) probe.max = depth;
+            if (depth > 1 && probe.nested.length < 12) probe.nested.push(key.slice('syscall/js.'.length));
+            try { return call.apply(this, arguments); } finally { depth--; }
+          }, {__reentryProbe: true});
+        }
+      }
+      return original.apply(this, arguments);
+    };
+  }
+})();`;
+
 test('placements edit visually and Session follows saved Score without reloading', {timeout:180000}, async t => {
   const base = process.env.CICADA_STUDIO_URL;
   assert.ok(base, 'set CICADA_STUDIO_URL to a disposable Studio');
   assert.ok(['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
   const browser = await playwright().chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox']});
   const context = await browser.newContext({viewport:{width:1440,height:1000}, reducedMotion:'reduce'});
+  await context.addInitScript(reentryProbe);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
-  const errors=[], checks=[];
-  page.on('pageerror', error=>errors.push(error.message));
+  const errors=[], checks=[], goOutput=[], polls={};
+  // A stopped engine never clears the busy flag. Say so at once, with what Go printed, instead of timing out.
+  let engineStopped; const engineStop=new Promise((_,reject)=>{ engineStopped=reject; }); engineStop.catch(()=>{});
+  let engineStopReported=false;
+  const reportEngineStop=reason=>{ if(engineStopReported) return; engineStopReported=true; setTimeout(()=>engineStopped(new Error(`the Go engine stopped: ${reason}\n${goOutput.join('\n')}`)),300); };
+  page.on('console', message=>{ const text=message.text(); if(/^(fatal error|panic):/.test(text)) reportEngineStop(text.slice(0,200)); if((goOutput.length||/^(fatal error|panic):/.test(text)) && goOutput.length<60) goOutput.push(text.slice(0,300)); });
+  page.on('pageerror', error=>{ errors.push(error.message); if(/Go program has already exited/.test(error.message)) reportEngineStop(error.message); });
+  page.on('request', request=>{ const name=new URL(request.url()).pathname; if(/^\/api\/(capture|transport|automation\/recording)$/.test(name)) polls[name]=(polls[name]||0)+1; });
   const state = async () => (await page.request.get(new URL('/api/state',base).href)).json();
   const transport = async () => (await page.request.get(new URL('/api/transport',base).href)).json();
-  const idle = async () => { await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'}); };
+  const idle = async () => { const settled=page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'}); settled.catch(()=>{}); await Promise.race([settled,engineStop]); };
+  const reentry = async label => {
+    const seen = await page.evaluate(()=>({hooked:window.__goReentry.hooked,max:window.__goReentry.max,nested:window.__goReentry.nested}));
+    assert.equal(seen.hooked,true,'the Go call counter was not installed in the engine');
+    assert.ok(seen.max<=1,`${label}: Go was re-entered from inside a call to JavaScript (depth ${seen.max}: ${seen.nested.join(', ')})`);
+  };
+  // Waits until each Studio loop has polled twice since this call, so a quiet check really covers the loops.
+  const pollsRan = async () => { const from={...polls}; const names=['/api/capture','/api/transport','/api/automation/recording']; await until(async()=>names.every(name=>(polls[name]||0)-(from[name]||0)>=2),'the Studio polls did not run'); };
   const ready = async target => { await target.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor(); };
   const block = (target,id='far-in') => target.locator(`[data-placement-block="${id}"]`);
   const at = async (ticks,target=page) => { await until(async()=>Number(await block(target).getAttribute('data-placement-at'))===ticks,`far-in did not move to ${ticks}`); await idle(); };
   const undo = async () => { await page.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'Undo did not restore the exact fixture'); await at(16320); };
   const far = page.locator('[data-placement-inspector="far-in"]');
-  const selectFar = async () => {
+  const selectFar = async (watchReentry=false) => {
     await idle();
     await page.getByRole('link',{name:'Edit placement far-in',exact:true}).click();
+    // Focusing the link runs a Go focusin listener inside the click. That one nest is by design; count from here on.
+    if (watchReentry) await page.evaluate(()=>window.__goReentry.reset());
     await until(async()=>new URL(page.url()).searchParams.get('placement')==='far-in' && await block(page).getAttribute('data-placement-selected')==='true' && await far.getAttribute('open')!==null,'placement selection did not settle');
     await until(async()=>await page.locator('#cicada-workspace input[name="revision"]').first().inputValue()===(await state()).revision,'selection did not refresh the saved revision');
     await idle();
+    if (watchReentry) await reentry('the refresh job that placement selection starts');
   };
   const drag = async (selector,dx,cancel=false) => {
     const target=page.locator(selector);
@@ -75,10 +122,12 @@ test('placements edit visually and Session follows saved Score without reloading
   };
   try {
     await page.goto(new URL('/?panel=session',base).href,{waitUntil:'domcontentloaded'}); await ready(page);
+    await page.evaluate(()=>window.__goReentry.reset()); // mounting the engines nests by design
     assert.equal((await state()).source,fixture,'runner refuses an unmarked or modified score');
     assert.equal(await page.locator('meta[name=gosx-page-cache]').getAttribute('content'),'no-store');
     assert.equal(await page.locator('[data-placement-block]').count(),9);
-    await at(16320); await selectFar();
+    await at(16320); await pollsRan(); await reentry('Studio polling with no input');
+    await selectFar(true);
     assert.equal(await far.getByLabel('Start',{exact:true}).inputValue(),'@5.2.1','placement forms share another region’s draft identity');
 
     await page.getByRole('link',{name:'Score',exact:true}).click(); await page.getByRole('textbox',{name:'Cicada score',exact:true}).waitFor();
@@ -250,6 +299,7 @@ test('placements edit visually and Session follows saved Score without reloading
       fs.mkdirSync(proof,{recursive:true});
       await page.screenshot({path:path.join(proof,'placement-editor-failure.png'),fullPage:true});
       fs.writeFileSync(path.join(proof,'placement-editor-failure.html'),await page.content());
+      if (goOutput.length) fs.writeFileSync(path.join(proof,'placement-editor-go-output.txt'),goOutput.join('\n')+'\n');
     }
     throw error;
   } finally {

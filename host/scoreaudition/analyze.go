@@ -28,6 +28,10 @@ type Options struct {
 	Bars       int // zero analyzes through the song end
 	AssetDir   string
 	TempDir    string // default os.TempDir()
+	// MaxResidentPCM caps the decoded PCM of the score's sampler packs, in
+	// bytes. Zero selects the default cap. The compile that reads the track
+	// kinds and the render that makes the stems share one copy of each pack.
+	MaxResidentPCM int64
 }
 
 type Report struct {
@@ -183,7 +187,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	if root == "" {
 		root = "."
 	}
-	cfg, err := schedule.Compile(p, root, rate, 4096)
+	cfg, err := schedule.CompileWithOptions(p, root, rate, 4096, schedule.Options{MaxResidentPCM: opts.MaxResidentPCM})
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +220,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, NoteTap: notes.tap}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}

@@ -48,6 +48,19 @@ type Options struct {
 	MasterInputGainDB float64
 	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
 	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
+	// MaxResidentPCM caps, in bytes, the decoded PCM of all sampler packs the
+	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
+	MaxResidentPCM int64
+	// MasterCache, when set, lets repeated direct renders of one score skip
+	// synthesis: a render replays the signal that entered the master stage when
+	// it differs from the stored capture only in MasterInputGainDB,
+	// MasterGainDB, MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A
+	// difference in anything else (the score, From, Bars, TailSec, SampleRate,
+	// Block, AssetRoot, AssetDir or SamplerBaseline) makes the render capture a
+	// new signal in place of the stored one. The cache matches scores by
+	// pointer, so do not modify a score between renders that share a cache. See
+	// MasterCache.
+	MasterCache *MasterCache
 	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
 	// included) and release (seq.NoteOff) that the render plays, in render
 	// order, from either render path. The events are the scheduler's own, so
@@ -157,6 +170,8 @@ type trackRuntime struct {
 type busMixerState struct {
 	masterProcessor      engine.StereoProcessor
 	masterLimiter        interface{ LimiterGainReductionDB() float64 }
+	masterCache          *MasterCache // captures or replays the signal entering the master stage
+	cacheReplay          bool
 	outputGain           float32
 	musicMute, musicSolo bool
 	sfxMute, sfxSolo     bool
@@ -674,6 +689,19 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
+	if cache := opts.MasterCache; cache != nil && masterProcessor != nil && stemsDir == "" && opts.NoteTap == nil {
+		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
+		use, replay, err := cache.begin(key, renderFrames+int64(insertLatency+masterLatency))
+		if err != nil {
+			return report, err
+		}
+		if use {
+			busState.masterCache, busState.cacheReplay = cache, replay
+		}
+		if replay {
+			return renderMasterReplay(writer, score, opts, cache, report, &encoder, limiter, busState, masterGain, block)
+		}
+	}
 	eventCapacity := 0
 	for i := range tracks {
 		eventCapacity += 2*len(eventBuf) + 1 // active, pending releases, and transition
@@ -858,13 +886,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		position += int64(frames)
 		remaining -= frames
 	}
-	if err := flushLimiter(writer, limiter, stems, &encoder, block, &report); err != nil {
-		return report, err
+	if busState.masterCache != nil {
+		if err := busState.masterCache.finishCapture(); err != nil {
+			return report, err
+		}
 	}
-	if report.writtenFrames != report.Frames {
-		return report, fmt.Errorf("limiter wrote %d frames, expected %d", report.writtenFrames, report.Frames)
-	}
-	if err := writeMetadata(writer, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges); err != nil {
+	if err := finishWAV(writer, score, limiter, stems, &encoder, block, &report); err != nil {
 		return report, err
 	}
 	if stems != nil {
@@ -873,6 +900,17 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	return report, nil
+}
+
+// finishWAV drains the safety limiter and appends the timing chunk.
+func finishWAV(w io.Writer, score *notation.Score, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, buffer []byte, report *Report) error {
+	if err := flushLimiter(w, limiter, stems, encoder, buffer, report); err != nil {
+		return err
+	}
+	if report.writtenFrames != report.Frames {
+		return fmt.Errorf("limiter wrote %d frames, expected %d", report.writtenFrames, report.Frames)
+	}
+	return writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges)
 }
 
 func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
@@ -1527,6 +1565,15 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, masterBiasL, masterBiasR, masterGain float32, busState busMixerState, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
+	cache := busState.masterCache
+	if cache != nil {
+		if err := cache.beginBlock(frames, busState.cacheReplay); err != nil {
+			return err
+		}
+		if cache.disabled {
+			cache = nil
+		}
+	}
 	for frame := 0; frame < frames; frame++ {
 		sample := start + int64(frame)
 		if len(tracks) > 0 {
@@ -1721,6 +1768,13 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		if busState.masterMute {
 			left, right = 0, 0
 		}
+		if cache != nil {
+			if busState.cacheReplay {
+				left, right = cache.block[2*frame], cache.block[2*frame+1]
+			} else {
+				cache.block = append(cache.block, left, right)
+			}
+		}
 		if masterGain != 1 {
 			left *= masterGain
 			right *= masterGain
@@ -1776,6 +1830,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		}
 		encoder.writeFrame(buffer[outFrames*encoder.frameBytes():], outL, outR, limiter.Ceiling(), report)
 		outFrames++
+	}
+	if cache != nil && !busState.cacheReplay {
+		cache.endBlock()
 	}
 	if outFrames == 0 {
 		if stems != nil {

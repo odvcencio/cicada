@@ -74,10 +74,36 @@ With a limiter in the chain, the renderer keeps two guard rails:
 
 A target that needs more than either limit stops short and returns a shortfall
 error that names the limit that bound. The WAV from the best pass is still
-written (Studio keeps it as a separate shortfall file). The render summary
-reports the applied gain, the gain stage (`master_input` when the gain runs ahead of the master chain, `post_chain` when it runs after it or there is no chain), the
+written (Studio keeps it as a separate shortfall file). When even a render
+that breaks a limit is too quiet for the target, and the best render is within
+0.5 dB of the reduction maximum, the search stops instead of using all six
+passes. The render summary reports the applied gain, the gain stage (`master_input` when the gain runs ahead of the master chain, `post_chain` when it runs after it or there is no chain), the
 chain limiter's largest gain reduction, and the largest gain reduction of any
 limiter. Review these numbers and run `cicada verify-wav` on the result.
+
+When a master chain follows the direct renderer, only the first pass
+synthesizes the mix. It stores the signal that enters the chain in a temporary
+file next to the output, and later passes play that signal back through the
+chain with the new gain. The result matches rendering every pass in full. The
+scheduled renderer renders each pass in full.
+
+The file takes about 23 MB per minute at 48 kHz, counted from the start of the
+song to the end of the exported range plus its tail, so an export of the last
+bars of a long song stores the whole song up to them. It stays until the export
+ends, on the same disk as the export's two other temporary WAV files (one holds
+the pass being rendered, the other the best pass so far). On a nearly full disk
+it can take space that those files need, so the export frees it as follows:
+
+- If the export cannot create the file, or a write to it fails, it renders every
+  pass in full.
+- If a pass, or the copy of a pass to the best-pass file, fails while the file
+  exists, the export deletes the file, repeats that step without it, and renders
+  every later pass in full. A pass fails when its render, its sync to disk or its
+  close fails, or when the stored signal cannot be read back.
+- If the repeated step fails too, the export stops with that error.
+
+Passes rendered without the file take longer, but the WAV and the report are the
+same.
 
 The same renderer serves `cicada render --export`, `--loudness`, and Studio's
 export. `cicada stems` does not apply loudness targets. The built-in safety

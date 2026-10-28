@@ -281,7 +281,9 @@ func main() {
 		os.Exit(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
-	renderOptions.AssetDir = filepath.Dir(path)
+	// Audio assets and sampler packs resolve from the project folder, where
+	// check looks, not from the folder of the score that was named.
+	renderOptions.AssetDir = inspection.root(path)
 	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
 		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -323,15 +325,15 @@ func main() {
 		}
 		writeJSON(program)
 	case "render":
-		renderOptions.AssetRoot = filepath.Dir(path)
-		renderOptions.AssetDir = filepath.Dir(path)
+		renderOptions.AssetRoot = inspection.root(path)
+		renderOptions.AssetDir = inspection.root(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	case "stems":
-		renderOptions.AssetRoot = filepath.Dir(path)
-		renderOptions.AssetDir = filepath.Dir(path)
+		renderOptions.AssetRoot = inspection.root(path)
+		renderOptions.AssetDir = inspection.root(path)
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -391,11 +393,11 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
-		"new <name> | check [--profile desktop|browser] [score.cicada] | validate <score.cicada> | fix <score.cicada> [--all] [--check] | play [score.cicada] [--audio tymbal|oto|null] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] | "+
+		"new <name> | check [--profile desktop|browser] [--max-resident-pcm 1GiB] [score.cicada] | validate <score.cicada> | fix <score.cicada> [--all] [--check] | play [score.cicada] [--audio tymbal|oto|null] [--max-resident-pcm 1GiB] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm 1GiB] | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
-		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5] | "+
-		"stems <file.cicada> -o <dir> [--rate 48000 --from 1 --bars 16 --tail 3s] | audition <file.cicada> [-o <dir> --from 1 --bars 16 --json] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
+		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5 --max-resident-pcm 1GiB] | "+
+		"stems <file.cicada> -o <dir> [--rate 48000 --from 1 --bars 16 --tail 3s --max-resident-pcm 1GiB] | audition <file.cicada> [-o <dir> --from 1 --bars 16 --json --max-resident-pcm 1GiB] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
 		"director <file.cicada> -o <director.json> [--rate 48000] | midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
@@ -585,6 +587,31 @@ const loudnessPassLimit = 6
 // DC offsets the fixtures do not produce.
 var loudnessRenderPass = render.WAV
 
+// newLoudnessMasterCache creates the temporary file that lets later passes
+// replay the first pass's mix; tests replace it to fail the way a full disk does.
+var newLoudnessMasterCache = render.NewMasterCache
+
+// loudnessPassFile is the candidate WAV that one pass writes.
+type loudnessPassFile interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// openLoudnessPassFile opens and empties the candidate file for one pass; tests
+// wrap the file to fail its sync or close the way a full disk does.
+var openLoudnessPassFile = func(path string) (loudnessPassFile, error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// copyLoudnessFile copies a pass's WAV over the file that keeps the best render
+// so far; tests replace it to fail the way a full disk does.
+var copyLoudnessFile = copyRenderFile
+
 // When the score's master chain holds a limiter, loudness targeting applies its
 // gain at the master input and lets that limiter hold the true-peak ceiling.
 // Two guard rails keep the search from crushing the mix:
@@ -686,6 +713,23 @@ func renderLoudnessFileReport(score *notation.Score, path string, opts render.Op
 	return renderLoudnessFileReportWithShortfall(score, path, "", opts, target, onPass)
 }
 
+// renderLoudnessPass renders one pass into the candidate file and flushes the
+// file to disk. It returns the first error of the render, the sync and the close.
+func renderLoudnessPass(score *notation.Score, opts render.Options, candidatePath string) (render.Report, error) {
+	file, err := openLoudnessPassFile(candidatePath)
+	if err != nil {
+		return render.Report{}, err
+	}
+	report, err := loudnessRenderPass(score, opts, file)
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return report, err
+}
+
 func renderStudioLoudnessFileReport(score *notation.Score, path string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
 	return renderLoudnessFileReportWithShortfall(score, path, studioShortfallPath(path), opts, target, onPass)
 }
@@ -738,9 +782,43 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
 		}
 	}
+	// Every pass differs only in export gain and DC correction. When a master
+	// chain follows the direct renderer's mix, later passes replay the first
+	// pass's mix instead of synthesizing it again; the scheduled engine renders
+	// in full each time. The cache only saves time. If its file cannot be
+	// created, every pass renders in full.
+	//
+	// A finished capture keeps its file, next to the output, for the rest of the
+	// search, and the file takes disk space that the export's own files need. A
+	// pass, or the copy of a pass to the best-render file, that fails while the
+	// cache exists therefore removes the cache and repeats that step without it,
+	// and so does a pass that cannot read the cache back. Every later pass then
+	// renders in full, as it does when the cache cannot be created.
+	var masterCache *render.MasterCache
+	if hasMasterChain && !render.UsesScheduledEngine(score, opts) {
+		if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
+			masterCache = cache
+			defer masterCache.Close()
+		}
+	}
+	dropMasterCache := func() {
+		// Close empties the file before it removes it, so the space comes back
+		// even when the removal fails; there is nothing more to do with its error.
+		masterCache.Close()
+		masterCache = nil
+	}
+	copyBest := func() error {
+		err := copyLoudnessFile(candidatePath, bestPath)
+		if err != nil && masterCache != nil {
+			dropMasterCache()
+			err = copyLoudnessFile(candidatePath, bestPath)
+		}
+		return err
+	}
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
 	safeGain, hasSafe, lowestUnsafe, prevUnsafe := 0.0, false, math.Inf(1), false
+	lowestUnsafeLUFS := math.Inf(1)
 	var bestChainReduction, fallbackChainReduction float64
 	for pass := 1; pass <= loudnessPassLimit; pass++ {
 		passes = pass
@@ -754,21 +832,16 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			passOptions.MasterGainDB = gain
 		}
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
+		passOptions.MasterCache = masterCache
 		passOptions.Normalize = false
-		file, err := os.OpenFile(candidatePath, os.O_WRONLY|os.O_TRUNC, 0)
+		passReport, err := renderLoudnessPass(score, passOptions, candidatePath)
+		if err != nil && masterCache != nil {
+			dropMasterCache()
+			passOptions.MasterCache = nil
+			passReport, err = renderLoudnessPass(score, passOptions, candidatePath)
+		}
 		if err != nil {
 			return report, err
-		}
-		passReport, renderErr := loudnessRenderPass(score, passOptions, file)
-		if renderErr == nil {
-			renderErr = file.Sync()
-		}
-		closeErr := file.Close()
-		if renderErr != nil {
-			return report, renderErr
-		}
-		if closeErr != nil {
-			return report, closeErr
 		}
 		measurement, err := render.VerifyWAV(candidatePath, render.VerifyOptions{
 			SampleRate: passReport.SampleRate,
@@ -790,7 +863,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		if dcSafe && !(peakSafe && limiterSafe) && !hasBest {
 			excess := math.Max(0, measurement.TruePeakDBTP-target.TruePeakMaxDBTP) + math.Max(0, chainReduction-maxExportLimiterReductionDB)
 			if excess < peakFallbackExcess {
-				if err := copyRenderFile(candidatePath, bestPath); err != nil {
+				if err := copyBest(); err != nil {
 					return report, err
 				}
 				peakFallbackRender, peakFallbackMeasure, peakFallbackGain = passReport, measurement, gain
@@ -801,7 +874,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		if safe {
 			delta := math.Abs(measurement.IntegratedLUFS - target.LoudnessTarget)
 			if !hasBest || delta < bestDelta {
-				if err := copyRenderFile(candidatePath, bestPath); err != nil {
+				if err := copyBest(); err != nil {
 					return report, err
 				}
 				bestRender, bestMeasure, bestGain, bestDelta, bestBiasL, bestBiasR, hasBest = passReport, measurement, gain, delta, biasL, biasR, true
@@ -810,6 +883,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			if delta <= target.Tolerance {
 				break
 			}
+		}
+		if limiterMode && hasBest && limiterTargetOutOfReach(target, bestMeasure.IntegratedLUFS, bestChainReduction, lowestUnsafeLUFS) {
+			break
 		}
 		pendingDC := !dcSafe
 		if !dcSafe {
@@ -825,8 +901,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				if !hasSafe || gain > safeGain {
 					safeGain, hasSafe = gain, true
 				}
-			} else {
-				lowestUnsafe = math.Min(lowestUnsafe, gain)
+			} else if gain <= lowestUnsafe {
+				lowestUnsafe = gain
+				lowestUnsafeLUFS = measurement.IntegratedLUFS
 			}
 			switch {
 			case !gainOK:
@@ -965,6 +1042,21 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	return report, nil
 }
 
+// limiterTargetOutOfReach reports whether a limiter search can stop because no
+// safe gain reaches the loudness target.
+//
+// The loudest safe render and the quietest render that broke a guard rail (true
+// peak or limiter reduction) are both still below the tolerance band. Loudness
+// and limiter reduction only rise with the input gain, so every safe gain
+// renders no louder than the unsafe one, and the target is out of reach. The
+// safe render also sits within 0.5 dB of the reduction maximum, the margin that
+// already makes the final report a limiter shortfall, so more bisection steps
+// would add little loudness and only repeat that shortfall.
+func limiterTargetOutOfReach(target renderTargetOptions, bestLUFS, bestChainReduction, lowestUnsafeLUFS float64) bool {
+	band := target.LoudnessTarget - target.Tolerance
+	return bestLUFS < band && lowestUnsafeLUFS < band && bestChainReduction >= maxExportLimiterReductionDB-0.5
+}
+
 func copyRenderFile(source, destination string) error {
 	input, err := os.Open(source)
 	if err != nil {
@@ -987,6 +1079,11 @@ func copyRenderFile(source, destination string) error {
 }
 
 func renderArgs(args []string, wantBits int) (string, render.Options, *renderTargetOptions) {
+	args, residentPCM, err := parseMaxResidentPCM(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", err)
+		os.Exit(2)
+	}
 	flags := flag.NewFlagSet("render", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	output := flags.String("o", "", "output WAV")
@@ -1049,7 +1146,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline}, target
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM}, target
 }
 
 func verifyWAVCommand(args []string) {

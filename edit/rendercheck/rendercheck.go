@@ -117,18 +117,18 @@ func (c check) renderFrom(overrides map[string][]byte) (string, error) {
 // renderPinned renders with the manifest resolution fixed when pin is set.
 func (c check) renderPinned(overrides map[string][]byte, pin *project.Resolution) (string, error) {
 	var (
-		score *notation.Score
-		ds    []notation.Diagnostic
-		err   error
+		sources *project.Sources
+		err     error
 	)
 	if pin != nil {
-		score, ds, err = project.LoadScorePinned(c.path, overrides, *pin)
+		sources, err = project.ReadSourcesPinned(c.path, overrides, *pin)
 	} else {
-		score, ds, err = project.LoadScore(c.path, overrides)
+		sources, err = project.ReadSources(c.path, overrides)
 	}
 	if err != nil {
 		return "", err
 	}
+	score, ds := sources.Parse()
 	for _, d := range ds {
 		if d.Severity == "error" {
 			return "", fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
@@ -137,7 +137,9 @@ func (c check) renderPinned(overrides map[string][]byte, pin *project.Resolution
 	if score == nil {
 		return "", fmt.Errorf("score did not load")
 	}
-	dir := filepath.Dir(c.path)
+	// Audio assets and sampler packs resolve from the project folder, as they do
+	// for every command, whichever source file the render check was given.
+	dir := sources.Root
 	dither := false
 	sum := sha256.New()
 	_, err = render.WAV(score, render.Options{SampleRate: 48000, Bits: 24, Dither: &dither, Block: 4096, AssetRoot: dir, AssetDir: dir}, sum)
@@ -419,10 +421,9 @@ func take(path string, source []byte, overrides map[string][]byte) (*snapshot, b
 		statTargets = append(statTargets, filepath.Join(root, filepath.FromSlash(asset.Path)))
 	}
 	var packDirs []string
-	dir := filepath.Dir(abs)
 	for _, sampler := range score.Samplers {
 		if sampler.Pack != "" {
-			packDirs = append(packDirs, filepath.Dir(filepath.Join(dir, filepath.FromSlash(sampler.Pack))))
+			packDirs = append(packDirs, filepath.Dir(filepath.Join(sources.Root, filepath.FromSlash(sampler.Pack))))
 		}
 	}
 	// Assets and packs still load from disk, so they are restated after a render.
