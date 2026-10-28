@@ -1723,6 +1723,10 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 	phase("finish")
 	// Canonical take lanes can gain new passes or comp regions while retaining
 	// their delegated pointer controls and already loaded waveform geometry.
+	// The Go consumers are called directly: a DOM listener in Go would run
+	// nested inside this call to JavaScript (see workspaceUpdated). The event
+	// stays for page scripts.
+	workspaceUpdated.run()
 	document.Call("dispatchEvent", js.Global().Get("Event").New("cicada:workspace-updated"))
 	if location, _ := url.Parse(workspaceLocation()); location.Query().Get("__workspace_profile") == "1" || workspaceAttr(u.root, "data-workspace-profile") == "true" {
 		measurements["nodes"] = float64(len(nextTree.Nodes))
