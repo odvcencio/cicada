@@ -171,15 +171,15 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    was still ringing when you stopped recording, and every hit would end where
    that tail passes it. It also warns when no part of a take is quiet, or the
    room is within 20 dB of the loudest sound. Hits must start at least half a
-   second apart. That is stricter than
-   `record-pack`'s 120 ms rule, because bass drums and toms swell again after
-   the first impact, and the command must not count the swell as a second hit.
-   An attack that comes sooner than half a second is kept inside the hit before
-   it, which then plays as a double strike, and the command warns you. Leave a
-   second after drums. Leave cymbals and the open hi-hat all the time they need
-   to die away, often 5 to 10 seconds, and keep the room quiet until then. A soft
-   hit that lands on the ring of a louder one can go unseen, so check the hit
-   count in step 8.
+   second apart. That is stricter than `record-pack`'s 120 ms rule, because
+   bass drums and toms swell again after the first impact, and the command must
+   not count the swell as a second hit. An attack that comes sooner than half a
+   second is kept inside the hit before it, which then plays as a double strike,
+   and the command warns you. Leave a second after drums. Leave cymbals and the
+   open hi-hat all the time they need to die away, often 5 to 10 seconds, and
+   keep the room quiet until then. A hit that lands on a loud ring, such as a
+   soft hit on the ring of a louder one or a tom struck again within a second,
+   can go unseen, so check the hit count in step 8.
 
    A hit keeps its tail until the tail is 60 dB below the loudest hit in its
    file, or twice the room's noise level if that is higher. If the next hit, or

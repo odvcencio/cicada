@@ -480,6 +480,126 @@ func TestRingingDoesNotCountASwellAsAMergedAttack(t *testing.T) {
 	}
 }
 
+// beatingTom renders one hit of a tom: a decaying 82 Hz sine, a second decaying
+// sine beat Hz above it at ratio times its level, a quieter overtone, and a
+// burst of noise for the stick. Its peak is 1.
+func beatingTom(seed uint64, seconds, beat, ratio, tau float64) []float64 {
+	const rate = 48000
+	state := seed
+	noise := func() float64 { // splitmix64, as testwav uses
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		return float64(z>>11)/float64(1<<53)*2 - 1
+	}
+	phases := [3]float64{(noise() + 1) * math.Pi, (noise() + 1) * math.Pi, (noise() + 1) * math.Pi}
+	hit := make([]float64, int(seconds*rate))
+	peak := 0.0
+	for i := range hit {
+		t := float64(i) / rate
+		hit[i] = math.Exp(-t/tau)*(math.Cos(2*math.Pi*82*t+phases[0])+ratio*math.Cos(2*math.Pi*(82+beat)*t+phases[1])) +
+			.4*math.Exp(-t/(tau/2))*math.Cos(2*math.Pi*130*t+phases[2]) + .3*noise()*math.Exp(-t/.004)
+		peak = max(peak, math.Abs(hit[i]))
+	}
+	for i := range hit {
+		hit[i] /= peak
+	}
+	return hit
+}
+
+// tomTake places hits of beatingTom gap seconds apart, the first at 0.3 s, over
+// a room at -70 dBFS.
+func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
+	const rate = 48000
+	pcm := make([]float64, int((.3+float64(len(levels))*gap+1.5)*rate))
+	state := uint64(0xfeed)
+	for i := range pcm {
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		pcm[i] = math.Pow(10, -70.0/20) * math.Sqrt(3) * (float64(z>>11)/float64(1<<53)*2 - 1)
+	}
+	for k, level := range levels {
+		at := int((.3 + float64(k)*gap) * rate)
+		for i, x := range beatingTom(uint64(400+k), gap+1.5, beat, ratio, tau) {
+			if at+i < len(pcm) {
+				pcm[at+i] += x * level
+			}
+		}
+	}
+	out := make([]float32, len(pcm))
+	for i, x := range pcm {
+		out[i] = float32(x)
+	}
+	return Audio{PCM: out, Rate: rate}
+}
+
+// A tom struck again a second after the last hit lands on a loud, beating ring.
+// The energy rises 2.5 times within 10 ms for two windows, and passes 1.5 times
+// the ring's recent maximum two windows after that: never both at once. The hit
+// must not vanish into the slice before it, which would then play as a double
+// strike with no warning.
+func TestRingingFindsATomStruckAgainOnABeatingRing(t *testing.T) {
+	levels := []float64{.60, .55, .65, .58, .50, .62}
+	for _, test := range []struct{ beat, ratio, tau float64 }{
+		{4, .6, .7}, {4, .8, .7}, {8, .7, .7}, {8, .9, .7}, {12, .7, .7}, {12, .9, .7},
+	} {
+		t.Run(fmt.Sprintf("%.0f Hz beat, second mode at %.0f%%", test.beat, test.ratio*100), func(t *testing.T) {
+			audio := tomTake(1, test.beat, test.ratio, test.tau, levels...)
+			hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(hits) != len(levels) || reports[0].Merged != 0 {
+				t.Errorf("found %d hits and %d merged attacks, played %d hits", len(hits), reports[0].Merged, len(levels))
+			}
+			for i, h := range hits {
+				played := .3 + float64(i)
+				if start := float64(h.Start) / 48000; start < played-.025 || start > played+.005 {
+					t.Errorf("hit %d starts at %.3f s, played at %.3f s", i+1, start, played)
+				}
+			}
+		})
+	}
+}
+
+// A ring that beats slowly climbs out of each null past the loudest sound of
+// the last 100 ms, since a peak a quarter of a second ago is out of sight. It
+// climbs slowly, though, and is not a hit. A hit struck while it rings still is
+// one, whatever the beat. So the same toms, struck one and two seconds apart,
+// are found once each, and a single hit with a slow beat is not found twice.
+func TestRingingBeatingTomsAreFoundOnceEach(t *testing.T) {
+	levels := []float64{.60, .55, .65, .58, .50, .62}
+	for _, gap := range []float64{1, 2} {
+		for _, beat := range []float64{4, 12} {
+			for _, ratio := range []float64{.5, .9} {
+				for _, tau := range []float64{.4, .7} {
+					audio := tomTake(gap, beat, ratio, tau, levels...)
+					hits, _, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+					if err != nil || len(hits) != len(levels) {
+						t.Errorf("%.0f s apart, %.0f Hz beat, second mode at %.0f%%, decay %.1f s: found %d hits, played %d (%v)", gap, beat, ratio*100, tau, len(hits), len(levels), err)
+					}
+				}
+			}
+		}
+	}
+	for _, beat := range []float64{2, 3, 5} {
+		for _, ratio := range []float64{.9, 1} {
+			for _, tau := range []float64{1.5, 3} {
+				audio := tomTake(8, beat, ratio, tau, .6)
+				hits, _, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+				if err != nil || len(hits) != 1 {
+					t.Errorf("one hit, %.0f Hz beat, second mode at %.0f%%, decay %.1f s: found %d hits (%v)", beat, ratio*100, tau, len(hits), err)
+				}
+			}
+		}
+	}
+}
+
 // peakOf is the largest absolute sample of pcm in frames from to to.
 func peakOf(pcm []float32, from, to int) float64 {
 	peak := 0.0

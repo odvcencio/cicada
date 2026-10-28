@@ -12,20 +12,20 @@ import (
 //
 // Ringing is for drums and cymbals, whose tails outlast the usual 120 ms
 // minimum between hits and swell again after the first impact. Hits must then
-// be at least half a second apart. A hit starts only where the energy rises
-// 2.5 times above its quietest level in the previous 10 ms and 1.5 times
-// above its loudest level between 100 and 10 ms before, so that a tail beating
-// against itself does not look like a new hit. That energy is smoothed over 10
-// ms, so it finds a hit a few milliseconds after it began. A slice starts 3 ms
-// before the 2 ms window in which the hit began, and the slice before it ends
-// there, so a cut tail does not end in the next attack. The room's noise is
-// read from the quietest 200 ms of each recording; TakeReport.NoRoomTone says
-// when the recording does not open with room tone, where that stretch may be a
-// tail. A hit keeps its tail until the energy is 60 dB below the recording's
-// loudest hit, or twice the noise floor when that is higher. If the next hit or
-// the end of the recording comes first, the tail is cut there and fades out
-// over 5 ms; the hit is marked Cut when the tail was still more than 6 dB above
-// that level.
+// be at least half a second apart. A hit starts only where the energy doubles
+// within 10 ms and, within the next 20 ms while it is still climbing, rises 1.5
+// times above its loudest level between 100 and 10 ms before the doubling, so
+// that a tail beating against itself does not look like a new hit. That energy
+// is smoothed over 10 ms, so it finds a hit a few milliseconds after it began.
+// A slice starts 3 ms before the 2 ms window in which the hit began, and the
+// slice before it ends there, so a cut tail does not end in the next attack.
+// The room's noise is read from the quietest 200 ms of each recording;
+// TakeReport.NoRoomTone says when the recording does not open with room tone,
+// where that stretch may be a tail. A hit keeps its tail until the energy is 60
+// dB below the recording's loudest hit, or twice the noise floor when that is
+// higher. If the next hit or the end of the recording comes first, the tail is
+// cut there and fades out over 5 ms; the hit is marked Cut when the tail was
+// still more than 6 dB above that level.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
@@ -95,11 +95,10 @@ const (
 	ringRecentMS = 100 // a new hit must beat the loudest energy from this long before it until 10 ms before it
 	cutFadeMS    = 5   // a hit that is cut off fades out over this time
 
-	ringRiseSpanMS     = 20  // a hit found by its attack began within this long before
+	ringRiseSpanMS     = 20  // a hit has this long after its rise starts to beat the recent maximum
 	ringRiseGapMS      = 10  // rises closer together than this belong to one surge of energy
-	ringRiseFactor     = 2   // a surge of energy rises this many times above its quietest level in the previous 10 ms
+	ringRiseFactor     = 2   // a rise is energy this many times above its quietest level in the previous 10 ms
 	ringStepFactor     = 2   // a hit begins in the 2 ms window that is this many times louder than the 12 ms before it
-	ringAttackRise     = 2.5 // a new hit must rise this many times above its quietest level in the previous 10 ms
 	ringNearMinimum    = 1.1 // energy this close to its lowest is as quiet, for finding where a hit began
 	ringRiseOverRecent = 1.5 // a new hit must beat the recent maximum by this factor
 	ringNoiseCap       = .05 // the noise floor is read as at most this fraction of the loudest energy
@@ -218,34 +217,41 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 		var onsets []int
 		last := -a.Rate
 		wasAttack := false
-		// The attack is found a little after the hit began, since the energy it
-		// is found in is smoothed over 10 ms. The hit began where the surge of
-		// energy that carried it over the recent maximum began: the first window
-		// of the rises that follow one another (surgeFrom).
+		// A hit that lands on a loud ring rises first and beats the ring a little
+		// later, and its own energy then enters the recent maximum it must beat.
+		// So a rise arms the detector and fixes the recent maximum as it stood
+		// before the rise; the hit then has the span to beat that, while its
+		// energy is still climbing. A ring that beats slowly climbs past a stale
+		// maximum too, but it does not double within 20 ms once it is out of its
+		// null. The hit began where the surge of energy that carried it over the
+		// maximum began (surgeFrom), which is not the arming rise when a bump in
+		// the ring came first.
+		armedAt, armedRef := -span-1, 0.0
 		roseAt, surgeFrom := -surge-1, 0
 		for w, e := range energy {
 			frame := w * hop
 			attack := false
 			if options.Ringing {
-				floor := 0.0
+				floor, climb := 0.0, 0.0
 				if w > 0 {
 					floor = slices.Min(energy[max(0, w-5):w])
+					climb = slices.Min(energy[max(0, w-span):w])
 				}
 				if e > floor*ringRiseFactor {
 					if w-roseAt > surge {
 						surgeFrom = w
 					}
 					roseAt = w
-				}
-				if e > threshold {
-					recentMax := 0.0
-					// The 10 ms before this window belong to the rise itself,
-					// which the floor test covers; the maximum looks further back.
-					if from, to := max(0, w-recent), w-5; from < to {
-						recentMax = slices.Max(energy[from:to])
+					if w-armedAt > span {
+						// The 10 ms before this window belong to the rise itself,
+						// which the floor test covers; the maximum looks further back.
+						armedAt, armedRef = w, 0
+						if from, to := max(0, w-recent), w-5; from < to {
+							armedRef = slices.Max(energy[from:to])
+						}
 					}
-					attack = e > floor*ringAttackRise && e > recentMax*ringRiseOverRecent
 				}
+				attack = w-armedAt <= span && e > threshold && e > armedRef*ringRiseOverRecent && e > climb*ringRiseFactor
 			} else if e > threshold {
 				previous := 0.0
 				if w > 0 {
@@ -267,8 +273,9 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 						}
 					}
 					// A swell has no such window, since each step of it is small, and
-					// neither has a hit that lands on a ring. The hit began where the
-					// energy was lowest in the span before it was found.
+					// neither has a hit that lands on a ring. The energy doubled within
+					// the span before the hit was found, and the hit began where the
+					// energy was lowest in that time.
 					if !found {
 						begin = lastNearMinimum(energy, max(0, w-span), w)
 					}
