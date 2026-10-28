@@ -239,7 +239,7 @@ func (s *studio) startExport(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Revision = studioRevision(inspection.source)
 	input.SourceRevision = sourceRevision
-	input.ProjectDir = filepath.Dir(s.path)
+	input.ProjectDir = inspection.root(s.path)
 	targetText := studioTargetFilename(input.TargetLUFS)
 	scoreName := strings.TrimSuffix(filepath.Base(s.path), filepath.Ext(s.path))
 	path := filepath.Join(filepath.Dir(s.path), "exports", scoreName+"-"+targetText+"LUFS.wav")

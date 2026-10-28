@@ -28,6 +28,38 @@ valid but still fail a name, type, unit, range, or engine check.
 - **Too many or mismatched steps** — each pitch pattern has 1–64 expanded
   cells; drum rows in a pattern must have equal lengths. A declared `steps`
   value is a check and must match the expanded pattern.
+- **`CICADA-SAMPLER-ZONE`** — a note falls outside every zone of its track's
+  sampler pack. `cicada check` shows the note's place in the source, its track
+  and pattern, and the keys the pack covers. A note that a phrase supplies is
+  shown at the `use`, with the phrase's name and the use's transpose. Move the
+  note, write it in another octave, change the pattern's `transpose`, or use a
+  pack that covers it. The sampler's `root` moves only a pitch written without
+  an octave. Without the check, the render stops with engine fault 29.
+- **`CICADA-SAMPLER-PACK`** — a pack does not load: its manifest or an audio
+  file is missing or damaged, the manifest differs from the `sha256` pin in
+  the `sampler` declaration, or the pack cannot play at 44.1, 48 or 96 kHz (the
+  message then says `at 96000 Hz`). Build the pack again, or update the pin if
+  you changed the pack on purpose. Pack paths are relative to the project
+  folder, the one that holds `cicada.mod`.
+- **`CICADA-SAMPLER-MEMORY`** — the packs of the score declare more decoded
+  audio than the cap allows, so `render`, `stems` and `play` would refuse it.
+  Use smaller packs or raise the cap; see the next section.
+
+## Sampler packs use too much memory
+
+- **`sampler packs exceed the native resident PCM cap`** — the packs of a
+  `render`, `stems`, `audition`, `play` or Studio session would decode to more
+  audio than the cap allows, 1 GiB by default. The message gives the cap and the
+  size. It comes before any audio is read. Raise the cap, for example
+  `cicada render song.cicada -o song.wav --max-resident-pcm 2GiB`, or
+  `cicada studio --max-resident-pcm 2GiB`, or set `CICADA_MAX_RESIDENT_PCM=2GiB`
+  where a command cannot take the option, or use smaller packs.
+  `cicada check --max-resident-pcm 2GiB` checks against the same cap.
+- **`project audio exceeds the 64 MiB resident PCM budget`** — sampler assets
+  and clips held in memory together, or the packs and assets of a browser image
+  or WAM2 export, pass 64 MiB. A native render does not count packs in this
+  budget. For a browser score, use a smaller pack; see
+  [instrument packs](../sampler/packs.md#memory-limits).
 
 ## Browser export is refused
 

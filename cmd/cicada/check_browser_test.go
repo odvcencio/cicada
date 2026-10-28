@@ -430,11 +430,11 @@ func TestCheckArgsTakeTheProfileAndScore(t *testing.T) {
 		want string
 	}{
 		{[]string{"--profile", "mobile", path}, `unknown profile "mobile" (valid: desktop, browser)`},
-		{[]string{"--profile"}, "usage: cicada check [--profile desktop|browser] [score.cicada]"},
-		{[]string{"--bogus", path}, "usage: cicada check [--profile desktop|browser] [score.cicada]"},
-		{[]string{path, path}, "usage: cicada check [--profile desktop|browser] [score.cicada]"},
-		{[]string{"--profile", "browser", path, path}, "usage: cicada check [--profile desktop|browser] [score.cicada]"},
-		{[]string{filepath.Dir(path)}, "usage: cicada check [--profile desktop|browser] [score.cicada]"},
+		{[]string{"--profile"}, "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"},
+		{[]string{"--bogus", path}, "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"},
+		{[]string{path, path}, "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"},
+		{[]string{"--profile", "browser", path, path}, "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"},
+		{[]string{filepath.Dir(path)}, "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if err := checkCommand(tc.args, &stdout, &stderr); err == nil || err.Error() != tc.want {

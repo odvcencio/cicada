@@ -1,9 +1,10 @@
-cicada play [score.cicada] [--audio tymbal|oto|null]
+cicada play [score.cicada] [--audio tymbal|oto|null] [--max-resident-pcm <size>]
 
 play and watch a score
 
 Flags:
-  --audio <name>  select tymbal, oto, or null
-  --help          show this help
+  --audio <name>             select tymbal, oto, or null
+  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)
+  --help                     show this help
 
-CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a score whose packs decode to more is refused, with the cap and the size measured in the message. A reloaded score reuses the packs already in memory; a reload that points a sampler at another pack holds both until the new score takes over at the next bar. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB.

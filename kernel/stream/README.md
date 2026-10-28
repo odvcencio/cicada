@@ -68,7 +68,10 @@ reused. Retry/error records never exceed the admitted arena's page count.
 Native playback and offline WAV/stems now connect this cache through
 `host/schedule.Compile` and `host/sampleasset.StreamPlan`. Clip-only assets above
 1 MiB are paged; short clips and all sampler assets keep their resident path.
-The sampler PCM budget remains 64 MiB. A streaming configuration holds verified
+The resident budget for sampler assets remains 64 MiB. Sampler packs are not
+counted in it: `schedule.Compile` holds them under their own cap, 1 GiB by
+default (`schedule.Options.MaxResidentPCM`), and decodes each pack once per
+process (`schedule.Validate` applies the same rules without reading audio). A streaming configuration holds verified
 metadata without files or workers; `engine.New` opens its private runtime only
 after engine validation succeeds. Each engine admits at most 32 clip readers
 and 32 upcoming-start readers. At 48 kHz the stereo page arena is 14.25 MiB,
@@ -98,6 +101,6 @@ without being published. `StreamStats` reports arena size, page operations,
 underrun episodes, missing output frames, recoveries and bounded page lookups.
 
 Portable browser/kernel images continue using `schedule.CompileResident` and
-its 64 MiB limit. Native streaming factories are rejected by image encoding;
+its 64 MiB limit, which counts sampler assets and packs together. Native streaming factories are rejected by image encoding;
 TinyGo compiles only the resident clip/SRC branch. Browser worker-to-worklet page
 transfer remains separate work.

@@ -165,6 +165,12 @@ func (c *studioStemsExportController) start(score *notation.Score, scorePath str
 
 func (c *studioStemsExportController) deliver(score *notation.Score, scorePath string, request studioStemsExportRequest, runner func(*notation.Score, render.Options, string) (render.Report, error)) (string, render.Report, error) {
 	var report render.Report
+	// Audio and sampler packs resolve from the project folder; the archive goes
+	// beside the score that Studio has open.
+	root, err := studioProjectRoot(scorePath)
+	if err != nil {
+		return "", report, err
+	}
 	output := filepath.Join(filepath.Dir(scorePath), "exports")
 	if err := os.MkdirAll(output, 0755); err != nil {
 		return "", report, err
@@ -180,7 +186,7 @@ func (c *studioStemsExportController) deliver(score *notation.Score, scorePath s
 	dir := filepath.Join(stage, "stems")
 	// Tracks and returns retain their authored processing and levels. There is
 	// no independent normalization, dither, or loudness targeting per stem.
-	options := render.Options{AssetRoot: filepath.Dir(scorePath), AssetDir: filepath.Dir(scorePath), SampleRate: request.Rate, Bits: 32, TailSec: studioStemsTailSeconds}
+	options := render.Options{AssetRoot: root, AssetDir: root, SampleRate: request.Rate, Bits: 32, TailSec: studioStemsTailSeconds}
 	report, err = runner(score, options, dir)
 	if err != nil {
 		return "", report, err
