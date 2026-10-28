@@ -492,15 +492,21 @@ func beatingTom(seed uint64, seconds, beat, ratio, tau float64) []float64 {
 		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
 		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
 		z ^= z >> 31
-		return float64(z>>11)/float64(1<<53)*2 - 1
+		return float64(float64(z>>11)/float64(1<<53)*2) - 1
 	}
 	phases := [3]float64{(noise() + 1) * math.Pi, (noise() + 1) * math.Pi, (noise() + 1) * math.Pi}
 	hit := make([]float64, int(seconds*rate))
 	peak := 0.0
 	for i := range hit {
 		t := float64(i) / rate
-		hit[i] = math.Exp(-t/tau)*(math.Cos(2*math.Pi*82*t+phases[0])+ratio*math.Cos(2*math.Pi*(82+beat)*t+phases[1])) +
-			.4*math.Exp(-t/(tau/2))*math.Cos(2*math.Pi*130*t+phases[2]) + .3*noise()*math.Exp(-t/.004)
+		// Every product is rounded before it is added, as mul does for the analysis,
+		// so the recording is the same on a processor that fuses x*y+z.
+		turns := func(hz float64) float64 { return float64(2 * math.Pi * hz * t) }
+		modes := math.Cos(turns(82)+phases[0]) + float64(ratio*math.Cos(turns(82+beat)+phases[1]))
+		body := float64(math.Exp(-t/tau) * modes)
+		overtone := float64(.4 * math.Exp(-t/(tau/2)) * math.Cos(turns(130)+phases[2]))
+		stick := float64(.3 * noise() * math.Exp(-t/.004))
+		hit[i] = body + overtone + stick
 		peak = max(peak, math.Abs(hit[i]))
 	}
 	for i := range hit {
@@ -513,7 +519,7 @@ func beatingTom(seed uint64, seconds, beat, ratio, tau float64) []float64 {
 // a room at -70 dBFS.
 func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
 	const rate = 48000
-	pcm := make([]float64, int((.3+float64(len(levels))*gap+1.5)*rate))
+	pcm := make([]float64, int((.3+float64(float64(len(levels))*gap)+1.5)*rate))
 	state := uint64(0xfeed)
 	for i := range pcm {
 		state += 0x9e3779b97f4a7c15
@@ -521,13 +527,13 @@ func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
 		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
 		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
 		z ^= z >> 31
-		pcm[i] = math.Pow(10, -70.0/20) * math.Sqrt(3) * (float64(z>>11)/float64(1<<53)*2 - 1)
+		pcm[i] = math.Pow(10, -70.0/20) * math.Sqrt(3) * (float64(float64(z>>11)/float64(1<<53)*2) - 1)
 	}
 	for k, level := range levels {
-		at := int((.3 + float64(k)*gap) * rate)
+		at := int((.3 + float64(float64(k)*gap)) * rate)
 		for i, x := range beatingTom(uint64(400+k), gap+1.5, beat, ratio, tau) {
 			if at+i < len(pcm) {
-				pcm[at+i] += x * level
+				pcm[at+i] += float64(x * level)
 			}
 		}
 	}

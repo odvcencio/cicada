@@ -1250,7 +1250,7 @@ func TestKitDoesNotCallLoudTakesThatDidNotClipClipped(t *testing.T) {
 		for hit := 0; hit < 3; hit++ {
 			for i := 0; i < rate; i++ {
 				at := float64(i) / rate
-				pcm[hit*rate+rate/2+i] += peak * math.Sin(2*math.Pi*80*at) * math.Exp(-at/.15)
+				pcm[hit*rate+rate/2+i] += float64(peak * math.Sin(2*math.Pi*80*at) * math.Exp(-at/.15))
 			}
 		}
 		return pcm
