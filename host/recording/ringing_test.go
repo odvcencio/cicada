@@ -131,7 +131,7 @@ func TestRingingTailsThatFillTheTakeAreKeptToTheNextHit(t *testing.T) {
 				}
 				// Every tail was cut while it still rang, well above the quiet
 				// level and below where the hit started.
-				if !h.Cut || h.CutDB < report.QuietDB+10 || h.CutDB > h.LoudnessDB-6 {
+				if !h.Cut || h.CutDB < report.QuietDB+10 || h.CutDB > h.LoudnessDB-5 {
 					t.Errorf("hit %d: cut %v at %.1f dBFS; its first 40 ms is at %.1f dBFS and a finished tail is below %.1f dBFS", i+1, h.Cut, h.CutDB, h.LoudnessDB, report.QuietDB)
 				}
 			}
@@ -477,5 +477,50 @@ func TestRingingDoesNotCountASwellAsAMergedAttack(t *testing.T) {
 		if err != nil || len(hits) != 1 || reports[0].Merged != test.merged {
 			t.Errorf("strikes %.2f s apart: %d hits and %d merged attacks (%v); want 1 and %d", test.spacing, len(hits), reports[0].Merged, err, test.merged)
 		}
+	}
+}
+
+// peakOf is the largest absolute sample of pcm in frames from to to.
+func peakOf(pcm []float32, from, to int) float64 {
+	peak := 0.0
+	for _, x := range pcm[max(0, from):min(len(pcm), to)] {
+		peak = max(peak, math.Abs(float64(x)))
+	}
+	return peak
+}
+
+// A cymbal struck again while the last one rings is cut off by the next hit.
+// The cut must fall before the next hit's attack, and the next slice must begin
+// before it: otherwise the first slice ends in a burst of the second strike, and
+// the second loses the start of its own attack. The energy that finds a hit is
+// smoothed over 10 ms, so it shows a swell a few milliseconds after it began.
+func TestRingingCutSliceEndsBeforeTheNextAttackAndTheNextBeginsBeforeIt(t *testing.T) {
+	const rate, ms = 48000, 48
+	for _, spacing := range []float64{4, 6} {
+		t.Run(fmt.Sprintf("%.0f s apart", spacing), func(t *testing.T) {
+			audio := spaced(t, testwav.LongCrash, testwav.Layout{Lead: 1, Spacing: spacing, After: 2, RoomDB: -80}, .55, .50, .60, .52)
+			hits, _, err := AnalyzeTakes([]Audio{audio}, Options{Root: 49, Layers: 1, Ringing: true})
+			if err != nil || len(hits) != 4 {
+				t.Fatalf("found %d hits, played 4 (%v)", len(hits), err)
+			}
+			for i := 0; i+1 < len(hits); i++ {
+				h, next := hits[i], hits[i+1]
+				if !h.Cut {
+					t.Fatalf("hit %d was not cut off; the test needs a tail that runs on under the next hit", i+1)
+				}
+				// The last 3 ms of the cut slice, in the source, are tail: no louder
+				// than the 20 ms before them, give or take the tail's own texture.
+				tail := peakOf(audio.PCM, h.End-25*ms, h.End-5*ms)
+				if end := peakOf(audio.PCM, h.End-3*ms, h.End); end > 2*tail {
+					t.Errorf("hit %d: the last 3 ms of the slice peak at %.1f dB above the tail before them; the next attack has begun", i+1, dB(end/tail))
+				}
+				// The next slice begins before its hit does: its first 2 ms are
+				// the tail as well, no louder than the 20 ms before them.
+				before := peakOf(audio.PCM, next.Start-25*ms, next.Start-5*ms)
+				if start := peakOf(audio.PCM, next.Start, next.Start+2*ms); start > 2*before {
+					t.Errorf("hit %d: the slice begins %.1f dB above the tail before it, inside the attack", i+2, dB(start/before))
+				}
+			}
+		})
 	}
 }

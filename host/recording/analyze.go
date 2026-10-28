@@ -15,14 +15,17 @@ import (
 // be at least half a second apart. A hit starts only where the energy rises
 // 2.5 times above its quietest level in the previous 10 ms and 1.5 times
 // above its loudest level between 100 and 10 ms before, so that a tail beating
-// against itself does not look like a new hit. The room's noise is read from
-// the quietest 200 ms of each recording; TakeReport.NoRoomTone says when the
-// recording does not open with room tone, where that stretch may be a tail. A
-// hit keeps its tail until the energy is 60 dB below the recording's loudest
-// hit, or twice the noise floor when that is higher. If the next hit or the end
-// of the recording comes first, the tail is cut there and fades out over 5 ms;
-// the hit is marked Cut when the tail was still more than 6 dB above that
-// level.
+// against itself does not look like a new hit. That energy is smoothed over 10
+// ms, so it finds a hit a few milliseconds after it began. A slice starts 3 ms
+// before the 2 ms window in which the hit began, and the slice before it ends
+// there, so a cut tail does not end in the next attack. The room's noise is
+// read from the quietest 200 ms of each recording; TakeReport.NoRoomTone says
+// when the recording does not open with room tone, where that stretch may be a
+// tail. A hit keeps its tail until the energy is 60 dB below the recording's
+// loudest hit, or twice the noise floor when that is higher. If the next hit or
+// the end of the recording comes first, the tail is cut there and fades out
+// over 5 ms; the hit is marked Cut when the tail was still more than 6 dB above
+// that level.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
@@ -92,6 +95,12 @@ const (
 	ringRecentMS = 100 // a new hit must beat the loudest energy from this long before it until 10 ms before it
 	cutFadeMS    = 5   // a hit that is cut off fades out over this time
 
+	ringRiseSpanMS     = 20  // a hit found by its attack began within this long before
+	ringRiseGapMS      = 10  // rises closer together than this belong to one surge of energy
+	ringRiseFactor     = 2   // a surge of energy rises this many times above its quietest level in the previous 10 ms
+	ringStepFactor     = 2   // a hit begins in the 2 ms window that is this many times louder than the 12 ms before it
+	ringAttackRise     = 2.5 // a new hit must rise this many times above its quietest level in the previous 10 ms
+	ringNearMinimum    = 1.1 // energy this close to its lowest is as quiet, for finding where a hit began
 	ringRiseOverRecent = 1.5 // a new hit must beat the recent maximum by this factor
 	ringNoiseCap       = .05 // the noise floor is read as at most this fraction of the loudest energy
 	ringCutMargin      = 2   // a cut tail is reported when it is this many times above the level where tails finish
@@ -204,36 +213,69 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 		}
 		swell := a.Rate * ringSwellMS / 1000
 		recent := max(1, ringRecentMS*a.Rate/1000/hop)
+		span := max(1, ringRiseSpanMS*a.Rate/1000/hop)
+		surge := max(1, ringRiseGapMS*a.Rate/1000/hop)
 		var onsets []int
 		last := -a.Rate
 		wasAttack := false
+		// The attack is found a little after the hit began, since the energy it
+		// is found in is smoothed over 10 ms. The hit began where the surge of
+		// energy that carried it over the recent maximum began: the first window
+		// of the rises that follow one another (surgeFrom).
+		roseAt, surgeFrom := -surge-1, 0
 		for w, e := range energy {
 			frame := w * hop
 			attack := false
-			if e > threshold {
-				if options.Ringing {
-					floor, recentMax := 0.0, 0.0
-					if w > 0 {
-						floor = slices.Min(energy[max(0, w-5):w])
+			if options.Ringing {
+				floor := 0.0
+				if w > 0 {
+					floor = slices.Min(energy[max(0, w-5):w])
+				}
+				if e > floor*ringRiseFactor {
+					if w-roseAt > surge {
+						surgeFrom = w
 					}
+					roseAt = w
+				}
+				if e > threshold {
+					recentMax := 0.0
 					// The 10 ms before this window belong to the rise itself,
 					// which the floor test covers; the maximum looks further back.
 					if from, to := max(0, w-recent), w-5; from < to {
 						recentMax = slices.Max(energy[from:to])
 					}
-					attack = e > floor*2.5 && e > recentMax*ringRiseOverRecent
-				} else {
-					previous := 0.0
-					if w > 0 {
-						previous = energy[w-1]
-					}
-					attack = previous < threshold || e > max(threshold, previous*2.5)
+					attack = e > floor*ringAttackRise && e > recentMax*ringRiseOverRecent
 				}
+			} else if e > threshold {
+				previous := 0.0
+				if w > 0 {
+					previous = energy[w-1]
+				}
+				attack = previous < threshold || e > max(threshold, previous*2.5)
 			}
 			switch {
 			case attack && frame-last >= gap:
+				if options.Ringing {
+					// The smoothed energy shows the surge a few windows after it
+					// began. Look back through the 2 ms energy for the window in
+					// which the hit began: the first that is well above the 12 ms
+					// before it.
+					begin, found := surgeFrom, false
+					for k := max(0, surgeFrom-4); k <= w && !found; k++ {
+						if before := rawEnergy[max(0, k-6):k]; len(before) == 0 || rawEnergy[k] > slices.Max(before)*ringStepFactor {
+							begin, found = k, true
+						}
+					}
+					// A swell has no such window, since each step of it is small, and
+					// neither has a hit that lands on a ring. The hit began where the
+					// energy was lowest in the span before it was found.
+					if !found {
+						begin = lastNearMinimum(energy, max(0, w-span), w)
+					}
+					frame = begin * hop
+				}
 				onsets = append(onsets, frame)
-				last = frame
+				last = w * hop
 			case attack && !wasAttack && frame-last >= swell:
 				// A new attack too soon after a hit: it stays inside that hit.
 				report.Merged++
@@ -360,6 +402,20 @@ func startsWithRoomTone(energy []float64, loudest float64, n int, noise float64)
 	sound := max(loudest*.10, noise*ringLeadInSound)
 	first := slices.IndexFunc(energy, func(e float64) bool { return e > sound })
 	return first >= n && quietestStretch(energy[:first], n) <= noise*ringLeadInOverRoom
+}
+
+// lastNearMinimum returns the last index in [from, to] whose value is within
+// ringNearMinimum of the lowest value there. Where the energy is steady, the
+// lowest value is whichever window the noise made lowest; the last window near
+// it is where the energy stopped being steady.
+func lastNearMinimum(energy []float64, from, to int) int {
+	low := slices.Min(energy[from : to+1])
+	for k := to; k > from; k-- {
+		if energy[k] <= low*ringNearMinimum {
+			return k
+		}
+	}
+	return from
 }
 
 // frameBudgetError says how far a set of recordings is over the frame limit.

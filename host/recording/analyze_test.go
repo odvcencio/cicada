@@ -237,7 +237,7 @@ func TestAnalysisDoesNotDependOnFusedMultiplyAdd(t *testing.T) {
 	}
 	addHits(cut)
 	add(float64(reports[0].Merged))
-	const want = "eeff2a371ab67ac15fd87e1cc3d701661d8f3a33ce910b39612d430933e69a8f"
+	const want = "e3d5eee81329362ff68067c9e2ad899f992873858d9c60d60f2e90bd5c202d22"
 	if got := fmt.Sprintf("%x", sum.Sum(nil)); got != want {
 		t.Fatalf("analysis digest %s, want %s: the numbers of an analysis changed; if the change is meant, take the new digest from a build that does not fuse", got, want)
 	}
