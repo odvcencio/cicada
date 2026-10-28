@@ -331,6 +331,249 @@ func TestExportLoudnessRunsInFullWhenTheMasterCacheCannotBeCreated(t *testing.T)
 	}
 }
 
+var errTestNoSpace = errors.New("no space left on device")
+
+// cacheFilesIn lists the master cache files in dir.
+func cacheFilesIn(t *testing.T, dir string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, ".cicada-master-cache-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// fullDiskWriter takes room bytes and then fails, as a file on a full disk does.
+type fullDiskWriter struct {
+	w    io.Writer
+	room int
+}
+
+func (f *fullDiskWriter) Write(p []byte) (int, error) {
+	if len(p) <= f.room {
+		f.room -= len(p)
+		return f.w.Write(p)
+	}
+	n, err := f.w.Write(p[:f.room])
+	f.room = 0
+	if err == nil {
+		err = errTestNoSpace
+	}
+	return n, err
+}
+
+// diskFaults makes one step of the loudness search fail the way a nearly full
+// disk makes it fail, and records what the search does.
+//
+// The step fails from its from-th call on, but only while a master cache file
+// exists: the cache holds the space that the step needs, so the failure ends
+// once the search has removed the cache. With always set the failure stays
+// after the cache is gone, as it does on a disk that is full without a cache.
+// The steps are "render" (the disk fills part way through a pass), "sync" and
+// "close" (of the pass's file), "copy" (of the pass to the best-render file)
+// and "read" (the stored mix is cut short before a pass replays it).
+type diskFaults struct {
+	t      *testing.T
+	dir    string
+	step   string
+	from   int
+	always bool
+
+	cached     []bool // for each call of the render pass, whether it had a cache
+	failures   int    // failures injected so far
+	failedPass int    // the pass the first failure came in, counting from 1
+	calls      map[string]int
+}
+
+func installDiskFaults(t *testing.T, dir, step string, from int, always bool) *diskFaults {
+	t.Helper()
+	pass, create, open, copyFile := loudnessRenderPass, newLoudnessMasterCache, openLoudnessPassFile, copyLoudnessFile
+	t.Cleanup(func() {
+		loudnessRenderPass, newLoudnessMasterCache, openLoudnessPassFile, copyLoudnessFile = pass, create, open, copyFile
+	})
+	d := &diskFaults{t: t, dir: dir, step: step, from: from, always: always, calls: map[string]int{}}
+	loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+		d.cached = append(d.cached, opts.MasterCache != nil)
+		if d.failures > 0 && opts.MasterCache == nil && len(cacheFilesIn(t, dir)) > 0 {
+			t.Errorf("pass %d renders without the cache, but its file is still on the disk", len(d.cached))
+		}
+		if step == "read" && len(d.cached) >= from {
+			for _, name := range cacheFilesIn(t, dir) {
+				if info, err := os.Stat(name); err == nil && info.Size() > 0 {
+					if err := os.Truncate(name, info.Size()/3); err != nil {
+						t.Fatal(err)
+					}
+					d.fail()
+				}
+			}
+		}
+		if d.fires("render") {
+			w = &fullDiskWriter{w: w, room: 20_000}
+		}
+		return render.WAV(score, opts, w)
+	}
+	openLoudnessPassFile = func(path string) (loudnessPassFile, error) {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+		if err != nil {
+			return nil, err
+		}
+		return &faultyPassFile{File: file, faults: d}, nil
+	}
+	copyLoudnessFile = func(source, destination string) error {
+		if d.fires("copy") {
+			data, err := os.ReadFile(source)
+			if err != nil {
+				return err
+			}
+			// Half of the file arrives before the disk is full.
+			if err := os.WriteFile(destination, data[:len(data)/2], 0o600); err != nil {
+				return err
+			}
+			return errTestNoSpace
+		}
+		return copyRenderFile(source, destination)
+	}
+	return d
+}
+
+// fires counts a call of step and reports whether this call fails.
+func (d *diskFaults) fires(step string) bool {
+	d.calls[step]++
+	if step != d.step || d.calls[step] < d.from || !d.always && len(cacheFilesIn(d.t, d.dir)) == 0 {
+		return false
+	}
+	d.fail()
+	return true
+}
+
+func (d *diskFaults) fail() {
+	d.failures++
+	if d.failedPass == 0 {
+		d.failedPass = len(d.cached)
+	}
+}
+
+// faultyPassFile is a pass's candidate file whose sync or close can fail.
+type faultyPassFile struct {
+	*os.File
+	faults *diskFaults
+}
+
+func (f *faultyPassFile) Sync() error {
+	if f.faults.fires("sync") {
+		return errTestNoSpace
+	}
+	return f.File.Sync()
+}
+
+func (f *faultyPassFile) Close() error {
+	err := f.File.Close()
+	if f.faults.fires("close") {
+		return errTestNoSpace
+	}
+	return err
+}
+
+// A finished capture keeps its file for the rest of the search, so on a nearly
+// full disk the cache can take the space that a later step needs. A pass, its
+// sync or close, the copy to the best-render file, and the read of the stored
+// mix must each give the cache up and repeat without it, and the search must
+// then return the report and the audio that it returns when nothing fails.
+func TestExportLoudnessFreesTheMasterCacheWhenAStepFails(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	search := func(t *testing.T, step string, from int) (faults *diskFaults, result loudnessFileReport, wav []byte, err error) {
+		dir := t.TempDir()
+		faults = installDiskFaults(t, dir, step, from, false)
+		path := filepath.Join(dir, "search.wav")
+		result, err = renderLoudnessFileReport(inspection.score, path, opts, target, nil)
+		wav, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("the search wrote no audio: %v (search error: %v)", readErr, err)
+		}
+		return faults, result, wav, err
+	}
+	base, want, wantWAV, wantErr := search(t, "", 0)
+	if want.Passes < 3 || len(base.cached) != want.Passes || !base.cached[0] || !base.cached[1] || base.calls["copy"] < 2 {
+		t.Fatalf("the search must replay from a finished capture and copy twice: %d passes, cached %v, %d copies", want.Passes, base.cached, base.calls["copy"])
+	}
+	for _, test := range []struct {
+		step string
+		from int // the call of the step that fails first
+	}{
+		{"render", 1}, {"render", 2},
+		{"sync", 1}, {"sync", 2},
+		{"close", 1}, {"close", 2},
+		{"copy", 1}, {"copy", 2},
+		{"read", 2},
+	} {
+		t.Run(fmt.Sprintf("%s call %d", test.step, test.from), func(t *testing.T) {
+			faults, got, gotWAV, gotErr := search(t, test.step, test.from)
+			if faults.failures == 0 {
+				t.Fatal("the test injected no failure")
+			}
+			if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !reflect.DeepEqual(got, want) || !bytes.Equal(gotWAV, wantWAV) {
+				t.Fatalf("search after a failed %s differs:\n got %+v (%v)\nwant %+v (%v)", test.step, got, gotErr, want, wantErr)
+			}
+			// Only a pass that failed is rendered twice. Passes up to the failure
+			// had the cache; the repeat and every later pass run without it.
+			wantPasses := want.Passes + 1
+			if test.step == "copy" {
+				wantPasses = want.Passes
+			}
+			if len(faults.cached) != wantPasses {
+				t.Fatalf("rendered %d passes, want %d; by cache: %v", len(faults.cached), wantPasses, faults.cached)
+			}
+			for i, cached := range faults.cached {
+				if cached != (i < faults.failedPass) {
+					t.Fatalf("passes by cache: %v; the failure came in pass %d, so only the passes up to it can have the cache", faults.cached, faults.failedPass)
+				}
+			}
+			if files := cacheFilesIn(t, faults.dir); len(files) != 0 {
+				t.Fatalf("the search left cache files behind: %v", files)
+			}
+		})
+	}
+}
+
+// A step that still fails without the cache is repeated once and then fails the
+// search. A search that never had a cache does not repeat anything.
+func TestExportLoudnessMasterCacheFallbackRepeatsAStepOnce(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	run := func(t *testing.T, faults *diskFaults) error {
+		t.Helper()
+		_, err := renderLoudnessFileReport(inspection.score, filepath.Join(faults.dir, "full.wav"), opts, target, nil)
+		if err == nil || !strings.Contains(err.Error(), errTestNoSpace.Error()) {
+			t.Fatalf("want the disk-full error, got %v", err)
+		}
+		if files := cacheFilesIn(t, faults.dir); len(files) != 0 {
+			t.Fatalf("the search left cache files behind: %v", files)
+		}
+		return err
+	}
+	t.Run("pass", func(t *testing.T) {
+		faults := installDiskFaults(t, t.TempDir(), "render", 2, true)
+		run(t, faults)
+		if want := []bool{true, true, false}; !reflect.DeepEqual(faults.cached, want) {
+			t.Fatalf("passes by cache: %v, want %v: pass 2 with the cache, then once without it", faults.cached, want)
+		}
+	})
+	t.Run("copy", func(t *testing.T) {
+		faults := installDiskFaults(t, t.TempDir(), "copy", 1, true)
+		run(t, faults)
+		if faults.calls["copy"] != 2 || !reflect.DeepEqual(faults.cached, []bool{true}) {
+			t.Fatalf("%d copies after passes by cache %v, want 2 after one pass with the cache", faults.calls["copy"], faults.cached)
+		}
+	})
+	t.Run("no cache", func(t *testing.T) {
+		faults := installDiskFaults(t, t.TempDir(), "render", 1, true)
+		newLoudnessMasterCache = func(string) (*render.MasterCache, error) { return nil, errTestNoSpace }
+		run(t, faults)
+		if !reflect.DeepEqual(faults.cached, []bool{false}) {
+			t.Fatalf("passes by cache: %v, want one pass without a cache and no repeat", faults.cached)
+		}
+	})
+}
+
 func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-limiter.cicada"))
 	if err != nil {

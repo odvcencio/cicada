@@ -589,6 +589,27 @@ var loudnessRenderPass = render.WAV
 // replay the first pass's mix; tests replace it to fail the way a full disk does.
 var newLoudnessMasterCache = render.NewMasterCache
 
+// loudnessPassFile is the candidate WAV that one pass writes.
+type loudnessPassFile interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// openLoudnessPassFile opens and empties the candidate file for one pass; tests
+// wrap the file to fail its sync or close the way a full disk does.
+var openLoudnessPassFile = func(path string) (loudnessPassFile, error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// copyLoudnessFile copies a pass's WAV over the file that keeps the best render
+// so far; tests replace it to fail the way a full disk does.
+var copyLoudnessFile = copyRenderFile
+
 // When the score's master chain holds a limiter, loudness targeting applies its
 // gain at the master input and lets that limiter hold the true-peak ceiling.
 // Two guard rails keep the search from crushing the mix:
@@ -690,6 +711,23 @@ func renderLoudnessFileReport(score *notation.Score, path string, opts render.Op
 	return renderLoudnessFileReportWithShortfall(score, path, "", opts, target, onPass)
 }
 
+// renderLoudnessPass renders one pass into the candidate file and flushes the
+// file to disk. It returns the first error of the render, the sync and the close.
+func renderLoudnessPass(score *notation.Score, opts render.Options, candidatePath string) (render.Report, error) {
+	file, err := openLoudnessPassFile(candidatePath)
+	if err != nil {
+		return render.Report{}, err
+	}
+	report, err := loudnessRenderPass(score, opts, file)
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return report, err
+}
+
 func renderStudioLoudnessFileReport(score *notation.Score, path string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
 	return renderLoudnessFileReportWithShortfall(score, path, studioShortfallPath(path), opts, target, onPass)
 }
@@ -745,14 +783,35 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	// Every pass differs only in export gain and DC correction. When a master
 	// chain follows the direct renderer's mix, later passes replay the first
 	// pass's mix instead of synthesizing it again; the scheduled engine renders
-	// in full each time. The cache only saves time: if its file cannot be
+	// in full each time. The cache only saves time. If its file cannot be
 	// created, every pass renders in full.
+	//
+	// A finished capture keeps its file, next to the output, for the rest of the
+	// search, and the file takes disk space that the export's own files need. A
+	// pass, or the copy of a pass to the best-render file, that fails while the
+	// cache exists therefore removes the cache and repeats that step without it,
+	// and so does a pass that cannot read the cache back. Every later pass then
+	// renders in full, as it does when the cache cannot be created.
 	var masterCache *render.MasterCache
 	if hasMasterChain && !render.UsesScheduledEngine(score, opts) {
 		if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
 			masterCache = cache
 			defer masterCache.Close()
 		}
+	}
+	dropMasterCache := func() {
+		// Close empties the file before it removes it, so the space comes back
+		// even when the removal fails; there is nothing more to do with its error.
+		masterCache.Close()
+		masterCache = nil
+	}
+	copyBest := func() error {
+		err := copyLoudnessFile(candidatePath, bestPath)
+		if err != nil && masterCache != nil {
+			dropMasterCache()
+			err = copyLoudnessFile(candidatePath, bestPath)
+		}
+		return err
 	}
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
@@ -773,20 +832,14 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
 		passOptions.MasterCache = masterCache
 		passOptions.Normalize = false
-		file, err := os.OpenFile(candidatePath, os.O_WRONLY|os.O_TRUNC, 0)
+		passReport, err := renderLoudnessPass(score, passOptions, candidatePath)
+		if err != nil && masterCache != nil {
+			dropMasterCache()
+			passOptions.MasterCache = nil
+			passReport, err = renderLoudnessPass(score, passOptions, candidatePath)
+		}
 		if err != nil {
 			return report, err
-		}
-		passReport, renderErr := loudnessRenderPass(score, passOptions, file)
-		if renderErr == nil {
-			renderErr = file.Sync()
-		}
-		closeErr := file.Close()
-		if renderErr != nil {
-			return report, renderErr
-		}
-		if closeErr != nil {
-			return report, closeErr
 		}
 		measurement, err := render.VerifyWAV(candidatePath, render.VerifyOptions{
 			SampleRate: passReport.SampleRate,
@@ -808,7 +861,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		if dcSafe && !(peakSafe && limiterSafe) && !hasBest {
 			excess := math.Max(0, measurement.TruePeakDBTP-target.TruePeakMaxDBTP) + math.Max(0, chainReduction-maxExportLimiterReductionDB)
 			if excess < peakFallbackExcess {
-				if err := copyRenderFile(candidatePath, bestPath); err != nil {
+				if err := copyBest(); err != nil {
 					return report, err
 				}
 				peakFallbackRender, peakFallbackMeasure, peakFallbackGain = passReport, measurement, gain
@@ -819,7 +872,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		if safe {
 			delta := math.Abs(measurement.IntegratedLUFS - target.LoudnessTarget)
 			if !hasBest || delta < bestDelta {
-				if err := copyRenderFile(candidatePath, bestPath); err != nil {
+				if err := copyBest(); err != nil {
 					return report, err
 				}
 				bestRender, bestMeasure, bestGain, bestDelta, bestBiasL, bestBiasR, hasBest = passReport, measurement, gain, delta, biasL, biasR, true
