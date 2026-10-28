@@ -70,7 +70,8 @@ Native playback and offline WAV/stems now connect this cache through
 1 MiB are paged; short clips and all sampler assets keep their resident path.
 The resident budget for sampler assets remains 64 MiB. Sampler packs are not
 counted in it: `schedule.Compile` holds them under their own cap, 1 GiB by
-default (`schedule.Options.MaxResidentPCM`). A streaming configuration holds verified
+default (`schedule.Options.MaxResidentPCM`), and decodes each pack once per
+process (`schedule.Validate` applies the same rules without reading audio). A streaming configuration holds verified
 metadata without files or workers; `engine.New` opens its private runtime only
 after engine validation succeeds. Each engine admits at most 32 clip readers
 and 32 upcoming-start readers. At 48 kHz the stereo page arena is 14.25 MiB,

@@ -15,14 +15,20 @@ schema.
 
 ## Sampler pack memory
 
-`cicada render SCORE -o FILE`, `cicada stems SCORE -o DIR` and `cicada play
+`cicada render SCORE -o FILE`, `cicada stems SCORE -o DIR`, `cicada play
+[SCORE]`, `cicada audition SCORE`, `cicada check [SCORE]` and `cicada studio
 [SCORE]` take `--max-resident-pcm SIZE`. It caps the decoded PCM of all sampler
-packs the score loads, 1 GiB by default. SIZE is a whole number with a unit:
-`KiB`, `MiB`, `GiB` or `TiB`, or `KB`, `MB`, `GB` or `TB`. A score over the cap
-is refused before it renders, and the message names the cap and the size
-measured. `cicada check` loads the packs and reports a note outside every zone
-of its pack, but it does not apply the cap. See
-[instrument packs](sampler/packs.md#memory-limits).
+packs the score loads, 1 GiB by default. When the option is omitted, the
+environment variable `CICADA_MAX_RESIDENT_PCM` sets the cap, which is how to
+give Studio another cap when it starts from a launcher that passes no flags.
+SIZE is a whole number with a unit: `KiB`, `MiB`, `GiB` or `TiB`, or `KB`, `MB`,
+`GB` or `TB`, in capitals or in lower case (`Mb` is refused, because it can
+read as megabits). The cap is counted from the pack manifests before any audio
+is read, so a score over the cap is refused without allocating its audio, and
+the message names the cap and the size. `cicada check` reports the same
+refusal as `CICADA-SAMPLER-MEMORY`, loads the packs one at a time, and reports a
+pack that does not load at 44.1, 48 or 96 kHz and a note outside every zone of
+its pack. See [instrument packs](sampler/packs.md#memory-limits).
 
 ```sh
 cicada render song.cicada -o song.wav --max-resident-pcm 2GiB

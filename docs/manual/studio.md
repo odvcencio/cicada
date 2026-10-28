@@ -1011,7 +1011,9 @@ Assets are verified before playback, confined to the project directory, and
 shared immutably between regions. Native playback streams long clip assets;
 resident sampler-asset PCM is limited to 64 MiB, with 16 clips per audio track.
 Sampler packs are not counted in that limit; native playback holds them under a
-separate cap, 1 GiB by default (see [instrument packs](../sampler/packs.md#memory-limits)). File
+separate cap, 1 GiB by default, which `cicada studio --max-resident-pcm` or
+`CICADA_MAX_RESIDENT_PCM` changes (see [instrument packs](../sampler/packs.md#memory-limits)).
+Studio reads a pack's audio once, when the engine first needs it, and reuses that copy for every later request, edit and export. File
 I/O and decoding never run in the audio callback. Offline WAV and stems exports
 wait for pages outside rendering and fail explicitly on missing audio. While a new native take
 records, the full project plays as accompaniment, including sampler tracks

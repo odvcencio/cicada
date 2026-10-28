@@ -97,7 +97,8 @@ These limits belong to the pad sampler. A `sampler` declaration with
 `pack = ...` loads a multisampled instrument pack instead, and a pack is not
 counted against them. A native render or `cicada play` holds all of a project's
 packs under one cap of 1 GiB, which `--max-resident-pcm` changes, and
-`cicada check` reports a note that no zone of the pack covers. See
+`cicada check` reports a note that no zone of the pack covers and packs that
+`render` would refuse for their size. See
 [instrument packs](../sampler/packs.md#memory-limits).
 
 Pad monitoring uses browser audio, even when the workstation's native output

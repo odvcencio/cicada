@@ -17,6 +17,7 @@ cicada audition song.cicada --from 9 --bars 8 --json
 | `--from <bar>` | One-based first bar (default 1). |
 | `--bars <n>` | Bars to analyze; 0 means through the song end. |
 | `--json` | Print the report as JSON instead of text. |
+| `--max-resident-pcm <size>` | Cap on the decoded audio of the score's sampler packs, such as `2GiB` (default 1 GiB). `CICADA_MAX_RESIDENT_PCM` sets it when the flag is omitted. A score over the cap is refused before any pack is read. |
 
 The command renders the mix and the per-track stems in process with the same
 engine as `cicada render` and `cicada stems`, with no tail. The same score and

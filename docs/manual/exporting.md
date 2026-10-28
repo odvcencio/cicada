@@ -37,8 +37,10 @@ DC offset, finite float data, and full-scale integer samples.
 A score that plays instrument packs (a `sampler` with `pack = ...`) keeps their
 audio in memory as decoded float32 PCM. `--max-resident-pcm` caps the total at
 1 GiB unless you give another size, such as `--max-resident-pcm 2GiB`. A
-project over the cap is refused before it renders; see
-[instrument packs](../sampler/packs.md#memory-limits).
+project over the cap is refused before it renders, and before its audio is
+read; see [instrument packs](../sampler/packs.md#memory-limits). Packs are found
+from the project folder (the folder of `cicada.mod`), so a score in a subfolder
+renders the same packs as the entry score.
 
 ## Stems
 
