@@ -281,7 +281,9 @@ func main() {
 		os.Exit(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
-	renderOptions.AssetDir = filepath.Dir(path)
+	// Audio assets and sampler packs resolve from the project folder, where
+	// check looks, not from the folder of the score that was named.
+	renderOptions.AssetDir = inspection.root(path)
 	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
 		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -323,15 +325,15 @@ func main() {
 		}
 		writeJSON(program)
 	case "render":
-		renderOptions.AssetRoot = filepath.Dir(path)
-		renderOptions.AssetDir = filepath.Dir(path)
+		renderOptions.AssetRoot = inspection.root(path)
+		renderOptions.AssetDir = inspection.root(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	case "stems":
-		renderOptions.AssetRoot = filepath.Dir(path)
-		renderOptions.AssetDir = filepath.Dir(path)
+		renderOptions.AssetRoot = inspection.root(path)
+		renderOptions.AssetDir = inspection.root(path)
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -391,11 +393,11 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
-		"new <name> | check [--profile desktop|browser] [score.cicada] | validate <score.cicada> | fix <score.cicada> [--all] [--check] | play [score.cicada] [--audio tymbal|oto|null] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] | "+
+		"new <name> | check [--profile desktop|browser] [--max-resident-pcm 1GiB] [score.cicada] | validate <score.cicada> | fix <score.cicada> [--all] [--check] | play [score.cicada] [--audio tymbal|oto|null] [--max-resident-pcm 1GiB] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm 1GiB] | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
-		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5] | "+
-		"stems <file.cicada> -o <dir> [--rate 48000 --from 1 --bars 16 --tail 3s] | audition <file.cicada> [-o <dir> --from 1 --bars 16 --json] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
+		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5 --max-resident-pcm 1GiB] | "+
+		"stems <file.cicada> -o <dir> [--rate 48000 --from 1 --bars 16 --tail 3s --max-resident-pcm 1GiB] | audition <file.cicada> [-o <dir> --from 1 --bars 16 --json --max-resident-pcm 1GiB] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
 		"director <file.cicada> -o <director.json> [--rate 48000] | midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
@@ -1077,6 +1079,11 @@ func copyRenderFile(source, destination string) error {
 }
 
 func renderArgs(args []string, wantBits int) (string, render.Options, *renderTargetOptions) {
+	args, residentPCM, err := parseMaxResidentPCM(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", err)
+		os.Exit(2)
+	}
 	flags := flag.NewFlagSet("render", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	output := flags.String("o", "", "output WAV")
@@ -1139,7 +1146,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline}, target
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM}, target
 }
 
 func verifyWAVCommand(args []string) {

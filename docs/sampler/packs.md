@@ -18,7 +18,57 @@ song { main*4 }
 
 `root` supplies the home octave for relative score pitches; each pack zone has its own recorded root. `voices` limits simultaneous notes; each note can blend two attack layers and two release layers. The manifest hash pins the exact map, configuration, provenance and asset hashes. Packs cannot also declare `asset` or loop `mode`. Existing single-file sampler declarations retain their syntax.
 
-`cicada render score.cicada -o after.wav` resolves packs inside the score directory, including confined symlink traversal. `--sampler-baseline` renders the same events through the existing single-region DSP using the same key maps, one fixed recorded dynamic, the first take and the original 2 ms release. The baseline has a separate pool for each key map and is an offline listening reference, not a performance comparison. Stems retain stereo sampler output. The host refuses missing/corrupt packs instead of substituting a synth.
+`cicada render score.cicada -o after.wav` resolves packs inside the project folder, including confined symlink traversal. The project folder is the one that holds `cicada.mod`, or the score's own folder when there is none, so a score in a subfolder such as `songs/theme.cicada` finds `packs/...` at the project root, as it finds its audio assets. `check`, `stems`, `audition`, `play` and Studio resolve packs the same way. `--sampler-baseline` renders the same events through the existing single-region DSP using the same key maps, one fixed recorded dynamic, the first take and the original 2 ms release. The baseline has a separate pool for each key map and is an offline listening reference, not a performance comparison. Stems retain stereo sampler output. The host refuses missing/corrupt packs instead of substituting a synth.
+
+## Memory limits
+
+A host keeps a pack's audio in memory as decoded float32 PCM, four bytes per sample and channel. For the catalog's six CC0 packs that is 461.8 MB, about six times their 75.8 MB PCM16 FLAC download. The limit depends on where the pack plays:
+
+| Where | Limit on pack audio in memory |
+| --- | --- |
+| `cicada render`, `stems`, `play`, `audition`, `check` and Studio | One cap shared by every pack in the project, 1 GiB by default. `--max-resident-pcm <size>` sets it on each of these commands. `CICADA_MAX_RESIDENT_PCM` sets it when the option is omitted, which is how a launcher that passes no flags gives Studio another cap. |
+| Browser image and WAM2 export (`cicada wam2`, `cicada check --profile browser`) | 64 MiB for all packs and sampler assets together. The image that holds them is limited to 2 MiB. |
+| `cmd/cicada-sampler-wasm` | 256 MiB for the one bank an instance holds. |
+
+Each pack also stays under the 256 MiB limit described below, so the default cap holds up to four packs of that size. Sampler assets that are not packs keep their own 64 MiB limit.
+
+```sh
+cicada render song.cicada -o song.wav --max-resident-pcm 2GiB
+```
+
+A size is a whole number with `B`, `KiB`, `MiB`, `GiB` or `TiB` (powers of 1024), or `KB`, `MB`, `GB` or `TB` (powers of 1000). Write a unit in capitals or in lower case, as above; `Mb` is refused because it can read as megabits.
+
+The cap is counted from the pack manifests, which list the frames and channels of each asset, before any audio is read. A project whose packs would decode to more than the cap is refused without allocating its audio. The message names the cap and the size when the cap was crossed:
+
+```text
+sampler packs exceed the native resident PCM cap (--max-resident-pcm): loading packs/bass/manifest.json would hold 139.35 MiB (146117712 bytes) of decoded PCM, cap 100 MiB (104857600 bytes)
+```
+
+Samplers that name one pack share one decoded copy, and the cap counts it once.
+
+### One copy in a process
+
+A process decodes a pack once. `cicada play` reloads, Studio requests and exports, and `cicada audition` (which compiles the score and then renders it) reuse the copy that an earlier compile decoded, when the pack has the same folder, manifest path and manifest bytes. The manifest pins every audio file by hash, so the same manifest means the same audio; an audio file changed on disk behind an unchanged manifest does not change the copy in memory until the process restarts. The output rate is not part of that identity, because the audio does not depend on it. Each rate is checked once.
+
+The process keeps decoded packs after a compile returns, so that the next compile finds them. It drops the least recently used pack when it holds more than the cap and a newer pack needs the room. A reload that leaves the packs alone therefore adds no pack memory. A reload that points a sampler at another pack holds both packs until the new score takes over at the next bar. Edits saved in quick succession can leave the playing score, the score waiting for the next bar and the score being compiled each holding packs of its own, so if every edit changes a pack the worst case is three times the cap for a short time.
+
+Studio checks that the score compiles on every state request and every edit. That check reads the manifests, counts the declared size against the cap and confirms that each audio file is present at its declared size. It decodes no audio. Damage inside an audio file (a corrupt file of the right size) shows when the engine decodes the pack: when Studio starts playback, builds a render or runs an export.
+
+## Checking a score against its packs
+
+`cicada check` reads every pack that a score declares and reports three kinds of problem. It resolves pack paths from the project folder, where it finds audio assets.
+
+- `CICADA-SAMPLER-PACK`, at the `sampler` declaration: the pack does not load (a missing file, a damaged file or a manifest that differs from its `sha256` pin), or it cannot play at 44.1, 48 or 96 kHz, the rates that the browser exports. A pack whose lowest zone key is far below its root can play at 48 kHz and not at 96 kHz, because the playback ratio is the recording's rate over the output rate and must stay within 0.125 to 8.
+- `CICADA-SAMPLER-MEMORY`, at the declaration of the sampler whose pack takes the total past the cap: the manifests declare more PCM than `--max-resident-pcm` allows (1 GiB unless you give another size), so `render`, `stems` and `play` would refuse the score. The check reads the figure from the manifests, as they do.
+- `CICADA-SAMPLER-ZONE`, at the note in the source: a scored note falls outside every zone of its track's pack.
+
+```text
+song.cicada:24:8: error CICADA-SAMPLER-ZONE: pitch c0 (MIDI 12) on track lead, pattern demo, is outside every zone of the pack for sampler sound (packs/bass/manifest.json, which covers MIDI 23-66)
+```
+
+Check proves that each pack loads by decoding it, one pack at a time: it keeps the zone table, lets the audio go, and only then reads the next pack. Its memory use follows the largest single pack, not the total.
+
+Without the zone check the note stops the render later, with engine fault 29, and stops the music in a browser. The check applies the pattern's `transpose` and each step's velocity, and a note can be outside every zone because of its velocity when the pack's zones leave a gap there (the message then adds `at velocity N`). Release zones do not start a sound, so they do not count. A note that a phrase use supplies is reported at the `use`, with the phrase's name and the use's transpose, because the use can be what moved it out of the pack's keys. A pattern that no scene, arrangement placement, chain or live stinger plays on the track is not checked.
 
 ## Manifest version 1
 

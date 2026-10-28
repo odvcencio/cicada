@@ -48,6 +48,9 @@ type Options struct {
 	MasterInputGainDB float64
 	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
 	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
+	// MaxResidentPCM caps, in bytes, the decoded PCM of all sampler packs the
+	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
+	MaxResidentPCM int64
 	// MasterCache, when set, lets repeated direct renders of one score skip
 	// synthesis: a render replays the signal that entered the master stage when
 	// it differs from the stored capture only in MasterInputGainDB,

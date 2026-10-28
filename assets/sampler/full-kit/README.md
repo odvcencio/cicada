@@ -10,7 +10,7 @@ cicada render demo/reggae-one-drop.cicada -o demo/reggae.wav --tail 10s
 
 Python 3, NumPy, FFmpeg and bsdtar are required. The builder verifies the pinned official source archive, records every source WAV checksum, and checks the exact regenerated catalog, manifests and compressed WAV hashes. It stages output and refuses to replace different or corrupt banks. Files are fetched only when the browser host requests their bank; PCM is admitted before playback. Only metadata and demo scores are committed.
 
-The distribution has **322 distinct recordings**, **34 note mappings**, and **252,612,372 compressed audio bytes** (240.91 MiB). Four physical toms cover all six GM tom notes. Shells retain 203,902,040 B (194.46 MiB) of resident float32 PCM; metals retain 252,660,624 B (240.96 MiB). Each bank stays below the existing 256 MiB cap. Together they retain 435.41 MiB PCM, plus SRC tables; browser admission temporarily holds host PCM and WASM PCM. Whole-bank loading is substantial for phones.
+The distribution has **322 distinct recordings**, **34 note mappings**, and **252,612,372 compressed audio bytes** (240.91 MiB). Four physical toms cover all six GM tom notes. Shells retain 203,902,040 B (194.46 MiB) of resident float32 PCM; metals retain 252,660,624 B (240.96 MiB). Each bank stays below the existing 256 MiB cap. Together they retain 435.41 MiB PCM, plus SRC tables; browser admission temporarily holds host PCM and WASM PCM. Whole-bank loading is substantial for phones. A native render of a groove that uses both banks holds the same 435.41 MiB, inside the default 1 GiB cap of `--max-resident-pcm`.
 
 ## Recorded coverage and MIDI routing
 

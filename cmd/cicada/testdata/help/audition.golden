@@ -3,10 +3,11 @@ cicada audition <score.cicada> [flags]
 report what a score sounds like
 
 Flags:
-  -o <directory>   write spectrogram.png, chroma.png and rhythm.png
-  --from <bar>     one-based start bar (default 1)
-  --bars <n>       bars to analyze; 0 means through song end
-  --json           write the report as JSON (format cicada.audition/1)
-  --help           show this help
+  -o <directory>             write spectrogram.png, chroma.png and rhythm.png
+  --from <bar>               one-based start bar (default 1)
+  --bars <n>                 bars to analyze; 0 means through song end
+  --json                     write the report as JSON (format cicada.audition/1)
+  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --help                     show this help
 
-Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md.
+Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted.

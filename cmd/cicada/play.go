@@ -30,6 +30,10 @@ func playCommand(args []string) error {
 	}
 	restoreThreads := raiseAudioProcessThreads(backendName)
 	defer restoreThreads()
+	args, residentPCM, err := parseMaxResidentPCM(args)
+	if err != nil {
+		return err
+	}
 	path, err := playScorePath(args)
 	if err != nil {
 		return err
@@ -42,7 +46,7 @@ func playCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	initial, err := compileLiveScoreAtRate(path, sampleRate)
+	initial, err := compileLiveScoreAtRateCapped(path, sampleRate, residentPCM)
 	if err != nil {
 		return err
 	}
@@ -70,7 +74,7 @@ func playCommand(args []string) error {
 	}
 	fmt.Fprintln(os.Stdout, playAudioBanner(format))
 	fmt.Printf("playing %s at %d Hz; edits land on the next bar (Ctrl-C to stop)\n", path, format.SampleRate)
-	err = watchLiveScore(ctxSignal, path, initialHash, stream, audio, os.Stderr)
+	err = watchLiveScore(ctxSignal, path, initialHash, stream, audio, os.Stderr, residentPCM)
 	if format.Backend == audiobackend.Tymbal {
 		fmt.Fprintln(os.Stderr, playAudioRunSummary(audio.Format(), audio.Stats()))
 	}
@@ -122,7 +126,7 @@ func renderLivePlayPeriod(source io.Reader, pcm []byte, output [][]float32) erro
 
 func playScorePath(args []string) (string, error) {
 	if len(args) > 1 {
-		return "", fmt.Errorf("usage: cicada play [score.cicada] [--audio tymbal|oto|null]")
+		return "", fmt.Errorf("usage: cicada play [score.cicada] [--audio tymbal|oto|null] [--max-resident-pcm <size>]")
 	}
 	path := "main.cicada"
 	if len(args) == 1 {
@@ -142,11 +146,17 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 }
 
 func compileLiveScoreAtRate(path string, sampleRate int) (liveplay.Score, error) {
+	return compileLiveScoreAtRateCapped(path, sampleRate, 0)
+}
+
+// compileLiveScoreAtRateCapped is compileLiveScoreAtRate with a cap, in bytes, on
+// the decoded PCM of the score's sampler packs. Zero selects the default cap.
+func compileLiveScoreAtRateCapped(path string, sampleRate int, maxResidentPCM int64) (liveplay.Score, error) {
 	p, err := loadProject(path)
 	if err != nil {
 		return liveplay.Score{}, err
 	}
-	return compileLiveProjectAtRate(path, p, sampleRate)
+	return compileLiveProjectCapped(path, p, sampleRate, true, maxResidentPCM)
 }
 
 func compileLiveProject(path string, p *project.Project) (liveplay.Score, error) {
@@ -158,6 +168,10 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 }
 
 func compileLiveProjectLoopAtRate(path string, p *project.Project, sampleRate int, loop bool) (liveplay.Score, error) {
+	return compileLiveProjectCapped(path, p, sampleRate, loop, 0)
+}
+
+func compileLiveProjectCapped(path string, p *project.Project, sampleRate int, loop bool, maxResidentPCM int64) (liveplay.Score, error) {
 	if sampleRate <= 0 {
 		return liveplay.Score{}, fmt.Errorf("audio sample rate must be positive")
 	}
@@ -165,7 +179,7 @@ func compileLiveProjectLoopAtRate(path string, p *project.Project, sampleRate in
 	if err != nil {
 		return liveplay.Score{}, err
 	}
-	cfg, err := schedule.Compile(p, root, sampleRate, liveBlockFrames)
+	cfg, err := schedule.CompileWithOptions(p, root, sampleRate, liveBlockFrames, schedule.Options{MaxResidentPCM: maxResidentPCM})
 	if err != nil {
 		return liveplay.Score{}, err
 	}
@@ -309,6 +323,8 @@ type liveScoreWatcher struct {
 	lastError string
 	stream    *liveplay.Player
 	output    io.Writer
+	// maxResidentPCM caps the sampler-pack PCM of each recompile; zero is the default.
+	maxResidentPCM int64
 }
 
 func (w *liveScoreWatcher) poll() {
@@ -324,7 +340,7 @@ func (w *liveScoreWatcher) poll() {
 		return
 	}
 	w.last = fingerprint
-	next, err := compileLiveScore(w.path)
+	next, err := compileLiveScoreAtRateCapped(w.path, liveSampleRate, w.maxResidentPCM)
 	if err == nil {
 		err = w.stream.Offer(next)
 	}
@@ -336,8 +352,8 @@ func (w *liveScoreWatcher) poll() {
 	w.lastError = ""
 }
 
-func watchLiveScore(ctx context.Context, path string, initialHash [32]byte, stream *liveplay.Player, audio audiobackend.Stream, errorsTo io.Writer) error {
-	watcher := liveScoreWatcher{path: path, last: initialHash, stream: stream, output: errorsTo}
+func watchLiveScore(ctx context.Context, path string, initialHash [32]byte, stream *liveplay.Player, audio audiobackend.Stream, errorsTo io.Writer, maxResidentPCM int64) error {
+	watcher := liveScoreWatcher{path: path, last: initialHash, stream: stream, output: errorsTo, maxResidentPCM: maxResidentPCM}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	health := time.NewTicker(time.Second)
 	defer ticker.Stop()
