@@ -1279,6 +1279,33 @@ func TestKitWarnsThatATakeWithNoRoomToneCannotBeTrusted(t *testing.T) {
 	}
 }
 
+// The guide asks for three seconds of silence before the first hit, and a take
+// made that way must not be asked for it again because of how the file ends. An
+// export that runs past the last tail adds digital silence, and an editor may
+// fade the end out: the take is quieter there than any room, and its quietest
+// 200 ms read as -240 dBFS, so the take was told that it did not start with room
+// tone. The command reads the room from the lead-in instead.
+func TestKitDoesNotAskForRoomToneATakeThatEndsInSilenceAlreadyHas(t *testing.T) {
+	plain, ends := roomToneAndThenSilence(t)
+	ends = append(ends, endedTake{"the take as it was recorded", plain.PCM})
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{{Name: "kick", Note: 36, Layers: 1, OneShot: true, Takes: []string{"kick.wav"}}}}
+	for _, end := range ends {
+		t.Run(end.name, func(t *testing.T) {
+			takes := fstest.MapFS{"kick.wav": {Data: EncodeWAV(end.pcm, 48000)}}
+			_, report, err := BuildKit("room", recipe, takes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if take := report.Pieces[0].Takes[0]; take.Hits != 5 || take.NoRoomTone || take.NoQuiet || math.Abs(take.NoiseDB+70) > 3 {
+				t.Errorf("take %+v: want 5 hits, room tone, a quiet stretch and the room at -70 dBFS", take)
+			}
+			if warnings := report.Warnings(); len(warnings) > 0 {
+				t.Errorf("a take with 3 s of room tone got warnings:\n%s", strings.Join(warnings, "\n"))
+			}
+		})
+	}
+}
+
 // Soft hits in a loud room, recorded as the guide asks with room tone first:
 // the room is 13 dB below the loudest sound, which is the fault. The command
 // must not ask for the silence the take already has, and it must not report

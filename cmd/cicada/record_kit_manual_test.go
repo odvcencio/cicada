@@ -188,13 +188,18 @@ func TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout(t *testing.
 	}
 }
 
-// The guide says where a hit's slice starts: 3 to 5 ms before its attack. The
-// numbers in the guide must be the ones the analysis gives.
-func TestRecordKitManualStatesWhereASliceStarts(t *testing.T) {
+// The guide says where a hit's slice starts: 3 to 5 ms before its attack, and
+// what the command reads as the room when a take ends in silence. The numbers
+// and the rule in the guide must be the ones the analysis uses.
+func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 	flat := strings.Join(strings.Fields(strings.Join(manualSection(t), "\n")), " ")
-	want := "Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was doing before the hit"
-	if !strings.Contains(flat, want) {
-		t.Errorf("the guide lacks %q", want)
+	for _, want := range []string{
+		"Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was doing before the hit",
+		"A take that opens with a second or more of steady room tone is read from that room tone, even if the file ends in silence that an export added after the last tail, or in a fade-out, which are quieter than any room.",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the guide lacks %q", want)
+		}
 	}
 	// The drums of the guide's kit, a second or more apart in a quiet room after
 	// three seconds of silence: a cymbal and the open hi-hat need longer.

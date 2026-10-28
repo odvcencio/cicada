@@ -734,6 +734,111 @@ func TestRingingRoomIsTheQuietestTwoHundredMillisecondsNotAGap(t *testing.T) {
 	}
 }
 
+// endedTake is a take and a name for the way it ends.
+type endedTake struct {
+	name string
+	pcm  []float32
+}
+
+// roomToneAndThenSilence returns a take of five kick hits with 3 s of room tone
+// at -70 dBFS before the first, and the ways such a take can end quieter than
+// the room: silence appended after the last tail, as an export that runs past
+// the clip adds, the last 0.3 s zeroed, or a fade-out of 1 or 2 s.
+func roomToneAndThenSilence(t *testing.T) (plain Audio, ends []endedTake) {
+	t.Helper()
+	plain = spaced(t, testwav.Kick, testwav.Layout{Lead: 3, Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60, .52, .58)
+	with := func(name string, edit func(pcm []float32) []float32) {
+		ends = append(ends, endedTake{name, edit(append([]float32(nil), plain.PCM...))})
+	}
+	fade := func(seconds float64) func([]float32) []float32 {
+		return func(pcm []float32) []float32 {
+			n := int(seconds * 48000)
+			for i := 0; i < n; i++ {
+				g := float64(n-i) / float64(n)
+				pcm[len(pcm)-n+i] *= float32(g * g * g)
+			}
+			return pcm
+		}
+	}
+	with("0.3 s of silence added", func(pcm []float32) []float32 { return append(pcm, make([]float32, 14400)...) })
+	with("5 s of silence added", func(pcm []float32) []float32 { return append(pcm, make([]float32, 5*48000)...) })
+	with("the last 0.3 s silent", func(pcm []float32) []float32 {
+		clear(pcm[len(pcm)-14400:])
+		return pcm
+	})
+	with("a 1 s fade-out", fade(1))
+	with("a 2 s fade-out", fade(2))
+	return plain, ends
+}
+
+// A take that opens with room tone has room tone, whatever follows the last
+// tail. Silence after it, or a fade-out, is quieter than any room, so the quietest
+// 200 ms of the take is not the room: it was read as -240 dBFS, and the take was
+// told it had no room tone and should start with the silence it already had.
+// The lead-in holds steady, as a ring that is dying away does not, so it is the room.
+func TestRingingTakeThatEndsQuieterThanTheRoomStillOpensWithRoomTone(t *testing.T) {
+	plain, ends := roomToneAndThenSilence(t)
+	want, plainReports, err := AnalyzeTakes([]Audio{plain}, Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil || len(want) != 5 || plainReports[0].NoRoomTone {
+		t.Fatalf("the take without such an end: %d hits, %+v, %v", len(want), plainReports, err)
+	}
+	for _, end := range ends {
+		t.Run(end.name, func(t *testing.T) {
+			hits, reports, err := AnalyzeTakes([]Audio{{PCM: end.pcm, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil || len(hits) != len(want) {
+				t.Fatalf("found %d hits (%v), played %d", len(hits), err, len(want))
+			}
+			report := reports[0]
+			if report.NoRoomTone || report.NoQuiet {
+				t.Errorf("no room tone %v, no quiet stretch %v; the take opens with 3 s of room tone", report.NoRoomTone, report.NoQuiet)
+			}
+			// The room is the lead-in's, -70 dBFS, and tails finish 6 dB above it as
+			// they do in the take without the end.
+			if math.Abs(report.NoiseDB+70) > 3 || math.Abs(report.QuietDB-report.NoiseDB-6) > 1 {
+				t.Errorf("room read at %.1f dBFS (it is at -70), tails finish at %.1f dBFS", report.NoiseDB, report.QuietDB)
+			}
+			// Everything before the end is the same take, so its hits are the same.
+			for i := range want[:4] {
+				if hits[i].Start != want[i].Start || hits[i].End != want[i].End || hits[i].Cut != want[i].Cut {
+					t.Errorf("hit %d runs from frame %d to %d (cut %v); without the end it runs from %d to %d (cut %v)", i+1, hits[i].Start, hits[i].End, hits[i].Cut, want[i].Start, want[i].End, want[i].Cut)
+				}
+			}
+		})
+	}
+}
+
+// The lead-in is the room only when it can be told from a ring that is still
+// dying away, which takes a second of it that holds steady; and a take must
+// still open with it. These takes end in silence too, and all report no room
+// tone: one that starts with a hit, one that starts a second into the ring of a
+// crash, and one with only half a second of room tone before its first hit.
+func TestRingingTakeThatEndsInSilenceHasNoRoomToneUnlessItOpensWithSteadyRoomTone(t *testing.T) {
+	silence := func(pcm []float32) Audio {
+		return Audio{PCM: append(append([]float32(nil), pcm...), make([]float32, 14400)...), Rate: 48000}
+	}
+	whole := spaced(t, testwav.LongCrash, testwav.Layout{Lead: 0, Spacing: 8, After: 14, RoomDB: -70}, .55, .6)
+	for _, test := range []struct {
+		name  string
+		audio Audio
+		tone  bool
+	}{
+		{"opens with a hit", silence(spaced(t, testwav.Kick, testwav.Layout{Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60).PCM), false},
+		{"opens in the middle of a ring", silence(whole.PCM[6*48000:]), false},
+		{"opens with half a second of room tone", silence(spaced(t, testwav.Kick, testwav.Layout{Lead: .5, Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60).PCM), false},
+		{"opens with 1.2 s of room tone", silence(spaced(t, testwav.Kick, testwav.Layout{Lead: 1.2, Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60).PCM), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, reports, err := AnalyzeTakes([]Audio{test.audio}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := !reports[0].NoRoomTone; got != test.tone {
+				t.Errorf("room tone %v, want %v (the room was read at %.1f dBFS, the loudest sound at %.1f dBFS)", got, test.tone, reports[0].NoiseDB, reports[0].LoudestDB)
+			}
+		})
+	}
+}
+
 // Drums recorded as the guide asks, about a second apart in a quiet room, ring
 // out almost all of that second, and the tail still beats against itself when
 // the next hit comes. Each time the beat climbs out of a lull the energy steps

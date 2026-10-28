@@ -31,13 +31,15 @@ import (
 // slice before it ends where this one starts, so a cut tail does not end in the
 // next attack.
 //
-// The room's noise is read from the quietest 200 ms of each recording;
-// TakeReport.NoRoomTone says when the recording does not open with room tone,
-// where that stretch may be a tail. A hit keeps its tail until the energy is 60
-// dB below the recording's loudest hit, or twice the noise floor when that is
-// higher. If the next hit or the end of the recording comes first, the tail is
-// cut there and fades out over 5 ms; the hit is marked Cut when the tail was
-// still more than 6 dB above that level.
+// The room's noise is read from the quietest 200 ms of each recording, or, when
+// the recording opens with a second or more of steady room tone and ends in
+// something quieter than any room, from that room tone. TakeReport.NoRoomTone
+// says when the recording does not open with room tone, where the quietest
+// 200 ms may be a tail. A hit keeps its tail until the energy is 60 dB below the
+// recording's loudest hit, or twice the noise floor when that is higher. If the
+// next hit or the end of the recording comes first, the tail is cut there and
+// fades out over 5 ms; the hit is marked Cut when the tail was still more than 6
+// dB above that level.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
@@ -75,13 +77,15 @@ type TakeReport struct {
 	LoudestDB float64
 	// NoiseDB is the room's noise level. In ringing mode it is the quietest
 	// 200 ms of the recording, so it reads the tail of the last hit when the
-	// recording has no quiet stretch.
+	// recording has no quiet stretch. A recording that opens with a second or
+	// more of steady room tone and ends in silence or a fade-out, which is
+	// quieter than any room, has its room read from the room tone instead.
 	NoiseDB float64
 	// NoRoomTone is set in ringing mode when the recording does not open with
-	// 200 ms of room tone: a stretch as quiet as the quietest 200 ms, before
-	// the first sound that stands clear of the room. The quietest 200 ms then
-	// stands in for the room, and it may be a tail that was still ringing when
-	// the recording stopped.
+	// room tone: 200 ms as quiet as the quietest 200 ms, or a second or more
+	// that holds steady, before the first sound that stands clear of the room.
+	// The quietest 200 ms then stands in for the room, and it may be a tail that
+	// was still ringing when the recording stopped.
 	NoRoomTone bool
 	// NoQuiet is set in ringing mode when the quietest 200 ms lies within
 	// 26 dB of the loudest sound and cannot be read as the room. Either the
@@ -107,7 +111,8 @@ const (
 	ringRecentMS = 100 // a new hit must beat the loudest energy from this long before it until 10 ms before it
 	cutFadeMS    = 5   // a hit that is cut off fades out over this time
 
-	ringPrerollMS = 3 // a slice starts this long before the 2 ms window in which its hit began
+	ringPrerollMS      = 3    // a slice starts this long before the 2 ms window in which its hit began
+	ringLeadInSteadyMS = 1000 // a lead-in this long that holds steady is room tone even when the recording is quieter elsewhere
 
 	ringRiseSpanMS     = 20  // a hit has this long after its rise starts to beat the recent maximum
 	ringRiseFactor     = 2   // a rise is energy this many times above its quietest level in the previous 10 ms
@@ -194,10 +199,11 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 			// whole take reads a tail, not the room. The quietest stretch is the
 			// room, as long as the take holds one.
 			room := max(1, ringRoomMS*a.Rate/1000/hop)
-			noise = quietestStretch(energy, room)
+			var tone bool
+			noise, tone = roomTone(energy, loudest, room, quietestStretch(energy, room))
 			report.NoiseDB = dB(noise)
 			floor = noise
-			report.NoRoomTone = !startsWithRoomTone(energy, loudest, room, noise)
+			report.NoRoomTone = !tone
 			// A quietest stretch within 26 dB of the loudest sound may be a tail
 			// that never faded. It is the room all the same when the recording
 			// starts as quiet, the room tone before the first hit, unless the
@@ -400,16 +406,38 @@ func quietestStretch(energy []float64, n int) float64 {
 	return math.Sqrt(best / float64(n))
 }
 
-// startsWithRoomTone reports whether a recording opens with a stretch of n
-// values as quiet as noise, its quietest stretch anywhere. The recording opens
-// where the first sound begins: the first value within 20 dB of the loudest
-// that also stands clear of the room, which a room louder than that would
-// otherwise hide. A recording that starts with a hit, or in the middle of a
-// ring, has no such stretch.
-func startsWithRoomTone(energy []float64, loudest float64, n int, noise float64) bool {
-	sound := max(loudest*.10, noise*ringLeadInSound)
+// roomTone reads the room's noise from the start of a recording. quietest is the
+// quietest stretch of n values anywhere in the recording. It returns the level of
+// the room and whether the recording opens with room tone.
+//
+// The recording opens where the first sound begins: the first value within 20
+// dB of the loudest that also stands clear of the room, which a room louder than
+// that would otherwise hide. It opens with room tone when n values before that
+// sound are as quiet as quietest, and the room is then quietest. A recording that
+// starts with a hit, or in the middle of a ring, has no such stretch: its
+// quietest stretch may be a tail, and is returned as it is, with false.
+//
+// A recording can also be quieter at its end than at its start: it may end in
+// digital silence, as an export that runs past the last tail does, or in a
+// fade-out. Its quietest stretch is then no room at all. A lead-in that lasts
+// ringLeadInSteadyMS or more, and opens as quietly as its own quietest stretch,
+// holds steady, as a ring that is dying away does not, and is the room tone: the
+// room is its quietest stretch.
+func roomTone(energy []float64, loudest float64, n int, quietest float64) (float64, bool) {
+	sound := max(loudest*.10, quietest*ringLeadInSound)
 	first := slices.IndexFunc(energy, func(e float64) bool { return e > sound })
-	return first >= n && quietestStretch(energy[:first], n) <= noise*ringLeadInOverRoom
+	if first < n {
+		return quietest, false
+	}
+	lead := energy[:first]
+	room := quietestStretch(lead, n)
+	switch {
+	case room <= quietest*ringLeadInOverRoom:
+		return quietest, true
+	case first >= n*ringLeadInSteadyMS/ringRoomMS && quietestStretch(lead[:n], n) <= room*ringLeadInOverRoom:
+		return room, true
+	}
+	return quietest, false
 }
 
 // tailLevel reads the level of a tail that was cut off at frame end. It is the
