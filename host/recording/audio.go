@@ -14,11 +14,49 @@ import (
 const MaxFrames = 8 << 20
 const MaxInputBytes = 64 << 20
 
+// A sample at or above clipLevel sits at digital full scale: 16-bit full scale
+// is .99997 and 24-bit .9999999. Three in a row make a clipped run; a lone
+// peak at full scale is not clipping, a flat top is.
+const (
+	clipLevel = .9999
+	clipRun   = 3
+)
+
 // Audio keeps source coordinates and an exact checksum of the input WAV.
 type Audio struct {
 	PCM    []float32
 	Rate   int
 	SHA256 string
+	// clipped has one bit per frame, set for the frames of every clipped run
+	// that DecodeWAV found in a channel before mixing down. It is nil when
+	// there are none, and for audio that did not come from DecodeWAV.
+	clipped []uint64
+}
+
+// ClippedFrames counts the frames of PCM[start:end] that lie in a clipped run.
+func (a Audio) ClippedFrames(start, end int) int {
+	n := 0
+	for i := max(0, start); i < min(end, len(a.PCM)); i++ {
+		if i>>6 < len(a.clipped) && a.clipped[i>>6]>>(i&63)&1 != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// markClipped sets the bit of frame i, and of the frames just before it when it
+// is the one that completes a run.
+func (a *Audio) markClipped(i int, completes bool) {
+	if a.clipped == nil {
+		a.clipped = make([]uint64, (len(a.PCM)+63)/64)
+	}
+	from := i
+	if completes {
+		from = i - clipRun + 1
+	}
+	for ; from <= i; from++ {
+		a.clipped[from>>6] |= 1 << (from & 63)
+	}
 }
 
 func DecodeWAV(data []byte) (Audio, error) {
@@ -36,6 +74,7 @@ func DecodeWAV(data []byte) (Audio, error) {
 	a.Rate, a.SHA256 = h.RateHz, Digest(data)
 	a.PCM = make([]float32, int(h.Frames))
 	width, offset := h.BitDepth/8, int(h.DataOffset)
+	run := make([]int, h.Channels)
 	for i := range a.PCM {
 		var sum float64
 		for ch := 0; ch < h.Channels; ch++ {
@@ -55,6 +94,13 @@ func DecodeWAV(data []byte) (Audio, error) {
 			}
 			if math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) > 8 {
 				return Audio{}, fmt.Errorf("invalid PCM at frame %d", i)
+			}
+			if math.Abs(value) >= clipLevel {
+				if run[ch]++; run[ch] >= clipRun {
+					a.markClipped(i, run[ch] == clipRun)
+				}
+			} else {
+				run[ch] = 0
 			}
 			sum += value
 		}
