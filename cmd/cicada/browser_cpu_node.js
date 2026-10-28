@@ -8,13 +8,16 @@ const fs = require('node:fs');
 // 250 Hz) of that thread's time. The Go test therefore starts this script with
 // --single-threaded --no-liftoff --no-wasm-lazy-compilation, and all three are needed.
 // On Node 22.23.4, --single-threaded alone leaves Liftoff, lazy compilation and dynamic
-// tier-up on, and V8 still runs that work on one background thread, so a block can still
-// pick up a whole tick of that thread's time. The two compile flags alone compile on
-// background threads that are still running when the loop starts. With all three, V8
-// compiles the whole kernel before the timed loop, and Node's worker threads exist but
-// get no work. With --single-threaded, V8 also compiles this script's own JavaScript on
-// the timed thread; warmCPUClock moves the compile of the clock reads out of the timed
-// loop.
+// tier-up on. V8 then compiles a function with Liftoff on the timed thread the first time
+// it runs, which adds to a block, and tiers hot functions up with TurboFan on one worker
+// thread, whose time a block can pick up at a tick. The two compile flags alone compile
+// the whole kernel before the loop, but worker threads still used 3.5 to 3.8 ms of CPU
+// during the loop. With all three, V8 compiles the whole kernel before the timed loop,
+// and Node's worker threads use no measurable CPU time in the loop. With
+// --single-threaded, V8 also compiles this script's own JavaScript on the timed thread;
+// warmCPUClock moves the compile of the clock reads out of the timed loop. The comment on
+// browserCPUNodeFlags in browser_soak_helpers_test.go gives the flag values and the
+// measurements.
 // An excess block is a measured block more than EXCESS_BLOCK_MS above the median. Another
 // thread's CPU time and slow render work both make one, so the report keeps the count, the
 // share and the first indices, and the Go test adds them to a failed CPU budget. Do not
