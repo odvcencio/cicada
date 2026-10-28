@@ -563,6 +563,51 @@ func TestKitBuildRefusals(t *testing.T) {
 	}
 }
 
+// analysis.json is compared byte for byte before a pack folder is reused, and
+// the Go math library can end a logarithm in another last digit on another kind
+// of processor. So every figure that comes from a logarithm is rounded to a
+// millionth, and carries at most six digits after the point.
+func TestKitAnalysisRecordRoundsEveryLogarithmFigure(t *testing.T) {
+	// A session with cut tails, which have a cut level, and pitched notes.
+	takes := fstest.MapFS{
+		"crash.wav": {Data: testwav.Spaced(48000, testwav.LongCrash, testwav.Layout{Lead: .5, Spacing: 4, After: 2, RoomDB: -80}, .5, .52, .51, .5)},
+		"kick.wav":  {Data: testwav.Take(48000, testwav.Kick, .3, .31, .32, .29)},
+	}
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{
+		{Name: "crash", Note: 49, Layers: 1, OneShot: true, ChokeNote: 26, Takes: []string{"crash.wav"}},
+		{Name: "kick", Note: 36, Layers: 1, OneShot: true, Takes: []string{"kick.wav"}},
+	}}
+	pack, _, err := BuildKit("rounded", recipe, takes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(pack.Files["analysis.json"]))
+	decoder.UseNumber()
+	var records []map[string]any
+	if err := decoder.Decode(&records); err != nil {
+		t.Fatal(err)
+	}
+	long := 0
+	for _, record := range records {
+		for _, field := range []string{"loudnessDB", "tuneCents", "cutDB"} {
+			number, ok := record[field].(json.Number)
+			if !ok {
+				continue
+			}
+			_, digits, _ := strings.Cut(number.String(), ".")
+			if len(digits) > 6 {
+				t.Errorf("%s of %v is %s: more than six digits after the point", field, record["asset"], number)
+			}
+			if len(digits) >= 4 {
+				long++
+			}
+		}
+	}
+	if long < 4 {
+		t.Errorf("only %d of the figures have four digits after the point; the record is too short to test", long)
+	}
+}
+
 // A tom recorded once can play on two General MIDI notes: two pieces may name
 // the same take file.
 func TestKitPiecesMayShareATakeFile(t *testing.T) {

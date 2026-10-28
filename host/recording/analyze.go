@@ -323,10 +323,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 			// tail finished.
 			forced := options.Ringing && !finished
 			if forced {
-				// Read the tail's level over the last 12 ms, whose minimum leaves
-				// out the rise of a next hit.
-				lastWindow := min(len(energy)-1, (end-1)/hop)
-				if level := slices.Min(energy[max(0, lastWindow-5) : lastWindow+1]); level >= quietLevel*ringCutMargin {
+				if level := tailLevel(energy, end, hop); level >= quietLevel*ringCutMargin {
 					hit.Cut, hit.CutDB = true, dB(level)
 				}
 			}
@@ -409,6 +406,14 @@ func startsWithRoomTone(energy []float64, loudest float64, n int, noise float64)
 	sound := max(loudest*.10, noise*ringLeadInSound)
 	first := slices.IndexFunc(energy, func(e float64) bool { return e > sound })
 	return first >= n && quietestStretch(energy[:first], n) <= noise*ringLeadInOverRoom
+}
+
+// tailLevel reads the level of a tail that was cut off at frame end. It is the
+// lowest of the last 12 ms of energy, since a next hit may have begun in the
+// last few milliseconds and its rise would lift the last value.
+func tailLevel(energy []float64, end, hop int) float64 {
+	lastWindow := min(len(energy)-1, (end-1)/hop)
+	return slices.Min(energy[max(0, lastWindow-5) : lastWindow+1])
 }
 
 // lastNearMinimum returns the last index in [from, to] whose value is within

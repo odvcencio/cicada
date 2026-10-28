@@ -628,6 +628,11 @@ func TestRingingCutSliceEndsBeforeTheNextAttackAndTheNextBeginsBeforeIt(t *testi
 				if !h.Cut {
 					t.Fatalf("hit %d was not cut off; the test needs a tail that runs on under the next hit", i+1)
 				}
+				// A hit that the next one cut off ends where the next begins: not
+				// later, which would play the same milliseconds twice.
+				if h.End != next.Start {
+					t.Errorf("hit %d ends at frame %d and hit %d starts at frame %d; a cut slice ends where the next one begins", i+1, h.End, i+2, next.Start)
+				}
 				// The last 3 ms of the cut slice, in the source, are tail: no louder
 				// than the 20 ms before them, give or take the tail's own texture.
 				tail := peakOf(audio.PCM, h.End-25*ms, h.End-5*ms)
@@ -642,5 +647,67 @@ func TestRingingCutSliceEndsBeforeTheNextAttackAndTheNextBeginsBeforeIt(t *testi
 				}
 			}
 		})
+	}
+}
+
+// The level of a cut tail is the lowest of the last 12 ms of energy, so the rise
+// of a next hit that has begun in the last few milliseconds does not make a
+// finished tail look as if it were cut off while ringing.
+func TestRingingTailLevelIsTheLowestOfTheLastTwelveMilliseconds(t *testing.T) {
+	// Energy per 2 ms window: a tail at 1, then a hit rising over the last two.
+	energy := []float64{4, 4, 4, 4, 4, 1, 1.1, 1.2, 1, 1.1, 1, 3, 9}
+	const hop = 96
+	if got := tailLevel(energy, len(energy)*hop, hop); got != 1 {
+		t.Errorf("the tail level is %g, want 1: the lowest of the last six windows, not the last", got)
+	}
+	// Six windows reach back 12 ms: the 4 before them are out of reach.
+	if got := tailLevel(energy[:7], 7*hop, hop); got != 1 {
+		t.Errorf("the tail level is %g at the seventh window, want 1", got)
+	}
+	// A recording shorter than six windows reads what it has.
+	if got := tailLevel([]float64{3, 2}, 2*hop, hop); got != 2 {
+		t.Errorf("the tail level of two windows is %g, want 2", got)
+	}
+	// An end past the last window, as the last hit of a recording has, reads the last six.
+	if got := tailLevel(energy, len(energy)*hop+500, hop); got != 1 {
+		t.Errorf("the tail level past the end is %g, want 1", got)
+	}
+}
+
+// A recording that starts in the middle of a ring has no room tone: the ring
+// before the first hit is far above the room, though far below the loudest
+// sound, and must not be taken for the room. The take here starts six seconds
+// into a crash that rings for fourteen, and the hit comes two seconds later; the
+// room is heard only at the end, after the ring has died.
+func TestRingingTakeThatStartsMidRingHasNoRoomTone(t *testing.T) {
+	whole := spaced(t, testwav.LongCrash, testwav.Layout{Lead: 0, Spacing: 8, After: 14, RoomDB: -70}, .55, .6)
+	audio := Audio{PCM: whole.PCM[6*48000:], Rate: 48000}
+	hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 49, Layers: 1, Ringing: true})
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("found %d hits (%v)", len(hits), err)
+	}
+	// Before the hit, the ring is 40 dB above the room, and not near the quietest stretch.
+	if report := reports[0]; !report.NoRoomTone || report.NoQuiet {
+		t.Errorf("no room tone %v, no quiet stretch %v; want true and false (quietest 200 ms at %.1f dBFS, loudest sound at %.1f dBFS)", report.NoRoomTone, report.NoQuiet, report.NoiseDB, report.LoudestDB)
+	}
+}
+
+// The room is the quietest stretch of 200 ms. A dip of a few tens of
+// milliseconds in a ring is not the room: the take here is all tail, with a gap
+// of silence cut into it, and its noise is read from stretches of 200 ms, which
+// hold a good deal of tail.
+func TestRingingRoomIsTheQuietestTwoHundredMillisecondsNotAGap(t *testing.T) {
+	whole := spaced(t, testwav.LongCrash, testwav.Layout{Spacing: 4, After: 1, RoomDB: -70}, .55, .5, .6, .52)
+	pcm := append([]float32(nil), whole.PCM...)
+	for i := 2*48000 + 1000; i < 2*48000+1000+48*50; i++ { // 50 ms of silence, 2 s into the first tail
+		pcm[i] = 0
+	}
+	_, reports, err := AnalyzeTakes([]Audio{{PCM: pcm, Rate: 48000}}, Options{Root: 49, Layers: 1, Ringing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The tail is about 40 dB below the hit; a 20 ms look at the gap would read -240 dBFS.
+	if reports[0].NoiseDB < reports[0].LoudestDB-45 {
+		t.Errorf("the noise is read at %.1f dBFS, %.1f dB below the loudest sound: from the gap, not from 200 ms of tail", reports[0].NoiseDB, reports[0].LoudestDB-reports[0].NoiseDB)
 	}
 }
