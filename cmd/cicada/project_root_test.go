@@ -150,6 +150,7 @@ func TestStudioExportsResolvePackPathsFromTheProjectFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.shutdown()
 	handler := s.routes()
 
 	audio := make(chan render.Options, 1)
@@ -164,6 +165,9 @@ func TestStudioExportsResolvePackPathsFromTheProjectFolder(t *testing.T) {
 	if options := receiveOptions(t, audio); options.AssetRoot != root || options.AssetDir != root {
 		t.Errorf("the audio export resolves assets and packs from %q and %q, want the project folder %q", options.AssetRoot, options.AssetDir, root)
 	}
+	// Each export goes on writing under the project after its renderer returns.
+	// Wait for it, so that the folder is not removed under it.
+	waitStudioExport(t, handler, "succeeded")
 
 	stems := make(chan render.Options, 1)
 	s.stemsExport.render = func(_ *notation.Score, options render.Options, dir string) (render.Report, error) {
@@ -180,4 +184,5 @@ func TestStudioExportsResolvePackPathsFromTheProjectFolder(t *testing.T) {
 	if options := receiveOptions(t, stems); options.AssetRoot != root || options.AssetDir != root {
 		t.Errorf("the stems export resolves assets and packs from %q and %q, want the project folder %q", options.AssetRoot, options.AssetDir, root)
 	}
+	waitStudioStems(t, handler, "succeeded")
 }

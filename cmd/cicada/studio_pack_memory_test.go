@@ -79,6 +79,7 @@ func TestStudioStartupAndStateRequestsDecodeNoSamplerPackAudio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.shutdown()
 	handler := s.routes()
 	for range 10 {
 		if state := studioCall(t, handler, "/api/state", nil); state.Code != http.StatusOK {
@@ -98,6 +99,7 @@ func TestStudioEditsDecodeAPackOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.shutdown()
 	handler := s.routes()
 	edit := func(comment string) {
 		t.Helper()
@@ -141,9 +143,11 @@ func TestStudioRefusesPacksOverTheCapWithoutDecodingThem(t *testing.T) {
 	if err := instrumentpack.SetDefaultMaxResidentPCM(4000); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newStudio(path); err != nil {
+	s, err := newStudio(path)
+	if err != nil {
 		t.Fatalf("a cap equal to the pack refused it: %v", err)
 	}
+	s.shutdown()
 }
 
 // The engine decodes a pack once. The plan that plays the score, a second plan
