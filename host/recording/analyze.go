@@ -274,8 +274,8 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 					}
 					// A swell has no such window, since each step of it is small, and
 					// neither has a hit that lands on a ring. The energy doubled within
-					// the span before the hit was found, and the hit began where the
-					// energy was lowest in that time.
+					// the span before the hit was found, and the hit began at the last
+					// window in that time whose energy was near the lowest.
 					if !found {
 						begin = lastNearMinimum(energy, max(0, w-span), w)
 					}
