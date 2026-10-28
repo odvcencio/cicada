@@ -164,7 +164,8 @@ func Load(dir, manifestPath, pin string) (*Prepared, error) {
 
 // LoadAtRate admits a pack for the requested output rate before playback. It
 // decodes the audio on every call. A native host that compiles one project more
-// than once uses ResidentCap.Load instead, which shares one decoded copy.
+// than once opens its packs with ResidentCap.Open and loads them with
+// Pack.LoadShared instead, which shares one decoded copy.
 func LoadAtRate(dir, manifestPath, pin string, rate int) (*Prepared, error) {
 	pack, err := Open(dir, manifestPath, pin)
 	if err != nil {

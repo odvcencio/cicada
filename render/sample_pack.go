@@ -66,24 +66,38 @@ func preparePackVoices(score *notation.Score, opts Options) (map[string]*instrum
 	if err != nil {
 		return nil, err
 	}
+	dir := opts.AssetDir
+	if dir == "" {
+		dir = "."
+	}
+	// Open every pack and count it against the cap, from its manifest, before
+	// any audio is decoded: a score over the cap is refused without allocating
+	// any of its packs.
+	type openedPack struct {
+		sampler notation.Sampler
+		pack    *instrumentpack.Pack
+	}
+	var opened []openedPack
 	for _, s := range score.Samplers {
 		if s.Pack == "" {
 			continue
 		}
-		dir := opts.AssetDir
-		if dir == "" {
-			dir = "."
-		}
-		// The cap counts the manifest's figure before the audio is read. The PCM
-		// is the copy that every native compile in the process shares; the
-		// Prepared is this sampler's own, so its voice count and seed stay here.
-		p, err := packCap.Load(dir, s.Pack, s.SHA256, opts.SampleRate)
+		pack, err := packCap.Open(dir, s.Pack, s.SHA256)
 		if err != nil {
 			return nil, fmt.Errorf("sampler %s: %w", s.Name, err)
 		}
-		p.Manifest.Config.Voices = s.Voices
+		opened = append(opened, openedPack{s, pack})
+	}
+	for _, o := range opened {
+		// The PCM is the copy that every native compile in the process shares; the
+		// Prepared is this sampler's own, so its voice count and seed stay here.
+		p, err := o.pack.LoadShared(opts.SampleRate, packCap.Limit())
+		if err != nil {
+			return nil, fmt.Errorf("sampler %s: %w", o.sampler.Name, err)
+		}
+		p.Manifest.Config.Voices = o.sampler.Voices
 		p.Manifest.Config.Humanize.Seed = score.Seed
-		banks[s.Name] = p
+		banks[o.sampler.Name] = p
 	}
 	return banks, nil
 }

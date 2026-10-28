@@ -151,14 +151,26 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 	}
 	cfg.Streaming = streaming
 	packs := map[string]*engine.PackFactory{}
+	use := func(sampler project.Sampler, prepared *instrumentpack.Prepared) {
+		config := prepared.Manifest.Config
+		config.Voices = sampler.Voices
+		packs[sampler.Name] = &engine.PackFactory{Zones: prepared.Zones, Config: config}
+	}
+	// On the native path every pack is opened and counted against the cap first,
+	// from its manifest. No audio is decoded until the whole project is known to
+	// fit, so a project over the cap is refused without allocating any of it.
+	type openedPack struct {
+		sampler project.Sampler
+		pack    *instrumentpack.Pack
+	}
+	var opened []openedPack
 	for _, sampler := range p.Samplers {
 		if sampler.Pack == "" {
 			continue
 		}
-		var prepared *instrumentpack.Prepared
 		switch mode {
 		case modeResident:
-			prepared, err = instrumentpack.LoadAtRate(root, sampler.Pack, sampler.SHA256, rate)
+			prepared, err := instrumentpack.LoadAtRate(root, sampler.Pack, sampler.SHA256, rate)
 			if err != nil {
 				return engine.Config{}, err
 			}
@@ -167,29 +179,30 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 			if resident > residentBudget {
 				return engine.Config{}, errResidentBudget
 			}
+			use(sampler, prepared)
 		case modeValidate:
-			pack, err := instrumentpack.Open(root, sampler.Pack, sampler.SHA256)
+			pack, err := packCap.Open(root, sampler.Pack, sampler.SHA256)
 			if err != nil {
-				return engine.Config{}, err
-			}
-			if err = packCap.Reserve(pack); err != nil {
 				return engine.Config{}, err
 			}
 			if err = pack.CheckFiles(); err != nil {
 				return engine.Config{}, err
 			}
-			continue
 		default:
-			// The cap counts the manifest's figure before the audio is read, and the
-			// PCM is the copy that every compile in the process shares.
-			prepared, err = packCap.Load(root, sampler.Pack, sampler.SHA256, rate)
+			pack, err := packCap.Open(root, sampler.Pack, sampler.SHA256)
 			if err != nil {
 				return engine.Config{}, err
 			}
+			opened = append(opened, openedPack{sampler, pack})
 		}
-		config := prepared.Manifest.Config
-		config.Voices = sampler.Voices
-		packs[sampler.Name] = &engine.PackFactory{Zones: prepared.Zones, Config: config}
+	}
+	for _, o := range opened {
+		// The PCM is the copy that every compile in the process shares.
+		prepared, err := o.pack.LoadShared(rate, packCap.Limit())
+		if err != nil {
+			return engine.Config{}, err
+		}
+		use(o.sampler, prepared)
 	}
 	for ti, track := range p.Tracks {
 		if pack := packs[track.Kind]; pack != nil {

@@ -124,6 +124,31 @@ func TestNativeCompileRefusesAPackOverTheCapBeforeReadingItsAudio(t *testing.T) 
 	}
 }
 
+// The cap sees the whole project before any pack is decoded. A first pack that
+// fits must not be decoded for a project that a second pack takes over the cap.
+func TestNativeCompileRefusesAProjectOverTheCapBeforeDecodingAnyPack(t *testing.T) {
+	dir := t.TempDir()
+	first := testpack.Write(t, dir, testpack.Options{ID: "first", Frames: 1000}) // 4000 bytes each
+	second := testpack.Write(t, dir, testpack.Options{ID: "second", Frames: 1000})
+	p := packProject(t, first, second)
+	t.Cleanup(instrumentpack.ReleaseShared)
+	before := instrumentpack.Decodes()
+	_, err := schedule.CompileWithOptions(p, dir, 48000, 128, schedule.Options{MaxResidentPCM: 7999})
+	var over *instrumentpack.ResidentPCMError
+	if !errors.As(err, &over) || over.Bytes != 8000 || over.Limit != 7999 || over.Pack != second.Manifest {
+		t.Fatalf("the second pack takes the project over the cap: %v", err)
+	}
+	if got := instrumentpack.Decodes() - before; got != 0 {
+		t.Fatalf("a project over the cap decoded %d of its packs before it was refused", got)
+	}
+	if _, err = schedule.CompileWithOptions(p, dir, 48000, 128, schedule.Options{MaxResidentPCM: 8000}); err != nil {
+		t.Fatalf("a cap equal to both packs refused the project: %v", err)
+	}
+	if got := instrumentpack.Decodes() - before; got != 2 {
+		t.Fatalf("a project of two packs decoded %d, want 2", got)
+	}
+}
+
 // Validate is the compile that Studio runs on every request, so it holds no
 // audio. It still applies each rule that needs no audio.
 func TestValidateReadsNoAudio(t *testing.T) {

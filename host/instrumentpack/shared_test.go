@@ -89,6 +89,53 @@ func TestResidentCapRefusesAPackBeforeReadingItsAudio(t *testing.T) {
 	}
 }
 
+// A host with several packs opens each one before it loads any. Open counts the
+// pack against the cap from its manifest and decodes nothing, so the cap sees
+// the whole project while no audio is in memory.
+func TestResidentCapOpenCountsEveryPackAndDecodesNone(t *testing.T) {
+	freshCache(t)
+	dir := t.TempDir()
+	first := testpack.Write(t, dir, testpack.Options{ID: "first", Frames: 1000}) // 4000 bytes each
+	second := testpack.Write(t, dir, testpack.Options{ID: "second", Frames: 1000})
+	before := instrumentpack.Decodes()
+	tally, err := instrumentpack.NewResidentCap(7999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tally.Open(dir, first.Manifest, first.SHA256); err != nil {
+		t.Fatalf("the first pack fits: %v", err)
+	}
+	_, err = tally.Open(dir, second.Manifest, second.SHA256)
+	var over *instrumentpack.ResidentPCMError
+	if !errors.As(err, &over) || over.Bytes != 8000 || over.Limit != 7999 || over.Pack != second.Manifest {
+		t.Fatalf("the second pack takes the total to 8000 bytes and must be refused from its manifest: %v", err)
+	}
+	if got := instrumentpack.Decodes() - before; got != 0 {
+		t.Fatalf("counting two packs decoded %d of them", got)
+	}
+	// At the cap both are counted, and the audio is read only when the caller asks.
+	tally, _ = instrumentpack.NewResidentCap(8000)
+	var opened []*instrumentpack.Pack
+	for _, pack := range []testpack.Pack{first, second} {
+		o, err := tally.Open(dir, pack.Manifest, pack.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened = append(opened, o)
+	}
+	if got := instrumentpack.Decodes() - before; got != 0 {
+		t.Fatalf("opening two packs decoded %d of them", got)
+	}
+	for _, o := range opened {
+		if _, err = o.LoadShared(48000, tally.Limit()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := instrumentpack.Decodes() - before; got != 2 {
+		t.Fatalf("loading two packs decoded %d, want 2", got)
+	}
+}
+
 func TestResidentCapLoadSharesOneDecodedCopyBetweenCompiles(t *testing.T) {
 	freshCache(t)
 	dir := t.TempDir()

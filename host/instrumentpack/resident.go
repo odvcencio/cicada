@@ -131,17 +131,35 @@ func (c *ResidentCap) Reserve(pack *Pack) error {
 	return nil
 }
 
-// Load opens the pack, reserves its PCM against the cap, and only then decodes
-// it, so a pack over the cap is refused before it allocates any audio. The
-// decoded PCM is shared with every other load of the same pack in the process
-// (see Pack.LoadShared); the returned Prepared is the caller's own and may have
-// its manifest configuration changed, but its PCM must not be written.
-func (c *ResidentCap) Load(dir, manifestPath, pin string, rate int) (*Prepared, error) {
+// Open reads the manifest of a pack and counts its PCM against the cap, before
+// any audio is read. It returns a *ResidentPCMError when the packs counted so
+// far would hold more PCM than the cap.
+//
+// A host with several packs opens every one first and loads their audio only
+// after that, with Pack.LoadShared(rate, Limit()), so that a project over the cap
+// is refused before any of its audio is decoded.
+func (c *ResidentCap) Open(dir, manifestPath, pin string) (*Pack, error) {
 	pack, err := Open(dir, manifestPath, pin)
 	if err != nil {
 		return nil, err
 	}
 	if err = c.Reserve(pack); err != nil {
+		return nil, err
+	}
+	return pack, nil
+}
+
+// Load opens the pack, reserves its PCM against the cap, and only then decodes
+// it, so a pack over the cap is refused before it allocates any audio. It suits
+// a host with one pack; a host with several uses Open for each and then loads
+// them, so that the cap sees the whole project before any audio is read.
+//
+// The decoded PCM is shared with every other load of the same pack in the
+// process (see Pack.LoadShared); the returned Prepared is the caller's own and
+// may have its manifest configuration changed, but its PCM must not be written.
+func (c *ResidentCap) Load(dir, manifestPath, pin string, rate int) (*Prepared, error) {
+	pack, err := c.Open(dir, manifestPath, pin)
+	if err != nil {
 		return nil, err
 	}
 	return pack.LoadShared(rate, c.limit)

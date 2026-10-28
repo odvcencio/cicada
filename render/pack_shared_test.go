@@ -108,6 +108,40 @@ func TestRenderRefusesPacksOverTheCapBeforeReadingTheirAudio(t *testing.T) {
 	}
 }
 
+// The cap sees the whole score before any pack is decoded, on both render paths.
+func TestRenderRefusesAScoreOverTheCapBeforeDecodingAnyPack(t *testing.T) {
+	dir := t.TempDir()
+	first := testpack.Write(t, dir, testpack.Options{ID: "first", Frames: 1000}) // 4000 bytes each
+	second := testpack.Write(t, dir, testpack.Options{ID: "second", Frames: 1000})
+	source := "cicada 2\ntempo 120\n" + first.Sampler("a", 2) + "track t0 a {}\n" + second.Sampler("b", 2) + "track t1 b {}\n" +
+		"pattern hit notes steps=4 { c4 . . . }\nscene main { t0 = hit t1 = hit }\nsong { main }\n"
+	score, ds := notation.Parse([]byte(source))
+	for _, d := range ds {
+		if d.Severity == "error" {
+			t.Fatal(ds)
+		}
+	}
+	t.Cleanup(instrumentpack.ReleaseShared)
+	for _, path := range []struct {
+		name     string
+		baseline bool
+	}{{"scheduled render", false}, {"sampler baseline", true}} {
+		t.Run(path.name, func(t *testing.T) {
+			instrumentpack.ReleaseShared()
+			before := instrumentpack.Decodes()
+			options := Options{SampleRate: 48000, Bits: 24, TailSec: .1, AssetDir: dir, AssetRoot: dir, SamplerBaseline: path.baseline, MaxResidentPCM: 7999}
+			_, err := WAV(score, options, &bytes.Buffer{})
+			var over *instrumentpack.ResidentPCMError
+			if !errors.As(err, &over) || over.Bytes != 8000 || over.Pack != second.Manifest {
+				t.Fatalf("the second pack takes the score over the cap: %v", err)
+			}
+			if got := instrumentpack.Decodes() - before; got != 0 {
+				t.Fatalf("a score over the cap decoded %d of its packs before it was refused", got)
+			}
+		})
+	}
+}
+
 // Two samplers that name one pack share one decoded copy, so the cap counts it once.
 func TestRenderCapCountsAPackOnceWhenSeveralSamplersNameIt(t *testing.T) {
 	dir := t.TempDir()
