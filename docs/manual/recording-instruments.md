@@ -224,7 +224,7 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    | --- | --- |
    | `name` | A lowercase name: letters, digits and underscores, starting with a letter. |
    | `note` | The MIDI note the piece plays, 12 to 95. No two pieces, or a piece and a choke note, may share a note. |
-   | `takes` | The WAV files, written relative to the recipe's folder, such as `takes/kick-soft.wav` with no leading `./`. A piece takes up to 32 files. Two pieces may name the same file, so one recorded tom can play on two notes. A file may be a link to another file in the folder, but not to a file outside it. |
+   | `takes` | The WAV files, written relative to the recipe's folder, such as `takes/kick-soft.wav` with no leading `./`. A piece takes up to 32 files. Two pieces may name the same file, so one recorded tom can play on two notes. A file may be a relative link to another file in the folder. A link to a file outside the folder, and an absolute link even to a file inside it, are refused. |
    | `layers` | Velocity layers, 1 to 8. The default is 3; set it to the number of dynamics you recorded. The piece needs at least this many hits. |
    | `choke` | A group name. A hit on any piece in the group cuts off the group's older hits within 2 ms. Give the closed, pedal and open hi-hats the same name. |
    | `choke_note` | For a cymbal: its hits ring together, and this note, which plays no sound, cuts them all off. Use it instead of `choke`, and pick a note no piece uses, such as 26 (`d1`). Play it on the cymbal's own track. A browser host needs a sampler module from the same release for a pack that uses it; older modules refuse it. |

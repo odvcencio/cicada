@@ -825,7 +825,9 @@ func readKitTake(takes fs.FS, name string) (Audio, error) {
 	}
 	if err != nil {
 		if strings.Contains(err.Error(), "escapes from parent") {
-			return Audio{}, fmt.Errorf("%w; a take cannot be a link to a file outside the recipe's folder", err)
+			// The folder is a root that no link may leave, and an absolute link
+			// counts as leaving it even when it points back inside.
+			return Audio{}, fmt.Errorf("%w; a take cannot be an absolute link or a link to a file outside the recipe's folder; use a relative link to a file in the folder", err)
 		}
 		return Audio{}, err
 	}

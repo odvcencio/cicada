@@ -247,7 +247,10 @@ func TestRecordKitPrintsWarningsForTakesToRecordAgain(t *testing.T) {
 }
 
 // A take that is a link to a file outside the recipe's folder is not read, and
-// the error says why. A link to a file inside the folder is fine.
+// the error says why. A relative link to a file inside the folder is fine. An
+// absolute link is refused even when it points inside the folder, since the
+// folder is opened as a root that no link may leave; the error then says that
+// the link is absolute and does not claim that it leaves the folder.
 func TestRecordKitDoesNotFollowATakeLinkedOutsideItsFolder(t *testing.T) {
 	root := t.TempDir()
 	session := filepath.Join(root, "session")
@@ -267,6 +270,15 @@ func TestRecordKitDoesNotFollowATakeLinkedOutsideItsFolder(t *testing.T) {
 	if err := os.Symlink("inside.wav", filepath.Join(session, "linked-in.wav")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Symlink(filepath.Join(session, "inside.wav"), filepath.Join(session, "linked-abs.wav")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(session, "folder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(session, filepath.Join(session, "folder", "back")); err != nil {
+		t.Fatal(err)
+	}
 	build := func(take string) error {
 		recipe := filepath.Join(session, take+".json")
 		if err := os.WriteFile(recipe, []byte(`{"format": "cicada.kit-recipe/1", "pieces": [{"name": "kick", "note": 36, "layers": 1, "takes": ["`+take+`"]}]}`), 0o600); err != nil {
@@ -275,10 +287,19 @@ func TestRecordKitDoesNotFollowATakeLinkedOutsideItsFolder(t *testing.T) {
 		return recordKitCommand([]string{"-o", filepath.Join(t.TempDir(), "pack"), recipe}, &bytes.Buffer{})
 	}
 	err := build("linked-out.wav")
-	if err == nil || !strings.Contains(err.Error(), `piece "kick": take "linked-out.wav": `) || !strings.Contains(err.Error(), "a take cannot be a link to a file outside the recipe's folder") {
+	if err == nil || !strings.Contains(err.Error(), `piece "kick": take "linked-out.wav": `) || !strings.Contains(err.Error(), "a take cannot be an absolute link or a link to a file outside the recipe's folder") {
 		t.Fatalf("a link out of the folder was followed or refused without a reason: %v", err)
 	}
 	if err := build("linked-in.wav"); err != nil {
 		t.Fatalf("a link to a file inside the folder was refused: %v", err)
+	}
+	// Both refusals name the take, say what the command does not accept and what
+	// to write instead.
+	for _, take := range []string{"linked-abs.wav", "folder/back/inside.wav"} {
+		err := build(take)
+		if err == nil || !strings.Contains(err.Error(), `piece "kick": take "`+take+`": `) ||
+			!strings.Contains(err.Error(), "a take cannot be an absolute link or a link to a file outside the recipe's folder; use a relative link to a file in the folder") {
+			t.Errorf("an absolute link %s: error %v", take, err)
+		}
 	}
 }
