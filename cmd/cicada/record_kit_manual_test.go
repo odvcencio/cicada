@@ -187,3 +187,34 @@ func TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout(t *testing.
 		}
 	}
 }
+
+// The guide says where a hit's slice starts: 3 to 5 ms before its attack. The
+// numbers in the guide must be the ones the analysis gives.
+func TestRecordKitManualStatesWhereASliceStarts(t *testing.T) {
+	flat := strings.Join(strings.Fields(strings.Join(manualSection(t), "\n")), " ")
+	want := "Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was doing before the hit"
+	if !strings.Contains(flat, want) {
+		t.Errorf("the guide lacks %q", want)
+	}
+	// The drums of the guide's kit, a second or more apart in a quiet room after
+	// three seconds of silence: a cymbal and the open hi-hat need longer.
+	for _, test := range []struct {
+		drum    testwav.Drum
+		spacing float64
+	}{{testwav.Kick, 1}, {testwav.Snare, 1}, {testwav.ClosedHat, 1}, {testwav.OpenHat, 2}, {testwav.Crash, 3}} {
+		audio, err := recording.DecodeWAV(testwav.Spaced(48000, test.drum, testwav.Layout{Lead: 3, Spacing: test.spacing, After: 2, RoomDB: -70}, .5, .45, .55, .5))
+		if err != nil {
+			t.Fatal(err)
+		}
+		hits, reports, err := recording.AnalyzeTakes([]recording.Audio{audio}, recording.Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || len(hits) != 4 || reports[0].NoRoomTone {
+			t.Fatalf("%s: %d hits, %+v, %v", test.drum, len(hits), reports, err)
+		}
+		for i, h := range hits {
+			played := int(math.Round((3 + float64(float64(i)*test.spacing)) * 48000))
+			if lead := float64(played-h.Start) / 48; lead < 3 || lead > 5 {
+				t.Errorf("%s: hit %d starts %.1f ms before its attack; the guide says 3 to 5 ms", test.drum, i+1, lead)
+			}
+		}
+	}
+}

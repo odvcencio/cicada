@@ -44,8 +44,8 @@ func TestRingingTakesKeepEachHitWhole(t *testing.T) {
 			slot := max(.75, test.length+.3)
 			for i, h := range hits {
 				played := .2 + float64(i)*slot
-				if start := float64(h.Start) / 48000; math.Abs(start-played) > .01 {
-					t.Errorf("hit %d starts at %.3f s, played at %.3f s", i+1, start, played)
+				if lead := leadIn(h.Start, played); lead < 0 || lead > 6 {
+					t.Errorf("hit %d starts %.1f ms before its attack, played at %.3f s; want up to 6 ms", i+1, lead, played)
 				}
 				if length := float64(h.End-h.Start) / 48000; length < test.keep {
 					t.Errorf("hit %d keeps %.3f s of its ring, want at least %.2f s", i+1, length, test.keep)
@@ -93,6 +93,10 @@ func spaced(t *testing.T, d testwav.Drum, layout testwav.Layout, levels ...float
 	return audio
 }
 
+// leadIn is how many milliseconds before the instant played, in seconds, a slice
+// that starts at frame start begins at 48 kHz.
+func leadIn(start int, played float64) float64 { return (played*48000 - float64(start)) / 48 }
+
 // A cymbal that rings longer than the time between hits leaves a take with
 // almost no quiet. The room's noise must come from the quietest stretch, not a
 // percentile of the whole take, and each hit must keep its tail up to the next
@@ -117,8 +121,8 @@ func TestRingingTailsThatFillTheTakeAreKeptToTheNextHit(t *testing.T) {
 			}
 			for i, h := range hits {
 				played := test.lead + float64(i)*test.spacing
-				if start := float64(h.Start) / 48000; math.Abs(start-played) > .01 {
-					t.Errorf("hit %d starts at %.3f s, played at %.3f s", i+1, start, played)
+				if lead := leadIn(h.Start, played); lead < 0 || lead > 6 {
+					t.Errorf("hit %d starts %.1f ms before its attack, played at %.3f s; want up to 6 ms", i+1, lead, played)
 				}
 				if i < len(hits)-1 {
 					// The tail is still 17 to 26 dB down when the next hit comes, and
@@ -162,8 +166,8 @@ func TestRingingTakeWithNoQuietStretchStillFindsItsHits(t *testing.T) {
 		t.Errorf("tails end %.1f dB below the loudest sound, want 20", got)
 	}
 	for i, h := range hits {
-		if played := float64(i) * 4; math.Abs(float64(h.Start)/48000-played) > .01 {
-			t.Errorf("hit %d starts at %.3f s, played at %.1f s", i+1, float64(h.Start)/48000, played)
+		if played := float64(i) * 4; leadIn(h.Start, played) < 0 || leadIn(h.Start, played) > 6 {
+			t.Errorf("hit %d starts %.1f ms before its attack, played at %.1f s; want up to 6 ms", i+1, leadIn(h.Start, played), played)
 		}
 	}
 }
@@ -414,8 +418,8 @@ func TestRingingBeatingTailIsNotANewHit(t *testing.T) {
 		t.Fatalf("found %d hits and %d merged attacks, played %d hits", len(hits), reports[0].Merged, len(levels))
 	}
 	for i, h := range hits {
-		if start := float64(h.Start) / 48000; math.Abs(start-(.2+float64(i)*2)) > .01 {
-			t.Errorf("hit %d starts at %.3f s, played at %.3f s", i+1, start, .2+float64(i)*2)
+		if lead := leadIn(h.Start, .2+float64(i)*2); lead < 0 || lead > 6 {
+			t.Errorf("hit %d starts %.1f ms before its attack, played at %.3f s; want up to 6 ms", i+1, lead, .2+float64(i)*2)
 		}
 		if h.Cut {
 			t.Errorf("hit %d was cut at %.1f dBFS; the tom rings out before the next hit", i+1, h.CutDB)
@@ -435,8 +439,8 @@ func TestRingingFindsCymbalHitsWithSlowAttacks(t *testing.T) {
 		}
 		for i, h := range hits {
 			// A hit that starts at the beginning of its swell is sliced from there.
-			if start := float64(h.Start) / 48000; start < 1+float64(i)*spacing-.005 || start > 1+float64(i)*spacing+.02 {
-				t.Errorf("hits %.0f s apart: hit %d starts at %.3f s, played at %.3f s", spacing, i+1, start, 1+float64(i)*spacing)
+			if lead := leadIn(h.Start, 1+float64(i)*spacing); lead < 0 || lead > 6 {
+				t.Errorf("hits %.0f s apart: hit %d starts %.1f ms before its attack, played at %.3f s; want up to 6 ms", spacing, i+1, lead, 1+float64(i)*spacing)
 			}
 		}
 	}
@@ -515,11 +519,11 @@ func beatingTom(seed uint64, seconds, beat, ratio, tau float64) []float64 {
 	return hit
 }
 
-// tomTake places hits of beatingTom gap seconds apart, the first at 0.3 s, over
-// a room at -70 dBFS.
-func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
+// beatingTake places hits of beatingTom gap seconds apart, the first after lead
+// seconds, over a room at -70 dBFS.
+func beatingTake(lead, gap, beat, ratio, tau float64, levels ...float64) Audio {
 	const rate = 48000
-	pcm := make([]float64, int((.3+float64(float64(len(levels))*gap)+1.5)*rate))
+	pcm := make([]float64, int((lead+float64(float64(len(levels))*gap)+1.5)*rate))
 	state := uint64(0xfeed)
 	for i := range pcm {
 		state += 0x9e3779b97f4a7c15
@@ -530,7 +534,7 @@ func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
 		pcm[i] = math.Pow(10, -70.0/20) * math.Sqrt(3) * (float64(float64(z>>11)/float64(1<<53)*2) - 1)
 	}
 	for k, level := range levels {
-		at := int((.3 + float64(float64(k)*gap)) * rate)
+		at := int((lead + float64(float64(k)*gap)) * rate)
 		for i, x := range beatingTom(uint64(400+k), gap+1.5, beat, ratio, tau) {
 			if at+i < len(pcm) {
 				pcm[at+i] += float64(x * level)
@@ -542,6 +546,11 @@ func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
 		out[i] = float32(x)
 	}
 	return Audio{PCM: out, Rate: rate}
+}
+
+// tomTake is a beatingTake whose first hit comes at 0.3 s.
+func tomTake(gap, beat, ratio, tau float64, levels ...float64) Audio {
+	return beatingTake(.3, gap, beat, ratio, tau, levels...)
 }
 
 // A tom struck again a second after the last hit lands on a loud, beating ring.
@@ -565,8 +574,8 @@ func TestRingingFindsATomStruckAgainOnABeatingRing(t *testing.T) {
 			}
 			for i, h := range hits {
 				played := .3 + float64(i)
-				if start := float64(h.Start) / 48000; start < played-.025 || start > played+.005 {
-					t.Errorf("hit %d starts at %.3f s, played at %.3f s", i+1, start, played)
+				if lead := leadIn(h.Start, played); lead < 0 || lead > 6 {
+					t.Errorf("hit %d starts %.1f ms before its attack, played at %.3f s; want up to 6 ms", i+1, lead, played)
 				}
 			}
 		})
@@ -628,6 +637,13 @@ func TestRingingCutSliceEndsBeforeTheNextAttackAndTheNextBeginsBeforeIt(t *testi
 			hits, _, err := AnalyzeTakes([]Audio{audio}, Options{Root: 49, Layers: 1, Ringing: true})
 			if err != nil || len(hits) != 4 {
 				t.Fatalf("found %d hits, played 4 (%v)", len(hits), err)
+			}
+			for i, h := range hits {
+				// Each slice begins before its attack, but not by more than 6 ms: it
+				// would otherwise play its hit late against the rest of the kit.
+				if lead := leadIn(h.Start, 1+float64(i)*spacing); lead < .5 || lead > 6 {
+					t.Errorf("hit %d starts %.1f ms before its attack; want .5 to 6 ms", i+1, lead)
+				}
 			}
 			for i := 0; i+1 < len(hits); i++ {
 				h, next := hits[i], hits[i+1]
@@ -715,5 +731,54 @@ func TestRingingRoomIsTheQuietestTwoHundredMillisecondsNotAGap(t *testing.T) {
 	// The tail is about 40 dB below the hit; a 20 ms look at the gap would read -240 dBFS.
 	if reports[0].NoiseDB < reports[0].LoudestDB-45 {
 		t.Errorf("the noise is read at %.1f dBFS, %.1f dB below the loudest sound: from the gap, not from 200 ms of tail", reports[0].NoiseDB, reports[0].LoudestDB-reports[0].NoiseDB)
+	}
+}
+
+// Drums recorded as the guide asks, about a second apart in a quiet room, ring
+// out almost all of that second, and the tail still beats against itself when
+// the next hit comes. Each time the beat climbs out of a lull the energy steps
+// up, in a bump 30 dB or more below the hit, and for some spacings the bump falls
+// 8 to 24 ms before a hit. A slice that began at such a bump started up to 24 ms
+// before its hit, so that hit played that much later than the others of its
+// kind. Every slice must start a few milliseconds before its attack, with the
+// same lead-in whatever its tail was doing. The spacings are those at which a
+// sweep from 0.90 to 0.96 s put a bump in front of a hit.
+func TestRingingSlicesStartAtTheirAttackWhateverTheTailDoesBeforeIt(t *testing.T) {
+	levels := []float64{.60, .55, .65, .58, .50}
+	const rate = 48000
+	for _, test := range []struct {
+		beat, ratio, tau float64
+		gapsMS           []int
+	}{
+		{20, .95, .22, []int{900, 906, 909, 921, 960}},
+		{30, .7, .22, []int{918, 939}},
+		{12, .95, .22, []int{936}},
+	} {
+		t.Run(fmt.Sprintf("%.0f Hz beat, second mode at %.0f%%, decay %.2f s", test.beat, test.ratio*100, test.tau), func(t *testing.T) {
+			for _, ms := range test.gapsMS {
+				gap := float64(ms) / 1000
+				audio := beatingTake(3, gap, test.beat, test.ratio, test.tau, levels...)
+				hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(hits) != len(levels) || reports[0].Merged != 0 {
+					t.Errorf("hits %.3f s apart: found %d and merged %d, played %d", gap, len(hits), reports[0].Merged, len(levels))
+					continue
+				}
+				earliest, latest := math.Inf(1), math.Inf(-1)
+				for i, h := range hits {
+					played := int((3 + float64(float64(i)*gap)) * rate)
+					lead := float64(played-h.Start) * 1000 / rate
+					earliest, latest = min(earliest, lead), max(latest, lead)
+					if lead < 2 || lead > 6 {
+						t.Errorf("hits %.3f s apart: hit %d starts %.1f ms before its attack, want 2 to 6 ms", gap, i+1, lead)
+					}
+				}
+				if latest-earliest > 2.1 {
+					t.Errorf("hits %.3f s apart: the hits start %.1f to %.1f ms before their attacks, a spread of %.1f ms", gap, earliest, latest, latest-earliest)
+				}
+			}
+		})
 	}
 }
