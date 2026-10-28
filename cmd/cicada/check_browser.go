@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"m31labs.dev/cicada/host/kernelimage"
@@ -115,7 +114,7 @@ func residentAudioBytes(cfg *engine.Config) int {
 // desktop checks and lists what each track reserves. It reports whether the
 // score fits.
 func checkBrowserScore(path string, inspection scoreInspection, stdout, stderr io.Writer) bool {
-	profile, refusal := checkBrowser(inspection.semantic, filepath.Dir(path))
+	profile, refusal := checkBrowser(inspection.semantic, inspection.root(path))
 	if refusal != nil {
 		// The refusal belongs to the whole score, so it has no source line to show.
 		refusal.Position.File = path

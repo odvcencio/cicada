@@ -4,15 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
 )
 
 // maxResidentPCMFlag names the option that caps the decoded sampler-pack PCM
-// that a native render or play session holds in memory. Without it the cap is
+// that a native command holds in memory. Without it the cap is
 // instrumentpack.DefaultMaxResidentPCM, 1 GiB.
 const maxResidentPCMFlag = "max-resident-pcm"
+
+// maxResidentPCMEnv sets the same cap for a command that was not given the
+// option, such as Studio started from a launcher that passes no flags.
+const maxResidentPCMEnv = "CICADA_MAX_RESIDENT_PCM"
 
 var byteUnits = map[string]int64{
 	"": 1, "b": 1,
@@ -48,9 +53,11 @@ func parseByteSize(text string) (int64, error) {
 
 // parseMaxResidentPCM removes --max-resident-pcm and its value from a command's
 // arguments, as audiobackend.ParseFlag does for --audio. The last occurrence
-// wins. It returns zero when the option is absent, which selects the default.
+// wins. Without the option the cap is CICADA_MAX_RESIDENT_PCM, if it is set;
+// without either it is zero, which selects the default.
 func parseMaxResidentPCM(args []string) (rest []string, limit int64, err error) {
 	rest = make([]string, 0, len(args))
+	seen := false
 	for i := 0; i < len(args); i++ {
 		arg, value, found := args[i], "", false
 		switch {
@@ -71,6 +78,14 @@ func parseMaxResidentPCM(args []string) (rest []string, limit int64, err error) 
 		}
 		if limit, err = parseByteSize(value); err != nil {
 			return nil, 0, fmt.Errorf("--%s: %w", maxResidentPCMFlag, err)
+		}
+		seen = true
+	}
+	if !seen {
+		if text := os.Getenv(maxResidentPCMEnv); strings.TrimSpace(text) != "" {
+			if limit, err = parseByteSize(text); err != nil {
+				return nil, 0, fmt.Errorf("%s: %w", maxResidentPCMEnv, err)
+			}
 		}
 	}
 	return rest, limit, nil

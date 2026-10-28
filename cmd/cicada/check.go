@@ -22,6 +22,17 @@ type scoreInspection struct {
 	diagnostics []notation.Diagnostic
 }
 
+// root is the folder that the relative paths in the score resolve from: audio
+// assets and sampler packs. It is the folder of the project's cicada.mod, or the
+// score's own folder when there is none, whichever source file the command was
+// given. path is the score as the command spelled it.
+func (i scoreInspection) root(path string) string {
+	if i.sources != nil && i.sources.Root != "" {
+		return i.sources.Root
+	}
+	return filepath.Dir(path)
+}
+
 // inspectScore is the validation gate shared by per-file commands and the
 // project checker. It includes semantic conversion and engine compilation.
 func inspectScore(path string) (scoreInspection, error) {
@@ -71,10 +82,18 @@ func inspectScore(path string) (scoreInspection, error) {
 	return scoreInspection{source: source, sources: sources, score: score, semantic: semantic, diagnostics: diagnostics}, nil
 }
 
-// parseCheckArgs reads the optional profile and score path. The score may come
-// before or after the flags.
-func parseCheckArgs(args []string) (profile, path string, err error) {
-	errUsage := fmt.Errorf("usage: cicada check [--profile desktop|browser] [score.cicada]")
+// checkUsage is the usage line of the check command.
+const checkUsage = "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"
+
+// parseCheckArgs reads the optional profile, the optional cap on decoded
+// sampler-pack PCM (zero selects the default) and the score path. The score may
+// come before or after the flags.
+func parseCheckArgs(args []string) (profile, path string, limit int64, err error) {
+	errUsage := fmt.Errorf("%s", checkUsage)
+	args, limit, err = parseMaxResidentPCM(args)
+	if err != nil {
+		return "", "", 0, err
+	}
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	name := flags.String("profile", profileDesktop, "limits to check: desktop or browser")
@@ -84,28 +103,29 @@ func parseCheckArgs(args []string) (profile, path string, err error) {
 		scores, rest = []string{rest[0]}, rest[1:]
 	}
 	if err := flags.Parse(rest); err != nil {
-		return "", "", errUsage
+		return "", "", 0, errUsage
 	}
 	scores = append(scores, flags.Args()...)
 	if len(scores) > 1 || len(scores) == 1 && filepath.Ext(scores[0]) != ".cicada" {
-		return "", "", errUsage
+		return "", "", 0, errUsage
 	}
 	if *name != profileDesktop && *name != profileBrowser {
-		return "", "", fmt.Errorf("unknown profile %q (valid: desktop, browser)", *name)
+		return "", "", 0, fmt.Errorf("unknown profile %q (valid: desktop, browser)", *name)
 	}
 	if len(scores) == 1 {
 		path = scores[0]
 	}
-	return *name, path, nil
+	return *name, path, limit, nil
 }
 
 func checkCommand(args []string, stdout, stderr io.Writer) error {
-	profile, path, err := parseCheckArgs(args)
+	profile, path, limit, err := parseCheckArgs(args)
 	if err != nil {
 		return err
 	}
+	options := checkOptions{profile: profile, maxResidentPCM: limit}
 	if path != "" {
-		return checkPathsProfile([]string{path}, profile, stdout, stderr)
+		return checkPathsWith([]string{path}, options, stdout, stderr)
 	}
 	root, err := projectRoot()
 	if err != nil {
@@ -127,7 +147,15 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 			paths = paths[:1]
 		}
 	}
-	return checkPathsProfile(paths, profile, stdout, stderr)
+	return checkPathsWith(paths, options, stdout, stderr)
+}
+
+// checkOptions are what a check run takes beyond the scores: the profile whose
+// limits apply and the cap on decoded sampler-pack PCM, in bytes, where zero is
+// the default.
+type checkOptions struct {
+	profile        string
+	maxResidentPCM int64
 }
 
 func checkPaths(paths []string, stdout, stderr io.Writer) error {
@@ -135,6 +163,10 @@ func checkPaths(paths []string, stdout, stderr io.Writer) error {
 }
 
 func checkPathsProfile(paths []string, profile string, stdout, stderr io.Writer) error {
+	return checkPathsWith(paths, checkOptions{profile: profile}, stdout, stderr)
+}
+
+func checkPathsWith(paths []string, options checkOptions, stdout, stderr io.Writer) error {
 	failed := 0
 	for _, path := range paths {
 		inspection, err := inspectScore(path)
@@ -153,7 +185,7 @@ func checkPathsProfile(paths []string, profile string, stdout, stderr io.Writer)
 			continue
 		}
 		// Check loads the sampler packs, which inspectScore leaves to render.
-		packDiagnostics := checkSamplerPacks(path, inspection)
+		packDiagnostics := checkSamplerPacks(path, inspection, options.maxResidentPCM)
 		for _, diagnostic := range packDiagnostics {
 			printCheckDiagnostic(stderr, path, inspection.source, diagnostic)
 			if diagnostic.Severity == "error" {
@@ -163,7 +195,7 @@ func checkPathsProfile(paths []string, profile string, stdout, stderr io.Writer)
 		if hasDiagnosticErrors(packDiagnostics) {
 			continue
 		}
-		if profile == profileBrowser {
+		if options.profile == profileBrowser {
 			if !checkBrowserScore(path, inspection, stdout, stderr) {
 				failed++
 			}
@@ -211,7 +243,9 @@ func checkSuggestion(d notation.Diagnostic) string {
 	case d.Code == "CICADA-SCALE-DEGREE":
 		return "choose a degree in the score's scale or use an absolute letter pitch"
 	case d.Code == samplerZoneCode:
-		return "move the note into the pack's key range, change the sampler's root or the pattern's transpose, or use a pack that covers it"
+		return "move the note into the pack's key range, write it in another octave, change the pattern's transpose, or use a pack that covers it (the sampler's root sets the octave of a pitch written without one)"
+	case d.Code == samplerMemoryCode:
+		return "use smaller packs, or give a larger cap with --max-resident-pcm or CICADA_MAX_RESIDENT_PCM, such as 2GiB"
 	case d.Code == "CICADA-REFERENCE" && strings.Contains(d.Message, "unknown pattern"):
 		return "use a declared pattern name in this scene"
 	case d.Code == "CICADA-PARAM" && strings.Contains(d.Message, "steps attribute must equal"):

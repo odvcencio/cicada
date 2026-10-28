@@ -54,6 +54,29 @@ func TestParseByteSize(t *testing.T) {
 	}
 }
 
+func TestMaxResidentPCMFallsBackToTheEnvironment(t *testing.T) {
+	t.Setenv(maxResidentPCMEnv, "2GiB")
+	if _, limit, err := parseMaxResidentPCM([]string{"song.cicada"}); err != nil || limit != 2<<30 {
+		t.Fatalf("without the option the cap must come from %s: %d, %v", maxResidentPCMEnv, limit, err)
+	}
+	rest, limit, err := parseMaxResidentPCM([]string{"song.cicada", "--max-resident-pcm", "256MiB"})
+	if err != nil || limit != 256<<20 || !reflect.DeepEqual(rest, []string{"song.cicada"}) {
+		t.Fatalf("the option must win over the environment: %q, %d, %v", rest, limit, err)
+	}
+	t.Setenv(maxResidentPCMEnv, "lots")
+	if _, _, err := parseMaxResidentPCM(nil); err == nil || !strings.Contains(err.Error(), maxResidentPCMEnv) {
+		t.Fatalf("a bad value must name the variable: %v", err)
+	}
+	// The option makes the environment irrelevant, so a bad value does not matter.
+	if _, limit, err := parseMaxResidentPCM([]string{"--max-resident-pcm=1GiB"}); err != nil || limit != 1<<30 {
+		t.Fatalf("an option given: %d, %v", limit, err)
+	}
+	t.Setenv(maxResidentPCMEnv, "  ")
+	if _, limit, err := parseMaxResidentPCM(nil); err != nil || limit != 0 {
+		t.Fatalf("an empty variable must select the default: %d, %v", limit, err)
+	}
+}
+
 func TestParseMaxResidentPCMTakesTheOptionOutOfTheArguments(t *testing.T) {
 	for _, tc := range []struct {
 		args  []string

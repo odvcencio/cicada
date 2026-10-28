@@ -2,15 +2,23 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/metrics"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf8"
 
+	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/internal/testpack"
 )
 
@@ -80,7 +88,9 @@ func TestCheckReportsEachNoteOutsideEveryZoneAtItsSourcePosition(t *testing.T) {
 	if strings.Contains(report, "pitch c4") {
 		t.Errorf("a note inside the zone was reported:\n%s", report)
 	}
-	if !strings.Contains(report, "change the sampler's root or the pattern's transpose") {
+	// The sampler's root moves only a pitch written without an octave, so the
+	// advice says that and puts the octave and the transpose first.
+	if !strings.Contains(report, "write it in another octave, change the pattern's transpose") || !strings.Contains(report, "the sampler's root sets the octave of a pitch written without one") {
 		t.Errorf("report gives no suggestion:\n%s", report)
 	}
 	if first, second := strings.Index(report, "pitch c1"), strings.Index(report, "pitch c6"); first < 0 || second < first {
@@ -263,5 +273,242 @@ func TestCheckExitStatusForNotesOutsideEveryZone(t *testing.T) {
 				t.Fatalf("zone diagnostic reported %t:\n%s", mentioned, output)
 			}
 		})
+	}
+}
+
+// declareFrames rewrites a pack's manifest to declare frames of PCM in each
+// asset, leaving the audio files as they are, and returns the pack with its new
+// pin. It makes a pack that opens and reports a size without the audio to match,
+// so a test can ask about sizes it could not afford to decode.
+func declareFrames(t *testing.T, dir string, pack testpack.Pack, frames, channels int) testpack.Pack {
+	t.Helper()
+	path := filepath.Join(dir, pack.Manifest)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest instrumentpack.Manifest
+	if err = json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for i := range manifest.Assets {
+		manifest.Assets[i].Frames, manifest.Assets[i].Channels = frames, channels
+	}
+	if data, err = json.Marshal(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	pack.SHA256, pack.PCMBytes = hex.EncodeToString(sum[:]), int64(len(manifest.Assets))*int64(frames)*int64(channels)*4
+	return pack
+}
+
+// peakHeap runs f and returns the most heap that was in use at any moment it
+// sampled, less the heap in use when it started.
+func peakHeap(f func()) uint64 {
+	sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+	metrics.Read(sample)
+	base := sample[0].Value.Uint64()
+	var peak atomic.Uint64
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+		for {
+			metrics.Read(sample)
+			if v := sample[0].Value.Uint64(); v > peak.Load() {
+				peak.Store(v)
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(time.Millisecond):
+			}
+		}
+	}()
+	f()
+	close(stop)
+	<-done
+	return max(peak.Load(), base) - base
+}
+
+// The check proves that each pack loads, but it keeps only the zone table.
+// Holding every pack until the end would make its memory grow with the number
+// of packs a score names.
+func TestCheckHoldsOnePackAtATime(t *testing.T) {
+	const packs, frames = 6, 4_000_000 // six packs of 16 MB of PCM
+	dir := t.TempDir()
+	var source strings.Builder
+	source.WriteString("cicada 2\ntempo 120\n")
+	for i := range packs {
+		pack := testpack.Write(t, dir, testpack.Options{ID: fmt.Sprintf("p%d", i), Frames: frames})
+		source.WriteString(pack.Sampler(fmt.Sprintf("s%d", i), 2))
+		fmt.Fprintf(&source, "track t%d s%d {}\n", i, i)
+	}
+	source.WriteString("pattern hit notes steps=4 { c4 . . . }\nscene main {")
+	for i := range packs {
+		fmt.Fprintf(&source, " t%d = hit", i)
+	}
+	source.WriteString(" }\nsong { main }\n")
+	path := filepath.Join(dir, "main.cicada")
+	if err := os.WriteFile(path, []byte(source.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	instrumentpack.ReleaseShared()
+	runtime.GC()
+	var err error
+	peak := peakHeap(func() { err = checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One pack is 16 MB of PCM, and decoding it holds up to as much again in
+	// buffers. Six packs held together would be 96 MB before any buffer.
+	t.Logf("check peaked at %d MB of heap for %d packs of %d MB", peak>>20, packs, frames*4>>20)
+	if limit := uint64(4 * frames * 4); peak > limit {
+		t.Fatalf("check peaked at %d MB of heap for %d packs of %d MB; one pack at a time stays under %d MB",
+			peak>>20, packs, frames*4>>20, limit>>20)
+	}
+}
+
+// Render counts the PCM that the manifests declare against the cap before it
+// reads any audio. Check reports the refusal that render would give, from the
+// same figures, so that a score which check passes is not refused for size.
+func TestCheckReportsWhatRenderWouldRefuseForSize(t *testing.T) {
+	t.Run("default cap, from manifests alone", func(t *testing.T) {
+		// Seventeen packs that declare 64,000,000 bytes each pass 1 GiB at the
+		// last one. Their audio is not that long: the check never needs it to know.
+		dir := t.TempDir()
+		var source strings.Builder
+		source.WriteString("cicada 2\ntempo 120\n")
+		for i := range 17 {
+			pack := declareFrames(t, dir, testpack.Write(t, dir, testpack.Options{ID: fmt.Sprintf("p%02d", i), Frames: 100}), 8_000_000, 2)
+			source.WriteString(pack.Sampler(fmt.Sprintf("s%02d", i), 2))
+		}
+		source.WriteString("track t s00 {}\npattern hit notes steps=4 { c4 . . . }\nscene main { t = hit }\nsong { main }\n")
+		path := filepath.Join(dir, "main.cicada")
+		if err := os.WriteFile(path, []byte(source.String()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr bytes.Buffer
+		if err := checkPaths([]string{path}, &stdout, &stderr); err == nil {
+			t.Fatal("a score whose packs declare 1.01 GiB passed")
+		}
+		report := stderr.String()
+		if got := strings.Count(report, "CICADA-SAMPLER-MEMORY"); got != 1 {
+			t.Fatalf("%d memory diagnostics, want 1, at the pack that crosses the cap:\n%s", got, report)
+		}
+		line, column := positionOf(t, source.String(), "sampler s16", "sampler")
+		want := fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-MEMORY: sampler packs exceed the native resident PCM cap (--max-resident-pcm): loading packs/p16/manifest.json would hold 1.01 GiB (1088000000 bytes) of decoded PCM, cap 1 GiB (1073741824 bytes); render, stems and play refuse this score",
+			path, line, column)
+		if !strings.Contains(report, want) {
+			t.Errorf("report lacks %q:\n%s", want, report)
+		}
+		if !strings.Contains(report, "--max-resident-pcm or CICADA_MAX_RESIDENT_PCM") {
+			t.Errorf("report does not say how to raise the cap:\n%s", report)
+		}
+	})
+
+	t.Run("a cap that check is given", func(t *testing.T) {
+		dir := t.TempDir()
+		first := testpack.Write(t, dir, testpack.Options{ID: "first", Frames: 1000}) // 4000 bytes each
+		second := testpack.Write(t, dir, testpack.Options{ID: "second", Frames: 1000})
+		source := "cicada 2\ntempo 120\n" + first.Sampler("a", 2) + second.Sampler("b", 2) + "track t a {}\npattern hit notes steps=4 { c4 . . . }\nscene main { t = hit }\nsong { main }\n"
+		path := filepath.Join(dir, "main.cicada")
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			args    []string
+			refused bool
+		}{
+			{[]string{path}, false},
+			{[]string{"--max-resident-pcm", "8000", path}, false},
+			{[]string{"--max-resident-pcm=7999", path}, true},
+			{[]string{path, "--max-resident-pcm", "6000"}, true},
+		} {
+			var stdout, stderr bytes.Buffer
+			err := checkCommand(tc.args, &stdout, &stderr)
+			if tc.refused != (err != nil) || tc.refused != strings.Contains(stderr.String(), "CICADA-SAMPLER-MEMORY") {
+				t.Errorf("%q: %v\n%s", tc.args, err, stderr.String())
+			}
+			if tc.refused {
+				line, column := positionOf(t, source, "sampler b", "sampler")
+				if want := fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-MEMORY", path, line, column); !strings.Contains(stderr.String(), want) {
+					t.Errorf("%q: the refusal belongs at the declaration of the sampler whose pack crosses the cap:\n%s", tc.args, stderr.String())
+				}
+			}
+		}
+		t.Setenv(maxResidentPCMEnv, "6000")
+		if err := checkCommand([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+			t.Error("the cap from the environment was ignored")
+		}
+	})
+
+	t.Run("zones are still checked", func(t *testing.T) {
+		path, _, _ := writeSamplerProject(t, testpack.Options{}, "pattern melody notes { c1 . c4 . }\n")
+		var stdout, stderr bytes.Buffer
+		err := checkCommand([]string{"--max-resident-pcm", "1000", path}, &stdout, &stderr)
+		if err == nil || err.Error() != "2 error(s) across 1 score(s)" || !strings.Contains(stderr.String(), "CICADA-SAMPLER-MEMORY") || !strings.Contains(stderr.String(), "CICADA-SAMPLER-ZONE") {
+			t.Fatalf("a score over the cap and with a stray note: %v\n%s", err, stderr.String())
+		}
+	})
+}
+
+// Whether a pack loads depends on the output rate: the playback ratio is the
+// recording's rate over the output rate. The browser exports at 44.1, 48 and 96
+// kHz, so check admits a pack at each.
+func TestCheckAdmitsAPackAtEveryExportedRate(t *testing.T) {
+	// Keys 34 to 86 around a root of 60 play at 48 kHz (lowest ratio 0.22) but
+	// not at 96 kHz (0.11, below the voice's 0.125).
+	wide := testpack.Options{Zones: []testpack.Zone{{KeyLow: 34, KeyHigh: 86}}}
+	path, source, _ := writeSamplerProject(t, wide, "pattern melody notes { c4 . . . }\n")
+	var stdout, stderr bytes.Buffer
+	err := checkPaths([]string{path}, &stdout, &stderr)
+	if err == nil || err.Error() != "1 error(s) across 1 score(s)" {
+		t.Fatalf("a pack that cannot play at 96 kHz passed: %v\n%s", err, stderr.String())
+	}
+	line, column := positionOf(t, source, "sampler sound", "sampler")
+	want := fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-PACK: sampler sound: at 96000 Hz: sample playback ratio must be between 0.125 and 8", path, line, column)
+	if !strings.Contains(stderr.String(), want) {
+		t.Fatalf("report lacks %q:\n%s", want, stderr.String())
+	}
+	// The same pack with narrower keys plays at all three rates.
+	path, _, _ = writeSamplerProject(t, testpack.Options{Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72}}}, "pattern melody notes { c4 . . . }\n")
+	stderr.Reset()
+	if err = checkPaths([]string{path}, &stdout, &stderr); err != nil {
+		t.Fatalf("a pack that plays at every rate: %v\n%s", err, stderr.String())
+	}
+}
+
+// A phrase use can move a note out of the pack's keys. The use is where the
+// score says so, and the written pitch alone would not explain the key.
+func TestCheckReportsANoteOfAPhraseAtTheUse(t *testing.T) {
+	patterns := "phrase motif { c4 . e4 . }\npattern melody notes { use motif +13 }\n"
+	path, source, _ := writeSamplerProject(t, testpack.Options{}, patterns)
+	var stdout, stderr bytes.Buffer
+	err := checkPaths([]string{path}, &stdout, &stderr)
+	if err == nil || err.Error() != "2 error(s) across 1 score(s)" {
+		t.Fatalf("c4 and e4 moved up 13 semitones are MIDI 73 and 77, above the zone: %v\n%s", err, stderr.String())
+	}
+	line, column := positionOf(t, source, "pattern melody", "use")
+	for _, want := range []string{
+		fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-ZONE: pitch c4 (MIDI 73) on track lead, pattern melody, from phrase motif used with transpose +13, is outside every zone", path, line, column),
+		fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-ZONE: pitch e4 (MIDI 77) on track lead, pattern melody, from phrase motif used with transpose +13, is outside every zone", path, line, column),
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("report lacks %q:\n%s", want, stderr.String())
+		}
+	}
+	// A phrase used as written is reported at the use too, without a transpose.
+	path, source, _ = writeSamplerProject(t, testpack.Options{}, "phrase high { c6 . . . }\npattern melody notes { c4 . . . use high }\n")
+	stderr.Reset()
+	if err = checkPaths([]string{path}, &stdout, &stderr); err == nil {
+		t.Fatal("c6 is above the zone")
+	}
+	line, column = positionOf(t, source, "pattern melody", "use high")
+	if want := fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-ZONE: pitch c6 (MIDI 84) on track lead, pattern melody, from phrase high, is outside every zone", path, line, column); !strings.Contains(stderr.String(), want) {
+		t.Errorf("report lacks %q:\n%s", want, stderr.String())
 	}
 }
