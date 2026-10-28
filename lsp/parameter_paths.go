@@ -10,6 +10,7 @@ import (
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -322,10 +323,13 @@ func matchingCompletion(names []string, prefix, detail string) []map[string]any 
 }
 
 // descriptorHasVoice applies the compiler's voice rule to a track's declared
-// kind. A modeled keyboard patch such as tine_ep stands for its family.
+// kind. A modeled keyboard patch such as tine_ep stands for its family, and a
+// model_ percussion track for the modal family.
 func descriptorHasVoice(descriptor paramdefs.Descriptor, kind string) bool {
 	if id := keyboard.ID(kind); id != 0 {
 		kind = keyboard.FamilyOf(id).String()
+	} else if _, ok := modal.ParseTrackKind(kind); ok {
+		kind = "modal"
 	}
 	return paramdefs.HasVoice(descriptor, kind)
 }

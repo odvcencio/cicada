@@ -168,7 +168,7 @@ func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
 			if voice.kind == engine.VoiceKeys {
 				family = hostkeys.FamilyName(previewKeysPatch) // The compiler resolves each keyboard to its family.
 			}
-			if family != "acid" && family != "drums" && family != "guitar" && family != "piano" && voice.kind != engine.VoiceKeys {
+			if family != "acid" && family != "drums" && family != "guitar" && family != "piano" && family != "modal" && voice.kind != engine.VoiceKeys {
 				family = "instrument"
 			}
 			var pcm [blockFrames * 8]byte

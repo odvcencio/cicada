@@ -284,6 +284,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				if profile, ok := modal.ParseTrackKind(track.Kind); ok {
 					config.Kind, config.Modal = engine.VoiceModal, profile
+					sustain, err := ModalSustainFromValues(track.Params)
+					if err != nil {
+						return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+					}
+					config.PianoSustain = sustain
 					break
 				}
 				config.Kind = engine.VoiceGraph

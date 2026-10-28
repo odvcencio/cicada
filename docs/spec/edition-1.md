@@ -197,7 +197,7 @@ song { main }
 
 **Defaults:** There are no implicit authored bindings.
 
-Modeled piece names are `kick`, `snare`, `rimshot`, `cross_stick`, `tom_low`, `tom_mid`, `tom_high`, `hat_closed`, `hat_pedal`, `hat_half_open`, `hat_open`, `ride_bow`, `ride_bell`, `crash`, and `splash`. Any source lane may select any piece. Within a kit, a hi-hat strike chokes the other hi-hat pieces, even when mapped to different source lanes.
+Modeled piece names are `kick`, `snare`, `rimshot`, `cross_stick`, `tom_low`, `tom_mid`, `tom_high`, `hat_closed`, `hat_pedal`, `hat_half_open`, `hat_open`, `ride_bow`, `ride_bell`, `crash`, `splash`, `brush_tap`, and `brush_sweep`. Any source lane may select any piece. Within a kit, a hi-hat strike chokes the other hi-hat pieces, even when mapped to different source lanes. Brush pieces join no choke group: a modeled hat does not choke them, though a built-in or instrument hat on `ch` still chokes whatever sounds on `oh`. A `brush_sweep` holds while its lane's gate is held, for at most about 1.6 s times its decay control, and ends 5 ms after a live note-off; a score row has no gate end, so it holds for that long and then fades, unless an offline render ends the last bar first.
 
 For a modeled lane, its source lane prefix selects the following track controls. For example, `bd_tune = 0.9` tunes the piece assigned to `bd`. Built-in and instrument bindings retain their existing parameter rules.
 

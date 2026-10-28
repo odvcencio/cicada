@@ -4,7 +4,7 @@ The new `kernel/fx/pro` package prepares a stereo chain in this order: four-band
 
 Native hosts assign a prepared chain to `engine.Config.MasterProcessor` before `engine.New`. The engine runs it after master gain and before the existing master safety limiter. `MasterProcessorLatencyFrames` reports its additional delay. Project image encoding rejects a prepared processor, because it contains host-owned state that cannot be silently omitted.
 
-Browser hosts can load the optional `cicada-mix.wasm` companion module separately from the core. `host/promix/processor.mjs` prepares it before the AudioWorklet starts and copies stereo blocks of up to 128 frames without making new typed-array views during processing. Preparation, compilation, fetches and controls belong outside the callback. The companion adds download bytes and memory; its size is reported separately and does not change the default core's size gate of 320 KiB raw and 120 KiB Brotli. The core retains these size gates; saved track effects use a separately negotiated project-image capability.
+Browser hosts can load the optional `cicada-mix.wasm` companion module separately from the core. `host/promix/processor.mjs` prepares it before the AudioWorklet starts and copies stereo blocks of up to 128 frames without making new typed-array views during processing. Preparation, compilation, fetches and controls belong outside the callback. The companion adds download bytes and memory; its size is reported separately and does not change the default core's size gate of 322 KiB raw and 120 KiB Brotli. The core retains these size gates; saved track effects use a separately negotiated project-image capability.
 
 Build and exercise the actual TinyGo module:
 
@@ -187,7 +187,7 @@ core rejects the track-processing requirement. Missing optional modules return
 an error instead of silently playing without the effects.
 
 Build the optional processing variant with `make build-vocals-wasm`. Its raw and
-Brotli bytes are reported separately; the default core retains the 320 KiB raw
+Brotli bytes are reported separately; the default core retains the 322 KiB raw
 and 120 KiB Brotli gates. WAM2 export automatically packages the required variant
 from beside the configured core file. `make build-wam2` prepares both the core
 and vocal modules; modeled keys require `make build-keys-wasm`.

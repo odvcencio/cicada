@@ -10,7 +10,7 @@ scene play { pan = riff }
 song { play*4 }
 ```
 
-Velocity controls contact duration and upper-mode balance. Four deterministic strike positions vary timbre without changing pitch. Four ringing slots keep the preceding notes alive; the quietest slot fades over 64 frames when stolen. Every track reserves four voices under the existing limit of 32. Key release allows natural decay, except vibraphone damping; slides retune the most recent strike while other strikes continue ringing. Steelpan includes a quiet close mode for bowl beating; this is not coupling between independently tuned notes.
+Velocity controls contact duration and upper-mode balance. Four deterministic strike positions vary timbre without changing pitch. Four ringing slots keep the preceding notes alive; the quietest slot fades over 64 frames when stolen. Every track reserves four voices under the existing limit of 32. Key release allows natural decay, except vibraphone damping, which the `sustain` pedal holds off (see [Modeled percussion](../manual/modeled-percussion.md#the-vibraphones-damper-pedal)); slides retune the most recent strike while other strikes continue ringing. Steelpan includes a quiet close mode for bowl beating; this is not coupling between independently tuned notes.
 
 Use the ordinary live `OpNoteOn` command for game events. Choose a profile in a prepared track, then use note to set resonant pitch and velocity for impact strength. `examples/modeled/domino-slam.cicada` auditions wood, zinc, felt and marble with the same hit sequence. The profiles describe material character, not measured recordings of a particular game surface.
 

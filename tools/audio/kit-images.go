@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -64,6 +65,10 @@ type event struct {
 	sample  int
 	command cmd.Command
 }
+
+// references counts the isolated reference hits and auditions the other WAVs,
+// so the closing line reports what was written and not a number kept by hand.
+var references, auditions int
 
 func wav(cfg engine.Config, events []event, seconds, bits int, destination string) {
 	e, err := engine.New(cfg)
@@ -144,6 +149,11 @@ func wav(cfg engine.Config, events []event, seconds, bits int, destination strin
 	encoded, err := json.MarshalIndent(recipe, "", "  ")
 	check(err)
 	check(os.WriteFile(destination[:len(destination)-4]+".json", append(encoded, '\n'), 0644))
+	if strings.HasPrefix(filepath.Base(destination), "model-") {
+		references++
+	} else {
+		auditions++
+	}
 	var message cmd.Message
 	for e.Poll(&message) {
 		if message.Kind == cmd.Fault {
@@ -158,9 +168,8 @@ func main() {
 	}
 	directory := os.Args[1]
 	check(os.MkdirAll(directory, 0755))
-	profiles := []string{"kick", "snare", "rimshot", "cross_stick", "tom_low", "tom_mid", "tom_high", "hat_closed", "hat_pedal", "hat_half_open", "hat_open", "ride_bow", "ride_bell", "crash", "splash"}
 	var images []imageInfo
-	for _, profile := range profiles {
+	for _, profile := range modeledkit.Names {
 		cfg := compile(single(profile), 48000)
 		data, err := kernelimage.Encode(cfg)
 		check(err)
@@ -215,5 +224,5 @@ func main() {
 	for _, lane := range []uint16{2, 4} {
 		wav(compile(hatSource, 48000), []event{{0, cmd.Command{Op: cmd.OpNoteOn, Track: 0, Index: 3, Arg0: 46 | 100<<8}}, {24000, cmd.Command{Op: cmd.OpNoteOn, Track: 0, Index: lane, Arg0: 42 | 100<<8}}}, 3, 24, filepath.Join(directory, fmt.Sprintf("choke-hat-lane%d.wav", lane)))
 	}
-	fmt.Printf("Generated %d live images, ten reference hit WAVs and 25 audition WAVs\n", len(images))
+	fmt.Printf("Generated %d live images, %d reference hit WAVs and %d audition WAVs\n", len(images), references, auditions)
 }

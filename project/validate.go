@@ -247,13 +247,8 @@ func ValidateProject(p *Project) error {
 			}
 		}
 		if isModal {
-			for name, value := range track.Params {
-				if name != "octave" {
-					return fmt.Errorf("modeled track %s accepts only octave and mixer settings", track.ID)
-				}
-				if err := validateOctaveValue(value); err != nil {
-					return fmt.Errorf("track %s: %w", track.ID, err)
-				}
+			if _, err := ModalSustainFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
 		if track.Kind == "acid" {

@@ -1195,6 +1195,13 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 			if err != nil {
 				return nil, err
 			}
+			sustain, err := project.CompileModalSustain(source)
+			if err != nil {
+				return nil, fmt.Errorf("track %s: %w", source.Name, err)
+			}
+			if err := voice.SetSustain(sustain); err != nil {
+				return nil, fmt.Errorf("track %s: %w", source.Name, err)
+			}
 			track := trackRuntime{name: source.Name, mixer: trackMix, voice: modalVoice{voice}, patterns: map[string]seq.Pattern{}}
 			for _, pattern := range score.Patterns {
 				if pattern.Kind != "notes" {
