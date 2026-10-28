@@ -148,9 +148,11 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
 
    Either way, watch the meter on the hardest hit of every piece, not only the
    loudest. A hit that reaches full scale clips, and nothing later can repair
-   it. The command finds clipped hits, which are runs of samples stuck at full
-   scale, and warns about them after the build. Lower the gain and record that
-   take again.
+   it. The command finds clipped hits, which are runs of samples stuck at the
+   same full-scale value, and warns about them after the build. Lower the gain
+   and record that take again. A peak that touches full scale and falls away is
+   not clipped, and neither is a peak above full scale in a 32-bit float file,
+   so the command says nothing about them.
 4. **Record three dynamics of each piece, five hits each.** Soft, medium and
    hard: a light tap, a normal hit and full force. Fifteen hits make three
    velocity layers of five round robins. Put each dynamic in its own WAV file.
@@ -260,7 +262,7 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    | --- | --- | --- |
    | Hits were cut off while still ringing | The next hit, or the end of the file, came while the tail was still more than 6 dB above the level where tails end. The line gives the level at the cut and the level where a finished tail ends. | Leave more time after each hit, and keep recording until the last one has died away. |
    | Attacks within 0.5 s of an earlier hit | The take holds a double strike, or hits that are too close together. | Leave 0.5 s or more between hits. |
-   | Hits clip at full scale | The input gain was too high. | Lower the gain and record the take again. |
+   | Hits clip at full scale | A hit holds a flat top: three or more samples in a row stuck at the same full-scale value. The input gain was too high. | Lower the gain and record the take again. |
    | A take does not start with room tone | The take's first 200 ms are not as quiet as its quietest 200 ms, so the command read the room's noise from the quietest stretch elsewhere in the take. If a tail was still ringing there, every hit ended too soon, and no cut was reported. | Start the take with three seconds of silence. |
    | A take has no quiet stretch | No 200 ms of the take is more than 26 dB below its loudest sound, and the take does not open with room tone, so the command cannot tell the room's noise from a ring that never faded. It ends tails 20 dB below the loudest sound and may miss the softer hits. | Start the take with three seconds of silence. If it already does, play harder, move the microphone closer, or record in a quieter room. |
    | A take was recorded in a room only so many dB below its loudest sound | The take opens with room tone, but the room is less than 20 dB below its loudest sound. The command finds the hits against an assumed floor, ends each tail where it reaches the room, and may miss the softer hits. | Play louder, move the microphone closer, or record in a quieter room. |

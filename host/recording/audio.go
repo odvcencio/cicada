@@ -15,8 +15,11 @@ const MaxFrames = 8 << 20
 const MaxInputBytes = 64 << 20
 
 // A sample at or above clipLevel sits at digital full scale: 16-bit full scale
-// is .99997 and 24-bit .9999999. Three in a row make a clipped run; a lone
-// peak at full scale is not clipping, a flat top is.
+// is .99997 and 24-bit .9999999. Three in a row with the same value make a
+// clipped run, which is a flat top. A lone peak at full scale is not clipping,
+// and neither is the round crest of a loud note, whose samples differ even when
+// they all lie close to full scale. A float recording may hold samples above
+// full scale: they are clipped only if they stay flat.
 const (
 	clipLevel = .9999
 	clipRun   = 3
@@ -74,7 +77,10 @@ func DecodeWAV(data []byte) (Audio, error) {
 	a.Rate, a.SHA256 = h.RateHz, Digest(data)
 	a.PCM = make([]float32, int(h.Frames))
 	width, offset := h.BitDepth/8, int(h.DataOffset)
+	// run counts, for each channel, the samples in a row that sit at full scale
+	// with the value last.
 	run := make([]int, h.Channels)
+	last := make([]float64, h.Channels)
 	for i := range a.PCM {
 		var sum float64
 		for ch := 0; ch < h.Channels; ch++ {
@@ -95,12 +101,15 @@ func DecodeWAV(data []byte) (Audio, error) {
 			if math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) > 8 {
 				return Audio{}, fmt.Errorf("invalid PCM at frame %d", i)
 			}
-			if math.Abs(value) >= clipLevel {
+			switch {
+			case math.Abs(value) < clipLevel:
+				run[ch] = 0
+			case run[ch] > 0 && value == last[ch]:
 				if run[ch]++; run[ch] >= clipRun {
 					a.markClipped(i, run[ch] == clipRun)
 				}
-			} else {
-				run[ch] = 0
+			default:
+				run[ch], last[ch] = 1, value
 			}
 			sum += value
 		}

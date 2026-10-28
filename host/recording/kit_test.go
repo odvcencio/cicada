@@ -1190,6 +1190,63 @@ func TestKitWarnsThatTheRoomIsLoudWhenTheTakeHasRoomTone(t *testing.T) {
 	}
 }
 
+// Loud takes that did not clip must not be told to record again. A 32-bit float
+// take keeps a peak above full scale; a low kick normalized to exactly full
+// scale in an editor puts three samples within 0.01% of the rail at its crest.
+// A take whose flat tops are real is still named.
+func TestKitDoesNotCallLoudTakesThatDidNotClipClipped(t *testing.T) {
+	const rate = 48000
+	// Hits of a decaying 80 Hz wave whose first crest, with a sample on each
+	// side within 0.01% of it, is the loudest point of the take.
+	kick := func(peak float64) []float64 {
+		pcm := make([]float64, rate*4)
+		for hit := 0; hit < 3; hit++ {
+			for i := 0; i < rate; i++ {
+				at := float64(i) / rate
+				pcm[hit*rate+rate/2+i] += peak * math.Sin(2*math.Pi*80*at) * math.Exp(-at/.15)
+			}
+		}
+		return pcm
+	}
+	var top float64
+	for _, x := range kick(1) {
+		top = max(top, math.Abs(x))
+	}
+	normalized := make([]byte, 44+3*rate*4)
+	copy(normalized, testwav.Bytes(rate, 1, 24, rate*4, 1))
+	for i, x := range kick(1 / top) {
+		v := int32(math.Round(x * 8388607))
+		normalized[44+3*i], normalized[44+3*i+1], normalized[44+3*i+2] = byte(v), byte(v>>8), byte(v>>16)
+	}
+	float := make([]float32, rate*4)
+	for i, x := range kick(2.4 / top) {
+		float[i] = float32(x)
+	}
+	takes := fstest.MapFS{
+		"normalized.wav": {Data: normalized},
+		"float.wav":      {Data: EncodeWAV(float, rate)},
+		"clipped.wav":    {Data: testwav.Take(rate, testwav.Kick, 1.6, 1.7, 1.65)},
+	}
+	recipe := KitRecipe{Format: KitFormat, Pieces: []KitPiece{
+		{Name: "normalized", Note: 36, Layers: 1, OneShot: true, Takes: []string{"normalized.wav"}},
+		{Name: "float", Note: 38, Layers: 1, OneShot: true, Takes: []string{"float.wav"}},
+		{Name: "clipped", Note: 40, Layers: 1, OneShot: true, Takes: []string{"clipped.wav"}},
+	}}
+	_, report, err := BuildKit("loud", recipe, takes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []struct{ hits, clipped int }{{3, 0}, {3, 0}, {3, 3}} {
+		if take := report.Pieces[i].Takes[0]; take.Hits != want.hits || take.Clipped != want.clipped {
+			t.Errorf("%s: %d hits and %d clipped; want %d and %d", report.Pieces[i].Name, take.Hits, take.Clipped, want.hits, want.clipped)
+		}
+	}
+	warnings := report.Warnings()
+	if len(warnings) != 1 || warnings[0] != "clipped: 3 of 3 hits clip at full scale (clipped.wav); lower the input gain and record those takes again" {
+		t.Errorf("warnings:\n%s", strings.Join(warnings, "\n"))
+	}
+}
+
 // The warnings are plain sentences. A single fault reads in the singular, and a
 // piece with the same fault in several takes names each take once.
 func TestKitWarningsReadAsSentences(t *testing.T) {
