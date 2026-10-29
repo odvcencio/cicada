@@ -226,6 +226,8 @@ func studioLibraryPreviewProject(scorePath string, item studioLibraryItem) (*pro
 		pattern = fmt.Sprintf("pattern phrase drums { %s: X...x...X...x... }\n", libraryEffectKind(sources, item))
 	}
 	if kind == "effect" {
+		// The audition plays the piano: it needs no keyboard module, so the
+		// browser's core kernel plays it as well as the native one.
 		binding = ""
 		if item.Kind == "preset" {
 			binding = "fx audition " + ref + " {}\n"
@@ -233,11 +235,11 @@ func studioLibraryPreviewProject(scorePath string, item studioLibraryItem) (*pro
 		}
 		switch libraryEffectKind(sources, item) {
 		case "comp":
-			binding += "bus music { insert=" + ref + " }\ntrack preview acid {}\n"
+			binding += "bus music { insert=" + ref + " }\ntrack preview piano {}\n"
 		case "delay", "reverb":
-			binding += "track preview acid { send " + ref + " = 0.4 }\n"
+			binding += "track preview piano { send " + ref + " = 0.4 }\n"
 		default:
-			binding += "track preview acid { insert=" + ref + " }\n"
+			binding += "track preview piano { insert=" + ref + " }\n"
 		}
 	}
 	source = append(source, []byte(binding+pattern+"scene audition { preview=phrase }\nsong { audition }\n")...)
