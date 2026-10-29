@@ -172,26 +172,34 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    that tail passes it. A take that opens with a second or more of steady room
    tone is read from that room tone, even if the file ends in silence that an
    export added after the last tail, or in a fade-out, which are quieter than
-   any room. The command also warns when no part of a take is quiet, or the
-   room is within 20 dB of the loudest sound. Hits must start at least half a
-   second apart. That is stricter than `record-pack`'s 120 ms rule, because
-   bass drums and toms swell again after the first impact, and the command must
-   not count the swell as a second hit. An attack that comes between 0.12 and
-   0.5 seconds after a hit is kept inside that hit, which then plays as a double
-   strike, and the command warns you. A strike within 0.12 seconds of a hit,
-   such as a flam or a beater bounce, counts as part of that hit, and the
-   command does not warn about it. Leave a second after drums. Leave cymbals and
-   the open hi-hat all the time they need to die away, often 5 to 10 seconds,
-   and keep the room quiet until then. A hit that lands on a loud ring, such as
-   a soft hit on the ring of a louder one or a tom struck again within a second,
-   can go unseen, so check the hit count in step 8.
+   any room. A click or a knock at the very start, such as the recorder
+   starting, does not break the room tone if some 200 ms of the first half
+   second is as quiet as the rest of it. Digital silence at the start of a
+   file, which an export that begins before your clip adds, does not count as
+   room tone: the room tone is what follows it. The command also warns when no
+   part of a take is quiet, or the room is within 20 dB of the loudest sound.
+   Hits must start at least half a second apart. That is stricter than
+   `record-pack`'s 120 ms rule, because bass drums and toms swell again after
+   the first impact, and the command must not count the swell as a second hit.
+   An attack that comes between 0.12 and 0.5 seconds after a hit is kept inside
+   that hit, which then plays as a double strike, and the command warns you. A
+   strike within 0.12 seconds of a hit, such as a flam or a beater bounce,
+   counts as part of that hit, and the command does not warn about it. Leave a
+   second after drums. Leave cymbals and the open hi-hat all the time they need
+   to die away, often 5 to 10 seconds, and keep the room quiet until then. A
+   hit that lands on a loud ring, such as a soft hit on the ring of a louder
+   one or a tom struck again within a second, can go unseen, so check the hit
+   count in step 8.
 
    A hit keeps its tail until the tail is 60 dB below the loudest hit in its
    file, or twice the room's noise level if that is higher. If the next hit, or
    the end of the file, comes first, the command cuts the hit there and fades it
    out over 5 ms. If the tail was still more than 6 dB above the level where
-   tails end, the command warns you and gives the level at the cut. Leave more
-   time and record that take again.
+   tails end, the command warns you and gives the level at the cut. It reads
+   that level as the tail's average over the 30 ms before the last 4 ms of the
+   hit, which is about one beat of a tom or a kick whose tail swells and fades
+   against itself, so a lull at the cut does not hide a tail that is still
+   ringing. Leave more time and record that take again.
 
    Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was
    doing before the hit, so the sampler plays the hit when its note starts and

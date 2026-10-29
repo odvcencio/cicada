@@ -189,17 +189,45 @@ func TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout(t *testing.
 }
 
 // The guide says where a hit's slice starts: 3 to 5 ms before its attack, and
-// what the command reads as the room when a take ends in silence. The numbers
-// and the rule in the guide must be the ones the analysis uses.
+// what the command reads as the room when a take ends in silence or opens with
+// a noise or with digital silence. The numbers and the rule in the guide must be
+// the ones the analysis uses.
 func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 	flat := strings.Join(strings.Fields(strings.Join(manualSection(t), "\n")), " ")
 	for _, want := range []string{
 		"Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was doing before the hit",
 		"the slice starts before it when the body follows within about 16 ms; a first sound further ahead is left out",
 		"A take that opens with a second or more of steady room tone is read from that room tone, even if the file ends in silence that an export added after the last tail, or in a fade-out, which are quieter than any room.",
+		"A click or a knock at the very start, such as the recorder starting, does not break the room tone if some 200 ms of the first half second is as quiet as the rest of it.",
+		"Digital silence at the start of a file, which an export that begins before your clip adds, does not count as room tone: the room tone is what follows it.",
+		"It reads that level as the tail's average over the 30 ms before the last 4 ms of the hit",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the guide lacks %q", want)
+		}
+	}
+	// A take that ends in silence, as an export that runs past the last tail does,
+	// still has room tone when it opens with a click, and when digital silence comes
+	// first, as the guide says.
+	quiet, err := recording.DecodeWAV(testwav.Spaced(48000, testwav.Kick, testwav.Layout{Lead: 3, Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60))
+	if err != nil {
+		t.Fatal(err)
+	}
+	silence := make([]float32, 14400)
+	click := append([]float32(nil), quiet.PCM...)
+	for i := 0; i < 480; i++ {
+		click[2400+i] += float32(.01 * math.Sin(float64(i)*.9))
+	}
+	for _, test := range []struct {
+		name string
+		pcm  []float32
+	}{
+		{"a click at 50 ms, then silence added", append(click, silence...)},
+		{"digital silence first, then silence added", append(append(make([]float32, 24000), quiet.PCM...), silence...)},
+	} {
+		_, reports, err := recording.AnalyzeTakes([]recording.Audio{{PCM: test.pcm, Rate: 48000}}, recording.Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || reports[0].NoRoomTone || math.Abs(reports[0].NoiseDB+70) > 3 {
+			t.Errorf("%s: %+v (%v); the guide says the room tone is found and read at -70 dBFS", test.name, reports, err)
 		}
 	}
 	// The drums of the guide's kit, a second or more apart in a quiet room after

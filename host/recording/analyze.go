@@ -45,15 +45,24 @@ import (
 // the hit. The slice before a hit ends where this one starts, so a cut tail does
 // not end in the next attack.
 //
-// The room's noise is read from the quietest 200 ms of each recording, or, when
-// the recording opens with a second or more of steady room tone and ends in
-// something quieter than any room, from that room tone. TakeReport.NoRoomTone
-// says when the recording does not open with room tone, where the quietest
-// 200 ms may be a tail. A hit keeps its tail until the energy is 60 dB below the
-// recording's loudest hit, or twice the noise floor when that is higher. If the
-// next hit or the end of the recording comes first, the tail is cut there and
-// fades out over 5 ms; the hit is marked Cut when the tail was still more than 6
-// dB above that level.
+// The room's noise is read from the quietest 200 ms of each recording. When the
+// recording opens with a second or more of steady room tone and ends in something
+// quieter than any room, it is read from that room tone instead. The lead-in is
+// steady when its quietest 200 ms within the first half second is as quiet as its
+// quietest 200 ms anywhere in it, so a noise near the start, such as the click of
+// starting the recorder, does not break it, and a ring that is dying away does.
+// Digital silence at the very start, which an export that begins before the clip
+// adds, is skipped: the room tone is what follows it. TakeReport.NoRoomTone says
+// when the recording does not open with room tone, where the quietest 200 ms may
+// be a tail.
+//
+// A hit keeps its tail until the energy is 60 dB below the recording's loudest hit,
+// or twice the noise floor when that is higher. If the next hit or the end of the
+// recording comes first, the tail is cut there and fades out over 5 ms; the hit is
+// marked Cut when the tail was still more than 6 dB above that level. The tail's
+// level is its average over the 30 ms that end 4 ms before the cut, about one beat
+// of a tail that swells and fades against itself, so a lull at the cut does not
+// hide a tail that is still ringing.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
@@ -78,7 +87,8 @@ type Hit struct {
 	// Cut is set in ringing mode when the next hit, or the end of the
 	// recording, ended this hit while its tail was still more than 6 dB above
 	// the level at which tails count as finished. CutDB is the tail's level at
-	// the cut, in dBFS of the source recording.
+	// the cut, in dBFS of the source recording: its average over the 30 ms that
+	// end 4 ms before the cut.
 	Cut   bool      `json:"cut,omitempty"`
 	CutDB float64   `json:"cutDB,omitempty"`
 	PCM   []float32 `json:"-"`
@@ -98,8 +108,9 @@ type TakeReport struct {
 	// NoRoomTone is set in ringing mode when the recording does not open with
 	// room tone: 200 ms as quiet as the quietest 200 ms, or a second or more
 	// that holds steady, before the first sound that stands clear of the room.
-	// The quietest 200 ms then stands in for the room, and it may be a tail that
-	// was still ringing when the recording stopped.
+	// Digital silence at the very start is no room tone; the tone that follows
+	// it is. The quietest 200 ms stands in for the room when there is none, and
+	// it may be a tail that was still ringing when the recording stopped.
 	NoRoomTone bool
 	// NoQuiet is set in ringing mode when the quietest 200 ms lies within
 	// 26 dB of the loudest sound and cannot be read as the room. Either the
@@ -124,19 +135,24 @@ const (
 	ringRoomMS   = 200 // the quietest stretch of this length sets the noise floor
 	ringRecentMS = 100 // a new hit must beat the loudest energy from this long before it until 10 ms before it
 	cutFadeMS    = 5   // a hit that is cut off fades out over this time
+	cutSkipMS    = 4   // the level of a cut tail leaves out this long at the cut, where a hit that began late may already rise
+	cutReadMS    = 30  // and reads this long before it: about one beat of a tail that beats against itself
 
 	ringPrerollMS      = 3    // a slice starts this long before the 2 ms window in which its hit began
 	ringLeadInSteadyMS = 1000 // a lead-in this long that holds steady is room tone even when the recording is quieter elsewhere
+	ringLeadInHeadMS   = 500  // the steady lead-in is judged from its quietest stretch within this long of its start
 
-	ringRiseSpanMS     = 20  // a hit has this long after its rise starts to beat the recent maximum
-	ringRiseFactor     = 2   // a rise is energy this many times above its quietest level in the previous 10 ms
-	ringNearMinimum    = 1.1 // energy this close to its lowest is as quiet, for finding where a hit began
-	ringRiseOverRecent = 1.5 // a new hit must beat the recent maximum by this factor
-	ringNoiseCap       = .05 // the noise floor is read as at most this fraction of the loudest energy
-	ringCutMargin      = 2   // a cut tail is reported when it is this many times above the level where tails finish
-	ringLeadInOverRoom = 1.5 // a lead-in is room tone when its quietest stretch is within this factor of the recording's
-	ringLeadInSound    = 3   // the first sound of a recording is this many times louder than the room
-	ringCloseRoom      = .1  // a room louder than this fraction of the loudest energy leaves the hits too little to stand on
+	ringRiseSpanMS     = 20   // a hit has this long after its rise starts to beat the recent maximum
+	ringRiseFactor     = 2    // a rise is energy this many times above its quietest level in the previous 10 ms
+	ringNearMinimum    = 1.1  // energy this close to its lowest is as quiet, for finding where a hit began
+	ringRiseOverRecent = 1.5  // a new hit must beat the recent maximum by this factor
+	ringNoiseCap       = .05  // the noise floor is read as at most this fraction of the loudest energy
+	ringCutMargin      = 2    // a cut tail is reported when it is this many times above the level where tails finish
+	ringLeadInOverRoom = 1.5  // a lead-in is room tone when its quietest stretch is within this factor of the recording's
+	ringLeadInSteady   = 1.3  // a lead-in holds steady when its quietest stretch near the start is within this factor of its quietest
+	ringLeadInSound    = 3    // the first sound of a recording is this many times louder than the room
+	ringCloseRoom      = .1   // a room louder than this fraction of the loudest energy leaves the hits too little to stand on
+	ringDigitalSilence = 1e-6 // energy under this, -120 dBFS, is digital silence
 )
 
 // Where a hit begins, in milliseconds and in fractions of the hit's loudest 2 ms
@@ -259,6 +275,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 		recent := max(1, ringRecentMS*a.Rate/1000/hop)
 		span := max(1, ringRiseSpanMS*a.Rate/1000/hop)
 		reach := stepWindows(a.Rate, hop)
+		cutSkip, cutRead := cutWindows(a.Rate, hop)
 		var onsets []int
 		last := -a.Rate
 		wasAttack := false
@@ -357,7 +374,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 			// tail finished.
 			forced := options.Ringing && !finished
 			if forced {
-				if level := tailLevel(energy, end, hop); level >= quietLevel*ringCutMargin {
+				if level := tailLevel(energy, onset/hop, end, hop, cutSkip, cutRead); level >= quietLevel*ringCutMargin {
 					hit.Cut, hit.CutDB = true, dB(level)
 				}
 			}
@@ -444,32 +461,74 @@ func quietestStretch(energy []float64, n int) float64 {
 // A recording can also be quieter at its end than at its start: it may end in
 // digital silence, as an export that runs past the last tail does, or in a
 // fade-out. Its quietest stretch is then no room at all. A lead-in that lasts
-// ringLeadInSteadyMS or more, and opens as quietly as its own quietest stretch,
-// holds steady, as a ring that is dying away does not, and is the room tone: the
-// room is its quietest stretch.
+// ringLeadInSteadyMS or more holds steady, as a ring that is dying away does not,
+// when its quietest stretch within the first ringLeadInHeadMS is as quiet as its
+// quietest stretch: a noise near the start, such as the click of starting the
+// recorder, leaves quieter stretches after it. That lead-in is the room tone, and
+// the room is its quietest stretch.
+//
+// An export that starts before the clip begins with digital silence. That is no
+// room: when n values of tone follow it before the first sound, the recording is
+// judged from there. Digital silence alone before the first sound is the room of a
+// recording that was gated to silence, and is read as it is.
 func roomTone(energy []float64, loudest float64, n int, quietest float64) (float64, bool) {
-	sound := max(loudest*.10, quietest*ringLeadInSound)
-	first := slices.IndexFunc(energy, func(e float64) bool { return e > sound })
+	if padding := slices.IndexFunc(energy, func(e float64) bool { return e >= ringDigitalSilence }); padding > 0 {
+		trimmed := energy[padding:]
+		room := quietestStretch(trimmed, n)
+		if first := firstSound(trimmed, loudest, room); first >= n {
+			return leadInRoom(trimmed[:first], n, room)
+		}
+	}
+	first := firstSound(energy, loudest, quietest)
 	if first < n {
 		return quietest, false
 	}
-	lead := energy[:first]
+	return leadInRoom(energy[:first], n, quietest)
+}
+
+// firstSound returns where the first sound begins in energy: the first value that
+// is within 20 dB of the loudest and at least ringLeadInSound times as loud as the
+// quietest stretch.
+func firstSound(energy []float64, loudest, quietest float64) int {
+	sound := max(loudest*.10, quietest*ringLeadInSound)
+	return slices.IndexFunc(energy, func(e float64) bool { return e > sound })
+}
+
+// leadInRoom judges the lead-in of at least n values before the first sound, as
+// roomTone describes, against the quietest stretch of n values of the recording.
+func leadInRoom(lead []float64, n int, quietest float64) (float64, bool) {
 	room := quietestStretch(lead, n)
+	head := min(len(lead), n*ringLeadInHeadMS/ringRoomMS)
 	switch {
 	case room <= quietest*ringLeadInOverRoom:
 		return quietest, true
-	case first >= n*ringLeadInSteadyMS/ringRoomMS && quietestStretch(lead[:n], n) <= room*ringLeadInOverRoom:
+	case len(lead) >= n*ringLeadInSteadyMS/ringRoomMS && quietestStretch(lead[:head], n) <= room*ringLeadInSteady:
 		return room, true
 	}
 	return quietest, false
 }
 
-// tailLevel reads the level of a tail that was cut off at frame end. It is the
-// lowest of the last 12 ms of energy, since a next hit may have begun in the
-// last few milliseconds and its rise would lift the last value.
-func tailLevel(energy []float64, end, hop int) float64 {
-	lastWindow := min(len(energy)-1, (end-1)/hop)
-	return slices.Min(energy[max(0, lastWindow-5) : lastWindow+1])
+// cutWindows returns, for windows of hop frames at rate, how many windows the
+// level of a cut tail leaves out at the cut, and how many it reads before them.
+func cutWindows(rate, hop int) (skip, read int) {
+	return max(1, cutSkipMS*rate/1000/hop), max(1, cutReadMS*rate/1000/hop)
+}
+
+// tailLevel reads the level of a tail that was cut off at frame end, for a hit
+// whose first window is first. A tail that beats against itself swells and fades
+// every 30 ms or so, and its lowest value in a few milliseconds lies in a lull,
+// several dB under the level it keeps for the rest of the beat. So the level is the
+// power mean of the energy over the read windows that end skip windows before the
+// cut: the next hit may have begun in the last few milliseconds, and its rise would
+// lift the level. A hit shorter than that is read from its first window.
+func tailLevel(energy []float64, first, end, hop, skip, read int) float64 {
+	last := max(first, min(len(energy)-1, (end-1)/hop)-skip)
+	from := max(first, last-read+1)
+	var sum float64
+	for _, e := range energy[from : last+1] {
+		sum += mul(e, e)
+	}
+	return math.Sqrt(sum / float64(last+1-from))
 }
 
 // stepReach says, in windows, how far back from the window where a hit was found

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 
 	"m31labs.dev/cicada/internal/testwav"
@@ -672,27 +673,84 @@ func TestRingingCutSliceEndsBeforeTheNextAttackAndTheNextBeginsBeforeIt(t *testi
 	}
 }
 
-// The level of a cut tail is the lowest of the last 12 ms of energy, so the rise
-// of a next hit that has begun in the last few milliseconds does not make a
-// finished tail look as if it were cut off while ringing.
-func TestRingingTailLevelIsTheLowestOfTheLastTwelveMilliseconds(t *testing.T) {
-	// Energy per 2 ms window: a tail at 1, then a hit rising over the last two.
-	energy := []float64{4, 4, 4, 4, 4, 1, 1.1, 1.2, 1, 1.1, 1, 3, 9}
-	const hop = 96
-	if got := tailLevel(energy, len(energy)*hop, hop); got != 1 {
-		t.Errorf("the tail level is %g, want 1: the lowest of the last six windows, not the last", got)
+// smoothed is the energy that AnalyzeTakes looks at: the RMS of each 2 ms window,
+// smoothed over 10 ms.
+func smoothed(pcm []float32, rate int) []float64 {
+	hop := rate / 500
+	raw := make([]float64, (len(pcm)+hop-1)/hop)
+	for w := range raw {
+		var e float64
+		end := min(len(pcm), (w+1)*hop)
+		for _, x := range pcm[w*hop : end] {
+			e += mul(float64(x), float64(x))
+		}
+		raw[w] = math.Sqrt(e / float64(end-w*hop))
 	}
-	// Six windows reach back 12 ms: the 4 before them are out of reach.
-	if got := tailLevel(energy[:7], 7*hop, hop); got != 1 {
-		t.Errorf("the tail level is %g at the seventh window, want 1", got)
+	out := make([]float64, len(raw))
+	for w := range out {
+		var sum float64
+		from := max(0, w-4)
+		for _, e := range raw[from : w+1] {
+			sum += mul(e, e)
+		}
+		out[w] = math.Sqrt(sum / float64(w-from+1))
 	}
-	// A recording shorter than six windows reads what it has.
-	if got := tailLevel([]float64{3, 2}, 2*hop, hop); got != 2 {
-		t.Errorf("the tail level of two windows is %g, want 2", got)
+	return out
+}
+
+// A tail that beats against itself swells and fades every 33 ms or so, and where
+// the cut falls in the beat decides what a few milliseconds of it say. Here the
+// tom's second mode is 30 Hz above the first and almost as loud, so each fade is a
+// lull 20 dB or more under the lobe before it, and the hits are a second apart: the
+// tail is still 3 to 12 dB over the limit for a cut to be reported when the next
+// hit cuts it off. For some spacings the cut falls in a lull, where the lowest of
+// the last 12 ms is far under the tail, and the cut went unreported. The tail's
+// level is read over a beat, so every one of these cuts is reported, at the
+// tail's level.
+func TestRingingCutIsReportedOnATailThatBeatsAtTheCut(t *testing.T) {
+	levels := []float64{.60, .55, .65, .58, .50}
+	const rate = 48000
+	var hiddenByALull, cuts int
+	for _, gapMS := range []int{1000, 1010, 1020, 1030, 1040, 1050} {
+		audio := beatingTake(3, float64(gapMS)/1000, 30, .95, .2, levels...)
+		hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || len(hits) != len(levels) {
+			t.Fatalf("hits %d ms apart: found %d (%v), played %d", gapMS, len(hits), err, len(levels))
+		}
+		limit := reports[0].QuietDB + 20*math.Log10(ringCutMargin)
+		energy := smoothed(audio.PCM, rate)
+		for i := 0; i+1 < len(hits); i++ {
+			h := hits[i]
+			if h.End != hits[i+1].Start {
+				t.Fatalf("hits %d ms apart: hit %d ends at %d, not where hit %d starts, %d; the test needs a tail that the next hit cuts off", gapMS, i+1, h.End, i+2, hits[i+1].Start)
+			}
+			// The source over the 30 ms that end 4 ms before the cut, and the lowest of the
+			// last 12 ms, which is what the cut level was once read from.
+			var sum float64
+			for _, x := range audio.PCM[h.End-34*rate/1000 : h.End-4*rate/1000] {
+				sum += mul(float64(x), float64(x))
+			}
+			tail := 10 * math.Log10(sum/float64(30*rate/1000))
+			last := (h.End - 1) / (rate / 500)
+			lowest := dB(slices.Min(energy[last-5 : last+1]))
+			if tail < limit+3 {
+				continue // too close to the limit to ask for a report
+			}
+			cuts++
+			if lowest < limit {
+				hiddenByALull++
+			}
+			if !h.Cut {
+				t.Errorf("hits %d ms apart: hit %d was cut at a tail of %.1f dBFS, %.1f dB over the limit of %.1f dBFS, and not reported (the lowest of its last 12 ms is %.1f dBFS)", gapMS, i+1, tail, tail-limit, limit, lowest)
+			} else if math.Abs(h.CutDB-tail) > 3 {
+				t.Errorf("hits %d ms apart: hit %d was cut at a tail of %.1f dBFS and reports %.1f dBFS", gapMS, i+1, tail, h.CutDB)
+			}
+		}
 	}
-	// An end past the last window, as the last hit of a recording has, reads the last six.
-	if got := tailLevel(energy, len(energy)*hop+500, hop); got != 1 {
-		t.Errorf("the tail level past the end is %g, want 1", got)
+	t.Logf("%d cuts 3 dB or more over the limit; %d of them fall in a lull that hides the tail from the lowest of the last 12 ms", cuts, hiddenByALull)
+	// The takes must hold enough cuts, and lulls at them, or the test says nothing.
+	if cuts < 15 || hiddenByALull < cuts/4 {
+		t.Errorf("%d cuts are 3 dB or more over the limit, and %d of them fall in a lull that hides the tail from the lowest of the last 12 ms; the test needs 15 and a quarter", cuts, hiddenByALull)
 	}
 }
 
@@ -1015,5 +1073,229 @@ func TestRingingSliceBeginsWithASoftFirstStageThatComesBeforeTheBody(t *testing.
 				}
 			})
 		}
+	}
+}
+
+// withClick returns a copy of pcm with a 10 ms burst of noise added at the given
+// level in dBFS (RMS), starting at the given second: the click of a recorder that
+// has just started, a knock on the stand.
+func withClick(pcm []float32, at, db float64) []float32 {
+	out := slices.Clone(pcm)
+	state := uint64(0x77)
+	amp := math.Pow(10, db/20) * math.Sqrt(3)
+	for i := int(at * 48000); i < int(at*48000)+480; i++ {
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		noise := float64(float64(z>>11)/float64(1<<53)*2) - 1
+		out[i] = float32(float64(out[i]) + float64(amp*noise))
+	}
+	return out
+}
+
+// A recording often opens with a noise: the click of the recorder starting, a
+// knock on the stand, a breath. It lies in the first 200 ms of room tone, and it is
+// not a ring that is dying away, which stays louder than the room for as long as
+// it lasts. The take here ends in silence or a fade-out, so its room is read from
+// its lead-in, and the lead-in holds steady in all but the first stretch. It was
+// told it had no room tone, and that its room was at -240 dBFS.
+func TestRingingRoomToneIsFoundAfterANoiseAtTheStartOfTheTake(t *testing.T) {
+	_, ends := roomToneAndThenSilence(t)
+	for _, click := range []struct {
+		name  string
+		at    float64
+		level float64
+	}{
+		{"a click at 50 ms, -45 dBFS", .05, -45},
+		{"a click at 50 ms, -55 dBFS", .05, -55},
+		{"a click at 150 ms, -45 dBFS", .15, -45},
+		{"a click at 350 ms, -45 dBFS", .35, -45},
+	} {
+		for i, end := range ends {
+			t.Run(click.name+", "+end.name, func(t *testing.T) {
+				want, _, err := AnalyzeTakes([]Audio{{PCM: end.pcm, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+				if err != nil || len(want) != 5 {
+					t.Fatalf("the take without the click: %d hits, %v", len(want), err)
+				}
+				audio := Audio{PCM: withClick(ends[i].pcm, click.at, click.level), Rate: 48000}
+				hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+				if err != nil || len(hits) != len(want) {
+					t.Fatalf("found %d hits (%v), played %d", len(hits), err, len(want))
+				}
+				report := reports[0]
+				if report.NoRoomTone || report.NoQuiet {
+					t.Errorf("no room tone %v, no quiet stretch %v; the take opens with 3 s of room tone and a click", report.NoRoomTone, report.NoQuiet)
+				}
+				if math.Abs(report.NoiseDB+70) > 3 || math.Abs(report.QuietDB-report.NoiseDB-6) > 1 {
+					t.Errorf("room read at %.1f dBFS (it is at -70), tails finish at %.1f dBFS", report.NoiseDB, report.QuietDB)
+				}
+				for j := range want[:4] {
+					if hits[j].Start != want[j].Start || hits[j].End != want[j].End || hits[j].Cut != want[j].Cut {
+						t.Errorf("hit %d runs from frame %d to %d (cut %v); without the click it runs from %d to %d (cut %v)", j+1, hits[j].Start, hits[j].End, hits[j].Cut, want[j].Start, want[j].End, want[j].Cut)
+					}
+				}
+			})
+		}
+	}
+	// A noise that lasts through the first 0.5 s leaves no 200 ms of quiet to judge
+	// the lead-in by, and the take is told it has no room tone: the safe answer.
+	t.Run("a noise that lasts 0.45 s", func(t *testing.T) {
+		pcm := slices.Clone(ends[0].pcm)
+		for k := 0; k < 9; k++ {
+			pcm = withClick(pcm, .05*float64(k), -45)
+		}
+		_, reports, err := AnalyzeTakes([]Audio{{PCM: pcm, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || !reports[0].NoRoomTone {
+			t.Errorf("no room tone %v (%v); a noise through the first 0.45 s leaves no quiet stretch to judge by", reports[0].NoRoomTone, err)
+		}
+	})
+}
+
+// padded returns a copy of audio with frames of digital silence in front.
+func padded(audio Audio, seconds float64) Audio {
+	return Audio{PCM: append(make([]float32, int(seconds*48000)), audio.PCM...), Rate: audio.Rate}
+}
+
+// An export that starts before the clip begins with digital silence, which is no
+// room: the room is the tone that follows it. Read from the whole take, the quietest
+// 200 ms is the silence, at -240 dBFS, and no tail ever came down to it: every hit
+// was cut off by the next, held for 1.5 s instead of 0.47 s. The room is the same
+// whether or not the silence comes first.
+func TestRingingRoomToneIsFoundAfterDigitalSilenceAtTheStartOfTheTake(t *testing.T) {
+	plain := spaced(t, testwav.Kick, testwav.Layout{Lead: 3, Spacing: 1.5, After: 2, RoomDB: -60}, .55, .50, .60, .52, .58)
+	want, wantReports, err := AnalyzeTakes([]Audio{plain}, Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil || len(want) != 5 || wantReports[0].NoRoomTone || want[0].Cut {
+		t.Fatalf("the take without the silence: %d hits, %+v, %v", len(want), wantReports[0], err)
+	}
+	for _, seconds := range []float64{.1, .3, .5, 1, 2} {
+		t.Run(fmt.Sprintf("%.1f s of silence", seconds), func(t *testing.T) {
+			audio := padded(plain, seconds)
+			hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil || len(hits) != len(want) {
+				t.Fatalf("found %d hits (%v), played %d", len(hits), err, len(want))
+			}
+			report := reports[0]
+			if report.NoRoomTone || report.NoQuiet || math.Abs(report.NoiseDB+60) > 3 || math.Abs(report.QuietDB-report.NoiseDB-6) > 1 {
+				t.Errorf("no room tone %v, no quiet stretch %v, room read at %.1f dBFS (it is at -60), tails finish at %.1f dBFS", report.NoRoomTone, report.NoQuiet, report.NoiseDB, report.QuietDB)
+			}
+			pad := int(seconds * 48000)
+			for i, h := range hits {
+				if h.Start != want[i].Start+pad || h.End != want[i].End+pad || h.Cut != want[i].Cut {
+					t.Errorf("hit %d runs from frame %d to %d (cut %v); without the silence it runs from %d to %d (cut %v), %d frames earlier", i+1, h.Start, h.End, h.Cut, want[i].Start+pad, want[i].End+pad, want[i].Cut, pad)
+				}
+			}
+		})
+	}
+	// A recording gated to silence has digital silence for its room, between the
+	// hits as well as before the first: the silence is the room tone, and it is read as it is.
+	t.Run("a recording gated to silence", func(t *testing.T) {
+		gated := slices.Clone(plain.PCM)
+		for i := range gated {
+			live := false
+			for k := 0; k < 5; k++ {
+				if from := int((3 + 1.5*float64(k)) * 48000); i >= from && i < from+int(.45*48000) {
+					live = true
+				}
+			}
+			if !live {
+				gated[i] = 0
+			}
+		}
+		hits, reports, err := AnalyzeTakes([]Audio{{PCM: gated, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || len(hits) != 5 {
+			t.Fatalf("found %d hits (%v), played 5", len(hits), err)
+		}
+		if reports[0].NoRoomTone || reports[0].NoiseDB > -200 {
+			t.Errorf("no room tone %v, room read at %.1f dBFS; the silence before the first hit is the room of a gated recording", reports[0].NoRoomTone, reports[0].NoiseDB)
+		}
+		for i, h := range hits {
+			if h.Cut {
+				t.Errorf("hit %d was cut off at %.1f dBFS; it ends in the silence of the gate", i+1, h.CutDB)
+			}
+		}
+	})
+}
+
+// roomToneTake is the energy of 2 ms windows that AnalyzeTakes passes to roomTone:
+// the lead windows, then a hit that dies away within five windows, then the tail
+// windows; the loudest window, and the quietest stretch of 200 ms.
+func roomToneTake(lead []float64, tail ...float64) (energy []float64, loudest, quietest float64) {
+	hit := []float64{.5, .3, .2, .1, .05}
+	energy = slices.Concat(lead, hit, tail)
+	return energy, slices.Max(energy), quietestStretch(energy, 100)
+}
+
+// The lead-in is the room when it lasts a second, holds steady, and the take ends
+// quieter than any room: steady is judged from the quietest 200 ms within its first
+// 0.5 s, so a noise near the start does not matter and a ring that is dying away
+// still does. Digital silence before it is no part of it.
+func TestRoomToneIsJudgedFromTheQuietestOfTheFirstHalfSecond(t *testing.T) {
+	const room = 1e-3
+	tone := func(windows int) []float64 { return slices.Repeat([]float64{room}, windows) }
+	level := func(v float64, windows int) []float64 { return slices.Repeat([]float64{v}, windows) }
+	silence := func(windows int) []float64 { return make([]float64, windows) }
+	// ring decays db dB each second from level at its start, 2 ms a window.
+	ring := func(windows int, start, db float64) []float64 {
+		out := make([]float64, windows)
+		for i := range out {
+			out[i] = start * math.Pow(10, -db*float64(i)*.002/20)
+		}
+		return out
+	}
+	noisy := func(windows int, from, to int) []float64 { // room tone with a noise in windows [from, to)
+		out := tone(windows)
+		for i := from; i < to; i++ {
+			out[i] = 20 * room
+		}
+		return out
+	}
+	for _, test := range []struct {
+		name string
+		lead []float64
+		tail []float64 // what comes after the hit
+		tone bool
+		room float64 // the room read, when there is tone
+	}{
+		{"a second and a half of room tone", tone(750), silence(150), true, room},
+		{"a lead-in of 1 s", tone(500), silence(150), true, room},
+		{"a lead-in under 1 s", tone(450), silence(150), false, 0},
+		{"a click at 50 ms", noisy(750, 25, 30), silence(150), true, room},
+		// The first half second is judged against the quietest stretch of the lead-in
+		// with a factor of 1.3, 2.3 dB: 1.26 times as loud passes and 1.4 does not.
+		{"a first half second 2 dB louder than the rest", slices.Concat(level(1.26*room, 250), tone(500)), silence(150), true, room},
+		{"a first half second 2.9 dB louder than the rest", slices.Concat(level(1.4*room, 250), tone(500)), silence(150), false, 0},
+		{"a noise through the first 300 ms", noisy(750, 10, 150), silence(150), true, room},
+		{"a noise through the first 340 ms", noisy(750, 10, 170), silence(150), false, 0},
+		{"a noise at 350 ms", noisy(750, 175, 180), silence(150), true, room},
+		{"a noise at 1 s", noisy(750, 500, 520), silence(150), true, room},
+		{"a ring that fades 10 dB in 1.5 s", ring(750, 10*room, 6.7), silence(150), false, 0},
+		{"a ring that fades 40 dB in 1.5 s", ring(750, 100*room, 26.7), silence(150), false, 0},
+		{"a ring that fades 2 dB in 1.5 s", ring(750, 1.26*room, 1.33), silence(150), true, 0},
+		// The silence before the clip is not a lead-in.
+		{"500 ms of silence, then room tone", slices.Concat(silence(250), tone(750)), silence(150), true, room},
+		{"500 ms of silence, then 1 s of room tone", slices.Concat(silence(250), tone(500)), silence(150), true, room},
+		{"500 ms of silence, then 200 ms of room tone", slices.Concat(silence(250), tone(100)), tone(150), true, room},
+		// Digital silence is under -120 dBFS: a start that is quiet, but not that, is a room.
+		{"500 ms at -66 dBFS, then room tone at -60 dBFS", slices.Concat(level(room/2, 250), tone(500)), silence(150), true, room / 2},
+		{"500 ms at -160 dBFS, then room tone", slices.Concat(level(1e-8, 250), tone(500)), silence(150), true, room},
+		{"500 ms of silence, then under 1 s of room tone", slices.Concat(silence(250), tone(450)), silence(150), false, 0},
+		{"500 ms of silence, then a ring", slices.Concat(silence(250), ring(750, 10*room, 6.7)), silence(150), false, 0},
+		// A lead-in a little louder than the quietest stretch of the recording is read at that stretch.
+		{"a lead-in 3 dB louder than the end of the recording", level(1.4*room, 750), tone(150), true, room},
+		// A recording that was gated to silence has the silence for its room.
+		{"a lead-in of silence alone", silence(750), silence(150), true, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			energy, loudest, quietest := roomToneTake(test.lead, test.tail...)
+			got, ok := roomTone(energy, loudest, 100, quietest)
+			if ok != test.tone {
+				t.Fatalf("room tone %v, want %v", ok, test.tone)
+			}
+			if ok && test.room > 0 && math.Abs(got-test.room)/test.room > .05 {
+				t.Errorf("room read at %g, want %g", got, test.room)
+			}
+		})
 	}
 }
