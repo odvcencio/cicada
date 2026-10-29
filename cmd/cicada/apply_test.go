@@ -242,15 +242,16 @@ func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *test
 	if err != nil || !strings.Contains(out, "+  place main-1-bass bass pulse {") {
 		t.Fatalf("template: %v\n%s", err, out)
 	}
-	// The project manifest declares edition 2, so no header is added. Both
-	// scenes bind the same patterns, so each track is one 8-bar placement.
+	// The project manifest declares edition 2, so no header is added. The break
+	// scene stops the drums, so they are one 4-bar placement; the bass and the
+	// chords bind the same patterns in both scenes, so each is one 8-bar placement.
 	converted, _ := os.ReadFile(path)
-	want := string(template)[:strings.Index(string(template), "song {")] + ("arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 8bars\n  }\n  place main-1-drums drums beat {\n    at = @1.1.1 length = 8bars\n  }\n}\n")
+	want := string(template)[:strings.Index(string(template), "song {")] + ("arrange {\n  place main-1-drums drums beat {\n    at = @1.1.1 length = 4bars\n  }\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 8bars\n  }\n  place main-1-chords chords progression {\n    at = @1.1.1 length = 8bars\n  }\n}\n")
 	if string(converted) != want {
 		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
 	}
 	// A different pattern with chance steps in the second scene needs a second placement, and chance passes restart at a placement origin.
-	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  bass = pulse\n  drums = beat\n}", "scene break {\n  bass = lively\n  drums = beat\n}", 1)+"\npattern lively acid {\n  1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50\n}\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  drums = stop\n  bass = pulse\n", "scene break {\n  drums = stop\n  bass = lively\n", 1)+"\npattern lively {\n  1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50\n}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(path)

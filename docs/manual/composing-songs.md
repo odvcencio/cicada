@@ -109,12 +109,13 @@ a point describes the segment arriving at that point:
 
 ```cicada
 cicada 2
-track bass acid { cutoff = 400Hz }
-pattern line { 1^ . 1~ 5 }
+fx warm drive { tone = 2kHz }
+track bass fm_bass { insert = warm }
+pattern line { 1 . 1 5 }
 scene main { bass = line }
-automate bass.cutoff {
-  @1.1.1 400Hz
-  @5.1.1 1600Hz smooth
+automate warm.tone {
+  @1.1.1 2kHz
+  @5.1.1 8kHz smooth
 }
 song { main*4 }
 ```
@@ -122,7 +123,7 @@ song { main*4 }
 Before its first point a lane contributes no value. Afterward it overrides
 scene settings on that path and holds its last value. Frequency and time
 parameters interpolate in logarithmic control space; this sweep's halfway
-target is 800 Hz. `cicada explain score.cicada bass.cutoff @3` shows the
+target is 4 kHz. `cicada explain score.cicada warm.tone @3` shows the
 automation contribution and final target, alongside any scene setting.
 The target is a prepared control value; smoothing can make the instantaneous
 audio parameter lag it. Continuous lanes currently use `song` time.

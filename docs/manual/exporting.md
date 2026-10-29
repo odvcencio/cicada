@@ -13,8 +13,8 @@ that browser's download settings.
 Render stereo PCM16 or PCM24 (the default), or IEEE float32:
 
 ```sh
-cicada render examples/first-acid.cicada -o first-acid.wav --rate 48000 --bits 24
-cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
+cicada render examples/first-song/main.cicada -o first-song.wav --rate 48000 --bits 24
+cicada verify-wav first-song.wav --rate 48000 --bits 24 --bars 8 --tail 3s
 ```
 
 The engine supports 44.1, 48, and 96 kHz. A render includes a three-second
@@ -94,8 +94,8 @@ Unsaved Code changes stay in the editor and are excluded from the file.
 From the command line:
 
 ```sh
-cicada midi examples/first-acid.cicada -o first-acid.mid
-cicada verify-midi first-acid.mid --ppq 960 --type 1
+cicada midi examples/first-song/main.cicada -o first-song.mid
+cicada verify-midi first-song.mid --ppq 960 --type 1
 ```
 
 The file contains one track per Cicada track, tempo, meter, key signature, and

@@ -24,8 +24,8 @@ build the command-line tool and the Studio workstation:
 git clone https://github.com/odvcencio/cicada.git
 cd cicada
 make build
-./build/cicada validate examples/first-acid.cicada
-./build/cicada play examples/first-acid.cicada
+./build/cicada validate examples/first-song/main.cicada
+./build/cicada play examples/first-song/main.cicada
 ```
 
 `make build` writes `build/cicada`, `build/cicada-workstation`, and the
@@ -50,6 +50,15 @@ cd night-circuit
 ../build/cicada check
 ../build/cicada studio main.cicada
 ```
+
+The starter plays three tracks: drums, an FM bass line, and chords on the
+poly keys patch. Its second scene, `break`, stops the drums, so the song has
+two parts. The bass and chords use built-in keyboard patches, which `play`,
+Studio and `render` run natively. A browser page needs the separate keyboard
+module for them: Studio's Browser audio mode loads it once you build it with
+`make build-keys-wasm`, and the [browser demo](browser-demo.md) runs only the
+core kernel, which refuses them (see
+[Electronic keyboards](keys.md#native-and-browser-playback)).
 
 The manifest selects edition 2, so `main.cicada` does not need an edition
 header. A loose score without a manifest still defaults to edition 1. Run

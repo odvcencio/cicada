@@ -146,10 +146,13 @@ Flags:
   --swing <percent>      swing percent (default 54)
   --gate <percent>       gate percent (default 55)
   --structure <name>     A, AABA, ABAB, ABAC, or AAAB (default aaba)
+  --voice <name>         voice of the bass track: a keyboard patch such as fm_bass, piano, or acid (default fm_bass)
   --rest-downbeat        allow a downbeat rest
   --trace                write the draw trace as JSON to stdout
   -o <file>              write the score instead of stdout
   --help                 show this help
+
+The voice sets only the track line of the score; the bars and the --trace output are the same for every voice. Accents (^) and slides (~) are written for every voice but are audible mainly on acid, so --accent-density and --slide-density matter most there. The piano and the keyboard patches hold a slid note into the next one instead of gliding.
 
 ### convert
 cicada convert <in.cicada|in.json> -o <out.json|out.cicada>

@@ -180,7 +180,7 @@ render check must confirm unchanged audio; source and library definitions
 remain intact, including when the arrangement lives in another source file.
 Automation lanes use
 `setautomationpoint` and `removeautomationpoint`, with an `entity` such as
-`param:bass.cutoff`, `at`, `oldat` (the point being moved), `value`, `shape`
+`param:bass.level`, `at`, `oldat` (the point being moved), `value`, `shape`
 and `curve`. `placesamplerprint` and `placevocalcomp` record the two Studio
 actions that print audio first (resampled pads and comped vocal takes); they
 name the audio file Studio already wrote, so use them for replay, not to print.
@@ -195,7 +195,7 @@ prints token spans. It honors `NO_COLOR`. `symbols` lists definitions; add
 cicada highlight examples/cicada-chorus.cicada
 cicada highlight --html examples/cicada-chorus.cicada
 cicada symbols --refs --json examples/cicada-chorus.cicada
-cicada view examples/first-acid.cicada -o first-acid.html
+cicada view examples/first-song/main.cicada -o first-song.html
 ```
 
 `view` writes a read-only HTML snapshot. Studio is the editable view.

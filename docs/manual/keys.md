@@ -36,7 +36,9 @@ song { dry held }
 
 Complete comping and melodic examples for each patch are in `examples/keys/`.
 Give pads enough held time for their attack. Note velocity changes the modeled
-pickup or modulation depth; `^` accents a note or chord. The sustain control
+pickup or modulation depth. The patches ignore the `^` accent flag, so write a
+`velocity:` row to accent a note or chord; a `~` slide holds the first note
+until the next one starts instead of gliding. The sustain control
 uses the same live MIDI pedal path as the grand. Most other score controls
 prepare new coefficients when the score is applied; the next section lists the
 ones a scene or an `automate` lane can change during playback.

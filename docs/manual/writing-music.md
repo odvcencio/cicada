@@ -5,18 +5,23 @@ you know what the first one should do.
 
 ```cicada
 cicada 2
+
 title "Night circuit"
+
 tempo 138
+
 key a minor
+
 seed 4242
 
-track bass acid {}
+track bass fm_bass {}
+
 track drums drums {}
 
-pattern bassline acid {
+pattern bassline {
   swing = 54%
   gate = 58%
-  1^ . 1~ 5 . 1 7, . | 1^ . 1'~ 1 5^ 3 1 .
+  1 . 1 5 . 1 7, . | 1 . 1' 1 5 3 1 .
 }
 
 pattern beat drums {
@@ -30,7 +35,9 @@ scene main {
   drums = beat
 }
 
-song { main*8 }
+song {
+  main*8
+}
 ```
 
 This score makes a short bass phrase and drum groove, binds both patterns to a
@@ -69,7 +76,7 @@ Run these commands from the example folder:
 ```sh
 cicada check
 cicada fmt --check
-cicada explain main.cicada bass.cutoff @1.1.1
+cicada explain main.cicada bass.level @1.1.1
 cicada play main.cicada
 cicada render main.cicada -o shared.wav --rate 48000 --bits 24
 ```
@@ -130,9 +137,12 @@ The language server completes import paths and public qualified names and goes t
 
 ## Tracks and patterns
 
-A track chooses a sound source: the built-in `acid` or `drums` voice, a
-declared mono or poly instrument, or an authored drum kit. A pattern describes steps
-for that source. The scene connects a pattern to a track by name.
+A track chooses a sound source: a built-in voice, a declared mono or poly
+instrument, or an authored drum kit. The built-in voices are `drums`, the grand
+`piano`, the 21 [keyboard patches](keys.md) such as `fm_bass` and `poly_keys`,
+the [modeled percussion](modeled-percussion.md) instruments, and `acid`. A
+pattern describes steps for that source. The scene connects a pattern to a
+track by name.
 
 The default grid uses sixteenth-note steps. A 16-step pattern fills one bar;
 `step = 1/8`, `step = 1/4`, or an exact triplet division changes its resolution.
@@ -179,9 +189,9 @@ A scene can set the song tempo. The change is a step on the bar line where the s
 cicada 2
 tempo 120
 
-track bass acid {}
+track bass fm_bass {}
 
-pattern riff acid steps=4 { 1 . 5 . }
+pattern riff steps=4 { 1 . 5 . }
 
 scene main {
   bass = riff
@@ -206,8 +216,11 @@ Scene tempo changes are steps; tempo ramps are not supported. Edition 2 also pro
 
 Keep modifiers next to the note they change:
 
-- `^` adds an accent.
-- `~` slides into the next playable note.
+- `^` adds an accent on an `acid` track. Other voices ignore it; give them a
+  `velocity:` row to vary their loudness.
+- `~` slides into the next playable note. `acid`, authored synths and the
+  guitar glide to the new pitch; the piano and the keyboard patches hold the
+  first note until the next one starts.
 - `*2` through `*8` retriggers the note that many times in one step.
 - `?70` gives the note a 70% chance on each seeded pass.
 - `-` ties the preceding note; `.` is a rest.
@@ -225,8 +238,8 @@ You can reuse a phrase and transpose a use:
 
 ```cicada
 cicada 2
-track bass acid {}
-phrase hook { 1^ . 1~ 5 }
+track bass fm_bass {}
+phrase hook { 1 . 1 5 }
 
 pattern verse {
   use hook
@@ -243,8 +256,9 @@ transpose by up to 24 semitones; the expanded pattern still has to fit the
 
 ## Generate a starting phrase
 
-`cicada gen` makes a deterministic acid score from a seed, key, and density
-settings. Save the generated source and optional trace to separate files:
+`cicada gen` makes a deterministic bass phrase from a seed, key, and density
+settings. It plays the `fm_bass` voice unless `--voice` names another, such as
+`--voice piano`. Save the generated source and optional trace to separate files:
 
 ```sh
 cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada > generated.trace.json
@@ -252,8 +266,11 @@ cicada check generated.cicada
 ```
 
 Use a new output filename. The generator defaults to a 16-step phrase, a C
-minor key, and the AABA structure. The full option ranges and defaults are in
-the [generator reference](../spec/edition-1.md#phrase-generator-command).
+minor key, the AABA structure, and the `fm_bass` voice. It writes accents and
+slides for every voice, but only `acid` sounds an accent, so
+`--voice acid` is where `--accent-density` is most audible. The full option
+ranges and defaults are in the
+[generator reference](../spec/edition-1.md#phrase-generator-command).
 
 ## Write drum rows
 
@@ -333,18 +350,19 @@ every primitive signature.
 ## Make an arrangement
 
 Scenes give named patterns to any tracks they mention. A missing assignment
-keeps that track's current pattern. `off` stops a track; `keep` is an explicit
-no-change action. A song plays scenes in order:
+keeps that track's current pattern. `stop` stops a track, and `off` is an older
+spelling of the same action; `keep` is an explicit no-change action. A song
+plays scenes in order:
 
 ```cicada
 cicada 2
-track bass acid {}
+track bass fm_bass {}
 track drums drums {}
-pattern bassline acid { 1 . 3 . }
+pattern bassline { 1 . 3 . }
 pattern beat drums { bd: X... }
 
 scene verse { bass = bassline drums = beat }
-scene break { bass = bassline drums = off }
+scene break { bass = bassline drums = stop }
 song { verse*8 break*2 verse*8 }
 ```
 
@@ -448,7 +466,7 @@ For a drive insert, delay and reverb sends, and music-bus compression:
 ```text
 cicada 2
 import "std/fx"
-track bass acid {
+track bass fm_bass {
   insert = fx.drive
   send fx.delay = 0.3
   send fx.reverb = 0.35
@@ -527,22 +545,22 @@ preset glassbass.bright {
   bite = 0.7
 }
 
-preset acid-bright {
-  instrument = acid
-  cutoff = 900Hz
-  decay = 180ms
+preset shimmer-keys {
+  instrument = builtin.tine_ep
+  tremolo = 0.6
+  tremolo_rate = 5Hz
 }
 
 track lead glassbass.bright { bite = 0.65 }
-track bass acid-bright { cutoff = 1100Hz }
+track keys shimmer-keys { tremolo = 0.4 }
 pattern melody { 1 . 3 . }
-scene verse { lead = melody bass = melody }
+scene verse { lead = melody keys = melody }
 song { verse }
 ```
 
 `glassbass` must be a declared instrument. A library target can use a qualified name such as `tone.glass`. Library presets are also qualified at use: `track bell tone.soft {}`. Their source bytes are included in the library's `cicada.sum` hash, so changing a preset requires an explicit `cicada lib update`.
 
-Values resolve in this order: registry default, instrument default, preset, track setting, scene setting. For example, `bass.cutoff = 1400Hz` in a scene overrides both the preset's 900Hz and the track's 1100Hz. Run `cicada explain examples/presets/main.cicada bass.cutoff @2` to see the layers. Authored numeric parameters use their instrument defaults; they have no separate registry default. Scene settings support the engine's existing registry paths, including built-in voice and mixer parameters.
+Values resolve in this order: registry default, instrument default, preset, track setting, scene setting. In the score above, `keys.tremolo` starts at the registry default 0, the preset raises it to 0.6, and the track setting lowers it to 0.4; a scene setting would replace all three. Run `cicada explain examples/presets/main.cicada bass.cutoff @2` to see every layer in one score: there a scene setting of 1400Hz overrides both the preset's 900Hz and the track's 1100Hz. Authored numeric parameters use their instrument defaults; they have no separate registry default. Scene settings support the engine's existing registry paths, including built-in voice and mixer parameters.
 
 For built-in drums, target `drums` and use lane-prefixed names such as `bd_tune` and `sd_decay`. To save one lane's values, target `builtin.bd` and use `tune` or `decay`; a track using this preset resolves to the same drum track with those lane values. An authored kit can bind an authored instrument preset to a lane. Kit presets can set mixer values. Use a drums track for built-in recipe settings; kit bindings cannot change those settings yet.
 

@@ -29,7 +29,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 	children := []gosx.Node{
 		gosx.El("h3", gosx.Text("Retained note take")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%s · %s", noteCount(count), destinationCount(len(takes))))),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, velocities and supported note gestures in a looping performance pattern. Channel-wide and MPE master controls become shared lanes, independent of each note. Finish after the release-tail movement you want to keep. Acid and authored synths keep bend, pressure, timbre and vibrato. Every destination shares the first captured bar as its origin; the final note or shared movement rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, velocities and supported note gestures in a looping performance pattern. Channel-wide and MPE master controls become shared lanes, independent of each note. Finish after the release-tail movement you want to keep. Authored synths and acid keep bend, pressure, timbre and vibrato. Every destination shares the first captured bar as its origin; the final note or shared movement rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
 	}
 	for _, take := range takes {
 		var pattern *project.Pattern

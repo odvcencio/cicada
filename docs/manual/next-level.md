@@ -1,8 +1,9 @@
 # Live playback and mixing
 
-Cicada projects use source edition 2. A new project includes bass, drums, and
-two scenes. You can save mixer routes and scene parameter changes in the score,
-record MIDI note takes and audio takes in Studio, and render a WAV.
+Cicada projects use source edition 2. A new project includes drums, a bass
+line, chords, and two scenes. You can save mixer routes and scene parameter
+changes in the score, record MIDI note takes and audio takes in Studio, and
+render a WAV.
 
 ## Start playing
 
@@ -38,26 +39,26 @@ Save mixer routing and scene changes in the score:
 ```cicada
 cicada 2
 fx room delay { time = 1/8 feedback = 0.3 }
-track bass acid {
+track bass fm_bass {
   level = -6dB
   mute = off
   solo = off
   send room = -12dB pre
 }
-pattern pulse acid { 1^ . 1~ 5 }
+pattern pulse { 1 . 1 5 }
 scene verse {
   bass = pulse
-  bass.cutoff = 900Hz
+  bass.pan = 0.3
   room.feedback = 0.4
 }
 song { verse*4 }
 ```
 
-Check the score and inspect the cutoff at bar 3:
+Check the score and inspect the pan at bar 3:
 
 ```sh
 cicada check main.cicada
-cicada explain main.cicada bass.cutoff @3
+cicada explain main.cicada bass.pan @3
 ```
 
 The parameter registry supplies the type, unit, range, and smoothing used by
@@ -73,9 +74,9 @@ and lead layout in [live-intensity.cicada](../../examples/live-intensity.cicada)
 
 ```cicada
 cicada 2
-track bass acid {}
+track bass piano {}
 track drums drums {}
-track lead acid {}
+track lead piano {}
 
 live {
   land = bar
@@ -90,12 +91,15 @@ live {
   }
 }
 
-pattern pulse { 1^ . 1~ 5 }
+pattern pulse { 1 . 1 5 }
 pattern beat drums { bd: X... }
 scene main { bass = pulse drums = beat lead = pulse }
 song { main*8 }
 ```
 
+Both pitched tracks use `piano`, which the core kernel in a browser or game
+host plays. Keyboard patches such as `fm_bass` need the separate keyboard
+module there (see [Electronic keyboards](keys.md#native-and-browser-playback)).
 Run `cicada check examples/live-intensity.cicada` from the repository root.
 Macro IDs follow declaration order. `project.LiveCommands` returns the kernel
 setup commands; `project.LiveSurfaceOf` returns names, defaults, and smoothing
@@ -128,7 +132,7 @@ See [note recording](studio.md#live-performance) for limits and
 Open Studio without an audio device for a silent session:
 
 ```sh
-cicada studio examples/first-acid.cicada --audio null
+cicada studio examples/first-song/main.cicada --audio null
 ```
 
 The [Studio chapter](studio.md#live-performance) explains the controls and
@@ -160,8 +164,8 @@ The renderer can target integrated loudness and limit true peak, then verify
 the result:
 
 ```sh
-cicada render examples/first-acid.cicada -o release.wav --rate 48000 --bits 24 --bars 16 --loudness -14 --true-peak-max -1
-cicada verify-wav release.wav --rate 48000 --bits 24 --bars 16 --tail 3s --lufs -14 --true-peak-max -1
+cicada render examples/first-song/main.cicada -o release.wav --rate 48000 --bits 24 --bars 8 --loudness -16 --true-peak-max -1
+cicada verify-wav release.wav --rate 48000 --bits 24 --bars 8 --tail 3s --lufs -16 --true-peak-max -1
 ```
 
 Bar numbers start at 1, so `--from 1` selects the first bar. The old

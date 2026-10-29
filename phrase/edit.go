@@ -12,7 +12,7 @@ import (
 // its length, swing and gate. Locked is a bitmask of immutable step positions.
 // If a repair would change a locked step, no result is returned.
 //
-// This API accepts the generator's acid wire format: untransposed notes in its
+// This API accepts the generator's step wire format: untransposed notes in its
 // pitch palette, with probability and velocity 100. Other step formats are
 // rejected rather than silently losing expression in the source projection.
 func Mutate(params Params, base seq.Pattern, ops []Op, locked uint64) (Result, error) {

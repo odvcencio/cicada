@@ -95,6 +95,16 @@ func TestPhraseWASMParity(t *testing.T) {
 		params.Seed, params.Structure = 8675309, structure
 		t.Run(fmt.Sprintf("structure-%d", structure), func(t *testing.T) { check(t, params) })
 	}
+	// An empty voice selects the default, as callers that predate the field send.
+	for _, voice := range []string{"", "acid", "piano", "poly_keys"} {
+		params := phrase.DefaultParams()
+		params.Seed, params.Voice = 31337, voice
+		name := voice
+		if name == "" {
+			name = "default"
+		}
+		t.Run("voice-"+name, func(t *testing.T) { check(t, params) })
+	}
 	for _, steps := range []uint8{8, 16, 32, 64} {
 		params := phrase.DefaultParams()
 		params.Seed, params.Steps = 1234, steps

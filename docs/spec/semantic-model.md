@@ -70,8 +70,8 @@ fx room delay {}
 bus music { insert = none }
 master { insert = none }
 export streaming { rate = 48000Hz bits = 24 tail = 2s loudness = -14LUFS }
-track bass acid { send room = 0.2 pre out = music }
-pattern pulse acid { 1 . }
+track bass fm_bass { send room = 0.2 pre out = music }
+pattern pulse { 1 . }
 scene main { bass = pulse }
 song { main }
 ```
@@ -104,8 +104,8 @@ This JSON fragment shows the named records and their base units:
 ```cicada-invalid CICADA-UNSUPPORTED
 cicada 2
 bus ambience {}
-track bass acid {}
-pattern pulse acid { 1 }
+track bass fm_bass {}
+pattern pulse { 1 }
 scene main { bass = pulse }
 song { main }
 ```
@@ -150,7 +150,7 @@ cicada 2
 title "Agent sketch"
 tempo 120
 key c major
-track melody acid {}
+track melody piano {}
 pattern phrase { 1 . 3 . 5 . 3 . }
 scene main { melody = phrase }
 song { main*4 }

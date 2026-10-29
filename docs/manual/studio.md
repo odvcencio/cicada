@@ -42,7 +42,7 @@ From a source checkout, build both executables and open a score:
 
 ```sh
 make build
-./build/cicada studio examples/first-acid.cicada
+./build/cicada studio examples/first-song/main.cicada
 ```
 
 Open the printed loopback URL. Playback starts only when you select **Play**.
@@ -365,10 +365,12 @@ Score edit instead of being discarded.
 
 ## Phrase generation
 
-**Generate** creates deterministic acid phrases from a 64-bit seed, key,
-scale, structure, density, articulation, swing, and gate. Eight scales and
-8, 16, 32, or 64 steps are available. Seeds remain exact even above JavaScript's
-integer precision limit.
+**Generate** creates deterministic bass phrases from a 64-bit seed, key,
+scale, structure, voice, density, articulation, swing, and gate. The voice is
+FM bass unless you choose another keyboard patch, the piano, or acid. Eight
+scales and 8, 16, 32, or 64 steps are available. Seeds remain exact even above
+JavaScript's integer precision limit. The articulation settings write accents
+and slides for every voice, but only acid sounds an accent.
 
 **Preview phrase** leaves the open score unchanged. The preview belongs to
 your browser session and expires after thirty minutes. Open **Mutate or evolve
@@ -386,9 +388,9 @@ It checks the original revision; it cannot overwrite another editor's save.
 ![GoSX Live performance with scene launches, note input, and MIDI learning.](screenshots/studio-live-1440.png)
 
 **Live** plays the **Pitched track** you choose from the A/W/S/E/D/F/T/G/Y/H/U/J/K
-keys or the onscreen keyboard. That list offers acid tracks, the modeled
-keyboards, and authored instrument tracks; audio and sampler tracks are not
-offered. The drum pads play the **Drum track** you choose and use General MIDI
+keys or the onscreen keyboard. That list offers the piano, the modeled
+keyboards, authored instrument tracks, and acid tracks; audio and sampler tracks
+are not offered. The drum pads play the **Drum track** you choose and use General MIDI
 notes. Press **Play** first; changing tracks, leaving the panel, or losing focus
 releases held notes, and **Release notes** releases them on demand.
 The launch matrix queues scenes or individual slots with the selected timing;
@@ -588,13 +590,13 @@ samples at the same musical tick; private recovery keeps every raw sample.
 Lanes that stayed neutral need no binding in the saved pattern. Shared movement
 requires **Keep played timing**; the step-grid option refuses to discard it.
 During live input, ordinary channel and MPE master controls keep shaping
-release tails on acid and authored synths. Note controls freeze at key release,
+release tails on authored synths and acid. Note controls freeze at key release,
 including polyphonic aftertouch under sustain. Reconnecting an input starts
 a separate shared address; old tails retain their last controls. The saved lane
 uses the same layering during playback and export.
 
-Played timing supports acid, modeled keyboards and piano, and authored pitched
-instruments, using each instrument's existing mono or polyphonic voice policy.
+Played timing supports modeled keyboards and piano, authored pitched
+instruments, and acid, using each instrument's existing mono or polyphonic voice policy.
 It supports up to 512 notes and 65,536 gesture samples per pattern, subject
 to playback density limits. Acid keeps pitch and vibrato; authored synths
 also expose pressure and timbre to their graph. Polyphonic authored synths

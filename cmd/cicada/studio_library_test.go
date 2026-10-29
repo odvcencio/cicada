@@ -157,6 +157,14 @@ func TestStudioLibraryInsertPinsAndUndoRedo(t *testing.T) {
 			if bytes.Count(current, []byte("import ")) != 1 {
 				t.Fatal("duplicate import")
 			}
+			// An effect applied to a track that does not exist gets a piano to
+			// process; the other items bring their own sound.
+			if item.Kind == "fx" && !bytes.Contains(current, []byte("track extra piano ")) {
+				t.Fatalf("new track for %s is not a piano:\n%s", item.Name, current)
+			}
+			if bytes.Contains(current, []byte("track extra acid")) {
+				t.Fatalf("new track for %s is an acid track:\n%s", item.Name, current)
+			}
 		})
 	}
 }

@@ -136,8 +136,8 @@ press the pedal (see [Live performance](studio.md#live-performance)). Studio
 learns the sustain controller (CC 64) as it learns any other. A controller value
 of 64 or more puts the pedal down. The pedal then works the patterns that are
 playing. Studio does not play live notes on a `model_` track: **Live** offers
-acid tracks, the modeled keyboards and authored instrument tracks only, so you
-cannot play a vibraphone from a MIDI keyboard there.
+the piano, the modeled keyboards, authored instrument tracks and acid tracks
+only, so you cannot play a vibraphone from a MIDI keyboard there.
 
 A seek rebuilds the pedal as it rebuilds every scene setting: the authored
 `sustain`, then each scene setting and automation point up to the new position.

@@ -83,7 +83,11 @@ band.cicada
 ```
 
 A poly graph instrument reserves four voices when a pattern with a chord step
-is assigned to one of its tracks, and eight otherwise.
+is assigned to one of its tracks, and eight otherwise. A keyboard patch or piano
+track reserves its `voices` setting, eight by default. The starter that
+`cicada new` writes reserves 22 of the 32 voices: 6 for the drums and 8 each for
+the FM bass and the chords. Set `voices = 2` on a bass track that never plays
+chords to leave room for more tracks.
 
 When the image is over its 2 MiB limit, the encoder returns no image to
 measure. The report then gives the audio the image holds, at 4 bytes per sample

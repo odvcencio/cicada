@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
 type Scale uint8
@@ -31,6 +32,35 @@ const (
 	AAAB
 )
 
+// DefaultVoice is the built-in voice a generated score plays when Params.Voice
+// is empty.
+const DefaultVoice = "fm_bass"
+
+// Voices lists the built-in voices a generated phrase can name: the default
+// first, then the piano and the other keyboard patches, and acid last. Each
+// plays a single note at the home octave 2 that the generator writes in, so the
+// source compiles to the same bars whichever voice is named. The modeled
+// percussion voices have a home octave of 4 and are not offered.
+//
+// Among these voices only acid reads the accent flag (^) and only acid glides
+// on a slide (~); the piano and the keyboard patches hold the note into the next
+// one. AccentDensity and SlideDensity therefore shape the notation for every
+// voice but are mainly audible on acid.
+func Voices() []string {
+	voices := make([]string, 0, len(keyboard.Names)+2)
+	voices = append(voices, DefaultVoice, "piano")
+	for _, name := range keyboard.Names {
+		if name != DefaultVoice {
+			voices = append(voices, name)
+		}
+	}
+	return append(voices, "acid")
+}
+
+func validVoice(name string) bool {
+	return name == "acid" || name == "piano" || keyboard.ID(name) != 0
+}
+
 type Params struct {
 	Seed            uint64
 	Key             uint8
@@ -45,6 +75,10 @@ type Params struct {
 	GatePercent     uint8
 	RestDownbeat    bool
 	Structure       Structure
+	// Voice names the built-in voice of the generated track; empty means
+	// DefaultVoice. It changes the track line of the source and nothing else:
+	// the bars, the patterns and the draw trace do not depend on it.
+	Voice string
 }
 
 type Draw struct {
@@ -89,6 +123,7 @@ func DefaultParams() Params {
 		RootOctave: 2, Steps: 16, Density: 0.6,
 		AccentDensity: 0.5, SlideDensity: 0.4, OctaveJump: 0.3,
 		SwingPercent100: 5400, GatePercent: 55, Structure: AABA,
+		Voice: DefaultVoice,
 	}
 }
 
@@ -125,6 +160,12 @@ func normalize(p Params) (normalizedParams, error) {
 	}
 	if p.Structure < A || p.Structure > AAAB {
 		return normalizedParams{}, fmt.Errorf("invalid structure")
+	}
+	if p.Voice == "" {
+		p.Voice = DefaultVoice
+	}
+	if !validVoice(p.Voice) {
+		return normalizedParams{}, fmt.Errorf("unknown voice %q: use a keyboard patch such as %s, piano or acid", p.Voice, DefaultVoice)
 	}
 	density, err := quantizeDensity(p.Density)
 	if err != nil {
