@@ -1,7 +1,7 @@
 # Play Cicada in a browser
 
 The browser demo plays the TinyGo kernel in an AudioWorklet. Its instrument
-sketches include acid bass, an authored synth, nine modeled instruments, and
+sketches include nine modeled instruments, an authored synth, acid bass, and
 a modeled drum kit. The page shows callback p99, underruns, WASM memory, and
 the messages drained from the kernel while it plays.
 
@@ -18,6 +18,11 @@ score stops playback and initializes a fresh kernel before Play is enabled
 again. Undo and Redo restore validated scores; Reset clears the edit history.
 Reloading starts a new session. The sketches target about −20 LUFS, and
 Volume starts at 75%.
+
+The demo plays the core kernel, which has no keyboard patches. A score that
+names one, such as the `fm_bass` and `poly_keys` tracks in the starter that
+`cicada new` writes, is refused with a message; the piano, the modeled
+instruments, authored synths and `acid` play.
 
 Score parsing and compilation run in a separate Go/WASM module on the page;
 the audio kernel runs on the worklet thread. These are separate downloads.
