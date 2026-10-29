@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -52,18 +53,44 @@ func TestNewProjectIsFormattedAndChecksWithStarterTracksAndScenes(t *testing.T) 
 	if hasDiagnosticErrors(inspection.diagnostics) {
 		t.Fatalf("starter diagnostics: %+v", inspection.diagnostics)
 	}
-	if len(inspection.score.Tracks) != 2 || len(inspection.score.Scenes) != 2 {
+	if len(inspection.score.Tracks) != 3 || len(inspection.score.Scenes) != 2 {
 		t.Fatalf("starter has %d tracks and %d scenes", len(inspection.score.Tracks), len(inspection.score.Scenes))
 	}
-	trackIDs := map[string]bool{}
+	trackKinds := map[string]string{}
 	for _, track := range inspection.score.Tracks {
-		trackIDs[track.Name] = true
+		trackKinds[track.Name] = track.Kind
 	}
-	if !trackIDs["bass"] || !trackIDs["drums"] {
-		t.Fatalf("starter tracks: %v", trackIDs)
+	if trackKinds["drums"] != "drums" || trackKinds["bass"] != "fm_bass" || trackKinds["chords"] != "poly_keys" {
+		t.Fatalf("starter tracks: %v", trackKinds)
 	}
 	if bytes.Contains(inspection.source, []byte("steps = 16")) {
 		t.Fatal("starter has a redundant steps = 16 header")
+	}
+	if bytes.Contains(bytes.ToLower(inspection.source), []byte("acid")) {
+		t.Fatalf("starter names the acid voice:\n%s", inspection.source)
+	}
+	// The two scenes must differ, or the song has no break.
+	sceneBindings := func(index int) map[string]string {
+		bound := map[string]string{}
+		for _, binding := range inspection.score.Scenes[index].Bindings {
+			bound[binding.Track] = binding.Pattern
+		}
+		return bound
+	}
+	if reflect.DeepEqual(sceneBindings(0), sceneBindings(1)) {
+		t.Fatal("starter scenes main and break bind the same patterns")
+	}
+	// A new project must need no migration: fix --check reports "already fixed".
+	if err := fixCommand([]string{mainPath, "--check"}); err != nil {
+		t.Fatalf("cicada fix --check on a new project: %v", err)
+	}
+	// The three starter tracks must fit the portable browser profile.
+	var portable bytes.Buffer
+	if err := checkCommand([]string{"--profile", "browser"}, &portable, &stderr); err != nil {
+		t.Fatalf("cicada check --profile browser: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(portable.String(), "3 of 16 tracks") {
+		t.Fatalf("browser profile report: %s", portable.String())
 	}
 	ignore, err := os.ReadFile(filepath.Join(root, "fresh", ".gitignore"))
 	if err != nil {
