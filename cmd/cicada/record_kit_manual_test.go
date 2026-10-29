@@ -195,6 +195,7 @@ func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 	flat := strings.Join(strings.Fields(strings.Join(manualSection(t), "\n")), " ")
 	for _, want := range []string{
 		"Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was doing before the hit",
+		"the slice starts before it when the body follows within about 16 ms; a first sound further ahead is left out",
 		"A take that opens with a second or more of steady room tone is read from that room tone, even if the file ends in silence that an export added after the last tail, or in a fade-out, which are quieter than any room.",
 	} {
 		if !strings.Contains(flat, want) {

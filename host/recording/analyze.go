@@ -19,17 +19,31 @@ import (
 // is smoothed over 10 ms, so it finds a hit a few milliseconds after it began.
 //
 // A hit begins with a step: a 2 ms window at least twice as loud as the 12 ms
-// before it. It began at the last step before it was found, together with the
-// steps just before that one, no more than 4 ms apart, such as a click ahead of
-// the thump. A step counts only if its window reaches a twentieth of the hit's
-// loudest window, 26 dB below it, since a tail that beats against itself steps
-// up out of each lull too, in bumps 30 dB or more below the hit that follows.
-// A slice starts 3 ms before the window in which the hit began, so its attack
-// sits 3 to 5 ms into it whatever the tail was doing. Measured on 57 recorded
-// drum hits, each placed 90 times in takes over room noise, the attack sat 2.5 to
-// 4.9 ms in for 98% of the 5,130 slices, and 0.8 to 8 ms in for all of them. The
-// slice before it ends where this one starts, so a cut tail does not end in the
-// next attack.
+// before it. It began at the last step before it was found that reaches a
+// twentieth of the hit's loudest window, 26 dB below it, together with the earlier
+// steps that lead into it, such as a click ahead of the thump or the soft first
+// stage of an attack. A tail that beats against itself steps up out of each lull
+// too, but its bumps are weak steps, under three times as loud as the 12 ms before
+// them in our tests, and 30 dB or more below the hit that follows. So an earlier
+// step leads into the hit when
+//
+//   - it reaches that twentieth and comes within 6 ms of the next step; or
+//   - it is sharp, as a sound that comes out of quiet is, and reaches a
+//     two-hundredth of the loudest window, 46 dB down: four times as loud as the
+//     12 ms before it and within 8 ms of the next step, or eight times as loud and
+//     within 16 ms.
+//
+// A slice starts 3 ms before the window in which the hit began, so its attack sits
+// 3 to 5 ms into it whatever the tail was doing. Measured on 89 recorded kicks,
+// snares, toms, hi-hats and hand drums, each placed 90 times in takes over room
+// noise at 0.6 to 2 s apart, the attack sat 2 to 6 ms in for 7,951 of the 7,986
+// slices, 0.9 to 2 ms in for 15 and 7.9 to 18 ms in for 20, and no slice started
+// after the attack. A hit that lands on a ring within 26 dB of it hides its own
+// attack: of 1,986 slices of 23 concert bass drums, timpani and frame drums, 288
+// started up to 5.8 ms after the attack and 201 more than 6 ms before it, up to
+// 25 ms. A click or a first stage more than 16 ms before the body is not part of
+// the hit. The slice before a hit ends where this one starts, so a cut tail does
+// not end in the next attack.
 //
 // The room's noise is read from the quietest 200 ms of each recording, or, when
 // the recording opens with a second or more of steady room tone and ends in
@@ -116,9 +130,6 @@ const (
 
 	ringRiseSpanMS     = 20  // a hit has this long after its rise starts to beat the recent maximum
 	ringRiseFactor     = 2   // a rise is energy this many times above its quietest level in the previous 10 ms
-	ringStepFactor     = 2   // a hit begins in a 2 ms window that is this many times louder than the 12 ms before it
-	ringStepGapMS      = 4   // steps this close together, or closer, belong to one hit
-	ringAttackFloor    = .05 // a step belongs to a hit when it reaches this fraction of the hit's loudest 2 ms window
 	ringNearMinimum    = 1.1 // energy this close to its lowest is as quiet, for finding where a hit began
 	ringRiseOverRecent = 1.5 // a new hit must beat the recent maximum by this factor
 	ringNoiseCap       = .05 // the noise floor is read as at most this fraction of the loudest energy
@@ -126,6 +137,19 @@ const (
 	ringLeadInOverRoom = 1.5 // a lead-in is room tone when its quietest stretch is within this factor of the recording's
 	ringLeadInSound    = 3   // the first sound of a recording is this many times louder than the room
 	ringCloseRoom      = .1  // a room louder than this fraction of the loudest energy leaves the hits too little to stand on
+)
+
+// Where a hit begins, in milliseconds and in fractions of the hit's loudest 2 ms
+// window. See hitBegin.
+const (
+	ringStepFactor    = 2    // a step is a window this many times louder than the 12 ms before it
+	ringAttackFloor   = .05  // a step belongs to a hit when it reaches this fraction of the loudest window
+	ringStepGapMS     = 6    // and comes within this long of the next step
+	ringSharpFactor   = 4    // a sharp step is this many times louder than the 12 ms before it
+	ringSharperFactor = 8    // a sharper step is this many times louder
+	ringSharpFloor    = .005 // a sharp or sharper step belongs to a hit when it reaches this fraction of the loudest window
+	ringSharpGapMS    = 8    // and a sharp one comes within this long of the next step
+	ringSharperGapMS  = 16   // and a sharper one within this long
 )
 
 // dB converts an amplitude to dBFS, flooring silence.
@@ -234,7 +258,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 		swell := a.Rate * ringSwellMS / 1000
 		recent := max(1, ringRecentMS*a.Rate/1000/hop)
 		span := max(1, ringRiseSpanMS*a.Rate/1000/hop)
-		back, joined := stepWindows(a.Rate, hop)
+		reach := stepWindows(a.Rate, hop)
 		var onsets []int
 		last := -a.Rate
 		wasAttack := false
@@ -281,7 +305,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 					// Look back through the 2 ms energy for the window in which it
 					// began. The arming rise came within the span before this window,
 					// and the smoothing delays a rise by up to 4 windows.
-					begin, found := hitBegin(rawEnergy, w, back, joined)
+					begin, found := hitBegin(rawEnergy, w, reach)
 					// A swell has no such window, since each step of it is small, and
 					// neither has a hit that lands on a ring. The energy doubled within
 					// the span before the hit was found, and the hit began at the last
@@ -448,35 +472,64 @@ func tailLevel(energy []float64, end, hop int) float64 {
 	return slices.Min(energy[max(0, lastWindow-5) : lastWindow+1])
 }
 
-// stepWindows returns, for windows of hop frames at rate, how many windows before
-// the one where a hit was found it can have begun, and the most windows between
-// two steps of one hit. The rise that armed the detector came within the span
-// before the window where the hit was found, and the smoothing over 10 ms
-// delays a rise by up to 4 windows.
-func stepWindows(rate, hop int) (back, joined int) {
-	return max(1, ringRiseSpanMS*rate/1000/hop) + 4, max(1, ringStepGapMS*rate/1000/hop)
+// stepReach says, in windows, how far back from the window where a hit was found
+// it can have begun, and how far apart the steps of one hit can lie.
+type stepReach struct {
+	back    int // the hit began at most this many windows before the one where it was found
+	joined  int // a step that reaches ringAttackFloor belongs to a hit within this many windows of the next
+	sharp   int // a sharp step belongs to a hit within this many windows of the next
+	sharper int // a sharper step belongs to a hit within this many windows of the next
+}
+
+// stepWindows returns the reach of the steps of a hit for windows of hop frames
+// at rate. The rise that armed the detector came within the span before the
+// window where the hit was found, and the smoothing over 10 ms delays a rise by
+// up to 4 windows.
+func stepWindows(rate, hop int) stepReach {
+	windows := func(ms int) int { return max(1, ms*rate/1000/hop) }
+	return stepReach{
+		back:    windows(ringRiseSpanMS) + 4,
+		joined:  windows(ringStepGapMS),
+		sharp:   windows(ringSharpGapMS),
+		sharper: windows(ringSharperGapMS),
+	}
 }
 
 // hitBegin returns the 2 ms window in which the hit found at window w began, or
 // false when the hit has no sharp beginning. raw holds the energy of each 2 ms
-// window of the recording; the hit began at most back windows before w.
+// window of the recording; the hit began at most reach.back windows before w.
 //
 // A hit begins with a step, a window that is at least twice as loud as the 12
-// ms before it. The last step at or before w is part of the hit, and so are the
-// steps before that one that follow each other within joined windows, such as
-// a click that comes just before the thump. A tail that beats against itself
-// steps up out of each lull in the same way, but a bump in a tail is far
-// quieter than the hit that follows it, so a step counts only if its window
-// reaches a twentieth of the loudest window around w, 26 dB below it. The
-// hit's steps are then the whole of its beginning, and the bump falls outside.
-func hitBegin(raw []float64, w, back, joined int) (int, bool) {
-	reach := slices.Max(raw[max(0, w-4):min(len(raw), w+6)]) * ringAttackFloor
+// ms before it. The last step at or before w that reaches a twentieth of the
+// loudest window around w, 26 dB below it, is part of the hit. So are the
+// earlier steps that lead into it, such as a click before the thump or the
+// first, soft stage of an attack. A tail that beats against itself steps up out
+// of each lull in the same way, but its bumps are weak steps, under three times
+// as loud as the 12 ms before them, and 30 dB or more below the hit that
+// follows. The steps that lead into a hit are strong ones, or they are close:
+//
+//   - a step that reaches a twentieth of the loudest window belongs to the hit
+//     when it comes within reach.joined windows of the next step;
+//   - a sharp step, four times as loud as the 12 ms before it, belongs to it
+//     when it reaches a two-hundredth of the loudest window, 46 dB down, and
+//     comes within reach.sharp windows of the next step;
+//   - a sharper step, eight times as loud, does so within reach.sharper windows.
+func hitBegin(raw []float64, w int, reach stepReach) (int, bool) {
+	loudest := slices.Max(raw[max(0, w-4):min(len(raw), w+6)])
 	begin := -1
-	for k := w; k >= max(0, w-back); k-- {
-		if begin >= 0 && begin-k > joined {
+	for k := w; k >= max(0, w-reach.back); k-- {
+		gap := begin - k
+		if begin >= 0 && gap > reach.sharper {
 			break
 		}
-		if raw[k] >= reach && isStep(raw, k) {
+		if !isStep(raw, k) {
+			continue
+		}
+		switch {
+		case raw[k] >= loudest*ringAttackFloor && (begin < 0 || gap <= reach.joined):
+			begin = k
+		case begin >= 0 && raw[k] >= loudest*ringSharpFloor &&
+			(gap <= reach.sharp && isStepBy(raw, k, ringSharpFactor) || gap <= reach.sharper && isStepBy(raw, k, ringSharperFactor)):
 			begin = k
 		}
 	}
@@ -485,9 +538,13 @@ func hitBegin(raw []float64, w, back, joined int) (int, bool) {
 
 // isStep reports whether the 2 ms window k is at least ringStepFactor times as
 // loud as the 12 ms before it.
-func isStep(raw []float64, k int) bool {
+func isStep(raw []float64, k int) bool { return isStepBy(raw, k, ringStepFactor) }
+
+// isStepBy reports whether the 2 ms window k is more than factor times as loud
+// as the loudest of the 12 ms before it.
+func isStepBy(raw []float64, k int, factor float64) bool {
 	before := raw[max(0, k-6):k]
-	return len(before) == 0 || raw[k] > slices.Max(before)*ringStepFactor
+	return len(before) == 0 || raw[k] > slices.Max(before)*factor
 }
 
 // lastNearMinimum returns the last index in [from, to] whose value is within

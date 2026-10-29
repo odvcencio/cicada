@@ -195,9 +195,18 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
 
    Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was
    doing before the hit, so the sampler plays the hit when its note starts and
-   every round robin of a piece starts that close to its attack. In our tests on
-   recorded kicks, snares, toms, hi-hats and hand drums, the attack landed 2.5 to
-   4.9 ms into the slice for 98 hits in 100, and 8 ms in at the latest.
+   every round robin of a piece starts that close to its attack. If a hit opens
+   with a click or a soft first stage, such as a stick tick before a snare's
+   body or the thud of a muted bass drum, the attack is that first sound, and
+   the slice starts before it when the body follows within about 16 ms; a first
+   sound further ahead is left out. In our tests on 89 recorded kicks, snares,
+   toms, hi-hats and hand drums, the attack landed 2 to 6 ms into the slice for
+   996 hits in 1,000, and no slice started after the attack. A hit that lands on
+   a ring that is still within 26 dB of it can hide its own attack in the ring.
+   In our tests on 23 concert bass drums, timpani and frame drums struck again
+   before they had rung out, 15 slices in 100 started up to 6 ms after the
+   attack, and 10 in 100 more than 6 ms before it. Leave those drums more time
+   between hits.
 
    A piece's takes together may hold 8,388,608 frames, which is 175 seconds at
    48 kHz or 190 seconds at 44.1 kHz. For a long cymbal, multiply the seconds

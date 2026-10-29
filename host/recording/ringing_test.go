@@ -887,3 +887,133 @@ func TestRingingSlicesStartAtTheirAttackWhateverTheTailDoesBeforeIt(t *testing.T
 		})
 	}
 }
+
+// twoStageTake places five hits of a drum whose attack comes in two stages,
+// spacing seconds apart after 3 s of room tone at -70 dBFS. A hit begins with a
+// first stage at stageDB below its body, and the body follows gapMS later: a 70
+// Hz sine that decays over 120 ms. The first stage is a click, a 2 ms burst of
+// noise, or a soft stage, a 70 Hz sine that lasts until the body starts. It
+// returns the take and the frame at which each hit begins, which is when its first
+// stage does. The hits start a few frames apart from the 2 ms windows of the
+// analysis, a different few each time.
+func twoStageTake(spacing, gapMS, stageDB float64, click bool) (Audio, []int) {
+	const rate = 48000
+	pcm := make([]float64, int((3+spacing*4+1.5)*rate))
+	state := uint64(0xfeed)
+	noise := func() float64 { // splitmix64, as testwav uses
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		return float64(float64(z>>11)/float64(1<<53)*2) - 1
+	}
+	room := math.Pow(10, -70.0/20) * math.Sqrt(3)
+	for i := range pcm {
+		pcm[i] = float64(room * noise())
+	}
+	stage := math.Pow(10, stageDB/20)
+	var plays []int
+	for k, level := range []float64{.5, .45, .55, .48, .52} {
+		at := int((3+float64(float64(k)*spacing))*rate) + k*29
+		plays = append(plays, at)
+		body := at + int(gapMS/1000*rate)
+		// Every product is rounded before it is added, as mul does for the analysis,
+		// so the recording is the same on a processor that fuses x*y+z.
+		if click {
+			for i := 0; i < rate/500; i++ {
+				pcm[at+i] += float64(float64(level*stage) * float64(math.Sqrt(3)*noise()))
+			}
+		} else {
+			for i := 0; i < body-at; i++ {
+				t := float64(i) / rate
+				pcm[at+i] += float64(float64(level*stage) * math.Sin(float64(2*math.Pi*70*t)))
+			}
+		}
+		for i := 0; i < rate*6/10; i++ {
+			t := float64(i) / rate
+			attack := min(1, float64(t/.001))
+			pcm[body+i] += float64(float64(level*float64(attack*math.Exp(-t/.12))) * math.Sin(float64(2*math.Pi*70*t)))
+		}
+	}
+	out := make([]float32, len(pcm))
+	for i, x := range pcm {
+		out[i] = float32(x)
+	}
+	return Audio{PCM: out, Rate: rate}, plays
+}
+
+// sliceLeads analyzes a take of hits at the frames plays and returns how many
+// milliseconds before its hit each slice starts.
+func sliceLeads(t *testing.T, audio Audio, plays []int) []float64 {
+	t.Helper()
+	hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != len(plays) || reports[0].Merged != 0 {
+		t.Fatalf("found %d hits and merged %d attacks, played %d hits", len(hits), reports[0].Merged, len(plays))
+	}
+	leads := make([]float64, len(hits))
+	for i, h := range hits {
+		leads[i] = float64(plays[i]-h.Start) * 1000 / float64(audio.Rate)
+	}
+	return leads
+}
+
+// Some drums open with a click, a stick or a beater touching the head, a few
+// milliseconds before the body. The sampler should play the click with the body,
+// as the drum did, so the slice starts at the click. A tail that steps up out of a
+// lull on its own does not belong to the hit (the beating-tom takes above check
+// that), but a click comes out of quiet, and a bump in a tail does not: the click
+// is four times as loud as the 12 ms before it, and eight times as loud when it is
+// far from the body. These takes put a click 18 to 32 dB under the body, 4 to 14
+// ms ahead of it. A slice began at the body when the click was more than 4 ms
+// ahead, 1.5 to 3.8 ms after the click on recorded snares, and when the click was
+// under a twentieth of the body, at any distance.
+func TestRingingSliceBeginsWithAClickThatComesBeforeTheBody(t *testing.T) {
+	for _, gapMS := range []float64{4, 5, 6, 7, 8, 10, 12, 14} {
+		for _, clickDB := range []float64{-18, -24, -32} {
+			t.Run(fmt.Sprintf("click %.0f dB down, %.0f ms ahead", -clickDB, gapMS), func(t *testing.T) {
+				audio, plays := twoStageTake(1.5, gapMS, clickDB, true)
+				for i, lead := range sliceLeads(t, audio, plays) {
+					if lead < 2 || lead > 6 {
+						t.Errorf("hit %d starts %.1f ms before its click, want 2 to 6 ms (the body follows %.0f ms after it)", i+1, lead, gapMS)
+					}
+				}
+			})
+		}
+	}
+	// A sound that far ahead of the body is a sound of its own: it is under the
+	// level at which a hit is found, so the hit is the body, and its slice starts 3
+	// to 5 ms before that.
+	t.Run("a click 20 ms ahead is left out", func(t *testing.T) {
+		audio, plays := twoStageTake(1.5, 20, -24, true)
+		for i, lead := range sliceLeads(t, audio, plays) {
+			if body := lead + 20; body < 2 || body > 6 {
+				t.Errorf("hit %d starts %.1f ms before its body, want 2 to 6 ms: the click 20 ms ahead is not part of the hit", i+1, body)
+			}
+		}
+	})
+}
+
+// The first stage of an attack can be a soft rise instead of a click: a muted bass
+// drum starts with a thud 25 to 30 dB under the body, 6 to 8 ms before it. The stage
+// stays under a twentieth of the body, so the slice began at the body, 3 to 5 ms
+// after the hit had started. The stage comes out of quiet as a sharp step, so it is
+// part of the hit. These takes put a stage 26 to 34 dB under the body, 6 to 8 ms
+// ahead of it.
+func TestRingingSliceBeginsWithASoftFirstStageThatComesBeforeTheBody(t *testing.T) {
+	for _, gapMS := range []float64{6, 7, 8} {
+		for _, stageDB := range []float64{-26, -30, -34} {
+			t.Run(fmt.Sprintf("stage %.0f dB down, %.0f ms ahead", -stageDB, gapMS), func(t *testing.T) {
+				audio, plays := twoStageTake(1.5, gapMS, stageDB, false)
+				for i, lead := range sliceLeads(t, audio, plays) {
+					if lead < 2 || lead > 6 {
+						t.Errorf("hit %d starts %.1f ms before its first stage, want 2 to 6 ms (the body follows %.0f ms after it)", i+1, lead, gapMS)
+					}
+				}
+			})
+		}
+	}
+}
