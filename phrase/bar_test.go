@@ -1,9 +1,11 @@
 package phrase
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -136,6 +138,73 @@ func TestBaseBarSourceVariants(t *testing.T) {
 		patterns, err := project.CompilePattern(score, score.Patterns[0], score.Tracks[0])
 		if err != nil || !reflect.DeepEqual(patterns[0].Pattern, want) {
 			t.Fatalf("source parity: %v\n%s", err, source)
+		}
+	}
+}
+
+// A rotated bar can begin with a rest. Its stored pitch is zero, and repair used
+// to start the bar on the octave of the root nearest to zero: three octaves low,
+// below the range of the piano and the keyboard patches (MIDI 21 to 108). The
+// bar starts on the root instead.
+func TestRepairStartsARestDownbeatOnTheRoot(t *testing.T) {
+	root := 12*3 + 9 // A2
+	notes := make([]noteState, 16)
+	notes[3] = noteState{active: true, class: classFive, note: root + 7}
+	notes[9] = noteState{active: true, class: classRoot, note: root}
+	if err := repairBar(notes, root, false, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !notes[0].active || notes[0].class != classRoot || notes[0].note != root {
+		t.Fatalf("downbeat = %+v, want the root %d", notes[0], root)
+	}
+	// A note that was already on the downbeat keeps its octave nearest the root.
+	notes = make([]noteState, 16)
+	notes[0] = noteState{active: true, class: classRoot, note: root + 12}
+	if err := repairBar(notes, root, false, 0); err != nil {
+		t.Fatal(err)
+	}
+	if notes[0].note != root+12 {
+		t.Fatalf("downbeat moved to %d, want %d", notes[0].note, root+12)
+	}
+}
+
+// Rotating rhythm is the only operation that leaves a rest on the downbeat. Every
+// generated or mutated bar must stay inside the range of the piano and the
+// keyboard patches, so the default voice never writes a score that fails to check.
+func TestRotatedBarsStayInTheKeyboardRange(t *testing.T) {
+	inRange := func(label string, bars ...seq.Pattern) {
+		t.Helper()
+		for index, bar := range bars {
+			for step := uint8(0); step < bar.Len; step++ {
+				unpacked, err := seq.UnpackStep(bar.Steps[step])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if unpacked.Gate && !unpacked.Tie && (unpacked.Note < 21 || unpacked.Note > 108) {
+					t.Fatalf("%s: bar %d step %d plays MIDI %d, outside 21 to 108", label, index, step, unpacked.Note)
+				}
+			}
+		}
+	}
+	for scale := Minor; scale <= Blues; scale++ {
+		for seed := uint64(0); seed < 60; seed++ {
+			params := DefaultParams()
+			params.Seed, params.Key, params.Scale, params.Structure = seed, uint8(seed%12), scale, ABAC
+			result, err := Generate(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inRange(fmt.Sprintf("generate scale=%d seed=%d", scale, seed), result.Bars...)
+			params.Structure = A
+			base, err := Generate(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rotated, err := Mutate(params, base.Bars[0], []Op{{Kind: RotateRhythm, Arg: 2}}, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inRange(fmt.Sprintf("rotate scale=%d seed=%d", scale, seed), rotated.Bars...)
 		}
 	}
 }
