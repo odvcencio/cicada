@@ -84,13 +84,15 @@ func TestNewProjectIsFormattedAndChecksWithStarterTracksAndScenes(t *testing.T) 
 	if err := fixCommand([]string{mainPath, "--check"}); err != nil {
 		t.Fatalf("cicada fix --check on a new project: %v", err)
 	}
-	// The three starter tracks must fit the portable browser profile.
-	var portable bytes.Buffer
-	if err := checkCommand([]string{"--profile", "browser"}, &portable, &stderr); err != nil {
+	// The three starter tracks must fit the browser profile's track and voice
+	// limits. The profile does not tell you that fm_bass and poly_keys also need
+	// the separate keyboard module, which the core-kernel browser demo lacks.
+	var profile bytes.Buffer
+	if err := checkCommand([]string{"--profile", "browser"}, &profile, &stderr); err != nil {
 		t.Fatalf("cicada check --profile browser: %v\n%s", err, stderr.String())
 	}
-	if !strings.Contains(portable.String(), "3 of 16 tracks") {
-		t.Fatalf("browser profile report: %s", portable.String())
+	if !strings.Contains(profile.String(), "3 of 16 tracks") {
+		t.Fatalf("browser profile report: %s", profile.String())
 	}
 	ignore, err := os.ReadFile(filepath.Join(root, "fresh", ".gitignore"))
 	if err != nil {

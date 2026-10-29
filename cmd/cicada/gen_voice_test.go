@@ -85,7 +85,9 @@ func TestGenVoiceAcceptsNoteVoicesAndRefusesTheRest(t *testing.T) {
 	}
 }
 
-// The default output is a portable score: one keyboard bass track.
+// The default output is one keyboard bass track, which fits the browser
+// profile's track and voice limits. The profile does not check that the page
+// has the separate keyboard module that fm_bass needs.
 func TestGenDefaultOutputFitsTheBrowserProfile(t *testing.T) {
 	source, err := generateToFile(t, "--seed", "4242", "--key", "a", "--scale", "minor")
 	if err != nil {
