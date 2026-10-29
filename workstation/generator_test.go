@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -88,6 +89,19 @@ func TestPhraseGeneratorWritesTheChosenVoice(t *testing.T) {
 		if !strings.Contains(page, `<option value="`+voice+`"`) {
 			t.Fatalf("the voice selector lacks %q", voice)
 		}
+	}
+	// The selector shows the generator's order: the default first, then the piano
+	// and the keyboard patches, with acid last.
+	selector := regexp.MustCompile(`(?s)<select name="voice"[^>]*>(.*?)</select>`).FindStringSubmatch(page)
+	if selector == nil {
+		t.Fatal("the generator page has no voice selector")
+	}
+	var offered []string
+	for _, option := range regexp.MustCompile(`<option value="([a-z_]+)"`).FindAllStringSubmatch(selector[1], -1) {
+		offered = append(offered, option[1])
+	}
+	if !reflect.DeepEqual(offered, phrase.Voices()) || len(offered) < 3 || offered[1] != "piano" || offered[len(offered)-1] != "acid" {
+		t.Fatalf("the voice selector lists %v, want %v with acid last", offered, phrase.Voices())
 	}
 	if strings.Contains(page, "acid phrases") {
 		t.Fatal("the generator still describes itself as an acid phrase generator")

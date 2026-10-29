@@ -42,6 +42,11 @@ func TestVoicesListsTheDefaultFirstAndEveryNameIsValid(t *testing.T) {
 	if len(voices) != len(keyboard.Names)+2 || voices[0] != DefaultVoice {
 		t.Fatalf("voices = %v", voices)
 	}
+	// The default comes first, then the piano and the other keyboard patches, and
+	// acid is one voice among them, listed last. Studio's selector shows this order.
+	if voices[1] != "piano" || voices[len(voices)-1] != "acid" {
+		t.Fatalf("voices should list piano second and acid last: %v", voices)
+	}
 	seen := map[string]bool{}
 	for _, voice := range voices {
 		if seen[voice] || !validVoice(voice) {
@@ -126,6 +131,13 @@ func TestUnsupportedVoicesAreRefused(t *testing.T) {
 		if _, err := Generate(params); err == nil || !strings.Contains(err.Error(), "unknown voice") {
 			t.Errorf("voice %q: error = %v", voice, err)
 		}
+	}
+	// The message leads with the default patch and names acid last, as the
+	// voice list does.
+	params := DefaultParams()
+	params.Voice = "nope"
+	if _, err := Generate(params); err == nil || !strings.Contains(err.Error(), "use a keyboard patch such as fm_bass, piano or acid") {
+		t.Errorf("unknown voice message = %v", err)
 	}
 }
 

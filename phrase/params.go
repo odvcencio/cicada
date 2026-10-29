@@ -36,11 +36,11 @@ const (
 // is empty.
 const DefaultVoice = "fm_bass"
 
-// Voices lists the built-in voices a generated phrase can name, the default
-// first: the keyboard patches, the piano and acid. Each plays a single note at
-// the home octave 2 that the generator writes in, so the source compiles to the
-// same bars whichever voice is named. The modeled percussion voices have a home
-// octave of 4 and are not offered.
+// Voices lists the built-in voices a generated phrase can name: the default
+// first, then the piano and the other keyboard patches, and acid last. Each
+// plays a single note at the home octave 2 that the generator writes in, so the
+// source compiles to the same bars whichever voice is named. The modeled
+// percussion voices have a home octave of 4 and are not offered.
 //
 // Among these voices only acid reads the accent flag (^) and only acid glides
 // on a slide (~); the piano and the keyboard patches hold the note into the next
@@ -48,13 +48,13 @@ const DefaultVoice = "fm_bass"
 // voice but are mainly audible on acid.
 func Voices() []string {
 	voices := make([]string, 0, len(keyboard.Names)+2)
-	voices = append(voices, DefaultVoice, "acid", "piano")
+	voices = append(voices, DefaultVoice, "piano")
 	for _, name := range keyboard.Names {
 		if name != DefaultVoice {
 			voices = append(voices, name)
 		}
 	}
-	return voices
+	return append(voices, "acid")
 }
 
 func validVoice(name string) bool {
@@ -165,7 +165,7 @@ func normalize(p Params) (normalizedParams, error) {
 		p.Voice = DefaultVoice
 	}
 	if !validVoice(p.Voice) {
-		return normalizedParams{}, fmt.Errorf("unknown voice %q: use acid, piano or a keyboard patch such as %s", p.Voice, DefaultVoice)
+		return normalizedParams{}, fmt.Errorf("unknown voice %q: use a keyboard patch such as %s, piano or acid", p.Voice, DefaultVoice)
 	}
 	density, err := quantizeDensity(p.Density)
 	if err != nil {
