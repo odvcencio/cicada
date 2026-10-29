@@ -17,7 +17,7 @@ import (
 	"m31labs.dev/gosx/session"
 )
 
-var phraseDefaults = map[string]string{"seed": "4242", "key": "a", "scale": "minor", "structure": "aaba", "rootOctave": "2", "steps": "16", "density": "0.6", "accentDensity": "0.5", "slideDensity": "0.4", "octaveJump": "0.3", "swing": "54", "gate": "55"}
+var phraseDefaults = map[string]string{"seed": "4242", "key": "a", "scale": "minor", "structure": "aaba", "voice": phrase.DefaultVoice, "rootOctave": "2", "steps": "16", "density": "0.6", "accentDensity": "0.5", "slideDensity": "0.4", "octaveJump": "0.3", "swing": "54", "gate": "55"}
 var phraseKeys = []string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}
 var phraseScales = []string{"minor", "phrygian", "dorian", "harmonic", "pent", "major", "mixo", "blues"}
 var phraseStructures = []string{"a", "aaba", "abab", "abac", "aaab"}
@@ -53,6 +53,14 @@ func phraseParams(form map[string]string) (phrase.Params, error) {
 		return p, err
 	}
 	p.Structure = phrase.Structure(structure + 1)
+	// Values saved by an earlier session have no voice; they select the default.
+	p.Voice = form["voice"]
+	if p.Voice == "" {
+		p.Voice = phrase.DefaultVoice
+	}
+	if _, err := choice(p.Voice, phrase.Voices()); err != nil {
+		return p, err
+	}
 	for _, item := range []struct {
 		name     string
 		min, max int
@@ -101,6 +109,8 @@ func (s *studioApp) generatePhrase(ctx *action.Context) error {
 	store.Delete("phrase-locks")
 	values := make(map[string]string, len(phraseDefaults)+1)
 	values["seed"], values["key"], values["scale"], values["structure"] = strconv.FormatUint(p.Seed, 10), phraseKeys[p.Key], phraseScales[p.Scale], phraseStructures[p.Structure-1]
+	// Mutate and Evolve read the form back from the session, so the voice is saved with it.
+	values["voice"] = p.Voice
 	values["rootOctave"], values["steps"], values["gate"] = strconv.Itoa(int(p.RootOctave)), strconv.Itoa(int(p.Steps)), strconv.Itoa(int(p.GatePercent))
 	for name, n := range map[string]float64{"density": float64(p.Density), "accentDensity": float64(p.AccentDensity), "slideDensity": float64(p.SlideDensity), "octaveJump": float64(p.OctaveJump), "swing": float64(p.SwingPercent100) / 100} {
 		values[name] = strconv.FormatFloat(n, 'f', 4, 64)
@@ -119,7 +129,7 @@ func (s *studioApp) generator(ctx *server.Context, v workspace, csrf string) gos
 	}
 	store := session.Current(ctx.Request)
 	_ = store.Decode("phrase-params", &values)
-	controls := []gosx.Node{field("Seed", textInput("seed", values["seed"])), field("Key", selectInput("key", values["key"], phraseKeys)), field("Scale", selectInput("scale", values["scale"], phraseScales)), field("Structure", selectInput("structure", values["structure"], phraseStructures)), field("Root octave", numberInput("rootOctave", values["rootOctave"], "1", "4")), field("Steps", selectInput("steps", values["steps"], []string{"8", "16", "32", "64"}))}
+	controls := []gosx.Node{field("Seed", textInput("seed", values["seed"])), field("Key", selectInput("key", values["key"], phraseKeys)), field("Scale", selectInput("scale", values["scale"], phraseScales)), field("Structure", selectInput("structure", values["structure"], phraseStructures)), field("Voice", selectInput("voice", values["voice"], phrase.Voices())), field("Root octave", numberInput("rootOctave", values["rootOctave"], "1", "4")), field("Steps", selectInput("steps", values["steps"], []string{"8", "16", "32", "64"}))}
 	for _, item := range []struct{ name, label, min, max string }{{"density", "Note density", "0", "1"}, {"accentDensity", "Accent density", "0", "1"}, {"slideDensity", "Slide density", "0", "1"}, {"octaveJump", "Octave jumps", "0", "1"}, {"swing", "Swing (%)", "50", "75"}, {"gate", "Gate (%)", "10", "100"}} {
 		controls = append(controls, field(item.label, numberInput(item.name, values[item.name], item.min, item.max)))
 	}
@@ -133,7 +143,7 @@ func (s *studioApp) generator(ctx *server.Context, v workspace, csrf string) gos
 	if generated, ok := s.draft(store.String("phrase-preview"), workspaceOwner(ctx.Request)); ok {
 		preview = gosx.Fragment(gosx.El("h3", gosx.Text("Generated score preview")), gosx.El("pre", gosx.Attrs(gosx.Attr("class", "history-diff")), gosx.Text(generated.Source)), s.mutationControls(v, csrf, values, store.String("phrase-locks"), generated.Source), s.form(workspace{Revision: generated.Revision}, csrf, "generator", "source", hidden("content", generated.Source), submit("", "", "Replace open score with this phrase")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Applying replaces the complete score. Undo restores the previous score.")))
 	}
-	return ui.Panel(ui.PanelProps{ID: "generator", Title: "Phrase generator", Description: "Deterministic acid phrases across eight scales. Preview before applying."}, form, preview)
+	return ui.Panel(ui.PanelProps{ID: "generator", Title: "Phrase generator", Description: "Deterministic bass phrases across eight scales, for the voice you choose. Preview before applying."}, form, preview)
 }
 
 var mutationNames = []string{"nudge", "accent", "slide", "octave", "rotate", "swap", "fill", "thin", "ratchet"}
