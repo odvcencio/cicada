@@ -54,8 +54,11 @@ cd night-circuit
 The starter plays three tracks: drums, an FM bass line, and chords on the
 poly keys patch. Its second scene, `break`, stops the drums, so the song has
 two parts. The bass and chords use built-in keyboard patches, which `play`,
-Studio and `render` run natively; a browser page loads the separate keyboard
-module for them (see [Electronic keyboards](keys.md#native-and-browser-playback)).
+Studio and `render` run natively. A browser page needs the separate keyboard
+module for them: Studio's Browser audio mode loads it once you build it with
+`make build-keys-wasm`, and the [browser demo](browser-demo.md) runs only the
+core kernel, which refuses them (see
+[Electronic keyboards](keys.md#native-and-browser-playback)).
 
 The manifest selects edition 2, so `main.cicada` does not need an edition
 header. A loose score without a manifest still defaults to edition 1. Run

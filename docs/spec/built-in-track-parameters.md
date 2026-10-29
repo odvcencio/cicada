@@ -3,8 +3,11 @@
 This page lists source parameters for the built-in drum and acid voices. The
 piano and the keyboard patches have their own controls, described in
 [Electronic keyboards](../manual/keys.md) and
-[the modeled piano](../audio/modeled-piano.md). [Parameter ranges](../manual/parameter-ranges.md)
-lists the allowed range of every voice, drum and effect setting.
+[the modeled piano](../audio/modeled-piano.md), and the `model_` percussion
+voices in [Modeled percussion](../manual/modeled-percussion.md).
+[Parameter ranges](../manual/parameter-ranges.md) lists the allowed range of
+each piano, drum, acid, guitar and effect setting; the keyboard patch ranges
+are in the tables in Electronic keyboards.
 Edition 2 also has an [experimental guitar](edition-2.md#experimental-guitar-voice)
 behind `experimental = on`; its reference lists the six continuous controls.
 For typed JSON record fields, see the [semantic field catalog](semantic-model.md).
