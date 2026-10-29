@@ -23,11 +23,17 @@ tempo 138
 key a minor
 seed 4242
 
-track bass acid { cutoff = 620Hz }
-pattern pulse acid {
-  1^ . 1~ 5
+track drums drums { bd_tune = 55Hz }
+track bass fm_bass {}
+
+pattern beat drums {
+  bd: X... ..x. X... ....
+  ch: x.x. x.x. x.x. x.x.
 }
-scene main { bass = pulse }
+pattern pulse {
+  1 . 1 5
+}
+scene main { drums = beat bass = pulse }
 song { main*8 }
 ```
 
@@ -235,9 +241,9 @@ song { main*4 }
 
 ## Tracks and patterns
 
-**Syntax (EBNF):** `track_decl` names a built-in voice (`acid` or `drums`), an instrument, or a kit. `acid_pattern`, `note_pattern`, and `drum_pattern` define reusable patterns. A pattern can place attributes before or inside its braces.
+**Syntax (EBNF):** `track_decl` names a built-in voice (`drums`, `piano`, a keyboard patch such as `fm_bass`, a `model_` percussion instrument, or `acid`), an instrument, or a kit. `acid_pattern`, `note_pattern`, and `drum_pattern` define reusable patterns: `acid_pattern` is a pattern with the `acid` kind word, and `note_pattern` is any other melodic pattern. A pattern can place attributes before or inside its braces.
 
-**Meaning:** A track owns voice and mixer settings. A scene connects a compatible pattern to a track. Note patterns may omit the `notes` kind word; the compiler infers note patterns for custom instruments. An acid track can play acid or note patterns. A drum or kit track plays drum patterns.
+**Meaning:** A track owns voice and mixer settings. A scene connects a compatible pattern to a track. Note patterns may omit the `notes` kind word; the compiler infers note patterns for the piano, the keyboard patches, and custom instruments. An acid track can play note patterns or patterns with the `acid` kind word. A drum or kit track plays drum patterns.
 
 **Types and units:** A pattern has 1–64 expanded steps. Swing is 50–75%; gate is 10–100%; note transpose is −24 to +24 semitones. Each track can use at most 16 patterns. Optional `slot = N` selects a slot from 0 through 15.
 
@@ -245,7 +251,7 @@ song { main*4 }
 
 **Errors:** Missing or excess steps report `CICADA-LIMIT`; a mismatched explicit `steps` value or incompatible pattern kind reports `CICADA-PARAM`; unknown attributes and invalid slot values report `CICADA-PARAM`.
 
-**Example:** `pattern pulse acid { swing = 54% 1^ . 1~ 5 }` defines four steps; the main source example shows it bound to a track.
+**Example:** `pattern pulse { swing = 54% 1 . 1 5 }` defines four steps; the main source example shows it bound to a track.
 
 **Edition history:** Edition 1 accepts legacy kind words and header attributes. `cicada fix` removes redundant `acid` or `notes` words and moves settings inside pattern braces. See the [built-in track parameter catalog](built-in-track-parameters.md) for voice-specific names, units, ranges, and defaults.
 
@@ -253,8 +259,8 @@ Unknown track parameters fail semantic validation. This score has exactly one er
 
 ```cicada-invalid CICADA-PARAM
 cicada 2
-track bass acid { mystery = 1 }
-pattern pulse acid { 1 }
+track bass fm_bass { mystery = 1 }
+pattern pulse { 1 }
 scene main { bass = pulse }
 song { main }
 ```
@@ -267,7 +273,7 @@ song { main }
 
 **Types and units:** Letter pitches use A–G, optional `#` or `b`, and optional octave 0–6. Numbered pitches use degree 1–7 with an optional chromatic accidental. MIDI note 60 is C4. Final pitches must remain in MIDI range 0–127.
 
-**Defaults:** An unnumbered letter pitch uses the instrument's home octave, default 2. A built-in acid track also defaults to octave 2. An explicit letter octave is absolute and is not changed by the home octave.
+**Defaults:** An unnumbered letter pitch uses the instrument's home octave, default 2. The built-in `piano`, keyboard patches, and `acid` also default to octave 2; the `model_` percussion instruments default to octave 4. An explicit letter octave is absolute and is not changed by the home octave.
 
 **Errors:** An unsupported degree in a pentatonic or blues scale reports `CICADA-SCALE-DEGREE`; a resolved pitch outside MIDI range reports `CICADA-PARAM`.
 
@@ -305,9 +311,9 @@ song { main*4 }
 
 ## Accents, ties, slides, ratchets, and chance
 
-**Syntax (EBNF):** `acid_step` accepts rest `.`, tie `-`, separator `|`, or `acid_note`. A note may be followed by `^`, `~`, `*N`, and `?N`; legacy `%N` is also parsed for chance.
+**Syntax (EBNF):** `acid_step` accepts rest `.`, tie `-`, separator `|`, or `acid_note`. The grammar keeps these historical names for every melodic step, whichever voice plays it. A note may be followed by `^`, `~`, `*N`, and `?N`; legacy `%N` is also parsed for chance.
 
-**Meaning:** `^` accents a note. `-` extends the preceding note. `~` slides to the next playable note without retriggering the outgoing note. `*N` divides one step into N retriggers. `?N` gives an event an N-percent chance on each seeded pass.
+**Meaning:** `^` sets a note's accent flag. Among the melodic voices only `acid` reads it; a `velocity:` row sets the loudness of a note on any pitched voice. `-` extends the preceding note. `~` slides to the next playable note. `acid`, authored synths, and the guitar glide to the new pitch without retriggering the outgoing note; the piano and the keyboard patches hold the outgoing note until the next one starts. `*N` divides one step into N retriggers. `?N` gives an event an N-percent chance on each seeded pass.
 
 **Types and units:** Ratchet count is 2–8. Written chance is 1–99%; an unmarked event has probability 100%. Modifiers apply to one note or drum hit.
 
@@ -315,7 +321,7 @@ song { main*4 }
 
 **Errors:** Ratchets outside 2–8 and chances outside 1–99 report `CICADA-PARAM`. A slide followed by a rest has no effect and produces the `CICADA-SLIDE-REST` warning unless a pattern or scene switch supplies the target.
 
-**Example:** `1^ . 3~*2?70 5` accents the first note and gives the third note a two-hit ratchet, slide, and 70% chance.
+**Example:** `1^ . 3~*2?70 5` sets the accent flag on the first note and gives the third note a two-hit ratchet, slide, and 70% chance.
 
 **Edition history:** `?N` is the current spelling. `%N` remains accepted for edition-1 compatibility; `cicada fix` rewrites `%N` to `?N`.
 
@@ -359,7 +365,7 @@ song { main*4 }
 
 **Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters, with one exception: the [scene tempo](#scene-tempo).
 
-**Defaults:** Each path starts with its registry default. A track or effect block value overrides that default. A scene setting overrides the block value when that scene lands, and remains active until another scene sets the same path. For example, `bass.cutoff` defaults to 600 Hz, while the acid track block may set it to 700 Hz.
+**Defaults:** Each path starts with its registry default. A track or effect block value overrides that default. A scene setting overrides the block value when that scene lands, and remains active until another scene sets the same path. For example, `bass.pan` defaults to 0, while the track block may set it to −0.2.
 
 **Errors:** An unknown owner reports `CICADA-REFERENCE`; duplicate track, effect, or bus names report `CICADA-DUPLICATE`. An unknown setting reports `CICADA-PARAM`. A duplicate path in one scene reports `CICADA-DUPLICATE`. A wrong unit, value type, or range reports `CICADA-UNIT`. A registered but non-live setting reports `CICADA-UNSUPPORTED`.
 
@@ -368,8 +374,8 @@ song { main*4 }
 ```cicada
 cicada 2
 fx room delay {}
-track bass acid { send room = 0.2 }
-pattern pulse acid { 1 . 1 . }
+track bass fm_bass { send room = 0.2 }
+pattern pulse { 1 . 1 . }
 scene main {
   bass = pulse
   bass.send.delay = 0.45
@@ -388,7 +394,7 @@ scene main { beat = drum-loop beat.bd_tune = 48Hz }
 song { main }
 ```
 
-Use `cicada explain score.cicada bass.cutoff @3.2.4` to inspect the registry default, block value, active scene value, and computed value at a song location.
+Use `cicada explain score.cicada bass.pan @3.2.4` to inspect the registry default, block value, active scene value, and computed value at a song location.
 
 **Edition history:** Parameter paths and live scene settings are edition-1 features. Named mixer paths and scene settings use `cicada.project/2`.
 
@@ -406,19 +412,19 @@ Seeking or restarting a song with scene settings reconstructs parameters from th
 
 **Errors:** Duplicate settings for one path in a scene report `CICADA-DUPLICATE`. Unknown owners report `CICADA-REFERENCE`; ambiguous track/effect owners report `CICADA-REFERENCE` and a rename hint. Unknown settings report `CICADA-PARAM`; wrong values or units report `CICADA-UNIT`. A non-boundary numeric value that rounds outside its float32 range, or a synced delay division that exceeds the four-second buffer at the score tempo, reports `CICADA-PARAM`. A registered value with no engine representation reports `CICADA-UNSUPPORTED` and names its path and value. Non-live paths, except the [scene tempo](#scene-tempo), and reserved `master` paths report `CICADA-UNSUPPORTED`.
 
-**Example:** The second scene leaves `bass.cutoff`, `drums.level`, and the synced delay division at the values set by the first scene:
+**Example:** The second scene leaves `bass.pan`, `drums.level`, and the synced delay division at the values set by the first scene:
 
 ```cicada
 cicada 2
 fx delay delay {}
-track bass acid { cutoff = 700Hz send delay = 0.2 }
+track bass fm_bass { pan = -0.2 send delay = 0.2 }
 track drums drums { level = -4dB }
-pattern pulse acid { 1 . 1 . }
+pattern pulse { 1 . 1 . }
 pattern beat drums { bd: X... }
 scene verse {
   bass = pulse
   drums = beat
-  bass.cutoff = 900Hz
+  bass.pan = 0.3
   drums.level = off
   delay.time = 1/8
 }
@@ -433,8 +439,8 @@ This invalid scene names a setting that is not in the registry:
 
 ```cicada-invalid CICADA-PARAM
 cicada 2
-track bass acid {}
-pattern riff acid { 1 }
+track bass fm_bass {}
+pattern riff { 1 }
 scene main { bass = riff bass.not_a_setting = 0.3 }
 song { main }
 ```
@@ -444,8 +450,8 @@ This invalid scene targets an effect setting that is registered but not live:
 ```cicada-invalid CICADA-UNSUPPORTED
 cicada 2
 fx drive drive { shape = soft }
-track bass acid {}
-pattern riff acid { 1 }
+track bass fm_bass {}
+pattern riff { 1 }
 scene main { bass = riff drive.shape = hard }
 song { main }
 ```
@@ -487,9 +493,9 @@ song { main }
 cicada 2
 tempo 120
 
-track bass acid {}
+track bass fm_bass {}
 
-pattern riff acid steps=4 { 1 . 5 . }
+pattern riff steps=4 { 1 . 5 . }
 
 scene main {
   bass = riff
@@ -524,13 +530,13 @@ song {
 
 ## Phrases and the generator
 
-**Syntax (EBNF):** `phrase_decl` names a sequence of acid steps. `phrase_use` inserts it into a note pattern with optional `*N` repetition and optional `transpose=N` or `+N`.
+**Syntax (EBNF):** `phrase_decl` names a sequence of melodic steps (`acid_step` in the grammar). `phrase_use` inserts it into a note pattern with optional `*N` repetition and optional `transpose=N` or `+N`.
 
 **Meaning:** Phrase uses expand before scheduling. The source model retains the phrase definition and use; the semantic project stores expanded notes.
 
 **Types and units:** Repeat count is 1–64. Transpose is an integer number of semitones from −24 to +24. The expanded pattern remains within 64 steps.
 
-**Defaults:** A phrase without the optional `acid` word is an acid phrase. A use repeats once and does not transpose. `cicada gen` defaults to 16 steps, key C, minor scale, seed 0, swing 54%, and an AABA structure.
+**Defaults:** The `acid` word on a phrase is optional; a phrase holds the same melodic steps with or without it. A use repeats once and does not transpose. `cicada gen` defaults to 16 steps, key C, minor scale, seed 0, swing 54%, an AABA structure, and an `fm_bass` track.
 
 **Errors:** Unknown phrase names report `CICADA-REFERENCE`; invalid repeat or transpose reports `CICADA-USE`; expansion above 64 steps reports `CICADA-EXPANSION`.
 
@@ -538,8 +544,8 @@ song {
 
 ```cicada
 cicada 2
-track bass acid {}
-phrase hook { 1^ . 1~ 5 }
+track bass fm_bass {}
+phrase hook { 1 . 1 5 }
 pattern pulse { use hook*2 }
 scene main { bass = pulse }
 song { main*8 }
@@ -549,15 +555,15 @@ song { main*8 }
 
 ## Phrase generator command
 
-**Syntax:** `cicada gen` takes flags: `--seed N --key ROOT --scale SCALE`, with optional `--root-octave`, `--steps`, density controls, `--swing`, `--gate`, `--structure`, `--rest-downbeat`, `-o FILE`, and `--trace`.
+**Syntax:** `cicada gen` takes flags: `--seed N --key ROOT --scale SCALE`, with optional `--root-octave`, `--steps`, density controls, `--swing`, `--gate`, `--structure`, `--voice NAME`, `--rest-downbeat`, `-o FILE`, and `--trace`.
 
-**Meaning:** The generator creates a deterministic, parseable acid score from the seed and music settings. It writes source to stdout unless `-o` names a new output file. A trace writes the random draw log as JSON to stdout.
+**Meaning:** The generator creates a deterministic, parseable bass phrase from the seed and music settings, as a score with one `bass` track. The track plays the voice named by `--voice`: `fm_bass` by default, or another keyboard patch, `piano`, or `acid`. The voice changes only the track line; the notes and the trace are the same for every voice. Accents (`^`) and slides (`~`) are written for every voice, but only `acid` reads the accent flag, so `--accent-density` and `--slide-density` matter most there. It writes source to stdout unless `-o` names a new output file. A trace writes the random draw log as JSON to stdout.
 
-**Types and units:** The generator seed is unsigned 64-bit. Key roots are C–B with sharps; scales are the eight edition-1 scales. Effective step counts are 8, 16, 32, or 64. Density, accent density, slide density, and octave-jump density are 0–1. Swing is 50–75% to two decimal places; gate is 10–100%. Structures are A, AABA, ABAB, ABAC, and AAAB. Root octave is 1–4.
+**Types and units:** The generator seed is unsigned 64-bit. Key roots are C–B with sharps; scales are the eight edition-1 scales. A voice is `acid`, `piano`, or one of the 21 keyboard patches; the `model_` percussion instruments are refused because their home octave is 4, two octaves above the generator's notes. Effective step counts are 8, 16, 32, or 64. Density, accent density, slide density, and octave-jump density are 0–1. Swing is 50–75% to two decimal places; gate is 10–100%. Structures are A, AABA, ABAB, ABAC, and AAAB. Root octave is 1–4.
 
-**Defaults:** Seed 0, key C minor, root octave 2, 16 steps, density 0.6, accent density 0.5, slide density 0.4, octave-jump density 0.3, swing 54%, gate 55%, and AABA structure. The emitted score's project seed is stored as a 32-bit value.
+**Defaults:** Seed 0, key C minor, root octave 2, 16 steps, density 0.6, accent density 0.5, slide density 0.4, octave-jump density 0.3, swing 54%, gate 55%, AABA structure, and the `fm_bass` voice. The emitted score's project seed is stored as a 32-bit value.
 
-**Errors:** Invalid keys, scales, structures, steps, ranges, or non-finite density values fail. `--trace` requires `-o` so the source and JSON trace have separate outputs.
+**Errors:** Invalid keys, scales, structures, steps, ranges, or non-finite density values fail. An unknown voice reports `CICADA-PARAM`. `--trace` requires `-o` so the source and JSON trace have separate outputs.
 
 **Example:**
 
@@ -565,7 +571,7 @@ song { main*8 }
 cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 ```
 
-**Edition history:** The generator emits edition-1 source and runs before the audio callback. Its output is parsed and compiled by the same project pipeline as authored scores.
+**Edition history:** The generator emits edition-2 source (`cicada 2`) and runs before the audio callback. `--voice acid` writes an `acid` track, as builds before `--voice` always did. Its output is parsed and compiled by the same project pipeline as authored scores.
 
 ## Named effects
 
@@ -588,8 +594,8 @@ fx room delay { time = 1/8 feedback = 0.35 }
 fx space reverb { size = 1 }
 fx glue comp { threshold = -18dB }
 bus music { insert = glue }
-track bass acid { insert = grit send room = 0.2 pre send space = -12dB }
-pattern pulse acid { 1 . 1 . }
+track bass fm_bass { insert = grit send room = 0.2 pre send space = -12dB }
+pattern pulse { 1 . 1 . }
 scene main { bass = pulse }
 song { main*4 }
 ```
@@ -615,8 +621,8 @@ cicada 2
 bus music { level = -3dB mute = off solo = off insert = none }
 bus sfx { mute = off solo = off }
 master { level = -1dB mute = off solo = off insert = none }
-track bass acid { out = sfx }
-pattern pulse acid { 1 . }
+track bass fm_bass { out = sfx }
+pattern pulse { 1 . }
 scene main { bass = pulse }
 song { main }
 ```
@@ -624,8 +630,8 @@ song { main }
 ```cicada-invalid CICADA-UNSUPPORTED
 cicada 2
 bus ambience {}
-track bass acid {}
-pattern pulse acid { 1 }
+track bass fm_bass {}
+pattern pulse { 1 }
 scene main { bass = pulse }
 song { main }
 ```
@@ -650,7 +656,7 @@ song { main }
 cicada 2
 fx room delay {}
 fx space reverb {}
-track bass acid {
+track bass fm_bass {
   level = -6dB
   pan = -0.2
   mute = off
@@ -659,7 +665,7 @@ track bass acid {
   send space = -12dB
   out = music
 }
-pattern pulse acid { 1 . 1 . }
+pattern pulse { 1 . 1 . }
 scene main { bass = pulse }
 song { main }
 ```
@@ -668,8 +674,8 @@ song { main }
 cicada 2
 fx grit drive {}
 fx second drive {}
-track bass acid { insert = grit -> second }
-pattern pulse acid { 1 }
+track bass fm_bass { insert = grit -> second }
+pattern pulse { 1 }
 scene main { bass = pulse }
 song { main }
 ```
@@ -693,8 +699,8 @@ song { main }
 ```cicada
 cicada 2
 export streaming { rate = 48000Hz bits = 24 tail = 2s loudness = -14LUFS true_peak = -1dBTP normalize = off }
-track bass acid {}
-pattern pulse acid { 1 . }
+track bass fm_bass {}
+pattern pulse { 1 . }
 scene main { bass = pulse }
 song { main }
 ```
@@ -702,8 +708,8 @@ song { main }
 ```cicada-invalid CICADA-UNSUPPORTED
 cicada 2
 export peak_only { true_peak = -1dBTP }
-track bass acid {}
-pattern pulse acid { 1 }
+track bass fm_bass {}
+pattern pulse { 1 }
 scene main { bass = pulse }
 song { main }
 ```

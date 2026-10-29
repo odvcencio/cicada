@@ -37,8 +37,8 @@ Studio shows the saved chain, followed by the built-in safety limiter.
 
 ```cicada
 cicada 2
-track bass acid {}
-pattern pulse acid { 1 . 3 . 5 . 3 . }
+track bass fm_bass {}
+pattern pulse { 1 . 3 . 5 . 3 . }
 scene main { bass = pulse }
 song { main*16 }
 fx tone eq { type = highpass frequency = 25Hz q = 0.707 }
@@ -47,13 +47,16 @@ fx punch transient { attack = 2dB sustain = -1dB }
 fx stereo width { amount = 1.08 bass_mono = 100Hz }
 fx ceiling limiter { ceiling = -1dBTP lookahead = 3ms release = 100ms }
 master { insert = tone -> glue -> punch -> stereo -> ceiling }
-export streaming { loudness = -14LUFS true_peak = -1dBTP normalize = off }
+export broadcast { loudness = -23LUFS true_peak = -1dBTP normalize = off }
 ```
 
-Run `cicada render score.cicada --export streaming --bars 16 -o streaming.wav`.
+Run `cicada render score.cicada --export broadcast --bars 16 -o broadcast.wav`.
 The export target uses the existing iterative BS.1770 loudness renderer and
 measures the delivered WAV. Live playback does not apply programme normalization.
-An unreachable target returns an error instead of claiming success.
+An unreachable target returns an error instead of claiming success. This
+one-track bass cannot reach a −14 LUFS streaming target, because the renderer
+adds at most 12 dB of input gain, so the example asks for the −23 LUFS
+broadcast level.
 
 ### Export loudness targets
 
@@ -144,8 +147,8 @@ cicada 2
 fx cleanup eq { type = highpass frequency = 80Hz q = 0.707 }
 fx leveler comp { threshold = -18dB ratio = 3 makeup = 0dB }
 fx sibilance deesser { frequency = 6000Hz threshold = -24dB ratio = 4 range = 9dB }
-track lead acid { insert = cleanup -> leveler -> sibilance }
-pattern phrase acid { 1 . 3 . 5 . 3 . }
+track lead piano { insert = cleanup -> leveler -> sibilance }
+pattern phrase { 1 . 3 . 5 . 3 . }
 scene main { lead = phrase }
 song { main*4 }
 ```

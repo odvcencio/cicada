@@ -29,21 +29,21 @@ scene_setting ::= parameter_path , "=" , scene_value ;
 
 **Meaning:** A scene can set a registered track or effect parameter alongside its pattern bindings. The value takes effect when the scene lands, uses the registered smoothing, and carries into later scenes until another scene changes that path. `cicada explain` reports the effective value at a bar.
 
-**Types and units:** Values use the parameter registry's type, unit, and range. Track paths use the track ID, such as `bass.cutoff`; effect paths use the effect ID, such as `room.feedback`.
+**Types and units:** Values use the parameter registry's type, unit, and range. Track paths use the track ID, such as `keys.tremolo`; effect paths use the effect ID, such as `room.feedback`.
 
 **Defaults:** Registry defaults apply first, then track or effect settings, then the latest scene setting. An omitted path carries its previous scene value forward.
 
 **Errors:** Unknown owners report `CICADA-REFERENCE`; unknown paths and out-of-range values report `CICADA-PARAM`; wrong units report `CICADA-UNIT`. Registered values without an engine representation report `CICADA-UNSUPPORTED`.
 
-**Example:** The chorus keeps the cutoff set by the verse:
+**Example:** The chorus keeps the tremolo set by the verse:
 
 ```cicada
 cicada 2
 fx room delay { time = 1/8 feedback = 0.3 }
-track bass acid {}
-pattern pulse acid { 1 . 1 . }
-scene verse { bass = pulse bass.cutoff = 900Hz room.feedback = 0.4 }
-scene chorus { bass = pulse }
+track keys tine_ep {}
+pattern comp { [a3 c4 e4] . . . [f3 a3 c4] . . . }
+scene verse { keys = comp keys.tremolo = 0.6 room.feedback = 0.4 }
+scene chorus { keys = comp }
 song { verse*4 chorus*4 }
 ```
 
@@ -78,14 +78,14 @@ units, ranges, model limits and image compatibility.
 ```cicada
 cicada 2
 fx room delay {}
-track bass acid {
+track bass fm_bass {
   level = -6dB
   mute = off
   solo = off
   send room = -12dB pre
   out = music
 }
-pattern pulse acid { 1 . 1 . }
+pattern pulse { 1 . 1 . }
 scene main { bass = pulse }
 song { main }
 ```
@@ -160,8 +160,8 @@ target_setting ::= "loudness" , "=" , number , ( "LUFS" | "LU" )
 
 ```cicada
 cicada 2
-track bass acid { level = 0dB }
-pattern pulse acid { 1 . 3 . 5 . 3 . }
+track bass fm_bass { level = 0dB }
+pattern pulse { 1 . 3 . 5 . 3 . }
 scene main { bass = pulse }
 song { main*16 }
 fx glue comp { threshold = -18dB }
@@ -253,11 +253,12 @@ shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
 ```cicada
 cicada 2
 tempo 120
-track bass acid {}
+fx warm drive {}
+track bass fm_bass { insert = warm }
 pattern triplet { step = 1/8t 1 3 5 }
-automate bass.cutoff {
-  @1.1.1 400Hz
-  @5.1.1 2400Hz exponential
+automate warm.tone {
+  @1.1.1 1kHz
+  @5.1.1 4kHz exponential
 }
 scene main { bass = triplet }
 song { main*4 }
@@ -283,7 +284,7 @@ retain the original scene-boundary behavior.
 cicada 2
 tempo 120
 track vox audio {}
-track bass acid {}
+track bass fm_bass {}
 pattern pulse { 1 . 5 . }
 automate vox.level {
   @1.1.1 -9dB
@@ -319,7 +320,7 @@ chain_decl ::= "chain" , "=" , identifier , { identifier } ;
 
 ```cicada
 cicada 2
-track bass acid {}
+track bass fm_bass {}
 pattern triplet { step = 1/8t 1 3 5 }
 scene main { bass = triplet }
 song { main*2 }
@@ -337,7 +338,7 @@ A track's `chain` plays complete patterns in order and loops. An empty scene kee
 
 ```cicada
 cicada 2
-track bass acid { chain = intro triplet chorus }
+track bass fm_bass { chain = intro triplet chorus }
 pattern intro { 1 }
 pattern triplet { step = 1/8t 3 5 7 }
 pattern chorus { step = 1/8 1 5 }
@@ -420,7 +421,7 @@ song { verse }
 
 **Meaning:** A preset names an existing target and replaces parameter values without changing its DSP expressions, routing, or asset binding. A track binds a voice preset in its instrument position. Registry default, instrument default, preset, track setting, and scene setting apply in that order. `cicada explain` reports explicit layers and the computed value. Authored parameters have instrument defaults and no separate registry default.
 
-**Targets:** Authored and library-qualified instruments; `acid`; `drums` with lane-prefixed values; a built-in drum lane such as `builtin.bd`; an authored kit's mixer values; `audio` mixer values; declared samplers' root, mode, voice count, and mixer values; and declared or built-in effects. Bind an effect preset with `fx NAME PRESET { ... }`. An unreferenced effect used as its target supplies defaults without creating an extra runtime instance; routed or scene-addressed targets remain active. Built-in effect targets are `builtin.drive`, `builtin.delay`, `builtin.reverb`, and `builtin.comp`. An authored kit lane can bind an authored instrument preset. The experimental guitar is not a score voice in this edition.
+**Targets:** Authored and library-qualified instruments; `acid`; the keyboard patches, such as `builtin.tine_ep`; `drums` with lane-prefixed values; a built-in drum lane such as `builtin.bd`; an authored kit's mixer values; `audio` mixer values; declared samplers' root, mode, voice count, and mixer values; and declared or built-in effects. Bind an effect preset with `fx NAME PRESET { ... }`. An unreferenced effect used as its target supplies defaults without creating an extra runtime instance; routed or scene-addressed targets remain active. Built-in effect targets are `builtin.drive`, `builtin.delay`, `builtin.reverb`, and `builtin.comp`. An authored kit lane can bind an authored instrument preset. The experimental guitar is not a score voice in this edition.
 
 **Types and units:** Built-in values use the shared parameter registry's type, unit, and bounds. Authored numeric parameters add host descriptors with their declared or inferred unit and the finite float32 range; the language has no authored parameter bounds syntax. Sampler settings use host descriptors. These descriptors do not extend the kernel parameter ABI. A preset cannot bind another preset or replace an asset, insert chain, or bus. Scene settings retain the engine's existing registry path support; arbitrary authored DSP parameters and sampler configuration are not scene parameters.
 
@@ -436,7 +437,13 @@ song { verse }
 
 ```cicada
 cicada 2
-track lead acid {}
+instrument glow {
+  voice mono {
+    let tone = mix(sine(pitch), saw(pitch), timbre)
+    out = tone * env(gate, 400ms) * velocity * (0.5 + pressure * 0.5)
+  }
+}
+track lead glow {}
 pattern phrase performance length=3840ticks {
   note 60 at=17ticks length=703ticks velocity=82 {
     gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
@@ -479,7 +486,13 @@ Declare a named lane inside a performance and bind notes with `group=NAME`:
 
 ```cicada
 cicada 2
-track lead acid {}
+instrument glow {
+  voice poly {
+    let tone = mix(sine(pitch), saw(pitch), timbre)
+    out = tone * env(gate, 400ms) * velocity * (0.5 + pressure * 0.5)
+  }
+}
+track lead glow {}
 pattern phrase performance length=3840ticks {
   gesture-group breath {
     gesture at=0ticks bend=0ct pressure=0.1 timbre=0.5;
