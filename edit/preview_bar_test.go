@@ -76,7 +76,7 @@ func TestReplacePreviewBarLegacyParity(t *testing.T) {
 			if _, err := edits.ReplacePreviewBar(original, changed); err == nil || err.Error() != "phrase preview pattern changed" {
 				t.Fatalf("mismatch error %v", err)
 			}
-			if _, err := edits.ReplacePreviewBar(original, "seed 4"); err == nil || err.Error() != "phrase preview has no acid bar" {
+			if _, err := edits.ReplacePreviewBar(original, "seed 4"); err == nil || err.Error() != "phrase preview has no note pattern" {
 				t.Fatalf("missing bar error %v", err)
 			}
 			// Declaration spans are byte exact, including the surrounding arrangement.

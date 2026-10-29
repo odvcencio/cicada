@@ -249,7 +249,7 @@ func TestChordGridRecordingOverChordRefusedAtomically(t *testing.T) {
 			}
 			result := studioCall(t, handler, "/api/record", studioEdit{Revision: studioRevision([]byte(studioChordScore)), SourceRevision: studioProjectReceipt(t, path), Track: "keys", Pattern: "harmony", Take: []studioTakeNote{{Tick: 0, EndTick: 60, Note: pitch, Velocity: 90}}})
 			got, err := os.ReadFile(path)
-			if err != nil || result.Code != http.StatusUnprocessableEntity || !strings.Contains(result.Body.String(), "is not an acid track") || string(got) != studioChordScore || len(studioHistoryEdits(t, handler)) != 0 {
+			if err != nil || result.Code != http.StatusUnprocessableEntity || !strings.Contains(result.Body.String(), "plays chords or note gestures") || string(got) != studioChordScore || len(studioHistoryEdits(t, handler)) != 0 {
 				t.Fatalf("recording was not refused atomically: %d %s %v", result.Code, result.Body.String(), err)
 			}
 		})
