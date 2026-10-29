@@ -361,7 +361,7 @@ song { main*4 }
 
 **Syntax (EBNF):** A `parameter_path` has the form `owner.setting` and is accepted as a scene target; see `parameter_path`, `scene_target`, and `scene_assignment` in the [EBNF appendix](appendix.ebnf). Its first part names the owner. The remaining part names a registered setting and may contain another dot, as in `bass.send.delay`.
 
-**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.cutoff` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends. Drum lane controls keep their flat suffixes, such as `bd_tune`.
+**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.pan` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends. Drum lane controls keep their flat suffixes, such as `bd_tune`.
 
 **Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters, with one exception: the [scene tempo](#scene-tempo).
 
@@ -571,7 +571,7 @@ song { main*8 }
 cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 ```
 
-**Edition history:** The generator emits edition-2 source (`cicada 2`) and runs before the audio callback. `--voice acid` writes an `acid` track, as builds before `--voice` always did. Its output is parsed and compiled by the same project pipeline as authored scores.
+**Edition history:** The generator emits edition-2 source (`cicada 2`) and runs before the audio callback. Its output is parsed and compiled by the same project pipeline as authored scores. `--voice acid` writes an `acid` track, as builds before `--voice` always did. One repair changed for every voice: when a rotated bar would begin with a rest, the bar now starts on the root pitch instead of three octaves below it. So `--structure abac` output for the same seed can differ from earlier builds, as can Studio's rotate and evolve results. `cicada gen` writes the same bars as before for the other four structures, and the 24 fixtures in `examples/gen` are unchanged.
 
 ## Named effects
 
