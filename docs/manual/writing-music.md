@@ -5,12 +5,17 @@ you know what the first one should do.
 
 ```cicada
 cicada 2
+
 title "Night circuit"
+
 tempo 138
+
 key a minor
+
 seed 4242
 
 track bass fm_bass {}
+
 track drums drums {}
 
 pattern bassline {
@@ -30,7 +35,9 @@ scene main {
   drums = beat
 }
 
-song { main*8 }
+song {
+  main*8
+}
 ```
 
 This score makes a short bass phrase and drum groove, binds both patterns to a
