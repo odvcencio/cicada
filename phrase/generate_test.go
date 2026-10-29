@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/seq"
@@ -16,8 +17,10 @@ import (
 
 func TestSeedFixturesAndReferenceTrace(t *testing.T) {
 	for seed := uint64(0); seed < 24; seed++ {
+		// The 24 checked-in fixtures are the acid reference set. They keep their
+		// sound and their frozen baseline; `cicada gen --voice acid` writes them.
 		params := DefaultParams()
-		params.Seed, params.Key, params.Scale = seed, 9, Minor
+		params.Seed, params.Key, params.Scale, params.Voice = seed, 9, Minor, "acid"
 		result, err := Generate(params)
 		if err != nil {
 			t.Fatalf("seed %d: %v", seed, err)
@@ -29,6 +32,22 @@ func TestSeedFixturesAndReferenceTrace(t *testing.T) {
 		}
 		if !bytes.Equal([]byte(result.Notation), fixture) {
 			t.Fatalf("seed %d changed from its checked-in source fixture", seed)
+		}
+		// The default voice writes the same score with only the track line changed.
+		params.Voice = ""
+		byDefault, err := Generate(params)
+		if err != nil {
+			t.Fatalf("seed %d default voice: %v", seed, err)
+		}
+		if !strings.Contains(string(fixture), "track bass acid {}\n") {
+			t.Fatalf("seed %d fixture does not name the acid voice", seed)
+		}
+		wantDefault := strings.Replace(string(fixture), "track bass acid {}\n", "track bass "+DefaultVoice+" {}\n", 1)
+		if byDefault.Notation != wantDefault {
+			t.Fatalf("seed %d: the default voice changed more than the track line:\n%s\nwant:\n%s", seed, byDefault.Notation, wantDefault)
+		}
+		if !reflect.DeepEqual(byDefault.Bars, result.Bars) || !reflect.DeepEqual(byDefault.Trace, result.Trace) {
+			t.Fatalf("seed %d: the voice changed the bars or the draw trace", seed)
 		}
 	}
 	params := DefaultParams()

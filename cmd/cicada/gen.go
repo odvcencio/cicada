@@ -26,6 +26,7 @@ func generatorCommand(args []string) error {
 	swing := flags.Float64("swing", 54, "swing percent")
 	gate := flags.Int("gate", 55, "gate percent")
 	structure := flags.String("structure", "aaba", "A, AABA, ABAB, ABAC, or AAAB")
+	voice := flags.String("voice", phrase.DefaultVoice, "built-in voice for the bass track")
 	restDownbeat := flags.Bool("rest-downbeat", false, "allow a downbeat rest")
 	trace := flags.Bool("trace", false, "write draw trace as JSON to stdout")
 	output := flags.String("o", "", "output .cicada file; stdout when omitted")
@@ -62,7 +63,7 @@ func generatorCommand(args []string) error {
 		Density: float32(*density), AccentDensity: float32(*accentDensity),
 		SlideDensity: float32(*slideDensity), OctaveJump: float32(*octaveJump),
 		SwingPercent100: uint16(math.Round(*swing * 100)), GatePercent: uint8(*gate),
-		RestDownbeat: *restDownbeat, Structure: structureValue,
+		RestDownbeat: *restDownbeat, Structure: structureValue, Voice: *voice,
 	}
 	result, err := phrase.Generate(params)
 	if err != nil {
