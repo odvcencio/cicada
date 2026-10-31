@@ -2,8 +2,9 @@
 // punch-kit (faster, brighter, more driven). The hat and cymbal voices of
 // punch-kit are synthesized, not sampled.
 // Private voices keep the public library surface to two complete kits.
-// eight-oh-eight and nine-oh-nine are older names for the same kits; they
-// stay so that existing scores keep loading.
+// Four kit names are public: boom-kit and punch-kit, plus the older names
+// eight-oh-eight and nine-oh-nine, which bind the same voices so that
+// existing scores keep loading.
 
 instrument _boom-kick {
   voice mono {

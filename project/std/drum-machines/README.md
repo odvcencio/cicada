@@ -33,7 +33,7 @@ loading. To adopt the new names, edit the track lines, then run
 
 Listen to [Classic Drum Study](../../../examples/drum-machines/main.cicada)
 for isolated hits followed by the same groove on each kit. In Session, loop
-the `eight-groove` or `nine-groove` section, or audition a placement solo. The
+the `boom-groove` or `punch-groove` section, or audition a placement solo. The
 example uses equal track levels and no effects so the voices remain exposed.
 
 The private `_boom-*` and `_punch-*` graphs are plain Cicada source. Copy a voice
