@@ -442,7 +442,7 @@ func (s *Sources) verifyLibraries() []notation.Diagnostic {
 	for _, imp := range s.Imports {
 		lib := s.Libraries[imp.Path]
 		pin, found := pins[imp.Path]
-		if found && pin == lib.LibraryPin {
+		if found && (pin == lib.LibraryPin || supersededStdPin(imp.Path, pin, lib.LibraryPin)) {
 			continue
 		}
 		message := "unpinned library " + imp.Path + "; run cicada lib update " + imp.Path
@@ -452,6 +452,27 @@ func (s *Sources) verifyLibraries() []notation.Diagnostic {
 		ds = append(ds, notation.Diagnostic{Code: "CICADA-LIB-HASH", Severity: "error", Message: message, Position: imp.Position})
 	}
 	return ds
+}
+
+// supersededStdPins lists std library hashes from earlier releases whose
+// exports the current library keeps with unchanged behavior. A project pinned
+// to one of them keeps loading until the owner runs cicada lib update.
+// Add an entry only with a test that renders every old export unchanged.
+var supersededStdPins = map[string][]string{
+	// Before the kits gained neutral names (boom-kit, punch-kit).
+	"std/drum-machines": {"86c5317c6fca18853fc495e34acd8aabee6ae6ad91f7be3acf69829c3b3dad16"},
+}
+
+func supersededStdPin(path string, pin, current LibraryPin) bool {
+	if pin.Kind != "std" || current.Kind != "std" {
+		return false
+	}
+	for _, hash := range supersededStdPins[path] {
+		if pin.SHA256 == hash {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Sources) readSum() (map[string]LibraryPin, error) {

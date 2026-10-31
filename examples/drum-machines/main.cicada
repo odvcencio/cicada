@@ -2,11 +2,11 @@ cicada 2
 import "std/drum-machines"
 title "Classic Drum Study"
 tempo 120
-seed 808909
+seed 4410
 
 // Equal track levels make the two families easy to compare without effects.
-track eight drum-machines.eight-oh-eight { level = -6dB }
-track nine drum-machines.nine-oh-nine { level = -6dB }
+track eight drum-machines.boom-kit { level = -6dB }
+track nine drum-machines.punch-kit { level = -6dB }
 
 pattern core drums {
   bd: X... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ....
