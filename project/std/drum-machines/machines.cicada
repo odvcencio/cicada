@@ -1,8 +1,12 @@
-// Original circuit-inspired voices. These are not hardware-calibrated replicas.
-// The 909 metal voices are synthesis approximations, not Roland sample ROMs.
+// Original synthesized voices in two kits: boom-kit (long, rounded decays) and
+// punch-kit (faster, brighter, more driven). The hat and cymbal voices of
+// punch-kit are synthesized, not sampled.
 // Private voices keep the public library surface to two complete kits.
+// Four kit names are public: boom-kit and punch-kit, plus the older names
+// eight-oh-eight and nine-oh-nine, which bind the same voices so that
+// existing scores keep loading.
 
-instrument _808-kick {
+instrument _boom-kick {
   voice mono {
     let amp = env(gate, 360ms)
     let body = sine(54Hz * (1 + env(gate, 18ms) * 0.95)) * amp
@@ -10,28 +14,28 @@ instrument _808-kick {
     out = tanh((body + tap) * 1.12) * velocity * 0.72
   }
 }
-instrument _808-snare {
+instrument _boom-snare {
   voice mono {
     let shell = sine(185Hz) * env(gate, 75ms) + sine(342Hz) * env(gate, 48ms) * 0.45
     let wire = highpass(lowpass(noise(), 7200Hz), 1400Hz) * env(gate, 155ms)
     out = tanh(shell * 0.48 + wire * 0.72) * velocity * 0.8
   }
 }
-instrument _808-closed {
+instrument _boom-closed {
   voice mono {
     let metal = (pulse(205.3Hz, 0.5) + pulse(304.4Hz, 0.5) + pulse(369.6Hz, 0.5) + pulse(522.7Hz, 0.5) + pulse(540Hz, 0.5) + pulse(800Hz, 0.5)) / 6
     let bright = highpass(lowpass(metal, 11000Hz), 6500Hz)
     out = bright * env(gate, 38ms) * velocity * 2.8
   }
 }
-instrument _808-open {
+instrument _boom-open {
   voice mono {
     let metal = (pulse(205.3Hz, 0.5) + pulse(304.4Hz, 0.5) + pulse(369.6Hz, 0.5) + pulse(522.7Hz, 0.5) + pulse(540Hz, 0.5) + pulse(800Hz, 0.5)) / 6
     let bright = highpass(lowpass(metal, 11000Hz), 6500Hz)
     out = bright * env(gate, 280ms) * velocity * 2.8
   }
 }
-instrument _808-clap {
+instrument _boom-clap {
   voice mono {
     let noise-band = highpass(lowpass(noise(), 2200Hz), 800Hz)
     let slap = noise-band * env(gate, 4ms)
@@ -41,42 +45,42 @@ instrument _808-clap {
     out = (bursts + tail) * velocity * 1.1
   }
 }
-instrument _808-rim {
+instrument _boom-rim {
   voice mono {
     let stick = sine(1700Hz) * env(gate, 3ms)
     let shell = sine(440Hz) * env(gate, 12ms)
     out = (stick * 0.5 + shell * 0.65) * velocity * 0.7
   }
 }
-instrument _808-low {
+instrument _boom-low {
   voice mono {
     let body = sine(92Hz * (1 + env(gate, 22ms) * 0.12)) * env(gate, 230ms)
     let skin = lowpass(noise(), 2500Hz) * env(gate, 35ms) * 0.055
     out = (body + skin) * velocity * 0.68
   }
 }
-instrument _808-mid {
+instrument _boom-mid {
   voice mono {
     let body = sine(136Hz * (1 + env(gate, 22ms) * 0.12)) * env(gate, 190ms)
     let skin = lowpass(noise(), 2500Hz) * env(gate, 30ms) * 0.055
     out = (body + skin) * velocity * 0.68
   }
 }
-instrument _808-high {
+instrument _boom-high {
   voice mono {
     let body = sine(196Hz * (1 + env(gate, 22ms) * 0.12)) * env(gate, 150ms)
     let skin = lowpass(noise(), 2500Hz) * env(gate, 25ms) * 0.055
     out = (body + skin) * velocity * 0.68
   }
 }
-instrument _808-cowbell {
+instrument _boom-cowbell {
   voice mono {
     let metal = pulse(540Hz, 0.5) + pulse(800Hz, 0.5)
     let ring = highpass(lowpass(metal, 3000Hz), 350Hz)
     out = ring * env(gate, 105ms) * velocity * 0.48
   }
 }
-instrument _808-cymbal {
+instrument _boom-cymbal {
   voice mono {
     let metal = (pulse(205.3Hz, 0.5) + pulse(304.4Hz, 0.5) + pulse(369.6Hz, 0.5) + pulse(522.7Hz, 0.5) + pulse(540Hz, 0.5) + pulse(800Hz, 0.5)) / 6
     let wash = highpass(lowpass(metal, 6200Hz), 1600Hz) * env(gate, 650ms)
@@ -85,7 +89,7 @@ instrument _808-cymbal {
   }
 }
 
-instrument _909-kick {
+instrument _punch-kick {
   voice mono {
     let amp = env(gate, 230ms)
     let body = sine(58Hz * (1 + env(gate, 24ms) * 2.4)) * amp
@@ -93,7 +97,7 @@ instrument _909-kick {
     out = tanh((body + knock) * 1.8) * velocity * 0.7
   }
 }
-instrument _909-snare {
+instrument _punch-snare {
   voice mono {
     let drop = 1 + env(gate, 7ms) * 0.32
     let shell = sine(185Hz * drop) * env(gate, 90ms) + sine(330Hz * drop) * env(gate, 55ms) * 0.55
@@ -101,21 +105,21 @@ instrument _909-snare {
     out = tanh(shell * 0.6 + wire * 0.9) * velocity * 0.82
   }
 }
-instrument _909-closed {
+instrument _punch-closed {
   voice mono {
     let ring = sine(6200Hz) + sine(8370Hz) * 0.52 + sine(10430Hz) * 0.28
     let metal = highpass(lowpass(noise(), 12000Hz), 7200Hz) * 0.8 + ring * 0.17
     out = tanh(metal * 1.4) * env(gate, 26ms) * velocity * 0.78
   }
 }
-instrument _909-open {
+instrument _punch-open {
   voice mono {
     let ring = sine(6200Hz) + sine(8370Hz) * 0.52 + sine(10430Hz) * 0.28
     let metal = highpass(lowpass(noise(), 12000Hz), 7200Hz) * 0.8 + ring * 0.17
     out = tanh(metal * 1.4) * env(gate, 190ms) * velocity * 0.78
   }
 }
-instrument _909-clap {
+instrument _punch-clap {
   voice mono {
     let noise-band = highpass(lowpass(noise(), 3200Hz), 1100Hz)
     let slap = noise-band * env(gate, 3ms)
@@ -125,42 +129,42 @@ instrument _909-clap {
     out = (bursts + tail) * velocity * 1.05
   }
 }
-instrument _909-rim {
+instrument _punch-rim {
   voice mono {
     let stick = sine(1900Hz) * env(gate, 2ms) + sine(530Hz) * env(gate, 9ms) * 0.8
     let tap = highpass(noise(), 3500Hz) * env(gate, 1ms) * 0.09
     out = (stick + tap) * velocity * 0.55
   }
 }
-instrument _909-low {
+instrument _punch-low {
   voice mono {
     let body = sine(105Hz * (1 + env(gate, 42ms) * 0.42)) * env(gate, 210ms)
     let skin = highpass(lowpass(noise(), 4000Hz), 700Hz) * env(gate, 5ms) * 0.12
     out = tanh((body + skin) * 1.45) * velocity * 0.7
   }
 }
-instrument _909-mid {
+instrument _punch-mid {
   voice mono {
     let body = sine(155Hz * (1 + env(gate, 38ms) * 0.42)) * env(gate, 175ms)
     let skin = highpass(lowpass(noise(), 4500Hz), 800Hz) * env(gate, 5ms) * 0.12
     out = tanh((body + skin) * 1.45) * velocity * 0.7
   }
 }
-instrument _909-high {
+instrument _punch-high {
   voice mono {
     let body = sine(225Hz * (1 + env(gate, 34ms) * 0.42)) * env(gate, 140ms)
     let skin = highpass(lowpass(noise(), 5000Hz), 900Hz) * env(gate, 5ms) * 0.12
     out = tanh((body + skin) * 1.45) * velocity * 0.7
   }
 }
-instrument _909-ride {
+instrument _punch-ride {
   voice mono {
     let bell = sine(3100Hz) + sine(4723Hz) * 0.55 + sine(6437Hz) * 0.3 + sine(8291Hz) * 0.2
     let wash = highpass(lowpass(noise(), 11000Hz), 4400Hz) * env(gate, 360ms) * 0.33
     out = (bell * env(gate, 270ms) * 0.24 + wash) * velocity * 0.7
   }
 }
-instrument _909-crash {
+instrument _punch-crash {
   voice mono {
     let ring = sine(2330Hz) + sine(3697Hz) * 0.62 + sine(5219Hz) * 0.39 + sine(7733Hz) * 0.27
     let wash = highpass(lowpass(noise(), 12000Hz), 1800Hz) * env(gate, 580ms) * 0.7
@@ -168,30 +172,59 @@ instrument _909-crash {
   }
 }
 
-kit eight-oh-eight {
-  bd = _808-kick
-  sd = _808-snare
-  ch = _808-closed
-  oh = _808-open
-  cp = _808-clap
-  rs = _808-rim
-  lt = _808-low
-  mt = _808-mid
-  ht = _808-high
-  cb = _808-cowbell
-  cy = _808-cymbal
+kit boom-kit {
+  bd = _boom-kick
+  sd = _boom-snare
+  ch = _boom-closed
+  oh = _boom-open
+  cp = _boom-clap
+  rs = _boom-rim
+  lt = _boom-low
+  mt = _boom-mid
+  ht = _boom-high
+  cb = _boom-cowbell
+  cy = _boom-cymbal
 }
-kit nine-oh-nine {
-  bd = _909-kick
-  sd = _909-snare
-  ch = _909-closed
-  oh = _909-open
-  cp = _909-clap
-  rs = _909-rim
-  lt = _909-low
-  mt = _909-mid
-  ht = _909-high
+kit punch-kit {
+  bd = _punch-kick
+  sd = _punch-snare
+  ch = _punch-closed
+  oh = _punch-open
+  cp = _punch-clap
+  rs = _punch-rim
+  lt = _punch-low
+  mt = _punch-mid
+  ht = _punch-high
   // The existing cb lane carries the ride in this kit; cy carries the crash.
-  cb = _909-ride
-  cy = _909-crash
+  cb = _punch-ride
+  cy = _punch-crash
+}
+// Older name for boom-kit.
+kit eight-oh-eight {
+  bd = _boom-kick
+  sd = _boom-snare
+  ch = _boom-closed
+  oh = _boom-open
+  cp = _boom-clap
+  rs = _boom-rim
+  lt = _boom-low
+  mt = _boom-mid
+  ht = _boom-high
+  cb = _boom-cowbell
+  cy = _boom-cymbal
+}
+// Older name for punch-kit.
+kit nine-oh-nine {
+  bd = _punch-kick
+  sd = _punch-snare
+  ch = _punch-closed
+  oh = _punch-open
+  cp = _punch-clap
+  rs = _punch-rim
+  lt = _punch-low
+  mt = _punch-mid
+  ht = _punch-high
+  // The existing cb lane carries the ride in this kit; cy carries the crash.
+  cb = _punch-ride
+  cy = _punch-crash
 }

@@ -2,11 +2,11 @@ cicada 2
 import "std/drum-machines"
 title "Classic Drum Study"
 tempo 120
-seed 808909
+seed 4410
 
 // Equal track levels make the two families easy to compare without effects.
-track eight drum-machines.eight-oh-eight { level = -6dB }
-track nine drum-machines.nine-oh-nine { level = -6dB }
+track boom drum-machines.boom-kit { level = -6dB }
+track punch drum-machines.punch-kit { level = -6dB }
 
 pattern core drums {
   bd: X... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ....
@@ -37,17 +37,17 @@ pattern groove drums {
   cy: X... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ....
 }
 arrange {
-  marker eight-core { at = @1.1.1 }
-  marker eight-colors { at = @5.1.1 }
-  marker eight-groove { at = @9.1.1 }
-  marker nine-core { at = @17.1.1 }
-  marker nine-colors { at = @21.1.1 }
-  marker nine-groove { at = @25.1.1 }
-  place eight-core-part eight core { at = @1.1.1 length = 4bars }
-  place eight-colors-part eight colors { at = @5.1.1 length = 4bars }
-  place eight-groove-part eight groove { at = @9.1.1 length = 8bars }
-  place nine-core-part nine core { at = @17.1.1 length = 4bars }
-  place nine-colors-part nine colors { at = @21.1.1 length = 4bars }
-  place nine-groove-part nine groove { at = @25.1.1 length = 8bars }
+  marker boom-core { at = @1.1.1 }
+  marker boom-colors { at = @5.1.1 }
+  marker boom-groove { at = @9.1.1 }
+  marker punch-core { at = @17.1.1 }
+  marker punch-colors { at = @21.1.1 }
+  marker punch-groove { at = @25.1.1 }
+  place boom-core-part boom core { at = @1.1.1 length = 4bars }
+  place boom-colors-part boom colors { at = @5.1.1 length = 4bars }
+  place boom-groove-part boom groove { at = @9.1.1 length = 8bars }
+  place punch-core-part punch core { at = @17.1.1 length = 4bars }
+  place punch-colors-part punch colors { at = @21.1.1 length = 4bars }
+  place punch-groove-part punch groove { at = @25.1.1 length = 8bars }
 }
 export listening { rate = 48000Hz bits = 24 normalize = on tail = 2s }
