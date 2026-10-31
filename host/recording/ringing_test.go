@@ -1139,6 +1139,59 @@ func TestRingingSliceBeginsWithASoftFirstStageThatComesBeforeTheBody(t *testing.
 	}
 }
 
+// inRoom returns a copy of audio with white noise at db dBFS (RMS) added, which
+// the analysis cannot tell from the same hits recorded at a lower gain in a room
+// at that level.
+func inRoom(audio Audio, db float64) Audio {
+	out := slices.Clone(audio.PCM)
+	state := uint64(0x5eed)
+	amp := math.Pow(10, db/20) * math.Sqrt(3)
+	for i := range out {
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		noise := float64(float64(z>>11)/float64(1<<53)*2) - 1
+		out[i] = float32(float64(out[i]) + float64(amp*noise))
+	}
+	return Audio{PCM: out, Rate: audio.Rate}
+}
+
+// A take recorded as the guide asks, with one gain for the whole session and the
+// hardest hit near -6 dBFS, puts a soft take 35 to 45 dB over the room, and a first
+// stage a few tens of dB under its body only 7 to 15 dB over the room. That is still a step
+// out of quiet, and it is part of the hit whatever the level of the room. The slice
+// began after a first stage of 7 to 10 dB over the room (up to 5.8 ms) and after a
+// click of 12 to 18 dB over it (up to 11.8 ms), because the sharp steps were judged
+// against the 12 ms before them, which is the room. The takes here are those of the
+// two tests above in rooms at -60, -55 and -50 dBFS, 54, 49 and 44 dB under the body.
+func TestRingingSliceBeginsWithAFirstStageThatStandsOnlyAFewTimesOverTheRoom(t *testing.T) {
+	for _, click := range []bool{false, true} {
+		gaps, stages := []float64{6, 7, 8}, []float64{-26, -30, -34}
+		if click {
+			gaps, stages = []float64{4, 8, 12}, []float64{-18, -24, -32}
+		}
+		for _, room := range []float64{-60, -55, -50} {
+			for _, gapMS := range gaps {
+				for _, stageDB := range stages {
+					if room > -52 && (stageDB < -26 && !click || stageDB < -24 && click) {
+						continue // within 10 dB of the room, where noise decides which window a stage begins in
+					}
+					t.Run(fmt.Sprintf("click %v, room %.0f dBFS, %.0f dB down, %.0f ms ahead", click, room, -stageDB, gapMS), func(t *testing.T) {
+						audio, plays := twoStageTake(1.5, gapMS, stageDB, click)
+						for i, lead := range sliceLeads(t, inRoom(audio, room), plays) {
+							if lead < 1 || lead > 6 {
+								t.Errorf("hit %d starts %.1f ms before its first stage, want 1 to 6 ms (the body follows %.0f ms after it)", i+1, lead, gapMS)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 // withClick returns a copy of pcm with a 10 ms burst of noise added at the given
 // level in dBFS (RMS), starting at the given second: the click of a recorder that
 // has just started, a knock on the stand.

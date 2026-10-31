@@ -31,18 +31,30 @@ import (
 //   - it is sharp, as a sound that comes out of quiet is, and reaches a
 //     two-hundredth of the loudest window, 46 dB down: four times as loud as the
 //     12 ms before it and within 8 ms of the next step, or eight times as loud and
-//     within 16 ms.
+//     within 16 ms; or
+//   - it is a step out of the room, and reaches that two-hundredth: the 30 ms
+//     before it are no louder than twice the room's noise, which is known only
+//     when the recording opens with room tone, and it comes within 16 ms of the
+//     next step.
+//
+// The last rule is for soft takes. Recorded at one gain for the session, with the
+// hardest hit near -6 dBFS, a soft take stands 35 to 45 dB over the room, and a
+// click or a soft first stage 25 to 35 dB under its body is only 7 to 18 dB over
+// it: too little for a sharp step, which judges a window against the 12 ms before
+// it, and before a first stage that is the room.
 //
 // A slice starts 3 ms before the window in which the hit began, so its attack sits
 // 3 to 5 ms into it whatever the tail was doing. Measured on 89 recorded kicks,
 // snares, toms, hi-hats and hand drums, each placed 90 times in takes over room
-// noise at 0.6 to 2 s apart, the attack sat 2 to 6 ms in for 7,951 of the 7,986
-// slices, 0.9 to 2 ms in for 15 and 7.9 to 18 ms in for 20, and no slice started
-// after the attack. A hit that lands on a ring within 26 dB of it hides its own
-// attack: of 1,986 slices of 23 concert bass drums, timpani and frame drums, 288
-// started up to 5.8 ms after the attack and 201 more than 6 ms before it, up to
-// 25 ms. A click or a first stage more than 16 ms before the body is not part of
-// the hit. The slice before a hit ends where this one starts, so a cut tail does
+// noise at 0.6 to 2 s apart and 50 to 70 dB under the hits' peaks, the attack sat 2
+// to 6 ms in for 7,951 of the 7,986 slices, 0.9 to 2 ms in for 15 and 7.9 to 18 ms
+// in for 20, and no slice started after the attack. The same hits 45 dB over the
+// room had no slice after the attack, 40 dB over it 25 of 2,662, 35 dB 56 and 30 dB
+// 147: the softest takes lose their first stage in the room. A hit that lands on a
+// ring within 26 dB of it hides its own attack: of 1,986 slices of 23 concert bass
+// drums, timpani and frame drums, 288 started up to 5.8 ms after the attack and 201
+// more than 6 ms before it, up to 25 ms. A click or a first stage more than 16 ms
+// before the body is not part of the hit. The slice before a hit ends where this one starts, so a cut tail does
 // not end in the next attack.
 //
 // The room's noise is read from the quietest 200 ms of each recording. When the
@@ -174,6 +186,8 @@ const (
 	ringSharpFloor    = .005 // a sharp or sharper step belongs to a hit when it reaches this fraction of the loudest window
 	ringSharpGapMS    = 8    // and a sharp one comes within this long of the next step
 	ringSharperGapMS  = 16   // and a sharper one within this long
+	ringFromRoom      = 2    // a step also comes out of quiet when the 12 ms before it are within this factor of the room,
+	ringRoomLookMS    = 30   // and so is everything for this long before it
 )
 
 // dB converts an amplitude to dBFS, flooring silence.
@@ -284,6 +298,14 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 		span := max(1, ringRiseSpanMS*a.Rate/1000/hop)
 		reach := stepWindows(a.Rate, hop)
 		cutSkip, cutRead := cutWindows(a.Rate, hop)
+		// A soft first stage or a click that stands only a few times above the room
+		// is told from the room while the room is known. A quietest stretch that is
+		// not the room of a recording that opens with room tone, or that is assumed,
+		// is no level to judge by.
+		var stepRoom float64
+		if options.Ringing && !report.NoRoomTone && !report.NoQuiet {
+			stepRoom = noise
+		}
 		var onsets []int
 		last := -a.Rate
 		wasAttack := false
@@ -330,7 +352,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 					// Look back through the 2 ms energy for the window in which it
 					// began. The arming rise came within the span before this window,
 					// and the smoothing delays a rise by up to 4 windows.
-					begin, found := hitBegin(rawEnergy, w, reach)
+					begin, found := hitBegin(rawEnergy, w, reach, stepRoom)
 					// A swell has no such window, since each step of it is small, and
 					// neither has a hit that lands on a ring. The energy doubled within
 					// the span before the hit was found, and the hit began at the last
@@ -576,6 +598,7 @@ type stepReach struct {
 	joined  int // a step that reaches ringAttackFloor belongs to a hit within this many windows of the next
 	sharp   int // a sharp step belongs to a hit within this many windows of the next
 	sharper int // a sharper step belongs to a hit within this many windows of the next
+	room    int // a step out of the room is judged against this many windows before it
 }
 
 // stepWindows returns the reach of the steps of a hit for windows of hop frames
@@ -589,6 +612,7 @@ func stepWindows(rate, hop int) stepReach {
 		joined:  windows(ringStepGapMS),
 		sharp:   windows(ringSharpGapMS),
 		sharper: windows(ringSharperGapMS),
+		room:    windows(ringRoomLookMS),
 	}
 }
 
@@ -611,7 +635,7 @@ func stepWindows(rate, hop int) stepReach {
 //     when it reaches a two-hundredth of the loudest window, 46 dB down, and
 //     comes within reach.sharp windows of the next step;
 //   - a sharper step, eight times as loud, does so within reach.sharper windows.
-func hitBegin(raw []float64, w int, reach stepReach) (int, bool) {
+func hitBegin(raw []float64, w int, reach stepReach, room float64) (int, bool) {
 	loudest := slices.Max(raw[max(0, w-4):min(len(raw), w+6)])
 	begin := -1
 	for k := w; k >= max(0, w-reach.back); k-- {
@@ -626,7 +650,7 @@ func hitBegin(raw []float64, w int, reach stepReach) (int, bool) {
 		case raw[k] >= loudest*ringAttackFloor && (begin < 0 || gap <= reach.joined):
 			begin = k
 		case begin >= 0 && raw[k] >= loudest*ringSharpFloor &&
-			(gap <= reach.sharp && isStepBy(raw, k, ringSharpFactor) || gap <= reach.sharper && isStepBy(raw, k, ringSharperFactor)):
+			(gap <= reach.sharp && isStepBy(raw, k, ringSharpFactor) || gap <= reach.sharper && (isStepBy(raw, k, ringSharperFactor) || fromRoom(raw, k, room, reach.room))):
 			begin = k
 		}
 	}
@@ -642,6 +666,14 @@ func isStep(raw []float64, k int) bool { return isStepBy(raw, k, ringStepFactor)
 func isStepBy(raw []float64, k int, factor float64) bool {
 	before := raw[max(0, k-6):k]
 	return len(before) == 0 || raw[k] > slices.Max(before)*factor
+}
+
+// fromRoom reports whether the 2 ms window k is a step out of the room: the look
+// windows before it, which include the 12 ms that make it a step, are no louder than
+// ringFromRoom times the room. A room of 0 is not known, and nothing is. A bump in a
+// tail that is still a few dB over the room is no step out of the room.
+func fromRoom(raw []float64, k int, room float64, look int) bool {
+	return room > 0 && isStep(raw, k) && slices.Max(raw[max(0, k-look):k]) <= room*ringFromRoom
 }
 
 // lastNearMinimum returns the last index in [from, to] whose value is within

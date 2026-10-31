@@ -39,7 +39,7 @@ func ramp(low, high float64, n int) []float64 {
 // the command reads, since a window is 2 ms long: 28 ms back from the window where
 // the hit was found, and 6, 8 and 16 ms between the steps of one hit.
 func TestStepReachIsTheSameNumberOfWindowsAtEveryRate(t *testing.T) {
-	want := stepReach{back: 14, joined: 3, sharp: 4, sharper: 8}
+	want := stepReach{back: 14, joined: 3, sharp: 4, sharper: 8, room: 15}
 	for _, rate := range []int{8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000} {
 		if got := stepWindows(rate, max(1, rate/500)); got != want {
 			t.Errorf("at %d Hz the reach is %+v, want %+v", rate, got, want)
@@ -59,7 +59,7 @@ func TestStepReachIsTheSameNumberOfWindowsAtEveryRate(t *testing.T) {
 // the search reaches 14 windows back from the window where the hit was found.
 func TestHitBeginIsTheFirstStepOfTheLastRunOfSteps(t *testing.T) {
 	reach := stepWindows(48000, 96)
-	if reach != (stepReach{back: 14, joined: 3, sharp: 4, sharper: 8}) {
+	if reach != (stepReach{back: 14, joined: 3, sharp: 4, sharper: 8, room: 15}) {
 		t.Fatalf("the reach is %+v; the cases below are written for 14 windows back and steps 3, 4 and 8 windows apart", reach)
 	}
 	quiet := flat(-70, 20)
@@ -147,7 +147,7 @@ func TestHitBeginIsTheFirstStepOfTheLastRunOfSteps(t *testing.T) {
 		{"a tail with no hit", energies(flat(-60, 40)), 30, -1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			begin, found := hitBegin(test.raw, test.found, reach)
+			begin, found := hitBegin(test.raw, test.found, reach, 0)
 			if test.begin < 0 {
 				if found {
 					t.Fatalf("the hit found at window %d began at window %d; it has no sharp beginning", test.found, begin)
@@ -156,6 +156,51 @@ func TestHitBeginIsTheFirstStepOfTheLastRunOfSteps(t *testing.T) {
 			}
 			if !found || begin != test.begin {
 				t.Errorf("the hit found at window %d began at window %d (found %v), want window %d", test.found, begin, found, test.begin)
+			}
+		})
+	}
+}
+
+// A first stage or a click out of the room is a step out of quiet whatever the level
+// of the room. Against the 12 ms before it, which are the room, it is only 8 dB over
+// them, 2.5 times, in a soft take: too little for a sharp step, which is four or
+// eight times as loud. It joins the hit, within 16 ms of the next step, when it is
+// a step and the 30 ms before it are no louder than twice the room; a room of 0 is
+// not known, and then nothing does.
+func TestHitBeginJoinsAStepOutOfTheKnownRoom(t *testing.T) {
+	reach := stepWindows(48000, 96)
+	const roomDB = -60
+	room := math.Pow(10, roomDB/20)
+	at := func(over float64) float64 { return roomDB + over }
+	for _, test := range []struct {
+		name  string
+		raw   []float64
+		room  float64
+		begin int
+	}{
+		{"a stage 8 dB over the room, 12 ms ahead", energies(flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 5), []float64{-20, -18, -17}), room, 14},
+		{"a stage 8 dB over the room, 16 ms ahead", energies(flat(roomDB, 12), []float64{at(8)}, flat(roomDB, 7), []float64{-20, -18, -17}), room, 12},
+		{"a stage 8 dB over the room, 18 ms ahead", energies(flat(roomDB, 11), []float64{at(8)}, flat(roomDB, 8), []float64{-20, -18, -17}), room, 20},
+		{"a stage 8 dB over a room that is not known", energies(flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 5), []float64{-20, -18, -17}), 0, 20},
+		{"a stage 14 dB over the room, 12 ms ahead", energies(flat(roomDB, 14), []float64{at(14)}, flat(roomDB, 5), []float64{-20, -18, -17}), room, 14},
+		// The 12 ms before the stage are within twice the room, 6 dB over it, or not.
+		{"a stage after 12 ms at 5 dB over the room", energies(flat(at(5), 14), []float64{at(5 + 8)}, flat(at(5), 5), []float64{-20, -18, -17}), room, 14},
+		{"a stage after 12 ms at 7 dB over the room", energies(flat(at(7), 14), []float64{at(7 + 8)}, flat(at(7), 5), []float64{-20, -18, -17}), room, 20},
+		// And the 30 ms before it: a bump in a tail that was 8 dB over the room 28 ms
+		// ago is no step out of the room, and one 30 ms ago is.
+		{"a stage 28 ms after a tail 8 dB over the room", energies(flat(at(8), 2), flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 3), []float64{-20, -18, -17}), room, 20},
+		{"a stage 30 ms after a tail 8 dB over the room", energies(flat(at(8), 1), flat(roomDB, 15), []float64{at(8)}, flat(roomDB, 3), []float64{-20, -18, -17}), room, 16},
+		// A step has to be twice the 12 ms before it.
+		{"a bump 5 dB over a quiet room", energies(flat(roomDB, 14), []float64{at(5)}, flat(roomDB, 5), []float64{-20, -18, -17}), room, 20},
+		// It still has to reach a two-hundredth of the hit's loudest window, 46 dB down.
+		{"a stage under a two-hundredth of the hit", energies(flat(-80, 14), []float64{-72}, flat(-80, 5), []float64{-20, -18, -17}), math.Pow(10, -80.0/20), 20},
+		// A bump in a tail 30 dB over the room is no step out of the room.
+		{"a bump in a tail", energies(flat(at(30), 14), []float64{at(38)}, flat(at(30), 5), []float64{-14, -12, -11}), room, 20},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			begin, found := hitBegin(test.raw, 21, reach, test.room)
+			if !found || begin != test.begin {
+				t.Errorf("the hit found at window 21 began at window %d (found %v), want window %d", begin, found, test.begin)
 			}
 		})
 	}

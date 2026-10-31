@@ -218,10 +218,15 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    body or the thud of a muted bass drum, the attack is that first sound, and
    the slice starts before it when the body follows within about 16 ms; a first
    sound further ahead is left out. In our tests on 89 recorded kicks, snares,
-   toms, hi-hats and hand drums, the attack landed 2 to 6 ms into the slice for
-   996 hits in 1,000, and no slice started after the attack. A hit that lands on
-   a ring that is still within 26 dB of it can hide its own attack in the ring.
-   In our tests on 23 concert bass drums, timpani and frame drums struck again
+   toms, hi-hats and hand drums, 50 to 70 dB over the room, the attack landed 2
+   to 6 ms into the slice for 996 hits in 1,000, and no slice started after the
+   attack. The command tells a first sound from the room by how far it stands
+   over the room's noise, so soft takes work too: with the hits 45 dB over the
+   room no slice started after the attack, at 40 dB over the room 25 of 2,662
+   slices did, at 35 dB 56, and at 30 dB 147. A first stage that stands only a
+   few dB over the room is lost in it, so record soft takes 40 dB or more over
+   the room where you can. A hit that lands on a ring that is still within
+   26 dB of it can hide its own attack in the ring. In our tests on 23 concert bass drums, timpani and frame drums struck again
    before they had rung out, 15 slices in 100 started up to 6 ms after the
    attack, and 10 in 100 more than 6 ms before it. Leave those drums more time
    between hits.

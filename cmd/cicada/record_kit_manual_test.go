@@ -203,6 +203,7 @@ func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 		"It reads that level as the tail's average over the 90 ms before the last 4 ms of the hit",
 		"That holds only for a file that ends under -90 dBFS. A take that ends in room tone has its room read from its quietest stretch, so a take that opens on a slow ring and ends in room tone gets the warning.",
 		"Dither does not count either when it is under -90 dBFS, as plain 16-bit dither is",
+		"with the hits 45 dB over the room no slice started after the attack, at 40 dB over the room 25 of 2,662 slices did, at 35 dB 56, and at 30 dB 147.",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the guide lacks %q", want)
