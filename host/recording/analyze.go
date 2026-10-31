@@ -34,8 +34,9 @@ import (
 //     within 16 ms; or
 //   - it is a step out of the room, and reaches that two-hundredth: the 30 ms
 //     before it are no louder than twice the room's noise, which is known only
-//     when the recording opens with room tone, and it comes within 16 ms of the
-//     next step.
+//     when the recording opens with room tone, and it lies 4 to 16 ms before the
+//     next step. A window closer than 4 ms is the rise of the attack itself, and
+//     joining it would only start the slice a window earlier.
 //
 // The last rule is for soft takes. Recorded at one gain for the session, with the
 // hardest hit near -6 dBFS, a soft take stands 35 to 45 dB over the room, and a
@@ -187,7 +188,8 @@ const (
 	ringSharpGapMS    = 8    // and a sharp one comes within this long of the next step
 	ringSharperGapMS  = 16   // and a sharper one within this long
 	ringFromRoom      = 2    // a step also comes out of quiet when the 12 ms before it are within this factor of the room,
-	ringRoomLookMS    = 30   // and so is everything for this long before it
+	ringRoomLookMS    = 30   // and so is everything for this long before it,
+	ringRoomApartMS   = 4    // and it lies at least this long before the next step, since a window next to it is the rise of the attack itself
 )
 
 // dB converts an amplitude to dBFS, flooring silence.
@@ -599,6 +601,7 @@ type stepReach struct {
 	sharp   int // a sharp step belongs to a hit within this many windows of the next
 	sharper int // a sharper step belongs to a hit within this many windows of the next
 	room    int // a step out of the room is judged against this many windows before it
+	apart   int // and it lies at least this many windows before the next step
 }
 
 // stepWindows returns the reach of the steps of a hit for windows of hop frames
@@ -613,6 +616,7 @@ func stepWindows(rate, hop int) stepReach {
 		sharp:   windows(ringSharpGapMS),
 		sharper: windows(ringSharperGapMS),
 		room:    windows(ringRoomLookMS),
+		apart:   windows(ringRoomApartMS),
 	}
 }
 
@@ -650,7 +654,7 @@ func hitBegin(raw []float64, w int, reach stepReach, room float64) (int, bool) {
 		case raw[k] >= loudest*ringAttackFloor && (begin < 0 || gap <= reach.joined):
 			begin = k
 		case begin >= 0 && raw[k] >= loudest*ringSharpFloor &&
-			(gap <= reach.sharp && isStepBy(raw, k, ringSharpFactor) || gap <= reach.sharper && (isStepBy(raw, k, ringSharperFactor) || fromRoom(raw, k, room, reach.room))):
+			(gap <= reach.sharp && isStepBy(raw, k, ringSharpFactor) || gap <= reach.sharper && (isStepBy(raw, k, ringSharperFactor) || gap >= reach.apart && fromRoom(raw, k, room, reach.room))):
 			begin = k
 		}
 	}

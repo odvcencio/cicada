@@ -39,7 +39,7 @@ func ramp(low, high float64, n int) []float64 {
 // the command reads, since a window is 2 ms long: 28 ms back from the window where
 // the hit was found, and 6, 8 and 16 ms between the steps of one hit.
 func TestStepReachIsTheSameNumberOfWindowsAtEveryRate(t *testing.T) {
-	want := stepReach{back: 14, joined: 3, sharp: 4, sharper: 8, room: 15}
+	want := stepReach{back: 14, joined: 3, sharp: 4, sharper: 8, room: 15, apart: 2}
 	for _, rate := range []int{8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000} {
 		if got := stepWindows(rate, max(1, rate/500)); got != want {
 			t.Errorf("at %d Hz the reach is %+v, want %+v", rate, got, want)
@@ -59,7 +59,7 @@ func TestStepReachIsTheSameNumberOfWindowsAtEveryRate(t *testing.T) {
 // the search reaches 14 windows back from the window where the hit was found.
 func TestHitBeginIsTheFirstStepOfTheLastRunOfSteps(t *testing.T) {
 	reach := stepWindows(48000, 96)
-	if reach != (stepReach{back: 14, joined: 3, sharp: 4, sharper: 8, room: 15}) {
+	if reach != (stepReach{back: 14, joined: 3, sharp: 4, sharper: 8, room: 15, apart: 2}) {
 		t.Fatalf("the reach is %+v; the cases below are written for 14 windows back and steps 3, 4 and 8 windows apart", reach)
 	}
 	quiet := flat(-70, 20)
@@ -186,6 +186,11 @@ func TestHitBeginJoinsAStepOutOfTheKnownRoom(t *testing.T) {
 		// The 12 ms before the stage are within twice the room, 6 dB over it, or not.
 		{"a stage after 12 ms at 5 dB over the room", energies(flat(at(5), 14), []float64{at(5 + 8)}, flat(at(5), 5), []float64{-20, -18, -17}), room, 14},
 		{"a stage after 12 ms at 7 dB over the room", energies(flat(at(7), 14), []float64{at(7 + 8)}, flat(at(7), 5), []float64{-20, -18, -17}), room, 20},
+		// A window next to the body is the rise of the attack itself; a stage 4 ms ahead
+		// of it, two windows, is part of the hit.
+		{"a stage next to the body", energies(flat(roomDB, 19), []float64{at(8)}, []float64{-20, -18, -17}), room, 20},
+		{"a stage two windows before the body", energies(flat(roomDB, 18), []float64{at(8)}, flat(roomDB, 1), []float64{-20, -18, -17}), room, 18},
+		{"a stage three windows before the body", energies(flat(roomDB, 17), []float64{at(8)}, flat(roomDB, 2), []float64{-20, -18, -17}), room, 17},
 		// And the 30 ms before it: a bump in a tail that was 8 dB over the room 28 ms
 		// ago is no step out of the room, and one 30 ms ago is.
 		{"a stage 28 ms after a tail 8 dB over the room", energies(flat(at(8), 2), flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 3), []float64{-20, -18, -17}), room, 20},
