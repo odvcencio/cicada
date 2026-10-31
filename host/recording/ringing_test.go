@@ -889,7 +889,80 @@ func roomToneAndThenSilence(t *testing.T) (plain Audio, ends []endedTake) {
 	})
 	with("a 1 s fade-out", fade(1))
 	with("a 2 s fade-out", fade(2))
+	for _, shape := range fadeShapes {
+		for _, seconds := range []float64{.5, 1, 2} {
+			with(fmt.Sprintf("a %.1f s %s fade-out", seconds, shape.name), func(pcm []float32) []float32 { return fadedOut(pcm, seconds, shape.gain) })
+		}
+	}
 	return plain, ends
+}
+
+// fadeShapes are the fade-outs of an editor: the gain at x, which falls from 1 to 0.
+var fadeShapes = []struct {
+	name string
+	gain func(x float64) float64
+}{
+	{"linear", func(x float64) float64 { return x }},
+	{"equal-power", func(x float64) float64 { return math.Sin(math.Pi / 2 * x) }},
+}
+
+// fadedOut applies a fade of the given length to the end of pcm.
+func fadedOut(pcm []float32, seconds float64, gain func(x float64) float64) []float32 {
+	n := int(seconds * 48000)
+	for i := 0; i < n; i++ {
+		pcm[len(pcm)-n+i] *= float32(gain(float64(n-i) / float64(n)))
+	}
+	return pcm
+}
+
+// An export that starts before the clip and ends in a linear fade-out has both: the
+// padding is skipped, and the end of the fade shows the lead-in is room tone.
+func TestRingingTakeWithPaddingThatFadesOutLinearlyStillOpensWithRoomTone(t *testing.T) {
+	plain := spaced(t, testwav.Kick, testwav.Layout{Lead: 3, Spacing: 1.5, After: 2, RoomDB: -60}, .55, .50, .60, .52, .58)
+	pcm := append(make([]float32, 14400), fadedOut(slices.Clone(plain.PCM), 1, fadeShapes[0].gain)...)
+	hits, reports, err := AnalyzeTakes([]Audio{{PCM: pcm, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil || len(hits) != 5 {
+		t.Fatalf("found %d hits (%v), played 5", len(hits), err)
+	}
+	if r := reports[0]; r.NoRoomTone || math.Abs(r.NoiseDB+60) > 3 {
+		t.Errorf("no room tone %v, room read at %.1f dBFS (it is -60)", r.NoRoomTone, r.NoiseDB)
+	}
+}
+
+// A fade-out that is linear or equal-power does not leave a 200 ms stretch under
+// -90 dBFS in a room at -60 dBFS: the take is quieter at its very end than any room
+// all the same, and that end is what shows the lead-in is room tone. The room is read
+// from the lead-in at -70 and at -60 dBFS, whatever the shape of the fade.
+func TestRingingTakeThatFadesOutLinearlyOrEqualPowerStillOpensWithRoomTone(t *testing.T) {
+	for _, roomDB := range []float64{-70, -60} {
+		plain := spaced(t, testwav.Kick, testwav.Layout{Lead: 3, Spacing: 1.5, After: 2, RoomDB: roomDB}, .55, .50, .60, .52, .58)
+		want, _, err := AnalyzeTakes([]Audio{plain}, Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || len(want) != 5 {
+			t.Fatalf("room %.0f without the fade: %d hits, %v", roomDB, len(want), err)
+		}
+		for _, shape := range append([]struct {
+			name string
+			gain func(x float64) float64
+		}{{"cubic", func(x float64) float64 { return x * x * x }}}, fadeShapes...) {
+			for _, seconds := range []float64{.5, 1, 2} {
+				t.Run(fmt.Sprintf("room %.0f, %s fade %.1f s", roomDB, shape.name, seconds), func(t *testing.T) {
+					pcm := fadedOut(slices.Clone(plain.PCM), seconds, shape.gain)
+					hits, reports, err := AnalyzeTakes([]Audio{{PCM: pcm, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+					if err != nil || len(hits) != len(want) {
+						t.Fatalf("found %d hits (%v), played %d", len(hits), err, len(want))
+					}
+					if r := reports[0]; r.NoRoomTone || math.Abs(r.NoiseDB-roomDB) > 3 {
+						t.Errorf("no room tone %v, room read at %.1f dBFS (it is %.0f)", r.NoRoomTone, r.NoiseDB, roomDB)
+					}
+					for i := range want[:4] {
+						if hits[i].End != want[i].End || hits[i].Cut != want[i].Cut {
+							t.Errorf("hit %d ends at frame %d (cut %v); without the fade it ends at %d (cut %v)", i+1, hits[i].End, hits[i].Cut, want[i].End, want[i].Cut)
+						}
+					}
+				})
+			}
+		}
+	}
 }
 
 // A take that opens with room tone has room tone, whatever follows the last
@@ -1175,7 +1248,7 @@ func TestRingingSliceBeginsWithAFirstStageThatStandsOnlyAFewTimesOverTheRoom(t *
 		for _, room := range []float64{-60, -55, -50} {
 			for _, gapMS := range gaps {
 				for _, stageDB := range stages {
-					if room > -52 && (stageDB < -26 && !click || stageDB < -24 && click) {
+					if room > -52 && !click || room > -52 && stageDB < -24 || room > -56 && !click && stageDB < -30 {
 						continue // within 10 dB of the room, where noise decides which window a stage begins in
 					}
 					t.Run(fmt.Sprintf("click %v, room %.0f dBFS, %.0f dB down, %.0f ms ahead", click, room, -stageDB, gapMS), func(t *testing.T) {
@@ -1189,6 +1262,99 @@ func TestRingingSliceBeginsWithAFirstStageThatStandsOnlyAFewTimesOverTheRoom(t *
 				}
 			}
 		}
+	}
+}
+
+// The room rule needs a room that is known. A take with less than 200 ms of room
+// tone before its first hit has none: its quietest stretch may be a tail, and a tail
+// has bumps of its own. So the rule is off for the whole take, and a soft first stage
+// is left out as it was before the rule: the slice starts at the body. The same take
+// with 3 s of room tone before it joins the first stage.
+func TestRingingRoomRuleIsOffForATakeWithNoRoomTone(t *testing.T) {
+	audio, plays := twoStageTake(1.5, 8, -35, false) // a stage 10 dB over the room
+	audio = inRoom(audio, -55)
+	cut := int(2.9 * 48000)
+	short := Audio{PCM: audio.PCM[cut:], Rate: audio.Rate}
+	shortPlays := make([]int, len(plays))
+	for i, p := range plays {
+		shortPlays[i] = p - cut
+	}
+	_, reports, err := AnalyzeTakes([]Audio{short}, Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil || !reports[0].NoRoomTone {
+		t.Fatalf("no room tone %v (%v); the take has 0.1 s of room before its first hit", reports[0].NoRoomTone, err)
+	}
+	for i, lead := range sliceLeads(t, short, shortPlays) {
+		if body := lead + 8; body < 2 || body > 6 {
+			t.Errorf("hit %d starts %.1f ms before its body, want 2 to 6 ms: without room tone the stage 8 ms ahead is left out", i+1, body)
+		}
+	}
+	// The stage is only 10 dB over a room, which has windows of its own that loud; the
+	// rule joins it for most of the hits.
+	joined := 0
+	for _, lead := range sliceLeads(t, audio, plays) {
+		if lead >= 1 && lead <= 6 {
+			joined++
+		}
+	}
+	if joined < 3 {
+		t.Errorf("with room tone, %d of 5 hits start 1 to 6 ms before their first stage, want at least 3", joined)
+	}
+}
+
+// brownNoise returns n frames of brown noise (white noise integrated, with a leak) at
+// db dBFS RMS: a room with far more low frequencies than high, as a room with a
+// ventilation fan or street noise is.
+func brownNoise(n int, db float64, seed uint64) []float32 {
+	state := seed
+	out := make([]float64, n)
+	y := 0.0
+	var sum float64
+	for i := range out {
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		y = float64(.995*y) + (float64(float64(z>>11)/float64(1<<53)*2) - 1)
+		out[i] = y
+		sum += float64(y * y)
+	}
+	gain := math.Pow(10, db/20) / math.Sqrt(sum/float64(n))
+	pcm := make([]float32, n)
+	for i := range out {
+		pcm[i] = float32(out[i] * gain)
+	}
+	return pcm
+}
+
+// The room rule judges a step against the room's own spread. In a brown room at
+// -50 dBFS a 2 ms window swings far more than twice its average from one window to
+// the next, and a rule that took twice the room's RMS for a step out of the room
+// joined that noise to the hit: 9 of 300 slices started 7 to 21 ms before the attack.
+// None may now, in 60 rooms made of different noise.
+func TestRingingRoomRuleDoesNotJoinTheNoiseOfABrownRoom(t *testing.T) {
+	plain := spaced(t, testwav.Kick, testwav.Layout{Lead: 3, Spacing: 1.5, After: 2, RoomDB: -120}, .55, .50, .60, .52, .58)
+	early, total := 0, 0
+	for seed := uint64(1); seed <= 60; seed++ {
+		noise := brownNoise(len(plain.PCM), -50, seed)
+		pcm := make([]float32, len(noise))
+		for i := range pcm {
+			pcm[i] = plain.PCM[i] + noise[i]
+		}
+		hits, _, err := AnalyzeTakes([]Audio{{PCM: pcm, Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+		if err != nil || len(hits) != 5 {
+			t.Fatalf("seed %d: found %d hits (%v), played 5", seed, len(hits), err)
+		}
+		for i, h := range hits {
+			total++
+			if lead := leadIn(h.Start, 3+1.5*float64(i)); lead > 6.5 {
+				early++
+				t.Errorf("seed %d: hit %d starts %.1f ms before its attack, want 6.5 ms or less", seed, i+1, lead)
+			}
+		}
+	}
+	if total != 300 {
+		t.Errorf("%d hits checked, want 300", total)
 	}
 }
 
@@ -1367,6 +1533,50 @@ func TestRingingTakeThatOpensOnARingAndEndsInRoomToneHasNoRoomTone(t *testing.T)
 		if got, wantLength := hits[i].End-hits[i].Start, want[i].End-want[i].Start; math.Abs(float64(got-wantLength)) > .05*float64(wantLength) {
 			t.Errorf("hit %d is %d frames long, %d without the ring: its tail ended where it passed the ring, not at the room", i+1, got, wantLength)
 		}
+	}
+}
+
+// Export padding in front of the ring take above changes nothing: the take still
+// ends in room tone, so it still has none to open with. The padding is not part of
+// the lead-in, and the quietest stretch of the take, which the padding makes
+// silent, is not what the lead-in is judged against.
+func TestRingingTakeThatOpensOnARingAfterPaddingHasNoRoomTone(t *testing.T) {
+	plain := spaced(t, testwav.Kick, testwav.Layout{Lead: 1.2, Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60, .52, .58)
+	ringing := slices.Clone(plain.PCM)
+	for i := 0; i < int(3.5*48000); i++ {
+		sec := float64(i) / 48000
+		gain := math.Min(1, (3.5-sec)/.3)
+		ringing[i] += float32(math.Pow(10, (-35-2.5*sec)/20) * math.Sqrt2 * gain * math.Sin(2*math.Pi*180*sec))
+	}
+	state := uint64(0xd17)
+	uniform := func() float64 {
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z ^= z >> 31
+		return float64(float64(z>>11)/float64(1<<53)*2) - 1
+	}
+	for _, test := range []struct {
+		name    string
+		seconds float64
+		dither  bool
+	}{{"0.1 s of zeros", .1, false}, {"0.3 s of zeros", .3, false}, {"0.5 s of zeros", .5, false}, {"0.5 s of dither", .5, true}} {
+		t.Run(test.name, func(t *testing.T) {
+			pad := make([]float32, int(test.seconds*48000))
+			if test.dither {
+				for i := range pad {
+					pad[i] = float32((uniform() + uniform()) / 2 / 32768)
+				}
+			}
+			_, reports, err := AnalyzeTakes([]Audio{{PCM: append(pad, ringing...), Rate: 48000}}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r := reports[0]; !r.NoRoomTone || math.Abs(r.NoiseDB+70) > 3 {
+				t.Errorf("no room tone %v, room read at %.1f dBFS; want true and -70", r.NoRoomTone, r.NoiseDB)
+			}
+		})
 	}
 }
 

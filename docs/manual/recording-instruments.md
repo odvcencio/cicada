@@ -172,9 +172,9 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    that tail passes it. A take that opens with a second or more of steady room
    tone is read from that room tone, even if the file ends in silence that an
    export added after the last tail, or in a fade-out, which are quieter than
-   any room. That holds only for a file that ends under -90 dBFS. A take that
-   ends in room tone has its room read from its quietest stretch, so a take
-   that opens on a slow ring and ends in room tone gets the warning. A take
+   any room. That holds only for a file that ends under -90 dBFS, in silence
+   or at the end of a fade-out. A take that ends in room tone has its room
+   read from its quietest stretch, so a take that opens on a slow ring and ends in room tone gets the warning. A take
    that opens on a slow ring and ends in silence is read as if it opened with
    room tone, so let a ring die away before you start recording. A click or a
    knock at the very start, such as the recorder starting, does not break the
@@ -220,14 +220,20 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    sound further ahead is left out. In our tests on 89 recorded kicks, snares,
    toms, hi-hats and hand drums, 50 to 70 dB over the room, the attack landed 2
    to 6 ms into the slice for 996 hits in 1,000, and no slice started after the
-   attack. The command tells a first sound from the room by how far it stands
-   over the room's noise, so soft takes work too: with the hits 45 dB over the
-   room no slice started after the attack, at 40 dB over the room 25 of 2,662
-   slices did, at 35 dB 56, and at 30 dB 147. A first stage that stands only a
-   few dB over the room is lost in it, so record soft takes 40 dB or more over
-   the room where you can. A hit that lands on a ring that is still within
-   26 dB of it can hide its own attack in the ring. In our tests on 23 concert bass drums, timpani and frame drums struck again
-   before they had rung out, 15 slices in 100 started up to 6 ms after the
+   attack. Soft takes lose their first stage in the room: with the hits 45 dB
+   over the room no slice started after the attack, at 40 dB over the room 25 of
+   2,662 slices did, at 35 dB 56, and at 30 dB 153. The command judges a first
+   stage against the room's loudest 2 ms window, and only when the take opens
+   with room tone, so it finds a stage about 8 dB over the room, and one about
+   5 dB over it that stays above the room until the body. That recovered 31 of
+   the 184 late slices at 30 dB over the room, and a few more on bass drums and
+   timpani at 40 dB. In a room with far more low frequencies than high, such as
+   a fan or street noise, it joins less, so that noise is not taken for a first
+   stage. A first stage that stands only a few dB over the room is lost in it,
+   so record soft takes 40 dB or more over the room where you can. A hit that
+   lands on a ring that is still within 26 dB of it can hide its own attack in
+   the ring. In our tests on 23 concert bass drums, timpani and frame drums
+   struck again before they had rung out, 15 slices in 100 started up to 6 ms after the
    attack, and 10 in 100 more than 6 ms before it. Leave those drums more time
    between hits.
 

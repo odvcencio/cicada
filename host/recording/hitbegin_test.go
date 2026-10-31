@@ -162,43 +162,53 @@ func TestHitBeginIsTheFirstStepOfTheLastRunOfSteps(t *testing.T) {
 }
 
 // A first stage or a click out of the room is a step out of quiet whatever the level
-// of the room. Against the 12 ms before it, which are the room, it is only 8 dB over
-// them, 2.5 times, in a soft take: too little for a sharp step, which is four or
-// eight times as loud. It joins the hit, within 16 ms of the next step, when it is
-// a step and the 30 ms before it are no louder than twice the room; a room of 0 is
-// not known, and then nothing does.
+// of the room. Against the 12 ms before it, which are the room, it is only 9 dB over
+// them in a soft take: too little for a sharp step, which is four or eight times as
+// loud. The room here is its loudest 2 ms window. The stage joins the hit, within 16
+// ms of the next step and not next to it, when it is a step, it is 2.5 times as loud
+// as the room, and the 30 ms before it are no louder than 1.25 times the room; a room
+// of 0 is not known, and then nothing does.
 func TestHitBeginJoinsAStepOutOfTheKnownRoom(t *testing.T) {
 	reach := stepWindows(48000, 96)
 	const roomDB = -60
 	room := math.Pow(10, roomDB/20)
 	at := func(over float64) float64 { return roomDB + over }
+	body := []float64{-20, -18, -17}
 	for _, test := range []struct {
 		name  string
 		raw   []float64
 		room  float64
 		begin int
 	}{
-		{"a stage 8 dB over the room, 12 ms ahead", energies(flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 5), []float64{-20, -18, -17}), room, 14},
-		{"a stage 8 dB over the room, 16 ms ahead", energies(flat(roomDB, 12), []float64{at(8)}, flat(roomDB, 7), []float64{-20, -18, -17}), room, 12},
-		{"a stage 8 dB over the room, 18 ms ahead", energies(flat(roomDB, 11), []float64{at(8)}, flat(roomDB, 8), []float64{-20, -18, -17}), room, 20},
-		{"a stage 8 dB over a room that is not known", energies(flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 5), []float64{-20, -18, -17}), 0, 20},
-		{"a stage 14 dB over the room, 12 ms ahead", energies(flat(roomDB, 14), []float64{at(14)}, flat(roomDB, 5), []float64{-20, -18, -17}), room, 14},
-		// The 12 ms before the stage are within twice the room, 6 dB over it, or not.
-		{"a stage after 12 ms at 5 dB over the room", energies(flat(at(5), 14), []float64{at(5 + 8)}, flat(at(5), 5), []float64{-20, -18, -17}), room, 14},
-		{"a stage after 12 ms at 7 dB over the room", energies(flat(at(7), 14), []float64{at(7 + 8)}, flat(at(7), 5), []float64{-20, -18, -17}), room, 20},
+		{"a stage 9 dB over the room, 12 ms ahead", energies(flat(roomDB, 14), []float64{at(9)}, flat(roomDB, 5), body), room, 14},
+		{"a stage 9 dB over the room, 16 ms ahead", energies(flat(roomDB, 12), []float64{at(9)}, flat(roomDB, 7), body), room, 12},
+		{"a stage 9 dB over the room, 18 ms ahead", energies(flat(roomDB, 11), []float64{at(9)}, flat(roomDB, 8), body), room, 20},
+		{"a stage 9 dB over a room that is not known", energies(flat(roomDB, 14), []float64{at(9)}, flat(roomDB, 5), body), 0, 20},
+		{"a stage 14 dB over the room, 12 ms ahead", energies(flat(roomDB, 14), []float64{at(14)}, flat(roomDB, 5), body), room, 14},
+		// A stage 2.5 times as loud as the room, 8 dB, joins on its own. One 1.75 times
+		// as loud, 4.9 dB, joins when it stays above the room until the body, and not
+		// when it falls back; a spike of noise falls back.
+		{"a stage 7.6 dB over the room that falls back", energies(flat(roomDB, 14), []float64{at(7.6)}, flat(at(-3), 5), body), room, 20},
+		{"a stage 8.3 dB over the room that falls back", energies(flat(roomDB, 14), []float64{at(8.3)}, flat(at(-3), 5), body), room, 14},
+		{"a stage 6.5 dB over the room that holds", energies(flat(roomDB, 14), flat(at(6.5), 6), body), room, 14},
+		{"a stage 6.5 dB over the room that dips under it", energies(flat(roomDB, 14), []float64{at(6.5), at(6.5), at(-1), at(6.5), at(6.5), at(6.5)}, body), room, 20},
+		{"a stage 4.5 dB over the room that holds", energies(flat(roomDB, 14), flat(at(4.5), 6), body), room, 20},
+		// The 30 ms before it are within 1.25 times the room, 1.9 dB over it, or not.
+		{"a stage after 12 ms at 1 dB over the room", energies(flat(at(1), 14), []float64{at(10)}, flat(at(1), 5), body), room, 14},
+		{"a stage after 12 ms at 3 dB over the room", energies(flat(at(3), 14), []float64{at(12)}, flat(at(3), 5), body), room, 20},
 		// A window next to the body is the rise of the attack itself; a stage 4 ms ahead
 		// of it, two windows, is part of the hit.
-		{"a stage next to the body", energies(flat(roomDB, 19), []float64{at(8)}, []float64{-20, -18, -17}), room, 20},
-		{"a stage two windows before the body", energies(flat(roomDB, 18), []float64{at(8)}, flat(roomDB, 1), []float64{-20, -18, -17}), room, 18},
-		{"a stage three windows before the body", energies(flat(roomDB, 17), []float64{at(8)}, flat(roomDB, 2), []float64{-20, -18, -17}), room, 17},
+		{"a stage next to the body", energies(flat(roomDB, 19), []float64{at(9)}, body), room, 20},
+		{"a stage two windows before the body", energies(flat(roomDB, 18), []float64{at(9)}, flat(roomDB, 1), body), room, 18},
+		{"a stage three windows before the body", energies(flat(roomDB, 17), []float64{at(9)}, flat(roomDB, 2), body), room, 17},
 		// And the 30 ms before it: a bump in a tail that was 8 dB over the room 28 ms
 		// ago is no step out of the room, and one 30 ms ago is.
-		{"a stage 28 ms after a tail 8 dB over the room", energies(flat(at(8), 2), flat(roomDB, 14), []float64{at(8)}, flat(roomDB, 3), []float64{-20, -18, -17}), room, 20},
-		{"a stage 30 ms after a tail 8 dB over the room", energies(flat(at(8), 1), flat(roomDB, 15), []float64{at(8)}, flat(roomDB, 3), []float64{-20, -18, -17}), room, 16},
+		{"a stage 28 ms after a tail 8 dB over the room", energies(flat(at(8), 2), flat(roomDB, 14), []float64{at(9)}, flat(roomDB, 3), body), room, 20},
+		{"a stage 30 ms after a tail 8 dB over the room", energies(flat(at(8), 1), flat(roomDB, 15), []float64{at(9)}, flat(roomDB, 3), body), room, 16},
 		// A step has to be twice the 12 ms before it.
-		{"a bump 5 dB over a quiet room", energies(flat(roomDB, 14), []float64{at(5)}, flat(roomDB, 5), []float64{-20, -18, -17}), room, 20},
+		{"a bump 5 dB over a quiet room", energies(flat(roomDB, 14), []float64{at(5)}, flat(roomDB, 5), body), room, 20},
 		// It still has to reach a two-hundredth of the hit's loudest window, 46 dB down.
-		{"a stage under a two-hundredth of the hit", energies(flat(-80, 14), []float64{-72}, flat(-80, 5), []float64{-20, -18, -17}), math.Pow(10, -80.0/20), 20},
+		{"a stage under a two-hundredth of the hit", energies(flat(-80, 14), []float64{-71}, flat(-80, 5), body), math.Pow(10, -80.0/20), 20},
 		// A bump in a tail 30 dB over the room is no step out of the room.
 		{"a bump in a tail", energies(flat(at(30), 14), []float64{at(38)}, flat(at(30), 5), []float64{-14, -12, -11}), room, 20},
 	} {
