@@ -423,7 +423,7 @@ Cicada embeds four MIT-licensed source libraries in its host binary. Use
 | --- | --- | --- |
 | `std/synth` | `glassbass`, `nightbass`, `tymbal`, `subline`, `glass` graph instruments | [Standard synth](../../examples/std-synth/main.cicada) |
 | `std/drums` | `kick`, `circuit-kick`, `snare`, `hat`; authored `steel` and `circuit` kits | [Standard drums](../../examples/std-drums/main.cicada) |
-| `std/drum-machines` | `eight-oh-eight`, `nine-oh-nine`; original circuit-inspired drum kits | [Classic Drum Study](../../examples/drum-machines/main.cicada) |
+| `std/drum-machines` | `boom-kit`, `punch-kit`; original drum kits (older names `eight-oh-eight`, `nine-oh-nine` still work) | [Classic Drum Study](../../examples/drum-machines/main.cicada) |
 | `std/fx` | `drive`, `delay`, `reverb`, `comp` defaults for inserts, sends, and bus compression | [Standard effects](../../examples/std-fx/main.cicada) |
 | `std/presets` | `acid-squelch`, `acid-round`, `acid-bite`; built-in drum-kit `kit-tight`, `kit-roomy`, `kit-lofi` presets | [Standard presets](../../examples/std-presets/main.cicada) |
 
