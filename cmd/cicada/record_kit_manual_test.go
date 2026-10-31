@@ -201,6 +201,8 @@ func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 		"A click or a knock at the very start, such as the recorder starting, does not break the room tone if some 200 ms of the first half second is as quiet as the rest of it.",
 		"Digital silence at the start of a file, which an export that begins before your clip adds, does not count as room tone: the room tone is what follows it.",
 		"It reads that level as the tail's average over the 90 ms before the last 4 ms of the hit",
+		"That holds only for a file that ends under -90 dBFS. A take that ends in room tone has its room read from its quietest stretch, so a take that opens on a slow ring and ends in room tone gets the warning.",
+		"Dither does not count either when it is under -90 dBFS, as plain 16-bit dither is",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the guide lacks %q", want)
@@ -229,6 +231,26 @@ func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 		if err != nil || reports[0].NoRoomTone || math.Abs(reports[0].NoiseDB+70) > 3 {
 			t.Errorf("%s: %+v (%v); the guide says the room tone is found and read at -70 dBFS", test.name, reports, err)
 		}
+	}
+	// A take that opens on a slow ring and ends in room tone gets the warning, as the
+	// guide says; the same ring is not told from room tone when the file ends in silence.
+	slow, err := recording.DecodeWAV(testwav.Spaced(48000, testwav.Kick, testwav.Layout{Lead: 1.2, Spacing: 1.5, After: 2, RoomDB: -70}, .55, .50, .60, .52, .58))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ringing := append([]float32(nil), slow.PCM...)
+	for i := 0; i < int(3.5*48000); i++ {
+		sec := float64(i) / 48000
+		gain := math.Min(1, (3.5-sec)/.3)
+		ringing[i] += float32(math.Pow(10, (-35-2.5*sec)/20) * math.Sqrt2 * gain * math.Sin(2*math.Pi*180*sec))
+	}
+	_, ringReports, err := recording.AnalyzeTakes([]recording.Audio{{PCM: ringing, Rate: 48000}}, recording.Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil || !ringReports[0].NoRoomTone || math.Abs(ringReports[0].NoiseDB+70) > 3 {
+		t.Errorf("a slow ring, then room tone: %+v (%v); the guide says the take gets the warning and its room is read at -70 dBFS", ringReports, err)
+	}
+	_, silentReports, err := recording.AnalyzeTakes([]recording.Audio{{PCM: append(ringing, silence...), Rate: 48000}}, recording.Options{Root: 36, Layers: 1, Ringing: true})
+	if err != nil || silentReports[0].NoRoomTone {
+		t.Errorf("a slow ring, then silence: %+v (%v); the guide says this take is read as if it opened with room tone", silentReports, err)
 	}
 	// The drums of the guide's kit, a second or more apart in a quiet room after
 	// three seconds of silence: a cymbal and the open hi-hat need longer.

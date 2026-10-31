@@ -47,14 +47,18 @@ import (
 //
 // The room's noise is read from the quietest 200 ms of each recording. When the
 // recording opens with a second or more of steady room tone and ends in something
-// quieter than any room, it is read from that room tone instead. The lead-in is
-// steady when its quietest 200 ms within the first half second is as quiet as its
-// quietest 200 ms anywhere in it, so a noise near the start, such as the click of
-// starting the recorder, does not break it, and a ring that is dying away does.
-// Digital silence at the very start, which an export that begins before the clip
-// adds, is skipped: the room tone is what follows it. TakeReport.NoRoomTone says
-// when the recording does not open with room tone, where the quietest 200 ms may
-// be a tail.
+// quieter than any room, under -90 dBFS, such as digital silence or a fade-out, it
+// is read from that room tone instead. The lead-in is steady when its quietest 200
+// ms within the first half second is as quiet as its quietest 200 ms anywhere in
+// it, so a noise near the start, such as the click of starting the recorder, does
+// not break it, and a ring that is dying away does, when it falls more than 2 dB
+// over the lead-in. A ring that falls less is as steady as room tone, and is told
+// from it only by an end that is room tone: a recording that opens on such a ring
+// and ends in silence is read as if it had room tone. Padding at the very start,
+// which an export that begins before the clip adds, is skipped: it is digital
+// silence or dither, under -90 dBFS, and the room tone is what follows it, when that
+// is ten times as loud. TakeReport.NoRoomTone says when the recording does not open
+// with room tone, where the quietest 200 ms may be a tail.
 //
 // A hit keeps its tail until the energy is 60 dB below the recording's loudest hit,
 // or twice the noise floor when that is higher. If the next hit or the end of the
@@ -105,13 +109,14 @@ type TakeReport struct {
 	// 200 ms of the recording, so it reads the tail of the last hit when the
 	// recording has no quiet stretch. A recording that opens with a second or
 	// more of steady room tone and ends in silence or a fade-out, which is
-	// quieter than any room, has its room read from the room tone instead.
+	// quieter than any room (under -90 dBFS), has its room read from the room
+	// tone instead.
 	NoiseDB float64
 	// NoRoomTone is set in ringing mode when the recording does not open with
 	// room tone: 200 ms as quiet as the quietest 200 ms, or a second or more
 	// that holds steady, before the first sound that stands clear of the room.
-	// Digital silence at the very start is no room tone; the tone that follows
-	// it is. The quietest 200 ms stands in for the room when there is none, and
+	// Padding at the very start, digital silence or dither under -90 dBFS, is no
+	// room tone; the tone that follows it is. The quietest 200 ms stands in for the room when there is none, and
 	// it may be a tail that was still ringing when the recording stopped.
 	NoRoomTone bool
 	// NoQuiet is set in ringing mode when the quietest 200 ms lies within
@@ -154,7 +159,8 @@ const (
 	ringLeadInSteady   = 1.3  // a lead-in holds steady when its quietest stretch near the start is within this factor of its quietest
 	ringLeadInSound    = 3    // the first sound of a recording is this many times louder than the room
 	ringCloseRoom      = .1   // a room louder than this fraction of the loudest energy leaves the hits too little to stand on
-	ringDigitalSilence = 1e-6 // energy under this, -120 dBFS, is digital silence
+	ringBelowRoom      = 3e-5 // energy under this, -90 dBFS, is no room: a room is louder, even a quiet one, and dither is under it
+	ringPaddingOver    = 10   // padding at the start is this many times quieter than the room tone after it
 )
 
 // Where a hit begins, in milliseconds and in fractions of the hit's loudest 2 ms
@@ -462,30 +468,58 @@ func quietestStretch(energy []float64, n int) float64 {
 //
 // A recording can also be quieter at its end than at its start: it may end in
 // digital silence, as an export that runs past the last tail does, or in a
-// fade-out. Its quietest stretch is then no room at all. A lead-in that lasts
-// ringLeadInSteadyMS or more holds steady, as a ring that is dying away does not,
-// when its quietest stretch within the first ringLeadInHeadMS is as quiet as its
-// quietest stretch: a noise near the start, such as the click of starting the
-// recorder, leaves quieter stretches after it. That lead-in is the room tone, and
-// the room is its quietest stretch.
+// fade-out. Its quietest stretch is then no room at all, and it is under
+// ringBelowRoom, which no room is. Only then is a lead-in that lasts
+// ringLeadInSteadyMS or more the room tone when it holds steady, as a ring that is
+// dying away does not: when its quietest stretch within the first ringLeadInHeadMS
+// is as quiet as its quietest stretch. A noise near the start, such as the click of
+// starting the recorder, leaves quieter stretches after it. The room is the
+// lead-in's quietest stretch. A recording that ends in room tone has its lead-in
+// judged against that room alone, however steady the lead-in is, so that a slow
+// ring at its start is not taken for the room.
 //
-// An export that starts before the clip begins with digital silence. That is no
-// room: when n values of tone follow it before the first sound, the recording is
-// judged from there. Digital silence alone before the first sound is the room of a
-// recording that was gated to silence, and is read as it is.
+// An export that starts before the clip begins with padding, digital silence or
+// dither, under ringBelowRoom. That is no room: when n values of tone follow it,
+// ringPaddingOver times as loud, and n values of it come before the first sound, the
+// recording is judged from there. Digital silence alone before the first sound is
+// the room of a recording that was gated to silence, and is read as it is.
 func roomTone(energy []float64, loudest float64, n int, quietest float64) (float64, bool) {
-	if padding := slices.IndexFunc(energy, func(e float64) bool { return e >= ringDigitalSilence }); padding > 0 {
-		trimmed := energy[padding:]
+	if pad := padding(energy, n); pad > 0 {
+		trimmed := energy[pad:]
 		room := quietestStretch(trimmed, n)
 		if first := firstSound(trimmed, loudest, room); first >= n {
-			return leadInRoom(trimmed[:first], n, room)
+			return leadInRoom(trimmed[:first], n, room, quietest)
 		}
 	}
 	first := firstSound(energy, loudest, quietest)
 	if first < n {
 		return quietest, false
 	}
-	return leadInRoom(energy[:first], n, quietest)
+	return leadInRoom(energy[:first], n, quietest, quietest)
+}
+
+// padding returns how many values at the start of energy are padding: an export
+// that starts before the clip begins with digital silence or with dither, noise
+// under ringBelowRoom. They are padding when the n values after them are at least
+// ringPaddingOver times as loud as they are.
+func padding(energy []float64, n int) int {
+	pad := slices.IndexFunc(energy, func(e float64) bool { return e >= ringBelowRoom })
+	if pad <= 0 || pad+n > len(energy) {
+		return 0
+	}
+	if windowsRMS(energy[pad:pad+n]) < windowsRMS(energy[:pad])*ringPaddingOver {
+		return 0
+	}
+	return pad
+}
+
+// windowsRMS returns the root mean square of values.
+func windowsRMS(values []float64) float64 {
+	var sum float64
+	for _, v := range values {
+		sum += mul(v, v)
+	}
+	return math.Sqrt(sum / float64(len(values)))
 }
 
 // firstSound returns where the first sound begins in energy: the first value that
@@ -497,14 +531,16 @@ func firstSound(energy []float64, loudest, quietest float64) int {
 }
 
 // leadInRoom judges the lead-in of at least n values before the first sound, as
-// roomTone describes, against the quietest stretch of n values of the recording.
-func leadInRoom(lead []float64, n int, quietest float64) (float64, bool) {
+// roomTone describes, against quietest, the quietest stretch of n values of the
+// recording after any padding. The recording's quietest stretch, padding
+// included, is overall: it is what the steady lead-in is judged against.
+func leadInRoom(lead []float64, n int, quietest, overall float64) (float64, bool) {
 	room := quietestStretch(lead, n)
 	head := min(len(lead), n*ringLeadInHeadMS/ringRoomMS)
 	switch {
 	case room <= quietest*ringLeadInOverRoom:
 		return quietest, true
-	case len(lead) >= n*ringLeadInSteadyMS/ringRoomMS && quietestStretch(lead[:head], n) <= room*ringLeadInSteady:
+	case overall < ringBelowRoom && len(lead) >= n*ringLeadInSteadyMS/ringRoomMS && quietestStretch(lead[:head], n) <= room*ringLeadInSteady:
 		return room, true
 	}
 	return quietest, false

@@ -172,12 +172,20 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    that tail passes it. A take that opens with a second or more of steady room
    tone is read from that room tone, even if the file ends in silence that an
    export added after the last tail, or in a fade-out, which are quieter than
-   any room. A click or a knock at the very start, such as the recorder
-   starting, does not break the room tone if some 200 ms of the first half
-   second is as quiet as the rest of it. Digital silence at the start of a
-   file, which an export that begins before your clip adds, does not count as
-   room tone: the room tone is what follows it. The command also warns when no
-   part of a take is quiet, or the room is within 20 dB of the loudest sound.
+   any room. That holds only for a file that ends under -90 dBFS. A take that
+   ends in room tone has its room read from its quietest stretch, so a take
+   that opens on a slow ring and ends in room tone gets the warning. A take
+   that opens on a slow ring and ends in silence is read as if it opened with
+   room tone, so let a ring die away before you start recording. A click or a
+   knock at the very start, such as the recorder starting, does not break the
+   room tone if some 200 ms of the first half second is as quiet as the rest of
+   it. Digital silence at the start of a file, which an export that begins
+   before your clip adds, does not count as room tone: the room tone is what
+   follows it. Dither does not count either when it is under -90 dBFS, as plain
+   16-bit dither is, and the room tone after it is ten times as loud;
+   noise-shaped dither is louder, and is read as room tone, so export without
+   it. The command also warns when no part of a take is quiet, or the room is
+   within 20 dB of the loudest sound.
    Hits must start at least half a second apart. That is stricter than
    `record-pack`'s 120 ms rule, because bass drums and toms swell again after
    the first impact, and the command must not count the swell as a second hit.
