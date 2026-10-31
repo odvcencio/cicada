@@ -754,6 +754,69 @@ func TestRingingCutIsReportedOnATailThatBeatsAtTheCut(t *testing.T) {
 	}
 }
 
+// A tom that beats slowly swells and fades every 80 to 250 ms, and a lull of that
+// tail at the cut is longer than 30 ms. The tail's level is read over 90 ms, which
+// reaches across the lull at 4 Hz and faster, so a cut tail that is 3 dB or more over
+// the limit over one beat is reported at every spacing. A tail that only decays is
+// not reported when it is 3 dB or more under the limit at the cut, though it reads
+// a little above its level there.
+func TestRingingCutIsReportedOnATailThatBeatsSlowlyAtTheCut(t *testing.T) {
+	levels := []float64{.60, .55, .65, .58, .50}
+	const rate = 48000
+	var cuts, missed int
+	for _, beat := range []float64{4, 6, 8, 12} {
+		for gapMS := 1000; gapMS <= 1100; gapMS += 10 {
+			audio := beatingTake(3, float64(gapMS)/1000, beat, .95, .2, levels...)
+			hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil || len(hits) != len(levels) {
+				t.Fatalf("%.0f Hz beat, hits %d ms apart: found %d (%v), played %d", beat, gapMS, len(hits), err, len(levels))
+			}
+			limit := reports[0].QuietDB + 20*math.Log10(ringCutMargin)
+			for i := 0; i+1 < len(hits); i++ {
+				h := hits[i]
+				if h.End != hits[i+1].Start {
+					continue // the tail finished before the next hit
+				}
+				// The source over one beat that ends 4 ms before the cut.
+				span := int(rate / beat)
+				var sum float64
+				for _, x := range audio.PCM[h.End-4*rate/1000-span : h.End-4*rate/1000] {
+					sum += mul(float64(x), float64(x))
+				}
+				tail := 10 * math.Log10(sum/float64(span))
+				if tail < limit+3 {
+					continue
+				}
+				cuts++
+				if !h.Cut {
+					missed++
+					t.Errorf("%.0f Hz beat, hits %d ms apart: hit %d was cut at a tail of %.1f dBFS over a beat, %.1f dB over the limit of %.1f dBFS, and not reported", beat, gapMS, i+1, tail, tail-limit, limit)
+				}
+			}
+		}
+	}
+	if cuts < 100 {
+		t.Errorf("%d cuts are 3 dB or more over the limit; the test needs 100 to say anything", cuts)
+	}
+	for _, tau := range []float64{.15, .2} {
+		for gapMS := 600; gapMS <= 1300; gapMS += 25 {
+			audio := beatingTake(3, float64(gapMS)/1000, 30, 0, tau, levels...)
+			hits, reports, err := AnalyzeTakes([]Audio{audio}, Options{Root: 36, Layers: 1, Ringing: true})
+			if err != nil || len(hits) != len(levels) {
+				t.Fatalf("decay %.2f s, hits %d ms apart: found %d (%v), played %d", tau, gapMS, len(hits), err, len(levels))
+			}
+			limit := reports[0].QuietDB + 20*math.Log10(ringCutMargin)
+			energy := smoothed(audio.PCM, rate)
+			for i := 0; i+1 < len(hits); i++ {
+				h := hits[i]
+				if now := dB(energy[(h.End-1)/(rate/500)-2]); h.Cut && h.End == hits[i+1].Start && now < limit-3 {
+					t.Errorf("decay %.2f s, hits %d ms apart: hit %d was reported cut with its tail %.1f dB under the limit at the cut", tau, gapMS, i+1, limit-now)
+				}
+			}
+		}
+	}
+}
+
 // A recording that starts in the middle of a ring has no room tone: the ring
 // before the first hit is far above the room, though far below the loudest
 // sound, and must not be taken for the room. The take here starts six seconds

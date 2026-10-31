@@ -196,10 +196,12 @@ Any note from 12 to 95 (`c0` to `b6`) works, so a splash (55) or a second crash
    the end of the file, comes first, the command cuts the hit there and fades it
    out over 5 ms. If the tail was still more than 6 dB above the level where
    tails end, the command warns you and gives the level at the cut. It reads
-   that level as the tail's average over the 30 ms before the last 4 ms of the
-   hit, which is about one beat of a tom or a kick whose tail swells and fades
-   against itself, so a lull at the cut does not hide a tail that is still
-   ringing. Leave more time and record that take again.
+   that level as the tail's average over the 90 ms before the last 4 ms of the
+   hit, which spans a beat of a tom or a kick whose tail swells and fades
+   against itself at 4 Hz or faster, so a lull at the cut does not hide a tail
+   that is still ringing. A tail that beats at 3 Hz or slower can still hide in
+   a lull, and a tail that dies away fast may read a few dB above its level at
+   the cut. Leave more time and record that take again.
 
    Each hit's slice starts 3 to 5 ms before its attack, whatever its tail was
    doing before the hit, so the sampler plays the hit when its note starts and

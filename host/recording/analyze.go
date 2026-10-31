@@ -60,9 +60,11 @@ import (
 // or twice the noise floor when that is higher. If the next hit or the end of the
 // recording comes first, the tail is cut there and fades out over 5 ms; the hit is
 // marked Cut when the tail was still more than 6 dB above that level. The tail's
-// level is its average over the 30 ms that end 4 ms before the cut, about one beat
-// of a tail that swells and fades against itself, so a lull at the cut does not
-// hide a tail that is still ringing.
+// level is its average over the 90 ms that end 4 ms before the cut, which spans the
+// lull of a tail that swells and fades against itself at 4 Hz or faster, so a lull
+// at the cut does not hide a tail that is still ringing. A tail that beats more
+// slowly, at 3 Hz or less, can still hide in a lull, and a tail that falls 80 dB a
+// second or faster reads a few dB above its level at the cut.
 type Options struct {
 	Root      int  `json:"root"`
 	Layers    int  `json:"layers"`
@@ -87,7 +89,7 @@ type Hit struct {
 	// Cut is set in ringing mode when the next hit, or the end of the
 	// recording, ended this hit while its tail was still more than 6 dB above
 	// the level at which tails count as finished. CutDB is the tail's level at
-	// the cut, in dBFS of the source recording: its average over the 30 ms that
+	// the cut, in dBFS of the source recording: its average over the 90 ms that
 	// end 4 ms before the cut.
 	Cut   bool      `json:"cut,omitempty"`
 	CutDB float64   `json:"cutDB,omitempty"`
@@ -136,7 +138,7 @@ const (
 	ringRecentMS = 100 // a new hit must beat the loudest energy from this long before it until 10 ms before it
 	cutFadeMS    = 5   // a hit that is cut off fades out over this time
 	cutSkipMS    = 4   // the level of a cut tail leaves out this long at the cut, where a hit that began late may already rise
-	cutReadMS    = 30  // and reads this long before it: about one beat of a tail that beats against itself
+	cutReadMS    = 90  // and reads this long before it, which spans the lulls of a tail that beats against itself at 4 Hz or faster
 
 	ringPrerollMS      = 3    // a slice starts this long before the 2 ms window in which its hit began
 	ringLeadInSteadyMS = 1000 // a lead-in this long that holds steady is room tone even when the recording is quieter elsewhere
@@ -516,7 +518,7 @@ func cutWindows(rate, hop int) (skip, read int) {
 
 // tailLevel reads the level of a tail that was cut off at frame end, for a hit
 // whose first window is first. A tail that beats against itself swells and fades
-// every 30 ms or so, and its lowest value in a few milliseconds lies in a lull,
+// every 250 ms or less, and its lowest value in a few milliseconds lies in a lull,
 // several dB under the level it keeps for the rest of the beat. So the level is the
 // power mean of the energy over the read windows that end skip windows before the
 // cut: the next hit may have begun in the last few milliseconds, and its rise would

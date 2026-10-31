@@ -200,7 +200,7 @@ func TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs(t *testing.T) {
 		"A take that opens with a second or more of steady room tone is read from that room tone, even if the file ends in silence that an export added after the last tail, or in a fade-out, which are quieter than any room.",
 		"A click or a knock at the very start, such as the recorder starting, does not break the room tone if some 200 ms of the first half second is as quiet as the rest of it.",
 		"Digital silence at the start of a file, which an export that begins before your clip adds, does not count as room tone: the room tone is what follows it.",
-		"It reads that level as the tail's average over the 30 ms before the last 4 ms of the hit",
+		"It reads that level as the tail's average over the 90 ms before the last 4 ms of the hit",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the guide lacks %q", want)
