@@ -3,7 +3,10 @@ package recording
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -182,4 +185,116 @@ func TestManifestWireFormat(t *testing.T) {
 	if config["Humanize"].(map[string]any)["Seed"] != "0" {
 		t.Fatal("exact seed")
 	}
+}
+
+// A pack folder is reused only when every generated file is identical, so the
+// numbers of an analysis may not depend on the machine. Go lets a compiler fuse
+// x*y+z into one instruction with another last digit, and arm64 and GOAMD64=v3
+// builds do; analyze.go forbids it with explicit conversions. The digest below
+// covers what a fused sum of products would change in the output: the pitch and
+// confidence that come from autocorrelation sums, the hit boundaries and peaks,
+// and every sample of every hit, for tapped, pitched and ringing recordings. It
+// was taken on a build that does not fuse. Run the test with GOAMD64=v3 to see
+// that a fusing build gives the same digest, and with a conversion removed from
+// estimatePitch to see that it then does not. The energy sums can differ only
+// in digits far below what any decision reads, so no digest can see them.
+//
+// The recordings come from integer arithmetic alone, and the digest leaves out
+// logarithms: the Go math library may end a result in another last digit on
+// another processor, and the digest must not depend on that.
+func TestAnalysisDoesNotDependOnFusedMultiplyAdd(t *testing.T) {
+	sum := sha256.New()
+	add := func(values ...float64) {
+		for _, v := range values {
+			binary.Write(sum, binary.LittleEndian, math.Float64bits(v))
+		}
+	}
+	addHits := func(hits []Hit) {
+		add(float64(len(hits)))
+		for _, h := range hits {
+			add(float64(h.Input), float64(h.Start), float64(h.End), h.Peak, h.PitchHz, h.Confidence, float64(h.Root))
+			if h.Cut {
+				add(1)
+			}
+			for _, x := range h.PCM {
+				add(float64(x))
+			}
+		}
+	}
+	taps, err := Analyze([]Audio{fixture(t)}, Options{Root: 60, Layers: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addHits(taps)
+	pitched, err := Analyze([]Audio{{PCM: integerNote(), Rate: 48000}}, Options{Root: 60, Layers: 3, AutoPitch: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addHits(pitched)
+	cut, reports, err := AnalyzeTakes([]Audio{{PCM: integerCrashes(), Rate: 48000}}, Options{Root: 49, Layers: 1, Ringing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addHits(cut)
+	add(float64(reports[0].Merged))
+	const want = "e3d5eee81329362ff68067c9e2ad899f992873858d9c60d60f2e90bd5c202d22"
+	if got := fmt.Sprintf("%x", sum.Sum(nil)); got != want {
+		t.Fatalf("analysis digest %s, want %s: the numbers of an analysis changed; if the change is meant, take the new digest from a build that does not fuse", got, want)
+	}
+}
+
+// xorshift is an integer generator, so a recording made with it is the same on
+// every processor.
+type xorshift uint64
+
+// next returns a signed 24-bit sample.
+func (s *xorshift) next() int64 {
+	x := uint64(*s)
+	x ^= x << 13
+	x ^= x >> 7
+	x ^= x << 17
+	*s = xorshift(x)
+	return int64(x>>40) - 1<<23
+}
+
+// integerNote is a triangle wave at 200 Hz that starts 10 ms into a third of a
+// second and fades out in a straight line over a sixth of a second, then stops.
+func integerNote() []float32 {
+	const period, length = 240, 48000 / 6
+	pcm := make([]float32, 48000/3)
+	for i := 0; i < length; i++ {
+		phase := i % period
+		tri := phase - period/4 // a triangle between -60 and 60
+		if phase >= period/2 {
+			tri = 3*period/4 - phase
+		}
+		pcm[480+i] = float32(tri*(length-i)) / 5e5
+	}
+	return pcm
+}
+
+// integerCrashes is three cymbal strikes four seconds apart in 10.5 s, each
+// swelling over 12 ms and fading with a time constant of 2 s, so that every
+// tail runs on under the next strike, over a faint room.
+func integerCrashes() []float32 {
+	const rate, rise = 48000, 48000 * 12 / 1000
+	pcm := make([]int64, rate*21/2)
+	room, noise := xorshift(0x5eed), xorshift(0xc0ffee)
+	for i := range pcm {
+		pcm[i] = room.next() / 4096
+	}
+	for k, level := range []int64{550, 500, 600} {
+		at := rate/2 + k*4*rate
+		decay := int64(1) << 30
+		for i := 0; at+i < len(pcm); i++ {
+			swell := decay * int64(min(i, rise)) / rise
+			pcm[at+i] += (noise.next() * swell >> 30) * level / 1000
+			decay -= decay / (2 * rate)
+		}
+	}
+	out := make([]float32, len(pcm))
+	for i, v := range pcm {
+		out[i] = float32(v) / (1 << 23)
+	}
+	return out
 }
