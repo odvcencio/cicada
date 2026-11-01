@@ -201,7 +201,8 @@ replaces and arms the list; later positions append or replace an entry.
 Patterns finish before the chain begins, and each entry plays its pattern for
 the requested number of full cycles. Seek restarts a configured chain from
 its first entry. A direct pattern selection or scene assignment takes over
-that track. Source-level `chain` declarations are not supported.
+that track. Scores can also declare source-level chains; see
+[Pattern grids and tuplets](../spec/features.md#pattern-grids-and-tuplets).
 
 A layer-mask command can mute tracks at the scheduled bar while their
 sequencers and voices keep advancing. At a quantized switch, a sliding note

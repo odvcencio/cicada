@@ -13,11 +13,14 @@ GOWORK=off make build-demo-browser
 ```
 
 Open `http://127.0.0.1:8170` and press **Play in browser**. Choose an
-instrument sketch or edit the score and press **Apply score**. Applying a
-score stops playback and initializes a fresh kernel before Play is enabled
-again. Undo and Redo restore validated scores; Reset clears the edit history.
-Reloading starts a new session. The sketches target about −20 LUFS, and
-Volume starts at 75%.
+instrument sketch or edit the score and press **Apply score**. While playing,
+the validated score is staged and takes effect at the next bar; invalid edits
+leave the playing score alone. Undo and Redo restore validated scores; Reset
+clears the edit history.
+Reloading starts a new session and restores the last applied score and editor
+draft from this browser, including drafts that have not yet been applied.
+Undo and Redo history does not survive a reload. The sketches target about
+−20 LUFS, and Volume starts at 75%.
 
 For a short first score, choose **Marimba**. Change a note in `pattern phrase`
 or change the tempo, then apply the score. In the editor, Ctrl+Enter (or
@@ -30,8 +33,12 @@ instruments, authored synths and `acid` play.
 
 Score parsing and compilation run in a separate Go/WASM module on the page;
 the audio kernel runs on the worklet thread. These are separate downloads.
-The score tools load once per visit. Scores stay in the tab: the demo does
-not upload, save, or export them. External file imports are unavailable.
+The score tools load once per visit. Drafts are stored locally in the browser;
+the page reports when storage is unavailable. **Open score** reads a UTF-8
+score of up to 128 KiB from your device into the editor, and **Download score**
+saves the current editor text, including unapplied edits. Neither sends a score
+to the server. External score imports, instrument assets, and audio export are
+unavailable.
 Stop, focus loss, a hidden tab, and AudioContext suspension stop the transport.
 Press Play to resume suspended audio and finish loading the fresh kernel image.
 

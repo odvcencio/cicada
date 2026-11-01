@@ -147,8 +147,8 @@ func TestImmutablePlaybackAssetsAndHeaders(t *testing.T) {
 		if w.Header().Get("Access-Control-Allow-Origin") != "" || w.Header().Get("Content-Disposition") != "" {
 			t.Fatal("unexpected CORS/download header")
 		}
-		if !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox allow-scripts allow-same-origin") || strings.Contains(w.Header().Get("Content-Security-Policy"), "allow-downloads") {
-			t.Fatal("download sandbox absent")
+		if !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox allow-scripts allow-same-origin allow-downloads") {
+			t.Fatal("score download sandbox policy absent")
 		}
 		if !strings.Contains(w.Header().Get("Permissions-Policy"), "microphone=(self)") {
 			t.Fatal("browser permission policy absent")
