@@ -77,15 +77,16 @@ type SwingGroup struct {
 }
 
 type BarReport struct {
-	Bar          int      `json:"bar"`
-	WrittenNotes []string `json:"written_notes"`
-	Written      string   `json:"written"`
-	Heard        string   `json:"heard"`
-	HeardFit     float64  `json:"heard_fit"`
-	MixRMSdBFS   float64  `json:"mix_rms_dbfs"`
-	AudibilityDB float64  `json:"audibility_db"` // pitched stems vs whole mix, 125 Hz to 2 kHz
-	Masked       bool     `json:"masked"`        // audibility_db below -15
-	Match        string   `json:"match"`         // agree, disagree, no-written-pitch, silent
+	Bar          int           `json:"bar"`
+	WrittenNotes []string      `json:"written_notes"`
+	Written      string        `json:"written"`
+	Heard        string        `json:"heard"`
+	HeardFit     float64       `json:"heard_fit"`
+	MixRMSdBFS   float64       `json:"mix_rms_dbfs"`
+	Stereo       *StereoReport `json:"stereo,omitempty"` // nil when the bar is silent
+	AudibilityDB float64       `json:"audibility_db"`    // pitched stems vs whole mix, 125 Hz to 2 kHz
+	Masked       bool          `json:"masked"`           // audibility_db below -15
+	Match        string        `json:"match"`            // agree, disagree, no-written-pitch, silent
 }
 
 type TrackReport struct {
@@ -366,6 +367,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		aud := bandDB(bp, bm)
 		br := BarReport{Bar: opts.From + b + 1, WrittenNotes: []string{}, Written: name, Heard: heard.Name, HeardFit: heard.Score,
 			MixRMSdBFS: round(rmsDB(mix.Slice(lo, hi)), 1), AudibilityDB: round(aud, 1), Masked: aud < maskedBelowDB}
+		br.Stereo = measureStereo(mix.Slice(lo, hi))
 		if br.Masked {
 			r.MaskedBars++
 		}

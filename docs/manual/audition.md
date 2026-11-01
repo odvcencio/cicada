@@ -199,3 +199,7 @@ Note starts come from spectral flux and miss soft notes under loud ones.
 `decay20` stops at the next detected attack, so a very dense part reports a
 short gap. Written chords use onsets only: a note held from an earlier bar does
 not count. Energy below 125 Hz does not affect the heard chord. A sampler that plays drum hits counts as pitched.
+
+### Stereo compatibility per bar
+
+Each non-silent bar includes `stereo.channel_correlation` (uncentered L/R correlation, null if either channel has no energy) and `stereo.mono_vs_stereo_db` (RMS of `(L+R)/2` relative to stereo RMS, floored at -120 dB). Silent bars omit `stereo`. These are whole-band, bar-averaged indicators, not a perceptual quality score: short cancellations and frequency-specific issues can be hidden. Audition the mono mix and inspect shorter windows when needed. Measurements use the rendered audition master, not an external encoded delivery.
