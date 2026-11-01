@@ -14,7 +14,7 @@ import (
 type studioTransportInput struct {
 	Action, Scene, Revision, Track, Pattern string
 	Entry                                   int
-	Quantize                                uint32
+	Quantize                                *uint32 `json:",omitempty"`
 	Placement, Section, Start, End, Mode    string
 	Loop                                    bool
 }

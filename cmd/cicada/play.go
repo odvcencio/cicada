@@ -230,9 +230,14 @@ func compileLiveProjectCapped(path string, p *project.Project, sampleRate int, l
 		song[i] = liveplay.SongEntry{Scene: entry.Scene, StartBar: startBar}
 		startBar += uint32(entry.Bars)
 	}
+	phraseBars := 0
+	if p.Live != nil {
+		phraseBars = p.Live.PhraseBars
+	}
 	return liveplay.Score{
 		Engine: created, SampleRate: sampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
-		SceneIDs: sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p, created),
+		PhraseBars: phraseBars,
+		SceneIDs:   sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p, created),
 		HasReturnA: cfg.DelayA != nil, HasReturnB: cfg.ReverbB != nil, HasSFX: hasSFXTracks(p),
 	}, nil
 }

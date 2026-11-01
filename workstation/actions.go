@@ -343,7 +343,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 				}
 				p["entry"] = v
 			}
-			if f["quantize"] != "" {
+			if f["quantize"] != "" && f["quantize"] != "-1" {
 				v, e := integer(f, "quantize")
 				if e != nil {
 					return nil, e

@@ -153,7 +153,7 @@ func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected str
 	var heads []gosx.Node
 	heads = append(heads, gosx.El("th", gosx.Text("Track")))
 	for _, scene := range p.Scenes {
-		heads = append(heads, gosx.El("th", s.form(v, csrf, "session", "transport", hidden("scene", scene.ID), hidden("quantize", "2"), submit("action", "launch", scene.ID))))
+		heads = append(heads, gosx.El("th", s.form(v, csrf, "session", "transport", hidden("scene", scene.ID), submit("action", "launch", scene.ID))))
 	}
 	var rows []gosx.Node
 	for _, track := range p.Tracks {
@@ -168,11 +168,11 @@ func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected str
 			if binding == "off" {
 				command, label = "trackStop", "Stop"
 			}
-			cells = append(cells, gosx.El("td", s.form(v, csrf, "session", "transport", hidden("track", track.ID), hidden("pattern", binding), hidden("quantize", "2"), submit("action", command, label))))
+			cells = append(cells, gosx.El("td", s.form(v, csrf, "session", "transport", hidden("track", track.ID), hidden("pattern", binding), submit("action", command, label))))
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
-	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
+	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Launches use the score timing, or the next bar if none is set."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}

@@ -357,8 +357,8 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	}
 	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", viewSelect("data-live-acid", options(pitched))), field("Pitched pattern", viewSelect("data-live-pattern", patternsFor(pitched))), field("Drum track", viewSelect("data-live-drums", options(drums))), field("Drum pattern", viewSelect("data-live-drumpattern", patternsFor(drums))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
 	var quantize []gosx.Node
-	for _, q := range []struct{ value, label string }{{"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
-		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "2")), gosx.Text(q.label)))
+	for _, q := range []struct{ value, label string }{{"-1", "Score default"}, {"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
+		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "-1")), gosx.Text(q.label)))
 	}
 	var midiModes []gosx.Node
 	for _, mode := range []struct{ value, label string }{{"auto", "Auto · follow controller"}, {"lower", "MPE · lower zone"}, {"upper", "MPE · upper zone"}} {
@@ -419,7 +419,7 @@ type liveLaunchCommand struct {
 	Track    string `json:"track,omitempty"`
 	Pattern  string `json:"pattern,omitempty"`
 	Revision string `json:"revision,omitempty"`
-	Quantize int    `json:"quantize,omitempty"`
+	Quantize *int   `json:"quantize,omitempty"`
 }
 
 func (s *studioApp) launchAction(ctx *action.Context) error {
@@ -435,7 +435,10 @@ func (s *studioApp) launchAction(ctx *action.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		command.Quantize, command.Revision = q, f["revision"]
+		if q != -1 {
+			command.Quantize = &q
+		}
+		command.Revision = f["revision"]
 		return command, nil
 	})(ctx)
 }
@@ -448,7 +451,7 @@ func (s *studioApp) liveLaunch(v workspace, csrf string) gosx.Node {
 	}
 	timing := func() gosx.Node {
 		var opts []gosx.Node
-		for _, q := range []struct{ value, label string }{{"2", "Next bar"}, {"1", "Next beat"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
+		for _, q := range []struct{ value, label string }{{"-1", "Score default"}, {"2", "Next bar"}, {"1", "Next beat"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
 			opts = append(opts, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value)), gosx.Text(q.label)))
 		}
 		return field("Launch timing", gosx.El("select", gosx.Attrs(gosx.Attr("name", "quantize")), gosx.Fragment(opts...)))

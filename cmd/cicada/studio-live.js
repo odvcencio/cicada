@@ -124,7 +124,7 @@
   if (acidSelect) settings.acidTrack = acidSelect.value;
   if (drumSelect) settings.drumTrack = drumSelect.value;
   if (quantizeSelect) {
-    quantizeSelect.value = ['1', '2', '5', '6', '8'].includes(String(settings.quantize)) ? String(settings.quantize) : '2';
+    quantizeSelect.value = ['-1', '1', '2', '5', '6', '8'].includes(String(settings.quantize)) ? String(settings.quantize) : '-1';
     settings.quantize = Number(quantizeSelect.value);
   }
   saveSettings();
@@ -266,7 +266,7 @@
 
   function quantizeTicks(value) {
     const map = {1: 960, 2: 3840, 5: 3840, 6: 7680, 8: 15360};
-    return map[value] || 3840;
+    return map[value] || null;
   }
   function stateTick(state = transportState) {
     return Math.max(0, (Number(state.bar || 1) - 1) * 3840 + (Number(state.step || 1) - 1) * 240);
@@ -274,6 +274,7 @@
   function queuedBars(state, selectedQuantize = state.pendingQuantize || quantizeSelect?.value || 2) {
     const current = stateTick(state);
     const quantum = quantizeTicks(Number(selectedQuantize));
+    if (!quantum) return null;
     let target = Math.ceil(current / quantum) * quantum;
     if (target <= current) target += quantum;
     return Math.max(1, Math.ceil((target - current) / 3840));
@@ -303,8 +304,9 @@
     for (const pad of liveScenePads) {
       const scene = pad.dataset.scene;
       const state = queuedScene === scene ? 'queued' : isPlaying && activeScene === scene ? 'playing' : 'stopped';
-      const stateText = state === 'queued' ? `QUEUED · ${countdown} BAR${countdown === 1 ? '' : 'S'}` : state.toUpperCase();
-      setPadState(pad, state, stateText, `Launch scene ${scene}, ${state === 'queued' ? `queued with ${countdown} bar countdown` : state}`);
+      const description = countdown === null ? 'queued' : `queued with ${countdown} bar countdown`;
+      const stateText = state === 'queued' && countdown !== null ? `QUEUED · ${countdown} BAR${countdown === 1 ? '' : 'S'}` : state.toUpperCase();
+      setPadState(pad, state, stateText, `Launch scene ${scene}, ${state === 'queued' ? description : state}`);
     }
     for (const pad of liveSlotPads) {
       const track = pad.dataset.track;
@@ -316,8 +318,9 @@
       const activePattern = transportState.activeSlots?.[track] || scenePattern;
       const state = queued ? 'queued' : stopped.has(track) ? 'stopped' : isPlaying && activeScene === scene && activePattern === pattern ? 'playing' : 'stopped';
       const slotCountdown = queued ? queuedBars(transportState, transportState.pendingSlotQuantize?.[track] || quantizeSelect?.value) : 0;
-      const stateText = state === 'queued' ? `QUEUED · ${slotCountdown} BAR${slotCountdown === 1 ? '' : 'S'}` : state.toUpperCase();
-      setPadState(pad, state, stateText, `Launch ${pattern} on ${track}, ${state === 'queued' ? `queued with ${slotCountdown} bar countdown` : state}`);
+      const description = slotCountdown === null ? 'queued' : `queued with ${slotCountdown} bar countdown`;
+      const stateText = state === 'queued' && slotCountdown !== null ? `QUEUED · ${slotCountdown} BAR${slotCountdown === 1 ? '' : 'S'}` : state.toUpperCase();
+      setPadState(pad, state, stateText, `Launch ${pattern} on ${track}, ${state === 'queued' ? description : state}`);
     }
     for (const stop of $$('.live-stop-pad')) {
       const track = stop.dataset.track;
@@ -330,14 +333,16 @@
   }
   function announcePendingLaunches(state) {
     if (state.pendingScene && state.pendingScene !== lastPendingScene) {
-      announce(`Queued scene ${state.pendingScene} with a ${queuedBars(state)} bar countdown`);
+      const bars = queuedBars(state);
+      announce(`Queued scene ${state.pendingScene}${bars === null ? '' : ` with a ${bars} bar countdown`}`);
     }
     lastPendingScene = state.pendingScene || '';
     const pending = state.pendingSlots || {};
     for (const [track, pattern] of Object.entries(pending)) {
       if (lastPendingSlots.get(track) !== pattern) {
         const quantize = state.pendingSlotQuantize?.[track] || quantizeSelect?.value;
-        announce(`Queued ${pattern} on ${track} with a ${queuedBars(state, quantize)} bar countdown`);
+        const bars = queuedBars(state, quantize);
+        announce(`Queued ${pattern} on ${track}${bars === null ? '' : ` with a ${bars} bar countdown`}`);
       }
     }
     for (const track of [...lastPendingSlots.keys()]) if (!pending[track]) lastPendingSlots.delete(track);
@@ -370,17 +375,17 @@
       return state;
     } catch (error) { setStatus(`Transport connection lost: ${error.message}`, 'error'); return null; }
   }
-  function selectedQuantize() { return Number(quantizeSelect?.value || 2); }
+  function selectedQuantize() { const value = Number(quantizeSelect?.value || -1); return value === -1 ? undefined : value; }
   function launchScene(scene) {
     const repeated = transportState.pendingScene === scene;
     const request = transportAction({action: 'launch', scene, quantize: selectedQuantize()});
-    if (repeated) request.then(state => state && announce(`Queued scene ${scene} with a ${queuedBars(state)} bar countdown`));
+    if (repeated) request.then(state => { if (state) { const bars = queuedBars(state); announce(`Queued scene ${scene}${bars === null ? '' : ` with a ${bars} bar countdown`}`); } });
     return request;
   }
   function launchSlot(track, pattern) {
     const repeated = transportState.pendingSlots?.[track] === pattern;
     const request = transportAction({action: 'slot', track, pattern, quantize: selectedQuantize()});
-    if (repeated) request.then(state => state && announce(`Queued ${pattern} on ${track} with a ${queuedBars(state, state.pendingSlotQuantize?.[track])} bar countdown`));
+    if (repeated) request.then(state => { if (state) { const bars = queuedBars(state, state.pendingSlotQuantize?.[track]); announce(`Queued ${pattern} on ${track}${bars === null ? '' : ` with a ${bars} bar countdown`}`); } });
     return request;
   }
   function stopTrack(track) { return transportAction({action: 'trackStop', track}); }
