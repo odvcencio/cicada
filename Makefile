@@ -22,6 +22,7 @@ KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 KERNEL_WASM_GO_VERSION ?= go1.25.6
 # Size optimization keeps the richer bounded voice engine within its existing
 # download budget. Audio parity and browser callback budgets gate this build.
+# A second Binaryen invocation folds code after the initial optimization.
 KERNEL_WASM_OPT ?= z
 KERNEL_WASM_BINARYEN_FLAGS ?= -Oz --converge --strip-producers --strip-target-features
 
@@ -202,7 +203,7 @@ build-kernel-wasm:
 		tinygo version && sh scripts/wasm-opt.sh --version && \
 		tinygo build -tags cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
 		sh scripts/wasm-opt.sh $(KERNEL_WASM_BINARYEN_FLAGS) build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
-		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \
+		sh scripts/wasm-opt.sh --enable-bulk-memory --enable-nontrapping-float-to-int $(if $(findstring +simd128,$(KERNEL_WASM_LLVM_FEATURES)),--enable-simd) --code-folding -Oz --converge build/cicada-kernel.optimized.wasm -o build/cicada-kernel.wasm' || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \

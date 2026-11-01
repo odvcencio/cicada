@@ -50,7 +50,7 @@ async function until(run, timeout = 20000) {
         const waiter = pending.get(data.id);
         if (waiter) { pending.delete(data.id); clearTimeout(waiter.timer); data.error ? waiter.reject(new Error(JSON.stringify(data.error))) : waiter.resolve(data.result); }
       } else if (data.method === 'Runtime.exceptionThrown') errors.push(data.params.exceptionDetails.text + ': ' + (data.params.exceptionDetails.exception?.description || ''));
-      else if (data.method === 'Log.entryAdded' && data.params.entry.level === 'error') errors.push(data.params.entry.text);
+      else if (data.method === 'Log.entryAdded' && data.params.entry.level === 'error') errors.push(`${data.params.entry.text} ${data.params.entry.url || ''}`.trim());
       else if (data.method === 'Network.requestWillBeSent') requests.push(data.params.request.url);
     };
     const cdp = (method, params = {}) => new Promise((resolve, reject) => {
@@ -146,6 +146,20 @@ async function until(run, timeout = 20000) {
     assert.equal(await evaluate('cicadaDemo.snapshot().source'), original);
     assert.equal(await evaluate(`document.getElementById('preset').value`), 'ensemble');
     assert(await evaluate(`document.getElementById('undo').disabled && document.getElementById('redo').disabled`));
+    await evaluate(`document.getElementById('source').value = cicadaDemo.snapshot().source.replace('tempo 112', 'tempo 118')`);
+    await click('#source');
+    await cdp('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Enter', code: 'Enter', modifiers: 2, windowsVirtualKeyCode: 13});
+    await cdp('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Enter', code: 'Enter', modifiers: 2, windowsVirtualKeyCode: 13});
+    await wait(`cicadaDemo.snapshot().source.includes('tempo 118') && !document.getElementById('play').disabled`);
+    await click('#reset'); await wait(`!document.getElementById('play').disabled`);
+    assert.equal(await evaluate('cicadaDemo.snapshot().source'), original);
+    await evaluate(`document.getElementById('source').value = cicadaDemo.snapshot().source.replace('tempo 112', 'tempo 119')`);
+    await click('#source');
+    await cdp('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Enter', code: 'Enter', modifiers: 4, windowsVirtualKeyCode: 13});
+    await cdp('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Enter', code: 'Enter', modifiers: 4, windowsVirtualKeyCode: 13});
+    await wait(`cicadaDemo.snapshot().source.includes('tempo 119') && !document.getElementById('play').disabled`);
+    await click('#reset'); await wait(`!document.getElementById('play').disabled`);
+    assert.equal(await evaluate('cicadaDemo.snapshot().source'), original);
     // Every selector option is played through its actual image and kernel.
     for (const id of await evaluate('cicadaDemo.presets().map(p=>p.id)')) {
       await click('#preset');
