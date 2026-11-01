@@ -530,6 +530,9 @@ func (p *Player) Offer(score Score) error {
 	for {
 		select {
 		case p.offers <- score:
+			// Launch requests resolve against the newest accepted score, even
+			// while its engine is waiting for the next bar.
+			p.phraseBars.Store(int64(score.PhraseBars))
 			accepted = true
 			return nil
 		default:
@@ -1585,7 +1588,6 @@ func (p *Player) beginRequestedSong() {
 			p.liveGroups = [256]liveControlGroup{}
 			p.liveGroupLimit = 0
 			p.current = next
-			p.phraseBars.Store(int64(next.PhraseBars))
 			p.streamEngine.Store(next.Engine)
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
@@ -1680,7 +1682,6 @@ func (p *Player) renderBlock(requestedFrames int) {
 			p.liveGroups = [256]liveControlGroup{}
 			p.liveGroupLimit = 0
 			p.current = next
-			p.phraseBars.Store(int64(next.PhraseBars))
 			p.streamEngine.Store(next.Engine)
 			if next.Range != nil {
 				p.setPlaybackRange(next.Range)

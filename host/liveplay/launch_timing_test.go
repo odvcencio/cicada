@@ -94,3 +94,26 @@ func TestImmediateLaunchReportsCurrentBar(t *testing.T) {
 	}
 	t.Fatal("immediate launch did not land")
 }
+
+func TestLaunchPhraseFollowsNewestOfferedScore(t *testing.T) {
+	initial := testScore(t, "initial", 120000, engine.Scene{})
+	initial.PhraseBars = 2
+	player, err := New(initial, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer player.Close()
+	for _, bars := range []int{4, 8} {
+		next := testScore(t, "replacement", 120000, engine.Scene{})
+		next.PhraseBars = bars
+		if err := player.Offer(next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := player.LaunchSceneQuantized("main", cmd.QuantizePhrase); err != nil {
+		t.Fatal(err)
+	}
+	if got := player.launches.Load().targetTick; got != 8*3840 {
+		t.Fatalf("newest phrase target = %d", got)
+	}
+}
