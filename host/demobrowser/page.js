@@ -215,6 +215,12 @@
     refreshControls();
   };
   $('apply').onclick = () => change('edit', ui.source.value);
+  ui.source.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing && !$('apply').disabled) {
+      event.preventDefault();
+      $('apply').click();
+    }
+  });
   $('undo').onclick = () => change('undo');
   $('redo').onclick = () => change('redo');
   $('reset').onclick = () => change('reset');

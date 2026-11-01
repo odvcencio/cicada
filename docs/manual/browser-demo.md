@@ -19,6 +19,10 @@ again. Undo and Redo restore validated scores; Reset clears the edit history.
 Reloading starts a new session. The sketches target about −20 LUFS, and
 Volume starts at 75%.
 
+For a short first score, choose **Marimba**. Change a note in `pattern phrase`
+or change the tempo, then apply the score. In the editor, Ctrl+Enter (or
+Command+Enter on macOS) also applies the score.
+
 Score parsing and compilation run in a separate Go/WASM module on the page;
 the audio kernel runs on the worklet thread. These are separate downloads.
 The score tools load once per visit. Scores stay in the tab: the demo does
