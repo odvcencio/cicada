@@ -6,7 +6,7 @@ scenes, and a song. New projects use source edition 2.
 ## Quick start
 
 Build Cicada and its GoSX workstation, then create and check a project.
-The realtime core uses Go 1.25; the workstation module pins Go 1.26.4 and
+The realtime core uses Go 1.25; the workstation module pins Go 1.27.3 and
 GoSX 0.57.5. Go downloads its pinned toolchain when needed.
 
 ```sh

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicada-demo
+  namespace: m31labs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cicada-demo
+  template:
+    metadata:
+      labels:
+        app: cicada-demo
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cicada-demo
+          image: CICADA_IMAGE
+          ports:
+            - name: http
+              containerPort: 8170
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: cicada.m31labs.dev
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: cicada.m31labs.dev
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: cicada.m31labs.dev
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cicada-demo
+  namespace: m31labs
+spec:
+  selector:
+    app: cicada-demo
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cicada-demo
+  namespace: m31labs
+  annotations:
+    cert-manager.io/cluster-issuer: cloudflare-issuer
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: cicada.m31labs.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cicada-demo
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - cicada.m31labs.dev
+      secretName: cicada-demo-tls

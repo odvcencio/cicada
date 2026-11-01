@@ -277,9 +277,17 @@ jobs:
       CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      # The pinned GoSX TinyGo runtime compiler still uses its Go 1.25 lane.
+      # Install that SDK separately; do not make TinyGo consume native Go 1.27.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.4'
+          go-version: '1.25.9'
+          cache: false
+      - name: Retain the compatible TinyGo SDK
+        run: echo "GOSX_TINYGO_GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.3'
           cache: false
       - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
         with:

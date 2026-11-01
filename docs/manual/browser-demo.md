@@ -19,6 +19,10 @@ again. Undo and Redo restore validated scores; Reset clears the edit history.
 Reloading starts a new session. The sketches target about −20 LUFS, and
 Volume starts at 75%.
 
+For a short first score, choose **Marimba**. Change a note in `pattern phrase`
+or change the tempo, then apply the score. In the editor, Ctrl+Enter (or
+Command+Enter on macOS) also applies the score.
+
 The demo plays the core kernel, which has no keyboard patches. A score that
 names one, such as the `fm_bass` and `poly_keys` tracks in the starter that
 `cicada new` writes, is refused with a message; the piano, the modeled
