@@ -103,6 +103,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "bundle" {
+		if err := bundleCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "new" {
 		if err := newCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
