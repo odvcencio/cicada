@@ -45,31 +45,18 @@ func Build(name string, hits []Hit, layers int) (*Pack, error) {
 	if !ValidName(name) || len(hits) == 0 || len(hits) > 256 || layers < 1 || layers > 8 {
 		return nil, fmt.Errorf("use a lowercase instrument name, 1–256 hits and 1–8 layers")
 	}
-	p := &Pack{Hits: hits, Files: map[string][]byte{}, Manifest: Manifest{Format: "cicada.instrument-pack/1", ID: name, Description: "User recording; automatic hit slicing, velocity layers and round robins"}}
-	p.Manifest.Config.Voices = 16
-	p.Manifest.Config.Gain = 1
-	p.Manifest.Config.Amp = sample.Envelope{Attack: 2, Sustain: 1, Release: 80}
-	p.Manifest.Config.Filter.Sustain = 1
-	p.Manifest.Config.Humanize.Seed = 0
+	p := &Pack{Hits: hits, Files: map[string][]byte{}, Manifest: newManifest(name, "User recording; automatic hit slicing, velocity layers and round robins")}
 	groups := map[int][]int{}
 	for i, h := range hits {
 		if h.Root < 0 || h.Root > 127 || h.Rate < 8000 || h.Rate > 192000 || len(h.PCM) == 0 || len(h.PCM) > MaxFrames || len(h.SourceSHA256) != 64 || h.Peak <= 0 {
 			return nil, fmt.Errorf("invalid analyzed hit %d", i+1)
 		}
-		id := fmt.Sprintf("hit_%03d", i+1)
-		wav := EncodeWAV(h.PCM, h.Rate)
-		var compressed bytes.Buffer
-		writer := gzip.NewWriter(&compressed)
-		if _, err := writer.Write(wav); err != nil {
+		data, asset, err := encodeHit(fmt.Sprintf("hit_%03d", i+1), h, "user recording")
+		if err != nil {
 			return nil, err
 		}
-		if err := writer.Close(); err != nil {
-			return nil, err
-		}
-		path := id + ".wav.gz"
-		data := compressed.Bytes()
-		p.Files[path] = data
-		p.Manifest.Assets = append(p.Manifest.Assets, Asset{ID: id, Path: path, SHA256: Digest(data), Bytes: int64(len(data)), WAVSHA256: Digest(wav), WAVBytes: int64(len(wav)), Frames: len(h.PCM), Rate: h.Rate, Channels: 1, SourceSHA256: h.SourceSHA256, License: "user recording"})
+		p.Files[asset.Path] = data
+		p.Manifest.Assets = append(p.Manifest.Assets, asset)
 		groups[h.Root] = append(groups[h.Root], i)
 	}
 	roots := make([]int, 0, len(groups))
@@ -129,6 +116,34 @@ func Build(name string, hits []Hit, layers int) (*Pack, error) {
 	root := hits[0].Root
 	p.Files["instrument.cicada"] = []byte(p.Starter("manifest.json", root))
 	return p, nil
+}
+
+// newManifest returns the pack header and sampler configuration that every
+// recorded pack shares.
+func newManifest(id, description string) Manifest {
+	m := Manifest{Format: "cicada.instrument-pack/1", ID: id, Description: description}
+	m.Config.Voices = 16
+	m.Config.Gain = 1
+	m.Config.Amp = sample.Envelope{Attack: 2, Sustain: 1, Release: 80}
+	m.Config.Filter.Sustain = 1
+	m.Config.Humanize.Seed = 0
+	return m
+}
+
+// encodeHit compresses one analyzed hit as a lossless float32 WAV and returns
+// the pack file with the manifest entry that pins it.
+func encodeHit(id string, h Hit, license string) ([]byte, Asset, error) {
+	wav := EncodeWAV(h.PCM, h.Rate)
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(wav); err != nil {
+		return nil, Asset{}, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, Asset{}, err
+	}
+	data := compressed.Bytes()
+	return data, Asset{ID: id, Path: id + ".wav.gz", SHA256: Digest(data), Bytes: int64(len(data)), WAVSHA256: Digest(wav), WAVBytes: int64(len(wav)), Frames: len(h.PCM), Rate: h.Rate, Channels: 1, SourceSHA256: h.SourceSHA256, License: license}, nil
 }
 
 func supportedRatio(note int, h Hit) bool {

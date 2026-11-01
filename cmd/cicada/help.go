@@ -52,7 +52,7 @@ var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
 	"  new, apply, fix, check, fmt, play, studio, lsp\n" +
 	"  render, stems, audition, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi\n" +
 	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
-	"  events, graph, fields, params, golden, record-pack, fit-model, transcribe, wam2, director\n\n" +
+	"  events, graph, fields, params, golden, record-pack, record-kit, fit-model, transcribe, wam2, director\n\n" +
 	"Run \"cicada help <command>\" for usage and flags."
 
 func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
@@ -107,6 +107,9 @@ func findCommandHelp(name string) (commandHelpEntry, bool) {
 	}
 	if name == "fit-model" {
 		return commandHelpEntry{name: "fit-model", summary: "fit a recorded hit to a playable modal instrument", usage: "cicada fit-model -o <pack-directory> [flags] <recording.wav>", flags: "  -o <directory>  required new pack directory\n  --name <id>     instrument name (default recorded_model)\n  --hit <n>       detected hit, one-based (default 1)\n  --help          show this help", notes: "Put flags before the input. Writes measured model.json, checksummed modal renders and a playable pinned score; user recording provenance is retained."}, true
+	}
+	if name == "record-kit" {
+		return commandHelpEntry{name: "record-kit", summary: "build one drum-kit sampler pack from your own recorded takes", usage: "cicada record-kit -o <pack-directory> [flags] <recipe.json>", flags: "  -o <directory>  required new pack directory\n  --name <id>     lowercase kit name (default kit)\n  --help          show this help", notes: "Put flags before the recipe. The recipe names each piece's MIDI note and its take WAV files, which are found next to the recipe; see docs/manual/recording-instruments.md. Prints the hits and layers found for each piece and a checksummed sampler declaration. Warns about takes to record again: tails cut off, hits that merged or clipped, and takes with no room tone at the start. Audio carries the owner recording label, which records provenance and grants no redistribution rights."}, true
 	}
 	if name == "record-pack" {
 		return commandHelpEntry{name: "record-pack", summary: "slice user WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the user recording licence."}, true
