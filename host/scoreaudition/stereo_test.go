@@ -41,4 +41,19 @@ func TestMeasureStereo(t *testing.T) {
 		t.Fatalf("silence: %#v", got)
 	}
 }
+
+func TestAnalyzeIncludesStereoForAudibleBars(t *testing.T) {
+	analysis := analyze(t, skankMajor)
+	if len(analysis.Report.Bars) == 0 || analysis.Report.Bars[0].Stereo == nil {
+		t.Fatal("audible bar has no stereo report")
+	}
+	data, err := json.Marshal(analysis.Report.Bars[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"channel_correlation"`) || !strings.Contains(string(data), `"mono_vs_stereo_db"`) {
+		t.Fatalf("bar JSON has no stereo measurements: %s", data)
+	}
+}
+
 func f64(v float64) *float64 { return &v }
