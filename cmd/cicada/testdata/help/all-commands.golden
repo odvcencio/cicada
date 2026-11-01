@@ -7,6 +7,17 @@ Flags:
   (no command flags)
   --help      show this help
 
+### bundle
+cicada bundle <score.cicada> <bundle.zip>
+
+package a portable score with provenance
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+Copies score sources, referenced audio, pinned libraries, and Save As recovery files into a ZIP with a SHA-256 file inventory. Existing output files are refused.
+
 ### apply
 cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]
 

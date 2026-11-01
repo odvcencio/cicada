@@ -58,7 +58,13 @@ and pinning behavior.
 retained takes, history, and imported libraries. It automatically vendors user
 and project libraries and writes target pins before publishing the score.
 Dependencies with different content and existing target scores are refused.
-Studio Save As uses the same operation. Bundle is not available in this build.
+Studio Save As uses the same operation.
+
+`cicada bundle SCORE OUTPUT.zip` creates a portable ZIP containing the Save As
+copy and a `cicada-bundle.json` inventory of file hashes and bundled library
+identities. It refuses an existing output. Retained takes and recovery files
+are included and may contain unpublished work; see [Managing libraries](manual/libraries.md)
+for their portability limits.
 
 ## Inspect a musical moment
 

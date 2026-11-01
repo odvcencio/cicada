@@ -12,6 +12,7 @@ type commandHelpEntry struct {
 
 var commandHelpEntries = []commandHelpEntry{
 	{name: "new", summary: "create an edition-2 project", usage: "cicada new <name>", flags: "  (no command flags)"},
+	{name: "bundle", summary: "package a portable score with provenance", usage: "cicada bundle <score.cicada> <bundle.zip>", flags: "  (no command flags)", notes: "Copies score sources, referenced audio, pinned libraries, and Save As recovery files into a ZIP with a SHA-256 file inventory. Existing output files are refused."},
 	{name: "apply", summary: "apply typed edit intents to a score", usage: "cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]", flags: "  --write         write the validated edits (default: print a diff only)\n  --author <name>  commit author (default: envelope author or cli)\n  --session <id>   commit session\n  --help          show this help", notes: "A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes."},
 	{name: "fix", summary: "migrate legacy source spellings", usage: "cicada fix <score.cicada> [--all] [--check]", flags: "  --all       migrate every edition-1 score under the project folder together\n  --check     report required source or manifest changes without writing\n  --help      show this help", notes: "With --all, the score path is optional; run the command from the project folder."},
 	{name: "check", summary: "validate one score or the current project", usage: "cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]", flags: "  --profile <name>           limits to check against: desktop (default) or browser\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)\n  --help                     show this help", notes: "The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted."},
@@ -49,7 +50,7 @@ var commandHelpEntries = []commandHelpEntry{
 var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
 	"Create a project, edit and validate scores, play them in Studio, or render files.\n\n" +
 	"Commands:\n" +
-	"  new, apply, fix, check, fmt, play, studio, lsp\n" +
+	"  new, bundle, apply, fix, check, fmt, play, studio, lsp\n" +
 	"  render, stems, audition, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi\n" +
 	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
 	"  events, graph, fields, params, golden, record-pack, record-kit, fit-model, transcribe, wam2, director\n\n" +

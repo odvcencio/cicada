@@ -4,6 +4,17 @@
   const ui = {play: $('play'), stop: $('stop'), status: $('status'), source: $('source'), preset: $('preset')};
   let api, context, node, gain, analyser, snapshot, modulePromise, resetPromise, recoveryPromise, metricsTimer, lastGoodSource, stageResolve, stageReject, suppressReset = false, suppressedStopAcks = 0, starting = false, failed = false, disposing = false;
   const state = {playing: false, metrics: null, messageCount: 0, faults: 0, playhead: 0, errors: [], revision: '', resets: 0};
+  const draftKey = 'cicada-demo-score-v1', maxSourceBytes = 128 * 1024;
+  let inputVersion = 0;
+  const saveDraft = () => {
+    try {
+      if (new TextEncoder().encode(ui.source.value).length > maxSourceBytes) throw new Error('Draft exceeds 128 KiB. Download it to avoid losing changes.');
+      localStorage.setItem(draftKey, JSON.stringify({source: snapshot.source, draft: ui.source.value}));
+      $('storage-status').textContent = 'Draft saved in this browser.';
+    } catch (error) {
+      $('storage-status').textContent = error.message.startsWith('Draft exceeds') ? error.message : 'Could not save the draft in this browser. Download it to keep your changes.';
+    }
+  };
   // Read-only diagnostics are also consumed by the browser acceptance checks.
   window.cicadaDemoState = state;
   const call = (name, ...args) => {
@@ -34,8 +45,11 @@
       try {
         call('close');
         if (lastGoodSource && call('snapshot').source !== lastGoodSource) {
+          const draft = ui.source.value;
           call('change', 'edit', call('snapshot').revision, lastGoodSource);
           refreshSource();
+          ui.source.value = draft;
+          saveDraft();
         }
       } catch (closeError) { state.errors.push(closeError.message); }
     }
@@ -52,6 +66,7 @@
     ui.stop.disabled = !node || !state.playing;
     ui.preset.disabled = !api || starting || !!resetPromise;
     for (const id of ['apply', 'reset']) $(id).disabled = !api || starting || !!resetPromise;
+    for (const id of ['open-score', 'save-score']) $(id).disabled = !api || starting || !!resetPromise;
     $('undo').disabled = !api || starting || !!resetPromise || !snapshot?.canUndo;
     $('redo').disabled = !api || starting || !!resetPromise || !snapshot?.canRedo;
     $('audio-state').textContent = state.playing ? 'AudioWorklet playing' : context ? 'Stopped' : 'Audio off';
@@ -84,6 +99,28 @@
       state.revision = fresh.revision;
       lastGoodSource = call('snapshot').source;
       state.resets++;
+      return true;
+    })().catch(error => { fail(error); return false; }).finally(() => { resetPromise = null; refreshControls(); });
+    refreshControls();
+    return resetPromise;
+  };
+  // The worklet stages a complete image and promotes it at the next bar while
+  // playing. The demo controller only sends transport commands, so its routing
+  // is not used until it is rebuilt when playback stops.
+  const stageKernel = () => {
+    if (resetPromise) return resetPromise;
+    resetPromise = (async () => {
+      const fresh = prepare();
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Score did not load; reload to retry.')), 15000);
+        stageResolve = () => { clearTimeout(timeout); resolve(); };
+        stageReject = error => { clearTimeout(timeout); reject(error); };
+        node.port.postMessage({t: 'i', i: fresh.image.buffer, r: fresh.revision}, [fresh.image.buffer]);
+      });
+      // Stop can arrive while the image is loading. In that case the worklet
+      // promotes it immediately and the controller must be reset before Play.
+      if (!state.playing) { rebind(); state.revision = fresh.revision; }
+      lastGoodSource = call('snapshot').source;
       return true;
     })().catch(error => { fail(error); return false; }).finally(() => { resetPromise = null; refreshControls(); });
     refreshControls();
@@ -207,14 +244,44 @@
   const change = async (action, value = '') => {
     try {
       call('change', action, snapshot.revision, value);
+      inputVersion++;
       $('edit-error').textContent = '';
       refreshSource();
-      if (node) { call('stop'); if (!await resetKernel()) return; }
-      ui.status.textContent = 'Score ready. Press Play to hear your changes.';
+      saveDraft();
+      if (node && state.playing) {
+        if (!await stageKernel()) return;
+        ui.status.textContent = state.playing ? 'Changes queued for the next bar.' : 'Score ready. Press Play to hear your changes.';
+      } else {
+        if (node) { call('stop'); if (!await resetKernel()) return; }
+        ui.status.textContent = 'Score ready. Press Play to hear your changes.';
+      }
     } catch (error) { $('edit-error').textContent = error.message; }
     refreshControls();
   };
   $('apply').onclick = () => change('edit', ui.source.value);
+  ui.source.addEventListener('input', () => { inputVersion++; saveDraft(); });
+  $('open-score').onclick = () => $('score-file').click();
+  $('score-file').onchange = async event => {
+    const file = event.target.files[0], version = inputVersion;
+    event.target.value = '';
+    if (!file) return;
+    try {
+      if (file.size > maxSourceBytes) throw new Error('Score must be at most 128 KiB.');
+      const source = new TextDecoder('utf-8', {fatal: true}).decode(await file.arrayBuffer());
+      if (inputVersion !== version) throw new Error('The editor changed while the file was opening; try again.');
+      ui.source.value = source;
+      inputVersion++;
+      $('edit-error').textContent = '';
+      saveDraft();
+      ui.status.textContent = 'Score opened. Apply it when you are ready to play.';
+    } catch (error) { $('edit-error').textContent = error instanceof TypeError ? 'Score must be UTF-8 text.' : error.message; }
+  };
+  $('save-score').onclick = () => {
+    const url = URL.createObjectURL(new Blob([ui.source.value], {type: 'text/plain;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'score.cicada'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   ui.source.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing && !$('apply').disabled) {
       event.preventDefault();
@@ -241,6 +308,21 @@
     const custom = document.createElement('option'); custom.value = 'custom'; custom.textContent = 'Custom score'; custom.disabled = true;
     ui.preset.append(custom);
     refreshSource();
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftKey));
+      if (saved && typeof saved.source === 'string' && typeof saved.draft === 'string' && new TextEncoder().encode(saved.source).length <= maxSourceBytes && new TextEncoder().encode(saved.draft).length <= maxSourceBytes) {
+        try {
+          call('change', 'edit', snapshot.revision, saved.source);
+          refreshSource();
+        } catch (error) {
+          $('edit-error').textContent = 'The last applied score could not be restored. Your draft is still available below; apply it to see any errors.';
+        }
+        ui.source.value = saved.draft;
+        $('storage-status').textContent = 'Draft restored from this browser.';
+      }
+    } catch (error) {
+      $('storage-status').textContent = 'Could not restore the saved draft; it is still stored in this browser.';
+    }
     lastGoodSource = snapshot.source;
     ui.status.textContent = 'Ready. Press Play to enable audio in this tab.';
   })().catch(fail);

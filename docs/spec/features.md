@@ -363,7 +363,7 @@ manifest_metadata ::= "entry" , string
 sum_file ::= { generated_sum_record } ;
 ```
 
-**Meaning:** All listed `.cicada` files under one `cicada.mod` share one namespace, like files in one Go package. The manifest names the entry file and explicit source list and stores an SPDX license identifier and author. Imports are for libraries; a qualified name selects a library declaration. Library declarations whose names begin with underscore are private. Version requirements are not supported. The generated `cicada.sum` pins each imported library by path, resolution kind, and content hash.
+**Meaning:** All listed `.cicada` files under one `cicada.mod` share one namespace, like files in one Go package. The manifest names the entry file and explicit source list and stores an SPDX license identifier and author. Imports are for libraries; a qualified name selects a library declaration. Library declarations whose names begin with underscore are private. Version requirements are not supported. The generated `cicada.sum` pins each imported library by path, resolution kind, and content hash. `cicada bundle` copies the project and its dependencies to a ZIP with a file and library provenance inventory; see [Managing libraries](../manual/libraries.md).
 
 **Types and units:** Entry and source values are project-relative file paths; the source list is explicit, not a glob. License is an SPDX identifier. Author is a string. Sum records use `PATH std|project|user sha256:HASH`, sorted by path. Each hash covers the library manifest, sorted sources, and audio assets; transitive imports have their own records. The generated file is tool-owned.
 
