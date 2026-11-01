@@ -1,5 +1,7 @@
 (() => {
   const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144, CapabilityGestures = 524288, CapabilitySharedControls = 2097152;
+  // Older servers omit the header and keep the one-bar default.
+  const countInBars = response => { const value = response.headers.get('X-Cicada-Count-In-Bars'); return /^[0-8]$/.test(value || '') ? Number(value) : 1; };
   // Match the worklet allowlist, including when an older cached worklet runs.
   const imageInfo = (image, capabilities) => {
     const bytes = new Uint8Array(image);
@@ -78,6 +80,7 @@
         const imageResponse = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' });
         if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
         const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
+        this.countInBars = countInBars(imageResponse);
         const image = await imageResponse.arrayBuffer();
         const kind = this.imageModuleKind(image);
         const module = await this.loadModule(kind);
@@ -443,12 +446,14 @@
       const response = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' });
       if (!response.ok) throw new Error((await response.text()) || 'Cannot prepare the edited score');
       const imageRevision = response.headers.get('X-Cicada-Revision') || '';
+      const countIn = countInBars(response);
       if (revision && imageRevision !== revision) throw new Error('Score changed while preparing the browser kernel');
       const image = await response.arrayBuffer();
       if (node !== this.node) throw new Error('Browser audio closed');
       const kind = this.imageModuleKind(image);
       if (kind !== this.moduleKind || this.nodeFault) {
         await this.replaceModule(kind, image, imageRevision);
+        this.countInBars = countIn;
         this.lastStageDurationMs = performance.now() - started;
         return true;
       }
@@ -457,6 +462,7 @@
       this.node.port.postMessage({ t: 'i', i: image, r: imageRevision }, [image]);
       await ready;
       this.bpmMilli = bpmMilli;
+      this.countInBars = countIn;
       this.lastStageDurationMs = performance.now() - started;
       return true;
     }

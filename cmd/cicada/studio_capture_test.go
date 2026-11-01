@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -49,6 +50,32 @@ func TestCaptureTransportUsesScoreTempoAndKeepsArmedDevice(t *testing.T) {
 	tx.stop()
 	if err := tx.disarmCapture(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCaptureTransportUsesDeclaredCountIn(t *testing.T) {
+	for _, bars := range []int{0, 2, 8} {
+		t.Run(fmt.Sprint(bars), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "capture.cicada")
+			source := fmt.Sprintf("cicada 2\ntempo 137.333\n%s\nlive { count_in = %dbars }\n", studioScore, bars)
+			if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			a, _ := simulatedCaptureAudio(256, zeroAudioSource{})
+			r, _ := capture.NewRecorder(4, 256, 2, func(capture.RecordedBlock, [][]float32) error { return nil })
+			tx := &studioTransport{path: path, audio: a, sampleRate: 48000, audioOptions: studioAudioOptions{InputEnabled: true, MonitorMuted: true, MonitorMode: "stereo"}}
+			defer tx.close()
+			if err := tx.armCapture(r); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.startCapture(capture.Calibration{}); err != nil {
+				t.Fatal(err)
+			}
+			want, err := capture.NewCountIn(48000, 137333, bars)
+			if err != nil || r.Snapshot().CountInFrames != want.Frames {
+				t.Fatalf("count-in frames = %d, want %d (%v)", r.Snapshot().CountInFrames, want.Frames, err)
+			}
+		})
 	}
 }
 

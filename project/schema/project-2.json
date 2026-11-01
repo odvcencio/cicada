@@ -1751,6 +1751,11 @@
           "minimum": 1,
           "maximum": 64
         },
+        "count_in_bars": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
         "macros": {
           "type": "array",
           "items": {

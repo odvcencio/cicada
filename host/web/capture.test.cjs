@@ -190,6 +190,12 @@ test('client requests processing off, reports effective settings and wires worke
   await h.client.record();assert.equal(h.messages[1].countInFrames,96000);assert.equal(h.audio.playing,true);
   const stopped=h.client.stop();h.client.receive({t:'finished',incomplete:false});await stopped;assert.equal(h.track.stopped,true);assert.equal(h.client.status.state,'stopped');
 });
+test('browser capture follows the score count-in including zero bars',async()=>{
+  for (const bars of [0, 2, 8]) {
+    const h=clientHarness(); h.audio.countInBars=bars; await h.client.arm(); await h.client.record();
+    assert.equal(h.messages[1].countInFrames,bars*96000);
+  }
+});
 test('a stereo device is mixed to a mono take; worker faults mark incomplete and stop',async()=>{
   const h=clientHarness({channelCount:2});await h.client.arm(1);
   assert.equal(h.client.status.state,'armed');assert.equal(h.audio.node.channelCount,1);assert.equal(h.audio.node.channelCountMode,'explicit');

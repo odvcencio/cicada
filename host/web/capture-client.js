@@ -161,7 +161,9 @@
       if (this.status.state !== 'armed' || this.audio.playing) throw new Error('Capture state changed while preparing the score');
       const bpm=this.audio.bpmMilli;
       if (!bpm) throw new Error('Score tempo unavailable');
-      const countInFrames=Math.ceil(3840*60000*this.audio.context.sampleRate/(bpm*960));
+      const bars=this.audio.countInBars ?? 1;
+      if (!Number.isInteger(bars) || bars < 0 || bars > 8) throw new Error('Invalid score count-in');
+      const countInFrames=Math.ceil(bars*3840*60000*this.audio.context.sampleRate/(bpm*960));
       this.audio.node.port.postMessage({t:'capture-control',op:'begin',countInFrames});
       this.capturePlayed=false;
       await this.audio.play();

@@ -231,13 +231,16 @@ func compileLiveProjectCapped(path string, p *project.Project, sampleRate int, l
 		startBar += uint32(entry.Bars)
 	}
 	phraseBars := 0
+	var countInBars *int
 	if p.Live != nil {
 		phraseBars = p.Live.PhraseBars
+		countInBars = p.Live.CountInBars
 	}
 	return liveplay.Score{
 		Engine: created, SampleRate: sampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
-		PhraseBars: phraseBars,
-		SceneIDs:   sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p, created),
+		PhraseBars:  phraseBars,
+		CountInBars: countInBars,
+		SceneIDs:    sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p, created),
 		HasReturnA: cfg.DelayA != nil, HasReturnB: cfg.ReverbB != nil, HasSFX: hasSFXTracks(p),
 	}, nil
 }

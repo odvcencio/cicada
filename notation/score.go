@@ -251,16 +251,18 @@ type Export struct {
 // Live declares the controls available to a host. Source positions remain
 // available for diagnostics; kernel packing happens in package project.
 type Live struct {
-	Land           string
-	LandPosition   Position
-	PhraseBars     int
-	PhrasePosition Position
-	Macros         []LiveMacro
-	States         []LiveState
-	Stingers       []LiveStinger
-	Transitions    []LiveTransition
-	Layers         []LiveLayers
-	Position       Position
+	Land            string
+	LandPosition    Position
+	PhraseBars      int
+	PhrasePosition  Position
+	CountInBars     *int
+	CountInPosition Position
+	Macros          []LiveMacro
+	States          []LiveState
+	Stingers        []LiveStinger
+	Transitions     []LiveTransition
+	Layers          []LiveLayers
+	Position        Position
 }
 
 type LiveMacro struct {
