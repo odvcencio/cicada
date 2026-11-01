@@ -423,8 +423,10 @@ support. Web MIDI also supplies MIDI 1 packets. System-exclusive messages are ig
 
 Select a parameter, scene, slot, track stop, or transport target, then **Learn
 next input**. Parameters learn controller messages; launches learn note
-messages. **MIDI launch timing** chooses next beat, next bar, or one, two, or four
-bars. Mapping and track selections are saved in this browser. **Clear mappings**
+messages. **MIDI launch timing** uses the score's `live { land = ... }` setting
+by default, or chooses next beat, next bar, or one, two, or four bars. The Live
+launch matrix also offers the score default and timing overrides. Mapping and
+track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
 Choose the **Pitched pattern** and **Drum pattern** destinations. Each picker

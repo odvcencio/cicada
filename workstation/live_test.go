@@ -133,6 +133,12 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	if launch["action"] != "slot" || launch["track"] != "bass" || launch["pattern"] != "pulse" || launch["quantize"] != float64(6) {
 		t.Fatalf("launch lost submitter or timing: %#v", launch)
 	}
+	if r := jsonPost("/__actions/launch", map[string]string{"revision": "initial", "quantize": "-1", "command": `{"action":"launch","scene":"main"}`}, csrf); r.StatusCode != 200 {
+		t.Fatalf("score timing launch: %d", r.StatusCode)
+	}
+	if launch := <-commands; launch["action"] != "launch" || launch["scene"] != "main" || launch["quantize"] != nil {
+		t.Fatalf("score default did not omit explicit timing: %#v", launch)
+	}
 	if r := jsonPost("/__actions/live", input, ""); r.StatusCode != 403 {
 		t.Fatalf("missing CSRF: %d", r.StatusCode)
 	}

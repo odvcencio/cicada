@@ -109,7 +109,7 @@ immediately; the 400 ms smoothing default applies to later host changes.
 
 Layers rise one level per bar and fall one level after 3 quiet bars. Tracks
 without a rule stay on. Values and thresholds are 0–1; the kernel rounds
-thresholds to 8 bits, so nearby values can share a level. `land` stores a launch preference. Tempo controls, saved MIDI mappings, and parameter-mapped macros are not supported.
+thresholds to 8 bits, so nearby values can share a level. Studio and the director SDK use `land` as their default launch timing. Studio can override it for a launch; `phrase` requires a declared phrase length. Tempo controls, saved MIDI mappings, and parameter-mapped macros are not supported.
 
 ### Live MIDI performance and note takes
 

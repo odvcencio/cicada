@@ -25,6 +25,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/cicada/sdk/director"
 )
 
 type studioTransport struct {
@@ -154,10 +155,29 @@ func (t *studioTransport) selectedAudioBackend() string {
 
 func validStudioQuantize(value cmd.Quantize) bool {
 	switch value {
-	case 1, 2, 5, 6, 8:
+	case 0, 1, 2, 5, 6, 8, cmd.QuantizePhrase:
 		return true
 	default:
 		return false
+	}
+}
+
+func studioQuantizeLabel(value cmd.Quantize) string {
+	switch value {
+	case 0:
+		return "now"
+	case 1:
+		return "the next beat"
+	case 2, 5:
+		return "the next bar"
+	case 6:
+		return "the next 2-bar boundary"
+	case 8:
+		return "the next 4-bar boundary"
+	case cmd.QuantizePhrase:
+		return "the next phrase"
+	default:
+		return "the requested boundary"
 	}
 }
 
@@ -729,7 +749,7 @@ func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) er
 	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
-		t.history.record("queued", fmt.Sprintf("Scene %s queued for the next bar", name), position.Bar, position.Step, "")
+		t.history.record("queued", fmt.Sprintf("Scene %s queued for %s", name, studioQuantizeLabel(quantize)), position.Bar, position.Step, "")
 	}
 	return nil
 }
@@ -750,7 +770,7 @@ func (t *studioTransport) launchPattern(track, pattern string, quantizes ...cmd.
 	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
-		t.history.record("queued", fmt.Sprintf("%s queued on %s for the next bar", pattern, track), position.Bar, position.Step, "")
+		t.history.record("queued", fmt.Sprintf("%s queued on %s for %s", pattern, track, studioQuantizeLabel(quantize)), position.Bar, position.Step, "")
 	}
 	return nil
 }
@@ -1255,15 +1275,15 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	quantize := cmd.Quantize(input.Quantize)
-	if input.Action == "launch" || input.Action == "slot" {
-		if input.Quantize == 0 {
-			quantize = cmd.Quantize(2)
-		}
-		if !validStudioQuantize(quantize) {
-			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "quantize must be next beat, next bar, 2 bars, or 4 bars"})
-			return
-		}
+	quantize := cmd.Quantize(2)
+	// Preserve the existing API's explicit zero as next-bar timing. An omitted
+	// value selects the score preference, including its "now" setting.
+	if input.Quantize != nil && *input.Quantize != 0 {
+		quantize = cmd.Quantize(*input.Quantize)
+	}
+	if (input.Action == "launch" || input.Action == "slot") && !validStudioQuantize(quantize) {
+		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid launch quantization"})
+		return
 	}
 	switch input.Action {
 	case "play":
@@ -1315,6 +1335,14 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		project := s.lastGoodProject
+		if input.Action != "playFrom" && input.Quantize == nil && project.Live != nil && project.Live.Land != "" {
+			value, err := director.Quantize(project.Live.Land, project.Live.PhraseBars)
+			if err != nil {
+				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+				return
+			}
+			quantize = cmd.Quantize(value)
+		}
 		s.transport.mu.Lock()
 		hasStream := s.transport.stream != nil
 		s.transport.mu.Unlock()

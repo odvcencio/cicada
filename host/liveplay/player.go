@@ -35,6 +35,7 @@ type Score struct {
 	Engine          *engine.Engine
 	SampleRate      int
 	BPMMilli        int64
+	PhraseBars      int // score-declared phrase length for launch quantization
 	Name            string
 	Revision        string             // Committed source revision supplied by Studio.
 	SceneParameters [][]ParameterValue // Ordered committed settings at scene launch.
@@ -276,6 +277,7 @@ type Player struct {
 	jumpFadeRemaining       int
 	position                atomic.Uint64
 	tempoMilli              atomic.Int64
+	phraseBars              atomic.Int64
 	scene                   atomic.Pointer[string]
 	sceneSequence           uint64
 	sceneEngine             *engine.Engine
@@ -368,6 +370,7 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
 	p.tempoMilli.Store(clock.BPMMilli)
+	p.phraseBars.Store(int64(initial.PhraseBars))
 	if len(initial.Song) != 0 {
 		p.scene.Store(&p.current.Song[0].Scene)
 	} else if len(initial.SceneIDs) != 0 {
@@ -1439,18 +1442,12 @@ func (p *Player) PendingPatternQuantizes() map[string]uint32 {
 }
 
 func (p *Player) nextQuantizedTick(quantize cmd.Quantize) (int64, error) {
-	quantum := int64(0)
-	switch quantize {
-	case 1:
-		quantum = seq.PPQ
-	case 2, 5:
-		quantum = seq.TicksPerBar
-	case 6:
-		quantum = 2 * seq.TicksPerBar
-	case 8:
-		quantum = 4 * seq.TicksPerBar
-	default:
-		return 0, fmt.Errorf("quantize must be next beat, next bar, 2 bars, or 4 bars")
+	quantum, ok := quantizeQuantum(quantize, p.phraseBars.Load())
+	if !ok {
+		return 0, fmt.Errorf("quantize must be now, beat, bar, 2 bars, 4 bars, or a declared phrase")
+	}
+	if quantize == 0 {
+		return 0, nil
 	}
 	position := p.Position()
 	if position.Bar < 1 || position.Step < 1 {
@@ -1461,6 +1458,12 @@ func (p *Player) nextQuantizedTick(quantize cmd.Quantize) (int64, error) {
 }
 
 func nextQuantizedAfter(tick int64, quantize cmd.Quantize, quantum int64) (int64, error) {
+	if quantize == 0 {
+		return 0, nil
+	}
+	if quantize == cmd.QuantizePhrase {
+		return (tick/quantum + 1) * quantum, nil
+	}
 	target, err := seq.QuantizeTick(tick, quantize, 16)
 	if err != nil {
 		return 0, err
@@ -1582,6 +1585,7 @@ func (p *Player) beginRequestedSong() {
 			p.liveGroups = [256]liveControlGroup{}
 			p.liveGroupLimit = 0
 			p.current = next
+			p.phraseBars.Store(int64(next.PhraseBars))
 			p.streamEngine.Store(next.Engine)
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
@@ -1676,6 +1680,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 			p.liveGroups = [256]liveControlGroup{}
 			p.liveGroupLimit = 0
 			p.current = next
+			p.phraseBars.Store(int64(next.PhraseBars))
 			p.streamEngine.Store(next.Engine)
 			if next.Range != nil {
 				p.setPlaybackRange(next.Range)
@@ -2094,7 +2099,7 @@ func (p *Player) requeuePendingLaunches() {
 		// when a replacement score lands, not every block, and allocates once per pending launch.
 		next := sceneLaunch{id: old.id, name: old.name, targetTick: old.targetTick, quantize: old.quantize}
 		if next.targetTick <= tick {
-			quantum, ok := quantizeQuantum(next.quantize)
+			quantum, ok := quantizeQuantum(next.quantize, p.phraseBars.Load())
 			if !ok {
 				p.launches.CompareAndSwap(old, nil)
 				break
@@ -2123,7 +2128,7 @@ func (p *Player) requeuePendingLaunches() {
 			}
 			request.submitted = false
 			if request.TargetTick <= tick {
-				quantum, ok := quantizeQuantum(request.quantize)
+				quantum, ok := quantizeQuantum(request.quantize, p.phraseBars.Load())
 				if !ok {
 					next.requests[index] = slotLaunch{}
 					changed = true
@@ -2146,8 +2151,10 @@ func (p *Player) requeuePendingLaunches() {
 	}
 }
 
-func quantizeQuantum(quantize cmd.Quantize) (int64, bool) {
+func quantizeQuantum(quantize cmd.Quantize, phraseBars int64) (int64, bool) {
 	switch quantize {
+	case 0:
+		return 0, true
 	case 1:
 		return seq.PPQ, true
 	case 2, 5:
@@ -2156,9 +2163,12 @@ func quantizeQuantum(quantize cmd.Quantize) (int64, bool) {
 		return 2 * seq.TicksPerBar, true
 	case 8:
 		return 4 * seq.TicksPerBar, true
-	default:
-		return 0, false
+	case cmd.QuantizePhrase:
+		if phraseBars >= 1 && phraseBars <= 64 {
+			return phraseBars * seq.TicksPerBar, true
+		}
 	}
+	return 0, false
 }
 
 func (p *Player) queueSlotLaunches(frames int) {
@@ -2261,7 +2271,11 @@ func (p *Player) completeSceneLaunch(endSample int64) {
 		return
 	}
 	if p.launches.CompareAndSwap(request, nil) {
-		p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene"})
+		tick := request.targetTick
+		if request.quantize == 0 {
+			tick = p.clock.TickAtSample(p.sample)
+		}
+		p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene"})
 	}
 }
 
@@ -2288,7 +2302,11 @@ func (p *Player) completeSlotLaunches(endSample int64) {
 			continue
 		}
 		for _, request := range landed {
-			p.emit(Event{Bar: request.TargetTick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot"})
+			tick := request.TargetTick
+			if request.quantize == 0 {
+				tick = p.clock.TickAtSample(p.sample)
+			}
+			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot"})
 		}
 		return
 	}
