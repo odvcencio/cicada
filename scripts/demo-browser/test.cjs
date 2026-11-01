@@ -132,15 +132,15 @@ async function until(run, timeout = 20000) {
     await wait('cicadaDemoState.messageCount>10');
     const liveBefore = await evaluate('({tick:cicadaDemoState.playhead,resets:cicadaDemoState.resets,source:cicadaDemo.snapshot().source})');
     await edit(liveBefore.source.replace('tempo 112', 'tempo 116'));
-    await wait(`document.getElementById('status').textContent.includes('next bar')`);
+    await wait(`cicadaDemo.snapshot().source.includes('tempo 116') && !document.getElementById('apply').disabled && document.getElementById('status').textContent.includes('next bar')`);
     assert.equal(await evaluate('cicadaDemoState.playing'), true, 'valid edits keep the transport playing');
     assert.equal(await evaluate('cicadaDemoState.resets'), liveBefore.resets, 'live edit does not reset the kernel');
     await until(async () => (await evaluate('cicadaDemoState.playhead')) >= liveBefore.tick + 3840);
-    assert((await energy()).energy > 1e-7, 'audio continues after the next bar');
+    await until(async () => (await energy()).energy > 1e-7);
     await edit('invalid score');
     assert(await evaluate(`document.getElementById('edit-error').textContent.length>0 && cicadaDemoState.playing`), 'invalid edits do not interrupt playback');
     await edit(liveBefore.source);
-    await wait(`document.getElementById('status').textContent.includes('next bar')`);
+    await wait(`cicadaDemo.snapshot().source===${JSON.stringify(liveBefore.source)} && !document.getElementById('apply').disabled && document.getElementById('status').textContent.includes('next bar')`);
     // Stop while a later image is still loading, then release it and restart.
     await evaluate(`(()=>{const p=cicadaDemoAudio.node.port;p.savedPost=p.postMessage;p.postMessage=function(data,transfer){if(data.t==='i'){p.heldImage=[data,transfer];return}p.savedPost(data,transfer)}})()`);
     await edit(liveBefore.source.replace('tempo 112', 'tempo 117'));
@@ -151,7 +151,7 @@ async function until(run, timeout = 20000) {
     assert.match(await evaluate('cicadaDemo.snapshot().source'), /tempo 117/, 'stop while staging retains the new score');
     await play();
     await edit(liveBefore.source);
-    await wait(`document.getElementById('status').textContent.includes('next bar')`);
+    await wait(`cicadaDemo.snapshot().source===${JSON.stringify(liveBefore.source)} && !document.getElementById('apply').disabled && document.getElementById('status').textContent.includes('next bar')`);
     await evaluate('window.scrollTo(0,0)');
     await screenshot('demo-playing-1440.png');
     const metricsVisible = await evaluate(`(()=>{const r=document.getElementById('metrics-title').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.getElementById('messages').textContent!=='0'})()`);
