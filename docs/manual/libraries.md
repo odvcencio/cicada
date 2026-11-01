@@ -79,7 +79,15 @@ duplicate locations still produce a shadowing error.
 
 Studio Save As and `cicada save-as` automatically copy imported user and project
 libraries and write project pins before publishing the target score. The copy
-then loads and renders without the original project or user library. There is
-no `cicada bundle` command in this build; use Save As to copy a project.
+then loads and renders without the original project or user library.
+
+`cicada bundle main.cicada song.zip` packages that portable copy as a ZIP.
+`cicada-bundle.json` lists its files with byte counts and SHA-256 hashes, and
+records the bundled library identities. Extract the archive and open
+`main.cicada`; embedded standard libraries still come from the Cicada host.
+The archive also contains the retained takes and recovery files copied by Save
+As, which may include unpublished work. History filenames are tied to the
+temporary copy's score path and do not automatically become Studio history at
+the extraction path. Existing bundle files are never overwritten.
 
 See the [library CLI reference](../cli.md#libraries) for command syntax.
