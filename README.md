@@ -17,7 +17,8 @@ cd night-circuit
 ../build/cicada check
 ```
 
-The starter score has bass, drums, and two scenes. Open it in Studio:
+The starter score has drums, an FM bass line, chords, and two scenes; the
+second scene drops the drums. Open it in Studio:
 
 ```sh
 ../build/cicada studio main.cicada --audio null
@@ -65,8 +66,8 @@ available when microphone permission is missing; recording requires access.
 - [Language specification](docs/spec/README.md) — edition 1 and 2 syntax,
   defaults, diagnostics, and supported language extensions.
 - [Examples](examples/) — complete Cicada scores, including
-  [first acid](examples/first-acid.cicada) and
-  [circuit kit](examples/circuit-kit.cicada).
+  [first song](examples/first-song/main.cicada), the project `cicada new`
+  creates, and [circuit kit](examples/circuit-kit.cicada).
 - [Demo songs](examples/songs/README.md) — three complete arrangements with
   composition notes, editing exercises, and full render commands.
 

@@ -1,13 +1,20 @@
 # Built-in track parameter catalog
 
-This page lists source parameters for the built-in acid and drum voices.
+This page lists source parameters for the built-in drum and acid voices. The
+piano and the keyboard patches have their own controls, described in
+[Electronic keyboards](../manual/keys.md) and
+[the modeled piano](../audio/modeled-piano.md), and the `model_` percussion
+voices in [Modeled percussion](../manual/modeled-percussion.md).
+[Parameter ranges](../manual/parameter-ranges.md) lists the allowed range of
+each piano, drum, acid, guitar and effect setting; the keyboard patch ranges
+are in the tables in Electronic keyboards.
 Edition 2 also has an [experimental guitar](edition-2.md#experimental-guitar-voice)
 behind `experimental = on`; its reference lists the six continuous controls.
 For typed JSON record fields, see the [semantic field catalog](semantic-model.md).
 
 ## Built-in voice parameters
 
-**Syntax (EBNF):** A <code>param_decl</code> is inside <code>track_decl</code>. Acid fields use their field name, such as <code>cutoff</code>; drum fields use a lane prefix, such as <code>bd_tune</code>.
+**Syntax (EBNF):** A <code>param_decl</code> is inside <code>track_decl</code>. Drum fields use a lane prefix, such as <code>bd_tune</code>; acid fields use their field name, such as <code>cutoff</code>.
 
 **Meaning:** The selected voice validates the names, types, and ranges before compilation. Mixer fields are documented in [Track mixer settings](edition-1.md#track-mixer-settings) and are not part of the voice parameter list.
 
@@ -21,13 +28,35 @@ For typed JSON record fields, see the [semantic field catalog](semantic-model.md
 
 ```cicada
 cicada 2
-track bass acid { cutoff = 720Hz reso = 0.65 decay = 500ms }
-pattern pulse acid { 1^ . 5 . }
-scene main { bass = pulse }
+track kit drums { bd_tune = 55Hz sd_decay = 120ms ch_tone = 7500Hz }
+pattern beat drums {
+  bd: X...x...
+  sd: ....X...
+  ch: x.x.x.x.
+}
+scene main { kit = beat }
 song { main*4 }
 ```
 
 **Edition history:** Available in edition 1. The semantic field catalog describes <code>track.params</code> as a typed-value map; this page defines the current built-in voice keys checked inside that map.
+
+## Drum voice parameters
+
+Prefix a drum parameter with the lane name. For example, <code>bd_tune</code> sets the bass drum tune. Every lane accepts <code>level</code> (−60 to +6 dB or <code>off</code>) and <code>pan</code> (−1 to +1).
+
+| Lane | Additional fields | Defaults |
+| --- | --- | --- |
+| <code>bd</code> | <code>tune</code> 40–120 Hz; <code>decay</code> 80–1500 ms; <code>sweep</code> 1–8; <code>sweep_time</code> 10–80 ms; <code>click</code> 0–1; <code>drive</code> 0–1 | 55 Hz, 400 ms, 4, 30 ms, 0.3, 0.2 |
+| <code>sd</code> | <code>tune</code> 0.7–1.4; <code>tone</code> 0.5–2; <code>mix</code> 0–1; <code>snappy</code> 60–400 ms; <code>decay</code> 40–300 ms | 1, 1, 0.6, 180 ms, 90 ms |
+| <code>ch</code> | <code>tune</code> 0.8–1.25; <code>tone</code> 5000–10000 Hz; <code>decay</code> 20–150 ms; <code>metal</code> switch | 1, 7500 Hz, 60 ms, off |
+| <code>oh</code> | <code>tune</code> 0.8–1.25; <code>tone</code> 5000–10000 Hz; <code>decay</code> 150–1200 ms; <code>metal</code> switch | 1, 7500 Hz, 400 ms, off |
+| <code>cp</code> | <code>tone</code> 700–2000 Hz; <code>decay</code> 60–400 ms; <code>spread</code> 6–16 ms | 1100 Hz, 120 ms, 10 ms |
+| <code>rs</code> | <code>tune</code> 0.7–1.4; <code>decay</code> 4–50 ms | 1, 12 ms |
+| <code>lt</code>, <code>mt</code>, <code>ht</code> | <code>tune</code> 0.667–1.498; <code>decay</code> 80–1000 ms; <code>sweep</code> 0–2 | 1, 250 ms, 0.4 |
+| <code>cb</code> | <code>tune</code> 0.7–1.4; <code>decay</code> 40–400 ms | 1, 120 ms |
+| <code>cy</code> | <code>tune</code> 0.8–1.25; <code>decay</code> 500–4000 ms; <code>tone</code> 0.5–2 | 1, 1500 ms, 1 |
+
+<code>sd_tune</code>, <code>sd_tone</code>, <code>sd_mix</code>, <code>ch_tune</code>, <code>oh_tune</code>, tom tune, <code>cb_tune</code>, <code>cy_tune</code>, and <code>cy_tone</code> are unitless ratios. <code>sweep</code>, <code>click</code>, <code>drive</code>, and <code>mix</code> are unitless controls from 0 to 1 unless a narrower range is listed. The tom tune bounds are 2 to the power of −7/12 through +7/12.
 
 ## Acid voice
 
@@ -55,31 +84,10 @@ The built-in acid voice accepts these parameters:
 
 <code>tune</code> and <code>fine</code> change pitch; <code>wave</code> and <code>pw</code> shape the oscillator; <code>cutoff</code>, <code>reso</code>, and <code>envmod</code> control the filter; <code>decay</code>, <code>accent</code>, <code>drive</code>, <code>release</code>, and <code>slide</code> shape articulation. <code>filter</code> selects the filter model. <code>savage</code> enables the additional nonlinear filter behavior.
 
-## Drum voice parameters
-
-Prefix a drum parameter with the lane name. For example, <code>bd_tune</code> sets the bass drum tune. Every lane accepts <code>level</code> (−60 to +6 dB or <code>off</code>) and <code>pan</code> (−1 to +1).
-
-| Lane | Additional fields | Defaults |
-| --- | --- | --- |
-| <code>bd</code> | <code>tune</code> 40–120 Hz; <code>decay</code> 80–1500 ms; <code>sweep</code> 1–8; <code>sweep_time</code> 10–80 ms; <code>click</code> 0–1; <code>drive</code> 0–1 | 55 Hz, 400 ms, 4, 30 ms, 0.3, 0.2 |
-| <code>sd</code> | <code>tune</code> 0.7–1.4; <code>tone</code> 0.5–2; <code>mix</code> 0–1; <code>snappy</code> 60–400 ms; <code>decay</code> 40–300 ms | 1, 1, 0.6, 180 ms, 90 ms |
-| <code>ch</code> | <code>tune</code> 0.8–1.25; <code>tone</code> 5000–10000 Hz; <code>decay</code> 20–150 ms; <code>metal</code> switch | 1, 7500 Hz, 60 ms, off |
-| <code>oh</code> | <code>tune</code> 0.8–1.25; <code>tone</code> 5000–10000 Hz; <code>decay</code> 150–1200 ms; <code>metal</code> switch | 1, 7500 Hz, 400 ms, off |
-| <code>cp</code> | <code>tone</code> 700–2000 Hz; <code>decay</code> 60–400 ms; <code>spread</code> 6–16 ms | 1100 Hz, 120 ms, 10 ms |
-| <code>rs</code> | <code>tune</code> 0.7–1.4; <code>decay</code> 4–50 ms | 1, 12 ms |
-| <code>lt</code>, <code>mt</code>, <code>ht</code> | <code>tune</code> 0.667–1.498; <code>decay</code> 80–1000 ms; <code>sweep</code> 0–2 | 1, 250 ms, 0.4 |
-| <code>cb</code> | <code>tune</code> 0.7–1.4; <code>decay</code> 40–400 ms | 1, 120 ms |
-| <code>cy</code> | <code>tune</code> 0.8–1.25; <code>decay</code> 500–4000 ms; <code>tone</code> 0.5–2 | 1, 1500 ms, 1 |
-
-<code>sd_tune</code>, <code>sd_tone</code>, <code>sd_mix</code>, <code>ch_tune</code>, <code>oh_tune</code>, tom tune, <code>cb_tune</code>, <code>cy_tune</code>, and <code>cy_tone</code> are unitless ratios. <code>sweep</code>, <code>click</code>, <code>drive</code>, and <code>mix</code> are unitless controls from 0 to 1 unless a narrower range is listed. The tom tune bounds are 2 to the power of −7/12 through +7/12.
-
 ```cicada
 cicada 2
-track kit drums { bd_tune = 55Hz bd_decay = 400ms ch_tone = 7500Hz }
-pattern beat drums {
-  bd: X...x...
-  ch: x.x.x.x.
-}
-scene main { kit = beat }
+track bass acid { cutoff = 720Hz reso = 0.65 decay = 500ms }
+pattern pulse { 1^ . 5 . }
+scene main { bass = pulse }
 song { main*4 }
 ```

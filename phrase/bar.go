@@ -45,8 +45,17 @@ func repairBar(notes []noteState, root int, restDownbeat bool, locked uint64) er
 		if locked&1 != 0 && (!notes[0].active || notes[0].class != classRoot || notes[0].tie) {
 			return fmt.Errorf("CICADA-LOCKED: root downbeat needs step 0")
 		}
+		wasRest := !notes[0].active
 		notes[0].active, notes[0].class, notes[0].tie = true, classRoot, false
-		notes[0].note = nearestOctave(root, notes[0].note)
+		if wasRest {
+			// A rotated bar can begin with a rest, which stores pitch zero. The
+			// octave of the root nearest to that zero is three octaves low, and
+			// the interval repair below would pull the next notes down with it,
+			// below the range of the piano and the keyboard patches.
+			notes[0].note = root
+		} else {
+			notes[0].note = nearestOctave(root, notes[0].note)
+		}
 	}
 	rootExists := false
 	for _, note := range notes {

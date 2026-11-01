@@ -126,7 +126,7 @@ func ReplacePreviewBar(original, variation string) (string, error) {
 			}
 		}
 		if _, ok := found["pattern"]; !ok {
-			return nil, fmt.Errorf("phrase preview has no acid bar")
+			return nil, fmt.Errorf("phrase preview has no note pattern")
 		}
 		return found, nil
 	}

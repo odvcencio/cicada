@@ -236,7 +236,11 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 		return stageProjectSource(ctx, path, source, updated), nil
 	}
 	if polyphonic && track.Polyphony == 4 {
-		return nil, fmt.Errorf("track %q is not an acid track", trackID)
+		// The four-voice pool belongs to a voice, not to one track: every track on
+		// the voice uses it once any pattern on the voice holds chords or note
+		// gestures, which a one-pitch-per-step grid cannot keep. The message names
+		// the voice because this track's own patterns may be single notes.
+		return nil, fmt.Errorf("track %q is on the %s voice, which plays chords or note gestures in this score, so a take cannot be snapped to its step grid; keep played timing, or record into a track on a voice that plays only single notes", trackID, track.Kind)
 	}
 	if polyphonic {
 		// Existing notes patterns hold one pitch per step. Refuse a chord take

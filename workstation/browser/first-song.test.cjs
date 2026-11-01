@@ -29,7 +29,7 @@ test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and exp
   fs.writeFileSync(path.join(proof,'reopen-report.json'),JSON.stringify({revision:reopened.revision,render,byteIdentical:true,errors},null,2)+'\n');
   assert.deepEqual(errors,[]);return;
  }
- const initial=await state();assert.ok(initial.source.includes('title \"first-light\"')&&initial.source.includes('track bass acid')&&initial.source.includes('track drums drums'),'use the untouched disposable first-light template');
+ const initial=await state();assert.ok(initial.source.includes('title \"first-light\"')&&initial.source.includes('track drums drums')&&initial.source.includes('track bass fm_bass')&&initial.source.includes('track chords poly_keys'),'use the untouched disposable first-light template');
  const audio=await(await page.request.get(new URL('/api/audio/config',origin).href)).json();assert.equal(audio.options.inputEnabled,false);assert.equal(String(audio.inventory.backendName||audio.inventory.backend).toLowerCase(),'null');
  await page.locator('#studio-code > details > summary').click();
  await projectSettings('First Light',108);

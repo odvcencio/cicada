@@ -6,7 +6,7 @@ scene boundaries, global pattern phase, slide behavior, and parameter changes.
 
 ```cicada
 cicada 2
-track bass acid {}
+track bass fm_bass {}
 pattern pulse { c3 . c4 . }
 arrange {
   tempo @1.1.1 120

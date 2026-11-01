@@ -17,7 +17,7 @@ func sourceForBar(notes []noteState, p normalizedParams) (string, error) {
 func sourceForBars(bars map[byte][]noteState, order []byte, p normalizedParams) (string, error) {
 	var source strings.Builder
 	fmt.Fprintf(&source, "cicada 2\n\ntitle \"Generated phrase\"\ntempo 130\nkey %s %s\nseed %d\n\n", keyNames[p.Key], scaleNames[p.Scale], uint32(p.Seed))
-	source.WriteString("track bass acid {}\n\n")
+	fmt.Fprintf(&source, "track bass %s {}\n\n", p.Voice)
 	for _, letter := range []byte{'a', 'b', 'c'} {
 		notes, ok := bars[letter]
 		if !ok {

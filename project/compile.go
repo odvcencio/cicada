@@ -319,7 +319,7 @@ func acidStep(score *notation.Score, token string, octave, transpose int) (seq.S
 		return s, nil
 	}
 	if token == "" {
-		return s, fmt.Errorf("empty acid step")
+		return s, fmt.Errorf("empty note step")
 	}
 	note, consumed, err := parsePitch(score, token, octave)
 	if err != nil {
@@ -362,7 +362,7 @@ func acidStep(score *notation.Score, token string, octave, transpose int) (seq.S
 				s.Probability = uint8(n)
 			}
 		default:
-			return s, fmt.Errorf("invalid acid modifier in %q", token)
+			return s, fmt.Errorf("invalid note modifier in %q", token)
 		}
 	}
 	note += transpose

@@ -246,13 +246,13 @@
   "library/insert/comp/extra/crlf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "099afd5ea7107d5f2a0aa1e6b246a4af8760e51addf3e7373e6e784614d741ac",
+      "playingRevision": "d3a543be56fac19a476a59d84ac69282b14c241238ef65177ead173906a2154c",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "099afd5ea7107d5f2a0aa1e6b246a4af8760e51addf3e7373e6e784614d741ac",
-      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+      "revision": "d3a543be56fac19a476a59d84ac69282b14c241238ef65177ead173906a2154c",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
       "valid": true
     },
-    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
     "Labels": [
       "Library: insert fx.comp on extra"
     ]
@@ -260,13 +260,13 @@
   "library/insert/comp/extra/lf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "27ce8b34d3977a38c070cd90a641116dfa2238a494353682b6a56113a0c56a9f",
+      "playingRevision": "b0efcb2e345c20567db63f6418271850b1d1ed4701267cf00713922bb4322d94",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "27ce8b34d3977a38c070cd90a641116dfa2238a494353682b6a56113a0c56a9f",
-      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+      "revision": "b0efcb2e345c20567db63f6418271850b1d1ed4701267cf00713922bb4322d94",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
       "valid": true
     },
-    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
     "Labels": [
       "Library: insert fx.comp on extra"
     ]
@@ -302,13 +302,13 @@
   "library/insert/delay/extra/crlf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "57d6895637d5f29e40ae1b6c7fa83e9f86be8924c4a05f5629d59704f2639032",
+      "playingRevision": "d379e03c498b1ad237c939fbf6683d34723c4ad13174bfad148106583bda76b9",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "57d6895637d5f29e40ae1b6c7fa83e9f86be8924c4a05f5629d59704f2639032",
-      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+      "revision": "d379e03c498b1ad237c939fbf6683d34723c4ad13174bfad148106583bda76b9",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.delay = 0.4\n}\n",
       "valid": true
     },
-    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.delay = 0.4\n}\n",
     "Labels": [
       "Library: insert fx.delay on extra"
     ]
@@ -316,13 +316,13 @@
   "library/insert/delay/extra/lf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "3e2a03fce2585f8347c1142a0bfeea73ac874c3478423beb508b29f9eb9020a0",
+      "playingRevision": "adad97a99839c54f47c40835c80ebc8cdc72cec6e79770a7d15af9d3d1ddfea7",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "3e2a03fce2585f8347c1142a0bfeea73ac874c3478423beb508b29f9eb9020a0",
-      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+      "revision": "adad97a99839c54f47c40835c80ebc8cdc72cec6e79770a7d15af9d3d1ddfea7",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.delay = 0.4\n}\n",
       "valid": true
     },
-    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.delay = 0.4\n}\n",
     "Labels": [
       "Library: insert fx.delay on extra"
     ]
@@ -358,13 +358,13 @@
   "library/insert/drive/extra/crlf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "3dfb27c58a2d7d89603c22895a64bff0c745b62f29bf9c27a808d14eb8edaff4",
+      "playingRevision": "d82205bfd5c27284edb0d50f719a93258b23c68fe68d5a0c7a456876ca5bea2c",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "3dfb27c58a2d7d89603c22895a64bff0c745b62f29bf9c27a808d14eb8edaff4",
-      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+      "revision": "d82205bfd5c27284edb0d50f719a93258b23c68fe68d5a0c7a456876ca5bea2c",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  insert = fx.drive\n}\n",
       "valid": true
     },
-    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  insert = fx.drive\n}\n",
     "Labels": [
       "Library: insert fx.drive on extra"
     ]
@@ -372,13 +372,13 @@
   "library/insert/drive/extra/lf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "a758a411564323ce9f5319c1c24b9f53a042a4e5fe0bddc39b9af2a9add4db5d",
+      "playingRevision": "b1ce36d2415574527468fbaed9c038195823a4167b35ad28743a84e5f28b06a8",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "a758a411564323ce9f5319c1c24b9f53a042a4e5fe0bddc39b9af2a9add4db5d",
-      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+      "revision": "b1ce36d2415574527468fbaed9c038195823a4167b35ad28743a84e5f28b06a8",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  insert = fx.drive\n}\n",
       "valid": true
     },
-    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  insert = fx.drive\n}\n",
     "Labels": [
       "Library: insert fx.drive on extra"
     ]
@@ -502,13 +502,13 @@
   "library/insert/reverb/extra/crlf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "e79511d70435949ff4672932169e64056594d900cafb1f20d8755bbdfdd6c4f3",
+      "playingRevision": "bc58b6006bd50ab1f9e859c679bc771cb2e004f5a086bc13ba3b0e2f92722c13",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "e79511d70435949ff4672932169e64056594d900cafb1f20d8755bbdfdd6c4f3",
-      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+      "revision": "bc58b6006bd50ab1f9e859c679bc771cb2e004f5a086bc13ba3b0e2f92722c13",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.reverb = 0.4\n}\n",
       "valid": true
     },
-    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.reverb = 0.4\n}\n",
     "Labels": [
       "Library: insert fx.reverb on extra"
     ]
@@ -516,13 +516,13 @@
   "library/insert/reverb/extra/lf": {
     "Code": 200,
     "Body": {
-      "playingRevision": "677d5c7ba2cae72d6fbe0e432f1fd23d2ce15d0c08a32930a8e17e02cb1f7528",
+      "playingRevision": "a6beefedacddffc7cac89349a5841405b8be645fb14732cadb4c6471dd943787",
       "preserved": "\u003cpreserved-score\u003e",
-      "revision": "677d5c7ba2cae72d6fbe0e432f1fd23d2ce15d0c08a32930a8e17e02cb1f7528",
-      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+      "revision": "a6beefedacddffc7cac89349a5841405b8be645fb14732cadb4c6471dd943787",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.reverb = 0.4\n}\n",
       "valid": true
     },
-    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra piano {\n  send fx.reverb = 0.4\n}\n",
     "Labels": [
       "Library: insert fx.reverb on extra"
     ]

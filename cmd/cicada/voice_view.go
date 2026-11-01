@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/project"
 )
@@ -75,7 +76,9 @@ func scoreVoices(p *project.Project) []viewVoice {
 		}
 		voices = append(voices, voice)
 	}
-	builtins := []string{"acid", "drums", "guitar"}
+	builtins := []string{"piano"}
+	builtins = append(builtins, keyboard.Names[:]...)
+	builtins = append(builtins, "acid", "drums", "guitar")
 	for _, name := range modal.Names {
 		builtins = append(builtins, "model_"+name)
 	}
@@ -83,6 +86,13 @@ func scoreVoices(p *project.Project) []viewVoice {
 		voice := viewVoice{ID: builtin, Kind: "built-in", Mode: "native", Description: "Native Cicada voice"}
 		if builtin == "guitar" {
 			voice.Description = "Experimental physical model and amp"
+		}
+		if builtin == "piano" || keyboard.ID(builtin) != 0 {
+			voice.Mode = "poly"
+			voice.Description = "Modeled keyboard"
+			if builtin == "piano" {
+				voice.Description = "Modeled grand piano"
+			}
 		}
 		if _, ok := modal.ParseTrackKind(builtin); ok {
 			voice.Mode = "four-strike"

@@ -18,42 +18,6 @@ again to see the next. Limits are shown to six significant digits, rounded towar
 the range. Mixer settings (`level`, `pan`, sends) are described in the
 [edition 1 specification](../spec/edition-1.md#track-mixer-settings).
 
-## Acid voice (`track name acid`)
-
-| Setting | Unit | Minimum | Maximum | Also accepts |
-| --- | --- | --- | --- | --- |
-| `tune` | unitless | -12 | 12 |  |
-| `fine` | unitless | -100 | 100 |  |
-| `wave` | unitless | 0 | 1 |  |
-| `pw` | unitless | 0.1 | 0.9 |  |
-| `detune` | unitless | 0 | 50 |  |
-| `sub` | unitless | 0 | 1 |  |
-| `cutoff` | Hz | 20Hz | 8000Hz |  |
-| `reso` | unitless | 0 | 1 |  |
-| `envmod` | unitless | 0 | 1 |  |
-| `decay` | ms or s | 100ms | 3s |  |
-| `accent` | unitless | 0 | 1 |  |
-| `drive` | unitless | 0 | 1 |  |
-| `release` | ms or s | 5ms | 500ms |  |
-| `slide` | ms or s | 20ms | 200ms |  |
-| `gate` | unitless | 10 | 100 |  |
-| `filter` | word | - | - | `diode`, `ladder` |
-| `savage` | word | - | - | `off`, `on` |
-| `octave` | word | - | - | `0`, `1`, `2`, `3`, `4`, `5`, `6` |
-
-## Guitar voice (`track name guitar`, edition 2, experimental)
-
-| Setting | Unit | Minimum | Maximum | Also accepts |
-| --- | --- | --- | --- | --- |
-| `bend` | semitones | -12 | 12 |  |
-| `vibrato` | cents | 0 | 100 |  |
-| `brightness` | unitless | 0 | 1 |  |
-| `damping` | unitless | 0 | 1 |  |
-| `pickup` | unitless | 0.05 | 0.45 |  |
-| `drive` | unitless | 0 | 1 |  |
-| `experimental` | word | - | - | `off`, `on` |
-| `octave` | unitless | 0 | 6 |  |
-
 ## Piano (`track name piano`)
 
 | Setting | Unit | Minimum | Maximum | Also accepts |
@@ -175,6 +139,42 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 | `cy_tone` | unitless | 0.5 | 2 |  |
 | `cy_level` | dB | -60dB | 6dB | `off` |
 | `cy_pan` | unitless | -1 | 1 |  |
+
+## Acid voice (`track name acid`)
+
+| Setting | Unit | Minimum | Maximum | Also accepts |
+| --- | --- | --- | --- | --- |
+| `tune` | unitless | -12 | 12 |  |
+| `fine` | unitless | -100 | 100 |  |
+| `wave` | unitless | 0 | 1 |  |
+| `pw` | unitless | 0.1 | 0.9 |  |
+| `detune` | unitless | 0 | 50 |  |
+| `sub` | unitless | 0 | 1 |  |
+| `cutoff` | Hz | 20Hz | 8000Hz |  |
+| `reso` | unitless | 0 | 1 |  |
+| `envmod` | unitless | 0 | 1 |  |
+| `decay` | ms or s | 100ms | 3s |  |
+| `accent` | unitless | 0 | 1 |  |
+| `drive` | unitless | 0 | 1 |  |
+| `release` | ms or s | 5ms | 500ms |  |
+| `slide` | ms or s | 20ms | 200ms |  |
+| `gate` | unitless | 10 | 100 |  |
+| `filter` | word | - | - | `diode`, `ladder` |
+| `savage` | word | - | - | `off`, `on` |
+| `octave` | word | - | - | `0`, `1`, `2`, `3`, `4`, `5`, `6` |
+
+## Guitar voice (`track name guitar`, edition 2, experimental)
+
+| Setting | Unit | Minimum | Maximum | Also accepts |
+| --- | --- | --- | --- | --- |
+| `bend` | semitones | -12 | 12 |  |
+| `vibrato` | cents | 0 | 100 |  |
+| `brightness` | unitless | 0 | 1 |  |
+| `damping` | unitless | 0 | 1 |  |
+| `pickup` | unitless | 0.05 | 0.45 |  |
+| `drive` | unitless | 0 | 1 |  |
+| `experimental` | word | - | - | `off`, `on` |
+| `octave` | unitless | 0 | 6 |  |
 
 ## Drive (`fx name drive`)
 

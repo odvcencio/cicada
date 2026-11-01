@@ -32,7 +32,7 @@ fx hall reverb {}
 fx glue comp {}
 bus music { insert = glue }
 master { level = -1dB mute = off }
-track bass acid {
+track bass fm_bass {
   level = -6dB
   mute = off
   send room = 0.25 pre
@@ -40,7 +40,7 @@ track bass acid {
   insert = none
   out = music
 }
-pattern pulse acid { 1 . 1 . }
+pattern pulse { 1 . 1 . }
 scene main { bass = pulse }
 song { main }
 ```
@@ -53,8 +53,8 @@ The music and SFX buses exist without declarations. `bus music` may select the m
 
 ```cicada-invalid CICADA-UNSUPPORTED
 cicada 2
-track bass acid { send music = 0.2 }
-pattern pulse acid { 1 }
+track bass fm_bass { send music = 0.2 }
+pattern pulse { 1 }
 scene main { bass = pulse }
 song { main }
 ```

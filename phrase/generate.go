@@ -5,7 +5,7 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// Generate creates a seeded acid phrase and the same music as parseable
+// Generate creates a seeded bass phrase and the same music as parseable
 // Cicada source. Structure variants reuse equal A bars by value.
 func Generate(params Params) (Result, error) {
 	p, err := normalize(params)

@@ -37,8 +37,6 @@ func GenerateRangesDoc() ([]byte, error) {
 		return func(d Descriptor) bool { return strings.HasPrefix(d.ID, p) }
 	}
 	sections := []section{
-		{"Acid voice (`track name acid`)", prefix("acid.")},
-		{"Guitar voice (`track name guitar`, edition 2, experimental)", prefix("guitar.")},
 		{"Piano (`track name piano`)", prefix("piano.")},
 	}
 	for _, lane := range []struct{ id, name string }{
@@ -50,6 +48,10 @@ func GenerateRangesDoc() ([]byte, error) {
 			return strings.HasPrefix(d.ID, "drum.") && strings.HasPrefix(d.Source, id+"_")
 		}})
 	}
+	sections = append(sections,
+		section{"Acid voice (`track name acid`)", prefix("acid.")},
+		section{"Guitar voice (`track name guitar`, edition 2, experimental)", prefix("guitar.")},
+	)
 	for _, kind := range []struct{ id, name string }{
 		{"drive", "Drive"}, {"delay", "Delay"}, {"reverb", "Reverb"}, {"comp", "Compressor"}, {"deesser", "De-esser"},
 		{"eq", "EQ (track insert)"}, {"master.eq", "EQ on the master chain"}, {"transient", "Transient shaper (master)"}, {"width", "Width (master)"}, {"limiter", "Limiter (master)"},

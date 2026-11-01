@@ -44,6 +44,57 @@ func newCommand(args []string) error {
 	return nil
 }
 
+// starterBody is the score `cicada new` writes after its title line: drums, an
+// FM bass line and poly-keys chords, in two scenes that differ so the song has
+// a break. It is already formatted and passes `cicada fix --check`, which is
+// why the break stops the drums with `stop`, the canonical word, not `off`.
+// examples/first-song holds the same score under a fixed title, and
+// TestStarterMatchesFirstSongExample keeps the two identical.
+const starterBody = `
+tempo 120
+
+key a minor
+
+track drums drums {}
+
+track bass fm_bass {}
+
+track chords poly_keys {
+  octave = 3
+}
+
+pattern beat drums {
+  bd: X... .... X... ....
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+}
+
+pattern pulse {
+  1 . . 1 . . 1 . 6, . . 6, . . 7, .
+}
+
+pattern progression {
+  [1 3 5] - - - - - - . [6, 1 3] - - - - - - .
+}
+
+scene main {
+  drums = beat
+  bass = pulse
+  chords = progression
+}
+
+scene break {
+  drums = stop
+  bass = pulse
+  chords = progression
+}
+
+song {
+  main*4
+  break*4
+}
+`
+
 func newProject(name string, writeFile func(string, []byte, os.FileMode) error) error {
 	if !edition.ValidProjectName(name) {
 		return fmt.Errorf("project name must use letters, digits, hyphen, or underscore")
@@ -66,7 +117,7 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 		}
 	}()
 	manifest := []byte("project " + name + "\ncicada 2\n")
-	main := []byte("title \"" + name + "\"\ntempo 130\nkey a minor\n\ntrack bass acid {}\ntrack drums drums {}\n\npattern pulse acid {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\npattern beat drums {\n  bd: X... .... X... ....\n  sd: .... X... .... X...\n  ch: x.x. x.x. x.x. x.x.\n}\n\nscene main { bass = pulse drums = beat }\nscene break { bass = pulse drums = beat }\nsong { main*4 break*4 }\n")
+	main := []byte("title \"" + name + "\"\n" + starterBody)
 	document, err := notation.ParseDocument(main)
 	if err != nil {
 		return err

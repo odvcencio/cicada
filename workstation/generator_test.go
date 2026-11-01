@@ -2,11 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/phrase"
 )
 
 func TestPhrasePreviewIsPrivateAndDoesNotWriteScore(t *testing.T) {
@@ -43,6 +48,141 @@ func TestPhrasePreviewIsPrivateAndDoesNotWriteScore(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != 422 || len(*edits) != 0 {
 		t.Fatalf("invalid preview status=%d edits=%d", response.StatusCode, len(*edits))
+	}
+}
+
+// generatorForm is the phrase generator's form with the given values replaced.
+func generatorForm(csrf string, overrides map[string]string) url.Values {
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "__gosx_return_to": {"/?panel=generator"}}
+	for key, value := range phraseDefaults {
+		form.Set(key, value)
+	}
+	for key, value := range overrides {
+		form.Set(key, value)
+	}
+	return form
+}
+
+func selectedVoice(t *testing.T, page string) string {
+	t.Helper()
+	match := regexp.MustCompile(`<option value="([a-z_]+)"[^>]*selected`).FindAllStringSubmatch(page, -1)
+	for _, m := range match {
+		for _, voice := range phrase.Voices() {
+			if m[1] == voice {
+				return voice
+			}
+		}
+	}
+	return ""
+}
+
+// The generator offers a voice and writes it on the track line. A new session
+// plays the default FM bass; acid stays one choice among the voices.
+func TestPhraseGeneratorWritesTheChosenVoice(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=generator"))
+	page := getPage(t, client, address+"/?panel=generator")
+	if got := selectedVoice(t, page); got != phrase.DefaultVoice {
+		t.Fatalf("a new session selects voice %q, want %q", got, phrase.DefaultVoice)
+	}
+	for _, voice := range []string{"acid", "piano", "fm_bass"} {
+		if !strings.Contains(page, `<option value="`+voice+`"`) {
+			t.Fatalf("the voice selector lacks %q", voice)
+		}
+	}
+	// The selector shows the generator's order: the default first, then the piano
+	// and the keyboard patches, with acid last.
+	selector := regexp.MustCompile(`(?s)<select name="voice"[^>]*>(.*?)</select>`).FindStringSubmatch(page)
+	if selector == nil {
+		t.Fatal("the generator page has no voice selector")
+	}
+	var offered []string
+	for _, option := range regexp.MustCompile(`<option value="([a-z_]+)"`).FindAllStringSubmatch(selector[1], -1) {
+		offered = append(offered, option[1])
+	}
+	if !reflect.DeepEqual(offered, phrase.Voices()) || len(offered) < 3 || offered[1] != "piano" || offered[len(offered)-1] != "acid" {
+		t.Fatalf("the voice selector lists %v, want %v with acid last", offered, phrase.Voices())
+	}
+	if strings.Contains(page, "acid phrases") {
+		t.Fatal("the generator still describes itself as an acid phrase generator")
+	}
+	for _, voice := range []string{"", "acid", "piano", "tine_ep"} {
+		want := voice
+		form := generatorForm(csrf, map[string]string{"voice": voice})
+		if voice == "" {
+			// A form from an earlier session has no voice field and selects the default.
+			form.Del("voice")
+			want = phrase.DefaultVoice
+		}
+		response := post(t, client, address+"/__actions/generate", form, false, address)
+		if response.StatusCode != 303 {
+			t.Fatalf("voice %q: preview status=%d", voice, response.StatusCode)
+		}
+		page = getPage(t, client, address+"/?panel=generator")
+		if !strings.Contains(page, "track bass "+want+" {}") {
+			t.Fatalf("voice %q: the preview lacks the %s track", voice, want)
+		}
+		if got := selectedVoice(t, page); got != want {
+			t.Fatalf("voice %q: the form shows %q after the preview", voice, got)
+		}
+	}
+	if len(*edits) != 0 {
+		t.Fatal("previewing a phrase edited the score")
+	}
+}
+
+func TestPhraseGeneratorRefusesAnUnknownVoice(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=generator"))
+	for _, voice := range []string{"drums", "model_bd", "nope"} {
+		response := post(t, client, address+"/__actions/generate", generatorForm(csrf, map[string]string{"voice": voice}), true, address)
+		if response.StatusCode != 422 || len(*edits) != 0 {
+			t.Fatalf("voice %q: status=%d edits=%d", voice, response.StatusCode, len(*edits))
+		}
+	}
+}
+
+// Mutate and Evolve read the form back from the session. The voice must survive
+// that round trip, and the default voice must accept every operation, including
+// the rotation that once left a bar below the keyboard range.
+func TestPhraseMutationKeepsTheVoice(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=generator"))
+	mutate := func(values map[string]string) *http.Response {
+		form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "__gosx_return_to": {"/?panel=generator"}, "seed": {"99"}, "operation": {"nudge"}, "rotation": {"2"}, "generation": {"0"}, "mode": {"mutate"}}
+		for key, value := range values {
+			form.Set(key, value)
+		}
+		return post(t, client, address+"/__actions/mutate", form, false, address)
+	}
+	for _, voice := range []string{"acid", "piano", phrase.DefaultVoice} {
+		response := post(t, client, address+"/__actions/generate", generatorForm(csrf, map[string]string{"voice": voice}), false, address)
+		if response.StatusCode != 303 {
+			t.Fatalf("voice %s: preview status=%d", voice, response.StatusCode)
+		}
+		for _, step := range []map[string]string{{"operation": "accent"}, {"mode": "evolve", "generation": "1"}, {"operation": "rotate"}} {
+			if response := mutate(step); response.StatusCode != 303 {
+				t.Fatalf("voice %s: mutation %v status=%d", voice, step, response.StatusCode)
+			}
+			page := getPage(t, client, address+"/?panel=generator")
+			if !strings.Contains(page, "track bass "+voice+" {}") || selectedVoice(t, page) != voice {
+				t.Fatalf("voice %s was lost after mutation %v", voice, step)
+			}
+		}
+	}
+	// Rotating moves the downbeat rest to the front of a bar. Every seed must still
+	// give a playable preview on the default keyboard voice.
+	for seed := 1; seed <= 40; seed++ {
+		form := generatorForm(csrf, map[string]string{"seed": fmt.Sprint(seed), "structure": "a"})
+		if response := post(t, client, address+"/__actions/generate", form, false, address); response.StatusCode != 303 {
+			t.Fatalf("seed %d: preview status=%d", seed, response.StatusCode)
+		}
+		if response := mutate(map[string]string{"operation": "rotate", "seed": fmt.Sprint(seed)}); response.StatusCode != 303 {
+			t.Fatalf("seed %d: rotating the default voice returned status=%d", seed, response.StatusCode)
+		}
+	}
+	if len(*edits) != 0 {
+		t.Fatal("mutating a preview edited the score")
 	}
 }
 

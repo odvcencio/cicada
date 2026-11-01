@@ -81,7 +81,9 @@ func insertLibraryItem(ctx *Context, intent Intent) error {
 	if !found {
 		binding := in.Reference
 		if in.ItemKind == "effect" {
-			binding = "acid"
+			// An effect needs a sound to process. The piano plays on every kernel,
+			// including the core one that has no keyboard module.
+			binding = "piano"
 		}
 		updated = append(updated, []byte("\ntrack "+in.Track+" "+binding+" {}\n")...)
 	}

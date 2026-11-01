@@ -99,7 +99,7 @@ func (s *studioApp) performanceGestures(ctx *server.Context, v workspace, csrf s
 	}
 	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "note-gestures"), gosx.Attr("class", "performance-gestures")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "gesture-heading")), gosx.El("h3", gosx.Text(performancePitch(int(note.Note)+int(p.Transpose))+" · Note gestures")), gosx.El("span", gosx.Text(fmt.Sprintf("%d points · %d ticks held", len(points), duration)))),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Each point holds until the next. Times are relative to this note, so moving the note carries its gestures. Acid and authored synths can play these controls; pressure and timbre need a sound that uses them.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Each point holds until the next. Times are relative to this note, so moving the note carries its gestures. Authored synths can play these controls, and acid follows bend and vibrato; pressure and timbre need a sound that uses them.")),
 		gestureTrace(points, duration, selected),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "gesture-content")),
 			gosx.El("div", gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("tabindex", "0"), gosx.Attr("role", "region"), gosx.Attr("aria-label", "Note gesture points")),

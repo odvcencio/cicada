@@ -249,10 +249,68 @@ func TestChordGridRecordingOverChordRefusedAtomically(t *testing.T) {
 			}
 			result := studioCall(t, handler, "/api/record", studioEdit{Revision: studioRevision([]byte(studioChordScore)), SourceRevision: studioProjectReceipt(t, path), Track: "keys", Pattern: "harmony", Take: []studioTakeNote{{Tick: 0, EndTick: 60, Note: pitch, Velocity: 90}}})
 			got, err := os.ReadFile(path)
-			if err != nil || result.Code != http.StatusUnprocessableEntity || !strings.Contains(result.Body.String(), "is not an acid track") || string(got) != studioChordScore || len(studioHistoryEdits(t, handler)) != 0 {
+			if err != nil || result.Code != http.StatusUnprocessableEntity || !strings.Contains(result.Body.String(), "plays chords or note gestures") || string(got) != studioChordScore || len(studioHistoryEdits(t, handler)) != 0 {
 				t.Fatalf("recording was not refused atomically: %d %s %v", result.Code, result.Body.String(), err)
 			}
 		})
+	}
+}
+
+// The four-voice pool belongs to a voice, not to one track: once a pattern on
+// the voice holds a chord, a take into any track on that voice is refused. The
+// refusal has to say that. It must not claim that the single-note track plays
+// chords, and it must not send the player to another track on the same voice.
+func TestRecordingRefusalNamesTheVoiceItShares(t *testing.T) {
+	const shared = `cicada 2
+
+tempo 120
+
+key c major
+
+track chords poly_keys {}
+
+track line poly_keys {}
+
+pattern pad {
+  [1 3 5] - - - - - - . [6, 1 3] - - - - - - .
+}
+
+pattern tune {
+  1 . 3 . 5 . 3 . 1 . 3 . 5 . 3 .
+}
+
+scene main {
+  chords = pad
+  line = tune
+}
+
+song {
+  main*2
+}
+`
+	take := []studioTakeNote{{Tick: 240, EndTick: 300, Note: 60, Velocity: 90}}
+	_, err := recordedTakeSource([]byte(shared), "line", "tune", take)
+	if err == nil {
+		t.Fatal("a take into a track that shares its voice with a chord track was accepted")
+	}
+	for _, want := range []string{`track "line"`, "poly_keys", "plays chords or note gestures in this score", "keep played timing", "voice that plays only single notes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), `track "line" plays`) || strings.Contains(err.Error(), "track with single-note patterns") {
+		t.Errorf("refusal blames the single-note track or sends the player to a track on the same voice: %v", err)
+	}
+
+	// The chord track is on the refused voice too, and the message still fits it.
+	if _, err := recordedTakeSource([]byte(shared), "chords", "pad", take); err == nil || !strings.Contains(err.Error(), "plays chords or note gestures in this score") {
+		t.Errorf("a take into the chord track itself: %v", err)
+	}
+
+	// With no chord anywhere on the voice, the same take is accepted.
+	single := strings.NewReplacer("[1 3 5]", "1", "[6, 1 3]", "6,").Replace(shared)
+	if updated, err := recordedTakeSource([]byte(single), "line", "tune", take); err != nil || bytes.Equal(updated, []byte(single)) {
+		t.Fatalf("a take into a single-note track was refused or changed nothing: %v", err)
 	}
 }
 
