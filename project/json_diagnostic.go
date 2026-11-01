@@ -36,7 +36,19 @@ func jsonError(data []byte, code, pointer string, offset int, cause error) error
 	}
 	var syntax *json.SyntaxError
 	if errors.As(cause, &syntax) {
-		offset = int(syntax.Offset)
+		// Decoder.Token's SyntaxError offsets changed in Go 1.27. Unmarshal
+		// reports the same one-based offending-byte offset on both toolchains;
+		// use its validation-only RawMessage path for stable source locations.
+		var raw json.RawMessage
+		var canonical *json.SyntaxError
+		if err := json.Unmarshal(data, &raw); errors.As(err, &canonical) {
+			offset = int(canonical.Offset) - 1
+			if canonical.Error() == "unexpected end of JSON input" {
+				offset = len(data)
+			}
+		} else {
+			offset = int(syntax.Offset) - 1
+		}
 	} else if pointer != "" && offset == 0 {
 		if located, ok := jsonPointerOffset(data, pointer); ok {
 			offset = located

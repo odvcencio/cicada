@@ -132,6 +132,9 @@ func TestExportLoudnessLimiterReductionMaximumReportsShortfall(t *testing.T) {
 	if !strings.Contains(err.Error(), "maximum master limiter gain reduction") {
 		t.Fatalf("shortfall does not name the limiter reduction maximum: %v", err)
 	}
+	if result.Passes > 3 {
+		t.Fatalf("limiter-cap shortfall used %d full renders, want at most 3", result.Passes)
+	}
 	t.Logf("METRIC EXPORT-REDUCTION-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
 }
 

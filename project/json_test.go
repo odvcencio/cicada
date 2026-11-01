@@ -444,6 +444,8 @@ func TestJSONDiagnosticLocations(t *testing.T) {
 	}{
 		{"duplicate nested key", `{"a/b~c":{"x":1,"x":2}}`, "CICADA-DUPLICATE", "/a~1b~0c/x", 1, 17},
 		{"syntax after unicode", "{\n  \"title\": \"🎵\",\n  \"x\": }\n", "CICADA-SYNTAX", "/x", 3, 8},
+		{"syntax at first byte", "!", "CICADA-SYNTAX", "", 1, 1},
+		{"syntax in array", "{\"x\":[1,!]}", "CICADA-SYNTAX", "/x/1", 1, 9},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := DecodeJSON([]byte(test.input))

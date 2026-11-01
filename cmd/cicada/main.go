@@ -734,6 +734,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
 	safeGain, hasSafe, lowestUnsafe, prevUnsafe := 0.0, false, math.Inf(1), false
+	lowestUnsafeLUFS := math.Inf(1)
 	var bestChainReduction, fallbackChainReduction float64
 	for pass := 1; pass <= loudnessPassLimit; pass++ {
 		passes = pass
@@ -804,6 +805,13 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				break
 			}
 		}
+		if limiterMode && hasBest && bestMeasure.IntegratedLUFS < target.LoudnessTarget-target.Tolerance && bestChainReduction >= maxExportLimiterReductionDB-0.5 && lowestUnsafeLUFS < target.LoudnessTarget-target.Tolerance {
+			// The lowest unsafe probe is still too quiet for the target. Within
+			// the search's gain bracket, no safe gain can reach it. The best
+			// result is already close enough to the limiter cap to report that
+			// shortfall, so do not render more bisection steps for the same WAV.
+			break
+		}
 		pendingDC := !dcSafe
 		if !dcSafe {
 			// Both renderers add the bias after the master chain and every
@@ -818,8 +826,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				if !hasSafe || gain > safeGain {
 					safeGain, hasSafe = gain, true
 				}
-			} else {
-				lowestUnsafe = math.Min(lowestUnsafe, gain)
+			} else if gain <= lowestUnsafe {
+				lowestUnsafe = gain
+				lowestUnsafeLUFS = measurement.IntegratedLUFS
 			}
 			switch {
 			case !gainOK:
