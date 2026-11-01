@@ -32,7 +32,7 @@ make build
 workstation's browser files in `build/workstation`. `cicada studio` starts the
 workstation, so it looks for `cicada-workstation` next to `cicada` and then on
 your `PATH`. If you move `cicada`, move those three together. The workstation
-module pins Go 1.26.4, which Go downloads when it needs it. To build only the
+module pins Go 1.27.3, which Go downloads when it needs it. To build only the
 command-line tool, run `make build-core`.
 
 `play` opens the system audio device and loops the score. Press Ctrl-C to stop.
