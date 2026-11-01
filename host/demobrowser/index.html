@@ -34,14 +34,15 @@
       <p id="drain" class="drain">Waiting for kernel messages…</p>
     </section>
     <section class="score" aria-labelledby="score-title">
-      <div class="section-heading"><h2 id="score-title">Make it yours</h2><span>Changes stay in this tab</span></div>
+      <div class="section-heading"><h2 id="score-title">Make it yours</h2><span>Score editor</span></div>
       <label class="sr-only" for="source">Cicada score</label>
       <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" disabled></textarea>
-      <div class="edit-actions"><button id="apply" disabled>Apply score</button><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="reset" disabled>Reset</button></div>
+      <div class="edit-actions"><button id="apply" disabled>Apply score</button><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="reset" disabled>Reset</button><button id="open-score" disabled>Open score</button><button id="save-score" disabled>Download score</button><input id="score-file" type="file" accept=".cicada,.txt,text/plain" hidden></div>
       <p id="edit-error" role="alert"></p>
-      <p class="hint">Start with the Marimba sketch. Change a note in <code>pattern phrase</code> or the tempo, then choose Apply score (Ctrl+Enter or ⌘+Enter). Playback stops before loading your changes. Reloading clears your edits.</p>
+      <p id="storage-status" class="hint" role="status"></p>
+      <p class="hint">Start with the Marimba sketch. Change a note in <code>pattern phrase</code> or the tempo, then choose Apply score (Ctrl+Enter or ⌘+Enter). While playing, changes start at the next bar. Open and download move score text between this browser and your device.</p>
     </section>
-    <footer><span>Local playback · no uploads or exports</span><a href="https://github.com/odvcencio/cicada">Source &amp; documentation ↗</a></footer>
+    <footer><span>Local playback · scores stay on your device</span><a href="https://github.com/odvcencio/cicada">Source &amp; documentation ↗</a></footer>
   </main>
 </body>
 </html>

@@ -123,7 +123,7 @@ func NewHandler(build Build) (http.Handler, error) {
 	h.csp = "default-src 'none'; script-src " + scripts + "; style-src 'self' 'unsafe-inline'; " +
 		"connect-src 'self'; worker-src 'self' blob:; media-src 'self' blob:; img-src 'self' data:; " +
 		"font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; " +
-		"sandbox allow-scripts allow-same-origin"
+		"sandbox allow-scripts allow-same-origin allow-downloads"
 	return h, nil
 }
 
