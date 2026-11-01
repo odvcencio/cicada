@@ -19,3 +19,4 @@ pattern beat drums {
 }
 scene main { drums = beat bass = bass-a }
 song { main }
+live { count_in = 2bars }

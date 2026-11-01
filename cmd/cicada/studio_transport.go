@@ -393,7 +393,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 			t.audio = audio
 		}
 		if t.audio != nil {
-			if err := t.prepareCaptureLocked(t.audio, t.stream.BPMMilli()); err != nil {
+			if err := t.prepareCaptureLocked(t.audio, t.stream.BPMMilli(), t.stream.CountInBars()); err != nil {
 				return err
 			}
 			if err := t.audio.Play(); err != nil {
@@ -501,7 +501,11 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		bound = true
 	}
 	if audio != nil {
-		if err := t.prepareCaptureLocked(audio, initial.BPMMilli); err != nil {
+		countInBars := 1
+		if initial.CountInBars != nil {
+			countInBars = *initial.CountInBars
+		}
+		if err := t.prepareCaptureLocked(audio, initial.BPMMilli, countInBars); err != nil {
 			return err
 		}
 		if err := audio.Play(); err != nil {

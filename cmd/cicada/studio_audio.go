@@ -600,6 +600,11 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Cicada-Revision", revision)
+	countInBars := 1
+	if p.Live != nil && p.Live.CountInBars != nil {
+		countInBars = *p.Live.CountInBars
+	}
+	w.Header().Set("X-Cicada-Count-In-Bars", strconv.Itoa(countInBars))
 	w.Header().Set("ETag", `"`+revision+`"`)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(image)

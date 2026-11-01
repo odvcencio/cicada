@@ -177,9 +177,9 @@ export streaming {
 
 ## Host macros and track layers
 
-A source-edition-2 `live` block after the tracks declares host macros, track layers, and phrase length. Macro values are unitless, from 0 to 1; smoothing uses ms or seconds. At most 16 macros and three distinct layer thresholds are supported. Layer attack is one bar and release is 1–16 bars. Thresholds are quantized to eight bits; tracks without a rule stay active.
+A source-edition-2 `live` block after the tracks declares host macros, track layers, phrase length, and optional recording count-in. Macro values are unitless, from 0 to 1; smoothing uses ms or seconds. At most 16 macros and three distinct layer thresholds are supported. Layer attack is one bar and release is 1–16 bars. Thresholds are quantized to eight bits; tracks without a rule stay active.
 
-Initialization applies macro values immediately. Hosts submit `OpSetMacro` changes with the declared smoothing. Studio and the director SDK use `land` as the default launch timing; a Studio timing selection can override it. Phrase timing requires a declared phrase length. Saved MIDI mappings and record quantization declarations are unavailable. Studio provides live MIDI performance and note recording through its controls. See [host macros and track layers](../manual/next-level.md#host-macros-and-track-layers) for a complete score and host commands.
+Initialization applies macro values immediately. Hosts submit `OpSetMacro` changes with the declared smoothing. Studio and the director SDK use `land` as the default launch timing; a Studio timing selection can override it. Phrase timing requires a declared phrase length. `count_in = 0bars` through `8bars` sets the project audio-take count-in; omission keeps one bar. Independent instrument recording does not use a score count-in. Saved MIDI mappings and record quantization declarations are unavailable. Studio provides live MIDI performance and note recording through its controls. See [host macros and track layers](../manual/next-level.md#host-macros-and-track-layers) for a complete score and host commands.
 
 ## Expression rows
 

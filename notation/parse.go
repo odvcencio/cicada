@@ -887,6 +887,10 @@ func parseLive(w *loweringWalker, n *gts.Node, ds []Diagnostic) (*Live, []Diagno
 		case "live_phrase":
 			duplicate(w.Type(c), c, seen)
 			live.PhraseBars, live.PhrasePosition = parseBars(w.Text(value)), w.position(value)
+		case "live_count_in":
+			duplicate(w.Type(c), c, seen)
+			bars := parseBars(w.Text(value))
+			live.CountInBars, live.CountInPosition = &bars, w.position(value)
 		case "live_macro":
 			smooth := w.Field(c, "smooth")
 			ms := float64(0)

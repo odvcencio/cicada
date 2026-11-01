@@ -87,6 +87,46 @@ func TestLiveCommandsMasksAndThresholds(t *testing.T) {
 	}
 }
 
+func TestLiveCountInSemanticRoundTrip(t *testing.T) {
+	for _, bars := range []int{0, 2, 8} {
+		p := liveTestProject(t)
+		p.Live.CountInBars = &bars
+		surface := LiveSurfaceOf(p)
+		if surface.CountInBars == nil || *surface.CountInBars != bars {
+			t.Fatalf("surface lost %d bars", bars)
+		}
+		*surface.CountInBars = 7
+		if *p.Live.CountInBars != bars {
+			t.Fatal("surface aliases the project count-in")
+		}
+		data, err := CanonicalJSON(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := DecodeJSON(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Live.CountInBars == nil || *decoded.Live.CountInBars != bars {
+			t.Fatalf("JSON lost %d bars", bars)
+		}
+		source, err := ToSource(decoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		score, diagnostics := notation.Parse(source)
+		if hasProjectErrors(diagnostics) || score.Live.CountInBars == nil || *score.Live.CountInBars != bars {
+			t.Fatalf("source lost %d bars: %+v", bars, diagnostics)
+		}
+	}
+	p := liveTestProject(t)
+	invalid := 9
+	p.Live.CountInBars = &invalid
+	if err := ValidateProject(p); err == nil {
+		t.Fatal("semantic project accepted a count-in over eight bars")
+	}
+}
+
 func TestLiveSurfaceNamesAndSmoothing(t *testing.T) {
 	p := liveTestProject(t)
 	p.Live.Macros = append(p.Live.Macros, LiveMacro{Name: "motion", Default: 1, SmoothMS: 1500}, LiveMacro{Name: "dry", Default: 0})

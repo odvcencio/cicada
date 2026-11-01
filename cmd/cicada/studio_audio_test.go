@@ -38,12 +38,29 @@ func TestStudioKernelImageCarriesSourceRevision(t *testing.T) {
 	if response.Header().Get("X-Cicada-Revision") != revision || response.Header().Get("ETag") != `"`+revision+`"` {
 		t.Fatalf("kernel image revision headers: %v", response.Header())
 	}
+	if response.Header().Get("X-Cicada-Count-In-Bars") != "1" {
+		t.Fatal("missing one-bar default")
+	}
 	if !strings.HasPrefix(response.Body.String(), "CIC1") {
 		t.Fatal("kernel image does not have the CIC1 header")
 	}
 	badRate := studioCall(t, handler, "/api/kernel-image?rate=22050", nil)
 	if badRate.Code != 400 {
 		t.Fatalf("unsupported sample rate accepted: %d", badRate.Code)
+	}
+}
+
+func TestStudioKernelImageCarriesScoreCountIn(t *testing.T) {
+	path := studioTestPath(t, "cicada 2\n"+studioScore+"live { count_in = 0bars }\n")
+	handler, err := studioHandler(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"", "&capture=1"} {
+		response := studioCall(t, handler, "/api/kernel-image?rate=48000"+query, nil)
+		if response.Code != 200 || response.Header().Get("X-Cicada-Count-In-Bars") != "0" {
+			t.Fatalf("count-in header: %d %v", response.Code, response.Header())
+		}
 	}
 }
 
