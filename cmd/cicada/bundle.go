@@ -154,6 +154,8 @@ func writeBundle(output io.Writer, stage string, libraries []bundleLibrary) erro
 		_, err = io.Copy(writer, source)
 		return err
 	}
+	type archiveFile struct{ name, path string }
+	var files []archiveFile
 	err = filepath.WalkDir(stage, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -188,26 +190,36 @@ func writeBundle(output io.Writer, stage string, libraries []bundleLibrary) erro
 		if name == "cicada-bundle.json" {
 			return fmt.Errorf("bundle manifest conflicts with project file %s", name)
 		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		hash := sha256.New()
-		counter := &bundleCounter{reader: io.TeeReader(file, hash)}
-		err = write(name, counter)
-		closeErr := file.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		manifest.Files = append(manifest.Files, bundleFile{Path: name, SHA256: hex.EncodeToString(hash.Sum(nil)), Bytes: counter.count})
+		files = append(files, archiveFile{name: name, path: path})
 		return nil
 	})
 	if err != nil {
 		archive.Close()
 		return err
+	}
+	// Temporary recovery filenames contain hashes of the staging directory.
+	// Sort after converting them to portable names so the archive order does
+	// not depend on that randomly chosen directory.
+	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	for _, item := range files {
+		file, err := os.Open(item.path)
+		if err != nil {
+			archive.Close()
+			return err
+		}
+		hash := sha256.New()
+		counter := &bundleCounter{reader: io.TeeReader(file, hash)}
+		err = write(item.name, counter)
+		closeErr := file.Close()
+		if err != nil {
+			archive.Close()
+			return err
+		}
+		if closeErr != nil {
+			archive.Close()
+			return closeErr
+		}
+		manifest.Files = append(manifest.Files, bundleFile{Path: item.name, SHA256: hex.EncodeToString(hash.Sum(nil)), Bytes: counter.count})
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
