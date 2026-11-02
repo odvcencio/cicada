@@ -15,15 +15,16 @@ func TestBrowserScoreRecordQuantizationPreviewAndCommit(t *testing.T) {
 		t.Skip("synthetic transport setup uses Chrome DevTools")
 	}
 	for _, tc := range []struct {
-		division string
-		step     int
-		want     string
+		name, division, grid string
+		step                 int
+		want                 string
 	}{
-		{"1/16", 1, "{ . c4 . . }"},
-		{"1/8", 2, "{ . . c4 . }"},
+		{"sixteenth", "1/16", "", 1, "{ . c4 . . }"},
+		{"eighth", "1/8", "", 2, "{ . . c4 . }"},
+		{"eighth-on-triplet", "1/8", "step = 1/8t ", 2, "{ step = 1/8t . . c4 . }"},
 	} {
-		t.Run(tc.division, func(t *testing.T) {
-			source := "cicada 2\ntempo 120\ntrack bass acid {}\nlive { record = " + tc.division + " }\npattern take acid steps=4 { . . . . }\nscene main { bass = take }\nsong { main*4 }\n"
+		t.Run(tc.name, func(t *testing.T) {
+			source := "cicada 2\ntempo 120\ntrack bass acid {}\nlive { record = " + tc.division + " }\npattern take acid steps=4 { " + tc.grid + ". . . . }\nscene main { bass = take }\nsong { main*4 }\n"
 			server := startBrowserStudio(t, []byte(source), nil)
 			chrome := startBrowserChrome(t, server)
 			chrome.mustCall("Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": `
