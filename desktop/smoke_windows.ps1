@@ -70,22 +70,24 @@ function Invoke-Smoke([string]$Name, [string]$Workflow) {
     Write-Output ("{0}: passed ({1} checks); report: {2}" -f $Name, @($result.frontend.checks).Count, $report)
 }
 
-Invoke-Smoke 'startup' 'native-startup-workflow.js'
-Invoke-Smoke 'editor' 'native-editor-workflow.js'
-
-# Only this run's disposable browser profiles are removed. Keep the reports,
-# scores, and application logs for diagnosis and leave failed cases intact.
-foreach ($webviewProfile in $profilesToClean) {
-    for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $webviewProfile); $attempt++) {
-        try {
-            Remove-Item -LiteralPath $webviewProfile -Recurse -Force -ErrorAction Stop
-        } catch {
-            # WebView2 can briefly retain files after the host window exits.
-            Start-Sleep -Milliseconds 500
+try {
+    Invoke-Smoke 'startup' 'native-startup-workflow.js'
+    Invoke-Smoke 'editor' 'native-editor-workflow.js'
+} finally {
+    # Only this run's successful browser profiles are removed. Keep reports,
+    # scores, application logs, and failed cases available for diagnosis.
+    foreach ($webviewProfile in $profilesToClean) {
+        for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $webviewProfile); $attempt++) {
+            try {
+                Remove-Item -LiteralPath $webviewProfile -Recurse -Force -ErrorAction Stop
+            } catch {
+                # WebView2 can briefly retain files after the host window exits.
+                Start-Sleep -Milliseconds 500
+            }
         }
-    }
-    if (Test-Path -LiteralPath $webviewProfile) {
-        Write-Warning "Could not remove the disposable WebView2 profile: $webviewProfile"
+        if (Test-Path -LiteralPath $webviewProfile) {
+            Write-Warning "Could not remove the disposable WebView2 profile: $webviewProfile"
+        }
     }
 }
 Write-Output "Windows WebView2 smoke reports: $runPath"
