@@ -551,7 +551,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       <div id="live-take-panel" class="take-panel" hidden>
         <h3 id="live-take-title">Recorded take</h3>
         <p id="live-take-summary" class="section-note"></p>
-        <div id="live-take-preview" class="take-preview"></div>
+        <div id="live-take-preview"></div>
         <div class="take-actions"><button id="live-take-commit" type="button">Commit take</button><button id="live-take-discard" data-action="discard" type="button">Discard</button></div>
       </div>
       <p id="live-midi-help" class="live-midi-help">Channel 10 percussion map: 36 bd, 37 rs, 38 sd, 39 cp, 41/43 lt, 42 ch, 45/47 mt, 46 oh, 48/50 ht, 49/57 cy, 56 cb. Mappings and Live settings stay in this browser session.</p>
@@ -571,7 +571,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     <section id="patterns" data-workspace-panel="session" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
-        <details class="pattern{{if .Drums}} drum{{end}}" open>
+        <details class="pattern{{if .Drums}} drum{{end}}" data-step-ticks="{{.StepTicks}}" open>
           <summary><span class="pattern-title">{{.ID}} <small>{{.Kind}}</small></span><span class="pattern-metrics">{{.Steps}} steps · swing {{.Swing}} · gate {{.Gate}} · transpose {{.Transpose}}</span></summary>
           {{if and $.Studio .HasChords}}<p class="chord-grid-help">Chord steps: click a lit pitch to remove only that note, or an empty pitch to add one (up to 4). The Note row clears the whole chord to a rest. A single remaining note uses normal set/clear editing.</p>{{end}}
           <div class="grid-wrap" role="group" aria-label="{{.ID}} pattern">

@@ -47,7 +47,8 @@
       const id = title?.childNodes[0]?.textContent.trim();
       const grid = card.querySelector('.grid-line');
       const steps = Number.parseInt(grid?.style.getPropertyValue('--steps') || '16', 10);
-      if (id) patternMeta.set(id, {steps: Number.isInteger(steps) ? steps : 16, drums: card.classList.contains('drum')});
+      const stepTicks = Number.parseInt(card.dataset.stepTicks || '240', 10);
+      if (id) patternMeta.set(id, {steps: Number.isInteger(steps) ? steps : 16, stepTicks: Number.isInteger(stepTicks) && stepTicks > 0 ? stepTicks : 240, drums: card.classList.contains('drum')});
     }
     sceneNames = $$('.scene-matrix thead .scene-pad[data-scene]').map(pad => pad.dataset.scene);
     sceneRows = new Map();
@@ -561,6 +562,7 @@
 
   let recording = false;
   let capturedNotes = [];
+  let recordingRevision = '', recordingSourceRevision = '';
   const activeNotes = new Map();
   function captureKey(track, noteId) { return `${track}:${noteId}`; }
   function captureNoteOn(track, note, velocity, eventTime, identity) {
@@ -630,7 +632,7 @@
       preview.style.setProperty('--steps', meta.steps);
       const byStep = new Map();
       for (const note of recording.notes) {
-        const step = midi.quantizeStep(note.tick, meta.steps);
+        const step = midi.quantizeStep(note.tick, meta.steps, meta.stepTicks);
         const text = meta.drums ? midi.mapGeneralMIDIDrum(note.note) || '?' : noteName(note.note);
         const slide = !meta.drums && recording.notes.some(next => note.tick < next.tick && note.endTick > next.tick);
         const values = byStep.get(step) || [];
@@ -676,6 +678,8 @@
       if (!armedTracks.size) { setStatus('Arm a track before recording a MIDI take', 'error'); return; }
       capturedNotes = [];
       activeNotes.clear();
+      recordingRevision = revision();
+      recordingSourceRevision = document.body.dataset.sourceRevision || '';
       recording = true;
       takePanel.hidden = true;
       recordButton.setAttribute('aria-pressed', 'true');
@@ -702,7 +706,7 @@
     try {
       const response = await fetch('/api/record', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({revision: revision(), recordings})
+        body: JSON.stringify({revision: recordingRevision, source_revision: recordingSourceRevision, recordings})
       });
       const result = await response.json();
       if (!response.ok) { setStatus(result.error || 'Take commit failed', 'error'); return; }

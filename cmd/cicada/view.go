@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/language"
 	"m31labs.dev/cicada/project"
 )
@@ -60,7 +61,7 @@ type viewNumber struct {
 
 type viewPattern struct {
 	ID, Kind               string
-	Steps                  int
+	Steps, StepTicks       int
 	Swing, Gate, Transpose string
 	Drums, HasChords       bool
 	Cells                  []viewCell
@@ -256,8 +257,12 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 	for _, pattern := range p.Patterns {
 		card := viewPattern{
 			ID: pattern.ID, Kind: pattern.Kind, Steps: int(pattern.Steps), Drums: pattern.Kind == "drums",
-			Swing: strconv.FormatFloat(float64(pattern.SwingPercent100)/100, 'f', -1, 64) + "%",
-			Gate:  strconv.Itoa(int(pattern.GatePercent)) + "%", Transpose: strconv.Itoa(int(pattern.Transpose)) + " st",
+			StepTicks: int(pattern.StepTicks),
+			Swing:     strconv.FormatFloat(float64(pattern.SwingPercent100)/100, 'f', -1, 64) + "%",
+			Gate:      strconv.Itoa(int(pattern.GatePercent)) + "%", Transpose: strconv.Itoa(int(pattern.Transpose)) + " st",
+		}
+		if card.StepTicks == 0 {
+			card.StepTicks = int(seq.TicksPerStep)
 		}
 		for index := 0; index < card.Steps; index++ {
 			card.Numbers = append(card.Numbers, viewNumber{Value: index + 1, Downbeat: index%4 == 0})
