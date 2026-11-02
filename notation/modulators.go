@@ -17,9 +17,8 @@ const (
 	MaxRoutes         = 64
 	MaxContourPoints  = 64
 	MaxSwayOctaves    = 4
-	MinFreeRateMicro  = 10_000     // 0.01 Hz
-	MaxFreeRateMicro  = 20_000_000 // 20 Hz
-	maxModulatorTicks = 1 << 31
+	MinFreeRateMicro  = 10_000 // 0.01 Hz
+	maxModulatorTicks = 1 << 28
 )
 
 // Modulator kinds, as written in source.
@@ -278,7 +277,11 @@ func ValidateModulators(s *Score) []Diagnostic {
 		if depths == 0 {
 			add("CICADA-PARAM", "route needs depth", r.Position)
 		}
-		key := r.Source + ">" + r.Target + ">" + r.Mode
+		mode := r.Mode
+		if mode == "" {
+			mode = "add"
+		}
+		key := r.Source + ">" + r.Target + ">" + mode
 		if seenRoutes[key] {
 			add("CICADA-DUPLICATE", "duplicate route "+r.Source+" -> "+r.Target, r.Position)
 		}
@@ -321,8 +324,12 @@ func validateModulatorSetting(m Modulator, p Param, tracks map[string]bool) []Di
 		if _, msg := ParseModRate(p.Value); msg != "" {
 			return bad("CICADA-PARAM", p.Name+": "+msg)
 		}
-		if r, _ := ParseModRate(p.Value); r.Free && (r.MicroHertz < MinFreeRateMicro) {
+		r, _ := ParseModRate(p.Value)
+		if r.Free && r.MicroHertz < MinFreeRateMicro {
 			return bad("CICADA-PARAM", p.Name+" is below 0.01 Hz")
+		}
+		if r.Free && m.Kind == ModContour {
+			return bad("CICADA-PARAM", "a contour period is a note length or a bar count, not a rate in Hz")
 		}
 	case "phase":
 		f, err := strconv.ParseFloat(strings.TrimSuffix(p.Value, "%"), 64)
@@ -404,48 +411,72 @@ func validateContour(m Modulator) []Diagnostic {
 }
 
 // formatModulatorDeclaration prints a source or route from its CST: one
-// setting per line, one contour point per line, a route on one line. Comments
-// inside the declaration stay, each on its own line.
+// setting per line, one contour point per line, a route on one line. Every
+// comment inside the declaration stays, on its own line: those inside a
+// setting, point or route go just before the line they were in, so a second
+// pass reads them where the first put them.
 func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
-	text := func(n *gts.Node) string { return canonicalNumericUnit(strings.Join(strings.Fields(w.Text(n)), " ")) }
+	text := func(n *gts.Node) string {
+		raw := w.Text(n)
+		if strings.Contains(raw, `"`) { // keep the whitespace inside string literals
+			return raw
+		}
+		return canonicalNumericUnit(strings.Join(strings.Fields(raw), " "))
+	}
+	var inner func(n *gts.Node, out *[]string)
+	inner = func(n *gts.Node, out *[]string) {
+		for i := 0; i < n.ChildCount(); i++ {
+			c := n.Child(i)
+			if w.Type(c) == "comment" {
+				*out = append(*out, strings.TrimSpace(w.Text(c)))
+				continue
+			}
+			inner(c, out)
+		}
+	}
 	if w.Type(node) == "mod_decl" {
-		line := "mod " + text(w.Field(node, "source")) + " -> " + text(w.Field(node, "target"))
 		var comments []string
+		inner(node, &comments)
+		line := "mod " + text(w.Field(node, "source")) + " -> " + text(w.Field(node, "target"))
 		for i := 0; i < node.NamedChildCount(); i++ {
-			c := node.NamedChild(i)
-			switch w.Type(c) {
-			case "param_decl":
+			if c := node.NamedChild(i); w.Type(c) == "param_decl" {
 				line += " " + w.Text(w.Field(c, "name")) + " = " + text(w.Field(c, "value"))
-			case "comment":
-				comments = append(comments, strings.TrimSpace(w.Text(c)))
 			}
 		}
 		if mode := w.Field(node, "mode"); mode != nil {
 			line += " " + w.Text(mode)
 		}
-		return strings.Join(append([]string{line}, comments...), "\n")
+		return strings.Join(append(comments, line), "\n")
 	}
 	lines := []string{w.Type(node)[:len(w.Type(node))-len("_decl")] + " " + text(w.Field(node, "name")) + " {"}
 	empty := true
 	for i := 0; i < node.NamedChildCount(); i++ {
 		c := node.NamedChild(i)
+		var line string
 		switch w.Type(c) {
 		case "param_decl":
-			lines = append(lines, "  "+w.Text(w.Field(c, "name"))+" = "+text(w.Field(c, "value")))
+			line = "  " + w.Text(w.Field(c, "name")) + " = " + text(w.Field(c, "value"))
 		case "contour_point":
-			line := "  " + w.Text(w.Field(c, "at")) + " " + text(w.Field(c, "value"))
+			line = "  " + w.Text(w.Field(c, "at")) + " " + text(w.Field(c, "value"))
 			if shape := w.Field(c, "shape"); shape != nil {
 				line += " " + w.Text(shape)
 				if curve := w.Field(c, "curve"); curve != nil {
 					line += " " + text(curve)
 				}
 			}
-			lines = append(lines, line)
 		case "comment":
 			lines = append(lines, "  "+strings.TrimSpace(w.Text(c)))
+			empty = false
+			continue
 		default:
 			continue
 		}
+		var comments []string
+		inner(c, &comments)
+		for _, comment := range comments {
+			lines = append(lines, "  "+comment)
+		}
+		lines = append(lines, line)
 		empty = false
 	}
 	if empty {

@@ -328,4 +328,5 @@
 (contour_position) @number.position
 (contour_point shape: (identifier) @attribute)
 (mod_decl source: (identifier) @type)
+(mod_decl source: (qualified_name) @type)
 (mod_decl mode: (identifier) @attribute)

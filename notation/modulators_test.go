@@ -222,3 +222,73 @@ song { s }
 		t.Fatalf("score = %+v", score)
 	}
 }
+
+// Every comment inside a declaration survives `fmt`, including those inside a
+// setting, a contour point and a route, and the second pass changes nothing.
+func TestModulatorFormatKeepsEveryComment(t *testing.T) {
+	source := []byte(modulatorHeader + `
+lfo a {
+  rate = // why this rate
+    8bars
+  wave = sine // inline trailing
+}
+contour c {
+  period = 1bar
+  @0 // start
+    0
+  @1/2 // mid
+    1 smooth
+  @1 0 // end
+}
+mod a -> // to the pad
+  pad.pan depth = // gentle
+  0.1 add
+mod c -> pad.level // second
+  depth = 1dB
+  // before mode
+  multiply
+`)
+	var once, twice []byte
+	for pass, in := range []*[]byte{&once, &twice} {
+		src := source
+		if pass == 1 {
+			src = once
+		}
+		document, err := ParseDocument(src)
+		if err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		if *in, err = Format(document); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []string{"// why this rate", "// inline trailing", "// start", "// mid", "// end", "// to the pad", "// gentle", "// second", "// before mode"} {
+		if !strings.Contains(string(once), want) {
+			t.Errorf("comment %q was dropped:\n%s", want, once)
+		}
+	}
+	if strings.Count(string(source), "//") != strings.Count(string(once), "//") {
+		t.Errorf("comment count %d became %d", strings.Count(string(source), "//"), strings.Count(string(once), "//"))
+	}
+	if !bytes.Equal(once, twice) {
+		t.Fatalf("not idempotent:\n%s\n---\n%s", once, twice)
+	}
+}
+
+func TestRouteWithoutModeDuplicatesAdd(t *testing.T) {
+	codes := modulatorCodes(t, "lfo a { rate = 1/4 }\nmod a -> pad.pan depth = 0.1\nmod a -> pad.pan depth = 0.2 add\n")
+	found := false
+	for _, c := range codes {
+		found = found || strings.HasPrefix(c, "CICADA-DUPLICATE: duplicate route")
+	}
+	if !found {
+		t.Fatalf("codes = %v", codes)
+	}
+}
+
+func TestContourPeriodRefusesHz(t *testing.T) {
+	codes := modulatorCodes(t, "contour c { period = 0.5Hz @0 0 @1 1 }\n")
+	if len(codes) == 0 || !strings.Contains(strings.Join(codes, "\n"), "not a rate in Hz") {
+		t.Fatalf("codes = %v", codes)
+	}
+}
