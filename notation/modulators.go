@@ -197,7 +197,16 @@ var modulatorKeys = map[string]map[string]bool{
 // modulatorsPlayable keeps detail-layer forms from reaching a renderer before
 // every surface can play them (spec 16, "Scope and syntax gate"). The change
 // that makes the engine evaluate modulators sets it.
-const modulatorsPlayable = false
+var modulatorsPlayable = false
+
+// OpenModulatorGate lets the tests of a layer that lands before the engine
+// plays modulators (the project compiler) parse and lower them. The PR that
+// wires the engine deletes this function and the gate.
+func OpenModulatorGate() (restore func()) {
+	previous := modulatorsPlayable
+	modulatorsPlayable = true
+	return func() { modulatorsPlayable = previous }
+}
 
 // ValidateModulators checks the declared sources and routes of a score. It
 // reports spelling, range and reference errors; target resolution and the

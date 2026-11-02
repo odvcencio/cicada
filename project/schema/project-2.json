@@ -142,6 +142,20 @@
       "items": {
         "$ref": "#/$defs/automation_lane"
       }
+    },
+    "modulators": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/modulator"
+      }
+    },
+    "routes": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/mod_route"
+      }
     }
   },
   "$defs": {
@@ -2204,6 +2218,138 @@
           "type": "integer",
           "minimum": 20000,
           "maximum": 300000
+        }
+      }
+    },
+    "modulator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "lfo",
+            "envelope",
+            "sway",
+            "contour"
+          ]
+        },
+        "wave": {
+          "enum": [
+            "sine",
+            "triangle",
+            "square",
+            "sample-hold"
+          ]
+        },
+        "rate_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "rate_micro_hz": {
+          "type": "integer",
+          "minimum": 10000,
+          "maximum": 1000000000000
+        },
+        "phase": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "loop": {
+          "enum": [
+            "wrap",
+            "continue"
+          ]
+        },
+        "octaves": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "source": {
+          "$ref": "#/$defs/id"
+        },
+        "attack_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "release_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/contour_point"
+          }
+        }
+      }
+    },
+    "contour_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "value",
+        "shape"
+      ],
+      "properties": {
+        "at": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "value": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "shape": {
+          "enum": [
+            "step",
+            "linear",
+            "smooth",
+            "exponential"
+          ]
+        }
+      }
+    },
+    "mod_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target",
+        "mode",
+        "depth"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/id"
+        },
+        "target": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "add",
+            "multiply"
+          ]
+        },
+        "depth": {
+          "$ref": "#/$defs/scene_value"
         }
       }
     }
