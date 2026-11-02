@@ -125,6 +125,46 @@ func TestSaveAsPendingAndActiveTakeSnapshots(t *testing.T) {
 		})
 	}
 }
+
+func TestSaveAsCopiesRecoveryThroughSymlinkedDirectories(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("CICADA_STATE_DIR", state)
+	sourceDir, destinationDir := t.TempDir(), t.TempDir()
+	score := filepath.Join(sourceDir, "main.cicada")
+	if err := os.WriteFile(score, []byte(copyScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sourceAlias := filepath.Join(t.TempDir(), "source")
+	destinationAlias := filepath.Join(t.TempDir(), "destination")
+	if err := os.Symlink(sourceDir, sourceAlias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(destinationDir, destinationAlias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	hash := takejournal.Revision([]byte(score))[:16]
+	prefix := ".cicada-studio-" + hash + "-"
+	stateRecovery := filepath.Join(state, "revisions", hash)
+	if err := os.MkdirAll(stateRecovery, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ dir, name string }{{sourceDir, prefix + "adjacent"}, {stateRecovery, prefix + "state"}} {
+		if err := os.WriteFile(filepath.Join(item.dir, item.name), []byte(copyScore), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SaveAs(filepath.Join(sourceAlias, "main.cicada"), filepath.Join(destinationAlias, "copy.cicada")); err != nil {
+		t.Fatal(err)
+	}
+	destinationScore := filepath.Join(destinationDir, "copy.cicada")
+	newPrefix := ".cicada-studio-" + takejournal.Revision([]byte(destinationScore))[:16] + "-"
+	for _, suffix := range []string{"adjacent", "state"} {
+		got, err := os.ReadFile(filepath.Join(destinationDir, newPrefix+suffix))
+		if err != nil || string(got) != copyScore {
+			t.Fatalf("missing copied %s recovery: %q %v", suffix, got, err)
+		}
+	}
+}
 func TestSaveAsAssetCollisionAndMissingFailBeforeScore(t *testing.T) {
 	path, s, id := pending(t, t.TempDir(), true)
 	if err := s.Publish(id); err != nil {

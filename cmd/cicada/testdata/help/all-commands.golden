@@ -9,14 +9,15 @@ Flags:
 
 ### bundle
 cicada bundle <score.cicada> <bundle.zip>
+  cicada bundle --restore-history <extracted-score.cicada>
 
 package a portable score with provenance
 
 Flags:
-  (no command flags)
+  --restore-history  restore inventoried recovery versions after extraction
   --help      show this help
 
-Copies score sources, referenced audio, pinned libraries, and Save As recovery files into a ZIP with a SHA-256 file inventory. Existing output files are refused.
+Copies score sources, referenced audio, pinned libraries, and recovery versions into a ZIP with a SHA-256 file inventory. Existing output files are refused. Restore preserves the extracted originals and refuses conflicting recovery files.
 
 ### apply
 cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]
