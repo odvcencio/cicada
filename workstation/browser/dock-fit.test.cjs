@@ -38,6 +38,25 @@ test('dock resizing fits the window and preserves musical work',{timeout:120000}
  await page.locator('#detail-tab-device').click();await handle().focus();await page.keyboard.press('End');await fits();
  assert.equal(await editor.inputValue(),draft);
  const after=await page.evaluate(async()=>{const r=await fetch('/api/state',{cache:'no-store'});return r.json();});assert.equal(after.source,initial.source);assert.equal(after.revision,initial.revision);
+ await page.setViewportSize({width:1024,height:640});
+ await page.locator('#score [data-code-command=find]').click();
+ await page.locator('#score [data-code-find=query]').fill('pattern');
+ const codeFit=await page.evaluate(()=>{
+  const source=document.querySelector('#editor-content'),dock=document.querySelector('#studio-code');
+  document.querySelector('#studio-code .shell-scroll').scrollTop=0;
+  const bounds=source.getBoundingClientRect(),outer=dock.getBoundingClientRect();
+  let top=Math.max(bounds.top,outer.top,0),bottom=Math.min(bounds.bottom,outer.bottom,innerHeight);
+  for(let parent=source.parentElement;parent;parent=parent.parentElement){
+   const style=getComputedStyle(parent),rect=parent.getBoundingClientRect();
+   if(/^(auto|scroll|hidden|clip)$/.test(style.overflowY)){
+    top=Math.max(top,rect.top+parent.clientTop);bottom=Math.min(bottom,rect.top+parent.clientTop+parent.clientHeight);
+   }
+  }
+  return {source:{top:bounds.top,bottom:bounds.bottom},clip:{top,bottom}};
+ });
+ assert.ok(codeFit.source.top>=codeFit.clip.top-1&&codeFit.source.bottom<=codeFit.clip.bottom+1,JSON.stringify(codeFit));
+ await page.screenshot({path:path.join(proof,'short-code-find.png')});
+ await page.locator('#score [data-code-find-action=close]').click();
  await page.setViewportSize({width:1024,height:480});
  await until(async()=>{const g=await geometry();return g.dock.bottom<=g.height+1&&Math.abs(g.value-g.dock.height)<1;},'compact window fits');snapshots.push({label:'compact',...await fits()});
  await page.setViewportSize({width:390,height:900});

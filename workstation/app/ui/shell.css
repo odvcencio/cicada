@@ -84,6 +84,12 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 	.shell :is(#studio-browser,#studio-code) .shell-collapsible:not([open]) > summary { writing-mode:vertical-rl; padding:10px 8px; min-width:36px; min-height:90px; }
 }
 
+/* Short desktop windows need enough vertical space for the editor's search
+   controls and source viewport. Let Code extend beside the lower dock. */
+@media (min-width:800px) and (max-height:800px) {
+	.shell .gsx-dock { grid-template-areas:"top top top" "left center right" "bottom bottom right"; }
+}
+
 .shell-phone-nav { display:none; }
 @media (max-width:799px) {
 	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"top" "region"; }
