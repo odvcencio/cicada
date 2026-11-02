@@ -317,3 +317,15 @@
 (performed_note velocity: (integer) @number)
 (performed_expression "gesture" @keyword)
 (performed_expression ["at" "bend" "pressure" "timbre" "vibrato" "rate"] @attribute)
+
+; Modulators: sources, drawn contours and routes.
+["lfo" "envelope" "sway" "contour"] @keyword.type
+"mod" @keyword
+(lfo_decl name: (identifier) @type.definition)
+(envelope_decl name: (identifier) @type.definition)
+(sway_decl name: (identifier) @type.definition)
+(contour_decl name: (identifier) @type.definition)
+(contour_position) @number.position
+(contour_point shape: (identifier) @attribute)
+(mod_decl source: (identifier) @type)
+(mod_decl mode: (identifier) @attribute)

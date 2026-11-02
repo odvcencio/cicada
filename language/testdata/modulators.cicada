@@ -1,0 +1,20 @@
+cicada 2
+title "Modulators"
+tempo 120
+track pad acid {}
+track drums acid {}
+pattern p { 1 . 3 . }
+lfo drift { wave = sine rate = 8bars phase = 0 }
+lfo breath { wave = sine rate = 0.07Hz loop = continue }
+envelope duck { attack = 5ms release = 120ms source = drums }
+sway wander { rate = 2bars octaves = 2 }
+contour swell {
+  period = 4bars
+  @0 -1
+  @1/4 1 smooth
+  @1 -1
+}
+mod drift -> pad.pan depth = 0.15 add
+mod breath -> pad.level depth = 1.5dB
+scene main { pad = p }
+song { main*4 }

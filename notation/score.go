@@ -50,6 +50,8 @@ type Score struct {
 	Phrases        []Phrase
 	Patterns       []Pattern
 	Automation     []Automation
+	Modulators     []Modulator
+	Routes         []Route
 	Scenes         []Scene
 	Arrange        *Arrangement
 	Song           []SongEntry

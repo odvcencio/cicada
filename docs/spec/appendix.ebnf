@@ -14,7 +14,8 @@ _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | 
                  preset_decl | kit_decl | track_decl | phrase_decl | acid_pattern | note_pattern |
                  drum_pattern | performance_pattern | automate_decl | scene_decl | song_decl |
                  fx_decl | bus_decl | master_decl | export_decl | arrange_decl | asset_decl |
-                 clip_decl | sampler_decl | live_decl ;
+                 clip_decl | sampler_decl | live_decl | lfo_decl | envelope_decl | sway_decl |
+                 contour_decl | mod_decl ;
 automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
 automation_point ::= musical_position , number , [ identifier , [ number ] ] ;
 musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
@@ -136,3 +137,10 @@ marker_decl ::= "marker" , _name , "{" , { param_decl } , "}" ;
 tick_count ::= /[0-9]+ticks/ ;
 automation_recall ::= "recall" , musical_position ;
 arrangement_tempo ::= "tempo" , musical_position , number ;
+lfo_decl ::= "lfo" , _name , "{" , { param_decl } , "}" ;
+envelope_decl ::= "envelope" , _name , "{" , { param_decl } , "}" ;
+sway_decl ::= "sway" , _name , "{" , { param_decl } , "}" ;
+contour_decl ::= "contour" , _name , "{" , { param_decl } , { contour_point } , "}" ;
+contour_point ::= contour_position , number , [ identifier , [ number ] ] ;
+contour_position ::= /@[0-9]+(\.[0-9]+)?(\/[0-9]+)?/ ;
+mod_decl ::= "mod" , _name , "->" , parameter_path , { param_decl } , [ identifier ] ;

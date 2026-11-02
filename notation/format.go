@@ -60,6 +60,8 @@ func Format(document *Document) ([]byte, error) {
 			}
 			if kind == "live_decl" {
 				section = formatLiveDeclaration(node, document.Walker)
+			} else if kind == "lfo_decl" || kind == "envelope_decl" || kind == "sway_decl" || kind == "contour_decl" || kind == "mod_decl" {
+				section = formatModulatorDeclaration(node, document.Walker)
 			} else {
 				section = formatDeclaration(document.source[start:end])
 			}

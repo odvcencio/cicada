@@ -39,6 +39,7 @@ func Cicada() *grammargen.Grammar {
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"), sym("performance_pattern"),
 		sym("automate_decl"), sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
+		sym("lfo_decl"), sym("envelope_decl"), sym("sway_decl"), sym("contour_decl"), sym("mod_decl"),
 	))
 
 	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(choice(sym("automation_point"), sym("automation_recall"))), str("}")))
@@ -296,5 +297,20 @@ func Cicada() *grammargen.Grammar {
 	g.Test("automation recall", "cicada 2 automate bass.level { @1.1.1 -6dB recall @3.1.1 @5.1.1 0dB smooth }", "")
 	g.Define("arrangement_tempo", seq(str("tempo"), field("at", sym("musical_position")), field("value", sym("number"))))
 	g.Test("arrangement tempo", "cicada 2 arrange { tempo @1.1.1 96 tempo @3.1.1 120.5 place bass bass riff { at=@1.1.1 length=4bars } }", "")
+
+	// Modulators (spec 24, lane 1). A source is a typed key/value body; a
+	// contour adds drawn breakpoints after its settings, and a route binds one
+	// source to one parameter path: `mod drift -> pad.pan depth = 0.15 add`.
+	// The keywords are reserved only where a declaration may start, so a
+	// parameter or track still named `mod` or `lfo` keeps parsing.
+	g.Define("lfo_decl", seq(str("lfo"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("envelope_decl", seq(str("envelope"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("sway_decl", seq(str("sway"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("contour_decl", seq(str("contour"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), repeat(sym("contour_point")), str("}")))
+	g.Define("contour_point", seq(field("at", sym("contour_position")), field("value", sym("number")), optional(seq(field("shape", sym("identifier")), optional(field("curve", sym("number")))))))
+	g.Define("contour_position", token(pat(`@[0-9]+(\.[0-9]+)?(\/[0-9]+)?`)))
+	g.Define("mod_decl", seq(str("mod"), field("source", sym("_name")), str("->"), field("target", sym("parameter_path")), repeat(sym("param_decl")), optional(field("mode", sym("identifier")))))
+	g.Test("modulators", "lfo drift { wave = sine rate = 8bars phase = 0 } lfo breath { wave = sine rate = 0.07Hz loop = continue } envelope duck { attack = 5ms release = 120ms source = drums } sway wander { rate = 2bars octaves = 2 } contour swell { period = 4bars @0 -1 @1/4 1 smooth @1 -1 } mod drift -> strings_pad.pan depth = 0.15 add mod wander -> pad.level depth = 1.5dB", "")
+	g.Test("modulator names stay identifiers", "instrument i { param mod = 1 voice mono { out = saw(mod(a) + lfo(2Hz, sine)) } } track mod acid { envelope = on } scene s { mod = x }", "")
 	return g
 }
