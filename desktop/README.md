@@ -111,16 +111,15 @@ The bundle declares the `.cicada` score type and explains microphone access to
 macOS. Both the UI host and its bundled audio helper read that same metadata.
 
 The bundle is self-contained and builds from a clean checkout. The desktop
-host pins the published GoSX Darwin backend at
-[`088e1fe1f18d`](https://github.com/jvcencio/gosx/commit/088e1fe1f18d02b2ca8bccf59f4baf3cfec6fab5)
-through a versioned replacement in `desktop/go.mod`. Go downloads and verifies
-it using `desktop/go.sum`; no local GoSX checkout or `go.work` is needed. This
-replacement can be removed once an upstream GoSX release includes the backend.
+host uses the published GoSX release pinned in `desktop/go.mod`. Go downloads
+and verifies it using `desktop/go.sum`; no local GoSX checkout or `go.work` is
+needed.
 
 Packaging sets `GOWORK=off` for every executable and the runtime, so a local
 workspace cannot override release dependencies. It also checks desktop backend
-availability before building the bundle. The workstation runtime retains its
-own matching GoSX pin, including the SVG namespace fix for dynamic note charts.
+availability before building the bundle. The workstation runtime uses a
+separate GoSX pin that includes the live updates needed by focused export
+controls.
 An existing output app is replaced only after the new bundle passes signature
 verification. Packaging reuses the stripped workstation executable from the
 production runtime build, avoiding a second compilation.
