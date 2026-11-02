@@ -51,6 +51,10 @@ test('take notes quantize to the nearest pattern step and wrap at pattern length
   assert.equal(quantizeStep(119, 16), 0);
   assert.equal(quantizeStep(120, 16), 1);
   assert.equal(quantizeStep(240 * 15 + 120, 16), 0);
+  assert.equal(quantizeStep(159, 4, 320), 0, 'eighth-note triplet before midpoint');
+  assert.equal(quantizeStep(160, 4, 320), 1, 'eighth-note triplet at midpoint');
+  assert.equal(quantizeStep(1120, 4, 320), 0, 'triplet pattern wraps at its own length');
+  assert.equal(quantizeStep(240, 4, 480), 1, 'eighth-note midpoint');
   assert.throws(() => quantizeStep(-1, 16), RangeError);
 });
 
