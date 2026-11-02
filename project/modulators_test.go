@@ -221,7 +221,7 @@ func TestImportedContourRequiresSyncedPeriod(t *testing.T) {
 	}
 }
 
-func TestImportedModulatorsCannotSilentlyReachEngine(t *testing.T) {
+func TestImportedModulatorsReachEngine(t *testing.T) {
 	p, ds := compileModulators(t, "lfo a { rate = 1/4 }\nmod a -> pad.pan depth = 0.1\n")
 	if p == nil {
 		t.Fatal(ds)
@@ -234,15 +234,18 @@ func TestImportedModulatorsCannotSilentlyReachEngine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, compile := range map[string]func() error{
-		"playback": func() error { _, err := CompileEngine(decoded, 48000, 128); return err },
-		"assets":   func() error { _, err := CompileEngineWithAssets(decoded, 48000, 128, nil); return err },
-		"prepared": func() error { _, err := CompileEnginePrepared(decoded, 48000, 128, nil); return err },
-		"notes":    func() error { _, err := CompileNoteSchedule(decoded); return err },
+	for name, compile := range map[string]func() (engine.Config, error){
+		"playback": func() (engine.Config, error) { return CompileEngine(decoded, 48000, 128) },
+		"assets":   func() (engine.Config, error) { return CompileEngineWithAssets(decoded, 48000, 128, nil) },
+		"prepared": func() (engine.Config, error) { return CompileEnginePrepared(decoded, 48000, 128, nil) },
 	} {
-		if err := compile(); err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED") {
-			t.Errorf("%s silently ignored modulators: %v", name, err)
+		cfg, err := compile()
+		if err != nil || len(cfg.Modulators) != 1 || len(cfg.Routes) != 1 {
+			t.Errorf("%s lost imported modulators: %+v, %v", name, cfg, err)
 		}
+	}
+	if _, err := CompileNoteSchedule(decoded); err != nil {
+		t.Fatalf("note schedule: %v", err)
 	}
 }
 

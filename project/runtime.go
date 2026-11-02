@@ -46,11 +46,6 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	// Semantic JSON can carry the accepted forms before the engine can play
-	// them. Keep every compilation entry point from silently dropping them.
-	if len(p.Modulators) != 0 || len(p.Routes) != 0 {
-		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: modulators and routes are not playable yet")
-	}
 	if purpose == compilePlayback && p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
 	}

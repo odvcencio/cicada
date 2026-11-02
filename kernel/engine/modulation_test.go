@@ -319,6 +319,84 @@ func TestEnvelopeStartsAtZeroAtLoadSeekAndWrap(t *testing.T) {
 	}
 }
 
+func TestEnvelopeFollowersShareTrackPeak(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Modulators = []ModulatorSpec{
+		{Kind: ModKindEnvelope, Source: 0, Attack: 1 << 31, Release: 1 << 28},
+		{Kind: ModKindEnvelope, Source: 0, Attack: 1 << 31, Release: 1 << 28},
+	}
+	cfg.Routes = nil
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	e.Push(cmd.Command{Op: cmd.OpNoteOn, Track: 0, Arg0: 45 | 100<<8})
+	left, right := make([]float32, 128), make([]float32, 128)
+	for i := 0; i < 200; i++ {
+		e.Render(left, right)
+	}
+	if a, b := e.ModulatorValue(0), e.ModulatorValue(1); a <= 0 || a != b {
+		t.Fatalf("identical followers of the same track diverged: %d and %d", a, b)
+	}
+}
+
+func TestModulatedGainHonorsOffAndResumes(t *testing.T) {
+	for _, initiallyOff := range []bool{false, true} {
+		t.Run(fmt.Sprintf("initiallyOff=%t", initiallyOff), func(t *testing.T) {
+			cfg := modConfig(t)
+			cfg.Track[0].Mute = initiallyOff
+			cfg.Routes = []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixGain), Depth: 3}}
+			e, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			left, right := make([]float32, 128), make([]float32, 128)
+			e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+			e.Render(left, right)
+			set := func(value float32) {
+				e.setParam(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixGain), Arg0: math.Float32bits(value)})
+				e.Render(left, right)
+			}
+			set(float32(math.Inf(-1)))
+			if !e.voices[0].sourceOff || !e.mod.targets[0].off {
+				t.Fatal("off was not preserved across the control grid")
+			}
+			set(-6)
+			if e.voices[0].sourceOff || e.mod.targets[0].off || e.mod.targets[0].base != -6 {
+				t.Fatal("finite level did not reactivate its modulation route")
+			}
+			e.Render(left, right)
+			if e.voices[0].sourceOff || e.mod.targets[0].off {
+				t.Fatal("route stopped again on a later grid")
+			}
+		})
+	}
+}
+
+func TestFittedRandomSourcesRepeatAcrossSongLoop(t *testing.T) {
+	for _, source := range []ModulatorSpec{
+		{Kind: ModKindSway, Octaves: 4, RateTicks: 1920, Continue: true},
+		{Kind: ModKindLFO, Wave: ModWaveSampleHold, RateTicks: 1920, Continue: true},
+	} {
+		cfg := modConfig(t)
+		cfg.LoopSong = true
+		cfg.Song = []SongEntry{{Scene: 0, Bars: 2}}
+		cfg.Modulators = []ModulatorSpec{source}
+		run := runMod(t, cfg, 128, 192_000+128, 0)
+		var first, before, after int32
+		fmt.Sscanf(run.log[0].values, "[%d]", &first)
+		fmt.Sscanf(run.log[1499].values, "[%d]", &before)
+		fmt.Sscanf(run.log[1500].values, "[%d]", &after)
+		if first != after {
+			t.Fatalf("kind %v did not repeat: %d vs %d", source.Kind, first, after)
+		}
+		if source.Kind == ModKindSway && math.Abs(float64(before)-float64(after))/modulate.One > .02 {
+			t.Fatalf("sway jumped at wrap: %d to %d", before, after)
+		}
+	}
+}
+
 func (s SongEntry) toTicks() int64 { return int64(s.Bars) * 3840 }
 
 // BenchmarkModulationGridPoint is the cost of one control-grid evaluation for

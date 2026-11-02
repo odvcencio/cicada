@@ -312,13 +312,14 @@ func (e *Engine) advanceModulation() {
 		tick -= cycle * e.scheduleDuration
 		loopSample = max(0, song-cycle*m.loopSample)
 	}
+	hasFollower := false
 	for i := range m.specs {
 		s := &m.specs[i]
 		var pos modulate.Position
 		switch {
 		case s.Kind == ModKindEnvelope:
+			hasFollower = true
 			peak := m.peak[s.Source]
-			m.peak[s.Source] = 0
 			q := float32(peak * (1 << 30))
 			level := int32(modulate.One)
 			if q < modulate.One {
@@ -337,12 +338,31 @@ func (e *Engine) advanceModulation() {
 		}
 		switch s.Kind {
 		case ModKindLFO:
-			m.values[i] = modulate.LFO(modulate.Wave(s.Wave), m.seed, uint8(i), pos.Offset(s.PhaseQ32))
+			cycles := m.fitTicks[i]
+			if cycles == 0 {
+				cycles = m.fitSamples[i]
+			}
+			if cycles != 0 && s.Wave == ModWaveSampleHold {
+				m.values[i] = modulate.LFOFitted(modulate.Wave(s.Wave), m.seed, uint8(i), pos.Offset(s.PhaseQ32), cycles)
+			} else {
+				m.values[i] = modulate.LFO(modulate.Wave(s.Wave), m.seed, uint8(i), pos.Offset(s.PhaseQ32))
+			}
 		case ModKindSway:
-			m.values[i] = modulate.Sway(m.seed, uint8(i), uint(s.Octaves), pos)
+			cycles := m.fitTicks[i]
+			if cycles == 0 {
+				cycles = m.fitSamples[i]
+			}
+			if cycles != 0 {
+				m.values[i] = modulate.SwayFitted(m.seed, uint8(i), uint(s.Octaves), pos, cycles)
+			} else {
+				m.values[i] = modulate.Sway(m.seed, uint8(i), uint(s.Octaves), pos)
+			}
 		default:
 			m.values[i] = modulate.Contour(m.points[i], pos)
 		}
+	}
+	if hasFollower {
+		m.peak = [MaxTracks]float32{}
 	}
 	if m.trace != nil {
 		m.trace(song, m.values[:len(m.specs)])

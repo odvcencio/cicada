@@ -1625,10 +1625,13 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		e.fault(FaultParam)
 		return
 	}
-	if modulationEnabled && e.mod.active && !e.mod.applying && !off && spec.Scope == "track" && int(c.Track) < e.tracks {
+	if modulationEnabled && e.mod.active && !e.mod.applying && spec.Scope == "track" && int(c.Track) < e.tracks {
 		if t := e.mod.find(c.Track, kernel.ParamID(c.Index)); t != nil {
-			t.base = value
-			value = e.modEffective(t)
+			t.off = off
+			if !off {
+				t.base = value
+				value = e.modEffective(t)
+			}
 		}
 	}
 	if spec.Scope == "track" {
