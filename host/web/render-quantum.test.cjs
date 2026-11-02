@@ -98,6 +98,25 @@ test('page metrics and output timeline use the negotiated quantum with a legacy 
   assert.equal(audio.quantumMs(), 128000 / 48000);
 });
 
+test('output timeline does not count rounding at one quantum but counts a real excess', () => {
+  for (const timestampTime of [2.6, 86400]) {
+    const window = {};
+    const context = vm.createContext({ window, performance: { now: () => 100 } });
+    vm.runInContext(fs.readFileSync(`${__dirname}/client.js`, 'utf8'), context);
+    const audio = window.cicadaBrowserAudio;
+    const quantum = 128 / 48000;
+    audio.context = { sampleRate: 48000, renderQuantumSize: 128, baseLatency: 0, outputLatency: 0,
+      state: 'running', currentTime: timestampTime + quantum,
+      getOutputTimestamp: () => ({ contextTime: timestampTime, performanceTime: 100 }) };
+    audio.playing = true;
+    audio.sampleOutputTimeline();
+    assert.equal(audio.outputTimeline.misses, 0, `exact quantum at ${timestampTime}s`);
+    audio.context.currentTime += .000001; // One microsecond beyond the boundary.
+    audio.sampleOutputTimeline();
+    assert.equal(audio.outputTimeline.misses, 1, `real excess at ${timestampTime}s`);
+  }
+});
+
 for (const actualQuantum of [undefined, 512]) {
   test(`audio startup requests hardware sizing; negotiated quantum=${actualQuantum ?? 'legacy'}`, async () => {
     const window = {};
