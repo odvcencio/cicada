@@ -2,5 +2,5 @@ github.com/ebitengine/purego v0.11.2 h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbU
 github.com/ebitengine/purego v0.11.2/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
 golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=
 golang.org/x/sys v0.43.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
-m31labs.dev/gosx v0.59.0 h1:TvQXlMk+ORiWWJmuwU8bZNRqajld9ZtvKHto5PqQTpE=
-m31labs.dev/gosx v0.59.0/go.mod h1:WXTTI1p5hTPMfLu5YOnP2sTtWxKuhuCk+I1hw1+2Wxw=
+m31labs.dev/gosx v0.59.1 h1:bnOhy9eUkBE9YwyAEIghRBiB7qwWTWCLY3CZZJud888=
+m31labs.dev/gosx v0.59.1/go.mod h1:WXTTI1p5hTPMfLu5YOnP2sTtWxKuhuCk+I1hw1+2Wxw=
