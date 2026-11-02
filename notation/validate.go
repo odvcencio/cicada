@@ -940,6 +940,11 @@ func ValidateLive(live *Live, tracks []Track) []Diagnostic {
 	if live.CountInBars != nil && (*live.CountInBars < 0 || *live.CountInBars > 8) {
 		add("CICADA-LIVE-COUNT-IN", "count_in must be 0 to 8 whole bars", live.CountInPosition)
 	}
+	if live.Record != "" {
+		if _, err := GridTicks(live.Record); err != nil {
+			add("CICADA-LIVE-RECORD", "record must be a musical division resolving exactly to 30..3840 ticks", live.RecordPosition)
+		}
+	}
 	if len(live.Macros) > 16 {
 		add("CICADA-LIVE-LIMIT", "live block allows at most 16 macros", live.Macros[16].Position)
 	}

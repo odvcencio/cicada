@@ -64,6 +64,22 @@ func TestRecordedExpressionTakeWritesRowsOnHeldTies(t *testing.T) {
 	}
 }
 
+func TestRecordedExpressionMovesWithQuantizedOnset(t *testing.T) {
+	source := []byte("cicada 2\ntrack bass acid {}\nlive { record = 1/8 }\npattern pulse acid steps=8 { . . . . . . . . }\nscene main { bass=pulse }\nsong { main }\n")
+	notes := []edits.TakeNote{{Tick: 260, EndTick: 740, Note: 60, Velocity: 96, Expressions: []edits.TakeExpression{{Tick: 260, PitchCents: 50, Timbre: .5}, {Tick: 500, PitchCents: 100, Timbre: .5}}}}
+	updated, err := recordTakeSource(t, source, "bass", "pulse", notes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := recordedPattern(t, updated, "pulse")
+	if pattern.Data[2] == nil || pattern.Data[2].Note != 60 || pattern.Data[3] == nil || !pattern.Data[3].Tie || pattern.Expression[2].PitchCents != 50 || pattern.Expression[3].PitchCents != 100 {
+		t.Fatalf("quantization lost length or expression offsets: %+v, %+v\n%s", pattern.Data, pattern.Expression, updated)
+	}
+	if notes[0].Tick != 260 || notes[0].EndTick != 740 || notes[0].Expressions[1].Tick != 500 {
+		t.Fatal("mutated retained expressive take")
+	}
+}
+
 func TestRecordedExpressionTakeSeparatesVibratoCenterAndDepth(t *testing.T) {
 	source, err := recordTakeSource(t, []byte(recordScore), "bass", "pulse", []edits.TakeNote{{
 		Tick: 0, EndTick: 120, Note: 60, Velocity: 96,

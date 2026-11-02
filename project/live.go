@@ -16,6 +16,7 @@ type Live struct {
 	Land        string           `cicada:"Default launch landing" json:"land,omitempty" introduced:"cicada.project/2"`
 	PhraseBars  int              `cicada:"Phrase length in bars" json:"phrase_bars,omitempty" introduced:"cicada.project/2"`
 	CountInBars *int             `cicada:"Recording count-in bars" default:"1" range:"0..8" unit:"bars" json:"count_in_bars,omitempty" introduced:"cicada.project/2"`
+	Record      string           `cicada:"Recorded note onset quantization" default:"1/16" unit:"note division" json:"record,omitempty" introduced:"cicada.project/2"`
 	Macros      []LiveMacro      `cicada:"Macros in host ID order" json:"macros" introduced:"cicada.project/2"`
 	States      []LiveState      `cicada:"Game state to scene map" json:"states,omitempty" introduced:"cicada.project/2"`
 	Stingers    []LiveStinger    `cicada:"One-shot game cues" json:"stingers,omitempty" introduced:"cicada.project/2"`
@@ -63,7 +64,7 @@ func liveFromScore(source *notation.Live) *Live {
 	if source == nil {
 		return nil
 	}
-	live := &Live{Land: source.Land, PhraseBars: source.PhraseBars, Macros: []LiveMacro{}, Layers: []LiveLayers{}}
+	live := &Live{Land: source.Land, PhraseBars: source.PhraseBars, Record: source.Record, Macros: []LiveMacro{}, Layers: []LiveLayers{}}
 	if source.CountInBars != nil {
 		bars := *source.CountInBars
 		live.CountInBars = &bars
@@ -94,7 +95,7 @@ func liveToScore(source *Live) *notation.Live {
 	if source == nil {
 		return nil
 	}
-	live := &notation.Live{Land: source.Land, PhraseBars: source.PhraseBars}
+	live := &notation.Live{Land: source.Land, PhraseBars: source.PhraseBars, Record: source.Record}
 	if source.CountInBars != nil {
 		bars := *source.CountInBars
 		live.CountInBars = &bars
@@ -184,6 +185,7 @@ type LiveSurface struct {
 	Land        string
 	PhraseBars  int
 	CountInBars *int
+	Record      string
 	Macros      []LiveMacro
 }
 
@@ -192,7 +194,7 @@ func LiveSurfaceOf(p *Project) LiveSurface {
 	if p == nil || p.Live == nil {
 		return LiveSurface{}
 	}
-	surface := LiveSurface{Land: p.Live.Land, PhraseBars: p.Live.PhraseBars, Macros: append([]LiveMacro{}, p.Live.Macros...)}
+	surface := LiveSurface{Land: p.Live.Land, PhraseBars: p.Live.PhraseBars, Record: p.Live.Record, Macros: append([]LiveMacro{}, p.Live.Macros...)}
 	if p.Live.CountInBars != nil {
 		bars := *p.Live.CountInBars
 		surface.CountInBars = &bars
@@ -224,6 +226,9 @@ func liveSource(live *Live) string {
 	}
 	if live.CountInBars != nil {
 		out.WriteString("  count_in = " + strconv.Itoa(*live.CountInBars) + "bars\n")
+	}
+	if live.Record != "" {
+		out.WriteString("  record = " + live.Record + "\n")
 	}
 	for _, m := range live.Macros {
 		out.WriteString("  macro " + m.Name + " = " + decimal(m.Default))

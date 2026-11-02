@@ -183,6 +183,52 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 
 	steps := make(map[int]recordedStep)
 	stepTicks := pattern.StepTicksOrDefault()
+	// A score's recording division snaps onsets before the destination's own
+	// step grid is applied. Keep held lengths and expression offsets intact.
+	quantum := int64(0) // Scores without a live block retain their authored pattern grid.
+	if score.Live != nil {
+		quantum = 240 // live-block default: 1/16 at 960 PPQ
+		if score.Live.Record != "" {
+			division, err := notation.GridTicks(score.Live.Record)
+			if err != nil {
+				return nil, fmt.Errorf("invalid recording division: %w", err)
+			}
+			quantum = int64(division)
+		}
+	}
+	originalTake := take
+	quantized := make([]TakeNote, len(take))
+	hasExpression := false
+	for i, note := range take {
+		if note.Tick < 0 || note.EndTick < note.Tick || note.Tick > 1<<60 || note.EndTick > 1<<60 {
+			return nil, fmt.Errorf("recorded note time is out of range")
+		}
+		if err := validateTakeExpression(note); err != nil {
+			return nil, err
+		}
+		hasExpression = hasExpression || len(note.Expressions) != 0
+		onset := note.Tick
+		if quantum != 0 {
+			onset = ((note.Tick + quantum/2) / quantum) * quantum
+		}
+		delta := onset - note.Tick
+		note.Tick, note.EndTick = onset, note.EndTick+delta
+		note.Expressions = append([]TakeExpression(nil), note.Expressions...)
+		for j := range note.Expressions {
+			note.Expressions[j].Tick += delta
+		}
+		quantized[i] = note
+	}
+	if hasExpression {
+		for i, note := range originalTake {
+			for _, other := range originalTake[i+1:] {
+				if note.Tick < other.EndTick && other.Tick < note.EndTick {
+					return nil, fmt.Errorf("overlapping expressive notes need separate note patterns; the take has not been committed")
+				}
+			}
+		}
+	}
+	take = quantized
 	expressive := false
 	for _, note := range take {
 		if note.Tick < 0 || note.EndTick < note.Tick || note.Tick > 1<<60 || note.EndTick > 1<<60 {
@@ -245,8 +291,8 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 	if polyphonic {
 		// Existing notes patterns hold one pitch per step. Refuse a chord take
 		// before editing any steps, preserving every retained performance note.
-		for i, note := range take {
-			for _, other := range take[i+1:] {
+		for i, note := range originalTake {
+			for _, other := range originalTake[i+1:] {
 				if note.Tick < other.EndTick && other.Tick < note.EndTick {
 					return nil, fmt.Errorf("notes patterns hold one pitch per step; record a single-note take for polyphonic track %q", trackID)
 				}
@@ -254,13 +300,13 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 		}
 	}
 	if !drums && !polyphonic {
-		for _, prior := range take {
-			priorStep := int((prior.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
-			for _, next := range take {
+		for i, prior := range originalTake {
+			priorStep := int((take[i].Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
+			for j, next := range originalTake {
 				if prior.Tick >= next.Tick || prior.EndTick <= next.Tick {
 					continue
 				}
-				nextStep := int((next.Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
+				nextStep := int((take[j].Tick + stepTicks/2) / stepTicks % int64(pattern.Steps))
 				if priorStep != nextStep {
 					current := steps[priorStep]
 					current.slide = true

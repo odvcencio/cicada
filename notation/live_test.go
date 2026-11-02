@@ -81,6 +81,34 @@ func TestLiveCountInBoundsAndDuplicates(t *testing.T) {
 	}
 }
 
+func TestLiveRecordDivision(t *testing.T) {
+	for _, division := range []string{"1/16", "1/8T", "1/4.", "7/192"} {
+		source := strings.Replace(liveSource, "land = bar", "land = bar record = "+division, 1)
+		score, diagnostics := Parse([]byte(source))
+		if len(diagnostics) != 0 || score.Live.Record != division {
+			t.Fatalf("division %s: %+v", division, diagnostics)
+		}
+		document, err := ParseDocument([]byte(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		formatted, err := Format(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reparsed, diagnostics := Parse(formatted)
+		if len(diagnostics) != 0 || reparsed.Live.Record != division {
+			t.Fatalf("formatted division %s: %+v", division, diagnostics)
+		}
+	}
+	for _, setting := range []string{"record = 0/16", "record = 1/0", "record = 1/7", "record = 1/256", "record = 1/16 record = 1/8", "record = 2"} {
+		_, diagnostics := Parse([]byte(strings.Replace(liveSource, "land = bar", setting, 1)))
+		if len(diagnostics) == 0 {
+			t.Fatalf("accepted %s", setting)
+		}
+	}
+}
+
 func TestLiveDefaultsAndBounds(t *testing.T) {
 	for _, land := range []string{"now", "beat", "bar", "2bars", "4bars", "phrase"} {
 		t.Run(land, func(t *testing.T) {

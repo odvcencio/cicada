@@ -127,6 +127,37 @@ func TestLiveCountInSemanticRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLiveRecordDivisionSemanticRoundTrip(t *testing.T) {
+	p := liveTestProject(t)
+	p.Live.Record = "1/8T"
+	if got := LiveSurfaceOf(p).Record; got != "1/8T" {
+		t.Fatalf("surface: %q", got)
+	}
+	data, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Live.Record != "1/8T" {
+		t.Fatalf("JSON: %q", decoded.Live.Record)
+	}
+	source, err := ToSource(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if hasProjectErrors(diagnostics) || score.Live.Record != "1/8T" {
+		t.Fatalf("source: %+v", diagnostics)
+	}
+	p.Live.Record = "1/7"
+	if err := ValidateProject(p); err == nil {
+		t.Fatal("accepted division that requires fractional ticks")
+	}
+}
+
 func TestLiveSurfaceNamesAndSmoothing(t *testing.T) {
 	p := liveTestProject(t)
 	p.Live.Macros = append(p.Live.Macros, LiveMacro{Name: "motion", Default: 1, SmoothMS: 1500}, LiveMacro{Name: "dry", Default: 0})

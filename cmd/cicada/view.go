@@ -14,6 +14,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/language"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
@@ -113,6 +114,7 @@ type scoreView struct {
 	Revision                      string
 	SourceRevision                string
 	Studio                        bool
+	RecordTicks                   uint16
 	LineNumbers                   []int
 	Tracks                        []viewTrack
 	Voices                        []viewVoice
@@ -174,6 +176,14 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		Tracks: make([]viewTrack, 0, len(p.Tracks)), Patterns: make([]viewPattern, 0, len(p.Patterns)),
 		Scenes: make([]viewScene, 0, len(p.Scenes)), Song: make([]viewSongEntry, 0, len(p.Song)),
 		MasterCompressor: make([]viewMixerParam, 0),
+	}
+	if p.Live != nil {
+		view.RecordTicks = 240
+		if p.Live.Record != "" {
+			if ticks, err := notation.GridTicks(p.Live.Record); err == nil {
+				view.RecordTicks = ticks
+			}
+		}
 	}
 	if p.Master != nil {
 		for _, name := range p.Master.Mixer.Inserts {
