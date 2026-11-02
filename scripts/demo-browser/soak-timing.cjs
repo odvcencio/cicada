@@ -3,6 +3,19 @@ const {spawn} = require('node:child_process');
 const readline = require('node:readline');
 const path = require('node:path');
 
+// The worklet's duration and gap histograms are cumulative and can both
+// count the same callback. Keep their measurement-window deltas separate.
+function callbackExceedanceDeltas(warmup, final) {
+  const delta = field => {
+    const before = warmup?.[field], after = final?.[field];
+    if (!Number.isSafeInteger(before) || before < 0 || !Number.isSafeInteger(after) || after < before) {
+      throw new Error(`Invalid or reset callback counter: ${field}`);
+    }
+    return after - before;
+  };
+  return {callbackDurationExceedances: delta('durationExceedances'), callbackGapExceedances: delta('gapExceedances')};
+}
+
 // Keep sampling and policy in Go so both browser runners use one implementation.
 async function startSoakTiming() {
   const child = spawn('nice', ['-n', '10', 'go', 'run', './scripts/browser-soak-timing'], {
@@ -44,4 +57,4 @@ async function startSoakTiming() {
   };
 }
 
-module.exports = {startSoakTiming};
+module.exports = {startSoakTiming, callbackExceedanceDeltas};

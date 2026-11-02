@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
 const {setTimeout: sleep} = require('node:timers/promises');
-const {startSoakTiming} = require('./soak-timing.cjs');
+const {startSoakTiming, callbackExceedanceDeltas} = require('./soak-timing.cjs');
 const {waitForServerURL} = require('./server-url.cjs');
 const repo = path.resolve(__dirname, '../..');
 const soak = process.argv.includes('--soak');
@@ -252,6 +252,7 @@ async function until(run, timeout = 20000) {
       }
       const final = await evaluate('({...cicadaDemoState.metrics, playhead:cicadaDemoState.playhead, messages:cicadaDemoState.messageCount, errors:cicadaDemoState.errors, faults:cicadaDemoState.faults, clock:cicadaDemoState.clock})');
       const report = {...info, requestedDurationSeconds: 1800, actualDurationSeconds: (Date.now()-started)/1000, warmupSeconds: 60, underruns: final.underruns-warmup.underruns, warmupUnderruns: warmup.underruns, faults: final.faults, callbackSamples: final.callbackSamples-warmup.callbackSamples, callbackP99Ms: final.callbackP99Ms, messagesDrained: final.messages-warmup.messages, memoryAfterWarmupBytes: warmup.memoryBytes, memoryPeakBytes: peakMemory, memoryFinalBytes: final.memoryBytes, quantumMs: final.quantumMs, durationLimitMs: final.durationLimitMs, gapLimitMs: final.gapLimitMs, playheadAdvanced: final.playhead>warmup.playhead};
+      Object.assign(report, callbackExceedanceDeltas(warmup, final));
       report.audioWorkletHighResClock = final.clock;
       Object.assign(report, await soakTiming.finish({...report, errors: final.errors, browserErrors: errors}));
       if (report.timingVerdict === 'inconclusive') {

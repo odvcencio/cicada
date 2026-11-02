@@ -1,7 +1,15 @@
 'use strict';
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
-const {startSoakTiming} = require('./soak-timing.cjs');
+const {startSoakTiming, callbackExceedanceDeltas} = require('./soak-timing.cjs');
+
+test('demo timing report separates duration and gap events after warmup', () => {
+  const before = {durationExceedances: 5, gapExceedances: 9};
+  const after = {durationExceedances: 12, gapExceedances: 11};
+  assert.deepEqual(callbackExceedanceDeltas(before, after), {callbackDurationExceedances: 7, callbackGapExceedances: 2});
+  assert.throws(() => callbackExceedanceDeltas(before, {durationExceedances: 4, gapExceedances: 11}), /reset callback counter/);
+  assert.throws(() => callbackExceedanceDeltas(before, {durationExceedances: 12}), /gapExceedances/);
+});
 
 test('demo bridge records shared host evidence and preserves correctness failures', {timeout: 30000}, async t => {
   const sampler = await startSoakTiming();

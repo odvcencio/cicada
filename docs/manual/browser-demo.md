@@ -67,6 +67,9 @@ for 30 minutes after a 60-second warmup. Both must pass. The demo report
 requires zero additional underruns and faults, advancing playback, received
 messages, and stable kernel memory. Callback timing uses the existing
 worklet quantum, clock allowance, and AudioContext latency thresholds.
+The demo report also separates callback-duration and callback-gap threshold
+exceedances after warmup. Both can count the same callback; they are
+diagnostic counters rather than independent counts of audible dropouts.
 Its p99 display has 0.25 ms histogram buckets; browsers without a high
 resolution worklet clock have 1 ms timing resolution. The separate
 `budget-browser` gate remains responsible for the 0.67 ms CPU budget.
