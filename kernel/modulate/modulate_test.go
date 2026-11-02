@@ -183,7 +183,7 @@ func TestDomainZeroMatchesChanceHash(t *testing.T) {
 		seed := rng.Uint32()
 		track, slot, step := uint8(rng.Intn(64)), uint8(rng.Intn(8)), uint8(rng.Intn(64))
 		iter := int64(rng.Intn(100000))
-		u := Hash(uint64(seed), 0, track, slot, step, uint64(iter)) >> 40
+		u := Hash(seed, 0, track, slot, step, uint64(iter)) >> 40
 		for _, p := range []uint8{1, 25, 50, 70, 99} {
 			want := seq.ProbabilityHit(p, seed, track, slot, iter, step)
 			if got := u*100 < uint64(p)<<24; got != want {
@@ -225,7 +225,7 @@ func TestContourShapes(t *testing.T) {
 		at    float64 // fraction of the segment
 		want  float64
 	}{
-		{Linear, .5, 0}, {Smooth, .25, -1 + 2*0.15625}, {Exponential, .5, -1 + 2*.25}, {Step, .5, -1}, {Step, .9999, -1},
+		{Linear, .5, 0}, {Smooth, .25, -1 + 2*0.15625}, {Exponential, .5, 0}, {Step, .5, -1}, {Step, .9999, -1},
 	}
 	for _, c := range cases {
 		points := []Point{{0, -One, Linear}, {half, One, c.shape}, {1 << 32, -One, Linear}}
@@ -261,6 +261,11 @@ func TestFollower(t *testing.T) {
 	}
 	if f.Level != 0 {
 		t.Fatalf("follower never reached zero: %d", f.Level)
+	}
+	f.Step(One, attack, release)
+	f.Reset()
+	if f.Level != 0 {
+		t.Fatalf("Reset left %d", f.Level)
 	}
 }
 
