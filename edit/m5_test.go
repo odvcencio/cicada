@@ -102,6 +102,51 @@ func TestRecordTakeExactBytesAndAtomicBatch(t *testing.T) {
 	}
 }
 
+func TestRecordTakeUsesScoreOnsetDivision(t *testing.T) {
+	base := "cicada 2\ntrack bass acid {}\nLIVE\npattern pulse acid steps=4 { . . . . }\nscene main { bass=pulse }\nsong { main }\n"
+	for _, test := range []struct{ name, setting, want string }{
+		{"default sixteenth", "live {}", "{ . c4 . . }"},
+		{"configured eighth", "live { record = 1/8 }", "{ . . c4 . }"},
+		{"triplet division", "live { record = 1/8T }", "{ . c4 . . }"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := []byte(strings.Replace(base, "LIVE", test.setting, 1))
+			notes := []edits.TakeNote{{Tick: 260, EndTick: 350, Note: 60, Velocity: 90}}
+			updated, err := recordTakeSource(t, source, "bass", "pulse", notes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(updated), test.want) {
+				t.Fatalf("got %s, want %s", updated, test.want)
+			}
+			if notes[0].Tick != 260 || notes[0].EndTick != 350 {
+				t.Fatal("mutated retained take")
+			}
+		})
+	}
+}
+
+func TestRecordTakeQuantizationRetainsOnConflictAndPlayedTiming(t *testing.T) {
+	source := []byte("cicada 2\ntrack bass acid {}\nlive { record = 1/8 }\npattern pulse acid steps=4 { . . . . }\nscene main { bass=pulse }\nsong { main }\n")
+	notes := []edits.TakeNote{{Tick: 100, EndTick: 130, Note: 60, Velocity: 90}, {Tick: 200, EndTick: 230, Note: 64, Velocity: 90}}
+	before := append([]byte(nil), source...)
+	if _, err := recordTakeSource(t, source, "bass", "pulse", notes); err == nil || !strings.Contains(err.Error(), "multiple notes") {
+		t.Fatalf("expected collision after quantization: %v", err)
+	}
+	if !bytes.Equal(source, before) || notes[0].Tick != 100 || notes[1].Tick != 200 {
+		t.Fatal("quantization conflict changed the source or retained take")
+	}
+	r, err := applyM5(t, source, &edits.RecordTake{Timing: "played", Recordings: []edits.Recording{{Track: "bass", Pattern: "pulse", Notes: notes}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"note 60 at=100ticks length=30ticks", "note 64 at=200ticks length=30ticks"} {
+		if !strings.Contains(string(r.Source), want) {
+			t.Fatalf("played timing lost %q: %s", want, r.Source)
+		}
+	}
+}
+
 func TestRecordTakeInheritedEdition(t *testing.T) {
 	source := []byte("track part tine_ep { voices=2 }\npattern take notes steps=4 { . . . . }\nscene main { part=take }\nsong { main }\n")
 	in := &edits.RecordTake{Recordings: []edits.Recording{{Track: "part", Pattern: "take", Notes: []edits.TakeNote{{Note: 60, Velocity: 90, EndTick: 60}}}}}

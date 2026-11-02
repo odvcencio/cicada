@@ -155,6 +155,7 @@
 (drum_pattern name: (identifier) @function)
 (pattern_attr name: (identifier) @attribute)
 (pattern_attr value: (fraction) @number.fraction)
+(live_record value: (fraction) @number.fraction)
 
 (expression_row_label) @attribute.builtin
 (expression_row name: (identifier) @attribute)
@@ -259,7 +260,7 @@
 ((number) @number.frames (#match? @number.frames "frames$"))
 
 ; Live host controls.
-["live" "land" "count_in" "macro" "smooth" "layers" "attack" "release" "state" "stinger" "transition" "quantize" "crossfade"] @keyword
+["live" "land" "count_in" "record" "macro" "smooth" "layers" "attack" "release" "state" "stinger" "transition" "quantize" "crossfade"] @keyword
 (live_land value: (identifier) @constant.builtin)
 (bar_count) @number.bars
 (live_macro name: (identifier) @variable.parameter)

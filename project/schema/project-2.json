@@ -1756,6 +1756,10 @@
           "minimum": 0,
           "maximum": 8
         },
+        "record": {
+          "type": "string",
+          "pattern": "^[0-9]+/[0-9]+[tT.]?$"
+        },
         "macros": {
           "type": "array",
           "items": {

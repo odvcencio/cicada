@@ -631,10 +631,16 @@
       preview.className = 'take-preview';
       preview.style.setProperty('--steps', meta.steps);
       const byStep = new Map();
-      for (const note of recording.notes) {
+      const quantum = Number(document.body.dataset.recordTicks) || 0;
+      const notes = recording.notes.map(note => {
+        const tick = quantum ? Math.floor((note.tick + quantum / 2) / quantum) * quantum : note.tick;
+        return {...note, tick, endTick: note.endTick + tick - note.tick};
+      });
+      for (const [index, note] of notes.entries()) {
         const step = midi.quantizeStep(note.tick, meta.steps, meta.stepTicks);
         const text = meta.drums ? midi.mapGeneralMIDIDrum(note.note) || '?' : noteName(note.note);
-        const slide = !meta.drums && recording.notes.some(next => note.tick < next.tick && note.endTick > next.tick);
+        const original = recording.notes[index];
+        const slide = !meta.drums && recording.notes.some(next => original.tick < next.tick && original.endTick > next.tick);
         const values = byStep.get(step) || [];
         values.push({text, slide});
         byStep.set(step, values);

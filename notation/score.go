@@ -257,6 +257,8 @@ type Live struct {
 	PhrasePosition  Position
 	CountInBars     *int
 	CountInPosition Position
+	Record          string
+	RecordPosition  Position
 	Macros          []LiveMacro
 	States          []LiveState
 	Stingers        []LiveStinger

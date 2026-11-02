@@ -2796,6 +2796,20 @@
     },
     {
       "construct": "live",
+      "name": "record",
+      "required": false,
+      "type": "string",
+      "unit": "note division",
+      "range": null,
+      "default": "1/16",
+      "meaning": "Recorded note onset quantization",
+      "order": 4,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "live",
       "name": "macros",
       "required": true,
       "type": "array\u003clive_macro\u003e",
@@ -2803,7 +2817,7 @@
       "range": null,
       "default": null,
       "meaning": "Macros in host ID order",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -2817,7 +2831,7 @@
       "range": null,
       "default": null,
       "meaning": "Game state to scene map",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -2831,7 +2845,7 @@
       "range": null,
       "default": null,
       "meaning": "One-shot game cues",
-      "order": 6,
+      "order": 7,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -2845,7 +2859,7 @@
       "range": null,
       "default": null,
       "meaning": "State transition timing",
-      "order": 7,
+      "order": 8,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -2859,7 +2873,7 @@
       "range": null,
       "default": null,
       "meaning": "Macro-controlled track layers",
-      "order": 8,
+      "order": 9,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"

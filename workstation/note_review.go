@@ -71,7 +71,15 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 		gridCheck = gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("Pattern check passed. The score is unchanged until you apply. Undo restores the previous patterns."))
 	}
 	apply := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", intent), gosx.Attr("disabled", blocked)), gosx.Text(label))
-	children = append(children, gosx.El("details", gosx.El("summary", gosx.Text("Snap to the existing step grid")), gridCheck, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Snaps starts to the destination grid and repeats at its saved length. Held lengths and overlapping notes may need a played-timing pattern instead.")), form(apply)), form(submit("intent", "check", "Check current patterns"), submit("intent", "discard", "Discard note take")))
+	gridDescription := "Snaps starts to the destination grid and repeats at its saved length. Held lengths and overlapping notes may need a played-timing pattern instead."
+	if v.Project.Live != nil {
+		division := "1/16"
+		if v.Project.Live.Record != "" {
+			division = v.Project.Live.Record
+		}
+		gridDescription = "Snaps starts to " + division + " and then to the destination grid; the pattern repeats at its saved length. Held lengths and overlapping notes may need a played-timing pattern instead."
+	}
+	children = append(children, gosx.El("details", gosx.El("summary", gosx.Text("Snap to the existing step grid")), gridCheck, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(gridDescription)), form(apply)), form(submit("intent", "check", "Check current patterns"), submit("intent", "discard", "Discard note take")))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "note-preview"), gosx.Attr("aria-label", "Retained note take")), gosx.Fragment(children...))
 }
 
