@@ -307,15 +307,43 @@ func TestEnvelopeStartsAtZeroAtLoadSeekAndWrap(t *testing.T) {
 		t.Fatalf("envelope after a seek = %s", log[0].values)
 	}
 	rise(200)
-	// Wrap: run on to the loop end (two bars, 192,000 samples) and check the first grid of the next pass.
-	for e.transport.Tick() < cfg.Song[0].toTicks() {
+	// Wrap: play through the loop end (two bars, 192,000 samples at 120 BPM and
+	// 48 kHz). The held note keeps sounding, so without a reset the follower
+	// would carry its level across the wrap. With one, the first grid point of the
+	// new pass is 0 and the level climbs again with the attack coefficient.
+	log = nil
+	for e.transport.Tick() < 2*cfg.Song[0].toTicks() {
 		e.Render(left, right)
 	}
-	log = nil
-	e.Render(left, right)
-	e.Render(left, right)
-	if len(log) == 0 || log[len(log)-1].values != "[0]" && log[0].values != "[0]" {
-		t.Fatalf("envelope after the wrap = %v", log)
+	const loopSamples = 192_000
+	value := func(g gridEntry) int32 {
+		var v int32
+		fmt.Sscanf(g.values, "[%d]", &v)
+		return v
+	}
+	wrap := -1
+	for i, g := range log {
+		if g.song >= loopSamples {
+			wrap = i
+			break
+		}
+	}
+	if wrap < 2 || wrap+3 >= len(log) {
+		t.Fatalf("wrap not found in %d grid points (index %d)", len(log), wrap)
+	}
+	before := value(log[wrap-1])
+	if before < modulate.One/1000 {
+		t.Fatalf("the follower never rose before the wrap: %d", before)
+	}
+	first, second, third := value(log[wrap]), value(log[wrap+1]), value(log[wrap+2])
+	if first != 0 {
+		t.Errorf("first grid of the new pass = %d, want 0 (before the wrap: %d)", first, before)
+	}
+	if !(second > first && third > second) {
+		t.Errorf("the follower does not climb after the wrap: %d %d %d", first, second, third)
+	}
+	if second > before*3/4 {
+		t.Errorf("second grid after the wrap = %d, too close to the pre-wrap level %d: no reset", second, before)
 	}
 }
 
