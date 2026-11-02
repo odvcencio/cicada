@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
@@ -217,5 +218,34 @@ func TestScoresWithoutModulatorsAreUnchanged(t *testing.T) {
 	data, _ := CanonicalJSON(p)
 	if bytes.Contains(data, []byte("modulators")) || bytes.Contains(data, []byte("routes")) {
 		t.Fatalf("empty modulator arrays leaked into JSON: %s", data)
+	}
+}
+
+// loop = continue fits the nearest whole number of cycles, at least one, and
+// warns when that moves the rate by more than 10 percent.
+func TestLoopContinueFitAndWarning(t *testing.T) {
+	p, ds := compileModulators(t, "lfo slow { rate = 0.01Hz loop = continue }\nlfo near { rate = 0.2Hz loop = continue }\nlfo wrap { rate = 0.01Hz }\nmod slow -> pad.pan depth = 0.1\n")
+	if p == nil {
+		t.Fatal(ds)
+	}
+	// The song is 8 bars at 120 BPM: 16 seconds.
+	cycles, authored, fitted, ok := LoopFit(p, "slow")
+	if !ok || cycles != 1 || math.Abs(authored-0.01) > 1e-12 || math.Abs(fitted-1.0/16) > 1e-9 {
+		t.Fatalf("slow: %d %g %g %v", cycles, authored, fitted, ok)
+	}
+	if cycles, _, fitted, _ := LoopFit(p, "near"); cycles != 3 || math.Abs(fitted-3.0/16) > 1e-9 {
+		t.Fatalf("near: %d cycles, %g Hz", cycles, fitted)
+	}
+	if _, _, _, ok := LoopFit(p, "wrap"); ok {
+		t.Fatal("a wrap source has no fit")
+	}
+	var warned []string
+	for _, d := range ds {
+		if d.Severity == "warning" && d.Code == "CICADA-RATE" {
+			warned = append(warned, d.Message)
+		}
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "lfo slow") || !strings.Contains(warned[0], "0.0625 Hz") || !strings.Contains(warned[0], "0.01 Hz") {
+		t.Fatalf("warnings = %q", warned)
 	}
 }

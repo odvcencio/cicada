@@ -43,8 +43,8 @@ type Project struct {
 	Live        *Live        `cicada:"Declared host controls" json:"live,omitempty" introduced:"cicada.project/2"`
 
 	Automation []AutomationLane `cicada:"Continuous song parameter lanes" json:"automation,omitempty" introduced:"cicada.project/2"`
-	Modulators []Modulator `cicada:"Control sources: lfo, envelope, sway and contour" json:"modulators,omitempty" introduced:"cicada.project/2"`
-	Routes     []ModRoute  `cicada:"Modulator routes to registered parameters" json:"routes,omitempty" introduced:"cicada.project/2"`
+	Modulators []Modulator      `cicada:"Control sources: lfo, envelope, sway and contour" json:"modulators,omitempty" introduced:"cicada.project/2"`
+	Routes     []ModRoute       `cicada:"Modulator routes to registered parameters" json:"routes,omitempty" introduced:"cicada.project/2"`
 	p2Syntax   bool
 }
 
@@ -529,7 +529,12 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		return nil, append(diagnostics, ds...)
 	}
 	if ds := lowerModulators(p, score); len(ds) > 0 {
-		return nil, append(diagnostics, ds...)
+		diagnostics = append(diagnostics, ds...)
+		for _, d := range ds {
+			if d.Severity == "error" {
+				return nil, diagnostics
+			}
+		}
 	}
 	if err := assignSlots(p, score); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})

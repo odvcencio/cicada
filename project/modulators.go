@@ -131,7 +131,73 @@ func lowerModulators(p *Project, score *notation.Score) []notation.Diagnostic {
 		return ds
 	}
 	p.Format, p.Version = FormatID2, 2
-	return nil
+	return fittedRateWarnings(p, score)
+}
+
+// FitTolerance is how far a `loop = continue` source's fitted rate may differ
+// from the authored one before the compiler warns (a fraction of the rate).
+const FitTolerance = 0.10
+
+// loopFit is the whole number of cycles a `loop = continue` source plays in one
+// pass of the song, and the rate that gives, in hertz. The song is the loop.
+// N rounds to the nearest whole cycle and is at least 1.
+func loopFit(p *Project, m Modulator) (cycles int64, authoredHz, fittedHz float64, ok bool) {
+	var ticks int64
+	for _, entry := range p.Song {
+		ticks += int64(entry.Bars) * 3840
+	}
+	if p.Arrange != nil {
+		ticks = 0
+		for _, placement := range p.Arrange.Placements {
+			ticks = max(ticks, placement.AtTick+placement.LengthTicks)
+		}
+	}
+	if ticks == 0 || m.Loop != "continue" {
+		return 0, 0, 0, false
+	}
+	tempo, err := NewTempoMap(48000, int64(p.TempoMilli), SongTempoChanges(p))
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	seconds := float64(tempo.SampleAtTick(ticks)) / 48000
+	switch {
+	case m.RateTicks > 0:
+		cycles = int64(float64(ticks)/float64(m.RateTicks) + .5)
+		authoredHz = float64(ticks) / float64(m.RateTicks) / seconds
+	case m.RateMicroHz > 0:
+		authoredHz = float64(m.RateMicroHz) / 1e6
+		cycles = int64(authoredHz*seconds + .5)
+	default:
+		return 0, 0, 0, false
+	}
+	cycles = max(1, cycles)
+	return cycles, authoredHz, float64(cycles) / seconds, true
+}
+
+// fittedRateWarnings reports each continue-looped source whose fitted rate is
+// more than FitTolerance away from the authored rate. It is CICADA-RATE at
+// warning severity: the score still plays, at the fitted rate.
+func fittedRateWarnings(p *Project, score *notation.Score) []notation.Diagnostic {
+	var ds []notation.Diagnostic
+	for i, m := range p.Modulators {
+		cycles, authored, fitted, ok := loopFit(p, m)
+		if ok && (fitted < authored*(1-FitTolerance) || fitted > authored*(1+FitTolerance)) {
+			ds = append(ds, notation.Diagnostic{Code: "CICADA-RATE", Severity: "warning", Position: score.Modulators[i].Position,
+				Message: fmt.Sprintf("%s %s: loop = continue fits %d whole cycles to the song, so it runs at %.4g Hz, not the authored %.4g Hz", m.Kind, m.ID, cycles, fitted, authored)})
+		}
+	}
+	return ds
+}
+
+// LoopFit describes the fit of a source for explain: ok is false when the
+// source does not use loop = continue.
+func LoopFit(p *Project, id string) (cycles int64, authoredHz, fittedHz float64, ok bool) {
+	for _, m := range p.Modulators {
+		if m.ID == id {
+			return loopFit(p, m)
+		}
+	}
+	return 0, 0, 0, false
 }
 
 func loopOrWrap(v string) string {
