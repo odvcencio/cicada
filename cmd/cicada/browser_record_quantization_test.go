@@ -27,17 +27,29 @@ func TestBrowserScoreRecordQuantizationPreviewAndCommit(t *testing.T) {
 			source := "cicada 2\ntempo 120\ntrack bass acid {}\nlive { record = " + tc.division + " }\npattern take acid steps=4 { " + tc.grid + ". . . . }\nscene main { bass = take }\nsong { main*4 }\n"
 			server := startBrowserStudio(t, []byte(source), nil)
 			chrome := startBrowserChrome(t, server)
-			chrome.mustCall("Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": `
+			var preload struct {
+				Identifier string `json:"identifier"`
+			}
+			if err := json.Unmarshal(chrome.mustCall("Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": `
 window.__gridClock=100;
 Object.defineProperty(performance,'now',{value:()=>window.__gridClock});
 const RealWS=WebSocket;
 window.WebSocket=class { constructor(url){if(!url.includes('/api/transport/ws'))return new RealWS(url);window.__gridSocket=this;} close(){} send(){} };
-`})
+`}), &preload); err != nil || preload.Identifier == "" {
+				t.Fatalf("register synthetic transport: %v", err)
+			}
+			t.Cleanup(func() {
+				chrome.mustCall("Page.removeScriptToEvaluateOnNewDocument", map[string]any{"identifier": preload.Identifier})
+			})
 			chrome.navigate("http://" + browserStudioAddress + "/")
 			chrome.waitFor(`!!window.cicadaPerformance && !!window.__gridSocket && !!document.querySelector('#live-arm-controls input')`, 20*time.Second)
+			priorLive := string(chrome.eval(`localStorage.getItem('cicada.live.enabled')`))
+			t.Cleanup(func() {
+				chrome.eval(`(()=>{const prior=` + priorLive + `;if(prior===null)localStorage.removeItem('cicada.live.enabled');else localStorage.setItem('cicada.live.enabled',prior);return true})()`)
+			})
 			chrome.eval(`(()=>{
 window.cicadaAudio={noteOn:()=>true,noteOff:()=>{},panic:()=>{},params:async()=>({revision:document.body.dataset.revision,registry:[],addresses:[]})};
-document.getElementById('live-toggle').click();
+if(document.getElementById('live-toggle').getAttribute('aria-pressed')!=='true')document.getElementById('live-toggle').click();
 const arm=document.querySelector('#live-arm-controls input[value=bass]');arm.checked=true;arm.dispatchEvent(new Event('change',{bubbles:true}));
 window.__gridSocket.onmessage({data:JSON.stringify({playing:true,bar:1,step:1,scene:'main',activeSlots:{bass:'take'}})});
 document.getElementById('live-record').click();
