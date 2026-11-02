@@ -171,6 +171,22 @@ Each case uses disposable scores, its own desktop data directory and
 WebKit/cache directories are removed afterward. Reports, signing output, and
 app logs are kept in the output directory.
 
+On Windows, run the startup and editor workflows in actual WebView2 windows
+against a prepared development bundle:
+
+```powershell
+powershell -NoProfile -File desktop/smoke_windows.ps1 `
+  -Bundle C:\path\to\desktop-bundle -Output C:\path\to\smoke-reports
+```
+
+The bundle must contain the three executables, `WebView2Loader.dll`, and the
+`workstation` runtime described above. Each run creates new disposable scores
+and isolated data directories beneath the output folder. Successful cases
+remove their disposable WebView2 profiles while retaining reports and logs;
+if Windows still holds a profile open, the script reports its path. Failed
+cases remain available for inspection. The checks use null audio with input
+off; they do not qualify an installer or physical audio devices.
+
 The Arrange workflow exercises saved placement shortcuts, contextual looping,
 Device sound and mix controls, Automation points, and exact Undo in WKWebView.
 It verifies the saved source after navigation and checks that focused editors

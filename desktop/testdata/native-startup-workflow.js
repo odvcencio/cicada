@@ -1,4 +1,4 @@
-// Actual WKWebView cold launch. Null audio/input off; no synthesized input.
+// Actual native WebView cold launch. Null audio/input off; no synthesized input.
 (() => {
  if(location.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(location.hostname)||window.__startupSmoke)return;window.__startupSmoke=true;
  const expectStartupUI=true,checks=[],errors=[],start=performance.now();let previous=start,maxFrameGap=0,done=false;
@@ -13,7 +13,7 @@
   const frameObserved=await Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true)))),new Promise(r=>setTimeout(()=>r(false),1000))]);
   const firstReadyFrameMs=frameObserved?performance.now():null;
   if(expectStartupUI&&(!window.__cicadaStartup||document.querySelector('#studio-shell')?.dataset.studioStartup!=='ready'||!document.querySelector('[data-studio-startup-status]')?.hidden))throw Error('Startup feedback did not settle');
-  checks.push('real WKWebView controls and highlighted Code ready; startup feedback cleared');
+  checks.push('native WebView controls and highlighted Code ready; startup feedback cleared');
   const state=await(await fetch('/api/state')).json(),audio=await(await fetch('/api/audio/config')).json();
   if(!state.source.includes('title "Desktop CI"')||String(audio.inventory.backendName||audio.inventory.backend).toLowerCase()!=='null'||audio.options.inputEnabled)throw Error('Disposable fixture and null audio/input-off required');
   checks.push('task-owned fixture; null audio, input off; source untouched');

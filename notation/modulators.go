@@ -345,7 +345,7 @@ func validateModulatorSetting(m Modulator, p Param, tracks map[string]bool) []Di
 		if strings.HasSuffix(p.Value, "%") {
 			f /= 100
 		}
-		if err != nil || f < 0 || f >= 1 {
+		if err != nil || !(f >= 0 && f < 1) {
 			return bad("CICADA-PARAM", "phase must be at least 0 and below 1 cycle; actual "+p.Value)
 		}
 	case "loop":
@@ -427,6 +427,34 @@ func validateContour(m Modulator) []Diagnostic {
 func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 	text := func(n *gts.Node) string {
 		raw := w.Text(n)
+		// Comments are emitted separately. Remove their exact CST ranges before
+		// normalizing whitespace so a line comment cannot swallow the tokens
+		// that follow it, or be duplicated in a qualified name.
+		var comments []*gts.Node
+		var collect func(*gts.Node)
+		collect = func(parent *gts.Node) {
+			for i := 0; i < parent.ChildCount(); i++ {
+				child := parent.Child(i)
+				if w.Type(child) == "comment" {
+					comments = append(comments, child)
+				} else {
+					collect(child)
+				}
+			}
+		}
+		collect(n)
+		if len(comments) > 0 {
+			var clean strings.Builder
+			cursor := uint32(0)
+			for _, comment := range comments {
+				start, end := comment.StartByte()-n.StartByte(), comment.EndByte()-n.StartByte()
+				clean.WriteString(raw[cursor:start])
+				clean.WriteByte(' ')
+				cursor = end
+			}
+			clean.WriteString(raw[cursor:])
+			raw = clean.String()
+		}
 		if strings.Contains(raw, `"`) { // keep the whitespace inside string literals
 			return raw
 		}
@@ -457,7 +485,9 @@ func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 		}
 		return strings.Join(append(comments, line), "\n")
 	}
-	lines := []string{w.Type(node)[:len(w.Type(node))-len("_decl")] + " " + text(w.Field(node, "name")) + " {"}
+	var headerComments []string
+	inner(w.Field(node, "name"), &headerComments)
+	lines := append(headerComments, w.Type(node)[:len(w.Type(node))-len("_decl")]+" "+text(w.Field(node, "name"))+" {")
 	empty := true
 	for i := 0; i < node.NamedChildCount(); i++ {
 		c := node.NamedChild(i)
@@ -489,7 +519,8 @@ func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 		empty = false
 	}
 	if empty {
-		return lines[0] + "}"
+		lines[len(lines)-1] += "}"
+		return strings.Join(lines, "\n")
 	}
 	return strings.Join(append(lines, "}"), "\n")
 }

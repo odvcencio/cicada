@@ -71,6 +71,7 @@ func TestModulatorDiagnostics(t *testing.T) {
 		{"non-integer ticks", "lfo a { rate = 1/7 }", "CICADA-PARAM: rate: the length 1/7 is not a whole number of ticks"},
 		{"bad loop", "lfo a { rate = 1/4 loop = hold }", "CICADA-PARAM: loop must be wrap or continue"},
 		{"phase out of range", "lfo a { rate = 1/4 phase = 1 }", "CICADA-PARAM: phase must be"},
+		{"phase NaN", "lfo a { rate = 1/4 phase = nan }", "CICADA-PARAM: phase must be"},
 		{"octaves", "sway a { rate = 1bar octaves = 5 }", "CICADA-PARAM: octaves must be"},
 		{"envelope needs source", "envelope e { attack = 5ms }", "CICADA-PARAM: envelope e needs source"},
 		{"envelope source is a track", "envelope e { source = ghost }", "CICADA-REFERENCE: envelope source ghost"},
@@ -102,6 +103,39 @@ func TestModulatorDiagnostics(t *testing.T) {
 			}
 			t.Fatalf("want %q in %v", c.want, codes)
 		})
+	}
+}
+
+func TestModulatorFormatQualifiedNamesWithComments(t *testing.T) {
+	source := []byte(modulatorHeader + `
+lfo ns. // source declaration
+  a { rate = 1/4 }
+mod ns. // source reference
+  a -> pad.pan depth = 0.1
+`)
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	once, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, comment := range []string{"// source declaration", "// source reference"} {
+		if strings.Count(string(once), comment) != 1 {
+			t.Errorf("comment %q not preserved exactly once:\n%s", comment, once)
+		}
+	}
+	doc, err = ParseDocument(once)
+	if err != nil {
+		t.Fatalf("formatted source cannot be parsed: %v\n%s", err, once)
+	}
+	twice, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(once, twice) {
+		t.Fatalf("format not idempotent:\n%s\n---\n%s", once, twice)
 	}
 }
 
