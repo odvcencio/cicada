@@ -116,8 +116,8 @@ rather than assuming that examples on `main` are supported by the pinned version
   private readiness page without a score or audio service. Export cannot bake
   session tokens, devices, project source, or recordings into shared HTML.
 - Package the GoSX runtime beside the executable, and locate it at runtime.
-  No source-checkout path is built into the installed workstation. Desktop and
-  workstation pin the same framework version.
+  No source-checkout path is built into the installed workstation. The desktop
+  host and workstation pin their GoSX dependencies independently.
 
 The native process starts the workstation with an ephemeral loopback service
 origin and a per-launch credential. The browser talks to GoSX; the workstation
@@ -128,11 +128,11 @@ GoSX sessions, request limits, and loopback host checks apply before actions.
 
 Tymbal is the default on macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). `--audio null` permits
 device-free transport testing; it is not hardware qualification. The existing
-explicit Oto fallback remains available. The pinned Core Audio driver exposes
-native output selection, timing, and thread priority; recording input is not
-implemented there yet. Device discovery and recording support are separate
-capabilities: the Audio panel shows native microphones but disables recording
-controls when the driver cannot open an input stream.
+explicit Oto fallback remains available. The pinned Core Audio driver supports
+native input and output selection, timing, and thread priority. Microphone
+recording requires permission and a usable input device; the Audio panel
+disables recording controls when the selected backend cannot open an input
+stream. Device-free checks do not qualify physical-device recording.
 
 The native service saves audio preferences per backend in the computer's app
 data. Desktop `--data-dir` isolates this setup along with the host state;
