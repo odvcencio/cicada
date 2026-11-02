@@ -55,7 +55,7 @@ func triangle(phase uint32) int32 {
 
 // LFO returns the value of an LFO at a position. seed is the project seed and
 // index the source's slot in the table (used by sample-hold only).
-func LFO(wave Wave, seed uint64, index uint8, p Position) int32 {
+func LFO(wave Wave, seed uint32, index uint8, p Position) int32 {
 	switch wave {
 	case Sine:
 		return Sin(p.Phase)
@@ -73,7 +73,7 @@ func LFO(wave Wave, seed uint64, index uint8, p Position) int32 {
 // Sway returns the stateless smooth random source: octaves layers, layer o at
 // 2^o times the base rate and weight 2^(octaves-1-o)/(2^octaves-1). Each layer
 // draws h(k) at its period boundaries and joins h(k) to h(k+1) with smoothstep.
-func Sway(seed uint64, index uint8, octaves uint, p Position) int32 {
+func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 	if octaves < 1 {
 		octaves = 1
 	}
@@ -94,6 +94,9 @@ func Sway(seed uint64, index uint8, octaves uint, p Position) int32 {
 type Shape uint8
 
 // The contour shapes. A point's shape governs the segment that arrives at it.
+// Exponential is linear here, as it is in automation: a route maps the value
+// into the target's control space, so a straight line there is the curve the
+// ear follows. The word stays so a score can say what it means.
 const (
 	Linear Shape = iota
 	Step
@@ -135,8 +138,6 @@ func Contour(points []Point, p Position) int32 {
 		return a.Value
 	case Smooth:
 		u = smooth(uint32(u))
-	case Exponential:
-		u = u * u >> 32
 	}
 	return lerp(a.Value, b.Value, u)
 }
@@ -145,6 +146,9 @@ func Contour(points []Point, p Position) int32 {
 // that the engine measures over the frames before each grid point. It starts at
 // zero at load, at a seek and at a loop wrap.
 type Follower struct{ Level int32 }
+
+// Reset returns the follower to zero, as at load, at a seek and at a loop wrap.
+func (f *Follower) Reset() { f.Level = 0 }
 
 // Step moves the level toward peak (Q30, at least 0) by the attack coefficient
 // when rising and the release coefficient when falling. Both are Q32

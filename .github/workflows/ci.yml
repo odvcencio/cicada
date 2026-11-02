@@ -142,13 +142,20 @@ jobs:
           CICADA_PARITY_DIR="$PWD/build/parity" \
           go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
             -run '^TestExamplesPCM24Parity$' -count=1 -v | tee build/parity/report.txt
+      - name: Require the modulator sources to match their reference digest on arm64
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: parity-arm64-report
           if-no-files-found: warn
-          path: build/parity/report.txt
+          path: |
+            build/parity/report.txt
+            build/parity/modulate.txt
 
   studio-cli:
     name: Studio CLI tests (shard ${{ matrix.shard }}/3)

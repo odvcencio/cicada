@@ -115,8 +115,8 @@ func (p Position) Scale(octave uint) Position {
 // Hash is the stateless SplitMix64 family of seq.ProbabilityHit with a domain
 // byte in the free top bits (spec 24, "Seeding"). Domain 0 with a 32-bit seed
 // reproduces the chance decision's input exactly.
-func Hash(seed uint64, domain, track, slot, step uint8, index uint64) uint64 {
-	x := seed ^ uint64(domain)<<56 ^ uint64(track)<<32 ^ uint64(slot)<<40 ^ uint64(step)<<48
+func Hash(seed uint32, domain, track, slot, step uint8, index uint64) uint64 {
+	x := uint64(seed) ^ uint64(domain)<<56 ^ uint64(track)<<32 ^ uint64(slot)<<40 ^ uint64(step)<<48
 	x ^= index * 0x9e3779b97f4a7c15
 	x += 0x9e3779b97f4a7c15
 	x = (x ^ x>>30) * 0xbf58476d1ce4e5b9
