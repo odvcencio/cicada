@@ -12,7 +12,7 @@ import (
 )
 
 // ExpectedDigest is the SHA-256 of the fixture's values, hex encoded.
-const ExpectedDigest = "583a1a0d22afd47c5b88484572f1b9617029d853ca94a243ecf66fb248d04c6a"
+const ExpectedDigest = "63f0f1f25c497ab9ae92b80b7a177b7e8709df2d817040858b794610f0da2c31"
 
 // Tick returns the tick and its remainder over 60000*rate for a song sample
 // at a tempo in thousandths of a beat per minute, at 960 ticks per quarter.
@@ -74,6 +74,8 @@ func Digest() [32]byte {
 				at := loop * k / 64
 				p := modulate.FitPosition(at, k%3, 3, loop, cycles)
 				put(modulate.LFO(modulate.Sine, 4242, 3, p))
+				put(modulate.LFOFitted(modulate.SampleHold, 4242, 3, p, cycles))
+				put(modulate.SwayFitted(4242, 3, 4, p, cycles))
 				put(int32(p.Phase))
 				put(int32(p.Cycle))
 			}

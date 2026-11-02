@@ -70,6 +70,15 @@ func LFO(wave Wave, seed uint32, index uint8, p Position) int32 {
 	return draw(Hash(seed, DomainLFO, 0xFF, index, 0, p.Cycle))
 }
 
+// LFOFitted repeats sample-and-hold values after cycles fitted to a song loop.
+// A zero cycle count leaves the source on its ordinary unbounded timeline.
+func LFOFitted(wave Wave, seed uint32, index uint8, p Position, cycles uint64) int32 {
+	if cycles != 0 {
+		p.Cycle %= cycles
+	}
+	return LFO(wave, seed, index, p)
+}
+
 // Sway returns the stateless smooth random source: octaves layers, layer o at
 // 2^o times the base rate and weight 2^(octaves-1-o)/(2^octaves-1). Each layer
 // draws h(k) at its period boundaries and joins h(k) to h(k+1) with smoothstep.
@@ -85,6 +94,34 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 		q := p.Scale(o)
 		a := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), q.Cycle))
 		b := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), q.Cycle+1))
+		sum += int64(lerp(a, b, smooth(q.Phase))) << (octaves - 1 - o)
+	}
+	return int32(sum / (1<<octaves - 1))
+}
+
+// SwayFitted wraps each octave's random endpoints at the fitted loop boundary.
+// Without this, the last segment approaches a different value from the first.
+// A zero cycle count keeps the ordinary unbounded sequence.
+func SwayFitted(seed uint32, index uint8, octaves uint, p Position, cycles uint64) int32 {
+	if cycles == 0 {
+		return Sway(seed, index, octaves, p)
+	}
+	if octaves < 1 {
+		octaves = 1
+	}
+	if octaves > 4 {
+		octaves = 4
+	}
+	p.Cycle %= cycles
+	var sum int64
+	for o := uint(0); o < octaves; o++ {
+		q := p.Scale(o)
+		a := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), q.Cycle))
+		next := q.Cycle + 1
+		if p.Cycle == cycles-1 && uint64(p.Phase)>>(32-o) == (uint64(1)<<o)-1 {
+			next = 0
+		}
+		b := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), next))
 		sum += int64(lerp(a, b, smooth(q.Phase))) << (octaves - 1 - o)
 	}
 	return int32(sum / (1<<octaves - 1))

@@ -154,6 +154,34 @@ func TestFitPositionMatchesBigArithmetic(t *testing.T) {
 	}
 }
 
+func TestFittedRandomSourcesWrapAtLoopBoundary(t *testing.T) {
+	for _, cycles := range []uint64{1, 3, 8} {
+		for octaves := uint(1); octaves <= 4; octaves++ {
+			first := SwayFitted(4242, 1, octaves, Position{}, cycles)
+			end := SwayFitted(4242, 1, octaves, Position{Cycle: cycles}, cycles)
+			near := SwayFitted(4242, 1, octaves, Position{Cycle: cycles - 1, Phase: ^uint32(0)}, cycles)
+			if end != first || abs64(int64(near)-int64(first)) > 16 {
+				t.Fatalf("cycles=%d octaves=%d: start=%d near=%d end=%d", cycles, octaves, first, near, end)
+			}
+		}
+		first := LFOFitted(SampleHold, 4242, 1, Position{}, cycles)
+		if end := LFOFitted(SampleHold, 4242, 1, Position{Cycle: cycles}, cycles); end != first {
+			t.Fatalf("sample-hold cycles=%d: start=%d end=%d", cycles, first, end)
+		}
+	}
+	p := Position{Cycle: 23, Phase: 1 << 30}
+	if got, want := SwayFitted(4242, 1, 3, p, 0), Sway(4242, 1, 3, p); got != want {
+		t.Fatalf("zero cycles changed ordinary sway: got %d want %d", got, want)
+	}
+}
+
+func abs64(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
 // The draws for seed 4242 are pinned: a change to the hash, the domain layout
 // or the mapping changes every score that uses a sample-hold or a sway.
 func TestReferenceVectors(t *testing.T) {

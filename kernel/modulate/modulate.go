@@ -72,8 +72,9 @@ func FreePosition(sample uint64, sampleRate uint32, microHz uint64) Position {
 // FitPosition places a source whose cycles are fitted to a loop: the loop of
 // length loopLen (in any unit) holds exactly cycles cycles, and at is the
 // position inside the loop in the same unit, with the fraction atNum/atDen.
-// The value at loopLen equals the value at 0, so a `loop = continue` source
-// does not jump when the song wraps.
+// The position at loopLen is cycles whole cycles from 0. Periodic waveforms
+// therefore repeat; random waveforms must also wrap their hash indices using
+// LFOFitted or SwayFitted to repeat at the song boundary.
 func FitPosition(at, atNum, atDen, loopLen, cycles uint64) Position {
 	if loopLen == 0 || atDen == 0 {
 		return Position{}
