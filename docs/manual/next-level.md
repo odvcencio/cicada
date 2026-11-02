@@ -81,6 +81,7 @@ track lead piano {}
 live {
   land = bar
   phrase = 8bars
+  count_in = 2bars
   macro intensity = 0.3 smooth 400ms
   layers intensity {
     drums >= 0.25
@@ -109,7 +110,7 @@ immediately; the 400 ms smoothing default applies to later host changes.
 
 Layers rise one level per bar and fall one level after 3 quiet bars. Tracks
 without a rule stay on. Values and thresholds are 0–1; the kernel rounds
-thresholds to 8 bits, so nearby values can share a level. Studio and the director SDK use `land` as their default launch timing. Studio can override it for a launch; `phrase` requires a declared phrase length. Tempo controls, saved MIDI mappings, and parameter-mapped macros are not supported.
+thresholds to 8 bits, so nearby values can share a level. Studio and the director SDK use `land` as their default launch timing. Studio can override it for a launch; `phrase` requires a declared phrase length. `count_in` sets audio recording to 0–8 bars; the default is one bar. Tempo controls, saved MIDI mappings, and parameter-mapped macros are not supported.
 
 ### Live MIDI performance and note takes
 

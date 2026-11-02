@@ -13,7 +13,7 @@ function image(version, bpm = 120000) {
   view.setUint32(12, bpm, true);
   return bytes.buffer;
 }
-function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true }) {
+function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true }, countIn = null) {
   let nextImage = image(version), nextRevision = 'initial';
   const stats = { nodes: 0, disconnected: 0, closed: 0, posted: [], timers: new Set(), errors: [] };
   class Context {
@@ -25,7 +25,7 @@ function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true
     window: { AudioContext: Context }, performance,
     Uint8Array, Uint32Array, ArrayBuffer, DataView, Set, Map, Error,
     WebAssembly: { compile: async () => ({}) },
-    fetch: async url => ({ ok: true, headers: { get: () => nextRevision }, arrayBuffer: async () => url.includes('kernel-image') ? nextImage : new ArrayBuffer(0) }),
+    fetch: async url => ({ ok: true, headers: { get: name => name === 'X-Cicada-Count-In-Bars' ? countIn : nextRevision }, arrayBuffer: async () => url.includes('kernel-image') ? nextImage : new ArrayBuffer(0) }),
     setTimeout: callback => { stats.timers.add(callback); return callback; },
     clearTimeout: callback => stats.timers.delete(callback),
     setInterval: () => 1,
@@ -39,7 +39,7 @@ function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8'), context);
   const client = context.window.cicadaBrowserAudio;
   client.onError(error => stats.errors.push(error));
-  return { client, stats, setImage: (version, bpm = 140000, required = 0) => { nextImage = image(version, bpm); new DataView(nextImage).setUint16(30, required, true); nextRevision = 'edited'; } };
+  return { client, stats, setCountIn: value => { countIn = value; }, setImage: (version, bpm = 140000, required = 0) => { nextImage = image(version, bpm); new DataView(nextImage).setUint16(30, required, true); nextRevision = 'edited'; } };
 }
 async function start(harness) {
   let outcome;
@@ -50,6 +50,11 @@ async function start(harness) {
   return outcome;
 }
 (async () => {
+  for (const [header, expected] of [[null, 1], ['0', 0], ['2', 2], ['8', 8], ['9', 1]]) {
+    const client = setup(13, { t: 'r', p: 0, r: 'initial', c: true }, header);
+    assert.ok((await start(client)).result);
+    assert.equal(client.client.countInBars, expected, `count-in header ${header}`);
+  }
   for (const version of [8, 9, 10, 11, 12, 13]) {
     const legacy = setup(version, { t: 'r', r: 'legacy', c: true });
     assert.ok((await start(legacy)).result);
@@ -144,17 +149,20 @@ async function start(harness) {
   unified.client.sendCommands([{ op: 22 }]);
   assert.equal(unified.stats.posted.at(-1).t, 'c');
   unified.setImage(15);
+  unified.setCountIn('2');
   const failedStage = unified.client.stageCurrentScore('edited');
   await settle();
   unified.client.receive({ t: 'x', r: 'edited', e: 'decoder rejected image' });
   await assert.rejects(failedStage, /decoder rejected image/);
   assert.equal(unified.client.bpmMilli, 120000);
+  assert.equal(unified.client.countInBars, 1, 'rejected score cannot change the count-in');
   assert.equal(unified.client.revision, 'initial');
   const successfulStage = unified.client.stageCurrentScore('edited');
   await settle();
   unified.client.receive({ t: 't', r: 'edited' });
   await successfulStage;
   assert.equal(unified.client.bpmMilli, 140000);
+  assert.equal(unified.client.countInBars, 2, 'successful score stage updates the count-in');
   assert.equal(unified.client.revision, 'edited');
 
   // Dedicated fault20 still reaches both message and fallback adapters clearly.

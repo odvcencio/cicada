@@ -719,7 +719,11 @@ func (s *studio) startAudioTake() error {
 	if err != nil {
 		return err
 	}
-	countIn, err := capture.DefaultCountIn(take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli)
+	countInBars := 1
+	if p.Live != nil && p.Live.CountInBars != nil {
+		countInBars = *p.Live.CountInBars
+	}
+	countIn, err := capture.NewCountIn(take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
 	if err != nil {
 		return err
 	}

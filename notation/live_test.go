@@ -52,6 +52,35 @@ func TestLiveBlockParses(t *testing.T) {
 	}
 }
 
+func TestLiveCountInBoundsAndDuplicates(t *testing.T) {
+	for _, bars := range []int{0, 1, 8} {
+		source := strings.Replace(liveSource, "land = bar", fmt.Sprintf("land = bar count_in = %dbars", bars), 1)
+		score, diagnostics := Parse([]byte(source))
+		if len(diagnostics) != 0 || score.Live.CountInBars == nil || *score.Live.CountInBars != bars {
+			t.Fatalf("count-in %d: %+v", bars, diagnostics)
+		}
+		document, err := ParseDocument([]byte(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		formatted, err := Format(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reparsed, diagnostics := Parse(formatted)
+		if len(diagnostics) != 0 || reparsed.Live.CountInBars == nil || *reparsed.Live.CountInBars != bars {
+			t.Fatalf("formatted count-in %d: %+v", bars, diagnostics)
+		}
+	}
+	for _, setting := range []string{"count_in = -1bar", "count_in = 9bars", "count_in = 1.5bars", "count_in = 1bar count_in = 2bars"} {
+		source := strings.Replace(liveSource, "land = bar", setting, 1)
+		_, diagnostics := Parse([]byte(source))
+		if len(diagnostics) == 0 {
+			t.Fatalf("accepted %s", setting)
+		}
+	}
+}
+
 func TestLiveDefaultsAndBounds(t *testing.T) {
 	for _, land := range []string{"now", "beat", "bar", "2bars", "4bars", "phrase"} {
 		t.Run(land, func(t *testing.T) {

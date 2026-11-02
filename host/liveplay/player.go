@@ -35,7 +35,8 @@ type Score struct {
 	Engine          *engine.Engine
 	SampleRate      int
 	BPMMilli        int64
-	PhraseBars      int // score-declared phrase length for launch quantization
+	PhraseBars      int  // score-declared phrase length for launch quantization
+	CountInBars     *int // nil uses the one-bar recording default
 	Name            string
 	Revision        string             // Committed source revision supplied by Studio.
 	SceneParameters [][]ParameterValue // Ordered committed settings at scene launch.
@@ -278,6 +279,7 @@ type Player struct {
 	position                atomic.Uint64
 	tempoMilli              atomic.Int64
 	phraseBars              atomic.Int64
+	countInBars             atomic.Int64
 	scene                   atomic.Pointer[string]
 	sceneSequence           uint64
 	sceneEngine             *engine.Engine
@@ -371,6 +373,11 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	p.position.Store(1<<8 | 1)
 	p.tempoMilli.Store(clock.BPMMilli)
 	p.phraseBars.Store(int64(initial.PhraseBars))
+	countIn := 1
+	if initial.CountInBars != nil {
+		countIn = *initial.CountInBars
+	}
+	p.countInBars.Store(int64(countIn))
 	if len(initial.Song) != 0 {
 		p.scene.Store(&p.current.Song[0].Scene)
 	} else if len(initial.SceneIDs) != 0 {
@@ -1488,6 +1495,9 @@ func (p *Player) CurrentScene() string {
 // BPMMilli observes the active engine tempo, excluding score offers that have
 // not landed yet. Hosts use it to prepare count-in with the engine's clock.
 func (p *Player) BPMMilli() int64 { return p.tempoMilli.Load() }
+
+// CountInBars is the recording count-in of the score used to start the player.
+func (p *Player) CountInBars() int { return int(p.countInBars.Load()) }
 
 // Position can be read safely by a UI thread while Read renders audio.
 func (p *Player) Position() Position {

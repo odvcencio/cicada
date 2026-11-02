@@ -110,7 +110,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 				}
 			}
 			if active {
-				text = "Armed take " + state.Active + ". Press Record for the one-bar count-in."
+				text = "Armed take " + state.Active + ". Press Record to start."
 			}
 			if recording {
 				c := state.Capture

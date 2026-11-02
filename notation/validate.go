@@ -937,6 +937,9 @@ func ValidateLive(live *Live, tracks []Track) []Diagnostic {
 			add("CICADA-LIVE-PHRASE", "phrase must be 1 to 64 bars", live.PhrasePosition)
 		}
 	}
+	if live.CountInBars != nil && (*live.CountInBars < 0 || *live.CountInBars > 8) {
+		add("CICADA-LIVE-COUNT-IN", "count_in must be 0 to 8 whole bars", live.CountInPosition)
+	}
 	if len(live.Macros) > 16 {
 		add("CICADA-LIVE-LIMIT", "live block allows at most 16 macros", live.Macros[16].Position)
 	}

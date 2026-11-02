@@ -290,6 +290,40 @@ func TestVocalTempoSyntheticCaptureAndFinitePasses(t *testing.T) {
 	}
 }
 
+func TestVocalTempoRangeUsesDeclaredCountIn(t *testing.T) {
+	isolateState(t)
+	s, entry, _ := tempoVocalStudio(t)
+	entry = append(entry, []byte("\nlive { count_in = 2bars }\n")...)
+	if err := os.WriteFile(s.path, entry, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.transport.sampleRate = 48000
+	s.transport.audioNull = true
+	s.transport.audioOptions.InputEnabled = true
+	audio, _ := simulatedCaptureAudio(1024, zeroAudioSource{})
+	audio.actual.CaptureChannels = 1
+	s.transport.takeInputOpener = func(io.Reader, studioAudioOptions, string, int) (studioAudioDevice, error) { return audio, nil }
+	r := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "record", Track: "vox", Revision: studioRevision(entry), Recording: &studioRecordingSettings{Start: "@2.1.1", End: "@5.1.1", Passes: 1}})
+	if r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	take, err := s.takes.Get(s.captureID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock, err := takeClock(take)
+	if err != nil {
+		t.Fatal(err)
+	}
+	countClock, err := seq.NewClock(48000, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.captureRecorder.Snapshot().CountInFrames, countClock.SampleAtTick(2*3840); got != want {
+		t.Fatalf("range count-in frames = %d, want %d", got, want)
+	}
+}
+
 func TestVocalTempoWaveformTransientStaysUnderItsMusicalBar(t *testing.T) {
 	isolateState(t)
 	s, entry, _ := tempoVocalStudio(t)

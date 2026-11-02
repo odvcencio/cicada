@@ -215,9 +215,10 @@ func Cicada() *grammargen.Grammar {
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 
 	// Live controls use ordinary numbers so unit and range errors get semantic diagnostics.
-	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_macro"), sym("live_layers"), sym("live_state"), sym("live_stinger"), sym("live_transition"))), str("}")))
+	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_count_in"), sym("live_macro"), sym("live_layers"), sym("live_state"), sym("live_stinger"), sym("live_transition"))), str("}")))
 	g.Define("live_land", seq(str("land"), str("="), field("value", choice(sym("identifier"), sym("bar_count"))), optional(str(";"))))
 	g.Define("live_phrase", seq(str("phrase"), str("="), field("value", sym("bar_count")), optional(str(";"))))
+	g.Define("live_count_in", seq(str("count_in"), str("="), field("value", sym("bar_count")), optional(str(";"))))
 	g.Define("live_macro", seq(str("macro"), field("name", sym("identifier")), str("="), field("value", sym("number")), optional(seq(str("smooth"), field("smooth", sym("number")))), optional(str(";"))))
 	g.Define("live_layers", seq(str("layers"), field("macro", sym("identifier")), str("{"), repeat(choice(sym("live_layer"), sym("live_attack"), sym("live_release"))), str("}")))
 	g.Define("live_layer", seq(field("track", sym("identifier")), str(">="), field("value", sym("number")), optional(str(";"))))

@@ -844,7 +844,8 @@ The same controls fit [phone screens](screenshots/studio-recording-levels-390.pn
 The default **Punch in** and **Punch out** cover the complete song. **Full song**
 resets both fields after a punch. Set either
 to `@bar.beat.step` or exact ticks for a phrase, then **Record take**. A one-bar
-count-in precedes playback; a punch starts its backing up to one bar earlier.
+count-in precedes playback by default; set `count_in = 0bars` through `8bars`
+in the score's `live` block to change it. A punch starts its backing up to one bar earlier.
 The previous vocal on that track is silent during capture. Recording stops
 automatically at the mapped input frame for Punch out. **Finish take** ends a
 pass early. The global **Stop & save take** button also drains and saves the

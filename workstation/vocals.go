@@ -28,6 +28,20 @@ type vocalCompProjection struct {
 	Segments []control.VocalPhrase `json:"segments"`
 }
 
+func scoreCountInLabel(p *project.Project) string {
+	bars := 1
+	if p != nil && p.Live != nil && p.Live.CountInBars != nil {
+		bars = *p.Live.CountInBars
+	}
+	if bars == 0 {
+		return "No count-in"
+	}
+	if bars == 1 {
+		return "One-bar count-in"
+	}
+	return fmt.Sprintf("%d-bar count-in", bars)
+}
+
 type vocalLane struct {
 	ID           string                  `json:"id"`
 	Label        string                  `json:"label"`
@@ -302,7 +316,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		}
 		laneEditor = s.vocalLanes(ctx, v, csrf, chosen, lanes, state.Comps, vocalLanesProps{Revision: v.Revision, End: end, Selected: selected.ID, Start: lo, Stop: hi, Lanes: lanes, Track: chosen, Phrases: phrases}, active, button)
 	}
-	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-record"), gosx.Attr("data-capture-idle", idle)), controls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("To link amp movements while recording, prepare them first in Automation and choose one pass."))), inputMeter(), gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("One-bar count-in, then backing pre-roll before the punch. Recording stops at Punch out. A clean pass updates that range in your vocal; Undo restores the previous choices.")), setup, guitar, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-choices")), gosx.El("h3", gosx.Text("Choose the best phrases")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Vocal tracks")), gosx.Fragment(trackLinks...)), current, laneEditor), s.sceneTakes(v, csrf, chosen, state.Takes, active))
+	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-record"), gosx.Attr("data-capture-idle", idle)), controls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("To link amp movements while recording, prepare them first in Automation and choose one pass."))), inputMeter(), gosx.El("p", gosx.Attrs(gosx.Attr("data-capture-status", ""), gosx.Attr("role", "status")), gosx.Text(status)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(scoreCountInLabel(v.Project)+", then backing pre-roll before the punch. Recording stops at Punch out. A clean pass updates that range in your vocal; Undo restores the previous choices.")), setup, guitar, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-choices")), gosx.El("h3", gosx.Text("Choose the best phrases")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "actions"), gosx.Attr("aria-label", "Vocal tracks")), gosx.Fragment(trackLinks...)), current, laneEditor), s.sceneTakes(v, csrf, chosen, state.Takes, active))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaTakes", Kind: engine.KindSurface, MountID: "cicada-vocals", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapAudio}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "vocals", Title: "Record vocals", Description: "Full-song takes, punch-ins and your chosen vocal phrases."}, surface)
 }

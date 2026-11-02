@@ -98,8 +98,8 @@ func (t *studioTransport) armCapture(recorder *capture.Recorder, preparedMode ..
 	return nil
 }
 
-// startCapture uses the score's tempo and one bar by default. A caller may Begin
-// with an explicit zero-bar CountIn instead. Calibration is the residual after
+// startCapture uses the score's tempo and declared count-in, or one bar by default.
+// Calibration is the residual after
 // clock mapping, never the full measured round-trip offset.
 func (t *studioTransport) startCapture(calibration capture.Calibration) error {
 	t.mu.Lock()
@@ -125,7 +125,7 @@ func (t *studioTransport) startCapture(calibration capture.Calibration) error {
 	return nil
 }
 
-func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli int64) error {
+func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli int64, bars int) error {
 	if t.pendingCapture == nil {
 		return nil
 	}
@@ -138,7 +138,7 @@ func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli
 			return err
 		}
 	}
-	countIn, err := capture.DefaultCountIn(t.sampleRate, bpmMilli)
+	countIn, err := capture.NewCountIn(t.sampleRate, bpmMilli, bars)
 	if err != nil {
 		return err
 	}
