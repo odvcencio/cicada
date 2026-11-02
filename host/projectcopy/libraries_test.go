@@ -223,6 +223,35 @@ func TestSaveAsVendorsLibrariesFromRetainedRevisionsAndCandidates(t *testing.T) 
 	}
 }
 
+func TestSaveAsVendorsLibrariesFromSecondarySourceRecovery(t *testing.T) {
+	root, _, _ := vendortest.Setup(t)
+	state := t.TempDir()
+	t.Setenv("CICADA_STATE_DIR", state)
+	vendortest.Write(t, root, "cicada.mod", []byte("project vendor\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/notes.cicada\"\n"))
+	vendortest.Write(t, root, "main.cicada", []byte("track lead acid {}\nscene verse { lead = melody }\nsong { verse }\n"))
+	part := filepath.Join(root, "parts", "notes.cicada")
+	current := []byte("pattern melody { 1 . }\n")
+	retained := []byte("import \"demo/tone\"\npattern melody { 1 . }\n")
+	vendortest.Write(t, root, "parts/notes.cicada", current)
+	hash := takejournal.Revision([]byte(part))[:16]
+	name := ".cicada-studio-" + hash + "-old"
+	vendortest.Write(t, state, "revisions/"+hash+"/"+name, retained)
+	vendortest.Write(t, state, "revisions/"+hash+"/"+name+".revision", []byte(takejournal.Revision(retained)))
+	dir := t.TempDir()
+	target := filepath.Join(dir, "main.cicada")
+	if err := SaveAs(filepath.Join(root, "main.cicada"), target); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CICADA_LIBRARY", t.TempDir())
+	restored, err := project.ReadSources(target, map[string][]byte{filepath.Join(dir, "parts", "notes.cicada"): retained})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, diagnostics := restored.Parse(); len(diagnostics) != 0 {
+		t.Fatalf("restored secondary source cannot use its retained library: %+v", diagnostics)
+	}
+}
+
 func TestSaveAsRejectsDestinationInsideVendoredLibrary(t *testing.T) {
 	root, _, _ := vendortest.Setup(t)
 	// A legacy manifest does not impose a separate source-path restriction.
