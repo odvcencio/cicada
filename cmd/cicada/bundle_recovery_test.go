@@ -136,7 +136,112 @@ func TestBundleRestoresOlderArchiveRecoveryNames(t *testing.T) {
 	}
 }
 
+func TestBundleRestoresRecoveryForEveryProjectSource(t *testing.T) {
+	isolateState(t)
+	root := t.TempDir()
+	want := map[string][]byte{}
+	for _, name := range []string{"cicada.mod", "main.cicada", "parts/patterns.cicada", "parts/voices.cicada"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "examples", "multifile", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if name == "cicada.mod" {
+			continue
+		}
+		want[name] = data
+		updated := append(bytes.Clone(data), []byte("\n// saved change\n")...)
+		ok, _, err := studioWriteIfRevision(file, updated, 0600, studioRevision(data), nil)
+		if err != nil || !ok {
+			t.Fatalf("save %s: %v %v", name, ok, err)
+		}
+	}
+	archive := filepath.Join(t.TempDir(), "project.zip")
+	if err := bundleCommand([]string{filepath.Join(root, "main.cicada"), archive}); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(t.TempDir(), "project.zip")
+	if err := bundleCommand([]string{filepath.Join(root, "main.cicada"), second}); err != nil {
+		t.Fatal(err)
+	}
+	firstBytes, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBytes, err := os.ReadFile(second)
+	if err != nil || !bytes.Equal(firstBytes, secondBytes) {
+		t.Fatalf("multi-file recovery bundle changed without edits: %v", err)
+	}
+	r, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	extracted := t.TempDir()
+	for _, file := range r.File {
+		if !filepath.IsLocal(file.Name) {
+			t.Fatalf("unsafe bundle path %q", file.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(extracted, file.Name)), 0700); err != nil {
+			t.Fatal(err)
+		}
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer, err := os.Create(filepath.Join(extracted, file.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.ReadFrom(reader); err != nil {
+			t.Fatal(err)
+		}
+		reader.Close()
+		writer.Close()
+	}
+	if err := restoreBundleHistory(filepath.Join(extracted, "main.cicada")); err != nil {
+		t.Fatal(err)
+	}
+	for name, expected := range want {
+		got, ok, err := studioRecoverySource(filepath.Join(extracted, name), studioRevision(expected))
+		if err != nil || !ok || !bytes.Equal(got, expected) {
+			t.Errorf("recovered %s: found=%v error=%v", name, ok, err)
+		}
+	}
+}
+
 func TestBundleRecoveryRefusesChangedFilesAndCollisions(t *testing.T) {
+	t.Run("source outside project", func(t *testing.T) {
+		score, _, _ := bundledRecoveryFixture(t)
+		manifestPath := filepath.Join(filepath.Dir(score), "cicada-bundle.json")
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var manifest bundleManifest
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			t.Fatal(err)
+		}
+		for id := range manifest.RecoverySources {
+			manifest.RecoverySources[id] = "../outside.cicada"
+		}
+		data, err = json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifestPath, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := restoreBundleHistory(score); err == nil {
+			t.Fatal("accepted a recovery source outside the project")
+		}
+	})
 	t.Run("tampered inventory file", func(t *testing.T) {
 		score, _, _ := bundledRecoveryFixture(t)
 		entries, err := os.ReadDir(filepath.Dir(score))

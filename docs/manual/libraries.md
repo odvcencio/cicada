@@ -91,11 +91,11 @@ As, which may include unpublished work. After extracting a bundle, run
 inventoried recovery versions to the extracted score. The command verifies
 their hashes, retains the extracted originals and refuses conflicting files;
 it can be repeated safely. It also accepts bundles made before this command
-was added. The recovered versions belong to the selected entry score; recovery
-versions for other source files in a multi-file project are not yet included.
-Restored files appear beside the score with `.cicada-studio-` names; keep each
-`.revision` receipt with its version. These files do not restore Studio's undo
-stack.
+was added. For new multi-file bundles, it also restores recovery versions for
+other owned source files. Restored files appear beside their source with
+`.cicada-studio-` names; keep each `.revision` receipt with its version. These
+files do not restore Studio's undo stack. Older bundles cannot restore versions
+that were never included in them.
 Existing bundle files are never overwritten.
 
 See the [library CLI reference](../cli.md#libraries) for command syntax.

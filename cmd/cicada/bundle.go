@@ -27,10 +27,11 @@ type bundleFile struct {
 }
 
 type bundleManifest struct {
-	Format    string          `json:"format"`
-	Entry     string          `json:"entry"`
-	Libraries []bundleLibrary `json:"libraries"`
-	Files     []bundleFile    `json:"files"`
+	Format          string            `json:"format"`
+	Entry           string            `json:"entry"`
+	Libraries       []bundleLibrary   `json:"libraries"`
+	Files           []bundleFile      `json:"files"`
+	RecoverySources map[string]string `json:"recovery_sources,omitempty"`
 }
 
 type bundleLibrary struct {
@@ -110,7 +111,31 @@ func writeBundle(output io.Writer, stage string, libraries []bundleLibrary) erro
 	if err != nil {
 		return err
 	}
-	recoveryPrefix := ".cicada-studio-" + takejournal.Revision([]byte(entry.Physical))[:16] + "-"
+	sources, err := project.ReadSources(entry.Physical, nil)
+	if err != nil {
+		return err
+	}
+	type recoverySource struct{ id, path, portable string }
+	recoveryPrefixes := map[string]recoverySource{}
+	for _, file := range sources.Files {
+		if file.Library != "" {
+			continue
+		}
+		resolved, err := filetarget.Resolve(file.Path, filetarget.Existing)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(filepath.Dir(entry.Physical), resolved.Physical)
+		if err != nil || !filepath.IsLocal(rel) {
+			return fmt.Errorf("bundle recovery source is outside the project: %s", file.Path)
+		}
+		rel = filepath.ToSlash(rel)
+		id := takejournal.Revision([]byte(rel))[:16]
+		prefix := ".cicada-studio-" + takejournal.Revision([]byte(resolved.Physical))[:16] + "-"
+		key := filepath.ToSlash(filepath.Join(filepath.Dir(rel), prefix))
+		portable := filepath.ToSlash(filepath.Join(filepath.Dir(rel), ".cicada-bundle-history-"+id+"-"))
+		recoveryPrefixes[key] = recoverySource{id: id, path: rel, portable: portable}
+	}
 	archive := zip.NewWriter(output)
 	manifest := bundleManifest{Format: "cicada.bundle/1", Entry: "main.cicada", Libraries: libraries, Files: []bundleFile{}}
 	written := map[string]bool{}
@@ -147,8 +172,18 @@ func writeBundle(output io.Writer, stage string, libraries []bundleLibrary) erro
 			return fmt.Errorf("bundle refuses non-regular file %s", rel)
 		}
 		name := filepath.ToSlash(rel)
-		if strings.HasPrefix(name, recoveryPrefix) && !strings.Contains(name, "/") {
-			name = ".cicada-bundle-history-" + strings.TrimPrefix(name, recoveryPrefix)
+		for prefix, source := range recoveryPrefixes {
+			if strings.HasPrefix(name, prefix) && !strings.Contains(strings.TrimPrefix(name, prefix), "/") {
+				if manifest.RecoverySources == nil {
+					manifest.RecoverySources = map[string]string{}
+				}
+				if prior, exists := manifest.RecoverySources[source.id]; exists && prior != source.path {
+					return fmt.Errorf("bundle recovery source identifier collision: %s", source.path)
+				}
+				manifest.RecoverySources[source.id] = source.path
+				name = source.portable + strings.TrimPrefix(name, prefix)
+				break
+			}
 		}
 		if name == "cicada-bundle.json" {
 			return fmt.Errorf("bundle manifest conflicts with project file %s", name)

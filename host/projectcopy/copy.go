@@ -160,14 +160,14 @@ func SaveAs(score, target string) error {
 			return err
 		}
 	}
-	collectRetained := func(data []byte) error {
+	collectRetained := func(sourcePath string, data []byte) error {
 		if err := collect(data); err != nil {
 			return err
 		}
-		if len(notation.ReadImports(notation.SourceFile{Path: score, Source: data})) == 0 {
+		if len(notation.ReadImports(notation.SourceFile{Path: sourcePath, Source: data})) == 0 {
 			return nil
 		}
-		retained, err := project.ReadSources(score, map[string][]byte{score: data})
+		retained, err := project.ReadSources(score, map[string][]byte{sourcePath: data})
 		if err != nil {
 			return err
 		}
@@ -195,87 +195,109 @@ func SaveAs(score, target string) error {
 			}
 		}
 		if len(s.Take.Candidate) > 0 {
-			if err = collectRetained(s.Take.Candidate); err != nil {
+			if err = collectRetained(score, s.Take.Candidate); err != nil {
 				return err
 			}
 		}
 	}
-	// Studio preserves exact displaced source inodes and revision receipts.
-	oldPrefix := ".cicada-studio-" + takejournal.Revision([]byte(score))[:16] + "-"
-	physicalPrefix := ".cicada-studio-" + takejournal.Revision([]byte(sourceTarget.Physical))[:16] + "-"
-	newPrefix := ".cicada-studio-" + takejournal.Revision([]byte(destination.Physical))[:16] + "-"
-	d, err := src.Open(filepath.Dir(srcName))
-	if err != nil {
-		return err
-	}
-	names, err := d.Readdirnames(-1)
-	d.Close()
-	if err != nil {
-		return err
-	}
-	histories := map[string][]byte{}
-	for _, name := range names {
-		prefix := oldPrefix
-		if strings.HasPrefix(name, physicalPrefix) {
-			prefix = physicalPrefix
-		} else if !strings.HasPrefix(name, oldPrefix) {
-			continue
-		}
-		data, err := src.ReadFile(filepath.Join(filepath.Dir(srcName), name))
-		if err != nil {
-			return err
-		}
-		path := filepath.Join(filepath.Dir(dstName), newPrefix+strings.TrimPrefix(name, prefix))
-		if prior, exists := histories[path]; exists && !bytes.Equal(prior, data) {
-			return fmt.Errorf("recovery file collision: %s", name)
-		}
-		histories[path] = data
-		if !strings.HasSuffix(name, ".revision") {
-			if err = collectRetained(data); err != nil {
-				return err
-			}
-		}
-	}
-	// Recent Studio versions keep displaced files in per-user state rather than
-	// beside the score. Include those snapshots too, without creating that
-	// directory as a side effect of a read-only copy.
+	// Keep displaced versions for every owned source, including per-user
+	// recovery state and legacy files beside the source. Each destination has
+	// its own namespace; retained source dependencies are collected as well.
 	stateDir, err := appdirs.StateDir()
 	if err != nil {
 		return err
 	}
-	recoveryDir := filepath.Join(stateDir, "revisions", takejournal.Revision([]byte(sourceTarget.Physical))[:16])
-	entries, err := os.ReadDir(recoveryDir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	var recoveryRoot *os.Root
-	if err == nil {
-		recoveryRoot, err = os.OpenRoot(recoveryDir)
-		if err != nil {
-			return err
-		}
-		defer recoveryRoot.Close()
-	}
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), physicalPrefix) {
+	histories := map[string][]byte{}
+	for _, sourceFile := range sources.Files {
+		if sourceFile.Library != "" {
 			continue
 		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("recovery file is not regular: %s", entry.Name())
-		}
-		data, err := recoveryRoot.ReadFile(entry.Name())
+		from, err := filetarget.Resolve(sourceFile.Path, filetarget.Existing)
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(filepath.Dir(dstName), newPrefix+strings.TrimPrefix(entry.Name(), physicalPrefix))
-		if prior, exists := histories[path]; exists && !bytes.Equal(prior, data) {
-			return fmt.Errorf("recovery file collision: %s", entry.Name())
+		fromName, err := filepath.Rel(srcDir, from.Logical)
+		if err != nil || !filepath.IsLocal(fromName) {
+			return errors.New("recovery source is outside the project")
 		}
-		histories[path] = data
-		if !strings.HasSuffix(entry.Name(), ".revision") {
-			if err := collectRetained(data); err != nil {
+		toName := fromName
+		if from.Logical == score {
+			toName = dstName
+		}
+		to, err := filetarget.Create(filepath.Join(dstDir, toName))
+		if err != nil {
+			return err
+		}
+		oldPrefix := ".cicada-studio-" + takejournal.Revision([]byte(from.Logical))[:16] + "-"
+		physicalPrefix := ".cicada-studio-" + takejournal.Revision([]byte(from.Physical))[:16] + "-"
+		newPrefix := ".cicada-studio-" + takejournal.Revision([]byte(to.Physical))[:16] + "-"
+		addHistory := func(name, prefix string, data []byte) error {
+			path := filepath.Join(filepath.Dir(toName), newPrefix+strings.TrimPrefix(name, prefix))
+			if prior, exists := histories[path]; exists && !bytes.Equal(prior, data) {
+				return fmt.Errorf("recovery file collision: %s", name)
+			}
+			histories[path] = data
+			if !strings.HasSuffix(name, ".revision") {
+				return collectRetained(from.Logical, data)
+			}
+			return nil
+		}
+		d, err := src.Open(filepath.Dir(fromName))
+		if err != nil {
+			return err
+		}
+		names, err := d.Readdirnames(-1)
+		d.Close()
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			prefix := oldPrefix
+			if strings.HasPrefix(name, physicalPrefix) {
+				prefix = physicalPrefix
+			} else if !strings.HasPrefix(name, oldPrefix) {
+				continue
+			}
+			data, err := src.ReadFile(filepath.Join(filepath.Dir(fromName), name))
+			if err != nil {
 				return err
 			}
+			if err := addHistory(name, prefix, data); err != nil {
+				return err
+			}
+		}
+		recoveryDir := filepath.Join(stateDir, "revisions", takejournal.Revision([]byte(from.Physical))[:16])
+		entries, err := os.ReadDir(recoveryDir)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		recoveryRoot, err := os.OpenRoot(recoveryDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), physicalPrefix) {
+				continue
+			}
+			if !entry.Type().IsRegular() {
+				recoveryRoot.Close()
+				return fmt.Errorf("recovery file is not regular: %s", entry.Name())
+			}
+			data, err := recoveryRoot.ReadFile(entry.Name())
+			if err != nil {
+				recoveryRoot.Close()
+				return err
+			}
+			if err := addHistory(entry.Name(), physicalPrefix, data); err != nil {
+				recoveryRoot.Close()
+				return err
+			}
+		}
+		if err := recoveryRoot.Close(); err != nil {
+			return err
 		}
 	}
 	// A destination may be absent now but scheduled for dependency installation.

@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/filetarget"
@@ -26,7 +28,15 @@ func restoreBundleHistory(score string) error {
 	if err != nil {
 		return err
 	}
-	root, err := os.OpenRoot(filepath.Dir(target.Physical))
+	projectDir, err := takejournal.ProjectRoot(target.Physical)
+	if err != nil {
+		return err
+	}
+	rootTarget, err := filetarget.Resolve(projectDir, filetarget.Existing)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(rootTarget.Physical)
 	if err != nil {
 		return err
 	}
@@ -39,15 +49,41 @@ func restoreBundleHistory(score string) error {
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return fmt.Errorf("invalid bundle inventory: %w", err)
 	}
-	if manifest.Format != "cicada.bundle/1" || manifest.Entry != filepath.Base(target.Physical) {
+	entryRel, err := filepath.Rel(rootTarget.Physical, target.Physical)
+	if err != nil || !filepath.IsLocal(entryRel) || manifest.Format != "cicada.bundle/1" || manifest.Entry != filepath.ToSlash(entryRel) {
 		return errors.New("bundle inventory does not identify this score")
 	}
-	prefix := ".cicada-studio-" + takejournal.Revision([]byte(target.Physical))[:16] + "-"
+	type destination struct{ dir, prefix string }
+	destinations := map[string]destination{}
+	for id, source := range manifest.RecoverySources {
+		if !filepath.IsLocal(source) || filepath.ToSlash(filepath.Clean(source)) != source || strings.Contains(source, `\`) || takejournal.Revision([]byte(source))[:16] != id {
+			return fmt.Errorf("invalid bundle recovery source: %s", source)
+		}
+		info, err := root.Lstat(filepath.FromSlash(source))
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("bundle recovery score is missing or not regular: %s", source)
+		}
+		resolved, err := filetarget.Resolve(filepath.Join(rootTarget.Physical, filepath.FromSlash(source)), filetarget.Existing)
+		if err != nil {
+			return err
+		}
+		physicalRel, err := filepath.Rel(rootTarget.Physical, resolved.Physical)
+		if err != nil || !filepath.IsLocal(physicalRel) {
+			return fmt.Errorf("bundle recovery score escapes project: %s", source)
+		}
+		destinations[id] = destination{dir: path.Dir(source), prefix: ".cicada-studio-" + takejournal.Revision([]byte(resolved.Physical))[:16] + "-"}
+	}
+	entryDestination := destination{dir: path.Dir(manifest.Entry), prefix: ".cicada-studio-" + takejournal.Revision([]byte(target.Physical))[:16] + "-"}
 	files := map[string][]byte{}
 	seen := map[string]bool{}
-	var namespace string
+	legacyNamespaces := map[string]string{}
 	for _, item := range manifest.Files {
-		match := bundleRecoveryName.FindStringSubmatch(item.Path)
+		dir, base := path.Split(item.Path)
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" {
+			dir = "."
+		}
+		match := bundleRecoveryName.FindStringSubmatch(base)
 		if match == nil {
 			continue
 		}
@@ -55,14 +91,31 @@ func restoreBundleHistory(score string) error {
 			return fmt.Errorf("duplicate recovery file in bundle inventory: %s", item.Path)
 		}
 		seen[item.Path] = true
-		currentNamespace := match[1]
-		if currentNamespace == "" {
-			currentNamespace = "portable"
+		dest, suffix := entryDestination, match[2]
+		if match[1] == "" && len(manifest.RecoverySources) != 0 {
+			if len(suffix) < 18 || suffix[16] != '-' {
+				return fmt.Errorf("invalid portable recovery filename: %s", item.Path)
+			}
+			id := suffix[:16]
+			var ok bool
+			dest, ok = destinations[id]
+			if !ok || dest.dir != dir {
+				return fmt.Errorf("unknown bundle recovery source: %s", item.Path)
+			}
+			suffix = suffix[17:]
+		} else {
+			if dir != entryDestination.dir {
+				return fmt.Errorf("legacy recovery file is outside the entry directory: %s", item.Path)
+			}
+			current := match[1]
+			if current == "" {
+				current = "portable"
+			}
+			if prior := legacyNamespaces[dir]; prior != "" && prior != current {
+				return errors.New("bundle inventory has multiple recovery namespaces")
+			}
+			legacyNamespaces[dir] = current
 		}
-		if namespace != "" && namespace != currentNamespace {
-			return errors.New("bundle inventory has multiple recovery namespaces")
-		}
-		namespace = currentNamespace
 		info, err := root.Lstat(item.Path)
 		if err != nil || !info.Mode().IsRegular() {
 			return fmt.Errorf("bundle recovery file is missing or not regular: %s", item.Path)
@@ -75,7 +128,7 @@ func restoreBundleHistory(score string) error {
 		if int64(len(data)) != item.Bytes || hex.EncodeToString(hash[:]) != item.SHA256 {
 			return fmt.Errorf("bundle recovery file does not match its inventory: %s", item.Path)
 		}
-		name := prefix + match[2]
+		name := filepath.FromSlash(path.Join(dest.dir, dest.prefix+suffix))
 		if _, exists := files[name]; exists {
 			return fmt.Errorf("duplicate restored recovery file: %s", name)
 		}
@@ -95,7 +148,7 @@ func restoreBundleHistory(score string) error {
 		}
 	}
 	for name, data := range files {
-		file, err := os.CreateTemp(filepath.Dir(target.Physical), ".cicada-bundle-restore-*")
+		file, err := os.CreateTemp(rootTarget.Physical, ".cicada-bundle-restore-*")
 		if err != nil {
 			return err
 		}
@@ -132,8 +185,14 @@ func restoreBundleHistory(score string) error {
 		}
 	}
 	if len(files) != 0 {
-		if err := takejournal.SyncDirectory(filepath.Dir(target.Physical)); err != nil {
-			return err
+		parents := map[string]bool{}
+		for name := range files {
+			parents[filepath.Dir(name)] = true
+		}
+		for parent := range parents {
+			if err := takejournal.SyncDirectory(filepath.Join(rootTarget.Physical, parent)); err != nil {
+				return err
+			}
 		}
 	}
 	fmt.Printf("Restored %d recovery files for %s. Bundle originals remain in place.\n", len(files), score)
