@@ -95,6 +95,12 @@ async function until(run, timeout = 20000) {
     await wait(`window.cicadaDemo && !document.getElementById('play').disabled`);
     // Applied score and an invalid draft must both survive a reload independently.
     const initialScore = await evaluate('cicadaDemo.snapshot().source');
+    const quantizedScore = initialScore.replace('pattern bassline', 'live { record = 1/8T }\npattern bassline');
+    assert.notEqual(quantizedScore, initialScore, 'fixture has a pattern after the tracks');
+    await edit(quantizedScore);
+    await wait(`cicadaDemo.snapshot().source.includes('record = 1/8T')`);
+    await edit(initialScore);
+    await wait(`cicadaDemo.snapshot().source===${JSON.stringify(initialScore)}`);
     await edit(initialScore.replace('tempo 112', 'tempo 115'));
     await wait(`cicadaDemo.snapshot().source.includes('tempo 115')`);
     await click('#source');
