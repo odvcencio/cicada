@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"unsafe"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -175,6 +176,7 @@ func TestRouteOrderAndClamp(t *testing.T) {
 	}{
 		{"multiply then add", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1}}, .5},
 		{"add then multiply", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1}}, .6},
+		{"interleaved targets preserve order", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1}, {Source: 0, Track: 1, Param: uint16(kernel.ParamMixPan), Depth: .7}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1}}, .6},
 		{"clamp once at the end", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: 2}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: -1.5}}, .7},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -194,6 +196,78 @@ func TestRouteOrderAndClamp(t *testing.T) {
 				t.Fatalf("pan %g, want %g", got, c.want)
 			}
 		})
+	}
+}
+
+// Count the engine's mutable working state and precomputed indices. Immutable
+// source, route and contour configuration payloads are separate project data.
+func TestModulationWorkingStateBudget(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Tracks, cfg.MaxVoices = 16, 32
+	cfg.Patterns = make([]PatternBank, cfg.Tracks)
+	for i := 0; i < cfg.Tracks; i++ {
+		cfg.Track[i].Kind = VoiceAcid
+	}
+	cfg.Modulators, cfg.Routes = nil, nil
+	for i := 0; i < MaxModulators; i++ {
+		cfg.Modulators = append(cfg.Modulators, ModulatorSpec{Kind: ModKindSway, Octaves: 4, RateTicks: uint32(960 + 7*i)})
+	}
+	rows := []kernel.ParamID{kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB}
+	for i := 0; i < MaxModRoutes; i++ {
+		cfg.Routes = append(cfg.Routes, RouteSpec{Source: uint8(i % MaxModulators), Track: uint8(i / len(rows)), Param: uint16(rows[i%len(rows)]), Depth: .01})
+	}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes := unsafe.Sizeof(e.mod) + uintptr(cap(e.mod.targets))*unsafe.Sizeof(modTarget{}) +
+		uintptr(cap(e.mod.routeOrder))*unsafe.Sizeof(uint8(0)) + uintptr(cap(e.mod.periodAux))*unsafe.Sizeof(uint64(0))
+	if bytes >= 2048 {
+		t.Fatalf("modulation working state uses %d bytes, budget is under 2048", bytes)
+	}
+	t.Logf("modulation working state: %d bytes, excluding immutable configuration", bytes)
+}
+
+func TestModulationSingleRouteBaseUpdateAfterInterleavedTargets(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Modulators = []ModulatorSpec{{Kind: ModKindLFO, Wave: ModWaveSquare, RateTicks: 3840}}
+	cfg.Routes = []RouteSpec{
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1},
+		{Source: 0, Track: 1, Param: uint16(kernel.ParamMixPan), Depth: .7},
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1},
+	}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	left, right := make([]float32, 128), make([]float32, 128)
+	e.Render(left, right)
+	e.setParamMode(cmd.Command{Op: cmd.OpSetParam, Track: 1, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.1)}, false)
+	if got := e.voices[1].pan; math.Abs(float64(got-.8)) > 1e-6 {
+		t.Fatalf("track 1 pan after base update = %g, want .8", got)
+	}
+}
+
+func TestModulationTrackMasksIncludeLastNativeTrack(t *testing.T) {
+	if MaxTracks < 64 {
+		t.Skip("native 64-track capacity required")
+	}
+	cfg := modConfig(t)
+	cfg.Tracks, cfg.MaxVoices = 64, 64
+	cfg.Patterns = make([]PatternBank, cfg.Tracks)
+	for i := 0; i < cfg.Tracks; i++ {
+		cfg.Track[i].Kind = VoiceAcid
+	}
+	cfg.Modulators = []ModulatorSpec{{Kind: ModKindEnvelope, Source: 63, Attack: 1 << 31, Release: 1 << 28}}
+	cfg.Routes = []RouteSpec{{Source: 0, Track: 63, Param: uint16(kernel.ParamMixGain), Depth: 1}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bit = uint64(1) << 63
+	if e.mod.watch&bit == 0 || e.mod.tableLaw&bit == 0 || e.mod.gainRoute&bit == 0 {
+		t.Fatal("track 63 is missing from a modulation mask")
 	}
 }
 

@@ -89,6 +89,22 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 	if octaves > 4 {
 		octaves = 4
 	}
+	if octaves == 4 {
+		q0, q1, q2, q3 := p, p.Scale(1), p.Scale(2), p.Scale(3)
+		a0 := draw(Hash(seed, DomainSway, 0xFF, index, 0, q0.Cycle))
+		b0 := draw(Hash(seed, DomainSway, 0xFF, index, 0, q0.Cycle+1))
+		a1 := draw(Hash(seed, DomainSway, 0xFF, index, 1, q1.Cycle))
+		b1 := draw(Hash(seed, DomainSway, 0xFF, index, 1, q1.Cycle+1))
+		a2 := draw(Hash(seed, DomainSway, 0xFF, index, 2, q2.Cycle))
+		b2 := draw(Hash(seed, DomainSway, 0xFF, index, 2, q2.Cycle+1))
+		a3 := draw(Hash(seed, DomainSway, 0xFF, index, 3, q3.Cycle))
+		b3 := draw(Hash(seed, DomainSway, 0xFF, index, 3, q3.Cycle+1))
+		sum := int64(lerp(a0, b0, smooth(q0.Phase)))<<3 +
+			int64(lerp(a1, b1, smooth(q1.Phase)))<<2 +
+			int64(lerp(a2, b2, smooth(q2.Phase)))<<1 +
+			int64(lerp(a3, b3, smooth(q3.Phase)))
+		return int32(sum / 15)
+	}
 	var sum int64
 	for o := uint(0); o < octaves; o++ {
 		q := p.Scale(o)

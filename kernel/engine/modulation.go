@@ -23,30 +23,34 @@ func RouteSupported(id kernel.ParamID) bool {
 }
 
 type modTarget struct {
-	track  uint8
-	id     kernel.ParamID
-	base   float32
-	off    bool
-	routes []int
+	base  float32
+	id    kernel.ParamID
+	track uint8
+	first uint8
+	count uint8
+	off   bool
 }
 
 type modState struct {
 	active     bool
+	hasSynced  bool
 	specs      []ModulatorSpec
 	routes     []RouteSpec
 	points     [][]modulate.Point
 	targets    []modTarget
-	fitTicks   []uint64 // whole cycles per loop, synced sources
-	fitSamples []uint64 // whole cycles per loop, free-rate sources
-	seed       uint32
-	values     [MaxModulators]int32
-	scaled     [MaxModulators]float32
-	followers  [MaxModulators]modulate.Follower
-	peak       [MaxTracks]float32
-	watch      [MaxTracks]bool
-	tableLaw   [MaxTracks]bool
-	gainRoute  [MaxTracks]bool
-	mixDirty   uint64
+	routeOrder []uint8
+	// For loop-fitted sources this is the fitted cycle count; for other
+	// synced sources it is the period reciprocal; other sources use zero.
+	periodAux []uint64
+	seed      uint32
+	values    [MaxModulators]int32
+	scaled    [MaxModulators]float32
+	followers [MaxModulators]modulate.Follower
+	peak      [MaxTracks]float32
+	watch     uint64
+	tableLaw  uint64
+	gainRoute uint64
+	mixDirty  uint64
 
 	base       int64 // song sample = base + transport sample
 	valid      bool
@@ -84,8 +88,9 @@ func (e *Engine) loadModulation(cfg *Config) error {
 	m.routes = append([]RouteSpec(nil), cfg.Routes...)
 	m.seed = cfg.Seed
 	m.points = make([][]modulate.Point, len(m.specs))
-	m.fitTicks = make([]uint64, len(m.specs))
-	m.fitSamples = make([]uint64, len(m.specs))
+	m.periodAux = make([]uint64, len(m.specs))
+	m.targets = make([]modTarget, 0, len(m.routes))
+	m.routeOrder = make([]uint8, len(m.routes))
 	if e.loopSong && e.scheduleDuration > 0 {
 		m.loopSample = e.songSampleAtTick(e.scheduleDuration)
 	}
@@ -103,7 +108,7 @@ func (e *Engine) loadModulation(cfg *Config) error {
 			if int(s.Source) >= e.tracks {
 				return engineError("envelope follows an unknown track")
 			}
-			m.watch[s.Source] = true
+			m.watch |= uint64(1) << s.Source
 		case ModKindContour:
 			n := len(s.Points)
 			if n < 2 || n > MaxContourPoints || s.Points[0].At != 0 || s.Points[n-1].At != 1<<32 {
@@ -126,10 +131,16 @@ func (e *Engine) loadModulation(cfg *Config) error {
 		if s.RateTicks > 1<<28 {
 			return engineError("modulator period is too long")
 		}
+		if s.RateTicks != 0 {
+			m.periodAux[i] = uint64(modulate.NewSyncedReciprocal(s.RateTicks))
+			if m.loopSample == 0 || !s.Continue {
+				m.hasSynced = true
+			}
+		}
 		if m.loopSample > 0 && s.Continue {
 			if s.RateTicks > 0 {
 				period := uint64(s.RateTicks)
-				m.fitTicks[i] = max(1, (uint64(e.scheduleDuration)+period/2)/period)
+				m.periodAux[i] = max(1, (uint64(e.scheduleDuration)+period/2)/period)
 			} else if s.RateMicroHz > 0 {
 				hi, lo := bits.Mul64(uint64(m.loopSample), s.RateMicroHz)
 				d := uint64(e.sampleRate) * 1_000_000
@@ -137,11 +148,11 @@ func (e *Engine) loadModulation(cfg *Config) error {
 				if r >= d-r {
 					q++
 				}
-				m.fitSamples[i] = max(1, q)
+				m.periodAux[i] = max(1, q)
 			}
 		}
 	}
-	for ri, r := range m.routes {
+	for _, r := range m.routes {
 		spec, ok := kernel.Param(kernel.ParamID(r.Param))
 		if !ok || !RouteSupported(spec.ID) || int(r.Source) >= len(m.specs) || int(r.Track) >= e.tracks || math.IsNaN(float64(r.Depth)) || math.IsInf(float64(r.Depth), 0) {
 			return engineError("invalid modulator route")
@@ -160,12 +171,31 @@ func (e *Engine) loadModulation(cfg *Config) error {
 			m.targets = append(m.targets, modTarget{track: r.Track, id: spec.ID, base: base, off: off})
 			found = len(m.targets) - 1
 		}
-		m.targets[found].routes = append(m.targets[found].routes, ri)
+		m.targets[found].count++
 		if spec.ID == kernel.ParamMixGain || spec.ID == kernel.ParamMixPan {
-			m.tableLaw[r.Track] = true
+			m.tableLaw |= uint64(1) << r.Track
 		}
 		if spec.ID == kernel.ParamMixGain {
-			m.gainRoute[r.Track] = true
+			m.gainRoute |= uint64(1) << r.Track
+		}
+	}
+	var next uint8
+	for i := range m.targets {
+		t := &m.targets[i]
+		t.first, next = next, next+t.count
+		t.count = 0
+	}
+	for ri, r := range m.routes {
+		t := m.find(r.Track, kernel.ParamID(r.Param))
+		m.routeOrder[int(t.first)+int(t.count)] = uint8(ri)
+		t.count++
+	}
+	// A single-route target can address its route directly. Multi-route
+	// targets retain an offset into routeOrder to preserve declaration order.
+	for i := range m.targets {
+		t := &m.targets[i]
+		if t.count == 1 {
+			t.first = m.routeOrder[t.first]
 		}
 	}
 	m.active = true
@@ -212,13 +242,23 @@ func (m *modState) find(track uint8, id kernel.ParamID) *modTarget {
 // so a fused multiply-add on arm64 cannot change the result.
 func (e *Engine) modEffective(t *modTarget) float32 {
 	value := t.base
-	for _, ri := range t.routes {
-		r := &e.mod.routes[ri]
+	if t.count == 1 {
+		r := &e.mod.routes[t.first]
 		amount := float32(r.Depth * e.mod.scaled[r.Source])
 		if r.Multiply {
 			value = float32(value * float32(1+amount))
 		} else {
 			value = float32(value + amount)
+		}
+	} else {
+		for _, ri := range e.mod.routeOrder[int(t.first) : int(t.first)+int(t.count)] {
+			r := &e.mod.routes[ri]
+			amount := float32(r.Depth * e.mod.scaled[r.Source])
+			if r.Multiply {
+				value = float32(value * float32(1+amount))
+			} else {
+				value = float32(value + amount)
+			}
 		}
 	}
 	spec := &kernel.Params[t.id]
@@ -247,14 +287,14 @@ func (e *Engine) modPeak(track int, left, right float32) {
 }
 
 func (e *Engine) gainLinear(track uint8, gainDB float32) float32 {
-	if modulationEnabled && e.mod.tableLaw[track] {
+	if modulationEnabled && e.mod.tableLaw&(uint64(1)<<track) != 0 {
 		return mix.DBToLinear(gainDB)
 	}
 	return float32(math.Pow(10, float64(gainDB)/20))
 }
 
 func (e *Engine) trackMix(track uint8, gainDB, pan float32) mix.Track {
-	if modulationEnabled && e.mod.tableLaw[track] {
+	if modulationEnabled && e.mod.tableLaw&(uint64(1)<<track) != 0 {
 		return mix.NewTrackTable(gainDB, pan)
 	}
 	return mix.NewTrack(float64(gainDB), float64(pan), false)
@@ -319,6 +359,10 @@ func (e *Engine) advanceModulation() {
 		loopSample = max(0, song-cycle*m.loopSample)
 	}
 	hasFollower := false
+	var syncedFraction uint32
+	if m.hasSynced && den != 0 {
+		syncedFraction = modulate.SyncedTickFraction(rem, den)
+	}
 	for i := range m.specs {
 		s := &m.specs[i]
 		var pos modulate.Position
@@ -332,21 +376,24 @@ func (e *Engine) advanceModulation() {
 				level = int32(q)
 			}
 			m.values[i] = m.followers[i].Step(level, s.Attack, s.Release)
+			m.scaled[i] = float32(float32(m.values[i]) * (1.0 / (1 << 30)))
 			continue
-		case s.RateTicks > 0 && m.fitTicks[i] > 0:
-			pos = modulate.FitPosition(uint64(tick), rem, den, uint64(e.scheduleDuration), m.fitTicks[i])
+		case s.RateTicks > 0 && m.loopSample > 0 && s.Continue:
+			pos = modulate.FitPosition(uint64(tick), rem, den, uint64(e.scheduleDuration), m.periodAux[i])
 		case s.RateTicks > 0:
-			pos = modulate.SyncedPosition(uint64(tick), rem, den, uint64(s.RateTicks))
-		case m.fitSamples[i] > 0:
-			pos = modulate.FitPosition(uint64(loopSample), 0, 1, uint64(m.loopSample), m.fitSamples[i])
+			if den != 0 {
+				pos = modulate.SyncedReciprocal(m.periodAux[i]).Position(uint64(tick), syncedFraction, s.RateTicks)
+			}
+		case m.loopSample > 0 && s.Continue:
+			pos = modulate.FitPosition(uint64(loopSample), 0, 1, uint64(m.loopSample), m.periodAux[i])
 		default:
 			pos = modulate.FreePosition(uint64(loopSample), uint32(e.sampleRate), s.RateMicroHz)
 		}
 		switch s.Kind {
 		case ModKindLFO:
-			cycles := m.fitTicks[i]
-			if cycles == 0 {
-				cycles = m.fitSamples[i]
+			var cycles uint64
+			if m.loopSample > 0 && s.Continue {
+				cycles = m.periodAux[i]
 			}
 			if cycles != 0 && s.Wave == ModWaveSampleHold {
 				m.values[i] = modulate.LFOFitted(modulate.Wave(s.Wave), m.seed, uint8(i), pos.Offset(s.PhaseQ32), cycles)
@@ -354,9 +401,9 @@ func (e *Engine) advanceModulation() {
 				m.values[i] = modulate.LFO(modulate.Wave(s.Wave), m.seed, uint8(i), pos.Offset(s.PhaseQ32))
 			}
 		case ModKindSway:
-			cycles := m.fitTicks[i]
-			if cycles == 0 {
-				cycles = m.fitSamples[i]
+			var cycles uint64
+			if m.loopSample > 0 && s.Continue {
+				cycles = m.periodAux[i]
 			}
 			if cycles != 0 {
 				m.values[i] = modulate.SwayFitted(m.seed, uint8(i), uint(s.Octaves), pos, cycles)
@@ -366,12 +413,10 @@ func (e *Engine) advanceModulation() {
 		default:
 			m.values[i] = modulate.Contour(m.points[i], pos)
 		}
+		m.scaled[i] = float32(float32(m.values[i]) * (1.0 / (1 << 30)))
 	}
 	if hasFollower {
 		m.peak = [MaxTracks]float32{}
-	}
-	for i := range m.specs {
-		m.scaled[i] = float32(float32(m.values[i]) * (1.0 / (1 << 30)))
 	}
 	if m.trace != nil {
 		m.trace(song, m.values[:len(m.specs)])
@@ -382,9 +427,59 @@ func (e *Engine) advanceModulation() {
 		if t.off {
 			continue
 		}
-		value := e.modEffective(t)
-		if !e.applyModulatedMixerTarget(t, value, m.snap) {
+		var value float32
+		if t.count == 1 {
+			r := &m.routes[t.first]
+			amount := float32(r.Depth * m.scaled[r.Source])
+			if r.Multiply {
+				value = float32(t.base * float32(1+amount))
+			} else {
+				value = float32(t.base + amount)
+			}
+			spec := &kernel.Params[t.id]
+			if value < spec.Min {
+				value = spec.Min
+			} else if value > spec.Max {
+				value = spec.Max
+			}
+		} else {
+			value = e.modEffective(t)
+		}
+		switch t.id {
+		case kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB:
+		default:
 			e.setParamMode(cmd.Command{Op: cmd.OpSetParam, Track: t.track, Index: uint16(t.id), Arg0: math.Float32bits(value)}, m.snap)
+			continue
+		}
+		// Targets are validated at load and clamped above. Chained routes can
+		// still produce NaN, which must fault as it does through setParamMode.
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			e.fault(FaultParam)
+			continue
+		}
+		v := &e.voices[t.track]
+		switch t.id {
+		case kernel.ParamMixGain:
+			positioned := &e.spatial.tracks[t.track]
+			positioned.target = mix.DBToLinear(value)
+			if m.snap {
+				positioned.gain = positioned.target
+			}
+			v.gainDB, v.sourceOff = value, false
+			m.mixDirty |= uint64(1) << t.track
+		case kernel.ParamMixPan:
+			v.pan = value
+			m.mixDirty |= uint64(1) << t.track
+		case kernel.ParamMixSendA:
+			v.targetSendA = value
+			if m.snap {
+				v.sendA = value
+			}
+		case kernel.ParamMixSendB:
+			v.targetSendB = value
+			if m.snap {
+				v.sendB = value
+			}
 		}
 	}
 	m.applying = false
@@ -397,7 +492,7 @@ func (e *Engine) advanceModulation() {
 			v.targetMix = mix.Track{}
 		} else {
 			gain := e.spatial.tracks[track].target
-			if !m.gainRoute[track] {
+			if m.gainRoute&(uint64(1)<<track) == 0 {
 				gain = mix.DBToLinear(v.gainDB)
 			}
 			v.targetMix = mix.NewTrackTableLinear(gain, v.pan)
@@ -408,45 +503,4 @@ func (e *Engine) advanceModulation() {
 	}
 	m.mixDirty = 0
 	m.snap = false
-}
-
-// applyModulatedMixerTarget avoids revalidating the track and parameter on
-// every grid: loadModulation validated the target, and modEffective clamped
-// its value. NaN can still arise from extreme chained routes and must fault as
-// it does through setParamMode.
-func (e *Engine) applyModulatedMixerTarget(t *modTarget, value float32, immediate bool) bool {
-	switch t.id {
-	case kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB:
-	default:
-		return false
-	}
-	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-		e.fault(FaultParam)
-		return true
-	}
-	v := &e.voices[t.track]
-	switch t.id {
-	case kernel.ParamMixGain:
-		positioned := &e.spatial.tracks[t.track]
-		positioned.target = mix.DBToLinear(value)
-		if immediate {
-			positioned.gain = positioned.target
-		}
-		v.gainDB, v.sourceOff = value, false
-		e.mod.mixDirty |= uint64(1) << t.track
-	case kernel.ParamMixPan:
-		v.pan = value
-		e.mod.mixDirty |= uint64(1) << t.track
-	case kernel.ParamMixSendA:
-		v.targetSendA = value
-		if immediate {
-			v.sendA = value
-		}
-	case kernel.ParamMixSendB:
-		v.targetSendB = value
-		if immediate {
-			v.sendB = value
-		}
-	}
-	return true
 }

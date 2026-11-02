@@ -55,10 +55,64 @@ func SyncedPosition(tick, remNum, remDen, period uint64) Position {
 	if period == 0 || remDen == 0 {
 		return Position{}
 	}
+	return SyncedPositionFraction(tick, SyncedTickFraction(remNum, remDen), period)
+}
+
+// SyncedTickFraction computes the clock fraction shared by synced sources at
+// one grid point. A zero denominator returns zero.
+func SyncedTickFraction(remNum, remDen uint64) uint32 {
+	if remDen == 0 {
+		return 0
+	}
+	return frac32(remNum%remDen, remDen)
+}
+
+// SyncedPositionFraction places a synced source using a previously computed
+// tick fraction. This lets sources share the clock-fraction division.
+func SyncedPositionFraction(tick uint64, fraction uint32, period uint64) Position {
+	if period == 0 {
+		return Position{}
+	}
 	cycle, inside := tick/period, tick%period
-	fraction := uint64(frac32(remNum%remDen, remDen))
-	numerator := inside<<32 | fraction // inside < 2^31 by the period cap
+	numerator := inside<<32 | uint64(fraction) // inside < 2^31 by the period cap
 	return Position{Cycle: cycle, Phase: uint32(numerator / period)}
+}
+
+// SyncedReciprocal is a precomputed reciprocal for one nonzero tick period.
+// It is derived from the period alone and holds no playback state.
+type SyncedReciprocal uint64
+
+func NewSyncedReciprocal(period uint32) SyncedReciprocal {
+	if period <= 1 {
+		return 0
+	}
+	return SyncedReciprocal(^uint64(0) / uint64(period))
+}
+
+// Position computes a synced position with the same period used to construct r.
+// The quotient correction makes the reciprocal result identical to division.
+func (r SyncedReciprocal) Position(tick uint64, fraction uint32, period uint32) Position {
+	if period == 0 {
+		return Position{}
+	}
+	if period == 1 {
+		return Position{Cycle: tick, Phase: fraction}
+	}
+	d := uint64(period)
+	cycle, inside := divideReciprocal(tick, d, uint64(r))
+	numerator := inside<<32 | uint64(fraction)
+	phase, _ := divideReciprocal(numerator, d, uint64(r))
+	return Position{Cycle: cycle, Phase: uint32(phase)}
+}
+
+func divideReciprocal(n, d, reciprocal uint64) (uint64, uint64) {
+	q, _ := bits.Mul64(n, reciprocal)
+	rem := n - q*d
+	if rem >= d {
+		q++
+		rem -= d
+	}
+	return q, rem
 }
 
 // FreePosition places a free-rate source from the song sample. microHz is the
