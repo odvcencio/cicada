@@ -360,16 +360,19 @@
       const now = performance.now();
       const sampleAgeMs = Math.max(0, now - timestamp.performanceTime);
       const timestampContextTimeNow = timestamp.contextTime + sampleAgeMs / 1000;
-      const lag = Math.max(0, (context.currentTime - timestampContextTimeNow) * 1000);
+      const contextTime = context.currentTime;
+      const lag = Math.max(0, (contextTime - timestampContextTimeNow) * 1000);
       const excess = Math.max(0, lag - this.contextLatencyMs());
       const timeline = this.outputTimeline;
       timeline.available = true;
       timeline.samples++;
       if (lag > timeline.maxLagMs) timeline.maxLagMs = lag;
       if (excess > timeline.maxExcessMs) timeline.maxExcessMs = excess;
-      if (excess > this.quantumMs()) {
+      // Subtracting large context times can round an exact quantum slightly up.
+      const roundingMs = Number.EPSILON * Math.max(1, Math.abs(contextTime), Math.abs(timestampContextTimeNow)) * 8000;
+      if (excess > this.quantumMs() + roundingMs) {
         timeline.misses++;
-        timeline.lastMiss = { now, sampleAgeMs, contextTime: context.currentTime,
+        timeline.lastMiss = { now, sampleAgeMs, contextTime,
           timestampContextTime: timestamp.contextTime, timestampPerformanceTime: timestamp.performanceTime,
           lagMs: lag, excessMs: excess };
       }

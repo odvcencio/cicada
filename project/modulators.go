@@ -387,6 +387,9 @@ func validateModulators(p *Project) error {
 				return fmt.Errorf("CICADA-REFERENCE: envelope %s needs a declared source track and times up to 10 s", m.ID)
 			}
 		case notation.ModContour:
+			if free {
+				return fmt.Errorf("CICADA-PARAM: contour %s period must use a note length or bar count", m.ID)
+			}
 			if len(m.Points) < 2 || len(m.Points) > notation.MaxContourPoints || m.Points[0].At != 0 || m.Points[len(m.Points)-1].At != 1 {
 				return fmt.Errorf("CICADA-POSITION: contour %s runs from @0 to @1 with 2..%d points", m.ID, notation.MaxContourPoints)
 			}
@@ -399,10 +402,16 @@ func validateModulators(p *Project) error {
 			return fmt.Errorf("CICADA-PARAM: unknown modulator kind %q", m.Kind)
 		}
 	}
+	seenRoutes := make(map[struct{ source, target, mode string }]bool, len(p.Routes))
 	for _, r := range p.Routes {
 		if fault := checkRoute(p, r); fault != nil {
 			return fault
 		}
+		key := struct{ source, target, mode string }{r.Source, r.Target, r.Mode}
+		if seenRoutes[key] {
+			return fmt.Errorf("CICADA-DUPLICATE: duplicate route %s -> %s", r.Source, r.Target)
+		}
+		seenRoutes[key] = true
 	}
 	return nil
 }

@@ -125,7 +125,10 @@ test('shared score respects focus, follows selection anchors, merges offline edi
     pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/collaboration/save' && response.request().method() === 'POST'),
     pages[0].getByRole('button', {name: 'Save shared score'}).click(),
   ]);
-  assert.equal(saved.status(), 200, `shared score save failed: ${await saved.text()}`);
+  if (saved.status() !== 200) {
+    const body = await saved.text().catch(() => '(response body unavailable after navigation)');
+    assert.fail(`shared score save failed with HTTP ${saved.status()}: ${body}`);
+  }
   const persisted = await (await pages[0].request.get(base + '/api/state')).json();
   assert.equal(persisted.source, draft, 'shared draft was not saved');
   assert.equal(persisted.revision, createHash('sha256').update(draft).digest('hex'), 'persisted revision does not match the shared draft');
