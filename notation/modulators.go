@@ -71,7 +71,8 @@ func findParam(params []Param, name string) (Param, bool) {
 }
 
 func parseModulator(w *loweringWalker, n *gts.Node, kind string) Modulator {
-	m := Modulator{Name: w.declaration(w.Field(n, "name")), Kind: kind, Position: w.position(n)}
+	name := w.Field(n, "name")
+	m := Modulator{Name: w.declarationText(name, modulatorTextWithoutComments(w.Walker, name)), Kind: kind, Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
@@ -90,7 +91,7 @@ func parseModulator(w *loweringWalker, n *gts.Node, kind string) Modulator {
 func parseRoute(w *loweringWalker, n *gts.Node) Route {
 	source, target := w.Field(n, "source"), w.Field(n, "target")
 	r := Route{
-		Source: strings.Join(strings.Fields(w.Text(source)), ""), Target: w.parameterPath(w.Text(target), w.position(target)),
+		Source: strings.Join(strings.Fields(modulatorTextWithoutComments(w.Walker, source)), ""), Target: w.parameterPath(w.Text(target), w.position(target)),
 		Mode: w.Text(w.Field(n, "mode")), Position: w.position(n), SourcePosition: w.position(source), TargetPosition: w.position(target),
 	}
 	for i := 0; i < n.NamedChildCount(); i++ {
@@ -415,37 +416,39 @@ func validateContour(m Modulator) []Diagnostic {
 // comment inside the declaration stays, on its own line: those inside a
 // setting, point or route go just before the line they were in, so a second
 // pass reads them where the first put them.
+func modulatorTextWithoutComments(w *walk.Walker, n *gts.Node) string {
+	raw := w.Text(n)
+	var comments []*gts.Node
+	var collect func(*gts.Node)
+	collect = func(parent *gts.Node) {
+		for i := 0; i < parent.ChildCount(); i++ {
+			child := parent.Child(i)
+			if w.Type(child) == "comment" {
+				comments = append(comments, child)
+			} else {
+				collect(child)
+			}
+		}
+	}
+	collect(n)
+	if len(comments) == 0 {
+		return raw
+	}
+	var clean strings.Builder
+	cursor := uint32(0)
+	for _, comment := range comments {
+		start, end := comment.StartByte()-n.StartByte(), comment.EndByte()-n.StartByte()
+		clean.WriteString(raw[cursor:start])
+		clean.WriteByte(' ')
+		cursor = end
+	}
+	clean.WriteString(raw[cursor:])
+	return clean.String()
+}
+
 func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 	text := func(n *gts.Node) string {
-		raw := w.Text(n)
-		// Comments are emitted separately. Remove their exact CST ranges before
-		// normalizing whitespace so a line comment cannot swallow the tokens
-		// that follow it, or be duplicated in a qualified name.
-		var comments []*gts.Node
-		var collect func(*gts.Node)
-		collect = func(parent *gts.Node) {
-			for i := 0; i < parent.ChildCount(); i++ {
-				child := parent.Child(i)
-				if w.Type(child) == "comment" {
-					comments = append(comments, child)
-				} else {
-					collect(child)
-				}
-			}
-		}
-		collect(n)
-		if len(comments) > 0 {
-			var clean strings.Builder
-			cursor := uint32(0)
-			for _, comment := range comments {
-				start, end := comment.StartByte()-n.StartByte(), comment.EndByte()-n.StartByte()
-				clean.WriteString(raw[cursor:start])
-				clean.WriteByte(' ')
-				cursor = end
-			}
-			clean.WriteString(raw[cursor:])
-			raw = clean.String()
-		}
+		raw := modulatorTextWithoutComments(w, n)
 		if strings.Contains(raw, `"`) { // keep the whitespace inside string literals
 			return raw
 		}

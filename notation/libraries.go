@@ -82,7 +82,11 @@ func CheckLibrary(file SourceFile) []Diagnostic {
 }
 
 func (w *loweringWalker) declaration(n *gts.Node) string {
-	name := strings.Join(strings.Fields(w.Text(n)), "")
+	return w.declarationText(n, w.Text(n))
+}
+
+func (w *loweringWalker) declarationText(n *gts.Node, raw string) string {
+	name := strings.Join(strings.Fields(raw), "")
 	if w.library != "" {
 		name = strings.ReplaceAll(w.library, "/", ".") + "." + name
 	}
