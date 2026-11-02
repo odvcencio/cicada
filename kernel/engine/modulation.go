@@ -40,10 +40,13 @@ type modState struct {
 	fitSamples []uint64 // whole cycles per loop, free-rate sources
 	seed       uint32
 	values     [MaxModulators]int32
+	scaled     [MaxModulators]float32
 	followers  [MaxModulators]modulate.Follower
 	peak       [MaxTracks]float32
 	watch      [MaxTracks]bool
 	tableLaw   [MaxTracks]bool
+	gainRoute  [MaxTracks]bool
+	mixDirty   uint64
 
 	base       int64 // song sample = base + transport sample
 	valid      bool
@@ -161,6 +164,9 @@ func (e *Engine) loadModulation(cfg *Config) error {
 		if spec.ID == kernel.ParamMixGain || spec.ID == kernel.ParamMixPan {
 			m.tableLaw[r.Track] = true
 		}
+		if spec.ID == kernel.ParamMixGain {
+			m.gainRoute[r.Track] = true
+		}
 	}
 	m.active = true
 	m.rebase = true
@@ -208,15 +214,14 @@ func (e *Engine) modEffective(t *modTarget) float32 {
 	value := t.base
 	for _, ri := range t.routes {
 		r := &e.mod.routes[ri]
-		scaled := float32(float32(e.mod.values[r.Source]) * (1.0 / (1 << 30)))
-		amount := float32(r.Depth * scaled)
+		amount := float32(r.Depth * e.mod.scaled[r.Source])
 		if r.Multiply {
 			value = float32(value * float32(1+amount))
 		} else {
 			value = float32(value + amount)
 		}
 	}
-	spec := kernel.Params[t.id]
+	spec := &kernel.Params[t.id]
 	if value < spec.Min {
 		value = spec.Min
 	} else if value > spec.Max {
@@ -287,6 +292,7 @@ func (e *Engine) advanceModulation() {
 		}
 		m.peak = [MaxTracks]float32{}
 		m.values = [MaxModulators]int32{}
+		m.scaled = [MaxModulators]float32{}
 		m.cycle = 0
 		if e.scheduleDuration > 0 {
 			m.cycle = e.transport.Tick() / e.scheduleDuration
@@ -364,6 +370,9 @@ func (e *Engine) advanceModulation() {
 	if hasFollower {
 		m.peak = [MaxTracks]float32{}
 	}
+	for i := range m.specs {
+		m.scaled[i] = float32(float32(m.values[i]) * (1.0 / (1 << 30)))
+	}
 	if m.trace != nil {
 		m.trace(song, m.values[:len(m.specs)])
 	}
@@ -373,8 +382,71 @@ func (e *Engine) advanceModulation() {
 		if t.off {
 			continue
 		}
-		e.setParamMode(cmd.Command{Op: cmd.OpSetParam, Track: t.track, Index: uint16(t.id), Arg0: math.Float32bits(e.modEffective(t))}, m.snap)
+		value := e.modEffective(t)
+		if !e.applyModulatedMixerTarget(t, value, m.snap) {
+			e.setParamMode(cmd.Command{Op: cmd.OpSetParam, Track: t.track, Index: uint16(t.id), Arg0: math.Float32bits(value)}, m.snap)
+		}
 	}
 	m.applying = false
+	// Gain and pan routes may update the same track on this grid. Rebuild its
+	// mix once, after both values are known, with the exact same pan law.
+	for dirty := m.mixDirty; dirty != 0; dirty &= dirty - 1 {
+		track := bits.TrailingZeros64(dirty)
+		v := &e.voices[track]
+		if v.sourceOff {
+			v.targetMix = mix.Track{}
+		} else {
+			gain := e.spatial.tracks[track].target
+			if !m.gainRoute[track] {
+				gain = mix.DBToLinear(v.gainDB)
+			}
+			v.targetMix = mix.NewTrackTableLinear(gain, v.pan)
+		}
+		if m.snap {
+			v.mix = v.targetMix
+		}
+	}
+	m.mixDirty = 0
 	m.snap = false
+}
+
+// applyModulatedMixerTarget avoids revalidating the track and parameter on
+// every grid: loadModulation validated the target, and modEffective clamped
+// its value. NaN can still arise from extreme chained routes and must fault as
+// it does through setParamMode.
+func (e *Engine) applyModulatedMixerTarget(t *modTarget, value float32, immediate bool) bool {
+	switch t.id {
+	case kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB:
+	default:
+		return false
+	}
+	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+		e.fault(FaultParam)
+		return true
+	}
+	v := &e.voices[t.track]
+	switch t.id {
+	case kernel.ParamMixGain:
+		positioned := &e.spatial.tracks[t.track]
+		positioned.target = mix.DBToLinear(value)
+		if immediate {
+			positioned.gain = positioned.target
+		}
+		v.gainDB, v.sourceOff = value, false
+		e.mod.mixDirty |= uint64(1) << t.track
+	case kernel.ParamMixPan:
+		v.pan = value
+		e.mod.mixDirty |= uint64(1) << t.track
+	case kernel.ParamMixSendA:
+		v.targetSendA = value
+		if immediate {
+			v.sendA = value
+		}
+	case kernel.ParamMixSendB:
+		v.targetSendB = value
+		if immediate {
+			v.sendB = value
+		}
+	}
+	return true
 }

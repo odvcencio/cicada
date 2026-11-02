@@ -17,9 +17,13 @@ func DBToLinear(gainDB float32) float32 {
 // table instead of math.Pow, math.Cos and math.Sin. It matches NewTrack within
 // 1e-6 relative error but is not bit-identical to it (see TestNewTrackTable).
 func NewTrackTable(gainDB, pan float32) Track {
+	return NewTrackTableLinear(DBToLinear(gainDB), pan)
+}
+
+// NewTrackTableLinear applies the same pan law to a precomputed linear gain.
+func NewTrackTableLinear(gain, pan float32) Track {
 	// angle = (pan+1)*pi/4 is (pan+1)/8 of a cycle.
 	phase := uint32(float64(float64(pan)+1) * (1 << 29))
-	gain := DBToLinear(gainDB)
 	const q30 = 1.0 / (1 << 30)
 	left := float32(modulate.Sin(phase+1<<30)) * q30
 	right := float32(modulate.Sin(phase)) * q30
