@@ -113,6 +113,15 @@ lfo ns. // source declaration
 mod ns. // source reference
   a -> pad.pan depth = 0.1
 `)
+	before, ds := Parse(source)
+	if before == nil || len(before.Modulators) != 1 || len(before.Routes) != 1 || before.Modulators[0].Name != "ns.a" || before.Routes[0].Source != "ns.a" {
+		t.Fatalf("qualified names changed by comments: score=%+v diagnostics=%v", before, ds)
+	}
+	for _, d := range ds {
+		if d.Severity == "error" && d.Code != "CICADA-UNSUPPORTED" {
+			t.Fatalf("unexpected diagnostic: %+v", d)
+		}
+	}
 	doc, err := ParseDocument(source)
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +138,10 @@ mod ns. // source reference
 	doc, err = ParseDocument(once)
 	if err != nil {
 		t.Fatalf("formatted source cannot be parsed: %v\n%s", err, once)
+	}
+	after, afterDS := Parse(once)
+	if after == nil || len(after.Modulators) != 1 || len(after.Routes) != 1 || after.Modulators[0].Name != before.Modulators[0].Name || after.Routes[0].Source != before.Routes[0].Source {
+		t.Fatalf("formatting changed qualified names: score=%+v diagnostics=%v", after, afterDS)
 	}
 	twice, err := Format(doc)
 	if err != nil {
