@@ -244,6 +244,7 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 	CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -count=1
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
+	go test -timeout=3m -tags modulate_wasm ./kernel/modulate -run '^TestModulateNativeWASMParity$$' -count=1 -v
 
 test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs
