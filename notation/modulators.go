@@ -71,7 +71,8 @@ func findParam(params []Param, name string) (Param, bool) {
 }
 
 func parseModulator(w *loweringWalker, n *gts.Node, kind string) Modulator {
-	m := Modulator{Name: w.declaration(w.Field(n, "name")), Kind: kind, Position: w.position(n)}
+	name := w.Field(n, "name")
+	m := Modulator{Name: w.declarationText(name, modulatorTextWithoutComments(w.Walker, name)), Kind: kind, Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
@@ -90,7 +91,7 @@ func parseModulator(w *loweringWalker, n *gts.Node, kind string) Modulator {
 func parseRoute(w *loweringWalker, n *gts.Node) Route {
 	source, target := w.Field(n, "source"), w.Field(n, "target")
 	r := Route{
-		Source: strings.Join(strings.Fields(w.Text(source)), ""), Target: w.parameterPath(w.Text(target), w.position(target)),
+		Source: strings.Join(strings.Fields(modulatorTextWithoutComments(w.Walker, source)), ""), Target: w.parameterPath(w.Text(target), w.position(target)),
 		Mode: w.Text(w.Field(n, "mode")), Position: w.position(n), SourcePosition: w.position(source), TargetPosition: w.position(target),
 	}
 	for i := 0; i < n.NamedChildCount(); i++ {
@@ -322,7 +323,7 @@ func validateModulatorSetting(m Modulator, p Param, tracks map[string]bool) []Di
 		if strings.HasSuffix(p.Value, "%") {
 			f /= 100
 		}
-		if err != nil || f < 0 || f >= 1 {
+		if err != nil || !(f >= 0 && f < 1) {
 			return bad("CICADA-PARAM", "phase must be at least 0 and below 1 cycle; actual "+p.Value)
 		}
 	case "loop":
@@ -401,9 +402,39 @@ func validateContour(m Modulator) []Diagnostic {
 // comment inside the declaration stays, on its own line: those inside a
 // setting, point or route go just before the line they were in, so a second
 // pass reads them where the first put them.
+func modulatorTextWithoutComments(w *walk.Walker, n *gts.Node) string {
+	raw := w.Text(n)
+	var comments []*gts.Node
+	var collect func(*gts.Node)
+	collect = func(parent *gts.Node) {
+		for i := 0; i < parent.ChildCount(); i++ {
+			child := parent.Child(i)
+			if w.Type(child) == "comment" {
+				comments = append(comments, child)
+			} else {
+				collect(child)
+			}
+		}
+	}
+	collect(n)
+	if len(comments) == 0 {
+		return raw
+	}
+	var clean strings.Builder
+	cursor := uint32(0)
+	for _, comment := range comments {
+		start, end := comment.StartByte()-n.StartByte(), comment.EndByte()-n.StartByte()
+		clean.WriteString(raw[cursor:start])
+		clean.WriteByte(' ')
+		cursor = end
+	}
+	clean.WriteString(raw[cursor:])
+	return clean.String()
+}
+
 func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 	text := func(n *gts.Node) string {
-		raw := w.Text(n)
+		raw := modulatorTextWithoutComments(w, n)
 		if strings.Contains(raw, `"`) { // keep the whitespace inside string literals
 			return raw
 		}
@@ -434,7 +465,9 @@ func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 		}
 		return strings.Join(append(comments, line), "\n")
 	}
-	lines := []string{w.Type(node)[:len(w.Type(node))-len("_decl")] + " " + text(w.Field(node, "name")) + " {"}
+	var headerComments []string
+	inner(w.Field(node, "name"), &headerComments)
+	lines := append(headerComments, w.Type(node)[:len(w.Type(node))-len("_decl")]+" "+text(w.Field(node, "name"))+" {")
 	empty := true
 	for i := 0; i < node.NamedChildCount(); i++ {
 		c := node.NamedChild(i)
@@ -466,7 +499,8 @@ func formatModulatorDeclaration(node *gts.Node, w *walk.Walker) string {
 		empty = false
 	}
 	if empty {
-		return lines[0] + "}"
+		lines[len(lines)-1] += "}"
+		return strings.Join(lines, "\n")
 	}
 	return strings.Join(append(lines, "}"), "\n")
 }

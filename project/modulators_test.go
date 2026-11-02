@@ -196,6 +196,7 @@ func TestImportedModulatorsAreValidated(t *testing.T) {
 		"route to a legacy reverb": func(q *Project) { q.Routes[0].Target = "hall.size" },
 		"unknown source":           func(q *Project) { q.Routes[0].Source = "ghost" },
 		"both rates":               func(q *Project) { q.Modulators[0].RateMicroHz = 1_000_000 },
+		"duplicate route":          func(q *Project) { q.Routes = append(q.Routes, q.Routes[0]) },
 		"too many routes": func(q *Project) {
 			for len(q.Routes) <= 64 {
 				q.Routes = append(q.Routes, q.Routes[0])
@@ -205,6 +206,46 @@ func TestImportedModulatorsAreValidated(t *testing.T) {
 		if err := mutate(f); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+}
+
+func TestImportedContourRequiresSyncedPeriod(t *testing.T) {
+	p, ds := compileModulators(t, "contour c { period = 1bar @0 0 @1 1 }\n")
+	if p == nil {
+		t.Fatal(ds)
+	}
+	p.Modulators[0].RateTicks = 0
+	p.Modulators[0].RateMicroHz = 1_000_000
+	if err := ValidateProject(p); err == nil || !strings.Contains(err.Error(), "CICADA-PARAM") {
+		t.Fatalf("free-rate contour accepted: %v", err)
+	}
+}
+
+func TestImportedModulatorsReachEngine(t *testing.T) {
+	p, ds := compileModulators(t, "lfo a { rate = 1/4 }\nmod a -> pad.pan depth = 0.1\n")
+	if p == nil {
+		t.Fatal(ds)
+	}
+	data, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, compile := range map[string]func() (engine.Config, error){
+		"playback": func() (engine.Config, error) { return CompileEngine(decoded, 48000, 128) },
+		"assets":   func() (engine.Config, error) { return CompileEngineWithAssets(decoded, 48000, 128, nil) },
+		"prepared": func() (engine.Config, error) { return CompileEnginePrepared(decoded, 48000, 128, nil) },
+	} {
+		cfg, err := compile()
+		if err != nil || len(cfg.Modulators) != 1 || len(cfg.Routes) != 1 {
+			t.Errorf("%s lost imported modulators: %+v, %v", name, cfg, err)
+		}
+	}
+	if _, err := CompileNoteSchedule(decoded); err != nil {
+		t.Fatalf("note schedule: %v", err)
 	}
 }
 

@@ -189,7 +189,7 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 				sideL, sideR = trackL, trackR
 			}
 		}
-		if modulationEnabled && e.mod.watch[track] {
+		if modulationEnabled && e.mod.watch&(uint64(1)<<track) != 0 {
 			e.modPeak(track, trackL, trackR)
 		}
 		if e.taps != nil {

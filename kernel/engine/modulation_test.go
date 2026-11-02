@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"unsafe"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -175,6 +176,7 @@ func TestRouteOrderAndClamp(t *testing.T) {
 	}{
 		{"multiply then add", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1}}, .5},
 		{"add then multiply", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1}}, .6},
+		{"interleaved targets preserve order", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1}, {Source: 0, Track: 1, Param: uint16(kernel.ParamMixPan), Depth: .7}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1}}, .6},
 		{"clamp once at the end", []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: 2}, {Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: -1.5}}, .7},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -194,6 +196,78 @@ func TestRouteOrderAndClamp(t *testing.T) {
 				t.Fatalf("pan %g, want %g", got, c.want)
 			}
 		})
+	}
+}
+
+// Count the engine's mutable working state and precomputed indices. Immutable
+// source, route and contour configuration payloads are separate project data.
+func TestModulationWorkingStateBudget(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Tracks, cfg.MaxVoices = 16, 32
+	cfg.Patterns = make([]PatternBank, cfg.Tracks)
+	for i := 0; i < cfg.Tracks; i++ {
+		cfg.Track[i].Kind = VoiceAcid
+	}
+	cfg.Modulators, cfg.Routes = nil, nil
+	for i := 0; i < MaxModulators; i++ {
+		cfg.Modulators = append(cfg.Modulators, ModulatorSpec{Kind: ModKindSway, Octaves: 4, RateTicks: uint32(960 + 7*i)})
+	}
+	rows := []kernel.ParamID{kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB}
+	for i := 0; i < MaxModRoutes; i++ {
+		cfg.Routes = append(cfg.Routes, RouteSpec{Source: uint8(i % MaxModulators), Track: uint8(i / len(rows)), Param: uint16(rows[i%len(rows)]), Depth: .01})
+	}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes := unsafe.Sizeof(e.mod) + uintptr(cap(e.mod.targets))*unsafe.Sizeof(modTarget{}) +
+		uintptr(cap(e.mod.routeOrder))*unsafe.Sizeof(uint8(0)) + uintptr(cap(e.mod.periodAux))*unsafe.Sizeof(uint64(0))
+	if bytes >= 2048 {
+		t.Fatalf("modulation working state uses %d bytes, budget is under 2048", bytes)
+	}
+	t.Logf("modulation working state: %d bytes, excluding immutable configuration", bytes)
+}
+
+func TestModulationSingleRouteBaseUpdateAfterInterleavedTargets(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Modulators = []ModulatorSpec{{Kind: ModKindLFO, Wave: ModWaveSquare, RateTicks: 3840}}
+	cfg.Routes = []RouteSpec{
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .1},
+		{Source: 0, Track: 1, Param: uint16(kernel.ParamMixPan), Depth: .7},
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: 1},
+	}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	left, right := make([]float32, 128), make([]float32, 128)
+	e.Render(left, right)
+	e.setParamMode(cmd.Command{Op: cmd.OpSetParam, Track: 1, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.1)}, false)
+	if got := e.voices[1].pan; math.Abs(float64(got-.8)) > 1e-6 {
+		t.Fatalf("track 1 pan after base update = %g, want .8", got)
+	}
+}
+
+func TestModulationTrackMasksIncludeLastNativeTrack(t *testing.T) {
+	if MaxTracks < 64 {
+		t.Skip("native 64-track capacity required")
+	}
+	cfg := modConfig(t)
+	cfg.Tracks, cfg.MaxVoices = 64, 64
+	cfg.Patterns = make([]PatternBank, cfg.Tracks)
+	for i := 0; i < cfg.Tracks; i++ {
+		cfg.Track[i].Kind = VoiceAcid
+	}
+	cfg.Modulators = []ModulatorSpec{{Kind: ModKindEnvelope, Source: 63, Attack: 1 << 31, Release: 1 << 28}}
+	cfg.Routes = []RouteSpec{{Source: 0, Track: 63, Param: uint16(kernel.ParamMixGain), Depth: 1}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bit = uint64(1) << 63
+	if e.mod.watch&bit == 0 || e.mod.tableLaw&bit == 0 || e.mod.gainRoute&bit == 0 {
+		t.Fatal("track 63 is missing from a modulation mask")
 	}
 }
 
@@ -347,6 +421,182 @@ func TestEnvelopeStartsAtZeroAtLoadSeekAndWrap(t *testing.T) {
 	}
 }
 
+func TestEnvelopeFollowersShareTrackPeak(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Modulators = []ModulatorSpec{
+		{Kind: ModKindEnvelope, Source: 0, Attack: 1 << 31, Release: 1 << 28},
+		{Kind: ModKindEnvelope, Source: 0, Attack: 1 << 31, Release: 1 << 28},
+	}
+	cfg.Routes = nil
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	e.Push(cmd.Command{Op: cmd.OpNoteOn, Track: 0, Arg0: 45 | 100<<8})
+	left, right := make([]float32, 128), make([]float32, 128)
+	for i := 0; i < 200; i++ {
+		e.Render(left, right)
+	}
+	if a, b := e.ModulatorValue(0), e.ModulatorValue(1); a <= 0 || a != b {
+		t.Fatalf("identical followers of the same track diverged: %d and %d", a, b)
+	}
+}
+
+func TestModulatedGainHonorsOffAndResumes(t *testing.T) {
+	for _, initiallyOff := range []bool{false, true} {
+		t.Run(fmt.Sprintf("initiallyOff=%t", initiallyOff), func(t *testing.T) {
+			cfg := modConfig(t)
+			cfg.Track[0].Mute = initiallyOff
+			cfg.Routes = []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixGain), Depth: 3}}
+			e, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			left, right := make([]float32, 128), make([]float32, 128)
+			e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+			e.Render(left, right)
+			set := func(value float32) {
+				e.setParam(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixGain), Arg0: math.Float32bits(value)})
+				e.Render(left, right)
+			}
+			set(float32(math.Inf(-1)))
+			if !e.voices[0].sourceOff || !e.mod.targets[0].off {
+				t.Fatal("off was not preserved across the control grid")
+			}
+			set(-6)
+			if e.voices[0].sourceOff || e.mod.targets[0].off || e.mod.targets[0].base != -6 {
+				t.Fatal("finite level did not reactivate its modulation route")
+			}
+			e.Render(left, right)
+			if e.voices[0].sourceOff || e.mod.targets[0].off {
+				t.Fatal("route stopped again on a later grid")
+			}
+		})
+	}
+}
+
+func TestModulatedGainPreservesAuthoredLayerMask(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Routes = []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixGain), Depth: 3}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, right := make([]float32, 128), make([]float32, 128)
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	e.Render(left, right)
+	e.apply(cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 2})
+	for i := 0; i < 4; i++ {
+		e.Render(left, right)
+	}
+	if e.layerAuthored != 2 || e.layerMask != 2 {
+		t.Fatalf("gain modulation changed authored layer mask: authored=%x effective=%x", e.layerAuthored, e.layerMask)
+	}
+}
+
+func TestModulationRebaseClearsScaledValuesBeforeNextGrid(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Modulators = []ModulatorSpec{{Kind: ModKindLFO, Wave: ModWaveSquare, RateTicks: 960}}
+	cfg.Routes = []RouteSpec{{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .5}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, right := make([]float32, 128), make([]float32, 128)
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	e.Render(left, right)
+	if e.ModulatorValue(0) == 0 {
+		t.Fatal("fixture did not produce a modulator value")
+	}
+	if err := e.seekTransport(1); err != nil {
+		t.Fatal(err)
+	}
+	e.advanceModulation() // tick 1 is between control-grid points.
+	if e.ModulatorValue(0) != 0 {
+		t.Fatal("fixture seek landed on a grid point")
+	}
+	e.setParam(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.2)})
+	if got := e.voices[0].pan; got != .2 {
+		t.Fatalf("post-seek base write used stale modulation: %g", got)
+	}
+}
+
+func TestModulationRejectsNaNFromOverflowingRoutes(t *testing.T) {
+	cfg := modConfig(t)
+	cfg.Track[0].Pan = .2
+	cfg.Modulators = []ModulatorSpec{{Kind: ModKindLFO, Wave: ModWaveSquare, RateTicks: 960}}
+	cfg.Routes = []RouteSpec{
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: math.MaxFloat32},
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: math.MaxFloat32},
+		{Source: 0, Track: 0, Param: uint16(kernel.ParamMixPan), Multiply: true, Depth: -1},
+	}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	e.Render(make([]float32, 128), make([]float32, 128))
+	var message cmd.Message
+	found := false
+	for e.Poll(&message) {
+		found = found || message.Kind == cmd.Fault
+	}
+	if !found || math.IsNaN(float64(e.voices[0].pan)) {
+		t.Fatalf("overflowing routes did not fault safely: fault=%t pan=%g", found, e.voices[0].pan)
+	}
+}
+
+func TestFittedRandomSourcesRepeatAcrossSongLoop(t *testing.T) {
+	for _, source := range []ModulatorSpec{
+		{Kind: ModKindSway, Octaves: 4, RateTicks: 1920, Continue: true},
+		{Kind: ModKindLFO, Wave: ModWaveSampleHold, RateTicks: 1920, Continue: true},
+	} {
+		cfg := modConfig(t)
+		cfg.LoopSong = true
+		cfg.Song = []SongEntry{{Scene: 0, Bars: 2}}
+		cfg.Modulators = []ModulatorSpec{source}
+		run := runMod(t, cfg, 128, 192_000+128, 0)
+		var first, before, after int32
+		fmt.Sscanf(run.log[0].values, "[%d]", &first)
+		fmt.Sscanf(run.log[1499].values, "[%d]", &before)
+		fmt.Sscanf(run.log[1500].values, "[%d]", &after)
+		if first != after {
+			t.Fatalf("kind %v did not repeat: %d vs %d", source.Kind, first, after)
+		}
+		if source.Kind == ModKindSway && math.Abs(float64(before)-float64(after))/modulate.One > .02 {
+			t.Fatalf("sway jumped at wrap: %d to %d", before, after)
+		}
+	}
+}
+
+// These reference renders use the pre-batching engine, with gain and pan
+// routed in both orders and a pan-only track. Batching must not change PCM.
+func TestModulationMixBatchPreservesPCM(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		panFirst   bool
+	}{
+		{name: "gain-first", want: "fe70d2c629265180b040020d268a10cef6cf6ad1b9f1863c44456c5b812ba6eb"},
+		{name: "pan-first", want: "fe70d2c629265180b040020d268a10cef6cf6ad1b9f1863c44456c5b812ba6eb", panFirst: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := modConfig(t)
+			cfg.Modulators = append(cfg.Modulators, ModulatorSpec{Kind: ModKindLFO, Wave: ModWaveTriangle, RateTicks: 480})
+			gain := RouteSpec{Source: 0, Track: 0, Param: uint16(kernel.ParamMixGain), Depth: 3}
+			pan := RouteSpec{Source: 1, Track: 0, Param: uint16(kernel.ParamMixPan), Depth: .5}
+			cfg.Routes = []RouteSpec{gain, pan, {Source: 0, Track: 1, Param: uint16(kernel.ParamMixPan), Depth: .3}}
+			if tc.panFirst {
+				cfg.Routes[0], cfg.Routes[1] = cfg.Routes[1], cfg.Routes[0]
+			}
+			got := fmt.Sprintf("%x", runMod(t, cfg, 128, 24_000, 0).pcm)
+			if got != tc.want {
+				t.Fatalf("PCM digest = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func (s SongEntry) toTicks() int64 { return int64(s.Bars) * 3840 }
 
 // BenchmarkModulationGridPoint is the cost of one control-grid evaluation for
@@ -374,6 +624,52 @@ func BenchmarkModulationGridPoint(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		e.mod.base = -e.transport.Sample() // song sample 0: a grid point
+		e.advanceModulation()
+	}
+}
+
+// Spread routes over the portable maximum of 16 tracks so all 64 targets
+// perform their parameter updates, instead of combining onto four targets.
+func BenchmarkModulationGridPointDistinctTargets(b *testing.B) {
+	benchmarkDistinctTargets(b, false)
+}
+
+// Include transport advancement so position-dependent optimizations cannot
+// appear fast solely because the previous benchmark repeats one grid point.
+func BenchmarkModulationGridPointDistinctTargetsAdvancing(b *testing.B) {
+	benchmarkDistinctTargets(b, true)
+}
+
+func benchmarkDistinctTargets(b *testing.B, advancing bool) {
+	cfg := modConfig(&testing.T{})
+	cfg.Tracks, cfg.MaxVoices = 16, 32
+	cfg.Patterns = make([]PatternBank, cfg.Tracks)
+	for i := 0; i < cfg.Tracks; i++ {
+		cfg.Track[i].Kind = VoiceAcid
+	}
+	cfg.Modulators, cfg.Routes = nil, nil
+	for i := 0; i < MaxModulators; i++ {
+		cfg.Modulators = append(cfg.Modulators, ModulatorSpec{Kind: ModKindSway, Octaves: 4, RateTicks: uint32(960 + 7*i)})
+	}
+	rows := []kernel.ParamID{kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB}
+	for i := 0; i < MaxModRoutes; i++ {
+		cfg.Routes = append(cfg.Routes, RouteSpec{Source: uint8(i % MaxModulators), Track: uint8(i / len(rows)), Param: uint16(rows[i%len(rows)]), Depth: .01})
+	}
+	e, err := New(cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+	left, right := make([]float32, 128), make([]float32, 128)
+	e.Render(left, right)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if advancing {
+			e.transport.Advance(128)
+		} else {
+			e.mod.base = -e.transport.Sample()
+		}
 		e.advanceModulation()
 	}
 }

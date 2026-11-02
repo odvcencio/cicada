@@ -37,6 +37,22 @@ func Sin(phase uint32) int32 {
 	return v
 }
 
+// SinCosQuarter returns the sine and cosine for a phase in the first quarter
+// cycle. It shares the table lookup setup used by the mixer's pan law.
+// Other phases keep the general Sin behavior.
+func SinCosQuarter(phase uint32) (int32, int32) {
+	if phase > 1<<30 {
+		return Sin(phase), Sin(phase + 1<<30)
+	}
+	if phase == 1<<30 {
+		return One, 0
+	}
+	i, f := phase>>20, int64(phase&(1<<20-1))
+	a, b := int64(sineQuarter[i]), int64(sineQuarter[i+1])
+	hi, lo := int64(sineQuarter[1024-i]), int64(sineQuarter[1023-i])
+	return int32(a + (b-a)*f>>20), int32(hi + (lo-hi)*f>>20)
+}
+
 // triangle rises from 0 to +One at a quarter cycle, falls to -One at three
 // quarters and returns to 0.
 func triangle(phase uint32) int32 {
@@ -70,6 +86,15 @@ func LFO(wave Wave, seed uint32, index uint8, p Position) int32 {
 	return draw(Hash(seed, DomainLFO, 0xFF, index, 0, p.Cycle))
 }
 
+// LFOFitted repeats sample-and-hold values after cycles fitted to a song loop.
+// A zero cycle count leaves the source on its ordinary unbounded timeline.
+func LFOFitted(wave Wave, seed uint32, index uint8, p Position, cycles uint64) int32 {
+	if cycles != 0 {
+		p.Cycle %= cycles
+	}
+	return LFO(wave, seed, index, p)
+}
+
 // Sway returns the stateless smooth random source: octaves layers, layer o at
 // 2^o times the base rate and weight 2^(octaves-1-o)/(2^octaves-1). Each layer
 // draws h(k) at its period boundaries and joins h(k) to h(k+1) with smoothstep.
@@ -80,11 +105,55 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 	if octaves > 4 {
 		octaves = 4
 	}
+	if octaves == 4 {
+		q0, q1, q2, q3 := p, p.Scale(1), p.Scale(2), p.Scale(3)
+		a0 := draw(Hash(seed, DomainSway, 0xFF, index, 0, q0.Cycle))
+		b0 := draw(Hash(seed, DomainSway, 0xFF, index, 0, q0.Cycle+1))
+		a1 := draw(Hash(seed, DomainSway, 0xFF, index, 1, q1.Cycle))
+		b1 := draw(Hash(seed, DomainSway, 0xFF, index, 1, q1.Cycle+1))
+		a2 := draw(Hash(seed, DomainSway, 0xFF, index, 2, q2.Cycle))
+		b2 := draw(Hash(seed, DomainSway, 0xFF, index, 2, q2.Cycle+1))
+		a3 := draw(Hash(seed, DomainSway, 0xFF, index, 3, q3.Cycle))
+		b3 := draw(Hash(seed, DomainSway, 0xFF, index, 3, q3.Cycle+1))
+		sum := int64(lerp(a0, b0, smooth(q0.Phase)))<<3 +
+			int64(lerp(a1, b1, smooth(q1.Phase)))<<2 +
+			int64(lerp(a2, b2, smooth(q2.Phase)))<<1 +
+			int64(lerp(a3, b3, smooth(q3.Phase)))
+		return int32(sum / 15)
+	}
 	var sum int64
 	for o := uint(0); o < octaves; o++ {
 		q := p.Scale(o)
 		a := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), q.Cycle))
 		b := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), q.Cycle+1))
+		sum += int64(lerp(a, b, smooth(q.Phase))) << (octaves - 1 - o)
+	}
+	return int32(sum / (1<<octaves - 1))
+}
+
+// SwayFitted wraps each octave's random endpoints at the fitted loop boundary.
+// Without this, the last segment approaches a different value from the first.
+// A zero cycle count keeps the ordinary unbounded sequence.
+func SwayFitted(seed uint32, index uint8, octaves uint, p Position, cycles uint64) int32 {
+	if cycles == 0 {
+		return Sway(seed, index, octaves, p)
+	}
+	if octaves < 1 {
+		octaves = 1
+	}
+	if octaves > 4 {
+		octaves = 4
+	}
+	p.Cycle %= cycles
+	var sum int64
+	for o := uint(0); o < octaves; o++ {
+		q := p.Scale(o)
+		a := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), q.Cycle))
+		next := q.Cycle + 1
+		if p.Cycle == cycles-1 && uint64(p.Phase)>>(32-o) == (uint64(1)<<o)-1 {
+			next = 0
+		}
+		b := draw(Hash(seed, DomainSway, 0xFF, index, uint8(o), next))
 		sum += int64(lerp(a, b, smooth(q.Phase))) << (octaves - 1 - o)
 	}
 	return int32(sum / (1<<octaves - 1))
