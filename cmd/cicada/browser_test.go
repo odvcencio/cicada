@@ -318,7 +318,9 @@ func TestBrowserUnderrunDetector(t *testing.T) {
 	if err := json.Unmarshal(baselineResult, &baseline); err != nil {
 		t.Fatalf("decode baseline underrun metrics %s: %v", baselineResult, err)
 	}
-	timestampCheck := chrome.eval(`(()=>{const audio=window.cicadaBrowserAudio,context=audio.context,original=context.getOutputTimestamp.bind(context),ageMs=20,latencyMs=((context.baseLatency||0)+(context.outputLatency||0))*1000;audio.outputTimeline={available:false,samples:0,misses:0,maxLagMs:0,maxExcessMs:0};context.getOutputTimestamp=()=>({contextTime:Math.max(0,context.currentTime-latencyMs/1000-ageMs/1000),performanceTime:performance.now()-ageMs});audio.sampleOutputTimeline();const result={...audio.outputTimeline,latencyMs,ageMs};context.getOutputTimestamp=original;return result})()`)
+	// Freeze the simulated context clock: the real one can advance a render
+	// quantum between constructing the timestamp and sampling the timeline.
+	timestampCheck := chrome.eval(`(()=>{const audio=window.cicadaBrowserAudio,context=audio.context,ageMs=20,latencyMs=((context.baseLatency||0)+(context.outputLatency||0))*1000,currentTime=context.currentTime;audio.outputTimeline={available:false,samples:0,misses:0,maxLagMs:0,maxExcessMs:0};audio.context={state:'running',currentTime,sampleRate:context.sampleRate,renderQuantumSize:context.renderQuantumSize,baseLatency:context.baseLatency,outputLatency:context.outputLatency,getOutputTimestamp:()=>({contextTime:Math.max(0,currentTime-latencyMs/1000-ageMs/1000),performanceTime:performance.now()-ageMs})};try{audio.sampleOutputTimeline();return {...audio.outputTimeline,latencyMs,ageMs}}finally{audio.context=context}})()`)
 	var timestampAge struct {
 		Samples   int     `json:"samples"`
 		Misses    int     `json:"misses"`
