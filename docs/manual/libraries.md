@@ -86,8 +86,12 @@ then loads and renders without the original project or user library.
 records the bundled library identities. Extract the archive and open
 `main.cicada`; embedded standard libraries still come from the Cicada host.
 The archive also contains the retained takes and recovery files copied by Save
-As, which may include unpublished work. History filenames are tied to the
-temporary copy's score path and do not automatically become Studio history at
-the extraction path. Existing bundle files are never overwritten.
+As, which may include unpublished work. After extracting a bundle, run
+`cicada bundle --restore-history main.cicada` from its directory to attach
+inventoried recovery versions to the extracted score. The command verifies
+their hashes, retains the extracted originals and refuses conflicting files;
+it can be repeated safely. It also accepts bundles made before this command
+was added. These recovery versions are not a restored Studio undo stack.
+Existing bundle files are never overwritten.
 
 See the [library CLI reference](../cli.md#libraries) for command syntax.

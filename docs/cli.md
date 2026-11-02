@@ -64,7 +64,9 @@ Studio Save As uses the same operation.
 copy and a `cicada-bundle.json` inventory of file hashes and bundled library
 identities. It refuses an existing output. Retained takes and recovery files
 are included and may contain unpublished work; see [Managing libraries](manual/libraries.md)
-for their portability limits.
+for their portability limits. After extraction, run
+`cicada bundle --restore-history main.cicada` to attach inventoried recovery
+versions without overwriting different files.
 
 ## Inspect a musical moment
 
