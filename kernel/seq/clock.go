@@ -92,3 +92,18 @@ func mulDiv(a, b, den uint64) (uint64, uint64) {
 	}
 	return bits.Div64(hi, lo, den)
 }
+
+// TickAtSampleRem is TickAtSample with the exact remainder: the position is
+// tick + rem/den of a tick, where den is 60000*SampleRate. Modulators take
+// their tempo-synced phase from it (spec 24, "Control grid and phase").
+func (c Clock) TickAtSampleRem(sample int64) (tick int64, rem, den uint64) {
+	den = uint64(60_000 * c.SampleRate)
+	if sample <= c.AnchorSample {
+		return c.AnchorTick, 0, den
+	}
+	q, rem := mulDiv(uint64(sample-c.AnchorSample), uint64(c.BPMMilli*PPQ), den)
+	if q > uint64(maxInt64-c.AnchorTick) {
+		return maxInt64, 0, den
+	}
+	return c.AnchorTick + int64(q), rem, den
+}

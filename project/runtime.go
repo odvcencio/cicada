@@ -424,6 +424,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	if automationErr != nil {
 		return cfg, automationErr
 	}
+	if err := compileModulation(p, &cfg); err != nil {
+		return cfg, err
+	}
 	if p.Arrange != nil {
 		cfg.Song = nil
 		var scheduleErr error

@@ -52,11 +52,9 @@ mod wander -> pad.level depth = 1.5dB
 	}
 }
 
-// Until a renderer plays them the forms fail with one CICADA-UNSUPPORTED and
-// nothing else, so the gate is the only thing standing between source and sound.
-func TestModulatorsAreGatedUntilPlayable(t *testing.T) {
-	codes := modulatorCodes(t, "lfo drift { rate = 1/4 }\nmod drift -> pad.pan depth = 0.1\n")
-	if len(codes) != 1 || !strings.HasPrefix(codes[0], "CICADA-UNSUPPORTED") {
+// A well-formed set of sources and routes is not an error: the engine plays them.
+func TestWellFormedModulatorsHaveNoDiagnostics(t *testing.T) {
+	if codes := modulatorCodes(t, "lfo drift { rate = 1/4 }\nmod drift -> pad.pan depth = 0.1\n"); len(codes) != 0 {
 		t.Fatalf("codes = %v", codes)
 	}
 }

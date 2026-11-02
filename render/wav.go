@@ -381,6 +381,10 @@ func UsesScheduledEngine(score *notation.Score, opts Options) bool {
 			return true
 		}
 	}
+	// Modulators and routes (spec 24) need the engine, which owns the control grid.
+	if len(score.Modulators) > 0 || len(score.Routes) > 0 {
+		return true
+	}
 	return score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline
 }
 

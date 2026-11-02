@@ -194,20 +194,6 @@ var modulatorKeys = map[string]map[string]bool{
 	ModContour:  {"period": true, "loop": true},
 }
 
-// modulatorsPlayable keeps detail-layer forms from reaching a renderer before
-// every surface can play them (spec 16, "Scope and syntax gate"). The change
-// that makes the engine evaluate modulators sets it.
-var modulatorsPlayable = false
-
-// OpenModulatorGate lets the tests of a layer that lands before the engine
-// plays modulators (the project compiler) parse and lower them. The PR that
-// wires the engine deletes this function and the gate.
-func OpenModulatorGate() (restore func()) {
-	previous := modulatorsPlayable
-	modulatorsPlayable = true
-	return func() { modulatorsPlayable = previous }
-}
-
 // ValidateModulators checks the declared sources and routes of a score. It
 // reports spelling, range and reference errors; target resolution and the
 // rate cap against a registered row belong to project compilation.
@@ -295,15 +281,6 @@ func ValidateModulators(s *Score) []Diagnostic {
 			add("CICADA-DUPLICATE", "duplicate route "+r.Source+" -> "+r.Target, r.Position)
 		}
 		seenRoutes[key] = true
-	}
-	if !modulatorsPlayable {
-		var first Position
-		if len(s.Modulators) > 0 {
-			first = s.Modulators[0].Position
-		} else {
-			first = s.Routes[0].Position
-		}
-		add("CICADA-UNSUPPORTED", "modulators and routes parse and format, but no renderer plays them yet", first)
 	}
 	return ds
 }

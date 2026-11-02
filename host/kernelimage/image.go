@@ -243,6 +243,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			}
 		}
 	}
+	if hasModulation(&cfg) {
+		if modularFlags == 0 {
+			return nil, imageError("modulators require the modular kernel module")
+		}
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -262,11 +267,14 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(version)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
+	flags := uint32(0)
 	if cfg.LoopSong {
-		w.u32(1)
-	} else {
-		w.u32(0)
+		flags |= 1
 	}
+	if hasModulation(&cfg) {
+		flags |= ModulatorFlag
+	}
+	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))
 	w.u32(cfg.Seed)
 	w.u32(uint32(cfg.SampleRate))
@@ -732,6 +740,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if modularFlags != 0 && hasModulation(&cfg) {
+		if err := writeModulation(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
 	if len(w.data) > MaxImageBytes {
 		return nil, imageError("project image exceeds 2 MiB")
 	}
@@ -774,7 +787,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != SharedImageVersion && version != GestureImageVersion && version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != SharedImageVersion && version != GestureImageVersion && version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^(1|modularFlags) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return imageError("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -1387,6 +1400,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	if version >= SharedImageVersion {
 		if err := readSharedGroups(&r, cfg); err != nil {
+			return err
+		}
+	}
+	if modularFlags != 0 && flags&ModulatorFlag != 0 {
+		if err := readModulation(&r, cfg); err != nil {
 			return err
 		}
 	}

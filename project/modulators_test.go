@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -20,7 +21,6 @@ pattern p { 1 . 3 . }
 
 func compileModulators(t *testing.T, body string) (*Project, []notation.Diagnostic) {
 	t.Helper()
-	defer notation.OpenModulatorGate()()
 	score, ds := notation.Parse([]byte(modulatorScore + body + "scene s { pad = p }\nsong { s*8 }\n"))
 	if score == nil || hasErrors(ds) {
 		return nil, ds
@@ -104,7 +104,6 @@ mod swell -> pad.pan depth = 0.3 add
 	if err != nil || !bytes.Equal(first, again) {
 		t.Fatalf("JSON is not stable: %v\n%s\n%s", err, first, again)
 	}
-	defer notation.OpenModulatorGate()()
 	source, err := ToSource(p)
 	if err != nil {
 		t.Fatal(err)
@@ -247,5 +246,55 @@ func TestLoopContinueFitAndWarning(t *testing.T) {
 	}
 	if len(warned) != 1 || !strings.Contains(warned[0], "lfo slow") || !strings.Contains(warned[0], "0.0625 Hz") || !strings.Contains(warned[0], "0.01 Hz") {
 		t.Fatalf("warnings = %q", warned)
+	}
+}
+
+// A compiled score carries its modulators into the engine: the tables hold
+// integers, and the project fits into the engine's validation.
+func TestModulatorsReachTheEngineConfig(t *testing.T) {
+	p, ds := compileModulators(t, `
+lfo drift { wave = triangle rate = 8bars phase = 0.25 }
+envelope duck { attack = 5ms release = 120ms source = drums }
+contour swell { period = 2bars @0 -1 @0.25 0.5 smooth @1 -1 }
+mod drift -> pad.pan depth = 0.15
+mod duck -> pad.level depth = -6dB
+mod swell -> pad.level depth = 0.5 multiply
+`)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	cfg, err := CompileEngine(p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Modulators) != 3 || len(cfg.Routes) != 3 {
+		t.Fatalf("%d modulators, %d routes", len(cfg.Modulators), len(cfg.Routes))
+	}
+	drift := cfg.Modulators[0]
+	if drift.RateTicks != 30720 || drift.PhaseQ32 != 1<<30 || drift.Wave != engine.ModWaveTriangle {
+		t.Fatalf("drift = %+v", drift)
+	}
+	if duck := cfg.Modulators[1]; duck.Source != 1 || duck.Attack == 0 || duck.Release >= duck.Attack {
+		t.Fatalf("duck = %+v", duck)
+	}
+	swell := cfg.Modulators[2]
+	if len(swell.Points) != 3 || swell.Points[0].Value != -1<<30 || swell.Points[1].At != 1<<30 || swell.Points[2].At != 1<<32 || swell.Points[1].Shape != engine.ModShapeSmooth {
+		t.Fatalf("swell = %+v", swell)
+	}
+	if r := cfg.Routes[1]; r.Track != 0 || r.Source != 1 || r.Depth != -6 || r.Multiply {
+		t.Fatalf("route 1 = %+v", r)
+	}
+	if !cfg.Routes[2].Multiply {
+		t.Fatal("multiply was lost")
+	}
+	if _, err := engine.New(cfg); err != nil {
+		t.Fatalf("engine refused the config: %v", err)
+	}
+}
+
+func TestUnroutableRowsAreRefusedByTheCompiler(t *testing.T) {
+	p, ds := compileModulators(t, "lfo a { rate = 1/4 }\nmod a -> pad.mute depth = 1\n")
+	if p != nil || !strings.Contains(firstCode(ds), "CICADA-ROUTE") {
+		t.Fatalf("mute was accepted or misreported: %v", ds)
 	}
 }

@@ -128,6 +128,8 @@ type Config struct {
 	Song       []SongEntry
 
 	Automation []cmd.Command    `json:",omitempty"`
+	Modulators []ModulatorSpec  `json:",omitempty"`
+	Routes     []RouteSpec      `json:",omitempty"`
 	Schedule   []ScheduleEvent  `json:",omitempty"`
 	Assets     []AudioAsset     `json:",omitempty"`
 	Streaming  StreamingFactory `json:"-"`
@@ -234,6 +236,7 @@ type Engine struct {
 	spatial                      spatialState
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
+	mod                          modState
 	macroCurrent                 [16]float32
 	macroStart                   [16]float32
 	macroTarget                  [16]float32
@@ -447,6 +450,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e.captureSceneDefaults()
 	if err := e.initStreaming(cfg); err != nil {
+		return nil, err
+	}
+	if err := e.loadModulation(cfg); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -1619,6 +1625,12 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		e.fault(FaultParam)
 		return
 	}
+	if modulationEnabled && e.mod.active && !e.mod.applying && !off && spec.Scope == "track" && int(c.Track) < e.tracks {
+		if t := e.mod.find(c.Track, kernel.ParamID(c.Index)); t != nil {
+			t.base = value
+			value = e.modEffective(t)
+		}
+	}
 	if spec.Scope == "track" {
 		if int(c.Track) >= e.tracks {
 			e.fault(FaultParam)
@@ -1636,7 +1648,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			}
 		case kernel.ParamMixGain:
 			positioned := &e.spatial.tracks[c.Track]
-			positioned.target = float32(math.Pow(10, float64(value)/20))
+			positioned.target = e.gainLinear(c.Track, value)
 			if off {
 				positioned.target = 0
 			}
@@ -1654,7 +1666,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			if off {
 				v.targetMix = mix.Track{}
 			} else {
-				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+				v.targetMix = e.trackMix(c.Track, v.gainDB, v.pan)
 			}
 			if immediate {
 				v.mix = v.targetMix
@@ -1664,7 +1676,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			if v.sourceOff {
 				v.targetMix = mix.Track{}
 			} else {
-				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+				v.targetMix = e.trackMix(c.Track, v.gainDB, v.pan)
 			}
 			if immediate {
 				v.mix = v.targetMix

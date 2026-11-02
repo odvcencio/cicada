@@ -330,6 +330,7 @@ func (e *Engine) flushPatternEdits() {
 // the move.
 func (e *Engine) seekTransport(tick int64) error {
 	e.flushPatternEdits()
+	e.mod.rebase = true
 	return e.transport.SeekTick(tick)
 }
 

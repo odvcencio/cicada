@@ -297,6 +297,8 @@ func checkRoute(p *Project, r ModRoute) *routeFault {
 		return &routeFault{"CICADA-ROUTE", r.Target + " is not a track row; routes reach track mixer and voice parameters"}
 	case !d.Live || !d.Automatable || d.Curve == "toggle" || d.Curve == "enum" || d.Unit == "enum":
 		return &routeFault{"CICADA-ROUTE", r.Target + " is not a continuous live row"}
+	case routableRow(resolved.ID) != "":
+		return &routeFault{"CICADA-ROUTE", routableRow(resolved.ID)}
 	case d.SmoothingMS <= 0:
 		return &routeFault{"CICADA-ROUTE", r.Target + " does not pass through the one-pole smoother"}
 	}
