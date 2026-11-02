@@ -25,7 +25,8 @@ func NewTrackTableLinear(gain, pan float32) Track {
 	// angle = (pan+1)*pi/4 is (pan+1)/8 of a cycle.
 	phase := uint32(float64(float64(pan)+1) * (1 << 29))
 	const q30 = 1.0 / (1 << 30)
-	left := float32(modulate.Sin(phase+1<<30)) * q30
-	right := float32(modulate.Sin(phase)) * q30
+	sin, cos := modulate.SinCosQuarter(phase)
+	left := float32(cos) * q30
+	right := float32(sin) * q30
 	return Track{Left: float32(gain * left), Right: float32(gain * right)}
 }

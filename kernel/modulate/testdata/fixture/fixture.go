@@ -39,6 +39,16 @@ func Digest() [32]byte {
 			}
 		}
 	}
+	for i := uint32(0); i < 8192; i++ {
+		phase := i * 0x9e3779b9
+		if i%2 == 0 {
+			phase &= 1<<30 - 1
+		}
+		sin, cos := modulate.SinCosQuarter(phase)
+		if sin != modulate.Sin(phase) || cos != modulate.Sin(phase+1<<30) {
+			panic("quarter-wave pair disagrees with sine")
+		}
+	}
 	points := []modulate.Point{
 		{At: 0, Value: -modulate.One, Shape: modulate.Linear},
 		{At: 1 << 30, Value: modulate.One, Shape: modulate.Smooth},

@@ -43,6 +43,22 @@ func TestSinAccuracy(t *testing.T) {
 	}
 }
 
+func TestSinCosQuarterMatchesIndividualSines(t *testing.T) {
+	rng := rand.New(rand.NewSource(26))
+	for i := 0; i < 100000; i++ {
+		phase := rng.Uint32()
+		if i < 4 {
+			phase = []uint32{0, 1, 1<<30 - 1, 1 << 30}[i]
+		} else if i%2 == 0 {
+			phase &= 1<<30 - 1
+		}
+		sin, cos := SinCosQuarter(phase)
+		if sin != Sin(phase) || cos != Sin(phase+1<<30) {
+			t.Fatalf("phase %d: got (%d, %d), want (%d, %d)", phase, sin, cos, Sin(phase), Sin(phase+1<<30))
+		}
+	}
+}
+
 // clockTick mirrors kernel/seq.Clock.TickAt for a clock anchored at 0: the tick
 // and the remainder over 60000*sampleRate.
 func clockTick(sample, bpmMilli, rate uint64) (tick, rem, den uint64) {

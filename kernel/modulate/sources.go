@@ -37,6 +37,22 @@ func Sin(phase uint32) int32 {
 	return v
 }
 
+// SinCosQuarter returns the sine and cosine for a phase in the first quarter
+// cycle. It shares the table lookup setup used by the mixer's pan law.
+// Other phases keep the general Sin behavior.
+func SinCosQuarter(phase uint32) (int32, int32) {
+	if phase > 1<<30 {
+		return Sin(phase), Sin(phase + 1<<30)
+	}
+	if phase == 1<<30 {
+		return One, 0
+	}
+	i, f := phase>>20, int64(phase&(1<<20-1))
+	a, b := int64(sineQuarter[i]), int64(sineQuarter[i+1])
+	hi, lo := int64(sineQuarter[1024-i]), int64(sineQuarter[1023-i])
+	return int32(a + (b-a)*f>>20), int32(hi + (lo-hi)*f>>20)
+}
+
 // triangle rises from 0 to +One at a quarter cycle, falls to -One at three
 // quarters and returns to 0.
 func triangle(phase uint32) int32 {
