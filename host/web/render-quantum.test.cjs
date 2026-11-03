@@ -98,7 +98,7 @@ test('page metrics and output timeline use the negotiated quantum with a legacy 
   assert.equal(audio.quantumMs(), 128000 / 48000);
 });
 
-test('output timeline does not count rounding at one quantum but counts a real excess', () => {
+test('output timeline heuristic ignores rounding at one quantum and counts threshold crossings', () => {
   for (const timestampTime of [2.6, 86400]) {
     const window = {};
     const context = vm.createContext({ window, performance: { now: () => 100 } });
@@ -111,9 +111,9 @@ test('output timeline does not count rounding at one quantum but counts a real e
     audio.playing = true;
     audio.sampleOutputTimeline();
     assert.equal(audio.outputTimeline.misses, 0, `exact quantum at ${timestampTime}s`);
-    audio.context.currentTime += .000001; // One microsecond beyond the boundary.
+    audio.context.currentTime += .000001; // One microsecond beyond the heuristic boundary.
     audio.sampleOutputTimeline();
-    assert.equal(audio.outputTimeline.misses, 1, `real excess at ${timestampTime}s`);
+    assert.equal(audio.outputTimeline.misses, 1, `threshold crossing at ${timestampTime}s`);
   }
 });
 
