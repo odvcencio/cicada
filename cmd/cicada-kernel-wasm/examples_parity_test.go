@@ -39,8 +39,10 @@ func TestExamplesPCM24Parity(t *testing.T) {
 	reference := os.Getenv("CICADA_PARITY_REFERENCE")
 	if reference != "" {
 		files, err := filepath.Glob(filepath.Join(reference, "*.pcm24"))
-		if err != nil || len(files) != len(paths)*2 {
-			t.Fatalf("reference corpus: %v (%d files, want %d)", err, len(files), len(paths)*2)
+		detailScores, _ := filepath.Glob(filepath.Join("..", "..", "examples", "detail", "*.cicada"))
+		want := len(paths)*2 + len(detailScores)*len(detailVectorRates)
+		if err != nil || len(files) != want {
+			t.Fatalf("reference corpus: %v (%d files, want %d)", err, len(files), want)
 		}
 	}
 	wasm, err := os.ReadFile(wasmModulePath())
@@ -54,8 +56,39 @@ func TestExamplesPCM24Parity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Spec 24: the detail layer's scores need the modular module (the default
+	// core refuses their images) and are rendered at 96 kHz as well.
+	type parityCase struct {
+		path     string
+		prefix   string
+		rates    []int
+		compiled wazero.CompiledModule
+	}
+	var cases []parityCase
 	for _, path := range paths {
-		t.Run(filepath.Base(path), func(t *testing.T) {
+		cases = append(cases, parityCase{path: path, rates: []int{44_100, 48_000}, compiled: compiled})
+	}
+	detailPaths, _ := filepath.Glob(filepath.Join("..", "..", "examples", "detail", "*.cicada"))
+	if len(detailPaths) > 0 {
+		modularPath := os.Getenv("CICADA_MODULAR_WASM_PATH")
+		if modularPath == "" {
+			modularPath = filepath.Join("..", "..", "build", "cicada-modular.wasm")
+		}
+		modularWASM, err := os.ReadFile(modularPath)
+		if err != nil {
+			t.Fatalf("modular module: %v", err)
+		}
+		modular, err := r.CompileModule(ctx, modularWASM)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range detailPaths {
+			cases = append(cases, parityCase{path: path, prefix: "detail-", rates: detailVectorRates, compiled: modular})
+		}
+	}
+	for _, c := range cases {
+		path, compiled := c.path, c.compiled
+		t.Run(c.prefix+filepath.Base(path), func(t *testing.T) {
 			score, diagnostics, err := project.LoadScore(path, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -69,7 +102,7 @@ func TestExamplesPCM24Parity(t *testing.T) {
 			if p == nil {
 				t.Fatalf("project: %v", diagnostics)
 			}
-			for _, rate := range []int{44_100, 48_000} {
+			for _, rate := range c.rates {
 				t.Run(sampleRateName(rate), func(t *testing.T) {
 					const blockSize = 128
 					cfg, err := project.CompileEngine(p, rate, blockSize)
@@ -150,7 +183,7 @@ func TestExamplesPCM24Parity(t *testing.T) {
 						}
 					}
 					frames := int(tempo.SampleAtTick(endTick)) + 3*rate
-					name := fmt.Sprintf("%s-%d.pcm24", filepath.Base(path), rate)
+					name := fmt.Sprintf("%s%s-%d.pcm24", c.prefix, filepath.Base(path), rate)
 					file, err := os.Create(filepath.Join(output, name))
 					if err != nil {
 						t.Fatal(err)

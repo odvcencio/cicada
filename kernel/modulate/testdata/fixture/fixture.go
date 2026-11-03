@@ -27,6 +27,28 @@ func Tick(sample, bpmMilli, rate uint64) (tick, rem, den uint64) {
 func Digest() [32]byte {
 	h := sha256.New()
 	var buf [4]byte
+	// Check the engine's reciprocal path against ordinary division in both
+	// native Go and TinyGo, including large ticks and difficult divisors.
+	for _, period := range []uint32{1, 2, 3, 7, 960, 7680, 1<<27 + 12345, 1 << 28} {
+		r := modulate.NewSyncedReciprocal(period)
+		for g := uint64(0); g < 1024; g++ {
+			tick := g*0x9e3779b97f4a7c15 + (1 << 63)
+			fraction := uint32(g * 0x85ebca6b)
+			if r.Position(tick, fraction, period) != modulate.SyncedPositionFraction(tick, fraction, uint64(period)) {
+				panic("synced reciprocal disagrees with division")
+			}
+		}
+	}
+	for i := uint32(0); i < 8192; i++ {
+		phase := i * 0x9e3779b9
+		if i%2 == 0 {
+			phase &= 1<<30 - 1
+		}
+		sin, cos := modulate.SinCosQuarter(phase)
+		if sin != modulate.Sin(phase) || cos != modulate.Sin(phase+1<<30) {
+			panic("quarter-wave pair disagrees with sine")
+		}
+	}
 	points := []modulate.Point{
 		{At: 0, Value: -modulate.One, Shape: modulate.Linear},
 		{At: 1 << 30, Value: modulate.One, Shape: modulate.Smooth},

@@ -1,0 +1,100 @@
+cicada 2
+
+title "Slow movement"
+
+tempo 118
+
+key a minor
+
+seed 4242
+
+// Two neutral voices: an acid line and a drum pattern. Nothing here changes a
+// note; the routes only move mixer and filter settings.
+track lead acid {
+  level = -8dB
+}
+
+track beat drums {
+  level = -6dB
+}
+
+pattern line acid {
+  1 . 3 . 5 . 3 . 1 . 3 . 6 . 5 .
+}
+
+pattern pulse drums {
+  bd: x... x... x... x.x.
+  ch: ..x. ..x. ..x. ..x.
+}
+
+// A tempo-synced triangle drifts the lead across the stereo field over 8 bars.
+lfo drift {
+  wave = triangle
+  rate = 8bars
+}
+
+// A square at a quarter note gates the drums a little.
+lfo throb {
+  wave = square
+  rate = 1/4
+}
+
+// A free-rate wave that fits whole cycles to the song, so it never jumps at the loop.
+lfo breath {
+  wave = sine
+  rate = 0.25Hz
+  loop = continue
+}
+
+// A stateless smooth random source, two layers deep.
+sway wander {
+  rate = 2bars
+  octaves = 2
+}
+
+// A drawn swell over four bars.
+contour swell {
+  period = 4bars
+  @0 -1
+  @1/4 1 smooth
+  @3/4 0.5 linear
+  @1 -1
+}
+
+// A sample-and-hold at 6 Hz, the fast end of what a route accepts.
+lfo steps {
+  wave = sample-hold
+  rate = 6Hz
+}
+
+// Follows the drums after the fader.
+envelope follow {
+  attack = 5ms
+  release = 120ms
+  source = beat
+}
+
+mod drift -> lead.pan depth = 0.5
+
+mod wander -> lead.level depth = 2dB
+
+mod swell -> lead.cutoff depth = 500Hz
+
+mod breath -> beat.level depth = 1.5dB
+
+mod throb -> beat.level depth = 0.5dB
+
+mod steps -> beat.pan depth = 0.2
+
+mod follow -> lead.level depth = -4dB
+
+mod drift -> lead.level depth = 0.25 multiply
+
+scene groove {
+  lead = line
+  beat = pulse
+}
+
+song {
+  groove*8
+}

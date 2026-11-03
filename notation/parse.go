@@ -159,6 +159,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 					namespace = "voice"
 				case "track_decl", "fx_decl", "bus_decl":
 					namespace = "mixer"
+				case "lfo_decl", "envelope_decl", "sway_decl", "contour_decl":
+					namespace = "modulator"
 				}
 				key := namespace + ":" + w.declaration(name)
 				if first, exists := seenNames[key]; exists {
@@ -264,6 +266,10 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				}
 			case "fx_decl":
 				s.Effects = append(s.Effects, parseEffect(w, n))
+			case "lfo_decl", "envelope_decl", "sway_decl", "contour_decl":
+				s.Modulators = append(s.Modulators, parseModulator(w, n, strings.TrimSuffix(kind, "_decl")))
+			case "mod_decl":
+				s.Routes = append(s.Routes, parseRoute(w, n))
 			}
 		}
 		expectedEdition := requestedEdition

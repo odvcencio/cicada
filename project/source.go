@@ -226,6 +226,11 @@ func ToSource(p *Project) ([]byte, error) {
 		out.WriteString("\n}")
 		sections = append(sections, out.String())
 	}
+	modulators, err := modulatorSources(p)
+	if err != nil {
+		return nil, err
+	}
+	sections = append(sections, modulators...)
 	for _, scene := range p.Scenes {
 		var out strings.Builder
 		out.WriteString("scene " + scene.ID + " {")

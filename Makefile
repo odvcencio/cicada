@@ -1,5 +1,5 @@
 .PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
-.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm
+.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm
 
 export GOWORK := off
 
@@ -222,6 +222,16 @@ build-vocals-wasm:
 		mv build/cicada-vocals.optimized.wasm build/cicada-vocals.wasm'
 	go run ./cmd/cicada-wasm-size --report-only build/cicada-vocals.wasm
 
+# Optional modulator module: the vocals module's tags plus the detail layer
+# (spec 24). Images with header flag bit 1 need it; the default core refuses them.
+build-modular-wasm:
+	mkdir -p build
+	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
+		tinygo build -tags modular,trackfx,cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-modular.wasm ./cmd/cicada-kernel-wasm && \
+		sh scripts/wasm-opt.sh -Oz build/cicada-modular.wasm -o build/cicada-modular.optimized.wasm && \
+		mv build/cicada-modular.optimized.wasm build/cicada-modular.wasm'
+	go run ./cmd/cicada-wasm-size --report-only build/cicada-modular.wasm
+
 build-loudness-wasm:
 	mkdir -p build
 	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
@@ -250,9 +260,9 @@ test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs
 	bash -o pipefail -c 'CICADA_CHORD_WASM_PATH="$(CURDIR)/build/cicada-kernel.wasm" go test -timeout=2m -tags chord_wasm ./cmd/cicada-kernel-wasm -run "^TestChordWASM" -count=1 -v | tee build/chord-wasm-report.txt build/test-chord-wasm.log'
 
-test-parity: build-kernel-wasm
+test-parity: build-kernel-wasm build-modular-wasm
 	mkdir -p build/parity
-	bash -o pipefail -c 'CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
+	bash -o pipefail -c 'CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v

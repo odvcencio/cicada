@@ -1,9 +1,26 @@
 package fastmath
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
 	"math"
 	"testing"
 )
+
+func TestExp2FinitePreservesReferenceBits(t *testing.T) {
+	h := sha256.New()
+	var buf [8]byte
+	for i := 0; i <= 100_000; i++ {
+		x := -32 + 64*float64(i)/100_000
+		binary.LittleEndian.PutUint64(buf[:], math.Float64bits(Exp2Finite(x)))
+		_, _ = h.Write(buf[:])
+	}
+	const want = "480e2e0b6d59c3792310850fceb1427881e8c119e48921b1e67d44b9432e4444"
+	if got := fmt.Sprintf("%x", h.Sum(nil)); got != want {
+		t.Fatalf("finite exp2 changed reference bits: %s", got)
+	}
+}
 
 func TestExp2GridAndAnchors(t *testing.T) {
 	if math.Float64bits(Exp2(0)) != math.Float64bits(1) || math.Float64bits(Exp2(1)) != math.Float64bits(2) {
@@ -20,6 +37,17 @@ func TestExp2GridAndAnchors(t *testing.T) {
 	}
 	if maxRelative > 1e-6 {
 		t.Fatalf("exp2 max relative error %g", maxRelative)
+	}
+}
+
+func TestExp2SpecialInputs(t *testing.T) {
+	for _, tc := range []struct{ in, want float64 }{
+		{math.NaN(), 0}, {math.Inf(-1), Exp2Finite(-32)},
+		{math.Inf(1), Exp2Finite(32)}, {math.Copysign(0, -1), 1},
+	} {
+		if got := Exp2(tc.in); math.Float64bits(got) != math.Float64bits(tc.want) {
+			t.Fatalf("Exp2(%g) = %g, want %g", tc.in, got, tc.want)
+		}
 	}
 }
 

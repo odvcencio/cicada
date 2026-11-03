@@ -128,6 +128,8 @@ type Config struct {
 	Song       []SongEntry
 
 	Automation []cmd.Command    `json:",omitempty"`
+	Modulators []ModulatorSpec  `json:",omitempty"`
+	Routes     []RouteSpec      `json:",omitempty"`
 	Schedule   []ScheduleEvent  `json:",omitempty"`
 	Assets     []AudioAsset     `json:",omitempty"`
 	Streaming  StreamingFactory `json:"-"`
@@ -234,6 +236,7 @@ type Engine struct {
 	spatial                      spatialState
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
+	mod                          modState
 	macroCurrent                 [16]float32
 	macroStart                   [16]float32
 	macroTarget                  [16]float32
@@ -447,6 +450,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e.captureSceneDefaults()
 	if err := e.initStreaming(cfg); err != nil {
+		return nil, err
+	}
+	if err := e.loadModulation(cfg); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -1604,11 +1610,12 @@ func (e *Engine) setParam(c cmd.Command) { e.setParamMode(c, false) }
 func (e *Engine) setParamImmediate(c cmd.Command) { e.setParamMode(c, true) }
 
 func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
-	spec, ok := kernel.Param(kernel.ParamID(c.Index))
-	if !ok || !spec.Live {
+	id := kernel.ParamID(c.Index)
+	if int(id) >= len(kernel.Params) || kernel.Params[id].ID != id || !kernel.Params[id].Live {
 		e.fault(FaultParam)
 		return
 	}
+	spec := &kernel.Params[id]
 	value := math.Float32frombits(c.Arg0)
 	off := spec.Off && math.IsInf(float64(value), -1)
 	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
@@ -1618,6 +1625,15 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 	if spec.Curve == "toggle" && value != 0 && value != 1 || keysEnabled && kernel.IsInteger(kernel.ParamID(c.Index)) && value != float32(int32(value)) {
 		e.fault(FaultParam)
 		return
+	}
+	if modulationEnabled && e.mod.active && !e.mod.applying && spec.Scope == "track" && int(c.Track) < e.tracks {
+		if t := e.mod.find(c.Track, kernel.ParamID(c.Index)); t != nil {
+			t.off = off
+			if !off {
+				t.base = value
+				value = e.modEffective(t)
+			}
+		}
 	}
 	if spec.Scope == "track" {
 		if int(c.Track) >= e.tracks {
@@ -1636,7 +1652,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			}
 		case kernel.ParamMixGain:
 			positioned := &e.spatial.tracks[c.Track]
-			positioned.target = float32(math.Pow(10, float64(value)/20))
+			positioned.target = e.gainLinear(c.Track, value)
 			if off {
 				positioned.target = 0
 			}
@@ -1645,6 +1661,12 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			}
 			v.gainDB = value
 			v.sourceOff = off
+			if modulationEnabled && e.mod.applying {
+				// A routed gain changes sound, not the authored layer mask.
+				// Batch the mix rebuild with any routed pan for this track.
+				e.mod.mixDirty |= uint64(1) << c.Track
+				break
+			}
 			if off {
 				e.layerAuthored &^= 1 << c.Track
 			} else {
@@ -1654,17 +1676,21 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			if off {
 				v.targetMix = mix.Track{}
 			} else {
-				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+				v.targetMix = e.trackMix(c.Track, v.gainDB, v.pan)
 			}
 			if immediate {
 				v.mix = v.targetMix
 			}
 		case kernel.ParamMixPan:
 			v.pan = value
+			if modulationEnabled && e.mod.applying {
+				e.mod.mixDirty |= uint64(1) << c.Track
+				break
+			}
 			if v.sourceOff {
 				v.targetMix = mix.Track{}
 			} else {
-				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+				v.targetMix = e.trackMix(c.Track, v.gainDB, v.pan)
 			}
 			if immediate {
 				v.mix = v.targetMix

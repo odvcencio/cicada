@@ -73,6 +73,9 @@ func ValidateProject(p *Project) error {
 	if err := validateAutomation(p); err != nil {
 		return err
 	}
+	if err := validateModulators(p); err != nil {
+		return err
+	}
 	if p.Edition != 1 && p.Edition != 2 {
 		return fmt.Errorf("CICADA-VERSION: only cicada 1 and 2 are supported")
 	}

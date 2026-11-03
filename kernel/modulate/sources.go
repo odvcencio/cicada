@@ -37,6 +37,22 @@ func Sin(phase uint32) int32 {
 	return v
 }
 
+// SinCosQuarter returns the sine and cosine for a phase in the first quarter
+// cycle. It shares the table lookup setup used by the mixer's pan law.
+// Other phases keep the general Sin behavior.
+func SinCosQuarter(phase uint32) (int32, int32) {
+	if phase > 1<<30 {
+		return Sin(phase), Sin(phase + 1<<30)
+	}
+	if phase == 1<<30 {
+		return One, 0
+	}
+	i, f := phase>>20, int64(phase&(1<<20-1))
+	a, b := int64(sineQuarter[i]), int64(sineQuarter[i+1])
+	hi, lo := int64(sineQuarter[1024-i]), int64(sineQuarter[1023-i])
+	return int32(a + (b-a)*f>>20), int32(hi + (lo-hi)*f>>20)
+}
+
 // triangle rises from 0 to +One at a quarter cycle, falls to -One at three
 // quarters and returns to 0.
 func triangle(phase uint32) int32 {
@@ -89,6 +105,27 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 	if octaves > 4 {
 		octaves = 4
 	}
+	if octaves == 4 {
+		const stride = uint64(0x9e3779b97f4a7c15)
+		prefix := uint64(seed) ^ uint64(DomainSway)<<56 ^ uint64(0xFF)<<32 ^ uint64(index)<<40
+		q0, q1 := p, p.Scale(1)
+		k0, k1 := q0.Cycle*stride, q1.Cycle*stride
+		x0, x1 := (prefix^k0)+stride, (prefix^(k0+stride))+stride
+		x2, x3 := (prefix^1<<48^k1)+stride, (prefix^1<<48^(k1+stride))+stride
+		x0, x1, x2, x3 = swayMixFirst(x0), swayMixFirst(x1), swayMixFirst(x2), swayMixFirst(x3)
+		x0, x1, x2, x3 = swayMixSecond(x0), swayMixSecond(x1), swayMixSecond(x2), swayMixSecond(x3)
+		sum := int64(lerp(swayDraw(x0), swayDraw(x1), smooth(q0.Phase))) << 3
+		sum += int64(lerp(swayDraw(x2), swayDraw(x3), smooth(q1.Phase))) << 2
+		q0, q1 = p.Scale(2), p.Scale(3)
+		k0, k1 = q0.Cycle*stride, q1.Cycle*stride
+		x0, x1 = (prefix^2<<48^k0)+stride, (prefix^2<<48^(k0+stride))+stride
+		x2, x3 = (prefix^3<<48^k1)+stride, (prefix^3<<48^(k1+stride))+stride
+		x0, x1, x2, x3 = swayMixFirst(x0), swayMixFirst(x1), swayMixFirst(x2), swayMixFirst(x3)
+		x0, x1, x2, x3 = swayMixSecond(x0), swayMixSecond(x1), swayMixSecond(x2), swayMixSecond(x3)
+		sum += int64(lerp(swayDraw(x0), swayDraw(x1), smooth(q0.Phase))) << 1
+		sum += int64(lerp(swayDraw(x2), swayDraw(x3), smooth(q1.Phase)))
+		return int32(sum / 15)
+	}
 	var sum int64
 	for o := uint(0); o < octaves; o++ {
 		q := p.Scale(o)
@@ -98,6 +135,12 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 	}
 	return int32(sum / (1<<octaves - 1))
 }
+
+// These inline the two SplitMix rounds. The last Hash xor cannot affect the
+// high 30 bits used by draw, so swayDraw needs only the preceding result.
+func swayMixFirst(x uint64) uint64  { return (x ^ x>>30) * 0xbf58476d1ce4e5b9 }
+func swayMixSecond(x uint64) uint64 { return (x ^ x>>27) * 0x94d049bb133111eb }
+func swayDraw(x uint64) int32       { return int32(2*int64(x>>34) - (One - 1)) }
 
 // SwayFitted wraps each octave's random endpoints at the fitted loop boundary.
 // Without this, the last segment approaches a different value from the first.

@@ -43,6 +43,22 @@ func TestSinAccuracy(t *testing.T) {
 	}
 }
 
+func TestSinCosQuarterMatchesIndividualSines(t *testing.T) {
+	rng := rand.New(rand.NewSource(26))
+	for i := 0; i < 100000; i++ {
+		phase := rng.Uint32()
+		if i < 4 {
+			phase = []uint32{0, 1, 1<<30 - 1, 1 << 30}[i]
+		} else if i%2 == 0 {
+			phase &= 1<<30 - 1
+		}
+		sin, cos := SinCosQuarter(phase)
+		if sin != Sin(phase) || cos != Sin(phase+1<<30) {
+			t.Fatalf("phase %d: got (%d, %d), want (%d, %d)", phase, sin, cos, Sin(phase), Sin(phase+1<<30))
+		}
+	}
+}
+
 // clockTick mirrors kernel/seq.Clock.TickAt for a clock anchored at 0: the tick
 // and the remainder over 60000*sampleRate.
 func clockTick(sample, bpmMilli, rate uint64) (tick, rem, den uint64) {
@@ -242,6 +258,49 @@ func TestSwayIsSmoothAndBounded(t *testing.T) {
 		// 2^(octaves-1)*1.5 of full swing per period.
 		if limit := int64(One) * 3 << octaves / 1024; biggest > limit {
 			t.Errorf("octaves %d: step %d exceeds %d", octaves, biggest, limit)
+		}
+	}
+}
+
+func TestFourOctaveSwayMatchesReference(t *testing.T) {
+	rng := rand.New(rand.NewSource(24))
+	for i := 0; i < 10000; i++ {
+		seed, slot := rng.Uint32(), uint8(rng.Uint32())
+		p := Position{Cycle: rng.Uint64(), Phase: rng.Uint32()}
+		if i < 6 {
+			p.Cycle = ^uint64(0) - uint64(i/3)
+			p.Phase = []uint32{0, 1 << 31, ^uint32(0)}[i%3]
+		}
+		var sum int64
+		for o := uint(0); o < 4; o++ {
+			q := p.Scale(o)
+			a := draw(Hash(seed, DomainSway, 0xFF, slot, uint8(o), q.Cycle))
+			b := draw(Hash(seed, DomainSway, 0xFF, slot, uint8(o), q.Cycle+1))
+			sum += int64(lerp(a, b, smooth(q.Phase))) << (3 - o)
+		}
+		if got, want := Sway(seed, slot, 4, p), int32(sum/15); got != want {
+			t.Fatalf("Sway(%d, %d, 4, %+v) = %d, want %d", seed, slot, p, got, want)
+		}
+	}
+}
+
+func TestSyncedReciprocalMatchesDivision(t *testing.T) {
+	rng := rand.New(rand.NewSource(25))
+	periods := []uint32{1, 2, 3, 7, 960, 1<<28 - 1, 1 << 28}
+	for i := 0; i < 100000; i++ {
+		period := uint32(rng.Int31n(1<<28) + 1)
+		if i < len(periods) {
+			period = periods[i]
+		}
+		tick, fraction := rng.Uint64(), rng.Uint32()
+		if i%10 == 0 {
+			tick = ^uint64(0) - uint64(i)
+		}
+		reciprocal := NewSyncedReciprocal(period)
+		got := reciprocal.Position(tick, fraction, period)
+		want := SyncedPositionFraction(tick, fraction, uint64(period))
+		if got != want {
+			t.Fatalf("period %d tick %d fraction %d: got %+v, want %+v", period, tick, fraction, got, want)
 		}
 	}
 }

@@ -84,3 +84,9 @@
 (performance_pattern name: (identifier) @name) @definition.pattern
 (performed_group name: (identifier) @name) @definition.binding
 (performed_note group: (identifier) @name) @reference.binding
+
+(lfo_decl name: (identifier) @name) @definition.modulator
+(envelope_decl name: (identifier) @name) @definition.modulator
+(sway_decl name: (identifier) @name) @definition.modulator
+(contour_decl name: (identifier) @name) @definition.modulator
+(mod_decl source: (identifier) @name) @reference.modulator

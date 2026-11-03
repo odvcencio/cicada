@@ -47,6 +47,9 @@ func (e *Engine) parallelSegmentFrames(remaining int) int {
 	if tempo, tick := e.transport.PendingTempo(); tempo != 0 {
 		limitTick(tick)
 	}
+	if frames, ok := e.nextGridFrames(); ok && frames < count {
+		count = frames
+	}
 	if e.automationIndex < len(e.automation) {
 		tick := e.automation[e.automationIndex].Tick
 		if e.loopSong && e.automationCycle > 0 {

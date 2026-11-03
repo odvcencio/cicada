@@ -36,6 +36,9 @@ func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR
 		return false
 	}
 	e.advanceAutomation()
+	if modulationEnabled {
+		e.advanceModulation()
+	}
 	e.advanceDirector()
 	e.processBarBoundary()
 	if e.faulted {
@@ -185,6 +188,9 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 			if e.compSidechainTrack == track+1 {
 				sideL, sideR = trackL, trackR
 			}
+		}
+		if modulationEnabled && e.mod.watch&(uint64(1)<<track) != 0 {
+			e.modPeak(track, trackL, trackR)
 		}
 		if e.taps != nil {
 			e.taps[frame].Tracks[track] = Stereo{trackL, trackR}

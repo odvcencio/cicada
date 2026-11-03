@@ -518,8 +518,11 @@ func compareMessageLogs(t *testing.T, wasm, native []cmd.Message) {
 }
 
 func sampleRateName(rate int) string {
-	if rate == 44_100 {
+	switch rate {
+	case 44_100:
 		return "44.1kHz"
+	case 96_000:
+		return "96kHz"
 	}
 	return "48kHz"
 }
