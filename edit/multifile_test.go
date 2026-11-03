@@ -142,6 +142,8 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"removearrangementtempo": &edits.RemoveArrangementTempo{At: "@2.1.1"},
 		"setautomationpoint":     &edits.SetAutomationPoint{Entity: "param:lead.level", At: "@2.1.1", Value: "-3dB"},
 		"removeautomationpoint":  &edits.RemoveAutomationPoint{Entity: "param:lead.level", At: "@2.1.1"},
+		"addmodulator":           &edits.AddModulator{SourceKind: "lfo", Name: "drift", Rate: "1/4", Wave: "sine"},
+		"modulationroute":        &edits.ModulationRoute{Operation: "add", Source: "drift", Target: "lead.pan", Mode: "add", Depth: "0.2"},
 		"placesamplerprint":      &edits.PlaceSamplerPrint{Name: "print", Track: "vox", At: "@9.1.1", Asset: edits.PrintAsset{Path: "print.wav", SHA256: strings.Repeat("c", 64), Frames: 480, RateHz: 48000}},
 		"placevocalcomp":         &edits.PlaceVocalComp{Comp: edits.VocalComp{Track: "vox", Tempo: 120000, Segments: []edits.VocalSegment{{Take: "t", Start: 0, End: 3840}}, Asset: "comp"}, Asset: edits.PrintAsset{Path: "comp.wav", SHA256: strings.Repeat("d", 64), Frames: 480, RateHz: 48000}},
 	}
@@ -275,6 +277,10 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 					case "setautomationpoint":
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 0 || !bytes.Contains(result.Source, []byte("automate lead.level")) {
 							t.Fatalf("new entry automation changed a referenced declaration: %v %v", result != nil, err)
+						}
+					case "addmodulator":
+						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 0 || !bytes.Contains(result.Source, []byte("lfo drift")) {
+							t.Fatalf("new source changed another file: %v %v", result != nil, err)
 						}
 					case "placevocalcomp":
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("automate lead.cutoff")) || !bytes.Contains(result.Files[0].After, []byte("place vocal-vox")) {

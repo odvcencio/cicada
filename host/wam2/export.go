@@ -24,11 +24,13 @@ import (
 var assets embed.FS
 
 type Options struct {
-	KernelPath       string
-	VocalsKernelPath string
-	KeysKernelPath   string
-	SDKPath          string
-	MIDITrack        string
+	KernelPath            string
+	VocalsKernelPath      string
+	KeysKernelPath        string
+	ModularKernelPath     string
+	KeysModularKernelPath string
+	SDKPath               string
+	MIDITrack             string
 }
 
 type macro struct {
@@ -115,7 +117,12 @@ func Export(p *project.Project, root, output string, o Options) error {
 		if _, selected := files["kernel.wasm"]; !selected {
 			path, target := o.KernelPath, "build-kernel-wasm"
 			required := binary.LittleEndian.Uint16(image[30:32])
-			if required&kernelimage.KeysCapability != 0 {
+			modular := binary.LittleEndian.Uint32(image[8:12])&kernelimage.ModulatorFlag != 0
+			if modular && required&kernelimage.KeysCapability != 0 {
+				path, target = optionalKernelPath(o.KernelPath, o.KeysModularKernelPath, "cicada-keys-modular.wasm"), "build-keys-modular-wasm"
+			} else if modular {
+				path, target = optionalKernelPath(o.KernelPath, o.ModularKernelPath, "cicada-modular.wasm"), "build-modular-wasm"
+			} else if required&kernelimage.KeysCapability != 0 {
 				path, target = optionalKernelPath(o.KernelPath, o.KeysKernelPath, "cicada-keys.wasm"), "build-keys-wasm"
 			} else if required&kernelimage.TrackEffectsCapability != 0 {
 				path, target = optionalKernelPath(o.KernelPath, o.VocalsKernelPath, "cicada-vocals.wasm"), "build-vocals-wasm"

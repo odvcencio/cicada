@@ -12,6 +12,26 @@ func (s *studio) editAutomation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if edit.Action == "mod-source-add" || edit.Action == "mod-route" {
+		var intent edits.Intent
+		if edit.Action == "mod-source-add" {
+			var source edits.AddModulator
+			if err := json.Unmarshal(edit.Value, &source); err != nil {
+				studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a modulation source"})
+				return
+			}
+			intent = &source
+		} else {
+			var route edits.ModulationRoute
+			if err := json.Unmarshal(edit.Value, &route); err != nil {
+				studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a modulation route"})
+				return
+			}
+			intent = &route
+		}
+		s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
+		return
+	}
 	if edit.Action == "automation-point-set" || edit.Action == "automation-point-remove" {
 		edition, err := mixerSourceEdition(s.path)
 		if err != nil || edition < 2 {

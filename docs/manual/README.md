@@ -55,9 +55,9 @@ The starter plays three tracks: drums, an FM bass line, and chords on the
 poly keys patch. Its second scene, `break`, stops the drums, so the song has
 two parts. The bass and chords use built-in keyboard patches, which `play`,
 Studio and `render` run natively. A browser page needs the separate keyboard
-module for them: Studio's Browser audio mode loads it once you build it with
-`make build-keys-wasm`, and the [browser demo](browser-demo.md) runs only the
-core kernel, which refuses them (see
+module for them: the portable AudioWorklet and WAM host use the module built
+with `make build-keys-wasm`, and the [browser demo](browser-demo.md) runs only
+the core kernel, which refuses them (see
 [Electronic keyboards](keys.md#native-and-browser-playback)).
 
 The manifest selects edition 2, so `main.cicada` does not need an edition
@@ -88,6 +88,7 @@ together.
 - [Audition](audition.md) — check what a score sounds like: heard key, chords,
   per-track level, brightness, decay and rhythm, with images.
 - [Live playback and mixing](next-level.md) — use native audio, host macros, MIDI, and mixer settings.
+- [Modulation](modulation.md) — create sources and route them to track controls.
 - [Hosting the engine](engine-host.md) — integrate Cicada's Go or TinyGo audio
   engine.
 - [Engine scaling measurements](engine-metrics.md) — run synthetic sessions

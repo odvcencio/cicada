@@ -618,6 +618,12 @@ func (s *studio) kernelWASM(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("keys") == "1" {
 		locate = locateKeysWASM
 	}
+	if r.URL.Query().Get("modular") == "1" {
+		locate = locateModularWASM
+	}
+	if r.URL.Query().Get("keys-modular") == "1" {
+		locate = locateKeysModularWASM
+	}
 	path, err := locate()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -643,6 +649,14 @@ func locateVocalsWASM() (string, error) {
 
 func locateKeysWASM() (string, error) {
 	return locateAudioWASM("CICADA_KEYS_WASM", "cicada-keys.wasm", "build-keys-wasm")
+}
+
+func locateModularWASM() (string, error) {
+	return locateAudioWASM("CICADA_MODULAR_WASM", "cicada-modular.wasm", "build-modular-wasm")
+}
+
+func locateKeysModularWASM() (string, error) {
+	return locateAudioWASM("CICADA_KEYS_MODULAR_WASM", "cicada-keys-modular.wasm", "build-keys-modular-wasm")
 }
 
 func locateAudioWASM(environment, filename, target string) (string, error) {

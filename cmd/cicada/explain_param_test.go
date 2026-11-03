@@ -58,6 +58,7 @@ automate bass.cutoff {
   @1.4.1 1600Hz smooth
   @2.1.1 1200Hz step
 }
+
 song { first second*2 }
 `
 	path := filepath.Join(t.TempDir(), "main.cicada")
@@ -85,6 +86,37 @@ song { first second*2 }
 				t.Fatalf("unexpected explanation:\n%s", text)
 			}
 		})
+	}
+}
+
+func TestExplainParameterShowsModulationWithoutClaimingPlaybackValue(t *testing.T) {
+	source := `cicada 2
+tempo 120
+track bass acid { cutoff = 700Hz }
+pattern pulse { 1 . }
+scene first { bass = pulse }
+song { first*2 }
+lfo drift { rate = 1/4 wave = triangle }
+sway wander { rate = 2bars }
+mod drift -> bass.cutoff depth = 500Hz
+mod wander -> bass.cutoff depth = 0.2 multiply
+`
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := explainParameter(path, "bass.cutoff", "@1", &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, want := range []string{"computed before modulation: 700Hz", "drift (lfo): add depth 500Hz", "wander (sway): multiply depth 0.2", "playback value depends on source signals"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("explanation lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Index(text, "drift (lfo)") > strings.Index(text, "wander (sway)") || strings.Contains(text, "computed: 700Hz") {
+		t.Fatalf("route order or value label is misleading:\n%s", text)
 	}
 }
 

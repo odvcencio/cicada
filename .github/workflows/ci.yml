@@ -108,6 +108,7 @@ jobs:
           path: |
             build/cicada-kernel.wasm
             build/cicada-modular.wasm
+            build/cicada-keys-modular.wasm
             build/parity/*.pcm24
             build/parity/report.txt
 
@@ -144,6 +145,9 @@ jobs:
           CICADA_PARITY_DIR="$PWD/build/parity" \
           go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
             -run '^TestExamplesPCM24Parity$' -count=1 -v | tee build/parity/report.txt
+          CICADA_KEYS_MODULAR_WASM_PATH="$PWD/build/amd64-reference/cicada-keys-modular.wasm" \
+          go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
+            -run '^TestKeysModularWASMParity$' -count=1 -v | tee -a build/parity/report.txt
       - name: Require the modulator sources to match their reference digest on arm64
         run: |
           set -euo pipefail

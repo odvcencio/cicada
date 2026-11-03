@@ -126,6 +126,9 @@ func Parse(source []byte) (*project.Project, error) {
 	if p.NeedsKeysEngine() {
 		return nil, fmt.Errorf("keyboard instruments are unavailable in this demo; choose a modeled instrument, acid bass, or an authored synth")
 	}
+	if len(p.Modulators) != 0 || len(p.Routes) != 0 {
+		return nil, fmt.Errorf("modulation is unavailable in this demo; use native Studio or a modular AudioWorklet host")
+	}
 	if err := project.ValidateProject(p); err != nil {
 		return nil, err
 	}

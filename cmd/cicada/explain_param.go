@@ -101,7 +101,34 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 			}
 		}
 	}
-	fmt.Fprintf(output, "computed: %s\n", computedText)
+	var routes []project.ModRoute
+	for _, route := range compiled.Routes {
+		if route.Target == lookup {
+			routes = append(routes, route)
+		}
+	}
+	if len(routes) == 0 {
+		fmt.Fprintf(output, "computed: %s\n", computedText)
+		return nil
+	}
+	fmt.Fprintf(output, "computed before modulation: %s\n", computedText)
+	fmt.Fprintln(output, "modulation routes (in declaration order):")
+	for _, route := range routes {
+		kind := "source"
+		for _, source := range compiled.Modulators {
+			if source.ID == route.Source {
+				kind = source.Kind
+				break
+			}
+		}
+		depth := "?"
+		if route.Depth.Number != nil {
+			depth = strconv.FormatFloat(*route.Depth.Number, 'f', -1, 64)
+			depth += map[string]string{"db": "dB", "hz": "Hz", "ms": "ms"}[route.Depth.Unit]
+		}
+		fmt.Fprintf(output, "  %s (%s): %s depth %s\n", route.Source, kind, route.Mode, depth)
+	}
+	fmt.Fprintln(output, "playback value depends on source signals, live state and smoothing")
 	return nil
 }
 

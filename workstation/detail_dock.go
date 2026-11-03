@@ -254,7 +254,8 @@ func builtinControlValue(descriptor paramdefs.Descriptor, value any) string {
 func (s *studioApp) automationDock(ctx *server.Context, v workspace, csrf string) gosx.Node {
 	curve := s.continuousAutomation(ctx, v, csrf)
 	scenes := s.automation(ctx, v, csrf)
-	if gosx.RenderHTML(curve) == "" && gosx.RenderHTML(scenes) == "" {
+	modulation := s.modulationDock(v, csrf)
+	if gosx.RenderHTML(curve) == "" && gosx.RenderHTML(scenes) == "" && gosx.RenderHTML(modulation) == "" {
 		description := "Place a pattern or audio clip in the song to begin automating track and effect parameters."
 		if v.Project.Edition < 2 {
 			description = "This score uses scene automation. Add a scene and song section to set parameter changes at scene boundaries; edition 2 also supports drawn curves."
@@ -267,7 +268,7 @@ func (s *studioApp) automationDock(ctx *server.Context, v workspace, csrf string
 	query := current.Query()
 	query.Set("dock", "automation")
 	current.RawQuery = query.Encode()
-	node := shellLinks(&current, gosx.Fragment(curve, scenes))
+	node := shellLinks(&current, gosx.Fragment(curve, modulation, scenes))
 	rendered := gosx.RenderHTML(node)
 	rendered = dockReturnField.ReplaceAllStringFunc(rendered, func(match string) string {
 		parts := dockReturnField.FindStringSubmatch(match)
