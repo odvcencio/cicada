@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
@@ -45,7 +46,7 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 		case source.RateMicroHz > 0:
 			detail += " · " + strconv.FormatFloat(float64(source.RateMicroHz)/1e6, 'f', -1, 64) + " Hz"
 		case source.RateTicks > 0:
-			detail += fmt.Sprintf(" · %d ticks per cycle", source.RateTicks)
+			detail += " · " + modulationPeriod(source.RateTicks)
 		}
 		sourceRows = append(sourceRows, gosx.El("li", gosx.El("strong", gosx.Text(source.ID)), gosx.Text(" · "+detail)))
 	}
@@ -81,4 +82,29 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 		gosx.El("h3", gosx.Text("Sources")), gosx.El("ul", gosx.Fragment(sourceRows...)), addSource,
 		gosx.El("h3", gosx.Text("Routes")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Routes apply in order. Add depth uses the target unit, such as 2dB or 500Hz; multiply uses a plain factor. Edit source settings and contour points in Code.")),
 		gosx.El("ol", gosx.Fragment(rows...)), addRoute)
+}
+
+func modulationPeriod(ticks int64) string {
+	if ticks%seq.TicksPerBar == 0 {
+		bars := ticks / seq.TicksPerBar
+		if bars == 1 {
+			return "1 bar per cycle"
+		}
+		return fmt.Sprintf("%d bars per cycle", bars)
+	}
+	beats, remainder := ticks/seq.PPQ, ticks%seq.PPQ
+	if remainder == 0 {
+		if beats == 1 {
+			return "1 beat per cycle"
+		}
+		return fmt.Sprintf("%d beats per cycle", beats)
+	}
+	a, b := ticks, seq.PPQ
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if ticks < seq.PPQ {
+		return fmt.Sprintf("%d/%d of a beat per cycle", ticks/a, seq.PPQ/a)
+	}
+	return fmt.Sprintf("%d/%d beats per cycle", ticks/a, seq.PPQ/a)
 }
