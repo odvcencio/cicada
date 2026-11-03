@@ -6,6 +6,13 @@ another track. The score stores both the source and its routes, so playback,
 seek, and offline rendering use the same declarations.
 
 ```cicada
+cicada 2
+tempo 118
+track lead acid { level = -8dB }
+track beat drums { level = -6dB }
+pattern line acid { 1 . 3 . 5 . 3 . }
+pattern pulse drums { bd: x... x... x... x... }
+
 lfo drift { wave = triangle rate = 8bars }
 sway wander { rate = 2bars octaves = 2 }
 envelope drums-level { source = beat attack = 5ms release = 120ms }
@@ -15,9 +22,12 @@ mod drift -> lead.pan depth = 0.5
 mod wander -> lead.level depth = 2dB
 mod swell -> lead.cutoff depth = 500Hz
 mod drums-level -> lead.level depth = -4dB
+
+scene groove { lead = line beat = pulse }
+song { groove*8 }
 ```
 
-The score must declare the `lead` and `beat` tracks. The complete example is
+For more sources and routes, see
 [`examples/detail/modulators.cicada`](../../examples/detail/modulators.cicada).
 
 LFO waves are `sine`, `triangle`, `square`, and `sample-hold`. LFO and sway
