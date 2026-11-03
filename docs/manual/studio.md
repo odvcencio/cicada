@@ -272,7 +272,7 @@ create a fresh fixture with `CICADA_ELASTIC_ALBUM_FIXTURE=/absolute/new/director
 go test ./cmd/cicada -run '^TestElasticAlbumWorkflow$' -count=1`, then use
 `desktop/smoke.py --mode normal --app /path/to/Cicada\ Studio.app --output /path/to/proof
 --project-fixture /absolute/new/directory/anywhere-you-are.cicada
---workflow desktop/testdata/native-elastic-automation-workflow.js --timeout 90`.
+--workflow desktop/testdata/native-elastic-automation-workflow.js --timeout 120`.
 The smoke app uses null audio, isolated browser/state directories, and a disposable
 project copy. It never opens a microphone or edits the original project.
 
