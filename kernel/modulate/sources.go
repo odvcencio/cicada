@@ -106,19 +106,24 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 		octaves = 4
 	}
 	if octaves == 4 {
-		q0, q1, q2, q3 := p, p.Scale(1), p.Scale(2), p.Scale(3)
-		a0 := draw(Hash(seed, DomainSway, 0xFF, index, 0, q0.Cycle))
-		b0 := draw(Hash(seed, DomainSway, 0xFF, index, 0, q0.Cycle+1))
-		a1 := draw(Hash(seed, DomainSway, 0xFF, index, 1, q1.Cycle))
-		b1 := draw(Hash(seed, DomainSway, 0xFF, index, 1, q1.Cycle+1))
-		a2 := draw(Hash(seed, DomainSway, 0xFF, index, 2, q2.Cycle))
-		b2 := draw(Hash(seed, DomainSway, 0xFF, index, 2, q2.Cycle+1))
-		a3 := draw(Hash(seed, DomainSway, 0xFF, index, 3, q3.Cycle))
-		b3 := draw(Hash(seed, DomainSway, 0xFF, index, 3, q3.Cycle+1))
-		sum := int64(lerp(a0, b0, smooth(q0.Phase)))<<3 +
-			int64(lerp(a1, b1, smooth(q1.Phase)))<<2 +
-			int64(lerp(a2, b2, smooth(q2.Phase)))<<1 +
-			int64(lerp(a3, b3, smooth(q3.Phase)))
+		const stride = uint64(0x9e3779b97f4a7c15)
+		prefix := uint64(seed) ^ uint64(DomainSway)<<56 ^ uint64(0xFF)<<32 ^ uint64(index)<<40
+		q0, q1 := p, p.Scale(1)
+		k0, k1 := q0.Cycle*stride, q1.Cycle*stride
+		x0, x1 := (prefix^k0)+stride, (prefix^(k0+stride))+stride
+		x2, x3 := (prefix^1<<48^k1)+stride, (prefix^1<<48^(k1+stride))+stride
+		x0, x1, x2, x3 = swayMixFirst(x0), swayMixFirst(x1), swayMixFirst(x2), swayMixFirst(x3)
+		x0, x1, x2, x3 = swayMixSecond(x0), swayMixSecond(x1), swayMixSecond(x2), swayMixSecond(x3)
+		sum := int64(lerp(swayDraw(x0), swayDraw(x1), smooth(q0.Phase))) << 3
+		sum += int64(lerp(swayDraw(x2), swayDraw(x3), smooth(q1.Phase))) << 2
+		q0, q1 = p.Scale(2), p.Scale(3)
+		k0, k1 = q0.Cycle*stride, q1.Cycle*stride
+		x0, x1 = (prefix^2<<48^k0)+stride, (prefix^2<<48^(k0+stride))+stride
+		x2, x3 = (prefix^3<<48^k1)+stride, (prefix^3<<48^(k1+stride))+stride
+		x0, x1, x2, x3 = swayMixFirst(x0), swayMixFirst(x1), swayMixFirst(x2), swayMixFirst(x3)
+		x0, x1, x2, x3 = swayMixSecond(x0), swayMixSecond(x1), swayMixSecond(x2), swayMixSecond(x3)
+		sum += int64(lerp(swayDraw(x0), swayDraw(x1), smooth(q0.Phase))) << 1
+		sum += int64(lerp(swayDraw(x2), swayDraw(x3), smooth(q1.Phase)))
 		return int32(sum / 15)
 	}
 	var sum int64
@@ -130,6 +135,12 @@ func Sway(seed uint32, index uint8, octaves uint, p Position) int32 {
 	}
 	return int32(sum / (1<<octaves - 1))
 }
+
+// These inline the two SplitMix rounds. The last Hash xor cannot affect the
+// high 30 bits used by draw, so swayDraw needs only the preceding result.
+func swayMixFirst(x uint64) uint64  { return (x ^ x>>30) * 0xbf58476d1ce4e5b9 }
+func swayMixSecond(x uint64) uint64 { return (x ^ x>>27) * 0x94d049bb133111eb }
+func swayDraw(x uint64) int32       { return int32(2*int64(x>>34) - (One - 1)) }
 
 // SwayFitted wraps each octave's random endpoints at the fitted loop boundary.
 // Without this, the last segment approaches a different value from the first.

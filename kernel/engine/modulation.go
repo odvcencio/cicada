@@ -461,7 +461,7 @@ func (e *Engine) advanceModulation() {
 		switch t.id {
 		case kernel.ParamMixGain:
 			positioned := &e.spatial.tracks[t.track]
-			positioned.target = mix.DBToLinear(value)
+			positioned.target = mix.DBToLinearClamped(value)
 			if m.snap {
 				positioned.gain = positioned.target
 			}

@@ -228,6 +228,13 @@ func TestModulationWorkingStateBudget(t *testing.T) {
 	t.Logf("modulation working state: %d bytes, excluding immutable configuration", bytes)
 }
 
+func TestModulatedGainBoundsFitFastConversion(t *testing.T) {
+	spec := &kernel.Params[kernel.ParamMixGain]
+	if math.IsNaN(float64(spec.Min)) || math.IsNaN(float64(spec.Max)) || math.IsInf(float64(spec.Min), 0) || math.IsInf(float64(spec.Max), 0) || spec.Min < -192 || spec.Max > 192 || spec.Min > spec.Max {
+		t.Fatalf("mix gain bounds [%g, %g] exceed the finite fast conversion range", spec.Min, spec.Max)
+	}
+}
+
 func TestModulationSingleRouteBaseUpdateAfterInterleavedTargets(t *testing.T) {
 	cfg := modConfig(t)
 	cfg.Modulators = []ModulatorSpec{{Kind: ModKindLFO, Wave: ModWaveSquare, RateTicks: 3840}}
