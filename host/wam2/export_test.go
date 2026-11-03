@@ -166,3 +166,56 @@ song { main }
 		t.Fatalf("chain image omitted %v", err)
 	}
 }
+
+func TestWAM2ModulationSelectsRequiredModule(t *testing.T) {
+	for _, tc := range []struct {
+		name, extra, binding, filename, target string
+	}{
+		{"modular", "", "", "cicada-modular.wasm", "build-modular-wasm"},
+		{"keys-modular", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := "cicada 2\ntempo 120\ntrack bass acid {}\npattern pulse acid { 1 . }\n" + tc.extra + "lfo drift { rate = 1/4 }\nmod drift -> bass.pan depth = 0.2\nscene main { bass = pulse" + tc.binding + " }\nsong { main }\n"
+			score, ds := notation.Parse([]byte(source))
+			p, ds := project.FromScore(score)
+			if p == nil {
+				t.Fatalf("fixture: %v", ds)
+			}
+			dir := t.TempDir()
+			sdk := filepath.Join(dir, "sdk")
+			for _, name := range []string{"dist/index.js", "src/RingBuffer_LICENSE.txt"} {
+				path := filepath.Join(sdk, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("fixture"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			core := filepath.Join(dir, "cicada-kernel.wasm")
+			head := []byte("\x00asm\x01\x00\x00\x00")
+			if err := os.WriteFile(core, head, 0644); err != nil {
+				t.Fatal(err)
+			}
+			out := filepath.Join(dir, "plugin")
+			opts := Options{KernelPath: core, SDKPath: sdk, MIDITrack: "bass"}
+			if err := Export(p, ".", out, opts); err == nil || !strings.Contains(err.Error(), tc.target) {
+				t.Fatalf("missing module: %v", err)
+			}
+			if _, err := os.Stat(out); !os.IsNotExist(err) {
+				t.Fatal("published incomplete plugin")
+			}
+			want := append(append([]byte(nil), head...), []byte(tc.name)...)
+			if err := os.WriteFile(filepath.Join(dir, tc.filename), want, 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := Export(p, ".", out, opts); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join(out, "kernel.wasm"))
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatalf("wrong module: %x %v", got, err)
+			}
+		})
+	}
+}

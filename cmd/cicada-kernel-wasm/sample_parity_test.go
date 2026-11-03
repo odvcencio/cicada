@@ -301,10 +301,14 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 }
 
 func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars int, exactMessages bool, wasm []byte) map[int][32]byte {
+	return compareWASMProjectRates(t, fixture, p, bars, exactMessages, wasm, []int{44_100, 48_000})
+}
+
+func compareWASMProjectRates(t *testing.T, fixture string, p *project.Project, bars int, exactMessages bool, wasm []byte, rates []int) map[int][32]byte {
 	t.Helper()
 	exactPCM := strings.HasPrefix(fixture, "neural-") || strings.HasPrefix(fixture, "keys-")
 	hashes := map[int][32]byte{}
-	for _, rate := range []int{44_100, 48_000} {
+	for _, rate := range rates {
 		t.Run(sampleRateName(rate), func(t *testing.T) {
 			const blockSize = 128
 			cfg, err := project.CompileEngine(p, rate, blockSize)

@@ -76,6 +76,22 @@ func TestKeyboardEditsPreserveLastGoodScore(t *testing.T) {
 	}
 }
 
+func TestModulationEditPreservesLastGoodDemoScore(t *testing.T) {
+	s, err := NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := s.Snapshot()
+	source := string(before.Source) + "\nlfo drift { rate = 1/4 }\nmod drift -> bass.pan depth = 0.2\n"
+	if err := s.Apply(before.Revision, []byte(source)); err == nil || !strings.Contains(err.Error(), "modulation is unavailable") {
+		t.Fatalf("expected an actionable refusal, got %v", err)
+	}
+	after := s.Snapshot()
+	if after.Revision != before.Revision || after.CanUndo {
+		t.Fatal("unsupported edit replaced the working score")
+	}
+}
+
 func TestPresetLoudness(t *testing.T) {
 	for _, preset := range Presets() {
 		for _, rate := range []int{44100, 48000} {

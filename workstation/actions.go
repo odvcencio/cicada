@@ -244,6 +244,12 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["command"], "path": f["path"], "name": f["takeId"], "value": map[string]any{"number": number, "replace": f["replace"] == "on", "monitor": f["monitor"] == "on"}}, nil
 		}),
 		"automation": s.mutation("/api/automation", func(f map[string]string) (any, error) {
+			if f["action"] == "mod-source-add" {
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "value": map[string]string{"sourcekind": f["sourcekind"], "name": f["name"], "rate": f["rate"], "wave": f["wave"], "source": f["source"]}}, nil
+			}
+			if f["action"] == "mod-route" {
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "value": map[string]string{"operation": f["operation"], "source": f["source"], "target": f["target"], "mode": f["mode"], "depth": f["depth"]}}, nil
+			}
 			if f["action"] == "automation-point-set" || f["action"] == "automation-point-remove" {
 				curve := 0.0
 				if f["shape"] == "curve" {
