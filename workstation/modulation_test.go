@@ -20,13 +20,21 @@ func TestModulationDockShowsSupportedRoutesAndSourceControls(t *testing.T) {
 		t.Fatal(ds)
 	}
 	page := gosx.RenderHTML(new(studioApp).modulationDock(workspace{Project: p, Revision: "r", SourceRevision: "s"}, "csrf"))
-	for _, text := range []string{"Modulation", "drift", "bass.pan", "Save depth", "Remove route", "Add source", "Add route", `name="source_revision" value="s"`} {
+	for _, text := range []string{"Modulation", "drift", "1 beat per cycle", "bass.pan", "Save depth", "Remove route", "Add source", "Add route", `name="source_revision" value="s"`} {
 		if !strings.Contains(page, text) {
 			t.Fatalf("missing %q in %s", text, page)
 		}
 	}
 	if strings.Contains(page, `<option value="bass.mute"`) {
 		t.Fatal("offered an unroutable toggle")
+	}
+}
+
+func TestModulationPeriodsUseMusicalTime(t *testing.T) {
+	for ticks, want := range map[int64]string{3840: "1 bar per cycle", 30720: "8 bars per cycle", 960: "1 beat per cycle", 1920: "2 beats per cycle", 240: "1/4 of a beat per cycle"} {
+		if got := modulationPeriod(ticks); got != want {
+			t.Errorf("%d: got %q, want %q", ticks, got, want)
+		}
 	}
 }
 
