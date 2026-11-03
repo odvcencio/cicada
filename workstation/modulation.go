@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
@@ -26,13 +27,6 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 	for _, track := range p.Tracks {
 		tracks = append(tracks, track.ID)
 	}
-	for _, address := range project.ParamAddresses(p) {
-		resolved, err := project.ResolveParameterPath(p, address.Address)
-		if err == nil && resolved.OwnerKind == "track" && engine.RouteSupported(resolved.ID) {
-			targets = append(targets, address.Address)
-		}
-	}
-	sort.Strings(targets)
 	form := func(children ...gosx.Node) gosx.Node {
 		return s.form(v, csrf, "session", "automation", children...)
 	}
@@ -49,6 +43,19 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 			detail += " · " + modulationPeriod(source.RateTicks)
 		}
 		sourceRows = append(sourceRows, gosx.El("li", gosx.El("strong", gosx.Text(source.ID)), gosx.Text(" · "+detail)))
+	}
+	if len(sources) != 0 {
+		for _, address := range project.ParamAddresses(p) {
+			id, ok := kernel.FindParam(address.Param)
+			if !ok || address.Track == "" || !engine.RouteSupported(id) {
+				continue
+			}
+			resolved, err := project.ResolveParameterPath(p, address.Address)
+			if err == nil && resolved.OwnerKind == "track" && engine.RouteSupported(resolved.ID) {
+				targets = append(targets, address.Address)
+			}
+		}
+		sort.Strings(targets)
 	}
 	if len(sourceRows) == 0 {
 		sourceRows = append(sourceRows, gosx.El("li", gosx.Text("No modulation sources yet.")))
