@@ -3,46 +3,83 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cicada · browser music engine</title>
+  <title>Cicada · make music in your browser</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/assets/demo.css">
   <script defer src="/assets/wasm_exec.js"></script>
   <script defer src="/assets/demo.js"></script>
 </head>
 <body>
-  <main>
-    <header><a class="wordmark" href="https://github.com/odvcencio/cicada">cicada<span>♪</span></a><span class="tag">Browser music engine</span></header>
-    <section class="intro">
-      <p class="eyebrow">A score you can hear.</p>
-      <h1>Small engine.<br>Living sound.</h1>
-      <p>Modeled percussion, bass and synths made from a few lines of text. Play a score and watch the engine work.</p>
+  <main class="app">
+    <header class="app-header">
+      <a class="wordmark" href="https://github.com/odvcencio/cicada" aria-label="Cicada source and documentation"><span class="brand-mark" aria-hidden="true">◌</span> cicada</a>
+      <div class="header-context"><span class="header-divider" aria-hidden="true"></span><span>Browser studio</span><span class="header-dot" aria-hidden="true">·</span><strong id="header-sketch">Night garden</strong></div>
+      <a class="header-link" href="https://github.com/odvcencio/cicada">About Cicada <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <section class="transport" aria-label="Playback">
+      <div class="transport-actions">
+        <button id="play" class="play-button" disabled><span class="play-icon" aria-hidden="true">▶</span><span>Play</span></button>
+        <button id="stop" class="stop-button" disabled><span aria-hidden="true">■</span><span>Stop</span></button>
+      </div>
+      <div class="transport-readout"><span>POSITION</span><strong id="transport-position">—</strong></div>
+      <div class="transport-status"><span class="status-dot" aria-hidden="true"></span><span id="audio-state">Audio off</span></div>
+      <label class="volume" for="volume"><span>Volume</span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.75"></label>
     </section>
-    <section class="player" aria-label="Playback">
-      <div class="preset"><label for="preset">Instrument sketch</label><select id="preset" disabled></select></div>
-      <div class="transport"><button id="play" class="primary" disabled>Play in browser</button><button id="stop" disabled>Stop</button><label class="volume" for="volume">Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.75"></label></div>
-      <p id="status" role="status">Loading score tools…</p>
-    </section>
-    <section class="metrics" aria-labelledby="metrics-title">
-      <div class="section-heading"><h2 id="metrics-title">Live engine metrics</h2><span id="audio-state">Audio off</span></div>
-      <dl class="metric-grid">
-        <div><dt>Callback p99</dt><dd id="p99">—</dd></div>
-        <div><dt>Underruns</dt><dd id="underruns">—</dd></div>
-        <div><dt>WASM memory</dt><dd id="memory">—</dd></div>
-        <div><dt>Messages drained</dt><dd id="messages">0</dd></div>
-      </dl>
-      <p id="timing-detail">Metrics appear after you press Play. Audio runs in an AudioWorklet.</p>
-      <p id="drain" class="drain">Waiting for kernel messages…</p>
-    </section>
-    <section class="score" aria-labelledby="score-title">
-      <div class="section-heading"><h2 id="score-title">Make it yours</h2><span>Score editor</span></div>
-      <label class="sr-only" for="source">Cicada score</label>
-      <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" disabled></textarea>
-      <div class="edit-actions"><button id="apply" disabled>Apply score</button><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="reset" disabled>Reset</button><button id="open-score" disabled>Open score</button><button id="save-score" disabled>Download score</button><input id="score-file" type="file" accept=".cicada,.txt,text/plain" hidden></div>
-      <p id="edit-error" role="alert"></p>
-      <p id="storage-status" class="hint" role="status"></p>
-      <p class="hint">Start with the Marimba sketch. Change a note in <code>pattern phrase</code> or the tempo, then choose Apply score (Ctrl+Enter or ⌘+Enter). While playing, changes start at the next bar. Open and download move score text between this browser and your device.</p>
-    </section>
-    <footer><span>Local playback · scores stay on your device</span><a href="https://github.com/odvcencio/cicada">Source &amp; documentation ↗</a></footer>
+
+    <div class="workspace">
+      <aside class="sketches" aria-labelledby="sketch-title">
+        <div class="sidebar-heading"><div><p class="overline">YOUR STARTING POINT</p><h2 id="sketch-title">Sketches</h2></div><span class="sidebar-number" aria-hidden="true">01</span></div>
+        <p class="sidebar-copy">Choose a sound, then make it yours.</p>
+        <div id="sketch-list" class="sketch-list" role="group" aria-label="Featured sketches"></div>
+        <div class="sketch-select"><label for="preset">All sketches</label><select id="preset" disabled></select></div>
+        <p class="sidebar-note"><span aria-hidden="true">✦</span> Your music stays in this browser.</p>
+      </aside>
+
+      <section class="session" aria-label="Music workspace">
+        <div class="session-heading">
+          <div><p class="overline">YOUR SESSION</p><h1 id="session-name">Night garden</h1><p class="session-subtitle">A little music to make your own.</p></div>
+          <span class="session-badge"><span aria-hidden="true"></span> LOCAL SESSION</span>
+        </div>
+
+        <div class="session-overview">
+          <div class="sound-display" aria-label="Audio waveform">
+            <div class="sound-heading"><span>OUTPUT</span><span id="waveform-state">Ready when you are</span></div>
+            <canvas id="waveform" aria-hidden="true"></canvas>
+            <div class="sound-footer"><span>Sound, made here.</span><span>STEREO OUT</span></div>
+          </div>
+          <section class="track-panel" aria-labelledby="track-title">
+            <div class="track-heading"><h2 id="track-title">Tracks in score</h2><span id="score-tempo"></span></div>
+            <ul id="track-list"></ul>
+          </section>
+        </div>
+        <p id="status" class="transport-message" role="status">Loading score tools…</p>
+
+        <section class="score" aria-labelledby="score-title">
+          <div class="score-heading"><div><p class="overline">MAKE IT YOURS</p><h2 id="score-title">Change the music</h2></div><span class="score-language">CICADA SCORE</span></div>
+          <p class="score-intro">Change a note or tempo, then apply your edit. While playing, it joins at the next bar.</p>
+          <label class="sr-only" for="source">Cicada score</label>
+          <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" disabled></textarea>
+          <div class="edit-actions">
+            <button id="apply" class="apply-button" disabled>Apply changes <span class="shortcut">⌘ / Ctrl + Enter</span></button>
+            <button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button>
+            <span class="action-spacer"></span><button id="reset" class="quiet-button" disabled>Reset</button>
+            <button id="open-score" class="quiet-button" disabled>Open score</button><button id="save-score" class="quiet-button" disabled>Download score</button><input id="score-file" type="file" accept=".cicada,.txt,text/plain" hidden>
+          </div>
+          <p id="edit-error" role="alert"></p><p id="storage-status" class="hint" role="status"></p>
+        </section>
+
+        <details class="diagnostics" id="diagnostics">
+          <summary><span><span aria-hidden="true">◫</span> Engine details</span><span class="diagnostics-caption">For the curious</span></summary>
+          <section class="metrics" aria-labelledby="metrics-title">
+            <div class="section-heading"><h2 id="metrics-title">Live engine metrics</h2><span>AudioWorklet</span></div>
+            <dl class="metric-grid"><div><dt>Callback p99</dt><dd id="p99">—</dd></div><div><dt>Underruns</dt><dd id="underruns">—</dd></div><div><dt>WASM memory</dt><dd id="memory">—</dd></div><div><dt>Messages drained</dt><dd id="messages">0</dd></div></dl>
+            <p id="timing-detail">Metrics appear after you press Play. Audio runs in an AudioWorklet.</p><p id="drain" class="drain">Waiting for kernel messages…</p>
+          </section>
+        </details>
+      </section>
+    </div>
+    <footer><span>Made for curious ears <span aria-hidden="true">·</span> Plays locally</span><a href="https://github.com/odvcencio/cicada">Source &amp; documentation ↗</a></footer>
   </main>
 </body>
 </html>

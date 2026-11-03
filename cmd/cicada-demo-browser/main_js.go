@@ -16,6 +16,8 @@ func main() {
 	}
 	var controller *browsercontrol.Controller
 	var lifecycle *browsercontrol.Lifecycle
+	var overviewRevision string
+	var overview map[string]any
 	api := js.Global().Get("Object").New()
 	bind := func(name string, call func([]js.Value) any) {
 		api.Set(name, js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -31,6 +33,17 @@ func main() {
 	}
 	bind("snapshot", func([]js.Value) any {
 		s := session.Snapshot()
+		if overviewRevision != s.Revision {
+			overview = map[string]any{"title": "", "tempo": 0, "tracks": []any{}}
+			if p, err := demobrowser.Parse(s.Source); err == nil {
+				tracks := make([]any, 0, len(p.Tracks))
+				for _, track := range p.Tracks {
+					tracks = append(tracks, map[string]any{"name": track.ID, "instrument": track.Kind})
+				}
+				overview = map[string]any{"title": p.Title, "tempo": float64(p.TempoMilli) / 1000, "tracks": tracks}
+			}
+			overviewRevision = s.Revision
+		}
 		preset := "custom"
 		for _, p := range demobrowser.Presets() {
 			if string(s.Source) == p.Source {
@@ -38,7 +51,7 @@ func main() {
 				break
 			}
 		}
-		return map[string]any{"source": string(s.Source), "revision": s.Revision, "canUndo": s.CanUndo, "canRedo": s.CanRedo, "preset": preset}
+		return map[string]any{"source": string(s.Source), "revision": s.Revision, "canUndo": s.CanUndo, "canRedo": s.CanRedo, "preset": preset, "overview": overview}
 	})
 	bind("presets", func([]js.Value) any {
 		rows := []any{}
