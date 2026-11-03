@@ -29,11 +29,14 @@ func Exp2(x float64) float64 {
 	if x != x {
 		return 0
 	}
-	if x < -32 {
-		x = -32
-	} else if x > 32 {
-		x = 32
-	}
+	x = max(-32, min(x, 32))
+	return Exp2Finite(x)
+}
+
+// Exp2Finite evaluates Exp2 for a finite input already bounded to [-32,32].
+// The caller must validate the range; the numerical evaluation is identical
+// to Exp2, but does not repeat those checks in a validated hot path.
+func Exp2Finite(x float64) float64 {
 	n := int(x)
 	frac := x - float64(n)
 	if frac > 0.5 {

@@ -267,6 +267,10 @@ func TestFourOctaveSwayMatchesReference(t *testing.T) {
 	for i := 0; i < 10000; i++ {
 		seed, slot := rng.Uint32(), uint8(rng.Uint32())
 		p := Position{Cycle: rng.Uint64(), Phase: rng.Uint32()}
+		if i < 6 {
+			p.Cycle = ^uint64(0) - uint64(i/3)
+			p.Phase = []uint32{0, 1 << 31, ^uint32(0)}[i%3]
+		}
 		var sum int64
 		for o := uint(0); o < 4; o++ {
 			q := p.Scale(o)

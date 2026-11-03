@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func TestClampedGainConversionMatchesGeneral(t *testing.T) {
+	for i := 0; i <= 100_000; i++ {
+		gain := float32(-60 + 66*float64(i)/100_000)
+		if got, want := math.Float32bits(DBToLinearClamped(gain)), math.Float32bits(DBToLinear(gain)); got != want {
+			t.Fatalf("gain %g: clamped bits %x, general bits %x", gain, got, want)
+		}
+	}
+}
+
 func TestNewTrackTableMatchesTheLaw(t *testing.T) {
 	worst := 0.0
 	for gain := -60.0; gain <= 6; gain += 0.37 {

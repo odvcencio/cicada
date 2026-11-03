@@ -12,6 +12,12 @@ func DBToLinear(gainDB float32) float32 {
 	return float32(fastmath.Exp2(float64(float64(gainDB) * 0.16609640474436813)))
 }
 
+// DBToLinearClamped applies the same conversion for a finite gain already
+// clamped to the mix-gain parameter's [-60,6] dB range.
+func DBToLinearClamped(gainDB float32) float32 {
+	return float32(fastmath.Exp2Finite(float64(float64(gainDB) * 0.16609640474436813)))
+}
+
 // NewTrackTable is NewTrack for a track whose gain or pan a modulator moves:
 // the same constant-power law, built from DBToLinear and the quarter-wave sine
 // table instead of math.Pow, math.Cos and math.Sin. It matches NewTrack within
