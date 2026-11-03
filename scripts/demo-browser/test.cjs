@@ -12,8 +12,10 @@ const {waitForServerURL} = require('./server-url.cjs');
 const repo = path.resolve(__dirname, '../..');
 const soak = process.argv.includes('--soak');
 const evidence = process.env.CICADA_DEMO_EVIDENCE_DIR || path.join(repo, 'build/demo-evidence');
+const bundle = process.env.CICADA_DEMO_BUNDLE || path.join(repo, 'build/demo');
+const serverBinary = process.env.CICADA_DEMO_BINARY || path.join(repo, 'build/cicada-demo');
 fs.mkdirSync(evidence, {recursive: true});
-assert(!fs.readFileSync(path.join(repo, 'build/demo/demo.wasm')).includes(Buffer.from(repo)), 'browser score tools must omit private build paths');
+assert(!fs.readFileSync(path.join(bundle, 'demo.wasm')).includes(Buffer.from(repo)), 'browser score tools must omit private build paths');
 
 async function until(run, timeout = 20000) {
   const deadline = Date.now() + timeout;
@@ -23,7 +25,7 @@ async function until(run, timeout = 20000) {
 
 (async () => {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cicada-demo-'));
-  const server = spawn(path.join(repo, 'build/cicada-demo'), ['-listen', '127.0.0.1:0'], {cwd: repo, stdio: ['ignore', 'pipe', 'pipe']});
+  const server = spawn(serverBinary, ['-listen', '127.0.0.1:0', '-bundle', bundle], {cwd: repo, stdio: ['ignore', 'pipe', 'pipe']});
   let chrome, socket, chromeLog, soakTiming;
   const pending = new Map();
   try {
@@ -93,6 +95,14 @@ async function until(run, timeout = 20000) {
     await viewport(1440, 1000);
     await cdp('Page.navigate', {url: base});
     await wait(`window.cicadaDemo && !document.getElementById('play').disabled`);
+    assert(await evaluate(`!document.getElementById('diagnostics').open`), 'engineering diagnostics start collapsed');
+    assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('#track-list strong'), e => e.textContent)`), ['bass', 'keys', 'lead', 'drums'], 'track overview comes from the applied score');
+    assert.equal(await evaluate(`document.getElementById('score-tempo').textContent`), '112 BPM');
+    await click('[data-preset="marimba"]');
+    await wait(`document.getElementById('preset').value==='marimba' && !document.getElementById('play').disabled`);
+    assert(await evaluate(`document.querySelector('[data-preset="marimba"]').getAttribute('aria-pressed')==='true'`), 'featured sketch follows the actual selection');
+    assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('#track-list strong'), e => e.textContent)`), ['sound'], 'track overview follows the selected sketch');
+    await click('#reset'); await wait(`document.getElementById('preset').value==='ensemble' && !document.getElementById('play').disabled`);
     // Applied score and an invalid draft must both survive a reload independently.
     const initialScore = await evaluate('cicadaDemo.snapshot().source');
     const quantizedScore = initialScore.replace('pattern bassline', 'live { record = 1/8T }\npattern bassline');
@@ -160,8 +170,12 @@ async function until(run, timeout = 20000) {
     await wait(`cicadaDemo.snapshot().source===${JSON.stringify(liveBefore.source)} && !document.getElementById('apply').disabled && document.getElementById('status').textContent.includes('next bar')`);
     await evaluate('window.scrollTo(0,0)');
     await screenshot('demo-playing-1440.png');
-    const metricsVisible = await evaluate(`(()=>{const r=document.getElementById('metrics-title').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.getElementById('messages').textContent!=='0'})()`);
-    assert(metricsVisible, 'live metrics visible in initial desktop viewport');
+    assert(await evaluate(`!document.getElementById('diagnostics').open`), 'diagnostics remain collapsed during playback');
+    await click('#diagnostics summary');
+    await wait(`document.getElementById('diagnostics').open && document.getElementById('messages').textContent!=='0'`);
+    const metricsVisible = await evaluate(`(()=>{document.getElementById('metrics-title').scrollIntoView({block:'center'});const r=document.getElementById('metrics-title').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})()`);
+    assert(metricsVisible, 'live metrics remain available in engine details');
+    await click('#diagnostics summary');
     await viewport(390, 900); await evaluate('window.scrollTo(0,0)');
     assert(await evaluate('document.documentElement.scrollWidth<=innerWidth'), 'no mobile horizontal overflow');
     await screenshot('demo-playing-390.png');

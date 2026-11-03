@@ -6,6 +6,47 @@
   const state = {playing: false, metrics: null, messageCount: 0, faults: 0, playhead: 0, errors: [], revision: '', resets: 0};
   const draftKey = 'cicada-demo-score-v1', maxSourceBytes = 128 * 1024;
   let inputVersion = 0;
+  const waveform = $('waveform'), waveformContext = waveform.getContext('2d');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let waveformFrame = 0, waveformSamples, waveformLastDraw = 0;
+  const drawWaveform = time => {
+    waveformFrame = 0;
+    if (!waveformContext) return;
+    if (state.playing && !reducedMotion.matches && time - waveformLastDraw < 33) {
+      waveformFrame = requestAnimationFrame(drawWaveform);
+      return;
+    }
+    waveformLastDraw = time;
+    const width = waveform.clientWidth, height = waveform.clientHeight;
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
+    if (waveform.width !== Math.round(width * scale) || waveform.height !== Math.round(height * scale)) {
+      waveform.width = Math.round(width * scale); waveform.height = Math.round(height * scale);
+    }
+    waveformContext.setTransform(scale, 0, 0, scale, 0, 0);
+    waveformContext.clearRect(0, 0, width, height);
+    waveformContext.strokeStyle = state.playing && !reducedMotion.matches ? '#b8ddaa' : '#536d5a';
+    waveformContext.lineWidth = 1.5;
+    waveformContext.beginPath();
+    if (state.playing && analyser && !reducedMotion.matches) {
+      if (!waveformSamples || waveformSamples.length !== analyser.fftSize) waveformSamples = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(waveformSamples);
+      for (let i = 0; i < waveformSamples.length; i++) {
+        const x = i * width / (waveformSamples.length - 1), y = height * (0.5 + (waveformSamples[i] - 128) / 256);
+        if (i === 0) waveformContext.moveTo(x, y); else waveformContext.lineTo(x, y);
+      }
+    } else {
+      waveformContext.moveTo(0, height / 2); waveformContext.lineTo(width, height / 2);
+    }
+    waveformContext.stroke();
+    if (state.playing && !reducedMotion.matches) waveformFrame = requestAnimationFrame(drawWaveform);
+  };
+  const refreshWaveform = () => {
+    if (waveformFrame) cancelAnimationFrame(waveformFrame);
+    waveformFrame = requestAnimationFrame(drawWaveform);
+  };
+  window.addEventListener('resize', refreshWaveform);
+  reducedMotion.addEventListener('change', refreshWaveform);
+  refreshWaveform();
   const saveDraft = () => {
     try {
       if (new TextEncoder().encode(ui.source.value).length > maxSourceBytes) throw new Error('Draft exceeds 128 KiB. Download it to avoid losing changes.');
@@ -69,13 +110,34 @@
     for (const id of ['open-score', 'save-score']) $(id).disabled = !api || starting || !!resetPromise;
     $('undo').disabled = !api || starting || !!resetPromise || !snapshot?.canUndo;
     $('redo').disabled = !api || starting || !!resetPromise || !snapshot?.canRedo;
-    $('audio-state').textContent = state.playing ? 'AudioWorklet playing' : context ? 'Stopped' : 'Audio off';
+    $('audio-state').textContent = state.playing ? 'Playing' : context ? 'Stopped' : 'Audio off';
+    $('audio-state').parentElement.classList.toggle('is-playing', state.playing);
+    $('waveform-state').textContent = state.playing ? 'Listening to output' : 'Ready when you are';
+    if (!state.playing) $('transport-position').textContent = '—';
+    for (const button of $('sketch-list').querySelectorAll('button')) {
+      button.disabled = ui.preset.disabled;
+      button.setAttribute('aria-pressed', String(button.dataset.preset === ui.preset.value));
+    }
+    const selected = ui.preset.selectedOptions[0];
+    const name = selected ? selected.textContent.split(' · ')[0] : 'Night garden';
+    $('session-name').textContent = $('header-sketch').textContent = name;
+    refreshWaveform();
   };
   const refreshSource = () => {
     snapshot = call('snapshot');
     ui.source.value = snapshot.source;
     ui.preset.value = snapshot.preset;
     ui.source.disabled = false;
+    const overview = snapshot.overview;
+    $('score-tempo').textContent = overview?.tempo ? `${overview.tempo} BPM` : '';
+    $('track-list').replaceChildren();
+    for (const track of overview?.tracks || []) {
+      const item = document.createElement('li'), name = document.createElement('strong'), instrument = document.createElement('span');
+      name.textContent = track.name;
+      instrument.textContent = track.instrument.replaceAll('_', ' ');
+      item.append(name, instrument);
+      $('track-list').append(item);
+    }
     refreshControls();
   };
   const prepare = () => call('prepare', context.sampleRate);
@@ -136,7 +198,7 @@
         for (let at = 0; at < data.n; at += 16) {
           const kind = view.getUint8(at), tick = Number(view.getBigInt64(at + 8, true));
           state.messageCount++;
-          if (kind === 1) state.playhead = tick;
+          if (kind === 1) { state.playhead = tick; $('transport-position').textContent = `Bar ${Math.floor(tick / 3840) + 1}`; }
           if (kind === 7) { state.faults++; throw new Error(`Kernel fault ${view.getUint16(at + 2, true)}`); }
           state.lastMessage = {kind: kindNames[kind] || 'Unknown', track: view.getUint8(at + 1), tick};
         }
@@ -255,7 +317,7 @@
         if (node) { call('stop'); if (!await resetKernel()) return; }
         ui.status.textContent = 'Score ready. Press Play to hear your changes.';
       }
-    } catch (error) { $('edit-error').textContent = error.message; }
+    } catch (error) { $('edit-error').textContent = error.message; ui.preset.value = snapshot.preset; }
     refreshControls();
   };
   $('apply').onclick = () => change('edit', ui.source.value);
@@ -301,12 +363,24 @@
     go.run(instance).catch(fail);
     api = window.cicadaDemo;
     if (!api) throw new Error('Score tools did not initialize; reload to retry.');
-    for (const preset of api.presets()) {
+    const presets = api.presets();
+    for (const preset of presets) {
       const option = document.createElement('option'); option.value = preset.id; option.textContent = preset.name;
       ui.preset.append(option);
     }
     const custom = document.createElement('option'); custom.value = 'custom'; custom.textContent = 'Custom score'; custom.disabled = true;
     ui.preset.append(custom);
+    const featured = [['ensemble', '◉', 'Full sketch'], ['marimba', '◇', 'Melodic percussion'], ['kit', '▦', 'Rhythm'], ['graph', '✳', 'Authored synth']];
+    for (const [id, symbol, description] of featured) {
+      const preset = presets.find(p => p.id === id);
+      if (!preset) continue;
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'sketch-button'; button.dataset.preset = id;
+      const icon = document.createElement('span'); icon.className = 'sketch-symbol'; icon.textContent = symbol; icon.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span'), name = document.createElement('strong'), note = document.createElement('small');
+      name.textContent = preset.name.split(' · ')[0]; note.textContent = description; label.append(name, note); button.append(icon, label);
+      button.addEventListener('click', () => { ui.preset.value = id; ui.preset.dispatchEvent(new Event('change')); });
+      $('sketch-list').append(button);
+    }
     refreshSource();
     try {
       const saved = JSON.parse(localStorage.getItem(draftKey));
