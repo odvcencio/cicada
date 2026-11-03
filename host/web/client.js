@@ -357,6 +357,11 @@
     sampleOutputTimeline() {
       const context = this.context;
       if (!context || context.state !== 'running' || !this.playing || typeof context.getOutputTimestamp !== 'function') return;
+      // This is an informational scheduling heuristic, not a latency or
+      // underrun measurement. The Web Audio specification notes that the
+      // difference between currentTime and timestamp.contextTime is not a
+      // reliable output-latency estimate; currentTime advances in blocks.
+      // https://www.w3.org/TR/webaudio-1.0/#dom-audiocontext-getoutputtimestamp
       const timestamp = context.getOutputTimestamp();
       if (!timestamp || !timestamp.contextTime || !timestamp.performanceTime) return;
       const now = performance.now();
