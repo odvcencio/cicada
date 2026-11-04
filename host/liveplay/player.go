@@ -58,6 +58,7 @@ type trackNameSnapshot struct {
 	incarnations  [engine.MaxTracks]uint64 // Assigned before publication when this score plays.
 	kinds         [engine.MaxTracks]string
 	poly          [engine.MaxTracks]bool
+	sampleNotes   [engine.MaxTracks][2]uint64
 	count         uint8
 	macros        []MacroControl
 	macroTargets  [16]atomic.Uint32
@@ -618,12 +619,19 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
 		snapshot.kinds[index] = score.Tracks[index].Kind
-		if score.Engine != nil && score.Engine.TrackVoiceKind(index) == engine.VoiceKeys {
+		if score.Engine != nil && score.Engine.TrackVoiceKind(index) == engine.VoiceSample {
+			snapshot.kinds[index] = "sampler"
+			for note := 0; note < 128; note++ {
+				if score.Engine.TrackSamplerNotePlayable(index, uint8(note)) {
+					snapshot.sampleNotes[index][note/64] |= uint64(1) << (note % 64)
+				}
+			}
+		} else if score.Engine != nil && score.Engine.TrackVoiceKind(index) == engine.VoiceKeys {
 			snapshot.kinds[index] = "keys"
 		} else if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
 			snapshot.kinds[index] = "instrument"
 		}
-		if score.Tracks[index].Pitched && snapshot.kinds[index] != "keys" {
+		if score.Tracks[index].Pitched && snapshot.kinds[index] != "keys" && snapshot.kinds[index] != "sampler" {
 			snapshot.kinds[index] = "graph"
 		}
 		if score.Engine != nil {
@@ -939,7 +947,9 @@ func (p *Player) NoteOwnerID(track string, note, velocity int, on bool, id strin
 			if note < 21 || note > 108 {
 				return fmt.Errorf("%s note must be in MIDI range 21–108", kind)
 			}
-		} else if kind != "acid" && kind != "graph" && kind != "poly" {
+		} else if kind == "sampler" && on && velocity != 0 && snapshot.sampleNotes[index][note/64]&(uint64(1)<<(note%64)) == 0 {
+			return fmt.Errorf("sampler note %d is outside its supported playback range", note)
+		} else if kind != "acid" && kind != "graph" && kind != "poly" && kind != "sampler" {
 			return fmt.Errorf("track %q does not accept live notes", track)
 		}
 		input := noteInput{ID: id, Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on, NoteID: noteID}
@@ -974,7 +984,10 @@ func (p *Player) NoteExpressionOwner(track string, noteID uint16, owner string, 
 	if found && kind == "keys" {
 		return fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboards do not support per-note expression")
 	}
-	if !found || kind != "acid" && kind != "graph" && kind != "poly" {
+	if kind == "sampler" && timbre != .5 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: sampler timbre expression is not supported")
+	}
+	if !found || kind != "acid" && kind != "graph" && kind != "poly" && kind != "sampler" {
 		return fmt.Errorf("track %q is not a pitched track in the playing score", track)
 	}
 	return p.queueOwnedNote(noteInput{ID: owner, Track: track, NoteID: noteID, Expression: true, PitchCents: pitchCents, Pressure: pressure, Timbre: timbre}, p.noteEpoch.Load())
@@ -2084,7 +2097,7 @@ func (p *Player) queueLiveNotes() {
 				p.emit(Event{Track: input.Track, Name: "CICADA-UNSUPPORTED: modeled keyboards do not support per-note expression", Kind: "note-error"})
 				continue
 			}
-			if kind == "acid" || kind == "graph" || kind == "poly" {
+			if kind == "acid" || kind == "graph" || kind == "poly" || kind == "sampler" {
 				for i := range p.heldNotes {
 					held := &p.heldNotes[i]
 					if p.heldOrder[i] != 0 && held.ID == input.ID && held.Track == input.Track && held.NoteID == input.NoteID {
@@ -2138,7 +2151,7 @@ func (p *Player) queueLiveNotes() {
 				continue
 			}
 			p.noteOrder++
-			if kind == "acid" || kind == "graph" || kind == "poly" {
+			if kind == "acid" || kind == "graph" || kind == "poly" || kind == "sampler" {
 				input.KernelID = p.allocateLiveIdentity()
 			}
 			p.heldNotes[free], p.heldOrder[free] = input, p.noteOrder
@@ -2162,7 +2175,7 @@ func (p *Player) queueLiveNotes() {
 			}
 		}
 		command := cmd.Command{Track: track, Index: input.KernelID}
-		if kind == "acid" || kind == "piano" || kind == "keys" || kind == "graph" || kind == "poly" {
+		if kind == "acid" || kind == "piano" || kind == "keys" || kind == "graph" || kind == "poly" || kind == "sampler" {
 			if (kind == "piano" || kind == "keys") && (input.Note < 21 || input.Note > 108) {
 				p.emit(Event{Track: input.Track, Name: fmt.Sprintf("%s note must be in MIDI range 21–108", kind), Kind: "note-error"})
 				continue

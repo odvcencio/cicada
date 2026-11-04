@@ -281,10 +281,14 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		for _, voice := range v.Project.Instruments {
 			authored = authored || voice.ID == t.Kind
 		}
-		if authored || t.Kind == "acid" || t.Kind == "piano" || keyboard.ID(t.Kind) != 0 {
+		sampler := false
+		for _, voice := range v.Project.Samplers {
+			sampler = sampler || voice.Name == t.Kind && voice.Pack == ""
+		}
+		if authored || sampler || t.Kind == "acid" || t.Kind == "piano" || keyboard.ID(t.Kind) != 0 {
 			canRecord = true
 			pitched = append(pitched, t.ID)
-			expressionTracks[t.ID] = authored || t.Kind == "acid"
+			expressionTracks[t.ID] = authored || sampler || t.Kind == "acid"
 		}
 		if t.Kind == "drums" {
 			canRecord = true

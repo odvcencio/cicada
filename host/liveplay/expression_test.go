@@ -10,6 +10,49 @@ import (
 	"m31labs.dev/cicada/kernel/graph"
 )
 
+func TestSamplerLiveAdmissionAndExpression(t *testing.T) {
+	pcm := make([]float32, 512)
+	for i := range pcm {
+		pcm[i] = .1
+	}
+	cfg := engine.Config{SampleRate: 48000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 2, BPMMilli: 120000, Assets: []engine.AudioAsset{{SampleRate: 48000, Left: pcm}}}
+	cfg.Track[0] = engine.TrackConfig{Kind: engine.VoiceSample, Sample: &engine.SamplerConfig{RootKey: 60, Voices: 2, Loop: true}}
+	e, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Score{Engine: e, SampleRate: 48000, BPMMilli: 120000, Tracks: []TrackSlots{{ID: "sample", Kind: "sampler", Pitched: true}}}, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.NoteOwnerID("sample", 127, 100, true, "bad", 1); err == nil {
+		t.Fatal("out-of-range live note accepted")
+	}
+	if err := p.NoteOwnerID("sample", 60, 100, true, "good", 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.NoteExpressionOwner("sample", 2, "good", 9600, .8, .5); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.NoteExpressionOwner("sample", 2, "good", 0, .8, .8); err == nil {
+		t.Fatal("unsupported timbre accepted")
+	}
+	if err := p.BindNoteGroupOwner("sample", 2, "good", "channel"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.GroupExpressionOwner("sample", "channel", -400, .4, .5); err != nil {
+		t.Fatal(err)
+	}
+	var audio [blockFrames * 8]byte
+	if _, err := p.Read(audio[:]); err != nil {
+		t.Fatal(err)
+	}
+	if p.ownedFinalCount != 1 {
+		t.Fatal("playable live note was not submitted")
+	}
+}
+
 func TestLiveIdentityNamespacesAndBurstReduction(t *testing.T) {
 	for _, voices := range []int{4, 8} {
 		cfg := engine.Config{SampleRate: 48000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: voices, BPMMilli: 120000}

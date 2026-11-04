@@ -40,21 +40,41 @@ func (e *Engine) preparePerformedTrack(track int, pattern *seq.Pattern) error {
 	v := &e.voices[track]
 	switch {
 	case v.poly != nil:
+	case sampleExpressionEnabled && v.sampler != nil:
 	case v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys:
 	case v.kind == VoiceAcid || v.kind == VoiceGraph || v.kind == VoiceGraphPoly:
 	default:
 		return engineError("performed notes need a pitched live-note voice")
 	}
 	for _, note := range pattern.Performance.Notes {
-		if len(note.Expressions) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph && !(v.kind == VoiceGraphPoly && len(pattern.Performance.Groups) > 0) {
+		if len(note.Expressions) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph && !(sampleExpressionEnabled && v.kind == VoiceSample) && !(v.kind == VoiceGraphPoly && len(pattern.Performance.Groups) > 0) {
 			return engineError("gestures need acid or an authored synth")
 		}
 		pitch := int(note.Note) + int(pattern.Transpose)
 		if (v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys) && (pitch < keyboard.MinNote || pitch > keyboard.MaxNote) {
 			return engineError("performed keyboard notes must stay in MIDI range 21 to 108")
 		}
+		if sampleExpressionEnabled && v.sampler != nil {
+			if pitch < 0 || pitch > 127 || !v.sampler.Playable(uint8(pitch)) {
+				return engineError("performed sampler note is outside its playback range")
+			}
+			for _, point := range note.Expressions {
+				if point.Params.Set && point.Params.Timbre != .5 {
+					return engineError("sampler timbre expression is not supported")
+				}
+			}
+		}
 	}
-	if len(pattern.Performance.Groups) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph && v.kind != VoiceGraphPoly {
+	if sampleExpressionEnabled && v.sampler != nil {
+		for _, group := range pattern.Performance.Groups {
+			for _, point := range group.Points {
+				if point.Value.Timbre != .5 {
+					return engineError("sampler timbre expression is not supported")
+				}
+			}
+		}
+	}
+	if len(pattern.Performance.Groups) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph && v.kind != VoiceGraphPoly && !(sampleExpressionEnabled && v.kind == VoiceSample) {
 		return engineError("shared gestures need acid or an authored synth")
 	}
 	// Admit enough events for any legal tempo and this configured block size,
@@ -166,7 +186,9 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 			}
 		}
 		*gate = performedGate{}
-		if v.poly != nil {
+		if sampleExpressionEnabled && v.sampler != nil {
+			v.sampler.ReleaseCohort(sampleCohort(cohort))
+		} else if v.poly != nil {
 			v.poly.Release(cohort)
 		} else if v.kind == VoiceGraphPoly && state.live[event.Note/64]&(uint64(1)<<(event.Note%64)) == 0 {
 			v.legacyPoly.NoteOffNote(event.Note)
@@ -189,6 +211,11 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 	}
 	v.expressionGroup = expression.Group{}
 	switch {
+	case sampleExpressionEnabled && v.sampler != nil:
+		if _, err := v.sampler.NoteOnCohort(event.Note, event.Velocity, sampleCohort(cohort)); err != nil {
+			e.fault(FaultScheduledNote)
+			return
+		}
 	case v.poly != nil:
 		if _, err := v.poly.NoteOn([4]uint8{event.Note}, 1, event.Velocity, false, cohort); err != nil {
 			e.fault(FaultPolyNote)
@@ -230,7 +257,11 @@ func (e *Engine) performedEvent(track int, item patternEvent) {
 
 func (e *Engine) performedExpression(track int, gate performedGate, params seq.Expression) {
 	v, state := &e.voices[track], e.patterns[track].performed
-	if v.poly != nil {
+	if sampleExpressionEnabled && v.sampler != nil {
+		if err := v.sampler.SetCohortExpression(sampleCohort(graph.Cohort{NoteID: gate.id, Generation: uint64(gate.generation)}), params); err != nil {
+			e.fault(FaultVoiceUnsupported)
+		}
+	} else if v.poly != nil {
 		v.poly.SetExpression(graph.Cohort{NoteID: gate.id, Generation: uint64(gate.generation)}, params)
 	} else if v.legacyPoly != nil {
 		v.legacyPoly.SetExpressionNote(gate.pitch, params)

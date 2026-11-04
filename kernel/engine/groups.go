@@ -3,10 +3,21 @@ package engine
 import (
 	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/sample"
 )
+
+func sampleCohort(c graph.Cohort) sample.Cohort {
+	return sample.Cohort{NoteID: c.NoteID, Generation: c.Generation}
+}
 
 func (e *Engine) bindPerformedGroup(track int, note uint8, cohort graph.Cohort, group expression.Group, controls expression.Controls) {
 	v := &e.voices[track]
+	if sampleExpressionEnabled && v.sampler != nil {
+		if err := v.sampler.BindGroup(sampleCohort(cohort), group, controls); err != nil {
+			e.fault(FaultVoiceUnsupported)
+		}
+		return
+	}
 	if v.poly != nil {
 		v.poly.BindGroup(cohort, group, controls)
 		return
@@ -26,6 +37,12 @@ func (e *Engine) bindPerformedGroup(track int, note uint8, cohort graph.Cohort, 
 
 func (e *Engine) setGroupControls(track int, group expression.Group, controls expression.Controls) {
 	v := &e.voices[track]
+	if sampleExpressionEnabled && v.sampler != nil {
+		if err := v.sampler.SetGroupControls(group, controls); err != nil {
+			e.fault(FaultVoiceUnsupported)
+		}
+		return
+	}
 	if v.poly != nil {
 		v.poly.SetGroupControls(group, controls)
 		return

@@ -5,6 +5,8 @@ package sample
 
 import (
 	"math"
+
+	"m31labs.dev/cicada/kernel/expression"
 )
 
 type Error string
@@ -63,11 +65,15 @@ type Voice struct {
 	sourceMissing              bool
 	params                     Params
 	rate, fadeFrames           int
-	phase, ratio               float64
+	phase, ratio, baseRatio    float64
+	expression                 expression.State
+	pressureGain               float64
+	pressureAlpha              float64
 	bank                       *sincBank
 	velocity, gain, targetGain float64
 	gainAlpha                  float64
 	active, releasing, looped  bool
+	expressionActive           bool
 	held                       bool
 	remaining                  int
 	lastL, lastR               float32
@@ -99,6 +105,11 @@ func validateRate(rate int) error {
 
 func (v *Voice) configure(rate int, region Region) {
 	v.rate, v.fadeFrames, v.region, v.params = rate, rate/500, region, DefaultParams()
+	if sampleExpressionEnabled {
+		v.pressureAlpha = 1 - math.Exp(-1/(float64(rate)*.005))
+		v.pressureGain = 1
+		v.expression.Reset()
+	}
 }
 
 func (v *Voice) SetParams(p Params) error {
@@ -149,7 +160,12 @@ func (v *Voice) NoteOn(note, velocity uint8) error {
 	if v.Active() {
 		v.tailL, v.tailR, v.tailRemaining = v.lastL, v.lastR, v.fadeFrames
 	}
-	v.phase, v.ratio, v.bank = float64(v.region.Start), ratio, bankFor(ratio)
+	if sampleExpressionEnabled {
+		v.expression.Reset()
+		v.pressureGain = 1
+		v.expressionActive = false
+	}
+	v.phase, v.ratio, v.baseRatio, v.bank = float64(v.region.Start), ratio, ratio, bankFor(ratio)
 	v.velocity = float64(velocity) / 127
 	v.gain, v.targetGain, v.gainAlpha = v.params.Gain*v.velocity, v.params.Gain*v.velocity, 0
 	v.active, v.releasing, v.looped, v.held = velocity != 0, false, false, false
@@ -227,8 +243,59 @@ func (v *Voice) Retune(note uint8, cents float64) error {
 		v.params = old
 		return err
 	}
-	v.ratio, v.bank = ratio, bankFor(ratio)
+	v.baseRatio, v.ratio, v.bank = ratio, ratio, bankFor(ratio)
 	return nil
+}
+
+// SetExpression changes a playing sample without restarting its phase. Pressure
+// adds up to 6 dB of gain; timbre is not yet mapped to the sampler.
+func (v *Voice) SetExpression(params expression.Params) error {
+	if err := params.Validate(); err != nil {
+		return err
+	}
+	if params.Set && params.Timbre != .5 {
+		return validationError("sample timbre expression is not supported")
+	}
+	next := v.expression
+	next.SetParams(params, float32(v.rate))
+	v.expression = next
+	v.refreshExpressionActive()
+	return nil
+}
+
+func (v *Voice) setGroupControls(controls expression.Controls) error {
+	if err := controls.Validate(); err != nil {
+		return err
+	}
+	if controls.Timbre != .5 {
+		return validationError("sample timbre expression is not supported")
+	}
+	next := v.expression
+	next.SetGroupControls(controls)
+	v.expression = next
+	v.refreshExpressionActive()
+	return nil
+}
+
+func (v *Voice) noteExpression(pitch, pressure, timbre float32) error {
+	if err := (expression.Controls{PitchCents: pitch, Pressure: pressure, Timbre: timbre}).Validate(); err != nil {
+		return err
+	}
+	if timbre != .5 {
+		return validationError("sample timbre expression is not supported")
+	}
+	next := v.expression
+	next.SetControls(pitch, pressure, timbre)
+	v.expression = next
+	v.refreshExpressionActive()
+	return nil
+}
+
+func (v *Voice) refreshExpressionActive() {
+	v.expressionActive = v.expression.PitchCents != 0 || v.expression.Pressure != 0 || v.expression.VibratoDepthCents != 0 || v.pressureGain != 1
+	if !v.expressionActive && v.ratio != v.baseRatio {
+		v.ratio, v.bank = v.baseRatio, bankFor(v.baseRatio)
+	}
 }
 func (v *Voice) KernelTaps() int {
 	if v.ratio == 1 || v.bank == nil {
@@ -259,6 +326,22 @@ func (v *Voice) Render(left, right []float32) {
 func (v *Voice) NextStereo() (float32, float32) {
 	var left, right float32
 	if v.active {
+		if sampleExpressionEnabled && v.expressionActive {
+			ratio := v.baseRatio * v.expression.NextRatio()
+			// Keep live bends and vibrato within the resampler's supported range.
+			// Saturation avoids stopping the transport when a note reaches an edge.
+			ratio = math.Max(.125, math.Min(8, ratio))
+			if ratio != v.ratio {
+				v.ratio, v.bank = ratio, bankFor(ratio)
+			}
+			pressureTarget := 1 + float64(v.expression.Pressure)
+			if v.pressureGain != pressureTarget {
+				v.pressureGain += (pressureTarget - v.pressureGain) * v.pressureAlpha
+				if math.Abs(v.pressureGain-pressureTarget) < 1e-7 {
+					v.pressureGain = pressureTarget
+				}
+			}
+		}
 		v.sourceMissing = false
 		if v.hasStream() {
 			v.source.AdvanceFrame(int64(v.phase))
@@ -267,6 +350,9 @@ func (v *Voice) NextStereo() (float32, float32) {
 			v.gain += float64((v.targetGain - v.gain) * v.gainAlpha)
 		}
 		gain := v.gain
+		if sampleExpressionEnabled {
+			gain *= v.pressureGain
+		}
 		if v.releasing {
 			gain = float64(gain * (float64(v.remaining) / float64(v.fadeFrames)))
 		}

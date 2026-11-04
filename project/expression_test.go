@@ -256,7 +256,7 @@ song { main }
 	}
 }
 
-func TestExpressionSamplerAssignmentRejectsUnsupportedControls(t *testing.T) {
+func TestExpressionSamplerSupportsPitchPressureAndRejectsTimbre(t *testing.T) {
 	_, source, score := assetFixture(t)
 	p, diagnostics := FromScore(score)
 	if p == nil {
@@ -268,8 +268,12 @@ func TestExpressionSamplerAssignmentRejectsUnsupportedControls(t *testing.T) {
 			p.Patterns[i].Expression[j].Timbre = 0.5
 		}
 	}
+	if err := ValidateProject(p); err != nil {
+		t.Fatalf("neutral sampler expression rejected: %v", err)
+	}
+	p.Patterns[0].Expression[0].Timbre = .8
 	if err := ValidateProject(p); err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED") {
-		t.Fatalf("sampler expression semantic validation: %v", err)
+		t.Fatalf("unsupported sampler timbre accepted: %v", err)
 	}
 	encoded, err := json.Marshal(p)
 	if err != nil {
@@ -283,8 +287,8 @@ func TestExpressionSamplerAssignmentRejectsUnsupportedControls(t *testing.T) {
 	if hasErrors(diagnostics) {
 		t.Fatalf("sampler expression syntax: %+v", diagnostics)
 	}
-	if result, diagnostics := FromScore(score); result != nil || !hasErrors(diagnostics) {
-		t.Fatalf("sampler expression source accepted: %+v", diagnostics)
+	if result, diagnostics := FromScore(score); result == nil || hasErrors(diagnostics) {
+		t.Fatalf("sampler pitch expression rejected: %+v", diagnostics)
 	}
 }
 

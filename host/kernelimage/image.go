@@ -260,6 +260,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if hasVibrato(&cfg) && modularFlags == 0 {
 		return nil, imageError("instrument vibrato requires the modular kernel module")
 	}
+	if hasSamplerExpression(&cfg) && modularFlags == 0 {
+		return nil, imageError("sampler expression requires the modular kernel module")
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -291,6 +294,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if hasVibrato(&cfg) {
 		flags |= InstrumentVibratoFlag
+	}
+	if hasSamplerExpression(&cfg) {
+		flags |= SamplerExpressionFlag
 	}
 	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))

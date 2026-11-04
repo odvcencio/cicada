@@ -359,9 +359,14 @@ func (e *Engine) TrackVoiceKind(track int) VoiceKind {
 	return e.voices[track].kind
 }
 
+// TrackSamplerNotePlayable is intended for host admission before publication.
+func (e *Engine) TrackSamplerNotePlayable(track int, note uint8) bool {
+	return track >= 0 && track < e.tracks && e.voices[track].sampler != nil && e.voices[track].sampler.Playable(note)
+}
+
 // TrackPolyphonic reports an immutable voice-mode capability to native hosts.
 func (e *Engine) TrackPolyphonic(track int) bool {
-	return track >= 0 && track < e.tracks && (e.voices[track].poly != nil || e.voices[track].legacyPoly != nil)
+	return track >= 0 && track < e.tracks && (e.voices[track].poly != nil || e.voices[track].legacyPoly != nil || sampleExpressionEnabled && e.voices[track].sampler != nil)
 }
 
 // MacroValue reports the current and target values for a macro ID. Invalid IDs return zero values.
@@ -762,6 +767,19 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 		}
 		for slot := range bank.Slots {
 			pattern := &bank.Slots[slot]
+			if !sampleExpressionEnabled && e.voices[track].kind == VoiceSample && pattern.Expression != nil {
+				return engineError("sampler expression requires the modular kernel")
+			}
+			if sampleExpressionEnabled && e.voices[track].sampler != nil && pattern.Expression != nil {
+				for i, point := range pattern.Expression {
+					if i >= int(pattern.Len) {
+						break
+					}
+					if point.Set && point.Timbre != .5 {
+						return engineError("sampler timbre expression is not supported")
+					}
+				}
+			}
 			if e.voices[track].kind == VoicePiano && pattern.Expression != nil {
 				return engineError("piano voices do not support per-note expression")
 			}
@@ -1566,11 +1584,17 @@ func (e *Engine) apply(c cmd.Command) {
 		e.setGroupControls(int(c.Track), liveGroup(c.Index), expression.Controls{PitchCents: math.Float32frombits(c.Arg0), Pressure: math.Float32frombits(c.Arg1), Timbre: math.Float32frombits(c.Pad)})
 	case cmd.OpNoteExpression:
 		v := &e.voices[c.Track]
-		if v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys {
+		if v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys || !sampleExpressionEnabled && v.kind == VoiceSample {
 			e.fault(FaultVoiceUnsupported)
 			return
 		}
-		if v.poly != nil || v.legacyPoly != nil {
+		if sampleExpressionEnabled && v.sampler != nil && v.noteActive && c.Index == v.noteIdentity {
+			if err := v.sampler.SetControls(v.samplerNote, math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad)); err != nil {
+				e.fault(FaultVoiceUnsupported)
+			}
+			return
+		}
+		if v.poly != nil || v.legacyPoly != nil || sampleExpressionEnabled && v.sampler != nil {
 			e.liveIdentityExpression(c.Track, c.Index, math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad))
 			return
 		}

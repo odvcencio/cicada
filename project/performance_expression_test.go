@@ -1,12 +1,55 @@
 package project
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
 )
+
+func TestSamplerPerformedExpressionRoundTrip(t *testing.T) {
+	_, source, _ := assetFixture(t)
+	source = bytes.Replace(source, []byte("pattern hits { c3 . c3 . }"), []byte(`pattern hits performance length=3840ticks {
+ note 48 at=17ticks length=703ticks velocity=82 {
+  gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
+  gesture at=123ticks bend=123ct pressure=0.7 timbre=0.5 vibrato=5ct;
+ }
+}`), 1)
+	score, ds := notation.ParseEdition(source, 2)
+	if hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := DecodeJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := ToSource(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	againScore, ds := notation.ParseEdition(canonical, 2)
+	if hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	again, ds := FromScore(againScore)
+	if again == nil || hasErrors(ds) || !reflect.DeepEqual(p.Patterns[0].Performance, again.Patterns[0].Performance) {
+		t.Fatalf("sampler performance changed: %v", ds)
+	}
+	again.Patterns[0].Performance.Notes[0].Expressions[0].Value.Timbre = .9
+	if err := ValidateProject(again); err == nil {
+		t.Fatal("unsupported sampler timbre accepted")
+	}
+}
 
 func TestPerformedGesturesSurviveSourceJSONAndFormatting(t *testing.T) {
 	const source = `cicada 2

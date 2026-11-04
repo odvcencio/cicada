@@ -15,6 +15,7 @@ import (
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -22,7 +23,19 @@ import (
 // This gate combines the two formerly conflicting formats in one actual
 // reactor, including serial sampler handles and scheduled graph cohorts.
 func TestAudioWASMUnifiedChordSamplerClipSeekParity(t *testing.T) {
-	wasm, err := os.ReadFile(wasmModulePath())
+	testUnifiedSamplerParity(t, wasmModulePath(), false)
+}
+
+func TestSamplerExpressionNativeWASMParity(t *testing.T) {
+	path := os.Getenv("CICADA_MODULAR_WASM_PATH")
+	if path == "" {
+		t.Skip("set CICADA_MODULAR_WASM_PATH")
+	}
+	testUnifiedSamplerParity(t, path, true)
+}
+
+func testUnifiedSamplerParity(t *testing.T, path string, expressive bool) {
+	wasm, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +67,12 @@ arrange { place first keys harmony { at=0ticks length=960ticks } }
 			cfg.Track[2] = engine.TrackConfig{Kind: engine.VoiceSample, GainSet: true, Sample: &engine.SamplerConfig{Asset: 0, RootKey: 60, Voices: 2, Loop: true}}
 			cfg.Patterns[2].Slots[0] = cfg.Patterns[0].Slots[0]
 			clear(cfg.Patterns[2].Slots[0].Chords[:])
+			if expressive {
+				cfg.Patterns[2].Slots[0].Expression = new([64]seq.Expression)
+				for i := range cfg.Patterns[2].Slots[0].Len {
+					cfg.Patterns[2].Slots[0].Expression[i] = seq.Expression{Set: true, Timbre: .5, Pressure: float32(i%2) * .7, PitchCents: float32(i%3) * 200, VibratoDepthCents: 25, VibratoRateHz: 5}
+				}
+			}
 			pcm := make([]float32, 512)
 			for i := range pcm {
 				pcm[i] = float32(math.Sin(2*math.Pi*float64(i)/32) * 0.05)
@@ -71,6 +90,11 @@ arrange { place first keys harmony { at=0ticks length=960ticks } }
 			image, err := kernelimage.Encode(cfg)
 			if err != nil {
 				t.Fatal(err)
+			}
+			// Exercise compatibility with images produced before sampler expression
+			// required the optional module. This fixture has no expression data.
+			if !expressive {
+				binary.LittleEndian.PutUint32(image[8:12], binary.LittleEndian.Uint32(image[8:12])&^kernelimage.SamplerExpressionFlag)
 			}
 			if binary.LittleEndian.Uint16(image[4:6]) != kernelimage.UnifiedImageVersion {
 				t.Fatal("wrong unified image version")

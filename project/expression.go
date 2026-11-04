@@ -12,8 +12,8 @@ import (
 
 func unsupportedSourceExpression(score *notation.Score, kind string) string {
 	for _, sampler := range score.Samplers {
-		if sampler.Name == kind {
-			return "sampler"
+		if sampler.Name == kind && sampler.Pack != "" {
+			return "sample pack"
 		}
 	}
 	if notationKeysBuiltin(score, kind) {
