@@ -1,9 +1,6 @@
 package notation
 
-import (
-	"m31labs.dev/cicada/internal/paramdefs"
-	"m31labs.dev/cicada/kernel"
-)
+import "m31labs.dev/cicada/internal/paramdefs"
 
 func validateMappedMacros(s *Score) []Diagnostic {
 	if s.Live == nil {
@@ -23,8 +20,7 @@ func validateMappedMacros(s *Score) []Diagnostic {
 			add(message)
 			continue
 		}
-		id, ok := kernel.FindParam(desc.ID)
-		if !ok || !desc.Live || desc.Curve == "toggle" || kernel.IsInteger(id) {
+		if !desc.Live || desc.Curve == "toggle" || desc.Type == "integer" || desc.Type == "boolean" {
 			add("mapped macro requires a continuous live parameter")
 			continue
 		}

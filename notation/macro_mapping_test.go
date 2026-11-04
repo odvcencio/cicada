@@ -31,4 +31,10 @@ song { main }
 			t.Fatalf("invalid mapped macro accepted: %s", bad)
 		}
 	}
+	integer := strings.Replace(source, "track bass acid", "track bass tonewheel_organ", 1)
+	integer = strings.Replace(integer, "bass.cutoff 200Hz..4kHz curve exp", "bass.drawbar1 0..8 curve linear", 1)
+	_, ds := Parse([]byte(integer))
+	if len(ds) != 1 || !strings.Contains(ds[0].Message, "continuous live parameter") {
+		t.Fatalf("integer target should be rejected as non-continuous: %+v", ds)
+	}
 }
