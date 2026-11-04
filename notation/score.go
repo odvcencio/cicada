@@ -61,7 +61,27 @@ type Score struct {
 	Master         []Param
 	HasMaster      bool
 	Live           *Live
+	MIDI           *MIDI
 	Exports        []Export
+}
+
+// MIDI describes portable logical ports and their score mappings. Device
+// names are machine-local and never appear in the score.
+type MIDI struct {
+	Ports    []MIDIPort
+	Mappings []MIDIMapping
+	Position Position
+}
+
+type MIDIPort struct {
+	Name     string
+	Position Position
+}
+
+type MIDIMapping struct {
+	Port, Message, Target, Min, Max, Takeover, Mode string
+	Channel, Number                                 int // channel 0 accepts any channel; otherwise 1..16
+	Position                                        Position
 }
 
 // Preset changes values on an existing target, never its DSP structure.

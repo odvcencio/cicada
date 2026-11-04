@@ -649,6 +649,18 @@ jobs:
           CICADA_SOLO_SCORE="$browser_root/solo-clock.cicada" CICADA_SOLO_PROOF_DIR="$PWD/build/studio-solo-clock-proof" node --test workstation/browser/solo-clock.test.cjs | tee build/studio-solo-clock-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          node workstation/browser/portable-midi.test.cjs --write-fixture "$browser_root/portable-midi"
+          ./build/cicada studio "$browser_root/portable-midi/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-portable-midi-server.log 2>&1 &
+          studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          CICADA_PORTABLE_MIDI_SCORE="$browser_root/portable-midi/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-portable-midi-proof" node --test workstation/browser/portable-midi.test.cjs | tee build/studio-portable-midi-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
           go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-observation-clock-fixture.json
           export CICADA_OBSERVATION_FIXTURE="$PWD/build/studio-observation-clock-fixture.json"
           observation_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_OBSERVATION_FIXTURE")"

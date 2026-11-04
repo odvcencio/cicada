@@ -26,7 +26,11 @@ func CCValue(d Descriptor, cc int) (*float64, error) {
 	v := d.Min + u*(d.Max-d.Min)
 	switch d.Curve {
 	case "log":
-		if d.Min > 0 && d.Max > 0 {
+		if cc == 0 {
+			v = d.Min
+		} else if cc == 127 {
+			v = d.Max
+		} else if d.Min > 0 && d.Max > 0 {
 			v = math.Exp(math.Log(d.Min) + u*(math.Log(d.Max)-math.Log(d.Min)))
 		}
 	case "fader":

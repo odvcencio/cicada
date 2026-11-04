@@ -70,7 +70,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 	scene := "scene main { lead=melody keys=keys-line drums=beat vox=off lead.cutoff=700Hz }"
 	part := "title \"Foreign\"\ntempo 120\nkey a minor\n" + voice + "\n" +
 		"preset bright { instrument=acid cutoff=900Hz }\nfx grit drive {}\n" +
-		"track lead acid {}\ntrack keys voice {}\ntrack drums drums {}\ntrack vox audio {}\n" +
+		"track lead acid {}\ntrack keys voice {}\ntrack drums drums {}\ntrack vox audio {}\nmidi { port controller }\n" +
 		"asset wave \"recorded.wav\" { sha256=\"" + strings.Repeat("a", 64) + "\" format=wav frames=480 rate=48000Hz channels=1 }\nclip hit wave { start=0frames end=480frames }\n" +
 		"pattern melody acid steps=4 { c4^ . . . }\npattern beat drums steps=4 { bd: x... }\n" +
 		"pattern keys-line notes steps=4 { c4 . . . }\n" +
@@ -82,6 +82,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 	entry := "cicada 2\n" + strings.Repeat("// entry sentinel "+strings.Repeat("x", 180)+"\n", strings.Count(part, "\n")+5)
 	declaration := "sampler captured { asset=wave root=c4 mode=oneshot voices=4 }"
 	fixtures := map[string]edits.Intent{
+		"setmidimapping":         &edits.SetMIDIMapping{Port: "controller", Message: "cc", Channel: 1, Number: 74, Target: "lead.cutoff"},
 		"setchord":               &edits.SetChord{Entity: "step:keys-line/0", Notes: []int{60, 64, 67}, Hold: 2, Shared: "pattern"},
 		"createpattern":          &edits.CreatePattern{Name: "new-phrase", Track: "keys", Steps: 16, Scene: "main"},
 		"setperformancegroup":    &edits.SetPerformanceGroup{Entity: "pattern:played", Index: 0, Name: "swell"},
@@ -197,7 +198,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
-					case "togglestep", "setpitch", "togglemodifier", "cyclestep", "setdrumvelocity", "setstep", "setpatternsettings", "setrange", "resizepattern", "setchord":
+					case "togglestep", "setpitch", "togglemodifier", "cyclestep", "setdrumvelocity", "setstep", "setpatternsettings", "setrange", "resizepattern", "setchord", "setmidimapping":
 						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
 							t.Fatalf("grid edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)
 						}

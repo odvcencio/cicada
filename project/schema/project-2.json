@@ -133,6 +133,9 @@
     "live": {
       "$ref": "#/$defs/live"
     },
+    "midi": {
+      "$ref": "#/$defs/midi"
+    },
     "arrange": {
       "$ref": "#/$defs/arrangement"
     },
@@ -159,6 +162,39 @@
     }
   },
   "$defs": {
+    "midi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ports", "maps"],
+      "properties": {
+        "ports": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/id"}},
+        "maps": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/midi_mapping"}}
+      }
+    },
+    "midi_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "message", "target"],
+      "properties": {
+        "port": {"$ref": "#/$defs/id"},
+        "message": {"enum": ["track", "cc", "note"]},
+        "channel": {"type": "integer", "minimum": 1, "maximum": 16},
+        "number": {"type": "integer", "minimum": 0, "maximum": 127},
+        "target": {"type": "string"},
+        "range": {"$ref": "#/$defs/midi_range"},
+        "takeover": {"enum": ["jump"]},
+        "mode": {"enum": ["trigger"]}
+      }
+    },
+    "midi_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": {"$ref": "#/$defs/value"},
+        "max": {"$ref": "#/$defs/value"}
+      }
+    },
     "id": {
       "type": "string",
       "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$",

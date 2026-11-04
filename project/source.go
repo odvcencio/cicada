@@ -183,6 +183,13 @@ func ToSource(p *Project) ([]byte, error) {
 	if p.Live != nil {
 		sections = append(sections, liveSource(p.Live))
 	}
+	if p.MIDI != nil {
+		source, err := midiSource(p.MIDI)
+		if err != nil {
+			return nil, err
+		}
+		sections = append(sections, source)
+	}
 	slots := make(map[string]int)
 	automatic := make(map[string]bool)
 	for _, track := range p.Tracks {

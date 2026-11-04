@@ -41,6 +41,7 @@ type Project struct {
 	Master      *Master      `cicada:"Master mixer" json:"master,omitempty" introduced:"cicada.project/2"`
 	Exports     []Export     `cicada:"Named render delivery targets" json:"exports,omitempty" introduced:"cicada.project/2"`
 	Live        *Live        `cicada:"Declared host controls" json:"live,omitempty" introduced:"cicada.project/2"`
+	MIDI        *Midi        `cicada:"Portable MIDI ports and mappings" json:"midi,omitempty" introduced:"cicada.project/2"`
 
 	Automation []AutomationLane `cicada:"Continuous song parameter lanes" json:"automation,omitempty" introduced:"cicada.project/2"`
 	Modulators []Modulator      `cicada:"Control sources: lfo, envelope, sway and contour" json:"modulators,omitempty" introduced:"cicada.project/2"`
@@ -335,8 +336,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	// Select /2 before lowering mixer fields. A later arrangement/automation
 	// upgrade must not discard levels or routing needed by its JSON wire form.
-	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0
 	p.Live = liveFromScore(score.Live)
+	p.MIDI = midiFromScore(score.MIDI)
 	for _, scene := range score.Scenes {
 		needsProject2 = needsProject2 || len(scene.Settings) > 0
 	}

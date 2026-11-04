@@ -286,6 +286,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/workspace", s.workspace)
+	mux.HandleFunc("GET /api/midi/ports", s.midiPorts)
 	mux.HandleFunc("GET /api/files", s.projectFiles)
 	mux.HandleFunc("GET /api/revision", s.projectRevision)
 	mux.HandleFunc("POST /api/files", s.editFile)

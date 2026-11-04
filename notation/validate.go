@@ -55,6 +55,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 	ds = append(ds, ValidateArrangement(s)...)
 	ds = append(ds, ValidateModulators(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
+	ds = append(ds, validateMIDI(s)...)
 	ds = append(ds, ValidateDirector(s.Live, s.Tracks, s.Patterns, s.Scenes, s.Kits)...)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})

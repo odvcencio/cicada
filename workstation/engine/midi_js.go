@@ -11,10 +11,55 @@ import (
 	"net/http"
 	"strings"
 	"syscall/js"
+	"time"
 
 	"m31labs.dev/cicada/host/midi"
 	"m31labs.dev/cicada/workstation/control"
 )
+
+func (u *liveUI) loadPortableMIDIPorts() {
+	origin := js.Global().Get("location").Get("origin").String()
+	request, err := http.NewRequestWithContext(u.ctx, http.MethodGet, origin+"/api/midi/ports", nil)
+	if err != nil {
+		return
+	}
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	if err != nil {
+		if !u.closed.Load() {
+			u.status.Set("Could not read local MIDI port settings.")
+		}
+		return
+	}
+	defer response.Body.Close()
+	var result struct {
+		Ports map[string]string `json:"ports"`
+		Error string            `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 65537)).Decode(&result); err != nil || response.StatusCode != http.StatusOK {
+		if !u.closed.Load() {
+			if result.Error != "" {
+				u.status.Set(result.Error)
+			} else {
+				u.status.Set("Could not read local MIDI port settings.")
+			}
+		}
+		return
+	}
+	if u.closed.Load() {
+		return
+	}
+	u.localMIDIPorts = result.Ports
+	var missing []string
+	for _, port := range u.props.PortableMIDI.Ports {
+		if result.Ports[port] == "" {
+			missing = append(missing, port)
+		}
+	}
+	if len(missing) > 0 {
+		u.status.Set("Set local MIDI ports in cicada.local: " + strings.Join(missing, ", "))
+	}
+	u.renderMappings()
+}
 
 func (u *liveUI) releaseMIDIPrefix(prefix string) {
 	u.releaseMIDIPrefixAt(prefix, nil)

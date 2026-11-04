@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := len(p.Automation) > 0 || len(p.Modulators) > 0 || len(p.Routes) > 0 || p.Arrange != nil || p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := len(p.Automation) > 0 || len(p.Modulators) > 0 || len(p.Routes) > 0 || p.Arrange != nil || p.HasAudio() || p.Live != nil || p.MIDI != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
@@ -557,7 +557,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
-	p.p2Syntax = p.Format == FormatID2 && (p.Arrange != nil || p.Live != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
+	p.p2Syntax = p.Format == FormatID2 && (p.Arrange != nil || p.Live != nil || p.MIDI != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
 	for _, effect := range p.Effects {
 		p.p2Syntax = p.p2Syntax || effect.Kind != ""
 	}
@@ -714,7 +714,7 @@ func checkRequiredFields(data []byte) error {
 		optionalByConstruct["mixer"] = nil
 		fieldsByConstruct["effect"] = []string{"id", "params"}
 		optionalByConstruct["effect"] = nil
-		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live", "arrange")
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live", "midi", "arrange")
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
 		fields, ok := fieldsByConstruct[construct]
@@ -869,6 +869,26 @@ func checkRequiredFields(data []byte) error {
 					_, err := require(value, "live_layer", "layer rule", pointer)
 					return err
 				})
+			}); err != nil {
+				return err
+			}
+		}
+		if rawMIDI, exists := root["midi"]; exists {
+			midi, err := require(rawMIDI, "midi", "midi", "/midi")
+			if err != nil {
+				return err
+			}
+			if err := checkObjectArray(midi["maps"], "MIDI mappings", "/midi/maps", func(value any, pointer string) error {
+				mapping, err := require(value, "midi_mapping", "MIDI mapping", pointer)
+				if err != nil {
+					return err
+				}
+				if bounds, exists := mapping["range"]; exists {
+					if _, err := require(bounds, "midi_range", "MIDI range", pointer+"/range"); err != nil {
+						return err
+					}
+				}
+				return nil
 			}); err != nil {
 				return err
 			}

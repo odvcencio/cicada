@@ -110,7 +110,45 @@ immediately; the 400 ms smoothing default applies to later host changes.
 
 Layers rise one level per bar and fall one level after 3 quiet bars. Tracks
 without a rule stay on. Values and thresholds are 0–1; the kernel rounds
-thresholds to 8 bits, so nearby values can share a level. Studio and the director SDK use `land` as their default launch timing. Studio can override it for a launch; `phrase` requires a declared phrase length. `count_in` sets audio recording to 0–8 bars; the default is one bar. Tempo controls, saved MIDI mappings, and parameter-mapped macros are not supported.
+thresholds to 8 bits, so nearby values can share a level. Studio and the director SDK use `land` as their default launch timing. Studio can override it for a launch; `phrase` requires a declared phrase length. `count_in` sets audio recording to 0–8 bars; the default is one bar. Tempo controls and parameter-mapped macros are not supported.
+
+### Portable MIDI mappings
+
+An edition-2 score can name logical input ports and map them to tracks, live
+parameters, scenes, Play, and Stop:
+
+```cicada
+cicada 2
+tempo 120
+track bass acid {}
+track lead acid {}
+midi {
+  port keys
+  keys ch 1 -> lead
+  keys cc 74 -> bass.cutoff 200Hz..4kHz
+  keys note c1 -> launch verse
+}
+pattern phrase { 1 . 3 . }
+scene verse { bass = phrase lead = phrase }
+song { verse*16 }
+```
+
+In the project directory, create `cicada.local` with a port-to-device binding
+for this machine, for example `port keys = "KeyStep 37 MIDI 1"`. Use the exact
+device name Studio reports. This file is local and is excluded from projects
+created by `cicada new` and from bundles. Bind the same logical name to a
+different device in another copy of the project. An absent or invalid binding
+is reported; the saved score never contains the device name. Reload Studio
+after changing the local bindings.
+
+In Studio's Live panel, choose a target and select **Learn next input**. When
+the device has exactly one matching declared port, the learned controller or
+note is saved in the score with Undo and revision checks. Without a `midi`
+block, Learn continues to save browser-local mappings as before. The current
+portable slice uses jump takeover and trigger launch; other takeover or launch
+modes are rejected with a diagnostic. Slot and per-track stop mappings can be
+learned as browser-local mappings in projects without a `midi` block. Remove
+score mappings in Code.
 
 ### Live MIDI performance and note takes
 

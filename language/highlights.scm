@@ -89,6 +89,27 @@
 ("->" @operator)
 (call_expr "," @punctuation.delimiter)
 
+; Portable MIDI ports and score mappings.
+(midi_decl "midi" @keyword)
+(midi_port "port" @keyword name: (identifier) @variable.parameter)
+(midi_track "ch" @keyword)
+(midi_track port: (identifier) @variable.parameter)
+(midi_track channel: (integer) @number)
+(midi_track target: (identifier) @variable.member)
+(midi_cc "cc" @keyword)
+(midi_cc port: (identifier) @variable.parameter)
+(midi_cc number: (integer) @number)
+(midi_cc "ch" @keyword channel: (integer) @number)
+(midi_cc ".." @operator)
+(midi_cc "takeover" @keyword takeover: (identifier) @keyword.modifier)
+(midi_note "note" @keyword)
+(midi_note port: (identifier) @variable.parameter)
+(midi_note "ch" @keyword channel: (integer) @number)
+(midi_note number: (integer) @number)
+(midi_note ["play" "stop" "launch"] @keyword)
+(midi_note scene: (identifier) @label)
+(midi_note "mode" @keyword mode: (identifier) @keyword.modifier)
+
 ; ---------------------------------------------------------------------------
 ; Tracks and effects: `track <name> <voice> { key = value }`.
 
