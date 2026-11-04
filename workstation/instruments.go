@@ -70,7 +70,20 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 		gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("data-sound-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Preparing sound previews…")),
 			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-stop", ""), gosx.BoolAttr("disabled")), gosx.Text("Stop preview")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "instrument-patches")), gosx.Fragment(library...))))
-	return gosx.Fragment(ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Choose a sound", Description: "Try each sound on its own in your song’s key and tempo. Then add it and make it yours."}, sounds,
+	var savePreset gosx.Node = gosx.Fragment()
+	if len(p.Tracks) > 0 {
+		trackIDs := make([]string, 0, len(p.Tracks))
+		for _, track := range p.Tracks {
+			trackIDs = append(trackIDs, track.ID)
+		}
+		savePreset = gosx.El("details", gosx.Attrs(gosx.Attr("data-preset-save", "")),
+			gosx.El("summary", gosx.Text("Save a track as a preset")),
+			gosx.El("p", gosx.Text("Save the track’s current sound settings in the score. Undo restores the previous score.")),
+			s.form(v, csrf, "instruments", "preset-save", hidden("source_revision", v.SourceRevision),
+				field("Track", selectInput("track", trackIDs[0], trackIDs)),
+				field("Preset name", textInput("name", "")), submit("", "", "Save preset")))
+	}
+	return gosx.Fragment(ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Choose a sound", Description: "Try each sound on its own in your song’s key and tempo. Then add it and make it yours."}, sounds, savePreset,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Adding an instrument and track is one Undo step. Use Create pattern on its card to start writing notes, or assign an existing notes pattern in the pattern editor."))),
 		ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score")))),
 		s.recorded(ctx, v, csrf), s.samplePacks(ctx, v, csrf))
