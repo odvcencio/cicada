@@ -159,13 +159,18 @@ func validatePerformedTrack(p *Project, track Track, pattern Pattern) error {
 			return fmt.Errorf("performed notes need a pitched instrument on track %s", track.ID)
 		}
 	}
+	samplerTrack := false
 	for _, sampler := range p.Samplers {
-		if sampler.Name == track.Kind {
-			return fmt.Errorf("performed notes for sampler tracks are not supported yet")
+		if sampler.Name != track.Kind {
+			continue
 		}
+		if sampler.Pack != "" {
+			return fmt.Errorf("performed notes for sample packs are not supported yet")
+		}
+		samplerTrack = true
 	}
 	modeled := isModeledPiano(p, track.Kind) || isModeledKeys(p, track.Kind)
-	pitched := track.Kind == "acid" || modeled
+	pitched := track.Kind == "acid" || modeled || samplerTrack
 	for _, instrument := range p.Instruments {
 		if instrument.ID == track.Kind {
 			pitched = true
@@ -174,7 +179,23 @@ func validatePerformedTrack(p *Project, track Track, pattern Pattern) error {
 	if !pitched {
 		return fmt.Errorf("performed notes need a pitched instrument on track %s", track.ID)
 	}
-	if track.Kind != "acid" {
+	if samplerTrack {
+		for _, group := range pattern.Performance.Groups {
+			for _, point := range group.Points {
+				if point.Timbre != .5 {
+					return fmt.Errorf("CICADA-UNSUPPORTED: sampler timbre expression is not supported")
+				}
+			}
+		}
+		for _, note := range pattern.Performance.Notes {
+			for _, point := range note.Expressions {
+				if point.Value.Timbre != .5 {
+					return fmt.Errorf("CICADA-UNSUPPORTED: sampler timbre expression is not supported")
+				}
+			}
+		}
+	}
+	if track.Kind != "acid" && !samplerTrack {
 		authored := false
 		for _, instrument := range p.Instruments {
 			authored = authored || instrument.ID == track.Kind

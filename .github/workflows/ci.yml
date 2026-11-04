@@ -1188,7 +1188,8 @@ jobs:
     # Full Studio on arm64; Intel compiles the app and exercises the native
     # host/bridge without rebuilding portable WASM. Neither waits on another job.
     # Both architectures retain the full Studio sweep in the nightly/manual lane.
-    timeout-minutes: 10
+    # Cold arm64 builds and the signed-app exercise can exceed ten minutes.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

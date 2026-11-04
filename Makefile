@@ -274,6 +274,7 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 	bash -o pipefail -c 'CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestMappedMacroNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentVibratoNativeWASMParity$$' -count=1 -v
+	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestSamplerExpressionNativeWASMParity$$' -count=1 -v
 	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestKeysModularWASMParity$$' -count=1 -v
 
 test-loudness: build-loudness-wasm
@@ -288,7 +289,7 @@ test-worklet-negotiation: build-worklets
 	node host/web/client_capability_test.cjs
 	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs host/web/message-drain.test.cjs host/web/keys_client.test.cjs
 
-test-browser: build-kernel-wasm
+test-browser: build-kernel-wasm build-modular-wasm
 	mkdir -p build
 	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit)$$' 5m build/test-browser.log
 	bash cmd/cicada/browser-runner.sh browser,worklet_testhooks '^TestBrowserUnderrunDetector$$' 2m build/test-worklet-stall.log

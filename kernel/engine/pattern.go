@@ -421,6 +421,8 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 			e.releasePianoPattern(track)
 		} else if keysEnabled && v.kind == VoiceKeys {
 			e.releaseKeysPattern(track)
+		} else if sampleExpressionEnabled && v.sampler != nil {
+			v.sampler.ReleaseCohort(sampleCohort(graph.Cohort{NoteID: p.playingNote, Generation: uint64(p.playingGen)}))
 		} else {
 			e.noteOff(track, 0xffff)
 		}
@@ -798,6 +800,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 							e.releasePianoPattern(track)
 						} else if keysEnabled && e.voices[track].kind == VoiceKeys {
 							e.releaseKeysPattern(track)
+						} else if sampleExpressionEnabled && e.voices[track].sampler != nil {
+							e.voices[track].sampler.ReleaseCohort(sampleCohort(graph.Cohort{NoteID: item.event.NoteID, Generation: uint64(item.generation)}))
 						} else {
 							e.noteOff(track, 0xffff)
 						}
@@ -835,8 +839,15 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				e.voices[track].modal.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoiceSample:
 				v := &e.voices[track]
+				if sampleExpressionEnabled && p.playingNote != 0 {
+					v.sampler.ReleaseCohort(sampleCohort(graph.Cohort{NoteID: p.playingNote, Generation: uint64(p.playingGen)}))
+				}
 				var err error
-				v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
+				if sampleExpressionEnabled {
+					v.samplerNote, err = v.sampler.NoteOnCohort(event.Note, event.Velocity, sampleCohort(graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}))
+				} else {
+					v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
+				}
 				if err != nil {
 					e.fault(FaultVoiceUnsupported)
 					return
@@ -945,6 +956,13 @@ func (e *Engine) applyStepExpression(track int, params seq.Expression) {
 		}
 	case VoiceAcid:
 		e.voices[track].acid.SetExpression(params)
+	case VoiceSample:
+		if sampleExpressionEnabled {
+			v := &e.voices[track]
+			if err := v.sampler.SetExpression(v.samplerNote, params); err != nil {
+				e.fault(FaultVoiceUnsupported)
+			}
+		}
 	}
 }
 

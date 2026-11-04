@@ -1032,8 +1032,17 @@ func validatePatternSound(p *Project, track Track, pattern Pattern, polyphonic, 
 	if err := validatePerformedTrack(p, track, pattern); err != nil {
 		return err
 	}
-	if sampler && len(pattern.Expression) > 0 {
-		return fmt.Errorf("CICADA-UNSUPPORTED: sampler track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
+	if sampler {
+		for _, voice := range p.Samplers {
+			if voice.Name == track.Kind && voice.Pack != "" && len(pattern.Expression) > 0 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: sample packs cannot play note expression")
+			}
+		}
+		for _, expression := range pattern.Expression {
+			if expression.Timbre != .5 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: sampler timbre expression is not supported")
+			}
+		}
 	}
 	if isModeledKeys(p, track.Kind) && len(pattern.Expression) > 0 {
 		return fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboard track %s cannot play note expression in pattern %s", track.ID, pattern.ID)

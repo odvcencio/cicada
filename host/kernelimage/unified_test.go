@@ -151,6 +151,9 @@ func TestUnifiedMixedRoundTripSeekStopAndReentry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if binary.LittleEndian.Uint32(data[8:12])&kernelimage.SamplerExpressionFlag == 0 {
+		t.Fatal("sampler image does not request the expressive module")
+	}
 	if binary.LittleEndian.Uint16(data[4:6]) != kernelimage.UnifiedImageVersion {
 		t.Fatal("wrong unified version")
 	}

@@ -13,7 +13,11 @@ func liveGroup(id uint16) expression.Group {
 func (e *Engine) bindLiveGroup(c cmd.Command) {
 	v := &e.voices[c.Track]
 	group, neutral := liveGroup(uint16(c.Arg0)), expression.Controls{Timbre: .5}
-	if v.poly != nil {
+	if sampleExpressionEnabled && v.sampler != nil {
+		if err := v.sampler.BindGroup(sampleCohort(liveCohort(c.Index)), group, neutral); err != nil {
+			e.fault(FaultVoiceUnsupported)
+		}
+	} else if v.poly != nil {
 		v.poly.BindGroup(liveCohort(c.Index), group, neutral)
 	} else if v.legacyPoly != nil {
 		v.legacyPoly.BindGroupIdentity(c.Index, group, neutral)
@@ -30,6 +34,9 @@ func (e *Engine) LiveGroupActive(track uint8, id uint16) bool {
 		return false
 	}
 	v, group := &e.voices[track], liveGroup(id)
+	if sampleExpressionEnabled && v.sampler != nil {
+		return v.sampler.GroupActive(group)
+	}
 	if v.poly != nil {
 		return v.poly.GroupActive(group)
 	}

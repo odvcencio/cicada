@@ -420,6 +420,10 @@ channel controls from MPE member and master controls. The native input requests
 MIDI 1 protocol conversion from CoreMIDI; it does not claim MIDI 2 expression
 support. Web MIDI also supplies MIDI 1 packets. System-exclusive messages are ignored.
 
+Single-asset sampler tracks support live pitch bend and pressure as well as
+recorded expression; sampler timbre/CC74 and sample-pack expression are not
+available yet. Playback speed saturates at the sampler's supported limits.
+
 #### Record and Arm
 
 Select a parameter, scene, slot, track stop, or transport target, then **Learn

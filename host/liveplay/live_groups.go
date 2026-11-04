@@ -31,6 +31,9 @@ func (p *Player) GroupExpressionOwner(track, owner string, pitch, pressure, timb
 	if err := p.validateLiveGroup(track, owner); err != nil {
 		return err
 	}
+	if _, kind, ok := findTrack(p.trackNames.Load(), track); ok && kind == "sampler" && timbre != .5 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: sampler timbre expression is not supported")
+	}
 	c := cmd.Command{Op: cmd.OpSetLiveGroup, Index: 1, Arg0: math.Float32bits(pitch), Arg1: math.Float32bits(pressure), Pad: math.Float32bits(timbre)}
 	if err := c.Validate(1); err != nil {
 		return err
@@ -43,7 +46,7 @@ func (p *Player) validateLiveGroup(track, owner string) error {
 		return fmt.Errorf("invalid live group owner")
 	}
 	_, kind, found := findTrack(p.trackNames.Load(), track)
-	if !found || kind != "acid" && kind != "graph" && kind != "poly" {
+	if !found || kind != "acid" && kind != "graph" && kind != "poly" && kind != "sampler" {
 		return fmt.Errorf("track %q does not support shared expression", track)
 	}
 	return nil

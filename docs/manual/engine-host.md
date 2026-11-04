@@ -119,7 +119,13 @@ cannot change its replacement. Identity zero preserves the legacy path, and
 Graph instruments expose `pitch_bend` in cents and normalized `pressure` and
 `timbre`. The existing `pitch` input includes bend and score vibrato. Built-in
 acid voices apply pitch expression; pressure and timbre need a graph that uses
-those inputs. Authored four-voice pools and eight-voice graphs also support
+those inputs. Single-asset samplers support bend, vibrato and pressure on
+individual notes and shared groups. Pressure smoothly scales amplitude from
+1× to 2×; bends and vibrato saturate at the resampler's 1/8× and 8× playback
+limits. Sampler timbre is not mapped and non-neutral timbre is rejected. Sample
+packs do not yet support expression. Browser images containing a single-asset
+sampler select the optional modular kernel, enabling later live expression;
+older unflagged sampler images remain playable in the core. Authored four-voice pools and eight-voice graphs also support
 independent live notes. Negotiate `CapabilityLiveIdentity` (bit 20) before
 sending note-on/off with `Arg1=1`; `Index` then names a live owner 1…65534,
 separate from sequenced cohorts. An identity-mode off with index 65535

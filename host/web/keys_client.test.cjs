@@ -113,6 +113,14 @@ test('instrument vibrato requires the modular audio kernel', () => {
   assert.equal(h.audio.imageModuleKind(image), 'keys-modular');
 });
 
+test('sampler expression requires the modular audio kernel', () => {
+  const h = setup(), image = scoreImage(false), view = new DataView(image);
+  view.setUint32(8, 16, true);
+  assert.equal(h.audio.imageModuleKind(image), 'modular');
+  view.setUint16(30, 512, true);
+  assert.equal(h.audio.imageModuleKind(image), 'keys-modular');
+});
+
 test('modulated scores select a modular kernel, including mixed keyboard scores', async () => {
   for (const kind of ['modular', 'keys-modular']) {
     const h = setup(kind);
