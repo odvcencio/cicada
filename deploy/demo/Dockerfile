@@ -16,14 +16,19 @@ RUN test "${#REVISION}" -eq 40 && \
 RUN mkdir -p build/demo && \
     tinygo build -p=2 -tags cicada_reactor -target=wasm-unknown \
       -llvm-features=+bulk-memory,+bulk-memory-opt -opt=z -panic=trap -no-debug \
-      -gc=leaking -scheduler=none -o build/demo/kernel.wasm ./cmd/cicada-kernel-wasm && \
+      -gc=leaking -scheduler=none -o build/core.wasm ./cmd/cicada-kernel-wasm && \
     "$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz --converge --strip-producers --strip-target-features \
-      build/demo/kernel.wasm -o build/kernel.optimized.wasm && \
+      build/core.wasm -o build/kernel.optimized.wasm && \
     "$(tinygo env TINYGOROOT)/bin/wasm-opt" --enable-bulk-memory --enable-nontrapping-float-to-int \
       --code-folding -Oz --converge \
-      build/kernel.optimized.wasm -o build/demo/kernel.wasm && \
-    go run ./cmd/cicada-wasm-size build/demo/kernel.wasm host/web/processor.min.js
-RUN GOOS=js GOARCH=wasm go build -trimpath -o build/demo/demo.wasm ./cmd/cicada-demo-browser && \
+      build/kernel.optimized.wasm -o build/core.wasm && \
+    go run ./cmd/cicada-wasm-size build/core.wasm host/web/processor.min.js && \
+    tinygo build -p=2 -tags modular,trackfx,cicada_reactor -target=wasm-unknown \
+      -llvm-features=+bulk-memory,+bulk-memory-opt -opt=z -panic=trap -no-debug \
+      -gc=leaking -scheduler=none -o build/modular.wasm ./cmd/cicada-kernel-wasm && \
+    "$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/modular.wasm -o build/demo/kernel.wasm && \
+    go run ./cmd/cicada-wasm-size --modular build/demo/kernel.wasm
+RUN GOOS=js GOARCH=wasm go build -tags modular,trackfx -trimpath -o build/demo/demo.wasm ./cmd/cicada-demo-browser && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" build/demo/wasm_exec.js && \
     go build -trimpath -ldflags "-s -w -X main.revision=$REVISION" -o build/cicada-demo ./cmd/cicada-demo
 

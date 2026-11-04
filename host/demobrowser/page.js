@@ -370,7 +370,7 @@
     }
     const custom = document.createElement('option'); custom.value = 'custom'; custom.textContent = 'Custom score'; custom.disabled = true;
     ui.preset.append(custom);
-    const featured = [['ensemble', '◉', 'Full sketch'], ['marimba', '◇', 'Melodic percussion'], ['kit', '▦', 'Rhythm'], ['graph', '✳', 'Authored synth']];
+    const featured = [['ensemble', '◉', 'Full sketch'], ['drift', '≈', 'Moving sound'], ['marimba', '◇', 'Melodic percussion'], ['kit', '▦', 'Rhythm'], ['graph', '✳', 'Authored synth']];
     for (const [id, symbol, description] of featured) {
       const preset = presets.find(p => p.id === id);
       if (!preset) continue;

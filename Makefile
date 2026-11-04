@@ -307,14 +307,16 @@ release-cpu-report: build-kernel-wasm
 	grep -q 'Windows Chrome CPU budget' build/release-cpu-report.log
 
 .PHONY: build-demo-browser test-demo-browser
-build-demo-browser: build-kernel-wasm
+build-demo-browser: build-kernel-wasm build-modular-wasm
 	mkdir -p build/demo
-	GOOS=js GOARCH=wasm go build -trimpath -o build/demo/demo.wasm ./cmd/cicada-demo-browser
+	GOOS=js GOARCH=wasm go build -tags 'modular trackfx' -trimpath -o build/demo/demo.wasm ./cmd/cicada-demo-browser
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" build/demo/wasm_exec.js
-	cp build/cicada-kernel.wasm build/demo/kernel.wasm
+	cp build/cicada-modular.wasm build/demo/kernel.wasm
+	go run ./cmd/cicada-wasm-size --modular build/demo/kernel.wasm
 	go build -trimpath -ldflags "-X main.revision=$$(git rev-parse HEAD)" -o build/cicada-demo ./cmd/cicada-demo
 
 test-demo-browser: build-demo-browser
+	go test -tags 'modular trackfx' ./host/demobrowser
 	node scripts/demo-browser/test.cjs
 
 test-browser-soak: export CICADA_BROWSER_SOAK := 1
