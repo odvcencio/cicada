@@ -429,6 +429,9 @@ func parseInstrument(w *loweringWalker, n *gts.Node) Instrument {
 				Name: w.Text(w.Field(c, "name")), Unit: w.Text(w.Field(c, "unit")),
 				Default: w.Text(w.Field(c, "default")), Position: w.position(c),
 			})
+		case "instrument_glide":
+			value := w.Field(c, "value")
+			inst.Glide = append(inst.Glide, Param{Name: "glide", Value: w.Text(value), Position: w.position(c), ValuePosition: w.position(value)})
 		case "voice_decl":
 			inst.Mode = w.Text(w.Field(c, "mode"))
 			for j := 0; j < c.NamedChildCount(); j++ {

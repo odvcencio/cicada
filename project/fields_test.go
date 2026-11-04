@@ -64,6 +64,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			}
 			continue
 		}
+		if field.Construct == "instrument" && field.Name == "glide_ms" {
+			if field.Required || field.Default == nil || *field.Default != "60" {
+				t.Errorf("glide default is missing: %+v", field)
+			}
+			continue
+		}
 		if field.Construct == "step" && field.Name == "notes" {
 			if field.Required || field.Default != nil {
 				t.Errorf("chord payload must remain optional: %+v", field)

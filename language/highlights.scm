@@ -63,6 +63,7 @@
 
 (instrument_decl name: (identifier) @type.definition)
 (instrument_octave value: (integer) @number)
+(instrument_glide "glide" @keyword)
 (instrument_param name: (identifier) @variable.parameter)
 (instrument_param unit: (identifier) @type.builtin)
 (voice_decl mode: (identifier) @keyword.modifier)

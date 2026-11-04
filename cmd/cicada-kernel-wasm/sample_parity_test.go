@@ -104,6 +104,18 @@ func TestAudioWASMCustomVoiceSlideSampleParity(t *testing.T) {
 	compareWASMFixture(t, "glassbass.cicada", 1)
 }
 
+func TestAudioWASMCustomGlideSettingsParity(t *testing.T) {
+	source := []byte(`cicada 2
+instrument lead { glide = 125ms voice mono { out = sine(pitch) * env(gate, 100ms) } }
+track first lead {}
+track second lead { glide = 250ms }
+pattern p { 1~ 3 . 5 }
+scene main { first = p second = p }
+song { main }
+`)
+	compareWASMSource(t, "custom-glide-settings", source, 1, true)
+}
+
 func TestAudioWASMDelaySendSampleParity(t *testing.T) {
 	compareWASMFixture(t, "fx/delay-send.cicada", 1)
 }

@@ -242,24 +242,33 @@ a loudness target.
 
 ### Custom-voice glide
 
-Custom graph voices glide for 60 ms when a note marked with `~` slides to the
-next pitch. Notes without `~` keep their existing onset behavior:
+Custom graph voices glide when a note marked with `~` slides to the next
+pitch. The default is 60 ms. Set an instrument's `glide` duration and, if
+needed, override it on a track. Notes without `~` keep their existing onset
+behavior:
 
 ```cicada
 cicada 2
 instrument glassbass {
+  glide = 120ms
   voice mono {
     let osc = saw(pitch)
     out = osc
   }
 }
-track lead glassbass {}
+track lead glassbass { glide = 75ms }
 pattern glide-line { 1~ 3 . 5 }
 scene main { lead = glide-line }
 song { main }
 ```
 
-Validate this score with `cicada check glide.cicada`. Per-step [expression rows](../spec/features.md#expression-rows) control bend, vibrato, pressure, and timbre.
+The track uses a 75 ms exponential time constant; another track using
+`glassbass` without an override uses 120 ms. A zero duration changes pitch immediately while preserving the slide's
+held gate. Durations may be 0–10000 ms, in milliseconds or seconds. If an
+existing instrument declares a synthesis parameter named `glide`, its track
+value continues to control that parameter. Validate this score with `cicada
+check glide.cicada`. Per-step [expression rows](../spec/features.md#expression-rows)
+control bend, vibrato, pressure, and timbre.
 
 ### Language reference
 

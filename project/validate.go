@@ -27,6 +27,13 @@ func validateOctaveValue(value Value) error {
 	return nil
 }
 
+func validateGlideValue(value Value) error {
+	if value.Unit != "ms" || value.Number == nil || !finite(*value.Number) || *value.Number < 0 || *value.Number > 10000 {
+		return fmt.Errorf("glide must be a duration from 0 to 10000ms")
+	}
+	return nil
+}
+
 // ValidateProject checks the semantic interchange records after source lowering
 // or JSON decoding. It does not yet load audio into the runtime engine.
 func ValidateProject(p *Project) error {
@@ -58,7 +65,9 @@ func ValidateProject(p *Project) error {
 		if ds := notation.ValidateLive(liveToScore(p.Live), tracks); len(ds) > 0 {
 			return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
 		}
-		if err := validateMappedMacrosProject(p); err != nil { return err }
+		if err := validateMappedMacrosProject(p); err != nil {
+			return err
+		}
 		if err := validateDirectorProject(p, tracks); err != nil {
 			return err
 		}
@@ -173,6 +182,9 @@ func ValidateProject(p *Project) error {
 		}
 		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
 			return fmt.Errorf("instrument %s octave must be 0 to 6", inst.ID)
+		}
+		if inst.GlideMS != nil && (!finite(*inst.GlideMS) || *inst.GlideMS < 0 || *inst.GlideMS > 10000) {
+			return fmt.Errorf("instrument %s glide must be 0 to 10000ms", inst.ID)
 		}
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
@@ -294,6 +306,12 @@ func ValidateProject(p *Project) error {
 		if program := instruments[track.Kind]; program != nil {
 			overrides := make(map[string]string, len(track.Params))
 			for name, value := range track.Params {
+				if name == "glide" && !program.HasParameter("glide") {
+					if err := validateGlideValue(value); err != nil {
+						return fmt.Errorf("track %s: %w", track.ID, err)
+					}
+					continue
+				}
 				if name == "octave" && !program.HasParameter("octave") {
 					if err := validateOctaveValue(value); err != nil {
 						return fmt.Errorf("track %s: %w", track.ID, err)

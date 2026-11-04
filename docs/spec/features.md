@@ -226,7 +226,7 @@ scene main { lead = glide-line }
 song { main }
 ```
 
-**Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Instrument-level glide and vibrato settings are not supported.
+**Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Custom graph instruments accept `glide = duration`, with per-track overrides; the default is 60 ms and zero is immediate. Instrument-level vibrato settings remain unsupported.
 
 ## Automation blocks
 
