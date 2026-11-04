@@ -8,12 +8,13 @@ type PortableMIDI struct {
 }
 
 type PortableMapping struct {
-	Port    string         `json:"port"`
-	Message string         `json:"message"`
-	Channel int            `json:"channel"` // zero means any channel
-	Number  *int           `json:"number"`
-	Target  string         `json:"target"`
-	Range   *PortableRange `json:"range"`
+	Port     string         `json:"port"`
+	Message  string         `json:"message"`
+	Channel  int            `json:"channel"` // zero means any channel
+	Number   *int           `json:"number"`
+	Target   string         `json:"target"`
+	Takeover string         `json:"takeover"`
+	Range    *PortableRange `json:"range"`
 }
 
 type PortableRange struct {

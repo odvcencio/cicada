@@ -19,6 +19,7 @@ midi {
   port keys
   keys ch 1 -> lead
   keys cc 74 -> bass.cutoff 200Hz..4kHz
+  keys note c1 -> launch verse
 }
 pattern phrase { 1 . 3 . }
 scene verse { bass = phrase lead = phrase }
@@ -39,8 +40,9 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   const context = await browser.newContext(), page = await context.newPage(), errors = [], actions = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('response', response => {
-    if (new URL(response.url()).pathname !== '/__actions/live') return;
-    try { const data = response.request().postDataJSON(); if (data.type === 'input-batch') actions.push(...JSON.parse(data.messages)); } catch {}
+    const endpoint = new URL(response.url()).pathname;
+    if (!['/__actions/live', '/__actions/transport'].includes(endpoint)) return;
+    try { const data = response.request().postDataJSON(); if (data.type === 'input-batch') actions.push(...JSON.parse(data.messages)); else if (endpoint === '/__actions/transport') actions.push(data); } catch {}
   });
   await page.addInitScript(() => {
     const access = new EventTarget(), port = new EventTarget();
@@ -86,6 +88,16 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await until(() => actions.some(m => m.type === 'param' && m.address === 'bass.pan' && Number(m.value) === 1), 'learned mapping works with the second device');
   await page.locator('#transport-form button[value=play]').click();
   await page.waitForFunction(() => !document.querySelector('[data-live-control=record]').disabled);
+  await page.locator('[data-live-target]').selectOption('stop-track:bass');
+  await page.locator('[data-live-control=learn]').click();
+  await page.evaluate(() => __sendMIDI(0x90, 24, 100));
+  await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('already mapped in the score'), null, {timeout:30000});
+  await page.evaluate(() => __sendMIDI(0x90, 65, 100));
+  await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('learned in this browser'), null, {timeout:30000});
+  const afterLocalLearn = fs.readFileSync(scorePath, 'utf8');
+  assert(!afterLocalLearn.includes('65 ->'), 'browser-only action does not alter the score');
+  await page.evaluate(() => __sendMIDI(0x90, 65, 100));
+  await until(() => actions.some(m => m.action === 'trackStop' && m.track === 'bass'), 'browser-local stop works with a score MIDI block');
   await page.locator('[data-live-acid]').selectOption('bass');
   await page.locator('[data-live-control=record]').click();
   await page.evaluate(() => __sendMIDI(0x90, 64, 100));

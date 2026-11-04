@@ -182,7 +182,7 @@
         "number": {"type": "integer", "minimum": 0, "maximum": 127},
         "target": {"type": "string"},
         "range": {"$ref": "#/$defs/midi_range"},
-        "takeover": {"enum": ["jump"]},
+        "takeover": {"enum": ["jump", "pickup"]},
         "mode": {"enum": ["trigger"]}
       }
     },

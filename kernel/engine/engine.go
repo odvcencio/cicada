@@ -228,6 +228,7 @@ type meterAccum struct {
 // Engine has fixed command and message rings. The host owns cross-thread
 // communication and calls Push only on the render thread.
 type Engine struct {
+	parameterObserver
 	tap                          noteTap
 	streamClosed                 bool
 	rawPlaying                   bool
@@ -1604,10 +1605,6 @@ func (e *Engine) apply(c cmd.Command) {
 		e.fault(FaultUnhandledCommand) // No accepted command may be silently discarded.
 	}
 }
-
-func (e *Engine) setParam(c cmd.Command) { e.setParamMode(c, false) }
-
-func (e *Engine) setParamImmediate(c cmd.Command) { e.setParamMode(c, true) }
 
 func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 	id := kernel.ParamID(c.Index)

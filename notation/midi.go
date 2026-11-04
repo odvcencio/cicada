@@ -128,7 +128,7 @@ func validateMIDI(s *Score) []Diagnostic {
 			if !desc.Live {
 				add("CICADA-UNSUPPORTED", "MIDI target is not live: "+m.Target, m.Position)
 			}
-			if m.Takeover != "" && m.Takeover != "jump" {
+			if m.Takeover != "" && m.Takeover != "jump" && m.Takeover != "pickup" {
 				add("CICADA-UNSUPPORTED", "MIDI takeover "+m.Takeover+" is not implemented", m.Position)
 			}
 			for _, value := range []string{m.Min, m.Max} {

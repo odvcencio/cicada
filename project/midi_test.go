@@ -14,7 +14,7 @@ midi {
   port keys
   port pads
   keys ch 1 -> lead
-  keys cc 74 -> bass.cutoff 200Hz..4kHz
+  keys cc 74 -> bass.cutoff 200Hz..4kHz takeover = pickup
   pads note c1 -> launch verse
   pads ch 2 note 60 -> stop
 }
