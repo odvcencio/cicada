@@ -1157,7 +1157,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 			u.status.Set("Use a CC input to learn a parameter.")
 			return
 		}
-		portableTargetSupported := !on || strings.HasPrefix(target, "scene:") || target == "transport:play" || target == "transport:stop"
+		portableTargetSupported := !on || strings.HasPrefix(target, "scene:") || strings.HasPrefix(target, "slot:") || strings.HasPrefix(target, "stop-track:") || target == "transport:play" || target == "transport:stop"
 		if u.props.PortableMIDI != nil && portableTargetSupported {
 			port := ""
 			for _, candidate := range u.props.PortableMIDI.Ports {
@@ -1179,6 +1179,10 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 				switch {
 				case strings.HasPrefix(target, "scene:"):
 					portableTarget = "launch " + strings.TrimPrefix(target, "scene:")
+				case strings.HasPrefix(target, "slot:"):
+					portableTarget = "launch-slot " + strings.ReplaceAll(strings.TrimPrefix(target, "slot:"), ":", " ")
+				case strings.HasPrefix(target, "stop-track:"):
+					portableTarget = "stop-track " + strings.TrimPrefix(target, "stop-track:")
 				case target == "transport:play":
 					portableTarget = "play"
 				case target == "transport:stop":
@@ -1240,6 +1244,10 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 					action := mapping.Target
 					if strings.HasPrefix(action, "launch ") {
 						action = "scene:" + strings.TrimPrefix(action, "launch ")
+					} else if strings.HasPrefix(action, "launch-slot ") {
+						action = "slot:" + strings.ReplaceAll(strings.TrimPrefix(action, "launch-slot "), " ", ":")
+					} else if strings.HasPrefix(action, "stop-track ") {
+						action = "stop-track:" + strings.TrimPrefix(action, "stop-track ")
 					} else {
 						action = "transport:" + action
 					}

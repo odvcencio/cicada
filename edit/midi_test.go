@@ -29,6 +29,12 @@ func TestLearnMidiPreservesOtherProjectFilesAndComments(t *testing.T) {
 	if err != nil || len(result.Files) != 1 || !strings.Contains(string(result.Files[0].After), "keys ch 1 note 60 -> launch main") {
 		t.Fatalf("mapping insert: %+v %v", result, err)
 	}
+	for _, target := range []string{"stop-track bass", "launch-slot bass phrase"} {
+		result, err = apply(&edits.SetMIDIMapping{Port: "keys", Message: "note", Channel: 1, Number: 61, Target: target})
+		if err != nil || len(result.Files) != 1 || !strings.Contains(string(result.Files[0].After), "note 61 -> "+target) {
+			t.Fatalf("track action insert %q: %+v %v", target, result, err)
+		}
+	}
 	if _, err := apply(&edits.SetMIDIMapping{Port: "keys", Message: "cc", Channel: 2, Number: 74, Target: "bass.cutoff\ntrack hack acid {}"}); err == nil {
 		t.Fatal("accepted injected source")
 	}

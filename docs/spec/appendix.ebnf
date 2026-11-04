@@ -154,4 +154,5 @@ midi_track ::= identifier , "ch" , integer , "->" , identifier , [ ";" ] ;
 midi_cc ::= identifier , [ "ch" , integer ] , "cc" , integer , "->" , parameter_path ,
             [ number , ".." , number ] , [ "takeover" , "=" , identifier ] , [ ";" ] ;
 midi_note ::= identifier , [ "ch" , integer ] , "note" , (integer | letter_pitch) , "->" ,
-              ("play" | "stop" | "launch" , identifier) , [ "mode" , "=" , identifier ] , [ ";" ] ;
+              ("play" | "stop" | "launch" , identifier | "stop-track" , identifier | "launch-slot" , identifier , _name) ,
+              [ "mode" , "=" , identifier ] , [ ";" ] ;

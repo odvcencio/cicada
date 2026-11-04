@@ -40,9 +40,15 @@ func parseMIDI(w *loweringWalker, node *gts.Node) *MIDI {
 			}
 		} else if kind == "midi_note" {
 			m.Number = midiPitch(w.Text(w.Field(child, "number")))
-			m.Target = w.Text(w.Field(child, "action"))
+			m.Target = strings.Join(strings.Fields(w.Text(w.Field(child, "action"))), " ")
 			if scene := w.Text(w.Field(child, "scene")); scene != "" {
 				m.Target = "launch " + scene
+			} else if track := w.Text(w.Field(child, "track")); track != "" {
+				if pattern := w.reference(w.Field(child, "pattern")); pattern != "" {
+					m.Target = "launch-slot " + track + " " + pattern
+				} else {
+					m.Target = "stop-track " + track
+				}
 			}
 		}
 		midi.Mappings = append(midi.Mappings, m)
@@ -149,7 +155,22 @@ func validateMIDI(s *Score) []Diagnostic {
 			if m.Mode != "" && m.Mode != "trigger" {
 				add("CICADA-UNSUPPORTED", "MIDI launch mode "+m.Mode+" is not implemented", m.Position)
 			}
-			if m.Target != "play" && m.Target != "stop" {
+			parts := strings.Fields(m.Target)
+			if len(parts) > 0 && (parts[0] == "stop-track" || parts[0] == "launch-slot") {
+				want := 2
+				if parts[0] == "launch-slot" {
+					want = 3
+				}
+				found := false
+				if len(parts) == want {
+					for _, track := range s.Tracks {
+						found = found || track.Name == parts[1]
+					}
+				}
+				if !found {
+					add("CICADA-MIDI", "unknown MIDI track action "+m.Target, m.Position)
+				}
+			} else if m.Target != "play" && m.Target != "stop" {
 				name := strings.TrimSpace(strings.TrimPrefix(m.Target, "launch"))
 				found := false
 				for _, scene := range s.Scenes {

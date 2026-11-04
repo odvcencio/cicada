@@ -40,8 +40,21 @@ func setMIDIMapping(ctx *Context, intent Intent) error {
 	if in.Message == "cc" && !midiPath.MatchString(in.Target) {
 		return fmt.Errorf("choose a parameter")
 	}
-	if in.Message == "note" && in.Target != "play" && in.Target != "stop" && (!strings.HasPrefix(in.Target, "launch ") || !midiName.MatchString(strings.TrimPrefix(in.Target, "launch "))) {
-		return fmt.Errorf("choose a scene, play, or stop")
+	if in.Message == "note" {
+		parts := strings.Split(in.Target, " ")
+		valid := in.Target == "play" || in.Target == "stop"
+		if len(parts) == 2 && (parts[0] == "launch" || parts[0] == "stop-track") {
+			valid = midiName.MatchString(parts[1])
+		}
+		if len(parts) == 3 && parts[0] == "launch-slot" {
+			valid = midiName.MatchString(parts[1]) && len(parts[2]) <= 64
+			for _, part := range strings.Split(parts[2], ".") {
+				valid = valid && midiName.MatchString(part)
+			}
+		}
+		if !valid {
+			return fmt.Errorf("choose a scene, slot, track stop, play, or stop")
+		}
 	}
 	score, ds, err := ctx.ParseProject()
 	if err != nil {

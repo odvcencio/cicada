@@ -8,6 +8,8 @@ midi {
   keys note c1 -> launch verse mode = trigger
   keys note 25 -> play
   keys note 26 -> stop
+  keys note 27 -> stop-track bass
+  keys note 28 -> launch-slot bass phrase
 }
 pattern phrase { 1 . }
 scene verse { bass = phrase lead = phrase }

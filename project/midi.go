@@ -171,7 +171,35 @@ func validateMidiProject(p *Project) error {
 				if item.Range != nil || item.Takeover != "" || item.Mode != "" && item.Mode != "trigger" {
 					return fmt.Errorf("CICADA-UNSUPPORTED: MIDI launch mode")
 				}
-				if item.Target != "play" && item.Target != "stop" {
+				parts := strings.Fields(item.Target)
+				if len(parts) > 0 && (parts[0] == "stop-track" || parts[0] == "launch-slot") {
+					want := 2
+					if parts[0] == "launch-slot" {
+						want = 3
+					}
+					if len(parts) != want || strings.Join(parts, " ") != item.Target || !validID(parts[1]) || want == 3 && !validID(parts[2]) {
+						return fmt.Errorf("CICADA-MIDI: invalid track action %s", item.Target)
+					}
+					found := false
+					for _, track := range p.Tracks {
+						if track.ID != parts[1] {
+							continue
+						}
+						if want == 2 {
+							found = true
+							break
+						}
+						for _, slot := range track.Slots {
+							if slot != nil && *slot == parts[2] {
+								found = true
+								break
+							}
+						}
+					}
+					if !found {
+						return fmt.Errorf("CICADA-MIDI: unknown track or slot %s", item.Target)
+					}
+				} else if item.Target != "play" && item.Target != "stop" {
 					name := strings.TrimSpace(strings.TrimPrefix(item.Target, "launch "))
 					found := false
 					for _, scene := range p.Scenes {

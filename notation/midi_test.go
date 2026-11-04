@@ -15,6 +15,8 @@ midi {
   keys cc 74 -> bass.cutoff 200Hz..4kHz takeover = pickup
   pads note c1 -> launch verse
   pads ch 2 note 60 -> stop
+  pads note 61 -> stop-track bass
+  pads note 62 -> launch-slot bass phrase
 }
 pattern phrase { 1 }
 scene verse { bass = phrase lead = phrase }
@@ -26,7 +28,7 @@ func TestPortableMIDIParseAndValidate(t *testing.T) {
 	if len(diagnostics) != 0 {
 		t.Fatal(diagnostics)
 	}
-	if s.MIDI == nil || len(s.MIDI.Ports) != 2 || len(s.MIDI.Mappings) != 4 {
+	if s.MIDI == nil || len(s.MIDI.Ports) != 2 || len(s.MIDI.Mappings) != 6 {
 		t.Fatalf("wrong MIDI mappings: %+v", s.MIDI)
 	}
 	if got := s.MIDI.Mappings[2]; got.Number != 24 || got.Target != "launch verse" {
@@ -34,6 +36,13 @@ func TestPortableMIDIParseAndValidate(t *testing.T) {
 	}
 	if got := s.MIDI.Mappings[1].Takeover; got != "pickup" {
 		t.Fatalf("lost pickup mode: %q", got)
+	}
+	if s.MIDI.Mappings[4].Target != "stop-track bass" || s.MIDI.Mappings[5].Target != "launch-slot bass phrase" {
+		t.Fatalf("lost track or slot action: %+v", s.MIDI.Mappings)
+	}
+	qualified := strings.Replace(midiScore, "launch-slot bass phrase", "launch-slot bass library.phrase", 1)
+	if score, ds := Parse([]byte(qualified)); len(ds) != 0 || score.MIDI.Mappings[5].Target != "launch-slot bass library.phrase" {
+		t.Fatalf("qualified slot target: %+v %v", score, ds)
 	}
 	for _, bad := range []string{
 		strings.Replace(midiScore, "keys cc 74", "other cc 74", 1),
@@ -43,6 +52,7 @@ func TestPortableMIDIParseAndValidate(t *testing.T) {
 		strings.Replace(midiScore, "200Hz..4kHz", "4kHz..200Hz", 1),
 		strings.Replace(midiScore, "keys ch 1", "keys ch 0", 1),
 		strings.Replace(midiScore, "takeover = pickup", "takeover = scale", 1),
+		strings.Replace(midiScore, "stop-track bass", "stop-track missing", 1),
 		strings.Replace(midiScore, "keys cc 74", "keys cc 99999999999999999999999999", 1),
 	} {
 		_, ds := Parse([]byte(bad))
