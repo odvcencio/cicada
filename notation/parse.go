@@ -904,13 +904,18 @@ func parseLive(w *loweringWalker, n *gts.Node, ds []Diagnostic) (*Live, []Diagno
 		case "live_record":
 			duplicate(w.Type(c), c, seen)
 			live.Record, live.RecordPosition = w.Text(value), w.position(value)
-		case "live_macro":
+		case "live_macro", "live_macro_map":
 			smooth := w.Field(c, "smooth")
 			ms := float64(0)
 			if smooth != nil {
 				ms = parseDurationMS(w.Text(smooth))
 			}
-			live.Macros = append(live.Macros, LiveMacro{Name: w.Text(w.Field(c, "name")), Value: parseLiveNumber(w.Text(value)), SmoothMS: ms, Position: w.position(c), ValuePosition: w.position(value), SmoothPosition: w.position(smooth)})
+			macro := LiveMacro{Name: w.Text(w.Field(c, "name")), SmoothMS: ms, Position: w.position(c), ValuePosition: w.position(value), SmoothPosition: w.position(smooth)}
+			if value != nil {
+				macro.Value = parseLiveNumber(w.Text(value))
+			}
+			macro.Target, macro.Min, macro.Max, macro.Curve = w.Text(w.Field(c, "target")), w.Text(w.Field(c, "min")), w.Text(w.Field(c, "max")), w.Text(w.Field(c, "curve"))
+			live.Macros = append(live.Macros, macro)
 		case "live_state":
 			live.States = append(live.States, LiveState{Name: w.Text(w.Field(c, "name")), Scene: w.Text(w.Field(c, "scene")), Position: w.position(c)})
 		case "live_stinger", "live_transition":

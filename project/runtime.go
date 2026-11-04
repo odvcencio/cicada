@@ -427,6 +427,21 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	if err := compileModulation(p, &cfg); err != nil {
 		return cfg, err
 	}
+	if p.Live != nil {
+		for id, macro := range p.Live.Macros {
+			if macro.Mapping == nil {
+				continue
+			}
+			resolved, err := ResolveParameterPath(p, macro.Mapping.Target)
+			if err != nil {
+				return cfg, err
+			}
+			if macro.Mapping.Min.Number == nil || macro.Mapping.Max.Number == nil {
+				return cfg, fmt.Errorf("CICADA-LIVE-MACRO: numeric range required")
+			}
+			cfg.MacroMappings = append(cfg.MacroMappings, engine.MacroMapping{Macro: uint8(id), Track: resolved.Track, Param: uint16(resolved.ID), Min: float32(*macro.Mapping.Min.Number), Max: float32(*macro.Mapping.Max.Number), Exponential: macro.Mapping.Curve == "exp"})
+		}
+	}
 	if p.Arrange != nil {
 		cfg.Song = nil
 		var scheduleErr error

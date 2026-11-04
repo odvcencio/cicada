@@ -123,6 +123,12 @@ func liveMessage(f map[string]string) (map[string]any, error) {
 			}
 			p["value"] = n
 		}
+	case "macro":
+		n, err := finiteNumber(f, "value")
+		if err != nil || n < 0 || n > 1 || f["address"] == "" {
+			return nil, action.Validation("macro needs a name and a value from 0 to 1", nil, nil)
+		}
+		p["value"] = n
 	case "mute", "solo":
 		on, e := strconv.ParseBool(f["on"])
 		if e != nil {
@@ -374,6 +380,21 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		midiPorts = gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Score MIDI port", viewSelect("data-live-port", options(v.Project.MIDI.Ports))), field("Device on this machine", viewSelect("data-live-device", gosx.El("option", gosx.Attrs(gosx.Attr("value", "")), gosx.Text("Enable MIDI to see devices")))), button("bind", "Bind device"), button("reload-ports", "Reload bindings"))
 	}
 	var preview gosx.Node = gosx.Fragment()
+	var macroControls []gosx.Node
+	if v.Project.Live != nil {
+		for _, macro := range v.Project.Live.Macros {
+			input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("min", "0"), gosx.Attr("max", "1"), gosx.Attr("step", "0.001"), gosx.Attr("value", macro.Default), gosx.Attr("data-live-macro", macro.Name), gosx.BoolAttr("disabled")))
+			label := macro.Name
+			if macro.Mapping != nil {
+				label += " · " + macro.Mapping.Target
+			}
+			macroControls = append(macroControls, field(label, input))
+		}
+	}
+	var macros gosx.Node = gosx.Fragment()
+	if len(macroControls) > 0 {
+		macros = gosx.El("section", gosx.El("h3", gosx.Text("Macros")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(macroControls...)))
+	}
 	previewKey := notePreviewKey(ctx.Request)
 	if d, ok := s.draft(previewKey, workspaceOwner(ctx.Request)); ok && d.Kind == "notes" {
 		preview = s.noteTakeReview(v, csrf, previewKey, d)
@@ -381,7 +402,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "libraryPatterns": libraryPatterns, "expressionTracks": expressionTracks, "nativeMIDI": runtime.GOOS == "darwin", "preview": previewKey, "persistentNotes": s.notes != nil, "portableMIDI": v.Project.MIDI, "drumTracks": drumTracks})
 	// SSR controls are the engine's owned subtree. GoSX can preserve that
 	// subtree when props are unchanged without retaining detached listeners.
-	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, midiPorts, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Declare a logical MIDI port in the score and bind a device on this machine to save learned mappings with the score. Without a MIDI block, learned mappings stay in this browser. Edit score mappings in Code.")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Bend, pressure and timbre follow individual held notes on authored synths, and acid follows bend. The piano and the modeled keyboards play notes without gestures. Auto keeps ordinary keyboard bend ranges and follows MPE setup messages; choose a zone when your controller does not send setup. Sustain holds notes until pedal release.")), gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
+	content := gosx.Fragment(macros, controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, midiPorts, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Declare a logical MIDI port in the score and bind a device on this machine to save learned mappings with the score. Without a MIDI block, learned mappings stay in this browser. Edit score mappings in Code.")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Bend, pressure and timbre follow individual held notes on authored synths, and acid follows bend. The piano and the modeled keyboards play notes without gestures. Auto keeps ordinary keyboard bend ranges and follows MPE setup messages; choose a zone when your controller does not send setup. Sustain holds notes until pedal release.")), gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play the piano, modeled keyboards, authored instruments, acid, and drums. Retain a take, then keep played timing or snap starts to a step pattern."}, s.liveLaunch(v, csrf), surface,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-live-destination-hint")), gosx.Text("Choose a pattern on this track or an unused compatible pattern from the library. Keeping a take replaces that pattern; unused patterns stay in the library until you arrange or assign them.")),

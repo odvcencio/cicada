@@ -66,3 +66,13 @@ type RouteSpec struct {
 	Multiply bool
 	Depth    float32 // add: base units of the parameter; multiply: a factor
 }
+
+// MacroMapping maps a named macro's normalized value into one parameter range.
+type MacroMapping struct {
+	Macro       uint8
+	Track       uint8
+	Param       uint16
+	Min         float32
+	Max         float32
+	Exponential bool
+}

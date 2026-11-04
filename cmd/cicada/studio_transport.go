@@ -105,6 +105,7 @@ type snapshotFrames struct {
 }
 
 type transportSnapshot struct {
+	MacroTargets        map[string]float32           `json:"macroTargets,omitempty"`
 	MIDIPickupValues    map[string]*float64          `json:"midiPickupValues,omitempty"`
 	MIDIClockEpoch      uint64                       `json:"midiClockEpoch"`
 	FrameAgeNanos       *int64                       `json:"frameAgeNanos,omitempty"`
@@ -195,6 +196,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 	}
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, MIDIClockEpoch: t.midiTimeline.Epoch(), Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if t.stream != nil {
+		state.MacroTargets = t.stream.MacroTargets()
 		stats := t.stream.StreamStats()
 		if stats.ArenaBytes > 0 {
 			state.Streaming = &studioStreamHealth{ArenaBytes: stats.ArenaBytes, MissingFrames: stats.MissingFrames, ReadErrors: stats.ReadErrors, Recoveries: stats.Recoveries}

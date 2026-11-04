@@ -1864,13 +1864,25 @@
         "smooth_ms": {
           "type": "number",
           "minimum": 0
-        }
+        },
+        "mapping": {"$ref": "#/$defs/live_macro_mapping"}
       },
       "required": [
         "name",
         "default",
         "smooth_ms"
       ]
+    },
+    "live_macro_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "min", "max"],
+      "properties": {
+        "target": {"type": "string"},
+        "min": {"$ref": "#/$defs/value"},
+        "max": {"$ref": "#/$defs/value"},
+        "curve": {"enum": ["linear", "exp"]}
+      }
     },
     "live_layers": {
       "type": "object",

@@ -166,6 +166,8 @@ td button { width:100%; }
 .live-keyboard,.live-drums { display:grid; grid-template-columns:repeat(auto-fit,minmax(65px,1fr)); gap:8px; margin:16px 0; }
 .live-keyboard button,.live-drums button { min-height:64px; touch-action:none; }
 #live .actions > .field { flex:1 1 180px; min-width:0; }
+#live input[data-live-macro] { accent-color:var(--mint); min-height:38px; padding:0; cursor:ew-resize; }
+#live input[data-live-macro]:disabled { cursor:not-allowed; }
 .note-preview,.note-recovery { margin-top:24px; border-top:1px solid var(--border); padding-top:22px; min-width:0; }
 .note-preview h3 { margin-bottom:4px; }
 .note-preview .action-form,.note-recovery .action-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }

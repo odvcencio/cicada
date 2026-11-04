@@ -6,6 +6,7 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/modulate"
 )
@@ -36,6 +37,7 @@ type modState struct {
 	hasSynced  bool
 	specs      []ModulatorSpec
 	routes     []RouteSpec
+	macros     []MacroMapping
 	points     [][]modulate.Point
 	targets    []modTarget
 	routeOrder []uint8
@@ -77,15 +79,30 @@ func (e *Engine) ModulatorValue(i int) int32 {
 }
 
 func (e *Engine) loadModulation(cfg *Config) error {
-	if !modulationEnabled || len(cfg.Modulators) == 0 && len(cfg.Routes) == 0 {
+	if !modulationEnabled && len(cfg.MacroMappings) > 0 {
+		return engineError("mapped macros require the modular kernel")
+	}
+	if !modulationEnabled || len(cfg.Modulators) == 0 && len(cfg.Routes) == 0 && len(cfg.MacroMappings) == 0 {
 		return nil
 	}
-	if len(cfg.Modulators) > MaxModulators || len(cfg.Routes) > MaxModRoutes {
+	if len(cfg.Modulators) > MaxModulators || len(cfg.Routes) > MaxModRoutes || len(cfg.MacroMappings) > 16 {
 		return engineError("too many modulators or routes")
 	}
 	m := &e.mod
 	m.specs = append([]ModulatorSpec(nil), cfg.Modulators...)
 	m.routes = append([]RouteSpec(nil), cfg.Routes...)
+	m.macros = append([]MacroMapping(nil), cfg.MacroMappings...)
+	for i, mapping := range m.macros {
+		spec, ok := kernel.Param(kernel.ParamID(mapping.Param))
+		if !ok || !spec.Live || kernel.IsInteger(spec.ID) || spec.Curve == "toggle" || mapping.Macro >= 16 || math.IsNaN(float64(mapping.Min)) || math.IsNaN(float64(mapping.Max)) || math.IsInf(float64(mapping.Min), 0) || math.IsInf(float64(mapping.Max), 0) || mapping.Min >= mapping.Max || mapping.Min < spec.Min || mapping.Max > spec.Max || mapping.Exponential && mapping.Min <= 0 || spec.Scope == "track" && int(mapping.Track) >= e.tracks || spec.Scope != "track" && mapping.Track != 0xff {
+			return engineError("invalid mapped macro")
+		}
+		for _, previous := range m.macros[:i] {
+			if previous.Track == mapping.Track && previous.Param == mapping.Param {
+				return engineError("duplicate mapped macro target")
+			}
+		}
+	}
 	m.seed = cfg.Seed
 	m.points = make([][]modulate.Point, len(m.specs))
 	m.periodAux = make([]uint64, len(m.specs))
@@ -341,6 +358,25 @@ func (e *Engine) advanceModulation() {
 	song := m.base + sample
 	if song&(modulate.GridFrames-1) != 0 {
 		return
+	}
+	for _, mapping := range m.macros {
+		value := e.macroCurrent[mapping.Macro]
+		var target float32
+		if mapping.Exponential {
+			target = float32(float64(mapping.Min) * fastmath.Exp2(fastmath.Log2(float64(mapping.Max)/float64(mapping.Min))*float64(value)))
+		} else {
+			target = mapping.Min + (mapping.Max-mapping.Min)*value
+		}
+		if value == 0 {
+			target = mapping.Min
+		} else if value == 1 {
+			target = mapping.Max
+		}
+		target = max(mapping.Min, min(mapping.Max, target))
+		e.setParam(cmd.Command{Op: cmd.OpSetParam, Track: mapping.Track, Index: mapping.Param, Arg0: math.Float32bits(target)})
+		if e.faulted {
+			return
+		}
 	}
 	clock := e.transport.Clock()
 	tick, rem, den := clock.TickAtSampleRem(sample)

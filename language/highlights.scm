@@ -281,10 +281,13 @@
 ((number) @number.frames (#match? @number.frames "frames$"))
 
 ; Live host controls.
-["live" "land" "count_in" "record" "macro" "smooth" "layers" "attack" "release" "state" "stinger" "transition" "quantize" "crossfade"] @keyword
+["live" "land" "count_in" "record" "macro" "smooth" "curve" "layers" "attack" "release" "state" "stinger" "transition" "quantize" "crossfade"] @keyword
 (live_land value: (identifier) @constant.builtin)
 (bar_count) @number.bars
 (live_macro name: (identifier) @variable.parameter)
+(live_macro_map name: (identifier) @variable.parameter)
+(live_macro_map curve: (identifier) @attribute)
+(live_macro_map ".." @operator)
 (live_layers macro: (identifier) @variable.parameter)
 (live_layer track: (identifier) @variable.member)
 ">=" @operator

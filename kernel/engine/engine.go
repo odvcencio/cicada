@@ -127,17 +127,18 @@ type Config struct {
 	Scenes     []Scene
 	Song       []SongEntry
 
-	Automation []cmd.Command    `json:",omitempty"`
-	Modulators []ModulatorSpec  `json:",omitempty"`
-	Routes     []RouteSpec      `json:",omitempty"`
-	Schedule   []ScheduleEvent  `json:",omitempty"`
-	Assets     []AudioAsset     `json:",omitempty"`
-	Streaming  StreamingFactory `json:"-"`
-	Clips      []ClipConfig     `json:",omitempty"`
-	LoopSong   bool
-	DelayA     *fx.DelayParams
-	ReverbB    *fx.ReverbParams
-	CompMusic  *fx.CompParams
+	Automation    []cmd.Command    `json:",omitempty"`
+	Modulators    []ModulatorSpec  `json:",omitempty"`
+	Routes        []RouteSpec      `json:",omitempty"`
+	MacroMappings []MacroMapping   `json:",omitempty"`
+	Schedule      []ScheduleEvent  `json:",omitempty"`
+	Assets        []AudioAsset     `json:",omitempty"`
+	Streaming     StreamingFactory `json:"-"`
+	Clips         []ClipConfig     `json:",omitempty"`
+	LoopSong      bool
+	DelayA        *fx.DelayParams
+	ReverbB       *fx.ReverbParams
+	CompMusic     *fx.CompParams
 	// MasterBias is an optional DC correction added after the master chain and
 	// master gain, immediately before the limiter.
 	MasterBiasL float32 `json:",omitempty"`
