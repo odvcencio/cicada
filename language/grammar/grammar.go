@@ -40,6 +40,7 @@ func Cicada() *grammargen.Grammar {
 		sym("automate_decl"), sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 		sym("lfo_decl"), sym("envelope_decl"), sym("sway_decl"), sym("contour_decl"), sym("mod_decl"),
+		sym("midi_decl"),
 	))
 
 	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(choice(sym("automation_point"), sym("automation_recall"))), str("}")))
@@ -312,5 +313,12 @@ func Cicada() *grammargen.Grammar {
 	g.Define("mod_decl", seq(str("mod"), field("source", sym("_name")), str("->"), field("target", sym("parameter_path")), repeat(sym("param_decl")), optional(field("mode", sym("identifier")))))
 	g.Test("modulators", "lfo drift { wave = sine rate = 8bars phase = 0 } lfo breath { wave = sine rate = 0.07Hz loop = continue } envelope duck { attack = 5ms release = 120ms source = drums } sway wander { rate = 2bars octaves = 2 } contour swell { period = 4bars @0 -1 @1/4 1 smooth @1 -1 } mod drift -> strings_pad.pan depth = 0.15 add mod wander -> pad.level depth = 1.5dB", "")
 	g.Test("modulator names stay identifiers", "instrument i { param mod = 1 voice mono { out = saw(mod(a) + lfo(2Hz, sine)) } } track mod acid { envelope = on } scene s { mod = x }", "")
+	// Logical ports belong to a score; host-specific device names do not.
+	g.Define("midi_decl", seq(str("midi"), str("{"), repeat(choice(sym("midi_port"), sym("midi_track"), sym("midi_cc"), sym("midi_note"))), str("}")))
+	g.Define("midi_port", seq(str("port"), field("name", sym("identifier")), optional(str(";"))))
+	g.Define("midi_track", seq(field("port", sym("identifier")), str("ch"), field("channel", sym("integer")), str("->"), field("target", sym("identifier")), optional(str(";"))))
+	g.Define("midi_cc", seq(field("port", sym("identifier")), optional(seq(str("ch"), field("channel", sym("integer")))), str("cc"), field("number", sym("integer")), str("->"), field("target", sym("parameter_path")), optional(seq(field("min", sym("number")), str(".."), field("max", sym("number")))), optional(seq(str("takeover"), str("="), field("takeover", sym("identifier")))), optional(str(";"))))
+	g.Define("midi_note", seq(field("port", sym("identifier")), optional(seq(str("ch"), field("channel", sym("integer")))), str("note"), field("number", choice(sym("integer"), sym("letter_pitch"))), str("->"), field("action", choice(str("play"), str("stop"), seq(str("launch"), field("scene", sym("identifier"))))), optional(seq(str("mode"), str("="), field("mode", sym("identifier")))), optional(str(";"))))
+	g.Test("portable midi", "cicada 2 midi { port keys keys ch 1 -> lead keys cc 74 -> bass.cutoff 200Hz..4kHz keys note c1 -> launch verse }", "")
 	return g
 }

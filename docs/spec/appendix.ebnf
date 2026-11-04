@@ -15,7 +15,7 @@ _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | 
                  drum_pattern | performance_pattern | automate_decl | scene_decl | song_decl |
                  fx_decl | bus_decl | master_decl | export_decl | arrange_decl | asset_decl |
                  clip_decl | sampler_decl | live_decl | lfo_decl | envelope_decl | sway_decl |
-                 contour_decl | mod_decl ;
+                 contour_decl | mod_decl | midi_decl ;
 automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
 automation_point ::= musical_position , number , [ identifier , [ number ] ] ;
 musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
@@ -144,3 +144,10 @@ contour_decl ::= "contour" , _name , "{" , { param_decl } , { contour_point } , 
 contour_point ::= contour_position , number , [ identifier , [ number ] ] ;
 contour_position ::= /@[0-9]+(\.[0-9]+)?(\/[0-9]+)?/ ;
 mod_decl ::= "mod" , _name , "->" , parameter_path , { param_decl } , [ identifier ] ;
+midi_decl ::= "midi" , "{" , { midi_port | midi_track | midi_cc | midi_note } , "}" ;
+midi_port ::= "port" , identifier , [ ";" ] ;
+midi_track ::= identifier , "ch" , integer , "->" , identifier , [ ";" ] ;
+midi_cc ::= identifier , [ "ch" , integer ] , "cc" , integer , "->" , parameter_path ,
+            [ number , ".." , number ] , [ "takeover" , "=" , identifier ] , [ ";" ] ;
+midi_note ::= identifier , [ "ch" , integer ] , "note" , (integer | letter_pitch) , "->" ,
+              ("play" | "stop" | "launch" , identifier) , [ "mode" , "=" , identifier ] , [ ";" ] ;

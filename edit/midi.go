@@ -1,0 +1,123 @@
+package edit
+
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"m31labs.dev/cicada/notation"
+)
+
+// SetMIDIMapping writes one learned input to the score's logical port. Device
+// names remain local. Relearning the same input replaces its previous target.
+type SetMIDIMapping struct {
+	Port    string `json:"port"`
+	Message string `json:"message"`
+	Channel int    `json:"channel"`
+	Number  int    `json:"number"`
+	Target  string `json:"target"`
+}
+
+func (SetMIDIMapping) Kind() string { return "setmidimapping" }
+
+func init() {
+	Register("setmidimapping", func() Intent { return &SetMIDIMapping{} })
+	Handle("setmidimapping", setMIDIMapping)
+}
+
+var midiName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,63}$`)
+var midiPath = regexp.MustCompile(`^[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+$`)
+
+func setMIDIMapping(ctx *Context, intent Intent) error {
+	in := intent.(*SetMIDIMapping)
+	if !midiName.MatchString(in.Port) || in.Channel < 1 || in.Channel > 16 || in.Number < 0 || in.Number > 127 {
+		return fmt.Errorf("invalid MIDI port, channel, or input")
+	}
+	if in.Message != "cc" && in.Message != "note" {
+		return fmt.Errorf("MIDI Learn accepts a controller or note")
+	}
+	if in.Message == "cc" && !midiPath.MatchString(in.Target) {
+		return fmt.Errorf("choose a parameter")
+	}
+	if in.Message == "note" && in.Target != "play" && in.Target != "stop" && (!strings.HasPrefix(in.Target, "launch ") || !midiName.MatchString(strings.TrimPrefix(in.Target, "launch "))) {
+		return fmt.Errorf("choose a scene, play, or stop")
+	}
+	score, ds, err := ctx.ParseProject()
+	if err != nil {
+		return err
+	}
+	if score == nil || hasErrors(ds) || score.Version != 2 {
+		return fmt.Errorf("save a valid edition-2 score before learning MIDI")
+	}
+	if score.MIDI == nil {
+		return fmt.Errorf("declare and bind a logical MIDI port first")
+	}
+	portFound := false
+	for _, p := range score.MIDI.Ports {
+		portFound = portFound || p.Name == in.Port
+	}
+	if !portFound {
+		return fmt.Errorf("logical MIDI port %s is not declared", in.Port)
+	}
+	path := score.MIDI.Position.File
+	if path == "" {
+		path = ctx.Options.Path
+	}
+	for _, file := range ctx.Options.Sources {
+		if file.Path == path && file.Library != "" {
+			return fmt.Errorf("library MIDI mappings are read-only")
+		}
+	}
+	before, ok := ctx.FileSource(path)
+	if !ok {
+		return fmt.Errorf("MIDI declaration is outside editable project sources")
+	}
+	root, walker, err := notation.ParseTree(before)
+	if err != nil {
+		return err
+	}
+	text := fmt.Sprintf("%s ch %d %s %d -> %s", in.Port, in.Channel, in.Message, in.Number, in.Target)
+	var start, end int = -1, -1
+	for i := 0; i < root.NamedChildCount(); i++ {
+		n := root.NamedChild(i)
+		if walker.Type(n) != "midi_decl" {
+			continue
+		}
+		end = int(n.EndByte()) - 1
+		for j := 0; j < n.NamedChildCount(); j++ {
+			m := n.NamedChild(j)
+			if walker.Type(m) != "midi_"+in.Message || walker.Text(walker.Field(m, "port")) != in.Port {
+				continue
+			}
+			channel, _ := strconv.Atoi(walker.Text(walker.Field(m, "channel")))
+			// Note spellings can differ; use the parsed mapping's source position.
+			for _, current := range score.MIDI.Mappings {
+				if current.Position.File != "" && current.Position.File != path {
+					continue
+				}
+				offset, err := Offset(before, path, current.Position)
+				if err == nil && offset == int(m.StartByte()) && current.Message == in.Message && current.Channel == channel && channel == in.Channel && current.Number == in.Number {
+					start, end = int(m.StartByte()), int(m.EndByte())
+				}
+			}
+		}
+		break
+	}
+	if end < 0 {
+		return fmt.Errorf("MIDI declaration could not be located")
+	}
+	var after []byte
+	if start >= 0 {
+		after, err = ReplaceSpan(before, path, Span{Start: start, End: end, File: path, Text: text})
+	} else {
+		nl := Newline(before)
+		after, err = ReplaceSpan(before, path, Span{Start: end, End: end, File: path, Text: nl + "  " + text + nl})
+	}
+	if err != nil {
+		return err
+	}
+	ctx.Source, ctx.plan = stageProjectSource(ctx, path, before, after), nil
+	ctx.SetLabel("MIDI · learned " + in.Port)
+	return nil
+}

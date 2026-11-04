@@ -264,7 +264,7 @@ func sourceReceiptRequired(env edits.Envelope) bool {
 			*edits.SetRange, *edits.ResizePattern, *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
 			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
 			*edits.ScalePerformance, *edits.ShapePerformancePitch,
-			*edits.AddModulator, *edits.ModulationRoute:
+			*edits.AddModulator, *edits.ModulationRoute, *edits.SetMIDIMapping:
 			return true
 		}
 	}

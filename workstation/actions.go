@@ -203,6 +203,7 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"midi-learn":            s.learnPortableMIDI,
 		"source-checkpoint":     s.checkpointSource,
 		"transcribe":            s.transcribeMelody,
 		"transcription-apply":   s.applyTranscription,

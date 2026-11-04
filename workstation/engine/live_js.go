@@ -23,14 +23,16 @@ import (
 )
 
 type liveProps struct {
-	CSRF             string              `json:"csrf"`
-	Revision         string              `json:"revision"`
-	BPM              float64             `json:"bpm"`
-	TrackPatterns    map[string][]string `json:"trackPatterns"`
-	LibraryPatterns  map[string]bool     `json:"libraryPatterns"`
-	ExpressionTracks map[string]bool     `json:"expressionTracks"`
-	NativeMIDI       bool                `json:"nativeMIDI"`
-	PersistentNotes  bool                `json:"persistentNotes"`
+	CSRF             string                `json:"csrf"`
+	Revision         string                `json:"revision"`
+	BPM              float64               `json:"bpm"`
+	TrackPatterns    map[string][]string   `json:"trackPatterns"`
+	LibraryPatterns  map[string]bool       `json:"libraryPatterns"`
+	ExpressionTracks map[string]bool       `json:"expressionTracks"`
+	NativeMIDI       bool                  `json:"nativeMIDI"`
+	PersistentNotes  bool                  `json:"persistentNotes"`
+	PortableMIDI     *control.PortableMIDI `json:"portableMIDI"`
+	DrumTracks       map[string]bool       `json:"drumTracks"`
 }
 type liveMapping struct {
 	Device     string `json:"device"`
@@ -112,6 +114,7 @@ type liveUI struct {
 	nativeMIDICancel     context.CancelFunc
 	nativeMIDIGeneration uint64
 	midiNames            map[string]string
+	localMIDIPorts       map[string]string
 }
 
 func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
@@ -127,6 +130,9 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan *liveJob, 128), expressionJobs: map[string]*liveJob{}, wireIDs: map[string]uint16{}, status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midi: js.Undefined()}
 	u.loadMappings()
 	u.midiNames = map[string]string{}
+	if u.props.PortableMIDI != nil {
+		go u.loadPortableMIDIPorts()
+	}
 	u.checkpointWake = make(chan struct{}, 1)
 	u.loadSettings()
 	u.midiNotes.Mode = u.selected("[data-live-midimode]")
@@ -255,6 +261,9 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if action == "note-preview" {
 		timeout = 90 * time.Second
 	} // two native pattern checks plus durable recovery IO
+	if action == "midi-learn" {
+		timeout = 40 * time.Second // score validation and a revision-checked source edit
+	}
 	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
 		return nil, err
@@ -335,6 +344,10 @@ func (u *liveUI) runCommands() {
 				u.saveTake()
 				u.syncControls()
 				u.status.Set("Note take retained for review. Commit it to patterns, or discard it.")
+				workspaceRefreshRequested.Set(workspaceRefreshRequested.Get() + 1)
+			}
+			if err == nil && job.Action == "midi-learn" && !u.closed.Load() {
+				u.status.Set("MIDI mapping saved in the score.")
 				workspaceRefreshRequested.Set(workspaceRefreshRequested.Get() + 1)
 			}
 			if err != nil && job.Action == "note-preview" {
@@ -478,6 +491,16 @@ func (u *liveUI) noteInputOnAt(id, track string, note, velocity int, wireID uint
 	if track == "" || !u.playing {
 		u.status.Set("Select a track and press Play before sending notes.")
 		return
+	}
+	if u.recording {
+		selected := u.selected("[data-live-acid]")
+		if u.props.DrumTracks[track] {
+			selected = u.selected("[data-live-drums]")
+		}
+		if track != selected {
+			u.status.Set("Select mapped track " + track + " and its pattern before recording it.")
+			return
+		}
 	}
 	if _, ok := u.held[id]; ok {
 		return
@@ -740,7 +763,7 @@ func (u *liveUI) bindControls() {
 		u.mappings = nil
 		u.saveMappings()
 		u.renderMappings()
-		u.status.Set("MIDI mappings cleared.")
+		u.status.Set("Browser MIDI mappings cleared; score mappings are unchanged.")
 	})
 }
 
@@ -885,6 +908,25 @@ func (u *liveUI) restoreTake() {
 func (u *liveUI) renderMappings() {
 	list := u.query("[data-live-mappings]")
 	list.Call("replaceChildren")
+	if u.props.PortableMIDI != nil {
+		for _, m := range u.props.PortableMIDI.Maps {
+			row := js.Global().Get("document").Call("createElement", "li")
+			device := u.localMIDIPorts[m.Port]
+			if device == "" {
+				device = "unbound in cicada.local"
+			}
+			channel := "any channel"
+			if m.Channel > 0 {
+				channel = fmt.Sprintf("channel %d", m.Channel)
+			}
+			input := m.Message
+			if m.Number != nil {
+				input += " " + strconv.Itoa(*m.Number)
+			}
+			row.Set("textContent", fmt.Sprintf("%s (%s) · %s · %s → %s · saved in score", m.Port, device, channel, input, m.Target))
+			list.Call("append", row)
+		}
+	}
 	for _, m := range u.mappings {
 		row := js.Global().Get("document").Call("createElement", "li")
 		target := m.Address
@@ -1055,6 +1097,42 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 			u.status.Set("Use a CC input to learn a parameter.")
 			return
 		}
+		if u.props.PortableMIDI != nil {
+			port := ""
+			for _, candidate := range u.props.PortableMIDI.Ports {
+				if u.localMIDIPorts[candidate] != "" && u.localMIDIPorts[candidate] == u.midiNames[device] {
+					if port != "" {
+						u.status.Set("This device matches more than one logical port in cicada.local.")
+						return
+					}
+					port = candidate
+				}
+			}
+			if port == "" {
+				u.status.Set("Bind this device to a declared port in cicada.local before learning.")
+				return
+			}
+			message, portableTarget := "cc", strings.TrimPrefix(target, "param:")
+			if on {
+				message = "note"
+				switch {
+				case strings.HasPrefix(target, "scene:"):
+					portableTarget = "launch " + strings.TrimPrefix(target, "scene:")
+				case target == "transport:play":
+					portableTarget = "play"
+				case target == "transport:stop":
+					portableTarget = "stop"
+				default:
+					u.status.Set("Score MIDI mappings currently support scenes, Play, Stop, and live parameters.")
+					return
+				}
+			}
+			u.learning = false
+			if u.queue("midi-learn", map[string]string{"revision": u.props.Revision, "source_revision": u.sourceRevision, "port": port, "message": message, "channel": strconv.Itoa(channel + 1), "number": strconv.Itoa(a), "target": portableTarget}) {
+				u.status.Set("Saving MIDI mapping in the score…")
+			}
+			return
+		}
 		m := liveMapping{Device: device, DeviceName: u.midiNames[device], Channel: channel}
 		if cc {
 			m.CC = &a
@@ -1078,8 +1156,49 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 		u.learning = false
 		u.saveMappings()
 		u.renderMappings()
-		u.status.Set("MIDI input learned for " + target)
+		u.status.Set("MIDI input learned in this browser for " + target)
 		return
+	}
+	if u.props.PortableMIDI != nil {
+		kind := ""
+		if cc {
+			kind = "cc"
+		} else if on {
+			kind = "note"
+		}
+		if kind != "" {
+			if mapping, ok := u.props.PortableMIDI.Match(u.localMIDIPorts, u.midiNames[device], channel+1, kind, a); ok {
+				if kind == "note" {
+					action := mapping.Target
+					if strings.HasPrefix(action, "launch ") {
+						action = "scene:" + strings.TrimPrefix(action, "launch ")
+					} else {
+						action = "transport:" + action
+					}
+					u.mappedAction(action)
+					return
+				}
+				d, found := u.descriptors[u.addresses[mapping.Target]]
+				if !found {
+					u.status.Set("Mapped parameter is no longer in this score.")
+					return
+				}
+				if mapping.Range != nil && mapping.Range.Min.Number != nil && mapping.Range.Max.Number != nil {
+					d.Min, d.Max, d.Off = *mapping.Range.Min.Number, *mapping.Range.Max.Number, false
+				}
+				value, err := control.CCValue(d, b)
+				if err != nil {
+					u.status.Set(err.Error())
+					return
+				}
+				text := "off"
+				if value != nil {
+					text = strconv.FormatFloat(*value, 'f', -1, 64)
+				}
+				u.queue("live", map[string]string{"type": "param", "address": mapping.Target, "value": text})
+				return
+			}
+		}
 	}
 	for _, m := range u.mappings {
 		if m.Device != device || m.Channel != channel {

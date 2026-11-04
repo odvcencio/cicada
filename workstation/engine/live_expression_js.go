@@ -25,11 +25,17 @@ func (u *liveUI) midiNote(event midi.NoteMessage, at *control.NoteTime) {
 	switch event.Type {
 	case "note-on":
 		track := u.selected("[data-live-acid]")
-		if event.Channel == 9 && !event.MPE {
-			track = u.selected("[data-live-drums]")
-			if !control.GMDrum(int(event.Note)) {
-				return
+		mapped := false
+		if u.props.PortableMIDI != nil {
+			if mapping, ok := u.props.PortableMIDI.Match(u.localMIDIPorts, u.midiNames[event.Device], int(event.Channel)+1, "track", 0); ok {
+				track, mapped = mapping.Target, true
 			}
+		}
+		if !mapped && event.Channel == 9 && !event.MPE {
+			track = u.selected("[data-live-drums]")
+		}
+		if (mapped && u.props.DrumTracks[track] || !mapped && event.Channel == 9 && !event.MPE) && !control.GMDrum(int(event.Note)) {
+			return
 		}
 		u.noteInputOnAt(id, track, int(event.Note), int(event.Velocity), event.ID, event.Channel, at)
 		if encoded, ok := u.active[id]; ok && event.Shared != nil && u.gesturePoints < control.MaxExpressionPoints {

@@ -138,7 +138,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			n := root.NamedChild(i)
 			kind := w.Type(n)
 			switch kind {
-			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "arrange_decl":
+			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "midi_decl", "arrange_decl":
 				if first, exists := seenDeclarations[kind]; exists {
 					diagnostics = append(diagnostics, Diagnostic{
 						Code: "CICADA-DUPLICATE", Severity: "error",
@@ -224,6 +224,10 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 					diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "only one live block is allowed", Position: w.position(n)})
 				} else {
 					s.Live, diagnostics = parseLive(w, n, diagnostics)
+				}
+			case "midi_decl":
+				if s.MIDI == nil {
+					s.MIDI = parseMIDI(w, n)
 				}
 			case "track_decl":
 				if s.Live != nil {

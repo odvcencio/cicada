@@ -170,6 +170,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	app.Mount("POST /__instrument/import", http.HandlerFunc(s.importInstrument))
 	app.Mount("POST /__sampler/import", http.HandlerFunc(s.importSampler))
 	app.Mount("POST /api/midi/input", http.HandlerFunc(s.nativeMIDIInput))
+	app.Mount("GET /api/midi/ports", http.HandlerFunc(s.localMIDIPorts))
 	app.Mount("GET /api/note-recovery/{id}", http.HandlerFunc(s.savedNoteState))
 	app.Mount("GET /media/sampler/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))

@@ -58,7 +58,7 @@ func Format(document *Document) ([]byte, error) {
 			if int(end) > len(document.source) || start > end {
 				return nil, fmt.Errorf("invalid syntax span")
 			}
-			if kind == "live_decl" {
+			if kind == "live_decl" || kind == "midi_decl" {
 				section = formatLiveDeclaration(node, document.Walker)
 			} else if kind == "lfo_decl" || kind == "envelope_decl" || kind == "sway_decl" || kind == "contour_decl" || kind == "mod_decl" {
 				section = formatModulatorDeclaration(node, document.Walker)
@@ -594,7 +594,7 @@ func formatLiveDeclaration(node *gts.Node, w *walk.Walker) string {
 	var visit func(*gts.Node)
 	visit = func(n *gts.Node) {
 		switch w.Type(n) {
-		case "live_land", "live_phrase", "live_count_in", "live_record", "live_macro", "live_layer", "live_attack", "live_release", "live_state", "live_stinger", "live_transition":
+		case "live_land", "live_phrase", "live_count_in", "live_record", "live_macro", "live_layer", "live_attack", "live_release", "live_state", "live_stinger", "live_transition", "midi_port", "midi_track", "midi_cc", "midi_note":
 			ends = append(ends, n.EndByte())
 			return
 		}
