@@ -1027,7 +1027,6 @@ jobs:
             build/studio-portable-proof/
             build/studio-portable-midi-proof/
             build/studio-midi-binding-report.txt
-            build/studio-midi-binding-server.log
             build/studio-midi-binding-proof/
             build/studio-code-recovery-*-report.txt
             build/studio-code-recovery-*-server.log
