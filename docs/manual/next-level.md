@@ -118,12 +118,19 @@ An edition-2 score can name logical input ports and map them to tracks, live
 parameters, scenes, Play, and Stop:
 
 ```cicada
+cicada 2
+tempo 120
+track bass acid {}
+track lead acid {}
 midi {
   port keys
   keys ch 1 -> lead
   keys cc 74 -> bass.cutoff 200Hz..4kHz
   keys note c1 -> launch verse
 }
+pattern phrase { 1 . 3 . }
+scene verse { bass = phrase lead = phrase }
+song { verse*16 }
 ```
 
 In the project directory, create `cicada.local` with a port-to-device binding
