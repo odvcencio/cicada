@@ -1,0 +1,14 @@
+cicada 2
+track lead acid {}
+track bass acid {}
+midi {
+  port keys;
+  keys ch 1 -> lead
+  keys ch 1 cc 74 -> bass.cutoff 200Hz..4kHz takeover = jump
+  keys note c1 -> launch verse mode = trigger
+  keys note 25 -> play
+  keys note 26 -> stop
+}
+pattern phrase { 1 . }
+scene verse { bass = phrase lead = phrase }
+song { verse }
