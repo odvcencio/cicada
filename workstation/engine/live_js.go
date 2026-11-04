@@ -204,7 +204,7 @@ func (u *liveUI) queue(action string, values map[string]string) bool {
 		values["sequence"] = strconv.FormatUint(u.sequence, 10)
 	}
 	job := &liveJob{action, values}
-	if action == "live" && (values["type"] == "note-expression" || values["type"] == "group-expression") {
+	if action == "live" && (values["type"] == "note-expression" || values["type"] == "group-expression" || values["type"] == "macro") {
 		key := expressionJobKey(values)
 		if previous := u.expressionJobs[key]; previous != nil {
 			values["sequence"] = previous.Values["sequence"]
@@ -387,7 +387,7 @@ func (u *liveUI) consumeExpression(job *liveJob) {
 	}
 }
 func expressionJobKey(values map[string]string) string {
-	return values["type"] + ":" + values["track"] + ":" + values["noteId"] + ":" + values["groupId"]
+	return values["type"] + ":" + values["track"] + ":" + values["noteId"] + ":" + values["groupId"] + ":" + values["address"]
 }
 
 func (u *liveUI) poll() {
@@ -427,6 +427,7 @@ func (u *liveUI) poll() {
 		}
 		var t struct {
 			control.PlaybackState
+			MacroTargets     map[string]float32  `json:"macroTargets"`
 			MIDIPickupValues map[string]*float64 `json:"midiPickupValues"`
 			Scene            string              `json:"scene"`
 			PendingScene     string              `json:"pendingScene"`
@@ -436,6 +437,16 @@ func (u *liveUI) poll() {
 		requested := time.Now()
 		if read("/api/transport", &t) == nil && !u.closed.Load() {
 			u.midiPickupValues = t.MIDIPickupValues
+			inputs := u.root.Call("querySelectorAll", "[data-live-macro]")
+			for i := 0; i < inputs.Length(); i++ {
+				input := inputs.Index(i)
+				if input.Equal(js.Global().Get("document").Get("activeElement")) {
+					continue
+				}
+				if value, ok := t.MacroTargets[input.Call("getAttribute", "data-live-macro").String()]; ok {
+					input.Set("value", strconv.FormatFloat(float64(value), 'f', 3, 32))
+				}
+			}
 			t.RoundTrip = time.Since(requested)
 			if t.MIDIClockEpoch < u.clockEpoch {
 				continue
@@ -641,6 +652,10 @@ func (u *liveUI) syncControls() {
 		buttons.Index(i).Set("disabled", !u.playing || track == "")
 		buttons.Index(i).Call("setAttribute", "aria-pressed", strconv.FormatBool(u.counts[liveHeld{track, note}] > 0))
 	}
+	macros := u.root.Call("querySelectorAll", "[data-live-macro]")
+	for i := 0; i < macros.Length(); i++ {
+		macros.Index(i).Set("disabled", !u.playing)
+	}
 }
 
 func (u *liveUI) buttonNote(b js.Value) (string, int) {
@@ -654,6 +669,13 @@ func (u *liveUI) buttonNote(b js.Value) (string, int) {
 	return track, note
 }
 func (u *liveUI) bindControls() {
+	macros := u.root.Call("querySelectorAll", "[data-live-macro]")
+	for i := 0; i < macros.Length(); i++ {
+		input := macros.Index(i)
+		u.on(input, "input", func(js.Value) {
+			u.queue("live", map[string]string{"type": "macro", "address": input.Call("getAttribute", "data-live-macro").String(), "value": input.Get("value").String()})
+		})
+	}
 	window := js.Global().Get("window")
 	keys := map[string]int{"a": 48, "w": 49, "s": 50, "e": 51, "d": 52, "f": 53, "t": 54, "g": 55, "y": 56, "h": 57, "u": 58, "j": 59, "k": 60}
 	u.on(window, "keydown", func(e js.Value) {

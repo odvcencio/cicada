@@ -594,7 +594,7 @@ func formatLiveDeclaration(node *gts.Node, w *walk.Walker) string {
 	var visit func(*gts.Node)
 	visit = func(n *gts.Node) {
 		switch w.Type(n) {
-		case "live_land", "live_phrase", "live_count_in", "live_record", "live_macro", "live_layer", "live_attack", "live_release", "live_state", "live_stinger", "live_transition", "midi_port", "midi_track", "midi_cc", "midi_note":
+		case "live_land", "live_phrase", "live_count_in", "live_record", "live_macro", "live_macro_map", "live_layer", "live_attack", "live_release", "live_state", "live_stinger", "live_transition", "midi_port", "midi_track", "midi_cc", "midi_note":
 			ends = append(ends, n.EndByte())
 			return
 		}

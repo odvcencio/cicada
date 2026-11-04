@@ -855,7 +855,13 @@ func checkRequiredFields(data []byte) error {
 				return err
 			}
 			if err := checkObjectArray(live["macros"], "macros", "/live/macros", func(value any, pointer string) error {
-				_, err := require(value, "live_macro", "macro", pointer)
+				macro, err := require(value, "live_macro", "macro", pointer)
+				if err != nil {
+					return err
+				}
+				if mapping, exists := macro["mapping"]; exists {
+					_, err = require(mapping, "live_macro_mapping", "macro mapping", pointer+"/mapping")
+				}
 				return err
 			}); err != nil {
 				return err

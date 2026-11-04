@@ -25,9 +25,17 @@ type Live struct {
 }
 
 type LiveMacro struct {
-	Name     string  `cicada:"Host control name" json:"name" introduced:"cicada.project/2"`
-	Default  float64 `cicada:"Initial macro value" json:"default" introduced:"cicada.project/2"`
-	SmoothMS float64 `cicada:"Default smoothing duration in milliseconds" json:"smooth_ms" introduced:"cicada.project/2"`
+	Name     string            `cicada:"Host control name" json:"name" introduced:"cicada.project/2"`
+	Default  float64           `cicada:"Initial macro value" json:"default" introduced:"cicada.project/2"`
+	SmoothMS float64           `cicada:"Default smoothing duration in milliseconds" json:"smooth_ms" introduced:"cicada.project/2"`
+	Mapping  *LiveMacroMapping `cicada:"Parameter range controlled by this macro" json:"mapping,omitempty" introduced:"cicada.project/2"`
+}
+
+type LiveMacroMapping struct {
+	Target string `cicada:"Registered parameter path" json:"target" introduced:"cicada.project/2"`
+	Min    Value  `cicada:"Minimum parameter value" json:"min" introduced:"cicada.project/2"`
+	Max    Value  `cicada:"Maximum parameter value" json:"max" introduced:"cicada.project/2"`
+	Curve  string `cicada:"Mapping curve" json:"curve,omitempty" introduced:"cicada.project/2"`
 }
 
 type LiveLayers struct {
@@ -70,7 +78,13 @@ func liveFromScore(source *notation.Live) *Live {
 		live.CountInBars = &bars
 	}
 	for _, m := range source.Macros {
-		live.Macros = append(live.Macros, LiveMacro{Name: m.Name, Default: m.Value, SmoothMS: m.SmoothMS})
+		macro := LiveMacro{Name: m.Name, Default: m.Value, SmoothMS: m.SmoothMS}
+		if m.Target != "" {
+			min, _ := projectValue(m.Min)
+			max, _ := projectValue(m.Max)
+			macro.Mapping = &LiveMacroMapping{Target: m.Target, Min: min, Max: max, Curve: m.Curve}
+		}
+		live.Macros = append(live.Macros, macro)
 	}
 	for _, l := range source.Layers {
 		layers := LiveLayers{Macro: l.Macro, AttackBars: l.AttackBars, ReleaseBars: l.ReleaseBars, Rules: []LiveLayer{}}
@@ -101,7 +115,13 @@ func liveToScore(source *Live) *notation.Live {
 		live.CountInBars = &bars
 	}
 	for _, m := range source.Macros {
-		live.Macros = append(live.Macros, notation.LiveMacro{Name: m.Name, Value: m.Default, SmoothMS: m.SmoothMS})
+		macro := notation.LiveMacro{Name: m.Name, Value: m.Default, SmoothMS: m.SmoothMS}
+		if m.Mapping != nil {
+			macro.Target, macro.Curve = m.Mapping.Target, m.Mapping.Curve
+			macro.Min, _ = valueSource(m.Mapping.Min)
+			macro.Max, _ = valueSource(m.Mapping.Max)
+		}
+		live.Macros = append(live.Macros, macro)
 	}
 	for _, l := range source.Layers {
 		layers := notation.LiveLayers{Macro: l.Macro, AttackBars: l.AttackBars, ReleaseBars: l.ReleaseBars}
@@ -195,6 +215,20 @@ func LiveSurfaceOf(p *Project) LiveSurface {
 		return LiveSurface{}
 	}
 	surface := LiveSurface{Land: p.Live.Land, PhraseBars: p.Live.PhraseBars, Record: p.Live.Record, Macros: append([]LiveMacro{}, p.Live.Macros...)}
+	for i := range surface.Macros {
+		if source := surface.Macros[i].Mapping; source != nil {
+			mapping := *source
+			if source.Min.Number != nil {
+				value := *source.Min.Number
+				mapping.Min.Number = &value
+			}
+			if source.Max.Number != nil {
+				value := *source.Max.Number
+				mapping.Max.Number = &value
+			}
+			surface.Macros[i].Mapping = &mapping
+		}
+	}
 	if p.Live.CountInBars != nil {
 		bars := *p.Live.CountInBars
 		surface.CountInBars = &bars
@@ -231,7 +265,17 @@ func liveSource(live *Live) string {
 		out.WriteString("  record = " + live.Record + "\n")
 	}
 	for _, m := range live.Macros {
-		out.WriteString("  macro " + m.Name + " = " + decimal(m.Default))
+		out.WriteString("  macro " + m.Name)
+		if m.Mapping == nil {
+			out.WriteString(" = " + decimal(m.Default))
+		} else {
+			min, _ := valueSource(m.Mapping.Min)
+			max, _ := valueSource(m.Mapping.Max)
+			out.WriteString(" -> " + m.Mapping.Target + " " + min + ".." + max)
+			if m.Mapping.Curve != "" {
+				out.WriteString(" curve " + m.Mapping.Curve)
+			}
+		}
 		if m.SmoothMS > 0 {
 			out.WriteString(" smooth " + decimal(m.SmoothMS) + "ms")
 		}

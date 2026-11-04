@@ -44,6 +44,7 @@ type Score struct {
 	Tracks          []TrackSlots       // engine track and slot indices in source order
 	Song            []SongEntry        // song entries with one-based start bars
 	Parameters      []ParameterValue
+	Macros          []MacroControl
 	HasReturnA      bool
 	HasReturnB      bool
 	HasSFX          bool
@@ -58,11 +59,43 @@ type trackNameSnapshot struct {
 	kinds         [engine.MaxTracks]string
 	poly          [engine.MaxTracks]bool
 	count         uint8
+	macros        []MacroControl
+	macroTargets  [16]atomic.Uint32
 	committed     [engine.MaxTracks + 1][kernel.ParamCount]atomic.Uint64 // Render writes; controls read.
 	effective     [engine.MaxTracks + 1][kernel.ParamCount]atomic.Uint64 // Render-owned targets, including automation and live controls.
 	defaults      engine.ParameterState                                  // Render-owned saved values, separate from scene values.
 	previewParams [engine.MaxTracks][kernel.ParamCount]bool
 	previewValues [engine.MaxTracks]engine.PreviewParamValidator
+}
+
+type MacroControl struct {
+	Name         string
+	SmoothFrames uint32
+	Default      float32
+}
+
+type macroValue struct {
+	name    string
+	value   float32
+	version uint64
+}
+type macroValues struct {
+	values [16]macroValue
+	count  int
+}
+
+func validateMacroControls(macros []MacroControl) error {
+	if len(macros) > 16 {
+		return fmt.Errorf("live score exceeds 16 macros")
+	}
+	seen := map[string]bool{}
+	for _, macro := range macros {
+		if macro.Name == "" || len(macro.Name) > 64 || seen[macro.Name] || math.IsNaN(float64(macro.Default)) || math.IsInf(float64(macro.Default), 0) || macro.Default < 0 || macro.Default > 1 {
+			return fmt.Errorf("invalid live macro %s", macro.Name)
+		}
+		seen[macro.Name] = true
+	}
+	return nil
 }
 
 // PreviewTarget retains the immutable playing-track metadata and incarnation
@@ -310,6 +343,11 @@ type Player struct {
 	rangeFinished           atomic.Bool
 	rangeCycles             atomic.Uint64
 	streamEngine            atomic.Pointer[engine.Engine]
+	macroValues             atomic.Pointer[macroValues]
+	macroSequence           atomic.Uint64
+	appliedMacroValues      *macroValues
+	appliedMacroEngine      *engine.Engine
+	appliedMacroVersions    [16]uint64
 }
 
 // New consumes the initial engine, closing it if player admission fails.
@@ -321,6 +359,9 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	}()
 	if len(initial.Tracks) > engine.MaxTracks {
 		return nil, fmt.Errorf("live score exceeds %d tracks", engine.MaxTracks)
+	}
+	if err := validateMacroControls(initial.Macros); err != nil {
+		return nil, err
 	}
 	if initial.Engine == nil || initial.SampleRate != rate {
 		return nil, fmt.Errorf("live score has no engine at %d Hz", rate)
@@ -498,6 +539,9 @@ func (p *Player) Offer(score Score) error {
 	if len(score.Tracks) > engine.MaxTracks {
 		return fmt.Errorf("live score exceeds %d tracks", engine.MaxTracks)
 	}
+	if err := validateMacroControls(score.Macros); err != nil {
+		return err
+	}
 	if score.Engine == nil || score.SampleRate != p.rate {
 		return fmt.Errorf("live score has no engine at %d Hz", p.rate)
 	}
@@ -560,7 +604,12 @@ func (p *Player) Events() <-chan Event { return p.events }
 func (p *Player) Meters() <-chan MeterFrame { return p.meters }
 
 func makeTrackNames(score Score) *trackNameSnapshot {
-	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), engine.MaxTracks))}
+	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), engine.MaxTracks)), macros: append([]MacroControl(nil), score.Macros...)}
+	for i, macro := range snapshot.macros {
+		if i < len(snapshot.macroTargets) {
+			snapshot.macroTargets[i].Store(math.Float32bits(macro.Default))
+		}
+	}
 	for _, parameter := range score.Parameters {
 		snapshot.storeCommitted(parameter.Track, parameter.ID, parameter.Value)
 		snapshot.storeEffective(parameter.Track, parameter.ID, parameter.Value)
@@ -610,6 +659,100 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 		score.Engine.SetParameterObserver(snapshot.storeEffective)
 	}
 	return snapshot
+}
+
+// MacroTargets returns a race-free snapshot of the values the engine is moving toward.
+func (p *Player) MacroTargets() map[string]float32 {
+	names := p.trackNames.Load()
+	if names == nil || len(names.macros) == 0 {
+		return nil
+	}
+	values := make(map[string]float32, len(names.macros))
+	for i, macro := range names.macros {
+		if i < len(names.macroTargets) {
+			values[macro.Name] = math.Float32frombits(names.macroTargets[i].Load())
+		}
+	}
+	return values
+}
+
+// SetMacro publishes the latest named control without accessing the render
+// engine from the caller's goroutine. Values follow their names across edits.
+func (p *Player) SetMacro(name string, value float32) error {
+	select {
+	case <-p.closed:
+		return fmt.Errorf("player is closed")
+	default:
+	}
+	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) || value < 0 || value > 1 {
+		return fmt.Errorf("macro value must be 0 to 1")
+	}
+	names := p.trackNames.Load()
+	if names == nil {
+		return fmt.Errorf("audio transport is not running")
+	}
+	known := func(name string) bool {
+		for _, m := range names.macros {
+			if m.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !known(name) {
+		return fmt.Errorf("unknown live macro %s", name)
+	}
+	for {
+		old := p.macroValues.Load()
+		next := &macroValues{}
+		if old != nil {
+			for _, v := range old.values[:old.count] {
+				if known(v.name) && v.name != name {
+					next.values[next.count] = v
+					next.count++
+				}
+			}
+		}
+		if next.count >= len(next.values) {
+			return fmt.Errorf("too many live macros")
+		}
+		next.values[next.count] = macroValue{name: name, value: value, version: p.macroSequence.Add(1)}
+		next.count++
+		if p.macroValues.CompareAndSwap(old, next) {
+			return nil
+		}
+	}
+}
+
+func (p *Player) applyMacroValues() {
+	values := p.macroValues.Load()
+	if values == nil || values == p.appliedMacroValues && p.current.Engine == p.appliedMacroEngine {
+		return
+	}
+	if p.current.Engine != p.appliedMacroEngine {
+		clear(p.appliedMacroVersions[:])
+	}
+	for _, item := range values.values[:values.count] {
+		for id, macro := range p.current.Macros {
+			if macro.Name == item.name {
+				if id >= len(p.appliedMacroVersions) {
+					p.fault = fmt.Errorf("too many live macros")
+					return
+				}
+				if p.appliedMacroVersions[id] == item.version {
+					break
+				}
+				command := cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: uint16(id), Arg0: math.Float32bits(item.value), Arg1: macro.SmoothFrames}
+				if !p.current.Engine.Push(command) {
+					p.fault = fmt.Errorf("live engine rejected macro %s", item.name)
+					return
+				}
+				p.appliedMacroVersions[id] = item.version
+				break
+			}
+		}
+	}
+	p.appliedMacroValues, p.appliedMacroEngine = values, p.current.Engine
 }
 
 // TrackIndex resolves a stable score track ID against the engine that Read owns.
@@ -1775,6 +1918,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 	}
 	p.drainPatches()
 	p.queueLiveNotes()
+	p.applyMacroValues()
 	if p.fault != nil {
 		return
 	}
@@ -1784,6 +1928,14 @@ func (p *Player) renderBlock(requestedFrames int) {
 	p.applyOverrides(p.current.Engine, p.current, false)
 	renderStart := time.Now()
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
+	if names := p.trackNames.Load(); names != nil {
+		for i := range names.macros {
+			if i < len(names.macroTargets) {
+				_, target := p.current.Engine.MacroValue(i)
+				names.macroTargets[i].Store(math.Float32bits(target))
+			}
+		}
+	}
 	p.noteRenderTime(time.Since(renderStart), frames)
 	if index, sequence := p.current.Engine.CurrentScene(); index >= 0 && index < len(p.current.SceneIDs) && (p.sceneEngine != p.current.Engine || p.sceneSequence != sequence) {
 		p.noteSceneCommitted(index, tick)

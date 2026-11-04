@@ -188,6 +188,11 @@ func compileLiveProjectCapped(path string, p *project.Project, sampleRate int, l
 	if err != nil {
 		return liveplay.Score{}, err
 	}
+	setup := project.LiveCommands(p)
+	if len(setup) > 0 && !created.PushBatch(setup) {
+		_ = created.Close()
+		return liveplay.Score{}, fmt.Errorf("live engine rejected score control setup")
+	}
 	// Native live scores prepare admitted worker lanes before a callback can
 	// take ownership. Browser images and offline reference renders stay serial.
 	if err := created.EnableParallel(0); err != nil {
@@ -232,15 +237,20 @@ func compileLiveProjectCapped(path string, p *project.Project, sampleRate int, l
 	}
 	phraseBars := 0
 	var countInBars *int
+	var macros []liveplay.MacroControl
 	if p.Live != nil {
 		phraseBars = p.Live.PhraseBars
 		countInBars = p.Live.CountInBars
+		for _, macro := range p.Live.Macros {
+			macros = append(macros, liveplay.MacroControl{Name: macro.Name, SmoothFrames: macro.SmoothingFrames(sampleRate), Default: float32(macro.Default)})
+		}
 	}
 	return liveplay.Score{
 		Engine: created, SampleRate: sampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
 		PhraseBars:  phraseBars,
 		CountInBars: countInBars,
 		SceneIDs:    sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p, created),
+		Macros:     macros,
 		HasReturnA: cfg.DelayA != nil, HasReturnB: cfg.ReverbB != nil, HasSFX: hasSFXTracks(p),
 	}, nil
 }

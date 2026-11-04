@@ -3,6 +3,7 @@ title "Modulators"
 tempo 120
 track pad acid {}
 track drums acid {}
+live { macro filter -> pad.cutoff 200Hz..4kHz curve exp smooth 150ms }
 pattern p { 1 . 3 . }
 lfo drift { wave = sine rate = 8bars phase = 0 }
 lfo breath { wave = sine rate = 0.07Hz loop = continue }

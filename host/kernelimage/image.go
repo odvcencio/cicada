@@ -248,6 +248,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, imageError("modulators require the modular kernel module")
 		}
 	}
+	if len(cfg.MacroMappings) > 0 && modularFlags == 0 {
+		return nil, imageError("mapped macros require the modular kernel module")
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -273,6 +276,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if hasModulation(&cfg) {
 		flags |= ModulatorFlag
+	}
+	if len(cfg.MacroMappings) > 0 {
+		flags |= MacroMappingFlag
 	}
 	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))
@@ -742,6 +748,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if modularFlags != 0 && hasModulation(&cfg) {
 		if err := writeModulation(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	if modularFlags != 0 && len(cfg.MacroMappings) > 0 {
+		if err := writeMacroMappings(&w, &cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -1405,6 +1416,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	if modularFlags != 0 && flags&ModulatorFlag != 0 {
 		if err := readModulation(&r, cfg); err != nil {
+			return err
+		}
+	}
+	if modularFlags != 0 && flags&MacroMappingFlag != 0 {
+		if err := readMacroMappings(&r, cfg); err != nil {
 			return err
 		}
 	}

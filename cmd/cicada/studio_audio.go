@@ -302,6 +302,19 @@ func validateAudioNote(message audioClientMessage) error {
 }
 
 func (s *studio) applyAudioMessage(message audioClientMessage) error {
+	if message.Type == "macro" {
+		var value float64
+		if message.Address == "" || len(message.Address) > 64 || json.Unmarshal(message.Value, &value) != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
+			return fmt.Errorf("macro needs a name and value from 0 to 1")
+		}
+		s.transport.mu.Lock()
+		stream := s.transport.stream
+		s.transport.mu.Unlock()
+		if stream == nil {
+			return fmt.Errorf("audio transport is not running")
+		}
+		return stream.SetMacro(message.Address, float32(value))
+	}
 	if message.Type == "note-group" || message.Type == "group-expression" {
 		if message.owner == "" || message.GroupID == "" {
 			return fmt.Errorf("shared controls require an owned live input")

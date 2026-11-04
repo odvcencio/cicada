@@ -293,6 +293,10 @@ type LiveMacro struct {
 	Name           string
 	Value          float64
 	SmoothMS       float64
+	Target         string
+	Min            string
+	Max            string
+	Curve          string
 	Position       Position
 	ValuePosition  Position
 	SmoothPosition Position
