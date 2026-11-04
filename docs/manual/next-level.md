@@ -115,7 +115,7 @@ thresholds to 8 bits, so nearby values can share a level. Studio and the directo
 A macro can also control a continuous live parameter. For example, with an
 acid track named `bass`, add this declaration to `live`:
 
-```cicada
+```text
 macro filter -> bass.cutoff 200Hz..4kHz curve exp smooth 150ms
 ```
 
