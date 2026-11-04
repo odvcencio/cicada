@@ -58,4 +58,12 @@ func TestStudioModulationEditsValidateAndUndo(t *testing.T) {
 	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(withRoute)}); r.Code != 200 || !bytes.Equal(read(), withSource) {
 		t.Fatalf("undo: %d %s", r.Code, r.Body.String())
 	}
+	apply("mod-source-edit", `{"operation":"set","source":"drift","field":"rate","value":"1/2"}`)
+	updated := read()
+	if !bytes.Contains(updated, []byte("rate = 1/2")) {
+		t.Fatalf("source setting was not saved: %s", updated)
+	}
+	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(updated)}); r.Code != 200 || !bytes.Equal(read(), withSource) {
+		t.Fatalf("source undo: %d %s", r.Code, r.Body.String())
+	}
 }

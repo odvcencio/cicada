@@ -76,7 +76,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"pattern keys-line notes steps=4 { c4 . . . }\n" +
 		"pattern empty acid steps=4 { . . . .\n bend: 0ct 0ct 0ct 0ct\n vibrato: 0ct 0ct 0ct 0ct\n pressure: 0 0 0 0\n timbre: 0.5 0.5 0.5 0.5\n}\n" +
 		"pattern played performance length=3840ticks { gesture-group touch { gesture at=0ticks bend=25ct pressure=0.2 timbre=0.5; } note 60 at=17ticks length=703ticks velocity=82 group=touch; }\n" +
-		"scene recording { lead=empty }\n" + scene + "\nscene other { lead=melody }\nsong { main*2 other recording }\n"
+		"lfo breathing { rate=1/4 }\nscene recording { lead=empty }\n" + scene + "\nscene other { lead=melody }\nsong { main*2 other recording }\n"
 	// Every foreign line/column lands in valid unrelated entry-file comments,
 	// so compilation cannot mask a writer that silently uses those offsets.
 	entry := "cicada 2\n" + strings.Repeat("// entry sentinel "+strings.Repeat("x", 180)+"\n", strings.Count(part, "\n")+5)
@@ -144,6 +144,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"setautomationpoint":     &edits.SetAutomationPoint{Entity: "param:lead.level", At: "@2.1.1", Value: "-3dB"},
 		"removeautomationpoint":  &edits.RemoveAutomationPoint{Entity: "param:lead.level", At: "@2.1.1"},
 		"addmodulator":           &edits.AddModulator{SourceKind: "lfo", Name: "drift", Rate: "1/4", Wave: "sine"},
+		"editmodulator":          &edits.EditModulator{Operation: "set", Source: "breathing", Field: "rate", Value: "1/2"},
 		"modulationroute":        &edits.ModulationRoute{Operation: "add", Source: "drift", Target: "lead.pan", Mode: "add", Depth: "0.2"},
 		"placesamplerprint":      &edits.PlaceSamplerPrint{Name: "print", Track: "vox", At: "@9.1.1", Asset: edits.PrintAsset{Path: "print.wav", SHA256: strings.Repeat("c", 64), Frames: 480, RateHz: 48000}},
 		"placevocalcomp":         &edits.PlaceVocalComp{Comp: edits.VocalComp{Track: "vox", Tempo: 120000, Segments: []edits.VocalSegment{{Take: "t", Start: 0, End: 3840}}, Asset: "comp"}, Asset: edits.PrintAsset{Path: "comp.wav", SHA256: strings.Repeat("d", 64), Frames: 480, RateHz: 48000}},
@@ -282,6 +283,10 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 					case "addmodulator":
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 0 || !bytes.Contains(result.Source, []byte("lfo drift")) {
 							t.Fatalf("new source changed another file: %v %v", result != nil, err)
+						}
+					case "editmodulator":
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Contains(result.Files[0].After, []byte("lfo breathing { rate=1/2 }")) {
+							t.Fatalf("source edit did not change its owning file: candidate=%v error=%v", result != nil, err)
 						}
 					case "placevocalcomp":
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("automate lead.cutoff")) || !bytes.Contains(result.Files[0].After, []byte("place vocal-vox")) {

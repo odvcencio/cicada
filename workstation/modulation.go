@@ -42,7 +42,47 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 		case source.RateTicks > 0:
 			detail += " · " + modulationPeriod(source.RateTicks)
 		}
-		sourceRows = append(sourceRows, gosx.El("li", gosx.El("strong", gosx.Text(source.ID)), gosx.Text(" · "+detail)))
+		setting := func(name, label, value string, options []string) gosx.Node {
+			input := textInput("value", value)
+			if len(options) != 0 {
+				input = selectInput("value", value, options)
+			}
+			return form(hidden("action", "mod-source-edit"), hidden("operation", "set"), hidden("source", source.ID), hidden("field", name), field(label, input), submit("", "", "Save "+label))
+		}
+		var settings []gosx.Node
+		number := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+		if source.Kind != "envelope" {
+			fieldName := "rate"
+			if source.Kind == "contour" {
+				fieldName = "period"
+			}
+			settings = append(settings, setting(fieldName, "Rate or period", modulationRate(source), nil))
+			settings = append(settings, setting("loop", "Loop", source.Loop, []string{"wrap", "continue"}))
+		}
+		switch source.Kind {
+		case "lfo":
+			settings = append(settings, setting("wave", "Waveform", source.Wave, []string{"sine", "triangle", "square", "sample-hold"}), setting("phase", "Phase", number(source.Phase), nil))
+		case "sway":
+			settings = append(settings, setting("octaves", "Octaves", strconv.Itoa(source.Octaves), []string{"1", "2", "3", "4"}))
+		case "envelope":
+			settings = append(settings, setting("source", "Follow track", source.Source, tracks), setting("attack", "Attack", number(source.AttackMS)+"ms", nil), setting("release", "Release", number(source.ReleaseMS)+"ms", nil))
+		case "contour":
+			var pointRows []gosx.Node
+			for i, point := range source.Points {
+				shape := gosx.Fragment()
+				if i != 0 {
+					shape = field("Shape", selectInput("shape", point.Shape, []string{"linear", "smooth", "step", "exponential"}))
+				}
+				var remove gosx.Node = gosx.Fragment()
+				if i > 0 && i < len(source.Points)-1 {
+					remove = submit("operation", "point-remove", "Remove point")
+				}
+				pointRows = append(pointRows, gosx.El("li", form(hidden("action", "mod-source-edit"), hidden("source", source.ID), hidden("index", strconv.Itoa(i)), field("Position", textInput("at", number(point.At))), field("Value", textInput("value", number(point.Value))), shape, submit("operation", "point-set", "Save point"), remove)))
+			}
+			settings = append(settings, gosx.El("h4", gosx.Text("Contour points")), gosx.El("ol", gosx.Fragment(pointRows...)), form(hidden("action", "mod-source-edit"), hidden("operation", "point-add"), hidden("source", source.ID), field("Position", textInput("at", "0.5")), field("Value", textInput("value", "0")), field("Shape", selectInput("shape", "linear", []string{"linear", "smooth", "step", "exponential"})), submit("", "", "Add point")))
+		}
+		settings = append(settings, form(hidden("action", "mod-source-edit"), hidden("operation", "remove"), hidden("source", source.ID), submit("", "", "Remove source")))
+		sourceRows = append(sourceRows, gosx.El("li", gosx.Attrs(gosx.Attr("data-mod-source", source.ID)), gosx.El("details", gosx.El("summary", gosx.El("strong", gosx.Text(source.ID)), gosx.Text(" · "+detail)), gosx.Fragment(settings...))))
 	}
 	if len(sources) != 0 {
 		for _, address := range project.ParamAddresses(p) {
@@ -87,8 +127,22 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 	}
 	return ui.Panel(ui.PanelProps{ID: "modulation-editor", Title: "Modulation", Description: "Create control sources and route them to track parameters. Changes save to the score and support Undo."},
 		gosx.El("h3", gosx.Text("Sources")), gosx.El("ul", gosx.Fragment(sourceRows...)), addSource,
-		gosx.El("h3", gosx.Text("Routes")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Routes apply in order. Add depth uses the target unit, such as 2dB or 500Hz; multiply uses a plain factor. Edit source settings and contour points in Code.")),
+		gosx.El("h3", gosx.Text("Routes")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Routes apply in order. Add depth uses the target unit, such as 2dB or 500Hz; multiply uses a plain factor. Remove a source's routes before removing it.")),
 		gosx.El("ol", gosx.Fragment(rows...)), addRoute)
+}
+
+func modulationRate(source project.Modulator) string {
+	if source.RateMicroHz > 0 {
+		return strconv.FormatFloat(float64(source.RateMicroHz)/1e6, 'f', -1, 64) + "Hz"
+	}
+	if source.RateTicks%seq.TicksPerBar == 0 {
+		return fmt.Sprintf("%dbars", source.RateTicks/seq.TicksPerBar)
+	}
+	a, b := source.RateTicks, int64(seq.TicksPerBar)
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return fmt.Sprintf("%d/%d", source.RateTicks/a, int64(seq.TicksPerBar)/a)
 }
 
 func modulationPeriod(ticks int64) string {
