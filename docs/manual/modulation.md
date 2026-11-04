@@ -72,4 +72,5 @@ Studio plays these scores through its native audio service. The optional
 AudioWorklet host and WAM export need `make build-modular-wasm`; a score that
 also uses modeled keyboard voices needs `make build-keys-modular-wasm`. The
 existing core and keyboard modules retain their own size budgets. The public
-browser demo currently uses the core module and cannot play modulated scores.
+browser demo uses the modular module and includes the Drift sketch; keyboard
+instruments and external assets remain unavailable there.

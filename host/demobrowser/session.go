@@ -83,6 +83,7 @@ song { demo*999 demo*999 }
 `, name, name, -12+trackGain, gains[i]-trackGain, velocity)})
 	}
 	presets = append(presets,
+		Preset{ID: "drift", Name: "Drift · moving sound", Source: strings.Replace(ensemble, "scene garden", "lfo drift { wave = triangle rate = 4bars }\nmod drift -> keys.pan depth = 0.65\nmod drift -> bass.cutoff depth = 300Hz\nscene garden", 1)},
 		Preset{ID: "kit", Name: "Modeled drum kit", Source: ensemble[:strings.Index(ensemble, "track bass")] + `track drums acoustic { level = 6dB bd_level = -4.3dB sd_level = -4.3dB ch_level = -4.3dB }
 master { level = 6dB }
 pattern beat drums {
@@ -125,9 +126,6 @@ func Parse(source []byte) (*project.Project, error) {
 	}
 	if p.NeedsKeysEngine() {
 		return nil, fmt.Errorf("keyboard instruments are unavailable in this demo; choose a modeled instrument, acid bass, or an authored synth")
-	}
-	if len(p.Modulators) != 0 || len(p.Routes) != 0 {
-		return nil, fmt.Errorf("modulation is unavailable in this demo; use native Studio or a modular AudioWorklet host")
 	}
 	if err := project.ValidateProject(p); err != nil {
 		return nil, err

@@ -24,14 +24,18 @@ const keysModularBrotliLimit = 224 * 1024
 func main() {
 	reportOnly := len(os.Args) > 1 && os.Args[1] == "--report-only"
 	keysModular := len(os.Args) > 1 && os.Args[1] == "--keys-modular"
+	modular := len(os.Args) > 1 && os.Args[1] == "--modular"
 	if reportOnly {
 		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
 	if keysModular {
 		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
+	if modular {
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	}
 	if len(os.Args) != 2 && len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: cicada-wasm-size [--report-only|--keys-modular] <kernel.wasm> [processor.js]")
+		fmt.Fprintln(os.Stderr, "usage: cicada-wasm-size [--report-only|--modular|--keys-modular] <kernel.wasm> [processor.js]")
 		os.Exit(2)
 	}
 	data, err := os.ReadFile(os.Args[1])
@@ -46,17 +50,21 @@ func main() {
 	if err := writer.Close(); err != nil {
 		fail(err)
 	}
-	if keysModular {
-		fmt.Printf("keys+modular WASM: raw=%d/%d bytes, Brotli=%d/%d bytes\n", len(data), keysModularRawLimit, compressed.Len(), keysModularBrotliLimit)
+	if keysModular || modular {
+		name := "keys+modular"
+		if modular {
+			name = "modular"
+		}
+		fmt.Printf("%s WASM: raw=%d/%d bytes, Brotli=%d/%d bytes\n", name, len(data), keysModularRawLimit, compressed.Len(), keysModularBrotliLimit)
 		if len(data) > keysModularRawLimit || compressed.Len() > keysModularBrotliLimit {
-			fail(fmt.Errorf("keys+modular WASM exceeds the size budget"))
+			fail(fmt.Errorf("%s WASM exceeds the size budget", name))
 		}
 	} else if reportOnly {
 		fmt.Printf("optional audio WASM: raw=%d bytes, Brotli=%d bytes (reported separately)\n", len(data), compressed.Len())
 	} else {
 		fmt.Printf("kernel WASM: raw=%d/%d bytes, Brotli=%d/%d bytes\n", len(data), rawLimit, compressed.Len(), brotliLimit)
 	}
-	if !reportOnly && !keysModular && (len(data) > rawLimit || compressed.Len() > brotliLimit) {
+	if !reportOnly && !keysModular && !modular && (len(data) > rawLimit || compressed.Len() > brotliLimit) {
 		fail(fmt.Errorf("kernel WASM exceeds the size budget"))
 	}
 	if len(os.Args) == 3 {
@@ -73,8 +81,8 @@ func main() {
 	}
 	if reportOnly {
 		fmt.Println("REPORT optional audio module; default core budget unchanged")
-	} else if keysModular {
-		fmt.Println("PASS keys+modular budget; default core budget unchanged")
+	} else if keysModular || modular {
+		fmt.Println("PASS modular budget; default core budget unchanged")
 	} else {
 		fmt.Println("PASS build-kernel-wasm")
 	}

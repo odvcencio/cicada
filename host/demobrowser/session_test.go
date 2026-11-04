@@ -16,6 +16,9 @@ func TestPresetAudio(t *testing.T) {
 	for _, preset := range Presets() {
 		for _, rate := range []int{44100, 48000} {
 			t.Run(preset.ID+"/"+strconv.Itoa(rate), func(t *testing.T) {
+				if preset.ID == "drift" && !demoModular {
+					t.Skip("modulation requires the modular build tag")
+				}
 				_, cfg, image, err := Prepare([]byte(preset.Source), rate)
 				if err != nil {
 					t.Fatal(err)
@@ -76,19 +79,26 @@ func TestKeyboardEditsPreserveLastGoodScore(t *testing.T) {
 	}
 }
 
-func TestModulationEditPreservesLastGoodDemoScore(t *testing.T) {
+func TestModulationEdit(t *testing.T) {
+	if !demoModular {
+		t.Skip("modulation requires the modular build tag")
+	}
 	s, err := NewSession()
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := s.Snapshot()
 	source := string(before.Source) + "\nlfo drift { rate = 1/4 }\nmod drift -> bass.pan depth = 0.2\n"
-	if err := s.Apply(before.Revision, []byte(source)); err == nil || !strings.Contains(err.Error(), "modulation is unavailable") {
-		t.Fatalf("expected an actionable refusal, got %v", err)
+	if err := s.Apply(before.Revision, []byte(source)); err != nil {
+		t.Fatalf("modulated score rejected: %v", err)
 	}
 	after := s.Snapshot()
-	if after.Revision != before.Revision || after.CanUndo {
-		t.Fatal("unsupported edit replaced the working score")
+	if after.Revision == before.Revision || !after.CanUndo {
+		t.Fatal("modulation edit did not commit")
+	}
+	_, cfg, _, err := Prepare(after.Source, 48000)
+	if err != nil || len(cfg.Modulators) != 1 || len(cfg.Routes) != 1 {
+		t.Fatalf("modulation was not compiled: sources=%d routes=%d err=%v", len(cfg.Modulators), len(cfg.Routes), err)
 	}
 }
 
@@ -96,6 +106,9 @@ func TestPresetLoudness(t *testing.T) {
 	for _, preset := range Presets() {
 		for _, rate := range []int{44100, 48000} {
 			t.Run(preset.ID+"/"+strconv.Itoa(rate), func(t *testing.T) {
+				if preset.ID == "drift" && !demoModular {
+					t.Skip("modulation requires the modular build tag")
+				}
 				_, cfg, _, err := Prepare([]byte(preset.Source), rate)
 				if err != nil {
 					t.Fatal(err)
