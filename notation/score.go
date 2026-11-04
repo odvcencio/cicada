@@ -122,6 +122,7 @@ type Instrument struct {
 	OctaveSet      bool
 	OctavePosition Position
 	Glide          []Param
+	Vibrato        []Param
 	Params         []InstrumentParam
 	Mode           string
 	Lets           []Let

@@ -291,6 +291,7 @@
                 "hz",
                 "ms",
                 "db",
+                "ct",
                 "lu",
                 "lufs",
                 "dbtp"
@@ -381,6 +382,9 @@
           "maximum": 6
         },
         "glide_ms": {"type": "number", "minimum": 0, "maximum": 10000},
+        "vibrato_depth_cents": {"type": "number", "minimum": 0, "maximum": 9600},
+        "vibrato_rate_hz": {"type": "number", "minimum": 0, "maximum": 100},
+        "vibrato_delay_ms": {"type": "number", "minimum": 0, "maximum": 10000},
         "mode": {
           "enum": [
             "mono",

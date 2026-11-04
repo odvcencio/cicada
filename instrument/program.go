@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/notation"
 )
@@ -39,6 +40,7 @@ type Program struct {
 	Output        int
 	StatefulNodes int
 	DelaySamples  int
+	Vibrato       *expression.VibratoConfig
 	// PeriodExpressions identifies the exact divisions converted from Hz to ms.
 	PeriodExpressions map[*notation.Expr]bool `json:"-"`
 }
@@ -67,6 +69,25 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 		return nil, []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Message: "voice mode must be mono or poly", Position: src.Position}}
 	}
 	c := &compiler{program: Program{Name: src.Name, Mode: src.Mode}, symbols: map[string]int{}}
+	if len(src.Vibrato) > 0 {
+		value := &expression.VibratoConfig{RateHz: 5}
+		for _, setting := range src.Vibrato {
+			n, err := notation.VibratoSetting(setting.Name, setting.Value)
+			if err != nil {
+				c.errorAt("CICADA-PARAM", err.Error(), setting.ValuePosition)
+				continue
+			}
+			switch setting.Name {
+			case "vibrato":
+				value.DepthCents = float32(n)
+			case "vibrato_rate":
+				value.RateHz = float32(n)
+			case "vibrato_delay":
+				value.DelayMS = float32(n)
+			}
+		}
+		c.program.Vibrato = value
+	}
 	for _, input := range []struct {
 		name   string
 		typeOf Type

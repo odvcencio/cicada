@@ -29,9 +29,10 @@ seed_decl ::= "seed" , integer ;
 track_decl ::= "track" , _name , _name , "{" , { mix_setting | chain_decl } , "}" ;
 chain_decl ::= "chain" , "=" , { _name } ;
 instrument_decl ::= "instrument" , _name , "{" , [ instrument_octave ] ,
-                    { instrument_param | instrument_glide } , voice_decl , "}" ;
+                    { instrument_param | instrument_glide | instrument_vibrato } , voice_decl , "}" ;
 instrument_octave ::= "octave" , "=" , integer , [ ";" ] ;
 instrument_glide ::= "glide" , "=" , number , [ ";" ] ;
+instrument_vibrato ::= ("vibrato" | "vibrato_rate" | "vibrato_delay") , "=" , number , [ ";" ] ;
 kit_decl ::= "kit" , _name , "{" , { kit_binding } , "}" ;
 kit_binding ::= identifier , "=" , kit_target , [ ";" ] ;
 kit_target ::= _name | "builtin" , "." , identifier | "model" , "." , identifier ;
@@ -91,7 +92,7 @@ value ::= musical_position | bar_count | tick_count | number | insert_chain | _n
           fraction ;
 insert_chain ::= _name , { "->" , _name } ;
 fraction ::= /[0-9]+\/[0-9]+[tT.]?/ ;
-number ::= /-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
+number ::= /-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|ct|%)?/ ;
 integer ::= /[0-9]+/ ;
 key_root ::= /[a-g][#b]?/ ;
 string ::= /"([^"\\]|\\.)*"/ ;

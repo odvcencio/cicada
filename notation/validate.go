@@ -18,6 +18,7 @@ var acidParams = map[string]bool{
 	"sub": true, "cutoff": true, "reso": true, "envmod": true, "decay": true,
 	"accent": true, "drive": true, "release": true, "slide": true,
 	"gate": true, "filter": true, "savage": true, "octave": true,
+	"vibrato": true, "vibrato_rate": true, "vibrato_delay": true,
 }
 
 var mixerParams = map[string]bool{
@@ -124,6 +125,16 @@ func Validate(s *Score) (ds []Diagnostic) {
 			value := parseDurationMS(glide.Value)
 			if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10000 {
 				add("CICADA-PARAM", "glide must be a duration from 0 to 10000ms", "error", glide.ValuePosition)
+			}
+		}
+		vibratoSeen := map[string]bool{}
+		for _, setting := range inst.Vibrato {
+			if vibratoSeen[setting.Name] {
+				add("CICADA-DUPLICATE", "duplicate instrument "+setting.Name, "error", setting.Position)
+			}
+			vibratoSeen[setting.Name] = true
+			if _, err := VibratoSetting(setting.Name, setting.Value); err != nil {
+				add("CICADA-PARAM", err.Error(), "error", setting.ValuePosition)
 			}
 		}
 		if inst.Mode != "mono" && inst.Mode != "poly" {
@@ -244,6 +255,20 @@ func Validate(s *Score) (ds []Diagnostic) {
 						if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10000 {
 							add("CICADA-PARAM", "glide must be a duration from 0 to 10000ms", "error", param.ValuePosition)
 						}
+					}
+				}
+			}
+			if IsVibratoSetting(param.Name) {
+				declared, graph := false, false
+				if inst, ok := instruments[t.Kind]; ok {
+					graph = true
+					for _, input := range inst.Params {
+						declared = declared || input.Name == param.Name
+					}
+				}
+				if t.Kind == "acid" || graph && !declared {
+					if _, err := VibratoSetting(param.Name, param.Value); err != nil {
+						add("CICADA-PARAM", err.Error(), "error", param.ValuePosition)
 					}
 				}
 			}
@@ -758,7 +783,7 @@ func validTrackParam(kind, name string, instruments map[string]Instrument, kits 
 		return false
 	}
 	if inst, ok := instruments[kind]; ok {
-		if name == "octave" || name == "glide" {
+		if name == "octave" || name == "glide" || IsVibratoSetting(name) {
 			return true
 		}
 		for _, param := range inst.Params {

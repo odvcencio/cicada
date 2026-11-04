@@ -56,6 +56,9 @@ func CompileKitAtSampleRate(kit Kit, programs map[string]*instrument.Program, sa
 		if err != nil {
 			return nil, fmt.Errorf("kit %s lane %s: %w", kit.ID, source, err)
 		}
+		if graph.Vibrato != nil {
+			return nil, fmt.Errorf("CICADA-UNSUPPORTED: instrument vibrato is not supported inside drum kits")
+		}
 		if graph.DelaySamples() > 0 {
 			if err := validateGraphDelayNote(graph, sampleRate, int(drum.MIDINotes[lane])); err != nil {
 				return nil, fmt.Errorf("CICADA-PARAM: kit %s lane %s: %w", kit.ID, source, err)

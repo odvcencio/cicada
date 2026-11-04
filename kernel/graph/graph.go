@@ -75,7 +75,8 @@ type Program struct {
 	Nodes   [MaxNodes]Node
 	Len     uint8
 	Output  uint8
-	GlideMS float64 // portamento time constant in milliseconds; zero keeps immediate pitch changes
+	GlideMS float64                   // portamento time constant in milliseconds; zero keeps immediate pitch changes
+	Vibrato *expression.VibratoConfig `json:",omitempty"`
 }
 
 type Error string
@@ -143,6 +144,11 @@ func NewVoiceFromProgram(program *Program, sampleRate int) (*Voice, error) {
 		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
 	}
 	v.expression.Reset()
+	if instrumentVibratoEnabled && program.Vibrato != nil {
+		if err := v.expression.ConfigureVibrato(*program.Vibrato, v.sampleRate); err != nil {
+			return nil, err
+		}
+	}
 	count := delaySamples(program) / MaxDelaySamples
 	if count > 0 {
 		v.delayMemory = make([]float32, count*MaxDelaySamples)
@@ -192,6 +198,14 @@ func Validate(program Program, sampleRate int) error {
 
 // ValidateProgram checks a program without passing its fixed node array by value.
 func ValidateProgram(program *Program, sampleRate int) error {
+	if program.Vibrato != nil {
+		if !instrumentVibratoEnabled {
+			return validationError("instrument vibrato requires the modular kernel")
+		}
+		if err := program.Vibrato.Validate(); err != nil {
+			return err
+		}
+	}
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return validationError("invalid graph program")
 	}

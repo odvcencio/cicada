@@ -1,5 +1,8 @@
 instrument expressive {
   glide = 80ms
+  vibrato = 20ct
+  vibrato_rate = 5Hz
+  vibrato_delay = 100ms
   voice mono {
     out = sine(pitch) * env(gate, 300ms) * velocity
   }

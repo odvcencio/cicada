@@ -55,13 +55,16 @@ type Key struct {
 }
 
 type Instrument struct {
-	ID      string            `cicada:"Instrument identifier" json:"id"`
-	Octave  *int              `cicada:"Home octave for unnumbered notes" default:"2" range:"0..6" json:"octave,omitempty"`
-	GlideMS *float64          `cicada:"Pitch glide duration in milliseconds" default:"60" unit:"ms" range:"0..10000" json:"glide_ms,omitempty"`
-	Mode    string            `cicada:"Voice mode" json:"mode"`
-	Params  []InstrumentParam `cicada:"Exposed synthesis parameters" json:"params"`
-	Lets    []Binding         `cicada:"Named intermediate expressions" json:"lets"`
-	Out     Expr              `cicada:"Instrument output expression" json:"out"`
+	ID                string            `cicada:"Instrument identifier" json:"id"`
+	Octave            *int              `cicada:"Home octave for unnumbered notes" default:"2" range:"0..6" json:"octave,omitempty"`
+	GlideMS           *float64          `cicada:"Pitch glide duration in milliseconds" default:"60" unit:"ms" range:"0..10000" json:"glide_ms,omitempty"`
+	Mode              string            `cicada:"Voice mode" json:"mode"`
+	Params            []InstrumentParam `cicada:"Exposed synthesis parameters" json:"params"`
+	Lets              []Binding         `cicada:"Named intermediate expressions" json:"lets"`
+	Out               Expr              `cicada:"Instrument output expression" json:"out"`
+	VibratoDepthCents *float64          `cicada:"Baseline vibrato depth" unit:"ct" range:"0..9600" default:"0" json:"vibrato_depth_cents,omitempty"`
+	VibratoRateHz     *float64          `cicada:"Baseline vibrato rate" unit:"hz" range:"0..100" default:"5" json:"vibrato_rate_hz,omitempty"`
+	VibratoDelayMS    *float64          `cicada:"Baseline vibrato onset delay" unit:"ms" range:"0..10000" default:"0" json:"vibrato_delay_ms,omitempty"`
 }
 
 type InstrumentParam struct {
@@ -317,6 +320,20 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Glide[0].ValuePosition})
 			}
 			inst.GlideMS = &value
+		}
+		for _, setting := range source.Vibrato {
+			value, err := notation.VibratoSetting(setting.Name, setting.Value)
+			if err != nil {
+				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: setting.ValuePosition})
+			}
+			switch setting.Name {
+			case "vibrato":
+				inst.VibratoDepthCents = &value
+			case "vibrato_rate":
+				inst.VibratoRateHz = &value
+			case "vibrato_delay":
+				inst.VibratoDelayMS = &value
+			}
 		}
 		for _, param := range source.Params {
 			value, inferredUnit, err := parseBaseValue(param.Default)

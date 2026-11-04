@@ -80,11 +80,12 @@ type TrackConfig struct {
 	Kit          *[drum.LaneCount]KitLaneBinding
 	Modal        modal.Profile `json:",omitempty"`
 	Graph        graph.Program
-	Polyphony    uint8              `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
-	PianoSustain float32            `json:",omitempty"`
-	Prepared     StereoVoiceFactory `json:"-"`
-	PreparedClip bool               `json:"-"`
-	Keys         *keyboard.Spec     `json:",omitempty"`
+	Vibrato      *expression.VibratoConfig `json:",omitempty"`
+	Polyphony    uint8                     `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
+	PianoSustain float32                   `json:",omitempty"`
+	Prepared     StereoVoiceFactory        `json:"-"`
+	PreparedClip bool                      `json:"-"`
+	Keys         *keyboard.Spec            `json:",omitempty"`
 	GainDB       float64
 	GainSet      bool
 	Pan          float64
@@ -595,6 +596,29 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 				return 0, err
 			}
 		}
+		vibrato := spec.Vibrato
+		if spec.Graph.Vibrato != nil && spec.Kind != VoiceGraph && spec.Kind != VoiceGraphPoly {
+			return 0, engineError("graph vibrato requires a graph voice")
+		}
+		if spec.Kind == VoiceGraph || spec.Kind == VoiceGraphPoly {
+			if spec.Graph.Vibrato != nil && vibrato != nil && *spec.Graph.Vibrato != *vibrato {
+				return 0, engineError("conflicting instrument vibrato settings")
+			}
+			if vibrato == nil {
+				vibrato = spec.Graph.Vibrato
+			}
+		}
+		if vibrato != nil {
+			if !modulationEnabled {
+				return 0, engineError("instrument vibrato requires the modular kernel")
+			}
+			if spec.Kind != VoiceAcid && spec.Kind != VoiceGraph && spec.Kind != VoiceGraphPoly {
+				return 0, engineError("instrument vibrato is unavailable for this voice")
+			}
+			if err := vibrato.Validate(); err != nil {
+				return 0, err
+			}
+		}
 		switch spec.Kind {
 		case VoiceOff:
 		case VoiceGuitar:
@@ -611,6 +635,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			}
 			if err == nil {
 				v.acidTarget = v.acid.Params()
+			}
+			if err == nil && vibrato != nil {
+				err = v.acid.ConfigureVibrato(*vibrato)
 			}
 		case VoiceDrums:
 			e.patterns[i].drumSlots = new([16][drum.LaneCount]seq.Pattern)
@@ -645,12 +672,14 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			voices += int(spec.Sample.Voices)
 		case VoiceAudio:
 		case VoiceGraph:
+			program := spec.Graph
+			program.Vibrato = vibrato
 			if spec.Polyphony == 4 {
 				voices += 4
-				v.poly, err = graph.NewPoolFromProgram(&spec.Graph, cfg.SampleRate)
+				v.poly, err = graph.NewPoolFromProgram(&program, cfg.SampleRate)
 			} else {
 				voices++
-				v.graph, err = graph.NewVoiceFromProgram(&spec.Graph, cfg.SampleRate)
+				v.graph, err = graph.NewVoiceFromProgram(&program, cfg.SampleRate)
 			}
 		case VoicePiano:
 			voices += piano.MaxVoices
@@ -685,7 +714,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			}
 		case VoiceGraphPoly:
 			voices += graph.PolyVoices
-			v.legacyPoly, err = graph.NewPolyFromProgram(&spec.Graph, cfg.SampleRate)
+			program := spec.Graph
+			program.Vibrato = vibrato
+			v.legacyPoly, err = graph.NewPolyFromProgram(&program, cfg.SampleRate)
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
 				return 0, engineError("prepared audio voice budget is invalid")

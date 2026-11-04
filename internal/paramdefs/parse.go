@@ -18,7 +18,7 @@ func ParseBase(source string) (float64, string, error) {
 	for _, suffix := range []struct {
 		name, unit string
 		places     int
-	}{{"frames", "frames", 0}, {"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
+	}{{"frames", "frames", 0}, {"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"ct", "ct", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
 		if strings.HasSuffix(strings.ToLower(source), suffix.name) {
 			unit, places = suffix.unit, suffix.places
 			source = source[:len(source)-len(suffix.name)]

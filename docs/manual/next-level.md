@@ -251,12 +251,15 @@ behavior:
 cicada 2
 instrument glassbass {
   glide = 120ms
+  vibrato = 12ct
+  vibrato_rate = 5Hz
+  vibrato_delay = 200ms
   voice mono {
     let osc = saw(pitch)
     out = osc
   }
 }
-track lead glassbass { glide = 75ms }
+track lead glassbass { glide = 75ms vibrato = 18ct }
 pattern glide-line { 1~ 3 . 5 }
 scene main { lead = glide-line }
 song { main }
@@ -267,8 +270,17 @@ The track uses a 75 ms exponential time constant; another track using
 held gate. Durations may be 0–10000 ms, in milliseconds or seconds. If an
 existing instrument declares a synthesis parameter named `glide`, its track
 value continues to control that parameter. Validate this score with `cicada
-check glide.cicada`. Per-step [expression rows](../spec/features.md#expression-rows)
-control bend, vibrato, pressure, and timbre.
+check glide.cicada`.
+
+The lead track also overrides the instrument's baseline vibrato depth to
+18 cents while inheriting its rate and delay. Custom graph instruments accept
+all three settings, and graph and acid tracks can override each one. Depth is
+0–9600 cents, rate is 0–100 Hz, and delay is 0–10000 ms. Defaults are 0 cents,
+5 Hz, and no delay. A zero rate pauses baseline vibrato. Per-step
+[expression rows](../spec/features.md#expression-rows) add their vibrato to
+the baseline and independently control bend, pressure, and timbre. Browser
+playback of baseline vibrato uses the modular audio kernel.
+Instrument vibrato is not yet available inside authored drum kits.
 
 ### Language reference
 

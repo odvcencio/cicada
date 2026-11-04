@@ -350,6 +350,15 @@ func instrumentSource(inst Instrument) (string, error) {
 	if inst.GlideMS != nil {
 		out.WriteString("  glide = " + decimal(*inst.GlideMS) + "ms\n")
 	}
+	if inst.VibratoDepthCents != nil {
+		out.WriteString("  vibrato = " + decimal(*inst.VibratoDepthCents) + "ct\n")
+	}
+	if inst.VibratoRateHz != nil {
+		out.WriteString("  vibrato_rate = " + decimal(*inst.VibratoRateHz) + "Hz\n")
+	}
+	if inst.VibratoDelayMS != nil {
+		out.WriteString("  vibrato_delay = " + decimal(*inst.VibratoDelayMS) + "ms\n")
+	}
 	for _, param := range inst.Params {
 		value, err := typedNumber(param.Default, instrument.Type(param.Unit))
 		if err != nil {
@@ -764,6 +773,8 @@ func typedNumber(value float64, unit instrument.Type) (string, error) {
 		return decimal(value) + "dBTP", nil
 	case "ratio":
 		return decimal(value), nil
+	case "ct":
+		return decimal(value) + "ct", nil
 	}
 	return "", fmt.Errorf("cannot spell literal with unit %s", unit)
 }

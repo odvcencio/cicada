@@ -64,6 +64,7 @@
 (instrument_decl name: (identifier) @type.definition)
 (instrument_octave value: (integer) @number)
 (instrument_glide "glide" @keyword)
+(instrument_vibrato ["vibrato" "vibrato_rate" "vibrato_delay"] @attribute)
 (instrument_param name: (identifier) @variable.parameter)
 (instrument_param unit: (identifier) @type.builtin)
 (voice_decl mode: (identifier) @keyword.modifier)
@@ -256,6 +257,7 @@
 ; Numbers carry their unit: 620Hz, 380ms, 3s, -6dB, 50%.
 
 ((number) @number.frequency (#match? @number.frequency "[Hh]z$"))
+((number) @number.cents (#match? @number.cents "ct$"))
 ((number) @number.duration (#match? @number.duration "[0-9]m?s$"))
 ((number) @number.decibel (#match? @number.decibel "(db|dB)$"))
 ((number) @number.loudness (#match? @number.loudness "(LU|LUFS)$"))

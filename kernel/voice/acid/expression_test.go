@@ -35,3 +35,29 @@ func TestAcidExpressionRetunesWithoutRetriggerAndAllocatesNothing(t *testing.T) 
 		t.Fatal("acid expression leaked to the next note")
 	}
 }
+
+func TestAcidInstrumentVibratoChangesPitchWithoutAllocating(t *testing.T) {
+	plain, err := New(48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modulated, err := New(48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := modulated.ConfigureVibrato(expression.VibratoConfig{DepthCents: 100, RateHz: 5}); err != nil {
+		t.Fatal(err)
+	}
+	plain.NoteOn(69, false, false, 127)
+	modulated.NoteOn(69, false, false, 127)
+	for range 2401 {
+		plain.Next()
+		modulated.Next()
+	}
+	if modulated.pitchDelta < plain.pitchDelta*1.05 {
+		t.Fatalf("baseline vibrato did not retune acid: %g vs %g", modulated.pitchDelta, plain.pitchDelta)
+	}
+	if allocations := testing.AllocsPerRun(100, func() { modulated.Next() }); allocations != 0 {
+		t.Fatalf("vibrato allocated %g times", allocations)
+	}
+}

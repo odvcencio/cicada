@@ -15,6 +15,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/piano"
+	"m31labs.dev/cicada/notation"
 )
 
 // CompileEngine lowers a validated semantic project into immutable engine
@@ -241,6 +242,10 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 				}
 				config.Acid = params
+				config.Vibrato, err = trackVibratoSettings(nil, track.Params, nil)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
 			case "drums":
 				config.Kind = engine.VoiceDrums
 				params, err := drumParamsFromValues(track.Params)
@@ -300,6 +305,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				overrides := map[string]string{}
 				for name, value := range track.Params {
+					if notation.IsVibratoSetting(name) && !program.HasParameter(name) {
+						continue
+					}
 					if name == "glide" && !program.HasParameter("glide") {
 						continue
 					}
@@ -322,6 +330,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				if value, ok := track.Params["glide"]; ok && !program.HasParameter("glide") {
 					graph.GlideMS = *value.Number
 				}
+				graph.Vibrato, err = trackVibratoSettings(program.Vibrato, track.Params, program)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				config.Vibrato = graph.Vibrato
 				config.Graph = graph
 				if program.Mode == "poly" {
 					if GraphPolyphony(p, track.Kind) == 4 {

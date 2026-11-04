@@ -147,7 +147,7 @@
       // Image versions 13 and 15 carry required capabilities at byte offset 30.
       const view = new DataView(image);
       const required = view.getUint16(4,true)>=13 ? view.getUint16(30,true) : 0;
-      const modular = (view.getUint32(8, true) & 6) !== 0;
+      const modular = (view.getUint32(8, true) & 14) !== 0;
       if (modular) return required & 512 ? 'keys-modular' : 'modular';
       return required & 512 ? 'keys' : required & 2048 ? 'vocals' : 'core';
     }
