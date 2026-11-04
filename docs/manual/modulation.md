@@ -63,10 +63,15 @@ unitless value held between the engine's 128-frame control-grid updates. All
 voices read the same song-positioned source, including after a seek:
 
 ```cicada
+cicada 2
 lfo breath { wave = triangle rate = 2bars }
 instrument lead {
   voice mono { out = sine(pitch) * (0.5 + 0.4 * mod(breath)) }
 }
+track voice lead {}
+pattern line { c4 . e4 . }
+scene verse { voice = line }
+song { verse }
 ```
 
 The source must be declared in the project. Graph modulation inside authored
