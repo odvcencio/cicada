@@ -91,6 +91,10 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		patterns[pattern.ID] = pattern
 	}
 	programs := make(map[string]*instrument.Program, len(p.Instruments))
+	modulators := make(map[string]int, len(p.Modulators))
+	for i, source := range p.Modulators {
+		modulators[source.ID] = i
+	}
 	instrumentGlides := make(map[string]*float64, len(p.Instruments))
 	for _, inst := range p.Instruments {
 		instrumentGlides[inst.ID] = inst.GlideMS
@@ -320,7 +324,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 					}
 					overrides[name] = literal
 				}
-				graph, err := instrument.Lower(program, overrides)
+				graph, err := instrument.LowerWithModulators(program, overrides, modulators)
 				if err != nil {
 					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 				}

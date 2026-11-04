@@ -185,6 +185,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
+		if spec.Kind == engine.VoiceGraph || spec.Kind == engine.VoiceGraphPoly {
+			if err := graph.ValidateModulatorIndices(&spec.Graph, len(cfg.Modulators)); err != nil {
+				return nil, err
+			}
+		}
 		if spec.Graph.Vibrato != nil && spec.Kind != engine.VoiceGraph && spec.Kind != engine.VoiceGraphPoly {
 			return nil, imageError("graph vibrato requires a graph track")
 		}
@@ -1450,6 +1455,14 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if modularFlags != 0 && flags&InstrumentVibratoFlag != 0 {
 		if err := readVibrato(&r, cfg); err != nil {
 			return err
+		}
+	}
+	for track := 0; track < cfg.Tracks; track++ {
+		spec := &cfg.Track[track]
+		if spec.Kind == engine.VoiceGraph || spec.Kind == engine.VoiceGraphPoly {
+			if err := graph.ValidateModulatorIndices(&spec.Graph, len(cfg.Modulators)); err != nil {
+				return err
+			}
 		}
 	}
 	if reserved&TrackEffectsCapability != 0 {

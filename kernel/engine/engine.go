@@ -679,12 +679,15 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			program := spec.Graph
 			program.Vibrato = vibrato
+			if err = validateGraphModulators(&program, cfg.Modulators, i); err != nil {
+				return 0, err
+			}
 			if spec.Polyphony == 4 {
 				voices += 4
-				v.poly, err = graph.NewPoolFromProgram(&program, cfg.SampleRate)
+				v.poly, err = graph.NewPoolFromProgramWithModulators(&program, cfg.SampleRate, &e.mod.scaled)
 			} else {
 				voices++
-				v.graph, err = graph.NewVoiceFromProgram(&program, cfg.SampleRate)
+				v.graph, err = graph.NewVoiceFromProgramWithModulators(&program, cfg.SampleRate, &e.mod.scaled)
 			}
 		case VoicePiano:
 			voices += piano.MaxVoices
@@ -721,7 +724,10 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			voices += graph.PolyVoices
 			program := spec.Graph
 			program.Vibrato = vibrato
-			v.legacyPoly, err = graph.NewPolyFromProgram(&program, cfg.SampleRate)
+			if err = validateGraphModulators(&program, cfg.Modulators, i); err != nil {
+				return 0, err
+			}
+			v.legacyPoly, err = graph.NewPolyFromProgramWithModulators(&program, cfg.SampleRate, &e.mod.scaled)
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
 				return 0, engineError("prepared audio voice budget is invalid")

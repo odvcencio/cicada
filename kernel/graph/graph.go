@@ -12,6 +12,7 @@ import (
 )
 
 const MaxNodes = 128
+const MaxModulators = 32
 
 // Each delay primitive reserves a full ring before rendering. The core
 // profile admits two rings per voice, including unused graph bindings.
@@ -54,6 +55,7 @@ const (
 	ADSR      Op = 23
 	Pulse     Op = 33
 	SVF       Op = 34
+	Modulator Op = 35 // shared, control-grid-held project source
 	DDSP      Op = 31 // harmonic-plus-noise reed: fundamental Hz, linear loudness
 	Pressure  Op = 29 // normalized 0..1; zero is neutral
 	Timbre    Op = 30 // normalized 0..1; 0.5 is neutral
@@ -102,6 +104,7 @@ type nodeState struct {
 // not allocate, lock, or use goroutines.
 type Voice struct {
 	program     Program
+	modulators  *[MaxModulators]float32
 	values      [MaxNodes]float32
 	states      [MaxNodes]nodeState
 	sampleRate  float32
@@ -130,11 +133,24 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 //
 //go:noinline
 func NewVoiceFromProgram(program *Program, sampleRate int) (*Voice, error) {
+	return NewVoiceFromProgramWithModulators(program, sampleRate, nil)
+}
+
+// NewVoiceFromProgramWithModulators binds project control values for this voice.
+func NewVoiceFromProgramWithModulators(program *Program, sampleRate int, modulators *[MaxModulators]float32) (*Voice, error) {
 	if err := ValidateProgram(program, sampleRate); err != nil {
 		return nil, err
 	}
+	if instrumentVibratoEnabled && modulators == nil {
+		for _, node := range program.Nodes[:program.Len] {
+			if node.Op == Modulator {
+				return nil, validationError("graph modulator has no source binding")
+			}
+		}
+	}
 	v := new(Voice)
 	v.program = *program
+	v.modulators = modulators
 	v.sampleRate = float32(sampleRate)
 	if usesQuality(program) {
 		v.quality = newQualityState(program, sampleRate)
@@ -223,6 +239,10 @@ func ValidateProgram(program *Program, sampleRate int) error {
 		var inputs int
 		switch n.Op {
 		case Pitch, Gate, Velocity, SampleRate, Constant, Noise, PitchBend, Pressure, Timbre:
+		case Modulator:
+			if !instrumentVibratoEnabled || n.Value < 0 || n.Value >= MaxModulators || n.Value != float32(uint8(n.Value)) {
+				return validationError("invalid or unavailable graph modulator")
+			}
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
 		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp, Pulse, DDSP:
@@ -250,6 +270,19 @@ func ValidateProgram(program *Program, sampleRate int) error {
 		return validationError("voice graph exceeds 8192 delay samples (two delay nodes)")
 	}
 	return validateDelayPitch(program, sampleRate, 0)
+}
+
+// ValidateModulatorIndices checks bindings against the actual source table.
+func ValidateModulatorIndices(program *Program, count int) error {
+	if program == nil || int(program.Len) > MaxNodes {
+		return validationError("invalid graph program")
+	}
+	for _, node := range program.Nodes[:program.Len] {
+		if node.Op == Modulator && (!instrumentVibratoEnabled || node.Value < 0 || node.Value >= float32(count) || node.Value != float32(uint8(node.Value))) {
+			return validationError("graph modulator source is unavailable")
+		}
+	}
+	return nil
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
@@ -304,8 +337,9 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 // voice's preallocated storage. Neither delay state nor ring memory is shared.
 func (v *Voice) CopyStateFrom(source *Voice) {
 	delays, memory, amps, neural := v.delays, v.delayMemory, v.amps, v.ddspVoices
-	quality := v.quality
+	quality, modulators := v.quality, v.modulators
 	*v = *source
+	v.modulators = modulators
 	v.delays, v.delayMemory, v.amps = delays, memory, amps
 	copy(v.delays, source.delays)
 	copy(v.delayMemory, source.delayMemory)
@@ -389,6 +423,10 @@ func (v *Voice) nextSample() float32 {
 			y = v.sampleRate
 		case Constant:
 			y = n.Value
+		case Modulator:
+			if instrumentVibratoEnabled {
+				y = v.modulators[uint8(n.Value)]
+			}
 		case DDSP:
 			y = v.ddspVoices[s.neural].NextFloat(a, b)
 		case Add:
