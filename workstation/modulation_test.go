@@ -20,13 +20,27 @@ func TestModulationDockShowsSupportedRoutesAndSourceControls(t *testing.T) {
 		t.Fatal(ds)
 	}
 	page := gosx.RenderHTML(new(studioApp).modulationDock(workspace{Project: p, Revision: "r", SourceRevision: "s"}, "csrf"))
-	for _, text := range []string{"Modulation", "drift", "1 beat per cycle", "bass.pan", "Save depth", "Remove route", "Add source", "Add route", `name="source_revision" value="s"`} {
+	for _, text := range []string{"Modulation", "drift", "1 beat per cycle", "bass.pan", "Save depth", "Remove route", "Add source", "Add route", "Save Waveform", "Remove source", `name="source_revision" value="s"`} {
 		if !strings.Contains(page, text) {
 			t.Fatalf("missing %q in %s", text, page)
 		}
 	}
 	if strings.Contains(page, `<option value="bass.mute"`) {
 		t.Fatal("offered an unroutable toggle")
+	}
+}
+
+func TestModulationSourceFormCarriesIdentityAndPoint(t *testing.T) {
+	address, client, requests := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "source_revision": {"seen"}, "action": {"mod-source-edit"}, "operation": {"point-set"}, "source": {"swell"}, "index": {"1"}, "at": {"0.5"}, "value": {"0.8"}, "shape": {"smooth"}}
+	response := post(t, client, address+"/__actions/automation", form, false, address)
+	if response.StatusCode != 303 || len(*requests) != 1 {
+		t.Fatalf("status %d requests %+v", response.StatusCode, *requests)
+	}
+	value, ok := (*requests)[0]["value"].(map[string]any)
+	if !ok || (*requests)[0]["source_revision"] != "seen" || value["source"] != "swell" || value["index"] != float64(1) || value["at"] != "0.5" || value["value"] != "0.8" || value["shape"] != "smooth" {
+		t.Fatalf("source request %+v", *requests)
 	}
 }
 

@@ -155,7 +155,8 @@ shared channel layer; polyphonic aftertouch stays local to each note. Channel
 and polyphonic pressure combine using the larger value. Local values freeze
 under sustain after key release; channel and zone controls still affect held
 gates and audio release tails. Reconnecting an input gets a separate shared address. Modeled keyboards, piano, drums and
-samplers still lack gesture monitoring; retained unsupported gestures are
+sample packs lack gesture monitoring. Single-asset samplers support bend and
+pressure but reject non-neutral timbre; unsupported gestures are retained and
 refused on apply. Raw takes retain up to 65,536 snapshots, including equal-tick
 samples, before the edit service derives playable points. Private recovery
 checkpoints with a capture project receipt use version 4 and retain

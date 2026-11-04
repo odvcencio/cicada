@@ -12,10 +12,17 @@ func (s *studio) editAutomation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if edit.Action == "mod-source-add" || edit.Action == "mod-route" {
+	if edit.Action == "mod-source-add" || edit.Action == "mod-source-edit" || edit.Action == "mod-route" {
 		var intent edits.Intent
 		if edit.Action == "mod-source-add" {
 			var source edits.AddModulator
+			if err := json.Unmarshal(edit.Value, &source); err != nil {
+				studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a modulation source"})
+				return
+			}
+			intent = &source
+		} else if edit.Action == "mod-source-edit" {
+			var source edits.EditModulator
 			if err := json.Unmarshal(edit.Value, &source); err != nil {
 				studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose a modulation source"})
 				return

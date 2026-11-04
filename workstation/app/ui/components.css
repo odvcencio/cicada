@@ -8,6 +8,9 @@
 .instrument-patch summary { color:var(--mint); cursor:pointer; }
 .instrument-patch [aria-pressed=true] { border-color:var(--mint); color:var(--mint); }
 .instrument-patch .action-form { margin-top:12px; }
+#modulation-editor [data-mod-source] .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:8px 0; }
+#modulation-editor [data-mod-source] .action-form .field { flex:0 1 150px; min-width:110px; margin:0; }
+#modulation-editor [data-mod-source] ol { padding-left:24px; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
 a { color:var(--mint); text-underline-offset:3px; }
