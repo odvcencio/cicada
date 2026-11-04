@@ -182,6 +182,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, imageError("project image configuration is out of range")
 	}
+	if err := engine.ValidatePortableEffectBudget(&cfg); err != nil {
+		return nil, err
+	}
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
@@ -837,7 +840,8 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	*cfg = engine.Config{
 		SampleRate: sampleRate, MaxBlock: maxBlock, Tracks: int(tracks), MaxVoices: int(voices),
-		BPMMilli: int64(tempo), Seed: seed, LoopSong: flags&1 != 0,
+		PortableEffectsBudget: true,
+		BPMMilli:              int64(tempo), Seed: seed, LoopSong: flags&1 != 0,
 		Patterns: make([]engine.PatternBank, int(tracks)),
 		Scenes:   make([]engine.Scene, int(scenes)),
 		Song:     make([]engine.SongEntry, int(entries)),
@@ -1474,6 +1478,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return imageError("chorus marker has no parameter record")
 			}
 		}
+	}
+	if err := engine.ValidatePortableEffectBudget(cfg); err != nil {
+		return err
 	}
 	if reserved&TrackEffectsCapability != 0 {
 		found := false

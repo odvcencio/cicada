@@ -30,6 +30,16 @@ func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engi
 	return compileEngine(p, sampleRate, maxBlock, assets, nil, compilePlayback)
 }
 
+// CompilePortableEngine plans effect storage before constructing portable DSP.
+func CompilePortableEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) {
+	return compileEngine(p, sampleRate, maxBlock, nil, nil, compilePortable)
+}
+
+// CompilePortableEngineWithAssets is the resident-audio portable variant.
+func CompilePortableEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset) (engine.Config, error) {
+	return compileEngine(p, sampleRate, maxBlock, assets, nil, compilePortable)
+}
+
 // CompileEnginePrepared accepts host-verified immutable native audio factories.
 func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engine.StereoVoiceFactory) (engine.Config, error) {
 	return compileEngine(p, sampleRate, maxBlock, nil, prepared, compilePlayback)
@@ -40,6 +50,7 @@ type engineCompilePurpose uint8
 const (
 	compilePlayback engineCompilePurpose = iota
 	compileNotes
+	compilePortable
 )
 
 func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory, purpose engineCompilePurpose) (engine.Config, error) {
@@ -47,8 +58,15 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	if purpose == compilePlayback && p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
+	if purpose != compileNotes && p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
+	}
+	if purpose == compilePortable && p.Master != nil && len(p.Master.Mixer.Inserts) != 0 {
+		for _, effect := range p.Effects {
+			if semanticEffectKind(effect) == "chorus" && TrackHasInsert(p, effect.ID) {
+				return cfg, fmt.Errorf("CICADA-UNSUPPORTED: portable chorus cannot account for a prepared master effect")
+			}
+		}
 	}
 	if len(prepared) == len(p.Tracks) && p.HasAudio() {
 		copy := *p
@@ -493,6 +511,12 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			if err := validators[control.Track].Validate(kernel.ParamID(control.Index), math.Float32frombits(control.Arg0)); err != nil {
 				return cfg, fmt.Errorf("automation %s.%s tick %d: %w", p.Tracks[control.Track].ID, kernel.Params[control.Index].Path, control.Tick, err)
 			}
+		}
+	}
+	if purpose == compilePortable {
+		cfg.PortableEffectsBudget = true
+		if err := engine.ValidatePortableEffectBudget(&cfg); err != nil {
+			return cfg, err
 		}
 	}
 	return cfg, nil

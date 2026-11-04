@@ -84,6 +84,15 @@ func (p *Processor) SetParams(params Params) error {
 	return nil
 }
 
+// SetParamsImmediate settles controls without clearing delay or oscillator history.
+func (p *Processor) SetParamsImmediate(params Params) error {
+	if err := p.SetParams(params); err != nil {
+		return err
+	}
+	p.current = params
+	return nil
+}
+
 func (p *Processor) Reset() {
 	clear(p.ring)
 	p.at, p.filteredL, p.filteredR, p.fault = 0, 0, 0, false

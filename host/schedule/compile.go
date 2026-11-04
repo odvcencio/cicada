@@ -96,6 +96,9 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 		return engine.Config{}, err
 	}
 	if !p.NeedsSampleEngine() {
+		if mode == modeResident {
+			return project.CompilePortableEngine(p, rate, block)
+		}
 		return project.CompileEngine(p, rate, block)
 	}
 	forceResident := mode == modeResident
@@ -145,7 +148,13 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 		}
 		streaming = plan
 	}
-	cfg, err := project.CompileEngineWithAssets(p, rate, block, assets)
+	var cfg engine.Config
+	var err error
+	if mode == modeResident {
+		cfg, err = project.CompilePortableEngineWithAssets(p, rate, block, assets)
+	} else {
+		cfg, err = project.CompileEngineWithAssets(p, rate, block, assets)
+	}
 	if err != nil {
 		return cfg, err
 	}

@@ -190,4 +190,13 @@ var Params = [...]ParamSpec{
 	{175, "track", "linear", 0, 1, 0.35, 0.01, 20, true, true, false},
 	{176, "track", "linear", 0, 1, 0.5, 0.01, 20, true, true, false},
 	{177, "track", "linear", -24, 12, 0, 0.1, 20, true, true, false},
+	{178, "track", "linear", 0.05, 5, 0.6, 0.01, 10, true, true, false},
+	{179, "track", "linear", 0, 8, 3, 0.1, 10, true, true, false},
+	{180, "track", "linear", 0, 1, 1, 0.01, 10, true, true, false},
+	{181, "track", "linear", 0, 1, 0.5, 0.01, 10, true, true, false},
+	{182, "global", "linear", 1, 3, 3, 1, 0, false, false, false},
+	{183, "global", "linear", 0.05, 5, 0.6, 0.01, 0, false, false, false},
+	{184, "global", "linear", 0, 8, 3, 0.1, 0, false, false, false},
+	{185, "global", "linear", 0, 1, 1, 0.01, 0, false, false, false},
+	{186, "global", "linear", 0, 1, 0.5, 0.01, 0, false, false, false},
 }

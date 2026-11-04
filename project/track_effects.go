@@ -44,6 +44,25 @@ func ChorusParamsFromValues(values map[string]Value) (chorus.Params, error) {
 	return p, p.Validate()
 }
 
+func trackChorusParams(p *Project, track Track) (chorus.Params, error) {
+	var effect *Effect
+	for _, name := range mixerInsertIDs(track.Mixer) {
+		for i := range p.Effects {
+			e := &p.Effects[i]
+			if e.ID == name && semanticEffectKind(*e) == "chorus" {
+				if effect != nil {
+					return chorus.Params{}, fmt.Errorf("chorus controls require exactly one chorus insert")
+				}
+				effect = e
+			}
+		}
+	}
+	if effect == nil {
+		return chorus.Params{}, fmt.Errorf("chorus controls require exactly one chorus insert")
+	}
+	return ChorusParamsFromValues(effect.Params)
+}
+
 func DeesserParamsFromValues(values map[string]Value) (fx.DeesserParams, error) {
 	p := fx.DefaultDeesserParams()
 	for _, name := range sortedKeys(values) {

@@ -15,6 +15,9 @@ import (
 // value of each is readable at load and each reaches its voice through the
 // one-pole smoothing path.
 func RouteSupported(id kernel.ParamID) bool {
+	if chorusEnabled && id >= kernel.ParamChorusRate && id <= kernel.ParamChorusMix {
+		return true
+	}
 	switch id {
 	case kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB,
 		kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
@@ -177,6 +180,11 @@ func (e *Engine) loadModulation(cfg *Config) error {
 		if spec.ID >= kernel.ParamAcidCutoff && spec.ID <= kernel.ParamAcidAccent && e.voices[r.Track].kind != VoiceAcid {
 			return engineError("acid route on a track without the acid voice")
 		}
+		if chorusEnabled && spec.ID >= kernel.ParamChorusRate && spec.ID <= kernel.ParamChorusMix {
+			if _, ok := e.voices[r.Track].chain.chorusParams(); !ok {
+				return engineError("chorus routes require exactly one chorus insert")
+			}
+		}
 		found := -1
 		for ti, t := range m.targets {
 			if t.track == r.Track && t.id == spec.ID {
@@ -240,6 +248,18 @@ func (e *Engine) routeBase(track uint8, id kernel.ParamID) (float32, bool) {
 		return float32(v.acidTarget.EnvMod), false
 	case kernel.ParamAcidDecay:
 		return float32(v.acidTarget.Decay * 1000), false
+	case kernel.ParamChorusRate, kernel.ParamChorusDepth, kernel.ParamChorusSpread, kernel.ParamChorusMix:
+		p, _ := v.chain.chorusParams()
+		switch id {
+		case kernel.ParamChorusRate:
+			return float32(p.Rate), false
+		case kernel.ParamChorusDepth:
+			return float32(p.Depth), false
+		case kernel.ParamChorusSpread:
+			return float32(p.Spread), false
+		default:
+			return float32(p.Mix), false
+		}
 	}
 	return float32(v.acidTarget.Accent), false
 }

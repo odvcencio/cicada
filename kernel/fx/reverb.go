@@ -67,6 +67,20 @@ func (l *reverbLine) read(frames float64) float64 {
 var reverbLineLengths = [...]float64{1237, 1381, 1607, 1753, 1871, 2053, 2237, 2411}
 var reverbDiffuserLengths = [...]int{142, 107, 379, 277}
 
+// ReverbBufferBytes returns the retained float64 backing storage allocated by
+// NewReverb. It excludes the processor struct and allocator overhead.
+func ReverbBufferBytes(sampleRate int) uint64 {
+	var frames uint64
+	for _, length := range reverbDiffuserLengths {
+		frames += 2 * uint64(math.Round(float64(length)*float64(sampleRate)/48_000))
+	}
+	frames += 2 * uint64(sampleRate/5+2)
+	for _, base := range reverbLineLengths {
+		frames += uint64(math.Ceil(base*1.5*float64(sampleRate)/48_000)) + 8
+	}
+	return frames * 8
+}
+
 // Reverb owns all storage before the render callback starts. SetParams and
 // Process do not allocate; length changes fade between stationary read heads.
 type Reverb struct {

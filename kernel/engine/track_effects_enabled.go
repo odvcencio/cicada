@@ -129,6 +129,54 @@ func (c *trackEffectChain) Reset() {
 	}
 }
 
+func (c *trackEffectChain) chorusStage() *chorus.Processor {
+	if c == nil {
+		return nil
+	}
+	var found *chorus.Processor
+	for i := 0; i < c.count; i++ {
+		if c.stages[i].chorus != nil {
+			if found != nil {
+				return nil
+			}
+			found = c.stages[i].chorus
+		}
+	}
+	return found
+}
+
+func (c *trackEffectChain) chorusParams() (chorus.Params, bool) {
+	p := c.chorusStage()
+	if p == nil {
+		return chorus.Params{}, false
+	}
+	return p.Params(), true
+}
+
+func (c *trackEffectChain) setChorusParam(id kernel.ParamID, value float32, immediate bool) error {
+	processor := c.chorusStage()
+	if processor == nil {
+		return engineError("chorus controls require exactly one chorus insert")
+	}
+	p := processor.Params()
+	switch id {
+	case kernel.ParamChorusRate:
+		p.Rate = float64(value)
+	case kernel.ParamChorusDepth:
+		p.Depth = float64(value)
+	case kernel.ParamChorusSpread:
+		p.Spread = float64(value)
+	case kernel.ParamChorusMix:
+		p.Mix = float64(value)
+	default:
+		return engineError("unknown chorus control")
+	}
+	if immediate {
+		return processor.SetParamsImmediate(p)
+	}
+	return processor.SetParams(p)
+}
+
 // ampStage resolves the only amp on this track, refusing ambiguous chains.
 func (c *trackEffectChain) ampStage() *ampcab.Processor {
 	if c == nil {

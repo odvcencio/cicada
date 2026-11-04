@@ -243,7 +243,8 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 		}
 		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("id", "effect-"+ret.Name)), gosx.El("h3", gosx.Text(ret.Name)), gosx.Fragment(fields...)))
 	}
-	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: "Track, bus, return, effect, and master parameters are saved to the score."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
+	addChorus := s.form(v, csrf, "mixer", "mixer", hidden("source_revision", v.SourceRevision), hidden("action", "add-chorus"), field("Chorus name", textInput("name", "chorus")), submit("", "", "Create chorus"))
+	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: "Track, bus, return, effect, and master parameters are saved to the score."}, addChorus, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
 }
 
 func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) gosx.Node {
