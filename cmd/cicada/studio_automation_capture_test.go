@@ -183,6 +183,9 @@ func TestBoundAmpWriteMonitorsAndKeepsDryCapture(t *testing.T) {
 	if pass.Prepared || !pass.Active || pass.MonitorFollower == nil || a.ampFollower.Load() == nil {
 		t.Fatal("Record did not bind prepared amp before playback")
 	}
+	// Preserve the recorder after Stop clears Studio's reference, so a failed
+	// keep reports whether the synthetic producer lost data to the queue.
+	recorder := s.captureRecorder
 	input, output := [][]float32{make([]float32, 128), make([]float32, 128)}, [][]float32{make([]float32, 128), make([]float32, 128)}
 	for i := range input[0] {
 		input[0][i] = .2 + .1*float32(math.Sin(2*math.Pi*float64(i)/128))
@@ -291,7 +294,7 @@ func TestBoundAmpWriteMonitorsAndKeepsDryCapture(t *testing.T) {
 	}
 	response = studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "stop", Revision: studioRevision([]byte(source))})
 	if response.Code != http.StatusOK {
-		t.Fatal(response.Body.String())
+		t.Fatalf("stop: %s; capture: %+v", response.Body.String(), recorder.Snapshot())
 	}
 	if a.ampFollower.Load() != nil || s.transport.monitorWrite {
 		t.Fatal("monitor binding not released")
@@ -315,7 +318,7 @@ func TestBoundAmpWriteMonitorsAndKeepsDryCapture(t *testing.T) {
 	}
 	response = studioCall(t, s.routes(), "/api/automation/recording", studioEdit{Action: "keep", Name: pass.ID, Revision: studioRevision([]byte(source))})
 	if response.Code != http.StatusOK {
-		t.Fatal(response.Body.String())
+		t.Fatalf("keep: %s; capture: %+v", response.Body.String(), recorder.Snapshot())
 	}
 	saved, _ := os.ReadFile(s.path)
 	p, err := compileStudioSource(s.path, saved)
