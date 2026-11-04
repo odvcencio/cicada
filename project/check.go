@@ -128,6 +128,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			continue
 		}
 		for _, param := range track.Params {
+			if param.Name == "glide" && !program.HasParameter("glide") {
+				continue
+			}
 			if param.Name == "octave" && !program.HasParameter("octave") {
 				if _, err := parseOctaveLiteral(param.Value); err != nil {
 					diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
@@ -136,6 +139,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
+			if param.Name == "glide" && !program.HasParameter("glide") {
+				continue
+			}
 			if param.Name == "octave" && !program.HasParameter("octave") {
 				continue
 			}
@@ -152,6 +158,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			}
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
+				if param.Name == "glide" && !program.HasParameter("glide") {
+					return nil
+				}
 				if param.Name == "octave" && !program.HasParameter("octave") {
 					return nil
 				}
@@ -234,7 +243,7 @@ func checkDelayNotes(program *instrument.Program, track notation.Track, patterns
 	}
 	overrides := map[string]string{}
 	for _, param := range track.Params {
-		if isMixerSourceParam(param.Name) || param.Name == "octave" && !program.HasParameter("octave") {
+		if isMixerSourceParam(param.Name) || (param.Name == "octave" || param.Name == "glide") && !program.HasParameter(param.Name) {
 			continue
 		}
 		overrides[param.Name] = param.Value

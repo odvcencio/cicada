@@ -28,9 +28,10 @@ key_decl ::= "key" , key_root , identifier ;
 seed_decl ::= "seed" , integer ;
 track_decl ::= "track" , _name , _name , "{" , { mix_setting | chain_decl } , "}" ;
 chain_decl ::= "chain" , "=" , { _name } ;
-instrument_decl ::= "instrument" , _name , "{" , [ instrument_octave ] , { instrument_param } ,
-                    voice_decl , "}" ;
+instrument_decl ::= "instrument" , _name , "{" , [ instrument_octave ] ,
+                    { instrument_param | instrument_glide } , voice_decl , "}" ;
 instrument_octave ::= "octave" , "=" , integer , [ ";" ] ;
+instrument_glide ::= "glide" , "=" , number , [ ";" ] ;
 kit_decl ::= "kit" , _name , "{" , { kit_binding } , "}" ;
 kit_binding ::= identifier , "=" , kit_target , [ ";" ] ;
 kit_target ::= _name | "builtin" , "." , identifier | "model" , "." , identifier ;

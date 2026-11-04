@@ -121,6 +121,7 @@ type Instrument struct {
 	Octave         int // home register for notes without an explicit octave
 	OctaveSet      bool
 	OctavePosition Position
+	Glide          []Param
 	Params         []InstrumentParam
 	Mode           string
 	Lets           []Let

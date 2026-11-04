@@ -72,9 +72,10 @@ func Cicada() *grammargen.Grammar {
 	// ordered lets and ends with the audio it outputs.
 	g.Define("instrument_decl", seq(
 		str("instrument"), field("name", sym("_name")),
-		str("{"), optional(sym("instrument_octave")), repeat(sym("instrument_param")), sym("voice_decl"), str("}"),
+		str("{"), optional(sym("instrument_octave")), repeat(choice(sym("instrument_param"), sym("instrument_glide"))), sym("voice_decl"), str("}"),
 	))
 	g.Define("instrument_octave", seq(str("octave"), str("="), field("value", sym("integer")), optional(str(";"))))
+	g.Define("instrument_glide", seq(str("glide"), str("="), field("value", sym("number")), optional(str(";"))))
 	// A kit binds drum lanes to instruments, built-in voices, or modeled pieces.
 	g.Define("kit_decl", seq(
 		str("kit"), field("name", sym("_name")),

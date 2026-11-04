@@ -117,6 +117,15 @@ func Validate(s *Score) (ds []Diagnostic) {
 		if inst.Octave < 0 || inst.Octave > 6 {
 			add("CICADA-PARAM", "instrument octave must be 0 to 6", "error", inst.OctavePosition)
 		}
+		if len(inst.Glide) > 1 {
+			add("CICADA-DUPLICATE", "duplicate instrument glide", "error", inst.Glide[1].Position)
+		}
+		for _, glide := range inst.Glide {
+			value := parseDurationMS(glide.Value)
+			if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10000 {
+				add("CICADA-PARAM", "glide must be a duration from 0 to 10000ms", "error", glide.ValuePosition)
+			}
+		}
 		if inst.Mode != "mono" && inst.Mode != "poly" {
 			add("CICADA-PARAM", "voice mode must be mono or poly", "error", inst.Position)
 		}
@@ -223,6 +232,20 @@ func Validate(s *Score) (ds []Diagnostic) {
 			seen[key] = true
 			if !validTrackParam(t.Kind, param.Name, instruments, kits) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
+			}
+			if param.Name == "glide" {
+				if inst, ok := instruments[t.Kind]; ok {
+					declared := false
+					for _, input := range inst.Params {
+						declared = declared || input.Name == "glide"
+					}
+					if !declared {
+						value := parseDurationMS(param.Value)
+						if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10000 {
+							add("CICADA-PARAM", "glide must be a duration from 0 to 10000ms", "error", param.ValuePosition)
+						}
+					}
+				}
 			}
 			if notationModeledPiano(s, t.Kind) && param.Name == "sustain" {
 				value, unit, err := notationBaseValue(param.Value)
@@ -735,7 +758,7 @@ func validTrackParam(kind, name string, instruments map[string]Instrument, kits 
 		return false
 	}
 	if inst, ok := instruments[kind]; ok {
-		if name == "octave" {
+		if name == "octave" || name == "glide" {
 			return true
 		}
 		for _, param := range inst.Params {
