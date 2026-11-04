@@ -115,6 +115,8 @@ type liveUI struct {
 	nativeMIDIGeneration uint64
 	midiNames            map[string]string
 	localMIDIPorts       map[string]string
+	midiPickupValues     map[string]*float64
+	midiPickups          map[string]*control.MIDIPickup
 	localMIDIRevision    string
 	nativeMIDINames      []string
 }
@@ -129,7 +131,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("live panel is missing")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan *liveJob, 128), expressionJobs: map[string]*liveJob{}, wireIDs: map[string]uint16{}, status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midi: js.Undefined()}
+	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan *liveJob, 128), expressionJobs: map[string]*liveJob{}, wireIDs: map[string]uint16{}, status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midiPickups: map[string]*control.MIDIPickup{}, midi: js.Undefined()}
 	u.loadMappings()
 	u.midiNames = map[string]string{}
 	if u.props.PortableMIDI != nil {
@@ -362,6 +364,7 @@ func (u *liveUI) runCommands() {
 				}
 				if json.Unmarshal(data, &result) == nil && result.Revision != "" {
 					u.localMIDIPorts, u.localMIDIRevision = result.Ports, result.Revision
+					clear(u.midiPickups)
 					u.renderMappings()
 					u.renderMIDIPortDevices()
 					u.status.Set("MIDI device bound on this machine.")
@@ -424,13 +427,15 @@ func (u *liveUI) poll() {
 		}
 		var t struct {
 			control.PlaybackState
-			Scene        string            `json:"scene"`
-			PendingScene string            `json:"pendingScene"`
-			ActiveSlots  map[string]string `json:"activeSlots"`
-			PendingSlots map[string]string `json:"pendingSlots"`
+			MIDIPickupValues map[string]*float64 `json:"midiPickupValues"`
+			Scene            string              `json:"scene"`
+			PendingScene     string              `json:"pendingScene"`
+			ActiveSlots      map[string]string   `json:"activeSlots"`
+			PendingSlots     map[string]string   `json:"pendingSlots"`
 		}
 		requested := time.Now()
 		if read("/api/transport", &t) == nil && !u.closed.Load() {
+			u.midiPickupValues = t.MIDIPickupValues
 			t.RoundTrip = time.Since(requested)
 			if t.MIDIClockEpoch < u.clockEpoch {
 				continue
@@ -1057,6 +1062,7 @@ func (u *liveUI) enableMIDI() {
 	}()
 }
 func (u *liveUI) bindMIDI() {
+	clear(u.midiPickups)
 	for _, e := range u.midiEvents {
 		e.Target.Call("removeEventListener", e.Name, e.Callback)
 		e.Callback.Release()
@@ -1129,7 +1135,8 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 			u.status.Set("Use a CC input to learn a parameter.")
 			return
 		}
-		if u.props.PortableMIDI != nil {
+		portableTargetSupported := !on || strings.HasPrefix(target, "scene:") || target == "transport:play" || target == "transport:stop"
+		if u.props.PortableMIDI != nil && portableTargetSupported {
 			port := ""
 			for _, candidate := range u.props.PortableMIDI.Ports {
 				if u.localMIDIPorts[candidate] != "" && u.localMIDIPorts[candidate] == u.midiNames[device] {
@@ -1154,9 +1161,6 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 					portableTarget = "play"
 				case target == "transport:stop":
 					portableTarget = "stop"
-				default:
-					u.status.Set("Score MIDI mappings currently support scenes, Play, Stop, and live parameters.")
-					return
 				}
 			}
 			u.learning = false
@@ -1164,6 +1168,16 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 				u.status.Set("Saving MIDI mapping in the score…")
 			}
 			return
+		}
+		if u.props.PortableMIDI != nil {
+			kind := "note"
+			if cc {
+				kind = "cc"
+			}
+			if _, exists := u.props.PortableMIDI.Match(u.localMIDIPorts, u.midiNames[device], channel+1, kind, a); exists {
+				u.status.Set("This input is already mapped in the score. Remove that mapping in Code before learning it in this browser.")
+				return
+			}
 		}
 		m := liveMapping{Device: device, DeviceName: u.midiNames[device], Channel: channel}
 		if cc {
@@ -1222,6 +1236,29 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 				if err != nil {
 					u.status.Set(err.Error())
 					return
+				}
+				if mapping.Takeover == "pickup" {
+					current, available := u.midiPickupValues[mapping.Target]
+					if !available {
+						u.status.Set("Waiting for the live parameter value before MIDI pickup. Press Play and move the control again.")
+						return
+					}
+					key := fmt.Sprintf("%s:%s:%d:%d", device, mapping.Port, channel, a)
+					pickup := u.midiPickups[key]
+					if pickup == nil {
+						pickup = &control.MIDIPickup{}
+						u.midiPickups[key] = pickup
+					}
+					var send bool
+					value, send, err = pickup.ApplyAt(d, b, current, time.Now().UnixMilli())
+					if err != nil {
+						u.status.Set(err.Error())
+						return
+					}
+					if !send {
+						u.status.Set("Move the MIDI control to the current value to take over.")
+						return
+					}
 				}
 				text := "off"
 				if value != nil {

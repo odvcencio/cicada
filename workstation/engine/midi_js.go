@@ -51,6 +51,7 @@ func (u *liveUI) loadPortableMIDIPorts() {
 		return
 	}
 	u.localMIDIPorts = result.Ports
+	clear(u.midiPickups)
 	u.localMIDIRevision = result.Revision
 	u.renderMIDIPortDevices()
 	var missing []string
@@ -115,6 +116,7 @@ func (u *liveUI) releaseMIDIPrefix(prefix string) {
 }
 
 func (u *liveUI) releaseMIDIPrefixAt(prefix string, at *control.NoteTime) {
+	clear(u.midiPickups)
 	u.midiNotes.DisconnectPrefix(strings.TrimPrefix(prefix, "midi:"))
 	for id, group := range u.monitorGroups {
 		if strings.HasPrefix("midi:"+group.Device+":", prefix) {

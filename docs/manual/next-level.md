@@ -125,7 +125,7 @@ track lead acid {}
 midi {
   port keys
   keys ch 1 -> lead
-  keys cc 74 -> bass.cutoff 200Hz..4kHz
+  keys cc 74 -> bass.cutoff 200Hz..4kHz takeover = pickup
   keys note c1 -> launch verse
 }
 pattern phrase { 1 . 3 . }
@@ -148,11 +148,16 @@ to reload rather than overwrite the newer file.
 In Studio's Live panel, choose a target and select **Learn next input**. When
 the device has exactly one matching declared port, the learned controller or
 note is saved in the score with Undo and revision checks. Without a `midi`
-block, Learn continues to save browser-local mappings as before. The current
-portable slice uses jump takeover and trigger launch; other takeover or launch
-modes are rejected with a diagnostic. Slot and per-track stop mappings can be
-learned as browser-local mappings in projects without a `midi` block. Remove
+block, Learn continues to save browser-local mappings as before. Slot and
+per-track stop mappings are browser-local even when the score has a `midi`
+block; an input already mapped by the score cannot be learned locally. Remove
 score mappings in Code.
+
+CC mappings use jump takeover by default. Add `takeover = pickup` in Code to
+wait until the controller reaches or crosses the current live parameter value
+before it changes the sound. Pickup tracks automation and rearms when another
+control changes that value. Start playback to make the live value available.
+Other takeover modes and launch modes besides trigger are not yet supported.
 
 ### Live MIDI performance and note takes
 

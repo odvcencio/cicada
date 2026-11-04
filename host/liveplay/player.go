@@ -59,6 +59,7 @@ type trackNameSnapshot struct {
 	poly          [engine.MaxTracks]bool
 	count         uint8
 	committed     [engine.MaxTracks + 1][kernel.ParamCount]atomic.Uint64 // Render writes; controls read.
+	effective     [engine.MaxTracks + 1][kernel.ParamCount]atomic.Uint64 // Render-owned targets, including automation and live controls.
 	defaults      engine.ParameterState                                  // Render-owned saved values, separate from scene values.
 	previewParams [engine.MaxTracks][kernel.ParamCount]bool
 	previewValues [engine.MaxTracks]engine.PreviewParamValidator
@@ -562,6 +563,7 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), engine.MaxTracks))}
 	for _, parameter := range score.Parameters {
 		snapshot.storeCommitted(parameter.Track, parameter.ID, parameter.Value)
+		snapshot.storeEffective(parameter.Track, parameter.ID, parameter.Value)
 		snapshot.defaults.Set(parameter.Track, parameter.ID, parameter.Value)
 	}
 	for index := 0; index < int(snapshot.count); index++ {
@@ -603,6 +605,9 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 				}
 			}
 		}
+	}
+	if score.Engine != nil {
+		score.Engine.SetParameterObserver(snapshot.storeEffective)
 	}
 	return snapshot
 }
@@ -662,6 +667,33 @@ func (p *Player) CommittedValue(track uint8, id kernel.ParamID) (float32, bool) 
 		return 0, false
 	}
 	return snapshot.committedValue(track, id)
+}
+
+// EffectiveValue reads the most recently applied base parameter target. It
+// includes scenes, automation and live overrides but excludes modulation and
+// transient smoothing; the render thread owns the underlying DSP state.
+func (p *Player) EffectiveValue(track uint8, id kernel.ParamID) (float32, bool) {
+	snapshot := p.trackNames.Load()
+	if snapshot == nil || id >= kernel.ParamCount {
+		return 0, false
+	}
+	if track == 0xff {
+		track = engine.ParameterGlobalSlot
+	}
+	if track > engine.ParameterGlobalSlot {
+		return 0, false
+	}
+	bits := snapshot.effective[track][id].Load()
+	return math.Float32frombits(uint32(bits)), bits>>32 != 0
+}
+
+func (snapshot *trackNameSnapshot) storeEffective(track uint8, id kernel.ParamID, value float32) {
+	if track == 0xff {
+		track = engine.ParameterGlobalSlot
+	}
+	if track <= engine.ParameterGlobalSlot && id < kernel.ParamCount {
+		snapshot.effective[track][id].Store(1<<32 | uint64(math.Float32bits(value)))
+	}
 }
 
 func (snapshot *trackNameSnapshot) storeCommitted(track uint8, id kernel.ParamID, value float32) {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -104,6 +105,7 @@ type snapshotFrames struct {
 }
 
 type transportSnapshot struct {
+	MIDIPickupValues    map[string]*float64          `json:"midiPickupValues,omitempty"`
 	MIDIClockEpoch      uint64                       `json:"midiClockEpoch"`
 	FrameAgeNanos       *int64                       `json:"frameAgeNanos,omitempty"`
 	NextTempo           *musictime.ObservedTempoStep `json:"nextTempo,omitempty"`
@@ -226,6 +228,38 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		}
 	}
 	if t.stream != nil {
+		if t.livePlan != nil && t.livePlan.project != nil && t.livePlan.project.MIDI != nil {
+			for _, mapping := range t.livePlan.project.MIDI.Maps {
+				if mapping.Message != "cc" || mapping.Takeover != "pickup" {
+					continue
+				}
+				key, ok := t.livePlan.parameterPaths[mapping.Target]
+				if !ok {
+					continue
+				}
+				track := uint8(0xff)
+				if strings.HasPrefix(key.entity, "track:") {
+					var found bool
+					track, found = t.stream.TrackIndex(strings.TrimPrefix(key.entity, "track:"))
+					if !found {
+						continue
+					}
+				}
+				value, available := t.stream.EffectiveValue(track, key.id)
+				if !available || math.IsNaN(float64(value)) || math.IsInf(float64(value), 1) {
+					continue
+				}
+				if state.MIDIPickupValues == nil {
+					state.MIDIPickupValues = make(map[string]*float64)
+				}
+				if math.IsInf(float64(value), -1) {
+					state.MIDIPickupValues[mapping.Target] = nil
+				} else {
+					v := float64(value)
+					state.MIDIPickupValues[mapping.Target] = &v
+				}
+			}
+		}
 		if id := t.stream.PendingSongEntryID(); id != 0 && id == t.pendingSongID {
 			state.PendingSong = t.pendingSong
 		}

@@ -445,6 +445,7 @@ func (p *Player) rebuildCommitted(score Score, tick int64) {
 	for track := range names.committed {
 		for id, bits := range p.reconstructed[track] {
 			names.committed[track][id].Store(bits)
+			names.effective[track][id].Store(bits)
 		}
 	}
 	if snapshot := p.overrides.Load(); snapshot != nil {

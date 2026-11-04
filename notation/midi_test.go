@@ -12,7 +12,7 @@ midi {
   port keys
   port pads
   keys ch 1 -> lead
-  keys cc 74 -> bass.cutoff 200Hz..4kHz
+  keys cc 74 -> bass.cutoff 200Hz..4kHz takeover = pickup
   pads note c1 -> launch verse
   pads ch 2 note 60 -> stop
 }
@@ -32,6 +32,9 @@ func TestPortableMIDIParseAndValidate(t *testing.T) {
 	if got := s.MIDI.Mappings[2]; got.Number != 24 || got.Target != "launch verse" {
 		t.Fatalf("incorrect pitch or action: %+v", got)
 	}
+	if got := s.MIDI.Mappings[1].Takeover; got != "pickup" {
+		t.Fatalf("lost pickup mode: %q", got)
+	}
 	for _, bad := range []string{
 		strings.Replace(midiScore, "keys cc 74", "other cc 74", 1),
 		strings.Replace(midiScore, "keys cc 74", "keys cc 128", 1),
@@ -39,6 +42,7 @@ func TestPortableMIDIParseAndValidate(t *testing.T) {
 		strings.Replace(midiScore, "bass.cutoff", "bass.missing", 1),
 		strings.Replace(midiScore, "200Hz..4kHz", "4kHz..200Hz", 1),
 		strings.Replace(midiScore, "keys ch 1", "keys ch 0", 1),
+		strings.Replace(midiScore, "takeover = pickup", "takeover = scale", 1),
 		strings.Replace(midiScore, "keys cc 74", "keys cc 99999999999999999999999999", 1),
 	} {
 		_, ds := Parse([]byte(bad))

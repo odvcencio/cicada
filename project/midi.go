@@ -145,7 +145,7 @@ func validateMidiProject(p *Project) error {
 				if !resolved.Descriptor.Live {
 					return fmt.Errorf("CICADA-UNSUPPORTED: MIDI target is not live")
 				}
-				if item.Mode != "" || item.Takeover != "" && item.Takeover != "jump" {
+				if item.Mode != "" || item.Takeover != "" && item.Takeover != "jump" && item.Takeover != "pickup" {
 					return fmt.Errorf("CICADA-UNSUPPORTED: MIDI takeover mode")
 				}
 				if item.Range != nil {
