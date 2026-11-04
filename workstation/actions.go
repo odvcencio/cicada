@@ -204,6 +204,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
 		"midi-learn":            s.learnPortableMIDI,
+		"midi-bind":             s.bindPortableMIDI,
 		"source-checkpoint":     s.checkpointSource,
 		"transcribe":            s.transcribeMelody,
 		"transcription-apply":   s.applyTranscription,

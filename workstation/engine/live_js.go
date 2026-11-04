@@ -115,6 +115,8 @@ type liveUI struct {
 	nativeMIDIGeneration uint64
 	midiNames            map[string]string
 	localMIDIPorts       map[string]string
+	localMIDIRevision    string
+	nativeMIDINames      []string
 }
 
 func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
@@ -264,6 +266,9 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if action == "midi-learn" {
 		timeout = 40 * time.Second // score validation and a revision-checked source edit
 	}
+	if action == "midi-bind" {
+		timeout = 20 * time.Second // local score validation and atomic file update
+	}
 	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
 		return nil, err
@@ -349,6 +354,18 @@ func (u *liveUI) runCommands() {
 			if err == nil && job.Action == "midi-learn" && !u.closed.Load() {
 				u.status.Set("MIDI mapping saved in the score.")
 				workspaceRefreshRequested.Set(workspaceRefreshRequested.Get() + 1)
+			}
+			if err == nil && job.Action == "midi-bind" && !u.closed.Load() {
+				var result struct {
+					Ports    map[string]string `json:"ports"`
+					Revision string            `json:"configRevision"`
+				}
+				if json.Unmarshal(data, &result) == nil && result.Revision != "" {
+					u.localMIDIPorts, u.localMIDIRevision = result.Ports, result.Revision
+					u.renderMappings()
+					u.renderMIDIPortDevices()
+					u.status.Set("MIDI device bound on this machine.")
+				}
 			}
 			if err != nil && job.Action == "note-preview" {
 				u.finishing = false
@@ -710,6 +727,20 @@ func (u *liveUI) bindControls() {
 		})
 	}
 	u.on(u.query("[data-live-target]"), "change", func(js.Value) { u.saveSettings() })
+	if u.props.PortableMIDI != nil && len(u.props.PortableMIDI.Ports) > 0 {
+		u.on(u.query("[data-live-port]"), "change", func(js.Value) { u.renderMIDIPortDevices() })
+		u.on(u.query("[data-live-control=reload-ports]"), "click", func(js.Value) { go u.loadPortableMIDIPorts() })
+		u.on(u.query("[data-live-control=bind]"), "click", func(js.Value) {
+			port, device := u.selected("[data-live-port]"), u.selected("[data-live-device]")
+			if device == "" || u.localMIDIRevision == "" {
+				u.status.Set("Enable MIDI and choose a connected device first.")
+				return
+			}
+			if u.queue("midi-bind", map[string]string{"port": port, "device": device, "revision": u.localMIDIRevision}) {
+				u.status.Set("Saving local MIDI binding…")
+			}
+		})
+	}
 	button := func(name string, fn func()) {
 		u.on(u.query("[data-live-control="+name+"]"), "click", func(js.Value) { fn() })
 	}
@@ -1063,6 +1094,7 @@ func (u *liveUI) bindMIDI() {
 		}
 	}
 	u.webMIDIPorts = ports
+	u.renderMIDIPortDevices()
 	u.status.Set(fmt.Sprintf("MIDI enabled · %d inputs · no system-exclusive access", count))
 }
 func (u *liveUI) midiMessage(device string, data js.Value) {

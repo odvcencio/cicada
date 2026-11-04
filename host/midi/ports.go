@@ -50,3 +50,39 @@ func ReadLocalPorts(r io.Reader) (map[string]string, error) {
 	}
 	return ports, nil
 }
+
+// SetLocalPort updates a binding without discarding comments or other ports.
+// A malformed existing file is left untouched and must be repaired first.
+func SetLocalPort(data []byte, port, device string) ([]byte, error) {
+	if _, err := ReadLocalPorts(strings.NewReader(string(data))); err != nil {
+		return nil, err
+	}
+	line := "port " + port + " = " + strconv.Quote(device)
+	if _, err := ReadLocalPorts(strings.NewReader(line + "\n")); err != nil {
+		return nil, err
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	found := false
+	for i, existing := range lines {
+		trimmed := strings.TrimSpace(existing)
+		match := localPortLine.FindStringSubmatchIndex(trimmed)
+		if match == nil || trimmed[match[2]:match[3]] != port {
+			continue
+		}
+		offset := strings.Index(existing, trimmed)
+		lines[i] = existing[:offset+match[4]] + strconv.Quote(device) + existing[offset+match[5]:]
+		found = true
+		break
+	}
+	updated := strings.Join(lines, "")
+	if !found {
+		if updated != "" && !strings.HasSuffix(updated, "\n") {
+			updated += "\n"
+		}
+		updated += line + "\n"
+	}
+	if _, err := ReadLocalPorts(strings.NewReader(updated)); err != nil {
+		return nil, err
+	}
+	return []byte(updated), nil
+}
