@@ -42,9 +42,10 @@ func checkBrowserParity(t *testing.T, source, reference []byte, files map[string
   const rate = 48000;
   const context = new OfflineAudioContext(2, frames, rate);
   await context.audioWorklet.addModule('/audio/cicada-processor.js');
-  const module = await WebAssembly.compile(await (await fetch('/api/kernel.wasm')).arrayBuffer());
   const imageResponse = await fetch('/api/kernel-image?rate=48000');
   const image = await imageResponse.arrayBuffer();
+  const kind = window.cicadaBrowserAudio.imageModuleKind(image);
+  const module = await window.cicadaBrowserAudio.loadModule(kind);
   let readyResolve, readyReject;
   const ready = new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject});
   const batches=[]; let returnedMessages=0;

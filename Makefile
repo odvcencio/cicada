@@ -289,7 +289,7 @@ test-worklet-negotiation: build-worklets
 	node host/web/client_capability_test.cjs
 	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs host/web/message-drain.test.cjs host/web/keys_client.test.cjs
 
-test-browser: build-kernel-wasm
+test-browser: build-kernel-wasm build-modular-wasm
 	mkdir -p build
 	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit)$$' 5m build/test-browser.log
 	bash cmd/cicada/browser-runner.sh browser,worklet_testhooks '^TestBrowserUnderrunDetector$$' 2m build/test-worklet-stall.log
