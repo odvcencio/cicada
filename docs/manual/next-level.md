@@ -142,6 +142,8 @@ midi {
   keys ch 1 -> lead
   keys cc 74 -> bass.cutoff 200Hz..4kHz takeover = pickup
   keys note c1 -> launch verse
+  keys note d1 -> stop-track bass
+  keys note e1 -> launch-slot bass phrase
 }
 pattern phrase { 1 . 3 . }
 scene verse { bass = phrase lead = phrase }
@@ -162,11 +164,11 @@ to reload rather than overwrite the newer file.
 
 In Studio's Live panel, choose a target and select **Learn next input**. When
 the device has exactly one matching declared port, the learned controller or
-note is saved in the score with Undo and revision checks. Without a `midi`
-block, Learn continues to save browser-local mappings as before. Slot and
-per-track stop mappings are browser-local even when the score has a `midi`
-block; an input already mapped by the score cannot be learned locally. Remove
-score mappings in Code.
+note is saved in the score with Undo and revision checks. Scene launches,
+track stops, and launches of a pattern or clip already in that track's slots
+can be mapped. Without a `midi` block, Learn saves browser-local mappings.
+Relearning a score-mapped input replaces its target. Remove score mappings in
+Code.
 
 CC mappings use jump takeover by default. Add `takeover = pickup` in Code to
 wait until the controller reaches or crosses the current live parameter value

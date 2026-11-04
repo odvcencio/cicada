@@ -17,6 +17,8 @@ midi {
   keys cc 74 -> bass.cutoff 200Hz..4kHz takeover = pickup
   pads note c1 -> launch verse
   pads ch 2 note 60 -> stop
+  pads note 61 -> stop-track bass
+  pads note 62 -> launch-slot bass phrase
 }
 pattern phrase { 1 }
 scene verse { bass = phrase lead = phrase }
@@ -32,7 +34,7 @@ func TestMidiSourceJSONSourceRoundTrip(t *testing.T) {
 	if len(diagnostics) != 0 || p == nil {
 		t.Fatalf("lower: %v", diagnostics)
 	}
-	if p.MIDI == nil || len(p.MIDI.Maps) != 4 {
+	if p.MIDI == nil || len(p.MIDI.Maps) != 6 {
 		t.Fatalf("lost MIDI: %+v", p.MIDI)
 	}
 	encoded, err := CanonicalJSON(p)
@@ -64,5 +66,20 @@ func TestMidiSourceJSONSourceRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(encoded, nextJSON) {
 		t.Fatalf("MIDI round trip changed:\n%s\n%s", encoded, nextJSON)
+	}
+}
+
+func TestMidiSlotMappingRejectsMissingTrackSlot(t *testing.T) {
+	score, ds := notation.Parse([]byte(portableMidiScore))
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p.MIDI.Maps[5].Target = "launch-slot lead nonexistent"
+	if err := ValidateProject(p); err == nil {
+		t.Fatal("accepted missing slot")
 	}
 }

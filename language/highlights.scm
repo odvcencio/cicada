@@ -108,8 +108,11 @@
 (midi_note port: (identifier) @variable.parameter)
 (midi_note "ch" @keyword channel: (integer) @number)
 (midi_note number: (integer) @number)
-(midi_note ["play" "stop" "launch"] @keyword)
+(midi_note ["play" "stop" "launch" "stop-track" "launch-slot"] @keyword)
 (midi_note scene: (identifier) @label)
+(midi_note track: (identifier) @variable.member)
+(midi_note pattern: (identifier) @label)
+(midi_note pattern: (qualified_name) @label)
 (midi_note "mode" @keyword mode: (identifier) @keyword.modifier)
 
 ; ---------------------------------------------------------------------------
