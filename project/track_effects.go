@@ -5,8 +5,44 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/fx/chorus"
 	"math"
 )
+
+func ChorusParamsFromValues(values map[string]Value) (chorus.Params, error) {
+	p := chorus.DefaultParams()
+	for _, name := range sortedKeys(values) {
+		v := values[name]
+		if v.Number == nil || v.Text != "" || math.IsNaN(*v.Number) || math.IsInf(*v.Number, 0) {
+			return p, fmt.Errorf("invalid chorus %s", name)
+		}
+		unit := "unit"
+		switch name {
+		case "voices":
+			if v.Unit != unit || math.Trunc(*v.Number) != *v.Number || *v.Number < 1 || *v.Number > 3 {
+				return p, fmt.Errorf("chorus voices must be an integer from 1 to 3")
+			}
+			p.Voices = int(*v.Number)
+			continue
+		case "rate":
+			unit = "hz"
+			p.Rate = *v.Number
+		case "depth":
+			unit = "ms"
+			p.Depth = *v.Number
+		case "spread":
+			p.Spread = *v.Number
+		case "mix":
+			p.Mix = *v.Number
+		default:
+			return p, fmt.Errorf("unknown chorus parameter %s", name)
+		}
+		if v.Unit != unit {
+			return p, fmt.Errorf("chorus %s requires %s", name, unit)
+		}
+	}
+	return p, p.Validate()
+}
 
 func DeesserParamsFromValues(values map[string]Value) (fx.DeesserParams, error) {
 	p := fx.DefaultDeesserParams()
@@ -113,6 +149,10 @@ func compileTrackEffect(effect Effect, rate int) (engine.TrackEffectConfig, erro
 	case "deesser":
 		v, err := DeesserParamsFromValues(effect.Params)
 		p.Kind, p.Deesser = engine.TrackEffectDeesser, &v
+		return p, err
+	case "chorus":
+		v, err := ChorusParamsFromValues(effect.Params)
+		p.Kind, p.Chorus = engine.TrackEffectChorus, &v
 		return p, err
 	}
 	return p, fmt.Errorf("CICADA-UNSUPPORTED: %s as a track insert is not implemented", semanticEffectKind(effect))

@@ -6,6 +6,7 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/fx/chorus"
 	"m31labs.dev/cicada/kernel/fx/pro"
 	"math"
 )
@@ -16,6 +17,7 @@ type trackEffectStage struct {
 	comp    *fx.Compressor
 	deesser *fx.Deesser
 	amp     *ampcab.Processor
+	chorus  *chorus.Processor
 }
 
 const ampControlsEnabled = true
@@ -59,6 +61,10 @@ func newTrackEffectChain(rate int, specs []TrackEffectConfig) (*trackEffectChain
 		case TrackEffectAmpCab:
 			s.amp, err = ampcab.New(rate, *p.AmpCab)
 			c.latency += ampcab.Latency
+		case TrackEffectChorus:
+			if chorusEnabled {
+				s.chorus, err = chorus.New(rate, *p.Chorus)
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -87,6 +93,9 @@ func (c *trackEffectChain) Process(l, r float32) (float32, float32) {
 			c.fault = s.deesser.Fault()
 		case s.amp != nil:
 			l, r = s.amp.Process(l, r)
+		case s.chorus != nil:
+			l, r = s.chorus.Process(l, r)
+			c.fault = s.chorus.Fault()
 		}
 		if c.fault || math.IsNaN(float64(l)) || math.IsNaN(float64(r)) || math.IsInf(float64(l), 0) || math.IsInf(float64(r), 0) {
 			c.fault = true
@@ -113,6 +122,9 @@ func (c *trackEffectChain) Reset() {
 		}
 		if s.amp != nil {
 			s.amp.Reset()
+		}
+		if s.chorus != nil {
+			s.chorus.Reset()
 		}
 	}
 }

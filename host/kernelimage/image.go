@@ -263,6 +263,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if hasSamplerExpression(&cfg) && modularFlags == 0 {
 		return nil, imageError("sampler expression requires the modular kernel module")
 	}
+	if hasChorus(&cfg) && modularFlags == 0 {
+		return nil, imageError("chorus requires the modular kernel module")
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -297,6 +300,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if hasSamplerExpression(&cfg) {
 		flags |= SamplerExpressionFlag
+	}
+	if hasChorus(&cfg) {
+		flags |= ChorusFlag
 	}
 	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))
@@ -776,6 +782,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if modularFlags != 0 && hasVibrato(&cfg) {
 		if err := writeVibrato(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	if modularFlags != 0 && hasChorus(&cfg) {
+		if err := writeChorus(&w, &cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -1450,6 +1461,18 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if modularFlags != 0 && flags&InstrumentVibratoFlag != 0 {
 		if err := readVibrato(&r, cfg); err != nil {
 			return err
+		}
+	}
+	if modularFlags != 0 && flags&ChorusFlag != 0 {
+		if err := readChorus(&r, cfg, sampleRate); err != nil {
+			return err
+		}
+	}
+	for track := 0; track < cfg.Tracks; track++ {
+		for _, stage := range cfg.Track[track].InsertChain {
+			if stage.Kind == engine.TrackEffectChorus && stage.Chorus == nil {
+				return imageError("chorus marker has no parameter record")
+			}
 		}
 	}
 	if reserved&TrackEffectsCapability != 0 {

@@ -3,6 +3,7 @@ package engine
 import (
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/fx/chorus"
 	"m31labs.dev/cicada/kernel/fx/pro"
 	"math"
 )
@@ -17,6 +18,7 @@ const (
 	TrackEffectComp
 	TrackEffectDeesser
 	TrackEffectAmpCab
+	TrackEffectChorus
 )
 
 // TrackEffectConfig is copied into independent, bounded audio-thread state.
@@ -28,11 +30,12 @@ type TrackEffectConfig struct {
 	Comp    *fx.CompParams    `json:",omitempty"`
 	Deesser *fx.DeesserParams `json:",omitempty"`
 	AmpCab  *ampcab.Params    `json:",omitempty"`
+	Chorus  *chorus.Params    `json:",omitempty"`
 }
 
 func (p TrackEffectConfig) Validate(rate int) error {
 	count := 0
-	for _, present := range []bool{p.Drive != nil, p.EQ != nil, p.Comp != nil, p.Deesser != nil, p.AmpCab != nil} {
+	for _, present := range []bool{p.Drive != nil, p.EQ != nil, p.Comp != nil, p.Deesser != nil, p.AmpCab != nil, p.Chorus != nil} {
 		if present {
 			count++
 		}
@@ -64,6 +67,13 @@ func (p TrackEffectConfig) Validate(rate int) error {
 	case TrackEffectAmpCab:
 		if p.AmpCab != nil {
 			return p.AmpCab.Validate()
+		}
+	case TrackEffectChorus:
+		if !chorusEnabled {
+			return engineError("chorus requires the modular kernel")
+		}
+		if p.Chorus != nil {
+			return p.Chorus.Validate()
 		}
 	}
 	return engineError("track effect kind and parameters do not match")
