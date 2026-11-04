@@ -71,6 +71,8 @@ instrument lead {
 
 The source must be declared in the project. Graph modulation inside authored
 drum-kit lanes is not supported.
+For a playable example, see
+[`examples/detail/instrument-modulation.cicada`](../../examples/detail/instrument-modulation.cicada).
 
 ## Studio and inspection
 

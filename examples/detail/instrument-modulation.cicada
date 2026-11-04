@@ -1,0 +1,17 @@
+cicada 2
+tempo 118
+sway wander { rate = 2bars octaves = 2 }
+lfo drift { wave = triangle rate = 8bars }
+contour swell { period = 4bars @0 -1 @1/4 1 smooth @1 -1 }
+instrument brass {
+  voice mono { out = lowpass(saw(pitch), 1200Hz * (1 + 0.4 * mod(wander))) * env(gate, 100ms) * 0.2 }
+}
+track lead brass {}
+track pad acid {}
+track keys acid {}
+pattern line { c4 . e4 . g4 . e4 . }
+mod drift -> pad.pan depth = 0.5
+mod wander -> keys.level depth = 2dB
+mod swell -> pad.level depth = 3dB
+scene groove { lead = line pad = line keys = line }
+song { groove*8 }

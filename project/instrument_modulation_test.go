@@ -82,6 +82,19 @@ func TestInstrumentModulatorRoundTripAndRender(t *testing.T) {
 	if decoded.Track[0].Graph != cfg.Track[0].Graph {
 		t.Fatal("graph changed in image")
 	}
+	// The graph node record contains opcode 35 and source index 1. Mutate only
+	// that index to 2, which is in the kernel's maximum range but absent from
+	// this project's two-entry source table.
+	needle := []byte{byte(graph.Modulator), 0, 0, 0, 0, 0, 128, 63}
+	if bytes.Count(image, needle) != 1 {
+		t.Fatal("could not locate unique graph source record")
+	}
+	bad := append([]byte(nil), image...)
+	at := bytes.Index(bad, needle)
+	copy(bad[at+4:at+8], []byte{0, 0, 0, 64})
+	if _, err := kernelimage.Decode(bad, 48000, 128); err == nil {
+		t.Fatal("image accepted a source index beyond its table")
+	}
 	render := func(cfg engine.Config, block int) []float32 {
 		e, err := engine.New(cfg)
 		if err != nil {
