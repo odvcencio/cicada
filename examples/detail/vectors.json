@@ -1,4 +1,7 @@
 {
+  "instrument-modulation.cicada-44100": "440004d803bde47507aebea758f31867bf4d34b558436f2467b6de07752bb164",
+  "instrument-modulation.cicada-48000": "4014e90333bc809434756e35bf2c5892d8d59b002f7e60b9256aa03d8c568ec1",
+  "instrument-modulation.cicada-96000": "09f226f69de0127f8864736924689747ebe50fe2f826a48bc9b1947782127114",
   "modulators.cicada-44100": "3fbc0fcd7aaafcaaae6fbc22100ff1da10a88d1139c135005bdd784e6a97b9c9",
   "modulators.cicada-48000": "cb2e73149dfb0f5a59051bfa97b81ba0177e948b4f0ff6a36f8b4a8b84924e38",
   "modulators.cicada-96000": "43d9b83842281e4d1a135bbf476d29266a676923552c3e7fdd03826072bc3b3c"
