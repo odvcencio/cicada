@@ -102,3 +102,56 @@ func TestPortableMIDILearnChecksProjectRevisionAndOwner(t *testing.T) {
 		t.Fatalf("owner port read: %d", response.StatusCode)
 	}
 }
+
+func TestPortableMIDIBindUsesOwnerAndCSRF(t *testing.T) {
+	var writes int
+	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/midi/ports" || r.Method != "POST" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		var input map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input["port"] != "keys" || input["device"] != "Keyboard" || input["revision"] != "r1" {
+			t.Errorf("invalid binding: %v %v", input, err)
+			w.WriteHeader(400)
+			return
+		}
+		writes++
+		_, _ = w.Write([]byte(`{"ports":{"keys":"Keyboard"},"configRevision":"r2"}`))
+	}))
+	defer audio.Close()
+	b, err := newBackend(audio.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := newApp(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := httptest.NewServer(handler)
+	defer app.Close()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	csrf := tokenFromPage(t, getPage(t, client, app.URL+"/?panel=live"))
+	post := func(token string) *http.Response {
+		body := bytes.NewBufferString(`{"port":"keys","device":"Keyboard","revision":"r1"}`)
+		req, _ := http.NewRequest("POST", app.URL+"/__actions/midi-bind", body)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Origin", app.URL)
+		req.Header.Set("X-CSRF-Token", token)
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { response.Body.Close() })
+		return response
+	}
+	if response := post(""); response.StatusCode != 403 || writes != 0 {
+		t.Fatalf("CSRF allowed: %d", response.StatusCode)
+	}
+	if response := post(csrf); response.StatusCode != 200 || writes != 1 {
+		t.Fatalf("binding failed: %d, writes %d", response.StatusCode, writes)
+	}
+}

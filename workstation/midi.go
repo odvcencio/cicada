@@ -49,6 +49,26 @@ func (s *studioApp) learnPortableMIDI(ctx *action.Context) error {
 	return nil
 }
 
+func (s *studioApp) bindPortableMIDI(ctx *action.Context) error {
+	if err := actionValues(ctx); err != nil {
+		return err
+	}
+	f := ctx.FormData
+	if f["port"] == "" || f["device"] == "" || f["revision"] == "" {
+		return action.Validation("Choose a port and connected MIDI device.", nil, f)
+	}
+	var result json.RawMessage
+	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/midi/ports", map[string]string{"port": f["port"], "device": f["device"], "revision": f["revision"]}, &result); err != nil {
+		var failure *backendError
+		if errors.As(err, &failure) {
+			return action.Error(failure.Status, failure.Message)
+		}
+		return action.Error(http.StatusServiceUnavailable, "Could not confirm the local MIDI binding. Reload bindings before trying again.")
+	}
+	ctx.SetResult(action.Result{OK: true, Message: "MIDI device bound on this machine.", Data: result})
+	return nil
+}
+
 // Device names are local configuration and are only exposed to workspace
 // editors, never to read-only collaborators or the public demo.
 func (s *studioApp) localMIDIPorts(w http.ResponseWriter, r *http.Request) {

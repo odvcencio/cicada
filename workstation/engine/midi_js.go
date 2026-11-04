@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"syscall/js"
 	"time"
@@ -32,8 +33,9 @@ func (u *liveUI) loadPortableMIDIPorts() {
 	}
 	defer response.Body.Close()
 	var result struct {
-		Ports map[string]string `json:"ports"`
-		Error string            `json:"error"`
+		Ports    map[string]string `json:"ports"`
+		Revision string            `json:"configRevision"`
+		Error    string            `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 65537)).Decode(&result); err != nil || response.StatusCode != http.StatusOK {
 		if !u.closed.Load() {
@@ -49,6 +51,8 @@ func (u *liveUI) loadPortableMIDIPorts() {
 		return
 	}
 	u.localMIDIPorts = result.Ports
+	u.localMIDIRevision = result.Revision
+	u.renderMIDIPortDevices()
 	var missing []string
 	for _, port := range u.props.PortableMIDI.Ports {
 		if result.Ports[port] == "" {
@@ -59,6 +63,51 @@ func (u *liveUI) loadPortableMIDIPorts() {
 		u.status.Set("Set local MIDI ports in cicada.local: " + strings.Join(missing, ", "))
 	}
 	u.renderMappings()
+}
+
+func (u *liveUI) renderMIDIPortDevices() {
+	if u.props.PortableMIDI == nil || len(u.props.PortableMIDI.Ports) == 0 {
+		return
+	}
+	selectEl := u.query("[data-live-device]")
+	if selectEl.IsNull() {
+		return
+	}
+	port := u.selected("[data-live-port]")
+	bound := u.localMIDIPorts[port]
+	names := map[string]bool{}
+	for id := range u.webMIDIPorts {
+		if name := u.midiNames[id]; name != "" {
+			names[name] = true
+		}
+	}
+	for _, name := range u.nativeMIDINames {
+		if name != "" {
+			names[name] = true
+		}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+	selectEl.Call("replaceChildren")
+	add := func(value, label string) {
+		option := js.Global().Get("document").Call("createElement", "option")
+		option.Set("value", value)
+		option.Set("textContent", label)
+		selectEl.Call("append", option)
+	}
+	add("", "Choose a connected device")
+	if bound != "" && !names[bound] {
+		add(bound, bound+" · disconnected")
+	}
+	for _, name := range ordered {
+		add(name, name)
+	}
+	if bound != "" {
+		selectEl.Set("value", bound)
+	}
 }
 
 func (u *liveUI) releaseMIDIPrefix(prefix string) {
@@ -94,6 +143,8 @@ func (u *liveUI) enableNativeMIDI() {
 			return
 		}
 		u.nativeMIDICancel = nil
+		u.nativeMIDINames = nil
+		u.renderMIDIPortDevices()
 		u.releaseMIDIPrefix("midi:native:")
 		u.query("[data-live-control=midi]").Set("textContent", "Enable MIDI")
 		u.query("[data-live-control=midi]").Set("disabled", false)
@@ -156,6 +207,8 @@ func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) string {
 					u.midiNames[fmt.Sprintf("native:%s:g%d", device.ID, group)] = device.Name
 				}
 			}
+			u.nativeMIDINames = names
+			u.renderMIDIPortDevices()
 			if len(names) == 0 {
 				u.status.Set("MIDI ready. Connect a controller; inputs appear automatically.")
 			} else {

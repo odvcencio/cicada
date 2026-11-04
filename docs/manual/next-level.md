@@ -133,13 +133,17 @@ scene verse { bass = phrase lead = phrase }
 song { verse*16 }
 ```
 
-In the project directory, create `cicada.local` with a port-to-device binding
-for this machine, for example `port keys = "KeyStep 37 MIDI 1"`. Use the exact
-device name Studio reports. This file is local and is excluded from projects
-created by `cicada new` and from bundles. Bind the same logical name to a
-different device in another copy of the project. An absent or invalid binding
-is reported; the saved score never contains the device name. Reload Studio
-after changing the local bindings.
+In Studio's Live panel, select **Enable MIDI**, choose a score port and a
+connected device, then select **Bind device**. The binding is saved on this
+machine in `cicada.local`. Bind the same logical port to a different device in
+another copy of the project. This file is excluded from projects created by
+`cicada new` and from bundles; the saved score never contains the device name.
+
+You can also edit `cicada.local` in the project directory yourself, for example
+`port keys = "KeyStep 37 MIDI 1"`. Use the exact device name Studio reports.
+An absent or invalid binding is reported; select **Reload bindings** after an
+external edit. If a binding changed while you were editing it, Studio asks you
+to reload rather than overwrite the newer file.
 
 In Studio's Live panel, choose a target and select **Learn next input**. When
 the device has exactly one matching declared port, the learned controller or

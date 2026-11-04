@@ -16,3 +16,28 @@ func TestReadLocalPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestSetLocalPortPreservesOtherContent(t *testing.T) {
+	original := []byte("# setup\r\n  port keys = \"Old\" # keyboard\r\nport pads = \"Pads\"\n")
+	updated, err := SetLocalPort(original, "keys", `New "Keys"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(updated) != "# setup\r\n  port keys = \"New \\\"Keys\\\"\" # keyboard\r\nport pads = \"Pads\"\n" {
+		t.Fatalf("updated %q", updated)
+	}
+	added, err := SetLocalPort([]byte("# no newline"), "keys", "Keyboard")
+	if err != nil || string(added) != "# no newline\nport keys = \"Keyboard\"\n" {
+		t.Fatalf("added %q: %v", added, err)
+	}
+	for _, tc := range []struct{ content, port, device string }{
+		{"bad input\n", "keys", "Keyboard"},
+		{"", "invalid port", "Keyboard"},
+		{"", "keys", ""},
+		{"", "keys", "bad\nname"},
+	} {
+		if _, err := SetLocalPort([]byte(tc.content), tc.port, tc.device); err == nil {
+			t.Errorf("accepted %+v", tc)
+		}
+	}
+}
