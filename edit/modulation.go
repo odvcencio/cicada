@@ -3,7 +3,9 @@ package edit
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
@@ -22,6 +24,19 @@ type AddModulator struct {
 
 func (AddModulator) Kind() string { return "addmodulator" }
 
+// EditModulator changes one setting or one contour point in its owning file.
+type EditModulator struct {
+	Operation string `json:"operation"`
+	Source    string `json:"source"`
+	Field     string `json:"field,omitempty"`
+	Value     string `json:"value,omitempty"`
+	Index     int    `json:"index,omitempty"`
+	At        string `json:"at,omitempty"`
+	Shape     string `json:"shape,omitempty"`
+}
+
+func (EditModulator) Kind() string { return "editmodulator" }
+
 // ModulationRoute adds, changes the depth of, or removes one identified route.
 // Source, target and mode identify a route even when a pair has both modes.
 type ModulationRoute struct {
@@ -36,12 +51,171 @@ func (ModulationRoute) Kind() string { return "modulationroute" }
 
 func init() {
 	Register("addmodulator", func() Intent { return &AddModulator{} })
+	Register("editmodulator", func() Intent { return &EditModulator{} })
 	Register("modulationroute", func() Intent { return &ModulationRoute{} })
 	Handle("addmodulator", addModulator)
+	Handle("editmodulator", editModulator)
 	Handle("modulationroute", editModulationRoute)
 }
 
 var modName = regexp.MustCompile(`^[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)*$`)
+
+var modSettings = map[string]map[string]bool{
+	"lfo":      {"wave": true, "rate": true, "phase": true, "loop": true},
+	"sway":     {"rate": true, "octaves": true, "loop": true},
+	"contour":  {"period": true, "loop": true},
+	"envelope": {"attack": true, "release": true, "source": true},
+}
+
+func editModulator(ctx *Context, intent Intent) error {
+	in := intent.(*EditModulator)
+	if ctx.Options.CaptureGuard != nil {
+		if err := ctx.Options.CaptureGuard(); err != nil {
+			return err
+		}
+	}
+	if !modName.MatchString(in.Source) {
+		return fmt.Errorf("choose a modulation source")
+	}
+	score, ds, err := ctx.ParseProject()
+	if err != nil {
+		return err
+	}
+	if score == nil || hasErrors(ds) {
+		return fmt.Errorf("score must validate before editing modulation")
+	}
+	for _, source := range score.Modulators {
+		if source.Name != in.Source {
+			continue
+		}
+		path := source.Position.File
+		if path == "" {
+			path = ctx.Options.Path
+		}
+		for _, file := range ctx.Options.Sources {
+			if file.Path == path && file.Library != "" {
+				return fmt.Errorf("library sources are read-only")
+			}
+		}
+		before, ok := ctx.FileSource(path)
+		if !ok {
+			return fmt.Errorf("source is outside the editable project")
+		}
+		offset, err := Offset(before, path, source.Position)
+		if err != nil {
+			return err
+		}
+		root, walker, err := notation.ParseTree(before)
+		if err != nil {
+			return err
+		}
+		for i := 0; i < root.NamedChildCount(); i++ {
+			node := root.NamedChild(i)
+			if walker.Type(node) != source.Kind+"_decl" || int(node.StartByte()) != offset {
+				continue
+			}
+			span := Span{Start: int(node.StartByte()), End: int(node.EndByte()), File: path}
+			switch in.Operation {
+			case "remove":
+				for _, route := range score.Routes {
+					if route.Source == in.Source {
+						return fmt.Errorf("remove this source's routes before removing it")
+					}
+				}
+			case "set":
+				if !modSettings[source.Kind][in.Field] || !safeModValue(in.Value) {
+					return fmt.Errorf("choose a valid source setting")
+				}
+				found := false
+				for j := 0; j < node.NamedChildCount(); j++ {
+					param := node.NamedChild(j)
+					if walker.Type(param) == "param_decl" && walker.Text(walker.Field(param, "name")) == in.Field {
+						value := walker.Field(param, "value")
+						span.Start, span.End, span.Text = int(value.StartByte()), int(value.EndByte()), in.Value
+						found = true
+						break
+					}
+				}
+				if !found {
+					span.Start, span.End, span.Text = int(node.EndByte())-1, int(node.EndByte())-1, " "+in.Field+" = "+in.Value+" "
+				}
+			case "point-set", "point-add", "point-remove":
+				if source.Kind != "contour" {
+					return fmt.Errorf("choose a contour source")
+				}
+				var points []Span
+				for j := 0; j < node.NamedChildCount(); j++ {
+					point := node.NamedChild(j)
+					if walker.Type(point) == "contour_point" {
+						points = append(points, Span{Start: int(point.StartByte()), End: int(point.EndByte()), File: path})
+					}
+				}
+				if len(points) != len(source.Points) {
+					return fmt.Errorf("contour points could not be located")
+				}
+				if in.Operation != "point-add" {
+					if in.Index < 0 || in.Index >= len(points) {
+						return fmt.Errorf("contour point no longer exists")
+					}
+					span = points[in.Index]
+					if strings.Contains(string(before[span.Start:span.End]), "//") || strings.Contains(string(before[span.Start:span.End]), "/*") {
+						return fmt.Errorf("edit this commented point in Code")
+					}
+				}
+				if in.Operation != "point-remove" {
+					at, ok := notation.ParseContourPosition(in.At)
+					level, parseErr := strconv.ParseFloat(in.Value, 64)
+					if !ok || parseErr != nil || math.IsNaN(level) || math.IsInf(level, 0) || level < -1 || level > 1 {
+						return fmt.Errorf("choose a contour position and value")
+					}
+					if in.Shape != "" && !notation.ModulatorShapes[in.Shape] {
+						return fmt.Errorf("choose a contour shape")
+					}
+					span.Text = "@" + strings.TrimPrefix(in.At, "@") + " " + strconv.FormatFloat(level, 'g', -1, 64)
+					if in.Shape != "" {
+						span.Text += " " + in.Shape
+					}
+					if in.Operation == "point-add" {
+						if at.Sign() == 0 || at.Cmp(big.NewRat(1, 1)) == 0 {
+							return fmt.Errorf("new points must be between 0 and 1")
+						}
+						insert := -1
+						for j, p := range source.Points {
+							old, valid := notation.ParseContourPosition(p.At)
+							if valid && old.Cmp(at) == 0 {
+								return fmt.Errorf("a point already exists at that position")
+							}
+							if valid && old.Cmp(at) > 0 {
+								insert = j
+								break
+							}
+						}
+						if insert < 0 {
+							return fmt.Errorf("new points must be between existing endpoints")
+						}
+						span.Start, span.End = points[insert].Start, points[insert].Start
+						span.Text += Newline(before) + "  "
+					}
+				}
+			default:
+				return fmt.Errorf("choose a modulation operation")
+			}
+			after, err := ReplaceSpan(before, path, span)
+			if err != nil {
+				return err
+			}
+			ctx.Source, ctx.plan = stageProjectSource(ctx, path, before, after), nil
+			ctx.SetLabel("Modulation · " + in.Operation + " " + in.Source)
+			return nil
+		}
+		return fmt.Errorf("source declaration could not be located")
+	}
+	return fmt.Errorf("modulation source no longer exists")
+}
+
+func safeModValue(value string) bool {
+	return value != "" && !strings.ContainsAny(value, " \t\r\n{};#=") && !strings.Contains(value, "//") && !strings.Contains(value, "/*")
+}
 
 func addModulator(ctx *Context, intent Intent) error {
 	in := intent.(*AddModulator)

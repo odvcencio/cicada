@@ -258,6 +258,17 @@ func (s *studioApp) actions() map[string]action.Handler {
 			if f["action"] == "mod-source-add" {
 				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "value": map[string]string{"sourcekind": f["sourcekind"], "name": f["name"], "rate": f["rate"], "wave": f["wave"], "source": f["source"]}}, nil
 			}
+			if f["action"] == "mod-source-edit" {
+				index := 0
+				if f["operation"] == "point-set" || f["operation"] == "point-remove" {
+					var err error
+					index, err = integer(f, "index")
+					if err != nil {
+						return nil, err
+					}
+				}
+				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "value": map[string]any{"operation": f["operation"], "source": f["source"], "field": f["field"], "value": f["value"], "index": index, "at": f["at"], "shape": f["shape"]}}, nil
+			}
 			if f["action"] == "mod-route" {
 				return map[string]any{"revision": f["revision"], "source_revision": f["source_revision"], "action": f["action"], "value": map[string]string{"operation": f["operation"], "source": f["source"], "target": f["target"], "mode": f["mode"], "depth": f["depth"]}}, nil
 			}

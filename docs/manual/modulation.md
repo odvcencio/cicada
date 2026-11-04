@@ -76,9 +76,10 @@ drum-kit lanes is not supported.
 
 Open the **Automation** detail dock. **Modulation** lists sources and routes;
 add a source, then choose a target, mode, and depth. Save a depth or remove a
-route from its row. These edits validate before saving and support Undo. Edit
-source settings and contour points in Code. A rejected edit leaves the saved
-score intact.
+route from its row. Expand a source to edit its settings or contour points, or
+remove it after removing its routes. These edits validate before saving and
+support Undo. Imported library sources remain read-only. A rejected edit
+leaves the saved score intact.
 
 `cicada explain score.cicada lead.cutoff @1` lists matching modulation routes
 in order and labels the computed value before modulation. The actual playback

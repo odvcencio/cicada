@@ -129,6 +129,11 @@ test-collaboration:
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
 
+.PHONY: test-studio-modulation-source
+# Requires a fresh Studio process, disposable score, and proof directory.
+test-studio-modulation-source:
+	node --test workstation/browser/modulation-source.test.cjs
+
 .PHONY: test-studio-shell
 # Requires a fresh Studio process with a disposable score; this suite edits the score.
 test-studio-shell:

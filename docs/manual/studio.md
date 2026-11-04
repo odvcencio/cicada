@@ -603,7 +603,7 @@ a separate shared address; old tails retain their last controls. The saved lane
 uses the same layering during playback and export.
 
 Played timing supports modeled keyboards and piano, authored pitched
-instruments, and acid, using each instrument's existing mono or polyphonic voice policy.
+instruments, single-asset samplers, and acid, using each instrument's existing mono or polyphonic voice policy.
 It supports up to 512 notes and 65,536 gesture samples per pattern, subject
 to playback density limits. Acid keeps pitch and vibrato; authored synths
 also expose pressure and timbre to their graph. Polyphonic authored synths
@@ -613,7 +613,7 @@ Both timing choices write each destination in its owning project file, including
 takes spanning several files. One Undo restores the whole take. Imported library
 sources remain read-only; create a local variation before recording into them.
 Overlapping gates of the same pitch need separate
-tracks. Drum, sampler, and unsupported expression performances are refused
+tracks. Drum, sample-pack, and unsupported expression performances are refused
 with the retained take intact. Values hold between gesture points. Capture
 coalesces samples at the same musical tick to their final state while the
 private raw take keeps every original sample. For step patterns, expand **Snap to the
