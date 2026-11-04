@@ -1212,6 +1212,20 @@
     },
     {
       "construct": "instrument",
+      "name": "glide_ms",
+      "required": false,
+      "type": "nullable\u003cnumber\u003e",
+      "unit": "ms",
+      "range": "0..10000",
+      "default": "60",
+      "meaning": "Pitch glide duration in milliseconds",
+      "order": 3,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "instrument",
       "name": "mode",
       "required": true,
       "type": "string",
@@ -1219,7 +1233,7 @@
       "range": null,
       "default": null,
       "meaning": "Voice mode",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1233,7 +1247,7 @@
       "range": null,
       "default": null,
       "meaning": "Exposed synthesis parameters",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1247,7 +1261,7 @@
       "range": null,
       "default": null,
       "meaning": "Named intermediate expressions",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1261,7 +1275,7 @@
       "range": null,
       "default": null,
       "meaning": "Instrument output expression",
-      "order": 6,
+      "order": 7,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"

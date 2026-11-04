@@ -90,7 +90,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		patterns[pattern.ID] = pattern
 	}
 	programs := make(map[string]*instrument.Program, len(p.Instruments))
+	instrumentGlides := make(map[string]*float64, len(p.Instruments))
 	for _, inst := range p.Instruments {
+		instrumentGlides[inst.ID] = inst.GlideMS
 		program, err := compileInstrument(inst)
 		if err != nil {
 			return cfg, fmt.Errorf("instrument %s: %w", inst.ID, err)
@@ -298,6 +300,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				overrides := map[string]string{}
 				for name, value := range track.Params {
+					if name == "glide" && !program.HasParameter("glide") {
+						continue
+					}
 					if name == "octave" && !program.HasParameter("octave") {
 						continue
 					}
@@ -310,6 +315,12 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				graph, err := instrument.Lower(program, overrides)
 				if err != nil {
 					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				if value := instrumentGlides[track.Kind]; value != nil {
+					graph.GlideMS = *value
+				}
+				if value, ok := track.Params["glide"]; ok && !program.HasParameter("glide") {
+					graph.GlideMS = *value.Number
 				}
 				config.Graph = graph
 				if program.Mode == "poly" {

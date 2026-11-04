@@ -347,6 +347,9 @@ func instrumentSource(inst Instrument) (string, error) {
 	if inst.Octave != nil {
 		out.WriteString("  octave = " + strconv.Itoa(*inst.Octave) + "\n")
 	}
+	if inst.GlideMS != nil {
+		out.WriteString("  glide = " + decimal(*inst.GlideMS) + "ms\n")
+	}
 	for _, param := range inst.Params {
 		value, err := typedNumber(param.Default, instrument.Type(param.Unit))
 		if err != nil {
