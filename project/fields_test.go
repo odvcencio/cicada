@@ -70,6 +70,16 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			}
 			continue
 		}
+		if field.Construct == "instrument" && (field.Name == "vibrato_depth_cents" || field.Name == "vibrato_rate_hz" || field.Name == "vibrato_delay_ms") {
+			expected := "0"
+			if field.Name == "vibrato_rate_hz" {
+				expected = "5"
+			}
+			if field.Required || field.Default == nil || *field.Default != expected {
+				t.Errorf("vibrato default is missing: %+v", field)
+			}
+			continue
+		}
 		if field.Construct == "step" && field.Name == "notes" {
 			if field.Required || field.Default != nil {
 				t.Errorf("chord payload must remain optional: %+v", field)

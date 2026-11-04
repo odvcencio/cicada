@@ -14,6 +14,12 @@ import (
 func CompileAcidParams(track notation.Track) (acid.Params, error) {
 	params := acid.DefaultParams()
 	for _, source := range track.Params {
+		if notation.IsVibratoSetting(source.Name) {
+			if _, err := notation.VibratoSetting(source.Name, source.Value); err != nil {
+				return params, err
+			}
+			continue
+		}
 		if isMixerSourceParam(source.Name) {
 			continue
 		}
@@ -45,6 +51,9 @@ func acidParamsFromValues(values map[string]Value) (acid.Params, error) {
 	params := acid.DefaultParams()
 	for _, name := range sortedKeys(values) {
 		value := values[name]
+		if notation.IsVibratoSetting(name) {
+			continue
+		}
 		if name == "octave" {
 			if value.Number == nil || value.Unit != "unit" || *value.Number < 0 || *value.Number > 6 || *value.Number != float64(int(*value.Number)) {
 				return params, fmt.Errorf("octave must be an integer from 0 to 6")

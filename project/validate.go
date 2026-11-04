@@ -186,6 +186,15 @@ func ValidateProject(p *Project) error {
 		if inst.GlideMS != nil && (!finite(*inst.GlideMS) || *inst.GlideMS < 0 || *inst.GlideMS > 10000) {
 			return fmt.Errorf("instrument %s glide must be 0 to 10000ms", inst.ID)
 		}
+		for _, setting := range []struct {
+			name  string
+			value *float64
+			max   float64
+		}{{"vibrato", inst.VibratoDepthCents, 9600}, {"vibrato_rate", inst.VibratoRateHz, 100}, {"vibrato_delay", inst.VibratoDelayMS, 10000}} {
+			if setting.value != nil && (!finite(*setting.value) || *setting.value < 0 || *setting.value > setting.max) {
+				return fmt.Errorf("instrument %s %s is out of range", inst.ID, setting.name)
+			}
+		}
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
@@ -274,6 +283,9 @@ func ValidateProject(p *Project) error {
 			if _, err := acidParamsFromValues(track.Params); err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
+			if _, err := trackVibratoSettings(nil, track.Params, nil); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
 		}
 		if track.Kind == "drums" {
 			if _, err := drumParamsFromValues(track.Params); err != nil {
@@ -306,6 +318,9 @@ func ValidateProject(p *Project) error {
 		if program := instruments[track.Kind]; program != nil {
 			overrides := make(map[string]string, len(track.Params))
 			for name, value := range track.Params {
+				if notation.IsVibratoSetting(name) && !program.HasParameter(name) {
+					continue
+				}
 				if name == "glide" && !program.HasParameter("glide") {
 					if err := validateGlideValue(value); err != nil {
 						return fmt.Errorf("track %s: %w", track.ID, err)
@@ -325,6 +340,10 @@ func ValidateProject(p *Project) error {
 				overrides[name] = literal
 			}
 			lowered, err := instrument.Lower(program, overrides)
+			if err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
+			lowered.Vibrato, err = trackVibratoSettings(program.Vibrato, track.Params, program)
 			if err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
@@ -816,7 +835,7 @@ func uniqueID(id string, seen map[string]bool) error {
 }
 
 func validNumericUnit(unit string) bool {
-	return unit == "unit" || unit == "ratio" || unit == "hz" || unit == "ms" || unit == "db" || unit == "lu" || unit == "lufs" || unit == "dbtp"
+	return unit == "unit" || unit == "ratio" || unit == "hz" || unit == "ms" || unit == "db" || unit == "ct" || unit == "lu" || unit == "lufs" || unit == "dbtp"
 }
 
 func semanticEffectKind(effect Effect) string {

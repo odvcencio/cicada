@@ -14,9 +14,9 @@ func validateSharedDelay(program graph.Program, sampleRate int, pattern seq.Patt
 	}
 	check := func(note uint8, member seq.Expression, shared expression.Controls) error {
 		resolved := shared.Apply(member)
-		depth := float32(0)
+		depth := baselineVibratoDepth(program)
 		if resolved.VibratoRateHz != 0 {
-			depth = resolved.VibratoDepthCents
+			depth += resolved.VibratoDepthCents
 		}
 		for _, cents := range [...]float32{resolved.PitchCents - depth, resolved.PitchCents + depth} {
 			pitch := float32(440 * math.Exp2(float64(int(note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))

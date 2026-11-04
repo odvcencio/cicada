@@ -16,6 +16,7 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 	if program == nil || len(program.Nodes) == 0 || len(program.Nodes) > graph.MaxNodes || program.Output < 0 {
 		return out, fmt.Errorf("invalid instrument program")
 	}
+	out.Vibrato = program.Vibrato
 	declared := make(map[string]bool)
 	for _, node := range program.Nodes {
 		if node.Op == "param" {

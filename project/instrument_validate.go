@@ -11,8 +11,21 @@ import (
 )
 
 func validateGraphDelayNote(program graph.Program, sampleRate, note int) error {
-	pitch := float32(440 * math.Exp2(float64(note-69)/12))
-	return graph.ValidateDelayPitch(program, sampleRate, pitch)
+	depth := baselineVibratoDepth(program)
+	for _, cents := range []float32{-depth, depth} {
+		pitch := float32(440 * math.Exp2(float64(note-69)/12+float64(cents)/1200))
+		if err := graph.ValidateDelayPitch(program, sampleRate, pitch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func baselineVibratoDepth(program graph.Program) float32 {
+	if program.Vibrato != nil && program.Vibrato.RateHz != 0 {
+		return program.Vibrato.DepthCents
+	}
+	return 0
 }
 
 // ValidateGraphDelayPattern rejects sequenced delay periods that exceed the
@@ -36,9 +49,9 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 				if point.Tick == note.EndTick-note.Tick {
 					continue
 				} // A released note cannot consume this value.
-				depth := float32(0)
+				depth := baselineVibratoDepth(program)
 				if point.Params.VibratoRateHz != 0 {
-					depth = point.Params.VibratoDepthCents
+					depth += point.Params.VibratoDepthCents
 				}
 				for _, cents := range [...]float32{point.Params.PitchCents - depth, point.Params.PitchCents + depth} {
 					pitch := float32(440 * math.Exp2(float64(int(note.Note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
@@ -65,11 +78,11 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 				notes[0], count = step.Note, 1
 			}
 		}
-		bend, depth := float32(0), float32(0)
+		bend, depth := float32(0), baselineVibratoDepth(program)
 		if expression := pattern.ExpressionAt(i); expression.Set {
 			bend = expression.PitchCents
 			if expression.VibratoRateHz != 0 {
-				depth = expression.VibratoDepthCents
+				depth += expression.VibratoDepthCents
 			}
 		}
 		for _, note := range notes[:count] {

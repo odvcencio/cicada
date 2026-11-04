@@ -226,7 +226,9 @@ scene main { lead = glide-line }
 song { main }
 ```
 
-**Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Custom graph instruments accept `glide = duration`, with per-track overrides; the default is 60 ms and zero is immediate. Instrument-level vibrato settings remain unsupported.
+**Instrument settings:** Custom graph instruments accept `glide = duration`, with per-track overrides; the default is a 60 ms exponential time constant and zero is immediate. They also accept `vibrato = 20ct`, `vibrato_rate = 5Hz`, and `vibrato_delay = 100ms`; graph and acid tracks can override these independently. Baseline depth is 0–9600 cents, rate is 0–100 Hz, and delay is 0–10000 ms. Defaults are zero depth, 5 Hz, and zero delay. Zero rate pauses baseline vibrato. Each new note resets its phase and delay. Per-note vibrato adds to the baseline, and graph delay validation checks their combined extrema. Existing graph synthesis parameters with these names retain their original meaning. Instrument vibrato in authored drum kits is unsupported. Browser playback with baseline vibrato requires the modular kernel.
+
+**Edition history:** Expression rows and these settings are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and per-note vibrato depth.
 
 ## Automation blocks
 

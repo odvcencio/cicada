@@ -185,6 +185,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
+		if spec.Graph.Vibrato != nil && spec.Kind != engine.VoiceGraph && spec.Kind != engine.VoiceGraphPoly {
+			return nil, imageError("graph vibrato requires a graph track")
+		}
 		if spec.Kind == engine.VoiceGuitar || keysImageEnabled && spec.Kind == engine.VoiceKeys {
 			version = max(version, uint16(guitarImageVersion))
 		}
@@ -196,6 +199,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
+				if binding.Program.Vibrato != nil {
+					return nil, imageError("instrument vibrato is not supported inside drum kits")
+				}
 				if version < UnifiedImageVersion && graphNeedsQuality(&binding.Program) {
 					version = max(version, uint16(UnifiedImageVersion))
 				}
@@ -251,6 +257,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if len(cfg.MacroMappings) > 0 && modularFlags == 0 {
 		return nil, imageError("mapped macros require the modular kernel module")
 	}
+	if hasVibrato(&cfg) && modularFlags == 0 {
+		return nil, imageError("instrument vibrato requires the modular kernel module")
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -279,6 +288,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if len(cfg.MacroMappings) > 0 {
 		flags |= MacroMappingFlag
+	}
+	if hasVibrato(&cfg) {
+		flags |= InstrumentVibratoFlag
 	}
 	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))
@@ -753,6 +765,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if modularFlags != 0 && len(cfg.MacroMappings) > 0 {
 		if err := writeMacroMappings(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	if modularFlags != 0 && hasVibrato(&cfg) {
+		if err := writeVibrato(&w, &cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -1421,6 +1438,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	if modularFlags != 0 && flags&MacroMappingFlag != 0 {
 		if err := readMacroMappings(&r, cfg); err != nil {
+			return err
+		}
+	}
+	if modularFlags != 0 && flags&InstrumentVibratoFlag != 0 {
+		if err := readVibrato(&r, cfg); err != nil {
 			return err
 		}
 	}

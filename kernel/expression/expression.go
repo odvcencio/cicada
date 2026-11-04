@@ -41,6 +41,7 @@ func (p Params) Validate() error {
 // at zero phase; rate changes preserve phase, and zero depth bypasses vibrato.
 type State struct {
 	Params
+	defaultVibrato
 	member           Params
 	shared           Controls
 	grouped          bool
@@ -48,7 +49,25 @@ type State struct {
 	ratio            float64
 }
 
-func (s *State) Reset() { *s = State{Params: Params{Timbre: .5}, member: Params{Timbre: .5}, ratio: 1} }
+func (s *State) Reset() {
+	defaults := s.defaultVibrato
+	*s = State{Params: Params{Timbre: .5}, member: Params{Timbre: .5}, ratio: 1, defaultVibrato: defaults}
+	s.defaultVibrato.reset()
+}
+
+func (s *State) ConfigureVibrato(cfg VibratoConfig, rate float32) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if rate <= 0 || math.IsNaN(float64(rate)) || math.IsInf(float64(rate), 0) {
+		return validationError("invalid vibrato sample rate")
+	}
+	if !s.defaultVibrato.supported() && cfg != (VibratoConfig{}) {
+		return validationError("instrument vibrato requires the modular kernel")
+	}
+	s.defaultVibrato.configure(cfg, rate)
+	return nil
+}
 
 func (s *State) SetParams(p Params, rate float32) {
 	if !p.Set {
@@ -62,7 +81,7 @@ func (s *State) SetParams(p Params, rate float32) {
 // NextCents uses the same scalar formulas and evaluation order on native and
 // WASM. It leaves the legacy pitch path untouched when expression is neutral.
 func (s *State) NextCents() float64 {
-	cents := float64(s.PitchCents)
+	cents := float64(s.PitchCents) + s.defaultVibrato.next()
 	if s.VibratoDepthCents != 0 && s.increment != 0 {
 		cents += float64(s.VibratoDepthCents) * math.Sin(2*math.Pi*s.phase)
 		s.phase += s.increment
@@ -88,7 +107,7 @@ func (s *State) updateRatio() {
 
 // NextRatio caches static bend and evaluates only a running vibrato per sample.
 func (s *State) NextRatio() float64 {
-	if s.VibratoDepthCents != 0 && s.increment != 0 {
+	if s.defaultVibrato.active() || s.VibratoDepthCents != 0 && s.increment != 0 {
 		return fastmath.Exp2(s.NextCents() / 1200)
 	}
 	return s.ratio

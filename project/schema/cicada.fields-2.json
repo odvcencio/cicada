@@ -1281,6 +1281,48 @@
       "layer": "semantic"
     },
     {
+      "construct": "instrument",
+      "name": "vibrato_depth_cents",
+      "required": false,
+      "type": "nullable\u003cnumber\u003e",
+      "unit": "ct",
+      "range": "0..9600",
+      "default": "0",
+      "meaning": "Baseline vibrato depth",
+      "order": 8,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "instrument",
+      "name": "vibrato_rate_hz",
+      "required": false,
+      "type": "nullable\u003cnumber\u003e",
+      "unit": "hz",
+      "range": "0..100",
+      "default": "5",
+      "meaning": "Baseline vibrato rate",
+      "order": 9,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "instrument",
+      "name": "vibrato_delay_ms",
+      "required": false,
+      "type": "nullable\u003cnumber\u003e",
+      "unit": "ms",
+      "range": "0..10000",
+      "default": "0",
+      "meaning": "Baseline vibrato onset delay",
+      "order": 10,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "construct": "instrument_param",
       "name": "id",
       "required": true,

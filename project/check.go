@@ -128,6 +128,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			continue
 		}
 		for _, param := range track.Params {
+			if notation.IsVibratoSetting(param.Name) && !program.HasParameter(param.Name) {
+				continue
+			}
 			if param.Name == "glide" && !program.HasParameter("glide") {
 				continue
 			}
@@ -139,6 +142,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
+			if notation.IsVibratoSetting(param.Name) && !program.HasParameter(param.Name) {
+				continue
+			}
 			if param.Name == "glide" && !program.HasParameter("glide") {
 				continue
 			}
@@ -158,6 +164,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			}
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
+				if notation.IsVibratoSetting(param.Name) && !program.HasParameter(param.Name) {
+					return nil
+				}
 				if param.Name == "glide" && !program.HasParameter("glide") {
 					return nil
 				}
@@ -243,7 +252,7 @@ func checkDelayNotes(program *instrument.Program, track notation.Track, patterns
 	}
 	overrides := map[string]string{}
 	for _, param := range track.Params {
-		if isMixerSourceParam(param.Name) || (param.Name == "octave" || param.Name == "glide") && !program.HasParameter(param.Name) {
+		if isMixerSourceParam(param.Name) || (param.Name == "octave" || param.Name == "glide" || notation.IsVibratoSetting(param.Name)) && !program.HasParameter(param.Name) {
 			continue
 		}
 		overrides[param.Name] = param.Value
@@ -252,6 +261,19 @@ func checkDelayNotes(program *instrument.Program, track notation.Track, patterns
 	if err != nil {
 		return nil
 	} // the track parameter check already reports it
+	values := make(map[string]Value)
+	for _, param := range track.Params {
+		if notation.IsVibratoSetting(param.Name) && !program.HasParameter(param.Name) {
+			value, err := projectValue(param.Value)
+			if err == nil {
+				values[param.Name] = value
+			}
+		}
+	}
+	lowered.Vibrato, err = trackVibratoSettings(program.Vibrato, values, program)
+	if err != nil {
+		return nil
+	}
 	for _, pattern := range patterns {
 		if err := ValidateGraphDelayPattern(lowered, 48_000, pattern.Pattern); err != nil {
 			return []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Position: position, Message: err.Error()}}

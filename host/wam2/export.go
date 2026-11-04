@@ -117,7 +117,7 @@ func Export(p *project.Project, root, output string, o Options) error {
 		if _, selected := files["kernel.wasm"]; !selected {
 			path, target := o.KernelPath, "build-kernel-wasm"
 			required := binary.LittleEndian.Uint16(image[30:32])
-			modular := binary.LittleEndian.Uint32(image[8:12])&(kernelimage.ModulatorFlag|kernelimage.MacroMappingFlag) != 0
+			modular := binary.LittleEndian.Uint32(image[8:12])&(kernelimage.ModulatorFlag|kernelimage.MacroMappingFlag|kernelimage.InstrumentVibratoFlag) != 0
 			if modular && required&kernelimage.KeysCapability != 0 {
 				path, target = optionalKernelPath(o.KernelPath, o.KeysModularKernelPath, "cicada-keys-modular.wasm"), "build-keys-modular-wasm"
 			} else if modular {

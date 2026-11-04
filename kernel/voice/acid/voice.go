@@ -231,6 +231,11 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 // SetExpression applies per-step pitch expression without changing the gate.
 func (v *Voice) SetExpression(p expression.Params) { v.expression.SetParams(p, float32(v.sampleRate)) }
 
+// ConfigureVibrato prepares a track's baseline movement before rendering.
+func (v *Voice) ConfigureVibrato(cfg expression.VibratoConfig) error {
+	return v.expression.ConfigureVibrato(cfg, float32(v.sampleRate))
+}
+
 func (v *Voice) SetGroupControls(c expression.Controls) { v.expression.SetGroupControls(c) }
 
 func (v *Voice) NoteExpression(pitchCents, pressure, timbre float32) {

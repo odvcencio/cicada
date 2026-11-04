@@ -72,10 +72,11 @@ func Cicada() *grammargen.Grammar {
 	// ordered lets and ends with the audio it outputs.
 	g.Define("instrument_decl", seq(
 		str("instrument"), field("name", sym("_name")),
-		str("{"), optional(sym("instrument_octave")), repeat(choice(sym("instrument_param"), sym("instrument_glide"))), sym("voice_decl"), str("}"),
+		str("{"), optional(sym("instrument_octave")), repeat(choice(sym("instrument_param"), sym("instrument_glide"), sym("instrument_vibrato"))), sym("voice_decl"), str("}"),
 	))
 	g.Define("instrument_octave", seq(str("octave"), str("="), field("value", sym("integer")), optional(str(";"))))
 	g.Define("instrument_glide", seq(str("glide"), str("="), field("value", sym("number")), optional(str(";"))))
+	g.Define("instrument_vibrato", seq(field("name", choice(str("vibrato"), str("vibrato_rate"), str("vibrato_delay"))), str("="), field("value", sym("number")), optional(str(";"))))
 	// A kit binds drum lanes to instruments, built-in voices, or modeled pieces.
 	g.Define("kit_decl", seq(
 		str("kit"), field("name", sym("_name")),
@@ -206,7 +207,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("value", choice(sym("musical_position"), sym("bar_count"), sym("tick_count"), sym("number"), sym("insert_chain"), sym("_name"), sym("string"), sym("fraction")))
 	g.Define("insert_chain", seq(field("first", sym("_name")), repeat(seq(str("->"), field("next", sym("_name"))))))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
-	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
+	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|ct|%)?`)))
 	g.Define("integer", token(pat(`[0-9]+`)))
 	g.Define("key_root", token(pat(`[a-g][#b]?`)))
 	g.Define("string", token(pat(`"([^"\\]|\\.)*"`)))
