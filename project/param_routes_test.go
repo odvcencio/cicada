@@ -69,6 +69,8 @@ func kernelAccepts(t *testing.T, d paramdefs.Descriptor, literal, route string) 
 			_, _, err = CompSpecFromValues(values)
 		case "deesser":
 			_, err = DeesserParamsFromValues(values)
+		case "chorus":
+			_, err = ChorusParamsFromValues(values)
 		case "eq":
 			_, err = compileTrackEffect(Effect{ID: "e", Kind: "eq", Params: values}, 48000)
 		default:
@@ -104,7 +106,7 @@ func routesFor(kind string) []string {
 		return []string{routeTrack, routeMaster}
 	case "comp":
 		return []string{routeTrack, routeMaster, routeBus}
-	case "drive", "deesser":
+	case "drive", "deesser", "chorus":
 		return []string{routeTrack}
 	}
 	return []string{routeFree} // delay, reverb

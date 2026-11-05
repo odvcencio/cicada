@@ -2,6 +2,7 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/fx/chorus"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -35,6 +36,7 @@ type sceneTrackParameters struct {
 	drive                     fx.DriveParams
 	amp                       [3]float64
 	hasAmp                    bool
+	chorus                    *chorus.Params
 }
 
 func (e *Engine) captureSceneDefaults() {
@@ -73,6 +75,11 @@ func (e *Engine) captureSceneDefaults() {
 			p.drive = v.insert.Params()
 		}
 		p.amp, p.hasAmp = v.chain.ampControls()
+		if chorusEnabled {
+			if settings, ok := v.chain.chorusParams(); ok {
+				p.chorus = &settings
+			}
+		}
 	}
 	if e.delayA != nil {
 		e.sceneDefaults.delay = e.delayA.Params()
@@ -181,6 +188,9 @@ func (e *Engine) restoreVoiceState(v *voiceSlot, p *sceneTrackParameters) bool {
 		v.insert != nil && v.insert.SetParams(p.drive) != nil
 	if p.hasAmp {
 		failed = failed || v.chain.setAmpControls(p.amp, true) != nil
+	}
+	if chorusEnabled && p.chorus != nil {
+		failed = failed || v.chain.setChorusControls(*p.chorus, true) != nil
 	}
 	if v.drums != nil {
 		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {

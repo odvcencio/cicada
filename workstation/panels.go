@@ -243,7 +243,11 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 		}
 		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("id", "effect-"+ret.Name)), gosx.El("h3", gosx.Text(ret.Name)), gosx.Fragment(fields...)))
 	}
-	addChorus := s.form(v, csrf, "mixer", "mixer", hidden("source_revision", v.SourceRevision), hidden("action", "add-chorus"), field("Chorus name", textInput("name", "chorus")), submit("", "", "Create chorus"))
+	chorusFields := []gosx.Node{hidden("source_revision", v.SourceRevision), hidden("action", "add-chorus"), field("Chorus name", textInput("name", "chorus")), submit("", "", "Create chorus")}
+	if v.Edition == 1 {
+		chorusFields = append(chorusFields, gosx.El("label", gosx.Attrs(gosx.Attr("class", "upgrade-confirm")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "confirmUpgrade"), gosx.BoolAttr("required"))), gosx.Text("Upgrade score to edition 2 for this change")))
+	}
+	addChorus := s.form(v, csrf, "mixer", "mixer", chorusFields...)
 	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: "Track, bus, return, effect, and master parameters are saved to the score."}, addChorus, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
 }
 

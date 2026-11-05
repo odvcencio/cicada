@@ -840,7 +840,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	*cfg = engine.Config{
 		SampleRate: sampleRate, MaxBlock: maxBlock, Tracks: int(tracks), MaxVoices: int(voices),
-		PortableEffectsBudget: true,
+		PortableEffectsBudget: flags&ChorusFlag != 0,
 		BPMMilli:              int64(tempo), Seed: seed, LoopSong: flags&1 != 0,
 		Patterns: make([]engine.PatternBank, int(tracks)),
 		Scenes:   make([]engine.Scene, int(scenes)),

@@ -645,6 +645,8 @@ source patcher. Each **Set** writes one parameter. Unsupported fields explain
 their limitation and remain available in **Score**.
 Ranges, units, enum choices, and On/Off controls come from Cicada's parameter
 registry. Existing track sends are included in their mixer strip.
+Use **Create chorus** to add a chorus declaration, then add it to a track's
+**Insert chain** and adjust its controls in the mixer.
 Audio tracks offer **Add vocal chain**: a high-pass EQ, compressor and de-esser
 in that order. A second click retains the existing vocal chain. Use the ordered
 **Insert chain** controls to move or remove stages, and follow each effect name

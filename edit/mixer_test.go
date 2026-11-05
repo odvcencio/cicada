@@ -277,7 +277,7 @@ func TestStudioMixerWriterInsertsEveryEffectFieldInFormatterOrder(t *testing.T) 
 			t.Fatalf("unexpected effect descriptor ID %q", descriptor.ID)
 		}
 		kind := parts[1]
-		name := map[string]string{"delay": "room", "reverb": "space", "drive": "grit", "comp": "glue", "eq": "tone", "deesser": "sibilance"}[kind]
+		name := map[string]string{"delay": "room", "reverb": "space", "drive": "grit", "comp": "glue", "eq": "tone", "deesser": "sibilance", "chorus": "wide"}[kind]
 		if name == "" {
 			t.Fatalf("no fixture effect for %s", kind)
 		}
@@ -291,7 +291,7 @@ func TestStudioMixerWriterInsertsEveryEffectFieldInFormatterOrder(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixture := mixerScore + "\nfx tone eq {}\n\nfx sibilance deesser {}\n"
+		fixture := mixerScore + "\nfx tone eq {}\n\nfx sibilance deesser {}\n\nfx wide chorus {}\n"
 		updated, _, _, _, err := mixerSource([]byte(fixture), name+"."+descriptor.Source, raw)
 		if err != nil {
 			t.Fatalf("insert %s: %v", descriptor.ID, err)

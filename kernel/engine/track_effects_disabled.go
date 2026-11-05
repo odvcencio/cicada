@@ -38,3 +38,6 @@ func (c *trackEffectChain) chorusParams() (chorus.Params, bool) { return chorus.
 func (c *trackEffectChain) setChorusParam(kernel.ParamID, float32, bool) error {
 	return engineError("chorus requires the modular kernel")
 }
+func (c *trackEffectChain) setChorusControls(chorus.Params, bool) error {
+	return engineError("chorus requires the modular kernel")
+}

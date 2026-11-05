@@ -177,6 +177,17 @@ func (c *trackEffectChain) setChorusParam(id kernel.ParamID, value float32, imme
 	return processor.SetParams(p)
 }
 
+func (c *trackEffectChain) setChorusControls(p chorus.Params, immediate bool) error {
+	processor := c.chorusStage()
+	if processor == nil {
+		return engineError("chorus controls require exactly one chorus insert")
+	}
+	if immediate {
+		return processor.SetParamsImmediate(p)
+	}
+	return processor.SetParams(p)
+}
+
 // ampStage resolves the only amp on this track, refusing ambiguous chains.
 func (c *trackEffectChain) ampStage() *ampcab.Processor {
 	if c == nil {

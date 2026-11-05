@@ -419,6 +419,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 					return nil, fmt.Errorf("choose a chorus name")
 				}
 				p["source_revision"], p["path"], p["value"] = f["source_revision"], "fx."+f["name"], "chorus"
+				p["confirmUpgrade"] = f["confirmUpgrade"] == "on"
 				return p, nil
 			}
 			if f["action"] == "amp-chain" {
