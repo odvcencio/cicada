@@ -318,7 +318,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 
 func compareWASMProjectRates(t *testing.T, fixture string, p *project.Project, bars int, exactMessages bool, wasm []byte, rates []int) map[int][32]byte {
 	t.Helper()
-	exactPCM := strings.HasPrefix(fixture, "neural-") || strings.HasPrefix(fixture, "keys-") || strings.HasPrefix(fixture, "vibrato-") || fixture == "instrument-modulation"
+	exactPCM := strings.HasPrefix(fixture, "neural-") || strings.HasPrefix(fixture, "keys-") || strings.HasPrefix(fixture, "vibrato-") || fixture == "instrument-modulation" || fixture == "graph-lfo"
 	hashes := map[int][32]byte{}
 	for _, rate := range rates {
 		t.Run(sampleRateName(rate), func(t *testing.T) {

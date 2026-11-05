@@ -68,6 +68,9 @@ func (e *Engine) EnableParallel(workers int) error {
 	if workers < 0 || workers > maxParallelLanes {
 		return engineError("parallel DSP requires zero to four render lanes")
 	}
+	if e.graphLFO != nil {
+		return nil // Graph LFOs share the serial transport frame clock.
+	}
 	if e.parallel != nil {
 		return engineError("parallel DSP is already configured")
 	}
@@ -115,7 +118,7 @@ func (e *Engine) EnableParallel(workers int) error {
 
 // Retired pools remain available until host teardown: a timeout must never
 // cause serial fallback to mutate voices that an outstanding worker owns.
-func (e *Engine) parallelAvailable() bool { return e.parallel != nil }
+func (e *Engine) parallelAvailable() bool { return e.parallel != nil && e.graphLFO == nil }
 
 // ParallelWorkers includes the callback lane. These immutable diagnostics are
 // safe for host status polling; they do not promise hardware round-trip latency.

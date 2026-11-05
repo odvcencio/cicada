@@ -60,6 +60,21 @@ func LowerWithModulators(program *Program, overrides map[string]string, modulato
 			return out, err
 		}
 		kn := graph.Node{Op: op}
+		if node.Op == "lfo" {
+			waves := map[string]uint8{"sine": 0, "triangle": 1, "square": 2, "sample-hold": 3}
+			wave, ok := waves[node.Name]
+			if !ok || node.Mode != "" && node.Mode != "note" {
+				return out, fmt.Errorf("invalid graph LFO waveform or mode")
+			}
+			kn.A = wave
+			if node.Mode == "note" {
+				kn.B = 1
+			}
+			kn.Value, err = numericLiteral(node.Literal)
+			if err != nil {
+				return out, err
+			}
+		}
 		if node.Op == "mod" {
 			index, ok := modulators[node.Name]
 			if !ok || index < 0 || index >= graph.MaxModulators {
@@ -109,6 +124,8 @@ func LowerWithModulators(program *Program, overrides map[string]string, modulato
 
 func kernelOp(n Node) (graph.Op, error) {
 	switch n.Op {
+	case "lfo":
+		return graph.LFO, nil
 	case "mod":
 		return graph.Modulator, nil
 	case "input":

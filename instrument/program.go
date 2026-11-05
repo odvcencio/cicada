@@ -29,6 +29,7 @@ type Node struct {
 	Type     Type
 	Inputs   []int
 	Name     string
+	Mode     string
 	Literal  string
 	Position notation.Position
 }
@@ -200,6 +201,29 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		}
 		return c.emit(Node{Op: op, Type: result, Inputs: []int{left, right}, Position: e.Position}), result
 	case "call":
+		if e.Text == "lfo" {
+			if (len(e.Args) != 2 && len(e.Args) != 3) || e.Args[0] == nil || e.Args[0].Kind != "number" || e.Args[1] == nil || e.Args[1].Kind != "name" {
+				c.errorAt("CICADA-PARAM", "lfo requires a fixed Hz rate, waveform, and optional note mode", e.Position)
+				return -1, ""
+			}
+			typ, err := literalType(e.Args[0].Text)
+			rate, numberErr := numericLiteral(e.Args[0].Text)
+			wave := e.Args[1].Text
+			if err != nil || typ != Hz || numberErr != nil || rate < .01 || rate > 20 || (wave != "sine" && wave != "triangle" && wave != "square" && wave != "sample-hold") {
+				c.errorAt("CICADA-PARAM", "lfo rate must be 0.01–20 Hz and waveform must be sine, triangle, square or sample-hold", e.Position)
+				return -1, ""
+			}
+			mode := ""
+			if len(e.Args) == 3 {
+				if e.Args[2] == nil || e.Args[2].Kind != "name" || e.Args[2].Text != "note" {
+					c.errorAt("CICADA-PARAM", "lfo third argument must be note", e.Position)
+					return -1, ""
+				}
+				mode = "note"
+			}
+			c.program.StatefulNodes++
+			return c.emit(Node{Op: "lfo", Name: wave, Mode: mode, Literal: e.Args[0].Text, Type: Unit, Position: e.Position}), Unit
+		}
 		if e.Text == "mod" {
 			if len(e.Args) != 1 || e.Args[0] == nil || e.Args[0].Kind != "name" {
 				c.errorAt("CICADA-PARAM", "mod requires one named modulator", e.Position)

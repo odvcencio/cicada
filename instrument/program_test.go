@@ -29,6 +29,38 @@ func TestModulatorReadsCountTowardStatefulLimit(t *testing.T) {
 	}
 }
 
+func TestGraphLFOCompilesAndRejectsInvalidArguments(t *testing.T) {
+	for _, tc := range []struct {
+		expr string
+		ok   bool
+	}{
+		{"lfo(1Hz, sine)", true},
+		{"lfo(0.5Hz, sample-hold, note)", true},
+		{"lfo(1, sine)", false},
+		{"lfo(21Hz, sine)", false},
+		{"lfo(1Hz, invalid)", false},
+		{"lfo(1Hz, sine, song)", false},
+	} {
+		source := "cicada 1 instrument x { voice mono { out = saw(pitch) * " + tc.expr + "; } } track t x {} pattern p notes steps=1 { 1 } scene s { t=p } song { s }"
+		score, ds := notation.Parse([]byte(source))
+		if len(ds) != 0 {
+			t.Fatalf("%s: parse: %+v", tc.expr, ds)
+		}
+		program, ds := Compile(score.Instruments[0])
+		if (len(ds) == 0) != tc.ok {
+			t.Fatalf("%s: diagnostics=%+v", tc.expr, ds)
+		}
+		if tc.ok {
+			if program.StatefulNodes != 2 {
+				t.Fatalf("%s: stateful count %d", tc.expr, program.StatefulNodes)
+			}
+			if _, err := Lower(program, nil); err != nil {
+				t.Fatalf("%s: lower: %v", tc.expr, err)
+			}
+		}
+	}
+}
+
 func TestGlassbassGraph(t *testing.T) {
 	src, err := os.ReadFile("../testdata/edition1/examples/first-acid.cicada")
 	if err != nil {

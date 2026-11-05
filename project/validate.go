@@ -934,6 +934,12 @@ func validateExpr(expr Expr, depth int) (int, error) {
 	if expr.Op == "mod" && expr.Args[0].Name == "" {
 		return 0, fmt.Errorf("mod requires one named modulator")
 	}
+	if expr.Op == "lfo" {
+		wave := expr.Args[1].Name
+		if expr.Args[0].Literal == nil || *expr.Args[0].Literal < .01 || *expr.Args[0].Literal > 20 || (wave != "sine" && wave != "triangle" && wave != "square" && wave != "sample-hold") || len(expr.Args) == 3 && expr.Args[2].Name != "note" {
+			return 0, fmt.Errorf("lfo requires a fixed 0.01–20 Hz rate, waveform, and optional note mode")
+		}
+	}
 	count := 1
 	for _, child := range expr.Args {
 		n, err := validateExpr(child, depth+1)
@@ -950,6 +956,8 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
+	case "lfo":
+		return n == 2 || n == 3
 	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp", "pulse", "ddsp":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2", "mod":

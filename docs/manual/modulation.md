@@ -79,6 +79,27 @@ drum-kit lanes is not supported.
 For a playable example, see
 [`examples/detail/instrument-modulation.cicada`](../../examples/detail/instrument-modulation.cicada).
 
+For a per-sample oscillator local to an authored instrument, use
+`lfo(rate, wave)`. The rate is a fixed frequency from `0.01Hz` to `20Hz`;
+the waveform is `sine`, `triangle`, `square`, or `sample-hold`. It follows
+the song position by default, holding its phase while transport is stopped
+and restarting at a song loop. Add `note` as the third argument to restart
+the oscillator for each new note; a slide keeps its current phase.
+
+```cicada
+cicada 2
+instrument lead {
+  voice mono { out = sine(pitch) * (0.5 + 0.4 * lfo(2Hz, triangle, note)) }
+}
+track voice lead {}
+pattern line { c4 . e4 . }
+scene verse { voice = line }
+song { verse }
+```
+
+Graph LFOs count toward the 32 stateful-node limit and use the optional
+modular browser kernel. They are not supported inside authored drum-kit lanes.
+
 ## Studio and inspection
 
 Open the **Automation** detail dock. **Modulation** lists sources and routes;
