@@ -19,7 +19,7 @@ func (f budgetProbeFactory) NewStereoVoice(int) (StereoVoice, error) {
 }
 
 func TestPortableChorusControlReserveCoversBoundedTables(t *testing.T) {
-	bound := unsafe.Sizeof(modState{}) + MaxModulators*(unsafe.Sizeof(ModulatorSpec{})+unsafe.Sizeof([]modulate.Point{})+8) + MaxModulators*MaxContourPoints*unsafe.Sizeof(modulate.Point{}) + MaxModRoutes*(unsafe.Sizeof(RouteSpec{})+unsafe.Sizeof(modTarget{})+1) + 16*unsafe.Sizeof(MacroMapping{})
+	bound := unsafe.Sizeof(modState{}) + MaxModulators*(unsafe.Sizeof(ModulatorSpec{})+unsafe.Sizeof([]modulate.Point{})+8) + MaxModulators*MaxContourPoints*(unsafe.Sizeof(modulate.Point{})+unsafe.Sizeof(ContourPoint{})) + MaxModRoutes*(unsafe.Sizeof(RouteSpec{})+unsafe.Sizeof(modTarget{})+1) + 16*unsafe.Sizeof(MacroMapping{})
 	if bound > 128<<10 {
 		t.Fatalf("control tables require %d bytes, above reserved 128 KiB", bound)
 	}

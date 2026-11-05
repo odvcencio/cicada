@@ -14,6 +14,20 @@ func validateChorusAutomation(cfg *engine.Config) error {
 			}
 		}
 	}
+	for _, mapping := range cfg.MacroMappings {
+		if mapping.Param >= uint16(kernel.ParamChorusRate) && mapping.Param <= uint16(kernel.ParamChorusMix) {
+			if int(mapping.Track) >= cfg.Tracks || !engine.ChorusControlFits(&cfg.Track[mapping.Track]) {
+				return imageError("chorus macro mapping requires exactly one chorus insert")
+			}
+		}
+	}
+	for _, route := range cfg.Routes {
+		if route.Param >= uint16(kernel.ParamChorusRate) && route.Param <= uint16(kernel.ParamChorusMix) {
+			if int(route.Track) >= cfg.Tracks || !engine.ChorusControlFits(&cfg.Track[route.Track]) {
+				return imageError("chorus route requires exactly one chorus insert")
+			}
+		}
+	}
 	return nil
 }
 
