@@ -180,9 +180,6 @@ func (e *Engine) loadModulation(cfg *Config) error {
 		if !ok || !RouteSupported(spec.ID) || int(r.Source) >= len(m.specs) || int(r.Track) >= e.tracks || math.IsNaN(float64(r.Depth)) || math.IsInf(float64(r.Depth), 0) {
 			return engineError("invalid modulator route")
 		}
-		if m.specs[r.Source].Kind == ModKindEnvelope && m.specs[r.Source].Source == r.Track {
-			return engineError("envelope cannot modulate its own input")
-		}
 		if spec.ID >= kernel.ParamAcidCutoff && spec.ID <= kernel.ParamAcidAccent && e.voices[r.Track].kind != VoiceAcid {
 			return engineError("acid route on a track without the acid voice")
 		}

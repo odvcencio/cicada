@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/fx/chorus"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -112,7 +113,8 @@ func previewParameterConfig(t *testing.T, kind engine.VoiceKind) engine.Config {
 	}
 	if kind != engine.VoiceOff {
 		amp := ampcab.DefaultParams()
-		cfg.Track[0].InsertChain = []engine.TrackEffectConfig{{Kind: engine.TrackEffectAmpCab, AmpCab: &amp}}
+		wide := chorus.DefaultParams()
+		cfg.Track[0].InsertChain = []engine.TrackEffectConfig{{Kind: engine.TrackEffectAmpCab, AmpCab: &amp}, {Kind: engine.TrackEffectChorus, Chorus: &wide}}
 	}
 	for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 		cfg.Track[0].Drums[lane] = drum.DefaultParams(lane)
@@ -135,6 +137,41 @@ func previewParameterScore(t *testing.T, kind engine.VoiceKind) Score {
 		}
 	}
 	return score
+}
+
+func TestPreviewChorusRequiresOneInsert(t *testing.T) {
+	for _, kind := range []engine.VoiceKind{engine.VoiceAcid, engine.VoiceDrums} {
+		for count := 0; count <= 2; count++ {
+			cfg := previewParameterConfig(t, kind)
+			cfg.Track[0].InsertChain = nil
+			for range count {
+				params := chorus.DefaultParams()
+				cfg.Track[0].InsertChain = append(cfg.Track[0].InsertChain, engine.TrackEffectConfig{Kind: engine.TrackEffectChorus, Chorus: &params})
+			}
+			validators, err := engine.PrepareParamValidators(&cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := validators[0].Validate(kernel.ParamChorusMix, .5) == nil; got != (count == 1) {
+				t.Fatalf("kind %d, %d inserts: prepared validator accepts=%v", kind, count, got)
+			}
+			created, err := engine.New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			score := Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Tracks: []TrackSlots{{ID: "bass"}}, Parameters: []ParameterValue{{Track: 0, ID: kernel.ParamChorusMix, Value: .5}}}
+			player, err := New(score, 48_000)
+			if err != nil {
+				created.Close()
+				t.Fatal(err)
+			}
+			_, err = player.SetPreview(0, kernel.ParamChorusMix, .5)
+			player.Close()
+			if (err == nil) != (count == 1) {
+				t.Fatalf("kind %d, %d inserts: preview error %v", kind, count, err)
+			}
+		}
+	}
 }
 
 func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
@@ -178,7 +215,7 @@ func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
 					t.Fatalf("kernel parameter %s is absent from the registry", spec.Name)
 				}
 				want := spec.Live && spec.Scope == "track" && paramdefs.HasVoice(descriptor, family)
-				if strings.HasPrefix(spec.Name, "amp.") && voice.kind == engine.VoiceOff {
+				if (strings.HasPrefix(spec.Name, "amp.") || strings.HasPrefix(spec.Name, "chorus.")) && voice.kind == engine.VoiceOff {
 					want = false
 				}
 				before := p.overrides.Load()
