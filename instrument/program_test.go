@@ -2,10 +2,32 @@ package instrument
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
 )
+
+func TestModulatorReadsCountTowardStatefulLimit(t *testing.T) {
+	for _, tc := range []struct {
+		reads int
+		ok    bool
+	}{{31, true}, {32, false}} {
+		source := "cicada 1 instrument x { voice mono { out = saw(pitch)" + strings.Repeat(" * mod(motion)", tc.reads) + "; } } track t x {} pattern p notes steps=1 { 1 } scene s { t=p } song { s }"
+		score, ds := notation.Parse([]byte(source))
+		if len(ds) != 0 {
+			t.Fatalf("%d reads: parse: %+v", tc.reads, ds)
+		}
+		program, ds := Compile(score.Instruments[0])
+		if tc.ok {
+			if len(ds) != 0 || program == nil || program.StatefulNodes != 32 {
+				t.Fatalf("%d reads: program=%+v diagnostics=%+v", tc.reads, program, ds)
+			}
+		} else if len(ds) == 0 || ds[0].Code != "CICADA-LIMIT" {
+			t.Fatalf("%d reads: expected stateful limit, got %+v", tc.reads, ds)
+		}
+	}
+}
 
 func TestGlassbassGraph(t *testing.T) {
 	src, err := os.ReadFile("../testdata/edition1/examples/first-acid.cicada")

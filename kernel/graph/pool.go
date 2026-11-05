@@ -50,6 +50,10 @@ func NewPool(program Program, sampleRate int) (*Pool, error) {
 
 // NewPoolFromProgram prepares the fixed voice pool from an immutable program.
 func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
+	return NewPoolFromProgramWithModulators(program, sampleRate, nil)
+}
+
+func NewPoolFromProgramWithModulators(program *Program, sampleRate int, modulators *[MaxModulators]float32) (*Pool, error) {
 	if program == nil {
 		return nil, validationError("nil graph program")
 	}
@@ -71,7 +75,7 @@ func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
 	p.releaseQuietFrames += 64
 	p.releaseLimitFrames = sampleRate*30 + p.releaseFrames + p.releaseQuietFrames
 	for i := range p.slots {
-		v, err := NewVoiceFromProgram(program, sampleRate)
+		v, err := NewVoiceFromProgramWithModulators(program, sampleRate, modulators)
 		if err != nil {
 			return nil, err
 		}

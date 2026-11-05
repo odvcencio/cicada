@@ -35,10 +35,14 @@ func NewPoly(program Program, sampleRate int) (*Poly, error) {
 
 // NewPolyFromProgram prepares the fixed voice pool from an immutable program.
 func NewPolyFromProgram(program *Program, sampleRate int) (*Poly, error) {
+	return NewPolyFromProgramWithModulators(program, sampleRate, nil)
+}
+
+func NewPolyFromProgramWithModulators(program *Program, sampleRate int, modulators *[MaxModulators]float32) (*Poly, error) {
 	p := new(Poly)
 	p.fadeFrames = sampleRate / 500
 	for i := range p.slots {
-		v, err := NewVoiceFromProgram(program, sampleRate)
+		v, err := NewVoiceFromProgramWithModulators(program, sampleRate, modulators)
 		if err != nil {
 			return nil, err
 		}

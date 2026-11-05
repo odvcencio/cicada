@@ -140,7 +140,7 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 		c.errorAt("CICADA-LIMIT", "voice graph exceeds 8192 delay samples (two delay nodes, 32768 bytes per voice)", src.Position)
 	}
 	if len(c.ds) == 0 {
-		if _, err := Lower(&c.program, nil); err != nil {
+		if _, err := LowerForValidation(&c.program, nil); err != nil {
 			position := src.Position
 			var parameter *graph.ParameterError
 			if errors.As(err, &parameter) {
@@ -200,6 +200,14 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		}
 		return c.emit(Node{Op: op, Type: result, Inputs: []int{left, right}, Position: e.Position}), result
 	case "call":
+		if e.Text == "mod" {
+			if len(e.Args) != 1 || e.Args[0] == nil || e.Args[0].Kind != "name" {
+				c.errorAt("CICADA-PARAM", "mod requires one named modulator", e.Position)
+				return -1, ""
+			}
+			c.program.StatefulNodes++
+			return c.emit(Node{Op: "mod", Name: e.Args[0].Text, Type: Unit, Position: e.Position}), Unit
+		}
 		inputs := make([]int, 0, len(e.Args))
 		types := make([]Type, 0, len(e.Args))
 		for _, arg := range e.Args {

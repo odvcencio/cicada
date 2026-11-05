@@ -147,7 +147,7 @@ func compileInstrument(inst Instrument) (*instrument.Program, error) {
 	if program == nil {
 		return nil, fmt.Errorf("instrument declaration could not be compiled")
 	}
-	if _, err := instrument.Lower(program, nil); err != nil {
+	if _, err := instrument.LowerForValidation(program, nil); err != nil {
 		return nil, err
 	}
 	return program, nil
