@@ -149,6 +149,10 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 	value := Value{Unit: unit, Number: &numberValue}
 	values := map[string]Value{descriptor.Source: value}
 	switch {
+	case strings.HasPrefix(descriptor.ID, "chorus."), strings.HasPrefix(descriptor.ID, "fx.chorus."):
+		values = map[string]Value{strings.TrimPrefix(descriptor.Source, "chorus_"): value}
+		_, err := ChorusParamsFromValues(values)
+		return err == nil
 	case strings.HasPrefix(descriptor.ID, "amp."):
 		values = map[string]Value{strings.TrimPrefix(descriptor.Source, "amp_"): value}
 		_, err := AmpCabParamsFromValues(values)

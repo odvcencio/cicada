@@ -134,6 +134,11 @@ test-studio-continuity:
 test-studio-modulation-source:
 	node --test workstation/browser/modulation-source.test.cjs
 
+.PHONY: test-studio-chorus
+# Requires a fresh Studio process, disposable score, and proof directory.
+test-studio-chorus:
+	node --test workstation/browser/chorus.test.cjs
+
 .PHONY: test-studio-shell
 # Requires a fresh Studio process with a disposable score; this suite edits the score.
 test-studio-shell:
@@ -279,6 +284,9 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 	bash -o pipefail -c 'CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestMappedMacroNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentVibratoNativeWASMParity$$' -count=1 -v
+	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorus(NativeWASMParity|InstrumentModulatorNativeWASMParity|GraphLFONativeWASMParity)$$' -count=1 -v
+	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorusRejectedByCoreKernel$$' -count=1 -v
+	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestKeysChorusNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentModulatorNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestGraphLFONativeWASMParity$$' -count=1 -v
 	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestGraphLFOKeysNativeWASMParity$$' -count=1 -v

@@ -2,7 +2,10 @@
 
 package engine
 
-import "m31labs.dev/cicada/kernel"
+import (
+	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/fx/chorus"
+)
 
 // Portable default kernels refuse track-chain images. Hosts automatically load
 // the separately budgeted vocal variant when an image requires this feature.
@@ -30,4 +33,11 @@ func (c *trackEffectChain) setAmpControls([3]float64, bool) error {
 }
 func (c *trackEffectChain) setAmpParam(kernel.ParamID, float32, bool) error {
 	return engineError("amp controls require the track FX kernel")
+}
+func (c *trackEffectChain) chorusParams() (chorus.Params, bool) { return chorus.Params{}, false }
+func (c *trackEffectChain) setChorusParam(kernel.ParamID, float32, bool) error {
+	return engineError("chorus requires the modular kernel")
+}
+func (c *trackEffectChain) setChorusControls(chorus.Params, bool) error {
+	return engineError("chorus requires the modular kernel")
 }

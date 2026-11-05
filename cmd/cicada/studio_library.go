@@ -330,7 +330,7 @@ func (s *studio) libraryPreview(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 400, map[string]any{"error": "rate must be 44100, 48000, or 96000"})
 		return
 	}
-	cfg, err := project.CompileEngine(p, edit.Rate, 128)
+	cfg, err := project.CompilePortableEngine(p, edit.Rate, 128)
 	var image []byte
 	if err == nil {
 		image, err = kernelimage.Encode(cfg)

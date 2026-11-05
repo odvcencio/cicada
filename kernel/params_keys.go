@@ -203,6 +203,15 @@ var paramsKeys = [...]ParamSpec{
 	{175, "amp.drive", "amp_drive", "track", "amp_drive", "", "linear", "source", 0, 1, 0.35, 0.01, 20, true, true, false},
 	{176, "amp.tone", "amp_tone", "track", "amp_tone", "", "linear", "source", 0, 1, 0.5, 0.01, 20, true, true, false},
 	{177, "amp.output", "amp_output", "track", "amp_output", "dB", "linear", "source", -24, 12, 0, 0.1, 20, true, true, false},
+	{178, "chorus.rate", "chorus_rate", "track", "chorus_rate", "Hz", "linear", "source", 0.05, 5, 0.6, 0.01, 10, true, true, false},
+	{179, "chorus.depth", "chorus_depth", "track", "chorus_depth", "ms", "linear", "source", 0, 8, 3, 0.1, 10, true, true, false},
+	{180, "chorus.spread", "chorus_spread", "track", "chorus_spread", "", "linear", "source", 0, 1, 1, 0.01, 10, true, true, false},
+	{181, "chorus.mix", "chorus_mix", "track", "chorus_mix", "", "linear", "source", 0, 1, 0.5, 0.01, 10, true, true, false},
+	{182, "fx.chorus.voices", "chorus.voices", "global", "voices", "", "linear", "source", 1, 3, 3, 1, 0, false, false, false},
+	{183, "fx.chorus.rate", "chorus.rate", "global", "rate", "Hz", "linear", "source", 0.05, 5, 0.6, 0.01, 0, false, false, false},
+	{184, "fx.chorus.depth", "chorus.depth", "global", "depth", "ms", "linear", "source", 0, 8, 3, 0.1, 0, false, false, false},
+	{185, "fx.chorus.spread", "chorus.spread", "global", "spread", "", "linear", "source", 0, 1, 1, 0.01, 0, false, false, false},
+	{186, "fx.chorus.mix", "chorus.mix", "global", "mix", "", "linear", "source", 0, 1, 0.5, 0.01, 0, false, false, false},
 }
 
 // Params lists every registry row in ParamID order.

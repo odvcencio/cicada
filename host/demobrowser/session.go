@@ -138,7 +138,7 @@ func Prepare(source []byte, rate int) (*project.Project, engine.Config, []byte, 
 	if err != nil {
 		return nil, engine.Config{}, nil, err
 	}
-	cfg, err := project.CompileEngine(p, rate, 128)
+	cfg, err := project.CompilePortableEngine(p, rate, 128)
 	if err != nil {
 		return nil, engine.Config{}, nil, err
 	}

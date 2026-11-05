@@ -109,7 +109,7 @@ func ValidateProject(p *Project) error {
 	var compSidechain string
 	for _, effect := range p.Effects {
 		kind := semanticEffectKind(effect)
-		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" && kind != "ampcab" {
+		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" && kind != "ampcab" && kind != "chorus" {
 			return fmt.Errorf("CICADA-UNSUPPORTED: effect kind %s is not implemented", kind)
 		}
 		if effect.ID == "music" || effect.ID == "sfx" || !validID(effect.ID) {
@@ -149,6 +149,13 @@ func ValidateProject(p *Project) error {
 			}
 		} else if kind == "deesser" {
 			if _, err := DeesserParamsFromValues(effect.Params); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else if kind == "chorus" {
+			if MasterHasInsert(p, effect.ID) {
+				return fmt.Errorf("CICADA-UNSUPPORTED: chorus is supported only as a track insert")
+			}
+			if _, err := ChorusParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 		} else if kind == "eq" {

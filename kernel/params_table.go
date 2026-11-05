@@ -182,7 +182,16 @@ const (
 	ParamAmpDrive            ParamID = 175
 	ParamAmpTone             ParamID = 176
 	ParamAmpOutput           ParamID = 177
-	ParamCount                       = 178
+	ParamChorusRate          ParamID = 178
+	ParamChorusDepth         ParamID = 179
+	ParamChorusSpread        ParamID = 180
+	ParamChorusMix           ParamID = 181
+	ParamFxChorusVoices      ParamID = 182
+	ParamFxChorusRate        ParamID = 183
+	ParamFxChorusDepth       ParamID = 184
+	ParamFxChorusSpread      ParamID = 185
+	ParamFxChorusMix         ParamID = 186
+	ParamCount                       = 187
 )
 
 // IsInteger reports whether a live parameter takes whole numbers only.

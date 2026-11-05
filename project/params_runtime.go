@@ -58,6 +58,22 @@ func ParamAddresses(p *Project) []ParamAddress {
 					value = amp.Output
 				}
 			}
+			if strings.HasPrefix(descriptor.ID, "chorus.") {
+				chorus, err := trackChorusParams(p, track)
+				if err != nil {
+					continue
+				}
+				switch descriptor.ID {
+				case "chorus.rate":
+					value = chorus.Rate
+				case "chorus.depth":
+					value = chorus.Depth
+				case "chorus.spread":
+					value = chorus.Spread
+				case "chorus.mix":
+					value = chorus.Mix
+				}
+			}
 			if keysSpec != nil && strings.HasPrefix(descriptor.ID, "keys.") {
 				// The patch supplies the value of a control the score leaves unset.
 				for _, parameter := range keyboard.Parameters(track.Kind) {

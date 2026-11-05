@@ -179,6 +179,9 @@ func sceneRegistryScore(descriptor paramdefs.Descriptor, value string) string {
 	if strings.HasPrefix(descriptor.ID, "amp.") {
 		fmt.Fprintln(&source, "fx rig ampcab {}")
 		fmt.Fprintf(&source, "track lane %s { insert = rig }\n", trackKind)
+	} else if strings.HasPrefix(descriptor.ID, "chorus.") {
+		fmt.Fprintln(&source, "fx rig chorus {}")
+		fmt.Fprintf(&source, "track lane %s { insert = rig }\n", trackKind)
 	} else {
 		fmt.Fprintf(&source, "track lane %s {}\n", trackKind)
 	}

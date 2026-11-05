@@ -697,6 +697,9 @@ func CanonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage)
 	if number < descriptor.Min || number > descriptor.Max {
 		return "", fmt.Errorf("value is outside %g..%g", descriptor.Min, descriptor.Max)
 	}
+	if descriptor.ID == "fx.chorus.voices" && math.Trunc(number) != number {
+		return "", fmt.Errorf("chorus voices must be an integer")
+	}
 	return formatMixerNumber(roundMixer(number, descriptor.DisplayStep)) + unit, nil
 }
 
@@ -927,7 +930,7 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 }
 
 func knownMixerEffectKind(kind string) bool {
-	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser" || kind == "ampcab"
+	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser" || kind == "ampcab" || kind == "chorus"
 }
 
 func ValidMixerIdentifier(name string) bool {

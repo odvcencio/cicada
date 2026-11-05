@@ -121,6 +121,14 @@ test('sampler expression requires the modular audio kernel', () => {
   assert.equal(h.audio.imageModuleKind(image), 'keys-modular');
 });
 
+test('chorus requires the modular audio kernel', () => {
+  const h = setup(), image = scoreImage(false), view = new DataView(image);
+  view.setUint32(8, 32, true);
+  assert.equal(h.audio.imageModuleKind(image), 'modular');
+  view.setUint16(30, 512, true);
+  assert.equal(h.audio.imageModuleKind(image), 'keys-modular');
+});
+
 test('graph LFOs require the modular audio kernel', () => {
   const h = setup(), image = scoreImage(false), view = new DataView(image);
   view.setUint32(8, 64, true);

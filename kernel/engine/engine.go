@@ -150,11 +150,14 @@ type Config struct {
 	// MasterProcessor is prepared by the host before New. It is single-owner
 	// callback state, placed after master gain and before the existing limiter.
 	MasterProcessor StereoProcessor `json:"-"`
-	MusicBusMute    bool
-	MusicBusSolo    bool
-	SFXBusMute      bool
-	SFXBusSolo      bool
-	MasterMute      bool
+	// PortableEffectsBudget marks a decoded portable image. Hosts producing
+	// images also check the effect budget before encoding.
+	PortableEffectsBudget bool `json:"-"`
+	MusicBusMute          bool
+	MusicBusSolo          bool
+	SFXBusMute            bool
+	SFXBusSolo            bool
+	MasterMute            bool
 	// MasterSolo is retained as project state; the final output has no peer bus.
 	MasterSolo bool
 	// CompSidechainTrack is zero for self-detection, a one-based track index,
@@ -398,6 +401,11 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > MaxTracks || cfg.MaxVoices < 1 || cfg.MaxVoices > MaxVoices {
 		return nil, engineError("engine configuration is out of range")
+	}
+	if cfg.PortableEffectsBudget {
+		if err := ValidatePortableEffectBudget(cfg); err != nil {
+			return nil, err
+		}
 	}
 	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
 		return nil, engineError("master gain is out of range")
@@ -951,6 +959,9 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			off := spec.Off && math.IsInf(float64(setting.Value), -1)
 			if spec.Scope == "track" && int(setting.Track) >= cfg.Tracks || spec.Scope == "global" && setting.Track != 0xff {
 				return engineError("scene parameter owner is out of range")
+			}
+			if chorusEnabled && setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && (int(setting.Track) >= cfg.Tracks || !ChorusControlFits(&cfg.Track[setting.Track])) {
+				return engineError("chorus scene setting requires exactly one chorus insert")
 			}
 			if math.IsNaN(float64(setting.Value)) || math.IsInf(float64(setting.Value), 0) && !off || !syncedDelay && !off && (setting.Value < spec.Min || setting.Value > spec.Max) {
 				return engineError("scene parameter value is out of range")
@@ -1729,6 +1740,10 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			return
 		}
 		switch kernel.ParamID(c.Index) {
+		case kernel.ParamChorusRate, kernel.ParamChorusDepth, kernel.ParamChorusSpread, kernel.ParamChorusMix:
+			if !chorusEnabled || v.chain.setChorusParam(kernel.ParamID(c.Index), value, immediate) != nil {
+				e.fault(FaultParam)
+			}
 		case kernel.ParamAmpDrive, kernel.ParamAmpTone, kernel.ParamAmpOutput:
 			if v.chain.setAmpParam(kernel.ParamID(c.Index), value, immediate) != nil {
 				e.fault(FaultParam)

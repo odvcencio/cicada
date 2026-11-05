@@ -11,10 +11,11 @@ import (
 // PreviewParamValidator holds detached validation context for prepared drums.
 // Other track controls use the registry's float32 bounds directly.
 type PreviewParamValidator struct {
-	drums    bool
-	ampValid bool
-	targets  [drum.LaneCount]drum.Params
-	lanes    [drum.LaneCount]drum.LiveParamValidator
+	drums       bool
+	ampValid    bool
+	chorusValid bool
+	targets     [drum.LaneCount]drum.Params
+	lanes       [drum.LaneCount]drum.LiveParamValidator
 }
 
 // PreviewParamValidator must be captured before the engine starts rendering.
@@ -30,6 +31,9 @@ func (e *Engine) PreviewParamValidator(track int) PreviewParamValidator {
 		validator.targets = v.drumTargets
 	}
 	validator.ampValid = v.chain.hasAmp()
+	if chorusEnabled {
+		_, validator.chorusValid = v.chain.chorusParams()
+	}
 	return validator
 }
 
@@ -49,15 +53,17 @@ func PrepareParamValidators(cfg *Config) ([MaxTracks]PreviewParamValidator, erro
 				count++
 			}
 		}
+		if cfg.Track[track].Kind == VoiceDrums {
+			kit, _, err := prepareDrumKit(&cfg.Track[track], cfg.SampleRate, cfg.Seed)
+			if err != nil {
+				return validators, err
+			}
+			validators[track] = preparedDrumParamValidator(kit)
+		}
 		validators[track].ampValid = count == 1
-		if cfg.Track[track].Kind != VoiceDrums {
-			continue
+		if chorusEnabled {
+			validators[track].chorusValid = ChorusControlFits(spec)
 		}
-		kit, _, err := prepareDrumKit(&cfg.Track[track], cfg.SampleRate, cfg.Seed)
-		if err != nil {
-			return validators, err
-		}
-		validators[track] = preparedDrumParamValidator(kit)
 	}
 	return validators, nil
 }
@@ -91,6 +97,9 @@ func (v *PreviewParamValidator) Validate(id kernel.ParamID, value float32) error
 	}
 	if id >= kernel.ParamAmpDrive && id <= kernel.ParamAmpOutput && !v.ampValid {
 		return engineError("amp controls require exactly one amp insert")
+	}
+	if chorusEnabled && id >= kernel.ParamChorusRate && id <= kernel.ParamChorusMix && !v.chorusValid {
+		return engineError("chorus controls require exactly one chorus insert")
 	}
 
 	lane, control, ok := drumParamControl(id)

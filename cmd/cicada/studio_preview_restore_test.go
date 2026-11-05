@@ -105,6 +105,12 @@ func previewRestoreSource(fixture previewRestoreFixture, descriptor paramdefs.De
 		ampDefinition = "fx ampfx ampcab { " + field + "=" + authoredPreviewRestoreValue(descriptor, value) + " }\n"
 		body = "insert=ampfx"
 	}
+	if strings.HasPrefix(descriptor.ID, "chorus.") {
+		// Chorus controls, like amp controls, belong to an inserted effect.
+		field := strings.TrimPrefix(descriptor.ID, "chorus.")
+		ampDefinition = "fx chorusfx chorus { " + field + "=" + authoredPreviewRestoreValue(descriptor, value) + " }\n"
+		body = "insert=chorusfx"
+	}
 	sceneSetting := ""
 	if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
 		body = "" // Named-kit synthesis settings are authored on the scene.

@@ -29,6 +29,11 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 				return engineError("amp automation requires exactly one amp insert")
 			}
 		}
+		if chorusEnabled && c.Index >= uint16(kernel.ParamChorusRate) && c.Index <= uint16(kernel.ParamChorusMix) {
+			if int(c.Track) >= cfg.Tracks || !ChorusControlFits(&cfg.Track[c.Track]) {
+				return engineError("chorus automation requires exactly one chorus insert")
+			}
+		}
 		if keysEnabled && isKeysControl(kernel.ParamID(c.Index)) && (c.Track == 0xff || !KeysControlFits(&cfg.Track[c.Track], kernel.ParamID(c.Index))) {
 			return engineError("keyboard automation needs a keyboard track of its family")
 		}

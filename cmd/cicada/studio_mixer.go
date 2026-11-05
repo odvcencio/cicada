@@ -555,7 +555,7 @@ func mixerInsertCapability(kind, owner string, names []string, score *notation.S
 		if effect == nil {
 			return unsupported("insert references undeclared effect " + name)
 		}
-		if kind == "track" && effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" && effect.Kind != "ampcab" {
+		if kind == "track" && effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" && effect.Kind != "ampcab" && effect.Kind != "chorus" {
 			return unsupported(effect.Kind + " as a track insert is not implemented")
 		}
 		if kind == "bus" && (owner != "music" || effect.Kind != "comp") {

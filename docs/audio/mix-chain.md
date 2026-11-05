@@ -136,7 +136,7 @@ is separate from native playback and Studio's saved-chain display. The master co
 ## Track inserts
 
 Track inserts accept up to eight distinct named stages in authored order.
-Supported kinds are `drive`, `eq`, `comp`, and `deesser`. Each track owns separate
+Supported kinds are `drive`, `eq`, `comp`, `deesser`, `ampcab`, and `chorus`. Each track owns separate
 filter and detector state. The chain runs before the fader and both send taps,
 so vocal reverb and delay receive the processed voice. All processing and resets
 allocate no memory. The engine aligns tracks to the longest drive-insert delay;
@@ -158,7 +158,30 @@ per band; track EQ frequency is 10–19845 Hz, with the same type, Q, and gain
 controls as master EQ. Track compressors detect their own stereo input and do
 not accept an external sidechain. Saved chain edits rebuild independent state;
 scene and live effect automation on a serial track chain are currently rejected.
-The legacy single-drive insert retains its live controls.
+The legacy single-drive insert retains its live controls. A track with exactly
+one chorus also exposes `chorus_rate`, `chorus_depth`, `chorus_spread`, and
+`chorus_mix` for scene settings, automation, and modulation routes.
+
+The stereo chorus uses one to three voices. `rate` is 0.05–5 Hz (default
+0.6 Hz), `depth` is 0–8 ms (default 3 ms), and `spread` and `mix` are 0–1
+(defaults 1 and 0.5). `voices` is an integer from 1 to 3 (default 3). The
+four continuous controls use a 10 ms smoother. Settled `mix = 0` passes the
+dry signal exactly while maintaining the delay history.
+
+```cicada
+cicada 2
+fx wide chorus { voices = 3 rate = 0.6Hz depth = 3ms spread = 1 mix = 0.5 }
+track lead acid { insert = wide }
+pattern phrase { 1 . 3 . }
+lfo drift { wave = triangle rate = 2bars }
+mod drift -> lead.chorus_mix depth = 0.25
+scene main { lead = phrase }
+song { main*4 }
+```
+
+Browser and WAM playback select the optional modular kernel for chorus. Portable
+chorus projects have a conservative 8 MiB effect-working-storage limit;
+externally prepared master processors cannot yet be included in that budget.
 
 The stereo-linked de-esser uses a complementary first-order split: it attenuates
 the high-frequency band while retaining the vocal body. `range` caps detector

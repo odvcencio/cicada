@@ -119,6 +119,11 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 				return fail("CICADA-UNSUPPORTED", err.Error())
 			}
 		}
+		if strings.HasPrefix(descriptor.ID, "chorus.") {
+			if _, err := trackChorusParams(p, p.Tracks[trackIndex]); err != nil {
+				return fail("CICADA-UNSUPPORTED", err.Error())
+			}
+		}
 		if strings.HasPrefix(descriptor.ID, "drum.") {
 			laneControl := strings.SplitN(descriptor.Source, "_", 2)
 			if len(laneControl) == 2 && laneControl[1] != "level" && laneControl[1] != "pan" {

@@ -97,6 +97,11 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 	}
 	p := &base.tracks[lane.track]
 	switch {
+	case chorusEnabled && id >= kernel.ParamChorusRate && id <= kernel.ParamChorusMix:
+		if p.chorus == nil {
+			return 0, false
+		}
+		return float32([...]float64{p.chorus.Rate, p.chorus.Depth, p.chorus.Spread, p.chorus.Mix}[id-kernel.ParamChorusRate]), true
 	case id >= kernel.ParamAmpDrive && id <= kernel.ParamAmpOutput:
 		if !p.hasAmp {
 			return 0, false

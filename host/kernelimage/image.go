@@ -182,6 +182,12 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, imageError("project image configuration is out of range")
 	}
+	if err := engine.ValidatePortableEffectBudget(&cfg); err != nil {
+		return nil, err
+	}
+	if err := validateChorusAutomation(&cfg); err != nil {
+		return nil, err
+	}
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
@@ -271,6 +277,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if hasSamplerExpression(&cfg) && modularFlags == 0 {
 		return nil, imageError("sampler expression requires the modular kernel module")
 	}
+	if hasChorus(&cfg) && modularFlags == 0 {
+		return nil, imageError("chorus requires the modular kernel module")
+	}
 	if hasGraphLFO(&cfg) && modularFlags == 0 {
 		return nil, imageError("graph LFO requires the modular kernel module")
 	}
@@ -308,6 +317,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if hasSamplerExpression(&cfg) {
 		flags |= SamplerExpressionFlag
+	}
+	if hasChorus(&cfg) {
+		flags |= ChorusFlag
 	}
 	if hasGraphLFO(&cfg) {
 		flags |= GraphLFOFlag
@@ -793,6 +805,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if modularFlags != 0 && hasChorus(&cfg) {
+		if err := writeChorus(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
 	if len(w.data) > MaxImageBytes {
 		return nil, imageError("project image exceeds 2 MiB")
 	}
@@ -840,7 +857,8 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	*cfg = engine.Config{
 		SampleRate: sampleRate, MaxBlock: maxBlock, Tracks: int(tracks), MaxVoices: int(voices),
-		BPMMilli: int64(tempo), Seed: seed, LoopSong: flags&1 != 0,
+		PortableEffectsBudget: flags&ChorusFlag != 0,
+		BPMMilli:              int64(tempo), Seed: seed, LoopSong: flags&1 != 0,
 		Patterns: make([]engine.PatternBank, int(tracks)),
 		Scenes:   make([]engine.Scene, int(scenes)),
 		Song:     make([]engine.SongEntry, int(entries)),
@@ -1466,6 +1484,24 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 	}
+	if modularFlags != 0 && flags&ChorusFlag != 0 {
+		if err := readChorus(&r, cfg, sampleRate); err != nil {
+			return err
+		}
+	}
+	for track := 0; track < cfg.Tracks; track++ {
+		for _, stage := range cfg.Track[track].InsertChain {
+			if stage.Kind == engine.TrackEffectChorus && stage.Chorus == nil {
+				return imageError("chorus marker has no parameter record")
+			}
+		}
+	}
+	if err := engine.ValidatePortableEffectBudget(cfg); err != nil {
+		return err
+	}
+	if err := validateChorusAutomation(cfg); err != nil {
+		return err
+	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := &cfg.Track[track]
 		if spec.Kind == engine.VoiceGraph || spec.Kind == engine.VoiceGraphPoly {
@@ -1718,6 +1754,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 			if count != 1 {
 				return imageError("amp setting requires exactly one amp insert")
 			}
+		}
+		if modularFlags != 0 && setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && !engine.ChorusControlFits(&cfg.Track[setting.Track]) {
+			return imageError("chorus setting requires exactly one chorus insert")
 		}
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
 			return imageError("guitar setting requires a guitar track")

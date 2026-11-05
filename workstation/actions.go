@@ -414,6 +414,14 @@ func (s *studioApp) actions() map[string]action.Handler {
 		}),
 		"mixer": s.mutation("/api/mixer", func(f map[string]string) (any, error) {
 			p := edit(f)
+			if f["action"] == "add-chorus" {
+				if f["name"] == "" {
+					return nil, fmt.Errorf("choose a chorus name")
+				}
+				p["source_revision"], p["path"], p["value"] = f["source_revision"], "fx."+f["name"], "chorus"
+				p["confirmUpgrade"] = f["confirmUpgrade"] == "on"
+				return p, nil
+			}
 			if f["action"] == "amp-chain" {
 				if f["track"] == "" {
 					return nil, fmt.Errorf("choose a recording track")

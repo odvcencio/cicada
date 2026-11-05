@@ -50,6 +50,8 @@ func writeTrackEffects(w *writer, rate int, specs []engine.TrackEffectConfig) er
 			for _, v := range []float64{p.Deesser.FrequencyHz, p.Deesser.ThresholdDB, p.Deesser.Ratio, p.Deesser.RangeDB, p.Deesser.AttackMs, p.Deesser.ReleaseMs, p.Deesser.Mix} {
 				w.f64(v)
 			}
+		case engine.TrackEffectChorus:
+			// Parameters are in the optional chorus appendix.
 		}
 	}
 	return nil
@@ -118,6 +120,12 @@ func readTrackEffects(r *reader, rate int) ([]engine.TrackEffectConfig, error) {
 		case engine.TrackEffectDeesser:
 			p.Deesser = &fx.DeesserParams{}
 			values = []*float64{&p.Deesser.FrequencyHz, &p.Deesser.ThresholdDB, &p.Deesser.Ratio, &p.Deesser.RangeDB, &p.Deesser.AttackMs, &p.Deesser.ReleaseMs, &p.Deesser.Mix}
+		case engine.TrackEffectChorus:
+			if modularFlags == 0 {
+				return nil, imageError("chorus requires the modular kernel")
+			}
+			// The optional appendix attaches and validates the parameters.
+			continue
 		default:
 			return nil, imageError("unknown track insert image kind")
 		}
