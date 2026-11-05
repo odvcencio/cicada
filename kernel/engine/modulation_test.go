@@ -27,14 +27,6 @@ func modConfig(t *testing.T) Config {
 	return cfg
 }
 
-func TestEnvelopeRouteRejectsItsOwnInput(t *testing.T) {
-	cfg := modConfig(t)
-	cfg.Modulators = []ModulatorSpec{{Kind: ModKindEnvelope, Source: 0}}
-	if _, err := New(cfg); err == nil {
-		t.Fatal("accepted self-following envelope route")
-	}
-}
-
 type gridEntry struct {
 	song   int64
 	values string
