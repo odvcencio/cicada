@@ -53,6 +53,9 @@ func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR
 		clear(outR[frame:])
 		return false
 	}
+	if modulationEnabled && e.graphLFO != nil {
+		e.syncGraphLFOClock()
+	}
 	e.rawPlaying = e.transport.Playing()
 	return true
 }
@@ -319,6 +322,9 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 
 func (e *Engine) advanceRenderFrame() {
 	e.advanceMacroRamps()
+	if modulationEnabled && e.graphLFO != nil && e.transport.Playing() {
+		e.graphLFO.absolute++
+	}
 	e.transport.Advance(1)
 	if e.transport.Playing() {
 		e.playheadFrames--

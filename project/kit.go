@@ -53,8 +53,8 @@ func CompileKitAtSampleRate(kit Kit, programs map[string]*instrument.Program, sa
 			return nil, fmt.Errorf("kit %s has unknown mono instrument %s", kit.ID, target)
 		}
 		for _, node := range program.Nodes {
-			if node.Op == "mod" {
-				return nil, fmt.Errorf("CICADA-UNSUPPORTED: graph modulators are not supported inside drum kits")
+			if node.Op == "mod" || node.Op == "lfo" {
+				return nil, fmt.Errorf("CICADA-UNSUPPORTED: graph modulators and LFOs are not supported inside drum kits")
 			}
 		}
 		graph, err := instrument.Lower(program, nil)

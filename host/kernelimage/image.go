@@ -204,6 +204,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
+				if graph.HasLFO(&binding.Program) {
+					return nil, imageError("graph LFO is not supported inside drum kits")
+				}
 				if binding.Program.Vibrato != nil {
 					return nil, imageError("instrument vibrato is not supported inside drum kits")
 				}
@@ -268,6 +271,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if hasSamplerExpression(&cfg) && modularFlags == 0 {
 		return nil, imageError("sampler expression requires the modular kernel module")
 	}
+	if hasGraphLFO(&cfg) && modularFlags == 0 {
+		return nil, imageError("graph LFO requires the modular kernel module")
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
@@ -302,6 +308,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	if hasSamplerExpression(&cfg) {
 		flags |= SamplerExpressionFlag
+	}
+	if hasGraphLFO(&cfg) {
+		flags |= GraphLFOFlag
 	}
 	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))
@@ -1464,6 +1473,16 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 		}
+		if spec.Kit != nil {
+			for _, binding := range spec.Kit {
+				if graph.HasLFO(&binding.Program) {
+					return imageError("graph LFO is not supported inside drum kits")
+				}
+			}
+		}
+	}
+	if modularFlags != 0 && hasGraphLFO(cfg) != (flags&GraphLFOFlag != 0) {
+		return imageError("graph LFO flag does not match its graph nodes")
 	}
 	if reserved&TrackEffectsCapability != 0 {
 		found := false
@@ -1615,6 +1634,9 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 			}
 		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
+		if modularFlags == 0 && graph.Op(op) == graph.LFO {
+			return imageError("graph LFO requires the modular kernel module")
+		}
 		if graph.Op(op) == graph.ADSR {
 			if version < qualityImageVersion {
 				return imageError("ADSR needs project image version 15")

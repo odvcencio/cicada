@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/kernel/amp"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/expression"
+	"m31labs.dev/cicada/kernel/modulate"
 	"m31labs.dev/cicada/kernel/voice/ddsp"
 )
 
@@ -56,6 +57,7 @@ const (
 	Pulse     Op = 33
 	SVF       Op = 34
 	Modulator Op = 35 // shared, control-grid-held project source
+	LFO       Op = 36 // per-sample, song- or note-locked oscillator
 	DDSP      Op = 31 // harmonic-plus-noise reed: fundamental Hz, linear loudness
 	Pressure  Op = 29 // normalized 0..1; zero is neutral
 	Timbre    Op = 30 // normalized 0..1; 0.5 is neutral
@@ -121,6 +123,7 @@ type Voice struct {
 	delayMemory []float32
 	amps        []amp.Model
 	ddspVoices  []ddsp.Synth
+	lfo         *lfoVoice
 }
 
 //go:noinline
@@ -151,6 +154,17 @@ func NewVoiceFromProgramWithModulators(program *Program, sampleRate int, modulat
 	v := new(Voice)
 	v.program = *program
 	v.modulators = modulators
+	if instrumentVibratoEnabled {
+		for i := range program.Nodes[:program.Len] {
+			if program.Nodes[i].Op == LFO {
+				if v.lfo == nil {
+					v.lfo = new(lfoVoice)
+				}
+				v.states[i].neural = uint8(len(v.lfo.rates))
+				v.lfo.rates = append(v.lfo.rates, uint64(float64(program.Nodes[i].Value)*1_000_000+0.5))
+			}
+		}
+	}
 	v.sampleRate = float32(sampleRate)
 	if usesQuality(program) {
 		v.quality = newQualityState(program, sampleRate)
@@ -243,6 +257,10 @@ func ValidateProgram(program *Program, sampleRate int) error {
 			if !instrumentVibratoEnabled || n.Value < 0 || n.Value >= MaxModulators || n.Value != float32(uint8(n.Value)) {
 				return validationError("invalid or unavailable graph modulator")
 			}
+		case LFO:
+			if !instrumentVibratoEnabled || n.A > 3 || n.B > 1 || n.C != 0 || n.D != 0 || n.E != 0 || math.IsNaN(float64(n.Value)) || math.IsInf(float64(n.Value), 0) || n.Value < .01 || n.Value > 20 {
+				return validationError("invalid or unavailable graph LFO")
+			}
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
 		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp, Pulse, DDSP:
@@ -305,6 +323,9 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
 	v.pitchLog, v.targetLog = targetLog, targetLog
 	v.gliding = false
+	if instrumentVibratoEnabled && v.lfo != nil {
+		v.lfo.noteSample = 0
+	}
 	if v.quality != nil {
 		v.quality.retrigger()
 	}
@@ -337,9 +358,16 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 // voice's preallocated storage. Neither delay state nor ring memory is shared.
 func (v *Voice) CopyStateFrom(source *Voice) {
 	delays, memory, amps, neural := v.delays, v.delayMemory, v.amps, v.ddspVoices
-	quality, modulators := v.quality, v.modulators
+	quality, modulators, lfo := v.quality, v.modulators, v.lfo
 	*v = *source
 	v.modulators = modulators
+	v.lfo = lfo
+	if instrumentVibratoEnabled && lfo != nil {
+		clock, rates := lfo.clock, lfo.rates
+		*lfo = *source.lfo
+		lfo.clock, lfo.rates = clock, rates
+		copy(lfo.rates, source.lfo.rates)
+	}
 	v.delays, v.delayMemory, v.amps = delays, memory, amps
 	copy(v.delays, source.delays)
 	copy(v.delayMemory, source.delayMemory)
@@ -356,6 +384,9 @@ func (v *Voice) Reset() {
 	v.expression.Reset()
 	v.pitch, v.gate, v.velocity = 0, 0, 0
 	v.pitchLog, v.targetLog, v.gliding = 0, 0, false
+	if instrumentVibratoEnabled && v.lfo != nil {
+		v.lfo.noteSample, v.lfo.localSample = 0, 0
+	}
 	if v.quality != nil {
 		v.quality.reset()
 	}
@@ -376,9 +407,9 @@ func (v *Voice) Reset() {
 
 func (v *Voice) Next() float32 {
 	if v.quality == nil {
-		return v.nextSample()
+		return v.nextSample(0)
 	}
-	first, second := v.nextSample(), v.nextSample()
+	first, second := v.nextSample(0), v.nextSample(1)
 	out := float32(v.quality.down.Downsample(float64(first), float64(second)))
 	if v.quality.fade > 0 {
 		blend := float32(v.quality.fade) / float32(v.quality.fadeFrames)
@@ -390,7 +421,7 @@ func (v *Voice) Next() float32 {
 }
 
 //go:noinline
-func (v *Voice) nextSample() float32 {
+func (v *Voice) nextSample(substep uint64) float32 {
 	if v.gliding {
 		v.pitchLog += float64((v.targetLog - v.pitchLog) * v.pitchAlpha)
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
@@ -426,6 +457,28 @@ func (v *Voice) nextSample() float32 {
 		case Modulator:
 			if instrumentVibratoEnabled {
 				y = v.modulators[uint8(n.Value)]
+			}
+		case LFO:
+			if instrumentVibratoEnabled {
+				lfo := v.lfo
+				sample, seed := lfo.noteSample, uint32(0)
+				if lfo.clock != nil {
+					seed = lfo.clock.Seed
+				}
+				if n.B == 0 {
+					sample = lfo.localSample
+					if lfo.clock != nil {
+						sample = lfo.clock.Sample
+						if v.quality != nil {
+							sample *= 2
+							if lfo.clock.Playing {
+								sample += substep
+							}
+						}
+					}
+				}
+				position := modulate.FreePosition(sample, uint32(v.sampleRate), lfo.rates[s.neural])
+				y = float32(modulate.LFO(modulate.Wave(n.A), seed, index, position)) / modulate.One
 			}
 		case DDSP:
 			y = v.ddspVoices[s.neural].NextFloat(a, b)
@@ -556,6 +609,10 @@ func (v *Voice) nextSample() float32 {
 			y = clamp(a, b, c)
 		}
 		v.values[index] = y
+	}
+	if instrumentVibratoEnabled && v.lfo != nil {
+		v.lfo.noteSample++
+		v.lfo.localSample++
 	}
 	out := v.values[v.program.Output&(MaxNodes-1)]
 	if math.IsNaN(float64(out)) || math.IsInf(float64(out), 0) {

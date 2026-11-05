@@ -338,6 +338,7 @@ type Engine struct {
 	liveTempo                    bool  // a manual launch or command moved the tempo off the authored chain
 	seekTick, seekSample         int64 // where the last seek anchored the transport
 	manualPatternTick            [MaxTracks]int64
+	graphLFO                     *graphLFOState
 }
 
 // TrackCount reports the immutable track count established by New.
@@ -679,6 +680,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			program := spec.Graph
 			program.Vibrato = vibrato
+			if modulationEnabled && graph.HasLFO(&program) && e.graphLFO == nil {
+				e.graphLFO = &graphLFOState{clock: graph.LFOClock{Seed: cfg.Seed}, cycle: -1}
+			}
 			if err = validateGraphModulators(&program, cfg.Modulators, i); err != nil {
 				return 0, err
 			}
@@ -688,6 +692,13 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			} else {
 				voices++
 				v.graph, err = graph.NewVoiceFromProgramWithModulators(&program, cfg.SampleRate, &e.mod.scaled)
+			}
+			if modulationEnabled && err == nil && e.graphLFO != nil {
+				if v.poly != nil {
+					v.poly.BindLFOClock(&e.graphLFO.clock)
+				} else {
+					v.graph.BindLFOClock(&e.graphLFO.clock)
+				}
 			}
 		case VoicePiano:
 			voices += piano.MaxVoices
@@ -724,10 +735,16 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			voices += graph.PolyVoices
 			program := spec.Graph
 			program.Vibrato = vibrato
+			if modulationEnabled && graph.HasLFO(&program) && e.graphLFO == nil {
+				e.graphLFO = &graphLFOState{clock: graph.LFOClock{Seed: cfg.Seed}, cycle: -1}
+			}
 			if err = validateGraphModulators(&program, cfg.Modulators, i); err != nil {
 				return 0, err
 			}
 			v.legacyPoly, err = graph.NewPolyFromProgramWithModulators(&program, cfg.SampleRate, &e.mod.scaled)
+			if modulationEnabled && err == nil && e.graphLFO != nil {
+				v.legacyPoly.BindLFOClock(&e.graphLFO.clock)
+			}
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
 				return 0, engineError("prepared audio voice budget is invalid")
@@ -1086,6 +1103,10 @@ func (e *Engine) Reset() {
 		e.compMusic.Reset()
 	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
+	if modulationEnabled && e.graphLFO != nil {
+		e.graphLFO.absolute, e.graphLFO.cycle, e.graphLFO.loopStart = 0, -1, 0
+		e.graphLFO.clock.Sample, e.graphLFO.clock.Playing = 0, false
+	}
 	if e.delayA != nil {
 		_ = e.delayA.SetTempo(e.bpmMilli)
 	}

@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
 
@@ -120,6 +121,9 @@ func prepareDrumKit(spec *TrackConfig, sampleRate int, seed uint32) (*drum.Kit, 
 			case KitLaneBuiltin:
 				err = kit.SetRecipe(lane, binding.Recipe)
 			case KitLaneGraph:
+				if graph.HasLFO(&binding.Program) {
+					return nil, 0, engineError("graph LFO is not supported inside drum kits")
+				}
 				err = kit.SetGraphFromProgram(lane, &binding.Program)
 			case KitLaneModeled:
 				err = kit.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
