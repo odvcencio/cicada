@@ -331,7 +331,18 @@ func (e *Engine) flushPatternEdits() {
 func (e *Engine) seekTransport(tick int64) error {
 	e.flushPatternEdits()
 	e.mod.rebase = true
-	return e.transport.SeekTick(tick)
+	if err := e.transport.SeekTick(tick); err != nil {
+		return err
+	}
+	if modulationEnabled && e.graphLFO != nil {
+		e.graphLFO.absolute = max(0, e.songSampleAtTick(tick))
+		e.graphLFO.cycle, e.graphLFO.loopStart = -1, 0
+		if e.loopSong && e.scheduleDuration > 0 {
+			e.graphLFO.cycle = tick / e.scheduleDuration
+			e.graphLFO.loopStart = e.songSampleAtTick(e.graphLFO.cycle * e.scheduleDuration)
+		}
+	}
+	return nil
 }
 
 // queuedCommand returns the command at a position in the combined order: the

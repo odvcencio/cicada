@@ -70,6 +70,33 @@ song { main }
 	compareWASMProjectRates(t, "chorus-instrument-modulation", p, 1, true, wasm, []int{44100, 48000, 96000})
 }
 
+func TestChorusGraphLFONativeWASMParity(t *testing.T) {
+	path := os.Getenv("CICADA_MODULAR_WASM_PATH")
+	if path == "" {
+		t.Skip("set CICADA_MODULAR_WASM_PATH")
+	}
+	wasm, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, ds := notation.Parse([]byte(`cicada 2
+instrument lead { voice mono { out = sine(pitch) * (0.5 + 0.4 * lfo(2Hz, triangle, note)) } }
+fx wide chorus {}
+track voice lead { insert = wide }
+pattern p notes { c4 . e4 . }
+scene main { voice = p }
+song { main }
+`))
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil || len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	compareWASMProjectRates(t, "chorus-graph-lfo", p, 1, true, wasm, []int{44100, 48000, 96000})
+}
+
 func TestKeysChorusNativeWASMParity(t *testing.T) {
 	path := os.Getenv("CICADA_KEYS_MODULAR_WASM_PATH")
 	if path == "" {

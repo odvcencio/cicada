@@ -115,6 +115,18 @@ async function until(run, timeout = 20000) {
     await evaluate('window.scrollTo(0,0)');
     await screenshot('demo-modulation-playing-1440.png');
     await click('#stop'); await wait(`!cicadaDemoState.playing && !document.getElementById('play').disabled`);
+    const graphLFOScore = `cicada 2
+instrument lead { voice mono { out = sine(pitch) * (0.5 + 0.4 * lfo(2Hz, triangle, note)) } }
+track voice lead {}
+pattern line { c4 . e4 . }
+scene verse { voice = line }
+song { verse }
+`;
+    await edit(graphLFOScore);
+    await wait(`cicadaDemo.snapshot().source.includes('lfo(2Hz, triangle, note)') && !document.getElementById('play').disabled`);
+    assert(await evaluate(`(new DataView(cicadaDemo.prepare(48000).image.buffer).getUint32(8,true)&64)!==0`), 'graph LFO image selects modular support');
+    await play();
+    await click('#stop'); await wait(`!cicadaDemoState.playing && !document.getElementById('play').disabled`);
     await click('#reset'); await wait(`document.getElementById('preset').value==='ensemble' && !document.getElementById('play').disabled`);
     // Applied score and an invalid draft must both survive a reload independently.
     const initialScore = await evaluate('cicadaDemo.snapshot().source');

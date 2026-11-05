@@ -403,6 +403,10 @@ func propagateType(expr Expr, want instrument.Type, symbols map[string]instrumen
 	if expr.Op == "" {
 		return
 	}
+	if expr.Op == "lfo" && len(expr.Args) > 0 {
+		propagateType(expr.Args[0], instrument.Hz, symbols, bindings, required, visiting)
+		return
+	}
 	if args, ok := callArgumentTypes(expr.Op); ok {
 		for i, arg := range expr.Args {
 			propagateType(arg, args[i], symbols, bindings, required, visiting)
@@ -534,6 +538,8 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 
 func callArgumentTypes(op string) ([]instrument.Type, bool) {
 	switch op {
+	case "lfo":
+		return []instrument.Type{instrument.Hz, instrument.Unit, instrument.Unit}, true
 	case "mod":
 		return []instrument.Type{instrument.Unit}, true
 	case "saw", "square", "sine":
@@ -580,7 +586,7 @@ func callOutputType(op string) instrument.Type {
 		return instrument.MS
 	case "saw", "square", "sine", "pm", "pulse", "svf", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb", "neural_amp", "ddsp":
 		return instrument.Audio
-	case "env", "exp2", "clamp", "adsr", "mod":
+	case "env", "exp2", "clamp", "adsr", "mod", "lfo":
 		return instrument.Unit
 	}
 	return ""

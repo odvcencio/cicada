@@ -153,7 +153,7 @@ jobs:
             -run '^TestInstrumentVibratoNativeWASMParity$' -count=1 -v | tee -a build/parity/report.txt
           CICADA_MODULAR_WASM_PATH="$PWD/build/amd64-reference/cicada-modular.wasm" \
           go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm \
-            -run '^TestChorus(NativeWASMParity|InstrumentModulatorNativeWASMParity)$' -count=1 -v | tee -a build/parity/report.txt
+            -run '^TestChorus(NativeWASMParity|InstrumentModulatorNativeWASMParity|GraphLFONativeWASMParity)$' -count=1 -v | tee -a build/parity/report.txt
           CICADA_WASM_PATH="$PWD/build/amd64-reference/cicada-kernel.wasm" \
           go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm \
             -run '^TestChorusRejectedByCoreKernel$' -count=1 -v | tee -a build/parity/report.txt
@@ -163,6 +163,12 @@ jobs:
           CICADA_WASM_PATH="$PWD/build/amd64-reference/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$PWD/build/amd64-reference/cicada-modular.wasm" \
           go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm \
             -run '^TestInstrumentModulatorNativeWASMParity$' -count=1 -v | tee -a build/parity/report.txt
+          CICADA_WASM_PATH="$PWD/build/amd64-reference/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$PWD/build/amd64-reference/cicada-modular.wasm" \
+          go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm \
+            -run '^TestGraphLFONativeWASMParity$' -count=1 -v | tee -a build/parity/report.txt
+          CICADA_KEYS_MODULAR_WASM_PATH="$PWD/build/amd64-reference/cicada-keys-modular.wasm" \
+          go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm \
+            -run '^TestGraphLFOKeysNativeWASMParity$' -count=1 -v | tee -a build/parity/report.txt
           CICADA_KEYS_MODULAR_WASM_PATH="$PWD/build/amd64-reference/cicada-keys-modular.wasm" \
           go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
             -run '^TestKeysModularWASMParity$' -count=1 -v | tee -a build/parity/report.txt
