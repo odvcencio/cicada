@@ -205,6 +205,7 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 				c.errorAt("CICADA-PARAM", "mod requires one named modulator", e.Position)
 				return -1, ""
 			}
+			c.program.StatefulNodes++
 			return c.emit(Node{Op: "mod", Name: e.Args[0].Text, Type: Unit, Position: e.Position}), Unit
 		}
 		inputs := make([]int, 0, len(e.Args))
