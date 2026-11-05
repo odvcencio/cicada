@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+
+	"m31labs.dev/cicada/patternmachine"
 )
 
 // CreatePattern creates a grid for a track's instrument. An optional
 // scene assignment is part of the same edit, validation, and Undo entry.
 type CreatePattern struct {
-	Name    string `json:"name"`
-	Track   string `json:"track"`
-	Steps   int    `json:"steps"`
-	Scene   string `json:"scene,omitempty"`
-	Starter string `json:"starter,omitempty"`
+	Name    string                 `json:"name"`
+	Track   string                 `json:"track"`
+	Steps   int                    `json:"steps"`
+	Scene   string                 `json:"scene,omitempty"`
+	Starter string                 `json:"starter,omitempty"`
+	Machine *patternmachine.Recipe `json:"machine,omitempty"`
 }
 
 func (CreatePattern) Kind() string { return "createpattern" }
@@ -67,6 +70,9 @@ func createPattern(ctx *Context, intent Intent) error {
 			kind = "acid"
 		case "drums":
 			kind, lanes = "drums", []string{"bd", "sd", "ch"}
+			if in.Machine != nil {
+				lanes = append(lanes, "oh", "rs")
+			}
 		default:
 			kind = "notes"
 			for _, kit := range score.Kits {
@@ -90,7 +96,20 @@ func createPattern(ctx *Context, intent Intent) error {
 			}
 		}
 	}
-	rows, err := patternStarter(in.Starter, kind, lanes, in.Steps)
+	var rows map[string]string
+	var velocities string
+	if in.Machine != nil {
+		if in.Starter != "machine" || in.Steps != in.Machine.Bars*16 {
+			return fmt.Errorf("generated pattern length must match its recipe")
+		}
+		generated, err := patternmachine.Generate(*in.Machine, kind, lanes)
+		if err != nil {
+			return err
+		}
+		rows, velocities = generated.SourceRows(kind, lanes)
+	} else {
+		rows, err = patternStarter(in.Starter, kind, lanes, in.Steps)
+	}
 	if err != nil {
 		return err
 	}
@@ -100,12 +119,18 @@ func createPattern(ctx *Context, intent Intent) error {
 	}
 	var body strings.Builder
 	fmt.Fprintf(&body, "pattern %s %s steps=%d {%s", in.Name, kind, in.Steps, newline)
+	if in.Machine != nil {
+		fmt.Fprintf(&body, "  step = 1/16%s  gate = 70%%%s", newline, newline)
+	}
 	if kind == "drums" {
 		for _, lane := range lanes {
 			fmt.Fprintf(&body, "  %s: %s%s", lane, rows[lane], newline)
 		}
 	} else {
 		fmt.Fprintf(&body, "  %s%s", rows[""], newline)
+		if velocities != "" {
+			fmt.Fprintf(&body, "  velocity: %s%s", velocities, newline)
+		}
 	}
 	body.WriteString("}" + newline)
 	// Appending leaves all existing declarations and their comments byte-for-

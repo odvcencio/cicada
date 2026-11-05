@@ -28,8 +28,8 @@ type soundJob struct {
 type soundsUI struct {
 	root  js.Value
 	props struct {
-		CSRF, Scale, Pattern, Revision string
-		Tempo, Root                    int
+		CSRF, Scale, Pattern, Revision, Machine, SourceRevision string
+		Tempo, Root                                             int
 	}
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -305,6 +305,9 @@ func (u *soundsUI) run() {
 				values := map[string]string{"action": "play", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "patch": job.patch, "tempo": strconv.Itoa(u.props.Tempo), "root": strconv.Itoa(u.props.Root), "scale": u.props.Scale}
 				if u.props.Pattern != "" {
 					values = map[string]string{"action": "pattern", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "pattern": u.props.Pattern, "revision": u.props.Revision, "track": job.track}
+					if u.props.Machine != "" {
+						values["action"], values["machine"], values["source_revision"] = "machine", u.props.Machine, u.props.SourceRevision
+					}
 				}
 				_, err = u.post(u.ctx, values)
 			}
