@@ -42,6 +42,22 @@
           <span class="session-badge"><span aria-hidden="true"></span> LOCAL SESSION</span>
         </div>
 
+        <section class="machine" aria-labelledby="machine-title">
+          <div class="machine-heading"><div><p class="overline">MAKE SOMETHING MOVE</p><h2 id="machine-title">Pattern machine</h2><p>Choose a track, shape a pattern, then put it in your session.</p></div><span class="machine-tag">16 STEPS / BAR</span></div>
+          <div id="machine-tracks" class="machine-tracks" role="group" aria-label="Track to generate"></div>
+          <div class="machine-controls">
+            <label>Length <select id="machine-bars"><option value="1">1 bar</option><option value="2">2 bars</option><option value="4">4 bars</option></select></label>
+            <label>Density <input id="machine-density" type="range" min="0" max="100" value="65"><output id="machine-density-value">65</output></label>
+            <label>Motion <input id="machine-motion" type="range" min="0" max="100" value="60"><output id="machine-motion-value">60</output></label>
+            <label id="machine-scene-label" hidden>Scene <select id="machine-scene"></select></label>
+          </div>
+          <div class="machine-preview-heading"><strong>Pattern preview</strong><span>Not yet applied</span></div>
+          <div id="machine-grid" class="machine-grid" aria-label="Generated pattern preview"></div>
+          <p id="machine-status" class="machine-status" role="status">Loading pattern tools…</p>
+          <div class="machine-actions"><button id="machine-generate" disabled>Generate pattern</button><button id="machine-vary" disabled>New variation</button><button id="machine-use" class="apply-button" disabled>Use pattern</button></div>
+          <p class="machine-note">Preview the steps here; use the pattern, then press Play to hear it. Applying while playing switches at the next bar.</p>
+        </section>
+
         <div class="session-overview">
           <div class="sound-display" aria-label="Audio waveform">
             <div class="sound-heading"><span>OUTPUT</span><span id="waveform-state">Ready when you are</span></div>
@@ -55,7 +71,9 @@
         </div>
         <p id="status" class="transport-message" role="status">Loading score tools…</p>
 
-        <section class="score" aria-labelledby="score-title">
+        <details id="score-panel" class="score">
+          <summary>Score editor <span>View and edit the Cicada source</span></summary>
+          <section aria-labelledby="score-title">
           <div class="score-heading"><div><p class="overline">MAKE IT YOURS</p><h2 id="score-title">Change the music</h2></div><span class="score-language">CICADA SCORE</span></div>
           <p class="score-intro">Change a note or tempo, then apply your edit. While playing, it joins at the next bar.</p>
           <label class="sr-only" for="source">Cicada score</label>
@@ -63,11 +81,12 @@
           <div class="edit-actions">
             <button id="apply" class="apply-button" disabled>Apply changes <span class="shortcut">⌘ / Ctrl + Enter</span></button>
             <button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button>
-            <span class="action-spacer"></span><button id="reset" class="quiet-button" disabled>Reset</button>
+            <span class="action-spacer"></span><button id="discard-draft" class="quiet-button" disabled>Discard draft</button><button id="reset" class="quiet-button" disabled>Reset</button>
             <button id="open-score" class="quiet-button" disabled>Open score</button><button id="save-score" class="quiet-button" disabled>Download score</button><input id="score-file" type="file" accept=".cicada,.txt,text/plain" hidden>
           </div>
           <p id="edit-error" role="alert"></p><p id="storage-status" class="hint" role="status"></p>
-        </section>
+          </section>
+        </details>
 
         <details class="diagnostics" id="diagnostics">
           <summary><span><span aria-hidden="true">◫</span> Engine details</span><span class="diagnostics-caption">For the curious</span></summary>

@@ -6,6 +6,73 @@
   const state = {playing: false, metrics: null, messageCount: 0, faults: 0, playhead: 0, errors: [], revision: '', resets: 0};
   const draftKey = 'cicada-demo-score-v1', maxSourceBytes = 128 * 1024;
   let inputVersion = 0;
+  let machineCandidate, machineTrack = '', machineScene = '', machineSeed = 34891;
+  const machineBusy = () => !api || starting || !!resetPromise || !!recoveryPromise;
+  const machineDraft = () => snapshot && ui.source.value !== snapshot.source;
+  const invalidateMachine = message => {
+    machineCandidate = null;
+    $('machine-grid').replaceChildren();
+    if (message) $('machine-status').textContent = message;
+    if (snapshot) refreshControls();
+  };
+  const showDraftWarning = () => {
+    $('score-panel').open = true;
+    $('edit-error').textContent = 'Apply your score edits first, or restore the applied score before changing the session.';
+    $('machine-status').textContent = 'Your unapplied score edits are safe in the score editor.';
+    ui.source.focus();
+  };
+  const refreshMachineTracks = () => {
+    const overview = snapshot.overview || {}, tracks = overview.tracks || [], scenes = overview.scenes || [];
+    if (!tracks.some(track => track.name === machineTrack)) machineTrack = tracks[0]?.name || '';
+    if (!scenes.includes(machineScene)) machineScene = scenes.length === 1 ? scenes[0] : '';
+    $('machine-tracks').replaceChildren();
+    for (const track of tracks) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.dataset.track = track.name;
+      button.textContent = `${track.drums ? '▦' : '♪'}  ${track.name}`;
+      button.setAttribute('aria-pressed', String(track.name === machineTrack));
+      button.onclick = () => { machineTrack = track.name; refreshMachineTracks(); invalidateMachine('Track selected. Generate a pattern to preview it.'); };
+      $('machine-tracks').append(button);
+    }
+    const select = $('machine-scene'); select.replaceChildren();
+    if (scenes.length !== 1) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Choose a scene'; select.append(option); }
+    for (const scene of scenes) { const option = document.createElement('option'); option.value = scene; option.textContent = scene; select.append(option); }
+    select.value = machineScene;
+    $('machine-scene-label').hidden = scenes.length === 1;
+  };
+  const renderMachine = idea => {
+    const grid = $('machine-grid'); grid.replaceChildren();
+    const bars = Number($('machine-bars').value);
+    for (let bar = 0; bar < bars; bar++) {
+      const card = document.createElement('div'); card.className = 'machine-bar';
+      const title = document.createElement('div'); title.className = 'machine-bar-title'; title.textContent = `BAR ${bar + 1}`; card.append(title);
+      const rows = idea.kind === 'drums' ? idea.lanes.map(lane => ({name: lane.name, steps: lane.steps})) : [{name: 'notes', steps: idea.notes}];
+      for (const row of rows) {
+        const line = document.createElement('div'); line.className = 'machine-row';
+        const label = document.createElement('span'); label.className = 'machine-lane'; label.textContent = row.name; line.append(label);
+        for (let step = 0; step < 16; step++) {
+          const value = row.steps[bar * 16 + step], active = idea.kind === 'drums' ? value > 0 : value?.velocity > 0;
+          const cell = document.createElement('span'); cell.className = `machine-step${active ? ' active' : ''}${step % 4 === 0 ? ' beat' : ''}`;
+          if (idea.kind !== 'drums' && active) cell.textContent = value.name;
+          cell.title = `Step ${step + 1}: ${active ? (idea.kind === 'drums' ? `velocity ${value}` : `${value.name}, velocity ${value.velocity}`) : 'rest'}`;
+          line.append(cell);
+        }
+        card.append(line);
+      }
+      grid.append(card);
+    }
+  };
+  const generateMachine = () => {
+    if (machineDraft()) { showDraftWarning(); return; }
+    try {
+      const revision = snapshot.revision, version = inputVersion;
+      const idea = call('generate', revision, machineTrack, machineScene, machineSeed, Number($('machine-bars').value), Number($('machine-density').value), Number($('machine-motion').value));
+      machineCandidate = {idea, revision, version};
+      renderMachine(idea);
+      $('machine-status').textContent = `${idea.track} · ${idea.scene} · ${idea.kind === 'drums' ? 'breakbeat' : 'arpeggio'} · ready to use`;
+    } catch (error) { invalidateMachine(error.message); }
+    refreshControls();
+  };
   const waveform = $('waveform'), waveformContext = waveform.getContext('2d');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let waveformFrame = 0, waveformSamples, waveformLastDraw = 0;
@@ -110,6 +177,7 @@
     for (const id of ['open-score', 'save-score']) $(id).disabled = !api || starting || !!resetPromise;
     $('undo').disabled = !api || starting || !!resetPromise || !snapshot?.canUndo;
     $('redo').disabled = !api || starting || !!resetPromise || !snapshot?.canRedo;
+    $('discard-draft').disabled = machineBusy() || !machineDraft();
     $('audio-state').textContent = state.playing ? 'Playing' : context ? 'Stopped' : 'Audio off';
     $('audio-state').parentElement.classList.toggle('is-playing', state.playing);
     $('waveform-state').textContent = state.playing ? 'Listening to output' : 'Ready when you are';
@@ -118,6 +186,9 @@
       button.disabled = ui.preset.disabled;
       button.setAttribute('aria-pressed', String(button.dataset.preset === ui.preset.value));
     }
+    for (const button of $('machine-tracks').querySelectorAll('button')) button.disabled = machineBusy();
+    for (const id of ['machine-bars', 'machine-density', 'machine-motion', 'machine-scene', 'machine-generate', 'machine-vary']) $(id).disabled = machineBusy();
+    $('machine-use').disabled = machineBusy() || !machineCandidate || !!machineDraft();
     const selected = ui.preset.selectedOptions[0];
     const name = selected ? selected.textContent.split(' · ')[0] : 'Night garden';
     $('session-name').textContent = $('header-sketch').textContent = name;
@@ -138,6 +209,10 @@
       item.append(name, instrument);
       $('track-list').append(item);
     }
+    machineCandidate = null;
+    $('machine-grid').replaceChildren();
+    $('machine-status').textContent = 'Choose a track and generate a pattern.';
+    refreshMachineTracks();
     refreshControls();
   };
   const prepare = () => call('prepare', context.sampleRate);
@@ -304,6 +379,7 @@
   };
   $('volume').oninput = () => { if (gain) gain.gain.setTargetAtTime(Number($('volume').value), context.currentTime, .01); };
   const change = async (action, value = '') => {
+    if (action !== 'edit' && machineDraft()) { ui.preset.value = snapshot.preset; showDraftWarning(); return; }
     try {
       call('change', action, snapshot.revision, value);
       inputVersion++;
@@ -321,7 +397,21 @@
     refreshControls();
   };
   $('apply').onclick = () => change('edit', ui.source.value);
-  ui.source.addEventListener('input', () => { inputVersion++; saveDraft(); });
+  $('discard-draft').onclick = () => { ui.source.value = snapshot.source; inputVersion++; $('edit-error').textContent = ''; saveDraft(); invalidateMachine('Draft discarded. Generate a pattern to preview it.'); };
+  ui.source.addEventListener('input', () => { inputVersion++; invalidateMachine('Apply or restore your score edits before generating.'); saveDraft(); });
+  $('machine-scene').onchange = event => { machineScene = event.target.value; invalidateMachine('Scene selected. Generate a pattern to preview it.'); };
+  for (const id of ['machine-bars', 'machine-density', 'machine-motion']) $(id).oninput = () => {
+    $('machine-density-value').textContent = $('machine-density').value;
+    $('machine-motion-value').textContent = $('machine-motion').value;
+    invalidateMachine('Settings changed. Generate a pattern to preview it.');
+  };
+  $('machine-generate').onclick = generateMachine;
+  $('machine-vary').onclick = () => { machineSeed = (machineSeed + 1) % 1000000000; generateMachine(); };
+  $('machine-use').onclick = () => {
+    if (machineDraft()) { showDraftWarning(); return; }
+    if (!machineCandidate || machineCandidate.revision !== snapshot.revision || machineCandidate.version !== inputVersion) { invalidateMachine('Score changed. Generate a new pattern.'); return; }
+    change('edit', machineCandidate.idea.source);
+  };
   $('open-score').onclick = () => $('score-file').click();
   $('score-file').onchange = async event => {
     const file = event.target.files[0], version = inputVersion;
@@ -333,6 +423,7 @@
       if (inputVersion !== version) throw new Error('The editor changed while the file was opening; try again.');
       ui.source.value = source;
       inputVersion++;
+      invalidateMachine('Apply or restore your score edits before generating.');
       $('edit-error').textContent = '';
       saveDraft();
       ui.status.textContent = 'Score opened. Apply it when you are ready to play.';
@@ -398,6 +489,8 @@
       $('storage-status').textContent = 'Could not restore the saved draft; it is still stored in this browser.';
     }
     lastGoodSource = snapshot.source;
+    if (!machineDraft()) generateMachine();
+    else { $('score-panel').open = true; invalidateMachine('Your restored score draft is ready to review.'); }
     ui.status.textContent = 'Ready. Press Play to enable audio in this tab.';
   })().catch(fail);
 })();
