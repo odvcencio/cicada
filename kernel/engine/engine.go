@@ -934,7 +934,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			if spec.Scope == "track" && int(setting.Track) >= cfg.Tracks || spec.Scope == "global" && setting.Track != 0xff {
 				return engineError("scene parameter owner is out of range")
 			}
-			if setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && (int(setting.Track) >= cfg.Tracks || !ChorusControlFits(&cfg.Track[setting.Track])) {
+			if chorusEnabled && setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && (int(setting.Track) >= cfg.Tracks || !ChorusControlFits(&cfg.Track[setting.Track])) {
 				return engineError("chorus scene setting requires exactly one chorus insert")
 			}
 			if math.IsNaN(float64(setting.Value)) || math.IsInf(float64(setting.Value), 0) && !off || !syncedDelay && !off && (setting.Value < spec.Min || setting.Value > spec.Max) {

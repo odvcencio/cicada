@@ -29,7 +29,7 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 				return engineError("amp automation requires exactly one amp insert")
 			}
 		}
-		if c.Index >= uint16(kernel.ParamChorusRate) && c.Index <= uint16(kernel.ParamChorusMix) {
+		if chorusEnabled && c.Index >= uint16(kernel.ParamChorusRate) && c.Index <= uint16(kernel.ParamChorusMix) {
 			if int(c.Track) >= cfg.Tracks || !ChorusControlFits(&cfg.Track[c.Track]) {
 				return engineError("chorus automation requires exactly one chorus insert")
 			}

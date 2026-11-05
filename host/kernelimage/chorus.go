@@ -7,6 +7,9 @@ import (
 )
 
 func validateChorusAutomation(cfg *engine.Config) error {
+	if modularFlags == 0 {
+		return nil
+	}
 	for _, control := range cfg.Automation {
 		if control.Index >= uint16(kernel.ParamChorusRate) && control.Index <= uint16(kernel.ParamChorusMix) {
 			if int(control.Track) >= cfg.Tracks || !engine.ChorusControlFits(&cfg.Track[control.Track]) {

@@ -1720,7 +1720,7 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 				return imageError("amp setting requires exactly one amp insert")
 			}
 		}
-		if setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && !engine.ChorusControlFits(&cfg.Track[setting.Track]) {
+		if modularFlags != 0 && setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && !engine.ChorusControlFits(&cfg.Track[setting.Track]) {
 			return imageError("chorus setting requires exactly one chorus insert")
 		}
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
