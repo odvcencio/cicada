@@ -33,6 +33,7 @@ import (
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/internal/studiohttp"
 	"m31labs.dev/cicada/lsp"
+	"m31labs.dev/cicada/patternmachine"
 	"m31labs.dev/cicada/project"
 )
 
@@ -542,6 +543,7 @@ type studioEdit struct {
 	Chord                 *edits.SetChord               `json:"chord,omitempty"`
 	NewName               string                        `json:"newName,omitempty"`
 	Starter               string                        `json:"starter,omitempty"`
+	Machine               *patternmachine.Recipe        `json:"machine,omitempty"`
 	AmpDrive              *float64                      `json:"ampDrive,omitempty"`
 	AmpTone               *float64                      `json:"ampTone,omitempty"`
 	AmpOutput             *float64                      `json:"ampOutput,omitempty"`

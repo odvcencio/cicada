@@ -424,6 +424,22 @@ jobs:
           make test-studio-chorus | tee build/studio-chorus-report.txt
           kill "$studio_pid"
           wait "$studio_pid" || true
+          mkdir -p "$browser_root/pattern-machine"
+          export CICADA_MACHINE_SCORE="$browser_root/pattern-machine/main.cicada"
+          export CICADA_MACHINE_PROOF="$PWD/build/pattern-machine-proof"
+          mkdir -p "$CICADA_MACHINE_PROOF"
+          node workstation/browser/pattern-machine.test.cjs --write-fixture "$CICADA_MACHINE_SCORE"
+          ./build/cicada studio "$CICADA_MACHINE_SCORE" --audio null --listen "127.0.0.1:$studio_port" > build/studio-pattern-machine-server.log 2>&1 &
+          studio_pid=$!
+          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+          for _ in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          make test-studio-pattern-machine | tee build/studio-pattern-machine-report.txt
+          kill "$studio_pid"
+          wait "$studio_pid" || true
           ./build/cicada studio "$browser_root/shell/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-shell-server.log 2>&1 &
           studio_pid=$!
           export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
@@ -1103,6 +1119,9 @@ jobs:
             build/studio-modulation-report.txt
             build/modulation-source-proof/
             build/studio-chorus-report.txt
+            build/studio-pattern-machine-report.txt
+            build/studio-pattern-machine-server.log
+            build/pattern-machine-proof/
             build/chorus-proof/
             build/studio-chorus-server.log
             build/studio-shell-report.txt

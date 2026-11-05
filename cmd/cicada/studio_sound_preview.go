@@ -13,7 +13,9 @@ import (
 	"strconv"
 	"time"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/patternmachine"
 	"m31labs.dev/cicada/project"
 )
 
@@ -30,16 +32,18 @@ type soundPreviewLease struct {
 }
 
 type soundPreviewRequest struct {
-	Action   string `json:"action"`
-	Lease    string `json:"lease"`
-	Sequence uint64 `json:"sequence"`
-	Patch    string `json:"patch"`
-	Tempo    int    `json:"tempo"`
-	Root     int    `json:"root"`
-	Scale    string `json:"scale"`
-	Pattern  string `json:"pattern,omitempty"`
-	Track    string `json:"track,omitempty"`
-	Revision string `json:"revision,omitempty"`
+	Action         string                 `json:"action"`
+	Lease          string                 `json:"lease"`
+	Sequence       uint64                 `json:"sequence"`
+	Patch          string                 `json:"patch"`
+	Tempo          int                    `json:"tempo"`
+	Root           int                    `json:"root"`
+	Scale          string                 `json:"scale"`
+	Pattern        string                 `json:"pattern,omitempty"`
+	Track          string                 `json:"track,omitempty"`
+	Revision       string                 `json:"revision,omitempty"`
+	SourceRevision string                 `json:"source_revision,omitempty"`
+	Machine        *patternmachine.Recipe `json:"machine,omitempty"`
 }
 
 type soundPreviewResult struct {
@@ -203,7 +207,14 @@ func patternPreviewProject(path string, request soundPreviewRequest) (*project.P
 	if request.Revision == "" || studioRevision(source) != request.Revision {
 		return nil, empty, errPatternPreviewChanged
 	}
-	fingerprint, err := playSourceHashBytes(path, source)
+	return patternPreviewSource(path, request, source, source)
+}
+
+// The source used for compilation may be an in-memory staged candidate. The
+// fingerprint always covers the real project, so changes stop the preview.
+func patternPreviewSource(path string, request soundPreviewRequest, currentSource, source []byte) (*project.Project, [32]byte, error) {
+	var empty [32]byte
+	fingerprint, err := playSourceHashBytes(path, currentSource)
 	if err != nil {
 		return nil, empty, err
 	}
@@ -255,6 +266,45 @@ func patternPreviewProject(path string, request soundPreviewRequest) (*project.P
 	return p, fingerprint, err
 }
 
+func (s *studio) machinePreviewProject(path string, request soundPreviewRequest) (*project.Project, [32]byte, error) {
+	var empty [32]byte
+	if request.Machine == nil {
+		return nil, empty, fmt.Errorf("choose a generated idea")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if path != s.path {
+		return nil, empty, errPatternPreviewChanged
+	}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, empty, err
+	}
+	if request.Revision == "" || studioRevision(source) != request.Revision {
+		return nil, empty, errPatternPreviewChanged
+	}
+	if request.SourceRevision == "" {
+		return nil, empty, errPatternPreviewChanged
+	}
+	currentRevision, err := project.ReadScoreRevision(path)
+	if err != nil {
+		return nil, empty, err
+	}
+	if currentRevision != request.SourceRevision {
+		return nil, empty, errPatternPreviewChanged
+	}
+	opts, err := s.editOptions(source, nil)
+	if err != nil {
+		return nil, empty, err
+	}
+	intent := &edits.CreatePattern{Name: request.Pattern, Track: request.Track, Steps: request.Machine.Bars * 16, Starter: "machine", Machine: request.Machine}
+	staged, err := edits.Stage(source, edits.Proposal{Envelope: edits.Envelope{Version: 1, Revision: request.Revision, Intents: []edits.Intent{intent}}}, opts)
+	if err != nil {
+		return nil, empty, err
+	}
+	return patternPreviewSource(path, request, source, staged.Result.Source)
+}
+
 func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 	if !studioSameOrigin(r) {
 		studioJSON(w, 403, map[string]string{"error": "cross-origin sound preview is not allowed"})
@@ -285,7 +335,7 @@ func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 200, soundPreviewResult{})
 	case "state":
 		studioJSON(w, 200, s.patternPreviewState(request.Lease))
-	case "play", "pattern":
+	case "play", "pattern", "machine":
 		generation, err := s.transport.beginSoundPreview(request)
 		if err != nil {
 			studioJSON(w, 409, map[string]string{"error": err.Error()})
@@ -306,7 +356,9 @@ func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 		var p *project.Project
 		var duration time.Duration
 		var fingerprint [32]byte
-		if request.Action == "pattern" {
+		if request.Action == "machine" {
+			p, fingerprint, err = s.machinePreviewProject(path, request)
+		} else if request.Action == "pattern" {
 			p, fingerprint, err = patternPreviewProject(path, request)
 		} else {
 			p, _, duration, err = soundPreviewProject(path, request)
@@ -326,7 +378,7 @@ func (s *studio) soundPreview(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, 409, map[string]string{"error": err.Error()})
 			return
 		}
-		if request.Action == "pattern" {
+		if request.Action == "pattern" || request.Action == "machine" {
 			s.transport.mu.Lock()
 			if s.transport.previewGeneration == generation && s.transport.soundPreviewOwner == request.Lease {
 				s.transport.previewSourceHash = fingerprint

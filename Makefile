@@ -139,6 +139,11 @@ test-studio-modulation-source:
 test-studio-chorus:
 	node --test workstation/browser/chorus.test.cjs
 
+.PHONY: test-studio-pattern-machine
+# Requires a fresh Studio process, disposable score, and proof directory.
+test-studio-pattern-machine:
+	node --test workstation/browser/pattern-machine.test.cjs
+
 .PHONY: test-studio-shell
 # Requires a fresh Studio process with a disposable score; this suite edits the score.
 test-studio-shell:

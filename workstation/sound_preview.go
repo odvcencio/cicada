@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 
+	"m31labs.dev/cicada/patternmachine"
 	"m31labs.dev/gosx/action"
 )
 
@@ -18,14 +19,25 @@ func (s *studioApp) soundPreviewAction(ctx *action.Context) error {
 	payload := map[string]any{"action": f["action"], "lease": f["lease"]}
 	switch f["action"] {
 	case "open", "state":
-	case "stop", "close", "play", "pattern":
+	case "stop", "close", "play", "pattern", "machine":
 		sequence, err := strconv.ParseUint(f["sequence"], 10, 64)
 		if err != nil || sequence == 0 {
 			return action.Validation("sound preview sequence is required", nil, f)
 		}
 		payload["sequence"] = sequence
-		if f["action"] == "pattern" {
+		if f["action"] == "pattern" || f["action"] == "machine" {
 			payload["pattern"], payload["track"], payload["revision"] = f["pattern"], f["track"], f["revision"]
+		}
+		if f["action"] == "machine" {
+			var recipe patternmachine.Recipe
+			if err := json.Unmarshal([]byte(f["machine"]), &recipe); err != nil {
+				return action.Validation("invalid generated idea", nil, f)
+			}
+			if err := recipe.Validate(); err != nil {
+				return action.Validation(err.Error(), nil, f)
+			}
+			payload["machine"] = recipe
+			payload["source_revision"] = f["source_revision"]
 		}
 		if f["action"] == "play" {
 			tempo, err := integer(f, "tempo")

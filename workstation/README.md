@@ -13,6 +13,18 @@ ordered track effects and an EQ/compressor/de-esser vocal chain. Session also
 edits continuous automation points by pointer, touch, keyboard, or unit-aware
 fields; saved changes use the same source revision and Undo history.
 
+In **Clip**, choose **Generate pattern** to open Pattern Machine. Select an
+instrument for a circular arpeggio or a drum track for a breakbeat, then pick
+one, two, or four bars and adjust density and motion. **Update preview** shows
+the resulting steps; **New variation** changes the seed. With playback and
+recording stopped, **Loop part** auditions the idea using the selected sound
+without saving it. **Keep pattern** creates an ordinary editable pattern; it
+does not replace the song. If a scene was selected, you can explicitly assign
+the pattern to that scene while keeping it. One Undo removes the new pattern
+and assignment together. The generator uses the project's key and scale;
+the minor-key dominant deliberately includes its raised third. It generates
+one track at a time rather than a complete multi-track arrangement.
+
 The single-window Studio shell uses **Space** for play/pause and **Home** to
 return to the start. **Cmd+S** saves the score on Mac; **Cmd+Z** and
 **Cmd+Shift+Z** undo and redo saved edits when focus is outside a text field.

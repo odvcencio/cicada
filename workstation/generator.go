@@ -143,7 +143,8 @@ func (s *studioApp) generator(ctx *server.Context, v workspace, csrf string) gos
 	if generated, ok := s.draft(store.String("phrase-preview"), workspaceOwner(ctx.Request)); ok {
 		preview = gosx.Fragment(gosx.El("h3", gosx.Text("Generated score preview")), gosx.El("pre", gosx.Attrs(gosx.Attr("class", "history-diff")), gosx.Text(generated.Source)), s.mutationControls(v, csrf, values, store.String("phrase-locks"), generated.Source), s.form(workspace{Revision: generated.Revision}, csrf, "generator", "source", hidden("content", generated.Source), submit("", "", "Replace open score with this phrase")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Applying replaces the complete score. Undo restores the previous score.")))
 	}
-	return ui.Panel(ui.PanelProps{ID: "generator", Title: "Phrase generator", Description: "Deterministic bass phrases across eight scales, for the voice you choose. Preview before applying."}, form, preview)
+	legacy := gosx.El("details", gosx.Attrs(gosx.Attr("open", store.String("phrase-preview") != "")), gosx.El("summary", gosx.Text("Classic phrase generator")), form, preview)
+	return ui.Panel(ui.PanelProps{ID: "generator", Title: "Generate", Description: "Make an editable pattern for a sound in your song."}, patternMachineLink(ctx.Request.URL.Query().Get("track"), "", ctx.Request.URL.Query().Get("scene")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shape an arpeggio or drum pattern on a step grid, then listen before keeping it.")), legacy)
 }
 
 var mutationNames = []string{"nudge", "accent", "slide", "octave", "rotate", "swap", "fill", "thin", "ratchet"}

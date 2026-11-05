@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/patternmachine"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
@@ -62,6 +63,36 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 			}
 			p["newName"], p["track"], p["scene"], p["length"] = f["newName"], f["track"], f["scene"], length
 			p["starter"] = f["starter"]
+			if f["starter"] == "machine" {
+				seed, err := strconv.ParseUint(f["machine_seed"], 10, 32)
+				if err != nil {
+					return nil, fmt.Errorf("seed must be a whole number from 0 to 4294967295")
+				}
+				bars, err := integer(f, "machine_bars")
+				if err != nil {
+					return nil, err
+				}
+				root, err := integer(f, "machine_root")
+				if err != nil {
+					return nil, err
+				}
+				density, err := integer(f, "machine_density")
+				if err != nil {
+					return nil, err
+				}
+				motion, err := integer(f, "machine_motion")
+				if err != nil {
+					return nil, err
+				}
+				recipe := patternmachine.Recipe{Version: 1, Seed: uint32(seed), Bars: bars, Root: root, Scale: f["machine_scale"], Density: density, Motion: motion}
+				if err := recipe.Validate(); err != nil {
+					return nil, err
+				}
+				if length != bars*16 {
+					return nil, fmt.Errorf("pattern length must match the generated bars")
+				}
+				p["machine"] = recipe
+			}
 			target, _ := url.Parse(patternURL(f["newName"], 1, "", ""))
 			q := target.Query()
 			q.Set("track", f["track"])
@@ -355,8 +386,11 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the pattern editor"))
 	}
+	if ctx.Request.URL.Query().Get("machine") == "1" {
+		return s.patternMachine(ctx, v, csrf)
+	}
 	if len(v.Project.Patterns) == 0 {
-		return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Create your first pattern, then draw notes or drum hits in its grid."}, s.patternCreation(ctx, v, csrf, ""))
+		return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Create your first pattern, then draw notes or drum hits in its grid."}, patternMachineLink(ctx.Request.URL.Query().Get("track"), "", ctx.Request.URL.Query().Get("scene")), s.patternCreation(ctx, v, csrf, ""))
 	}
 	q := ctx.Request.URL.Query()
 	p := v.Project.Patterns[0]
@@ -526,7 +560,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"), gridFormStatus(ctx, p.ID, "range"))
 	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"), gridFormStatus(ctx, p.ID, "resize"))
 	tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions"), gosx.BoolAttr("data-workspace-tools"), gosx.BoolAttr("hidden"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Piano-roll tools")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "select"), gosx.Attr("aria-pressed", "true")), gosx.Text("Select")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "draw"), gosx.Attr("aria-pressed", "false"), gosx.Attr("aria-keyshortcuts", "B")), gosx.Text("Draw (B)")))
-	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), patternGridTiming(p), s.patternPreview(ctx, v, csrf, p), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
+	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport, patternMachineLink(q.Get("track"), p.ID, q.Get("scene"))), patternGridTiming(p), s.patternPreview(ctx, v, csrf, p), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
 	var phraseNotice gosx.Node = gosx.Fragment()
 	if usesPhrase {
 		phraseNotice = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This pattern uses shared phrases. Editing a cell expands its phrase uses locally; the shared phrases and other patterns keep their music."))
