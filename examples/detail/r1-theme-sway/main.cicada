@@ -1,0 +1,300 @@
+cicada 2
+
+title "Bon Voyage!"
+
+tempo 92
+
+key bb major
+
+seed 4242
+
+// R1 adds motion without changing the theme's notes.
+lfo drift { wave = triangle rate = 8bars }
+sway keys_wander { rate = 2bars octaves = 2 }
+sway brass_wander { rate = 4bars octaves = 2 }
+contour pad_swell { period = 4bars @0 -1 @1/4 1 smooth @1 -1 }
+
+mod drift -> strings_pad.pan depth = 0.2
+mod keys_wander -> keys.level depth = 1.5dB
+mod pad_swell -> strings_pad.level depth = 2dB
+
+track vibes model_vibraphone {
+  level = -9dB
+  pan = -0.2
+  insert = sparkle
+  send echo = -18dB
+  send hall = 0dB
+  octave = 4
+}
+
+track bells tine_bell {
+  level = -9dB
+  pan = 0.3
+  insert = sparkle
+  send echo = -18dB
+  send hall = 0dB
+  voices = 2
+}
+
+track brass brass_lead {
+  level = -7dB
+  send hall = -4.5dB
+}
+
+track strings_pad string_machine {
+  level = -12dB
+  pan = -0.3
+  send hall = -0.5dB
+  voices = 4
+  attack = 400ms
+  release = 900ms
+}
+
+track strings_line string_machine {
+  level = -5.5dB
+  pan = 0.3
+  send hall = -1.5dB
+  voices = 2
+  attack = 120ms
+  release = 500ms
+}
+
+track keys tine_ep {
+  level = -12dB
+  pan = 0.1
+  send hall = -4dB
+  voices = 6
+}
+
+track harp harp {
+  level = -4dB
+  pan = -0.1
+  send hall = 0dB
+}
+
+track bass bass {
+  level = -12dB
+}
+
+track drums band_kit {
+  level = -12dB
+  send hall = -9dB
+}
+
+bus music {
+  insert = duck
+}
+
+live {
+  land = phrase
+  phrase = 8bars
+  state theme = theme_loop
+  state lounge = lounge_loop
+  transition theme -> lounge quantize phrase crossfade 2s
+  transition lounge -> theme quantize phrase
+}
+
+arrange {
+  place vibes-vibes-a-b9 vibes vibes_a {
+    at = @9.1.1 length = 8bars
+  }
+  place vibes-vibes-a-b17 vibes vibes_a {
+    at = @17.1.1 length = 8bars
+  }
+  place vibes-vibes-break-b41 vibes vibes_break {
+    at = @41.1.1 length = 8bars
+  }
+  place vibes-vibes-a-up-b49 vibes vibes_a_up {
+    at = @49.1.1 length = 8bars
+  }
+  place vibes-vibes-tag-b57 vibes vibes_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place bells-bells-sparkle-b1 bells bells_sparkle {
+    at = @1.1.1 length = 8bars
+  }
+  place bells-bells-a-b9 bells bells_a {
+    at = @9.1.1 length = 8bars
+  }
+  place bells-bells-sparkle-b33 bells bells_sparkle {
+    at = @33.1.1 length = 8bars
+  }
+  place bells-bells-a-up-b49 bells bells_a_up {
+    at = @49.1.1 length = 8bars
+  }
+  place bells-bells-tag-b57 bells bells_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place brass-brass-fanfare-b5 brass brass_fanfare {
+    at = @5.1.1 length = 4bars
+  }
+  place brass-brass-a3-b33 brass brass_a3 {
+    at = @33.1.1 length = 8bars
+  }
+  place brass-brass-final-b49 brass brass_final {
+    at = @49.1.1 length = 8bars
+  }
+  place brass-brass-tag-b57 brass brass_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place strings-pad-pad-swell-b1 strings_pad pad_swell {
+    at = @1.1.1 length = 8bars
+  }
+  place strings-pad-pad-a-b9 strings_pad pad_a {
+    at = @9.1.1 length = 8bars
+  }
+  place strings-pad-pad-a-b17 strings_pad pad_a {
+    at = @17.1.1 length = 8bars
+  }
+  place strings-pad-pad-b-b25 strings_pad pad_b {
+    at = @25.1.1 length = 8bars
+  }
+  place strings-pad-pad-a-b33 strings_pad pad_a {
+    at = @33.1.1 length = 8bars
+  }
+  place strings-pad-pad-break-b41 strings_pad pad_break {
+    at = @41.1.1 length = 8bars
+  }
+  place strings-pad-pad-a-up-b49 strings_pad pad_a_up {
+    at = @49.1.1 length = 8bars
+  }
+  place strings-pad-pad-tag-b57 strings_pad pad_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place strings-line-line-a2-b17 strings_line line_a2 {
+    at = @17.1.1 length = 8bars
+  }
+  place strings-line-line-b-b25 strings_line line_b {
+    at = @25.1.1 length = 8bars
+  }
+  place strings-line-line-a2-up-b49 strings_line line_a2_up {
+    at = @49.1.1 length = 8bars
+  }
+  place keys-keys-intro-b1 keys keys_intro {
+    at = @1.1.1 length = 8bars
+  }
+  place keys-keys-a-b9 keys keys_a {
+    at = @9.1.1 length = 8bars
+  }
+  place keys-keys-a-b17 keys keys_a {
+    at = @17.1.1 length = 8bars
+  }
+  place keys-keys-b-b25 keys keys_b {
+    at = @25.1.1 length = 8bars
+  }
+  place keys-keys-a-b33 keys keys_a {
+    at = @33.1.1 length = 8bars
+  }
+  place keys-keys-break-b41 keys keys_break {
+    at = @41.1.1 length = 8bars
+  }
+  place keys-keys-a-up-b49 keys keys_a_up {
+    at = @49.1.1 length = 8bars
+  }
+  place keys-keys-tag-b57 keys keys_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place harp-harp-gliss-b1 harp harp_gliss {
+    at = @1.1.1 length = 1bars
+  }
+  place harp-harp-b-b25 harp harp_b {
+    at = @25.1.1 length = 8bars
+  }
+  place harp-harp-gliss-up-b49 harp harp_gliss_up {
+    at = @49.1.1 length = 1bars
+  }
+  place harp-harp-tag-b57 harp harp_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place bass-bass-intro-b5 bass bass_intro {
+    at = @5.1.1 length = 4bars
+  }
+  place bass-bass-a-b9 bass bass_a {
+    at = @9.1.1 length = 8bars
+  }
+  place bass-bass-a-b17 bass bass_a {
+    at = @17.1.1 length = 7bars
+  }
+  place bass-bass-turn-b24 bass bass_turn {
+    at = @24.1.1 length = 1bars
+  }
+  place bass-bass-b-b25 bass bass_b {
+    at = @25.1.1 length = 7bars
+  }
+  place bass-bass-walk-b32 bass bass_walk {
+    at = @32.1.1 length = 1bars
+  }
+  place bass-bass-a-b33 bass bass_a {
+    at = @33.1.1 length = 8bars
+  }
+  place bass-bass-a-b41 bass bass_a {
+    at = @41.1.1 length = 8bars
+  }
+  place bass-bass-a-up-b49 bass bass_a_up {
+    at = @49.1.1 length = 8bars
+  }
+  place bass-bass-tag-b57 bass bass_tag {
+    at = @57.1.1 length = 8bars
+  }
+  place drums-drums-intro-b5 drums drums_intro {
+    at = @5.1.1 length = 4bars
+  }
+  place drums-drums-groove-b9 drums drums_groove {
+    at = @9.1.1 length = 7bars
+  }
+  place drums-drums-fill-b16 drums drums_fill {
+    at = @16.1.1 length = 1bars
+  }
+  place drums-drums-groove-b17 drums drums_groove {
+    at = @17.1.1 length = 7bars
+  }
+  place drums-drums-fill-b24 drums drums_fill {
+    at = @24.1.1 length = 1bars
+  }
+  place drums-drums-groove-b-b25 drums drums_groove_b {
+    at = @25.1.1 length = 7bars
+  }
+  place drums-drums-fill-b32 drums drums_fill {
+    at = @32.1.1 length = 1bars
+  }
+  place drums-drums-groove-b33 drums drums_groove {
+    at = @33.1.1 length = 7bars
+  }
+  place drums-drums-fill-b40 drums drums_fill {
+    at = @40.1.1 length = 1bars
+  }
+  place drums-drums-groove-b41 drums drums_groove {
+    at = @41.1.1 length = 7bars
+  }
+  place drums-drums-fill-b48 drums drums_fill {
+    at = @48.1.1 length = 1bars
+  }
+  place drums-drums-groove-b49 drums drums_groove {
+    at = @49.1.1 length = 7bars
+  }
+  place drums-drums-fill-b56 drums drums_fill {
+    at = @56.1.1 length = 1bars
+  }
+  place drums-drums-tag-b57 drums drums_tag {
+    at = @57.1.1 length = 8bars
+  }
+}
+
+// Level lanes follow the transport, also after a Director state lands. The strings_pad
+// swell ends in bar 8 at the track's own level; the other three lanes sit on tracks that
+// both state scenes switch off.
+automate strings_line.level {
+  @25.1.1 -2.5dB @33.1.1 -5.5dB step
+}
+
+automate brass.level {
+  @49.1.1 -10dB @57.1.1 -7dB step
+}
+
+automate harp.level {
+  @24.4.4 2dB @33.1.1 -4dB step @48.4.4 2dB step @60.4.4 -4dB step
+}
+
+automate strings_pad.level {
+  @1.1.1 -22dB @8.4.4 -12dB smooth
+}

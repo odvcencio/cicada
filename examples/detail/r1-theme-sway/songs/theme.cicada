@@ -1,0 +1,341 @@
+// Bon Voyage! main theme: phrases, patterns and scenes. Step patterns only.
+phrase ph_vibes_a {
+  f5 - - eb5 d5 - - bb5 | - - g5 - . . bb4 c5 | d5 - - c5 d5 - - f5 | - - eb5 - . . c5 d5 | a5 - - g5 f5 - - d6 | - - - c6 - - bb5 a5 | bb5 - - a5 g5 - - f5 | - - d5 - . . a4 c5
+}
+
+phrase ph_bells_a {
+  f6 - - eb6 d6 - - bb6 | - - g6 - . . bb5 c6 | d6 - - c6 d6 - - f6 | - - eb6 - . . c6 d6 | a6 - - g6 f6 - - d6' | - - - c6' - - bb6 a6 | bb6 - - a6 g6 - - f6 | - - d6 - . . a5 c6
+}
+
+phrase ph_pad_a {
+  [bb3 d4 f4 a4] - - - - - - - | [g3 bb3 eb4 f4] - - - - - - - | [bb3 d4 f4 a4] - - - [g3 bb3 d4 f4] - - - | [g3 bb3 c4 eb4] - - - [f3 bb3 c4 eb4] - - - | [bb3 d4 f4 a4] - - - - - - - | [g3 bb3 d4 eb4] - - - - - - - | [g3 bb3 c4 eb4] - - - [f3 bb3 c4 eb4] - - - | [bb3 c4 d4 f4] - - - [f3 a3 c4 eb4] - - -
+}
+
+phrase ph_line_a2 {
+  . . . . . . . . | . . eb5 - bb4 - - - | f4 - - - . . . . | . . c5 - g4 - - - | - - . . . . . . | . . g5 - d5 - - - | - - . . . . . . | . . bb4 - c5 - eb4 -
+}
+
+phrase ph_keys_a {
+  [f3 a3 c4 d4] - - [f3 a3 c4 d4] - - [f3 a3 c4 d4] . | [g3 bb3 eb4 f4] - - [g3 bb3 eb4 f4] - - [g3 bb3 eb4 f4] . | [f3 a3 c4 d4] - - [f3 bb3 d4] - - [f3 bb3 d4] . | [g3 bb3 eb4] - - [f3 bb3 c4 eb4] - - [f3 bb3 c4 eb4] . | [f3 a3 c4 d4] - - [f3 a3 c4 d4] - - [f3 a3 c4 d4] . | [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] . | [g3 bb3 eb4] - - [f3 bb3 c4 eb4] - - [f3 bb3 c4 eb4] . | [f3 bb3 c4 d4] - - [f3 a3 c4 eb4] - - [f3 a3 c4 eb4] .
+}
+
+phrase ph_bass_a {
+  bb1 - - bb1 f2 - - eb2 | - - eb2 - bb1 - c2 - | bb1 - - bb1 g1 - - c2 | - - c2 - f1 - - f2 | bb1 - - bb1 f2 - - eb2 | - - eb2 - bb2 - g2 - | c2 - - c2 f1 - c2 - | bb1 - - bb1 f1 - a1 -
+}
+
+phrase ph_harp_gliss {
+  bb2 c3 d3 eb3 f3 g3 a3 bb3 c4 d4 eb4 f4 g4 a4 bb4 c5 d5 eb5 f5 g5 a5 bb5 c6 d6 . . . . . . . .
+}
+
+// vibes
+pattern vibes_a notes {
+  step = 1/8
+  gate = 100
+  use ph_vibes_a
+}
+
+pattern vibes_a_up notes {
+  step = 1/8
+  gate = 100
+  transpose = 1
+  use ph_vibes_a
+}
+
+pattern vibes_break notes {
+  step = 1/8
+  gate = 100
+  d5 f5 - a5 c6 - - d6 | - - c6 bb5 g5 - - . | . . . . . . . . | . . . . . . . . | f5 a5 - c6 d6 - c6 bb5 | g5 - - bb5 g5 - f5 . | . . . . . . . . | . . . . . . . .
+}
+
+pattern vibes_tag notes {
+  step = 1/8
+  gate = 100
+  f#5 - - e5 d#5 - - b5 | - - g#5 - f#5 - - . | c#5 - - d#5 e5 - b5 - | - - a#5 - - - . . | c#6 - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - -
+}
+
+// bells
+pattern bells_sparkle notes {
+  step = 1/8
+  gate = 90
+  . . . . . . f6 . | . . bb6 . . . g6 . | . . . . a6 a6 . . | . . . . . . bb6 . | . . . . . . d6 . | . . g6 . . . . . | . . . . eb6 eb6 . . | f6 . . . c6 . . .
+}
+
+pattern bells_a notes {
+  step = 1/8
+  gate = 90
+  use ph_bells_a
+}
+
+pattern bells_a_up notes {
+  step = 1/8
+  gate = 90
+  transpose = 1
+  use ph_bells_a
+}
+
+pattern bells_tag notes {
+  step = 1/8
+  gate = 90
+  . . . . . . . . | . . . . f#6 . . . | . . . . . . b6 . | . . a#6 . . . . . | c#6' - - - - - - - | . . . . . . . . | . . . . . . . . | . . . . . . . .
+}
+
+// brass
+pattern brass_fanfare notes {
+  step = 1/8
+  gate = 90
+  f5 - - eb5 d5 - - bb5 | - - g5 - bb5 . bb5 . | c6 - - - bb5 - - - | a5 - - - - - . .
+}
+
+pattern brass_a3 notes {
+  step = 1/8
+  gate = 90
+  use ph_vibes_a
+}
+
+pattern brass_final notes {
+  step = 1/8
+  gate = 90
+  transpose = 1
+  use ph_vibes_a
+}
+
+pattern brass_tag notes {
+  step = 1/8
+  gate = 90
+  a#4 - - g#4 f#4 - - d#5 | - - e5 - d#5 - - . | e4 - - f#4 g#4 - - - | - - c#5 - - - . . | f#5 - - - - - - - | - - - - . . . . | . . . . . . . . | . . . . . . . .
+}
+
+// strings_pad
+pattern pad_a notes {
+  step = 1/8
+  gate = 100
+  use ph_pad_a
+}
+
+pattern pad_a_up notes {
+  step = 1/8
+  gate = 100
+  transpose = 1
+  use ph_pad_a
+}
+
+pattern pad_break notes {
+  step = 1/8
+  gate = 100
+  use ph_pad_a
+  velocity: 100 . . . . . . . . . . . . . . . 30 . . . . . . . . . . . . . . . 100 . . . . . . . . . . . . . . . 30 . . . . . . . . . . . . . . .
+}
+
+pattern pad_b notes {
+  step = 1/8
+  gate = 100
+  [g3 bb3 d4 eb4] - - - - - - - | [ab3 c4 eb4 bb4] - - - - - - - | [bb3 d4 f4 a4] - - - - - - - | [bb3 d4 f4 a4] - - - [g3 bb3 d4 f4] - - - | [g3 bb3 d4 eb4] - - - - - - - | [ab3 c4 eb4 g4] - - - - - - - | [g3 bb3 c4 eb4] - - - [f3 bb3 c4 eb4] - - - | [f3 bb3 c4 eb4] - - - [f3 a3 c4 eb4] - - -
+}
+
+pattern pad_swell notes {
+  step = 1/8
+  gate = 100
+  [bb3 d4 f4 a4] - - - - - - - | [bb3 eb4 f4 g4] - - - - - - - | [bb3 d4 f4 a4] - - - - - - - | [bb3 eb4 f4 g4] - - - - - - - | [bb3 d4 f4 a4] - - - - - - - | [g3 bb3 d4 eb4] - - - - - - - | [g3 bb3 c4 eb4] - - - [f3 bb3 c4 eb4] - - - | [f3 a3 c4 eb4] - - - - - - -
+  velocity: 40 . . . . . . . 46 . . . . . . . 52 . . . . . . . 58 . . . . . . . 64 . . . . . . . 70 . . . . . . . 78 . . . . . . . 86 . . . . . . .
+}
+
+pattern pad_tag notes {
+  step = 1/8
+  gate = 100
+  [b3 d#4 f#4 a#4] - - - - - - - | [g#3 b3 d#4 e4] - - - - - - - | [g#3 b3 c#4 e4] - - - [f#3 b3 c#4 e4] - - - | [f#3 b3 c#4 e4] - [f#3 a#3 c#4 e4] - - - - - | [b3 d#4 a#4 c#5] - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - -
+}
+
+// strings_line
+pattern line_a2 notes {
+  step = 1/8
+  gate = 100
+  use ph_line_a2
+}
+
+pattern line_a2_up notes {
+  step = 1/8
+  gate = 100
+  transpose = 1
+  use ph_line_a2
+}
+
+pattern line_b notes {
+  step = 1/8
+  gate = 100
+  g5 - - - - - f5 - | eb5 - - - - - c5 - | d5 - - - f5 - - - | a5 - - - - - g5 - | bb5 - - - - - f5 - | g5 - - - c6 - bb5 - | g5 - - - - - f5 eb5 | bb4 - - - a4 - - -
+}
+
+// keys
+pattern keys_a notes {
+  step = 1/8
+  gate = 85%
+  use ph_keys_a
+}
+
+pattern keys_a_up notes {
+  step = 1/8
+  gate = 85%
+  transpose = 1
+  use ph_keys_a
+}
+
+pattern keys_intro notes {
+  step = 1/8
+  gate = 85%
+  [f3 a3 c4 d4] - - - - - - - | [g3 bb3 eb4 f4] - - - - - - - | [f3 a3 c4 d4] - - - - - - - | [g3 bb3 eb4 f4] - - - - - - - | [f3 a3 c4 d4] - - [f3 a3 c4 d4] - - [f3 a3 c4 d4] . | [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] . | [g3 bb3 eb4] - - [f3 bb3 c4 eb4] - - [f3 bb3 c4 eb4] . | [f3 a3 c4 eb4] - - [f3 a3 c4 eb4] - - - .
+}
+
+pattern keys_b notes {
+  step = 1/8
+  gate = 85%
+  [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] . | [ab3 c4 eb4 bb4] - - [ab3 c4 eb4 bb4] - - [ab3 c4 eb4 bb4] . | [f3 a3 c4 d4] - - [f3 a3 c4 d4] - - [f3 a3 c4 d4] . | [f3 a3 c4 d4] - - [f3 bb3 d4] - - [f3 bb3 d4] . | [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] . | [ab3 c4 eb4 g4] - - [ab3 c4 eb4 g4] - - [ab3 c4 eb4 g4] . | [g3 bb3 eb4] - - [f3 bb3 c4 eb4] - - [f3 bb3 c4 eb4] . | [f3 bb3 c4 eb4] - - - [f3 a3 c4 eb4] - - -
+}
+
+pattern keys_break notes {
+  step = 1/8
+  gate = 85%
+  [f3 a3 c4 d4] - - [f3 a3 c4 d4] - - [f3 a3 c4 d4] . | [g3 bb3 eb4 f4] - - [g3 bb3 eb4 f4] - - [g3 bb3 eb4 f4] . | [f4 f5] - - [a4 a5] [c5 c6] - - [bb4 bb5] | - - [g4 g5] - [eb4 eb5] - . . | [f3 a3 c4 d4] - - [f3 a3 c4 d4] - - [f3 a3 c4 d4] . | [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] - - [g3 bb3 d4 f4] . | [eb5 eb6] - - [d5 d6] [c5 c6] - - [bb4 bb5] | - - [a4 a5] - [f3 a3 c4 eb4] - - -
+  velocity: 100 . . . . . . . . . . . . . . . 127 . . . . . . . . . . . . . . . 100 . . . . . . . . . . . . . . . 127 . . . . . . . . . . . 100 . . .
+}
+
+pattern keys_tag notes {
+  step = 1/8
+  gate = 85%
+  [f#3 a#3 c#4 d#4] - - [f#3 a#3 c#4 d#4] - - [f#3 a#3 c#4 d#4] . | [g#3 b3 d#4 f#4] - - [g#3 b3 d#4 f#4] - - [g#3 b3 d#4 f#4] . | [g#3 b3 e4] - - [f#3 b3 c#4 e4] - - [f#3 b3 c#4 e4] . | [f#3 b3 c#4 e4] - [f#3 a#3 c#4 e4] - - - . . | [b2 f#3 d#4 a#4] - - - - - - - | . . . . . . . . | . . . . . . . . | . . . . . . . .
+}
+
+// harp
+pattern harp_gliss notes {
+  step = 1/32
+  gate = 100%
+  use ph_harp_gliss
+}
+
+pattern harp_gliss_up notes {
+  step = 1/32
+  gate = 100%
+  transpose = 1
+  use ph_harp_gliss
+}
+
+pattern harp_b notes {
+  step = 1/8
+  gate = 100%
+  eb3 bb3 d4 g4 bb4 g4 d4 bb3 | ab3 c4 eb4 bb4 eb4 c4 eb4 c4 | bb3 f4 a4 d5 a4 f4 d4 f4 | bb3 f4 a4 d5 g3 bb3 d4 f4 | eb3 bb3 d4 g4 bb4 g4 d4 bb3 | ab3 c4 eb4 g4 c5 g4 eb4 c4 | c3 g3 bb3 eb4 f3 bb3 c4 eb4 | f3 bb3 c4 eb4 f3 a3 c4 eb4
+}
+
+pattern harp_tag notes {
+  step = 1/8
+  gate = 100%
+  b3 f#4 a#4 d#5 a#4 f#4 d#4 f#4 | e3 b3 d#4 g#4 b4 g#4 d#4 b3 | c#3 g#3 b3 e4 f#3 b3 c#4 e4 | f#3 b3 a#3 c#4 e4 a#4 . . | [b3 f#4 a#4 d#5] - - - - - - - | - - - - - - - - | - - - - - - - - | - - - - - - - -
+}
+
+// bass
+pattern bass_a notes {
+  step = 1/8
+  gate = 80%
+  use ph_bass_a
+}
+
+pattern bass_a_up notes {
+  step = 1/8
+  gate = 80%
+  transpose = 1
+  use ph_bass_a
+}
+
+pattern bass_intro notes {
+  step = 1/8
+  gate = 80%
+  bb1 - - bb1 f2 - - - | eb2 - - eb2 bb1 - - - | c2 - - c2 f1 - - - | f1 - - f1 c2 - a1 -
+}
+
+pattern bass_b notes {
+  step = 1/8
+  gate = 80%
+  eb2 - - eb2 bb1 - - - | ab1 - - ab1 eb2 - - - | bb1 - - bb1 f2 - - - | bb1 - - bb1 g1 - - - | eb2 - - eb2 bb1 - - - | ab1 - - ab1 eb2 - bb1 - | c2 - - c2 f1 - - -
+}
+
+pattern bass_turn notes {
+  step = 1/8
+  gate = 80%
+  bb1 - - bb1 c2 - d2 -
+}
+
+pattern bass_walk notes {
+  step = 1/8
+  gate = 90%
+  f1 - - - g1 - a1 -
+}
+
+pattern bass_tag notes {
+  step = 1/8
+  gate = 95%
+  b1 - - b1 f#2 - - - | e2 - - e2 b1 - - - | c#2 - - c#2 f#1 - - - | f#1 - - f#1 c#2 - . . | b1 - - - - - - - | - - - - - - - - | . . . . . . . . | . . . . . . . .
+}
+
+// drums
+pattern drums_groove drums {
+  step = 1/16
+  swing = 56%
+  bd: X... ..x. X... .... X... ..x. X... .... X... ..x. X... .... X... ..x. X... x...
+  rs: .... X... .... X... .... X... .... X... .... X... .... X... .... X... .... X...
+  ch: x6.x4x3 x6.x4. x6.x4x3 x6.x4. x6.x4x3 x6.x4. x6.x4x3 x6.x4. x6.x4x3 x6.x4. x6.x4x3 x6.x4. x6.x4x3 x6.x4. x6.x4x3 x6...
+  oh: .... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ..x5.
+}
+
+pattern drums_groove_b drums {
+  step = 1/16
+  swing = 56%
+  bd: X... .... X... ..x. X... .... X... ..x. X... .... X... ..x. X... .... X... ..x.
+  rs: .... x6... .... x6... .... x6... .... x6... .... x6... .... x6... .... x6... .... x6...
+  cy: x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3.
+}
+
+pattern drums_fill drums {
+  step = 1/16
+  bd: X... .... .... ....
+  rs: .... .... x3x4x5x6 x7x8x9X
+  ch: x6.x4x3 .... .... ....
+}
+
+pattern drums_intro drums {
+  step = 1/16
+  swing = 56%
+  bd: .... .... .... .... .... .... .... .... X... .... X... .... X... ..x. X... ....
+  rs: .... .... .... .... .... X... .... X... .... X... .... X... .... X... .... X...
+  ch: x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3. x5.x3.
+}
+
+pattern drums_tag drums {
+  step = 1/8
+  bd: X.x. X.x. X.x. X.x. X.x. X.x. X.x. X... X... .... .... .... .... .... .... ....
+  rs: ..X. ..X. ..X. ..X. ..X. ..X. ..X. .... .... .... .... .... .... .... .... ....
+  ch: x5x3x5x3 x5x3x5x3 x5x3x5x3 x5x3x5x3 x5x3x5x3 x5x3x5x3 x5x3x5x3 x5x3.. .... .... .... .... .... .... .... ....
+  oh: .... .... .... .... .... .... .... .... X... .... .... .... .... .... .... ....
+  cy: .... .... .... .... .... .... .... .... x7... .... .... .... .... .... .... ....
+}
+
+scene theme_loop {
+  vibes = vibes_a
+  bells = bells_a
+  brass = off
+  strings_pad = pad_a
+  strings_line = off
+  keys = keys_a
+  harp = off
+  bass = bass_a
+  drums = drums_groove
+}
+
+scene lounge_loop {
+  vibes = vibes_a
+  bells = off
+  brass = off
+  strings_pad = pad_a
+  strings_line = off
+  keys = keys_a
+  harp = off
+  bass = off
+  drums = off
+}

@@ -1,0 +1,73 @@
+// House band: instruments, kit and effects.
+instrument brass_lead {
+  octave = 4
+  param cutoff = 2600Hz
+  voice mono {
+    let amp = adsr(gate, 45ms, 140ms, 0.8, 160ms)
+    let tone = (saw(pitch) + saw(pitch * 1.004)) * 0.5
+    out = svf(tone, cutoff * (0.5 + amp) * (1 + 0.2 * mod(brass_wander)), 0.12) * amp * velocity * 0.4
+  }
+}
+
+instrument harp {
+  octave = 4
+  voice poly {
+    let burst = noise() * env(gate, 1ms) * velocity
+    let string = comb(burst, 1 / pitch, 0.996, 0.45)
+    let amp = adsr(gate, 1ms, 1800ms, 0, 1500ms)
+    let shaped = string * amp
+    let dc = lowpass(shaped, 20Hz)
+    out = (shaped - dc) * 0.9
+  }
+}
+
+instrument bass {
+  octave = 2
+  voice mono {
+    let amp = adsr(gate, 8ms, 220ms, 0.6, 140ms)
+    let body = sine(pitch) + saw(pitch) * 0.6
+    out = lowpass(body, 1400Hz) * amp * velocity * 0.6
+  }
+}
+
+kit band_kit {
+  bd = model.kick
+  rs = model.cross_stick
+  ch = model.hat_closed
+  oh = model.hat_open
+  cy = model.ride_bow
+}
+
+fx hall reverb {
+  size = 1
+  decay = 2.4s
+  damp = 8kHz
+  highpass = 250Hz
+  predelay = 25ms
+  mix = 1
+}
+
+fx echo delay {
+  time = 1/8.
+  feedback = 0.25
+  mix = 1
+}
+
+fx sparkle eq {
+  type = high_shelf
+  frequency = 6kHz
+  q = 0.707
+  gain = 2dB
+}
+
+fx duck comp {
+  detect = peak
+  threshold = -24dB
+  ratio = 4
+  knee = 6dB
+  attack = 5ms
+  release = 150ms
+  makeup = 0dB
+  sidechain = sfx
+  mix = 1
+}
