@@ -68,6 +68,9 @@ func (e *Engine) EnableParallel(workers int) error {
 	if workers < 0 || workers > maxParallelLanes {
 		return engineError("parallel DSP requires zero to four render lanes")
 	}
+	if e.graphLFO != nil {
+		return nil // Graph LFOs share the serial transport frame clock.
+	}
 	if e.parallel != nil {
 		return engineError("parallel DSP is already configured")
 	}

@@ -19,7 +19,9 @@ func (e *Engine) syncGraphLFOClock() {
 		cycle := e.transport.Tick() / e.scheduleDuration
 		if cycle != s.cycle {
 			s.cycle = cycle
-			s.loopStart = e.songSampleAtTick(cycle * e.scheduleDuration)
+			// A live tempo change can make actual playback differ from the
+			// authored time map. The frame crossing the seam is loop sample 0.
+			s.loopStart = s.absolute
 		}
 		position -= s.loopStart
 	}

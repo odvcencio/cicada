@@ -64,3 +64,29 @@ func TestLFOValidationAndCopyBinding(t *testing.T) {
 		t.Fatalf("copy lost destination clock: %g", got)
 	}
 }
+
+func TestLFOQualitySubstepsAndNoRenderAllocations(t *testing.T) {
+	p := Program{Len: 4, Output: 0}
+	p.Nodes[0] = Node{Op: LFO, Value: 20}
+	p.Nodes[1] = Node{Op: Constant, Value: 100}
+	p.Nodes[2] = Node{Op: Constant, Value: .5}
+	p.Nodes[3] = Node{Op: Pulse, A: 1, B: 2}
+	v, err := NewVoiceFromProgram(&p, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := &LFOClock{Sample: 1000}
+	v.BindLFOClock(clock)
+	first, second := v.nextSample(0), v.nextSample(1)
+	if first != second {
+		t.Fatalf("stopped song advanced inside a quality frame: %g vs %g", first, second)
+	}
+	clock.Playing = true
+	first, second = v.nextSample(0), v.nextSample(1)
+	if first == second {
+		t.Fatal("playing song did not advance between quality substeps")
+	}
+	if got := testing.AllocsPerRun(1000, func() { v.Next() }); got != 0 {
+		t.Fatalf("render allocated %g times per frame", got)
+	}
+}

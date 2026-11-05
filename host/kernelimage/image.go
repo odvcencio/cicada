@@ -1473,9 +1473,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 		}
-		if spec.Kit != nil {
-			for _, binding := range spec.Kit {
-				if graph.HasLFO(&binding.Program) {
+		if modularFlags != 0 && spec.Kit != nil {
+			for i := range spec.Kit {
+				if graph.HasLFO(&spec.Kit[i].Program) {
 					return imageError("graph LFO is not supported inside drum kits")
 				}
 			}

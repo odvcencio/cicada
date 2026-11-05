@@ -336,7 +336,11 @@ func (e *Engine) seekTransport(tick int64) error {
 	}
 	if modulationEnabled && e.graphLFO != nil {
 		e.graphLFO.absolute = max(0, e.songSampleAtTick(tick))
-		e.graphLFO.cycle = -1
+		e.graphLFO.cycle, e.graphLFO.loopStart = -1, 0
+		if e.loopSong && e.scheduleDuration > 0 {
+			e.graphLFO.cycle = tick / e.scheduleDuration
+			e.graphLFO.loopStart = e.songSampleAtTick(e.graphLFO.cycle * e.scheduleDuration)
+		}
 	}
 	return nil
 }

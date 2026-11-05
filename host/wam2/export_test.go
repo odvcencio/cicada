@@ -170,12 +170,18 @@ song { main }
 func TestWAM2ModulationSelectsRequiredModule(t *testing.T) {
 	for _, tc := range []struct {
 		name, extra, binding, filename, target string
+		graphLFO                               bool
 	}{
-		{"modular", "", "", "cicada-modular.wasm", "build-modular-wasm"},
-		{"keys-modular", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm"},
+		{"modular", "", "", "cicada-modular.wasm", "build-modular-wasm", false},
+		{"keys-modular", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm", false},
+		{"graph-lfo", "", "", "cicada-modular.wasm", "build-modular-wasm", true},
+		{"graph-lfo-keys", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := "cicada 2\ntempo 120\ntrack bass acid {}\npattern pulse acid { 1 . }\n" + tc.extra + "lfo drift { rate = 1/4 }\nmod drift -> bass.pan depth = 0.2\nscene main { bass = pulse" + tc.binding + " }\nsong { main }\n"
+			if tc.graphLFO {
+				source = "cicada 2\ntempo 120\ninstrument lead { voice mono { out = sine(pitch) * lfo(1Hz, sine) } }\ntrack bass lead {}\npattern pulse notes { c4 . }\n" + tc.extra + "scene main { bass = pulse" + tc.binding + " }\nsong { main }\n"
+			}
 			score, ds := notation.Parse([]byte(source))
 			p, ds := project.FromScore(score)
 			if p == nil {

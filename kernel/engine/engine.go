@@ -424,6 +424,15 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1, flushLimit: -1}
+	if modulationEnabled {
+		for i := 0; i < cfg.Tracks; i++ {
+			track := &cfg.Track[i]
+			if (track.Kind == VoiceGraph || track.Kind == VoiceGraphPoly) && graph.HasLFO(&track.Graph) {
+				e.graphLFO = &graphLFOState{clock: graph.LFOClock{Seed: cfg.Seed}, cycle: -1}
+				break
+			}
+		}
+	}
 	if err := e.configureParallel(cfg); err != nil {
 		return nil, err
 	}
@@ -680,9 +689,6 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			program := spec.Graph
 			program.Vibrato = vibrato
-			if modulationEnabled && graph.HasLFO(&program) && e.graphLFO == nil {
-				e.graphLFO = &graphLFOState{clock: graph.LFOClock{Seed: cfg.Seed}, cycle: -1}
-			}
 			if err = validateGraphModulators(&program, cfg.Modulators, i); err != nil {
 				return 0, err
 			}
@@ -735,9 +741,6 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			voices += graph.PolyVoices
 			program := spec.Graph
 			program.Vibrato = vibrato
-			if modulationEnabled && graph.HasLFO(&program) && e.graphLFO == nil {
-				e.graphLFO = &graphLFOState{clock: graph.LFOClock{Seed: cfg.Seed}, cycle: -1}
-			}
 			if err = validateGraphModulators(&program, cfg.Modulators, i); err != nil {
 				return 0, err
 			}

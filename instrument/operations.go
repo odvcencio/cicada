@@ -9,6 +9,8 @@ type OperationInfo struct {
 
 func Operation(name string) (OperationInfo, bool) {
 	switch name {
+	case "lfo":
+		return OperationInfo{name, "lfo(hz, wave[, note]) -> unit", "Per-sample bipolar oscillator with a fixed 0.01–20 Hz rate and sine, triangle, square, or sample-hold wave. Follows song position by default; note mode restarts on each fresh note and keeps phase through slides."}, true
 	case "neural_amp":
 		return OperationInfo{name, "neural_amp(audio, drive) -> audio", "Pinned CC0 causal neural amp with integer inference. Drive is clamped to 0..8; eight samples of history, 32 bytes per node. Designed for 48 kHz; other render rates preserve deterministic sample-domain behavior."}, true
 	case "pm":

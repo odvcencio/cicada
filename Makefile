@@ -280,6 +280,8 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestMappedMacroNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentVibratoNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentModulatorNativeWASMParity$$' -count=1 -v
+	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestGraphLFONativeWASMParity$$' -count=1 -v
+	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestGraphLFOKeysNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestSamplerExpressionNativeWASMParity$$' -count=1 -v
 	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestKeysModularWASMParity$$' -count=1 -v
 
