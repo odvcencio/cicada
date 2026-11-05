@@ -534,6 +534,8 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 
 func callArgumentTypes(op string) ([]instrument.Type, bool) {
 	switch op {
+	case "mod":
+		return []instrument.Type{instrument.Unit}, true
 	case "saw", "square", "sine":
 		return []instrument.Type{instrument.Hz}, true
 	case "pm":
@@ -578,7 +580,7 @@ func callOutputType(op string) instrument.Type {
 		return instrument.MS
 	case "saw", "square", "sine", "pm", "pulse", "svf", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb", "neural_amp", "ddsp":
 		return instrument.Audio
-	case "env", "exp2", "clamp", "adsr":
+	case "env", "exp2", "clamp", "adsr", "mod":
 		return instrument.Unit
 	}
 	return ""

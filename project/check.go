@@ -21,10 +21,19 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		return programs, nil
 	}
 	score, diagnostics := notation.ResolvePresets(score)
+	modulators := make(map[string]bool, len(score.Modulators))
+	for _, source := range score.Modulators {
+		modulators[source.Name] = true
+	}
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
 		diagnostics = append(diagnostics, ds...)
 		if program != nil {
+			for _, node := range program.Nodes {
+				if node.Op == "mod" && !modulators[node.Name] {
+					diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-REFERENCE", Severity: "error", Message: "unknown modulator " + node.Name, Position: node.Position})
+				}
+			}
 			programs[definition.Name] = program
 		}
 	}
@@ -156,7 +165,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			}
 			overrides[param.Name] = param.Value
 		}
-		if _, err := instrument.Lower(program, overrides); err != nil {
+		if _, err := instrument.LowerForValidation(program, overrides); err != nil {
 			code := "CICADA-UNIT"
 			var parameter *graph.ParameterError
 			if errors.As(err, &parameter) {
@@ -176,7 +185,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				if isMixerSourceParam(param.Name) {
 					return nil
 				}
-				_, err := instrument.Lower(program, map[string]string{param.Name: param.Value})
+				_, err := instrument.LowerForValidation(program, map[string]string{param.Name: param.Value})
 				return err
 			})
 			diagnostics = append(diagnostics, notation.Diagnostic{
@@ -257,7 +266,7 @@ func checkDelayNotes(program *instrument.Program, track notation.Track, patterns
 		}
 		overrides[param.Name] = param.Value
 	}
-	lowered, err := instrument.Lower(program, overrides)
+	lowered, err := instrument.LowerForValidation(program, overrides)
 	if err != nil {
 		return nil
 	} // the track parameter check already reports it

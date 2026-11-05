@@ -56,6 +56,29 @@ Sources default to `loop = wrap`, which restarts them at the song loop. Set
 the authored rate by more than 10%. The envelope follower resets at load,
 seek, and loop wrap.
 
+## Sources in authored instruments
+
+An authored instrument can read a named source with `mod(name)`. It returns a
+unitless value held between the engine's 128-frame control-grid updates. All
+voices read the same song-positioned source, including after a seek:
+
+```cicada
+cicada 2
+lfo breath { wave = triangle rate = 2bars }
+instrument lead {
+  voice mono { out = sine(pitch) * (0.5 + 0.4 * mod(breath)) }
+}
+track voice lead {}
+pattern line { c4 . e4 . }
+scene verse { voice = line }
+song { verse }
+```
+
+The source must be declared in the project. Graph modulation inside authored
+drum-kit lanes is not supported.
+For a playable example, see
+[`examples/detail/instrument-modulation.cicada`](../../examples/detail/instrument-modulation.cicada).
+
 ## Studio and inspection
 
 Open the **Automation** detail dock. **Modulation** lists sources and routes;

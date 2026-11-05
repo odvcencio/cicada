@@ -233,6 +233,13 @@ func ValidateProject(p *Project) error {
 		if err != nil {
 			return fmt.Errorf("instrument %s: %w", inst.ID, err)
 		}
+		modulators := make(map[string]int, len(p.Modulators))
+		for i, source := range p.Modulators {
+			modulators[source.ID] = i
+		}
+		if _, err := instrument.LowerWithModulators(program, nil, modulators); err != nil {
+			return fmt.Errorf("instrument %s: %w", inst.ID, err)
+		}
 		instruments[inst.ID] = program
 	}
 	kits := map[string]Kit{}
@@ -323,6 +330,13 @@ func ValidateProject(p *Project) error {
 			}
 		}
 		if program := instruments[track.Kind]; program != nil {
+			for _, node := range program.Nodes {
+				for _, source := range p.Modulators {
+					if node.Op == "mod" && node.Name == source.ID && source.Kind == notation.ModEnvelope && source.Source == track.ID {
+						return fmt.Errorf("CICADA-ROUTE: envelope %s follows %s and would modulate its own input", source.ID, track.ID)
+					}
+				}
+			}
 			overrides := make(map[string]string, len(track.Params))
 			for name, value := range track.Params {
 				if notation.IsVibratoSetting(name) && !program.HasParameter(name) {
@@ -346,7 +360,7 @@ func ValidateProject(p *Project) error {
 				}
 				overrides[name] = literal
 			}
-			lowered, err := instrument.Lower(program, overrides)
+			lowered, err := instrument.LowerForValidation(program, overrides)
 			if err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
@@ -924,6 +938,9 @@ func validateExpr(expr Expr, depth int) (int, error) {
 	if !validExprArity(expr.Op, len(expr.Args)) {
 		return 0, fmt.Errorf("unsupported expression operation %s", expr.Op)
 	}
+	if expr.Op == "mod" && expr.Args[0].Name == "" {
+		return 0, fmt.Errorf("mod requires one named modulator")
+	}
 	count := 1
 	for _, child := range expr.Args {
 		n, err := validateExpr(child, depth+1)
@@ -942,7 +959,7 @@ func validExprArity(op string, n int) bool {
 	switch op {
 	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp", "pulse", "ddsp":
 		return n == 2
-	case "saw", "square", "sine", "tanh", "exp2":
+	case "saw", "square", "sine", "tanh", "exp2", "mod":
 		return n == 1
 	case "noise":
 		return n == 0

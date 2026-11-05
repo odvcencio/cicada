@@ -7,6 +7,7 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/modulate"
 )
@@ -66,6 +67,25 @@ type modState struct {
 	applying   bool
 	loopSample int64 // samples in one loop of the song
 	trace      func(grid int64, values []int32)
+}
+
+func validateGraphModulators(program *graph.Program, sources []ModulatorSpec, track int) error {
+	if !modulationEnabled {
+		// The graph validator rejects this operation in the core module.
+		return nil
+	}
+	if err := graph.ValidateModulatorIndices(program, len(sources)); err != nil {
+		return err
+	}
+	for _, node := range program.Nodes[:program.Len] {
+		if node.Op == graph.Modulator {
+			source := sources[uint8(node.Value)]
+			if source.Kind == ModKindEnvelope && int(source.Source) == track {
+				return engineError("graph envelope cannot modulate its own input")
+			}
+		}
+	}
+	return nil
 }
 
 // SetModulationTrace installs a callback that receives every control-grid

@@ -12,6 +12,25 @@ import (
 // Lower translates the checked instrument graph to the fixed-size kernel
 // program. overrides are per-track parameter values in Cicada notation.
 func Lower(program *Program, overrides map[string]string) (graph.Program, error) {
+	return LowerWithModulators(program, overrides, nil)
+}
+
+// LowerForValidation checks graph structure before project sources are bound.
+// Its result must not be used for playback.
+func LowerForValidation(program *Program, overrides map[string]string) (graph.Program, error) {
+	names := make(map[string]int)
+	if program != nil {
+		for _, node := range program.Nodes {
+			if node.Op == "mod" {
+				names[node.Name] = 0
+			}
+		}
+	}
+	return LowerWithModulators(program, overrides, names)
+}
+
+// LowerWithModulators binds named sources to their project declaration order.
+func LowerWithModulators(program *Program, overrides map[string]string, modulators map[string]int) (graph.Program, error) {
 	out := graph.Program{GlideMS: 60}
 	if program == nil || len(program.Nodes) == 0 || len(program.Nodes) > graph.MaxNodes || program.Output < 0 {
 		return out, fmt.Errorf("invalid instrument program")
@@ -41,6 +60,13 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 			return out, err
 		}
 		kn := graph.Node{Op: op}
+		if node.Op == "mod" {
+			index, ok := modulators[node.Name]
+			if !ok || index < 0 || index >= graph.MaxModulators {
+				return out, fmt.Errorf("unknown modulator %s", node.Name)
+			}
+			kn.Value = float32(index)
+		}
 		if len(node.Inputs) > 0 {
 			kn.A = uint8(node.Inputs[0])
 		}
@@ -83,6 +109,8 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 
 func kernelOp(n Node) (graph.Op, error) {
 	switch n.Op {
+	case "mod":
+		return graph.Modulator, nil
 	case "input":
 		switch n.Name {
 		case "pitch":
