@@ -245,6 +245,9 @@ func ValidateProgram(program *Program, sampleRate int) error {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
 		return validationError("unsupported sample rate")
 	}
+	if instrumentVibratoEnabled && HasLFO(program) && statefulNodeCount(program) > 32 {
+		return validationError("voice graph exceeds 32 stateful nodes")
+	}
 	for i := 0; i < int(program.Len); i++ {
 		n := program.Nodes[i]
 		if int(n.A) >= MaxNodes || int(n.B) >= MaxNodes || int(n.C) >= MaxNodes {

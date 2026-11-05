@@ -36,6 +36,17 @@ func HasLFO(program *Program) bool {
 	return false
 }
 
+func statefulNodeCount(program *Program) int {
+	count := 0
+	for _, node := range program.Nodes[:program.Len] {
+		switch node.Op {
+		case Saw, Square, Sine, Noise, Envelope, Ladder, Diode, Lowpass, Highpass, Delay, Comb, NeuralAmp, PM, ADSR, Pulse, SVF, DDSP, Modulator, LFO:
+			count++
+		}
+	}
+	return count
+}
+
 // BindLFOClock attaches the same read-only frame clock to every pool voice.
 func (p *Pool) BindLFOClock(clock *LFOClock) {
 	for i := range p.slots {

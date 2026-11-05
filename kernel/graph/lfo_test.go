@@ -55,6 +55,17 @@ func TestLFOValidationAndCopyBinding(t *testing.T) {
 			t.Fatalf("accepted invalid node %+v", n)
 		}
 	}
+	p := Program{Len: 33, Output: 0}
+	for i := range p.Nodes[:p.Len] {
+		p.Nodes[i] = Node{Op: LFO, Value: 1}
+	}
+	if err := ValidateProgram(&p, 48000); err == nil {
+		t.Fatal("accepted more than 32 stateful graph nodes")
+	}
+	p.Len = 32
+	if err := ValidateProgram(&p, 48000); err != nil {
+		t.Fatalf("rejected 32 stateful graph nodes: %v", err)
+	}
 	a, b := lfoTestVoice(t, 0), lfoTestVoice(t, 0)
 	first, second := &LFOClock{Sample: 12000, Playing: true}, &LFOClock{Sample: 36000, Playing: true}
 	a.BindLFOClock(first)
