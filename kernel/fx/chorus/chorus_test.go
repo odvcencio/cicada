@@ -159,6 +159,16 @@ func BenchmarkProcess(b *testing.B) {
 	}
 }
 
+func BenchmarkPrepare(b *testing.B) {
+	params := DefaultParams()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := New(96000, params); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // TestReferenceSignal checks the specified tap timing, polarity, stereo mix,
 // lowpass and interpolation against a deliberately direct floating-point
 // reference. Its oscillator uses math.Sin instead of the production table.

@@ -10,6 +10,20 @@ import (
 
 const MaxTrackInserts = 8
 
+// ChorusControlFits requires a single owned chorus stage for a track control.
+func ChorusControlFits(track *TrackConfig) bool {
+	if !chorusEnabled || track == nil {
+		return false
+	}
+	count := 0
+	for _, stage := range track.InsertChain {
+		if stage.Kind == TrackEffectChorus {
+			count++
+		}
+	}
+	return count == 1
+}
+
 type TrackEffectKind uint8
 
 const (

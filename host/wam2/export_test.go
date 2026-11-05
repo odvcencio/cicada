@@ -170,12 +170,19 @@ song { main }
 func TestWAM2ModulationSelectsRequiredModule(t *testing.T) {
 	for _, tc := range []struct {
 		name, extra, binding, filename, target string
+		chorus                                 bool
 	}{
-		{"modular", "", "", "cicada-modular.wasm", "build-modular-wasm"},
-		{"keys-modular", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm"},
+		{"modular", "", "", "cicada-modular.wasm", "build-modular-wasm", false},
+		{"keys-modular", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm", false},
+		{"chorus", "", "", "cicada-modular.wasm", "build-modular-wasm", true},
+		{"chorus-keys", "track keys tine_ep {}\npattern chord notes { c4 . }\n", " keys = chord", "cicada-keys-modular.wasm", "build-keys-modular-wasm", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			source := "cicada 2\ntempo 120\ntrack bass acid {}\npattern pulse acid { 1 . }\n" + tc.extra + "lfo drift { rate = 1/4 }\nmod drift -> bass.pan depth = 0.2\nscene main { bass = pulse" + tc.binding + " }\nsong { main }\n"
+			track, modulation := "track bass acid {}\n", "lfo drift { rate = 1/4 }\nmod drift -> bass.pan depth = 0.2\n"
+			if tc.chorus {
+				track, modulation = "fx wide chorus {}\ntrack bass acid { insert = wide }\n", ""
+			}
+			source := "cicada 2\ntempo 120\n" + track + "pattern pulse acid { 1 . }\n" + tc.extra + modulation + "scene main { bass = pulse" + tc.binding + " }\nsong { main }\n"
 			score, ds := notation.Parse([]byte(source))
 			p, ds := project.FromScore(score)
 			if p == nil {

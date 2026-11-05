@@ -185,6 +185,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if err := engine.ValidatePortableEffectBudget(&cfg); err != nil {
 		return nil, err
 	}
+	if err := validateChorusAutomation(&cfg); err != nil {
+		return nil, err
+	}
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
@@ -1482,6 +1485,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if err := engine.ValidatePortableEffectBudget(cfg); err != nil {
 		return err
 	}
+	if err := validateChorusAutomation(cfg); err != nil {
+		return err
+	}
 	if reserved&TrackEffectsCapability != 0 {
 		found := false
 		for _, track := range cfg.Track[:cfg.Tracks] {
@@ -1713,6 +1719,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 			if count != 1 {
 				return imageError("amp setting requires exactly one amp insert")
 			}
+		}
+		if setting.ID >= kernel.ParamChorusRate && setting.ID <= kernel.ParamChorusMix && !engine.ChorusControlFits(&cfg.Track[setting.Track]) {
+			return imageError("chorus setting requires exactly one chorus insert")
 		}
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
 			return imageError("guitar setting requires a guitar track")

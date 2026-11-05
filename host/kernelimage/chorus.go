@@ -1,9 +1,21 @@
 package kernelimage
 
 import (
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx/chorus"
 )
+
+func validateChorusAutomation(cfg *engine.Config) error {
+	for _, control := range cfg.Automation {
+		if control.Index >= uint16(kernel.ParamChorusRate) && control.Index <= uint16(kernel.ParamChorusMix) {
+			if int(control.Track) >= cfg.Tracks || !engine.ChorusControlFits(&cfg.Track[control.Track]) {
+				return imageError("chorus automation requires exactly one chorus insert")
+			}
+		}
+	}
+	return nil
+}
 
 // ChorusFlag selects the modular kernel and appends track/stage parameters.
 const ChorusFlag uint32 = 1 << 5
