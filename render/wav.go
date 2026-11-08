@@ -385,19 +385,38 @@ func hasResidentSampler(score *notation.Score) bool {
 // engine path rather than the direct WAV mixer. The two paths inject DC
 // correction at different points relative to export gain.
 func UsesScheduledEngine(score *notation.Score, opts Options) bool {
+	return scheduledEngineReason(score, opts) != ""
+}
+
+// scheduledEngineReason names the first feature that needs the streamed
+// engine, or returns "" when the direct WAV mixer can render the score.
+func scheduledEngineReason(score *notation.Score, opts Options) string {
 	if score == nil {
-		return false
+		return ""
 	}
 	for _, pattern := range score.Patterns {
 		if pattern.Performance != nil {
-			return true
+			return "performance pattern " + pattern.Name
 		}
 	}
 	// Modulators and routes (spec 24) need the engine, which owns the control grid.
-	if len(score.Modulators) > 0 || len(score.Routes) > 0 {
-		return true
+	switch {
+	case len(score.Modulators) > 0 || len(score.Routes) > 0:
+		return "modulators"
+	case score.Arrange != nil:
+		return "an arrangement"
+	case hasTapeEcho(score):
+		return "a tape echo"
+	case hasAudioClipTrack(score):
+		return "audio clips"
+	case hasSerialTrackEffects(score):
+		return "serial track effects"
+	case hasKitSampler(score):
+		return "kit sampler lanes"
+	case hasPackSampler(score) && !opts.SamplerBaseline:
+		return "sample packs"
 	}
-	return score.Arrange != nil || hasTapeEcho(score) || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline || hasKitSampler(score)
+	return ""
 }
 
 func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {
@@ -407,7 +426,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.AssetDir == "" {
 		opts.AssetDir = opts.AssetRoot
 	}
-	if UsesScheduledEngine(score, opts) {
+	if reason := scheduledEngineReason(score, opts); reason != "" {
+		// The baseline is a direct-mixer mode; the engine would ignore it.
+		if opts.SamplerBaseline && hasPackSampler(score) {
+			return Report{}, fmt.Errorf("--sampler-baseline needs the direct WAV mixer, but this score uses %s, which only the scheduled engine renders", reason)
+		}
 		return renderScheduleWAV(score, opts, writer, stemsDir, outputGain)
 	}
 	var report Report

@@ -2,6 +2,8 @@ package notation
 
 import (
 	"fmt"
+	"strings"
+
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -328,17 +330,29 @@ func (d Diagnostic) Error() string {
 	if d.Position.File != "" {
 		location = d.Position.File + ":" + location
 	}
-	message := fmt.Sprintf("%s: %s %s: %s", location, d.Severity, d.Code, d.Message)
+	message := fmt.Sprintf("%s: %s %s: %s", location, d.Severity, d.Code, trimCode(d.Code, d.Message))
 	if d.Related.Line != 0 {
 		message += fmt.Sprintf(" (first declared at %s:%d:%d)", d.Related.File, d.Related.Line, d.Related.Column)
 	}
 	return message
 }
 
+// trimCode removes a leading "CODE: " from a message whose diagnostic already
+// carries that code: errors built as fmt.Errorf("CICADA-PARAM: ...") would
+// otherwise print it twice.
+func trimCode(code, message string) string {
+	if code != "" {
+		return strings.TrimPrefix(message, code+": ")
+	}
+	return message
+}
+
 // LocateDiagnostics fills the entry location for project-wide errors. Precise
-// declaration locations already carried by the parser are left intact.
+// declaration locations already carried by the parser are left intact. It also
+// drops a code that a wrapped error repeats at the start of the message.
 func LocateDiagnostics(ds []Diagnostic, entry Position) {
 	for i := range ds {
+		ds[i].Message = trimCode(ds[i].Code, ds[i].Message)
 		if ds[i].Position.File == "" {
 			ds[i].Position.File = entry.File
 		}
