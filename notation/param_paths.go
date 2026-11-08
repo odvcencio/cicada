@@ -148,7 +148,15 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 			}
 			return descriptor, "track", owner, "", ""
 		}
-		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path
+		hint := sendPathHint(score, setting)
+		for _, inst := range score.Instruments {
+			for _, param := range inst.Params {
+				if hint == "" && inst.Name == track.Kind && param.Name == setting {
+					hint = paramdefs.InstrumentParamHint(inst.Name, param.Name)
+				}
+			}
+		}
+		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + hint
 	}
 	if effectOK {
 		setting := strings.Join(parts[1:], ".")
@@ -357,4 +365,16 @@ func contains(values []string, value string) bool {
 // instrument for authored voices.
 func ParameterVoiceKind(score *Score, kind string) string {
 	return notationParameterVoiceKind(score, kind)
+}
+
+// sendPathHint is paramdefs.SendPathHint over the score's effects.
+func sendPathHint(score *Score, setting string) string {
+	return paramdefs.SendPathHint(setting, func(name string) (string, bool) {
+		for _, effect := range score.Effects {
+			if effect.Name == name {
+				return effect.Kind, true
+			}
+		}
+		return "", false
+	})
 }

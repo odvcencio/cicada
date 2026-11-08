@@ -495,7 +495,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 				}
 				seenLanes[lane.Name] = true
 				if len(lane.Hits) != steps {
-					add("CICADA-PARAM", "drum lane length differs from pattern", "error", lane.Position)
+					add("CICADA-PARAM", fmt.Sprintf("drum lane %s has %d cells, but lane %s has %d; every lane needs the same count, and x1 to x9 are one cell each", lane.Name, len(lane.Hits), p.Lanes[0].Name, steps), "error", lane.Position)
 				}
 			}
 		}

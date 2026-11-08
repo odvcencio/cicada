@@ -405,7 +405,16 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 	return existing
 }
 
+// usage prints the usage of the command being run, as cicada help shows it,
+// or every command when there is none, and exits with status 2.
 func usage() {
+	if len(os.Args) > 1 {
+		if entry, ok := findCommandHelp(os.Args[1]); ok {
+			fmt.Fprintln(os.Stderr, "usage: "+entry.usage)
+			fmt.Fprintln(os.Stderr, "run cicada help "+entry.name+" for its flags")
+			os.Exit(2)
+		}
+	}
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
 		"new <name> | check [--profile desktop|browser] [--max-resident-pcm 1GiB] [score.cicada] | validate <score.cicada> | fix <score.cicada> [--all] [--check] | play [score.cicada] [--audio tymbal|oto|null] [--max-resident-pcm 1GiB] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm 1GiB] | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+

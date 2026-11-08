@@ -9,12 +9,15 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
@@ -195,7 +198,7 @@ func Open(dir, manifestPath, pin string) (*Pack, error) {
 	defer root.Close()
 	f, err := root.Open(manifestPath)
 	if err != nil {
-		return nil, err
+		return nil, outsideProject(dir, manifestPath, err)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxManifestBytes+1))
 	f.Close()
@@ -427,4 +430,23 @@ func DecodeAsset(a Asset, compressed []byte) (sample.Region, error) {
 		}
 	}
 	return r, nil
+}
+
+// outsideProject explains a refused open whose path leads out of the project
+// folder through a symlink. Packs are read only inside the project, so a pack
+// shared between projects has to be copied or hard-linked in. Any other error
+// is returned unchanged.
+func outsideProject(dir, rel string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	resolved, evalErr := filepath.EvalSymlinks(filepath.Join(dir, filepath.FromSlash(rel)))
+	base, baseErr := filepath.EvalSymlinks(dir)
+	if evalErr != nil || baseErr != nil {
+		return err
+	}
+	if inside, relErr := filepath.Rel(base, resolved); relErr == nil && inside != ".." && !strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return err
+	}
+	return fmt.Errorf("%s leads outside the project folder through a symlink (it resolves to %s); packs are read only inside the project, so copy or hard-link the pack folder into it", rel, resolved)
 }

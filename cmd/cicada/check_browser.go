@@ -111,23 +111,34 @@ func residentAudioBytes(cfg *engine.Config) int {
 }
 
 // checkBrowserScore applies the browser profile to a score that passed the
-// desktop checks and lists what each track reserves. It reports whether the
-// score fits.
-func checkBrowserScore(path string, inspection scoreInspection, stdout, stderr io.Writer) bool {
+// desktop checks and lists what each track reserves. It returns the number of
+// errors it printed; zero means the score fits.
+func checkBrowserScore(path string, inspection scoreInspection, stdout, stderr io.Writer) int {
+	// Features the image refuses are all listed first; the image build below
+	// stops at its first refusal.
+	features := portableFeatureRefusals(inspection.semantic)
+	for i := range features {
+		features[i].Position.File = path
+		fmt.Fprintln(stderr, features[i].Error())
+	}
 	profile, refusal := checkBrowser(inspection.semantic, inspection.root(path))
-	if refusal != nil {
+	errors := len(features)
+	if refusal != nil && (len(features) == 0 || refusal.Code != "CICADA-PARAM" || !portableFeatureError(refusal.Message)) {
+		errors++
 		// The refusal belongs to the whole score, so it has no source line to show.
 		refusal.Position.File = path
 		fmt.Fprintln(stderr, refusal.Error())
 		if suggestion := checkSuggestion(*refusal); suggestion != "" {
 			fmt.Fprintf(stderr, "  %s\n", suggestion)
 		}
+	}
+	if refusal != nil || len(features) > 0 {
 		profile.write(stderr)
-		return false
+		return errors
 	}
 	fmt.Fprintln(stdout, path)
 	profile.write(stdout)
-	return true
+	return 0
 }
 
 func (profile browserProfile) write(w io.Writer) {
@@ -151,4 +162,15 @@ func (profile browserProfile) write(w io.Writer) {
 	for _, track := range profile.Tracks {
 		fmt.Fprintf(w, "    %-*s  %-*s  %6d\n", idWidth, track.ID, kindWidth, track.Kind, track.Voices)
 	}
+}
+
+// portableFeatureError reports whether an image refusal repeats a feature that
+// portableFeatureRefusals already listed.
+func portableFeatureError(message string) bool {
+	for _, feature := range []string{"tape echo", "humanize", "sampler kit lanes", "sampler chords"} {
+		if strings.Contains(message, feature) {
+			return true
+		}
+	}
+	return false
 }
