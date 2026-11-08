@@ -109,7 +109,7 @@ func ValidateProject(p *Project) error {
 	var compSidechain string
 	for _, effect := range p.Effects {
 		kind := semanticEffectKind(effect)
-		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" && kind != "ampcab" && kind != "chorus" {
+		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" && kind != "ampcab" && kind != "chorus" && kind != "tape" {
 			return fmt.Errorf("CICADA-UNSUPPORTED: effect kind %s is not implemented", kind)
 		}
 		if effect.ID == "music" || effect.ID == "sfx" || !validID(effect.ID) {
@@ -133,6 +133,17 @@ func ValidateProject(p *Project) error {
 			}
 		} else if kind == "delay" {
 			params, err := DelayParamsFromValues(effect.Params)
+			if err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+			if err := params.ValidateTempo(int64(SlowestTempoMilli(p))); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else if kind == "tape" {
+			if MasterHasInsert(p, effect.ID) || trackHasInsert(p, effect.ID) {
+				return fmt.Errorf("CICADA-UNSUPPORTED: tape is supported only as the delay return")
+			}
+			params, err := TapeParamsFromValues(effect.Params)
 			if err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
@@ -171,8 +182,8 @@ func ValidateProject(p *Project) error {
 			}
 		}
 	}
-	if kindCounts["delay"] > 1 || kindCounts["reverb"] > 1 {
-		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented")
+	if kindCounts["delay"]+kindCounts["tape"] > 1 || kindCounts["reverb"] > 1 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented (a tape echo is the delay return)")
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > engine.MaxTracks || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
 		return fmt.Errorf("project needs 1 to %d tracks, patterns, and a song", engine.MaxTracks)
@@ -250,7 +261,7 @@ func ValidateProject(p *Project) error {
 		if _, exists := kits[kit.ID]; exists {
 			return fmt.Errorf("duplicate kit %s", kit.ID)
 		}
-		if _, err := CompileKit(kit, instruments); err != nil {
+		if _, err := CompileKitWithSamplers(kit, instruments, p.SamplerPackSet(), 48_000); err != nil {
 			return err
 		}
 		kits[kit.ID] = kit
@@ -317,7 +328,7 @@ func ValidateProject(p *Project) error {
 			}
 		}
 		if isKit {
-			if _, err := CompileKitTrack(kits[track.Kind], instruments, track.Params); err != nil {
+			if _, err := CompileKitTrackWithSamplers(kits[track.Kind], instruments, p.SamplerPackSet(), track.Params, 48_000); err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
@@ -400,7 +411,7 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s effect %s: %w", track.ID, name, err)
 			}
 		}
-		if track.Mixer.SendA > 0 && !hasEffectKind(effects, "delay") {
+		if track.Mixer.SendA > 0 && !hasEffectKind(effects, "delay") && !hasEffectKind(effects, "tape") {
 			return fmt.Errorf("track %s requires a declared delay for send_a", track.ID)
 		}
 		if track.Mixer.SendB > 0 && !hasEffectKind(effects, "reverb") {
@@ -414,8 +425,11 @@ func ValidateProject(p *Project) error {
 					return fmt.Errorf("track %s send references unknown effect %s", track.ID, send.To)
 				}
 				kind := semanticEffectKind(effect)
-				if kind != "delay" && kind != "reverb" {
+				if !isDelayReturnKind(kind) && kind != "reverb" {
 					return fmt.Errorf("CICADA-UNSUPPORTED: send to %s effect is not implemented", kind)
+				}
+				if kind == "tape" {
+					kind = "delay" // the tape echo is send A, like the delay
 				}
 				if seenSends[kind] {
 					return fmt.Errorf("track %s has multiple sends to %s", track.ID, kind)
@@ -577,7 +591,7 @@ func ValidateProject(p *Project) error {
 		} else if track.Kind == "drums" {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
-			allocatedVoices += len(kit.Lanes)
+			allocatedVoices += kitVoiceCount(p, kit)
 		} else if inst := instruments[track.Kind]; inst != nil && inst.Mode == "poly" {
 			allocatedVoices += GraphPolyphony(p, track.Kind)
 		} else {
@@ -605,7 +619,7 @@ func ValidateProject(p *Project) error {
 		if pattern.StepTicks != 0 && (pattern.StepTicks < 30 || pattern.StepTicks > 3840) {
 			return fmt.Errorf("pattern %s has invalid grid", pattern.ID)
 		}
-		if pattern.Steps < 1 || pattern.Steps > 64 || pattern.SwingPercent100 < 5000 || pattern.SwingPercent100 > 7500 || pattern.GatePercent < 10 || pattern.GatePercent > 100 || pattern.Transpose < -24 || pattern.Transpose > 24 {
+		if pattern.Steps < 1 || pattern.Steps > 64 || pattern.SwingPercent100 < 5000 || pattern.SwingPercent100 > 7500 || pattern.GatePercent < 10 || pattern.GatePercent > 100 || pattern.Transpose < -24 || pattern.Transpose > 24 || pattern.Humanize > notation.MaxHumanize {
 			return fmt.Errorf("pattern %s has invalid timing or length", pattern.ID)
 		}
 		if pattern.Data == nil || pattern.Lanes == nil {
@@ -793,7 +807,7 @@ func ValidateProject(p *Project) error {
 			} else if kind == "drums" {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
-				voices += len(kit.Lanes)
+				voices += kitVoiceCount(p, kit)
 			} else if inst := instruments[kind]; inst != nil && inst.Mode == "poly" {
 				voices += GraphPolyphony(p, kind)
 			} else {
@@ -1070,6 +1084,23 @@ func validatePatternSound(p *Project, track Track, pattern Pattern, polyphonic, 
 				return fmt.Errorf("CICADA-UNSUPPORTED: sample packs cannot play note expression")
 			}
 		}
+		for _, voice := range p.Samplers {
+			if voice.Name != track.Kind {
+				continue
+			}
+			for i, step := range pattern.Data {
+				if step != nil && len(step.Notes) > voice.Voices {
+					return fmt.Errorf("CICADA-PARAM: track %s pattern %s step %d plays a %d-note chord, but sampler %s has voices = %d; the chord would steal its own notes", track.ID, pattern.ID, i+1, len(step.Notes), voice.Name, voice.Voices)
+				}
+			}
+		}
+		// A sampler keeps one voice handle per step, so expression would bend only
+		// the last note of a chord.
+		for i, expression := range pattern.Expression {
+			if i < len(pattern.Data) && pattern.Data[i] != nil && len(pattern.Data[i].Notes) > 0 && expression != (NoteExpression{Timbre: .5}) {
+				return fmt.Errorf("CICADA-UNSUPPORTED: sampler track %s cannot play note expression on the chord at step %d of pattern %s", track.ID, i+1, pattern.ID)
+			}
+		}
 		for _, expression := range pattern.Expression {
 			if expression.Timbre != .5 {
 				return fmt.Errorf("CICADA-UNSUPPORTED: sampler timbre expression is not supported")
@@ -1084,7 +1115,7 @@ func validatePatternSound(p *Project, track Track, pattern Pattern, polyphonic, 
 	}
 	for _, step := range pattern.Data {
 		if step != nil && len(step.Notes) > 0 {
-			if !isModeledPiano(p, track.Kind) && !isModeledKeys(p, track.Kind) && !polyphonic || pattern.Kind != "notes" {
+			if !isModeledPiano(p, track.Kind) && !isModeledKeys(p, track.Kind) && !polyphonic && !sampler || pattern.Kind != "notes" {
 				return fmt.Errorf("chords require a voice poly instrument and a notes pattern")
 			}
 		}
@@ -1106,4 +1137,28 @@ func validatePatternSound(p *Project, track Track, pattern Pattern, polyphonic, 
 		}
 	}
 	return nil
+}
+
+// kitVoiceCount counts the voices an authored kit track allocates: one for each
+// lane that is not a sampler lane, and the whole voice pool of each distinct
+// sampler, because the lanes that name one sampler share one instrument.
+func kitVoiceCount(p *Project, kit Kit) int {
+	declared := p.SamplerPackSet()
+	voices := map[string]int{}
+	for _, sampler := range p.Samplers {
+		voices[sampler.Name] = sampler.Voices
+	}
+	count := 0
+	pools := map[string]bool{}
+	for _, target := range kit.Lanes {
+		if name, _, ok := isSamplerTarget(target, declared); ok && declared[name] {
+			if !pools[name] {
+				pools[name] = true
+				count += voices[name]
+			}
+			continue
+		}
+		count++
+	}
+	return count
 }

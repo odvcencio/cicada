@@ -358,7 +358,7 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 					kind = "reverb"
 				}
 				for _, effect := range s.Effects {
-					if effect.Kind == kind {
+					if effect.Kind == kind || kind == "delay" && effect.Kind == "tape" {
 						routed[effect.Name] = true
 					}
 				}

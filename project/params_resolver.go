@@ -126,6 +126,18 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		}
 		if strings.HasPrefix(descriptor.ID, "drum.") {
 			laneControl := strings.SplitN(descriptor.Source, "_", 2)
+			if len(laneControl) == 2 && (laneControl[1] == "level" || laneControl[1] == "pan") {
+				// A sampler lane's level and pan are fixed when the track compiles; a live
+				// path would be accepted and then change nothing.
+				for _, kit := range p.Kits {
+					if kit.ID != p.Tracks[trackIndex].Kind {
+						continue
+					}
+					if _, _, sampler := isSamplerTarget(kit.Lanes[laneControl[0]], p.SamplerPackSet()); sampler {
+						return fail("CICADA-UNSUPPORTED", "sampler kit lane level and pan must be set in the track block, not live: "+path)
+					}
+				}
+			}
 			if len(laneControl) == 2 && laneControl[1] != "level" && laneControl[1] != "pan" {
 				for _, kit := range p.Kits {
 					if kit.ID == p.Tracks[trackIndex].Kind && strings.HasPrefix(kit.Lanes[laneControl[0]], "model.") {

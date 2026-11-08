@@ -154,3 +154,45 @@ song {main}
 		t.Fatal("corrupt pin rendered")
 	}
 }
+
+func TestPackVoiceChordSoundsAndReleasesEveryNote(t *testing.T) {
+	pcm := make([]float32, 1024)
+	for i := range pcm {
+		pcm[i] = .25
+	}
+	c := sample.DefaultInstrumentConfig()
+	c.Voices, c.Amp.Release = 4, 2
+	p := &instrumentpack.Prepared{Manifest: instrumentpack.Manifest{Config: c}}
+	for i, note := range []uint8{60, 62} {
+		p.Zones = append(p.Zones, sample.Zone{Region: sample.Region{Left: pcm, SampleRate: 48000, RootKey: note, End: len(pcm), Loop: true, LoopEnd: len(pcm)}, KeyLow: note, KeyHigh: note, VelocityLow: 1, VelocityHigh: 127, Layer: 64, Group: uint8(i), Count: 1, Gain: 1})
+	}
+	for _, baseline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("baseline=%v", baseline), func(t *testing.T) {
+			var v *packVoice
+			var err error
+			if baseline {
+				v, err = legacyBaseline(p, 48000)
+			} else {
+				v = &packVoice{}
+				v.instrument, err = p.New(48000)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			v.NoteChord([]uint8{60, 62}, 127, false)
+			for i := 0; i < 256; i++ {
+				v.NextStereo()
+			}
+			if l, _ := v.NextStereo(); math.Abs(float64(l)-.5) > 1e-6 {
+				t.Fatalf("chord sounds %g, want both notes (.5)", l)
+			}
+			v.NoteOff()
+			for i := 0; i < 256; i++ {
+				v.NextStereo()
+			}
+			if l, r := v.NextStereo(); l != 0 || r != 0 {
+				t.Fatalf("chord note survived note-off: %g/%g", l, r)
+			}
+		})
+	}
+}

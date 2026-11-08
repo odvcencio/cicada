@@ -191,7 +191,13 @@ const (
 	ParamFxChorusDepth       ParamID = 184
 	ParamFxChorusSpread      ParamID = 185
 	ParamFxChorusMix         ParamID = 186
-	ParamCount                       = 187
+	ParamFxTapeTime          ParamID = 187
+	ParamFxTapeFeedback      ParamID = 188
+	ParamFxTapeWow           ParamID = 189
+	ParamFxTapeFlutter       ParamID = 190
+	ParamFxTapeSaturation    ParamID = 191
+	ParamFxTapeDamp          ParamID = 192
+	ParamCount                       = 193
 )
 
 // IsInteger reports whether a live parameter takes whole numbers only.

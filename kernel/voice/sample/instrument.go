@@ -99,6 +99,8 @@ type instrumentVoice struct {
 	filterL, filterR                      float64
 	lastL, lastR, tailL, tailR            float32
 	tail                                  int
+	// mixL and mixR scale the voice's output. NoteOn sets both to one.
+	mixL, mixR float64
 }
 
 // Instrument owns bounded two-layer note slots and two release layers per
@@ -228,6 +230,13 @@ func (p *Instrument) NoteOnSeeded(note, velocity uint8, seed uint64) (Handle, er
 }
 
 func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
+	return p.NoteOnMix(note, velocity, 1, 1)
+}
+
+// NoteOnMix starts a note whose output is scaled by gainL and gainR. A drum kit
+// uses it to give each lane its own level and balance from one shared voice pool,
+// so that the pack's choke groups still span the lanes.
+func (p *Instrument) NoteOnMix(note, velocity uint8, gainL, gainR float64) (Handle, error) {
 	if note > 127 || velocity > 127 || p.serial == ^uint64(0) {
 		return Handle{}, validationError("sample note, velocity or ID out of range")
 	}
@@ -294,7 +303,7 @@ func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 	if v.active || v.tail > 0 {
 		tail = p.rate / 500
 	}
-	*v = instrumentVoice{active: true, note: note, velocity: vel, tuneCents: cents, zones: zs, delay: delay, cycle: p.rr[group], tailL: tl, tailR: tr, tail: tail}
+	*v = instrumentVoice{active: true, note: note, velocity: vel, tuneCents: cents, zones: zs, delay: delay, cycle: p.rr[group], tailL: tl, tailR: tr, tail: tail, mixL: gainL, mixR: gainR}
 	p.serial++
 	v.id = p.serial
 	v.cutoffLow = 1 - math.Exp(-2*math.Pi*p.config.Cutoff/float64(p.rate))
@@ -466,13 +475,17 @@ func (p *Instrument) NextStereo() (float32, float32) {
 				v.filterL, v.filterR = 0, 0
 			}
 		}
+		// lastL and lastR hold the voice's output after its own mix. The declick tail
+		// of a stolen voice is that old output, so it must not pass through the new
+		// voice's mix.
+		outL, outR := l*v.mixL, r*v.mixR
 		if v.tail > 0 {
 			fade := float64(v.tail) / float64(p.rate/500)
-			l += float64(v.tailL) * fade
-			r += float64(v.tailR) * fade
+			outL += float64(v.tailL) * fade
+			outR += float64(v.tailR) * fade
 			v.tail--
 		}
-		v.lastL, v.lastR = float32(l), float32(r)
+		v.lastL, v.lastR = float32(outL), float32(outR)
 		sumL += float64(v.lastL)
 		sumR += float64(v.lastR)
 	}

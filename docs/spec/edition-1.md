@@ -157,7 +157,7 @@ song { main*8 }
 
 **Meaning:** An instrument compiles a bounded expression graph into a monophonic or eight-voice polyphonic sound source. A binding may use declared parameters, built-in inputs, and earlier bindings. The output expression must produce audio.
 
-**Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `pulse` (Hz and unit pulse width to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `adsr` (gate, attack ms, decay ms, unit sustain, release ms to unit); `ladder`, `diode`, and `svf` (audio, Hz cutoff, unit resonance to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Expressions are type-checked before playback. Both `mono` and `poly` modes are implemented.
+**Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `pulse` (Hz and unit pulse width to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `adsr` (gate, attack ms, decay ms, unit sustain, release ms to unit); `ladder`, `diode`, and `svf` (audio, Hz cutoff, unit resonance to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Multiplying two audio signals gives audio (ring modulation), for example `noise() * sine(pitch)`; a gate cannot be multiplied. Expressions are type-checked before playback. Both `mono` and `poly` modes are implemented.
 
 `delay(audio, ms)` and `comb(audio, ms, unit, unit)` add bounded delay lines and damped feedback loops. Unit divided by Hz produces a period in ms (`1 / pitch`). Their interpolation, memory, ranges, and diagnostics are specified in [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings).
 
@@ -195,7 +195,7 @@ song { main }
 
 ## Authored kits
 
-**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name, `builtin.<lane>`, or `model.<piece>`.
+**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name, `builtin.<lane>`, `model.<piece>`, or `<sampler>.<pitch>`.
 
 **Meaning:** A kit maps drum lanes to compiled mono instruments, built-in drum recipes, or modeled acoustic kit pieces. An unbound lane is silent. Modeled pieces synthesize each strike internally, without recordings or external assets.
 
@@ -217,6 +217,31 @@ For a modeled lane, its source lane prefix selects the following track controls.
 | `<lane>_pan` | unitless | −1–1 | 0 | Piece pan |
 
 Modeled synthesis controls are prepared with the track. Scene settings may change piece level and pan; synthesis changes require a different configured track. Humanization does not move scheduled event times. Keep interacting hi-hat pieces in the same kit, because separate tracks have separate choke groups.
+
+### Sample-pack lanes
+
+`<sampler>.<pitch>` binds a lane to one note of a `sampler` that loads a sample pack. A pitch is a note name with an optional `#` or `b` and one octave digit; `c4` is MIDI 60, so `d2` is 38 and `c#2` is 37. Every hit on the lane starts that note at the hit's velocity (`x1` to `x9`, `x`, `X`), so the pack's quiet layers play as ghost notes.
+
+```text
+cicada 2
+sampler shells { pack = "packs/full-kit-shells/manifest.json" sha256 = "<manifest sha256>" root = c4 voices = 10 }
+kit snare_kit {
+  sd = shells.d2
+  rs = shells.c#2
+  bd = builtin.bd
+}
+track snare snare_kit { level = -6dB sd_level = -3dB }
+pattern drop drums steps = 8 { rs: .... x8... sd: .... ..x2. }
+```
+
+- All lanes of one kit that bind the same sampler share one voice pool. The pack's own choke groups therefore work across lanes: with a closed-hat zone and an open-hat zone in one group, a closed hat cuts an open hat.
+- Sampler, `model.` and `builtin.` lanes may mix in one kit. The output stays stereo.
+- A one-shot zone ignores note-off. A drum row ends no gate, so one-shot packs ring to the end of their recording.
+- The track's mixer, inserts and sends apply as usual. A sampler lane accepts `<lane>_level` (dB, -60 to +6, default 0) and `<lane>_pan` (-1 to 1, a balance that leaves both channels at unity in the centre). It refuses `_tune`, `_decay`, `_position` and `_humanize`; the recording and the pack's envelope settings set those.
+- A sampler used only by kits still loads and counts once against `--max-resident-pcm`.
+- Not available yet: the browser kernel image refuses a kit with sampler lanes, and scene settings cannot change a sampler lane's level or pan.
+
+`check` reports an unknown sampler (`CICADA-REFERENCE`), a sampler without a `pack` (`CICADA-UNSUPPORTED`), a bad pitch name (`CICADA-PARAM`), a note outside every zone of the pack, and a hit velocity that no zone covers (`CICADA-SAMPLER-ZONE`).
 
 **Errors:** Unknown lanes or instrument targets report `CICADA-REFERENCE`; duplicate lane bindings report `CICADA-DUPLICATE`.
 
@@ -247,7 +272,7 @@ song { main*4 }
 
 **Types and units:** A pattern has 1–64 expanded steps. Swing is 50–75%; gate is 10–100%; note transpose is −24 to +24 semitones. Each track can use at most 16 patterns. Optional `slot = N` selects a slot from 0 through 15.
 
-**Defaults:** Note kind is inferred when omitted. Pattern defaults are 50% swing, 55% gate, zero transpose, and the project seed. `steps = N` is an optional assertion and must equal the expanded length.
+**Defaults:** Note kind is inferred when omitted. Pattern defaults are 50% swing, 55% gate, zero transpose, and the project seed. `steps = N` is an optional assertion and must equal the expanded length. `humanize = N` (0 to 32, default 0) offsets each hit's velocity by a seeded amount from -N to +N, kept within 1 to 127; it draws from the pattern seed as `?N` chance does, so every render repeats it, and it applies to drum and notes patterns, not acid patterns. The browser kernel image refuses a pattern with `humanize`.
 
 **Errors:** Missing or excess steps report `CICADA-LIMIT`; a mismatched explicit `steps` value or incompatible pattern kind reports `CICADA-PARAM`; unknown attributes and invalid slot values report `CICADA-PARAM`.
 

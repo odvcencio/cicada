@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/fx/tape"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/seq"
@@ -128,6 +129,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	}
 	effectsByID := make(map[string]Effect, len(p.Effects))
 	var delayParams *fx.DelayParams
+	var tapeParams *tape.Params
 	var reverbParams *fx.ReverbParams
 	var compParams *fx.CompParams
 	var compSidechain string
@@ -143,6 +145,12 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				return cfg, err
 			}
 			delayParams = &params
+		} else if kind == "tape" {
+			params, err := TapeParamsFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			tapeParams = &params
 		} else if kind == "reverb" {
 			params, err := ReverbParamsFromValues(effect.Params)
 			if err != nil {
@@ -164,6 +172,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	}
 	cfg.CompMusic = compParams
 	cfg.DelayA = delayParams
+	cfg.TapeA = tapeParams
 	cfg.ReverbB = reverbParams
 	for _, bus := range p.Buses {
 		switch bus.ID {
@@ -207,7 +216,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				gain = math.Pow(10, gain/20)
 			}
 			switch semanticEffectKind(effect) {
-			case "delay":
+			case "delay", "tape":
 				config.SendA = gain
 				config.SendAPre = send.Tap == "pre"
 			case "reverb":
@@ -293,7 +302,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				if kit, ok := kits[track.Kind]; ok {
 					config.Kind = engine.VoiceDrums
-					bindings, err := CompileKitTrackAtSampleRate(kit, programs, track.Params, sampleRate)
+					bindings, err := CompileKitTrackWithSamplers(kit, programs, p.SamplerPackSet(), track.Params, sampleRate)
 					if err != nil {
 						return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 					}
@@ -544,9 +553,24 @@ func TrackVoices(v *engine.TrackConfig) int {
 	switch v.Kind {
 	case engine.VoiceOff:
 	case engine.VoiceDrums:
+		// A sampler-bound lane shares its pack's whole voice pool with the other
+		// lanes on that pack, as prepareDrumKit reserves it: count it once per pack.
+		var banks [drum.LaneCount]*engine.PackFactory
+		bankCount := 0
 		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 			if v.Kit != nil {
-				if v.Kit[lane].Kind != engine.KitLaneOff {
+				binding := v.Kit[lane]
+				if binding.Kind == engine.KitLaneSampler && binding.Pack != nil {
+					seen := false
+					for _, bank := range banks[:bankCount] {
+						seen = seen || bank == binding.Pack
+					}
+					if !seen {
+						banks[bankCount] = binding.Pack
+						bankCount++
+						voices += binding.Pack.VoiceCount()
+					}
+				} else if binding.Kind != engine.KitLaneOff {
 					voices++
 				}
 			} else if lane < drum.LT || v.Drums[lane] != (drum.Params{}) {
@@ -603,6 +627,27 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 	if value.Unit == "enum" {
 		if value.Text == "off" && resolved.Descriptor.Off {
 			return float32(math.Inf(-1)), fx.FreeDelay, nil
+		}
+		if resolved.Descriptor.ID == "fx.tape.time" {
+			division, err := fx.ParseDelayDivision(value.Text)
+			if err != nil || division == fx.FreeDelay {
+				return 0, fx.FreeDelay, fmt.Errorf("CICADA-UNSUPPORTED: scene setting %s value %q has no engine representation", setting.Path, value.Text)
+			}
+			for _, effect := range p.Effects {
+				if effect.ID != resolved.Owner {
+					continue
+				}
+				params, err := TapeParamsFromValues(effect.Params)
+				if err != nil {
+					return 0, fx.FreeDelay, err
+				}
+				params.Division, params.TimeMs = division, 0
+				if err := params.ValidateTempo(int64(SlowestTempoMilli(p))); err != nil {
+					return 0, fx.FreeDelay, fmt.Errorf("CICADA-PARAM: scene setting %s value %q: %w", setting.Path, value.Text, err)
+				}
+				return 0, division, nil
+			}
+			return 0, fx.FreeDelay, fmt.Errorf("CICADA-REFERENCE: scene setting %s has no tape effect", setting.Path)
 		}
 		if resolved.Descriptor.ID == "fx.delay.time" {
 			division, err := fx.ParseDelayDivision(value.Text)
@@ -690,7 +735,7 @@ func kernelPattern(pattern Pattern) (seq.Pattern, error) {
 	}
 	compiled := seq.Pattern{
 		Len: pattern.Steps, StepTicks: pattern.StepTicks, SwingPermille: swing, GatePercent: pattern.GatePercent,
-		Transpose: pattern.Transpose, Seed: pattern.Seed, Performance: pattern.Performance.Kernel(),
+		Transpose: pattern.Transpose, Seed: pattern.Seed, Humanize: pattern.Humanize, Performance: pattern.Performance.Kernel(),
 	}
 	if len(pattern.Expression) > 0 {
 		compiled.Expression = new([64]seq.Expression)

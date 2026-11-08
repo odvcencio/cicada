@@ -149,6 +149,8 @@
 (kit_binding lane: (identifier) @tag.builtin)
 (kit_target instrument: (identifier) @type)
 (kit_target voice: (identifier) @tag.builtin)
+(kit_target sampler: (identifier) @type)
+(kit_target pitch: (sampler_pitch) @number)
 (kit_target "." @punctuation.delimiter)
 
 (param_decl name: (identifier) @property)

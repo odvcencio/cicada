@@ -14,6 +14,7 @@ import (
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/fx/chorus"
+	"m31labs.dev/cicada/kernel/fx/tape"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -130,6 +131,9 @@ func engineState(e *Engine) string {
 	if e.delayA != nil {
 		state += roundNumbers(fmt.Sprintf("|%+v", e.delayA.Params()))
 	}
+	if e.tapeA != nil {
+		state += roundNumbers(fmt.Sprintf("|%+v", e.tapeA.Params()))
+	}
 	if e.reverbB != nil {
 		state += roundNumbers(fmt.Sprintf("|%+v", e.reverbB.Params()))
 	}
@@ -173,6 +177,10 @@ func TestEveryLiveParameterRestoresLikeAFreshEngine(t *testing.T) {
 							amp := ampcab.DefaultParams()
 							cfg.Track[track].InsertDrive = nil
 							cfg.Track[track].InsertChain = []TrackEffectConfig{{Kind: TrackEffectAmpCab, AmpCab: &amp}}
+						}
+						if strings.HasPrefix(d.ID, "fx.tape.") {
+							params := tape.DefaultParams()
+							cfg.DelayA, cfg.TapeA = nil, &params
 						}
 						if strings.HasPrefix(d.ID, "chorus.") {
 							params := chorus.DefaultParams()
@@ -280,4 +288,28 @@ func roundNumbers(text string) string {
 		}
 		return strconv.FormatFloat(value, 'g', 7, 64)
 	})
+}
+
+// Settling the scene effects clears the tape echo's tail as it clears the delay.
+func TestSettleSceneEffectsResetsTheTapeEcho(t *testing.T) {
+	cfg := restoreBase(t)
+	params := tape.DefaultParams()
+	cfg.DelayA, cfg.TapeA = nil, &params
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.sceneDefaults == nil {
+		e.sceneDefaults = &sceneParameterState{}
+	}
+	for i := 0; i < 4800; i++ {
+		e.tapeA.Process(.5, .5)
+	}
+	if e.tapeA.Silent() {
+		t.Fatal("tape echo was not excited before the settle")
+	}
+	e.settleSceneEffects()
+	if !e.tapeA.Silent() {
+		t.Fatal("settleSceneEffects left the tape echo ringing")
+	}
 }

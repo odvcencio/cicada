@@ -307,7 +307,7 @@ func (e *Engine) setSceneTempo(bpmMilli int64) {
 		return
 	}
 	e.transport.SetTempoNow(bpmMilli)
-	if e.delayA != nil && e.delayA.SetTempo(bpmMilli) != nil {
+	if e.delayA != nil && e.delayA.SetTempo(bpmMilli) != nil || e.tapeA != nil && e.tapeA.SetTempo(bpmMilli) != nil {
 		e.fault(FaultDelayTempo)
 	}
 }

@@ -531,3 +531,19 @@ func TestCheckReportsANoteOfAPhraseAtTheUse(t *testing.T) {
 		t.Errorf("report lacks %q:\n%s", want, stderr.String())
 	}
 }
+
+func TestCheckReportsAChordNoteOutsideEveryZone(t *testing.T) {
+	path, _, _ := writeSamplerProject(t, testpack.Options{}, "pattern melody notes { [c4 c6] . . . }\n")
+	var stdout, stderr bytes.Buffer
+	err := checkPaths([]string{path}, &stdout, &stderr)
+	if err == nil || err.Error() != "1 error(s) across 1 score(s)" {
+		t.Fatalf("a chord with one note outside the zones: %v\n%s", err, stderr.String())
+	}
+	report := stderr.String()
+	if !strings.Contains(report, "error CICADA-SAMPLER-ZONE: pitch c6 (MIDI 84) on track lead, pattern melody, is outside every zone") {
+		t.Errorf("report does not name the chord note:\n%s", report)
+	}
+	if strings.Contains(report, "pitch c4") || strings.Contains(report, "pitch c5") {
+		t.Errorf("a chord note inside the zone was reported:\n%s", report)
+	}
+}

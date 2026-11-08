@@ -169,6 +169,9 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 	case strings.HasPrefix(descriptor.ID, "fx.delay."):
 		_, err := DelayParamsFromValues(values)
 		return err == nil
+	case strings.HasPrefix(descriptor.ID, "fx.tape."):
+		_, err := TapeParamsFromValues(values)
+		return err == nil
 	case strings.HasPrefix(descriptor.ID, "fx.reverb."):
 		_, err := ReverbParamsFromValues(values)
 		return err == nil

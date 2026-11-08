@@ -63,6 +63,8 @@ func kernelAccepts(t *testing.T, d paramdefs.Descriptor, literal, route string) 
 			_, err = DriveParamsFromValues(values)
 		case "delay":
 			_, err = DelayParamsFromValues(values)
+		case "tape":
+			_, err = TapeParamsFromValues(values)
 		case "reverb":
 			_, err = ReverbParamsFromValues(values)
 		case "comp":

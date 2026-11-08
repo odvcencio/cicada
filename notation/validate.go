@@ -46,6 +46,53 @@ var scales = map[string]bool{
 	"harmonic": true, "pent": true, "mixo": true, "blues": true,
 }
 
+// ParseSamplerPitch reads a pitch name such as d2, c#2 or eb3 as a MIDI note.
+// Octaves follow the sampler root spelling, so c4 is 60 and d2 is 38.
+func ParseSamplerPitch(name string) (int, bool) {
+	if len(name) < 2 || len(name) > 3 {
+		return 0, false
+	}
+	base, ok := map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}[name[0]]
+	if !ok {
+		return 0, false
+	}
+	rest := name[1:]
+	switch rest[0] {
+	case '#':
+		base++
+		rest = rest[1:]
+	case 'b':
+		base--
+		rest = rest[1:]
+	}
+	if len(rest) != 1 || rest[0] < '0' || rest[0] > '9' {
+		return 0, false
+	}
+	note := 12*(int(rest[0]-'0')+1) + base
+	if note < 0 || note > 127 {
+		return 0, false
+	}
+	return note, true
+}
+
+func hasInstrument(instruments map[string]Instrument, name string) bool {
+	_, ok := instruments[name]
+	return ok
+}
+
+// isSamplerBinding reports whether a kit target reads as <sampler>.<pitch>: its
+// prefix is a declared sampler, or its suffix is a pitch name.
+func isSamplerBinding(name, pitch string, samplers map[string]Sampler) bool {
+	if _, declared := samplers[name]; declared {
+		return true
+	}
+	_, ok := ParseSamplerPitch(pitch)
+	return ok
+}
+
+// MaxHumanize is the largest pattern humanize velocity offset.
+const MaxHumanize = 32
+
 // Validate checks the meaning of a syntactically valid score. It leaves the
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) (ds []Diagnostic) {
@@ -105,6 +152,10 @@ func Validate(s *Score) (ds []Diagnostic) {
 		add("CICADA-LIMIT", fmt.Sprintf("score must have 1 to %d tracks", limits.MaxTracks), "error", Position{Line: 1, Column: 1})
 	}
 	instruments := make(map[string]Instrument, len(s.Instruments))
+	samplers := make(map[string]Sampler, len(s.Samplers))
+	for _, sampler := range s.Samplers {
+		samplers[sampler.Name] = sampler
+	}
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
 		_, isModal := modal.ParseTrackKind(inst.Name)
@@ -187,6 +238,18 @@ func Validate(s *Score) (ds []Diagnostic) {
 			} else if strings.HasPrefix(binding.Target, "model.") {
 				if _, ok := modeledkit.ParseProfile(strings.TrimPrefix(binding.Target, "model.")); !ok {
 					add("CICADA-REFERENCE", "unknown modeled drum "+binding.Target, "error", binding.Position)
+				}
+			} else if name, pitch, dotted := strings.Cut(binding.Target, "."); dotted && !hasInstrument(instruments, binding.Target) && isSamplerBinding(name, pitch, samplers) {
+				sampler, declared := samplers[name]
+				switch {
+				case !declared:
+					add("CICADA-REFERENCE", "kit binds "+binding.Target+", but no sampler named "+name+" is declared", "error", binding.Position)
+				case sampler.Pack == "":
+					add("CICADA-UNSUPPORTED", "kit lanes can bind only sample packs; sampler "+name+" has no pack", "error", binding.Position)
+				default:
+					if _, ok := ParseSamplerPitch(pitch); !ok {
+						add("CICADA-PARAM", pitch+" is not a note name from c0 to g9, such as d2 or c#2", "error", binding.Position)
+					}
 				}
 			} else if inst, exists := instruments[binding.Target]; !exists {
 				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
@@ -377,6 +440,13 @@ func Validate(s *Score) (ds []Diagnostic) {
 				} else if p.Kind == "drums" && n != 0 {
 					add("CICADA-UNSUPPORTED", "drum patterns cannot transpose lanes", "error", a.ValuePosition)
 				}
+			case "humanize":
+				n, err := strconv.Atoi(a.Value)
+				if err != nil || n < 0 || n > MaxHumanize {
+					add("CICADA-PARAM", fmt.Sprintf("humanize must be an integer velocity offset from 0 to %d", MaxHumanize), "error", a.ValuePosition)
+				} else if p.Kind == "acid" {
+					add("CICADA-UNSUPPORTED", "acid patterns do not support humanize", "error", a.ValuePosition)
+				}
 			case "slot":
 				n, err := strconv.Atoi(a.Value)
 				if err != nil || n < 0 || n > 15 {
@@ -558,7 +628,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		if !onMaster {
 			kindCounts[effect.Kind]++
 		}
-		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" && effect.Kind != "deesser" && effect.Kind != "ampcab" && effect.Kind != "chorus" {
+		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" && effect.Kind != "deesser" && effect.Kind != "ampcab" && effect.Kind != "chorus" && effect.Kind != "tape" {
 			add("CICADA-UNSUPPORTED", "effect kind "+effect.Kind+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
@@ -581,6 +651,9 @@ func Validate(s *Score) (ds []Diagnostic) {
 				}
 			}
 		}
+	}
+	if kindCounts["delay"]+kindCounts["tape"] > 1 {
+		add("CICADA-UNSUPPORTED", "multiple delay or tape instances are not implemented: a tape echo is the delay return", "error", Position{Line: 1, Column: 1})
 	}
 	for _, kind := range []string{"delay", "reverb"} {
 		if kindCounts[kind] > 1 {
@@ -766,12 +839,21 @@ func validTrackParam(kind, name string, instruments map[string]Instrument, kits 
 		if len(parts) != 2 {
 			return false
 		}
-		modeled := false
+		modeled, sampler := false, false
 		for _, binding := range kit.Bindings {
-			if binding.Lane == parts[0] && strings.HasPrefix(binding.Target, "model.") {
-				modeled = true
-				break
+			if binding.Lane != parts[0] {
+				continue
 			}
+			modeled = strings.HasPrefix(binding.Target, "model.")
+			if _, suffix, dotted := strings.Cut(binding.Target, "."); dotted && !modeled && !strings.HasPrefix(binding.Target, "builtin.") {
+				_, sampler = ParseSamplerPitch(suffix)
+			}
+			break
+		}
+		if sampler {
+			// A pack lane has no tune, decay, position or humanize: the recording
+			// and the pack's own envelope set them.
+			return parts[1] == "level" || parts[1] == "pan"
 		}
 		if !modeled {
 			return false
@@ -855,7 +937,7 @@ func validateTrackMixer(score *Score, track Track, effects map[string]Effect, na
 				}
 				continue
 			}
-			if effect.Kind != "delay" && effect.Kind != "reverb" {
+			if effect.Kind != "delay" && effect.Kind != "tape" && effect.Kind != "reverb" {
 				add("CICADA-UNSUPPORTED", "send to "+effect.Kind+" effect "+param.Target+" is not implemented", "error", param.Position)
 			}
 			validateSendLevel(param.Value, param.ValuePosition, add)
@@ -878,7 +960,7 @@ func validateTrackMixer(score *Score, track Track, effects map[string]Effect, na
 			}
 			found := false
 			for _, effect := range effects {
-				found = found || effect.Kind == kind
+				found = found || effect.Kind == kind || kind == "delay" && effect.Kind == "tape"
 			}
 			if value > 0 && !found {
 				add("CICADA-REFERENCE", param.Name+" requires a declared "+kind+" effect", "error", param.ValuePosition)

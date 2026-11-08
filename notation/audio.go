@@ -3,6 +3,7 @@ package notation
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"path/filepath"
 	"sort"
@@ -36,8 +37,11 @@ type Sampler struct {
 	Name, Asset, Mode string
 	Pack, SHA256      string
 	RootMIDI, Voices  int
-	Params            []Param
-	Position          Position
+	// Optional amplitude envelope overrides for a pack sampler. Times are
+	// milliseconds, sustain is 0..1. Nil keeps the pack manifest's value.
+	AttackMS, DecayMS, Sustain, ReleaseMS *float64
+	Params                                []Param
+	Position                              Position
 }
 
 func audioDiagnostic(code, expected, actual string, p Position) Diagnostic {
@@ -271,7 +275,7 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 					break
 				}
 			}
-			f := fields(sampler.Params, required, []string{"asset", "root", "mode", "voices", "pack", "sha256"}, "CICADA-SAMPLER-PARAM", sampler.Position)
+			f := fields(sampler.Params, required, []string{"asset", "root", "mode", "voices", "pack", "sha256", "attack", "decay", "sustain", "release"}, "CICADA-SAMPLER-PARAM", sampler.Position)
 			sampler.Pack, _ = strconv.Unquote(f["pack"].Value)
 			sampler.SHA256, _ = strconv.Unquote(f["sha256"].Value)
 			sampler.Asset = f["asset"].Value
@@ -280,6 +284,21 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 				sampler.Mode = "oneshot"
 			}
 			sampler.Voices = int(integer(f["voices"], 1, 32, "CICADA-SAMPLER-PARAM"))
+			sampler.AttackMS, sampler.DecayMS, sampler.Sustain, sampler.ReleaseMS = nil, nil, nil, nil
+			for _, env := range []struct {
+				name string
+				dst  **float64
+				time bool
+			}{{"attack", &sampler.AttackMS, true}, {"decay", &sampler.DecayMS, true}, {"sustain", &sampler.Sustain, false}, {"release", &sampler.ReleaseMS, true}} {
+				if p, exists := f[env.name]; exists {
+					v, err := parseEnvelopeValue(p.Value, env.time)
+					if err != nil {
+						add("CICADA-SAMPLER-PARAM", envelopeExpectation(env.name), strconv.Quote(p.Value), p.ValuePosition)
+						continue
+					}
+					*env.dst = &v
+				}
+			}
 			sampler.RootMIDI = -1
 			root := f["root"].Value
 			if len(root) >= 2 && len(root) <= 3 && root[0] >= 'a' && root[0] <= 'g' && root[len(root)-1] >= '0' && root[len(root)-1] <= '6' {
@@ -309,6 +328,19 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 		if sampler.RootMIDI < 12 || sampler.RootMIDI > 95 || sampler.Mode != "oneshot" && sampler.Mode != "loop" || sampler.Voices < 1 || sampler.Voices > 32 {
 			add("CICADA-SAMPLER-PARAM", "absolute root c0..b6, mode oneshot or loop, voices 1..32", fmt.Sprintf("root MIDI=%d mode=%q voices=%d", sampler.RootMIDI, sampler.Mode, sampler.Voices), sampler.Position)
 		}
+		if sampler.AttackMS != nil || sampler.DecayMS != nil || sampler.Sustain != nil || sampler.ReleaseMS != nil {
+			if sampler.Pack == "" {
+				add("CICADA-SAMPLER-PARAM", "attack, decay, sustain and release only with pack", "envelope on single-asset sampler", sampler.Position)
+			}
+			for _, env := range []struct {
+				name string
+				v    *float64
+			}{{"attack", sampler.AttackMS}, {"decay", sampler.DecayMS}, {"sustain", sampler.Sustain}, {"release", sampler.ReleaseMS}} {
+				if env.v != nil && !validEnvelope(env.name, *env.v) {
+					add("CICADA-SAMPLER-PARAM", envelopeExpectation(env.name), strconv.FormatFloat(*env.v, 'g', -1, 64), audioFieldPosition(sampler.Params, env.name, sampler.Position))
+				}
+			}
+		}
 		for _, inst := range s.Instruments {
 			if inst.Name == sampler.Name {
 				add("CICADA-DUPLICATE", "unique instrument name", sampler.Name, sampler.Position)
@@ -329,6 +361,60 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 	}
 	return assets, clips, samplers, ds
 }
+func sameOptional(a, b *float64) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+
+// ValidEnvelope reports whether a pack sampler envelope override is in range.
+// Names are attack, decay, sustain and release; times are milliseconds.
+func validEnvelope(name string, v float64) bool {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return false
+	}
+	switch name {
+	case "attack":
+		return v >= 0 && v <= 5000
+	case "decay":
+		return v >= 0 && v <= 10000
+	case "sustain":
+		return v >= 0 && v <= 1
+	case "release":
+		return v >= 1 && v <= 10000
+	}
+	return false
+}
+
+func envelopeExpectation(name string) string {
+	switch name {
+	case "attack":
+		return "attack 0ms..5s"
+	case "decay":
+		return "decay 0ms..10s"
+	case "sustain":
+		return "sustain 0..1 without a unit"
+	}
+	return "release 1ms..10s"
+}
+
+func parseEnvelopeValue(text string, timed bool) (float64, error) {
+	scale, number := 1.0, text
+	if timed {
+		switch {
+		case strings.HasSuffix(text, "ms"):
+			number = strings.TrimSuffix(text, "ms")
+		case strings.HasSuffix(text, "s"):
+			number, scale = strings.TrimSuffix(text, "s"), 1000
+		default:
+			return 0, fmt.Errorf("expected ms or s")
+		}
+	}
+	v, err := strconv.ParseFloat(number, 64)
+	if err != nil {
+		return 0, err
+	}
+	return v * scale, nil
+}
+
 func audioFieldPosition(params []Param, name string, fallback Position) Position {
 	for _, p := range params {
 		if p.Name == name {
@@ -359,7 +445,7 @@ func ValidateAudio(s *Score) []Diagnostic {
 	}
 	for i, v := range s.Samplers {
 		resolved := samplers[i]
-		if v.Pack != resolved.Pack || v.SHA256 != resolved.SHA256 || v.Asset != resolved.Asset || v.RootMIDI != resolved.RootMIDI || v.Mode != resolved.Mode || v.Voices != resolved.Voices {
+		if v.Pack != resolved.Pack || v.SHA256 != resolved.SHA256 || v.Asset != resolved.Asset || v.RootMIDI != resolved.RootMIDI || v.Mode != resolved.Mode || v.Voices != resolved.Voices || !sameOptional(v.AttackMS, resolved.AttackMS) || !sameOptional(v.DecayMS, resolved.DecayMS) || !sameOptional(v.Sustain, resolved.Sustain) || !sameOptional(v.ReleaseMS, resolved.ReleaseMS) {
 			ds = append(ds, audioDiagnostic("CICADA-SAMPLER-PARAM", fmt.Sprintf("source asset=%s root=%d mode=%s voices=%d", resolved.Asset, resolved.RootMIDI, resolved.Mode, resolved.Voices), fmt.Sprintf("typed asset=%s root=%d mode=%s voices=%d", v.Asset, v.RootMIDI, v.Mode, v.Voices), v.Position))
 		}
 	}

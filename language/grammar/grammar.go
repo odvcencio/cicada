@@ -89,7 +89,11 @@ func Cicada() *grammargen.Grammar {
 		field("instrument", sym("_name")),
 		seq(str("builtin"), str("."), field("voice", sym("identifier"))),
 		seq(str("model"), str("."), field("voice", sym("identifier"))),
+		// <sampler>.<pitch> with a sharp or flat, such as shells.c#2. Natural
+		// pitches such as shells.d2 already read as a qualified name.
+		seq(field("sampler", sym("identifier")), str("."), field("pitch", sym("sampler_pitch"))),
 	))
+	g.Define("sampler_pitch", token(prec(3, pat(`[a-g][#b][0-9]`))))
 	g.Define("instrument_param", seq(
 		str("param"), field("name", sym("identifier")), optional(seq(str(":"), field("unit", sym("identifier")))),
 		str("="), field("default", sym("number")), optional(str(";")),

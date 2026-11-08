@@ -153,3 +153,50 @@ song {main}
 		}
 	}
 }
+
+func TestPackSamplerEnvelopeOverrides(t *testing.T) {
+	const pin = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	source := func(extra string) []byte {
+		return []byte(`sampler grand {pack="packs/grand/manifest.json" sha256="` + pin + `" root=c4 voices=4 ` + extra + `}
+track piano grand {}
+pattern melody {c4 . e4 .}
+scene main {piano=melody}
+song {main}
+`)
+	}
+	score, ds := ParseEdition(source("attack=0.5s decay=250ms sustain=0.4 release=30ms"), 2)
+	if parseHasErrors(ds) {
+		t.Fatalf("%+v", ds)
+	}
+	s := score.Samplers[0]
+	if s.AttackMS == nil || *s.AttackMS != 500 || *s.DecayMS != 250 || *s.Sustain != 0.4 || *s.ReleaseMS != 30 {
+		t.Fatalf("%+v", s)
+	}
+	if ds := ValidateAudio(score); len(ds) > 0 {
+		t.Fatal(ds)
+	}
+	plain, _ := ParseEdition(source(""), 2)
+	if p := plain.Samplers[0]; p.AttackMS != nil || p.DecayMS != nil || p.Sustain != nil || p.ReleaseMS != nil {
+		t.Fatalf("omitted fields must stay nil: %+v", p)
+	}
+	for _, bad := range []string{"attack=6s", "attack=-1ms", "decay=11s", "sustain=1.5", "sustain=0.5s", "release=0ms", "release=11s", "release=30", "release=fast"} {
+		_, ds := ParseEdition(source(bad), 2)
+		found := false
+		for _, d := range ds {
+			found = found || d.Code == "CICADA-SAMPLER-PARAM"
+		}
+		if !found {
+			t.Errorf("%s admitted: %+v", bad, ds)
+		}
+	}
+	// A single-asset sampler has no manifest envelope to override.
+	single := "asset vocal \"v.wav\" {}\nsampler hit {asset=vocal root=c3 mode=oneshot voices=8 release=30ms}\n"
+	_, ds = ParseEdition([]byte(single), 2)
+	found := false
+	for _, d := range ds {
+		found = found || d.Code == "CICADA-SAMPLER-PARAM" && strings.Contains(d.Message, "only with pack")
+	}
+	if !found {
+		t.Errorf("envelope on a single-asset sampler admitted: %+v", ds)
+	}
+}

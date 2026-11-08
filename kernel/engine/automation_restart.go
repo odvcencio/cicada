@@ -37,6 +37,8 @@ func (e *Engine) restartAutomationLanes() bool {
 			e.setParamImmediate(cmd.Command{Op: cmd.OpSetParam, Track: lane.track, Index: uint16(lane.id), Arg0: math.Float32bits(value)})
 		} else if lane.id == kernel.ParamFxDelayTime && e.delayA != nil {
 			e.setDelayDivision(base.delay.Division) // The authored time is a tempo division.
+		} else if lane.id == kernel.ParamFxTapeTime && e.tapeA != nil {
+			e.setDelayDivision(base.tape.Division)
 		} else if lane.id == kernel.ParamFxCompMakeup && e.compMusic != nil {
 			params := e.compMusic.Params()
 			params.MakeupAuto, params.MakeupDB = base.compressor.MakeupAuto, base.compressor.MakeupDB
@@ -85,6 +87,9 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 			}
 		case id >= kernel.ParamFxDelayTime && id <= kernel.ParamFxDelayMix:
 			return float32([...]float64{d.TimeMs, d.Feedback, d.DampHz, pingpong, d.Width, d.Mix}[id-kernel.ParamFxDelayTime]), id != kernel.ParamFxDelayTime || d.Division == fx.FreeDelay
+		case id >= kernel.ParamFxTapeTime && id <= kernel.ParamFxTapeDamp:
+			t := &base.tape
+			return float32([...]float64{t.TimeMs, t.Feedback, t.Wow, t.Flutter, t.Saturation, t.DampHz}[id-kernel.ParamFxTapeTime]), id != kernel.ParamFxTapeTime || t.Division == fx.FreeDelay
 		case id >= kernel.ParamFxReverbSize && id <= kernel.ParamFxReverbMix:
 			return float32([...]float64{r.Size, r.DecaySec * 1000, r.DampHz, r.HighpassHz, r.PredelayMs, r.Mix}[id-kernel.ParamFxReverbSize]), true
 		case id >= kernel.ParamFxCompThreshold && id <= kernel.ParamFxCompMix:

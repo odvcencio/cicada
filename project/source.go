@@ -470,6 +470,9 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 	}
 	left := inferExprType(expr.Args[0], symbols, bindings, map[string]bool{})
 	right := inferExprType(expr.Args[1], symbols, bindings, map[string]bool{})
+	if expr.Op == "*" && left == instrument.Audio && right == instrument.Audio {
+		return instrument.Audio, instrument.Audio
+	}
 	if expr.Op == "/" {
 		if want == instrument.MS && right == instrument.Hz {
 			return instrument.Unit, instrument.Hz
@@ -532,6 +535,12 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 	}
 	if right != "" && right != instrument.Unit {
 		return right
+	}
+	// The model stores literals without units, so a product with a bare
+	// literal (147Hz * exp2(...)) may still carry the literal's unit. Leave it
+	// unknown and let the use site decide, rather than calling it unitless.
+	if left == "" || right == "" {
+		return ""
 	}
 	return instrument.Unit
 }
@@ -613,6 +622,9 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 	}
 	if pattern.Transpose != 0 {
 		out.WriteString("  transpose = " + strconv.Itoa(int(pattern.Transpose)) + "\n")
+	}
+	if pattern.Humanize != 0 {
+		out.WriteString("  humanize = " + strconv.Itoa(int(pattern.Humanize)) + "\n")
 	}
 	if pattern.Seed != projectSeed {
 		out.WriteString("  seed = " + strconv.FormatUint(uint64(pattern.Seed), 10) + "\n")

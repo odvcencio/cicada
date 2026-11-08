@@ -180,6 +180,7 @@ type laneVoice struct {
 	modeled                             *modeledkit.Voice
 	modeledProfile                      modeledkit.Profile
 	modeledAccent                       float64
+	sampler                             *samplerLane
 }
 
 type Kit struct {
@@ -187,6 +188,7 @@ type Kit struct {
 	clickDecay float64
 	seed       uint32
 	lanes      [LaneCount]laneVoice
+	banks      []*SamplerBank
 	fault      bool
 }
 
@@ -370,6 +372,7 @@ func (k *Kit) SetModeled(lane Lane, profile modeledkit.Profile, params modeledki
 	v.customActive, v.customChoke, v.fadeRemaining = false, 0, 0
 	v.current, v.old = state{}, state{}
 	v.modeled, v.modeledProfile, v.modeledAccent = voice, profile, 1
+	v.sampler = nil
 	return k.SetParams(lane, p)
 }
 
@@ -381,6 +384,7 @@ func (k *Kit) Disable(lane Lane) error {
 	}
 	v := &k.lanes[lane]
 	v.enabled = false
+	v.sampler = nil
 	v.current.active = false
 	v.old.active = false
 	v.customActive = false
@@ -413,6 +417,9 @@ func (k *Kit) Reset() {
 			v.modeledAccent = 1
 		}
 	}
+	for _, bank := range k.banks {
+		bank.reset()
+	}
 }
 
 func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
@@ -420,6 +427,19 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 		return
 	}
 	if !k.lanes[lane].enabled {
+		return
+	}
+	if v := &k.lanes[lane]; v.sampler != nil {
+		// Velocity zero starts nothing. An accent plays at full velocity.
+		if velocity == 0 {
+			return
+		}
+		if accent {
+			velocity = 127
+		}
+		if err := v.sampler.bank.noteOn(v.sampler.note, velocity, v.sampler.gainL, v.sampler.gainR); err != nil {
+			k.fault = true
+		}
 		return
 	}
 	if lane == CH && k.lanes[lane].modeled == nil {
@@ -489,6 +509,10 @@ func (k *Kit) NoteOff(lane Lane) {
 	if lane >= LaneCount {
 		return
 	}
+	if v := &k.lanes[lane]; v.sampler != nil {
+		v.sampler.bank.noteOff(v.sampler.note)
+		return
+	}
 	if v := &k.lanes[lane]; v.modeled != nil {
 		v.modeled.Choke()
 		return
@@ -526,7 +550,7 @@ func (k *Kit) NextStereo() (left, right float32) {
 			v.panL += float64((v.targetPanL - v.panL) * alpha)
 			v.panR += float64((v.targetPanR - v.panR) * alpha)
 		}
-		if !v.enabled {
+		if !v.enabled || v.sampler != nil {
 			continue
 		}
 		if v.modeled != nil {
@@ -564,6 +588,11 @@ func (k *Kit) NextStereo() (left, right float32) {
 		output *= nominalTrim[v.recipe] * v.level
 		l += float64(output * v.panL)
 		r += float64(output * v.panR)
+	}
+	for _, bank := range k.banks {
+		bl, br := bank.instrument.NextStereo()
+		l += float64(bl)
+		r += float64(br)
 	}
 	if math.IsNaN(l) || math.IsNaN(r) || math.IsInf(l, 0) || math.IsInf(r, 0) {
 		k.fault = true

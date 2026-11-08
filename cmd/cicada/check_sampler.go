@@ -51,6 +51,7 @@ func checkSamplerPacks(path string, inspection scoreInspection, limit int64) []n
 	}
 	packs, diagnostics := loadSamplerPacks(inspection.root(path), limit, p.Samplers, score.Samplers)
 	diagnostics = append(diagnostics, notesOutsideEveryZone(p, score, packs)...)
+	diagnostics = append(diagnostics, kitSamplerZoneDiagnostics(p, score, packs)...)
 	diagnostics = appendUniqueDiagnostics(nil, diagnostics)
 	sort.SliceStable(diagnostics, func(i, j int) bool {
 		a, b := diagnostics[i].Position, diagnostics[j].Position
@@ -202,23 +203,38 @@ func notesOutsideEveryZone(p *project.Project, score *notation.Score, packs map[
 				if step == nil || step.Tie || step.Velocity == 0 {
 					continue
 				}
-				note := int(step.Note) + int(pattern.Transpose)
-				if note < 0 || note > 127 || admitted.zones.HasAttackZone(uint8(note), step.Velocity) {
-					continue
+				pitches := step.Notes
+				if len(pitches) == 0 {
+					pitches = []int{int(step.Note)}
 				}
-				position, written := source.Position, ""
-				var use *notation.PhraseUse
-				if i < len(source.Steps) {
-					position, written = source.Steps[i].Position, strings.TrimSpace(source.Steps[i].Text)
-					if i < len(uses) && uses[i] != nil {
-						use = uses[i]
-						position = use.Position
+				for n, pitch := range pitches {
+					note := pitch + int(pattern.Transpose)
+					if note < 0 || note > 127 || admitted.zones.HasAttackZone(uint8(note), step.Velocity) {
+						continue
 					}
+					position, written := source.Position, ""
+					var use *notation.PhraseUse
+					if i < len(source.Steps) {
+						position, written = source.Steps[i].Position, strings.TrimSpace(source.Steps[i].Text)
+						if i < len(uses) && uses[i] != nil {
+							use = uses[i]
+							position = use.Position
+						}
+						if len(step.Notes) > 0 {
+							// Name the chord pitch, not the whole chord.
+							if words := strings.Fields(strings.Trim(written, "[]")); len(words) == len(step.Notes) {
+								written = words[n]
+								if cut := strings.IndexAny(written, "^?!~"); cut > 0 {
+									written = written[:cut]
+								}
+							}
+						}
+					}
+					diagnostics = append(diagnostics, notation.Diagnostic{
+						Code: samplerZoneCode, Severity: "error", Position: position,
+						Message: outOfZoneMessage(admitted, track, *id, use, written, note, step.Velocity),
+					})
 				}
-				diagnostics = append(diagnostics, notation.Diagnostic{
-					Code: samplerZoneCode, Severity: "error", Position: position,
-					Message: outOfZoneMessage(admitted, track, *id, use, written, note, step.Velocity),
-				})
 			}
 		}
 	}

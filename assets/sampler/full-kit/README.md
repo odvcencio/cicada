@@ -93,3 +93,24 @@ python3 tools/sampler/build_full_kit.py --tier hq16 --from-packs demo/packs --ou
 The exact tier preserves original decoded PCM, using FLAC for integer recordings and gzip where float32 PCM cannot round-trip through FLAC. PCM16 FLAC quantizes after power-of-two scaling to preserve quiet recordings; it pins that reconstruction and is the default for new browser and Studio downloads. Both tiers retain the same maps, dynamics, takes, loops, licenses and resident float32 PCM. Catalog `tiers` entries pin each alternate manifest. Host admission verifies encoded hashes, dimensions and canonical decoded-PCM hashes before playback; codecs add no kernel code. The builder checks source pins, stages output and refuses to replace differing or corrupt packs. Use `--verify-catalog` (CC0) or `--verify` (full kit) with the corresponding published `tiers/<tier>/catalog.json` to verify a rebuild. Copy the published root catalog beside the generated banks to expose both tiers.
 
 The full kit contains 142,689,506 encoded bytes in the exact tier or 79,681,355 bytes in PCM16 FLAC, versus 252,612,372 gzip bytes.
+
+## Play a pack from a drum kit
+
+A drum `kit` can bind a lane to one note of a pack `sampler`, so ordinary drum rows play the recorded kit with per-hit velocity. Low velocities reach the quiet ghost layers. Pitches use the table above (`c4` is 60, so `d2` is 38).
+
+```text
+cicada 2
+sampler shells { pack = "packs/full-kit-shells/manifest.json" sha256 = "<manifest sha256>" root = c4 voices = 10 }
+kit snare_kit {
+  sd = shells.d2
+  rs = shells.c#2
+  cp = shells.e2
+}
+track snare snare_kit { level = -6dB }
+pattern drop drums steps = 16 humanize = 6 {
+  rs: .... .... x8... ....
+  sd: .... ..x2. .... ..x1.
+}
+```
+
+Lanes of one kit share the pack's voices, so its choke groups work between lanes. `humanize = 6` moves each hit's velocity by a seeded amount of up to 6, the same on every render. See "Authored kits" in `docs/spec/edition-1.md`.

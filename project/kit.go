@@ -19,12 +19,31 @@ func CompileKit(kit Kit, programs map[string]*instrument.Program) (*[drum.LaneCo
 // CompileKitAtSampleRate validates graph delays against each lane's fixed
 // trigger pitch at the playback or export rate before binding the graph.
 func CompileKitAtSampleRate(kit Kit, programs map[string]*instrument.Program, sampleRate int) (*[drum.LaneCount]engine.KitLaneBinding, error) {
+	return CompileKitWithSamplers(kit, programs, nil, sampleRate)
+}
+
+// CompileKitWithSamplers also resolves lanes bound to a sample pack note.
+// samplers maps each declared sampler name to whether it is a pack.
+func CompileKitWithSamplers(kit Kit, programs map[string]*instrument.Program, samplers map[string]bool, sampleRate int) (*[drum.LaneCount]engine.KitLaneBinding, error) {
 	bindings := new([drum.LaneCount]engine.KitLaneBinding)
 	if kit.Lanes == nil {
 		return nil, fmt.Errorf("kit %s lanes must be explicit", kit.ID)
 	}
+	samplerLanes, err := KitSamplerLanes(kit, programs, samplers)
+	if err != nil {
+		return nil, err
+	}
+	isSamplerLane := map[drum.Lane]bool{}
+	for _, sl := range samplerLanes {
+		isSamplerLane[sl.Lane] = true
+		// The host attaches the loaded pack to Pack when it compiles the track.
+		bindings[sl.Lane] = engine.KitLaneBinding{Kind: engine.KitLaneSampler, Sampler: sl.Sampler, SampleNote: sl.Note}
+	}
 	for _, source := range sortedKeys(kit.Lanes) {
 		target := kit.Lanes[source]
+		if lane, ok := drumLane(source); ok && isSamplerLane[lane] {
+			continue
+		}
 		lane, ok := drumLane(source)
 		if !ok {
 			return nil, fmt.Errorf("kit %s has unknown lane %s", kit.ID, source)
@@ -84,7 +103,13 @@ func CompileKitTrack(kit Kit, programs map[string]*instrument.Program, params ma
 // CompileKitTrackAtSampleRate preserves modeled controls and validates graph
 // delay bindings at the requested playback or export rate.
 func CompileKitTrackAtSampleRate(kit Kit, programs map[string]*instrument.Program, params map[string]Value, sampleRate int) (*[drum.LaneCount]engine.KitLaneBinding, error) {
-	bindings, err := CompileKitAtSampleRate(kit, programs, sampleRate)
+	return CompileKitTrackWithSamplers(kit, programs, nil, params, sampleRate)
+}
+
+// CompileKitTrackWithSamplers is CompileKitTrackAtSampleRate for a kit that may
+// bind lanes to sample pack notes.
+func CompileKitTrackWithSamplers(kit Kit, programs map[string]*instrument.Program, samplers map[string]bool, params map[string]Value, sampleRate int) (*[drum.LaneCount]engine.KitLaneBinding, error) {
+	bindings, err := CompileKitWithSamplers(kit, programs, samplers, sampleRate)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +119,12 @@ func CompileKitTrackAtSampleRate(kit Kit, programs map[string]*instrument.Progra
 			return nil, fmt.Errorf("kit %s has unknown parameter %s", kit.ID, name)
 		}
 		lane, ok := drumLane(parts[0])
+		if ok && bindings[lane].Kind == engine.KitLaneSampler {
+			if err := applySamplerLaneParam(kit.ID, name, parts[1], params[name], &bindings[lane]); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if !ok || bindings[lane].Kind != engine.KitLaneModeled {
 			return nil, fmt.Errorf("kit %s parameter %s requires a modeled lane", kit.ID, name)
 		}
@@ -137,4 +168,35 @@ func CompileKitTrackAtSampleRate(kit Kit, programs map[string]*instrument.Progra
 		}
 	}
 	return bindings, nil
+}
+
+// applySamplerLaneParam applies <lane>_level and <lane>_pan to a sampler lane.
+// Tune, decay, position and humanize belong to modeled drums and the pack's own
+// envelope, so a sampler lane refuses them.
+func applySamplerLaneParam(kit, name, control string, value Value, binding *engine.KitLaneBinding) error {
+	if value.Number == nil || !finite(*value.Number) || value.Text != "" {
+		return fmt.Errorf("kit %s parameter %s requires a finite number", kit, name)
+	}
+	number := *value.Number
+	switch control {
+	case "level":
+		if value.Unit != "db" {
+			return fmt.Errorf("kit %s parameter %s requires db, got %s", kit, name, value.Unit)
+		}
+		if number < -60 || number > 6 {
+			return fmt.Errorf("kit %s parameter %s requires -60..+6 dB", kit, name)
+		}
+		binding.SampleLevelDB = number
+	case "pan":
+		if value.Unit != "unit" {
+			return fmt.Errorf("kit %s parameter %s requires unit, got %s", kit, name, value.Unit)
+		}
+		if number < -1 || number > 1 {
+			return fmt.Errorf("kit %s parameter %s requires -1..1", kit, name)
+		}
+		binding.SamplePan = number
+	default:
+		return fmt.Errorf("CICADA-UNSUPPORTED: kit %s parameter %s: a sampler lane supports only level and pan", kit, name)
+	}
+	return nil
 }

@@ -163,6 +163,18 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 	use := func(sampler project.Sampler, prepared *instrumentpack.Prepared) {
 		config := prepared.Manifest.Config
 		config.Voices = sampler.Voices
+		if sampler.AttackMS != nil {
+			config.Amp.Attack = *sampler.AttackMS
+		}
+		if sampler.DecayMS != nil {
+			config.Amp.Decay = *sampler.DecayMS
+		}
+		if sampler.Sustain != nil {
+			config.Amp.Sustain = *sampler.Sustain
+		}
+		if sampler.ReleaseMS != nil {
+			config.Amp.Release = *sampler.ReleaseMS
+		}
 		packs[sampler.Name] = &engine.PackFactory{Zones: prepared.Zones, Config: config}
 	}
 	// On the native path every pack is opened and counted against the cap first,
@@ -213,6 +225,24 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 		}
 		use(o.sampler, prepared)
 	}
+	// Lanes of an authored kit that bind a sampler share that sampler's pack,
+	// loaded and counted once above, whether or not a track plays it directly.
+	for ti := range p.Tracks {
+		kit := cfg.Track[ti].Kit
+		if kit == nil {
+			continue
+		}
+		for lane := range kit {
+			if kit[lane].Kind != engine.KitLaneSampler {
+				continue
+			}
+			pack := packs[kit[lane].Sampler]
+			if pack == nil && mode != modeValidate {
+				return engine.Config{}, fmt.Errorf("track %s: kit lane %d needs sampler %s, which has no loaded pack", p.Tracks[ti].ID, lane, kit[lane].Sampler)
+			}
+			kit[lane].Pack = pack
+		}
+	}
 	for ti, track := range p.Tracks {
 		if pack := packs[track.Kind]; pack != nil {
 			cfg.Track[ti].Kind = engine.VoicePrepared
@@ -220,5 +250,12 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 			cfg.Track[ti].Sample = nil
 		}
 	}
+	// Kit lanes now carry their packs, whose whole voice pools the engine
+	// reserves; size the capacity from the attached voices.
+	voices := 0
+	for ti := 0; ti < cfg.Tracks; ti++ {
+		voices += project.TrackVoices(&cfg.Track[ti])
+	}
+	cfg.MaxVoices = max(cfg.MaxVoices, voices)
 	return cfg, nil
 }

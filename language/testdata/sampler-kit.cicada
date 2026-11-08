@@ -1,0 +1,16 @@
+cicada 2
+
+sampler shells { pack = "packs/full-kit-shells/manifest.json" root = c4 voices = 10 }
+
+kit snare_kit {
+  sd = shells.d2
+  rs = shells.c#2
+  cp = shells.eb2
+}
+
+track snare snare_kit { level = -6dB }
+
+pattern drop drums steps = 16 {
+  rs: .... .... x8.. ....
+  sd: .... ..x2. .... ..x1
+}
