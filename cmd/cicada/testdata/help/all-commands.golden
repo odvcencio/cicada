@@ -362,7 +362,7 @@ Flags:
   --report            write JSON import report to stderr
   --help              show this help
 
-Imports fixed-tempo 4/4 notes and velocity. Timing edits, cross-bar retriggers, and drum velocity quantization are counted. Controller, program and expression events are not imported.
+Imports fixed-tempo 4/4 notes and velocity. Each MIDI track keeps its own named tracks; notes that start together with one length become a chord, and drums share one drums track. Timing edits, cross-bar retriggers, and velocity edits are counted. Controller, program and expression events are not imported.
 
 ### golden
 cicada golden [flags]
