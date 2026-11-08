@@ -2,6 +2,7 @@ package smf
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,14 +30,33 @@ type ImportReport struct {
 	SplitNotes          int    `json:"split_notes"`
 }
 
+// importLane is one score track: the melodic voice or the drums of one MIDI
+// track. A MIDI track whose notes overlap gets more than one melodic lane.
 type importLane struct {
-	notes []Note
-	drum  string
+	source int  // index of the MIDI track the notes came from
+	drums  bool // channel-10 notes, one row per drum lane
+	events []importEvent
+}
+
+// importEvent is one step a lane plays: a note, a chord of two to four
+// pitches that share an onset and a length, or a drum hit.
+type importEvent struct {
+	tick, dur int64
+	pitches   []uint8
+	vel       uint8
+	drum      string
+}
+
+type sourcedNote struct {
+	Note
+	source int
 }
 
 // ImportSource imports fixed-tempo 4/4 SMF notes to a validated edition-2
-// score. Overlapping melodic notes get independent piano tracks. Notes that
-// cross a bar are split and retriggered; the report counts every timing edit.
+// score. Each MIDI track keeps its own score tracks, named after it: notes that
+// start together with one length become a chord, other overlapping notes get
+// another piano track, and drum notes share one drums track. Notes that cross
+// a bar are split and retriggered; the report counts every timing edit.
 func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error) {
 	var report ImportReport
 	fail := func(message string) ([]byte, ImportReport, error) {
@@ -53,10 +73,10 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 	if bpm < 20000 || bpm > 300000 {
 		return fail("tempo must be 20..300 BPM")
 	}
-	var notes []Note
+	var notes []sourcedNote
 	end := int64(0)
 	grid := int64(960)
-	for _, track := range file.Tracks {
+	for ti, track := range file.Tracks {
 		if len(track.Events) != 0 {
 			return fail("controller and program messages cannot yet be imported without loss; keep the source MIDI or render audio")
 		}
@@ -99,7 +119,7 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 			}
 			grid = a
 			end = max(end, note.Tick+note.Dur)
-			notes = append(notes, note)
+			notes = append(notes, sourcedNote{Note: note, source: ti})
 		}
 	}
 	if len(notes) == 0 {
@@ -129,14 +149,14 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 		if notes[i].Tick != notes[j].Tick {
 			return notes[i].Tick < notes[j].Tick
 		}
-		return notes[i].Note < notes[j].Note
+		return notes[i].Note.Note < notes[j].Note.Note
 	})
 	var lanes []importLane
 	for _, note := range notes {
-		name := ""
 		if note.Chan == 9 {
+			name := ""
 			for i, pitch := range drum.MIDINotes {
-				if pitch == note.Note {
+				if pitch == note.Note.Note {
 					name = drum.Names[i]
 					break
 				}
@@ -144,45 +164,102 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 			if name == "" {
 				return fail("drum note has no built-in lane")
 			}
+			selected := -1
+			for i := range lanes {
+				if lanes[i].source == note.source && lanes[i].drums {
+					selected = i
+					break
+				}
+			}
+			if selected < 0 {
+				if len(lanes) == limits.MaxTracks {
+					return fail(fmt.Sprintf("polyphony needs more than %d score tracks", limits.MaxTracks))
+				}
+				selected = len(lanes)
+				lanes = append(lanes, importLane{source: note.source, drums: true})
+			}
+			lanes[selected].events = append(lanes[selected].events, importEvent{tick: note.Tick, dur: note.Dur, vel: note.Vel, drum: name})
+			continue
 		}
-		selected := -1
-		for i, lane := range lanes {
-			if lane.drum != name {
+		// A note that starts with the last chord of a lane and lasts as long
+		// joins it; otherwise it takes the first lane of its track that is free.
+		chord, free := -1, -1
+		for i := range lanes {
+			lane := &lanes[i]
+			if lane.source != note.source || lane.drums {
 				continue
 			}
-			last := lane.notes[len(lane.notes)-1]
-			if last.Tick+last.Dur <= note.Tick {
-				selected = i
+			last := &lane.events[len(lane.events)-1]
+			if last.tick == note.Tick && last.dur == note.Dur && len(last.pitches) < 4 && !slices.Contains(last.pitches, note.Note.Note) {
+				chord = i
 				break
 			}
+			if free < 0 && last.tick+last.dur <= note.Tick {
+				free = i
+			}
 		}
-		if selected < 0 {
+		if chord >= 0 {
+			last := &lanes[chord].events[len(lanes[chord].events)-1]
+			last.pitches = append(last.pitches, note.Note.Note)
+			if note.Vel != last.vel {
+				// A chord step has one velocity; it keeps the loudest note's.
+				report.QuantizedVelocities++
+				last.vel = max(last.vel, note.Vel)
+			}
+			continue
+		}
+		if free < 0 {
 			if len(lanes) == limits.MaxTracks {
 				return fail(fmt.Sprintf("polyphony needs more than %d score tracks", limits.MaxTracks))
 			}
-			selected = len(lanes)
-			lanes = append(lanes, importLane{drum: name})
+			free = len(lanes)
+			lanes = append(lanes, importLane{source: note.source})
 		}
-		lanes[selected].notes = append(lanes[selected].notes, note)
+		lanes[free].events = append(lanes[free].events, importEvent{tick: note.Tick, dur: note.Dur, pitches: []uint8{note.Note.Note}, vel: note.Vel})
 	}
+	// Tracks follow the MIDI file's track order; a track's lanes keep the
+	// order they were opened in.
+	sort.SliceStable(lanes, func(i, j int) bool { return lanes[i].source < lanes[j].source })
 	report.Tracks = len(lanes)
+	// Named tracks read better, but a MIDI track name can still be a word the
+	// score reserves; then the import falls back to midi-N names.
+	attempt := report
+	source, err := writeImport(file, lanes, importTrackNames(file, lanes), bpm, grid, &attempt)
+	if err != nil {
+		legacy := make([]string, len(lanes))
+		for i := range legacy {
+			legacy[i] = fmt.Sprintf("midi-%d", i+1)
+		}
+		attempt = report
+		source, err = writeImport(file, lanes, legacy, bpm, grid, &attempt)
+	}
+	if err != nil {
+		return nil, report, err
+	}
+	return source, attempt, nil
+}
+
+// writeImport spells the lanes as a formatted, validated score. names holds
+// one track ID per lane; report gathers the timing edits it makes.
+func writeImport(file File, lanes []importLane, names []string, bpm, grid int64, report *ImportReport) ([]byte, error) {
+	fail := func(message string) ([]byte, error) {
+		return nil, fmt.Errorf("MIDI import: %s", message)
+	}
 	var output strings.Builder
-	fmt.Fprintf(&output, "cicada 2\ntitle %q\ntempo %d.%03d\n", "MIDI import", bpm/1000, bpm%1000)
+	fmt.Fprintf(&output, "cicada 2\ntitle %q\ntempo %d.%03d\n", importTitle(file), bpm/1000, bpm%1000)
 	bindings := make([][]string, report.Bars)
 	for ti, lane := range lanes {
-		trackID := fmt.Sprintf("midi-%d", ti+1)
+		trackID := names[ti]
 		kind := "piano"
-		if lane.drum != "" {
+		if lane.drums {
 			kind = "drums"
 		}
 		fmt.Fprintf(&output, "track %s %s {}\n", trackID, kind)
 		gate := int64(100)
-		{
-			for _, n := range lane.notes {
-				if n.Dur < grid {
-					gate = max(int64(10), min(int64(100), (n.Dur*100+grid/2)/grid))
-					break
-				}
+		for _, e := range lane.events {
+			if e.dur < grid {
+				gate = max(int64(10), min(int64(100), (e.dur*100+grid/2)/grid))
+				break
 			}
 		}
 		pool := map[string]string{}
@@ -193,65 +270,82 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 				cells[i] = "."
 				velocities[i] = "100"
 			}
+			rows := map[string][]string{}
 			start := int64(bar) * seq.TicksPerBar
-			for _, n := range lane.notes {
-				noteEnd := n.Tick + n.Dur
-				if n.Tick >= start+seq.TicksPerBar || noteEnd <= start {
+			for _, e := range lane.events {
+				eventEnd := e.tick + e.dur
+				if e.tick >= start+seq.TicksPerBar || eventEnd <= start {
 					continue
 				}
-				from := max(start, n.Tick)
-				to := min(start+seq.TicksPerBar, noteEnd)
+				from := max(start, e.tick)
+				to := min(start+seq.TicksPerBar, eventEnd)
 				index := int((from - start) / grid)
-				if from != n.Tick {
+				if from != e.tick {
 					report.SplitNotes++
 				}
-				if lane.drum != "" {
-					velocity := int((int(n.Vel) + 7) / 14)
+				if lane.drums {
+					velocity := int((int(e.vel) + 7) / 14)
 					velocity = max(1, min(9, velocity))
 					hit := "x" + strconv.Itoa(velocity)
-					if n.Vel == 127 {
+					if e.vel == 127 {
 						hit = "X"
-					} else if n.Vel == 100 {
+					} else if e.vel == 100 {
 						hit = "x"
-					} else if int(n.Vel) != velocity*14 {
+					} else if int(e.vel) != velocity*14 {
 						report.QuantizedVelocities++
 					}
-					cells[index] = hit
+					if rows[e.drum] == nil {
+						rows[e.drum] = make([]string, len(cells))
+						for i := range rows[e.drum] {
+							rows[e.drum][i] = "."
+						}
+					}
+					rows[e.drum][index] = hit
 					if grid*gate/100 != to-from {
 						report.QuantizedDurations++
 					}
-				} else {
-					cells[index] = importPitch(n.Note)
-					velocities[index] = strconv.Itoa(int(n.Vel))
-					width := max(int64(1), (to-from+grid/2)/grid)
-					for offset := int64(1); offset < width && index+int(offset) < len(cells); offset++ {
-						cells[index+int(offset)] = "-"
-						velocities[index+int(offset)] = strconv.Itoa(int(n.Vel))
-					}
-					duration := grid * gate / 100
-					if width > 1 {
-						duration = width * grid
-					}
-					if duration != to-from {
-						report.QuantizedDurations++
-					}
+					continue
+				}
+				cells[index] = importStep(e.pitches)
+				velocities[index] = strconv.Itoa(int(e.vel))
+				width := max(int64(1), (to-from+grid/2)/grid)
+				for offset := int64(1); offset < width && index+int(offset) < len(cells); offset++ {
+					cells[index+int(offset)] = "-"
+					velocities[index+int(offset)] = strconv.Itoa(int(e.vel))
+				}
+				duration := grid * gate / 100
+				if width > 1 {
+					duration = width * grid
+				}
+				if duration != to-from {
+					report.QuantizedDurations++
 				}
 			}
-			body := strings.Join(cells, " ")
-			if lane.drum != "" {
-				body = lane.drum + ": " + body
+			var body string
+			if lane.drums {
+				var lines []string
+				for _, name := range drum.Names {
+					if rows[name] != nil {
+						lines = append(lines, name+": "+strings.Join(rows[name], " "))
+					}
+				}
+				if len(lines) == 0 {
+					// A bar with no hits still needs one row.
+					lines = append(lines, lane.events[0].drum+": "+strings.Join(cells, " "))
+				}
+				body = strings.Join(lines, "\n ")
 			} else {
-				body += "\n velocity: " + strings.Join(velocities, " ")
+				body = strings.Join(cells, " ") + "\n velocity: " + strings.Join(velocities, " ")
 			}
 			id, ok := pool[body]
 			if !ok {
 				if len(pool) == 16 {
 					return fail("track needs more than 16 distinct bar patterns")
 				}
-				id = fmt.Sprintf("midi-%d-bar-%d", ti+1, len(pool)+1)
+				id = fmt.Sprintf("%s-bar-%d", trackID, len(pool)+1)
 				pool[body] = id
 				fmt.Fprintf(&output, "pattern %s", id)
-				if lane.drum != "" {
+				if lane.drums {
 					output.WriteString(" drums")
 				}
 				fmt.Fprintf(&output, " {\n step = %d/3840\n gate = %d%%\n %s\n}\n", grid, gate, body)
@@ -277,13 +371,82 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 	}
 	document, err := notation.ParseDocument(source)
 	if err != nil {
-		return nil, report, err
+		return nil, err
 	}
-	formatted, err := notation.Format(document)
-	if err != nil {
-		return nil, report, err
+	return notation.Format(document)
+}
+
+// importTrackNames names each lane after its MIDI track: the track name as a
+// score identifier, with -2, -3 for the track's further lanes. A track with no
+// usable name keeps the midi-N name of its lane.
+func importTrackNames(file File, lanes []importLane) []string {
+	names := make([]string, len(lanes))
+	used := map[string]bool{}
+	for i, lane := range lanes {
+		base := importIdentifier(file.Tracks[lane.source].Name)
+		if base == "" {
+			base = fmt.Sprintf("midi-%d", i+1)
+		}
+		name := base
+		for n := 2; used[name]; n++ {
+			name = fmt.Sprintf("%s-%d", base, n)
+		}
+		used[name] = true
+		names[i] = name
 	}
-	return formatted, report, nil
+	return names
+}
+
+// importIdentifier turns a MIDI track name into a score identifier
+// ([a-z_][a-z0-9_-]*), or returns "" when nothing usable is left.
+func importIdentifier(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_':
+			b.WriteRune(r)
+			dash = false
+		case b.Len() > 0 && !dash:
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	id := strings.TrimRight(b.String(), "-")
+	if id == "" || id[0] >= '0' && id[0] <= '9' {
+		return ""
+	}
+	return id
+}
+
+// importTitle is the name of a type-1 file's conductor track when it is plain
+// printable ASCII, else "MIDI import".
+func importTitle(file File) string {
+	if file.Format != 1 || len(file.Tracks) == 0 || len(file.Tracks[0].Notes) != 0 {
+		return "MIDI import"
+	}
+	name := strings.TrimSpace(file.Tracks[0].Name)
+	if name == "" {
+		return "MIDI import"
+	}
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			return "MIDI import"
+		}
+	}
+	return name
+}
+
+// importStep spells a step's pitches: one note, or a chord such as [c4 e4 g4].
+func importStep(pitches []uint8) string {
+	if len(pitches) == 1 {
+		return importPitch(pitches[0])
+	}
+	parts := make([]string, len(pitches))
+	for i, pitch := range pitches {
+		parts[i] = importPitch(pitch)
+	}
+	return "[" + strings.Join(parts, " ") + "]"
 }
 
 func importPitch(note uint8) string {

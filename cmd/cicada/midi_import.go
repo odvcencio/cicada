@@ -56,7 +56,7 @@ func importMIDICommand(args []string) error {
 	if *reportJSON {
 		return json.NewEncoder(os.Stderr).Encode(report)
 	}
-	fmt.Printf("%s: imported %d notes, %d tracks, %d bars on a %d-tick grid; %d onset edits, %d duration edits, %d cross-bar retriggers, %d drum velocity edits\n", *output, report.Notes, report.Tracks, report.Bars, report.GridTicks, report.QuantizedOnsets, report.QuantizedDurations, report.SplitNotes, report.QuantizedVelocities)
+	fmt.Printf("%s: imported %d notes, %d tracks, %d bars on a %d-tick grid; %d onset edits, %d duration edits, %d cross-bar retriggers, %d velocity edits\n", *output, report.Notes, report.Tracks, report.Bars, report.GridTicks, report.QuantizedOnsets, report.QuantizedDurations, report.SplitNotes, report.QuantizedVelocities)
 	return nil
 }
 

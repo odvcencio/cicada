@@ -42,14 +42,61 @@ func TestImportTupletNotesPreservesTicksAndVelocity(t *testing.T) {
 	}
 }
 
-func TestImportPolyphonyAndDrums(t *testing.T) {
-	f := File{Format: 0, PPQ: 960, Tracks: []TrackChunk{{Notes: []Note{{Note: 60, Vel: 100, Dur: 960}, {Note: 64, Vel: 80, Dur: 960}, {Note: 36, Vel: 127, Chan: 9, Dur: 120}}}}}
+// Notes that start together with one length become a chord; a note that
+// overlaps without matching gets another track; drums get a drums track.
+func TestImportChordsOverlapsAndDrums(t *testing.T) {
+	f := File{Format: 0, PPQ: 960, Tracks: []TrackChunk{{Notes: []Note{{Note: 60, Vel: 100, Dur: 960}, {Note: 64, Vel: 80, Dur: 960}, {Tick: 480, Note: 67, Vel: 90, Dur: 960}, {Note: 36, Vel: 127, Chan: 9, Dur: 120}}}}}
 	source, report, err := ImportSource(f, ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Tracks != 3 || !strings.Contains(string(source), "bd:") {
+	if report.Tracks != 3 || !strings.Contains(string(source), "[c4 e4]") || !strings.Contains(string(source), "bd:") {
 		t.Fatalf("%+v: %s", report, source)
+	}
+}
+
+// Each MIDI track keeps its own score tracks and its name, the drums share one
+// track with a row per lane, and the conductor track names the score.
+func TestImportKeepsMIDITracksAndNames(t *testing.T) {
+	f := File{Format: 1, PPQ: 960, Tracks: []TrackChunk{
+		{Name: "Harbor Song"},
+		{Name: "Bass", Notes: []Note{{Note: 36, Vel: 100, Dur: 480}, {Tick: 960, Note: 43, Vel: 100, Dur: 480}}},
+		{Name: "Lead Synth!", Notes: []Note{{Note: 72, Vel: 90, Dur: 960}, {Tick: 1920, Note: 74, Vel: 90, Dur: 960}}},
+		{Name: "drums", Notes: []Note{{Note: 36, Vel: 127, Chan: 9, Dur: 120}, {Tick: 960, Note: 38, Vel: 100, Chan: 9, Dur: 120}, {Tick: 480, Note: 42, Vel: 70, Chan: 9, Dur: 120}}},
+	}}
+	source, report, err := ImportSource(f, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, want := range []string{"title \"Harbor Song\"", "track bass piano", "track lead-synth piano", "track drums drums", "bd:", "sd:", "ch:"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("source lacks %q:\n%s", want, text)
+		}
+	}
+	if report.Tracks != 3 || strings.Count(text, "track drums") != 1 {
+		t.Fatalf("want bass, lead and one drums track: %+v\n%s", report, text)
+	}
+	score, ds := notation.Parse(source)
+	if importErrors(ds) {
+		t.Fatal(ds)
+	}
+	if p, ds := project.FromScore(score); p == nil {
+		t.Fatal(ds)
+	}
+}
+
+// A track name the score cannot use still imports.
+func TestImportNameThatIsAKeywordStillImports(t *testing.T) {
+	for _, name := range []string{"scene", "song", "track", "42 strings", "♫"} {
+		f := File{Format: 1, PPQ: 960, Tracks: []TrackChunk{{Name: name, Notes: []Note{{Note: 60, Vel: 100, Dur: 960}}}}}
+		source, _, err := ImportSource(f, ImportOptions{})
+		if err != nil {
+			t.Fatalf("name %q: %v", name, err)
+		}
+		if score, ds := notation.Parse(source); score == nil || importErrors(ds) {
+			t.Fatalf("name %q: %+v\n%s", name, ds, source)
+		}
 	}
 }
 
