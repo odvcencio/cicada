@@ -214,7 +214,7 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 		accumulateMeter(&e.returnAMeter, returnL, returnR)
 		dry.AddReturn(returnL, returnR)
 	}
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		returnL, returnR := e.tapeA.Process(sendAL, sendAR)
 		if e.tapeA.Fault() {
 			e.fault(FaultDelay)

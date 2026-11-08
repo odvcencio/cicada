@@ -3,7 +3,6 @@
 package kernelimage
 
 import (
-	"errors"
 	"math"
 
 	"m31labs.dev/cicada/kernel"
@@ -167,7 +166,7 @@ func (r *reader) f64() (float64, error) {
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.TapeA != nil {
-		return nil, errors.New("kernelimage: the tape echo is not available in portable kernel images; use a delay return")
+		return nil, imageError("portable images have no tape echo; use a delay")
 	}
 	if cfg.Tracks > limits.PortableMaxTracks || cfg.MaxVoices > limits.PortableMaxVoices {
 		return nil, imageError("portable browser/WAM exports support at most 16 tracks and 32 allocated voices; use native playback or WAV/stems for larger projects")
@@ -568,7 +567,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 						w.f64(binding.ModelLevelDB)
 						w.f64(binding.ModelPan)
 					case engine.KitLaneSampler:
-						return nil, imageError("kit lanes bound to a sampler pack are not available in portable kernel images")
+						return nil, imageError("portable images have no sampler kit lanes")
 					default:
 						return nil, imageError("invalid kit lane kind")
 					}
@@ -649,7 +648,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				return nil, imageError("keyboard voices do not support per-note expression")
 			}
 			if pattern.Humanize != 0 {
-				return nil, imageError("pattern humanize is not available in portable kernel images")
+				return nil, imageError("portable images have no pattern humanize")
 			}
 			w.byte(pattern.Len)
 			w.u16(pattern.SwingPermille)

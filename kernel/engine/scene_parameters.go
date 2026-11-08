@@ -86,7 +86,7 @@ func (e *Engine) captureSceneDefaults() {
 	if e.delayA != nil {
 		e.sceneDefaults.delay = e.delayA.Params()
 	}
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		e.sceneDefaults.tape = e.tapeA.Params()
 	}
 	if e.reverbB != nil {
@@ -131,7 +131,7 @@ func (e *Engine) restoreSceneDefaults() bool {
 // restoreEffects returns the delay, reverb and compressor to their authored
 // parameters.
 func (e *Engine) restoreEffects(base *sceneParameterState) bool {
-	failed := e.delayA != nil && e.delayA.SetParams(base.delay) != nil || e.tapeA != nil && e.tapeA.SetParams(base.tape) != nil ||
+	failed := e.delayA != nil && e.delayA.SetParams(base.delay) != nil || tapeEnabled && e.tapeA != nil && e.tapeA.SetParams(base.tape) != nil ||
 		e.reverbB != nil && e.reverbB.SetParams(base.reverb) != nil || e.compMusic != nil && e.compMusic.SetParams(base.compressor) != nil
 	if failed {
 		e.fault(FaultParam)
@@ -146,7 +146,7 @@ func (e *Engine) settleSceneEffects() {
 	if e.delayA != nil {
 		e.delayA.Reset()
 	}
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		e.tapeA.Reset()
 	}
 	if e.reverbB != nil {

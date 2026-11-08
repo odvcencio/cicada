@@ -853,9 +853,11 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				if sampleExpressionEnabled && p.playingNote != 0 {
 					v.sampler.ReleaseCohort(sampleCohort(graph.Cohort{NoteID: p.playingNote, Generation: uint64(p.playingGen)}))
 				}
-				notes, count := event.Notes, event.NoteCount
-				if count == 0 {
-					notes[0], count = event.Note, 1
+				notes, count := event.Notes, uint8(1)
+				if sampleChordsEnabled && event.NoteCount > 0 {
+					count = event.NoteCount
+				} else {
+					notes[0] = event.Note
 				}
 				for n := uint8(0); n < count; n++ {
 					var err error
@@ -890,9 +892,11 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			case VoiceGraphPoly:
 				e.voices[track].legacyPoly.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoicePrepared:
-				notes, count := event.Notes, event.NoteCount
-				if count == 0 {
-					notes[0], count = event.Note, 1
+				notes, count := event.Notes, uint8(1)
+				if sampleChordsEnabled && event.NoteCount > 0 {
+					count = event.NoteCount
+				} else {
+					notes[0] = event.Note
 				}
 				for n := uint8(0); n < count; n++ {
 					if e.voices[track].prepared.NoteOn(notes[n], event.Velocity) != nil {

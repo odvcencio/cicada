@@ -280,7 +280,7 @@ type Engine struct {
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
 	delayA                       *fx.Delay
-	tapeA                        *tape.Tape
+	tapeA                        *tapeReturn
 	reverbB                      *fx.Reverb
 	compMusic                    *fx.Compressor
 	compSidechainTrack           int
@@ -500,11 +500,14 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 //go:noinline
 func (e *Engine) initEffects(cfg *Config, bpmMilli int64) error {
 	var err error
-	if cfg.DelayA != nil && cfg.TapeA != nil {
-		return engineError("a score has one delay return: delay or tape")
-	}
 	if cfg.TapeA != nil {
-		e.tapeA, err = tape.New(cfg.SampleRate, bpmMilli)
+		if !tapeEnabled {
+			return engineError("the tape echo is not available in portable kernels")
+		}
+		if cfg.DelayA != nil {
+			return engineError("a score has one delay return: delay or tape")
+		}
+		e.tapeA, err = newTapeReturn(cfg.SampleRate, bpmMilli)
 		if err == nil {
 			err = e.tapeA.SetParams(*cfg.TapeA)
 		}
@@ -579,7 +582,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < -60 || gain > 6 || math.IsNaN(spec.Pan) || math.IsInf(spec.Pan, 0) || spec.Pan < -1 || spec.Pan > 1 {
 			return 0, engineError("track mixer parameter is out of range")
 		}
-		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil && e.tapeA == nil {
+		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil && (!tapeEnabled || e.tapeA == nil) {
 			return 0, engineError("track send A is invalid or has no delay return")
 		}
 		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && e.reverbB == nil {
@@ -870,7 +873,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			}
 			for step := uint8(0); step < pattern.Len; step++ {
 				kind := e.voices[track].kind
-				if pattern.Chords[step].Count > 0 && e.voices[track].poly == nil && kind != VoicePiano && kind != VoiceSample && kind != VoicePrepared && (!keysEnabled || kind != VoiceKeys) {
+				if pattern.Chords[step].Count > 0 && e.voices[track].poly == nil && kind != VoicePiano && (!sampleChordsEnabled || kind != VoiceSample && kind != VoicePrepared) && (!keysEnabled || kind != VoiceKeys) {
 					return engineError("chord pattern requires a polyphonic graph track")
 				}
 			}
@@ -903,7 +906,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			}
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				lanePattern := &bank.Drums[slot][lane]
-				if lanePattern.Len != pattern.Len || lanePattern.StepTicks != pattern.StepTicks || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Humanize != pattern.Humanize || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
+				if lanePattern.Len != pattern.Len || lanePattern.StepTicks != pattern.StepTicks || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || seq.HumanizeEnabled && lanePattern.Humanize != pattern.Humanize || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
 					return engineError("invalid preloaded drum lane")
 				}
 				for step := uint8(0); step < lanePattern.Len; step++ {
@@ -974,7 +977,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			seen[address] = true
 			syncedDelay := setting.Division != fx.FreeDelay
 			if syncedDelay {
-				tapeTime := setting.ID == kernel.ParamFxTapeTime && e.tapeA != nil
+				tapeTime := setting.ID == kernel.ParamFxTapeTime && tapeEnabled && e.tapeA != nil
 				if !tapeTime && (setting.ID != kernel.ParamFxDelayTime || e.delayA == nil) || setting.Division.String() == "invalid" || setting.Value != 0 {
 					return engineError("scene delay division is invalid")
 				}
@@ -1039,7 +1042,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	if e.delayA != nil && e.delayA.Params().ValidateTempo(slowest) != nil {
 		return engineError("delay division does not fit the slowest scene tempo")
 	}
-	if e.tapeA != nil && e.tapeA.Params().ValidateTempo(slowest) != nil {
+	if tapeEnabled && e.tapeA != nil && e.tapeA.Params().ValidateTempo(slowest) != nil {
 		return engineError("tape echo division does not fit the slowest scene tempo")
 	}
 	return e.buildTempoChain()
@@ -1149,7 +1152,7 @@ func (e *Engine) Reset() {
 	if e.delayA != nil {
 		e.delayA.Reset()
 	}
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		e.tapeA.Reset()
 	}
 	if e.reverbB != nil {
@@ -1166,7 +1169,7 @@ func (e *Engine) Reset() {
 	if e.delayA != nil {
 		_ = e.delayA.SetTempo(e.bpmMilli)
 	}
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		_ = e.tapeA.SetTempo(e.bpmMilli)
 	}
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
@@ -1197,7 +1200,7 @@ func (e *Engine) syncTempo(scheduled *int64) bool {
 	if tempo == *scheduled {
 		return true
 	}
-	if e.delayA != nil && e.delayA.SetTempo(tempo) != nil || e.tapeA != nil && e.tapeA.SetTempo(tempo) != nil {
+	if e.delayA != nil && e.delayA.SetTempo(tempo) != nil || tapeEnabled && e.tapeA != nil && e.tapeA.SetTempo(tempo) != nil {
 		e.fault(FaultDelayTempo)
 		return false
 	}
@@ -1510,7 +1513,7 @@ func (e *Engine) apply(c cmd.Command) {
 		if e.delayA != nil {
 			e.delayA.Reset()
 		}
-		if e.tapeA != nil {
+		if tapeEnabled && e.tapeA != nil {
 			e.tapeA.Reset()
 		}
 		if e.reverbB != nil {
@@ -2064,7 +2067,7 @@ func (e *Engine) updateMuteTargets() {
 }
 
 func (e *Engine) setDelayDivision(division fx.DelayDivision) {
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		params := e.tapeA.Params()
 		params.Division, params.TimeMs = division, 0
 		if e.tapeA.SetParams(params) != nil {
@@ -2128,7 +2131,7 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 			}
 		}
 	case kernel.ParamFxTapeTime, kernel.ParamFxTapeFeedback, kernel.ParamFxTapeWow, kernel.ParamFxTapeFlutter, kernel.ParamFxTapeSaturation, kernel.ParamFxTapeDamp:
-		if e.tapeA != nil {
+		if tapeEnabled && e.tapeA != nil {
 			params := e.tapeA.Params()
 			switch id {
 			case kernel.ParamFxTapeTime:
@@ -2369,7 +2372,7 @@ func (e *Engine) emit(message cmd.Message) {
 			if e.delayA != nil {
 				e.delayA.Reset()
 			}
-			if e.tapeA != nil {
+			if tapeEnabled && e.tapeA != nil {
 				e.tapeA.Reset()
 			}
 			if e.reverbB != nil {
@@ -2403,7 +2406,7 @@ func (e *Engine) fault(code uint16) {
 	if e.delayA != nil {
 		e.delayA.Reset()
 	}
-	if e.tapeA != nil {
+	if tapeEnabled && e.tapeA != nil {
 		e.tapeA.Reset()
 	}
 	if e.reverbB != nil {

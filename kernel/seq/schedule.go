@@ -76,7 +76,7 @@ func ProbabilityHit(probability uint8, seed uint32, track, slot uint8, iteration
 // note, so every host draws the same value. A drum lane step carries its lane as
 // the note, so simultaneous lanes draw different offsets.
 func HumanizeVelocity(velocity, amount uint8, seed uint32, track, slot uint8, iteration int64, step, ratchet, note uint8) uint8 {
-	if amount == 0 || velocity == 0 {
+	if !HumanizeEnabled || amount == 0 || velocity == 0 {
 		return velocity
 	}
 	x := uint64(seed) ^ uint64(track)<<32 ^ uint64(slot)<<40 ^ uint64(step)<<48 ^ uint64(ratchet)<<56
