@@ -116,3 +116,84 @@ func TestImportRejectsTempoChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A drum kit whose rows repeat on different cycles needs more than 16 bar
+// patterns as one track; the import then splits it into a track per drum.
+func TestImportSplitsAKitThatNeedsTooManyBarPatterns(t *testing.T) {
+	var notes []Note
+	for bar := int64(0); bar < 20; bar++ {
+		start := bar * 3840
+		notes = append(notes, Note{Tick: start + (bar%5)*240, Note: 36, Vel: 127, Chan: 9, Dur: 120})
+		notes = append(notes, Note{Tick: start + 480 + (bar%4)*240, Note: 42, Vel: 100, Chan: 9, Dur: 120})
+	}
+	f := File{Format: 1, PPQ: 960, Tracks: []TrackChunk{{Name: "kit", Notes: notes}}}
+	source, report, err := ImportSource(f, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Tracks != 2 || strings.Count(string(source), " drums {}") != 2 {
+		t.Fatalf("want one drums track per drum: %+v\n%s", report, source)
+	}
+}
+
+// Two hits of one drum in the same step keep the louder and are counted.
+func TestImportMergesDrumHitsInOneStep(t *testing.T) {
+	f := File{Format: 0, PPQ: 960, Tracks: []TrackChunk{{Notes: []Note{
+		{Tick: 0, Note: 36, Vel: 70, Chan: 9, Dur: 120}, {Tick: 0, Note: 36, Vel: 127, Chan: 9, Dur: 120},
+		{Tick: 960, Note: 42, Vel: 100, Chan: 9, Dur: 60}, {Tick: 990, Note: 42, Vel: 100, Chan: 9, Dur: 60},
+	}}}}
+	source, report, err := ImportSource(f, ImportOptions{GridTicks: 240})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.MergedHits != 2 || !strings.Contains(string(source), "bd: X") {
+		t.Fatalf("want two merged hits and the louder kick: %+v\n%s", report, source)
+	}
+}
+
+// Parts on different channels of one MIDI track stay separate tracks.
+func TestImportKeepsChannelsApart(t *testing.T) {
+	f := File{Format: 0, PPQ: 960, Tracks: []TrackChunk{{Notes: []Note{
+		{Tick: 0, Note: 36, Vel: 110, Chan: 0, Dur: 960}, {Tick: 0, Note: 72, Vel: 60, Chan: 1, Dur: 960},
+	}}}}
+	source, report, err := ImportSource(f, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Tracks != 2 || report.QuantizedVelocities != 0 || strings.Contains(string(source), "[") {
+		t.Fatalf("want two single-note tracks with their own velocities: %+v\n%s", report, source)
+	}
+}
+
+// Every chord note whose velocity changes is counted.
+func TestImportCountsEachChordVelocityEdit(t *testing.T) {
+	f := File{Format: 0, PPQ: 960, Tracks: []TrackChunk{{Notes: []Note{
+		{Note: 60, Vel: 80, Dur: 960}, {Note: 64, Vel: 80, Dur: 960}, {Note: 67, Vel: 100, Dur: 960},
+	}}}}
+	_, report, err := ImportSource(f, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.QuantizedVelocities != 2 {
+		t.Fatalf("want 2 velocity edits, got %+v", report)
+	}
+}
+
+// A long name is shortened, and a name the score cannot use falls back to
+// midi-N for that track only.
+func TestImportShortensLongNamesAndFallsBackPerTrack(t *testing.T) {
+	long := strings.Repeat("strings ", 10)
+	f := File{Format: 1, PPQ: 960, Tracks: []TrackChunk{
+		{Name: long, Notes: []Note{{Note: 60, Vel: 100, Dur: 960}}},
+		{Name: "track", Notes: []Note{{Note: 64, Vel: 100, Dur: 960}}},
+		{Name: "Bass", Notes: []Note{{Note: 36, Vel: 100, Dur: 960}}},
+	}}
+	source, _, err := ImportSource(f, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if !strings.Contains(text, "track strings-strings") || !strings.Contains(text, "track bass piano") {
+		t.Fatalf("named tracks lost their names:\n%s", text)
+	}
+}
