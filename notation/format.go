@@ -397,10 +397,15 @@ func formatDeclaration(source []byte) string {
 			if frame.kind == "pattern" && value == "use" && strings.TrimSpace(line) != "" {
 				flush()
 			}
-			// One timeline entry per line in an arrangement, and one point per
-			// line in an automation lane.
-			if (frame.kind == "arrange" && (value == "tempo" || value == "place" || value == "marker") ||
-				frame.kind == "automate" && strings.HasPrefix(value, "@")) && strings.TrimSpace(line) != "" {
+			// One timeline entry per line in an arrangement. A placement or
+			// marker line already ends at its closing brace, so only a tempo step
+			// needs a break; a name such as a pattern called marker never does.
+			if frame.kind == "arrange" && (value == "tempo" || value == "place" || value == "marker") && strings.HasPrefix(strings.TrimSpace(line), "tempo ") {
+				flush()
+			}
+			// One point per line in an automation lane. recall takes the position
+			// that follows it, so the line breaks before recall, not after it.
+			if frame.kind == "automate" && (value == "recall" || strings.HasPrefix(value, "@") && strings.TrimSpace(line) != "recall") && strings.TrimSpace(line) != "" {
 				flush()
 			}
 		}

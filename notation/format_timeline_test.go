@@ -40,3 +40,25 @@ func TestFormatKeepsOneTimelineEntryPerLine(t *testing.T) {
 		t.Fatalf("formatting is not idempotent:\n%s\n---\n%s", formatted, twice)
 	}
 }
+
+// recall takes the position after it, so it starts its own line; a placement
+// whose pattern is named like a keyword stays on one line.
+func TestFormatKeepsRecallAndKeywordNamesInPlace(t *testing.T) {
+	source := "cicada 2\ntrack bass acid {}\npattern marker acid { 1 . 5 . }\narrange { tempo @1.1.1 120 place a bass marker { at = @1.1.1 length = 2bars } }\nautomate bass.cutoff { @1.1.1 400Hz @5.1.1 2400Hz exponential recall @3.1.1 }\n"
+	document, err := ParseDocument([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"\n  place a bass marker { at = @1.1.1 length = 2bars }\n",
+		"\n  @5.1.1 2400Hz exponential\n  recall @3.1.1\n",
+	} {
+		if !strings.Contains(string(formatted), want) {
+			t.Fatalf("formatted source lacks %q:\n%s", want, formatted)
+		}
+	}
+}
