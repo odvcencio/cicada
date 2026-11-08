@@ -25,8 +25,14 @@ func ParseSamplerPitch(name string) (int, bool) { return notation.ParseSamplerPi
 // "<sampler>.<pitch>": the prefix names a declared sampler, or the suffix reads
 // as a pitch so that an undeclared sampler gets a reference error.
 func isSamplerTarget(target string, samplers map[string]bool) (sampler, pitch string, ok bool) {
-	sampler, pitch, ok = strings.Cut(target, ".")
-	if !ok || strings.Contains(pitch, ".") || sampler == "builtin" || sampler == "model" {
+	// Split at the last dot: a library qualifies the sampler name itself, so
+	// demo.tone.shells.d2 is pitch d2 of sampler demo.tone.shells.
+	i := strings.LastIndex(target, ".")
+	if i < 0 {
+		return "", "", false
+	}
+	sampler, pitch = target[:i], target[i+1:]
+	if sampler == "builtin" || sampler == "model" {
 		return "", "", false
 	}
 	if _, declared := samplers[sampler]; declared {

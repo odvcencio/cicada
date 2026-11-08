@@ -82,6 +82,16 @@ func hasInstrument(instruments map[string]Instrument, name string) bool {
 
 // isSamplerBinding reports whether a kit target reads as <sampler>.<pitch>: its
 // prefix is a declared sampler, or its suffix is a pitch name.
+// cutLast splits s around its last sep. A kit target splits at its last dot,
+// because a library qualifies the sampler name itself: demo.tone.shells.d2
+// is pitch d2 of sampler demo.tone.shells.
+func cutLast(s, sep string) (before, after string, found bool) {
+	if i := strings.LastIndex(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
+}
+
 func isSamplerBinding(name, pitch string, samplers map[string]Sampler) bool {
 	if _, declared := samplers[name]; declared {
 		return true
@@ -239,7 +249,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 				if _, ok := modeledkit.ParseProfile(strings.TrimPrefix(binding.Target, "model.")); !ok {
 					add("CICADA-REFERENCE", "unknown modeled drum "+binding.Target, "error", binding.Position)
 				}
-			} else if name, pitch, dotted := strings.Cut(binding.Target, "."); dotted && !hasInstrument(instruments, binding.Target) && isSamplerBinding(name, pitch, samplers) {
+			} else if name, pitch, dotted := cutLast(binding.Target, "."); dotted && !hasInstrument(instruments, binding.Target) && isSamplerBinding(name, pitch, samplers) {
 				sampler, declared := samplers[name]
 				switch {
 				case !declared:
@@ -653,12 +663,14 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 	}
 	if kindCounts["delay"]+kindCounts["tape"] > 1 {
-		add("CICADA-UNSUPPORTED", "multiple delay or tape instances are not implemented: a tape echo is the delay return", "error", Position{Line: 1, Column: 1})
-	}
-	for _, kind := range []string{"delay", "reverb"} {
-		if kindCounts[kind] > 1 {
-			add("CICADA-UNSUPPORTED", "multiple "+kind+" instances are not implemented", "error", Position{Line: 1, Column: 1})
+		message := "multiple delay instances are not implemented"
+		if kindCounts["tape"] > 0 {
+			message = "multiple delay or tape instances are not implemented: a tape echo is the delay return"
 		}
+		add("CICADA-UNSUPPORTED", message, "error", Position{Line: 1, Column: 1})
+	}
+	if kindCounts["reverb"] > 1 {
+		add("CICADA-UNSUPPORTED", "multiple reverb instances are not implemented", "error", Position{Line: 1, Column: 1})
 	}
 	for _, bus := range s.Buses {
 		checkID(bus.Name, bus.Position)
@@ -845,7 +857,7 @@ func validTrackParam(kind, name string, instruments map[string]Instrument, kits 
 				continue
 			}
 			modeled = strings.HasPrefix(binding.Target, "model.")
-			if _, suffix, dotted := strings.Cut(binding.Target, "."); dotted && !modeled && !strings.HasPrefix(binding.Target, "builtin.") {
+			if _, suffix, dotted := cutLast(binding.Target, "."); dotted && !modeled && !strings.HasPrefix(binding.Target, "builtin.") {
 				_, sampler = ParseSamplerPitch(suffix)
 			}
 			break

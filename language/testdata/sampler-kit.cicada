@@ -11,6 +11,6 @@ kit snare_kit {
 track snare snare_kit { level = -6dB }
 
 pattern drop drums steps = 16 {
-  rs: .... .... x8.. ....
-  sd: .... ..x2. .... ..x1
+  rs: .... .... x8... ....
+  sd: .... ..x2. .... ..x1.
 }

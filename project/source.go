@@ -341,7 +341,7 @@ func instrumentSource(inst Instrument) (string, error) {
 		bindings[binding.ID] = binding.Value
 	}
 	required := map[string]instrument.Type{}
-	propagateType(inst.Out, instrument.Audio, symbols, bindings, required, map[string]bool{})
+	propagateType(inst.Out, instrument.Audio, false, symbols, bindings, required, map[string]bool{})
 	var out strings.Builder
 	out.WriteString("instrument " + inst.ID + " {\n")
 	if inst.Octave != nil {
@@ -390,12 +390,19 @@ func instrumentSource(inst Instrument) (string, error) {
 	return out.String(), nil
 }
 
-func propagateType(expr Expr, want instrument.Type, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, visiting map[string]bool) {
+// propagateType records the type each let must have at its uses. A weak
+// requirement comes from a product whose operands both have unknown types; it
+// only fills a let that no other use has typed, so a guess at one use cannot
+// overwrite a type another use forces (sine(f) needs Hz, f * 2 does not).
+func propagateType(expr Expr, want instrument.Type, weak bool, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, visiting map[string]bool) {
 	if expr.Name != "" {
 		if binding, ok := bindings[expr.Name]; ok && !visiting[expr.Name] {
+			if _, typed := required[expr.Name]; weak && typed {
+				return
+			}
 			required[expr.Name] = want
 			visiting[expr.Name] = true
-			propagateType(binding, want, symbols, bindings, required, visiting)
+			propagateType(binding, want, weak, symbols, bindings, required, visiting)
 			delete(visiting, expr.Name)
 		}
 		return
@@ -404,19 +411,22 @@ func propagateType(expr Expr, want instrument.Type, symbols map[string]instrumen
 		return
 	}
 	if expr.Op == "lfo" && len(expr.Args) > 0 {
-		propagateType(expr.Args[0], instrument.Hz, symbols, bindings, required, visiting)
+		propagateType(expr.Args[0], instrument.Hz, weak, symbols, bindings, required, visiting)
 		return
 	}
 	if args, ok := callArgumentTypes(expr.Op); ok {
 		for i, arg := range expr.Args {
-			propagateType(arg, args[i], symbols, bindings, required, visiting)
+			propagateType(arg, args[i], weak, symbols, bindings, required, visiting)
 		}
 		return
 	}
 	if len(expr.Args) == 2 {
 		left, right := binaryOperandTypes(expr, want, symbols, bindings)
-		propagateType(expr.Args[0], left, symbols, bindings, required, visiting)
-		propagateType(expr.Args[1], right, symbols, bindings, required, visiting)
+		guess := weak || expr.Op == "*" && want != instrument.Unit &&
+			inferExprType(expr.Args[0], symbols, bindings, map[string]bool{}) == "" &&
+			inferExprType(expr.Args[1], symbols, bindings, map[string]bool{}) == ""
+		propagateType(expr.Args[0], left, guess, symbols, bindings, required, visiting)
+		propagateType(expr.Args[1], right, guess, symbols, bindings, required, visiting)
 	}
 }
 
@@ -489,6 +499,11 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 		return want, instrument.Unit
 	}
 	if right == want || left == instrument.Unit {
+		return instrument.Unit, want
+	}
+	// Neither side has a known type. A bare literal can carry any unit, so it
+	// takes the wanted one: amt * 200Hz keeps amt unitless.
+	if expr.Args[1].Literal != nil && expr.Args[0].Literal == nil {
 		return instrument.Unit, want
 	}
 	return want, instrument.Unit

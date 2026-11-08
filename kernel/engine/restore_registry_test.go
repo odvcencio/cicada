@@ -313,3 +313,40 @@ func TestSettleSceneEffectsResetsTheTapeEcho(t *testing.T) {
 		t.Fatal("settleSceneEffects left the tape echo ringing")
 	}
 }
+
+// Reset returns a tempo-synced tape to the authored tempo before it clears the
+// buffer, so the first echo after a rewind lands on time instead of gliding in
+// from the tempo a scene had set.
+func TestResetReturnsTheTapeToTheAuthoredTempo(t *testing.T) {
+	firstEcho := func(e *Engine) int {
+		for i := 0; i < 4*48_000; i++ {
+			in := float32(0)
+			if i == 0 {
+				in = 1
+			}
+			if l, _ := e.tapeA.Process(in, in); l > .01 {
+				return i
+			}
+		}
+		return -1
+	}
+	build := func() *Engine {
+		cfg := restoreBase(t)
+		params := tape.DefaultParams()
+		cfg.DelayA, cfg.TapeA = nil, &params
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	want := firstEcho(build())
+	e := build()
+	if err := e.tapeA.SetTempo(e.bpmMilli / 2); err != nil {
+		t.Fatal(err)
+	}
+	e.Reset()
+	if got := firstEcho(e); got != want || want < 0 {
+		t.Fatalf("first echo after Reset at frame %d, want %d", got, want)
+	}
+}

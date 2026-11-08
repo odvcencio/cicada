@@ -209,7 +209,11 @@ func notesOutsideEveryZone(p *project.Project, score *notation.Score, packs map[
 				}
 				for n, pitch := range pitches {
 					note := pitch + int(pattern.Transpose)
-					if note < 0 || note > 127 || admitted.zones.HasAttackZone(uint8(note), step.Velocity) {
+					if note < 0 || note > 127 {
+						continue
+					}
+					gap := humanizedGap(admitted.zones, uint8(note), step.Velocity, pattern.Humanize)
+					if gap == 0 {
 						continue
 					}
 					position, written := source.Position, ""
@@ -230,15 +234,35 @@ func notesOutsideEveryZone(p *project.Project, score *notation.Score, packs map[
 							}
 						}
 					}
+					message := outOfZoneMessage(admitted, track, *id, use, written, note, gap)
+					if gap != step.Velocity {
+						message += fmt.Sprintf("; the step is written at velocity %d and humanize = %d can move it to %d", step.Velocity, pattern.Humanize, gap)
+					}
 					diagnostics = append(diagnostics, notation.Diagnostic{
 						Code: samplerZoneCode, Severity: "error", Position: position,
-						Message: outOfZoneMessage(admitted, track, *id, use, written, note, step.Velocity),
+						Message: message,
 					})
 				}
 			}
 		}
 	}
 	return diagnostics
+}
+
+// humanizedGap returns a velocity that a hit written at velocity can play
+// under pattern humanize but no attack zone of note covers, or 0 when every
+// such velocity is covered. Humanize moves a velocity by at most humanize
+// either way, within 1..127 (seq.HumanizeVelocity).
+func humanizedGap(zones instrumentpack.ZoneMap, note, velocity, humanize uint8) uint8 {
+	if !zones.HasAttackZone(note, velocity) {
+		return velocity
+	}
+	for v := max(1, int(velocity)-int(humanize)); v <= min(127, int(velocity)+int(humanize)); v++ {
+		if !zones.HasAttackZone(note, uint8(v)) {
+			return uint8(v)
+		}
+	}
+	return 0
 }
 
 // stepPhraseUses lines up the steps of a pattern after its phrases expand with

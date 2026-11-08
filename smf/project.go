@@ -74,9 +74,9 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	}
 	channels := make([]uint8, len(p.Tracks))
 	// Past fifteen melodic tracks, later tracks share channels in turn. Each
-	// keeps its own named track chunk; only channel-wide expression needs a
-	// channel of its own, which sharedChannelError checks after export.
-	var channelUsers [16]int
+	// keeps its own named track chunk. A track with note expression is moved to
+	// its own MIDI port and member channels by prepareGestureMIDI, so its bend
+	// and pressure never reach a track that shares its first channel.
 	nextChannel := uint8(0)
 	for i, track := range p.Tracks {
 		if cfg.TrackKinds[i] == engine.VoiceAudio {
@@ -92,16 +92,12 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 				nextChannel = 0
 			}
 			channels[i] = nextChannel
-			channelUsers[nextChannel]++
 			nextChannel++
 		}
 		file.Tracks[i+1] = TrackChunk{Name: track.ID, EndTick: endTick}
 	}
 	if p.Arrange != nil {
 		appendPlacements(&file, p, &cfg, channels, endTick)
-		if err := sharedChannelError(file, cfg.TrackKinds, channels, channelUsers); err != nil {
-			return File{}, err
-		}
 		return prepareGestureMIDI(file)
 	}
 	var slots [engine.MaxTracks]int
@@ -210,30 +206,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 			break
 		}
 	}
-	if err := sharedChannelError(file, cfg.TrackKinds, channels, channelUsers); err != nil {
-		return File{}, err
-	}
 	return prepareGestureMIDI(file)
-}
-
-// sharedChannelError refuses a shared melodic channel whose tracks carry note
-// gestures: bend, pressure and timbre are channel-wide in MIDI 1.0, so they
-// would bend every track on that channel.
-func sharedChannelError(file File, kinds []engine.VoiceKind, channels []uint8, users [16]int) error {
-	for i := range channels {
-		if i+1 >= len(file.Tracks) || kinds[i] == engine.VoiceAudio || kinds[i] == engine.VoiceDrums || users[channels[i]] < 2 {
-			continue
-		}
-		track := &file.Tracks[i+1]
-		expressive := len(track.Groups) > 0
-		for _, note := range track.Notes {
-			expressive = expressive || note.Gesture != nil
-		}
-		if expressive {
-			return fmt.Errorf("MIDI has only 15 melodic channels, and track %s needs one of its own for note expression", track.Name)
-		}
-	}
-	return nil
 }
 
 // FromPattern exports a selected pattern with its first compatible track.

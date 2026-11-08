@@ -237,6 +237,7 @@ pattern drop drums steps = 8 { rs: .... x8... sd: .... ..x2. }
 - All lanes of one kit that bind the same sampler share one voice pool. The pack's own choke groups therefore work across lanes: with a closed-hat zone and an open-hat zone in one group, a closed hat cuts an open hat.
 - Sampler, `model.` and `builtin.` lanes may mix in one kit. The output stays stereo.
 - A one-shot zone ignores note-off. A drum row ends no gate, so one-shot packs ring to the end of their recording.
+- A lane whose note no attack zone covers is refused when the kit loads. A hit softer or louder than every velocity the pack records for its note, including one that `humanize` or an accent produces, plays the nearest recorded layer; `cicada check` warns about a written one. A velocity inside the recorded range that no zone covers, written or reached under `humanize`, is a `cicada check` error and stops playback when it sounds.
 - The track's mixer, inserts and sends apply as usual. A sampler lane accepts `<lane>_level` (dB, -60 to +6, default 0) and `<lane>_pan` (-1 to 1, a balance that leaves both channels at unity in the centre). It refuses `_tune`, `_decay`, `_position` and `_humanize`; the recording and the pack's envelope settings set those.
 - A sampler used only by kits still loads and counts once against `--max-resident-pcm`.
 - Not available yet: the browser kernel image refuses a kit with sampler lanes, and scene settings cannot change a sampler lane's level or pan.
@@ -272,7 +273,7 @@ song { main*4 }
 
 **Types and units:** A pattern has 1–64 expanded steps. Swing is 50–75%; gate is 10–100%; note transpose is −24 to +24 semitones. Each track can use at most 16 patterns. Optional `slot = N` selects a slot from 0 through 15.
 
-**Defaults:** Note kind is inferred when omitted. Pattern defaults are 50% swing, 55% gate, zero transpose, and the project seed. `steps = N` is an optional assertion and must equal the expanded length. `humanize = N` (0 to 32, default 0) offsets each hit's velocity by a seeded amount from -N to +N, kept within 1 to 127; it draws from the pattern seed as `?N` chance does, so every render repeats it, and it applies to drum and notes patterns, not acid patterns. The browser kernel image refuses a pattern with `humanize`.
+**Defaults:** Note kind is inferred when omitted. Pattern defaults are 50% swing, 55% gate, zero transpose, and the project seed. `steps = N` is an optional assertion and must equal the expanded length. `humanize = N` (0 to 32, default 0) offsets each hit's velocity by a seeded amount from -N to +N, kept within 1 to 127; it draws from the pattern seed as `?N` chance does, so every render repeats it, and it applies to drum and notes patterns, not acid patterns, and a track that uses the built-in acid voice refuses it because that voice ignores velocity. The browser kernel image refuses a pattern with `humanize`.
 
 **Errors:** Missing or excess steps report `CICADA-LIMIT`; a mismatched explicit `steps` value or incompatible pattern kind reports `CICADA-PARAM`; unknown attributes and invalid slot values report `CICADA-PARAM`.
 

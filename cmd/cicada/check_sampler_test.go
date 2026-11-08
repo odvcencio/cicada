@@ -124,6 +124,23 @@ func TestCheckReportsAVelocityNoZoneCovers(t *testing.T) {
 	}
 }
 
+// Humanize moves a step's velocity by up to its amount, so check tests every
+// velocity it can reach.
+func TestCheckReportsAVelocityOnlyHumanizeReaches(t *testing.T) {
+	loud := testpack.Options{Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72, VelocityLow: 95, VelocityHigh: 127}}}
+	path, _, _ := writeSamplerProject(t, loud, "pattern melody notes { c4 . . . }\n")
+	var stdout, stderr bytes.Buffer
+	if err := checkPaths([]string{path}, &stdout, &stderr); err != nil {
+		t.Fatalf("velocity 100 is inside the zone: %v\n%s", err, stderr.String())
+	}
+	path, _, _ = writeSamplerProject(t, loud, "pattern melody notes humanize = 10 { c4 . . . }\n")
+	stdout.Reset()
+	stderr.Reset()
+	if err := checkPaths([]string{path}, &stdout, &stderr); err == nil || !strings.Contains(stderr.String(), "humanize = 10 can move it to 90") {
+		t.Fatalf("want a humanize zone error: %v\n%s", err, stderr.String())
+	}
+}
+
 func TestCheckAppliesThePatternTranspose(t *testing.T) {
 	up := "pattern melody notes steps=4 transpose=24 { c4 . . . }\n"
 	path, source, _ := writeSamplerProject(t, testpack.Options{}, up)

@@ -58,12 +58,41 @@ func TestMoreThanFifteenMelodicTracksShareChannels(t *testing.T) {
 	}
 }
 
-// Note expression is channel-wide in MIDI 1.0, so a shared channel refuses it.
-func TestSharedChannelRefusesNoteExpression(t *testing.T) {
-	if _, err := FromProject(manyTrackProject(t, 16, true), 1); err == nil || !strings.Contains(err.Error(), "note expression") {
-		t.Fatalf("shared channel accepted a bending track: %v", err)
+// Note expression is channel-wide in MIDI 1.0, so a bending track that shares a
+// channel moves to its own port; the track it shares with stays untouched.
+func TestSharedChannelKeepsNoteExpressionOnItsOwnPort(t *testing.T) {
+	file, err := FromProject(manyTrackProject(t, 16, true), 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := FromProject(manyTrackProject(t, 15, true), 1); err != nil {
-		t.Fatalf("fifteen tracks fit their own channels: %v", err)
+	port := func(track *TrackChunk) byte {
+		for _, meta := range track.Meta {
+			if meta.Type == 0x21 && len(meta.Data) == 1 {
+				return meta.Data[0]
+			}
+		}
+		return 0
+	}
+	var plain, bent *TrackChunk
+	for i := range file.Tracks {
+		switch track := &file.Tracks[i]; {
+		case track.Name == "t0":
+			plain = track
+		case track.Name == "t15" && len(track.Notes) > 0:
+			bent = track
+		}
+	}
+	if plain == nil || bent == nil {
+		t.Fatalf("missing tracks: t0 %v, t15 %v", plain != nil, bent != nil)
+	}
+	if port(plain) == port(bent) {
+		t.Fatalf("bending track shares port %d with t0", port(plain))
+	}
+	if len(plain.Events) != 0 || len(bent.Events) == 0 {
+		t.Fatalf("channel events: t0 has %d, t15 has %d", len(plain.Events), len(bent.Events))
+	}
+	var encoded bytes.Buffer
+	if err := Encode(file, &encoded); err != nil {
+		t.Fatal(err)
 	}
 }

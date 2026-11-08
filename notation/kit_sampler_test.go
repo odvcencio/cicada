@@ -93,3 +93,24 @@ func TestSamplerKitRefusesAnAssetSampler(t *testing.T) {
 	}
 	t.Fatalf("want an unsupported diagnostic, got %+v", diagnostics)
 }
+
+// Only a sharp needs the sampler pitch token, so qualified names that start
+// like a flat pitch (bb808, eb2kick) still parse as names, as they did before.
+func TestKitTargetsThatStartLikeAFlatPitchStillParse(t *testing.T) {
+	source := []byte("cicada 2\ntempo 120\nkit k {\n  sd = tone.bb808\n  rs = tone.ab1_snare\n  cp = tone.eb2kick\n}\n")
+	score, diagnostics := Parse(source)
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-SYNTAX" {
+			t.Fatalf("syntax error: %+v", d)
+		}
+	}
+	if score == nil || len(score.Kits) != 1 {
+		t.Fatalf("kit not parsed: %+v", diagnostics)
+	}
+	want := map[string]string{"sd": "tone.bb808", "rs": "tone.ab1_snare", "cp": "tone.eb2kick"}
+	for _, binding := range score.Kits[0].Bindings {
+		if want[binding.Lane] != binding.Target {
+			t.Errorf("lane %s binds %q, want %q", binding.Lane, binding.Target, want[binding.Lane])
+		}
+	}
+}

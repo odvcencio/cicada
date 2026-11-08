@@ -1153,6 +1153,9 @@ func (e *Engine) Reset() {
 		e.delayA.Reset()
 	}
 	if tapeEnabled && e.tapeA != nil {
+		// Set the authored tempo first: Reset snaps the read head to the current
+		// target, and a later tempo change would glide it across the cleared buffer.
+		_ = e.tapeA.SetTempo(e.bpmMilli)
 		e.tapeA.Reset()
 	}
 	if e.reverbB != nil {
@@ -1168,9 +1171,6 @@ func (e *Engine) Reset() {
 	}
 	if e.delayA != nil {
 		_ = e.delayA.SetTempo(e.bpmMilli)
-	}
-	if tapeEnabled && e.tapeA != nil {
-		_ = e.tapeA.SetTempo(e.bpmMilli)
 	}
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0

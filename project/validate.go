@@ -1078,6 +1078,10 @@ func validatePatternSound(p *Project, track Track, pattern Pattern, polyphonic, 
 	if err := validatePerformedTrack(p, track, pattern); err != nil {
 		return err
 	}
+	// The acid voice ignores velocity, so humanize would be stored and do nothing.
+	if track.Kind == "acid" && pattern.Humanize != 0 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: track %s is an acid voice, which ignores velocity, so pattern %s cannot use humanize", track.ID, pattern.ID)
+	}
 	if sampler {
 		for _, voice := range p.Samplers {
 			if voice.Name == track.Kind && voice.Pack != "" && len(pattern.Expression) > 0 {

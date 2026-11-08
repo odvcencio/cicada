@@ -221,6 +221,24 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 // NoteOnSeeded makes humanization independent of unrelated trigger order.
 // Use a shared game-event ID as the seed. Round-robin cycles still follow the
 // ordered trigger stream; the default random stream is left unchanged.
+// AttackVelocityRange reports the lowest and highest velocity at which an
+// attack zone plays note. ok is false when no attack zone covers note.
+func (p *Instrument) AttackVelocityRange(note uint8) (low, high uint8, ok bool) {
+	for _, z := range p.zones {
+		if z.Release || note < z.KeyLow || note > z.KeyHigh {
+			continue
+		}
+		if !ok || z.VelocityLow < low {
+			low = z.VelocityLow
+		}
+		if !ok || z.VelocityHigh > high {
+			high = z.VelocityHigh
+		}
+		ok = true
+	}
+	return low, high, ok
+}
+
 func (p *Instrument) NoteOnSeeded(note, velocity uint8, seed uint64) (Handle, error) {
 	previous := p.random
 	p.random = seed
@@ -478,7 +496,9 @@ func (p *Instrument) NextStereo() (float32, float32) {
 		// lastL and lastR hold the voice's output after its own mix. The declick tail
 		// of a stolen voice is that old output, so it must not pass through the new
 		// voice's mix.
-		outL, outR := l*v.mixL, r*v.mixR
+		// The conversions round the products, so l + tail*fade fuses as it did
+		// before the mix existed and a unity mix stays bit-identical on arm64.
+		outL, outR := float64(l*v.mixL), float64(r*v.mixR)
 		if v.tail > 0 {
 			fade := float64(v.tail) / float64(p.rate/500)
 			outL += float64(v.tailL) * fade

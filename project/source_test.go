@@ -171,3 +171,42 @@ song { s }
 		t.Fatalf("audio product changed in the round trip: %+v\n%s", diagnostics, rewritten)
 	}
 }
+
+// A let used at one site that forces its type and at another where neither
+// operand has a known type keeps the forced type, whichever use comes first.
+func TestSourceRoundTripKeepsAForcedLetTypeAgainstAGuess(t *testing.T) {
+	for _, body := range []string{
+		"let amt = 0.5 * velocity\n    out = amt * sine(pitch + amt * 200Hz)",
+		"let amt = 0.5 * velocity\n    out = sine(pitch + amt * 200Hz) * amt",
+		"let f = 147Hz * exp2(env(gate, 30ms) * 0.06)\n    out = sine(f * 1.594) * 0.3 + sine(f) * env(gate, 400ms)",
+		"let f = 147Hz * exp2(env(gate, 30ms) * 0.06)\n    out = sine(f) * env(gate, 400ms) + sine(f * 1.594) * 0.3",
+	} {
+		source := []byte("cicada 2\ninstrument drum {\n  voice mono {\n    " + body + "\n  }\n}\ntrack t drum {}\npattern p notes { c4 . . . }\nscene s { t = p }\nsong { s }\n")
+		score, diagnostics := notation.Parse(source)
+		if len(diagnostics) != 0 {
+			t.Fatalf("parse: %+v\n%s", diagnostics, source)
+		}
+		compiled, diagnostics := FromScore(score)
+		if compiled == nil {
+			t.Fatalf("compile: %+v\n%s", diagnostics, source)
+		}
+		rewritten, err := ToSource(compiled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reparsed, diagnostics := notation.Parse(rewritten)
+		if len(diagnostics) != 0 {
+			t.Fatalf("generated source: %+v\n%s", diagnostics, rewritten)
+		}
+		recompiled, diagnostics := FromScore(reparsed)
+		if recompiled == nil {
+			t.Fatalf("recompile: %+v\n%s", diagnostics, rewritten)
+		}
+		if err := ValidateProject(recompiled); err != nil {
+			t.Fatalf("validate: %v\n%s", err, rewritten)
+		}
+		if !reflect.DeepEqual(compiled.Instruments, recompiled.Instruments) {
+			t.Fatalf("instrument changed in the round trip:\n%s", rewritten)
+		}
+	}
+}

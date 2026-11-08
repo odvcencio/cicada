@@ -183,3 +183,22 @@ func TestDelayTempoAndDivisionAtOneBoundaryFadeOnce(t *testing.T) {
 		}
 	}
 }
+
+// A read delay a hair above the write position wraps to len(buffer), which
+// must read index zero instead of panicking on the audio thread.
+func TestDelayReadWrapsAPositionJustBelowZero(t *testing.T) {
+	delay, _ := NewDelay(48_000, 120_000)
+	params := DefaultDelayParams()
+	params.Division, params.TimeMs = FreeDelay, math.Nextafter(250, 1000)
+	if err := delay.SetParams(params); err != nil {
+		t.Fatal(err)
+	}
+	delay.Reset()
+	for frame := 0; frame < 48_000; frame++ {
+		input := float32(0)
+		if frame == 0 {
+			input = 1
+		}
+		delay.Process(input, input)
+	}
+}

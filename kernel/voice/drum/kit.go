@@ -439,6 +439,7 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 		if accent {
 			velocity = 127
 		}
+		velocity = min(max(velocity, v.sampler.velLow), v.sampler.velHigh)
 		if err := v.sampler.bank.noteOn(v.sampler.note, velocity, v.sampler.gainL, v.sampler.gainR); err != nil {
 			k.fault = true
 		}

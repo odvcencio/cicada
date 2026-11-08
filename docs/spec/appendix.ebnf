@@ -37,7 +37,7 @@ kit_decl ::= "kit" , _name , "{" , { kit_binding } , "}" ;
 kit_binding ::= identifier , "=" , kit_target , [ ";" ] ;
 kit_target ::= _name | "builtin" , "." , identifier | "model" , "." , identifier | identifier , "." ,
                sampler_pitch ;
-sampler_pitch ::= /[a-g][#b][0-9]/ ;
+sampler_pitch ::= /[a-g]#[0-9]/ ;
 instrument_param ::= "param" , identifier , [ ":" , identifier ] , "=" , number , [ ";" ] ;
 voice_decl ::= "voice" , identifier , "{" , { let_stmt } , out_stmt , "}" ;
 let_stmt ::= "let" , identifier , "=" , expression , [ ";" ] ;

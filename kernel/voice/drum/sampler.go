@@ -57,6 +57,10 @@ type samplerLane struct {
 	bank         *SamplerBank
 	note         uint8
 	gainL, gainR float64
+	// velLow and velHigh bound the velocities the pack recorded for note. A hit
+	// outside them, such as a humanized velocity below the softest layer, plays
+	// the nearest recorded layer instead of faulting the kit.
+	velLow, velHigh uint8
 }
 
 // SetSampler binds a lane to one note of a shared pack bank before rendering
@@ -72,13 +76,17 @@ func (k *Kit) SetSampler(lane Lane, bank *SamplerBank, note uint8, levelDB, pan 
 	if math.IsNaN(levelDB) || math.IsNaN(pan) || pan < -1 || pan > 1 || levelDB < -60 || levelDB > 6 {
 		return validationError("sampler lane level or pan is out of range")
 	}
+	low, high, ok := bank.instrument.AttackVelocityRange(note)
+	if !ok {
+		return validationError("sampler kit lane note has no attack sample in its pack")
+	}
 	level := math.Pow(10, levelDB/20)
 	v := &k.lanes[lane]
 	v.enabled = true
 	v.custom, v.customOld, v.modeled = nil, nil, nil
 	v.customActive, v.customChoke, v.fadeRemaining = false, 0, 0
 	v.current, v.old = state{}, state{}
-	v.sampler = &samplerLane{bank: bank, note: note, gainL: level * math.Min(1, 1-pan), gainR: level * math.Min(1, 1+pan)}
+	v.sampler = &samplerLane{bank: bank, note: note, gainL: level * math.Min(1, 1-pan), gainR: level * math.Min(1, 1+pan), velLow: max(low, 1), velHigh: high}
 	k.addBank(bank)
 	return nil
 }
