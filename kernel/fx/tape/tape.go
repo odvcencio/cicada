@@ -240,13 +240,13 @@ func (t *Tape) read(frames float64) stereo {
 	position := float64(t.position) - frames
 	if position < 0 {
 		position += float64(len(t.buffer))
+		// A position a hair below zero rounds up to len(buffer) when wrapped;
+		// that is the same instant as index zero.
+		if position >= float64(len(t.buffer)) {
+			position = 0
+		}
 	}
 	base := int(position)
-	// A position a hair below zero rounds up to len(buffer) when wrapped; that
-	// is the same instant as index zero.
-	if base >= len(t.buffer) {
-		base -= len(t.buffer)
-	}
 	frac := position - float64(base)
 	next := base + 1
 	if next == len(t.buffer) {

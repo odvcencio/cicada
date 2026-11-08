@@ -385,7 +385,7 @@ func BenchmarkProcess(b *testing.B) {
 }
 
 // A read delay a hair above the write position wraps to len(buffer), which
-// must read index zero instead of panicking on the audio thread.
+// must read index zero instead of panicking on the audio thread or reading a huge sample.
 func TestReadWrapsAPositionJustBelowZero(t *testing.T) {
 	tp := newTape(t, 48_000, free(math.Nextafter(250, 1000)))
 	for i := 0; i < 48_000; i++ {
@@ -393,6 +393,9 @@ func TestReadWrapsAPositionJustBelowZero(t *testing.T) {
 		if i == 0 {
 			in = 1
 		}
-		tp.Process(in, in)
+		l, r := tp.Process(in, in)
+		if math.Abs(float64(l)) > 2 || math.Abs(float64(r)) > 2 {
+			t.Fatalf("frame %d: a unit impulse came back at (%g, %g)", i, l, r)
+		}
 	}
 }

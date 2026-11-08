@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -21,6 +22,23 @@ func recordedVelocities(zones instrumentpack.ZoneMap, note uint8) (low, high uin
 	return low, high
 }
 
+// laneGap returns a velocity that a kit lane hit can play but no attack zone
+// of note covers, or 0 when there is none. The engine humanizes a hit, plays an
+// accent at 127, then clamps the velocity into the note's recorded range
+// [low, high], so a gap can only sit inside that range.
+func laneGap(zones instrumentpack.ZoneMap, note, velocity, humanize uint8, accent bool, low, high uint8) uint8 {
+	from, to := max(1, int(velocity)-int(humanize)), min(127, int(velocity)+int(humanize))
+	if accent {
+		from, to = 127, 127
+	}
+	for v := from; v <= to; v++ {
+		if c := min(max(uint8(v), low), high); !zones.HasAttackZone(note, c) {
+			return c
+		}
+	}
+	return 0
+}
+
 // kitSamplerZoneDiagnostics reports the drum lanes of an authored kit that bind
 // a pack note the pack cannot play. A lane is reported at its kit binding when
 // no attack zone covers its note at any velocity, and at the hit when the note
@@ -35,6 +53,12 @@ func kitSamplerZoneDiagnostics(p *project.Project, score *notation.Score, packs 
 	for _, pattern := range p.Patterns {
 		patterns[pattern.ID] = pattern
 	}
+	// A lane that names an instrument is not a sampler lane, even when the
+	// instrument's name reads like a pitch (demo.tone.e2). Only the names matter.
+	programs := map[string]*instrument.Program{}
+	for _, inst := range p.Instruments {
+		programs[inst.ID] = &instrument.Program{}
+	}
 	sources := map[string]notation.Pattern{}
 	for _, pattern := range score.Patterns {
 		sources[pattern.Name] = pattern
@@ -46,7 +70,7 @@ func kitSamplerZoneDiagnostics(p *project.Project, score *notation.Score, packs 
 			kit.Lanes[binding.Lane] = binding.Target
 			positions[binding.Lane] = binding.Position
 		}
-		lanes, err := project.KitSamplerLanes(kit, nil, p.SamplerPackSet())
+		lanes, err := project.KitSamplerLanes(kit, programs, p.SamplerPackSet())
 		if err != nil {
 			continue // validation already reported it
 		}
@@ -87,8 +111,8 @@ func kitSamplerZoneDiagnostics(p *project.Project, score *notation.Score, packs 
 							continue
 						}
 						clamped := min(max(step.Velocity, low), high)
-						gap := humanizedGap(admitted.zones, lane.Note, clamped, pattern.Humanize)
-						if gap == 0 && clamped == step.Velocity {
+						gap := laneGap(admitted.zones, lane.Note, step.Velocity, pattern.Humanize, step.Accent, low, high)
+						if gap == 0 && (clamped == step.Velocity || step.Accent) {
 							continue
 						}
 						position := written.Position

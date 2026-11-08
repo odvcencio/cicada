@@ -218,9 +218,6 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 	return indices, weights, true
 }
 
-// NoteOnSeeded makes humanization independent of unrelated trigger order.
-// Use a shared game-event ID as the seed. Round-robin cycles still follow the
-// ordered trigger stream; the default random stream is left unchanged.
 // AttackVelocityRange reports the lowest and highest velocity at which an
 // attack zone plays note. ok is false when no attack zone covers note.
 func (p *Instrument) AttackVelocityRange(note uint8) (low, high uint8, ok bool) {
@@ -239,6 +236,9 @@ func (p *Instrument) AttackVelocityRange(note uint8) (low, high uint8, ok bool) 
 	return low, high, ok
 }
 
+// NoteOnSeeded makes humanization independent of unrelated trigger order.
+// Use a shared game-event ID as the seed. Round-robin cycles still follow the
+// ordered trigger stream; the default random stream is left unchanged.
 func (p *Instrument) NoteOnSeeded(note, velocity uint8, seed uint64) (Handle, error) {
 	previous := p.random
 	p.random = seed

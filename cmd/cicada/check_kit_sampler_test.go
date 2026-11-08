@@ -70,6 +70,19 @@ func TestCheckReportsAKitVelocityGapThatHumanizeReaches(t *testing.T) {
 	}
 }
 
+// The engine clamps after humanize, so humanize below the softest recorded
+// layer plays that layer and passes check; an accent always plays at 127.
+func TestCheckPassesAHumanizedKitHitThatClampsIntoTheRecordedLayers(t *testing.T) {
+	loud := testpack.Options{Zones: []testpack.Zone{{KeyLow: 38, KeyHigh: 38, VelocityLow: 80, VelocityHigh: 127}}}
+	if err, report := checkKitPattern(t, loud, "  sd = shells.d2\n", "humanize = 32", "  sd: x..X\n"); err != nil || strings.Contains(report, "CICADA-SAMPLER-ZONE") {
+		t.Fatalf("humanize below the softest layer clamps into it: %v\n%s", err, report)
+	}
+	gapped := testpack.Options{Zones: []testpack.Zone{{KeyLow: 38, KeyHigh: 38, VelocityLow: 1, VelocityHigh: 40}, {KeyLow: 38, KeyHigh: 38, VelocityLow: 100, VelocityHigh: 127}}}
+	if err, report := checkKitPattern(t, gapped, "  sd = shells.d2\n", "humanize = 32", "  sd: X...\n"); err != nil || strings.Contains(report, "CICADA-SAMPLER-ZONE") {
+		t.Fatalf("an accent plays at 127 whatever humanize does: %v\n%s", err, report)
+	}
+}
+
 func TestCheckReportsAnUnknownKitSampler(t *testing.T) {
 	err, report := checkKitScore(t, testpack.Options{}, "  sd = drumz.d2\n", "  sd: x...\n")
 	if err == nil || !strings.Contains(report, "no sampler named drumz") {

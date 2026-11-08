@@ -172,14 +172,18 @@ song { s }
 	}
 }
 
-// A let used at one site that forces its type and at another where neither
-// operand has a known type keeps the forced type, whichever use comes first.
+// A let that a call argument types (sine(f) needs Hz) keeps that type against
+// a later use inside arithmetic, whichever comes first, and lets that main
+// already wrote correctly keep their source.
 func TestSourceRoundTripKeepsAForcedLetTypeAgainstAGuess(t *testing.T) {
 	for _, body := range []string{
 		"let amt = 0.5 * velocity\n    out = amt * sine(pitch + amt * 200Hz)",
 		"let amt = 0.5 * velocity\n    out = sine(pitch + amt * 200Hz) * amt",
 		"let f = 147Hz * exp2(env(gate, 30ms) * 0.06)\n    out = sine(f * 1.594) * 0.3 + sine(f) * env(gate, 400ms)",
 		"let f = 147Hz * exp2(env(gate, 30ms) * 0.06)\n    out = sine(f) * env(gate, 400ms) + sine(f * 1.594) * 0.3",
+		"let a = 100Hz\n    let b = 50Hz\n    out = sine(a) * 0.5 + sine((a + b) * 2) * 0.5",
+		"let t = 30ms\n    let f = 147Hz * exp2(env(gate, t) * 0.06)\n    out = delay(sine(pitch), t * 2) + sine(f * 1.5)",
+		"let t = 30ms\n    let f = 147Hz * exp2(env(gate, t) * 0.06)\n    out = sine(f) + delay(sine(pitch), t * 2) + sine(f * 1.5)",
 	} {
 		source := []byte("cicada 2\ninstrument drum {\n  voice mono {\n    " + body + "\n  }\n}\ntrack t drum {}\npattern p notes { c4 . . . }\nscene s { t = p }\nsong { s }\n")
 		score, diagnostics := notation.Parse(source)

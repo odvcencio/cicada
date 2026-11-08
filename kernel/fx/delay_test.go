@@ -185,7 +185,7 @@ func TestDelayTempoAndDivisionAtOneBoundaryFadeOnce(t *testing.T) {
 }
 
 // A read delay a hair above the write position wraps to len(buffer), which
-// must read index zero instead of panicking on the audio thread.
+// must read index zero instead of panicking on the audio thread or reading a huge sample.
 func TestDelayReadWrapsAPositionJustBelowZero(t *testing.T) {
 	delay, _ := NewDelay(48_000, 120_000)
 	params := DefaultDelayParams()
@@ -199,6 +199,9 @@ func TestDelayReadWrapsAPositionJustBelowZero(t *testing.T) {
 		if frame == 0 {
 			input = 1
 		}
-		delay.Process(input, input)
+		left, right := delay.Process(input, input)
+		if math.Abs(float64(left)) > 2 || math.Abs(float64(right)) > 2 {
+			t.Fatalf("frame %d: a unit impulse came back at (%g, %g)", frame, left, right)
+		}
 	}
 }

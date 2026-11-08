@@ -341,7 +341,7 @@ func instrumentSource(inst Instrument) (string, error) {
 		bindings[binding.ID] = binding.Value
 	}
 	required := map[string]instrument.Type{}
-	propagateType(inst.Out, instrument.Audio, false, symbols, bindings, required, map[string]bool{})
+	propagateType(inst.Out, instrument.Audio, true, symbols, bindings, required, map[string]bool{}, map[string]bool{})
 	var out strings.Builder
 	out.WriteString("instrument " + inst.ID + " {\n")
 	if inst.Octave != nil {
@@ -390,19 +390,21 @@ func instrumentSource(inst Instrument) (string, error) {
 	return out.String(), nil
 }
 
-// propagateType records the type each let must have at its uses. A weak
-// requirement comes from a product whose operands both have unknown types; it
-// only fills a let that no other use has typed, so a guess at one use cannot
-// overwrite a type another use forces (sine(f) needs Hz, f * 2 does not).
-func propagateType(expr Expr, want instrument.Type, weak bool, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, visiting map[string]bool) {
+// propagateType records the type each let must have at its uses; the last use
+// decides. A let used directly as a call argument, such as f in sine(f), has
+// its type forced by that call, and a later use inside arithmetic, whose
+// operand types are inferred, cannot overwrite it. Without that, sine(f) and
+// sine(f * 1.5) could leave f typed for the product and break the call.
+func propagateType(expr Expr, want instrument.Type, forcing bool, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, forced, visiting map[string]bool) {
 	if expr.Name != "" {
 		if binding, ok := bindings[expr.Name]; ok && !visiting[expr.Name] {
-			if _, typed := required[expr.Name]; weak && typed {
+			if forced[expr.Name] && !forcing {
 				return
 			}
 			required[expr.Name] = want
+			forced[expr.Name] = forced[expr.Name] || forcing
 			visiting[expr.Name] = true
-			propagateType(binding, want, weak, symbols, bindings, required, visiting)
+			propagateType(binding, want, false, symbols, bindings, required, forced, visiting)
 			delete(visiting, expr.Name)
 		}
 		return
@@ -411,22 +413,19 @@ func propagateType(expr Expr, want instrument.Type, weak bool, symbols map[strin
 		return
 	}
 	if expr.Op == "lfo" && len(expr.Args) > 0 {
-		propagateType(expr.Args[0], instrument.Hz, weak, symbols, bindings, required, visiting)
+		propagateType(expr.Args[0], instrument.Hz, true, symbols, bindings, required, forced, visiting)
 		return
 	}
 	if args, ok := callArgumentTypes(expr.Op); ok {
 		for i, arg := range expr.Args {
-			propagateType(arg, args[i], weak, symbols, bindings, required, visiting)
+			propagateType(arg, args[i], true, symbols, bindings, required, forced, visiting)
 		}
 		return
 	}
 	if len(expr.Args) == 2 {
 		left, right := binaryOperandTypes(expr, want, symbols, bindings)
-		guess := weak || expr.Op == "*" && want != instrument.Unit &&
-			inferExprType(expr.Args[0], symbols, bindings, map[string]bool{}) == "" &&
-			inferExprType(expr.Args[1], symbols, bindings, map[string]bool{}) == ""
-		propagateType(expr.Args[0], left, guess, symbols, bindings, required, visiting)
-		propagateType(expr.Args[1], right, guess, symbols, bindings, required, visiting)
+		propagateType(expr.Args[0], left, false, symbols, bindings, required, forced, visiting)
+		propagateType(expr.Args[1], right, false, symbols, bindings, required, forced, visiting)
 	}
 }
 
@@ -501,11 +500,6 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 	if right == want || left == instrument.Unit {
 		return instrument.Unit, want
 	}
-	// Neither side has a known type. A bare literal can carry any unit, so it
-	// takes the wanted one: amt * 200Hz keeps amt unitless.
-	if expr.Args[1].Literal != nil && expr.Args[0].Literal == nil {
-		return instrument.Unit, want
-	}
 	return want, instrument.Unit
 }
 
@@ -550,12 +544,6 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 	}
 	if right != "" && right != instrument.Unit {
 		return right
-	}
-	// The model stores literals without units, so a product with a bare
-	// literal (147Hz * exp2(...)) may still carry the literal's unit. Leave it
-	// unknown and let the use site decide, rather than calling it unitless.
-	if left == "" || right == "" {
-		return ""
 	}
 	return instrument.Unit
 }
