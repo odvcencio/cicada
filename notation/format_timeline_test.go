@@ -40,3 +40,26 @@ func TestFormatKeepsOneTimelineEntryPerLine(t *testing.T) {
 		t.Fatalf("formatting is not idempotent:\n%s\n---\n%s", formatted, twice)
 	}
 }
+
+// A comment the author separated with a blank line stays apart from the next
+// declaration, as a section heading; a comment directly above a declaration
+// stays attached to it.
+func TestFormatKeepsTheBlankLineAfterASectionComment(t *testing.T) {
+	source := "cicada 2\n\n// ---- Tracks ----\n\n// The bass line.\ntrack bass acid {}\n// first idea\n\n// second idea\npattern pulse acid { 1 . 5 . }\n"
+	document, err := ParseDocument([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"// ---- Tracks ----\n\n// The bass line.\ntrack bass acid {}",
+		"// first idea\n\n// second idea\npattern pulse acid {",
+	} {
+		if !strings.Contains(string(formatted), want) {
+			t.Fatalf("formatted source lacks %q:\n%s", want, formatted)
+		}
+	}
+}
