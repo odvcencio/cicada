@@ -212,3 +212,31 @@ func TestPreparedEngineSamplerAndNoRenderAllocations(t *testing.T) {
 		t.Fatal("prepared stereo audio did not reach the mixer")
 	}
 }
+
+// A chord note outside the resampler ratio is refused like a single note.
+func TestValidatePatternsChecksEveryChordNote(t *testing.T) {
+	dir, p := audioEngineFixture(t, true)
+	factories, err := Prepare(dir, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notes *project.Pattern
+	for i := range p.Patterns {
+		if p.Patterns[i].ID == "notes" {
+			notes = &p.Patterns[i]
+		}
+	}
+	if notes == nil {
+		t.Fatal("fixture has no notes pattern")
+	}
+	first := notes.Data[0]
+	first.Note, first.Notes = 127, nil
+	if err := ValidatePatterns(p, factories, 48000); err == nil {
+		t.Fatal("MIDI note 127 was accepted on a root-c3 sampler; the test needs a note outside the ratio")
+	}
+	first.Note, first.Notes = 48, []int{48, 52, 127}
+	err = ValidatePatterns(p, factories, 48000)
+	if err == nil || !strings.Contains(err.Error(), "MIDI note 127") {
+		t.Fatalf("chord note outside the ratio: %v", err)
+	}
+}

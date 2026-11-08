@@ -853,15 +853,23 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				if sampleExpressionEnabled && p.playingNote != 0 {
 					v.sampler.ReleaseCohort(sampleCohort(graph.Cohort{NoteID: p.playingNote, Generation: uint64(p.playingGen)}))
 				}
-				var err error
-				if sampleExpressionEnabled {
-					v.samplerNote, err = v.sampler.NoteOnCohort(event.Note, event.Velocity, sampleCohort(graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}))
+				notes, count := event.Notes, uint8(1)
+				if sampleChordsEnabled && event.NoteCount > 0 {
+					count = event.NoteCount
 				} else {
-					v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
+					notes[0] = event.Note
 				}
-				if err != nil {
-					e.fault(FaultVoiceUnsupported)
-					return
+				for n := uint8(0); n < count; n++ {
+					var err error
+					if sampleExpressionEnabled {
+						v.samplerNote, err = v.sampler.NoteOnCohort(notes[n], event.Velocity, sampleCohort(graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}))
+					} else {
+						v.samplerNote, err = v.sampler.NoteOn(notes[n], event.Velocity)
+					}
+					if err != nil {
+						e.fault(FaultVoiceUnsupported)
+						return
+					}
 				}
 			case VoiceGraph:
 				if pool := e.voices[track].poly; pool != nil {
@@ -884,9 +892,17 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			case VoiceGraphPoly:
 				e.voices[track].legacyPoly.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoicePrepared:
-				if e.voices[track].prepared.NoteOn(event.Note, event.Velocity) != nil {
-					e.fault(FaultPreparedVoice)
-					return
+				notes, count := event.Notes, uint8(1)
+				if sampleChordsEnabled && event.NoteCount > 0 {
+					count = event.NoteCount
+				} else {
+					notes[0] = event.Note
+				}
+				for n := uint8(0); n < count; n++ {
+					if e.voices[track].prepared.NoteOn(notes[n], event.Velocity) != nil {
+						e.fault(FaultPreparedVoice)
+						return
+					}
 				}
 			case VoicePiano:
 				if event.Slide && p.playingNote != 0 {

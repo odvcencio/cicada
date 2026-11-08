@@ -313,3 +313,68 @@ func TestEditionOneAudioNameCompatibility(t *testing.T) {
 		})
 	}
 }
+
+func TestPackSamplerEnvelopeRoundTrip(t *testing.T) {
+	const pin = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	source := `cicada 2
+sampler grand {
+  pack = "packs/grand/manifest.json"
+  sha256 = "` + pin + `"
+  root = c4
+  voices = 4
+  attack = 1.5s
+  sustain = 0.25
+  release = 30ms
+}
+track piano grand {}
+pattern melody { c4 . e4 . }
+scene main { piano = melody }
+song { main }
+`
+	score, ds := notation.ParseEdition([]byte(source), 2)
+	if hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || hasErrors(ds) {
+		t.Fatalf("lower: %+v", ds)
+	}
+	s := p.Samplers[0]
+	if s.AttackMS == nil || *s.AttackMS != 1500 || s.DecayMS != nil || *s.Sustain != 0.25 || *s.ReleaseMS != 30 {
+		t.Fatalf("%+v", s)
+	}
+	data, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"release_ms": 30`) && !strings.Contains(string(data), `"release_ms":30`) || strings.Contains(string(data), "decay_ms") {
+		t.Fatalf("JSON: %s", data)
+	}
+	decoded, err := DecodeJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !SemanticEqual(p, decoded) {
+		t.Fatal("JSON lost the envelope")
+	}
+	text, err := ToSource(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, ds := notation.ParseEdition(text, 2)
+	if hasErrors(ds) {
+		t.Fatalf("%v\n%s", ds, text)
+	}
+	back, _ := FromScore(again)
+	if back == nil || !SemanticEqual(p, back) {
+		t.Fatalf("source lost the envelope:\n%s", text)
+	}
+	// Out-of-range typed values are refused on the JSON path too.
+	bad := *decoded
+	bad.Samplers = []Sampler{decoded.Samplers[0]}
+	r := 0.0
+	bad.Samplers[0].ReleaseMS = &r
+	if err := validateAudioProject(&bad); err == nil || !strings.Contains(err.Error(), "CICADA-SAMPLER-PARAM") {
+		t.Fatalf("typed release 0 admitted: %v", err)
+	}
+}

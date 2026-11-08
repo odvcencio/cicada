@@ -124,6 +124,23 @@ func TestCheckReportsAVelocityNoZoneCovers(t *testing.T) {
 	}
 }
 
+// Humanize moves a step's velocity by up to its amount, so check tests every
+// velocity it can reach.
+func TestCheckReportsAVelocityOnlyHumanizeReaches(t *testing.T) {
+	loud := testpack.Options{Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72, VelocityLow: 95, VelocityHigh: 127}}}
+	path, _, _ := writeSamplerProject(t, loud, "pattern melody notes { c4 . . . }\n")
+	var stdout, stderr bytes.Buffer
+	if err := checkPaths([]string{path}, &stdout, &stderr); err != nil {
+		t.Fatalf("velocity 100 is inside the zone: %v\n%s", err, stderr.String())
+	}
+	path, _, _ = writeSamplerProject(t, loud, "pattern melody notes humanize = 10 { c4 . . . }\n")
+	stdout.Reset()
+	stderr.Reset()
+	if err := checkPaths([]string{path}, &stdout, &stderr); err == nil || !strings.Contains(stderr.String(), "humanize = 10 can move it to 90") {
+		t.Fatalf("want a humanize zone error: %v\n%s", err, stderr.String())
+	}
+}
+
 func TestCheckAppliesThePatternTranspose(t *testing.T) {
 	up := "pattern melody notes steps=4 transpose=24 { c4 . . . }\n"
 	path, source, _ := writeSamplerProject(t, testpack.Options{}, up)
@@ -529,5 +546,21 @@ func TestCheckReportsANoteOfAPhraseAtTheUse(t *testing.T) {
 	line, column = positionOf(t, source, "pattern melody", "use high")
 	if want := fmt.Sprintf("%s:%d:%d: error CICADA-SAMPLER-ZONE: pitch c6 (MIDI 84) on track lead, pattern melody, from phrase high, is outside every zone", path, line, column); !strings.Contains(stderr.String(), want) {
 		t.Errorf("report lacks %q:\n%s", want, stderr.String())
+	}
+}
+
+func TestCheckReportsAChordNoteOutsideEveryZone(t *testing.T) {
+	path, _, _ := writeSamplerProject(t, testpack.Options{}, "pattern melody notes { [c4 c6] . . . }\n")
+	var stdout, stderr bytes.Buffer
+	err := checkPaths([]string{path}, &stdout, &stderr)
+	if err == nil || err.Error() != "1 error(s) across 1 score(s)" {
+		t.Fatalf("a chord with one note outside the zones: %v\n%s", err, stderr.String())
+	}
+	report := stderr.String()
+	if !strings.Contains(report, "error CICADA-SAMPLER-ZONE: pitch c6 (MIDI 84) on track lead, pattern melody, is outside every zone") {
+		t.Errorf("report does not name the chord note:\n%s", report)
+	}
+	if strings.Contains(report, "pitch c4") || strings.Contains(report, "pitch c5") {
+		t.Errorf("a chord note inside the zone was reported:\n%s", report)
 	}
 }

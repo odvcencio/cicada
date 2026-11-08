@@ -243,6 +243,11 @@ func (d *Delay) read(frames float64) stereo {
 	position := float64(d.position) - frames
 	if position < 0 {
 		position += float64(len(d.buffer))
+		// A position a hair below zero rounds up to len(buffer) when wrapped;
+		// that is the same instant as index zero.
+		if position >= float64(len(d.buffer)) {
+			position = 0
+		}
 	}
 	base := int(position)
 	frac := position - float64(base)

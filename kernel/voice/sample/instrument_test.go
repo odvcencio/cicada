@@ -453,3 +453,42 @@ func TestInstrumentEventSeedDoesNotDependOnOtherTriggers(t *testing.T) {
 		t.Fatal("event seed depends on preceding stream or consumes default randomness")
 	}
 }
+
+// The declick tail of a stolen voice is the old voice's output after its own
+// mix. A new voice with a quiet mix must not silence the tail.
+func TestStealTailKeepsTheOldVoiceMix(t *testing.T) {
+	pcm := make([]float32, 1024)
+	for i := range pcm {
+		pcm[i] = .25
+	}
+	config := DefaultInstrumentConfig()
+	config.Voices, config.Amp.Release = 1, 2
+	zone := Zone{Region: Region{Left: pcm, SampleRate: 48000, RootKey: 60, End: len(pcm), Loop: true, LoopEnd: len(pcm)}, KeyLow: 60, KeyHigh: 60, VelocityLow: 1, VelocityHigh: 127, Layer: 64, Count: 1, Gain: 1}
+	instrument, err := NewInstrument(48000, []Zone{zone}, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := instrument.NoteOnMix(60, 127, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	var l, r float32
+	for i := 0; i < 256; i++ {
+		l, r = instrument.NextStereo()
+	}
+	if l < .2 {
+		t.Fatalf("first note is not sounding: %g", l)
+	}
+	if _, err := instrument.NoteOnMix(60, 127, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	l, r = instrument.NextStereo()
+	if l < .2 || r < .2 {
+		t.Fatalf("steal tail was scaled by the new voice's mix: %g/%g", l, r)
+	}
+	for i := 0; i < 200; i++ {
+		l, r = instrument.NextStereo()
+	}
+	if l != 0 || r != 0 {
+		t.Fatalf("tail did not end: %g/%g", l, r)
+	}
+}

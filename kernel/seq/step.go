@@ -116,6 +116,9 @@ type Pattern struct {
 	Transpose     int8
 	GatePercent   uint8
 	Seed          uint32
+	// Humanize is the largest velocity offset, in MIDI velocity units, that a
+	// hit may receive. Zero leaves every velocity as written.
+	Humanize uint8 `json:",omitempty"`
 }
 
 // DurationTicks is independent of a step grid for a performed pattern.

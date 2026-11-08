@@ -133,3 +133,65 @@ func TestEventsInBlockAllocs(t *testing.T) {
 		t.Fatalf("scheduler allocated %v times per call", n)
 	}
 }
+
+func TestHumanizeVelocityIsBoundedDeterministicAndOffByDefault(t *testing.T) {
+	if HumanizeVelocity(90, 0, 7, 0, 0, 3, 2, 0, 0) != 90 {
+		t.Fatal("amount 0 changed the velocity")
+	}
+	moved := false
+	for iteration := int64(0); iteration < 200; iteration++ {
+		got := HumanizeVelocity(90, 6, 7, 1, 0, iteration, 2, 0, 0)
+		if got < 84 || got > 96 {
+			t.Fatalf("iteration %d: %d is outside 90 +/- 6", iteration, got)
+		}
+		if got != 90 {
+			moved = true
+		}
+		if got != HumanizeVelocity(90, 6, 7, 1, 0, iteration, 2, 0, 0) {
+			t.Fatal("the offset is not deterministic")
+		}
+	}
+	if !moved {
+		t.Fatal("200 hits never moved")
+	}
+	for _, edge := range []uint8{1, 127} {
+		for iteration := int64(0); iteration < 200; iteration++ {
+			if got := HumanizeVelocity(edge, 32, 3, 0, 0, iteration, 0, 0, 0); got < 1 || got > 127 {
+				t.Fatalf("velocity %d left 1..127: %d", edge, got)
+			}
+		}
+	}
+}
+
+func TestHumanizeVelocityDiffersBetweenDrumLanesOnOneStep(t *testing.T) {
+	// A drum lane step carries its lane as the note: kick, snare and hat at one
+	// step must not all draw the same offset.
+	offsets := map[int]bool{}
+	for _, lane := range []uint8{0, 1, 2, 3, 4} {
+		offsets[int(HumanizeVelocity(90, 10, 7, 1, 0, 3, 2, 0, lane))-90] = true
+	}
+	if len(offsets) < 2 {
+		t.Fatalf("every lane drew the same offset: %v", offsets)
+	}
+	// Scheduling the lanes of one step through EventsInBlock shows the same.
+	clock, _ := NewClock(48000, 120000)
+	seen := map[uint8]bool{}
+	for _, lane := range []uint8{0, 1, 2, 3, 4} {
+		var p Pattern
+		p.Len, p.GatePercent, p.Seed, p.Humanize = 4, 100, 7, 10
+		packed, err := PackStep(Step{Note: lane, Gate: true, Velocity: 90, Ratchet: 1, Probability: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Steps[0] = packed
+		var events [8]Event
+		n, _ := EventsInBlock(&p, clock, 1, 0, 0, 48000, events[:])
+		if n < 1 {
+			t.Fatalf("lane %d scheduled no event", lane)
+		}
+		seen[events[0].Velocity] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("scheduled lanes share one velocity: %v", seen)
+	}
+}

@@ -217,3 +217,64 @@ Brotli bytes are reported separately; the default core retains the 322 KiB raw
 and 120 KiB Brotli gates. WAM2 export automatically packages the required variant
 from beside the configured core file. `make build-wam2` prepares both the core
 and vocal modules; modeled keys require `make build-keys-wasm`.
+
+## Tape echo
+
+`tape` is a delay return that behaves like a tape echo. Declare it where you
+would declare a `delay`, send tracks to it the same way, and a score has one
+delay return: either `delay` or `tape`.
+
+```cicada
+cicada 2
+tempo 74
+fx echo tape { time = 3/16 feedback = 0.6 wow = 0.5 flutter = 0.2 saturation = 0.4 damp = 3200Hz }
+track rim drums { send echo = 0.8 pre }
+pattern hit drums { rs: x... .... .... .... }
+automate echo.time { @1.1.1 608ms @3.1.1 300ms smooth }
+scene main { rim = hit }
+song { main*4 }
+```
+
+In this score the repeats start at 608 ms and, over two bars, slow their
+spacing down to 300 ms. The pitch of the repeats rises while the time shortens
+and falls while it lengthens, as it does when you turn the delay knob on a tape
+machine.
+
+| Control | Unit | Range | Default |
+| --- | --- | --- | --- |
+| `time` | note division or ms | 1/32 up to 2 s, 1 ms to 2000 ms | 1/8 |
+| `feedback` | unitless | 0–0.95 | 0.4 |
+| `wow` | unitless | 0–1 | 0.4 |
+| `flutter` | unitless | 0–1 | 0.2 |
+| `saturation` | unitless | 0–1 | 0.3 |
+| `damp` | Hz | 1000–16000 | 5000 |
+
+All six controls take scene settings (`echo.feedback = 0.3`) and `automate`
+lanes (`echo.time`, `echo.wow`, `echo.flutter`, `echo.feedback`,
+`echo.saturation`, `echo.damp`). Each moves through a 5 ms smoother, except
+`time`, which glides as described below.
+
+**What it models.**
+
+- One read head over a 2-second stereo buffer. A change of `time`, from
+  automation, a scene, or a tempo change on a synced time, moves the head at up
+  to half a sample per sample, so the repeats play between 0.5x and 1.5x speed
+  during the move. Nothing crossfades. A jump of 300 ms takes 0.6 s.
+- Wow: slow drift of the head (two sines near 0.37 and 1.3 Hz), up to 3 ms of
+  excursion at `wow = 1`. Flutter: fast ripple (near 7 and 11 Hz), up to 0.25 ms
+  at `flutter = 1`.
+- A one-pole `damp` filter and a `tanh` limiter inside the feedback loop.
+  `saturation` drives that limiter harder and divides the drive back out, so
+  quiet repeats keep the `feedback` gain and loud repeats compress.
+- With `wow`, `flutter` and `saturation` at 0, `tape` matches a stereo `delay`
+  that has the same time, feedback and `damp`, no ping-pong, width 1 and mix 1.
+  The match is byte for byte when the time is a whole number of frames. For
+  other times it differs by float rounding, under -120 dB.
+
+**What it does not model.** There is no tape-head frequency response, no
+hiss, no bias or print-through, and no motor inertia beyond the fixed glide
+rate. There is no ping-pong, width or mix control: the return is always
+wet-only and stereo-preserving. It cannot be a track insert or a master stage.
+Modulation routes to its controls are not supported yet. Portable browser kernel
+images refuse a score that declares `tape`, with a clear error; native playback
+and offline `render` and `stems` support it.

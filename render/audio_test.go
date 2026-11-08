@@ -170,3 +170,69 @@ func TestRepeatedAudioSceneRetriggersAndKeepContinues(t *testing.T) {
 		t.Fatal("keep retriggered the clip")
 	}
 }
+
+// A sampler chord on the direct WAV mixer starts every note, as the engine does.
+func TestDirectMixerSamplerChordPlaysEveryNote(t *testing.T) {
+	dir, _ := audioRenderFixture(t, false)
+	data, err := os.ReadFile(filepath.Join(dir, "take.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func(step string) *notation.Score {
+		text := fmt.Sprintf("cicada 2\ntempo 120\nasset take \"take.wav\" { sha256 = \"%x\" format = wav frames = 120000 rate = 48000Hz channels = 2 }\nsampler hit { asset = take root = c4 mode = loop voices = 8 }\ntrack keys hit {}\npattern ch notes { %s - - - }\nscene a { keys = ch }\nsong { a }\n", sha256.Sum256(data), step)
+		score, ds := notation.Parse([]byte(text))
+		if score == nil || hasAudioErrors(ds) {
+			t.Fatal(ds)
+		}
+		return score
+	}
+	opts := Options{AssetDir: dir, SampleRate: 48000, Bits: 32, Block: 128}
+	render := func(score *notation.Score) ([]byte, Report) {
+		if UsesScheduledEngine(score, opts) {
+			t.Fatal("fixture must use the direct mixer")
+		}
+		var wav bytes.Buffer
+		report, err := WAV(score, opts, &wav)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return wav.Bytes(), report
+	}
+	root, _ := render(build("c4"))
+	chordScore := build("[c4 e4 g4]")
+	chord, report := render(chordScore)
+	if bytes.Equal(root, chord) {
+		t.Fatal("sampler chord rendered like its root")
+	}
+	p, ds := project.FromScore(chordScore)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	cfg, err := sampleasset.CompileEngine(dir, p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter, _ := mix.NewLimiter(48000)
+	latency := limiter.LatencyFrames()
+	l, r := make([]float32, int(report.Frames)+latency), make([]float32, int(report.Frames)+latency)
+	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("play rejected")
+	}
+	for at := 0; at < len(l); at += 128 {
+		end := min(len(l), at+128)
+		e.Render(l[at:end], r[at:end])
+	}
+	var worst float64
+	for i := 0; i < int(report.Frames); i++ {
+		wl := math.Float32frombits(binary.LittleEndian.Uint32(chord[44+i*8:]))
+		wr := math.Float32frombits(binary.LittleEndian.Uint32(chord[48+i*8:]))
+		worst = math.Max(worst, math.Max(math.Abs(float64(wl-l[i+latency])), math.Abs(float64(wr-r[i+latency]))))
+	}
+	if worst > 1e-6 {
+		t.Fatalf("direct chord differs from the engine by %g", worst)
+	}
+}

@@ -3,6 +3,7 @@ package engine
 import (
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/chorus"
+	"m31labs.dev/cicada/kernel/fx/tape"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -17,6 +18,7 @@ type sceneParameterState struct {
 	layerMask  trackMask
 	soloCount  int
 	delay      fx.DelayParams
+	tape       tape.Params
 	reverb     fx.ReverbParams
 	compressor fx.CompParams
 }
@@ -84,6 +86,9 @@ func (e *Engine) captureSceneDefaults() {
 	if e.delayA != nil {
 		e.sceneDefaults.delay = e.delayA.Params()
 	}
+	if tapeEnabled && e.tapeA != nil {
+		e.sceneDefaults.tape = e.tapeA.Params()
+	}
 	if e.reverbB != nil {
 		e.sceneDefaults.reverb = e.reverbB.Params()
 	}
@@ -126,7 +131,7 @@ func (e *Engine) restoreSceneDefaults() bool {
 // restoreEffects returns the delay, reverb and compressor to their authored
 // parameters.
 func (e *Engine) restoreEffects(base *sceneParameterState) bool {
-	failed := e.delayA != nil && e.delayA.SetParams(base.delay) != nil ||
+	failed := e.delayA != nil && e.delayA.SetParams(base.delay) != nil || tapeEnabled && e.tapeA != nil && e.tapeA.SetParams(base.tape) != nil ||
 		e.reverbB != nil && e.reverbB.SetParams(base.reverb) != nil || e.compMusic != nil && e.compMusic.SetParams(base.compressor) != nil
 	if failed {
 		e.fault(FaultParam)
@@ -140,6 +145,9 @@ func (e *Engine) settleSceneEffects() {
 	}
 	if e.delayA != nil {
 		e.delayA.Reset()
+	}
+	if tapeEnabled && e.tapeA != nil {
+		e.tapeA.Reset()
 	}
 	if e.reverbB != nil {
 		e.reverbB.Reset()

@@ -109,3 +109,21 @@ audio preview. Arrangement playback still uses the native output device; see
 [Troubleshooting](troubleshooting.md) if that device is unavailable.
 
 ![Sampler on a 390-pixel-wide touch layout.](screenshots/studio-sampler-390.png)
+
+### Shorten or lengthen a pack's notes
+
+A pack sampler can override the pack's envelope with `attack`, `decay`,
+`sustain` and `release`. Times take `ms` or `s`; `sustain` is 0 to 1.
+
+```text
+sampler chk {
+  pack = "packs/grand/manifest.json"
+  sha256 = "..."
+  root = c4
+  voices = 8
+  release = 30ms
+}
+```
+
+`release = 30ms` chokes each note into a short "chk". Fields you omit keep the
+pack's own values. See [the pack reference](../sampler/packs.md#override-the-pack-envelope).

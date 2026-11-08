@@ -18,6 +18,34 @@ song { main*4 }
 
 `root` supplies the home octave for relative score pitches; each pack zone has its own recorded root. `voices` limits simultaneous notes; each note can blend two attack layers and two release layers. The manifest hash pins the exact map, configuration, provenance and asset hashes. Packs cannot also declare `asset` or loop `mode`. Existing single-file sampler declarations retain their syntax.
 
+## Override the pack envelope
+
+A pack carries an amplitude envelope in its manifest. A `sampler` declaration can replace any part of it, so a sampled piano can play a short reggae "chk" or a pad can ring longer.
+
+```cicada
+cicada 2
+sampler chk {
+  pack = "packs/grand/manifest.json"
+  sha256 = "EXACT_64_HEX_DIGIT_MANIFEST_HASH"
+  root = c4
+  voices = 8
+  release = 30ms
+}
+track skank chk { level = -6dB }
+pattern offbeat { . c4 . c4 }
+scene main { skank = offbeat }
+song { main*4 }
+```
+
+| Field | Range | Unit |
+|---|---|---|
+| `attack` | 0 ms to 5 s | `ms` or `s` |
+| `decay` | 0 ms to 10 s | `ms` or `s` |
+| `sustain` | 0 to 1 | none |
+| `release` | 1 ms to 10 s | `ms` or `s` |
+
+A field you leave out keeps the manifest value, so a score without these fields renders exactly as before. A value outside its range, a time without a unit, or a field on a single-asset sampler reports `CICADA-SAMPLER-PARAM`. The values travel in the project JSON as `attack_ms`, `decay_ms`, `sustain` and `release_ms`, and in browser images through the pack configuration.
+
 `cicada render score.cicada -o after.wav` resolves packs inside the project folder, including confined symlink traversal. The project folder is the one that holds `cicada.mod`, or the score's own folder when there is none, so a score in a subfolder such as `songs/theme.cicada` finds `packs/...` at the project root, as it finds its audio assets. `check`, `stems`, `audition`, `play` and Studio resolve packs the same way. `--sampler-baseline` renders the same events through the existing single-region DSP using the same key maps, one fixed recorded dynamic, the first take and the original 2 ms release. The baseline has a separate pool for each key map and is an offline listening reference, not a performance comparison. Stems retain stereo sampler output. The host refuses missing/corrupt packs instead of substituting a synth.
 
 ## Memory limits

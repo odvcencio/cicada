@@ -26,6 +26,10 @@ import (
 type Zone struct {
 	KeyLow, KeyHigh           int
 	VelocityLow, VelocityHigh int
+	// ChokeGroup puts the zone in a choke group; zero is none. OneShot makes
+	// the zone ignore note-off.
+	ChokeGroup int
+	OneShot    bool
 }
 
 // Options shape a pack. The zero value is one mono asset of 1,024 frames and
@@ -140,6 +144,7 @@ func Write(t testing.TB, dir string, o Options) Pack {
 		manifest.Zones = append(manifest.Zones, instrumentpack.Zone{
 			Asset: manifest.Assets[i%o.Assets].ID, Root: (z.KeyLow + z.KeyHigh) / 2, KeyLow: z.KeyLow, KeyHigh: z.KeyHigh,
 			VelocityLow: low, VelocityHigh: high, Layer: (low + high) / 2, Group: i, Count: 1, Gain: 1,
+			ChokeGroup: z.ChokeGroup, OneShot: z.OneShot,
 		})
 	}
 	encodedManifest, err := json.Marshal(manifest)

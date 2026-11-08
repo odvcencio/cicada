@@ -719,6 +719,11 @@
           "minimum": 0,
           "maximum": 4294967295
         },
+        "humanize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
         "data": {
           "type": "array",
           "maxItems": 64,
@@ -1784,6 +1789,26 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 32
+        },
+        "attack_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5000
+        },
+        "decay_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "sustain": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "release_ms": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10000
         }
       }
     },

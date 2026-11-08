@@ -42,7 +42,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		for _, binding := range source.Bindings {
 			kit.Lanes[binding.Lane] = binding.Target
 		}
-		if _, err := CompileKit(kit, programs); err != nil {
+		if _, err := CompileKitWithSamplers(kit, programs, scoreSamplerSet(score), 48_000); err != nil {
 			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
 		}
 	}
@@ -122,7 +122,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 					}
 					values[param.Name] = value
 				}
-				_, err := CompileKitTrack(kit, programs, values)
+				_, err := CompileKitTrackWithSamplers(kit, programs, scoreSamplerSet(score), values, 48_000)
 				return err
 			}
 			if err := check(track); err != nil {
@@ -412,4 +412,14 @@ func sourceTrackIsPoly(score *notation.Score, kind string) bool {
 		}
 	}
 	return false
+}
+
+// scoreSamplerSet lists the sampler names a score declares and whether each is
+// a sample pack.
+func scoreSamplerSet(score *notation.Score) map[string]bool {
+	set := make(map[string]bool, len(score.Samplers))
+	for _, sampler := range score.Samplers {
+		set[sampler.Name] = sampler.Pack != ""
+	}
+	return set
 }

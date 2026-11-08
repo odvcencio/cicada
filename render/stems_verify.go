@@ -164,7 +164,8 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 	}
 	report.Files, report.Frames, report.SampleRate, report.Bars, report.From = len(names), int64(reference[1]), int(reference[0]), int(reference[2]), from
 	var data [8]byte
-	var samples [21]stemPair
+	// One slot per stem file: every track plus the two returns and the bus views.
+	samples := make([]stemPair, len(names))
 	for frame := int64(0); frame < report.Frames; frame++ {
 		for i, reader := range readers {
 			if _, err := io.ReadFull(reader, data[:]); err != nil {

@@ -161,6 +161,7 @@ type Pattern struct {
 	GatePercent     uint8              `cicada:"Note gate percentage" unit:"percent" range:"10..100" json:"gate_percent"`
 	Transpose       int8               `cicada:"Semitone transposition" unit:"semitone" range:"-24..24" json:"transpose"`
 	Seed            uint32             `cicada:"Pattern random seed" json:"seed"`
+	Humanize        uint8              `cicada:"Largest seeded velocity offset per hit" unit:"velocity" range:"0..32" json:"humanize,omitempty" introduced:"cicada.project/2"`
 	Data            []*Step            `cicada:"Melodic steps" json:"data"`
 	Lanes           map[string][]*Step `cicada:"Drum lane steps" json:"lanes"`
 	Expression      []NoteExpression   `cicada:"Resolved expression at each melodic step" json:"expression,omitempty"`
@@ -389,6 +390,10 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 				if _, err := DelayParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
+			} else if kind == "tape" {
+				if _, err := TapeParamsFromValues(map[string]Value{param.Name: value}); err != nil {
+					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+				}
 			} else if kind == "reverb" {
 				if _, err := ReverbParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
@@ -615,7 +620,7 @@ func CompileProjectPattern(score *notation.Score, source notation.Pattern, track
 	pattern := Pattern{
 		ID: source.Name, Kind: semanticPatternKind(score, source), Steps: compiled[0].Pattern.Len, StepTicks: compiled[0].Pattern.StepTicks,
 		SwingPercent100: 5000, GatePercent: compiled[0].Pattern.GatePercent,
-		Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
+		Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed, Humanize: compiled[0].Pattern.Humanize,
 		Data: []*Step{}, Lanes: map[string][]*Step{},
 	}
 	pattern.Expression = projectExpression(compiled[0].Pattern)

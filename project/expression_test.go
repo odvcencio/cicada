@@ -373,3 +373,42 @@ func TestExpressionModeledPianoRejectsUnsupportedControls(t *testing.T) {
 		t.Fatalf("piano expression JSON validation: %v", err)
 	}
 }
+
+func TestSamplerChordRefusesNoteExpression(t *testing.T) {
+	_, _, score := assetFixture(t)
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("valid sampler source: %+v", diagnostics)
+	}
+	pattern := &p.Patterns[0]
+	pattern.Expression = make([]NoteExpression, pattern.Steps)
+	for i := range pattern.Expression {
+		pattern.Expression[i].Timbre = .5
+	}
+	pattern.Data[0] = &Step{Note: 48, Ratchet: 1, Probability: 100, Velocity: 100, Notes: []int{48, 52, 55}}
+	if err := ValidateProject(p); err != nil {
+		t.Fatalf("neutral expression on a sampler chord rejected: %v", err)
+	}
+	pattern.Expression[0].PitchCents = 100
+	if err := ValidateProject(p); err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED") || !strings.Contains(err.Error(), "chord") {
+		t.Fatalf("bend on a sampler chord accepted: %v", err)
+	}
+}
+
+func TestSamplerChordLargerThanVoicesIsRefused(t *testing.T) {
+	_, _, score := assetFixture(t)
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("valid sampler source: %+v", diagnostics)
+	}
+	p.Samplers[0].Voices = 2
+	p.Patterns[0].Data[0] = &Step{Note: 48, Ratchet: 1, Probability: 100, Velocity: 100, Notes: []int{48, 52, 55}}
+	err := ValidateProject(p)
+	if err == nil || !strings.Contains(err.Error(), "3-note chord") || !strings.Contains(err.Error(), "voices = 2") || !strings.Contains(err.Error(), p.Patterns[0].ID) {
+		t.Fatalf("chord over the voice count: %v", err)
+	}
+	p.Samplers[0].Voices = 3
+	if err := ValidateProject(p); err != nil {
+		t.Fatalf("chord that fits the voices refused: %v", err)
+	}
+}

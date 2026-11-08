@@ -96,12 +96,12 @@ func ParamAddresses(p *Project) []ParamAddress {
 			}
 			suffix := strings.TrimPrefix(descriptor.Path, kind+".")
 			value := defaultParamValue(descriptor)
-			if descriptor.ID == "fx.delay.time" && p.TempoMilli > 0 {
+			if (descriptor.ID == "fx.delay.time" || descriptor.ID == "fx.tape.time") && p.TempoMilli > 0 {
 				// The default source division is 1/8, which lasts half a beat.
 				value = 30_000_000 / float64(p.TempoMilli)
 			}
 			if source, ok := effect.Params[descriptor.Source]; ok {
-				if descriptor.ID == "fx.delay.time" && source.Number == nil {
+				if (descriptor.ID == "fx.delay.time" || descriptor.ID == "fx.tape.time") && source.Number == nil {
 					value = delayDivisionMilliseconds(source.Text, p.TempoMilli)
 				} else if descriptor.ID == "fx.comp.makeup" && source.Text == "auto" {
 					value = automaticMakeup(effect.Params)

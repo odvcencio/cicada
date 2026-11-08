@@ -70,6 +70,27 @@ func ProbabilityHit(probability uint8, seed uint32, track, slot uint8, iteration
 	return u*100 < uint64(probability)<<24
 }
 
+// HumanizeVelocity offsets velocity by a deterministic amount in -amount..+amount
+// and keeps the result in 1..127, so a sounding hit never becomes silent. The
+// offset follows the pattern seed, track, slot, loop iteration, step, ratchet and
+// note, so every host draws the same value. A drum lane step carries its lane as
+// the note, so simultaneous lanes draw different offsets.
+func HumanizeVelocity(velocity, amount uint8, seed uint32, track, slot uint8, iteration int64, step, ratchet, note uint8) uint8 {
+	if !HumanizeEnabled || amount == 0 || velocity == 0 {
+		return velocity
+	}
+	x := uint64(seed) ^ uint64(track)<<32 ^ uint64(slot)<<40 ^ uint64(step)<<48 ^ uint64(ratchet)<<56
+	x ^= uint64(iteration) * 0x9e3779b97f4a7c15
+	x ^= uint64(note) * 0xd6e8feb86659fd93
+	x += 0x632be59bd9b4e019
+	x = (x ^ x>>30) * 0xbf58476d1ce4e5b9
+	x = (x ^ x>>27) * 0x94d049bb133111eb
+	x ^= x >> 31
+	span := uint64(amount)*2 + 1
+	offset := int(x%span) - int(amount)
+	return uint8(max(1, min(127, int(velocity)+offset)))
+}
+
 // EventsInBlock writes note onsets for [startSample, startSample+frames).
 // It never allocates. overflow is true if dst could not hold every event.
 // The caller must retry with a larger preallocated buffer before rendering.
@@ -144,7 +165,7 @@ func EventsAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOf
 				Kind: NoteOn, NoteID: absoluteStep*8 + int64(r) + 1,
 				Tick: tick, Sample: sample, Offset: int32(sample - startSample),
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
-				Note: uint8(int(step.Note) + int(p.Transpose)), Velocity: step.Velocity, Accent: step.Accent, Slide: incomingSlide && r == 0,
+				Note: uint8(int(step.Note) + int(p.Transpose)), Velocity: HumanizeVelocity(step.Velocity, p.Humanize, p.Seed, track, slot, iteration, stepIndex, r, step.Note), Accent: step.Accent, Slide: incomingSlide && r == 0,
 			}
 			chord := p.Chords[stepIndex]
 			dst[written].NoteCount = chord.Count

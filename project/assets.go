@@ -40,6 +40,11 @@ type Sampler struct {
 	RootMIDI int    `json:"root_midi" cicada:"Root MIDI note" range:"12..95"`
 	Mode     string `json:"mode" cicada:"oneshot or full-region loop"`
 	Voices   int    `json:"voices" cicada:"Maximum simultaneous voices" range:"1..32"`
+	// Optional pack envelope overrides; absent keeps the manifest value.
+	AttackMS  *float64 `json:"attack_ms,omitempty" cicada:"Pack amplitude attack override" unit:"ms" range:"0..5000" introduced:"cicada.project/2"`
+	DecayMS   *float64 `json:"decay_ms,omitempty" cicada:"Pack amplitude decay override" unit:"ms" range:"0..10000" introduced:"cicada.project/2"`
+	Sustain   *float64 `json:"sustain,omitempty" cicada:"Pack amplitude sustain level override" range:"0..1" introduced:"cicada.project/2"`
+	ReleaseMS *float64 `json:"release_ms,omitempty" cicada:"Pack amplitude release override" unit:"ms" range:"1..10000" introduced:"cicada.project/2"`
 }
 
 func (p *Project) HasAudio() bool {
@@ -165,7 +170,7 @@ func lowerAudio(p *Project, s *notation.Score) {
 		p.Clips = append(p.Clips, Clip{c.Name, c.Asset, c.StartFrame, c.EndFrame, c.GainDB, c.FadeInFrames, c.FadeOutFrames})
 	}
 	for _, v := range s.Samplers {
-		p.Samplers = append(p.Samplers, Sampler{Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices, Pack: v.Pack, SHA256: v.SHA256})
+		p.Samplers = append(p.Samplers, Sampler{Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices, Pack: v.Pack, SHA256: v.SHA256, AttackMS: v.AttackMS, DecayMS: v.DecayMS, Sustain: v.Sustain, ReleaseMS: v.ReleaseMS})
 	}
 }
 func validateAudioProject(p *Project) error {
@@ -189,7 +194,7 @@ func validateAudioProject(p *Project) error {
 		if !validID(v.Name) {
 			return fmt.Errorf("invalid sampler name %q", v.Name)
 		}
-		s.Samplers = append(s.Samplers, notation.Sampler{Pack: v.Pack, SHA256: v.SHA256, Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices})
+		s.Samplers = append(s.Samplers, notation.Sampler{Pack: v.Pack, SHA256: v.SHA256, Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices, AttackMS: v.AttackMS, DecayMS: v.DecayMS, Sustain: v.Sustain, ReleaseMS: v.ReleaseMS})
 	}
 	if ds := notation.ValidateAudio(s); len(ds) > 0 {
 		return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
@@ -236,7 +241,16 @@ func audioSource(p *Project) []string {
 	for _, v := range p.Samplers {
 		root := samplerPitchNames[v.RootMIDI%12] + strconv.Itoa(v.RootMIDI/12-1)
 		if v.Pack != "" {
-			sections = append(sections, fmt.Sprintf("sampler %s {\n  pack = %s\n  sha256 = %s\n  root = %s\n  voices = %d\n}", v.Name, strconv.Quote(v.Pack), strconv.Quote(v.SHA256), root, v.Voices))
+			envelope := ""
+			for _, e := range []struct {
+				name, unit string
+				v          *float64
+			}{{"attack", "ms", v.AttackMS}, {"decay", "ms", v.DecayMS}, {"sustain", "", v.Sustain}, {"release", "ms", v.ReleaseMS}} {
+				if e.v != nil {
+					envelope += fmt.Sprintf("\n  %s = %s%s", e.name, decimal(*e.v), e.unit)
+				}
+			}
+			sections = append(sections, fmt.Sprintf("sampler %s {\n  pack = %s\n  sha256 = %s\n  root = %s\n  voices = %d%s\n}", v.Name, strconv.Quote(v.Pack), strconv.Quote(v.SHA256), root, v.Voices, envelope))
 			continue
 		}
 		sections = append(sections, fmt.Sprintf("sampler %s {\n  asset = %s\n  root = %s\n  mode = %s\n  voices = %d\n}", v.Name, v.Asset, root, v.Mode, v.Voices))

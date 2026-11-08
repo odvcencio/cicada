@@ -275,7 +275,7 @@ func namedMixerCompletion(source []byte, prefix string, offset int) []map[string
 	}
 	var names []string
 	for _, effect := range effects {
-		if effect.Kind == "delay" || effect.Kind == "reverb" {
+		if effect.Kind == "delay" || effect.Kind == "tape" || effect.Kind == "reverb" {
 			names = append(names, effect.Name)
 		}
 	}

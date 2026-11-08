@@ -212,6 +212,12 @@ var paramsKeys = [...]ParamSpec{
 	{184, "fx.chorus.depth", "chorus.depth", "global", "depth", "ms", "linear", "source", 0, 8, 3, 0.1, 0, false, false, false},
 	{185, "fx.chorus.spread", "chorus.spread", "global", "spread", "", "linear", "source", 0, 1, 1, 0.01, 0, false, false, false},
 	{186, "fx.chorus.mix", "chorus.mix", "global", "mix", "", "linear", "source", 0, 1, 0.5, 0.01, 0, false, false, false},
+	{187, "fx.tape.time", "tape.time", "global", "time", "ms", "log", "source", 1, 2000, 250, 0.1, 20, true, true, false},
+	{188, "fx.tape.feedback", "tape.feedback", "global", "feedback", "ratio", "linear", "source", 0, 0.95, 0.4, 0.01, 5, true, true, false},
+	{189, "fx.tape.wow", "tape.wow", "global", "wow", "", "linear", "source", 0, 1, 0.4, 0.01, 5, true, true, false},
+	{190, "fx.tape.flutter", "tape.flutter", "global", "flutter", "", "linear", "source", 0, 1, 0.2, 0.01, 5, true, true, false},
+	{191, "fx.tape.saturation", "tape.saturation", "global", "saturation", "", "linear", "source", 0, 1, 0.3, 0.01, 5, true, true, false},
+	{192, "fx.tape.damp", "tape.damp", "global", "damp", "Hz", "log", "source", 1000, 16000, 5000, 1, 5, true, true, false},
 }
 
 // Params lists every registry row in ParamID order.

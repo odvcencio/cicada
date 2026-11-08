@@ -341,7 +341,7 @@ func instrumentSource(inst Instrument) (string, error) {
 		bindings[binding.ID] = binding.Value
 	}
 	required := map[string]instrument.Type{}
-	propagateType(inst.Out, instrument.Audio, symbols, bindings, required, map[string]bool{})
+	propagateType(inst.Out, instrument.Audio, true, symbols, bindings, required, map[string]bool{}, map[string]bool{})
 	var out strings.Builder
 	out.WriteString("instrument " + inst.ID + " {\n")
 	if inst.Octave != nil {
@@ -390,12 +390,21 @@ func instrumentSource(inst Instrument) (string, error) {
 	return out.String(), nil
 }
 
-func propagateType(expr Expr, want instrument.Type, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, visiting map[string]bool) {
+// propagateType records the type each let must have at its uses; the last use
+// decides. A let used directly as a call argument, such as f in sine(f), has
+// its type forced by that call, and a later use inside arithmetic, whose
+// operand types are inferred, cannot overwrite it. Without that, sine(f) and
+// sine(f * 1.5) could leave f typed for the product and break the call.
+func propagateType(expr Expr, want instrument.Type, forcing bool, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, forced, visiting map[string]bool) {
 	if expr.Name != "" {
 		if binding, ok := bindings[expr.Name]; ok && !visiting[expr.Name] {
+			if forced[expr.Name] && !forcing {
+				return
+			}
 			required[expr.Name] = want
+			forced[expr.Name] = forced[expr.Name] || forcing
 			visiting[expr.Name] = true
-			propagateType(binding, want, symbols, bindings, required, visiting)
+			propagateType(binding, want, false, symbols, bindings, required, forced, visiting)
 			delete(visiting, expr.Name)
 		}
 		return
@@ -404,19 +413,19 @@ func propagateType(expr Expr, want instrument.Type, symbols map[string]instrumen
 		return
 	}
 	if expr.Op == "lfo" && len(expr.Args) > 0 {
-		propagateType(expr.Args[0], instrument.Hz, symbols, bindings, required, visiting)
+		propagateType(expr.Args[0], instrument.Hz, true, symbols, bindings, required, forced, visiting)
 		return
 	}
 	if args, ok := callArgumentTypes(expr.Op); ok {
 		for i, arg := range expr.Args {
-			propagateType(arg, args[i], symbols, bindings, required, visiting)
+			propagateType(arg, args[i], true, symbols, bindings, required, forced, visiting)
 		}
 		return
 	}
 	if len(expr.Args) == 2 {
 		left, right := binaryOperandTypes(expr, want, symbols, bindings)
-		propagateType(expr.Args[0], left, symbols, bindings, required, visiting)
-		propagateType(expr.Args[1], right, symbols, bindings, required, visiting)
+		propagateType(expr.Args[0], left, false, symbols, bindings, required, forced, visiting)
+		propagateType(expr.Args[1], right, false, symbols, bindings, required, forced, visiting)
 	}
 }
 
@@ -470,6 +479,9 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 	}
 	left := inferExprType(expr.Args[0], symbols, bindings, map[string]bool{})
 	right := inferExprType(expr.Args[1], symbols, bindings, map[string]bool{})
+	if expr.Op == "*" && left == instrument.Audio && right == instrument.Audio {
+		return instrument.Audio, instrument.Audio
+	}
 	if expr.Op == "/" {
 		if want == instrument.MS && right == instrument.Hz {
 			return instrument.Unit, instrument.Hz
@@ -613,6 +625,9 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 	}
 	if pattern.Transpose != 0 {
 		out.WriteString("  transpose = " + strconv.Itoa(int(pattern.Transpose)) + "\n")
+	}
+	if pattern.Humanize != 0 {
+		out.WriteString("  humanize = " + strconv.Itoa(int(pattern.Humanize)) + "\n")
 	}
 	if pattern.Seed != projectSeed {
 		out.WriteString("  seed = " + strconv.FormatUint(uint64(pattern.Seed), 10) + "\n")

@@ -54,7 +54,7 @@ func PrepareParamValidators(cfg *Config) ([MaxTracks]PreviewParamValidator, erro
 			}
 		}
 		if cfg.Track[track].Kind == VoiceDrums {
-			kit, _, err := prepareDrumKit(&cfg.Track[track], cfg.SampleRate, cfg.Seed)
+			kit, _, err := prepareDrumKit(&cfg.Track[track], cfg.SampleRate, cfg.Seed, true)
 			if err != nil {
 				return validators, err
 			}
@@ -115,12 +115,21 @@ func (v *PreviewParamValidator) Validate(id kernel.ParamID, value float32) error
 
 // prepareDrumKit is the single cold preparation path for render voices and
 // detached parameter validation. It preserves the effective lane parameters.
-func prepareDrumKit(spec *TrackConfig, sampleRate int, seed uint32) (*drum.Kit, int, error) {
+// prepareDrumKit builds one track's kit. A sampler lane needs its loaded pack
+// unless unloaded is set, which parameter validation uses before the host has
+// attached packs; that lane stays silent because validation plays nothing.
+func prepareDrumKit(spec *TrackConfig, sampleRate int, seed uint32, unloaded bool) (*drum.Kit, int, error) {
 	kit, err := drum.New(sampleRate, seed)
 	if err != nil {
 		return nil, 0, err
 	}
 	voices := 0
+	// One bank per distinct pack in this kit; a kit has at most LaneCount lanes.
+	var banks [drum.LaneCount]struct {
+		pack *PackFactory
+		bank *drum.SamplerBank
+	}
+	bankCount := 0
 	for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 		if spec.Kit != nil {
 			binding := &spec.Kit[lane]
@@ -136,10 +145,38 @@ func prepareDrumKit(spec *TrackConfig, sampleRate int, seed uint32) (*drum.Kit, 
 				err = kit.SetGraphFromProgram(lane, &binding.Program)
 			case KitLaneModeled:
 				err = kit.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
+			case KitLaneSampler:
+				if !kitSamplerEnabled {
+					return nil, 0, engineError("sampler kit lanes are not available in portable kernels")
+				}
+				if binding.Pack == nil {
+					if !unloaded {
+						return nil, 0, engineError("sampler kit lane has no loaded pack")
+					}
+					err = kit.Disable(lane)
+					break
+				}
+				var bank *drum.SamplerBank
+				for i := 0; i < bankCount; i++ {
+					if banks[i].pack == binding.Pack {
+						bank = banks[i].bank
+					}
+				}
+				if bank == nil {
+					bank, err = binding.Pack.NewSamplerBank(sampleRate)
+					if err != nil {
+						return nil, 0, err
+					}
+					banks[bankCount].pack, banks[bankCount].bank = binding.Pack, bank
+					bankCount++
+					// Each distinct bank owns an instrument with the sampler's whole voice pool.
+					voices += binding.Pack.VoiceCount()
+				}
+				err = kit.SetSampler(lane, bank, binding.SampleNote, binding.SampleLevelDB, binding.SamplePan)
 			default:
 				return nil, 0, engineError("unknown kit lane kind")
 			}
-			if binding.Kind != KitLaneOff {
+			if binding.Kind != KitLaneOff && binding.Kind != KitLaneSampler {
 				voices++
 			}
 		} else if lane >= drum.LT && spec.Drums[lane] == (drum.Params{}) {

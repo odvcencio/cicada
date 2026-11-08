@@ -147,6 +147,12 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				return nil, fmt.Errorf("invalid transpose %q", attr.Value)
 			}
 			base.Transpose = int8(n)
+		case "humanize":
+			n, err := strconv.Atoi(attr.Value)
+			if err != nil || n < 0 || n > notation.MaxHumanize {
+				return nil, fmt.Errorf("invalid humanize %q", attr.Value)
+			}
+			base.Humanize = uint8(n)
 		case "seed":
 			n, err := strconv.ParseUint(attr.Value, 10, 32)
 			if err != nil {
@@ -193,7 +199,9 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		poly := track.Kind == "piano" || notationKeysBuiltin(score, track.Kind) || track.Kind == "unused_notes" && track.Name == ""
 		for _, sampler := range score.Samplers {
 			if sampler.Name == track.Kind {
-				poly = false
+				// Sampler voices own several slots, so a chord step starts one
+				// slot per pitch and releases them together.
+				poly = true
 			}
 		}
 		for _, inst := range score.Instruments {

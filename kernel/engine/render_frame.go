@@ -214,6 +214,20 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 		accumulateMeter(&e.returnAMeter, returnL, returnR)
 		dry.AddReturn(returnL, returnR)
 	}
+	if tapeEnabled && e.tapeA != nil {
+		returnL, returnR := e.tapeA.Process(sendAL, sendAR)
+		if e.tapeA.Fault() {
+			e.fault(FaultDelay)
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return 0, false
+		}
+		if e.taps != nil {
+			e.taps[frame].ReturnA = Stereo{returnL, returnR}
+		}
+		accumulateMeter(&e.returnAMeter, returnL, returnR)
+		dry.AddReturn(returnL, returnR)
+	}
 	if e.reverbB != nil {
 		returnL, returnR := e.reverbB.Process(sendBL, sendBR)
 		if e.reverbB.Fault() {

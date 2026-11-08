@@ -9,6 +9,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strings"
 
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/host/keyboard"
@@ -360,6 +361,17 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 	return false
 }
 
+// hasTapeEcho reports whether the score declares a tape echo. The direct WAV
+// mixer has no tape return, so such a score renders through the engine.
+func hasTapeEcho(score *notation.Score) bool {
+	for _, effect := range score.Effects {
+		if effect.Kind == "tape" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasResidentSampler(score *notation.Score) bool {
 	for _, sampler := range score.Samplers {
 		if sampler.Asset != "" {
@@ -385,7 +397,7 @@ func UsesScheduledEngine(score *notation.Score, opts Options) bool {
 	if len(score.Modulators) > 0 || len(score.Routes) > 0 {
 		return true
 	}
-	return score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline
+	return score.Arrange != nil || hasTapeEcho(score) || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline || hasKitSampler(score)
 }
 
 func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {
@@ -1025,7 +1037,7 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				return nil, err
 			}
 			if isAuthoredKit {
-				bindings, err := project.CompileKitTrackAtSampleRate(kitDefinition, programs, semantic.Tracks[sourceIndex].Params, sampleRate)
+				bindings, err := project.CompileKitTrackWithSamplers(kitDefinition, programs, semantic.SamplerPackSet(), semantic.Tracks[sourceIndex].Params, sampleRate)
 				if err != nil {
 					return nil, err
 				}
@@ -1040,6 +1052,11 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 						err = kit.SetGraph(lane, binding.Program)
 					case engine.KitLaneModeled:
 						err = kit.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
+					case engine.KitLaneSampler:
+						// The direct mixer has no pack voices; UsesScheduledEngine sends such scores to the engine.
+						err = fmt.Errorf("sampler kit lanes need the scheduled engine")
+					default:
+						err = fmt.Errorf("unknown kit lane kind %d", binding.Kind)
 					}
 					if err != nil {
 						return nil, fmt.Errorf("track %s lane %s: %w", source.Name, drum.Names[lane], err)
@@ -1633,6 +1650,16 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 						if err := voice.NoteChord(notes, count, event.event.Velocity, event.event.Slide); err != nil {
 							return err
 						}
+					} else if event.event.NoteCount > 1 && isSamplerVoice(track.voice) {
+						// Sampler voices are polyphonic: a chord starts every note, as the engine does.
+						notes := event.event.Notes[:event.event.NoteCount]
+						if pack, ok := track.voice.(*packVoice); ok {
+							pack.NoteChord(notes, event.event.Velocity, event.event.Slide)
+						} else {
+							for _, note := range notes {
+								track.voice.NoteOn(note, event.event.Velocity, event.event.Accent, event.event.Slide)
+							}
+						}
 					} else {
 						track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
 					}
@@ -1965,6 +1992,34 @@ func hasPackSampler(score *notation.Score) bool {
 		if sampler.Pack != "" {
 			return true
 		}
+	}
+	return false
+}
+
+// hasKitSampler reports whether an authored kit binds a lane to a sampler. The
+// direct WAV mixer has no pack voices, so such a score renders through the
+// scheduled engine even when the sampler baseline is requested.
+func hasKitSampler(score *notation.Score) bool {
+	declared := map[string]bool{}
+	for _, sampler := range score.Samplers {
+		declared[sampler.Name] = true
+	}
+	for _, kit := range score.Kits {
+		for _, binding := range kit.Bindings {
+			if name, _, ok := strings.Cut(binding.Target, "."); ok && declared[name] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isSamplerVoice reports whether a direct-mixer voice is a polyphonic sampler
+// (an asset sampler or a pack instrument).
+func isSamplerVoice(voice monoVoice) bool {
+	switch voice.(type) {
+	case *preparedVoice, *packVoice:
+		return true
 	}
 	return false
 }

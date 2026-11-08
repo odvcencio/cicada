@@ -208,3 +208,33 @@ func TestStemsBarRangeWithDriveAlignment(t *testing.T) {
 		}
 	}
 }
+
+// Native projects allow more tracks than the portable sixteen; their stems
+// must verify instead of overrunning a fixed sample buffer.
+func TestVerifyStemsAcceptsMoreThanSixteenTracks(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("cicada 2\ntempo 120\ninstrument tone {\n  voice mono {\n    out = sine(pitch) * env(gate, 120ms) * 0.05\n  }\n}\n")
+	scene := "scene main {"
+	for i := 0; i < 20; i++ {
+		source.WriteString("track t" + string(rune('a'+i)) + " tone {}\n")
+		scene += " t" + string(rune('a'+i)) + " = hit"
+	}
+	source.WriteString("pattern hit { c4 . . . }\n" + scene + " }\nsong { main }\n")
+	score, diagnostics := notation.Parse([]byte(source.String()))
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("%+v\n%s", diagnostic, source.String())
+		}
+	}
+	dir := filepath.Join(t.TempDir(), "stems")
+	if _, err := Stems(score, Options{SampleRate: 48_000, Bars: 1, TailSec: 0.1}, dir); err != nil {
+		t.Fatal(err)
+	}
+	report, err := VerifyStems(score, dir, VerifyStemsOptions{ResidualMaxDB: -80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Files != 25 {
+		t.Fatalf("verified %d files, want 25", report.Files)
+	}
+}

@@ -85,8 +85,17 @@ arrange {
 			t.Fatal("combined projection changed image bytes")
 		}
 	}
+	// Sampler tracks play chord steps natively: one sampler slot per pitch.
+	// The portable image still refuses them rather than dropping notes.
 	p.Tracks[2].Kind = "hit"
-	if err := ValidateProject(p); err == nil {
-		t.Fatal("sampler silently accepted graph chord ownership")
+	if err := ValidateProject(p); err != nil {
+		t.Fatalf("sampler chord rejected: %v", err)
+	}
+	cfg, err := CompileEngineWithAssets(p, 48000, 128, assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Fatal("portable image silently accepted a sampler chord")
 	}
 }

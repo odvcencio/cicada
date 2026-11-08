@@ -525,7 +525,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 				gain = math.Pow(10, gain/20)
 			}
 			switch effectKinds[send.To] {
-			case "delay":
+			case "delay", "tape":
 				p.Tracks[i].Mixer.SendA = gain
 			case "reverb":
 				p.Tracks[i].Mixer.SendB = gain

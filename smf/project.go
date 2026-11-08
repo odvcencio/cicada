@@ -73,6 +73,10 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		file.Tracks[0].Meta = append(file.Tracks[0].Meta, MetaEvent{Tick: int64(change.Bar) * seq.TicksPerBar, Type: 0x51, Data: []byte{byte(micros >> 16), byte(micros >> 8), byte(micros)}})
 	}
 	channels := make([]uint8, len(p.Tracks))
+	// Past fifteen melodic tracks, later tracks share channels in turn. Each
+	// keeps its own named track chunk. A track with note expression is moved to
+	// its own MIDI port and member channels by prepareGestureMIDI, so its bend
+	// and pressure never reach a track that shares its first channel.
 	nextChannel := uint8(0)
 	for i, track := range p.Tracks {
 		if cfg.TrackKinds[i] == engine.VoiceAudio {
@@ -85,7 +89,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 				nextChannel++
 			}
 			if nextChannel >= 16 {
-				return File{}, fmt.Errorf("MIDI has only 15 distinct melodic channels")
+				nextChannel = 0
 			}
 			channels[i] = nextChannel
 			nextChannel++

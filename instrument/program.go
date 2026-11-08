@@ -299,6 +299,11 @@ func binaryResult(op string, left, right Type) (Type, bool) {
 	case "+", "-":
 		return left, left == right && left != Gate
 	case "*":
+		// Audio times audio is ring modulation: amplitude-modulated noise,
+		// a ratchet's ridges, a bell's sidebands.
+		if left == Audio && right == Audio {
+			return Audio, true
+		}
 		if left == Unit && right != Gate {
 			return right, true
 		}

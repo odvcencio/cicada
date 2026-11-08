@@ -14,13 +14,53 @@ type packVoice struct {
 	instrument *sample.Instrument
 	handle     sample.Handle
 	fault      error
+	heldNotes  [4]heldNote
+	held       int
+}
+
+type heldNote struct {
+	pool   int
+	handle sample.Handle
 }
 
 func (v *packVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
+	v.releaseHeld()
+	v.start(note, velocity, slide)
+}
+
+// NoteChord starts every note of a chord on one gate. The earlier chord notes
+// stay held so the step's note-off releases all of them.
+func (v *packVoice) NoteChord(notes []uint8, velocity uint8, slide bool) {
+	v.releaseHeld()
+	for _, note := range notes {
+		v.start(note, velocity, slide)
+		if v.held < len(v.heldNotes) {
+			v.heldNotes[v.held] = heldNote{pool: v.activePool, handle: v.handle}
+			v.held++
+		}
+	}
+}
+
+// releaseHeld releases the extra chord notes a previous NoteChord left held.
+func (v *packVoice) releaseHeld() {
+	for i := 0; i < v.held; i++ {
+		h := v.heldNotes[i]
+		if len(v.baseline) > 0 {
+			v.baseline[h.pool].pool.NoteOff(h.handle)
+		} else if v.instrument != nil {
+			v.instrument.NoteOff(h.handle)
+		}
+	}
+	v.held = 0
+}
+
+func (v *packVoice) start(note, velocity uint8, slide bool) {
 	if len(v.baseline) > 0 {
 		for i, b := range v.baseline {
 			if note >= b.lo && note <= b.hi {
-				v.baseline[v.activePool].pool.NoteOff(v.handle)
+				if v.held == 0 {
+					v.baseline[v.activePool].pool.NoteOff(v.handle)
+				}
 				v.activePool = i
 				v.handle, v.fault = b.pool.NoteOn(note, velocity)
 				return
@@ -35,10 +75,13 @@ func (v *packVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
 	if slide && v.instrument != nil && v.instrument.Legato(v.handle, note, 0) == nil {
 		return
 	}
-	v.instrument.NoteOff(v.handle)
+	if v.held == 0 {
+		v.instrument.NoteOff(v.handle)
+	}
 	v.handle, v.fault = v.instrument.NoteOn(note, velocity)
 }
 func (v *packVoice) NoteOff() {
+	v.releaseHeld()
 	if len(v.baseline) > 0 {
 		v.baseline[v.activePool].pool.NoteOff(v.handle)
 		return

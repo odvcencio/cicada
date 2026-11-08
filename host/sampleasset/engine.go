@@ -137,9 +137,15 @@ func ValidatePatterns(p *project.Project, factories []engine.StereoVoiceFactory,
 				if step == nil || step.Tie {
 					continue
 				}
-				note := max(0, min(127, int(step.Note)+int(pattern.Transpose)))
-				if err := voice.NoteOn(uint8(note), step.Velocity); err != nil {
-					return fmt.Errorf("sampler track %s, pattern %s, MIDI note %d: %w", track.ID, *slot, note, err)
+				pitches := step.Notes
+				if len(pitches) == 0 {
+					pitches = []int{int(step.Note)}
+				}
+				for _, pitch := range pitches {
+					note := max(0, min(127, pitch+int(pattern.Transpose)))
+					if err := voice.NoteOn(uint8(note), step.Velocity); err != nil {
+						return fmt.Errorf("sampler track %s, pattern %s, MIDI note %d: %w", track.ID, *slot, note, err)
+					}
 				}
 			}
 		}

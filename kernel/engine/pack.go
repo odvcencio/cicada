@@ -1,12 +1,24 @@
 package engine
 
-import "m31labs.dev/cicada/kernel/voice/sample"
+import (
+	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/sample"
+)
 
 // PackFactory contains only verified immutable PCM and a bounded instrument
 // map. Native, offline and worklet engines each construct their own owner.
 type PackFactory struct {
 	Zones  []sample.Zone
 	Config sample.InstrumentConfig
+}
+
+// NewSamplerBank builds a voice pool that several drum kit lanes share.
+func (p *PackFactory) NewSamplerBank(rate int) (*drum.SamplerBank, error) {
+	inst, err := sample.NewInstrument(rate, p.Zones, p.Config)
+	if err != nil {
+		return nil, err
+	}
+	return drum.NewSamplerBank(inst), nil
 }
 
 func (p *PackFactory) VoiceCount() int { return p.Config.Voices }

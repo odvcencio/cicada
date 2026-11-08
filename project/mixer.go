@@ -192,7 +192,7 @@ func resolveNamedMixer(mixer *Mixer, source notation.Track, effectKinds map[stri
 				kind = "reverb"
 			}
 			for name, effectKind := range effectKinds {
-				if effectKind == kind || effectKind == "" && name == kind {
+				if effectKind == kind || kind == "delay" && effectKind == "tape" || effectKind == "" && name == kind {
 					target = name
 					break
 				}
@@ -217,7 +217,7 @@ func resolveNamedMixer(mixer *Mixer, source notation.Track, effectKinds map[stri
 			linear = math.Pow(10, linear/20)
 		}
 		switch kind {
-		case "delay":
+		case "delay", "tape":
 			mixer.SendA = linear
 		case "reverb":
 			mixer.SendB = linear

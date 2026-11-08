@@ -28,6 +28,8 @@ scene groove { kit = beat }
 song { groove*4 }
 ```
 
+A lane can also play a recorded kit from a sample pack with `sd = shells.d2`; see "Authored kits" in `docs/spec/edition-1.md`.
+
 Use the checked examples under `examples/modeled-kit/` for full scores. Any drum source lane may select any `model.` articulation; omitted lanes remain silent. A kit in a library binds `model.` pieces the same way, and a score with imports needs no import for them.
 
 | Piece | Model suffixes |

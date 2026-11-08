@@ -199,4 +199,10 @@ var Params = [...]ParamSpec{
 	{184, "global", "linear", 0, 8, 3, 0.1, 0, false, false, false},
 	{185, "global", "linear", 0, 1, 1, 0.01, 0, false, false, false},
 	{186, "global", "linear", 0, 1, 0.5, 0.01, 0, false, false, false},
+	{187, "global", "log", 1, 2000, 250, 0.1, 20, true, true, false},
+	{188, "global", "linear", 0, 0.95, 0.4, 0.01, 5, true, true, false},
+	{189, "global", "linear", 0, 1, 0.4, 0.01, 5, true, true, false},
+	{190, "global", "linear", 0, 1, 0.2, 0.01, 5, true, true, false},
+	{191, "global", "linear", 0, 1, 0.3, 0.01, 5, true, true, false},
+	{192, "global", "log", 1000, 16000, 5000, 1, 5, true, true, false},
 }
