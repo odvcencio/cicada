@@ -140,8 +140,9 @@ note's velocity; other overlapping notes get another piano track, such as
 `bass-2`. General MIDI drums of one MIDI track share one drums track with a
 row per built-in lane; two hits of one drum in the same step keep the louder,
 and `merged_hits` counts them. Each MIDI channel of a track gets its own score
-tracks. A kit or chord track that would need more than 16 distinct bar
-patterns is split instead into a track per drum and single-note tracks. A
+tracks. A MIDI track whose kit or chords would need more than 16 distinct bar
+patterns is split instead into a track per drum and single-note tracks; other
+MIDI tracks keep their kits and chords. A
 track name the score cannot use falls back to `midi-N` for that track only.
 The import report counts onset and duration edits, cross-bar note retriggers,
 and velocity edits.

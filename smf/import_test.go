@@ -197,3 +197,40 @@ func TestImportShortensLongNamesAndFallsBackPerTrack(t *testing.T) {
 		t.Fatalf("named tracks lost their names:\n%s", text)
 	}
 }
+
+// Only the hit that plays counts edits, so the report does not depend on the
+// order of two hits that merge.
+func TestImportCountsEditsOnlyForTheHitThatPlays(t *testing.T) {
+	quiet, loud := Note{Note: 36, Vel: 50, Chan: 9, Dur: 120}, Note{Note: 36, Vel: 60, Chan: 9, Dur: 120}
+	var reports []ImportReport
+	for _, pair := range [][]Note{{quiet, loud}, {loud, quiet}} {
+		_, report, err := ImportSource(File{Format: 0, PPQ: 960, Tracks: []TrackChunk{{Notes: pair}}}, ImportOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		reports = append(reports, report)
+	}
+	if reports[0] != reports[1] || reports[0].MergedHits != 1 || reports[0].QuantizedVelocities != 1 {
+		t.Fatalf("reports differ by note order or miscount: %+v vs %+v", reports[0], reports[1])
+	}
+}
+
+// A kit that needs splitting splits only its own MIDI track; another track's
+// chords stay chords.
+func TestImportSplitsOnlyTheTrackThatNeedsIt(t *testing.T) {
+	var kit []Note
+	for bar := int64(0); bar < 20; bar++ {
+		start := bar * 3840
+		kit = append(kit, Note{Tick: start + (bar%5)*240, Note: 36, Vel: 127, Chan: 9, Dur: 120})
+		kit = append(kit, Note{Tick: start + 480 + (bar%4)*240, Note: 42, Vel: 100, Chan: 9, Dur: 120})
+	}
+	pad := []Note{{Note: 60, Vel: 90, Dur: 3840}, {Note: 64, Vel: 90, Dur: 3840}, {Note: 67, Vel: 90, Dur: 3840}}
+	f := File{Format: 1, PPQ: 960, Tracks: []TrackChunk{{Name: "kit", Notes: kit}, {Name: "pad", Notes: pad}}}
+	source, report, err := ImportSource(f, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Tracks != 3 || !strings.Contains(string(source), "[c4 e4 g4]") {
+		t.Fatalf("want two drum tracks and one pad chord track: %+v\n%s", report, source)
+	}
+}
