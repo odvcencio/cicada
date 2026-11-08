@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
@@ -200,6 +201,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		}
 	}
 	trackIndex := make(map[string]int, len(p.Tracks))
+	// paramNodes holds, per authored-instrument track, the graph node of each
+	// declared parameter in declaration order.
+	paramNodes := make([][]int, len(p.Tracks))
 	for ti, track := range p.Tracks {
 		trackIndex[track.ID] = ti
 		config := &cfg.Track[ti]
@@ -367,6 +371,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				config.Vibrato = graph.Vibrato
 				config.Graph = graph
+				for i, node := range program.Nodes {
+					if node.Op == "param" {
+						paramNodes[ti] = append(paramNodes[ti], i)
+					}
+				}
 				if program.Mode == "poly" {
 					if GraphPolyphony(p, track.Kind) == 4 {
 						config.Polyphony = 4
@@ -504,6 +513,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		if scheduleErr != nil {
 			return cfg, scheduleErr
 		}
+	}
+	if err := bindLiveParams(p, &cfg, paramNodes); err != nil {
+		return cfg, err
 	}
 	cfg.MaxVoices = runtimeVoiceCapacity(&cfg)
 	validators, err := engine.PrepareParamValidators(&cfg)
@@ -758,4 +770,53 @@ func packProjectStep(source *Step, isDrum bool, drumLane uint8) (uint32, error) 
 		Note: note, Accent: source.Accent, Slide: source.Slide, Gate: true,
 		Tie: source.Tie, Ratchet: source.Ratchet, Probability: source.Probability, Velocity: source.Velocity,
 	})
+}
+
+// bindLiveParams lists, for each authored-instrument track, the parameter
+// slots that scene settings, automation, routes, macros or MIDI controls move,
+// so the engine drives those graph nodes. A track nothing moves gets no
+// binding and renders exactly as before.
+func bindLiveParams(p *Project, cfg *engine.Config, paramNodes [][]int) error {
+	used := make([]uint8, len(p.Tracks)) // one bit per slot
+	mark := func(track uint8, id kernel.ParamID) {
+		if engine.IsLiveParam(id) && int(track) < len(used) {
+			used[track] |= 1 << (id - kernel.ParamInstrumentP1)
+		}
+	}
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			mark(setting.Track, setting.ID)
+		}
+	}
+	for _, control := range cfg.Automation {
+		mark(control.Track, kernel.ParamID(control.Index))
+	}
+	for _, route := range cfg.Routes {
+		mark(route.Track, kernel.ParamID(route.Param))
+	}
+	for _, mapping := range cfg.MacroMappings {
+		mark(mapping.Track, kernel.ParamID(mapping.Param))
+	}
+	if p.MIDI != nil {
+		for _, item := range p.MIDI.Maps {
+			if item.Message != "cc" {
+				continue
+			}
+			if resolved, err := ResolveParameterPath(p, item.Target); err == nil {
+				mark(resolved.Track, resolved.ID)
+			}
+		}
+	}
+	for ti := range p.Tracks {
+		for slot := 0; slot < paramdefs.InstrumentParamSlots; slot++ {
+			if used[ti]&(1<<slot) == 0 {
+				continue
+			}
+			if slot >= len(paramNodes[ti]) {
+				return fmt.Errorf("track %s has no instrument parameter %d to move", p.Tracks[ti].ID, slot+1)
+			}
+			cfg.LiveParams = append(cfg.LiveParams, engine.LiveParam{Track: uint8(ti), Slot: uint8(slot), Node: uint8(paramNodes[ti][slot])})
+		}
+	}
+	return nil
 }

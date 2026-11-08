@@ -148,14 +148,27 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 			}
 			return descriptor, "track", owner, "", ""
 		}
-		hint := sendPathHint(score, setting)
+		// An authored instrument's own parameter is live through the
+		// instrument.p slot of its declaration order.
 		for _, inst := range score.Instruments {
-			for _, param := range inst.Params {
-				if hint == "" && inst.Name == track.Kind && param.Name == setting {
-					hint = paramdefs.InstrumentParamHint(inst.Name, param.Name)
+			if inst.Name != track.Kind {
+				continue
+			}
+			for slot, param := range inst.Params {
+				if param.Name != setting {
+					continue
 				}
+				if slot >= paramdefs.InstrumentParamSlots {
+					return paramdefs.Descriptor{}, "track", owner, "CICADA-UNSUPPORTED", fmt.Sprintf("parameter %s of instrument %s cannot change while it plays: only the first %d parameters an instrument declares can, and %s is number %d", param.Name, inst.Name, paramdefs.InstrumentParamSlots, param.Name, slot+1)
+				}
+				value, unit, _ := paramdefs.ParseBase(param.Default)
+				if param.Unit != "" {
+					unit = strings.ToLower(param.Unit)
+				}
+				return paramdefs.InstrumentParamDescriptor(slot, param.Name, unit, value), "track", owner, "", ""
 			}
 		}
+		hint := sendPathHint(score, setting)
 		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + hint
 	}
 	if effectOK {

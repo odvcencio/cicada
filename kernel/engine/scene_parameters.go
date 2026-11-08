@@ -32,6 +32,7 @@ type sceneTrackParameters struct {
 	spatialGain, spatialTrack float32 // The positioned-track gain and its target.
 	pianoSustain              float32
 	keysValues                [keysControlCount]float32
+	liveValues                [liveParamCount]float32
 	acid                      acid.Params
 	drums                     [drum.LaneCount]drum.Params
 	guitar                    guitar.Params
@@ -70,6 +71,9 @@ func (e *Engine) captureSceneDefaults() {
 		p.acid, p.drums = v.acidTarget, v.drumTargets
 		p.pianoSustain = v.pianoSustain
 		p.keysValues = v.keysValues
+		if modulationEnabled {
+			p.liveValues = v.liveTargets()
+		}
 		if v.guitar != nil {
 			p.guitar = v.guitar.Params()
 		}
@@ -191,6 +195,9 @@ func (e *Engine) restoreVoiceState(v *voiceSlot, p *sceneTrackParameters) bool {
 	if v.modal != nil {
 		v.pianoSustain = p.pianoSustain
 		failed = failed || v.modal.SetSustain(p.pianoSustain) != nil
+	}
+	if modulationEnabled && v.liveChanged != 0 {
+		v.restoreLiveParams(&p.liveValues)
 	}
 	failed = failed || v.guitar != nil && v.guitar.SetParams(p.guitar) != nil || v.acid != nil && v.acid.SetParams(p.acid) != nil ||
 		v.insert != nil && v.insert.SetParams(p.drive) != nil

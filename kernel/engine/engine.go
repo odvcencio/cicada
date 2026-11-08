@@ -183,6 +183,11 @@ type Config struct {
 	// machine. Negative values are rejected. It has no effect on builds without
 	// parallel rendering.
 	ParallelWaitFloor time.Duration `json:"-"`
+	// LiveParams lists the authored instrument parameters that scene
+	// settings, automation, routes or macros move while they play. It is the
+	// last field so that the fields before it keep their offsets in the core
+	// kernel, which has none.
+	LiveParams []LiveParam `json:",omitempty"`
 }
 
 // DefaultParallelWaitFloor is the production parallel lane wait floor.
@@ -203,6 +208,9 @@ type voiceSlot struct {
 	keysFamily                     keyboard.Family
 	keysValues                     [keysControlCount]float32
 	keysChanged                    uint32 // controls commanded since load, whatever their value
+	live                           [liveParamCount]liveParam
+	liveChanged                    uint8 // live slots commanded since load
+	liveMoving                     bool  // some live slot still glides
 	pianoSustain                   float32
 	legacyPoly                     *graph.Poly
 	graphNote                      uint8
@@ -472,6 +480,12 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	voices, err := e.initTrackVoices(cfg)
 	if err != nil {
 		return nil, err
+	}
+	// The core kernel decodes images, which never carry live parameters.
+	if modulationEnabled {
+		if err := e.checkLiveParams(cfg.LiveParams); err != nil {
+			return nil, err
+		}
 	}
 	e.updateMuteTargets()
 	e.clipLimit = cfg.MaxVoices - voices
@@ -743,6 +757,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 					v.graph.BindLFOClock(&e.graphLFO.clock)
 				}
 			}
+			if modulationEnabled && err == nil {
+				err = v.initLiveParams(i, spec, cfg.LiveParams)
+			}
 		case VoicePiano:
 			voices += piano.MaxVoices
 			v.piano, err = piano.New(cfg.SampleRate)
@@ -784,6 +801,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			v.legacyPoly, err = graph.NewPolyFromProgramWithModulators(&program, cfg.SampleRate, &e.mod.scaled)
 			if modulationEnabled && err == nil && e.graphLFO != nil {
 				v.legacyPoly.BindLFOClock(&e.graphLFO.clock)
+			}
+			if modulationEnabled && err == nil {
+				err = v.initLiveParams(i, spec, cfg.LiveParams)
 			}
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
@@ -1788,6 +1808,10 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		v := &e.voices[c.Track]
 		if keysEnabled && isKeysControl(kernel.ParamID(c.Index)) {
 			e.setKeysControl(v, kernel.ParamID(c.Index), value, immediate)
+			return
+		}
+		if isLiveParam(kernel.ParamID(c.Index)) {
+			e.setLiveParam(v, kernel.ParamID(c.Index), value, immediate)
 			return
 		}
 		switch kernel.ParamID(c.Index) {

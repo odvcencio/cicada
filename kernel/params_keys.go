@@ -218,6 +218,14 @@ var paramsKeys = [...]ParamSpec{
 	{190, "fx.tape.flutter", "tape.flutter", "global", "flutter", "", "linear", "source", 0, 1, 0.2, 0.01, 5, true, true, false},
 	{191, "fx.tape.saturation", "tape.saturation", "global", "saturation", "", "linear", "source", 0, 1, 0.3, 0.01, 5, true, true, false},
 	{192, "fx.tape.damp", "tape.damp", "global", "damp", "Hz", "log", "source", 1000, 16000, 5000, 1, 5, true, true, false},
+	{193, "instrument.p1", "instrument.p1", "track", "p1", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{194, "instrument.p2", "instrument.p2", "track", "p2", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{195, "instrument.p3", "instrument.p3", "track", "p3", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{196, "instrument.p4", "instrument.p4", "track", "p4", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{197, "instrument.p5", "instrument.p5", "track", "p5", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{198, "instrument.p6", "instrument.p6", "track", "p6", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{199, "instrument.p7", "instrument.p7", "track", "p7", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{200, "instrument.p8", "instrument.p8", "track", "p8", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 }
 
 // Params lists every registry row in ParamID order.

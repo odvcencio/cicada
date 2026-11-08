@@ -168,6 +168,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.TapeA != nil {
 		return nil, imageError("portable images have no tape echo; use a delay")
 	}
+	if len(cfg.LiveParams) != 0 {
+		return nil, imageError("portable images cannot move an authored instrument parameter while it plays")
+	}
 	if cfg.Tracks > limits.PortableMaxTracks || cfg.MaxVoices > limits.PortableMaxVoices {
 		return nil, imageError("portable browser/WAM exports support at most 16 tracks and 32 allocated voices; use native playback or WAV/stems for larger projects")
 	}

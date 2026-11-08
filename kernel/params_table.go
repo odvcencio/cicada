@@ -197,7 +197,15 @@ const (
 	ParamFxTapeFlutter       ParamID = 190
 	ParamFxTapeSaturation    ParamID = 191
 	ParamFxTapeDamp          ParamID = 192
-	ParamCount                       = 193
+	ParamInstrumentP1        ParamID = 193
+	ParamInstrumentP2        ParamID = 194
+	ParamInstrumentP3        ParamID = 195
+	ParamInstrumentP4        ParamID = 196
+	ParamInstrumentP5        ParamID = 197
+	ParamInstrumentP6        ParamID = 198
+	ParamInstrumentP7        ParamID = 199
+	ParamInstrumentP8        ParamID = 200
+	ParamCount                       = 201
 )
 
 // IsInteger reports whether a live parameter takes whole numbers only.
