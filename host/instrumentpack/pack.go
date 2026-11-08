@@ -437,7 +437,9 @@ func DecodeAsset(a Asset, compressed []byte) (sample.Region, error) {
 // shared between projects has to be copied or hard-linked in. Any other error
 // is returned unchanged.
 func outsideProject(dir, rel string, err error) error {
-	if errors.Is(err, fs.ErrNotExist) {
+	// Only a path that stays inside the folder as written can escape through a
+	// symlink; a path such as .. escapes on its own.
+	if errors.Is(err, fs.ErrNotExist) || !filepath.IsLocal(filepath.FromSlash(rel)) {
 		return err
 	}
 	resolved, evalErr := filepath.EvalSymlinks(filepath.Join(dir, filepath.FromSlash(rel)))

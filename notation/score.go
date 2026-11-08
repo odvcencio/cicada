@@ -348,11 +348,9 @@ func trimCode(code, message string) string {
 }
 
 // LocateDiagnostics fills the entry location for project-wide errors. Precise
-// declaration locations already carried by the parser are left intact. It also
-// drops a code that a wrapped error repeats at the start of the message.
+// declaration locations already carried by the parser are left intact.
 func LocateDiagnostics(ds []Diagnostic, entry Position) {
 	for i := range ds {
-		ds[i].Message = trimCode(ds[i].Code, ds[i].Message)
 		if ds[i].Position.File == "" {
 			ds[i].Position.File = entry.File
 		}

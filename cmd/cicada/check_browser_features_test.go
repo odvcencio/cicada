@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -22,7 +24,8 @@ func TestPortableFeatureRefusalsListsEveryBlocker(t *testing.T) {
 		t.Fatalf("compile: %+v", ds)
 	}
 	var messages []string
-	for _, d := range portableFeatureRefusals(p) {
+	diagnostics, _ := portableFeatureRefusals(p)
+	for _, d := range diagnostics {
 		messages = append(messages, d.Message)
 	}
 	text := strings.Join(messages, "\n")
@@ -31,5 +34,21 @@ func TestPortableFeatureRefusalsListsEveryBlocker(t *testing.T) {
 	}
 	if strings.Contains(text, "spare") {
 		t.Fatalf("an unplayed pattern was reported:\n%s", text)
+	}
+}
+
+// A score whose only portable problem is a tape echo reports it once: the
+// image encoder's own refusal of the same feature is not printed again.
+func TestBrowserCheckReportsAFeatureOnce(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/main.cicada"
+	source := "cicada 2\ntempo 120\nfx echo tape { time = 1/8 }\ntrack lead acid { send echo = 0.2 }\npattern line acid { 1 . 3 . }\nscene main { lead = line }\nsong { main }\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	err := checkCommand([]string{"--profile", "browser", path}, &stdout, &stderr)
+	if err == nil || err.Error() != "1 error(s) across 1 score(s)" || strings.Count(stderr.String(), "tape echo") != 1 {
+		t.Fatalf("want the tape echo reported once: %v\n%s", err, stderr.String())
 	}
 }

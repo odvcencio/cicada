@@ -506,12 +506,19 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 		return instrument.Audio, instrument.Audio
 	}
 	if expr.Op == "/" {
-		if want == instrument.MS && right == instrument.Hz {
-			return instrument.Unit, instrument.Hz
+		// A model "/" is a plain division: the compiler records unit / Hz as
+		// the separate period op. So a Hz denominator had a Hz numerator, and
+		// writing unit / Hz here would compile to a period, 1000 times larger.
+		if right == instrument.Hz {
+			return instrument.Hz, instrument.Hz
 		}
-		// A ratio of a typed value to a bare literal: f / 50Hz.
+		// A ratio of a typed value to a bare literal, f / 50Hz, or of a
+		// literal to a typed value, 440Hz / f: both sides share the unit.
 		if want == instrument.Unit && left != "" && left != instrument.Unit && right == "" {
 			return left, left
+		}
+		if want == instrument.Unit && right != "" && right != instrument.Unit && (left == "" || left == instrument.Unit) {
+			return right, right
 		}
 		if want == instrument.Unit && left != "" && left == right {
 			return left, right
@@ -563,8 +570,9 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 	if expr.Op == "/" && left == right && left != "" {
 		return instrument.Unit
 	}
-	if expr.Op == "/" && left == instrument.Unit && right == instrument.Hz {
-		return instrument.MS
+	// A model "/" over Hz is Hz / Hz: unit / Hz is stored as the period op.
+	if expr.Op == "/" && right == instrument.Hz {
+		return instrument.Unit
 	}
 	if left != "" && left != instrument.Unit {
 		return left

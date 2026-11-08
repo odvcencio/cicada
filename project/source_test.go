@@ -227,6 +227,11 @@ func TestSourceRoundTripSettlesForcedLetsBeforeArithmetic(t *testing.T) {
 		"let f = 220Hz\n    let g = f\n    out = sine(g) * (f / 50Hz)",
 		// exp2 makes y unitless, so x in y * x carries the Hz.
 		"let x = 100Hz\n    let y = 2\n    out = sine(y * x) * exp2(y)",
+		// A division by pitch stays a division, not a 1000x period.
+		"let f = 220Hz * exp2(env(gate, 30ms))\n    out = sine(pitch * 2) * ((f / pitch) / 4) * 0.1",
+		// A literal over a typed value shares its unit.
+		"let f = 220Hz\n    out = saw(f) * (440Hz / f) * 0.1",
+		"let f = 220Hz\n    let g = f\n    out = lowpass(saw(f), ((velocity * 220Hz) / g) * (g * 2)) * 0.1",
 	} {
 		source := []byte("cicada 2\ninstrument drum {\n  voice mono {\n    " + body + "\n  }\n}\ntrack t drum {}\npattern p notes { c4 . . . }\nscene s { t = p }\nsong { s }\n")
 		score, diagnostics := notation.Parse(source)

@@ -116,14 +116,15 @@ func residentAudioBytes(cfg *engine.Config) int {
 func checkBrowserScore(path string, inspection scoreInspection, stdout, stderr io.Writer) int {
 	// Features the image refuses are all listed first; the image build below
 	// stops at its first refusal.
-	features := portableFeatureRefusals(inspection.semantic)
+	features, kinds := portableFeatureRefusals(inspection.semantic)
 	for i := range features {
 		features[i].Position.File = path
 		fmt.Fprintln(stderr, features[i].Error())
 	}
 	profile, refusal := checkBrowser(inspection.semantic, inspection.root(path))
 	errors := len(features)
-	if refusal != nil && (len(features) == 0 || refusal.Code != "CICADA-PARAM" || !portableFeatureError(refusal.Message)) {
+	// An image refusal that repeats a listed feature is not printed again.
+	if refusal != nil && !kinds[imageFeatureKind(refusal.Message)] {
 		errors++
 		// The refusal belongs to the whole score, so it has no source line to show.
 		refusal.Position.File = path
@@ -162,15 +163,4 @@ func (profile browserProfile) write(w io.Writer) {
 	for _, track := range profile.Tracks {
 		fmt.Fprintf(w, "    %-*s  %-*s  %6d\n", idWidth, track.ID, kindWidth, track.Kind, track.Voices)
 	}
-}
-
-// portableFeatureError reports whether an image refusal repeats a feature that
-// portableFeatureRefusals already listed.
-func portableFeatureError(message string) bool {
-	for _, feature := range []string{"tape echo", "humanize", "sampler kit lanes", "sampler chords"} {
-		if strings.Contains(message, feature) {
-			return true
-		}
-	}
-	return false
 }
