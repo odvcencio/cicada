@@ -15,7 +15,16 @@ import (
 // export) sampler packs count against it too.
 const residentBudget = 64 << 20
 
-var errResidentBudget = fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget")
+// residentBudgetError names what pushed the project past residentBudget and
+// how far: name needs bytes on top of used.
+func residentBudgetError(name string, bytes, used int64) error {
+	if used == 0 {
+		return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", name, mib(bytes))
+	}
+	return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s on top of %s already resident", name, mib(bytes), mib(used))
+}
+
+func mib(bytes int64) string { return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20)) }
 
 // Options tune a native compile.
 type Options struct {
@@ -125,7 +134,7 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 			continue
 		}
 		if a.Frames > sampleasset.FrameLimit(a) || bytes <= 0 || bytes > residentBudget-resident {
-			return engine.Config{}, errResidentBudget
+			return engine.Config{}, residentBudgetError("asset "+a.Name, bytes, resident)
 		}
 		if mode == modeValidate {
 			// The project parse already hashed the file; there is no PCM to hold.
@@ -196,10 +205,10 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 				return engine.Config{}, err
 			}
 			// Immutable regions count once even when several zones share an asset.
-			resident += prepared.ResidentPCMBytes()
-			if resident > residentBudget {
-				return engine.Config{}, errResidentBudget
+			if bytes := prepared.ResidentPCMBytes(); resident+bytes > residentBudget {
+				return engine.Config{}, residentBudgetError("sampler "+sampler.Name, bytes, resident)
 			}
+			resident += prepared.ResidentPCMBytes()
 			use(sampler, prepared)
 		case modeValidate:
 			pack, err := packCap.Open(root, sampler.Pack, sampler.SHA256)

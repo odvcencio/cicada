@@ -214,3 +214,48 @@ func TestSourceRoundTripKeepsAForcedLetTypeAgainstAGuess(t *testing.T) {
 		}
 	}
 }
+
+// Lets that a call argument types settle before arithmetic decides the other
+// operands, so these shapes, which fail on main, compile and round-trip.
+func TestSourceRoundTripSettlesForcedLetsBeforeArithmetic(t *testing.T) {
+	for _, body := range []string{
+		// x is Hz from sine(x), so y in y * x is unitless.
+		"let x = 100Hz\n    let y = 2\n    out = sine(x) * 0.5 + sine(y * x) * 0.5",
+		// f is Hz, so f / 50Hz is a unitless ratio.
+		"let f = 220Hz * exp2(env(gate, 30ms) * 0.06)\n    out = sine(f) * (f / 50Hz)",
+		// The alias g carries the call's type to f.
+		"let f = 220Hz\n    let g = f\n    out = sine(g) * (f / 50Hz)",
+		// exp2 makes y unitless, so x in y * x carries the Hz.
+		"let x = 100Hz\n    let y = 2\n    out = sine(y * x) * exp2(y)",
+		// A division by pitch stays a division, not a 1000x period.
+		"let f = 220Hz * exp2(env(gate, 30ms))\n    out = sine(pitch * 2) * ((f / pitch) / 4) * 0.1",
+		// A literal over a typed value shares its unit.
+		"let f = 220Hz\n    out = saw(f) * (440Hz / f) * 0.1",
+		"let f = 220Hz\n    let g = f\n    out = lowpass(saw(f), ((velocity * 220Hz) / g) * (g * 2)) * 0.1",
+	} {
+		source := []byte("cicada 2\ninstrument drum {\n  voice mono {\n    " + body + "\n  }\n}\ntrack t drum {}\npattern p notes { c4 . . . }\nscene s { t = p }\nsong { s }\n")
+		score, diagnostics := notation.Parse(source)
+		if len(diagnostics) != 0 {
+			t.Fatalf("parse: %+v\n%s", diagnostics, source)
+		}
+		compiled, diagnostics := FromScore(score)
+		if compiled == nil {
+			t.Fatalf("compile: %+v\n%s", diagnostics, source)
+		}
+		rewritten, err := ToSource(compiled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reparsed, diagnostics := notation.Parse(rewritten)
+		if len(diagnostics) != 0 {
+			t.Fatalf("generated source: %+v\n%s", diagnostics, rewritten)
+		}
+		recompiled, diagnostics := FromScore(reparsed)
+		if recompiled == nil {
+			t.Fatalf("recompile: %+v\n%s", diagnostics, rewritten)
+		}
+		if !reflect.DeepEqual(compiled.Instruments, recompiled.Instruments) {
+			t.Fatalf("instrument changed in the round trip:\n%s", rewritten)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package project
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -340,8 +341,18 @@ func instrumentSource(inst Instrument) (string, error) {
 	for _, binding := range inst.Lets {
 		bindings[binding.ID] = binding.Value
 	}
-	required := map[string]instrument.Type{}
-	propagateType(inst.Out, instrument.Audio, true, symbols, bindings, required, map[string]bool{}, map[string]bool{})
+	required, forced := map[string]instrument.Type{}, map[string]bool{}
+	// First the lets that a call argument types, such as f in sine(f). Their
+	// types then inform the arithmetic around other lets: in sine(y * x) with x
+	// forced to Hz, y is unitless.
+	first := letTypes{symbols: symbols, bindings: bindings, required: required, forced: forced, forcedOnly: true, visiting: map[string]bool{}}
+	first.propagate(inst.Out, instrument.Audio, true)
+	settled := maps.Clone(symbols)
+	for name := range forced {
+		settled[name] = required[name]
+	}
+	second := letTypes{symbols: settled, bindings: bindings, required: required, forced: forced, visiting: map[string]bool{}}
+	second.propagate(inst.Out, instrument.Audio, true)
 	var out strings.Builder
 	out.WriteString("instrument " + inst.ID + " {\n")
 	if inst.Octave != nil {
@@ -390,42 +401,54 @@ func instrumentSource(inst Instrument) (string, error) {
 	return out.String(), nil
 }
 
-// propagateType records the type each let must have at its uses; the last use
-// decides. A let used directly as a call argument, such as f in sine(f), has
-// its type forced by that call, and a later use inside arithmetic, whose
-// operand types are inferred, cannot overwrite it. Without that, sine(f) and
-// sine(f * 1.5) could leave f typed for the product and break the call.
-func propagateType(expr Expr, want instrument.Type, forcing bool, symbols map[string]instrument.Type, bindings map[string]Expr, required map[string]instrument.Type, forced, visiting map[string]bool) {
+// letTypes finds the type each let must have from its uses; the last use
+// decides. A let used directly as a call argument, such as f in sine(f), has its
+// type forced by that call, and a later use inside arithmetic, whose operand
+// types are inferred, cannot overwrite it. An alias (let g = f) passes a forced
+// type on to the let it names.
+type letTypes struct {
+	symbols  map[string]instrument.Type
+	bindings map[string]Expr
+	required map[string]instrument.Type
+	forced   map[string]bool
+	// forcedOnly records only forced lets. It still walks every expression,
+	// because a call inside arithmetic forces its own arguments.
+	forcedOnly bool
+	visiting   map[string]bool
+}
+
+func (lt *letTypes) propagate(expr Expr, want instrument.Type, forcing bool) {
 	if expr.Name != "" {
-		if binding, ok := bindings[expr.Name]; ok && !visiting[expr.Name] {
-			if forced[expr.Name] && !forcing {
-				return
-			}
-			required[expr.Name] = want
-			forced[expr.Name] = forced[expr.Name] || forcing
-			visiting[expr.Name] = true
-			propagateType(binding, want, false, symbols, bindings, required, forced, visiting)
-			delete(visiting, expr.Name)
+		binding, ok := lt.bindings[expr.Name]
+		if !ok || lt.visiting[expr.Name] || lt.forced[expr.Name] && !forcing {
+			return
 		}
+		if forcing || !lt.forcedOnly {
+			lt.required[expr.Name] = want
+			lt.forced[expr.Name] = lt.forced[expr.Name] || forcing
+		}
+		lt.visiting[expr.Name] = true
+		lt.propagate(binding, want, forcing && binding.Name != "")
+		delete(lt.visiting, expr.Name)
 		return
 	}
 	if expr.Op == "" {
 		return
 	}
 	if expr.Op == "lfo" && len(expr.Args) > 0 {
-		propagateType(expr.Args[0], instrument.Hz, true, symbols, bindings, required, forced, visiting)
+		lt.propagate(expr.Args[0], instrument.Hz, true)
 		return
 	}
 	if args, ok := callArgumentTypes(expr.Op); ok {
 		for i, arg := range expr.Args {
-			propagateType(arg, args[i], true, symbols, bindings, required, forced, visiting)
+			lt.propagate(arg, args[i], true)
 		}
 		return
 	}
 	if len(expr.Args) == 2 {
-		left, right := binaryOperandTypes(expr, want, symbols, bindings)
-		propagateType(expr.Args[0], left, false, symbols, bindings, required, forced, visiting)
-		propagateType(expr.Args[1], right, false, symbols, bindings, required, forced, visiting)
+		left, right := binaryOperandTypes(expr, want, lt.symbols, lt.bindings)
+		lt.propagate(expr.Args[0], left, false)
+		lt.propagate(expr.Args[1], right, false)
 	}
 }
 
@@ -483,8 +506,19 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 		return instrument.Audio, instrument.Audio
 	}
 	if expr.Op == "/" {
-		if want == instrument.MS && right == instrument.Hz {
-			return instrument.Unit, instrument.Hz
+		// A model "/" is a plain division: the compiler records unit / Hz as
+		// the separate period op. So a Hz denominator had a Hz numerator, and
+		// writing unit / Hz here would compile to a period, 1000 times larger.
+		if right == instrument.Hz {
+			return instrument.Hz, instrument.Hz
+		}
+		// A ratio of a typed value to a bare literal, f / 50Hz, or of a
+		// literal to a typed value, 440Hz / f: both sides share the unit.
+		if want == instrument.Unit && left != "" && left != instrument.Unit && right == "" {
+			return left, left
+		}
+		if want == instrument.Unit && right != "" && right != instrument.Unit && (left == "" || left == instrument.Unit) {
+			return right, right
 		}
 		if want == instrument.Unit && left != "" && left == right {
 			return left, right
@@ -536,8 +570,9 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 	if expr.Op == "/" && left == right && left != "" {
 		return instrument.Unit
 	}
-	if expr.Op == "/" && left == instrument.Unit && right == instrument.Hz {
-		return instrument.MS
+	// A model "/" over Hz is Hz / Hz: unit / Hz is stored as the period op.
+	if expr.Op == "/" && right == instrument.Hz {
+		return instrument.Unit
 	}
 	if left != "" && left != instrument.Unit {
 		return left

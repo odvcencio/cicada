@@ -196,9 +196,7 @@ func checkPathsWith(paths []string, options checkOptions, stdout, stderr io.Writ
 			continue
 		}
 		if options.profile == profileBrowser {
-			if !checkBrowserScore(path, inspection, stdout, stderr) {
-				failed++
-			}
+			failed += checkBrowserScore(path, inspection, stdout, stderr)
 			continue
 		}
 		fmt.Fprintln(stdout, path)

@@ -112,7 +112,22 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 		}
 		if !found {
-			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
+			hint := paramdefs.SendPathHint(setting, func(name string) (string, bool) {
+				for _, effect := range p.Effects {
+					if effect.ID == name {
+						return effect.Kind, true
+					}
+				}
+				return "", false
+			})
+			for _, inst := range p.Instruments {
+				for _, param := range inst.Params {
+					if hint == "" && inst.ID == p.Tracks[trackIndex].Kind && param.ID == setting {
+						hint = paramdefs.InstrumentParamHint(inst.ID, param.ID)
+					}
+				}
+			}
+			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+hint)
 		}
 		if strings.HasPrefix(descriptor.ID, "amp.") {
 			if _, err := trackAmpParams(p, p.Tracks[trackIndex]); err != nil {

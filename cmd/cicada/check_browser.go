@@ -111,23 +111,35 @@ func residentAudioBytes(cfg *engine.Config) int {
 }
 
 // checkBrowserScore applies the browser profile to a score that passed the
-// desktop checks and lists what each track reserves. It reports whether the
-// score fits.
-func checkBrowserScore(path string, inspection scoreInspection, stdout, stderr io.Writer) bool {
+// desktop checks and lists what each track reserves. It returns the number of
+// errors it printed; zero means the score fits.
+func checkBrowserScore(path string, inspection scoreInspection, stdout, stderr io.Writer) int {
+	// Features the image refuses are all listed first; the image build below
+	// stops at its first refusal.
+	features, kinds := portableFeatureRefusals(inspection.semantic)
+	for i := range features {
+		features[i].Position.File = path
+		fmt.Fprintln(stderr, features[i].Error())
+	}
 	profile, refusal := checkBrowser(inspection.semantic, inspection.root(path))
-	if refusal != nil {
+	errors := len(features)
+	// An image refusal that repeats a listed feature is not printed again.
+	if refusal != nil && !kinds[imageFeatureKind(refusal.Message)] {
+		errors++
 		// The refusal belongs to the whole score, so it has no source line to show.
 		refusal.Position.File = path
 		fmt.Fprintln(stderr, refusal.Error())
 		if suggestion := checkSuggestion(*refusal); suggestion != "" {
 			fmt.Fprintf(stderr, "  %s\n", suggestion)
 		}
+	}
+	if refusal != nil || len(features) > 0 {
 		profile.write(stderr)
-		return false
+		return errors
 	}
 	fmt.Fprintln(stdout, path)
 	profile.write(stdout)
-	return true
+	return 0
 }
 
 func (profile browserProfile) write(w io.Writer) {

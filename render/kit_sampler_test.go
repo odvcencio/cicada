@@ -160,3 +160,19 @@ func equalFloats(a, b []float64) bool {
 	}
 	return true
 }
+
+// The sampler baseline is a direct-mixer mode. A kit sampler lane needs the
+// scheduled engine, so the render refuses the flag instead of ignoring it.
+func TestSamplerBaselineRefusesAScoreOnlyTheEngineRenders(t *testing.T) {
+	dir := t.TempDir()
+	source := kitScore(kitPack(t, dir), "  sd: x... .... .... ....\n")
+	score, ds := notation.Parse([]byte(source))
+	if score == nil {
+		t.Fatalf("%+v", ds)
+	}
+	var wav bytes.Buffer
+	_, err := render.WAV(score, render.Options{AssetRoot: dir, SampleRate: 48000, Bits: 32, Block: 256, Bars: 1, SamplerBaseline: true}, &wav)
+	if err == nil || !strings.Contains(err.Error(), "--sampler-baseline") || !strings.Contains(err.Error(), "kit sampler lanes") {
+		t.Fatalf("want a sampler-baseline refusal naming kit sampler lanes, got %v", err)
+	}
+}

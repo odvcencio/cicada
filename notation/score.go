@@ -2,6 +2,8 @@ package notation
 
 import (
 	"fmt"
+	"strings"
+
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -328,9 +330,19 @@ func (d Diagnostic) Error() string {
 	if d.Position.File != "" {
 		location = d.Position.File + ":" + location
 	}
-	message := fmt.Sprintf("%s: %s %s: %s", location, d.Severity, d.Code, d.Message)
+	message := fmt.Sprintf("%s: %s %s: %s", location, d.Severity, d.Code, trimCode(d.Code, d.Message))
 	if d.Related.Line != 0 {
 		message += fmt.Sprintf(" (first declared at %s:%d:%d)", d.Related.File, d.Related.Line, d.Related.Column)
+	}
+	return message
+}
+
+// trimCode removes a leading "CODE: " from a message whose diagnostic already
+// carries that code: errors built as fmt.Errorf("CICADA-PARAM: ...") would
+// otherwise print it twice.
+func trimCode(code, message string) string {
+	if code != "" {
+		return strings.TrimPrefix(message, code+": ")
 	}
 	return message
 }
