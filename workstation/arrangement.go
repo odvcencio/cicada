@@ -21,6 +21,10 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	if p.Arrange != nil {
 		return s.placementArrangement(ctx, v, csrf, selected)
 	}
+	openPattern := ""
+	if ctx != nil {
+		openPattern = ctx.Request.URL.Query().Get("pattern")
+	}
 	scenes := map[string]project.Scene{}
 	var sceneNames []string
 	for _, scene := range p.Scenes {
@@ -28,13 +32,13 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		sceneNames = append(sceneNames, scene.ID)
 	}
 	var columns []string
-	columns = append(columns, "130px")
+	columns = append(columns, "var(--timeline-track-width,130px)")
 	for _, entry := range p.Song {
 		columns = append(columns, fmt.Sprintf("minmax(110px,%dfr)", entry.Bars))
 	}
-	style := "grid-template-columns:" + strings.Join(columns, " ")
+	style := "grid-template-columns:" + strings.Join(columns, " ") + ";--timeline-scenes:" + strconv.Itoa(len(p.Song))
 	var ruler []gosx.Node
-	ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.Text("ARRANGEMENT")))
+	ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.Text("Tracks")))
 	var blocks []gosx.Node
 	bar := 1
 	for index, entry := range p.Song {
@@ -82,16 +86,18 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 				href := patternURL(inherited, 1, "", "")
 				if track.Kind == "audio" && p.Edition == 2 {
 					href = "/?panel=takes&clip=" + url.QueryEscape(inherited)
+				} else if inherited == openPattern {
+					attrs = append(attrs, gosx.BoolAttr("data-arrange-pattern-open"))
 				}
 				cells = append(cells, gosx.El("a", append(attrs, gosx.Attr("href", href)), gosx.Text(text)))
 			} else {
 				cells = append(cells, gosx.El("span", attrs, gosx.Text(text)))
 			}
 		}
-		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-row"), gosx.Attr("style", style)), gosx.Fragment(cells...)))
+		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-row"), gosx.Attr("data-arrange-kind", track.Kind), gosx.Attr("style", style)), gosx.Fragment(cells...)))
 	}
 	seconds := project.SongSeconds(p, bar-1)
-	length := fmt.Sprintf("%d bars · %d:%02d at %.1f BPM", bar-1, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000)
+	length := fmt.Sprintf("Scene matrix · %d bars · %d:%02d at %.1f BPM", bar-1, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000)
 	if changes := project.SongTempoChanges(p); len(changes) > 0 {
 		length += fmt.Sprintf(" (the tempo changes %d times; the time is the sum of the steps)", len(changes))
 	}
@@ -152,15 +158,15 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 		seconds = float64(clock.SampleAtTick(end)) / 48000
 	}
 	bars := (end + seq.TicksPerBar - 1) / seq.TicksPerBar
-	description := fmt.Sprintf("%d bars · %d:%02d at %.1f BPM · %d placements", bars, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000, len(placements))
+	description := fmt.Sprintf("Placement lanes · %d bars · %d:%02d at %.1f BPM · %d placements", bars, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000, len(placements))
 	if len(p.Arrange.Tempos) > 0 {
 		description += " · tempo changes"
 	}
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: description},
+		placementTimeline(p, placements, selected, end),
 		markerList,
 		s.arrangementTempos(v, csrf, selected, end),
-		placementTimeline(p, placements, selected, end),
 		s.sessionListening(v, csrf, selected, end),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Select a block to edit it. Drag to move; drag its right edge to resize. Arrow keys on a block or edge change it by a sixteenth; hold Shift for a bar. Each placement restarts its pattern; End is exclusive.")),
 		s.placementEditors(ctx, v, csrf, placements, selected, end),

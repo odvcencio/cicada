@@ -60,7 +60,7 @@ test('dock resizing fits the window and preserves musical work',{timeout:120000}
  await page.setViewportSize({width:1024,height:480});
  await until(async()=>{const g=await geometry();return g.dock.bottom<=g.height+1&&Math.abs(g.value-g.dock.height)<1;},'compact window fits');snapshots.push({label:'compact',...await fits()});
  await page.setViewportSize({width:390,height:900});
- await page.locator('.shell-phone-nav a').filter({hasText:'Detail'}).click();
+ await page.locator('.shell-phone-nav a').filter({hasText:'Edit'}).click();
  await page.screenshot({path:path.join(proof,'phone-detail.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.setViewportSize({width:1280,height:720});await page.locator('#detail-tab-clip').click();await ready();await fits();

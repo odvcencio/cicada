@@ -32,7 +32,7 @@ test('sidebars fit the song, collapse into rails and preserve edits',{timeout:12
   return g;
  };
  const handle=name=>page.getByRole('separator',{name,exact:true});
- const left=()=>handle('Resize Browser'),right=()=>handle('Resize Code lens');
+ const left=()=>handle('Resize Library'),right=()=>handle('Resize Code lens');
  const summary=id=>page.locator('#'+id+' > details > summary');
  await until(async()=>{const g=await geometry();return g.left.width===640&&g.right.width===720;},'wide window restores both preferred widths');
  const snapshots=[{label:'wide',...await fits()}];
@@ -67,10 +67,10 @@ test('sidebars fit the song, collapse into rails and preserve edits',{timeout:12
  assert.equal(await editor.inputValue(),draft);assert.ok((await page.locator('#studio-code').boundingBox()).width>=599);
  for(const id of ['studio-browser','studio-center','studio-detail'])assert.equal(await page.locator('#'+id).isVisible(),false);
  await page.screenshot({path:path.join(proof,'compact-code.png')});
- await page.locator('.shell-phone-nav a').filter({hasText:'Browser'}).click();await page.locator('#studio-browser').waitFor({state:'visible'});
+ await page.locator('.shell-phone-nav a').filter({hasText:'Library'}).click();await page.locator('#studio-browser').waitFor({state:'visible'});
  await page.locator('[data-sound-preview="soft-bell"]').focus();
- await page.locator('.shell-phone-nav a').filter({hasText:'Center'}).click();await page.locator('#view-tab-session').click();
- await page.locator('.shell-phone-nav a').filter({hasText:'Detail'}).click();await page.locator('#detail-tab-device').click();
+ await page.locator('.shell-phone-nav a').filter({hasText:'View'}).click();await page.locator('#view-tab-session').click();
+ await page.locator('.shell-phone-nav a').filter({hasText:'Edit'}).click();await page.locator('#detail-tab-device').click();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.setViewportSize({width:390,height:900});await page.screenshot({path:path.join(proof,'phone-device.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

@@ -72,12 +72,14 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 	var visit func([]notation.SourceFile, string) error
 	visit = func(files []notation.SourceFile, scope string) error {
 		bindings := map[string]string{}
-		if !s.revisionOnly {
+		if scope != "" && !s.revisionOnly {
 			declarations[scope] = notation.DeclarationNames(files)
 		}
 		s.Bindings[scope] = bindings
 		for _, file := range files {
-			if s.revisionOnly && !bytes.Contains(file.Source, []byte("import")) {
+			// Every import starts with this literal token. A match still
+			// needs the parser to distinguish declarations from text.
+			if !bytes.Contains(file.Source, []byte("import")) {
 				continue
 			}
 			imports := notation.ReadImports(file)
@@ -93,6 +95,9 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 				// prefix is reserved for engine drum recipes, as is its import alias.
 				if alias == "builtin" || strings.HasPrefix(imp.Path, "builtin/") {
 					return fail("CICADA-LIB-SHADOW", "builtin is a reserved namespace", nil)
+				}
+				if !s.revisionOnly && declarations[scope] == nil {
+					declarations[scope] = notation.DeclarationNames(files)
 				}
 				if declarations[scope][alias] {
 					return fail("CICADA-LIB-SHADOW", "import namespace conflicts with declaration "+alias, nil)

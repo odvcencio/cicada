@@ -1,5 +1,7 @@
-/* Cicada's existing night palette, shared by every workstation panel. */
-:root { color-scheme:dark; --bg:#0f1411; --panel:#19211c; --raised:#202b24; --border:#354439; --text:#e2e9dc; --muted:#a6b5a6; --amber:#f2c66d; --mint:#88d9bb; --coral:#ff936f; }
+/* Cicada's neutral charcoal palette, shared by every workstation panel. Amber
+   marks the active, selected or playing thing; mint marks musical content
+   (clips, notes, curves) and links. Both stay restrained. */
+:root { color-scheme:dark; --bg:#141518; --panel:#1a1b1f; --raised:#222328; --border:#34363d; --text:#e5e5e2; --muted:#a0a3ab; --amber:#f2b84b; --mint:#74d5b1; --coral:#ff8f6b; --chrome:#0e0f11; --line:#27292e; --hover:#2a2c32; --field:#101114; --clip:#1b2f29; --clip-edge:#3b7262; }
 .instrument-patches { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:12px; margin-top:16px; }
 .instrument-patch { min-width:0; border:1px solid var(--border); border-radius:6px; padding:14px; background:var(--raised); }
 .instrument-patch-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }

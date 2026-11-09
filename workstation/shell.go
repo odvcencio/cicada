@@ -21,7 +21,7 @@ import (
 
 // Shell regions start at these sizes, in CSS pixels, until a stored layout loads.
 const (
-	shellBrowserWidth = 280
+	shellBrowserWidth = 232
 	shellCodeWidth    = 360
 	shellDockHeight   = 240
 )
@@ -92,13 +92,13 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 
 	returnTo := ctx.Request.URL.RequestURI()
 	file := func(name string) gosx.Node {
-		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
+		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name, Text: name}))
 	}
 	form := func(id, name string, children ...gosx.Node) gosx.Node {
 		return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: returnTo}, children...)
 	}
-	button := func(value, label string) gosx.Node {
-		return ui.ActionButton(ui.ActionButtonProps{Name: "action", Value: value, Label: label})
+	button := func(value, label, glyph string) gosx.Node {
+		return ui.ActionButton(ui.ActionButtonProps{Name: "action", Value: value, Label: label, Text: glyph, Class: "transport-glyph"})
 	}
 	keys := func(id string) string {
 		for _, cmd := range shellCommands() {
@@ -109,16 +109,21 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		return ""
 	}
 	top := ui.TopBar(ui.TopBarProps{Title: props.Title, Filename: props.Filename, Tempo: props.Tempo, Key: props.Key, Backend: engineLabel(state)},
-		form("transport-form", "transport", button("play", "Play"), button("pause", "Pause"), button("stop", "Stop"), button("home", "Return to start")),
-		ui.CommandButton(ui.CommandButtonProps{ID: "transport.record", Label: "Record", Keys: keys("transport.record")}),
-		ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Keys: keys("transport.loop")}),
-		ui.Placeholder(ui.PlaceholderProps{Label: "Metronome"}),
-		ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
-		form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo")), form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo")),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#palette", Controls: "palette", Label: "Shortcuts"}),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-playback")),
+			form("transport-form", "transport", button("home", "Return to start", "▏◀"), button("play", "Play", "▶"), button("pause", "Pause", "Ⅱ"), button("stop", "Stop", "■")),
+			ui.CommandButton(ui.CommandButtonProps{ID: "transport.record", Label: "Record", Glyph: "●", Keys: keys("transport.record")}),
+			ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Glyph: "↻", Keys: keys("transport.loop")}),
+			ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
+		),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-actions")),
+			ui.Placeholder(ui.PlaceholderProps{Label: "Metronome", Glyph: "♩"}),
+			form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo")),
+			form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo")),
+			ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History"}),
+			ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio"}),
+			ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
+			ui.DialogTrigger(ui.DialogTriggerProps{Target: "#palette", Controls: "palette", Label: "Shortcuts"}),
+		),
 		ui.CaptureHint(),
 	)
 
@@ -186,7 +191,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ID: "studio-workbench", LeftSignal: "$layout.browserWidth", RightSignal: "$layout.codeWidth", BottomSignal: "$layout.dockHeight",
 		Left: strconv.Itoa(shellBrowserWidth), Right: strconv.Itoa(shellCodeWidth), Bottom: strconv.Itoa(shellDockHeight),
 	}, top, browser, center, code, detail)
-	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, phone, workbench, dialogs), view, true
+	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, workbench, phone, dialogs), view, true
 }
 
 func engineLabel(state transport) string {

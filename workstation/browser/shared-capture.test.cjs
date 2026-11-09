@@ -32,12 +32,12 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
     const errors = [];
     page.on('pageerror',error => errors.push(error.message));
     await page.exposeFunction('__cicadaCaptureReview',async () => {
-      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Center'}).click();
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'View'}).click();
       await page.locator('.take-shared-gestures summary').scrollIntoViewIfNeeded();
       await page.screenshot({path:path.join(proof,name+'-shared-review.png')});
     });
     await page.exposeFunction('__cicadaCapturePattern',async () => {
-      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Detail'}).click();
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Edit'}).click();
       else {
         const handle = await page.getByRole('separator',{name:'Resize Detail dock',exact:true}).boundingBox();
         await page.mouse.move(handle.x+handle.width/2,handle.y+3);

@@ -226,7 +226,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await shellTab('view','session');
     await page.setViewportSize({width:390,height:844});
     const beforeRegions={posts:posts.length,navigations:navigations.length};
-    for (const [label,region,panel] of [['Detail','detail','#studio-detail'],['Code','code','#studio-code'],['Center','center','#studio-center'],['Detail','detail','#studio-detail']]) {
+    for (const [label,region,panel] of [['Edit','detail','#studio-detail'],['Code','code','#studio-code'],['View','center','#studio-center'],['Edit','detail','#studio-detail']]) {
       await page.locator('.shell-phone-nav').getByRole('link',{name:label,exact:true}).click();
       await page.locator(panel).waitFor({state:'visible'});
       assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),region);

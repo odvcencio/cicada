@@ -124,17 +124,21 @@ func ActionForm(props ActionFormProps, children ...gosx.Node) gosx.Node {
 type CommandButtonProps struct {
 	ID    string
 	Label string
+	Glyph string
 	Keys  string
 }
 
 func CommandButton(props CommandButtonProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.Attr("data-gosx-command", props.ID), gosx.Attr("aria-keyshortcuts", props.Keys)), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command transport-glyph"), gosx.Attr("data-gosx-command", props.ID), gosx.Attr("aria-keyshortcuts", props.Keys), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Glyph))
 }
 
-type PlaceholderProps struct{ Label string }
+type PlaceholderProps struct {
+	Label string
+	Glyph string
+}
 
 func Placeholder(props PlaceholderProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.BoolAttr("disabled"), gosx.Attr("aria-disabled", "true")), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command transport-glyph"), gosx.BoolAttr("disabled"), gosx.Attr("aria-disabled", "true"), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Glyph))
 }
 
 type DialogTriggerProps struct {
@@ -162,7 +166,7 @@ type BrowserProps struct {
 }
 
 func Browser(props BrowserProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("aside", gosx.Attrs(gosx.Attr("id", "studio-browser"), gosx.Attr("class", "gsx-dock__left shell-region"), gosx.Attr("aria-label", "Browser")), gosx.El("details", gosx.Attrs(gosx.Attr("class", "gsx-collapsible shell-collapsible"), gosx.Attr("data-gosx-collapsible", "$layout.browserOpen"), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Text("Browser")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))), SplitHandleX(SplitHandleProps{Signal: "$layout.browserWidth", Label: "Resize Browser", Min: "160", Max: "640", Value: props.Width}))
+	return gosx.El("aside", gosx.Attrs(gosx.Attr("id", "studio-browser"), gosx.Attr("class", "gsx-dock__left shell-region"), gosx.Attr("aria-label", "Library")), gosx.El("details", gosx.Attrs(gosx.Attr("class", "gsx-collapsible shell-collapsible"), gosx.Attr("data-gosx-collapsible", "$layout.browserOpen"), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Text("Library")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))), SplitHandleX(SplitHandleProps{Signal: "$layout.browserWidth", Label: "Resize Library", Min: "160", Max: "640", Value: props.Width}))
 }
 
 type BrowserSectionProps struct {
@@ -236,7 +240,7 @@ type PhoneNavProps struct {
 
 // PhoneNav is visible only at phone width, where one region shows at a time.
 func PhoneNav(props PhoneNavProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("nav", gosx.Attrs(gosx.Attr("class", "shell-phone-nav"), gosx.Attr("aria-label", "Regions")), PhoneLink(PhoneLinkProps{Href: props.BrowserHref, Current: props.BrowserOn, Region: "browser"}, gosx.Text("Browser")), PhoneLink(PhoneLinkProps{Href: props.CenterHref, Current: props.CenterOn, Region: "center"}, gosx.Text("Center")), PhoneLink(PhoneLinkProps{Href: props.DetailHref, Current: props.DetailOn, Region: "detail"}, gosx.Text("Detail")), PhoneLink(PhoneLinkProps{Href: props.CodeHref, Current: props.CodeOn, Region: "code"}, gosx.Text("Code")))
+	return gosx.El("nav", gosx.Attrs(gosx.Attr("class", "shell-phone-nav"), gosx.Attr("aria-label", "Regions")), PhoneLink(PhoneLinkProps{Href: props.CenterHref, Current: props.CenterOn, Region: "center"}, gosx.Text("View")), PhoneLink(PhoneLinkProps{Href: props.BrowserHref, Current: props.BrowserOn, Region: "browser"}, gosx.Text("Library")), PhoneLink(PhoneLinkProps{Href: props.DetailHref, Current: props.DetailOn, Region: "detail"}, gosx.Text("Edit")), PhoneLink(PhoneLinkProps{Href: props.CodeHref, Current: props.CodeOn, Region: "code"}, gosx.Text("Code")))
 }
 
 type ShortcutGroupProps struct{ Title string }
@@ -259,10 +263,12 @@ type ActionButtonProps struct {
 	Name  string
 	Value string
 	Label string
+	Text  string
+	Class string
 }
 
 func ActionButton(props ActionButtonProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", props.Name), gosx.Attr("value", props.Value)), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", props.Name), gosx.Attr("value", props.Value), gosx.Attr("class", props.Class), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Text))
 }
 
 type HiddenFieldProps struct {

@@ -178,7 +178,7 @@ test('shell fits a 390 px phone without horizontal scroll and shows one region',
   }
   const width = await page.evaluate(() => ({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth}));
   assert.ok(width.scroll <= width.client, 'no horizontal scroll');
-  await page.locator('.shell-phone-nav a', {hasText: 'Browser'}).click();
+  await page.locator('.shell-phone-nav a', {hasText: 'Library'}).click();
   await page.locator('#studio-browser').waitFor({state: 'visible'});
   assert.ok(!(await page.locator('#studio-center').isVisible()));
   await page.close();
@@ -717,7 +717,7 @@ test('part loops preserve paused playback and drafts with keyboard control', {ti
       const editor = page.locator('#score textarea');
       const draft = original.source+'\n// Unsaved part-loop draft\n';
       await editor.fill(draft);
-      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Detail'}).click();
+      if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Edit'}).click();
       const preview = page.locator('#cicada-pattern-preview[data-sounds-ready=true]');
       await preview.waitFor();
       const selector = preview.locator('[data-pattern-preview-track]');

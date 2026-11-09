@@ -56,19 +56,24 @@ func (s *studio) projectFileList() ([]studioProjectFile, error) {
 		_, extra := project.FromScore(score)
 		ds = append(ds, extra...)
 	}
+	return studioFileRows(sources, ds, s.path), nil
+}
+
+// studioFileRows builds Code file rows from captured sources and diagnostics.
+func studioFileRows(sources *project.Sources, ds []notation.Diagnostic, entryPath string) []studioProjectFile {
 	files := make([]studioProjectFile, 0, len(sources.Files))
 	for _, file := range sources.Files {
 		name, _ := filepath.Rel(sources.Root, file.Path)
 		entry := studioProjectFile{Name: filepath.ToSlash(name), Source: string(file.Source), Revision: studioRevision(file.Source), Diagnostics: []notation.Diagnostic{}}
 		for _, d := range ds {
-			if d.Position.File == file.Path || d.Position.File == "" && file.Path == s.path {
+			if d.Position.File == file.Path || d.Position.File == "" && file.Path == entryPath {
 				d.Position.File = entry.Name
 				entry.Diagnostics = append(entry.Diagnostics, d)
 			}
 		}
 		files = append(files, entry)
 	}
-	return files, nil
+	return files
 }
 
 func (s *studio) projectFiles(w http.ResponseWriter, r *http.Request) {

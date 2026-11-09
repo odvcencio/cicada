@@ -226,17 +226,21 @@ component ActionForm(props: ActionFormProps) {
 type CommandButtonProps struct {
 	ID    string
 	Label string
+	Glyph string
 	Keys  string
 }
 
 component CommandButton(props: CommandButtonProps) {
-	return <button type="button" class="shell-command" data-gosx-command={props.ID} aria-keyshortcuts={props.Keys}>{props.Label}</button>
+	return <button type="button" class="shell-command transport-glyph" data-gosx-command={props.ID} aria-keyshortcuts={props.Keys} aria-label={props.Label} title={props.Label}>{props.Glyph}</button>
 }
 
-type PlaceholderProps struct{ Label string }
+type PlaceholderProps struct {
+	Label string
+	Glyph string
+}
 
 component Placeholder(props: PlaceholderProps) {
-	return <button type="button" class="shell-command" disabled aria-disabled="true">{props.Label}</button>
+	return <button type="button" class="shell-command transport-glyph" disabled aria-disabled="true" aria-label={props.Label} title={props.Label}>{props.Glyph}</button>
 }
 
 type DialogTriggerProps struct {
@@ -273,12 +277,12 @@ type BrowserProps struct {
 }
 
 component Browser(props: BrowserProps) {
-	return <aside id="studio-browser" class="gsx-dock__left shell-region" aria-label="Browser">
+	return <aside id="studio-browser" class="gsx-dock__left shell-region" aria-label="Library">
 		<details class="gsx-collapsible shell-collapsible" data-gosx-collapsible="$layout.browserOpen" open={props.Open}>
-			<summary>Browser</summary>
+			<summary>Library</summary>
 			<div class="shell-scroll">{children}</div>
 		</details>
-		<SplitHandleX Signal="$layout.browserWidth" Label="Resize Browser" Min="160" Max="640" Value={props.Width} />
+		<SplitHandleX Signal="$layout.browserWidth" Label="Resize Library" Min="160" Max="640" Value={props.Width} />
 	</aside>
 }
 
@@ -385,9 +389,9 @@ type PhoneNavProps struct {
 // PhoneNav is visible only at phone width, where one region shows at a time.
 component PhoneNav(props: PhoneNavProps) {
 	return <nav class="shell-phone-nav" aria-label="Regions">
-		<PhoneLink Href={props.BrowserHref} Current={props.BrowserOn} Region="browser">Browser</PhoneLink>
-		<PhoneLink Href={props.CenterHref} Current={props.CenterOn} Region="center">Center</PhoneLink>
-		<PhoneLink Href={props.DetailHref} Current={props.DetailOn} Region="detail">Detail</PhoneLink>
+		<PhoneLink Href={props.CenterHref} Current={props.CenterOn} Region="center">View</PhoneLink>
+		<PhoneLink Href={props.BrowserHref} Current={props.BrowserOn} Region="browser">Library</PhoneLink>
+		<PhoneLink Href={props.DetailHref} Current={props.DetailOn} Region="detail">Edit</PhoneLink>
 		<PhoneLink Href={props.CodeHref} Current={props.CodeOn} Region="code">Code</PhoneLink>
 	</nav>
 }
@@ -416,10 +420,12 @@ type ActionButtonProps struct {
 	Name  string
 	Value string
 	Label string
+	Text  string
+	Class string
 }
 
 component ActionButton(props: ActionButtonProps) {
-	return <button type="submit" name={props.Name} value={props.Value}>{props.Label}</button>
+	return <button type="submit" name={props.Name} value={props.Value} class={props.Class} aria-label={props.Label} title={props.Label}>{props.Text}</button>
 }
 
 type HiddenFieldProps struct {
