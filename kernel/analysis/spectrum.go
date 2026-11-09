@@ -45,9 +45,14 @@ func BandHz(sampleRate, i int) (low, high float64) {
 	return LowHz * math.Pow(ratio, float64(i)/Bands), LowHz * math.Pow(ratio, float64(i+1)/Bands)
 }
 
+// bandSpan lists the FFT bins a band draws power from. Bin k stands for the
+// frequencies within half a bin of its centre, and a band takes the share of
+// each bin that lies between its edges. So the bands split the spectrum's
+// power between them, with no gap and no double counting, whether a band is
+// wider or narrower than a bin.
 type bandSpan struct {
-	first, last int     // inclusive bin range whose centres lie in the band
-	pos         float64 // fractional bin of the band centre, used when no bin falls inside
+	first, last           int     // inclusive range of bins that overlap the band
+	firstShare, lastShare float64 // share of the first and last bin inside the band
 }
 
 // Spectrum computes a Hann-windowed, 64-band power spectrum of the mono mix
@@ -79,15 +84,15 @@ func NewSpectrum(sampleRate int) (*Spectrum, error) {
 	binHz := float64(sampleRate) / float64(n)
 	for i := range s.spans {
 		low, high := BandHz(sampleRate, i)
-		first := int(math.Ceil(low / binHz))
-		last := int(math.Ceil(high/binHz)) - 1
-		if i == Bands-1 {
-			last = int(math.Floor(high / binHz))
+		low, high = low/binHz, high/binHz // band edges in bins
+		first := int(math.Floor(low + 0.5))
+		last := min(int(math.Floor(high+0.5)), n/2)
+		span := bandSpan{first: first, last: last, firstShare: high - low}
+		if last > first {
+			span.firstShare = float64(first) + 0.5 - low
+			span.lastShare = min(high-(float64(last)-0.5), 1)
 		}
-		if last > n/2 {
-			last = n / 2
-		}
-		s.spans[i] = bandSpan{first: first, last: last, pos: math.Sqrt(low*high) / binHz}
+		s.spans[i] = span
 	}
 	return s, nil
 }
@@ -112,7 +117,7 @@ func (s *Spectrum) Process(left, right []float32) {
 		if l != l || r != r || l-l != 0 || r-r != 0 { // NaN or Inf
 			l, r = 0, 0
 		}
-		s.ring[s.head] = (l + r) * 0.5
+		s.ring[s.head] = l*0.5 + r*0.5 // halve first: l+r can overflow float32
 		s.head++
 		if s.head == size {
 			s.head = 0
@@ -121,10 +126,17 @@ func (s *Spectrum) Process(left, right []float32) {
 	s.filled = min(s.filled+n, size)
 }
 
-// Bands writes the level of each band in dBFS. A full-scale sine reads 0 dB in
-// the band that holds it (a sine near a band edge splits across two bands).
-// Levels floor at -120 dB. Bands narrower than one FFT bin read the
-// interpolated bin power at the band centre.
+// Bands writes the level of each band in dBFS: the power of the mono mix
+// between the band's edges, on a scale where a full-scale sine carries 0 dB.
+// The bands add up to the signal's power between 20 Hz and the top edge, and
+// steady noise reads evenly across wide and narrow bands. Levels floor at
+// -120 dB.
+//
+// The window resolves about 12 Hz, and a tone occupies four bins. A sine in
+// the middle of a band reads its level from about 350 Hz up; a sine near a
+// band edge splits across two bands. Lower bands are narrower than a tone's
+// four bins, so a low tone spreads over its neighbours, which still add up to
+// its level: a full-scale 50 Hz sine reads about -5.5 dB in its own band.
 func (s *Spectrum) Bands(out *[Bands]float32) {
 	n := len(s.ring)
 	w := s.plan.window
@@ -142,23 +154,19 @@ func (s *Spectrum) Bands(out *[Bands]float32) {
 		s.power[k] = (s.re[k]*s.re[k] + s.im[k]*s.im[k]) * s.scale
 	}
 	for i, span := range s.spans {
-		var p float64
-		if span.last >= span.first {
-			for k := span.first; k <= span.last; k++ {
+		p := s.power[span.first] * span.firstShare
+		if span.last > span.first {
+			for k := span.first + 1; k < span.last; k++ {
 				p += s.power[k]
 			}
-		} else {
-			k0 := int(span.pos)
-			f := span.pos - float64(k0)
-			k1 := min(k0+1, n/2)
-			p = (1-f)*s.power[k0] + f*s.power[k1]
+			p += s.power[span.last] * span.lastShare
 		}
 		out[i] = powerToDB(p)
 	}
 }
 
 func powerToDB(p float64) float32 {
-	if !(p > 1e-12) { // also catches NaN
+	if !(p > 1e-12) || math.IsInf(p, 1) { // also catches NaN; never returns a non-finite level
 		return FloorDB
 	}
 	return float32(10 * math.Log10(p))

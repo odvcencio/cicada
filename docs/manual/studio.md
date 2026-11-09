@@ -674,11 +674,19 @@ short-term and integrated LUFS, loudness range, true peak, and dropped blocks.
 `/api/meters` also returns an `analysis` object for the master output. Its
 `spectrum` holds 64 levels in dBFS (`bands_db`), spaced evenly on a log scale
 from `low_hz` (20 Hz) to `high_hz` (20 kHz, or 0.45 times the sample rate when
-that is lower); a full-scale sine reads 0 dB in its band. Its `correlation` is
-the stereo phase correlation over about 300 ms: +1 means identical channels,
-0 unrelated channels, and -1 opposite polarity. It is `null` when either
-channel is quieter than -90 dBFS. Both update about 30 times a second and
-restart when you reset live loudness. The surface stops polling
+that is lower). Each level is the power of the mono mix, (L+R)/2, inside the
+band, on a scale where a full-scale sine carries 0 dB. The bands add up to the
+signal's power, so steady noise reads evenly across them. A sine in the middle
+of a band reads its level from about 350 Hz up, and one on a band edge splits
+across two bands. The analysis resolves about 12 Hz, so a lower tone spreads
+over neighbouring bands that still add up to its level: a full-scale 50 Hz
+sine reads about -5.5 dB in its own band. A sound in one channel only reads
+6 dB below its level, and channels in opposite polarity cancel. Its
+`correlation` is the stereo phase correlation over about 300 ms: +1 means
+identical channels, 0 unrelated channels, and -1 opposite polarity. It is
+`null` when either channel's level over that window is below -90 dBFS, so it
+keeps its last value for a few seconds after the sound stops. Both update
+about 30 times a second and restart when you reset live loudness. The surface stops polling
 when you leave the mixer. Offline export still provides the final loudness
 verification.
 
