@@ -131,9 +131,21 @@ cicada check idea.cicada
 The importer infers an exact onset grid at 960 PPQ, including triplets.
 `--quantize 1/16` or `--quantize 1/8t` explicitly allows onset quantization.
 Melodic notes retain their MIDI velocities through `velocity:` rows; dots
-hold the preceding row value. Overlapping notes become independent piano
-tracks. General MIDI drums use the built-in lanes. The import report counts
-onset and duration edits, cross-bar note retriggers, and drum velocity edits.
+hold the preceding row value. Each MIDI track keeps its own score tracks, in
+file order, named after the MIDI track (`Lead Synth` becomes `lead-synth`; a
+track with no usable name becomes `midi-N`), and a type 1 file's conductor
+track name becomes the title. Notes of one MIDI track that start together and
+last as long become a chord of up to four pitches, which plays at the loudest
+note's velocity; other overlapping notes get another piano track, such as
+`bass-2`. General MIDI drums of one MIDI track share one drums track with a
+row per built-in lane; two hits of one drum in the same step keep the louder,
+and `merged_hits` counts them. Each MIDI channel of a track gets its own score
+tracks. A MIDI track whose kit or chords would need more than 16 distinct bar
+patterns is split instead into a track per drum and single-note tracks; other
+MIDI tracks keep their kits and chords. A
+track name the score cannot use falls back to `midi-N` for that track only.
+The import report counts onset and duration edits, cross-bar note retriggers,
+and velocity edits.
 
 Import supports fixed tempo, 4/4 meter, 60–960 ticks per cell, at most 64
 tracks within the 256-voice native budget, 256 bars, and 16 distinct bar patterns per track. Pitch spellings
