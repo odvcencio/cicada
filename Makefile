@@ -1,4 +1,4 @@
-.PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
+.PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
 .PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm
 
 export GOWORK := off
@@ -371,6 +371,14 @@ build-sampler-wasm:
 test-sampler-wasm: build-sampler-wasm
 	go test -tags wasm_integration ./cmd/cicada-sampler-wasm -count=1
 	go test -tags sample_wasm ./kernel/voice/sample -run '^TestSampleNativeWASMDeterminism$$' -count=1
+
+# GoSX hosting: the score pack and controller, and sample-exact native/worklet parity.
+# GOSX_WORKLET_PROCESSOR is GoSX's game/audio/worklet/processor.js (a checkout of
+# m31labs.dev/gosx, or its module cache directory).
+test-gosx-worklet: build-kernel-wasm
+	@test -n "$(GOSX_WORKLET_PROCESSOR)" || { echo "set GOSX_WORKLET_PROCESSOR to GoSX's game/audio/worklet/processor.js" >&2; exit 2; }
+	go test ./sdk/gosxhost ./host/gamescore -count=1
+	go test ./sdk/gosxhost -run TestWorkletMatchesNativeKernel -count=1 -v
 
 # M5: SDK and layer-state parity over 64 bars across four native/WASM clients.
 test-director: build-kernel-wasm
