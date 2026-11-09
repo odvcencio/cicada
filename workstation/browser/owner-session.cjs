@@ -25,6 +25,17 @@ function install(browserType, readStartup) {
       const owner = available;
       available = false;
       const context = await newContext(...options);
+      // Studio's Code pane starts closed for new users. These suites type into
+      // the score as a user who keeps Code open would, so every context starts
+      // with that preference unless a test sets its own; the shell suite checks
+      // the closed default explicitly. The cookie lets the server render the
+      // pane open instead of opening it after the first paint.
+      await context.addInitScript(() => {
+        try { if (localStorage.getItem('studio:layout:codeOpen') === null) localStorage.setItem('studio:layout:codeOpen', 'true'); } catch {}
+      });
+      if (process.env.CICADA_STUDIO_URL) {
+        await context.addCookies([{name: 'cicada_panes', value: '11', url: new URL(process.env.CICADA_STUDIO_URL).origin}]);
+      }
       if (owner) {
         try {
           const response = await context.request.get(readStartup());

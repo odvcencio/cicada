@@ -55,8 +55,10 @@ async function sharedBrowser() {
 }
 
 // Code starts closed for users. These scenarios type into the score, so they
-// open it as a stored layout preference would; pass codeOpen: null to see the
-// default.
+// open it as a stored layout preference would. codeOpen: null stores the
+// closed default instead (the harness opens Code for contexts without a
+// preference, and init-script order is unspecified); TestShellPanes covers the
+// server's no-preference default.
 async function openShell(search = '', viewport, platform, {codeOpen = true} = {}) {
   assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to a running Studio');
   const base = new URL(process.env.CICADA_STUDIO_URL);
@@ -65,8 +67,7 @@ async function openShell(search = '', viewport, platform, {codeOpen = true} = {}
   const page = await context.newPage();
   await page.addInitScript(open => {
     try {
-      if (open === null) localStorage.removeItem('studio:layout:codeOpen');
-      else localStorage.setItem('studio:layout:codeOpen', JSON.stringify(open));
+      localStorage.setItem('studio:layout:codeOpen', JSON.stringify(open === null ? false : open));
     } catch {}
   }, codeOpen);
   // The server renders the panes from this cookie, as the shell engine writes it.
