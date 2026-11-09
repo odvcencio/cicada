@@ -112,6 +112,24 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 		}
 		if !found {
+			// An authored instrument's own parameter is live through the
+			// instrument.p slot of its declaration order.
+			for _, inst := range p.Instruments {
+				if inst.ID != p.Tracks[trackIndex].Kind {
+					continue
+				}
+				for slot, param := range inst.Params {
+					if param.ID != setting {
+						continue
+					}
+					if slot >= paramdefs.InstrumentParamSlots {
+						return fail("CICADA-UNSUPPORTED", fmt.Sprintf("parameter %s of instrument %s cannot change while it plays: only the first %d parameters an instrument declares can, and %s is number %d", param.ID, inst.ID, paramdefs.InstrumentParamSlots, param.ID, slot+1))
+					}
+					descriptor, found = paramdefs.InstrumentParamDescriptor(slot, param.ID, param.Unit, param.Default), true
+				}
+			}
+		}
+		if !found {
 			hint := paramdefs.SendPathHint(setting, func(name string) (string, bool) {
 				for _, effect := range p.Effects {
 					if effect.ID == name {
@@ -120,13 +138,6 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 				}
 				return "", false
 			})
-			for _, inst := range p.Instruments {
-				for _, param := range inst.Params {
-					if hint == "" && inst.ID == p.Tracks[trackIndex].Kind && param.ID == setting {
-						hint = paramdefs.InstrumentParamHint(inst.ID, param.ID)
-					}
-				}
-			}
 			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+hint)
 		}
 		if strings.HasPrefix(descriptor.ID, "amp.") {

@@ -24,10 +24,3 @@ func SendPathHint(setting string, kind func(effect string) (string, bool)) strin
 	}
 	return "; only the delay and reverb returns have track send paths (send.delay and send.reverb)"
 }
-
-// InstrumentParamHint explains why a route, automation lane or scene setting
-// cannot reach an authored instrument's own parameter: its value is fixed when
-// the instrument compiles. It names the in-graph alternative.
-func InstrumentParamHint(instrument, param string) string {
-	return "; " + param + " is a parameter of instrument " + instrument + ", fixed when the instrument compiles, so only the track's static " + param + " setting changes it; to move it while it plays, read a modulator inside the instrument, such as " + param + " * exp2(mod(<source>))"
-}

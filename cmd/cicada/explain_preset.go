@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -139,7 +140,8 @@ func explainAuthoredParameter(score *notation.Score, compiled *project.Project, 
 		if !found {
 			continue
 		}
-		if _, err := sceneValueAtBar(compiled, path, loc.bar); err != nil {
+		active, err := sceneValueAtBar(compiled, path, loc.bar)
+		if err != nil {
 			return true, err
 		}
 		fmt.Fprintf(output, "%s at bar %d, beat %d, step %d\n", path, loc.bar, loc.beat, loc.step)
@@ -158,6 +160,11 @@ func explainAuthoredParameter(score *notation.Score, compiled *project.Project, 
 				value = p.Value
 				fmt.Fprintf(output, "track block (%s): %s\n", owner, value)
 			}
+		}
+		// A parameter that scenes, automation or routes can move goes on to
+		// those layers, as a registry parameter does.
+		if resolved, err := project.ResolveParameterPath(compiled, path); err == nil && engine.IsLiveParam(resolved.ID) {
+			return true, explainMovingLayers(compiled, path, loc, resolved.Descriptor, value, active, output)
 		}
 		fmt.Fprintf(output, "computed: %s\n", value)
 		return true, nil

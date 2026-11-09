@@ -82,10 +82,16 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 	if sourceHasBlockSetting(score, resolved) {
 		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainBlockValue(score, resolved, value.Value))
 	}
-	computedText := explainValue(value.Value, resolved.Descriptor)
+	return explainMovingLayers(compiled, lookup, loc, resolved.Descriptor, explainValue(value.Value, resolved.Descriptor), active, output)
+}
+
+// explainMovingLayers prints what moves a parameter after its authored value:
+// the active scene setting, automation at the location, and modulation routes,
+// then the computed value.
+func explainMovingLayers(compiled *project.Project, lookup string, loc explainLocation, descriptor paramdefs.Descriptor, computedText string, active sceneExplainValue, output io.Writer) error {
 	if active.set {
-		computedText = explainProjectValue(active.value, resolved.Descriptor)
-		fmt.Fprintf(output, "scene %s (entered bar %d): %s\n", active.scene, active.bar, explainProjectValue(active.value, resolved.Descriptor))
+		computedText = explainProjectValue(active.value, descriptor)
+		fmt.Fprintf(output, "scene %s (entered bar %d): %s\n", active.scene, active.bar, explainProjectValue(active.value, descriptor))
 	}
 	// Song lanes override scene settings, including held values after their last
 	// point. Use the playback evaluator so log curves and incoming shapes agree.
@@ -96,7 +102,7 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 	for _, lane := range compiled.Automation {
 		if lane.Path == lookup {
 			if target, ok := project.AutomationValue(compiled, lane, tick); ok {
-				computedText = explainValue(float32(target), resolved.Descriptor)
+				computedText = explainValue(float32(target), descriptor)
 				fmt.Fprintf(output, "automation at %s: %s\n", notation.TickPosition(tick), computedText)
 			}
 		}

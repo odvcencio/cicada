@@ -27,19 +27,24 @@ func TestAutomationSendPathNamedByEffectGetsAHint(t *testing.T) {
 	t.Fatalf("no hint naming send.delay: %+v", ds)
 }
 
-// A route to an authored instrument's own parameter explains that the value is
-// fixed at compile time and names the in-graph alternative.
-func TestRouteToAnInstrumentParamExplainsTheLimit(t *testing.T) {
-	source := "cicada 2\ntempo 120\ninstrument tone {\n  param cutoff = 400Hz\n  voice mono { out = lowpass(saw(pitch), cutoff) * env(gate, 200ms) }\n}\ntrack lead tone { cutoff = 500Hz }\nlfo wobble { wave = sine rate = 1bars }\nmod wobble -> lead.cutoff depth = 100Hz\npattern p notes { c4 . . . }\nscene s { lead = p }\nsong { s }\n"
+// A route to an authored instrument's own parameter moves it live: the track
+// gets a binding for that parameter's slot and graph node, and no other.
+func TestRouteToAnInstrumentParamBindsItsSlot(t *testing.T) {
+	source := "cicada 2\ntempo 120\ninstrument tone {\n  param drive = 0.5\n  param cutoff = 400Hz\n  voice mono { out = lowpass(saw(pitch) * drive, cutoff) * env(gate, 200ms) }\n}\ntrack lead tone { cutoff = 500Hz }\ntrack pad tone {}\nlfo wobble { wave = sine rate = 1bars }\nmod wobble -> lead.cutoff depth = 100Hz\npattern p notes { c4 . . . }\nscene s { lead = p pad = p }\nsong { s }\n"
 	score, ds := notation.Parse([]byte(source))
 	if score == nil {
 		t.Fatalf("parse: %+v", ds)
 	}
-	_, ds = FromScore(score)
-	for _, d := range ds {
-		if strings.Contains(d.Message, "cutoff is a parameter of instrument tone") && strings.Contains(d.Message, "mod(<source>)") {
-			return
-		}
+	p, ds := FromScore(score)
+	if p == nil {
+		t.Fatalf("compile: %+v", ds)
 	}
-	t.Fatalf("no instrument-parameter hint: %+v", ds)
+	cfg, err := CompileEngine(p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := cfg.LiveParams
+	if len(live) != 1 || live[0].Track != 0 || live[0].Slot != 1 || cfg.Track[0].Graph.Nodes[live[0].Node].Value != 500 {
+		t.Fatalf("bindings %+v, want only lead's slot 1 (cutoff) on the node holding 500 Hz; pad, which nothing moves, gets none", live)
+	}
 }

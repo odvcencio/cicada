@@ -83,6 +83,9 @@ func TestParameterRangesMatchProjectValidatorsAndSchema(t *testing.T) {
 		if strings.HasPrefix(descriptor.ID, "global.") {
 			continue // top-level source settings have no v1 track/effect compiler
 		}
+		if paramdefs.IsInstrumentParamSlot(descriptor) {
+			continue // a slot takes the range of the authored parameter it carries
+		}
 		if descriptor.Schema != "" {
 			got, ok := schemaRanges[descriptor.Schema]
 			want := strconv.FormatFloat(descriptor.Min, 'f', -1, 64) + ".." + strconv.FormatFloat(descriptor.Max, 'f', -1, 64)
