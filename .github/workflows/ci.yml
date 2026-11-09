@@ -1137,6 +1137,8 @@ jobs:
             build/studio-chorus-server.log
             build/studio-shell-report.txt
             build/studio-shell-server.log
+            build/studio-mixer-strips-report.txt
+            build/studio-mixer-strips-server.log
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/

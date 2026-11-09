@@ -21,12 +21,18 @@ const (
 	meterHoldFall   = 20.0 // dB per second after the hold
 	meterClipFor    = 3 * time.Second
 	meterLabelEvery = 500 * time.Millisecond
+	meterSilent     = -96.0 // dBFS reported for "no signal" and for missing meters
+	meterLostAfter  = 3     // failed fetches in a row before the meters read no signal
 )
 
 // stripHold is the peak-hold tick and clip latch of one meter.
 type stripHold struct {
 	at, clipUntil, last time.Time
 	db                  float64
+	// The element and the values last written to it. A re-render brings a new
+	// element, which starts with nothing written.
+	element          js.Value
+	css, clip, label string
 }
 
 // mountStripMeters updates the strip meters in the shell Mixer from
@@ -40,6 +46,7 @@ func mountStripMeters() enginewasm.Handle {
 	ctx, cancel := context.WithCancel(context.Background())
 	holds := map[string]*stripHold{}
 	var labelled time.Time
+	failures := 0
 	go func() {
 		for {
 			visible := stripMetersVisible(document)
@@ -55,11 +62,26 @@ func mountStripMeters() enginewasm.Handle {
 			if !visible {
 				continue
 			}
-			var frame meterFrame
-			if readNativeJSON(ctx, "/api/meters", 2*time.Second, 64<<10, &frame) != nil || ctx.Err() != nil {
+			// Master starts silent, so a frame without it does not read 0 dBFS.
+			frame := meterFrame{Master: pair{Peak: meterSilent, RMS: meterSilent}}
+			if readNativeJSON(ctx, "/api/meters", 2*time.Second, 64<<10, &frame) != nil {
+				if ctx.Err() != nil {
+					continue
+				}
+				failures++
+				if failures == meterLostAfter {
+					// Show silence instead of the last level, and drop the
+					// holds and clip lamps. The next good frame paints again.
+					clear(holds)
+					paintStripMeters(document, meterFrame{Master: pair{Peak: meterSilent, RMS: meterSilent}}, holds, &labelled, true)
+				}
 				continue
 			}
-			paintStripMeters(document, frame, holds, &labelled)
+			if ctx.Err() != nil {
+				continue
+			}
+			failures = 0
+			paintStripMeters(document, frame, holds, &labelled, false)
 		}
 	}()
 	var once sync.Once
@@ -82,7 +104,7 @@ func meterFraction(db float64) float64 {
 
 func finiteDB(db float64) float64 {
 	if math.IsNaN(db) || math.IsInf(db, 0) {
-		return -96
+		return meterSilent
 	}
 	return db
 }
@@ -103,12 +125,12 @@ func (f meterFrame) lookup(id string) pair {
 	if found, ok := source[name]; ok {
 		return found
 	}
-	return pair{Peak: -96, RMS: -96}
+	return pair{Peak: meterSilent, RMS: meterSilent}
 }
 
-func paintStripMeters(document js.Value, frame meterFrame, holds map[string]*stripHold, labelled *time.Time) {
+func paintStripMeters(document js.Value, frame meterFrame, holds map[string]*stripHold, labelled *time.Time, force bool) {
 	now := time.Now()
-	announce := now.Sub(*labelled) >= meterLabelEvery
+	announce := force || now.Sub(*labelled) >= meterLabelEvery
 	if announce {
 		*labelled = now
 	}
@@ -123,6 +145,9 @@ func paintStripMeters(document js.Value, frame meterFrame, holds map[string]*str
 			hold = &stripHold{db: peak, at: now, last: now}
 			holds[id] = hold
 		}
+		if !hold.element.Equal(element) {
+			hold.element, hold.css, hold.clip, hold.label = element, "", "", ""
+		}
 		switch {
 		case peak >= hold.db:
 			hold.db, hold.at = peak, now
@@ -134,14 +159,26 @@ func paintStripMeters(document js.Value, frame meterFrame, holds map[string]*str
 			hold.clipUntil = now.Add(meterClipFor)
 		}
 		clipped := now.Before(hold.clipUntil)
-		element.Get("style").Set("cssText", fmt.Sprintf("--peak:%.3f;--rms:%.3f;--hold:%.3f", meterFraction(peak), meterFraction(rms), meterFraction(hold.db)))
-		element.Call("setAttribute", "data-clip", fmt.Sprint(clipped))
+		if css := fmt.Sprintf("--peak:%.3f;--rms:%.3f;--hold:%.3f", meterFraction(peak), meterFraction(rms), meterFraction(hold.db)); css != hold.css {
+			element.Get("style").Set("cssText", css)
+			hold.css = css
+		}
+		if clip := fmt.Sprint(clipped); clip != hold.clip {
+			element.Call("setAttribute", "data-clip", clip)
+			hold.clip = clip
+		}
 		if announce {
-			label := fmt.Sprintf("%s meter, peak %.1f dBFS, RMS %.1f dBFS", element.Call("getAttribute", "data-meter-name").String(), peak, rms)
-			if clipped {
+			name := element.Call("getAttribute", "data-meter-name").String()
+			label := fmt.Sprintf("%s meter, peak %.1f dBFS, RMS %.1f dBFS", name, peak, rms)
+			if peak <= meterSilent {
+				label = name + " meter, no signal"
+			} else if clipped {
 				label += ", clipping"
 			}
-			element.Call("setAttribute", "aria-label", label)
+			if label != hold.label {
+				element.Call("setAttribute", "aria-label", label)
+				hold.label = label
+			}
 		}
 	}
 	if !announce {
