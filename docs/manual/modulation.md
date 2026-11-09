@@ -105,8 +105,9 @@ modular browser kernel. They are not supported inside authored drum-kit lanes.
 ## Live instrument parameters
 
 An authored instrument's own parameters can move while it plays. A scene
-setting, an automation lane, a modulation route, a macro mapping or a MIDI
-control names the parameter on the track that plays the instrument:
+setting, an automation lane, a modulation route or a macro mapping names the
+parameter on the track that plays the instrument, including a track that plays
+a preset of it:
 
 ```cicada
 cicada 2
@@ -134,7 +135,12 @@ parameter keeps its declared unit, and its range comes from that unit:
 `hz` 1–20,000 Hz on a log curve, `ms` 0–60,000 ms, `db` −60 to +24 dB,
 and a unitless parameter −1,000 to 1,000; a default outside that range widens
 it. Only the first eight parameters an instrument declares can move, in
-declaration order; a later one is refused with the limit named.
+declaration order; a later one is refused with the limit named. Cicada checks
+the instrument at the lowest and highest values the scenes, automation, routes
+and macros can give a parameter, as it checks a track's static setting, so a
+delay time or comb feedback out of range is refused rather than clamped while
+it plays. A seek or a scene restore also returns a routed parameter's base to
+the authored value. MIDI controls cannot reach an authored parameter yet.
 
 Native playback, `render` and `stems` move these parameters. The
 portable browser and WAM images refuse a score that moves one. Reading a

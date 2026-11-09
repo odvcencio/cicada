@@ -41,5 +41,8 @@ func InstrumentParamDescriptor(slot int, name, unit string, def float64) Descrip
 	if def > d.Max {
 		d.Max = def
 	}
+	if d.Curve == "log" && d.Min <= 0 {
+		d.Curve = "linear" // a log curve needs positive values
+	}
 	return d
 }

@@ -41,3 +41,14 @@ func TestSceneAndAutomationMoveAnAuthoredParameter(t *testing.T) {
 		t.Fatal("not a WAV")
 	}
 }
+
+// A track that plays a preset of an authored instrument can move the
+// instrument's parameter; the render goes through the engine.
+func TestAPresetTrackMovesItsInstrumentParameter(t *testing.T) {
+	preset := strings.Replace(liveTone, "track lead tone {}", "preset soft { instrument = tone cutoff = 600Hz }\ntrack lead soft {}", 1)
+	static := renderSource(t, preset+"scene main { lead = line }\nsong { main*2 }\n")
+	moved := renderSource(t, preset+"scene main { lead = line }\nscene bright { lead = line lead.cutoff = 4000Hz }\nsong { main bright }\n")
+	if bytes.Equal(static, moved) {
+		t.Fatal("the scene setting on a preset track did not change the render")
+	}
+}

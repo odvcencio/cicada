@@ -129,6 +129,14 @@ func (e *Engine) restoreSceneDefaults() bool {
 			return false
 		}
 	}
+	// A route adds to the value it saw last; after the restore that is the
+	// authored value again, not a scene's.
+	if modulationEnabled && e.mod.active {
+		for i := range e.mod.targets {
+			t := &e.mod.targets[i]
+			t.base, t.off = e.routeBase(t.track, t.id)
+		}
+	}
 	return e.restoreEffects(base)
 }
 

@@ -2052,6 +2052,10 @@ func isSamplerVoice(voice monoVoice) bool {
 // movesInstrumentParam reports whether a scene setting or automation lane
 // moves an authored instrument's own parameter. Only the engine drives those.
 func movesInstrumentParam(score *notation.Score) bool {
+	// A preset track plays its target instrument.
+	if resolved, _ := notation.ResolvePresets(score); resolved != nil {
+		score = resolved
+	}
 	params := map[string]map[string]bool{} // instrument -> declared parameters
 	for _, inst := range score.Instruments {
 		params[inst.Name] = map[string]bool{}
