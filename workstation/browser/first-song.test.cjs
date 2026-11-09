@@ -31,7 +31,7 @@ test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and exp
  }
  const initial=await state();assert.ok(initial.source.includes('title \"first-light\"')&&initial.source.includes('track drums drums')&&initial.source.includes('track bass fm_bass')&&initial.source.includes('track chords poly_keys'),'use the untouched disposable first-light template');
  const audio=await(await page.request.get(new URL('/api/audio/config',origin).href)).json();assert.equal(audio.options.inputEnabled,false);assert.equal(String(audio.inventory.backendName||audio.inventory.backend).toLowerCase(),'null');
- await page.locator('#studio-code > details > summary').click();
+ if(await page.locator('#studio-code > details').evaluate(node=>node.open)) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=hide]').click();
  await projectSettings('First Light',108);
  const patch=page.locator('[data-instrument-patch="warm-pad"]');await patch.locator('summary').click();await patch.locator('[name=newName]').fill('first-light-keys');await patch.locator('[name=track]').fill('keys');await patch.getByRole('button',{name:'Add instrument and track',exact:true}).click();
  await saved(s=>s.includes('track keys first-light-keys'),'keys sound added to the song');

@@ -34,6 +34,10 @@ func shellCommands() []command.Command {
 		{ID: "dock.device", Title: "Show Device tab", Group: "View", Keys: []string{"Alt+Shift+5"}, Action: command.Action{Signal: "$dock", Value: "device"}},
 		{ID: "dock.automation", Title: "Show Automation tab", Group: "View", Keys: []string{"Alt+Shift+6"}, Action: command.Action{Signal: "$dock", Value: "automation"}},
 		{ID: "palette.open", Title: "Show keyboard shortcuts", Group: "View", Keys: []string{"Mod+K", "?", "Shift+/"}, Action: command.Action{Open: "#palette"}},
+		{ID: "layout.library.show", Title: "Show Library", Group: "View", Action: command.Action{Signal: "$layout.browserOpen", Value: true}},
+		{ID: "layout.library.hide", Title: "Hide Library", Group: "View", Action: command.Action{Signal: "$layout.browserOpen", Value: false}},
+		{ID: "layout.code.show", Title: "Show Code", Group: "View", Action: command.Action{Signal: "$layout.codeOpen", Value: true}},
+		{ID: "layout.code.hide", Title: "Hide Code", Group: "View", Action: command.Action{Signal: "$layout.codeOpen", Value: false}},
 
 		// The shell engine submits the existing managed forms, retaining their
 		// CSRF token, displayed revision, file and normal conflict handling.
@@ -78,6 +82,7 @@ func shellCommands() []command.Command {
 	return cmds
 }
 
-// shellToggleMirrors names the second command of each toggle pair. The
-// shortcuts dialog lists the pair once.
-var shellToggleMirrors = map[string]bool{"tool.select": true}
+// shellToggleMirrors names the second command of each toggle pair, and the
+// keyless pane toggles behind the top bar's Library and Code buttons. The
+// shortcuts dialog lists a pair once and leaves the pane toggles out.
+var shellToggleMirrors = map[string]bool{"tool.select": true, "layout.library.show": true, "layout.library.hide": true, "layout.code.show": true, "layout.code.hide": true}

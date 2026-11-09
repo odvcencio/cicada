@@ -489,28 +489,37 @@ func (s *studioApp) liveLaunch(v workspace, csrf string) gosx.Node {
 		}
 		return field("Launch timing", gosx.El("select", gosx.Attrs(gosx.Attr("name", "quantize")), gosx.Fragment(opts...)))
 	}
-	heads = append(heads, gosx.El("th", gosx.Text("Track")))
-	for _, scene := range v.Project.Scenes {
-		heads = append(heads, gosx.El("th", button(scene.ID, liveLaunchCommand{Action: "launch", Scene: scene.ID})))
+	// Scenes are rows and tracks are columns, as in a DAW session view. Each
+	// scene's header button carries its 1-based position for the F1–F8 keys.
+	tracks := v.Project.Tracks
+	color := func(i int) gosx.AttrList {
+		return gosx.Attrs(gosx.Attr("data-track-color", strconv.Itoa(i%trackColors)))
 	}
-	heads = append(heads, gosx.El("th", gosx.Text("Stop track")))
-	for _, track := range v.Project.Tracks {
-		cells := []gosx.Node{gosx.El("th", gosx.Text(track.ID))}
-		for _, scene := range v.Project.Scenes {
+	heads = append(heads, gosx.El("th", gosx.Attrs(gosx.Attr("scope", "col"), gosx.Attr("class", "live-scene-head")), gosx.Text("Scene")))
+	for i, track := range tracks {
+		heads = append(heads, gosx.El("th", append(color(i), gosx.Attr("scope", "col")), gosx.Text(track.ID)))
+	}
+	for index, scene := range v.Project.Scenes {
+		cells := []gosx.Node{gosx.El("th", gosx.Attrs(gosx.Attr("scope", "row"), gosx.Attr("data-live-scene", strconv.Itoa(index+1))), button(scene.ID, liveLaunchCommand{Action: "launch", Scene: scene.ID}))}
+		for i, track := range tracks {
 			pattern := scene.Bindings[track.ID]
 			if pattern == "" || pattern == "keep" {
-				cells = append(cells, gosx.El("td", gosx.Text("Keep")))
+				cells = append(cells, gosx.El("td", append(color(i), gosx.Attr("class", "live-keep")), gosx.Text("Keep")))
 				continue
 			}
 			action, label := "slot", pattern
 			if pattern == "off" {
 				action, label = "trackStop", "Stop"
 			}
-			cells = append(cells, gosx.El("td", gosx.Attrs(gosx.Attr("data-live-slot", pattern), gosx.Attr("data-live-track", track.ID)), button(label, liveLaunchCommand{Action: action, Track: track.ID, Pattern: pattern})))
+			cells = append(cells, gosx.El("td", append(color(i), gosx.Attr("data-live-slot", pattern), gosx.Attr("data-live-track", track.ID)), button(label, liveLaunchCommand{Action: action, Track: track.ID, Pattern: pattern})))
 		}
-		cells = append(cells, gosx.El("td", button("Stop "+track.ID, liveLaunchCommand{Action: "trackStop", Track: track.ID})))
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
+	stops := []gosx.Node{gosx.El("th", gosx.Attrs(gosx.Attr("scope", "row")), gosx.Text("Stop track"))}
+	for i, track := range tracks {
+		stops = append(stops, gosx.El("td", color(i), button("Stop "+track.ID, liveLaunchCommand{Action: "trackStop", Track: track.ID})))
+	}
+	rows = append(rows, gosx.El("tr", gosx.Attrs(gosx.Attr("class", "live-stop-row")), gosx.Fragment(stops...)))
 	return gosx.El("details", gosx.Attrs(gosx.BoolAttr("open")), gosx.El("summary", gosx.Text("Live launch matrix")), gosx.El("p", gosx.Attrs(gosx.Attr("data-live-launch-status", ""), gosx.Attr("aria-live", "off")), gosx.Text("Launch scenes or individual slots while playing.")), s.form(v, csrf, "live", "launch", timing(), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Live launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
 }
 

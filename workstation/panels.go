@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -210,7 +211,17 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 	v.Revision = mixer.Revision
 	v.Edition = mixer.Edition
 	var strips []gosx.Node
-	for _, strip := range append(append(mixer.Tracks, mixer.Buses...), mixer.Master) {
+	all := append(append(slices.Clone(mixer.Tracks), mixer.Buses...), mixer.Master)
+	for index, strip := range all {
+		attrs := gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-mixer-strip", "track"))
+		switch {
+		case index < len(mixer.Tracks):
+			attrs = append(attrs, gosx.Attr("data-track-color", strconv.Itoa(index%trackColors)))
+		case index == len(all)-1:
+			attrs = gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-mixer-strip", "master"))
+		default:
+			attrs = gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-mixer-strip", "bus"))
+		}
 		var fields []gosx.Node
 		keys := make([]string, 0, len(strip.Fields))
 		for key := range strip.Fields {
@@ -234,7 +245,7 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 				}
 			}
 		}
-		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip")), gosx.El("h3", gosx.Text(strip.Name)), gosx.Fragment(fields...)))
+		strips = append(strips, gosx.El("section", attrs, gosx.El("h3", gosx.Text(strip.Name)), s.mixerFader(v, csrf, strip.Name, strip.Fields["level"]), gosx.Fragment(fields...)))
 	}
 	for _, ret := range append(mixer.Returns, mixer.Effects...) {
 		var fields []gosx.Node
@@ -249,6 +260,34 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 	}
 	addChorus := s.form(v, csrf, "mixer", "mixer", chorusFields...)
 	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: "Track, bus, return, effect, and master parameters are saved to the score."}, addChorus, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
+}
+
+// mixerFader shows a strip's level as a vertical fader. Moving it submits the
+// level through the same mixer action as the strip's numeric level field,
+// which stays for exact values and for "off". Edition 1 scores confirm an
+// upgrade with each mixer change, so they keep only the field.
+func (s *studioApp) mixerFader(v workspace, csrf, name string, f mixerField) gosx.Node {
+	d := f.Descriptor
+	if !f.Supported || v.Edition == 1 || d.Max <= d.Min {
+		return gosx.Fragment()
+	}
+	value, numeric := f.Value.(float64)
+	readout := "off"
+	if numeric {
+		readout = strconv.FormatFloat(value, 'f', 1, 64)
+	} else {
+		value = d.Min
+	}
+	step := "any"
+	if d.DisplayStep > 0 {
+		step = strconv.FormatFloat(d.DisplayStep, 'f', -1, 64)
+	}
+	input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("name", "value"),
+		gosx.Attr("min", strconv.FormatFloat(d.Min, 'f', -1, 64)), gosx.Attr("max", strconv.FormatFloat(d.Max, 'f', -1, 64)), gosx.Attr("step", step),
+		gosx.Attr("value", strconv.FormatFloat(value, 'f', -1, 64)), gosx.Attr("aria-label", name+" level fader"), gosx.Attr("data-gosx-submit-on", "change")))
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-fader"), gosx.Attr("data-mixer-fader", f.Path)),
+		s.form(v, csrf, "mixer", "mixer", hidden("path", f.Path), hidden("valueType", "number"), input),
+		gosx.El("span", gosx.Attrs(gosx.Attr("class", "strip-readout")), gosx.Text(readout), gosx.El("small", gosx.Text(d.Unit))))
 }
 
 func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) gosx.Node {

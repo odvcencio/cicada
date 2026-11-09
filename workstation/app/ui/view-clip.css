@@ -1,0 +1,54 @@
+/* Clip dock: the pattern list, one tool row, then the grid. The dock bar
+   already names the pattern, so the panel's own heading is for screen readers. */
+.shell #detail-panel-clip #patterns { margin:0; padding:0; border:0; border-radius:0; background:none; }
+.shell #detail-panel-clip #patterns > .panel-heading { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.shell #detail-panel-clip #patterns > details > summary { color:var(--muted); font-size:12px; }
+.shell #detail-panel-clip .pattern-editor { grid-template-columns:150px minmax(0,1fr); gap:12px; margin-top:6px; }
+
+/* Pattern list: one row per pattern, the open one marked in amber. */
+.shell #detail-panel-clip .pattern-library { gap:2px; }
+.shell #detail-panel-clip .pattern-choice { display:grid; gap:0; padding:4px 8px; border:0; border-left:2px solid transparent; border-radius:3px; background:none; color:var(--text); }
+.shell #detail-panel-clip .pattern-choice:hover { background:var(--raised); }
+.shell #detail-panel-clip .pattern-choice strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
+.shell #detail-panel-clip .pattern-choice span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font:10px var(--mono); }
+.shell #detail-panel-clip .pattern-choice[aria-current] { border-left-color:var(--amber); background:var(--raised); color:var(--amber); }
+
+/* Tool row: title, register, Pattern Machine, timing and the preview. */
+.shell #detail-panel-clip .pattern-workspace > .actions { gap:6px 10px; }
+.shell #detail-panel-clip .pattern-workspace > .actions h3 { margin:0; font-size:13px; }
+.shell #detail-panel-clip .pattern-workspace > .actions .field { display:flex; align-items:center; gap:6px; margin:0; }
+.shell #detail-panel-clip .pattern-workspace > .actions input { width:56px; }
+.shell #detail-panel-clip .pattern-workspace :is(button,input,select,.machine-open) { min-height:27px; }
+.shell #detail-panel-clip .pattern-workspace > p,
+.shell #detail-panel-clip .pattern-workspace > .note-preview p { margin:4px 0; color:var(--muted); font-size:11px; }
+.shell #detail-panel-clip .pattern-workspace > .note-preview { margin-top:4px; padding-top:4px; border-top:0; }
+
+/* Piano roll: key labels like a keyboard, a dark grid with beat lines, notes
+   in mint. */
+.shell #detail-panel-clip .pattern-canvas { margin:6px 0 10px; gap:10px; }
+.shell #detail-panel-clip .piano-roll { max-height:none; border-color:var(--border); border-radius:4px; background:var(--bg); }
+.shell #detail-panel-clip .roll-label { width:56px; height:22px; justify-content:flex-end; padding:0 6px; border-bottom:1px solid #9aa6b3; background:#d6dde5; color:#1b222c; font:10px var(--mono); }
+.shell #detail-panel-clip .black-key .roll-label { background:#1f2732; border-bottom-color:var(--border); color:var(--muted); }
+.shell #detail-panel-clip .roll-cell { width:30px; min-width:30px; height:22px; min-height:22px; flex:1 0 30px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--bg); color:transparent; }
+.shell #detail-panel-clip .black-key .roll-cell { background:var(--ruler); }
+.shell #detail-panel-clip .roll-cell:nth-of-type(4n+1) { border-left:1px solid var(--grid-strong); }
+.shell #detail-panel-clip .roll-cell[data-active=true] { background:color-mix(in srgb,var(--mint) 52%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mint) 80%,var(--bg)); color:transparent; }
+.shell #detail-panel-clip .roll-cell[data-selected=true] { border-left-color:var(--amber); border-right-color:var(--amber); }
+.shell #detail-panel-clip .roll-cell[data-active=true][data-selected=true] { background:color-mix(in srgb,var(--amber) 55%,var(--bg)); }
+.shell #detail-panel-clip .ruler .roll-label { height:24px; background:var(--panel); border-bottom-color:var(--border); color:var(--muted); }
+.shell #detail-panel-clip :is(.step-number,.tie-step) { width:30px; min-width:30px; height:24px; flex:1 0 30px; color:var(--muted); font:10px/24px var(--mono); }
+.shell #detail-panel-clip .ruler:first-child { background:var(--panel); }
+.shell #detail-panel-clip .step-number[aria-current] { background:var(--amber); color:var(--bg); }
+
+/* Drum grid: rounded step cells, hits in mint with the step number. */
+.shell #detail-panel-clip .drum-row .roll-label { height:32px; justify-content:flex-start; background:var(--panel); border-bottom-color:var(--border); color:var(--text); font:11px var(--mono); }
+.shell #detail-panel-clip .drum-row .roll-cell { height:28px; min-height:28px; margin:2px 1px; border:1px solid var(--border); border-radius:3px; background:var(--raised); color:var(--muted); font:11px var(--mono); }
+.shell #detail-panel-clip .drum-row .roll-cell:nth-of-type(4n+1) { border-left:1px solid var(--grid-strong); margin-left:4px; }
+.shell #detail-panel-clip .drum-row .roll-cell[data-active=true] { background:color-mix(in srgb,var(--mint) 38%,var(--bg)); border-color:color-mix(in srgb,var(--mint) 70%,var(--bg)); box-shadow:none; color:var(--amber); }
+
+/* Step inspector beside the grid. */
+.shell #detail-panel-clip .step-inspector { padding:8px 10px; border-radius:4px; background:var(--panel); }
+.shell #detail-panel-clip .step-inspector h3 { font-size:13px; }
+.shell #detail-panel-clip .pattern-workspace > details { margin:6px 0; }
+.shell #detail-panel-clip .pattern-workspace > details > summary { color:var(--muted); font-size:12px; cursor:pointer; }
+@media (min-width:1100px) { .shell #detail-panel-clip .pattern-canvas { grid-template-columns:minmax(0,1fr) 220px; } }

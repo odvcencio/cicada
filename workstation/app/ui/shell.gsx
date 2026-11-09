@@ -190,19 +190,56 @@ component Collapsible(props: CollapsibleProps) {
 type TopBarProps struct {
 	Title    string
 	Filename string
-	Tempo    string
-	Key      string
-	Backend  string
 }
 
 // The transport toolbar's children are forms and command buttons from the page.
 component TopBar(props: TopBarProps) {
 	return <header class="gsx-dock__top shell-top">
-		<a class="brand" href="/studio">CICADA <span>STUDIO</span></a>
-		<div class="score-title"><h1>{props.Title}</h1><span class="muted">{props.Filename}</span></div>
-		<div class="score-meta"><span>{props.Tempo} BPM</span><span>{props.Key}</span><span class="engine-label">{props.Backend}</span></div>
+		<a class="brand" href="/studio" aria-label="Cicada Studio"><span class="brand-mark" aria-hidden="true"></span></a>
+		<div class="score-title"><h1>{props.Title}</h1><span class="score-sub">{props.Filename}</span></div>
 		<div class="shell-transport" role="toolbar" aria-label="Transport">{children}</div>
 	</header>
+}
+
+type TempoProps struct {
+	Tempo string
+	Key   string
+}
+
+// Tempo shows the song's tempo and key beside the position counter.
+component Tempo(props: TempoProps) {
+	return <div class="shell-tempo"><b>{props.Tempo}</b><span>BPM</span><small>{props.Key}</small></div>
+}
+
+// StatusBar is the workspace's bottom line: the saved state on the left and
+// the audio service on the right. Its children are the page's status items.
+component StatusBar() {
+	return <footer class="gsx-dock__status shell-status" aria-label="Status">{children}</footer>
+}
+
+type StatusItemProps struct {
+	Label string
+	Value string
+}
+
+component StatusItem(props: StatusItemProps) {
+	return <span class="shell-status__item"><span class="shell-status__label">{props.Label}</span>{props.Value}</span>
+}
+
+type PaneToggleProps struct {
+	Show  string
+	Hide  string
+	Label string
+	Pane  string
+}
+
+// PaneToggle opens or closes a side pane through its layout signal. Only the
+// button that changes the current state shows; CSS reads the pane's state.
+component PaneToggle(props: PaneToggleProps) {
+	return <>
+		<button type="button" class="shell-command shell-pane-toggle" data-pane={props.Pane} data-pane-action="show" data-gosx-command={props.Show} aria-pressed="false">{props.Label}</button>
+		<button type="button" class="shell-command shell-pane-toggle" data-pane={props.Pane} data-pane-action="hide" data-gosx-command={props.Hide} aria-pressed="true">{props.Label}</button>
+	</>
 }
 
 type ActionFormProps struct {
@@ -251,6 +288,32 @@ type DialogTriggerProps struct {
 
 component DialogTrigger(props: DialogTriggerProps) {
 	return <button type="button" class="shell-command" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false">{props.Label}</button>
+}
+
+type IconDialogTriggerProps struct {
+	Target   string
+	Controls string
+	Label    string
+	Glyph    string
+}
+
+// IconDialogTrigger is a DialogTrigger whose visible text is a glyph; the
+// label stays its accessible name.
+component IconDialogTrigger(props: IconDialogTriggerProps) {
+	return <button type="button" class="shell-command transport-glyph" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false" aria-label={props.Label} title={props.Label}>{props.Glyph}</button>
+}
+
+type StatusTriggerProps struct {
+	Target   string
+	Controls string
+	Label    string
+	Text     string
+}
+
+// StatusTrigger opens a dialog from the status bar. It names the dialog, then
+// the current status, so both are part of its accessible name.
+component StatusTrigger(props: StatusTriggerProps) {
+	return <button type="button" class="shell-status__trigger" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false"><span class="shell-status__label">{props.Label}</span> <span>{props.Text}</span></button>
 }
 
 type DialogFrameProps struct {
@@ -331,6 +394,9 @@ type DetailDockProps struct {
 	DeviceShown    bool
 	AutomationShown bool
 	Height         string
+	Selection      string
+	SelectionDetail string
+	TrackDetail    string
 }
 
 component DetailDock(props: DetailDockProps) {
@@ -342,6 +408,8 @@ component DetailDock(props: DetailDockProps) {
 				<Tab ID="detail-tab-device" Value="device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
 				<Tab ID="detail-tab-automation" Value="automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
 			</nav>
+			<p class="shell-dock-selection" data-dock-selection="clip"><strong>{props.Selection}</strong> <span>{props.SelectionDetail}</span></p>
+			<p class="shell-dock-selection" data-dock-selection="track"><span>{props.TrackDetail}</span></p>
 			<div class="shell-scroll">{children}</div>
 		</div>
 	</section>

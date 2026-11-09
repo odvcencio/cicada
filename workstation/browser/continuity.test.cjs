@@ -483,7 +483,8 @@ async function scenario(t) {
     await page.locator('#cicada-meters canvas').waitFor();
     await page.evaluate(() => { window.__continuityMeters = {root: document.querySelector('#cicada-workspace'), mount: document.querySelector('#cicada-meters'), canvas: document.querySelector('#cicada-meters canvas'), document: window.__continuityDocument}; });
     documentRequests = 0; armed = true;
-    const gain = page.locator('#mixer form').filter({has: page.locator('input[name="path"][value="keys.level"]')});
+    // The numeric field, not the strip's fader, which posts the same path.
+    const gain = page.locator('#mixer .mixer-control form').filter({has: page.locator('input[name="path"][value="keys.level"]')});
     await gain.locator('input[name="value"]').fill('-7.25');
     start = requests.length;
     await gain.locator('button[type="submit"]').evaluate(button => button.click());
@@ -540,7 +541,7 @@ async function scenario(t) {
     assert.equal(await page.locator('[data-live-note="50"]').getAttribute('aria-pressed'), 'true', 'held note feedback was not immediate');
     await until(() => liveHeartbeats.some(record => record.delivered && record.payload.lease === held.payload.lease), 'held Live note did not renew its lease');
     start = requests.length;
-    await page.locator('form[action="/__actions/launch"] thead button').filter({hasText: /^alternate$/}).evaluate(button => button.click());
+    await page.locator('form[action="/__actions/launch"] [data-live-scene] button').filter({hasText: /^alternate$/}).evaluate(button => button.click());
     await waitRequests(start + 1);
     assert.equal(requests[start].action, 'launch');
     await projectedRevision(requests[start]);

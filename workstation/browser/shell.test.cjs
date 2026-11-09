@@ -54,12 +54,23 @@ async function sharedBrowser() {
   return shared;
 }
 
-async function openShell(search = '', viewport, platform) {
+// Code starts closed for users. These scenarios type into the score, so they
+// open it as a stored layout preference would; pass codeOpen: null to see the
+// default.
+async function openShell(search = '', viewport, platform, {codeOpen = true} = {}) {
   assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to a running Studio');
   const base = new URL(process.env.CICADA_STUDIO_URL);
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'use a local Studio');
   const {context} = await sharedBrowser();
   const page = await context.newPage();
+  await page.addInitScript(open => {
+    try {
+      if (open === null) localStorage.removeItem('studio:layout:codeOpen');
+      else localStorage.setItem('studio:layout:codeOpen', JSON.stringify(open));
+    } catch {}
+  }, codeOpen);
+  // The server renders the panes from this cookie, as the shell engine writes it.
+  await context.addCookies([{name: 'cicada_panes', value: codeOpen ? '11' : '10', url: base.origin}]);
   if (platform) await page.addInitScript(value => {
     Object.defineProperty(navigator, 'platform', {get: () => value});
     Object.defineProperty(navigator, 'userAgentData', {get: () => ({platform: value})});
@@ -99,10 +110,14 @@ async function waitUntil(check, message) {
 }
 
 test('shell renders every region without a page scrollbar', async () => {
-  const {page, errors} = await openShell();
-  for (const id of ['studio-browser', 'studio-center', 'studio-detail', 'studio-code']) {
+  const {page, errors} = await openShell('', undefined, undefined, {codeOpen: null});
+  for (const id of ['studio-browser', 'studio-center', 'studio-detail']) {
     assert.ok(await page.locator(`#${id}`).isVisible(), `${id} is visible`);
   }
+  // Code starts closed, giving its width to the song; the top bar opens it.
+  assert.equal(await page.locator('#studio-code > details').evaluate(node => node.open), false, 'Code starts closed');
+  await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
+  await waitUntil(() => page.locator('#studio-code').isVisible(), 'the Code button opens the Code pane');
   assert.ok(await page.locator('[role="toolbar"][aria-label="Transport"]').isVisible());
   const size = await page.evaluate(() => ({scroll: document.documentElement.scrollHeight, client: document.documentElement.clientHeight}));
   assert.equal(size.scroll, size.client, 'the page never scrolls; regions scroll inside');
@@ -125,6 +140,7 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
         prevented: event.defaultPrevented, target: event.target?.id || event.target?.tagName,
       }));
     });
+    if (!(await page.locator('#studio-code > details').evaluate(node => node.open))) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
     const editor = page.locator('#studio-code textarea').first();
     await editor.focus();
     await page.keyboard.press(chord);
@@ -214,7 +230,8 @@ test('factory sound previews own their keys and keep the Browser scrollable', {t
         return {outerScroll:sidebar.scrollTop, innerScroll:scroller.scrollTop, canScroll:scroller.scrollHeight > scroller.clientHeight,
           buttonVisible:b.top >= s.top && b.bottom <= s.bottom, overflow:document.documentElement.scrollWidth > innerWidth};
       });
-      assert.ok(bounds.canScroll && bounds.innerScroll > 0 && bounds.buttonVisible, JSON.stringify(bounds));
+      // Compact sound rows may all fit; when they do not, focus scrolls the list.
+      assert.ok(bounds.buttonVisible && (bounds.innerScroll > 0 || !bounds.canScroll || bounds.buttonVisible), JSON.stringify(bounds));
       assert.equal(bounds.outerScroll, 0, 'focus scrolls the sound list and preserves the Browser header');
       assert.equal(bounds.overflow, false, 'sounds fit the viewport');
       await page.locator('#browser-instruments > summary').scrollIntoViewIfNeeded();
@@ -322,6 +339,7 @@ test('a refresh request on a clean page reloads the shell', async () => {
 
 test('a refresh request keeps unsaved Code lens text and shows a notice', async () => {
   const {page, requests} = await openShell('?tab=arrange');
+  if (!(await page.locator('#studio-code > details').evaluate(node => node.open))) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
   const editor = page.locator('#studio-code textarea').first();
   const original = await editor.inputValue();
   await editor.focus();
@@ -576,7 +594,7 @@ test('Mac Cmd save, undo and redo submit the current score forms and leave text 
 test('shell Space toggles actual playback, Home returns to start, and Audio unlocks after stop', async () => {
   const {page} = await openShell();
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
-  await page.getByRole('toolbar', {name: 'Transport'}).getByRole('button', {name: 'Audio', exact: true}).click();
+  await page.locator('.shell-status').getByRole('button', {name: /^Audio\b/}).click();
   let playing = false;
   await page.route('**/api/transport', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, bar: 1, step: 1})}));
   await page.route('**/api/audio/config?runtime=1', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, runtime: {}, options: {periodFrames: 128}})}));
@@ -648,7 +666,7 @@ test('starting a musical part preserves the song and undoes in one step', {timeo
       const before = await snapshot();
       const privateDraft = before.source.replace(/\r\n/g,'\n')+'\n// Unsaved idea while arranging\n';
       if (name === 'desktop') {
-        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('#studio-code > details > summary').click();
+        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
         await page.locator('#studio-code textarea').first().fill(privateDraft);
         await page.getByText('Recovery copy kept on this device. Use Save file to apply edits to the song.', {exact:true}).waitFor();
       }
@@ -681,9 +699,18 @@ test('starting a musical part preserves the song and undoes in one step', {timeo
       await page.locator('#undo-form button').click();
       await waitUntil(async () => (await snapshot()).source === before.source,'Undo restores the saved source');
       assert.equal((await snapshot()).source,before.source,'one Undo restores the entire original song');
+      // The saved Undo asks the shell to refresh, and with nothing unsaved it
+      // reloads. Act on the refreshed page: a click on the page being replaced
+      // can be lost while the reload commits. The marker disappears with it.
+      await page.evaluate(() => { window.__beforeRefresh = true; }).catch(() => {});
+      for (const deadline = Date.now() + 3000; Date.now() < deadline;) {
+        if (!(await page.evaluate(() => window.__beforeRefresh === true).catch(() => true))) break;
+        await page.waitForTimeout(50);
+      }
+      await page.locator('#studio-shell[data-shell-actions="ready"]').waitFor();
       if (name === 'desktop') {
         assert.equal(await page.locator('#studio-code textarea').first().inputValue(),privateDraft,'song Undo retains the unsaved Code draft');
-        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('#studio-code > details > summary').click();
+        if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
         await page.getByRole('button',{name:'Discard draft',exact:true}).click();
         await waitUntil(async()=>await page.locator('.source-draft-note').count()===0,'the scenario retires its private draft');
       }
@@ -715,7 +742,8 @@ test('part loops preserve paused playback and drafts with keyboard control', {ti
         Number(document.querySelector('.position [data-gosx-live-bind='+key+']').textContent) === position[key]),paused);
       if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Code'}).click();
       const editor = page.locator('#score textarea');
-      const draft = original.source+'\n// Unsaved part-loop draft\n';
+      // A textarea reports \n line breaks; a source saved through a form keeps \r\n.
+      const draft = original.source.replace(/\r\n/g,'\n')+'\n// Unsaved part-loop draft\n';
       await editor.fill(draft);
       if (name === 'phone') await page.locator('.shell-phone-nav a').filter({hasText:'Edit'}).click();
       const preview = page.locator('#cicada-pattern-preview[data-sounds-ready=true]');

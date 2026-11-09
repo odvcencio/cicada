@@ -33,6 +33,7 @@ test('dock resizing fits the window and preserves musical work',{timeout:120000}
  const box=await handle().boundingBox();await page.mouse.move(box.x+box.width/2,box.y+4);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+20,{steps:4});await page.mouse.up();
  await until(async()=>Math.abs((await geometry()).dock.height-(before.dock.height-24))<1,'first pointer drag follows sixteen pixels');await fits();
  await page.reload();await ready();snapshots.push({label:'reopened short',...await fits()});
+ if(!(await page.locator('#studio-code > details').evaluate(node=>node.open)))await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
  const editor=page.locator('#score textarea');const initial=await page.evaluate(async()=>{const r=await fetch('/api/state',{cache:'no-store'});return r.json();});
  const draft=await editor.inputValue()+'\n// unsaved window sizing proof\n';await editor.fill(draft);
  await page.locator('#detail-tab-device').click();await handle().focus();await page.keyboard.press('End');await fits();
