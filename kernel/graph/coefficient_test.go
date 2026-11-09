@@ -141,12 +141,7 @@ func (v *Voice) nextUncached() float32 {
 			if n.Op == Diode {
 				feedback = 2.8 * clamp(c, 0, 1)
 			}
-			input := float32(math.Tanh(float64(a - float32(feedback*s.filter[3]))))
-			for stage := 0; stage < 4; stage++ {
-				s.filter[stage] += float32(coef * (input - s.filter[stage]))
-				input = s.filter[stage]
-			}
-			y = s.filter[3]
+			y = ladder(&s.filter, coef, feedback, a)
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			coef := float32(1 - math.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))

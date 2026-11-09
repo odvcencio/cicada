@@ -51,10 +51,14 @@ func onePole(g, hz float64) float64 {
 }
 
 func graphFilterResponses() []responseCase {
+	// Ladder and diode: four trapezoidal one-poles, each the bilinear image of
+	// 1/(s+1) with its corner prewarped to the cutoff.
 	cascade := func(cutoff float64) func(float64) float64 {
-		t := math.Tan(math.Pi * cutoff / sampleRate)
-		g := t / (1 + t)
-		return func(hz float64) float64 { return 4 * db(onePole(g, hz)) }
+		g := math.Tan(math.Pi * cutoff / sampleRate)
+		return func(hz float64) float64 {
+			w := math.Tan(math.Pi*hz/sampleRate) / g
+			return 4 * db(1/math.Hypot(1, w))
+		}
 	}
 	lowpass := func(cutoff float64) func(float64) float64 {
 		g := 1 - math.Exp(-2*math.Pi*cutoff/sampleRate)
