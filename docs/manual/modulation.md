@@ -45,8 +45,10 @@ the engine clamps and smooths the result. A source that moves a target faster
 than 20 Hz at the song's fastest tempo is refused. A score supports at most 32
 sources and 64 routes.
 
-The current route targets are track level, pan, sends A and B, and the acid
-cutoff, resonance, envelope amount, decay, and accent controls. Legacy delay
+The current route targets are track level, pan, sends A and B, the acid
+cutoff, resonance, envelope amount, decay, and accent controls, and the first
+eight parameters an authored instrument declares, such as `bass.cutoff` (see
+[live instrument parameters](#live-instrument-parameters)). Legacy delay
 and reverb settings cannot be routed. A routed track's level and pan use a
 table-based calculation and can differ slightly from an unrouted track even
 at zero depth. Registered-parameter routes are control-rate, not audio-rate.
@@ -99,6 +101,51 @@ song { verse }
 
 Graph LFOs count toward the 32 stateful-node limit and use the optional
 modular browser kernel. They are not supported inside authored drum-kit lanes.
+
+## Live instrument parameters
+
+An authored instrument's own parameters can move while it plays. A scene
+setting, an automation lane, a modulation route or a macro mapping names the
+parameter on the track that plays the instrument, including a track that plays
+a preset of it:
+
+```cicada
+cicada 2
+tempo 112
+instrument pmbass {
+  param cutoff = 420Hz
+  voice mono { out = lowpass(saw(pitch), cutoff) * env(gate, 300ms) * 0.4 }
+}
+track bass pmbass { cutoff = 480Hz }
+pattern line { c2 . . c2 . . eb2 . }
+lfo lift { wave = triangle rate = 4bars }
+mod lift -> bass.cutoff depth = 300Hz
+scene verse { bass = line }
+scene open { bass = line bass.cutoff = 1600Hz }
+song { verse*4 open*4 }
+automate bass.cutoff {
+  @5.1.1 1600Hz
+  @8.4.4 3000Hz exponential
+}
+```
+
+The track's static setting (`cutoff = 480Hz`) is the authored value that a
+scene restore or a seek returns to. A moved value glides over 20 ms. The
+parameter keeps its declared unit, and its range comes from that unit:
+`hz` 1–20,000 Hz on a log curve, `ms` 0–60,000 ms, `db` −60 to +24 dB,
+and a unitless parameter −1,000 to 1,000; a default outside that range widens
+it. Only the first eight parameters an instrument declares can move, in
+declaration order; a later one is refused with the limit named. Cicada checks
+the instrument at the lowest and highest values the scenes, automation, routes
+and macros can give a parameter, as it checks a track's static setting, so a
+delay time or comb feedback out of range is refused rather than clamped while
+it plays. A seek or a scene restore also returns a routed parameter's base to
+the authored value. MIDI controls cannot reach an authored parameter yet.
+
+Native playback, `render` and `stems` move these parameters. The
+portable browser and WAM images refuse a score that moves one. Reading a
+modulation source inside the instrument with `mod(name)` still works there,
+and in drum-kit graph lanes, where live parameters are not available.
 
 ## Studio and inspection
 

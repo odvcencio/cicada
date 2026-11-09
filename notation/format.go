@@ -43,11 +43,19 @@ func Format(document *Document) ([]byte, error) {
 	}
 	var sections []string
 	var comments []string
+	commentEnd := 0 // last source row of the pending comment block
 	for i := 0; i < document.Root.NamedChildCount(); i++ {
 		node := document.Root.NamedChild(i)
 		kind := document.Walker.Type(node)
 		if kind == "comment" {
+			// A blank line before this comment ends the pending block, which
+			// then stays a section of its own, as the author spaced it.
+			if len(comments) > 0 && int(node.StartPoint().Row) > commentEnd+1 {
+				sections = append(sections, strings.Join(comments, "\n"))
+				comments = nil
+			}
 			comments = append(comments, strings.TrimSpace(document.Walker.Text(node)))
+			commentEnd = lastRow(node)
 			continue
 		}
 		var section string
@@ -76,7 +84,13 @@ func Format(document *Document) ([]byte, error) {
 			}
 		}
 		if len(comments) > 0 {
-			section = strings.Join(comments, "\n") + "\n" + section
+			if int(node.StartPoint().Row) > commentEnd+1 {
+				// A blank line after the comments: a section heading, not the
+				// declaration's own comment.
+				sections = append(sections, strings.Join(comments, "\n"))
+			} else {
+				section = strings.Join(comments, "\n") + "\n" + section
+			}
 			comments = nil
 		}
 		sections = append(sections, section)
@@ -85,6 +99,16 @@ func Format(document *Document) ([]byte, error) {
 		sections = append(sections, strings.Join(comments, "\n"))
 	}
 	return []byte(strings.Join(sections, "\n\n") + "\n"), nil
+}
+
+// lastRow is the last source row a node covers. A node that ends at the start
+// of a row, after its newline, ends on the row before.
+func lastRow(node *gts.Node) int {
+	end := node.EndPoint()
+	if end.Column == 0 && end.Row > node.StartPoint().Row {
+		return int(end.Row) - 1
+	}
+	return int(end.Row)
 }
 
 func formatMixerDeclaration(section, kind string) string {

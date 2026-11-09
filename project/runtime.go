@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
@@ -200,6 +201,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		}
 	}
 	trackIndex := make(map[string]int, len(p.Tracks))
+	// paramNodes holds, per authored-instrument track, the graph node of each
+	// declared parameter in declaration order.
+	paramNodes := make([][]int, len(p.Tracks))
 	for ti, track := range p.Tracks {
 		trackIndex[track.ID] = ti
 		config := &cfg.Track[ti]
@@ -367,6 +371,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				config.Vibrato = graph.Vibrato
 				config.Graph = graph
+				for i, node := range program.Nodes {
+					if node.Op == "param" {
+						paramNodes[ti] = append(paramNodes[ti], i)
+					}
+				}
 				if program.Mode == "poly" {
 					if GraphPolyphony(p, track.Kind) == 4 {
 						config.Polyphony = 4
@@ -504,6 +513,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		if scheduleErr != nil {
 			return cfg, scheduleErr
 		}
+	}
+	if err := bindLiveParams(p, &cfg, paramNodes); err != nil {
+		return cfg, err
 	}
 	cfg.MaxVoices = runtimeVoiceCapacity(&cfg)
 	validators, err := engine.PrepareParamValidators(&cfg)
@@ -758,4 +770,114 @@ func packProjectStep(source *Step, isDrum bool, drumLane uint8) (uint32, error) 
 		Note: note, Accent: source.Accent, Slide: source.Slide, Gate: true,
 		Tie: source.Tie, Ratchet: source.Ratchet, Probability: source.Probability, Velocity: source.Velocity,
 	})
+}
+
+// bindLiveParams lists, for each authored-instrument track, the parameter
+// slots that scene settings, automation, routes, macros or MIDI controls move,
+// so the engine drives those graph nodes. A track nothing moves gets no
+// binding and renders exactly as before.
+func bindLiveParams(p *Project, cfg *engine.Config, paramNodes [][]int) error {
+	used := make([]uint8, len(p.Tracks)) // one bit per slot
+	mark := func(track uint8, id kernel.ParamID) {
+		if engine.IsLiveParam(id) && int(track) < len(used) {
+			used[track] |= 1 << (id - kernel.ParamInstrumentP1)
+		}
+	}
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			mark(setting.Track, setting.ID)
+		}
+	}
+	for _, control := range cfg.Automation {
+		mark(control.Track, kernel.ParamID(control.Index))
+	}
+	for _, route := range cfg.Routes {
+		mark(route.Track, kernel.ParamID(route.Param))
+	}
+	for _, mapping := range cfg.MacroMappings {
+		mark(mapping.Track, kernel.ParamID(mapping.Param))
+	}
+	for ti := range p.Tracks {
+		for slot := 0; slot < paramdefs.InstrumentParamSlots; slot++ {
+			if used[ti]&(1<<slot) == 0 {
+				continue
+			}
+			if slot >= len(paramNodes[ti]) {
+				return fmt.Errorf("track %s has no instrument parameter %d to move", p.Tracks[ti].ID, slot+1)
+			}
+			binding := engine.LiveParam{Track: uint8(ti), Slot: uint8(slot), Node: uint8(paramNodes[ti][slot])}
+			if err := validateLiveReach(p, cfg, binding); err != nil {
+				return err
+			}
+			cfg.LiveParams = append(cfg.LiveParams, binding)
+		}
+	}
+	return nil
+}
+
+// validateLiveReach checks the graph at the lowest and highest values that
+// scene settings, automation, routes and macros can give a live parameter, as
+// a track's static setting is checked: a delay time or comb feedback out of
+// range is refused here instead of being clamped while it plays.
+func validateLiveReach(p *Project, cfg *engine.Config, b engine.LiveParam) error {
+	id := kernel.ParamInstrumentP1 + kernel.ParamID(b.Slot)
+	authored := cfg.Track[b.Track].Graph.Nodes[b.Node].Value
+	lo, hi := authored, authored
+	reach := func(v float32) { lo, hi = min(lo, v), max(hi, v) }
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			if setting.Track == b.Track && setting.ID == id {
+				reach(setting.Value)
+			}
+		}
+	}
+	for _, control := range cfg.Automation {
+		if control.Track == b.Track && kernel.ParamID(control.Index) == id {
+			reach(math.Float32frombits(control.Arg0))
+		}
+	}
+	for _, mapping := range cfg.MacroMappings {
+		if mapping.Track == b.Track && kernel.ParamID(mapping.Param) == id {
+			reach(mapping.Min)
+			reach(mapping.Max)
+		}
+	}
+	for _, route := range cfg.Routes {
+		if route.Track != b.Track || kernel.ParamID(route.Param) != id {
+			continue
+		}
+		// A source swings from -1 to 1, so a multiply route scales by a factor
+		// from 1-depth to 1+depth, and an add route offsets by up to depth.
+		depth := float32(math.Abs(float64(route.Depth)))
+		if route.Multiply {
+			a, b, c, d := lo*(1-depth), lo*(1+depth), hi*(1-depth), hi*(1+depth)
+			lo, hi = min(a, b, c, d), max(a, b, c, d)
+		} else {
+			lo, hi = lo-depth, hi+depth
+		}
+	}
+	name, unit := fmt.Sprintf("parameter %d", b.Slot+1), ""
+	for _, inst := range p.Instruments {
+		if inst.ID == p.Tracks[b.Track].Kind && int(b.Slot) < len(inst.Params) {
+			name = inst.Params[b.Slot].ID
+			unit = map[string]string{"hz": "Hz", "ms": "ms", "db": "dB"}[inst.Params[b.Slot].Unit]
+		}
+	}
+	for _, value := range [...]float32{lo, hi} {
+		program := cfg.Track[b.Track].Graph
+		program.Nodes[b.Node].Value = value
+		if err := graph.ValidateProgram(&program, cfg.SampleRate); err != nil {
+			return fmt.Errorf("CICADA-PARAM: track %s can move %s to %g%s, where %w", p.Tracks[b.Track].ID, name, value, unit, err)
+		}
+		for slot := range cfg.Patterns[b.Track].Slots {
+			pattern := cfg.Patterns[b.Track].Slots[slot]
+			if pattern.Len == 0 {
+				continue
+			}
+			if err := ValidateGraphDelayPattern(program, cfg.SampleRate, pattern); err != nil {
+				return fmt.Errorf("CICADA-PARAM: track %s can move %s to %g%s, where %w", p.Tracks[b.Track].ID, name, value, unit, err)
+			}
+		}
+	}
+	return nil
 }

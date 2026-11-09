@@ -205,4 +205,12 @@ var Params = [...]ParamSpec{
 	{190, "global", "linear", 0, 1, 0.2, 0.01, 5, true, true, false},
 	{191, "global", "linear", 0, 1, 0.3, 0.01, 5, true, true, false},
 	{192, "global", "log", 1000, 16000, 5000, 1, 5, true, true, false},
+	{193, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{194, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{195, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{196, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{197, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{198, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{199, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{200, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 }

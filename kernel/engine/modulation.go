@@ -16,7 +16,7 @@ import (
 // value of each is readable at load and each reaches its voice through the
 // one-pole smoothing path.
 func RouteSupported(id kernel.ParamID) bool {
-	if chorusEnabled && id >= kernel.ParamChorusRate && id <= kernel.ParamChorusMix {
+	if chorusEnabled && id >= kernel.ParamChorusRate && id <= kernel.ParamChorusMix || isLiveParam(id) {
 		return true
 	}
 	switch id {
@@ -283,6 +283,9 @@ func (e *Engine) routeBase(track uint8, id kernel.ParamID) (float32, bool) {
 		default:
 			return float32(p.Mix), false
 		}
+	}
+	if isLiveParam(id) {
+		return v.live[id-liveParamFirst].target, false
 	}
 	return float32(v.acidTarget.Accent), false
 }
