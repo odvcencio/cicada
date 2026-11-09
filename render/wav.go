@@ -413,6 +413,8 @@ func scheduledEngineReason(score *notation.Score, opts Options) string {
 		return "serial track effects"
 	case hasKitSampler(score):
 		return "kit sampler lanes"
+	case movesInstrumentParam(score):
+		return "a live instrument parameter"
 	case hasPackSampler(score) && !opts.SamplerBaseline:
 		return "sample packs"
 	}
@@ -2043,6 +2045,44 @@ func isSamplerVoice(voice monoVoice) bool {
 	switch voice.(type) {
 	case *preparedVoice, *packVoice:
 		return true
+	}
+	return false
+}
+
+// movesInstrumentParam reports whether a scene setting or automation lane
+// moves an authored instrument's own parameter. Only the engine drives those.
+func movesInstrumentParam(score *notation.Score) bool {
+	// A preset track plays its target instrument.
+	if resolved, _ := notation.ResolvePresets(score); resolved != nil {
+		score = resolved
+	}
+	params := map[string]map[string]bool{} // instrument -> declared parameters
+	for _, inst := range score.Instruments {
+		params[inst.Name] = map[string]bool{}
+		for _, param := range inst.Params {
+			params[inst.Name][param.Name] = true
+		}
+	}
+	kinds := map[string]string{}
+	for _, track := range score.Tracks {
+		kinds[track.Name] = track.Kind
+	}
+	moves := func(path string) bool {
+		owner, setting, ok := strings.Cut(path, ".")
+		kind, track := kinds[owner]
+		return ok && track && params[kind][setting]
+	}
+	for _, lane := range score.Automation {
+		if moves(lane.Path) {
+			return true
+		}
+	}
+	for _, scene := range score.Scenes {
+		for _, setting := range scene.Settings {
+			if moves(setting.Path) {
+				return true
+			}
+		}
 	}
 	return false
 }

@@ -125,6 +125,8 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 		return float32(p.guitar.Value(id)), true
 	case isKeysControl(id):
 		return p.keysValues[id-keysControlFirst], true
+	case isLiveParam(id):
+		return p.liveValues[id-liveParamFirst], true
 	}
 	lane2, control, ok := drumParamControl(id)
 	if !ok {

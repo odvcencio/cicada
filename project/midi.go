@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -141,6 +142,11 @@ func validateMidiProject(p *Project) error {
 				resolved, err := ResolveParameterPath(p, item.Target)
 				if err != nil {
 					return err
+				}
+				if engine.IsLiveParam(resolved.ID) {
+					// Hosts dispatch MIDI controls through ParamAddresses, which
+					// has no authored instrument parameters yet.
+					return fmt.Errorf("CICADA-UNSUPPORTED: MIDI control %s cannot reach an authored instrument parameter yet; use a scene setting, automation lane, route or macro", item.Target)
 				}
 				if !resolved.Descriptor.Live {
 					return fmt.Errorf("CICADA-UNSUPPORTED: MIDI target is not live")

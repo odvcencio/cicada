@@ -51,7 +51,11 @@ func (state *ParameterState) visit(visitor parameterVisitor) {
 
 // visitSlot applies the saved values of one track (or the global slot).
 func (state *ParameterState) visitSlot(track int, visitor parameterVisitor) {
-	for id, bits := range state[track] {
+	// Only the rows this kernel knows can hold a value: setParamMode refuses
+	// the others. In the core kernel that is fewer than ParamCount.
+	row := &state[track]
+	for id := 0; id < len(kernel.Params) && id < len(row); id++ {
+		bits := row[id]
 		if bits>>32 == 0 {
 			continue
 		}

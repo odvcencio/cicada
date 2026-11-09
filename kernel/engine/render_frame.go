@@ -85,6 +85,9 @@ func (e *Engine) nextRawTrack(track int) (left, right float32, fault uint16) {
 	case VoiceAudio:
 		left, right = e.nextClipStereo(track)
 	case VoiceGraph:
+		if modulationEnabled && v.liveMoving {
+			e.stepLiveParams(v)
+		}
 		var sample float32
 		if v.poly != nil {
 			sample = v.poly.Next()
@@ -100,6 +103,9 @@ func (e *Engine) nextRawTrack(track int) (left, right float32, fault uint16) {
 			left, right = v.keys.NextStereo()
 		}
 	case VoiceGraphPoly:
+		if modulationEnabled && v.liveMoving {
+			e.stepLiveParams(v)
+		}
 		left, right = v.legacyPoly.NextStereo()
 	case VoicePrepared:
 		left, right = v.prepared.NextStereo()
