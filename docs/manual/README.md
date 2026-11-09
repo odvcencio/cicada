@@ -7,7 +7,7 @@ arrangement views to edit the same source.
 The [Cicada Language Specification](../spec/README.md) documents source
 editions 1 and 2, with edition 2 used by new projects.
 
-For game integration, see [Game Director and the Go/JS SDKs](game-director.md).
+For game integration, see [Game Director and the Go/JS SDKs](game-director.md) and, for GoSX games, [Use a score in a GoSX game](gosx-game.md).
 
 ## Start here
 

@@ -1,0 +1,105 @@
+cicada 2
+
+title "Game music"
+
+tempo 112
+
+key d minor
+
+seed 7701
+
+track bass acid {
+  cutoff = 520Hz
+  reso = 0.55
+  envmod = 0.6
+  decay = 320ms
+  drive = 0.2
+}
+
+track drums drums {
+  bd_tune = 52Hz
+  bd_decay = 380ms
+  ch_decay = 55ms
+}
+
+instrument glass {
+  octave = 3
+  param cutoff = 1400Hz
+  param bite = 0.5
+  voice mono {
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let tone = mix(osc, sub, 0.3)
+    let shape = env(gate, 420ms)
+    out = ladder(tone, cutoff * exp2(shape * 2), bite) * shape
+  }
+}
+
+track lead glass {
+  cutoff = 1800Hz
+}
+
+track cue acid {
+  cutoff = 2600Hz
+}
+
+
+// One score, two game states. explore is a bass pulse; combat adds drums and a
+// lead. The intensity macro brings the drums and the lead in and out inside
+// either state.
+live {
+  land = bar
+  phrase = 4bars
+  macro intensity = 0.3 smooth 600ms
+  layers intensity {
+    drums >= 0.25
+    lead >= 0.70
+    attack 1bar
+    release 2bars
+  }
+  state explore = calm
+  state combat = fight
+  stinger pickup = cue.chime quantize beat crossfade 10ms
+  transition explore -> combat quantize bar crossfade 300ms
+  transition combat -> explore quantize phrase crossfade 800ms
+}
+
+pattern pulse {
+  1 . . 5 . . 1 .
+}
+
+pattern drive {
+  1^ . 1~ 5 . 1 7, .
+}
+
+pattern theme {
+  5 . . . 3 . . . | 1' . . . 7 . . .
+}
+
+pattern chime {
+  1'^ . . .
+}
+
+pattern groove drums {
+  bd: x... x... x... x.x.
+  sd: .... x... .... x...
+  ch: x.x. x.x. x.x. x.x.
+}
+
+scene calm {
+  bass = pulse
+  drums = off
+  lead = off
+  cue = off
+}
+
+scene fight {
+  bass = drive
+  drums = groove
+  lead = theme
+  cue = off
+}
+
+song {
+  calm*64
+}
