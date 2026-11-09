@@ -102,7 +102,7 @@ func TestPlacementTimelineShowsOverlappingAudioOnSeparateRows(t *testing.T) {
 		{ID: "second", Track: "voice", Content: "take-b", AtTick: 320, LengthTicks: 3840},
 	}
 	p := &project.Project{Tracks: []project.Track{{ID: "voice", Kind: "audio"}}, Arrange: &project.Arrangement{Placements: placements}}
-	page := gosx.RenderHTML(placementTimeline(p, placements, "second", 4160))
+	page := gosx.RenderHTML(placementTimeline(p, placements, "second", 4160, nil))
 	for _, want := range []string{`data-placement-block="first"`, `data-placement-block="second"`, `data-placement-at="320"`, `top:8px`, `top:76px`, `height:144px`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("overlapping audio timeline missing %s: %s", want, page)

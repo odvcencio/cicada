@@ -260,6 +260,7 @@ type mixerStrip struct {
 }
 type mixerReturn struct {
 	Name   string       `json:"name"`
+	Meter  string       `json:"meter"`
 	Fields []mixerField `json:"fields"`
 }
 type mixerState struct {

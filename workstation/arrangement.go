@@ -63,10 +63,11 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		blocks = append(blocks, gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i)), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...))))
 		bar += int(entry.Bars)
 	}
+	rail := s.trackRail(ctx, v, csrf)
 	var rows []gosx.Node
 	rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-row"), gosx.Attr("style", style)), gosx.Fragment(ruler...)))
 	for trackIndex, track := range p.Tracks {
-		cells := []gosx.Node{gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind)))}
+		cells := []gosx.Node{gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind)), rail(track.ID))}
 		inherited := "off"
 		for _, entry := range p.Song {
 			binding := scenes[entry.Scene].Bindings[track.ID]
@@ -185,7 +186,7 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 	}
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: description},
-		placementTimeline(p, placements, selected, end),
+		placementTimeline(p, placements, selected, end, s.trackRail(ctx, v, csrf)),
 		markerList,
 		s.arrangementTempos(v, csrf, selected, end),
 		s.sessionListening(v, csrf, selected, end),

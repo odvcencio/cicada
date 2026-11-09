@@ -20,7 +20,7 @@ func (s *studioApp) placementForm(v workspace, csrf, id string, children ...gosx
 	return ui.Form(ui.FormProps{Action: "/__actions/arrange", CSRF: csrf, Revision: v.Revision, ReturnTo: placementURL(id), Class: "action-form"}, children...)
 }
 
-func placementTimeline(p *project.Project, placements []project.Placement, selected string, end int64) gosx.Node {
+func placementTimeline(p *project.Project, placements []project.Placement, selected string, end int64, rail func(string) gosx.Node) gosx.Node {
 	for _, marker := range p.Arrange.Markers {
 		end = max(end, marker.AtTick+seq.TicksPerBar)
 	}
@@ -42,6 +42,9 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			}
 		}
 		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-marker"), gosx.Attr("style", "left:"+position(marker.AtTick)+";max-width:calc("+position(room)+" - 3px)"), gosx.Attr("title", marker.ID+" "+placementPosition(marker.AtTick))), gosx.Text(marker.ID)))
+	}
+	if rail == nil {
+		rail = func(string) gosx.Node { return gosx.Fragment() }
 	}
 	rows := []gosx.Node{gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.Text("BARS")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-ruler")), gosx.Fragment(ruler...)))}
 	for trackIndex, track := range p.Tracks {
@@ -69,7 +72,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-placement-resize"), gosx.Attr("aria-label", "Resize placement "+placement.ID), gosx.Attr("title", "Drag or use arrow keys to resize")), gosx.El("span", gosx.Attrs(gosx.Attr("aria-hidden", "true")), gosx.Text("⋮")))))
 		}
 		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row"), gosx.Attr("data-arrange-kind", track.Kind), gosx.Attr("data-track-color", strconv.Itoa(trackIndex%trackColors))),
-			gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind))),
+			gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind)), rail(track.ID)),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}
 	viewButton := func(action, label string) gosx.Node {

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -245,14 +246,35 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 				}
 			}
 		}
-		strips = append(strips, gosx.El("section", attrs, gosx.El("h3", gosx.Text(strip.Name)), s.mixerFader(v, csrf, strip.Name, strip.Fields["level"]), gosx.Fragment(fields...)))
+		meterID := "track:" + strip.ID
+		switch {
+		case index == len(all)-1:
+			meterID = "master"
+		case index >= len(mixer.Tracks):
+			meterID = "bus:" + strip.ID
+		}
+		// Bus and master pan are unsupported, so mixerPan renders nothing there.
+		// strip-tools keeps a fixed height so the meter and fader line up across strips.
+		tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-tools")),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-toggles")), s.mixerToggle(v, csrf, "mixer", strip.Name, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "mixer", strip.Name, "solo", strip.Fields["solo"])),
+			s.mixerPan(v, csrf, strip.Name, strip.Fields["pan"]))
+		channel := []gosx.Node{stripMeter(meterID, strip.Name), s.mixerFader(v, csrf, strip.Name, strip.Fields["level"])}
+		var loudness gosx.Node = gosx.Fragment()
+		if meterID == "master" {
+			loudness = masterLoudness()
+		}
+		strips = append(strips, gosx.El("section", attrs, gosx.El("h3", gosx.Text(strip.Name)), tools, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-channel")), gosx.Fragment(channel...)), loudness, gosx.Fragment(fields...)))
 	}
 	for _, ret := range append(mixer.Returns, mixer.Effects...) {
 		var fields []gosx.Node
 		for _, f := range ret.Fields {
 			fields = append(fields, s.mixerField(v, csrf, f.Path, f))
 		}
-		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("id", "effect-"+ret.Name)), gosx.El("h3", gosx.Text(ret.Name)), gosx.Fragment(fields...)))
+		var returnMeter gosx.Node = gosx.Fragment()
+		if ret.Meter != "" {
+			returnMeter = gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-channel")), stripMeter("return:"+ret.Meter, ret.Name))
+		}
+		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("id", "effect-"+ret.Name)), gosx.El("h3", gosx.Text(ret.Name)), returnMeter, gosx.Fragment(fields...)))
 	}
 	chorusFields := []gosx.Node{hidden("source_revision", v.SourceRevision), hidden("action", "add-chorus"), field("Chorus name", textInput("name", "chorus")), submit("", "", "Create chorus")}
 	if v.Edition == 1 {
@@ -288,6 +310,108 @@ func (s *studioApp) mixerFader(v workspace, csrf, name string, f mixerField) gos
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-fader"), gosx.Attr("data-mixer-fader", f.Path)),
 		s.form(v, csrf, "mixer", "mixer", hidden("path", f.Path), hidden("valueType", "number"), input),
 		gosx.El("span", gosx.Attrs(gosx.Attr("class", "strip-readout")), gosx.Text(readout), gosx.El("small", gosx.Text(d.Unit))))
+}
+
+// mixerToggle is a one-click mute or solo button. It posts the opposite of the
+// saved value through the mixer action, so the change reaches the score and
+// Undo restores it. Edition 1 scores confirm an upgrade with each mixer
+// change, so they keep only the Set form.
+func (s *studioApp) mixerToggle(v workspace, csrf, panel, name, kind string, f mixerField) gosx.Node {
+	if !f.Supported || v.Edition == 1 {
+		return gosx.Fragment()
+	}
+	on := f.Value == true || f.Value == float64(1)
+	label := strings.ToUpper(kind[:1])
+	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("class", "strip-toggle"), gosx.Attr("data-toggle", kind),
+		gosx.Attr("aria-pressed", strconv.FormatBool(on)), gosx.Attr("aria-label", strings.ToUpper(kind[:1])+kind[1:]+" "+name),
+		gosx.Attr("title", strings.ToUpper(kind[:1])+kind[1:]+" "+name)), gosx.Text(label))
+	return s.form(v, csrf, panel, "mixer", hidden("path", f.Path), hidden("valueType", "bool"), hidden("value", strconv.FormatBool(!on)), button)
+}
+
+// trackRail returns a function that renders the mute and solo buttons for a
+// track in the Arrange rail. It reads the saved mixer state once. When the
+// mixer is unavailable, or the score is edition 1, every track gets nothing.
+func (s *studioApp) trackRail(ctx *server.Context, v workspace, csrf string) func(string) gosx.Node {
+	none := func(string) gosx.Node { return gosx.Fragment() }
+	if ctx == nil || s.backend == nil {
+		return none
+	}
+	var mixer mixerState
+	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/mixer", nil, &mixer); err != nil || mixer.Edition == 1 {
+		return none
+	}
+	v.Revision, v.Edition = mixer.Revision, mixer.Edition
+	strips := map[string]mixerStrip{}
+	for _, strip := range mixer.Tracks {
+		strips[strip.ID] = strip
+	}
+	return func(track string) gosx.Node {
+		strip, ok := strips[track]
+		if !ok {
+			return gosx.Fragment()
+		}
+		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
+	}
+}
+
+// mixerPan shows a track's pan as a horizontal range that submits on change,
+// like the level fader. The reset button returns it to centre. The numeric
+// Set field stays for exact values.
+func (s *studioApp) mixerPan(v workspace, csrf, name string, f mixerField) gosx.Node {
+	d := f.Descriptor
+	value, numeric := f.Value.(float64)
+	if !f.Supported || v.Edition == 1 || !numeric || d.Max <= d.Min {
+		return gosx.Fragment()
+	}
+	step := "0.01"
+	if d.DisplayStep > 0 {
+		step = strconv.FormatFloat(d.DisplayStep, 'f', -1, 64)
+	}
+	text := panText(value)
+	input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("name", "value"),
+		gosx.Attr("min", strconv.FormatFloat(d.Min, 'f', -1, 64)), gosx.Attr("max", strconv.FormatFloat(d.Max, 'f', -1, 64)), gosx.Attr("step", step),
+		gosx.Attr("value", strconv.FormatFloat(value, 'f', -1, 64)), gosx.Attr("aria-label", name+" pan"), gosx.Attr("aria-valuetext", text), gosx.Attr("data-gosx-submit-on", "change")))
+	reset := s.form(v, csrf, "mixer", "mixer", hidden("path", f.Path), hidden("valueType", "number"), hidden("value", "0"),
+		gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("class", "strip-pan-reset"), gosx.Attr("aria-label", name+" pan to centre"), gosx.Attr("title", "Centre pan"), gosx.Attr("disabled", value == 0)), gosx.Text("C")))
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-pan"), gosx.Attr("data-mixer-pan", f.Path)),
+		s.form(v, csrf, "mixer", "mixer", hidden("path", f.Path), hidden("valueType", "number"), input),
+		gosx.El("span", gosx.Attrs(gosx.Attr("class", "strip-pan-readout")), gosx.Text(text)), reset)
+}
+
+// panText names a pan position: C for centre, otherwise the side and the
+// distance from centre in percent.
+func panText(value float64) string {
+	percent := int(math.Round(math.Abs(value) * 100))
+	switch {
+	case percent == 0:
+		return "C"
+	case value < 0:
+		return "L" + strconv.Itoa(percent)
+	}
+	return "R" + strconv.Itoa(percent)
+}
+
+// stripMeter is the markup for one live level meter. The UI engine finds it by
+// data-meter ("track:id", "bus:id", "return:a" or "master") and writes
+// --rms, --peak and --hold (0 to 1 over -60 to +6 dBFS), data-clip and the
+// aria-label at most twice a second. The label is not a live region.
+func stripMeter(id, name string) gosx.Node {
+	span := func(class string) gosx.Node {
+		return gosx.El("span", gosx.Attrs(gosx.Attr("class", "strip-meter__"+class), gosx.Attr("aria-hidden", "true")))
+	}
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-meter"), gosx.Attr("data-meter", id), gosx.Attr("data-meter-name", name), gosx.Attr("data-clip", "false"),
+		gosx.Attr("role", "img"), gosx.Attr("aria-live", "off"), gosx.Attr("aria-label", name+" meter, no signal")),
+		span("peak"), span("rms"), span("hold"), span("clip"))
+}
+
+// masterLoudness holds the master strip's loudness text. The engine fills it
+// from /api/meters.
+func masterLoudness() gosx.Node {
+	var rows []gosx.Node
+	for _, item := range []struct{ key, label string }{{"momentary", "Momentary LUFS"}, {"short_term", "Short-term LUFS"}, {"integrated", "Integrated LUFS"}, {"true_peak", "True peak dBTP"}} {
+		rows = append(rows, gosx.El("div", gosx.El("dt", gosx.Text(item.label)), gosx.El("dd", gosx.Attrs(gosx.Attr("data-loudness", item.key)), gosx.Text("—"))))
+	}
+	return gosx.El("dl", gosx.Attrs(gosx.Attr("class", "strip-loudness"), gosx.Attr("aria-label", "Master loudness")), gosx.Fragment(rows...))
 }
 
 func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) gosx.Node {

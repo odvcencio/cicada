@@ -149,6 +149,11 @@ test-studio-pattern-machine:
 test-studio-shell:
 	node --test workstation/browser/shell.test.cjs
 
+.PHONY: test-studio-mixer-strips
+# Requires a fresh Studio process with a disposable score; this suite mutes and unmutes a track.
+test-studio-mixer-strips:
+	node --test workstation/browser/mixer-strips.test.cjs
+
 .PHONY: test-studio-columns
 # Requires a fresh Studio process and an absolute CICADA_COLUMN_PROOF_DIR.
 test-studio-columns:
