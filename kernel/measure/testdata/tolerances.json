@@ -1,0 +1,378 @@
+{
+  "schema": 1,
+  "rule": "limit = measured + margin, rounded up to 0.1 (see README.md): aliasing_db and thdn_db +3 dB with a floor of -110 dB; noise_floor_dbfs +3 dB with a floor of -120 dBFS; frequency_response_error_db 1.25x + 0.05 dB. A metric fails when its value is above its limit.",
+  "limits": {
+    "fx/ampcab": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -12.2,
+        "measured_when_set": -15.283
+      }
+    },
+    "fx/chorus": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -1,
+        "measured_when_set": -4.045
+      }
+    },
+    "fx/comp": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -148.433
+      }
+    },
+    "fx/convolution": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -146.726
+      }
+    },
+    "fx/deesser": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -115.627
+      }
+    },
+    "fx/delay": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -37.9,
+        "measured_when_set": -40.948
+      }
+    },
+    "fx/drive_diode": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -8.5,
+        "measured_when_set": -11.56
+      }
+    },
+    "fx/drive_fold": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": 7.8,
+        "measured_when_set": 4.727
+      }
+    },
+    "fx/drive_hard": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -6.3,
+        "measured_when_set": -9.326
+      }
+    },
+    "fx/drive_soft": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -7.7,
+        "measured_when_set": -10.728
+      }
+    },
+    "fx/pro_chain_mastering": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -63.3,
+        "measured_when_set": -66.397
+      }
+    },
+    "fx/pro_eq": {
+      "frequency_response_error_db": {
+        "limit": 0.1,
+        "measured_when_set": 0
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -148.325
+      }
+    },
+    "fx/pro_limiter": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -148.499
+      }
+    },
+    "fx/pro_normalize": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -147.313
+      }
+    },
+    "fx/pro_reverb": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -45.2,
+        "measured_when_set": -48.265
+      }
+    },
+    "fx/pro_transient": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -91.3,
+        "measured_when_set": -94.333
+      }
+    },
+    "fx/pro_width": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -110,
+        "measured_when_set": -151.322
+      }
+    },
+    "fx/reverb": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -20.2,
+        "measured_when_set": -23.286
+      }
+    },
+    "fx/tape": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      },
+      "thdn_db": {
+        "limit": -27.5,
+        "measured_when_set": -30.587
+      }
+    },
+    "voice/acid": {
+      "aliasing_db": {
+        "limit": -25.4,
+        "measured_when_set": -28.472
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/clav": {
+      "aliasing_db": {
+        "limit": -36.1,
+        "measured_when_set": -39.152
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/ddsp": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/drum": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/ep": {
+      "aliasing_db": {
+        "limit": -55.3,
+        "measured_when_set": -58.369
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/fm": {
+      "aliasing_db": {
+        "limit": -86.7,
+        "measured_when_set": -89.755
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_filters": {
+      "frequency_response_error_db": {
+        "limit": 0.1,
+        "measured_when_set": 0.001
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_quality_pulse": {
+      "aliasing_db": {
+        "limit": -89.2,
+        "measured_when_set": -92.299
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_quality_saw": {
+      "aliasing_db": {
+        "limit": -89,
+        "measured_when_set": -92.056
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_saw": {
+      "aliasing_db": {
+        "limit": -20.7,
+        "measured_when_set": -23.744
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_square": {
+      "aliasing_db": {
+        "limit": -26.1,
+        "measured_when_set": -29.167
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/guitar": {
+      "aliasing_db": {
+        "limit": -64,
+        "measured_when_set": -67.09
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/modal": {
+      "aliasing_db": {
+        "limit": -81.8,
+        "measured_when_set": -84.877
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/modeledkit": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/organ": {
+      "aliasing_db": {
+        "limit": -89.1,
+        "measured_when_set": -92.169
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/piano": {
+      "aliasing_db": {
+        "limit": -48.8,
+        "measured_when_set": -51.827
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/polykeys": {
+      "aliasing_db": {
+        "limit": -33.5,
+        "measured_when_set": -36.537
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/sample": {
+      "aliasing_db": {
+        "limit": -91.4,
+        "measured_when_set": -94.443
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/strings": {
+      "aliasing_db": {
+        "limit": -22.4,
+        "measured_when_set": -25.416
+      },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    }
+  }
+}

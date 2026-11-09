@@ -1,4 +1,4 @@
-.PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
+.PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-engine-measurements test-chord-wasm test-worklet-negotiation
 .PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm
 
 export GOWORK := off
@@ -314,6 +314,14 @@ test-browser: build-kernel-wasm build-modular-wasm
 	mkdir -p build
 	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit)$$' 5m build/test-browser.log
 	bash cmd/cicada/browser-runner.sh browser,worklet_testhooks '^TestBrowserUnderrunDetector$$' 2m build/test-worklet-stall.log
+
+# E1 measurement suite: renders every voice family and effect, writes
+# build/engine-measurements.json (override with CICADA_ENGINE_MEASUREMENTS),
+# and fails when a gated metric is worse than kernel/measure/testdata/tolerances.json.
+# Takes about 2 seconds. See kernel/measure/README.md.
+test-engine-measurements:
+	mkdir -p build
+	go test -p 1 -count=1 -timeout=5m -v ./kernel/measure
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
