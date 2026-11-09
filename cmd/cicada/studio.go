@@ -33,6 +33,7 @@ import (
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/internal/studiohttp"
 	"m31labs.dev/cicada/lsp"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/patternmachine"
 	"m31labs.dev/cicada/project"
 )
@@ -681,46 +682,60 @@ func compileStudioSourceWithOverrides(path string, source []byte, overrides map[
 
 // Keep the source identity and the compiled view on the same captured files.
 func compileStudioSourceSnapshot(path string, source []byte, overrides map[string][]byte) (*project.Project, *project.Sources, error) {
+	p, sources, _, err := compileStudioSourceDetailed(path, source, overrides, false)
+	return p, sources, err
+}
+
+// compileStudioSourceDetailed also returns the complete parse and conversion
+// diagnostics of the captured sources so callers can render file rows without
+// re-reading or re-parsing.
+func compileStudioSourceDetailed(path string, source []byte, overrides map[string][]byte, fileDiagnostics bool) (*project.Project, *project.Sources, []notation.Diagnostic, error) {
 	if !utf8.Valid(source) {
-		return nil, nil, fmt.Errorf("score is not UTF-8")
+		return nil, nil, nil, fmt.Errorf("score is not UTF-8")
 	}
 	if overrides == nil {
 		overrides = map[string][]byte{}
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	overrides[absolute] = source
 	sources, err := project.ReadSources(path, overrides)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	score, diagnostics := sources.Parse()
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
-			return nil, sources, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			if fileDiagnostics && score != nil {
+				// Code still reports semantic diagnostics on the parsed portion.
+				_, extra := project.FromScore(score)
+				diagnostics = append(diagnostics, extra...)
+			}
+			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 		}
 	}
 	p, extra := project.FromScore(score)
+	diagnostics = append(diagnostics, extra...)
 	for _, d := range extra {
 		if d.Severity == "error" {
-			return nil, sources, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
 		}
 	}
 	if p == nil {
-		return nil, sources, fmt.Errorf("score did not compile")
+		return nil, sources, diagnostics, fmt.Errorf("score did not compile")
 	}
 	if err := project.ValidateProject(p); err != nil {
-		return nil, sources, err
+		return nil, sources, diagnostics, err
 	}
 	// Studio asks this on every request and every edit. It applies the compile's
 	// rules without reading the project's audio; the engine that plays the score
 	// decodes it, once, when it builds its plan.
 	if err := schedule.Validate(p, sources.Root, 48000, 128, schedule.Options{}); err != nil {
-		return nil, sources, err
+		return nil, sources, diagnostics, err
 	}
-	return p, sources, nil
+	return p, sources, diagnostics, nil
 }
 
 func studioJSON(w http.ResponseWriter, status int, value any) {

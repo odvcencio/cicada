@@ -47,7 +47,7 @@ func TestShellRouteAndRegions(t *testing.T) {
 		`bootstrapFeatureWorkbenchPath`,
 		`id="studio-browser"`, `id="studio-center"`, `id="studio-detail"`, `id="studio-code"`,
 		`id="history-dialog"`, `id="audio-dialog"`, `id="export-dialog"`, `id="palette"`,
-		`data-studio-region="arrange"`, `130 BPM`, `C minor`,
+		`data-studio-region="arrange"`, `<div class="shell-tempo"><b>130</b><span>BPM</span><small>C minor</small></div>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("shell missing %s", want)

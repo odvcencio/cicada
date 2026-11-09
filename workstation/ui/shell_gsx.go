@@ -98,14 +98,49 @@ func Collapsible(props CollapsibleProps, children ...gosx.Node) gosx.Node {
 type TopBarProps struct {
 	Title    string
 	Filename string
-	Tempo    string
-	Key      string
-	Backend  string
 }
 
 // The transport toolbar's children are forms and command buttons from the page.
 func TopBar(props TopBarProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("header", gosx.Attrs(gosx.Attr("class", "gsx-dock__top shell-top")), gosx.El("a", gosx.Attrs(gosx.Attr("class", "brand"), gosx.Attr("href", "/studio")), gosx.Text("CICADA "), gosx.El("span", gosx.Text("STUDIO"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "score-title")), gosx.El("h1", gosx.Expr(props.Title)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Expr(props.Filename))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "score-meta")), gosx.El("span", gosx.Expr(props.Tempo), gosx.Text(" BPM")), gosx.El("span", gosx.Expr(props.Key)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "engine-label")), gosx.Expr(props.Backend))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-transport"), gosx.Attr("role", "toolbar"), gosx.Attr("aria-label", "Transport")), gosx.Expr(children)))
+	return gosx.El("header", gosx.Attrs(gosx.Attr("class", "gsx-dock__top shell-top")), gosx.El("a", gosx.Attrs(gosx.Attr("class", "brand"), gosx.Attr("href", "/studio"), gosx.Attr("aria-label", "Cicada Studio")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "brand-mark"), gosx.Attr("aria-hidden", "true")))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "score-title")), gosx.El("h1", gosx.Expr(props.Title)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "score-sub")), gosx.Expr(props.Filename))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-transport"), gosx.Attr("role", "toolbar"), gosx.Attr("aria-label", "Transport")), gosx.Expr(children)))
+}
+
+type TempoProps struct {
+	Tempo string
+	Key   string
+}
+
+// Tempo shows the song's tempo and key beside the position counter.
+func Tempo(props TempoProps, children ...gosx.Node) gosx.Node {
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-tempo")), gosx.El("b", gosx.Expr(props.Tempo)), gosx.El("span", gosx.Text("BPM")), gosx.El("small", gosx.Expr(props.Key)))
+}
+
+// StatusBar is the workspace's bottom line: the saved state on the left and
+// the audio service on the right. Its children are the page's status items.
+func StatusBar(children ...gosx.Node) gosx.Node {
+	return gosx.El("footer", gosx.Attrs(gosx.Attr("class", "gsx-dock__status shell-status"), gosx.Attr("aria-label", "Status")), gosx.Expr(children))
+}
+
+type StatusItemProps struct {
+	Label string
+	Value string
+}
+
+func StatusItem(props StatusItemProps, children ...gosx.Node) gosx.Node {
+	return gosx.El("span", gosx.Attrs(gosx.Attr("class", "shell-status__item")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "shell-status__label")), gosx.Expr(props.Label)), gosx.Expr(props.Value))
+}
+
+type PaneToggleProps struct {
+	Show  string
+	Hide  string
+	Label string
+	Pane  string
+}
+
+// PaneToggle opens or closes a side pane through its layout signal. Only the
+// button that changes the current state shows; CSS reads the pane's state.
+func PaneToggle(props PaneToggleProps, children ...gosx.Node) gosx.Node {
+	return gosx.Fragment(gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command shell-pane-toggle"), gosx.Attr("data-pane", props.Pane), gosx.Attr("data-pane-action", "show"), gosx.Attr("data-gosx-command", props.Show), gosx.Attr("aria-pressed", "false")), gosx.Expr(props.Label)), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command shell-pane-toggle"), gosx.Attr("data-pane", props.Pane), gosx.Attr("data-pane-action", "hide"), gosx.Attr("data-gosx-command", props.Hide), gosx.Attr("aria-pressed", "true")), gosx.Expr(props.Label)))
 }
 
 type ActionFormProps struct {
@@ -124,17 +159,21 @@ func ActionForm(props ActionFormProps, children ...gosx.Node) gosx.Node {
 type CommandButtonProps struct {
 	ID    string
 	Label string
+	Glyph string
 	Keys  string
 }
 
 func CommandButton(props CommandButtonProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.Attr("data-gosx-command", props.ID), gosx.Attr("aria-keyshortcuts", props.Keys)), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command transport-glyph"), gosx.Attr("data-gosx-command", props.ID), gosx.Attr("aria-keyshortcuts", props.Keys), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Glyph))
 }
 
-type PlaceholderProps struct{ Label string }
+type PlaceholderProps struct {
+	Label string
+	Glyph string
+}
 
 func Placeholder(props PlaceholderProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.BoolAttr("disabled"), gosx.Attr("aria-disabled", "true")), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command transport-glyph"), gosx.BoolAttr("disabled"), gosx.Attr("aria-disabled", "true"), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Glyph))
 }
 
 type DialogTriggerProps struct {
@@ -145,6 +184,32 @@ type DialogTriggerProps struct {
 
 func DialogTrigger(props DialogTriggerProps, children ...gosx.Node) gosx.Node {
 	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.Attr("data-gosx-disclosure-target", props.Target), gosx.Attr("aria-controls", props.Controls), gosx.Attr("aria-expanded", "false")), gosx.Expr(props.Label))
+}
+
+type IconDialogTriggerProps struct {
+	Target   string
+	Controls string
+	Label    string
+	Glyph    string
+}
+
+// IconDialogTrigger is a DialogTrigger whose visible text is a glyph; the
+// label stays its accessible name.
+func IconDialogTrigger(props IconDialogTriggerProps, children ...gosx.Node) gosx.Node {
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command transport-glyph"), gosx.Attr("data-gosx-disclosure-target", props.Target), gosx.Attr("aria-controls", props.Controls), gosx.Attr("aria-expanded", "false"), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Glyph))
+}
+
+type StatusTriggerProps struct {
+	Target   string
+	Controls string
+	Label    string
+	Text     string
+}
+
+// StatusTrigger opens a dialog from the status bar. It names the dialog, then
+// the current status, so both are part of its accessible name.
+func StatusTrigger(props StatusTriggerProps, children ...gosx.Node) gosx.Node {
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-status__trigger"), gosx.Attr("data-gosx-disclosure-target", props.Target), gosx.Attr("aria-controls", props.Controls), gosx.Attr("aria-expanded", "false")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "shell-status__label")), gosx.Expr(props.Label)), gosx.El("span", gosx.Expr(props.Text)))
 }
 
 type DialogFrameProps struct {
@@ -162,7 +227,7 @@ type BrowserProps struct {
 }
 
 func Browser(props BrowserProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("aside", gosx.Attrs(gosx.Attr("id", "studio-browser"), gosx.Attr("class", "gsx-dock__left shell-region"), gosx.Attr("aria-label", "Browser")), gosx.El("details", gosx.Attrs(gosx.Attr("class", "gsx-collapsible shell-collapsible"), gosx.Attr("data-gosx-collapsible", "$layout.browserOpen"), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Text("Browser")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))), SplitHandleX(SplitHandleProps{Signal: "$layout.browserWidth", Label: "Resize Browser", Min: "160", Max: "640", Value: props.Width}))
+	return gosx.El("aside", gosx.Attrs(gosx.Attr("id", "studio-browser"), gosx.Attr("class", "gsx-dock__left shell-region"), gosx.Attr("aria-label", "Library")), gosx.El("details", gosx.Attrs(gosx.Attr("class", "gsx-collapsible shell-collapsible"), gosx.Attr("data-gosx-collapsible", "$layout.browserOpen"), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Text("Library")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))), SplitHandleX(SplitHandleProps{Signal: "$layout.browserWidth", Label: "Resize Library", Min: "160", Max: "640", Value: props.Width}))
 }
 
 type BrowserSectionProps struct {
@@ -198,10 +263,13 @@ type DetailDockProps struct {
 	DeviceShown     bool
 	AutomationShown bool
 	Height          string
+	Selection       string
+	SelectionDetail string
+	TrackDetail     string
 }
 
 func DetailDock(props DetailDockProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
+	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "clip")), gosx.El("strong", gosx.Expr(props.Selection)), gosx.El("span", gosx.Expr(props.SelectionDetail))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "track")), gosx.El("span", gosx.Expr(props.TrackDetail))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
 }
 
 type CodeLensProps struct {
@@ -236,7 +304,7 @@ type PhoneNavProps struct {
 
 // PhoneNav is visible only at phone width, where one region shows at a time.
 func PhoneNav(props PhoneNavProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("nav", gosx.Attrs(gosx.Attr("class", "shell-phone-nav"), gosx.Attr("aria-label", "Regions")), PhoneLink(PhoneLinkProps{Href: props.BrowserHref, Current: props.BrowserOn, Region: "browser"}, gosx.Text("Browser")), PhoneLink(PhoneLinkProps{Href: props.CenterHref, Current: props.CenterOn, Region: "center"}, gosx.Text("Center")), PhoneLink(PhoneLinkProps{Href: props.DetailHref, Current: props.DetailOn, Region: "detail"}, gosx.Text("Detail")), PhoneLink(PhoneLinkProps{Href: props.CodeHref, Current: props.CodeOn, Region: "code"}, gosx.Text("Code")))
+	return gosx.El("nav", gosx.Attrs(gosx.Attr("class", "shell-phone-nav"), gosx.Attr("aria-label", "Regions")), PhoneLink(PhoneLinkProps{Href: props.CenterHref, Current: props.CenterOn, Region: "center"}, gosx.Text("View")), PhoneLink(PhoneLinkProps{Href: props.BrowserHref, Current: props.BrowserOn, Region: "browser"}, gosx.Text("Library")), PhoneLink(PhoneLinkProps{Href: props.DetailHref, Current: props.DetailOn, Region: "detail"}, gosx.Text("Edit")), PhoneLink(PhoneLinkProps{Href: props.CodeHref, Current: props.CodeOn, Region: "code"}, gosx.Text("Code")))
 }
 
 type ShortcutGroupProps struct{ Title string }
@@ -259,10 +327,12 @@ type ActionButtonProps struct {
 	Name  string
 	Value string
 	Label string
+	Text  string
+	Class string
 }
 
 func ActionButton(props ActionButtonProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", props.Name), gosx.Attr("value", props.Value)), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", props.Name), gosx.Attr("value", props.Value), gosx.Attr("class", props.Class), gosx.Attr("aria-label", props.Label), gosx.Attr("title", props.Label)), gosx.Expr(props.Text))
 }
 
 type HiddenFieldProps struct {

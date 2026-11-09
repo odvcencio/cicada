@@ -44,7 +44,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-marker"), gosx.Attr("style", "left:"+position(marker.AtTick)+";max-width:calc("+position(room)+" - 3px)"), gosx.Attr("title", marker.ID+" "+placementPosition(marker.AtTick))), gosx.Text(marker.ID)))
 	}
 	rows := []gosx.Node{gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.Text("BARS")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-ruler")), gosx.Fragment(ruler...)))}
-	for _, track := range p.Tracks {
+	for trackIndex, track := range p.Tracks {
 		var blocks []gosx.Node
 		var laneEnds []int64
 		for _, placement := range placements {
@@ -65,10 +65,10 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 				gosx.Attr("data-placement-kind", track.Kind), gosx.Attr("data-placement-track", placement.Track), gosx.Attr("data-placement-content", placement.Content), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
 				gosx.Attr("data-placement-selected", strconv.FormatBool(placement.ID == selected)),
 				gosx.Attr("style", fmt.Sprintf("left:%s;width:%s;top:%dpx", position(placement.AtTick), position(placement.LengthTicks), 8+lane*68))),
-				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", "Drag to move; Option/Alt-drag copies. Shift-drag moves freely. Arrow keys use Snap step; Shift changes one bar. Escape cancels."), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content))),
+				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", "Drag to move; Option/Alt-drag copies. Shift-drag moves freely. Arrow keys use Snap step; Shift changes one bar. Escape cancels."), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content)), clipPreview(p, placement.Content, placement.LengthTicks)),
 				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-placement-resize"), gosx.Attr("aria-label", "Resize placement "+placement.ID), gosx.Attr("title", "Drag or use arrow keys to resize")), gosx.El("span", gosx.Attrs(gosx.Attr("aria-hidden", "true")), gosx.Text("⋮")))))
 		}
-		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")),
+		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row"), gosx.Attr("data-arrange-kind", track.Kind), gosx.Attr("data-track-color", strconv.Itoa(trackIndex%trackColors))),
 			gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}

@@ -106,7 +106,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 				if err != nil || scene < 1 || scene > 8 {
 					return
 				}
-				selector = fmt.Sprintf("#live form[action='/__actions/launch'] thead th:nth-child(%d) button", scene+1)
+				selector = fmt.Sprintf("#live form[action='/__actions/launch'] [data-live-scene='%d'] button", scene)
 			}
 			if ctx.Err() != nil || !root.Get("isConnected").Bool() {
 				return

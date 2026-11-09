@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"net/http"
 	"net/url"
@@ -21,7 +22,7 @@ import (
 
 // Shell regions start at these sizes, in CSS pixels, until a stored layout loads.
 const (
-	shellBrowserWidth = 280
+	shellBrowserWidth = 232
 	shellCodeWidth    = 360
 	shellDockHeight   = 240
 )
@@ -87,18 +88,19 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	csrf := session.Token(ctx.Request)
 	var state transport
 	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
-	registerShell(ctx, tab, dock)
+	browserOpen, codeOpen := shellPanes(ctx.Request)
+	registerShell(ctx, tab, dock, browserOpen, codeOpen)
 	registerArrangementTempos(ctx)
 
 	returnTo := ctx.Request.URL.RequestURI()
-	file := func(name string) gosx.Node {
-		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
+	file := func(name, glyph string) gosx.Node {
+		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name, Text: glyph, Class: "transport-glyph"}))
 	}
 	form := func(id, name string, children ...gosx.Node) gosx.Node {
 		return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: returnTo}, children...)
 	}
-	button := func(value, label string) gosx.Node {
-		return ui.ActionButton(ui.ActionButtonProps{Name: "action", Value: value, Label: label})
+	button := func(value, label, glyph string) gosx.Node {
+		return ui.ActionButton(ui.ActionButtonProps{Name: "action", Value: value, Label: label, Text: glyph, Class: "transport-glyph"})
 	}
 	keys := func(id string) string {
 		for _, cmd := range shellCommands() {
@@ -108,18 +110,28 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		}
 		return ""
 	}
-	top := ui.TopBar(ui.TopBarProps{Title: props.Title, Filename: props.Filename, Tempo: props.Tempo, Key: props.Key, Backend: engineLabel(state)},
-		form("transport-form", "transport", button("play", "Play"), button("pause", "Pause"), button("stop", "Stop"), button("home", "Return to start")),
-		ui.CommandButton(ui.CommandButtonProps{ID: "transport.record", Label: "Record", Keys: keys("transport.record")}),
-		ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Keys: keys("transport.loop")}),
-		ui.Placeholder(ui.PlaceholderProps{Label: "Metronome"}),
-		ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
-		form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo")), form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo")),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#palette", Controls: "palette", Label: "Shortcuts"}),
+	top := ui.TopBar(ui.TopBarProps{Title: props.Title, Filename: props.Filename},
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-playback")),
+			form("transport-form", "transport", button("home", "Return to start", "▏◀"), button("play", "Play", "▶"), button("pause", "Pause", "Ⅱ"), button("stop", "Stop", "■")),
+			ui.CommandButton(ui.CommandButtonProps{ID: "transport.record", Label: "Record", Glyph: "●", Keys: keys("transport.record")}),
+			ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Glyph: "↻", Keys: keys("transport.loop")}),
+			ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
+			ui.Tempo(ui.TempoProps{Tempo: props.Tempo, Key: props.Key}),
+		),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-actions")),
+			form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo", "↶")),
+			form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo", "↷")),
+			ui.PaneToggle(ui.PaneToggleProps{Show: "layout.library.show", Hide: "layout.library.hide", Label: "Library", Pane: "library"}),
+			ui.PaneToggle(ui.PaneToggleProps{Show: "layout.code.show", Hide: "layout.code.hide", Label: "Code", Pane: "code"}),
+			ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
+			ui.IconDialogTrigger(ui.IconDialogTriggerProps{Target: "#palette", Controls: "palette", Label: "Shortcuts", Glyph: "?"}),
+		),
 		ui.CaptureHint(),
+	)
+	status := ui.StatusBar(
+		ui.StatusTrigger(ui.StatusTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History", Text: savedStatus(view)}),
+		gosx.El("span", gosx.Attrs(gosx.Attr("class", "shell-status__spacer"))),
+		ui.StatusTrigger(ui.StatusTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio", Text: audioStatus(state)}),
 	)
 
 	panelView := func(name string) workspace {
@@ -140,7 +152,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id, Tab: "detail-tab-" + id, Hidden: id != dock}, content())
 	}
 
-	browser := ui.Browser(ui.BrowserProps{Open: true, Width: strconv.Itoa(shellBrowserWidth)},
+	browser := ui.Browser(ui.BrowserProps{Open: browserOpen, Width: strconv.Itoa(shellBrowserWidth)},
 		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Signal: "$layout.instrumentsOpen", Title: "Instruments", Open: true}, panel("instruments")),
 		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, panel("generator")),
 		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes"}, panel("takes")),
@@ -151,13 +163,15 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ArrangeHref: shellLink(current, "tab", "arrange"), SessionHref: shellLink(current, "tab", "session"), MixerHref: shellLink(current, "tab", "mixer"),
 		ArrangeShown: tab == "arrange", SessionShown: tab == "session", MixerShown: tab == "mixer",
 	}, centerPanel("arrange", "session"), centerPanel("session", "live"), centerPanel("mixer", "mixer"))
+	clipSelection, trackSelection := dockSelection(view, query)
 	detail := ui.DetailDock(ui.DetailDockProps{
 		ClipHref: shellLink(current, "dock", "clip"), DeviceHref: shellLink(current, "dock", "device"), AutomationHref: shellLink(current, "dock", "automation"),
 		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", Height: strconv.Itoa(shellDockHeight),
+		Selection: clipSelection.name, SelectionDetail: clipSelection.detail, TrackDetail: trackSelection,
 	}, dockPanel("clip", func() gosx.Node { return panel("patterns") }),
 		dockPanel("device", func() gosx.Node { return panel("device") }),
 		dockPanel("automation", func() gosx.Node { return panel("automation") }))
-	code := ui.CodeLens(ui.CodeLensProps{Open: true, Width: strconv.Itoa(shellCodeWidth)}, panel("code"), panel("collaboration"))
+	code := ui.CodeLens(ui.CodeLensProps{Open: codeOpen, Width: strconv.Itoa(shellCodeWidth)}, panel("code"), panel("collaboration"))
 
 	// This engine binds the surrounding document, rather than owning its
 	// rendered children. A fresh masked CSRF token gives managed navigation a
@@ -185,15 +199,88 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	workbench := ui.Dock(ui.DockProps{
 		ID: "studio-workbench", LeftSignal: "$layout.browserWidth", RightSignal: "$layout.codeWidth", BottomSignal: "$layout.dockHeight",
 		Left: strconv.Itoa(shellBrowserWidth), Right: strconv.Itoa(shellCodeWidth), Bottom: strconv.Itoa(shellDockHeight),
-	}, top, browser, center, code, detail)
-	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, phone, workbench, dialogs), view, true
+	}, top, browser, center, code, detail, status)
+	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, workbench, phone, dialogs), view, true
 }
 
-func engineLabel(state transport) string {
-	if state.Backend == "" {
-		return "OFFLINE"
+type dockClip struct{ name, detail string }
+
+// dockSelection names what the detail dock edits: the Clip tab's pattern with
+// the tracks that play it, and the Device and Automation tabs' track. It
+// follows the same defaults as the editors, so the header matches them.
+func dockSelection(v workspace, query url.Values) (dockClip, string) {
+	if v.Project == nil {
+		return dockClip{}, ""
 	}
-	return strings.ToUpper(state.Backend)
+	var clip dockClip
+	if len(v.Project.Patterns) > 0 {
+		p := v.Project.Patterns[0]
+		for _, candidate := range v.Project.Patterns {
+			if candidate.ID == query.Get("pattern") {
+				p = candidate
+			}
+		}
+		// The tracks that play the pattern, in track order, from the scene
+		// matrix or the placement lanes.
+		var tracks []string
+		for _, track := range v.Project.Tracks {
+			plays := false
+			for _, scene := range v.Project.Scenes {
+				plays = plays || scene.Bindings[track.ID] == p.ID
+			}
+			if v.Project.Arrange != nil {
+				for _, placement := range v.Project.Arrange.Placements {
+					plays = plays || placement.Track == track.ID && placement.Content == p.ID
+				}
+			}
+			if plays {
+				tracks = append(tracks, track.ID)
+			}
+		}
+		parts := tracks
+		if p.Performance != nil {
+			parts = append(parts, fmt.Sprintf("%d notes", len(p.Performance.Notes)))
+		} else {
+			parts = append(parts, p.Kind, fmt.Sprintf("%d steps", p.Steps))
+		}
+		clip = dockClip{name: p.ID, detail: strings.Join(parts, " · ")}
+	}
+	track := ""
+	if t := deviceTrack(v.Project, query); t != nil {
+		track = t.ID + " · " + t.Kind
+	}
+	return clip, track
+}
+
+// audioStatus is the status bar's audio line: the active output or why there
+// is none.
+func audioStatus(state transport) string {
+	switch {
+	case state.Error != "":
+		return "Error"
+	case state.Backend == "":
+		return "Offline"
+	case state.Playing:
+		return "Playing · " + state.Backend
+	default:
+		return "Ready · " + state.Backend
+	}
+}
+
+// savedStatus is the status bar's history line: the saved revision the page
+// was built from.
+func savedStatus(view workspace) string {
+	revision := view.SourceRevision
+	if revision == "" {
+		revision = view.Revision
+	}
+	if len(revision) > 7 {
+		revision = revision[:7]
+	}
+	if revision == "" {
+		return "Saved"
+	}
+	return "Saved · " + revision
 }
 
 // shortcuts renders the command table by group. It is the interim palette
@@ -217,8 +304,19 @@ func shortcuts() gosx.Node {
 	return gosx.Fragment(nodes...)
 }
 
+// shellPanes is whether Library and Code open, from the cookie the shell engine
+// writes when either changes: two characters, Library then Code, "1" for open.
+// Without it Library opens and Code stays one gesture away.
+func shellPanes(r *http.Request) (library, code bool) {
+	library, code = true, false
+	if cookie, err := r.Cookie("cicada_panes"); err == nil && len(cookie.Value) == 2 {
+		library, code = cookie.Value[0] == '1', cookie.Value[1] == '1'
+	}
+	return library, code
+}
+
 // registerShell declares the shell's shared signals, persisted layout and commands.
-func registerShell(ctx *server.Context, tab, dock string) {
+func registerShell(ctx *server.Context, tab, dock string, browserOpen, codeOpen bool) {
 	runtime := ctx.Runtime()
 	layout := func(name string, initial any) controller.Output {
 		return controller.Output{Name: name, Signal: "$layout." + name, Initial: initial}
@@ -238,7 +336,7 @@ func registerShell(ctx *server.Context, tab, dock string) {
 			{Name: "selectionActive", Signal: "$selectionActive", Initial: false},
 			{Name: "placementSelectionActive", Signal: "$placementSelectionActive", Initial: false},
 			layout("browserWidth", shellBrowserWidth), layout("codeWidth", shellCodeWidth), layout("dockHeight", shellDockHeight),
-			layout("browserOpen", true), layout("codeOpen", true),
+			layout("browserOpen", browserOpen), layout("codeOpen", codeOpen),
 			layout("instrumentsOpen", true), layout("generateOpen", false), layout("takesOpen", false), layout("samplerOpen", false),
 		},
 		Storage: &controller.Storage{Area: "local", Namespace: "studio:layout", Load: load, Save: save},

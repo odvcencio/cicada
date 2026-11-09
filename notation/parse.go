@@ -3,9 +3,11 @@ package notation
 import (
 	"bytes"
 	_ "embed"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -24,10 +26,38 @@ func Language() (*gts.Language, error) {
 	return walk.LanguageFromBlob("cicada", grammarBlob)
 }
 
+var syntaxParsers = sync.OnceValues(func() (*gts.ParserPool, error) {
+	lang, err := Language()
+	if err != nil {
+		return nil, fmt.Errorf("load language %q: %w", "cicada", err)
+	}
+	return gts.NewParserPool(lang), nil
+})
+
+// parseSyntax gives callers that lower or inspect a tree immediately the
+// handle they need to return its arena to the parser's pool.
+func parseSyntax(src []byte) (*gts.Tree, *walk.Walker, error) {
+	parsers, err := syntaxParsers()
+	if err != nil {
+		return nil, nil, err
+	}
+	tree, err := parsers.Parse(src)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse: %w", err)
+	}
+	root := tree.RootNode()
+	w := walk.NewWalker(parsers.Language(), src)
+	if root.HasError() {
+		return tree, w, w.SyntaxError(root)
+	}
+	return tree, w, nil
+}
+
 // ParseTree returns the lossless gotreesitter CST for editor and query tools.
 // It returns a partial tree alongside syntax errors where possible.
 func ParseTree(src []byte) (*gts.Node, *walk.Walker, error) {
-	return walk.ParseFromBlob("cicada", grammarBlob, src)
+	tree, w, err := parseSyntax(src)
+	return tree.RootNode(), w, err
 }
 
 // Parse lowers the CST to a typed score and then validates musical references.
@@ -121,16 +151,18 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 		libraryDeclarations[strings.ReplaceAll(library, "/", ".")] = DeclarationNames(sources)
 	}
 	for _, file := range files {
-		root, walker, err := ParseTree(file.Source)
+		tree, walker, err := parseSyntax(file.Source)
+		root := tree.RootNode()
 		if err != nil {
 			syntaxFailed = true
 			d := syntaxDiagnostic(root, walker, err, file.Source)
 			d.Position.File = file.Path
 			diagnostics = append(diagnostics, d)
+			tree.Release()
 			continue
 		}
 		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations, libraryDeclarations: libraryDeclarations}
-		if w.declarations == nil {
+		if w.declarations == nil && (file.Library != "" || file.Bindings != nil) {
 			w.declarations = DeclarationNames(files)
 		}
 		headerEdition := 0
@@ -286,6 +318,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				Position: Position{File: file.Path, Line: 1, Column: 1},
 			})
 		}
+		tree.Release()
 	}
 	if syntaxFailed {
 		return nil, diagnostics

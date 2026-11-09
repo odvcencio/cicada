@@ -159,6 +159,8 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     t.diagnostic(JSON.stringify({scenario:'initial Arrange section jumps',expected:{posts:0,navigations:0,document:true,shell:true,live:true,sourceUnchanged:true},actual:{posts:posts.length-beforeLinks.posts,navigations:navigations.length-beforeLinks.navigations,...initialPaneIdentity,sourceUnchanged:(await state()).source===fixture}}));
 
     const scoreDraft=fixture+'// keep this unsaved vocal idea\n';
+    // Code starts closed; open it from the top bar to keep a draft there.
+    if(!(await page.locator('#studio-code > details').evaluate(node=>node.open)))await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
     const draftEditor=page.locator('#score textarea').first();
     await draftEditor.fill(scoreDraft);
     const beforeTabs={posts:posts.length,navigations:navigations.length};
@@ -226,7 +228,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await shellTab('view','session');
     await page.setViewportSize({width:390,height:844});
     const beforeRegions={posts:posts.length,navigations:navigations.length};
-    for (const [label,region,panel] of [['Detail','detail','#studio-detail'],['Code','code','#studio-code'],['Center','center','#studio-center'],['Detail','detail','#studio-detail']]) {
+    for (const [label,region,panel] of [['Edit','detail','#studio-detail'],['Code','code','#studio-code'],['View','center','#studio-center'],['Edit','detail','#studio-detail']]) {
       await page.locator('.shell-phone-nav').getByRole('link',{name:label,exact:true}).click();
       await page.locator(panel).waitFor({state:'visible'});
       assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),region);

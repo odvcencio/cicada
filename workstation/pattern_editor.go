@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -418,25 +419,30 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	}
 	var laneNames []string
 	usesPhrase := false
-	var sources []notation.SourceFile
-	for _, file := range v.Files {
-		sources = append(sources, notation.SourceFile{Path: file.Name, Source: []byte(file.Source)})
-	}
-	if len(sources) == 0 {
-		sources = []notation.SourceFile{{Source: []byte(v.Source)}}
-	}
-	edition := 1
-	if v.Project.Edition == 2 {
-		edition = 2
-	}
-	if score, _ := notation.ParseFiles(sources, edition); score != nil {
-		for _, authored := range score.Patterns {
-			if authored.Name == p.ID {
-				for _, lane := range authored.Lanes {
-					laneNames = append(laneNames, lane.Name)
-				}
-				for _, part := range authored.Parts {
-					usesPhrase = usesPhrase || part.Use != nil
+	// Only authored drum lane order and phrase uses need a syntax read.
+	// The grammar spells every phrase use with the literal "use" token.
+	if p.Kind == "drums" || strings.Contains(v.Source, "use") ||
+		slices.ContainsFunc(v.Files, func(file projectFile) bool { return strings.Contains(file.Source, "use") }) {
+		var sources []notation.SourceFile
+		for _, file := range v.Files {
+			sources = append(sources, notation.SourceFile{Path: file.Name, Source: []byte(file.Source)})
+		}
+		if len(sources) == 0 {
+			sources = []notation.SourceFile{{Source: []byte(v.Source)}}
+		}
+		edition := 1
+		if v.Project.Edition == 2 {
+			edition = 2
+		}
+		if score, _ := notation.ParseFiles(sources, edition); score != nil {
+			for _, authored := range score.Patterns {
+				if authored.Name == p.ID {
+					for _, lane := range authored.Lanes {
+						laneNames = append(laneNames, lane.Name)
+					}
+					for _, part := range authored.Parts {
+						usesPhrase = usesPhrase || part.Use != nil
+					}
 				}
 			}
 		}

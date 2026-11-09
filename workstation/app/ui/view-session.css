@@ -1,0 +1,32 @@
+/* Session: scenes launch as rows across track columns. A slot shows its
+   pattern and state: Ready, Playing (mint) or Queued (amber). */
+.shell #view-panel-session #live { margin:0; padding:0 0 12px; border:0; border-radius:0; background:none; }
+.shell #view-panel-session #live > details > summary { padding:8px 12px 4px; color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+.shell #view-panel-session #live [data-live-launch-status] { margin:0 12px 4px; color:var(--muted); font-size:11px; }
+.shell #view-panel-session #live form[action$="/__actions/launch"] > .field { display:flex; align-items:center; gap:8px; margin:0; padding:5px 12px; border-block:1px solid var(--border); background:var(--panel); }
+.shell #view-panel-session #live form[action$="/__actions/launch"] > .field select { width:auto; min-height:27px; }
+.shell #view-panel-session #live .grid-scroll { padding:8px 12px; }
+.shell #view-panel-session #live table { width:100%; min-width:max-content; border-collapse:separate; border-spacing:4px; table-layout:fixed; }
+.shell #view-panel-session #live th,
+.shell #view-panel-session #live td { padding:0; border:0; vertical-align:stretch; }
+.shell #view-panel-session #live thead th { padding:4px 8px 6px; border-bottom:2px solid var(--track-color,var(--border)); color:var(--text); font:500 12px system-ui,sans-serif; letter-spacing:0; text-transform:none; text-align:left; }
+.shell #view-panel-session #live thead th.live-scene-head { width:132px; border-bottom-color:transparent; color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+.shell #view-panel-session #live tbody th { width:132px; }
+.shell #view-panel-session #live tbody :is(th,td) button { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; width:100%; min-height:52px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; background:var(--panel); text-align:left; font-weight:650; }
+.shell #view-panel-session #live tbody th[data-live-scene] button::before { content:"▶ "; color:var(--muted); font-size:10px; }
+.shell #view-panel-session #live tbody th[data-live-scene] button { flex-direction:row; justify-content:flex-start; gap:4px; align-items:center; }
+.shell #view-panel-session #live tbody td[data-live-slot] button { border-left:3px solid var(--track-color,var(--mint)); background:color-mix(in srgb,var(--track-color,var(--mint)) 14%,var(--bg)); }
+.shell #view-panel-session #live tbody td[data-live-slot] button::after { content:"Ready"; margin-top:2px; color:var(--muted); font:400 10px var(--mono); }
+.shell #view-panel-session #live tbody td[data-live-slot][data-state=playing] button { border-color:var(--mint); box-shadow:inset 0 0 0 1px var(--mint); }
+.shell #view-panel-session #live tbody td[data-live-slot][data-state=playing] button::after { content:"▶ Playing"; color:var(--mint); }
+.shell #view-panel-session #live tbody td[data-live-slot][data-state=queued] button { border-color:var(--amber); box-shadow:inset 0 0 0 1px var(--amber); }
+.shell #view-panel-session #live tbody td[data-live-slot][data-state=queued] button::after { content:"◷ Queued"; color:var(--amber); }
+.shell #view-panel-session #live tbody td[data-live-slot][data-state] { box-shadow:none; }
+.shell #view-panel-session #live td.live-keep { display:table-cell; height:52px; padding:6px 10px; border:1px dashed var(--border); border-radius:4px; color:var(--muted); font-size:12px; font-weight:650; vertical-align:middle; }
+.shell #view-panel-session #live tr.live-stop-row :is(th,td) { padding-top:4px; color:var(--muted); font:500 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; vertical-align:middle; }
+.shell #view-panel-session #live tr.live-stop-row button { min-height:27px; flex-direction:row; align-items:center; font:500 11px system-ui,sans-serif; color:var(--muted); background:none; }
+/* Live input below the matrix. */
+.shell #view-panel-session #live > :not(details):not(.panel-heading) { margin-inline:12px; }
+.shell #view-panel-session #live .live-keyboard,
+.shell #view-panel-session #live .live-drums { gap:4px; margin:8px 0; }
+.shell #view-panel-session #live :is(.live-keyboard,.live-drums) button { min-height:52px; }

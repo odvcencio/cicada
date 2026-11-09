@@ -1,0 +1,32 @@
+/* Mixer: aligned channel strips that scroll sideways, the master last. Each
+   strip shows its name, a level fader with its value, then inserts, sends,
+   pan, mute and routing in the same order. */
+.shell #view-panel-mixer #mixer { margin:0; padding:0 0 12px; border:0; border-radius:0; background:none; }
+.shell #view-panel-mixer #mixer > .action-form { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:0; padding:5px 12px; border-bottom:1px solid var(--border); background:var(--panel); }
+.shell #view-panel-mixer #mixer > .action-form .field { display:flex; align-items:center; gap:6px; margin:0; }
+.shell #view-panel-mixer #mixer > .action-form :is(input,button) { min-height:27px; }
+.shell #view-panel-mixer #mixer > .action-form input[type=text] { width:140px; }
+
+.shell #view-panel-mixer .strips { display:flex; align-items:stretch; gap:8px; padding:10px 12px; overflow-x:auto; overscroll-behavior-x:contain; }
+.shell #view-panel-mixer .strip { display:flex; flex-direction:column; gap:6px; flex:0 0 200px; min-width:0; padding:8px; border:1px solid var(--border); border-top:3px solid var(--track-color,var(--grid-strong)); border-radius:4px; background:var(--panel); }
+.shell #view-panel-mixer .strip[data-mixer-strip=master] { border-top-color:var(--amber); }
+.shell #view-panel-mixer .strip[data-mixer-strip=bus] { border-top-color:var(--muted); }
+.shell #view-panel-mixer .strip > h3 { margin:0; padding:5px 8px; border-radius:3px; background:var(--raised); font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Fader: a vertical range beside its dB readout. */
+.shell #view-panel-mixer .strip-fader { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:10px; padding:6px 4px; }
+.shell #view-panel-mixer .strip-fader .action-form { display:block; margin:0; }
+.shell #view-panel-mixer .strip-fader input[type=range] { writing-mode:vertical-lr; direction:rtl; width:28px; height:132px; min-height:0; margin:0; padding:0; border:0; background:none; accent-color:var(--track-color,var(--amber)); cursor:ns-resize; }
+.shell #view-panel-mixer .strip[data-mixer-strip=master] .strip-fader input[type=range] { accent-color:var(--amber); }
+.shell #view-panel-mixer .strip-readout { justify-self:end; color:var(--text); font:600 14px var(--mono); }
+.shell #view-panel-mixer .strip-readout small { display:block; color:var(--muted); font:10px var(--mono); text-align:right; }
+
+/* The strip's other controls: compact label, value and Set. */
+.shell #view-panel-mixer .strip .mixer-control form { grid-template-columns:minmax(0,1fr) auto; gap:4px; align-items:end; }
+.shell #view-panel-mixer .strip .mixer-control .field { margin:0; }
+.shell #view-panel-mixer .strip .mixer-control .field span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:10px var(--mono); letter-spacing:.04em; }
+.shell #view-panel-mixer .strip .mixer-control :is(input,select,button) { min-height:26px; padding:2px 6px; font-size:12px; }
+.shell #view-panel-mixer .strip .effect-chain { padding:6px; border:1px solid var(--border); border-radius:3px; background:var(--bg); font-size:12px; }
+.shell #view-panel-mixer .strip .effect-chain > strong { color:var(--muted); font:500 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+.shell #view-panel-mixer .strip .effect-chain ol { margin:4px 0; padding-left:18px; }
+.shell #view-panel-mixer .strip > p.muted { margin:0; font-size:11px; }

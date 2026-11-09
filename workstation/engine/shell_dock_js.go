@@ -18,6 +18,7 @@ func bindShellLayoutFit(host enginewasm.Context, root js.Value) (func(), error) 
 	window := js.Global()
 	workbench := root.Call("querySelector", "#studio-workbench")
 	top := workbench.Call("querySelector", ".gsx-dock__top")
+	status := workbench.Call("querySelector", ".gsx-dock__status")
 	handle := workbench.Call("querySelector", "[aria-label='Resize Detail dock']")
 	disposed, queued := false, false
 	frame := 0
@@ -32,8 +33,11 @@ func bindShellLayoutFit(host enginewasm.Context, root js.Value) (func(), error) 
 		if height <= 0 || math.IsNaN(height) || math.IsInf(height, 0) {
 			return nil
 		}
-		topHeight := top.Call("getBoundingClientRect").Get("height").Float()
-		available := math.Floor(max(0, height-topHeight))
+		chrome := top.Call("getBoundingClientRect").Get("height").Float()
+		if !status.IsNull() {
+			chrome += status.Call("getBoundingClientRect").Get("height").Float()
+		}
+		available := math.Floor(max(0, height-chrome))
 		minimum := min(120.0, available)
 		center := min(200.0, max(0, available-minimum))
 		maximum := min(640.0, available-center)
@@ -78,9 +82,29 @@ func bindShellLayoutFit(host enginewasm.Context, root js.Value) (func(), error) 
 		queued = true
 		frame = window.Call("requestAnimationFrame", frameFn).Int()
 	}
+	// Mirror the side panes' open state into a cookie. The server renders the
+	// panes from it, so a reload (the shell reloads after every saved edit)
+	// paints Library and Code as the user left them instead of moving them after
+	// the first paint. The server reads the same name and format in shell.go.
+	rememberPanes := func() {
+		library, libraryErr := enginewasm.ReadSignal[bool](host, "$layout.browserOpen")
+		code, codeErr := enginewasm.ReadSignal[bool](host, "$layout.codeOpen")
+		if libraryErr != nil || codeErr != nil {
+			return
+		}
+		value := map[bool]string{true: "1", false: "0"}
+		js.Global().Get("document").Set("cookie", "cicada_panes="+value[library]+value[code]+"; Path=/; Max-Age=31536000; SameSite=Strict")
+	}
+	rememberPanes()
 	var releaseSignals []enginewasm.HandleFunc
 	for _, name := range []string{"dockHeight", "browserWidth", "codeWidth", "browserOpen", "codeOpen"} {
-		release, err := host.SubscribeSignal("$layout."+name, func(json.RawMessage) { schedule() })
+		pane := name == "browserOpen" || name == "codeOpen"
+		release, err := host.SubscribeSignal("$layout."+name, func(json.RawMessage) {
+			if pane {
+				rememberPanes()
+			}
+			schedule()
+		})
 		if err != nil {
 			for _, previous := range releaseSignals {
 				previous()

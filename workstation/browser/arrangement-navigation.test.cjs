@@ -34,16 +34,18 @@ test('arranging zooms, reveals and follows playback without editing the song', {
  try {
   await page.goto(base+'/studio?placement=far-home'); await ready();
   const before=await state(); assert.ok(before.source.includes('cicada-placement-test: disposable fixture'));
+  // The track label column's width comes from the stylesheet; zoom scales only the bars.
+  const label=await page.locator('.placement-timeline').evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--placement-label-width'))||112);
   const initial=await width();
   for(const [value,multiple] of [['96',2],['192',4],['384',8],['48',1]]){
-   await zoom.selectOption(value); await until(async()=>Math.abs((await width())-(112+(initial-112)*multiple))<1,'zoom scale incorrect');
+   await zoom.selectOption(value); await until(async()=>Math.abs((await width())-(label+(initial-label)*multiple))<1,'zoom scale incorrect');
   }
   await zoom.selectOption('192');
   await page.getByRole('button',{name:'Show selected',exact:true}).click();
   await until(async()=>(await scroller.evaluate(el=>el.scrollLeft))>2500,'late placement was not revealed');
   const selected=page.locator('[data-placement-block="far-home"]');
   const bounds=await selected.boundingBox(), scrollBounds=await scroller.boundingBox();
-  assert.ok(bounds.x>=scrollBounds.x+112 && bounds.x<scrollBounds.x+scrollBounds.width);
+  assert.ok(bounds.x>=scrollBounds.x+label && bounds.x<scrollBounds.x+scrollBounds.width);
   checks.push('1×/2×/4×/8× zoom and late-placement reveal');
 
   await follow.check(); await page.getByRole('button',{name:'Show selected',exact:true}).click(); assert.equal(await follow.isChecked(),false);
@@ -63,7 +65,7 @@ test('arranging zooms, reveals and follows playback without editing the song', {
   assert.equal(await zoom.inputValue(),'96'); assert.equal(await follow.isChecked(),true); assert.equal(await editor.inputValue(),draft);
   await follow.uncheck();
   await page.setViewportSize({width:390,height:844});
-  await page.getByRole('link',{name:'Center',exact:true}).click();
+  await page.getByRole('link',{name:'View',exact:true}).click();
   await page.getByRole('button',{name:'Fit song',exact:true}).click();
   await until(async()=>await scroller.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'phone Fit song overflows');
   assert.ok(await zoom.isVisible()); assert.ok(await follow.isVisible());

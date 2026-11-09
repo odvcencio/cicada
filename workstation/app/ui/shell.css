@@ -1,17 +1,46 @@
 /* Studio shell. Every rule is scoped to .shell or a gsx- recipe class, so the
    panel application served at / keeps its own layout. */
 html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
-.shell { --gsx-color-border:var(--border); --gsx-color-text:var(--text); --gsx-color-text-secondary:var(--muted); --gsx-color-accent:var(--amber); --gsx-color-focus:var(--amber); --gsx-space-xs:4px; --gsx-space-sm:8px; --gsx-font-body:system-ui,-apple-system,"Segoe UI",sans-serif; display:flex; flex-direction:column; height:100vh; height:100dvh; font-size:13px; line-height:1.4; overflow:hidden; }
+.shell {
+	--bg:#11151b;
+	--chrome:#161c24;
+	--panel:#1b222c;
+	--raised:#26303c;
+	--control:#26303c;
+	--border:#303b49;
+	--text:#edf2f7;
+	--muted:#a8b4c2;
+	--amber:#ffc477;
+	--mint:#79dfbd;
+	--gsx-color-border:var(--border);
+	--gsx-color-text:var(--text);
+	--gsx-color-text-secondary:var(--muted);
+	--gsx-color-accent:var(--amber);
+	--gsx-color-focus:var(--amber);
+	--gsx-space-xs:4px;
+	--gsx-space-sm:8px;
+	--gsx-font-body:system-ui,-apple-system,"Segoe UI",sans-serif;
+	display:flex;
+	flex-direction:column;
+	height:100vh;
+	height:100dvh;
+	overflow:hidden;
+	background:var(--bg);
+	color:var(--text);
+	font-size:13px;
+	line-height:1.4;
+}
 .shell > .gsx-dock { flex:1; min-height:0; }
 .shell .notice { margin:0; padding:6px 12px; background:var(--raised); border-bottom:1px solid var(--border); }
 .shell .skip { position:absolute; left:-9999px; }
 .shell .skip:focus { left:8px; top:8px; z-index:20; background:var(--bg); padding:6px 10px; }
 .shell button, .shell input, .shell select { min-height:30px; padding:3px 9px; }
+.shell :focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 .shell h1 { font-size:15px; }
 .shell h2 { font-size:14px; }
 .shell h3 { font-size:13px; margin:0 0 8px; }
 
-.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--studio-browser-column,var(--gsx-dock-left,280px)) minmax(0,1fr) var(--studio-code-column,var(--gsx-dock-right,360px)); grid-template-rows:auto minmax(var(--studio-center-min,200px),1fr) minmax(var(--studio-dock-min,120px),var(--gsx-dock-bottom,240px)); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
+.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--studio-browser-column,var(--gsx-dock-left,232px)) minmax(0,1fr) var(--studio-code-column,var(--gsx-dock-right,360px)); grid-template-rows:auto minmax(var(--studio-center-min,200px),1fr) minmax(var(--studio-dock-min,120px),var(--gsx-dock-bottom,240px)) auto; grid-template-areas:"top top top" "left center right" "left bottom right" "status status status"; }
 .gsx-dock > * { min-width:0; min-height:0; }
 .gsx-dock__top { grid-area:top; min-height:min-content; }
 .gsx-dock__left { grid-area:left; display:grid; grid-template-columns:minmax(0,1fr) auto; }
@@ -22,23 +51,61 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .gsx-split__handle[aria-orientation="vertical"] { width:8px; cursor:col-resize; }
 .gsx-split__handle[aria-orientation="horizontal"] { height:8px; cursor:row-resize; }
 
-.gsx-tabs__list { display:flex; gap:var(--gsx-space-xs); border-bottom:1px solid var(--border); padding:0 12px; }
-.gsx-tabs__tab { padding:var(--gsx-space-xs) var(--gsx-space-sm); color:var(--muted); text-decoration:none; border-bottom:2px solid transparent; }
-.gsx-tabs__tab[aria-current="page"] { color:var(--text); border-color:var(--amber); }
+.gsx-tabs__list { display:flex; flex-wrap:wrap; gap:var(--gsx-space-xs); border-bottom:1px solid var(--border); padding:0 12px; }
+.shell .gsx-tabs__list { background:var(--panel); }
+.gsx-tabs__tab { padding:8px 12px; color:var(--muted); font-weight:600; text-decoration:none; border-bottom:2px solid transparent; }
+.gsx-tabs__tab[aria-current="page"] { color:var(--amber); border-color:var(--amber); }
 .gsx-tabs__panel { min-width:0; padding-block:var(--gsx-space-sm); }
 .gsx-tabs__panel[hidden] { display:none; }
 .gsx-collapsible { border-block:1px solid var(--border); min-height:0; }
 .gsx-collapsible > summary { padding:var(--gsx-space-xs) var(--gsx-space-sm); cursor:pointer; }
+.shell .shell-collapsible > summary { height:36px; padding:8px 12px; background:var(--raised); border-bottom:1px solid var(--border); font-weight:600; }
+.shell #studio-browser { background:var(--panel); }
 
-.shell-top { display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px; padding:6px 12px; border-bottom:1px solid var(--border); background:#141d17; }
-.shell-top .brand { font-size:13px; }
-.shell-top .score-title { flex:1 1 160px; }
-.shell-top .score-title h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.shell-transport { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
-.shell-transport form { display:flex; gap:4px; margin:0; }
-.shell-transport .position { gap:8px; }
-.shell-transport .position b { font-size:14px; }
+/* Top bar: project identity, transport, position and tempo, then the
+   workspace actions. One 52px row at desktop widths. */
+.shell-top { display:flex; align-items:center; gap:6px 16px; min-height:52px; padding:6px 12px; border-bottom:1px solid var(--border); background:var(--chrome); }
+.shell-top .brand { display:grid; place-items:center; width:28px; height:28px; flex:none; border-radius:6px; text-decoration:none; }
+.shell-top .brand-mark { width:24px; height:24px; background:var(--mint); -webkit-mask:var(--brand-mark) center/contain no-repeat; mask:var(--brand-mark) center/contain no-repeat; }
+.shell { --brand-mark:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v16'/%3E%3Cpath d='M12 6c-2-2-6-2.5-8-1 1 3 3 6 8 7'/%3E%3Cpath d='M12 6c2-2 6-2.5 8-1-1 3-3 6-8 7'/%3E%3Cpath d='M12 12c-2 1-4.5 3.5-5 6.5 2.5.2 4-1.3 5-3'/%3E%3Cpath d='M12 12c2 1 4.5 3.5 5 6.5-2.5.2-4-1.3-5-3'/%3E%3C/svg%3E"); }
+.shell-top .score-title { flex:0 1 200px; min-width:96px; padding:0; border:0; }
+.shell-top .score-title :is(h1,span) { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell-top .score-title h1 { font-size:15px; font-weight:650; letter-spacing:-.02em; }
+.shell-top .score-sub { color:var(--muted); font:11px/1.35 var(--mono); letter-spacing:.04em; }
+.shell-top button { background:var(--control); border-radius:4px; }
+.shell-top button[aria-pressed=true] { border-color:var(--amber); color:var(--amber); }
+.shell-top .transport-glyph { width:32px; min-height:32px; padding:0; font-size:14px; line-height:1; }
+.shell-top [value=play] { color:var(--mint); background:color-mix(in srgb,var(--mint) 16%,var(--bg)); border-color:color-mix(in srgb,var(--mint) 40%,var(--border)); }
+.shell-top [data-gosx-command="transport.record"] { color:var(--coral); }
+.shell-transport { display:flex; flex:1 1 auto; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 12px; min-width:0; max-width:100%; }
+.shell-playback, .shell-actions { display:flex; flex-wrap:wrap; align-items:center; gap:3px; min-width:0; }
+.shell-playback { gap:3px 8px; }
+.shell-actions { gap:6px; }
+.shell-transport form { display:flex; flex-wrap:wrap; gap:3px; margin:0; }
+.shell-transport .position { display:inline-grid; grid-template-columns:auto auto; align-items:baseline; gap:0 10px; max-width:100%; min-width:132px; padding:3px 9px; background:var(--field); border:1px solid var(--border); border-radius:4px; font-variant-numeric:tabular-nums; }
+.shell-transport .position > span:empty { display:none; }
+.shell-transport .position > [data-gosx-live-bind=activeBackend] { display:none; }
+.shell-transport .position .position-label { display:inline-flex; align-items:baseline; gap:5px; color:var(--muted); font:10px var(--mono); letter-spacing:.06em; text-transform:uppercase; }
+.shell-transport .position b { display:inline-block; color:var(--amber); font:600 19px/1.1 var(--mono); text-align:right; letter-spacing:normal; }
+.shell-transport .position b[data-gosx-live-bind="bar"] { min-width:2ch; }
+.shell-transport .position b[data-gosx-live-bind="step"] { min-width:2ch; }
+.shell-transport .position > span:not(.position-label) { grid-column:1/-1; min-width:0; overflow-wrap:anywhere; font-size:11px; line-height:1.3; }
+.shell-tempo { display:grid; grid-template-columns:auto auto; align-items:baseline; gap:0 4px; padding:0 0 0 10px; border-left:1px solid var(--border); color:var(--muted); font:11px var(--mono); }
+.shell-tempo b { color:var(--text); font:600 15px var(--mono); }
+.shell-tempo small { grid-column:1/-1; font:10px var(--mono); }
 .shell-transport .transport-capture-hint { margin:0; }
+/* Library and Code toggles: the button that changes the pane's state shows. */
+.shell:has(#studio-browser .shell-collapsible[open]) .shell-pane-toggle[data-pane=library][data-pane-action=show],
+.shell:has(#studio-browser .shell-collapsible:not([open])) .shell-pane-toggle[data-pane=library][data-pane-action=hide],
+.shell:has(#studio-code .shell-collapsible[open]) .shell-pane-toggle[data-pane=code][data-pane-action=show],
+.shell:has(#studio-code .shell-collapsible:not([open])) .shell-pane-toggle[data-pane=code][data-pane-action=hide] { display:none; }
+/* Status bar: saved revision on the left, audio service on the right. */
+.gsx-dock__status { grid-area:status; }
+.shell-status { display:flex; align-items:center; gap:12px; min-height:26px; padding:0 12px; border-top:1px solid var(--border); background:var(--chrome); color:var(--muted); font-size:11px; }
+.shell-status__spacer { flex:1; }
+.shell .shell-status__trigger { display:inline-flex; align-items:baseline; gap:6px; min-height:22px; padding:2px 6px; border:0; border-radius:3px; background:transparent; color:var(--muted); font-size:11px; }
+.shell .shell-status__trigger:hover { background:var(--raised); color:var(--text); }
+.shell-status__label { color:var(--muted); font:10px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
 .shell-region { min-height:0; min-width:0; overflow:hidden; background:var(--bg); }
 .shell-collapsible { display:flex; flex-direction:column; min-height:0; height:100%; }
 .shell-collapsible[open] > .shell-scroll { flex:1; }
@@ -49,7 +116,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
    sidebars a definite scrolling viewport so focus and wheel input keep their
    headers in place and every sound or source line remains reachable. */
 .shell :is(#studio-browser, #studio-code) .shell-collapsible { position:relative; }
-.shell :is(#studio-browser, #studio-code) .shell-collapsible > .shell-scroll { position:absolute; inset:calc(1.4em + 8px) 0 0; }
+.shell :is(#studio-browser, #studio-code) .shell-collapsible > .shell-scroll { position:absolute; inset:36px 0 0; }
 .shell #studio-code #score { display:flex; flex-direction:column; height:100%; min-height:340px; }
 .shell #studio-code #score > :not(.editor-surface-code) { flex-shrink:0; }
 .shell #studio-code #score > ul:empty { display:none; }
@@ -61,9 +128,61 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #studio-code .editor-surface-code { flex:1 1 0; min-height:160px; height:auto; }
 .shell-section { border-bottom:1px solid var(--border); }
 .shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
-.shell .arrange-workspace-nav { position:sticky; top:-8px; z-index:2; display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 0; margin-bottom:8px; border-bottom:1px solid var(--border); background:var(--bg); }
-.shell .arrange-workspace-nav a { padding:4px 0; color:var(--mint); text-underline-offset:3px; }
+.shell #view-tabs > .shell-scroll:has(> :is(#view-panel-arrange,#view-panel-session,#view-panel-mixer):not([hidden])), .shell :is(#view-panel-arrange,#view-panel-session,#view-panel-mixer) { padding:0; }
+.shell :is(#view-panel-session #live,#view-panel-mixer #mixer) > .panel-heading p { display:none; }
+.shell #view-panel-arrange > .panel:not(#arrangement) { margin-inline:12px; }
+.shell .arrange-workspace-nav { position:sticky; top:0; z-index:4; display:flex; flex-wrap:wrap; gap:4px 16px; padding:4px 12px; border-bottom:1px solid var(--border); background:var(--raised); }
+.shell .arrange-workspace-nav a { padding:4px 0; color:var(--text); text-underline-offset:3px; }
 .shell #arrangement,.shell #vocals { scroll-margin-top:52px; }
+
+/* The scene matrix and placement lanes share the canvas and the track rail. */
+.shell #arrangement { --timeline-track-width:156px; --arrange-kind:var(--mint); min-width:0; padding:0 12px 12px; border:0; border-radius:0; background:var(--bg); }
+.shell #arrangement > .panel-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; margin:0; padding:6px 0; }
+.shell #arrangement > .panel-heading p { font:11px/1.4 ui-monospace,monospace; text-align:start; overflow-wrap:anywhere; }
+.shell #arrangement :is([data-arrange-kind*=bass],[data-arrange-kind=acid],[data-arrange-kind=sub]) { --arrange-kind:#91baff; }
+.shell #arrangement :is([data-arrange-kind*=key],[data-arrange-kind*=synth],[data-arrange-kind=pad],[data-arrange-kind=pluck]) { --arrange-kind:#c1adf9; }
+/* Tracks take the palette in order in Arrange, Session and Mixer, so a track
+   keeps one color across views; audio stays rose. */
+.shell [data-track-color="0"] { --track-color:#79dfbd; }
+.shell [data-track-color="1"] { --track-color:#91baff; }
+.shell [data-track-color="2"] { --track-color:#c1adf9; }
+.shell [data-track-color="3"] { --track-color:#f2c48d; }
+.shell [data-track-color="4"] { --track-color:#7fd4e6; }
+.shell [data-track-color="5"] { --track-color:#e6a6d8; }
+.shell #arrangement [data-track-color] { --arrange-kind:var(--track-color); }
+.shell #arrangement [data-arrange-kind=audio] { --arrange-kind:#f2a7b6; }
+.shell #arrangement :is(.timeline,.placement-scroll) { overflow:auto; overscroll-behavior-x:contain; max-height:min(52dvh,520px); margin:0 -12px 12px; border-inline:0; border-radius:0; }
+.shell #arrangement .placement-scroll[data-placement-auto-scroll] { border-block-color:var(--mint); }
+.shell .timeline-row { min-width:calc(var(--timeline-track-width,130px) + var(--timeline-scenes,1) * 110px); }
+.shell #arrangement .timeline-row { border-bottom:1px solid var(--border); min-height:64px; }
+.shell #arrangement :is(.timeline-row:first-child,.placement-playhead + .placement-row) { position:sticky; top:0; z-index:3; min-height:0; background:var(--raised); }
+.shell #arrangement .timeline-heading { padding:4px 8px; background:var(--raised); border-bottom:0; overflow-wrap:anywhere; }
+.shell #arrangement .timeline-heading button { width:auto; max-width:100%; margin-top:2px; padding:2px 6px; }
+.shell #arrangement :is(.timeline-track,.placement-track) {
+	z-index:2;
+	min-width:0;
+	overflow-wrap:anywhere;
+	background:var(--panel);
+	box-shadow:inset 3px 0 0 var(--arrange-kind);
+}
+.shell #arrangement .timeline-track { border-bottom:0; }
+.shell #arrangement :is(.timeline-row:first-child,.placement-playhead + .placement-row) > :is(.timeline-track,.placement-track) { background:var(--raised); box-shadow:none; font:11px/1.4 ui-monospace,monospace; }
+.shell #arrangement :is(a.timeline-clip,.placement-block) {
+	background:color-mix(in srgb,var(--arrange-kind) 15%,var(--bg));
+	border-color:color-mix(in srgb,var(--arrange-kind) 46%,var(--bg));
+	box-shadow:inset 3px 0 0 var(--arrange-kind);
+	color:var(--text);
+}
+.shell #arrangement .timeline-clip { border-radius:3px; }
+.shell #arrangement .timeline-clip.silent { color:var(--muted); background:var(--bg); border-color:var(--border); }
+.shell #arrangement a.timeline-clip.inherited { background:color-mix(in srgb,var(--arrange-kind) 8%,var(--bg)); }
+.shell #arrangement :is(a.timeline-clip[data-arrange-pattern-open],.placement-block[data-placement-selected=true],.placement-block[data-placement-preview]) { border-color:var(--amber); box-shadow:inset 3px 0 0 var(--arrange-kind),inset 0 0 0 1px var(--amber); }
+.shell #arrangement :is(a.timeline-clip,.placement-select,[data-placement-resize]):focus-visible { outline:2px solid var(--text); outline-offset:-3px; }
+.shell #arrangement .placement-timeline { --placement-label-width:var(--timeline-track-width); }
+.shell #arrangement .placement-ruler { background-color:var(--raised); }
+.shell #arrangement :is(.placement-ruler,.placement-lane) { background-image:repeating-linear-gradient(to right,transparent 0,transparent calc(var(--placement-bar-width) - 1px),color-mix(in srgb,var(--border) 55%,transparent) calc(var(--placement-bar-width) - 1px),color-mix(in srgb,var(--border) 55%,transparent) var(--placement-bar-width)); }
+.shell #arrangement .placement-navigation { margin:0 0 8px; }
+.shell #arrangement .placement-block [data-placement-resize] { border-left-color:var(--border); }
 
 .shell-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:30; }
 .shell-backdrop[hidden], .shell-dialog[hidden] { display:none; }
@@ -84,26 +203,23 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 	.shell :is(#studio-browser,#studio-code) .shell-collapsible:not([open]) > summary { writing-mode:vertical-rl; padding:10px 8px; min-width:36px; min-height:90px; }
 }
 
-/* Short desktop windows need enough vertical space for the editor's search
-   controls and source viewport. Let Code extend beside the lower dock. */
-@media (min-width:800px) and (max-height:800px) {
-	.shell .gsx-dock { grid-template-areas:"top top top" "left center right" "bottom bottom right"; }
-}
-
 .shell-phone-nav { display:none; }
 @media (max-width:799px) {
-	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"top" "region"; }
-	.shell .gsx-dock__top { flex-direction:column; align-items:stretch; gap:6px; }
-	.shell .shell-top .score-title { flex:0 0 auto; }
+	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto; grid-template-areas:"top" "region" "status"; }
+	.shell .shell-pane-toggle { display:none; }
+	.shell .gsx-dock__top { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:6px 8px; padding-inline:8px; }
+	.shell-transport { grid-column:1/-1; }
+	.shell-playback, .shell-actions { flex-basis:100%; }
+	.shell .shell-actions button { padding-inline:5px; font-size:12px; }
+	.shell #arrangement { --timeline-track-width:104px; }
 	.shell .gsx-dock__left, .shell .gsx-dock__center, .shell .gsx-dock__right, .shell .gsx-dock__bottom { grid-area:region; display:none; }
 	.shell[data-phone-region="center"] .gsx-dock__center, .shell[data-phone-region="browser"] .gsx-dock__left, .shell[data-phone-region="detail"] .gsx-dock__bottom, .shell[data-phone-region="code"] .gsx-dock__right { display:grid; }
 	.shell[data-phone-region="center"] .gsx-dock__center { display:block; }
 	.shell .gsx-split__handle { display:none; }
 	.shell #studio-code { grid-template-columns:minmax(0,1fr); }
-	.shell-phone-nav { display:flex; gap:4px; padding:4px 12px; border-bottom:1px solid var(--border); }
-	.shell-phone-nav a { flex:1; text-align:center; padding:6px 0; text-decoration:none; border-bottom:2px solid transparent; }
+	.shell-phone-nav { display:flex; gap:4px; padding:4px 8px; border-top:1px solid var(--border); background:var(--chrome); }
+	.shell-phone-nav a { flex:1; display:flex; align-items:center; justify-content:center; min-height:44px; color:var(--text); background:var(--control); border:1px solid var(--border); border-radius:4px; text-decoration:none; }
 	.shell-phone-nav a[aria-current="page"] { color:var(--amber); border-color:var(--amber); }
-	.shell .score-meta { flex-wrap:wrap; }
 	.shell .shell-dialog { top:2vh; max-height:96vh; }
 }
 .shell main { padding:0; }
@@ -149,7 +265,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 
 /* Pattern Machine: a compact step-sequencer, not a settings catalog. */
 .machine-open,.machine-vary { display:inline-flex; align-items:center; min-height:32px; padding:5px 12px; border:1px solid var(--mint); border-radius:5px; color:var(--mint); text-decoration:none; font-weight:650; }
-.machine-open:hover,.machine-vary:hover { background:#28463a; }
+.machine-open:hover,.machine-vary:hover { background:color-mix(in srgb,var(--mint) 18%,var(--bg)); }
 .machine-header { display:flex; align-items:start; justify-content:space-between; gap:16px; padding:6px 0 10px; }
 .machine-header h3 { font-size:19px; margin:3px 0; }
 .machine-header p,.machine-caption { color:var(--muted); margin:2px 0 10px; }
@@ -162,15 +278,15 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .machine-bar-option { display:flex; align-items:center; gap:3px; padding:3px 6px; border:1px solid var(--border); border-radius:4px; }
 .machine-bar-option:has(input:checked) { border-color:var(--amber); color:var(--amber); }
 .machine-controls details { font-size:12px; color:var(--muted); }
-.machine-controls button,.machine-keep button { background:var(--amber); color:#182019; border:0; font-weight:700; }
+.machine-controls button,.machine-keep button { background:var(--amber); color:var(--bg); border:0; font-weight:700; }
 .machine-bars { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr)); gap:10px; margin:14px 0; }
-.machine-bar { min-width:0; padding:9px; background:#101a15; border:1px solid var(--border); border-radius:6px; overflow-x:auto; }
+.machine-bar { min-width:0; padding:9px; background:var(--field); border:1px solid var(--border); border-radius:6px; overflow-x:auto; }
 .machine-bar h4 { color:var(--amber); font-size:10px; letter-spacing:.1em; margin:0 0 7px; }
 .machine-lane { display:grid; grid-template-columns:48px repeat(16,minmax(19px,1fr)); gap:2px; min-width:384px; margin:2px 0; }
 .machine-lane-name { color:var(--muted); font-size:10px; align-self:center; text-transform:uppercase; }
-.machine-step { display:grid; place-items:center; min-height:26px; overflow:hidden; border-radius:3px; background:#263229; color:#697a6b; font-size:9px; font-variant-numeric:tabular-nums; }
-.machine-step.is-beat { border-left:2px solid #879577; }
-.machine-step.is-active { background:#447b68; color:#f0fff5; font-weight:700; }
+.machine-step { display:grid; place-items:center; min-height:26px; overflow:hidden; border-radius:3px; background:var(--raised); color:var(--muted); font-size:9px; font-variant-numeric:tabular-nums; }
+.machine-step.is-beat { border-left:2px solid var(--grid-strong); }
+.machine-step.is-active { background:var(--clip-edge); color:var(--text); font-weight:700; }
 .machine-footer { display:flex; align-items:end; flex-wrap:wrap; justify-content:space-between; gap:12px; }
 .machine-keep { display:flex; align-items:end; flex-wrap:wrap; gap:8px; }
 .machine-keep .field { margin:0; }
@@ -188,3 +304,27 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 @media (max-width:1100px) {
   .machine-bars { grid-template-columns:minmax(0,1fr); }
 }
+
+/* Mode bar: view tabs on the left; the active view's summary on the right. */
+.shell #studio-center { position:relative; }
+.shell .gsx-tabs__list { min-height:36px; padding:0 8px; gap:0; background:var(--chrome); }
+.shell .gsx-tabs__tab { display:flex; align-items:center; min-width:72px; justify-content:center; padding:0 14px; color:var(--muted); font-weight:550; border-bottom:0; box-shadow:none; }
+.shell .gsx-tabs__tab:hover { color:var(--text); background:#ffffff05; }
+.shell .gsx-tabs__tab[aria-current="page"] { color:var(--text); box-shadow:inset 0 -2px var(--amber); background:#ffffff06; }
+/* A view's heading is a slim row at the top of its pane: the name, then a
+   one-line summary such as the arrangement's length. */
+.shell :is(#arrangement,#view-panel-session #live,#view-panel-mixer #mixer) > .panel-heading { order:-2; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:30px; margin:0; padding:0 12px; border-bottom:1px solid var(--border); background:var(--chrome); }
+.shell :is(#arrangement,#view-panel-session #live,#view-panel-mixer #mixer) > .panel-heading h2 { color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+.shell :is(#arrangement,#view-panel-session #live,#view-panel-mixer #mixer) > .panel-heading p { overflow:hidden; margin:0; max-width:none; color:var(--muted); font:11px var(--mono); letter-spacing:.04em; text-align:right; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Detail dock: tabs and the selection they edit share one 38px bar. */
+.shell #studio-detail { background:var(--panel); }
+.shell #detail-tabs { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr); }
+.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
+.shell #detail-tabs > .shell-dock-selection { grid-column:2; grid-row:1; display:flex; align-items:baseline; gap:8px; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+.shell #detail-tabs > .shell-dock-selection strong { color:var(--amber); font-size:14px; font-weight:650; }
+.shell #detail-tabs > .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
+.shell #detail-tabs > .shell-dock-selection:has(> strong:empty) { visibility:hidden; }
+.shell #detail-tabs:has(#detail-tab-clip[aria-current="page"]) > [data-dock-selection=track],
+.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) > [data-dock-selection=clip] { display:none; }
+.shell #detail-tabs > .shell-scroll { grid-column:1/-1; grid-row:2; }

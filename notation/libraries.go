@@ -19,7 +19,9 @@ type Origin struct {
 // ReadImports inspects source without requiring a complete song or resolving
 // declarations. Imports are collected across a scope before lowering it.
 func ReadImports(file SourceFile) []Import {
-	root, walker, _ := ParseTree(file.Source)
+	tree, walker, _ := parseSyntax(file.Source)
+	defer tree.Release()
+	root := tree.RootNode()
 	if root == nil || walker == nil {
 		return nil
 	}
@@ -37,7 +39,9 @@ func ReadImports(file SourceFile) []Import {
 
 // SourceEdition reads the optional edition marker of a loose score.
 func SourceEdition(file SourceFile) int {
-	root, w, _ := ParseTree(file.Source)
+	tree, w, _ := parseSyntax(file.Source)
+	defer tree.Release()
+	root := tree.RootNode()
 	if root != nil && w != nil {
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
@@ -52,7 +56,9 @@ func SourceEdition(file SourceFile) int {
 
 // CheckLibrary rejects score-only declarations and asset paths outside audio/.
 func CheckLibrary(file SourceFile) []Diagnostic {
-	root, walker, err := ParseTree(file.Source)
+	tree, walker, err := parseSyntax(file.Source)
+	defer tree.Release()
+	root := tree.RootNode()
 	if err != nil {
 		d := syntaxDiagnostic(root, walker, err, file.Source)
 		d.Position.File = file.Path
@@ -157,15 +163,15 @@ func (w *loweringWalker) referenceText(name string, position Position) string {
 func DeclarationNames(files []SourceFile) map[string]bool {
 	names := map[string]bool{}
 	for _, file := range files {
-		root, w, _ := ParseTree(file.Source)
-		if root == nil || w == nil {
-			continue
-		}
-		for i := 0; i < root.NamedChildCount(); i++ {
-			if name := w.Field(root.NamedChild(i), "name"); name != nil {
-				names[w.Text(name)] = true
+		tree, w, _ := parseSyntax(file.Source)
+		if root := tree.RootNode(); root != nil && w != nil {
+			for i := 0; i < root.NamedChildCount(); i++ {
+				if name := w.Field(root.NamedChild(i), "name"); name != nil {
+					names[w.Text(name)] = true
+				}
 			}
 		}
+		tree.Release()
 	}
 	return names
 }

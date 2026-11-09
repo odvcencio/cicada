@@ -190,19 +190,56 @@ component Collapsible(props: CollapsibleProps) {
 type TopBarProps struct {
 	Title    string
 	Filename string
-	Tempo    string
-	Key      string
-	Backend  string
 }
 
 // The transport toolbar's children are forms and command buttons from the page.
 component TopBar(props: TopBarProps) {
 	return <header class="gsx-dock__top shell-top">
-		<a class="brand" href="/studio">CICADA <span>STUDIO</span></a>
-		<div class="score-title"><h1>{props.Title}</h1><span class="muted">{props.Filename}</span></div>
-		<div class="score-meta"><span>{props.Tempo} BPM</span><span>{props.Key}</span><span class="engine-label">{props.Backend}</span></div>
+		<a class="brand" href="/studio" aria-label="Cicada Studio"><span class="brand-mark" aria-hidden="true"></span></a>
+		<div class="score-title"><h1>{props.Title}</h1><span class="score-sub">{props.Filename}</span></div>
 		<div class="shell-transport" role="toolbar" aria-label="Transport">{children}</div>
 	</header>
+}
+
+type TempoProps struct {
+	Tempo string
+	Key   string
+}
+
+// Tempo shows the song's tempo and key beside the position counter.
+component Tempo(props: TempoProps) {
+	return <div class="shell-tempo"><b>{props.Tempo}</b><span>BPM</span><small>{props.Key}</small></div>
+}
+
+// StatusBar is the workspace's bottom line: the saved state on the left and
+// the audio service on the right. Its children are the page's status items.
+component StatusBar() {
+	return <footer class="gsx-dock__status shell-status" aria-label="Status">{children}</footer>
+}
+
+type StatusItemProps struct {
+	Label string
+	Value string
+}
+
+component StatusItem(props: StatusItemProps) {
+	return <span class="shell-status__item"><span class="shell-status__label">{props.Label}</span>{props.Value}</span>
+}
+
+type PaneToggleProps struct {
+	Show  string
+	Hide  string
+	Label string
+	Pane  string
+}
+
+// PaneToggle opens or closes a side pane through its layout signal. Only the
+// button that changes the current state shows; CSS reads the pane's state.
+component PaneToggle(props: PaneToggleProps) {
+	return <>
+		<button type="button" class="shell-command shell-pane-toggle" data-pane={props.Pane} data-pane-action="show" data-gosx-command={props.Show} aria-pressed="false">{props.Label}</button>
+		<button type="button" class="shell-command shell-pane-toggle" data-pane={props.Pane} data-pane-action="hide" data-gosx-command={props.Hide} aria-pressed="true">{props.Label}</button>
+	</>
 }
 
 type ActionFormProps struct {
@@ -226,17 +263,21 @@ component ActionForm(props: ActionFormProps) {
 type CommandButtonProps struct {
 	ID    string
 	Label string
+	Glyph string
 	Keys  string
 }
 
 component CommandButton(props: CommandButtonProps) {
-	return <button type="button" class="shell-command" data-gosx-command={props.ID} aria-keyshortcuts={props.Keys}>{props.Label}</button>
+	return <button type="button" class="shell-command transport-glyph" data-gosx-command={props.ID} aria-keyshortcuts={props.Keys} aria-label={props.Label} title={props.Label}>{props.Glyph}</button>
 }
 
-type PlaceholderProps struct{ Label string }
+type PlaceholderProps struct {
+	Label string
+	Glyph string
+}
 
 component Placeholder(props: PlaceholderProps) {
-	return <button type="button" class="shell-command" disabled aria-disabled="true">{props.Label}</button>
+	return <button type="button" class="shell-command transport-glyph" disabled aria-disabled="true" aria-label={props.Label} title={props.Label}>{props.Glyph}</button>
 }
 
 type DialogTriggerProps struct {
@@ -247,6 +288,32 @@ type DialogTriggerProps struct {
 
 component DialogTrigger(props: DialogTriggerProps) {
 	return <button type="button" class="shell-command" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false">{props.Label}</button>
+}
+
+type IconDialogTriggerProps struct {
+	Target   string
+	Controls string
+	Label    string
+	Glyph    string
+}
+
+// IconDialogTrigger is a DialogTrigger whose visible text is a glyph; the
+// label stays its accessible name.
+component IconDialogTrigger(props: IconDialogTriggerProps) {
+	return <button type="button" class="shell-command transport-glyph" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false" aria-label={props.Label} title={props.Label}>{props.Glyph}</button>
+}
+
+type StatusTriggerProps struct {
+	Target   string
+	Controls string
+	Label    string
+	Text     string
+}
+
+// StatusTrigger opens a dialog from the status bar. It names the dialog, then
+// the current status, so both are part of its accessible name.
+component StatusTrigger(props: StatusTriggerProps) {
+	return <button type="button" class="shell-status__trigger" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false"><span class="shell-status__label">{props.Label}</span> <span>{props.Text}</span></button>
 }
 
 type DialogFrameProps struct {
@@ -273,12 +340,12 @@ type BrowserProps struct {
 }
 
 component Browser(props: BrowserProps) {
-	return <aside id="studio-browser" class="gsx-dock__left shell-region" aria-label="Browser">
+	return <aside id="studio-browser" class="gsx-dock__left shell-region" aria-label="Library">
 		<details class="gsx-collapsible shell-collapsible" data-gosx-collapsible="$layout.browserOpen" open={props.Open}>
-			<summary>Browser</summary>
+			<summary>Library</summary>
 			<div class="shell-scroll">{children}</div>
 		</details>
-		<SplitHandleX Signal="$layout.browserWidth" Label="Resize Browser" Min="160" Max="640" Value={props.Width} />
+		<SplitHandleX Signal="$layout.browserWidth" Label="Resize Library" Min="160" Max="640" Value={props.Width} />
 	</aside>
 }
 
@@ -327,6 +394,9 @@ type DetailDockProps struct {
 	DeviceShown    bool
 	AutomationShown bool
 	Height         string
+	Selection      string
+	SelectionDetail string
+	TrackDetail    string
 }
 
 component DetailDock(props: DetailDockProps) {
@@ -338,6 +408,8 @@ component DetailDock(props: DetailDockProps) {
 				<Tab ID="detail-tab-device" Value="device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
 				<Tab ID="detail-tab-automation" Value="automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
 			</nav>
+			<p class="shell-dock-selection" data-dock-selection="clip"><strong>{props.Selection}</strong> <span>{props.SelectionDetail}</span></p>
+			<p class="shell-dock-selection" data-dock-selection="track"><span>{props.TrackDetail}</span></p>
 			<div class="shell-scroll">{children}</div>
 		</div>
 	</section>
@@ -385,9 +457,9 @@ type PhoneNavProps struct {
 // PhoneNav is visible only at phone width, where one region shows at a time.
 component PhoneNav(props: PhoneNavProps) {
 	return <nav class="shell-phone-nav" aria-label="Regions">
-		<PhoneLink Href={props.BrowserHref} Current={props.BrowserOn} Region="browser">Browser</PhoneLink>
-		<PhoneLink Href={props.CenterHref} Current={props.CenterOn} Region="center">Center</PhoneLink>
-		<PhoneLink Href={props.DetailHref} Current={props.DetailOn} Region="detail">Detail</PhoneLink>
+		<PhoneLink Href={props.CenterHref} Current={props.CenterOn} Region="center">View</PhoneLink>
+		<PhoneLink Href={props.BrowserHref} Current={props.BrowserOn} Region="browser">Library</PhoneLink>
+		<PhoneLink Href={props.DetailHref} Current={props.DetailOn} Region="detail">Edit</PhoneLink>
 		<PhoneLink Href={props.CodeHref} Current={props.CodeOn} Region="code">Code</PhoneLink>
 	</nav>
 }
@@ -416,10 +488,12 @@ type ActionButtonProps struct {
 	Name  string
 	Value string
 	Label string
+	Text  string
+	Class string
 }
 
 component ActionButton(props: ActionButtonProps) {
-	return <button type="submit" name={props.Name} value={props.Value}>{props.Label}</button>
+	return <button type="submit" name={props.Name} value={props.Value} class={props.Class} aria-label={props.Label} title={props.Label}>{props.Text}</button>
 }
 
 type HiddenFieldProps struct {
