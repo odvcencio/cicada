@@ -128,7 +128,7 @@ test('held placement gestures pan, remain anchored, save once and cancel safely'
   assert.equal(await block().getAttribute('data-placement-preview'),null);assert.equal(await scroller().getAttribute('data-placement-auto-scroll'),null);
   check('window resize ends the gesture without saving a placement');
 
-  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'Center',exact:true}).click();await setup('192');
+  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'View',exact:true}).click();await setup('192');
   await block().locator('.placement-select').scrollIntoViewIfNeeded();
   g=await geometry();b=await block().boundingBox();const x=Math.max(g.left+24,b.x+8),initial=await scroll();count=posts.length;
   const cdp=await context.newCDPSession(page);

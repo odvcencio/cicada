@@ -97,7 +97,7 @@ test('Studio placement gestures save once, cancel cleanly and retain the working
   assert.equal(await block().locator('.placement-select').evaluate(e=>e===document.activeElement),false,'returning gesture reclaimed placement focus');await undo();
   check('a real pending action blocks racing nudges and cancels gesture focus return when focus moves elsewhere');
 
-  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'Center',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'View',exact:true}).click();
   await page.getByLabel('Timeline zoom',{exact:true}).selectOption('48');await page.getByRole('button',{name:'Show selected',exact:true}).click();
   await block().locator('.placement-select').scrollIntoViewIfNeeded();const box=await block().locator('.placement-select').boundingBox(),scroll=await page.locator('.placement-scroll').boundingBox();
   const x=Math.max(scroll.x+140,Math.min(box.x+box.width*.3,scroll.x+scroll.width-24)),y=box.y+box.height/2;

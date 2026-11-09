@@ -363,7 +363,7 @@ test('Studio Code typing, commands, drafts and guarded saves work across platfor
       assert.equal(await page.evaluate(()=>window.__codeEditorRefs.document===document && window.__codeEditorRefs.editor===document.querySelector('#editor-content')),true,'view changes replaced the Code editor');
       assert.equal(lf((await state(page)).source),fixture);
       await page.setViewportSize({width:390,height:844});
-      for (const region of ['Center','Detail','Code']) await page.locator('.shell-phone-nav').getByRole('link',{name:region,exact:true}).click();
+      for (const region of ['View','Edit','Code']) await page.locator('.shell-phone-nav').getByRole('link',{name:region,exact:true}).click();
       await fit(page); await visibleText(page);
       assert.equal(await editor.inputValue(),draft,'narrow region switch discarded '+profile.name+' draft');
       t.diagnostic(profile.name+': typing, indentation, local history, Unicode, focused search/replace, Go to line, comments, brackets and draft-preserving view/narrow navigation passed');
