@@ -670,7 +670,15 @@ includes synths, samplers and existing audio clips; capture retains device input
 before monitoring and mixing.
 The GoSX meter surface shows track and master peaks, RMS, momentary,
 short-term and integrated LUFS, loudness range, true peak, and dropped blocks.
-**Reset live loudness** begins a new measurement. The surface stops polling
+**Reset live loudness** begins a new measurement. While the song plays,
+`/api/meters` also returns an `analysis` object for the master output. Its
+`spectrum` holds 64 levels in dBFS (`bands_db`), spaced evenly on a log scale
+from `low_hz` (20 Hz) to `high_hz` (20 kHz, or 0.45 times the sample rate when
+that is lower); a full-scale sine reads 0 dB in its band. Its `correlation` is
+the stereo phase correlation over about 300 ms: +1 means identical channels,
+0 unrelated channels, and -1 opposite polarity. It is `null` when either
+channel is quieter than -90 dBFS. Both update about 30 times a second and
+restart when you reset live loudness. The surface stops polling
 when you leave the mixer. Offline export still provides the final loudness
 verification.
 

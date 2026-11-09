@@ -95,6 +95,7 @@ type studioMeterSnapshot struct {
 	sequence uint64
 	frame    liveplay.MeterFrame
 	loudness liveplay.LoudnessSnapshot
+	analysis liveplay.AnalysisSnapshot
 }
 
 // snapshotFrames carries the latest binary telemetry frames, base64-encoded.
@@ -883,6 +884,16 @@ func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
 	return liveplay.LoudnessSnapshot{}
 }
 
+func (t *studioTransport) analysis() liveplay.AnalysisSnapshot {
+	t.mu.Lock()
+	stream := t.stream
+	t.mu.Unlock()
+	if stream != nil {
+		return stream.Analysis()
+	}
+	return liveplay.AnalysisSnapshot{}
+}
+
 // healthFramePeriod is the interval between published health frames (twice a
 // second).
 const healthFramePeriod = 500 * time.Millisecond
@@ -950,6 +961,7 @@ func (t *studioTransport) publishMeter(frame liveplay.MeterFrame, loudnessSnapsh
 	} else {
 		snapshot.loudness = t.loudness()
 	}
+	snapshot.analysis = t.analysis()
 	t.latestMeter.Store(&snapshot)
 }
 

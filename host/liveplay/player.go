@@ -448,6 +448,15 @@ func (p *Player) Loudness() LoudnessSnapshot {
 	return LoudnessSnapshot{}
 }
 
+// Analysis returns the latest master spectrum and phase correlation, computed
+// off the audio thread and published about every 33 ms.
+func (p *Player) Analysis() AnalysisSnapshot {
+	if p.loudness != nil {
+		return p.loudness.analysis()
+	}
+	return AnalysisSnapshot{}
+}
+
 // Close permanently ends rendering, releases cancellation producers and stops
 // the meter worker. Call it after the audio device has stopped reading this player.
 func (p *Player) Close() {
