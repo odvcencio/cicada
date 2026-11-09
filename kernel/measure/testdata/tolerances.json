@@ -198,8 +198,8 @@
     },
     "voice/acid": {
       "aliasing_db": {
-        "limit": -25.4,
-        "measured_when_set": -28.472
+        "limit": -51,
+        "measured_when_set": -54.039
       },
       "noise_floor_dbfs": {
         "limit": -120,

@@ -353,8 +353,12 @@ func (v *Voice) Next() float32 {
 		osc += v.params.Sub * .5 * v.oscSub.pulse(v.phaseSub, .5)
 		v.phaseSub = fraction(v.phaseSub + subDelta)
 	}
-	pre := fastmath.Tanh(v.drivePre*osc) * v.drivePost
-	first, second := v.up.Upsample(pre)
+	// The drive saturation runs at the 2x rate, after the upsampler, so its
+	// harmonics above the base Nyquist are filtered before they fold back.
+	// Even at drive 0 it saturates a full-level oscillator at unity gain.
+	first, second := v.up.Upsample(osc)
+	first = fastmath.Tanh(v.drivePre*first) * v.drivePost
+	second = fastmath.Tanh(v.drivePre*second) * v.drivePost
 	g := v.restingFilterG
 	if v.meg != 0 {
 		cutoff := v.cutoffHz()
