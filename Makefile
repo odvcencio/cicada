@@ -129,6 +129,18 @@ test-collaboration:
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
 
+.PHONY: test-studio-latency
+# Requires a fresh Studio (the benchmark claims its one-use owner session) on a
+# disposable fixture from continuity.test.cjs or placements.test.cjs, with
+# CICADA_STUDIO_URL and CICADA_STUDIO_STARTUP_LOG set. Report mode by default;
+# CICADA_BENCH_GATES=enforce fails on a missed gate. Also reads
+# CICADA_BENCH_VIEWPORT, CICADA_BENCH_PLAYBACK, CICADA_BENCH_WARMUPS and CICADA_BENCH_TRIALS.
+CICADA_BENCH_REPORT ?= build/studio-latency.json
+export CICADA_BENCH_REPORT
+test-studio-latency:
+	mkdir -p $(dir $(CICADA_BENCH_REPORT))
+	CICADA_BENCH_GATES=$${CICADA_BENCH_GATES:-report} node workstation/browser/edit-undo-benchmark.cjs > /dev/null
+
 .PHONY: test-studio-modulation-source
 # Requires a fresh Studio process, disposable score, and proof directory.
 test-studio-modulation-source:
