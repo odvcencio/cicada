@@ -251,7 +251,7 @@
     "voice/graph_filters": {
       "frequency_response_error_db": {
         "limit": 0.1,
-        "measured_when_set": 0.001
+        "measured_when_set": 0.018
       },
       "noise_floor_dbfs": {
         "limit": -120,

@@ -619,6 +619,11 @@ func (v *Voice) nextSample(substep uint64) float32 {
 	return out
 }
 
+// ladderInputLimit bounds a ladder's input. With feedback at most 3.2 the
+// tanh argument is at least a third of the input, far past the point where a
+// float32 tanh is exactly 1.
+const ladderInputLimit = 1e4
+
 func clamp(x, lo, hi float32) float32 {
 	if x < lo {
 		return lo
@@ -650,16 +655,23 @@ func polyBLEP(phase, dt float32) float32 {
 
 // ladder runs one sample of a four-stage ladder: trapezoidal (zero-delay)
 // one-pole stages whose corners sit at the cutoff, with the resonance feedback
-// solved within the sample. So the resonant peak lands on the cutoff at every
-// cutoff, and without resonance the -3 dB point is about 0.435 times it, as in
-// an analog ladder. coef is g/(1+g) with g = tan(pi*cutoff/rate).
+// solved within the sample. As in an analog ladder, the cutoff is the stage
+// corner: without resonance the response is 3 dB down at about 0.435 times the
+// cutoff, and the resonant peak sits just below the cutoff (0.92 times it at
+// resonance 0.9) and approaches it as resonance rises, at every cutoff. coef
+// is g/(1+g) with g = tan(pi*cutoff/rate).
 //
 // Each stage is out = coef*in + (1-coef)*state, so the output is
 // coef^4*in + S, where S collects the stage states. Solving
 // y = coef^4*(x - k*y) + S for y gives the feedback estimate; the input then
 // saturates through tanh. Products round to float32 before additions so arm64
 // cannot contract an FMA and results stay identical across targets.
+//
+// The input is held to +-1e4 so an infinite sample cannot turn the estimate
+// into Inf - Inf and leave NaN in the stage states. tanh already returns
+// exactly +-1 for any input that large, so no finite render changes.
 func ladder(state *[4]float32, coef, feedback, x float32) float32 {
+	x = clamp(x, -ladderInputLimit, ladderInputLimit)
 	rest := 1 - coef
 	g2 := float32(coef * coef)
 	g3 := float32(g2 * coef)

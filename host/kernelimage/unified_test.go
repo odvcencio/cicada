@@ -20,6 +20,12 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+// The image bytes are the ones captured at the v13 release
+// (testdata/frozen-manifest.json). The render hashes were re-pinned on
+// 2026-11-09, the first change since that capture: the graph ladder and diode
+// corner moved to the cutoff setting, and the acid drive moved inside its 2x
+// section to stop it aliasing. The manifest keeps the original f32le hashes as
+// the record of the release render.
 func TestFrozenMainVersion13BytesAndRender(t *testing.T) {
 	for _, tc := range []struct{ name, render string }{
 		{"legacy-first-acid-v13", "4400a57bfc8f6185bffe19a964bda5c2220b061d51af27a3b7d2eee1abb25753"},
