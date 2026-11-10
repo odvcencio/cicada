@@ -248,6 +248,11 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 		ctx.SetStatus(http.StatusServiceUnavailable)
 		return workspace{}, ui.ShellProps{}, ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), false
 	}
+	view.mixer = sync.OnceValues(func() (mixerState, error) {
+		var mixer mixerState
+		err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/mixer", nil, &mixer)
+		return mixer, err
+	})
 	if saved != nil {
 		// The unmodified snapshot, taken before any file selection or draft
 		// restoration, for panels that must match the saved project.

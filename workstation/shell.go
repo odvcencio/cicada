@@ -182,6 +182,8 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, panel("audio")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "export-dialog", Title: "Export"}, panel("export")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "palette", Title: "Keyboard shortcuts"}, shortcuts(), ui.ShortcutNotes()),
+		// Level meters in the Mixer strips. The engine polls only while that view shows.
+		meterEngine(ctx, engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-strip-meters", Runtime: engine.RuntimeGoWASM, Props: []byte(`{"mode":"strips"}`), Capabilities: []engine.Capability{engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.BoolAttr("hidden")))),
 		meterEngine(ctx, engine.Config{Name: "CicadaShell", Kind: engine.KindSurface, MountID: "cicada-shell-actions", Runtime: engine.RuntimeGoWASM, Props: shellProps, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.BoolAttr("hidden")))),
 	)
 	message, hasMessage := props.Message, props.HasMessage

@@ -32,6 +32,8 @@ var workspaceRefreshRequested = signal.New(uint64(0))
 
 type meterFrame struct {
 	Tracks   map[string]pair `json:"tracks"`
+	Returns  map[string]pair `json:"returns"`
+	Buses    map[string]pair `json:"buses"`
 	Master   pair            `json:"master"`
 	Loudness struct {
 		Momentary  *float64 `json:"momentary"`
@@ -84,6 +86,14 @@ func main() {
 }
 
 func mountMeters(host enginewasm.Context) (enginewasm.Handle, error) {
+	// The shell Mixer mounts this engine with mode "strips"; the legacy panel
+	// page mounts it without props and gets the canvas.
+	var props struct {
+		Mode string `json:"mode"`
+	}
+	if host.DecodeProps(&props) == nil && props.Mode == "strips" {
+		return mountStripMeters(), nil
+	}
 	mount := host.Mount()
 	if mount.IsNull() || mount.IsUndefined() {
 		return nil, fmt.Errorf("meter mount is missing")

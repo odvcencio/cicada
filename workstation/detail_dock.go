@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"html"
-	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
@@ -96,8 +95,8 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 		sourceControls = append(sourceControls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(text)))
 	}
 	var controls, effects []gosx.Node
-	var mixer mixerState
-	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/mixer", nil, &mixer); err != nil {
+	mixer, err := s.loadMixer(ctx, v)
+	if err != nil {
 		controls = append(controls, failure(err))
 	} else {
 		v.Revision, v.Edition = mixer.Revision, mixer.Edition

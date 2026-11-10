@@ -30,3 +30,38 @@
 .shell #view-panel-mixer .strip .effect-chain > strong { color:var(--muted); font:500 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
 .shell #view-panel-mixer .strip .effect-chain ol { margin:4px 0; padding-left:18px; }
 .shell #view-panel-mixer .strip > p.muted { margin:0; font-size:11px; }
+
+/* Mute and solo: one-click toggles; the pressed state is the saved state. */
+.shell .strip-toggles { display:flex; gap:6px; }
+.shell .strip-toggles .action-form, .shell .rail-toggles .action-form { display:block; margin:0; }
+.shell .strip-toggle { min-width:26px; min-height:26px; padding:2px 6px; border:1px solid var(--border); border-radius:3px; background:var(--bg); color:var(--muted); font:600 12px var(--mono); cursor:pointer; }
+.shell .strip-toggle:hover { color:var(--text); border-color:var(--grid-strong); }
+.shell .strip-toggle[data-toggle=mute][aria-pressed=true] { background:var(--coral); border-color:var(--coral); color:var(--bg); }
+.shell .strip-toggle[data-toggle=solo][aria-pressed=true] { background:var(--amber); border-color:var(--amber); color:var(--bg); }
+
+/* Pan: a horizontal range with its readout and a centre button. */
+.shell #view-panel-mixer .strip-pan { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:6px; }
+.shell #view-panel-mixer .strip-pan .action-form { display:block; margin:0; min-width:0; }
+.shell #view-panel-mixer .strip-pan input[type=range] { width:100%; min-height:20px; margin:0; padding:0; border:0; background:none; accent-color:var(--track-color,var(--amber)); }
+.shell #view-panel-mixer .strip-pan-readout { min-width:3ch; color:var(--text); font:600 12px var(--mono); text-align:right; }
+.shell #view-panel-mixer .strip-pan-reset { min-width:22px; min-height:22px; padding:0 4px; border:1px solid var(--border); border-radius:3px; background:var(--bg); color:var(--muted); font:11px var(--mono); }
+.shell #view-panel-mixer .strip-pan-reset:disabled { opacity:.4; }
+
+/* Meter: peak (dim), RMS (bright), a peak-hold tick and a clip lamp over
+   -60 to +6 dBFS. The engine writes --peak, --rms and --hold as 0 to 1. */
+.shell #view-panel-mixer .strip-channel { display:flex; align-items:flex-start; gap:6px; }
+.shell #view-panel-mixer .strip-channel .strip-fader { flex:1; min-width:0; }
+.shell .strip-meter { --peak:0; --rms:0; --hold:0; position:relative; flex:0 0 16px; width:16px; height:132px; margin:6px 0 0; border:1px solid var(--border); border-radius:2px; background:var(--bg); overflow:hidden; }
+.shell .strip-meter > span { position:absolute; left:0; right:0; }
+.shell .strip-meter__peak { bottom:0; height:calc(var(--peak) * 100%); background:color-mix(in srgb,var(--mint) 35%,transparent); }
+.shell .strip-meter > .strip-meter__rms { bottom:0; left:3px; right:3px; height:calc(var(--rms) * 100%); background:var(--mint); }
+.shell .strip-meter__hold { bottom:calc(var(--hold) * 100% - 1px); height:2px; background:var(--amber); }
+.shell .strip-meter__clip { top:0; height:5px; background:var(--raised); }
+.shell .strip-meter[data-clip=true] .strip-meter__clip { background:var(--coral); }
+.shell .strip-meter::after { content:""; position:absolute; left:0; right:0; bottom:90.9%; height:1px; background:var(--grid-strong); opacity:.8; }
+
+.shell .strip-loudness { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; margin:0; font:10px var(--mono); }
+.shell .strip-loudness div { display:flex; flex-direction:column; }
+.shell .strip-loudness dt { color:var(--muted); }
+.shell .strip-loudness dd { margin:0; color:var(--text); font:600 12px var(--mono); }
+.shell #view-panel-mixer .strip-tools { display:flex; flex-direction:column; gap:6px; min-height:60px; }

@@ -180,6 +180,9 @@ type workspace struct {
 	Valid           bool             `json:"valid"`
 	Error           string           `json:"error"`
 	Project         *project.Project `json:"project"`
+	// mixer reads /api/mixer at most once per request. loadWorkspace sets it;
+	// copies of the workspace made later share the same read.
+	mixer func() (mixerState, error)
 }
 
 type transport struct {
@@ -260,6 +263,7 @@ type mixerStrip struct {
 }
 type mixerReturn struct {
 	Name   string       `json:"name"`
+	Meter  string       `json:"meter"`
 	Fields []mixerField `json:"fields"`
 }
 type mixerState struct {
