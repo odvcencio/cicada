@@ -38,21 +38,30 @@ func TestMedian(t *testing.T) {
 func TestGates(t *testing.T) {
 	results := []Result{
 		{Step: "help", MedianMS: 5},
-		{Step: "render:medium", Realtime: 30},
-		{Step: "loudness:medium", Syntheses: 2},
+		{Step: "render:medium", MedianMS: 6000, Realtime: 15},
+		{Step: "loudness:medium", MedianMS: 7800, Syntheses: 2},
 	}
 	outcomes, passed := checkGates(results)
-	if passed || len(outcomes) != 3 {
+	if passed || len(outcomes) != 4 {
 		t.Fatalf("outcomes %+v passed %v", outcomes, passed)
 	}
 	for _, outcome := range outcomes {
-		if want := outcome.Step != "loudness:medium"; outcome.Passed != want {
-			t.Fatalf("%s: passed %v, want %v", outcome.Step, outcome.Passed, want)
+		if want := outcome.Metric != "syntheses"; outcome.Passed != want {
+			t.Fatalf("%s %s: passed %v, want %v", outcome.Step, outcome.Metric, outcome.Passed, want)
 		}
 	}
 	results[2].Syntheses = 1
 	if _, passed := checkGates(results); !passed {
 		t.Fatal("one synthesis should pass the exact gate")
+	}
+	// A loudness render that takes more than 1.5 plain renders fails.
+	results[2].MedianMS = 9100
+	if _, passed := checkGates(results); passed {
+		t.Fatal("a loudness render at 1.52 plain renders should fail")
+	}
+	// Without the plain render the ratio is unknown, which fails.
+	if outcomes, _ := checkGates(results[2:]); len(outcomes) != 2 || outcomes[1].Passed {
+		t.Fatalf("ratio without a plain render: %+v", outcomes)
 	}
 }
 

@@ -48,8 +48,11 @@ func identitySubset() []identityScore {
 	loudness := filepath.Join("testdata", "export-loudness")
 	return []identityScore{
 		{name: "direct-no-chain", path: filepath.Join(root, "examples", "tuplet-grid.cicada")},
-		{name: "direct-limiter-chain", path: filepath.Join(root, "examples", "songs", "anywhere-you-are.cicada"), bars: 4},
 		{name: "direct-chain", path: filepath.Join(loudness, "punchy-nolimiter.cicada"), bars: 2},
+		{name: "direct-limiter-chain", path: filepath.Join(loudness, "punchy-limiter.cicada"), bars: 2},
+		// The large reference song: serial track effects put it on the scheduled
+		// engine, and its master chain ends in a limiter.
+		{name: "scheduled-song-limiter-chain", path: filepath.Join(root, "examples", "songs", "anywhere-you-are.cicada"), bars: 2},
 		{name: "scheduled-no-chain", path: filepath.Join(root, "examples", "arrangement-tempo.cicada"), bars: 4},
 		{name: "scheduled-chain", path: filepath.Join(loudness, "punchy-nolimiter.cicada"), bars: 2, replacements: []string{"track bass acid {", scheduledInsert}},
 		{name: "scheduled-limiter-chain", path: filepath.Join(loudness, "punchy-limiter.cicada"), bars: 2, replacements: []string{"track bass acid {", scheduledInsert}},
