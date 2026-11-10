@@ -122,10 +122,34 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 			target := renderTargetOptions{LoudnessTarget: -9, TruePeakMaxDBTP: ceiling, Tolerance: 0.5, Loudness: true}
 			result, code, stderr := runRenderJSON(t, "render", score, filepath.Join(dir, "short.wav"), opts, &target)
 			failure := result.Error
-			if code != 1 || failure == nil || failure.Code != "loudness_shortfall_at_true_peak_ceiling" || failure.Remedy == nil || len(failure.Remedy.Intents) != 0 {
+			if code != 1 || failure == nil || failure.Code != "loudness_shortfall_at_true_peak_ceiling" || failure.Remedy == nil {
 				t.Fatalf("shortfall: code %d %+v", code, failure)
 			}
 			remedy := failure.Remedy
+			// The remedy's intents, applied with cicada apply at its revision,
+			// make a fresh copy of the score meet the target too.
+			viaIntents := filepath.Join(dir, "intents.cicada")
+			if err := os.WriteFile(viaIntents, source, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			envelope := filepath.Join(dir, "remedy.json")
+			intents := make([]string, len(remedy.Intents))
+			for i, intent := range remedy.Intents {
+				intents[i] = string(intent)
+			}
+			if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+remedy.Revision+`","intents":[`+strings.Join(intents, ",")+`]}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if len(remedy.Intents) != 1 {
+				t.Fatalf("remedy intents: %s", intents)
+			}
+			if err := applyCommandWithHooks([]string{viaIntents, envelope, "--write"}, &bytes.Buffer{}, nil); err != nil {
+				t.Fatalf("the remedy's intents do not apply: %v", err)
+			}
+			byIntents, code, _ := runRenderJSON(t, "render", viaIntents, filepath.Join(dir, "intents.wav"), opts, &target)
+			if code != 0 || byIntents.Loudness == nil || !byIntents.Loudness.TargetMet {
+				t.Fatalf("after the remedy's intents: code %d %+v %+v", code, byIntents.Error, byIntents.Loudness)
+			}
 			if !strings.Contains(remedy.ScoreText, fmt.Sprintf("ceiling = %gdBTP", ceiling)) || remedy.Summary != limiterRemedySummary(ceiling) || !strings.Contains(stderr, remedy.Summary) {
 				t.Fatalf("remedy: %+v\n%s", remedy, stderr)
 			}
@@ -160,7 +184,7 @@ func TestLimiterRemedyWithoutAMasterDeclaration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plain.cicada")
 	source := []byte("cicada 2\ntempo 120\nfx ceiling limiter { ceiling = -1dBTP }\ntrack bass acid {}\npattern p { a1 . }\nscene main { bass = p }\nsong { main }\n")
 	remedy := limiterRemedy(path, scoreInspection{source: source}, -1.5)
-	if remedy.Replaces != "" || remedy.ScoreText != "fx ceiling-2 limiter { ceiling = -1.5dBTP }\nmaster { insert = ceiling-2 }" {
+	if remedy.Replaces != "" || remedy.ScoreText != "fx ceiling-2 limiter { ceiling = -1.5dBTP }\nmaster { insert = ceiling-2 }" || len(remedy.Intents) != 1 || !strings.Contains(string(remedy.Intents[0]), `"name":"ceiling-2"`) {
 		t.Fatalf("remedy: %+v", remedy)
 	}
 }

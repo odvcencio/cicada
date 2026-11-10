@@ -241,7 +241,9 @@ type applyIntentJSON struct {
 
 // applyErrorJSON says why an apply failed. Code is one of applyErrorCodes.
 // Index, kind and field name the intent at fault when the error is about
-// one; diagnostic, reason and note carry a note refusal of editnotes as data.
+// one; reason names why an intent was refused when it says (with uses, the
+// references that block it); diagnostic and note carry a note refusal of
+// editnotes as data.
 type applyErrorJSON struct {
 	Code       string         `json:"code"`
 	Message    string         `json:"message"`
@@ -251,6 +253,7 @@ type applyErrorJSON struct {
 	Diagnostic string         `json:"diagnostic,omitempty"`
 	Reason     string         `json:"reason,omitempty"`
 	Note       map[string]any `json:"note,omitempty"`
+	Uses       []string       `json:"uses,omitempty"`
 }
 
 // applyErrorCodes are the codes of apply --json errors; docs/manual/agents.md
@@ -284,6 +287,10 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		var refusal *edits.NoteError
 		if errors.As(err, &refusal) {
 			failure.Diagnostic, failure.Reason, failure.Note = "CICADA-NOTES", refusal.Code, refusal.Note()
+		}
+		var reason *edits.ReasonError
+		if errors.As(err, &reason) {
+			failure.Reason, failure.Uses = reason.Reason, reason.Uses
 		}
 		document.Error = failure
 	}

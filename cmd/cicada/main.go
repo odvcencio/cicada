@@ -815,9 +815,9 @@ func (e *loudnessShortfallError) Error() string {
 // limiterRemedySummary is the fix docs/audio/mix-chain.md gives for a target
 // that a score without a master limiter misses at the true-peak ceiling: the
 // static gain keeps the crest factor, and a limiter as the last master insert
-// lets the gain go in ahead of it. No edit intent adds a limiter yet.
+// lets the gain go in ahead of it; addeffect adds one.
 func limiterRemedySummary(ceiling float64) string {
-	return fmt.Sprintf("add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent", formatDBTP(ceiling))
+	return fmt.Sprintf("add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text", formatDBTP(ceiling))
 }
 
 // formatDBTP writes a dBTP number as score text writes it.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -95,7 +96,8 @@ type renderErrorJSON struct {
 // otherwise it is added at the end of File. Revision is File's revision when
 // the render read it, in the form cicada apply uses: a remedy holds only
 // while the file is at that revision. Intents, when present, make the same
-// change through cicada apply; it is absent when no intent can.
+// change through cicada apply on the score the render read, in an envelope
+// with Revision; it is absent when no intent can.
 type renderRemedyJSON struct {
 	Summary   string            `json:"summary"`
 	File      string            `json:"file"`
@@ -310,6 +312,13 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 		name = fmt.Sprintf("ceiling-%d", i)
 	}
 	fx := fmt.Sprintf("fx %s limiter { ceiling = %sdBTP }", name, formatDBTP(ceiling))
+	// The same change as intents: addeffect declares the limiter with the
+	// ceiling and appends it to the master insert chain.
+	envelope := edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{&edits.AddEffect{
+		Name: name, EffectKind: "limiter", InsertOn: "master",
+		Settings: map[string]json.RawMessage{"ceiling": json.RawMessage(strconv.Quote(formatDBTP(ceiling) + "dBTP"))},
+	}}}
+	raw, rawErr := envelope.RawIntents()
 	remedy.ScoreText = fx + "\nmaster { insert = " + name + " }"
 	for _, file := range files {
 		if file.Library != "" {
@@ -325,6 +334,11 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 		}
 		remedy.File, remedy.Revision, remedy.Replaces, remedy.ScoreText = jsonPath(file.Path), edits.Revision(file.Source), master, fx+"\n"+replaced
 		break
+	}
+	// cicada apply edits the score it is given, so the intents are offered
+	// only when the change belongs to that file.
+	if rawErr == nil && remedy.File == jsonPath(path) {
+		remedy.Intents = raw
 	}
 	return remedy
 }

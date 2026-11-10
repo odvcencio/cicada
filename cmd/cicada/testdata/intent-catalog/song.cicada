@@ -21,7 +21,9 @@ instrument glow {
   }
 }
 
-track bass acid { cutoff = 620Hz }
+fx grit drive {}
+
+track bass acid { cutoff = 620Hz insert = grit }
 track drums drums {}
 track keys piano {}
 track lead glow {}
