@@ -1,6 +1,10 @@
 package pro
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 type EQType uint8
 
@@ -67,13 +71,12 @@ func NewEQ(sampleRate int, bands [4]Band) (*EQ, error) {
 }
 
 // designBand rounds products before additions, as process does, so its own
-// arithmetic cannot fuse. The coefficients are not yet the same on every
-// target: they pass through math.Sincos and, through dbGain, math.Pow, whose
-// last bit can differ between architectures. Making those deterministic is
-// follow-up work.
+// arithmetic cannot fuse, and takes its sine, cosine and dB gain from
+// detmath rather than the math library, whose last bit differs by target.
+// The coefficients are therefore the same on amd64, arm64 and WebAssembly.
 func designBand(rate int, p Band) biquad {
 	w := 2 * math.Pi * p.FrequencyHz / float64(rate)
-	s, c := math.Sincos(w)
+	s, c := detmath.Sincos(w)
 	a := dbGain(p.GainDB / 2)
 	alpha := s / (2 * p.Q)
 	var b0, b1, b2, a0, a1, a2 float64

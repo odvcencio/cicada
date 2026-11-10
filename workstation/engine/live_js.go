@@ -143,7 +143,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.refreshPatterns()
 	watch := signal.Watch(func() { root.Call("querySelector", "[data-live-status]").Set("textContent", u.status.Get()) })
 	revisionWatch := signal.Watch(func() {
-		if version := confirmedWorkspaceVersion.Get(); version.Revision != "" && !u.closed.Load() {
+		if version := engineVersion(root, confirmedWorkspaceVersion.Get()); version.Revision != "" && !u.closed.Load() {
 			u.props.Revision, u.sourceRevision = version.Revision, version.SourceRevision
 		}
 	})

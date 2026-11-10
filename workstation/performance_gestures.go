@@ -82,7 +82,7 @@ func (s *studioApp) performanceGestures(ctx *server.Context, v workspace, csrf s
 		}
 		return gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", name), gosx.Attr("value", text), gosx.Attr("min", low), gosx.Attr("max", high), gosx.Attr("step", step)))
 	}
-	children := []gosx.Node{hidden("pattern", p.ID), hidden("source_revision", v.SourceRevision), hidden("track", query.Get("track")), hidden("scene", query.Get("scene")), hidden("action", "performed-gesture"), hidden("note_index", strconv.Itoa(noteIndex)), hidden("index", strconv.Itoa(selected)),
+	children := []gosx.Node{hidden("pattern", p.ID), hidden("source_revision", v.SourceRevision), hidden("track", query.Get("track")), hidden("scene", query.Get("scene")), hidden("action", "performed-gesture"), hidden("note_index", strconv.Itoa(noteIndex)), hidden("index", strconv.Itoa(selected)), targetField(performedNoteKey(p.Performance.Notes, noteIndex) + "/" + expressionKey(points, selected)),
 		field("Tick after note starts", input("tick", float64(point.Tick), "0", strconv.FormatInt(duration, 10))),
 		field("Bend · cents", input("pitch_cents", float64(point.Value.PitchCents), "-9600", "9600")),
 		field("Pressure · 0–1", input("pressure", float64(point.Value.Pressure), "0", "1")),

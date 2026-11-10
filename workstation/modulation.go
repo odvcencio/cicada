@@ -77,7 +77,7 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 				if i > 0 && i < len(source.Points)-1 {
 					remove = submit("operation", "point-remove", "Remove point")
 				}
-				pointRows = append(pointRows, gosx.El("li", form(hidden("action", "mod-source-edit"), hidden("source", source.ID), hidden("index", strconv.Itoa(i)), field("Position", textInput("at", number(point.At))), field("Value", textInput("value", number(point.Value))), shape, submit("operation", "point-set", "Save point"), remove)))
+				pointRows = append(pointRows, gosx.El("li", form(hidden("action", "mod-source-edit"), hidden("source", source.ID), hidden("index", strconv.Itoa(i)), targetField(contourPointKey(source.Points, i)), field("Position", textInput("at", number(point.At))), field("Value", textInput("value", number(point.Value))), shape, submit("operation", "point-set", "Save point"), remove)))
 			}
 			settings = append(settings, gosx.El("h4", gosx.Text("Contour points")), gosx.El("ol", gosx.Fragment(pointRows...)), form(hidden("action", "mod-source-edit"), hidden("operation", "point-add"), hidden("source", source.ID), field("Position", textInput("at", "0.5")), field("Value", textInput("value", "0")), field("Shape", selectInput("shape", "linear", []string{"linear", "smooth", "step", "exponential"})), submit("", "", "Add point")))
 		}

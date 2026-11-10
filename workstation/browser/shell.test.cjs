@@ -578,6 +578,14 @@ test('Mac Cmd save, undo and redo submit the current score forms and leave text 
     assert.ok(data.csrf_token, chord + ' retains the editor token');
     assert.ok(data.revision, chord + ' retains the displayed revision');
     assert.ok(Object.hasOwn(data, 'fileRevision'), chord + ' retains the file revision');
+    if (action !== 'source') {
+      // Undo and Redo run through the shell's edit queue. A refused write
+      // blocks it until the saved state is read again, as the queue on / does.
+      const retry = page.locator('[data-workspace-retry]');
+      await retry.waitFor({state: 'visible'});
+      await retry.click();
+      await retry.waitFor({state: 'hidden'});
+    }
   }
   const editor = page.locator('#score textarea').first();
   await editor.focus();

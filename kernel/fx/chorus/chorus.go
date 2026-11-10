@@ -62,7 +62,7 @@ func New(sampleRate int, params Params) (*Processor, error) {
 	r := float64(sampleRate)
 	p := &Processor{rate: r, params: params, current: params, smooth: 1 - math.Exp(-1/(.01*r)), lowpass: 1 - math.Exp(-2*math.Pi*6500/r), ring: make([]frame, int(math.Ceil(.028*r))+2)}
 	for i, hz := range [...]float64{5.73, 6.347, 6.964} {
-		p.fastStep[i] = uint32(hz*(4294967296/r) + .5)
+		p.fastStep[i] = uint32(float64(hz*(4294967296/r)) + .5)
 	}
 	p.Reset()
 	return p, nil
@@ -116,9 +116,9 @@ func (p *Processor) read(delay float64, left bool) float64 {
 	}
 	a, b := p.ring[first], p.ring[second]
 	if left {
-		return float64(a.left) + (float64(b.left)-float64(a.left))*fraction
+		return float64(a.left) + float64((float64(b.left)-float64(a.left))*fraction)
 	}
-	return float64(a.right) + (float64(b.right)-float64(a.right))*fraction
+	return float64(a.right) + float64((float64(b.right)-float64(a.right))*fraction)
 }
 
 // Process advances the delay and oscillator history even at dry mix. It does
@@ -131,25 +131,25 @@ func (p *Processor) Process(left, right float32) (float32, float32) {
 		p.fault = true
 		return 0, 0
 	}
-	p.current.Rate += (p.params.Rate - p.current.Rate) * p.smooth
-	p.current.Depth += (p.params.Depth - p.current.Depth) * p.smooth
-	p.current.Spread += (p.params.Spread - p.current.Spread) * p.smooth
-	p.current.Mix += (p.params.Mix - p.current.Mix) * p.smooth
+	p.current.Rate += float64((p.params.Rate - p.current.Rate) * p.smooth)
+	p.current.Depth += float64((p.params.Depth - p.current.Depth) * p.smooth)
+	p.current.Spread += float64((p.params.Spread - p.current.Spread) * p.smooth)
+	p.current.Mix += float64((p.params.Mix - p.current.Mix) * p.smooth)
 	if p.params.Mix == 0 && p.current.Mix < .000001 {
 		p.current.Mix = 0
 	}
-	p.filteredL += (float64(left) - p.filteredL) * p.lowpass
-	p.filteredR += (float64(right) - p.filteredR) * p.lowpass
+	p.filteredL += float64((float64(left) - p.filteredL) * p.lowpass)
+	p.filteredR += float64((float64(right) - p.filteredR) * p.lowpass)
 	p.ring[p.at] = frame{float32(p.filteredL), float32(p.filteredR)}
 	var wetL, wetR float64
 	for i := 0; i < p.params.Voices; i++ {
 		slow := float64(modulate.Sin(p.slowPhase[i])) / modulate.One
 		fast := float64(modulate.Sin(p.fastPhase[i])) / modulate.One
 		base := [...]float64{16, 17.3, 18.6}[i]
-		offset := p.current.Depth*slow + .65*fast
+		offset := float64(p.current.Depth*slow) + float64(.65*fast)
 		wetL += p.read((base+offset)*p.rate/1000, true)
 		wetR += p.read((base-offset)*p.rate/1000, false)
-		p.slowPhase[i] += uint32(p.current.Rate*[...]float64{1, 1.205, 1.410}[i]*(4294967296/p.rate) + .5)
+		p.slowPhase[i] += uint32(float64(p.current.Rate*[...]float64{1, 1.205, 1.410}[i]*(4294967296/p.rate)) + .5)
 		p.fastPhase[i] += p.fastStep[i]
 	}
 	p.at++
@@ -163,7 +163,7 @@ func (p *Processor) Process(left, right float32) (float32, float32) {
 	wetR /= float64(p.params.Voices)
 	mid := (wetL + wetR) * .5
 	spread, mix := p.current.Spread, p.current.Mix
-	return float32((1-mix)*float64(left) + mix*((1-spread)*mid+spread*wetL)), float32((1-mix)*float64(right) + mix*((1-spread)*mid+spread*wetR))
+	return float32(float64((1-mix)*float64(left)) + float64(mix*(float64((1-spread)*mid)+float64(spread*wetL)))), float32(float64((1-mix)*float64(right)) + float64(mix*(float64((1-spread)*mid)+float64(spread*wetR))))
 }
 
 func finite32(v float32) bool { return v == v && v <= math.MaxFloat32 && v >= -math.MaxFloat32 }

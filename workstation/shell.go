@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
@@ -67,41 +68,150 @@ func (s *studioApp) shell(ctx *server.Context) gosx.Node {
 	return body
 }
 
-// shellContent renders the shell and returns the workspace it was built from;
-// ok is false when the app is unavailable and the node explains why.
-func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, bool) {
-	query := ctx.Request.URL.Query()
-	current := query
-	tab := oneOf(query.Get("tab"), shellTabs)
-	dock := oneOf(query.Get("dock"), shellDocks)
-	region := oneOf(query.Get("region"), shellPhones)
-	// The Code lens always shows the score, so the loader selects its file.
-	// One read: the Code lens gets the selected file and any restored draft;
-	// every other panel gets the unmodified snapshot, so its source matches the
-	// saved project.
+// shellPage is one read of the workspace for the shell and everything its
+// update regions render from. The page renders every region; an edit response
+// and a region refresh render only the regions the browser asks for.
+type shellPage struct {
+	s              *studioApp
+	ctx            *server.Context
+	view, codeView workspace
+	props          ui.ShellProps
+	csrf, returnTo string
+	query          url.Values
+	tab, dock      string
+	transport      func() transport
+}
+
+// loadShell reads the workspace once for the shell. The Code lens always shows
+// the score, so the loader selects its file: the Code lens gets the selected
+// file and any restored draft; every other panel gets the unmodified snapshot,
+// so its source matches the saved project. When ok is false the node explains
+// why the app is unavailable.
+func (s *studioApp) loadShell(ctx *server.Context) (*shellPage, gosx.Node, bool) {
 	var view workspace
 	codeView, props, unavailable, ok := s.loadWorkspace(ctx, "code", &view)
 	if !ok {
+		return nil, unavailable, false
+	}
+	query := ctx.Request.URL.Query()
+	page := &shellPage{s: s, ctx: ctx, view: view, codeView: codeView, props: props, csrf: session.Token(ctx.Request), returnTo: ctx.Request.URL.RequestURI(), query: query,
+		tab: oneOf(query.Get("tab"), shellTabs), dock: oneOf(query.Get("dock"), shellDocks)}
+	page.transport = sync.OnceValue(func() transport {
+		var state transport
+		_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
+		return state
+	})
+	return page, gosx.Fragment(), true
+}
+
+func (p *shellPage) form(id, name string, children ...gosx.Node) gosx.Node {
+	return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: p.csrf, Revision: p.view.Revision, ReturnTo: p.returnTo}, children...)
+}
+
+func (p *shellPage) panel(name string) gosx.Node {
+	v := p.view
+	if name == "code" {
+		v = p.codeView
+	}
+	return shellLinks(p.ctx.Request.URL, p.s.shellPanel(p.ctx, v, p.csrf, name))
+}
+
+// regionContent renders one update region's content. The bar and step readout
+// is not a region: it is a live binding, and a server snapshot would move it
+// backwards during playback.
+func (p *shellPage) regionContent(id string) (gosx.Node, bool) {
+	button := func(value, label, glyph string) gosx.Node {
+		return ui.ActionButton(ui.ActionButtonProps{Name: "action", Value: value, Label: label, Text: glyph, Class: "transport-glyph"})
+	}
+	file := func(name, glyph string) gosx.Node {
+		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: p.view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: p.view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name, Text: glyph, Class: "transport-glyph"}))
+	}
+	switch id {
+	case "project":
+		return ui.ScoreTitle(ui.ScoreTitleProps{Title: p.props.Title, Filename: p.props.Filename}), true
+	case "transport":
+		return p.form("transport-form", "transport", button("home", "Return to start", "▏◀"), button("play", "Play", "▶"), button("pause", "Pause", "Ⅱ"), button("stop", "Stop", "■")), true
+	case "tempo":
+		return ui.Tempo(ui.TempoProps{Tempo: p.props.Tempo, Key: p.props.Key}), true
+	case "actions":
+		return gosx.Fragment(
+			p.form("undo-form", "undo", hidden("source_revision", p.view.SourceRevision), file("Undo", "↶")),
+			p.form("redo-form", "redo", hidden("source_revision", p.view.SourceRevision), file("Redo", "↷")),
+		), true
+	case "status":
+		return gosx.Fragment(
+			ui.StatusTrigger(ui.StatusTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History", Text: savedStatus(p.view)}),
+			gosx.El("span", gosx.Attrs(gosx.Attr("class", "shell-status__spacer"))),
+			ui.StatusTrigger(ui.StatusTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio", Text: audioStatus(p.transport())}),
+		), true
+	case "dock-header":
+		clip, track := dockSelection(p.view, p.query)
+		return ui.DockSelection(ui.DockSelectionProps{Selection: clip.name, SelectionDetail: clip.detail, TrackDetail: track}), true
+	case "code":
+		return gosx.Fragment(p.panel("code"), p.panel("collaboration")), true
+	}
+	for _, r := range shellPanelRegions {
+		if r.id == id {
+			return p.panel(r.panel), true
+		}
+	}
+	return gosx.Fragment(), false
+}
+
+// shellPanelRegions are the update regions that hold one panel each.
+var shellPanelRegions = []struct{ id, panel string }{
+	{"browser-instruments", "instruments"}, {"browser-generate", "generator"}, {"browser-takes", "takes"}, {"browser-sampler", "sampler"},
+	{"center-arrange", "session"}, {"center-session", "live"}, {"center-mixer", "mixer"},
+	{"dock-clip", "patterns"}, {"dock-device", "device"}, {"dock-automation", "automation"},
+	{"dialog-history", "history"}, {"dialog-audio", "audio"}, {"dialog-export", "export"},
+}
+
+// shellRegionIDs lists every update region of the shell in page order.
+var shellRegionIDs = []string{
+	"project", "transport", "tempo", "actions",
+	"browser-instruments", "browser-generate", "browser-takes", "browser-sampler",
+	"center-arrange", "center-session", "center-mixer",
+	"dock-header", "dock-clip", "dock-device", "dock-automation", "code", "status",
+	"dialog-history", "dialog-audio", "dialog-export",
+}
+
+// renderRegion renders one update region's body and its digest.
+func (p *shellPage) renderRegion(id string) (string, string, bool) {
+	content, ok := p.regionContent(id)
+	if !ok {
+		return "", "", false
+	}
+	body := regionBody(gosx.RenderHTML(content))
+	return body, regionDigest(body), true
+}
+
+// region renders an update region with its wrapper for the page.
+func (p *shellPage) region(id string) gosx.Node {
+	body, digest, _ := p.renderRegion(id)
+	return gosx.RawHTML(regionWrapper(id, digest, p.view.Revision, p.view.SourceRevision, body))
+}
+
+// shellContent renders the shell and returns the workspace it was built from;
+// ok is false when the app is unavailable and the node explains why.
+func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, bool) {
+	p, unavailable, ok := s.loadShell(ctx)
+	if !ok {
 		return unavailable, workspace{}, false
 	}
+	query, current, view, props := p.query, p.query, p.view, p.props
+	tab, dock := p.tab, p.dock
+	region := oneOf(query.Get("region"), shellPhones)
 	ctx.Runtime().ManagedScript("/studio-startup.js", server.ManagedScriptOptions{Role: server.ManagedScriptRoleLifecycle}, gosx.BoolAttr("defer"))
-	csrf := session.Token(ctx.Request)
-	var state transport
-	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
+	// The shell engine applies edit responses with GoSX's patch receiver.
+	// Engine-only pages do not load it implicitly; register GoSX's own asset.
+	if runtimeRoot() != "" {
+		ctx.Runtime().ManagedScript("/gosx/patch.js", server.ManagedScriptOptions{Role: server.ManagedScriptRolePatch})
+	}
+	state := p.transport()
 	browserOpen, codeOpen := shellPanes(ctx.Request)
 	registerShell(ctx, tab, dock, browserOpen, codeOpen)
 	registerArrangementTempos(ctx)
 
-	returnTo := ctx.Request.URL.RequestURI()
-	file := func(name, glyph string) gosx.Node {
-		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name, Text: glyph, Class: "transport-glyph"}))
-	}
-	form := func(id, name string, children ...gosx.Node) gosx.Node {
-		return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: returnTo}, children...)
-	}
-	button := func(value, label, glyph string) gosx.Node {
-		return ui.ActionButton(ui.ActionButtonProps{Name: "action", Value: value, Label: label, Text: glyph, Class: "transport-glyph"})
-	}
 	keys := func(id string) string {
 		for _, cmd := range shellCommands() {
 			if cmd.ID == id {
@@ -110,77 +220,60 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		}
 		return ""
 	}
-	top := ui.TopBar(ui.TopBarProps{Title: props.Title, Filename: props.Filename},
+	top := ui.TopBar(p.region("project"), ui.TransportBar(
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-playback")),
-			form("transport-form", "transport", button("home", "Return to start", "▏◀"), button("play", "Play", "▶"), button("pause", "Pause", "Ⅱ"), button("stop", "Stop", "■")),
+			p.region("transport"),
 			ui.CommandButton(ui.CommandButtonProps{ID: "transport.record", Label: "Record", Glyph: "●", Keys: keys("transport.record")}),
 			ui.CommandButton(ui.CommandButtonProps{ID: "transport.loop", Label: "Loop", Glyph: "↻", Keys: keys("transport.loop")}),
 			ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
-			ui.Tempo(ui.TempoProps{Tempo: props.Tempo, Key: props.Key}),
+			p.region("tempo"),
 		),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-actions")),
-			form("undo-form", "undo", hidden("source_revision", view.SourceRevision), file("Undo", "↶")),
-			form("redo-form", "redo", hidden("source_revision", view.SourceRevision), file("Redo", "↷")),
+			p.region("actions"),
 			ui.PaneToggle(ui.PaneToggleProps{Show: "layout.library.show", Hide: "layout.library.hide", Label: "Library", Pane: "library"}),
 			ui.PaneToggle(ui.PaneToggleProps{Show: "layout.code.show", Hide: "layout.code.hide", Label: "Code", Pane: "code"}),
 			ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
 			ui.IconDialogTrigger(ui.IconDialogTriggerProps{Target: "#palette", Controls: "palette", Label: "Shortcuts", Glyph: "?"}),
 		),
 		ui.CaptureHint(),
-	)
-	status := ui.StatusBar(
-		ui.StatusTrigger(ui.StatusTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History", Text: savedStatus(view)}),
-		gosx.El("span", gosx.Attrs(gosx.Attr("class", "shell-status__spacer"))),
-		ui.StatusTrigger(ui.StatusTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio", Text: audioStatus(state)}),
-	)
+	))
 
-	panelView := func(name string) workspace {
-		if name == "code" {
-			return codeView
-		}
-		return view
-	}
-	panel := func(name string) gosx.Node {
-		return shellLinks(ctx.Request.URL, s.shellPanel(ctx, panelView(name), csrf, name))
-	}
 	// Every panel renders, hidden unless selected, so in-place tab switching
-	// has its content.
-	centerPanel := func(id, name string) gosx.Node {
-		return ui.TabPanel(ui.TabPanelProps{ID: "view-panel-" + id, Tab: "view-tab-" + id, Hidden: id != tab}, panel(name))
+	// has its content. Each sits in its own update region inside the tab panel,
+	// so a patch never touches GoSX's tab elements.
+	centerPanel := func(id string) gosx.Node {
+		return ui.TabPanel(ui.TabPanelProps{ID: "view-panel-" + id, Tab: "view-tab-" + id, Hidden: id != tab}, p.region("center-"+id))
 	}
-	dockPanel := func(id string, content func() gosx.Node) gosx.Node {
-		return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id, Tab: "detail-tab-" + id, Hidden: id != dock}, content())
+	dockPanel := func(id string) gosx.Node {
+		return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id, Tab: "detail-tab-" + id, Hidden: id != dock}, p.region("dock-"+id))
 	}
 
 	browser := ui.Browser(ui.BrowserProps{Open: browserOpen, Width: strconv.Itoa(shellBrowserWidth)},
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Signal: "$layout.instrumentsOpen", Title: "Instruments", Open: true}, panel("instruments")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, panel("generator")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes"}, panel("takes")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Signal: "$layout.samplerOpen", Title: "Sampler"}, panel("sampler")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Signal: "$layout.instrumentsOpen", Title: "Instruments", Open: true}, p.region("browser-instruments")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, p.region("browser-generate")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes"}, p.region("browser-takes")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Signal: "$layout.samplerOpen", Title: "Sampler"}, p.region("browser-sampler")),
 	)
 	center := ui.Center(ui.CenterProps{
 		View:        tab,
 		ArrangeHref: shellLink(current, "tab", "arrange"), SessionHref: shellLink(current, "tab", "session"), MixerHref: shellLink(current, "tab", "mixer"),
 		ArrangeShown: tab == "arrange", SessionShown: tab == "session", MixerShown: tab == "mixer",
-	}, centerPanel("arrange", "session"), centerPanel("session", "live"), centerPanel("mixer", "mixer"))
-	clipSelection, trackSelection := dockSelection(view, query)
+	}, centerPanel("arrange"), centerPanel("session"), centerPanel("mixer"))
 	detail := ui.DetailDock(ui.DetailDockProps{
 		ClipHref: shellLink(current, "dock", "clip"), DeviceHref: shellLink(current, "dock", "device"), AutomationHref: shellLink(current, "dock", "automation"),
 		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", Height: strconv.Itoa(shellDockHeight),
-		Selection: clipSelection.name, SelectionDetail: clipSelection.detail, TrackDetail: trackSelection,
-	}, dockPanel("clip", func() gosx.Node { return panel("patterns") }),
-		dockPanel("device", func() gosx.Node { return panel("device") }),
-		dockPanel("automation", func() gosx.Node { return panel("automation") }))
-	code := ui.CodeLens(ui.CodeLensProps{Open: codeOpen, Width: strconv.Itoa(shellCodeWidth)}, panel("code"), panel("collaboration"))
+	}, p.region("dock-header"), ui.ShellScroll(dockPanel("clip"), dockPanel("device"), dockPanel("automation")))
+	code := ui.CodeLens(ui.CodeLensProps{Open: codeOpen, Width: strconv.Itoa(shellCodeWidth)}, p.region("code"))
+	status := ui.StatusBar(p.region("status"))
 
 	// This engine binds the surrounding document, rather than owning its
 	// rendered children. A fresh masked CSRF token gives managed navigation a
 	// fresh binding instead of retaining a listener on the previous shell.
-	shellProps, _ := json.Marshal(map[string]string{"csrf": csrf, "revision": view.Revision, "sourceRevision": view.SourceRevision})
+	shellProps, _ := json.Marshal(map[string]string{"csrf": p.csrf, "revision": view.Revision, "sourceRevision": view.SourceRevision})
 	dialogs := gosx.Fragment(
-		ui.DialogFrame(ui.DialogFrameProps{ID: "history-dialog", Title: "History"}, panel("history")),
-		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, panel("audio")),
-		ui.DialogFrame(ui.DialogFrameProps{ID: "export-dialog", Title: "Export"}, panel("export")),
+		ui.DialogFrame(ui.DialogFrameProps{ID: "history-dialog", Title: "History"}, p.region("dialog-history")),
+		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, p.region("dialog-audio")),
+		ui.DialogFrame(ui.DialogFrameProps{ID: "export-dialog", Title: "Export"}, p.region("dialog-export")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "palette", Title: "Keyboard shortcuts"}, shortcuts(), ui.ShortcutNotes()),
 		// Level meters in the Mixer strips. The engine polls only while that view shows.
 		meterEngine(ctx, engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-strip-meters", Runtime: engine.RuntimeGoWASM, Props: []byte(`{"mode":"strips"}`), Capabilities: []engine.Capability{engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.BoolAttr("hidden")))),
@@ -202,7 +295,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ID: "studio-workbench", LeftSignal: "$layout.browserWidth", RightSignal: "$layout.codeWidth", BottomSignal: "$layout.dockHeight",
 		Left: strconv.Itoa(shellBrowserWidth), Right: strconv.Itoa(shellCodeWidth), Bottom: strconv.Itoa(shellDockHeight),
 	}, top, browser, center, code, detail, status)
-	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, workbench, phone, dialogs), view, true
+	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, workbench, phone, dialogs, ui.EditFeedback()), view, true
 }
 
 type dockClip struct{ name, detail string }

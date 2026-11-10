@@ -55,7 +55,7 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 		for i, group := range groups {
 			options = append(options, option(strconv.Itoa(i+1), group.Name, int(note.Group) == i+1))
 		}
-		children = append(children, form(laneURL(selected), "performance-binding", field(performancePitch(int(note.Note)+int(p.Transpose))+" · Shared lane", gosx.El("select", gosx.Attrs(gosx.Attr("name", "group")), gosx.Fragment(options...))), submit("", "", "Bind note")))
+		children = append(children, form(laneURL(selected), "performance-binding", targetField(performedNoteKey(p.Performance.Notes, noteIndex)), field(performancePitch(int(note.Note)+int(p.Transpose))+" · Shared lane", gosx.El("select", gosx.Attrs(gosx.Attr("name", "group")), gosx.Fragment(options...))), submit("", "", "Bind note")))
 	}
 	name, label := "", "Create shared lane"
 	if selected < len(groups) {
@@ -65,7 +65,7 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 	if !state.OK() && state.Value("revision") == v.Revision && state.Value("pattern") == p.ID && state.Value("action") == "performance-group" && state.Value("index") == strconv.Itoa(selected) {
 		name = state.Value("name")
 	}
-	groupFields := []gosx.Node{hidden("index", strconv.Itoa(selected)), field("Lane name", gosx.El("input", gosx.Attrs(gosx.Attr("name", "name"), gosx.Attr("value", name), gosx.Attr("maxlength", "64"), gosx.Attr("pattern", "[a-z_][a-z0-9_\\-]*"), gosx.Attr("required", true)))), submit("intent", "save", label)}
+	groupFields := []gosx.Node{hidden("index", strconv.Itoa(selected)), targetField(groupKey(groups, selected)), field("Lane name", gosx.El("input", gosx.Attrs(gosx.Attr("name", "name"), gosx.Attr("value", name), gosx.Attr("maxlength", "64"), gosx.Attr("pattern", "[a-z_][a-z0-9_\\-]*"), gosx.Attr("required", true)))), submit("intent", "save", label)}
 	if selected < len(groups) {
 		groupFields = append(groupFields, submit("intent", "remove", "Remove shared lane"))
 	}
@@ -119,7 +119,7 @@ func (s *studioApp) sharedGestures(ctx *server.Context, v workspace, csrf string
 		}
 		return gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", name), gosx.Attr("value", text), gosx.Attr("min", low), gosx.Attr("max", high), gosx.Attr("step", step)))
 	}
-	fields := []gosx.Node{hidden("group_index", strconv.Itoa(selected)), hidden("index", strconv.Itoa(pointIndex)), field("Tick in loop", input("tick", float64(point.Tick), "0", strconv.FormatInt(p.Performance.LengthTicks-1, 10))), field("Shared bend · cents", input("pitch_cents", float64(point.Value.PitchCents), "-9600", "9600")), field("Shared pressure · 0–1", input("pressure", float64(point.Value.Pressure), "0", "1")), field("Shared timbre · 0–1", input("timbre", float64(point.Value.Timbre), "0", "1")), submit("intent", "save", pointLabel)}
+	fields := []gosx.Node{hidden("group_index", strconv.Itoa(selected)), hidden("index", strconv.Itoa(pointIndex)), targetField(groupPointKey(groups, selected, pointIndex)), field("Tick in loop", input("tick", float64(point.Tick), "0", strconv.FormatInt(p.Performance.LengthTicks-1, 10))), field("Shared bend · cents", input("pitch_cents", float64(point.Value.PitchCents), "-9600", "9600")), field("Shared pressure · 0–1", input("pressure", float64(point.Value.Pressure), "0", "1")), field("Shared timbre · 0–1", input("timbre", float64(point.Value.Timbre), "0", "1")), submit("intent", "save", pointLabel)}
 	if pointIndex < len(points) && len(points) > 1 {
 		fields = append(fields, submit("intent", "remove", "Remove shared point"))
 	}

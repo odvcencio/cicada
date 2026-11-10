@@ -5,6 +5,8 @@ package convolution
 import (
 	"errors"
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // MaxFrames bounds one impulse to less than 22 seconds at 48 kHz. New also
@@ -29,7 +31,7 @@ func newFFT(n int) fft {
 	}
 	for i := range f.roots {
 		angle := -2 * math.Pi * float64(i) / float64(n)
-		f.roots[i] = complex(math.Cos(angle), math.Sin(angle))
+		f.roots[i] = complex(detmath.Cos(angle), detmath.Sin(angle))
 	}
 	return f
 }
@@ -49,7 +51,7 @@ func (f *fft) transform(x []complex128, inverse bool) {
 				if inverse {
 					root = complex(real(root), -imag(root))
 				}
-				u, v := x[base+j], x[base+j+half]*root
+				u, v := x[base+j], mulComplex(x[base+j+half], root)
 				x[base+j], x[base+j+half] = u+v, u-v
 			}
 		}
@@ -57,7 +59,7 @@ func (f *fft) transform(x []complex128, inverse bool) {
 	if inverse {
 		gain := complex(1/float64(n), 0)
 		for i := range x {
-			x[i] *= gain
+			x[i] = mulComplex(x[i], gain)
 		}
 	}
 }
@@ -149,6 +151,15 @@ func prepare(left, right []float32, partitionFrames int) *Reverb {
 
 func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
 
+// mulComplex is a*b as Go computes it, (ac-bd) + (ad+bc)i, with every product
+// rounded by an explicit conversion. arm64 fuses the products of a plain
+// complex multiplication into multiply-adds; this form gives the same bits on
+// every target.
+func mulComplex(a, b complex128) complex128 {
+	ar, ai, br, bi := real(a), imag(a), real(b), imag(b)
+	return complex(float64(ar*br)-float64(ai*bi), float64(ar*bi)+float64(ai*br))
+}
+
 func (r *Reverb) LatencyFrames() int { return r.block }
 func (r *Reverb) Fault() bool        { return r.fault }
 
@@ -219,7 +230,7 @@ func (r *Reverb) render() {
 			h := c.impulse[p*bins : (p+1)*bins]
 			x = c.history[slot*bins : (slot+1)*bins]
 			for j := 0; j < bins; j++ {
-				c.work[j] += h[j] * x[j]
+				c.work[j] += mulComplex(h[j], x[j])
 			}
 			slot--
 			if slot < 0 {

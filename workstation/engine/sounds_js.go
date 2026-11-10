@@ -304,9 +304,12 @@ func (u *soundsUI) run() {
 			if err == nil {
 				values := map[string]string{"action": "play", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "patch": job.patch, "tempo": strconv.Itoa(u.props.Tempo), "root": strconv.Itoa(u.props.Root), "scale": u.props.Scale}
 				if u.props.Pattern != "" {
-					values = map[string]string{"action": "pattern", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "pattern": u.props.Pattern, "revision": u.props.Revision, "track": job.track}
+					// The preview's update region names the revision it shows (rule
+					// R1); the props hold the one it was mounted with.
+					version := engineVersion(u.root, workspaceVersion{Revision: u.props.Revision, SourceRevision: u.props.SourceRevision})
+					values = map[string]string{"action": "pattern", "lease": u.lease, "sequence": strconv.FormatUint(job.sequence, 10), "pattern": u.props.Pattern, "revision": version.Revision, "track": job.track}
 					if u.props.Machine != "" {
-						values["action"], values["machine"], values["source_revision"] = "machine", u.props.Machine, u.props.SourceRevision
+						values["action"], values["machine"], values["source_revision"] = "machine", u.props.Machine, version.SourceRevision
 					}
 				}
 				_, err = u.post(u.ctx, values)

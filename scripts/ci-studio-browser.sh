@@ -35,7 +35,7 @@ shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup" ;;
-	3) echo "owner_session page_stall pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding" ;;
+	3) echo "owner_session page_stall pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits" ;;
 	4) echo "shutdown_proof grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
@@ -54,6 +54,7 @@ segment_runs() {
 	pattern_machine) echo pattern-machine ;;
 	shell) echo shell ;;
 	mixer_strips) echo mixer-strips ;;
+	studio_edits) echo studio-edits ;;
 	note_editor) echo note-editor ;;
 	columns) echo columns ;;
 	first_song) echo first-song@compose first-song@reopen ;;
@@ -347,6 +348,13 @@ seg_mixer_strips() { # 15 s
 	continuity_fixture mixer-strips
 	start_studio "$browser_root/mixer-strips/continuity.cicada" build/studio-mixer-strips-server.log /
 	run_suite mixer-strips make test-studio-mixer-strips | tee build/studio-mixer-strips-report.txt
+	stop_studio
+}
+
+seg_studio_edits() { # 20 s
+	continuity_fixture studio-edits
+	start_studio "$browser_root/studio-edits/continuity.cicada" build/studio-edits-server.log /
+	run_suite studio-edits make test-studio-edits | tee build/studio-edits-report.txt
 	stop_studio
 }
 
