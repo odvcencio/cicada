@@ -487,7 +487,7 @@ func editGridNotes(ctx *Context, intent Intent) error {
 	if authored == nil || compiled == nil {
 		return fmt.Errorf("unknown pattern %q", id)
 	}
-	grid := gridNotes{ctx: ctx, in: in, source: local, path: ctx.Options.Path, authored: authored, compiled: compiled, step: compiled.StepTicksOrDefault()}
+	grid := gridNotes{in: in, source: local, path: ctx.Options.Path, authored: authored, compiled: compiled, step: compiled.StepTicksOrDefault()}
 	var spans []Span
 	var count int
 	if authored.Kind == "drums" {
@@ -511,7 +511,6 @@ func editGridNotes(ctx *Context, intent Intent) error {
 }
 
 type gridNotes struct {
-	ctx      *Context
 	in       *EditNotes
 	source   []byte
 	path     string

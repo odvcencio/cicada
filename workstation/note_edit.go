@@ -183,7 +183,9 @@ func (s *studioApp) noteQuantize(ctx *server.Context, v workspace, csrf string, 
 	}
 	children = append(children,
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("aria-keyshortcuts", keys)), gosx.Text("Quantize")),
-		gosx.El("span", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message)))
+		// Its own status class: editor suites read the first .form-status in
+		// the workspace as the step inspector's status.
+		gosx.El("span", gosx.Attrs(gosx.Attr("class", "notes-quantize-status"), gosx.Attr("role", "status"), gosx.Attr("style", "color:var(--coral)")), gosx.Text(message)))
 	help := "Moves each note's start to the nearest grid line and keeps its length. One Undo restores the notes."
 	if p.Performance == nil {
 		help = "Moves each note to the nearest grid line with its hold and velocity. If the grid cannot hold the result, nothing changes and the reason is shown. One Undo restores the notes."
