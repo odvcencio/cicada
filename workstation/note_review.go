@@ -99,7 +99,8 @@ func performancePitch(note int) string {
 	return fmt.Sprintf("%s%d", [...]string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}[note%12], note/12-1)
 }
 func performancePosition(tick int64) string {
-	position := fmt.Sprintf("%d.%d.%d", tick/seq.TicksPerBar+1, tick%seq.TicksPerBar/seq.PPQ+1, tick%seq.PPQ/seq.TicksPerStep+1)
+	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	position := fmt.Sprintf("%d.%d.%d", bar, beat, step)
 	if remainder := tick % seq.TicksPerStep; remainder != 0 {
 		position += fmt.Sprintf(" +%d ticks", remainder)
 	}
@@ -263,16 +264,18 @@ func notePerformanceTrace(notes []control.Note, track string) gosx.Node {
 		low = min(low, n.Note)
 		high = max(high, n.Note)
 	}
-	origin := start / seq.TicksPerBar * seq.TicksPerBar
-	bars := (end - origin + seq.TicksPerBar - 1) / seq.TicksPerBar
-	span := max(seq.TicksPerBar, bars*seq.TicksPerBar)
+	var meterMap seq.MeterMap // a take carries no meter; the base meter is 4/4 in every song
+	originBar, _ := meterMap.BarAt(start)
+	origin := meterMap.BarStart(originBar)
+	bars := meterMap.BarsUntil(end) - originBar
+	span := max(meterMap.BarTicks(originBar), meterMap.BarStart(originBar+bars)-origin)
 	x := func(tick int64) float64 { return 24 + 912*float64(tick-origin)/float64(span) }
 	number := func(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 	var marks []gosx.Node
 	spacing := max(int64(1), (bars+7)/8)
 	for bar := int64(0); bar <= bars; bar += spacing {
-		position := number(x(origin + bar*seq.TicksPerBar))
-		marks = append(marks, gosx.El("line", gosx.Attrs(gosx.Attr("x1", position), gosx.Attr("x2", position), gosx.Attr("y1", "28"), gosx.Attr("y2", "130"))), gosx.El("text", gosx.Attrs(gosx.Attr("x", position), gosx.Attr("y", "22")), gosx.Text(fmt.Sprintf("%d", origin/seq.TicksPerBar+bar+1))))
+		position := number(x(meterMap.BarStart(originBar + bar)))
+		marks = append(marks, gosx.El("line", gosx.Attrs(gosx.Attr("x1", position), gosx.Attr("x2", position), gosx.Attr("y1", "28"), gosx.Attr("y2", "130"))), gosx.El("text", gosx.Attrs(gosx.Attr("x", position), gosx.Attr("y", "22")), gosx.Text(fmt.Sprintf("%d", originBar+bar+1))))
 	}
 	for _, n := range notes {
 		y := float64(76)
@@ -284,6 +287,6 @@ func notePerformanceTrace(notes []control.Note, track string) gosx.Node {
 	graph := gosx.El("svg", gosx.Attrs(gosx.Attr("viewBox", "0 0 960 142"), gosx.Attr("role", "img"), gosx.Attr("aria-label", track+" performance: "+noteCount(len(notes))+", "+performancePitch(low)+" to "+performancePitch(high))), gosx.Fragment(marks...))
 	return gosx.El("figure", gosx.Attrs(gosx.Attr("class", "take-trace")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-trace-scroll"), gosx.Attr("tabindex", "0"), gosx.Attr("role", "region"), gosx.Attr("aria-label", track+" performance timeline")), graph),
-		gosx.El("figcaption", gosx.Text(performancePitch(low)+"–"+performancePitch(high)+" · Bar "+strconv.FormatInt(origin/seq.TicksPerBar+1, 10)+" onward · Line length is held time; brightness is velocity.")),
+		gosx.El("figcaption", gosx.Text(performancePitch(low)+"–"+performancePitch(high)+" · Bar "+strconv.FormatInt(originBar+1, 10)+" onward · Line length is held time; brightness is velocity.")),
 	)
 }

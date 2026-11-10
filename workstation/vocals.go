@@ -71,7 +71,8 @@ func vocalPosition(tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return fmt.Sprintf("%dticks", tick)
 	}
-	return fmt.Sprintf("@%d.%d.%d", tick/seq.TicksPerBar+1, tick%seq.TicksPerBar/seq.PPQ+1, tick%seq.PPQ/seq.TicksPerStep+1)
+	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 
 func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.Node {
@@ -105,9 +106,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 			end = max(end, place.AtTick+place.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * seq.TicksPerBar
-		}
+		end = p.SongEndTick()
 	}
 	chosen := ctx.Request.URL.Query().Get("vocalTrack")
 	if chosen == "" && len(tracks) > 0 {
@@ -302,8 +301,8 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		}
 		lo, hi := selected.Start, min(selected.End, end)
 		if selected.ID == selectedRange.TakeID {
-			a, e1 := notation.MusicalTicks(selectedRange.Start, true)
-			b, e2 := notation.MusicalTicks(selectedRange.End, true)
+			a, e1 := notation.MusicalTicks(p.MeterMap(), selectedRange.Start, true)
+			b, e2 := notation.MusicalTicks(p.MeterMap(), selectedRange.End, true)
 			if e1 == nil && e2 == nil && a >= lo && b <= hi && a < b {
 				lo, hi = a, b
 			}

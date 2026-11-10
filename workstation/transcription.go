@@ -103,7 +103,7 @@ func (s *studioApp) transcriptionAudio(w http.ResponseWriter, r *http.Request) {
 	for _, event := range events {
 		duration = max(duration, event.Tick, event.EndTick)
 	}
-	bars := min(4, int((duration+seq.TicksPerBar-1)/seq.TicksPerBar))
+	bars := min(4, int((seq.MeterMap{}).BarsUntil(duration)))
 	audio, err := audition.Render([]byte(result.Source), 44100, bars, .2)
 	if err != nil {
 		http.Error(w, "cannot render this score preview", http.StatusUnprocessableEntity)

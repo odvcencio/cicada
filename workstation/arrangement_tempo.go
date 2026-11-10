@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/controller"
 	"m31labs.dev/gosx/server"
@@ -22,7 +21,7 @@ func registerArrangementTempos(ctx *server.Context) {
 
 func (s *studioApp) arrangementTempos(v workspace, csrf, selected string, end int64) gosx.Node {
 	p := v.Project
-	lastBar := int(min(int64(1<<20+1), max(int64(1), (end+seq.TicksPerBar-1)/seq.TicksPerBar)))
+	lastBar := int(min(int64(1<<20+1), max(int64(1), p.MeterMap().BarsUntil(end))))
 	bpm := func(milli int) string { return strconv.FormatFloat(float64(milli)/1000, 'f', -1, 64) }
 	used := map[int]bool{}
 	var rows []gosx.Node

@@ -21,18 +21,19 @@ func (s *studioApp) placementForm(v workspace, csrf, id string, children ...gosx
 }
 
 func placementTimeline(p *project.Project, placements []project.Placement, selected string, end int64, rail func(string) gosx.Node) gosx.Node {
+	meterMap := p.MeterMap()
 	for _, marker := range p.Arrange.Markers {
-		end = max(end, marker.AtTick+seq.TicksPerBar)
+		end = max(end, marker.AtTick+meterMap.BarsTicks(marker.AtTick, 1))
 	}
-	bars := max(int64(1), (end+seq.TicksPerBar-1)/seq.TicksPerBar)
-	ticks := bars * seq.TicksPerBar
+	bars := max(int64(1), meterMap.BarsUntil(end))
+	ticks := meterMap.BarStart(bars)
 	position := func(at int64) string { return strconv.FormatFloat(float64(at)*100/float64(ticks), 'f', 6, 64) + "%" }
 	var ruler []gosx.Node
 	// Keep the ruler bounded even for long arrangements; its scale remains
 	// exact and the horizontally scrolling lanes still show every region.
 	stride := max(int64(1), (bars+63)/64)
 	for bar := int64(0); bar < bars; bar += stride {
-		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-bar"), gosx.Attr("data-placement-bar", strconv.FormatInt(bar+1, 10)), gosx.Attr("style", "left:"+position(bar*seq.TicksPerBar))), gosx.Text(strconv.FormatInt(bar+1, 10))))
+		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-bar"), gosx.Attr("data-placement-bar", strconv.FormatInt(bar+1, 10)), gosx.Attr("style", "left:"+position(meterMap.BarStart(bar)))), gosx.Text(strconv.FormatInt(bar+1, 10))))
 	}
 	for _, marker := range p.Arrange.Markers {
 		room := ticks - marker.AtTick
@@ -87,7 +88,8 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 		zoomOptions = append(zoomOptions, gosx.El("option", attrs, gosx.Text(option.label)))
 	}
 	var snapOptions []gosx.Node
-	for _, option := range []struct{ value, label string }{{"3840", "Bar"}, {"960", "Beat"}, {"480", "1/8"}, {"320", "1/8T"}, {"240", "1/16"}, {"160", "1/16T"}, {"120", "1/32"}, {"1", "Off"}} {
+	barSnap, beatSnap := strconv.FormatInt(meterMap.BarTicks(0), 10), strconv.FormatInt(meterMap.BeatTicks(0), 10)
+	for _, option := range []struct{ value, label string }{{barSnap, "Bar"}, {beatSnap, "Beat"}, {"480", "1/8"}, {"320", "1/8T"}, {"240", "1/16"}, {"160", "1/16T"}, {"120", "1/32"}, {"1", "Off"}} {
 		attrs := gosx.Attrs(gosx.Attr("value", option.value))
 		if option.value == "240" {
 			attrs = append(attrs, gosx.BoolAttr("selected"))
@@ -196,8 +198,8 @@ func placementLiteral(tick int64, position bool) string {
 	if position {
 		return strings.ReplaceAll(placementPosition(tick), " ticks", "ticks")
 	}
-	if tick%seq.TicksPerBar == 0 {
-		return strconv.FormatInt(tick/seq.TicksPerBar, 10) + "bars"
+	if bars, whole := (seq.MeterMap{}).WholeBars(0, tick); whole {
+		return strconv.FormatInt(bars, 10) + "bars"
 	}
 	return strconv.FormatInt(tick, 10) + "ticks"
 }

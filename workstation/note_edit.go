@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
@@ -118,9 +119,10 @@ type quantizeGrid struct {
 // as long as the pattern is left out: it sends every note to the start, which
 // the server always refuses.
 func quantizeGrids(p project.Pattern) []quantizeGrid {
+	var meterMap seq.MeterMap // a pattern carries no meter; the base meter is 4/4 in every song
 	if p.Performance != nil {
 		var grids []quantizeGrid
-		for _, grid := range []quantizeGrid{{"Bar", 3840}, {"Beat", 960}, {"1/8", 480}, {"1/8T", 320}, {"1/16", 240}, {"1/16T", 160}, {"1/32", 120}} {
+		for _, grid := range []quantizeGrid{{"Bar", meterMap.BarTicks(0)}, {"Beat", meterMap.BeatTicks(0)}, {"1/8", 480}, {"1/8T", 320}, {"1/16", 240}, {"1/16T", 160}, {"1/32", 120}} {
 			if grid.ticks < p.Performance.LengthTicks {
 				grids = append(grids, grid)
 			}
@@ -132,7 +134,7 @@ func quantizeGrids(p project.Pattern) []quantizeGrid {
 		step = 240
 	}
 	var grids []quantizeGrid
-	for _, grid := range []quantizeGrid{{"Beat", 960}, {"Bar", 3840}} {
+	for _, grid := range []quantizeGrid{{"Beat", meterMap.BeatTicks(0)}, {"Bar", meterMap.BarTicks(0)}} {
 		if grid.ticks > step && grid.ticks%step == 0 && grid.ticks < int64(p.Steps)*step {
 			grids = append(grids, grid)
 		}

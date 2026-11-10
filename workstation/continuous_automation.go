@@ -21,13 +21,13 @@ func continuousAutomation(p *project.Project) gosx.Node {
 			end = max(end, place.AtTick+place.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * 3840
-		}
+		end = p.SongEndTick()
 	}
 	if end == 0 {
 		return gosx.Fragment()
 	}
+	lastBar, _ := p.MeterMap().BarAt(end)
+	lastBar++
 	var figures []gosx.Node
 	for _, lane := range p.Automation {
 		resolved, err := project.ResolveParameterPath(p, lane.Path)
@@ -86,7 +86,7 @@ func continuousAutomation(p *project.Project) gosx.Node {
 				gosx.El("desc", gosx.Text(strings.Join(labels, "; "))),
 				gosx.El("path", gosx.Attrs(gosx.Attr("class", "continuous-grid"), gosx.Attr("d", "M16 16H984 M16 64H984 M16 112H984"))),
 				gosx.El("path", gosx.Attrs(gosx.Attr("class", "continuous-curve"), gosx.Attr("d", curve.String()))), gosx.Fragment(points...)),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "continuous-time")), gosx.El("span", gosx.Text("Bar 1")), gosx.El("span", gosx.Text(fmt.Sprintf("Bar %d", end/3840+1))))))
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "continuous-time")), gosx.El("span", gosx.Text("Bar 1")), gosx.El("span", gosx.Text(fmt.Sprintf("Bar %d", lastBar))))))
 	}
 	return ui.Panel(ui.PanelProps{ID: "continuous-automation", Title: "Continuous automation", Description: "Edit automate blocks in the score to change these curves."}, gosx.Fragment(figures...))
 }

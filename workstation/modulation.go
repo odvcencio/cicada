@@ -135,19 +135,18 @@ func modulationRate(source project.Modulator) string {
 	if source.RateMicroHz > 0 {
 		return strconv.FormatFloat(float64(source.RateMicroHz)/1e6, 'f', -1, 64) + "Hz"
 	}
-	if source.RateTicks%seq.TicksPerBar == 0 {
-		return fmt.Sprintf("%dbars", source.RateTicks/seq.TicksPerBar)
+	if bars, whole := (seq.MeterMap{}).WholeBars(0, source.RateTicks); whole {
+		return fmt.Sprintf("%dbars", bars)
 	}
-	a, b := source.RateTicks, int64(seq.TicksPerBar)
+	a, b := source.RateTicks, seq.TicksPerWhole
 	for b != 0 {
 		a, b = b, a%b
 	}
-	return fmt.Sprintf("%d/%d", source.RateTicks/a, int64(seq.TicksPerBar)/a)
+	return fmt.Sprintf("%d/%d", source.RateTicks/a, seq.TicksPerWhole/a)
 }
 
 func modulationPeriod(ticks int64) string {
-	if ticks%seq.TicksPerBar == 0 {
-		bars := ticks / seq.TicksPerBar
+	if bars, whole := (seq.MeterMap{}).WholeBars(0, ticks); whole {
 		if bars == 1 {
 			return "1 bar per cycle"
 		}

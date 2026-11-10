@@ -4,7 +4,6 @@ import (
 	"slices"
 	"sort"
 
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
 )
@@ -14,7 +13,7 @@ func (s *studioApp) listeningForm(v workspace, csrf, selected string, children .
 }
 
 func (s *studioApp) sessionListening(v workspace, csrf, selected string, end int64) gosx.Node {
-	start, finish := int64(0), min(end, 4*seq.TicksPerBar)
+	start, finish := int64(0), min(end, v.Project.MeterMap().BarStart(4))
 	if v.Project.Arrange != nil {
 		for _, place := range v.Project.Arrange.Placements {
 			if place.ID == selected {

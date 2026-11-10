@@ -16,9 +16,9 @@ func patternGridTiming(pattern project.Pattern) gosx.Node {
 	}
 	length := pattern.DurationTicks()
 	duration := patternBeatLength(length)
-	if length%seq.TicksPerBar == 0 {
-		duration = fmt.Sprintf("%d bars", length/seq.TicksPerBar)
-		if length == seq.TicksPerBar {
+	if bars, whole := (seq.MeterMap{}).WholeBars(0, length); whole {
+		duration = fmt.Sprintf("%d bars", bars)
+		if bars == 1 {
 			duration = "1 bar"
 		}
 	}
@@ -31,7 +31,7 @@ func patternGridTiming(pattern project.Pattern) gosx.Node {
 
 func patternGridName(ticks int64) string {
 	for i, name := range []string{"whole", "half", "quarter", "eighth", "sixteenth", "thirty-second", "sixty-fourth", "128th"} {
-		base := seq.TicksPerBar >> i
+		base := seq.TicksPerWhole >> i
 		switch {
 		case ticks == base:
 			return name + " notes"

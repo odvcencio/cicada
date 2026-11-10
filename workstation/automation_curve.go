@@ -68,9 +68,7 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 			end = max(end, place.AtTick+place.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * 3840
-		}
+		end = p.SongEndTick()
 	}
 	if end <= 0 {
 		return gosx.Fragment()
