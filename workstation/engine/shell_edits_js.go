@@ -464,27 +464,45 @@ func (u *workspaceUI) reload() {
 }
 
 // refreshThenSubmit reads a stale region before a form in it is sent. If the
-// server reports the region unchanged, the user saw current content and the
-// form goes out once, with the fresh revision fields. If the content changed,
-// the refreshed form stays for the user to check and submit again. Nothing
-// was sent before the read, so this never repeats a write.
+// form would send the same values after the read, apart from its revision
+// fields, it goes out once with the fresh revisions. If its values changed,
+// the refreshed form stays for the user to check and submit again. Text
+// around the form, such as a render status, may change without stopping the
+// submit. Nothing was sent before the read, so this never repeats a write.
 func (u *workspaceUI) refreshThenSubmit(region, form, submitter js.Value) {
-	id, digest := workspaceAttr(region, "data-update-region"), workspaceAttr(region, "data-region-digest")
+	id, digest, values := workspaceAttr(region, "data-update-region"), workspaceAttr(region, "data-region-digest"), shellFormValues(form, submitter)
 	select {
 	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: id + ":" + digest, then: func(applied bool) {
 		switch {
-		case !applied || !form.Get("isConnected").Bool():
+		case !applied || !form.Get("isConnected").Bool() || domHas(domRegion(id), "data-region-stale"):
 			u.status.Set("This panel could not be refreshed, so nothing was saved. Submit it again.")
-		case workspaceAttr(domRegion(id), "data-region-digest") != digest:
+		case shellFormValues(form, submitter) != values:
 			u.status.Set("This panel changed since it was shown. Check it and submit again.")
-		case workspacePresent(submitter) && submitter.Get("isConnected").Bool():
+		case workspacePresent(submitter):
 			form.Call("requestSubmit", submitter)
 		default:
 			form.Call("requestSubmit")
 		}
 	}}:
 	default:
+		u.status.Set("Too many changes are waiting, so this panel was not sent. Submit it again.")
 	}
+}
+
+// shellFormValues is what a form would send, without the fields a read
+// renews (the CSRF token and the revisions), plus its submit button.
+//
+//go:noinline
+func shellFormValues(form, submitter js.Value) string {
+	params := js.Global().Get("URLSearchParams").New(js.Global().Get("FormData").New(form))
+	for _, name := range []string{"csrf_token", "revision", "source_revision", "fileRevision", "diskRevision"} {
+		params.Call("delete", name)
+	}
+	values := params.Call("toString").String()
+	if workspacePresent(submitter) {
+		values += " " + workspaceString(submitter, "name") + "=" + workspaceString(submitter, "value") + " " + fmt.Sprint(submitter.Get("disabled").Bool(), submitter.Get("isConnected").Bool())
+	}
+	return values
 }
 
 // dropHistory removes queued Undo and Redo after a refused edit: they were

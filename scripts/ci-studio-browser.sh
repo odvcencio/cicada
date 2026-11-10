@@ -340,7 +340,7 @@ seg_mixer_strips() { # 15 s
 	stop_studio
 }
 
-seg_studio_edits() { # 8 s
+seg_studio_edits() { # 20 s
 	continuity_fixture studio-edits
 	start_studio "$browser_root/studio-edits/continuity.cicada" build/studio-edits-server.log /
 	run_suite studio-edits make test-studio-edits | tee build/studio-edits-report.txt

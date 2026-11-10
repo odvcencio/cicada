@@ -534,6 +534,118 @@ test('a form in a stale region is sent only after its region is read', async () 
   await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
 });
 
+test('a stale region whose text changed still sends a form whose values did not', async () => {
+  const {page, state, posts, cell, settled, region, status} = await studio();
+  await page.keyboard.press('Alt+Shift+Digit1');
+  const dialog = page.locator('#export-dialog');
+  const render = page.locator('#export-render-button');
+  const open = async () => {
+    await page.locator('[data-gosx-disclosure-target="#export-dialog"]').click();
+    await until(async () => !(await dialog.evaluate(node => node.hidden)), 'the Export dialog did not open');
+  };
+  const close = () => page.locator('#export-dialog [data-gosx-disclosure-close]').click();
+  // Any end state counts: the job's status text is what changes the region.
+  // (This fixture's song is longer than a render allows, so its jobs fail.)
+  const finished = async previous => until(async () => {
+    const job = await state('/api/export');
+    return job.id !== previous && ['succeeded', 'shortfall', 'failed'].includes(job.state);
+  }, 'the WAV export did not finish', 60_000);
+  // A first render, so the Export dialog's delivery status names a job that
+  // the dialog's last read did not show.
+  await open();
+  await until(async () => await region('dialog-export').getAttribute('data-region-stale') === null, 'the Export dialog stayed stale');
+  const first = (await state('/api/export')).id;
+  await render.click();
+  await finished(first);
+  await close();
+  // Hold the reads after a draw, so the dialog stays stale while it opens.
+  const held = [];
+  let exportPost = null;
+  page.on('request', request => { if (!exportPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/export') exportPost = request; });
+  await page.route('**/__studio/regions**', route => { held.push(route); });
+  const previous = (await state('/api/export')).id;
+  try {
+    try {
+      const start = posts.length;
+      await page.locator(cell(30)).click();
+      await settled(start + 1);
+      await until(() => held.length > 0, 'the write was not followed by a read');
+      await open();
+      assert.notEqual(await region('dialog-export').getAttribute('data-region-stale'), null, 'the Export dialog was not stale');
+      await render.click();
+      await page.waitForTimeout(300);
+      assert.equal(exportPost, null, 'a form in a stale region was sent before its region was read');
+    } finally {
+      await page.unroute('**/__studio/regions**');
+      for (const route of held) await route.continue().catch(() => {});
+    }
+    // The read changes the status text but not the export settings, so the
+    // render the user asked for goes out.
+    await until(() => exportPost !== null, 'the export was not sent once its region was current')
+      .catch(async error => { throw new Error(`${error.message}; status: ${await status()}`); });
+    const response = await exportPost.response();
+    assert.ok(response && response.status() < 400, `the export was refused: ${response && response.status()}`);
+    await finished(previous);
+    assert.doesNotMatch(await status(), /changed since it was shown/);
+  } finally {
+    if (!(await dialog.evaluate(node => node.hidden))) await close();
+  }
+});
+
+test('Quantize from a stale Clip tab is sent only after the tab is read, with the saved revision', async () => {
+  const {page, state, posts, settled, region} = await studio();
+  // The queue does not capture Quantize: GoSX sends it. The stale-region gate
+  // still holds it until the Clip tab shows the saved score.
+  const field = (request, name) => {
+    const body = request.postData() || '';
+    const multipart = body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`));
+    return multipart ? multipart[1] : new URLSearchParams(body).get(name);
+  };
+  const quantize = page.locator('#notes-quantize button[type=submit]');
+  await quantize.waitFor();
+  const held = [];
+  let notesPost = null;
+  page.on('request', request => { if (!notesPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/notes') notesPost = request; });
+  await page.locator('#detail-tab-device').click();
+  await page.locator('#detail-tab-device[aria-selected="true"]').waitFor();
+  await page.route('**/__studio/regions**', route => { held.push(route); });
+  let saved;
+  try {
+    // An Undo while the Clip tab is hidden leaves that tab stale.
+    const start = posts.length;
+    await page.locator('#undo-form button').click();
+    await settled(start + 1);
+    saved = await state('/api/state');
+    await until(() => held.length > 0, 'the write was not followed by a read');
+    await page.locator('#detail-tab-clip').click();
+    await page.locator('#detail-tab-clip[aria-selected="true"]').waitFor();
+    assert.notEqual(await region('dock-clip').getAttribute('data-region-stale'), null, 'the Clip tab was not stale');
+    await quantize.click();
+    await page.waitForTimeout(300);
+    assert.equal(notesPost, null, 'Quantize was sent from a stale Clip tab');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+    for (const route of held) await route.continue().catch(() => {});
+  }
+  await until(() => notesPost !== null, 'Quantize was not sent once the Clip tab was current');
+  assert.equal(field(notesPost, 'revision'), saved.revision, 'Quantize did not carry the saved revision');
+  // The drawn notes may not fit the grid (422, with the reason); a stale
+  // revision would be refused with 409.
+  const response = await notesPost.response();
+  assert.ok(response, 'Quantize got no answer');
+  assert.notEqual(response.status(), 409, `Quantize was refused as stale: ${await response.text()}`);
+  // Put the notes back as they were. Notes already on the grid write nothing.
+  const after = await state('/api/state');
+  if (after.revision !== saved.revision) {
+    await until(async () => await page.locator('#notes-quantize input[name=revision]').inputValue().catch(() => '') === after.revision, 'the Clip tab did not show the quantized score');
+    await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+    const start = posts.length;
+    await page.locator('#undo-form button').click();
+    await settled(start + 1);
+    await until(async () => (await state('/api/state')).source === saved.source, 'Undo did not restore the notes');
+  }
+});
+
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {
   const {page, state, posts, cell, hold, settled} = await studio();
   const errors = [];
