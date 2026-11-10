@@ -182,9 +182,9 @@ jobs:
       - name: Tests that read every tracked file, the docs, or the README
         run: |
           set -euo pipefail
-          tests='TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository'
+          tests='TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
           regex="^($(echo "$tests" | tr ' ' '|'))\$"
-          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
+          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in $tests; do
