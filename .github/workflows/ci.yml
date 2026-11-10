@@ -297,7 +297,17 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/fx/pro ./kernel/loudness ./cmd/cicada -run '^Test(EQDigest|MeterDigest|TruePeakWindow|ExportLoudness)' -count=1 -v | tee -a build/parity/modulate.txt
+          go test ./kernel/fx/pro ./kernel/loudness ./cmd/cicada -run '^Test(EQDigest|MeterDigest|TruePeakWindow|ExportLoudness)' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          missing=0
+          for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain; do
+            if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
+              echo "No PASS line for $name; was it renamed or skipped?" >&2
+              missing=1
+            fi
+          done
+          exit "$missing"
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

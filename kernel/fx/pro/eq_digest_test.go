@@ -8,10 +8,12 @@ import (
 	"testing"
 )
 
-// eqDigest is the SHA-256 of the coefficients and output of every EQ band type
-// at every supported rate. amd64 never fuses a multiply and an add, but arm64
-// may unless an explicit conversion rounds the product first, so the digest
-// must be the same on both. CI checks it on arm64 in the PCM24 parity job.
+// eqDigest is the SHA-256 of the coefficients and output of one band of every
+// EQ type at every supported rate. amd64 never fuses a multiply and an add, but
+// arm64 may unless an explicit conversion rounds the product first. For these
+// bands the digest is the same on both; other frequencies or gains can still
+// differ in the last bit through math.Sincos and math.Pow (see designBand). CI
+// checks it on arm64 in the PCM24 parity job.
 const eqDigest = "84a262a6f115646b9caa509c57de3b8c909b4712c73871cfdc21aaee0e1d56a5"
 
 // digestNoise returns exact float32 noise in [-0.5, 0.5) from a 32-bit

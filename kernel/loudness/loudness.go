@@ -63,8 +63,11 @@ type biquad struct {
 }
 
 // The meter rounds every product with an explicit conversion before it is
-// added, so arm64 cannot fuse a multiply-add and every reading matches amd64
-// bit for bit; an export's loudness search depends on these readings.
+// added, so arm64 cannot fuse a multiply-add in its per-sample arithmetic; an
+// export's loudness search depends on these readings. That does not make every
+// reading the same on every target: the true-peak coefficients pass through
+// math.Sin and the LUFS conversion through math.Log10, whose last bit can
+// differ between architectures. Making those deterministic is follow-up work.
 func (f *biquad) process(x float64) float64 {
 	y := float64(f.b0*x) + float64(f.b1*f.x1) + float64(f.b2*f.x2) - float64(f.a1*f.y1) - float64(f.a2*f.y2)
 	f.x2, f.x1 = f.x1, x
@@ -501,6 +504,11 @@ func histogramIndex(level float64) int {
 }
 
 func firstBinAtLeast(level float64) int {
+	// A fused multiply-subtract would give the same bin. Where the product is
+	// at least 1, 0.5 is a whole multiple of its float64 spacing, so rounding
+	// once or twice lands on the same value; below that the bin clamps to 0
+	// either way. The conversion only keeps the rule that every product is
+	// rounded; no test can tell the two apart.
 	index := int(math.Ceil(float64((level-histMin)*histResolution) - 0.5))
 	if index < 0 {
 		return 0

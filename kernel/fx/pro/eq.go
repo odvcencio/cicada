@@ -28,7 +28,8 @@ type biquad struct {
 }
 
 // process rounds every product with an explicit conversion before it is added,
-// so arm64 cannot fuse a multiply-add and the output matches amd64 bit for bit.
+// so arm64 cannot fuse a multiply-add. Given the same coefficients and input,
+// the output matches amd64 bit for bit; see designBand for the coefficients.
 func (f *biquad) process(input float64, channel int) float64 {
 	output := float64(f.b0*input) + f.z1[channel]
 	f.z1[channel] = clean(float64(f.b1*input) - float64(f.a1*output) + f.z2[channel])
@@ -65,8 +66,11 @@ func NewEQ(sampleRate int, bands [4]Band) (*EQ, error) {
 	return e, nil
 }
 
-// designBand rounds products before additions, as process does, so the
-// coefficients are the same on every target.
+// designBand rounds products before additions, as process does, so its own
+// arithmetic cannot fuse. The coefficients are not yet the same on every
+// target: they pass through math.Sincos and, through dbGain, math.Pow, whose
+// last bit can differ between architectures. Making those deterministic is
+// follow-up work.
 func designBand(rate int, p Band) biquad {
 	w := 2 * math.Pi * p.FrequencyHz / float64(rate)
 	s, c := math.Sincos(w)
