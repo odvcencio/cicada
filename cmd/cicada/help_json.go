@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"sort"
 	"strings"
@@ -47,7 +46,7 @@ func writeHelpJSON(w io.Writer, only string) bool {
 		return false
 	}
 	sort.Slice(commands, func(i, j int) bool { return commands[i].Name < commands[j].Name })
-	data, err := json.MarshalIndent(helpDocument{Schema: helpSchema, Usage: "cicada <command> [arguments]", Commands: commands}, "", "  ")
+	data, err := marshalAgentJSON(helpDocument{Schema: helpSchema, Usage: "cicada <command> [arguments]", Commands: commands})
 	if err != nil {
 		return false
 	}

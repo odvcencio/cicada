@@ -151,6 +151,7 @@ jobs:
   # jobs that would otherwise run them (Studio CLI, native, M0) can be skipped.
   repo-checks:
     name: Repository and documentation checks
+    needs: changes
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -193,6 +194,19 @@ jobs:
             fi
           done
           exit "$missing"
+      # The agent task suite (make test-agent-surface) drives the built binary
+      # through one task with JSON output only. The M0 kernel job runs it when
+      # the root group is on (any Go change, cmd/cicada and edit included).
+      # When the classifier turns the root group off, as it does for a change
+      # under docs/, it runs here instead: agents read the formats it checks.
+      - name: Agent task suite, when the M0 jobs are skipped
+        if: needs.changes.outputs.root != 'true'
+        run: |
+          set -euo pipefail
+          make test-agent-surface | tee "$RUNNER_TEMP/agent-surface.log"
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '^--- PASS: TestAgentTaskSuite ' "$RUNNER_TEMP/agent-surface.log"
+          grep -q -- '^--- PASS: TestAgentDocumentationExamples ' "$RUNNER_TEMP/agent-surface.log"
 
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
@@ -428,6 +442,13 @@ jobs:
             ./build/cicada midi examples/first-acid.cicada -o build/m1-ci/first-acid.mid
             ./build/cicada verify-midi build/m1-ci/first-acid.mid --ppq 960 --type 1
           } | tee build/m1-cli-report.txt
+      - name: Agent task suite (help, intents, check, apply, render and audition as JSON)
+        run: |
+          set -euo pipefail
+          make test-agent-surface | tee build/agent-surface-report.txt
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '^--- PASS: TestAgentTaskSuite ' build/agent-surface-report.txt
+          grep -q -- '^--- PASS: TestAgentDocumentationExamples ' build/agent-surface-report.txt
       - name: Save gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -441,6 +462,7 @@ jobs:
             build/m0-cli-report.txt
             build/m1-phrase-wasm-report.txt
             build/m1-cli-report.txt
+            build/agent-surface-report.txt
             build/m1-ci/generated.cicada
             build/m1-ci/generated.trace.json
             build/m1-ci/first-acid.mid

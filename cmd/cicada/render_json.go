@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -111,7 +110,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			fmt.Fprintln(stderr, err)
 		}
 		document.OK = err == nil
-		data, marshalErr := json.MarshalIndent(document, "", "  ")
+		data, marshalErr := marshalAgentJSON(document)
 		if marshalErr != nil {
 			fmt.Fprintln(stderr, marshalErr)
 			return 1

@@ -102,7 +102,7 @@ func checkPathsJSON(paths []string, options checkOptions, stdout io.Writer) erro
 		document.Scores = append(document.Scores, report)
 	}
 	document.Valid = failed == 0
-	data, err := json.MarshalIndent(document, "", "  ")
+	data, err := marshalAgentJSON(document)
 	if err != nil {
 		return err
 	}

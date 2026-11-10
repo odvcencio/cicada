@@ -98,6 +98,14 @@ build-core:
 	mkdir -p build
 	GOFLAGS=-buildvcs=false go build -o build/cicada ./cmd/cicada
 
+# The agent task suite (internal/agentsuite) drives build/cicada through one
+# scripted task that reads only JSON: help, intents, symbols, check, apply,
+# render to a loudness target and audition. It must finish within 2 minutes.
+# It also runs the examples of docs/manual/agents.md against the binary.
+.PHONY: test-agent-surface
+test-agent-surface: build-core
+	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentDocumentationExamples)$$' -count=1 -v
+
 # The GoSX app has its own Go 1.26 module; the realtime TinyGo core stays 1.25.
 build-workstation:
 	cd workstation && go run -mod=mod m31labs.dev/gosx/cmd/gosx build .

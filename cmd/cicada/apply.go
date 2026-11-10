@@ -283,7 +283,7 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		}
 		document.Error = failure
 	}
-	data, marshalErr := json.MarshalIndent(document, "", "  ")
+	data, marshalErr := marshalAgentJSON(document)
 	if marshalErr != nil {
 		return marshalErr
 	}

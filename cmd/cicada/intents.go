@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -48,7 +47,7 @@ func intentsCommand(args []string, stdout io.Writer) error {
 		catalog = []edits.IntentInfo{info}
 	}
 	if asJSON {
-		data, err := json.MarshalIndent(intentsDocument{Schema: intentsSchema, EnvelopeVersion: edits.EnvelopeVersion, Envelope: edits.EnvelopeFields(), Intents: catalog}, "", "  ")
+		data, err := marshalAgentJSON(intentsDocument{Schema: intentsSchema, EnvelopeVersion: edits.EnvelopeVersion, Envelope: edits.EnvelopeFields(), Intents: catalog})
 		if err != nil {
 			return err
 		}
