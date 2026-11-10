@@ -69,7 +69,7 @@ func New(rate int, params Params) (*Processor, error) {
 		var sum float64
 		for j := 0; j < taps; j++ {
 			t := float64(j) / float64(rate)
-			p.ir[i][j] = math.Exp(-t/decay) * (1 + .25*math.Cos(2*math.Pi*freq*t))
+			p.ir[i][j] = float64(math.Exp(-t/decay) * (1 + float64(.25*math.Cos(2*math.Pi*freq*t))))
 			sum += p.ir[i][j]
 		}
 		for j := range p.ir[i] {
@@ -91,7 +91,7 @@ func (p *Processor) SetParams(v Params) error {
 		return err
 	}
 	p.params = v
-	p.targetTone = 1 - math.Exp(-2*math.Pi*(1200+6800*v.Tone)/float64(p.rate))
+	p.targetTone = 1 - math.Exp(-2*math.Pi*(1200+float64(6800*v.Tone))/float64(p.rate))
 	p.targetOut = math.Pow(10, v.Output/20)
 	return nil
 }
@@ -142,21 +142,21 @@ func (p *Processor) Reset() {
 	}
 }
 func (p *Processor) Process(l, r float32) (float32, float32) {
-	p.drive += p.smooth * (p.params.Drive - p.drive)
-	p.tone += p.smooth * (p.targetTone - p.tone)
-	p.out += p.smooth * (p.targetOut - p.out)
+	p.drive += float64(p.smooth * (p.params.Drive - p.drive))
+	p.tone += float64(p.smooth * (p.targetTone - p.tone))
+	p.out += float64(p.smooth * (p.targetOut - p.out))
 	for i := range p.weights {
 		target := 0.0
 		if i == p.params.Cabinet {
 			target = 1
 		}
-		p.weights[i] += p.smooth * (target - p.weights[i])
+		p.weights[i] += float64(p.smooth * (target - p.weights[i]))
 	}
 	target := 0.
 	if p.params.Bypass {
 		target = 1
 	}
-	p.bypass += p.smooth * (target - p.bypass)
+	p.bypass += float64(p.smooth * (target - p.bypass))
 	return float32(p.process(&p.left, float64(l))), float32(p.process(&p.right, float64(r)))
 }
 func (p *Processor) process(c *channel, x float64) float64 {
@@ -171,7 +171,7 @@ func (p *Processor) process(c *channel, x float64) float64 {
 	a, b := c.up1.Upsample(filtered)
 	a0, a1 := c.up2.Upsample(a)
 	b0, b1 := c.up2.Upsample(b)
-	gain := 1 + 12*p.drive
+	gain := 1 + float64(12*p.drive)
 	norm := 1 / math.Tanh(gain)
 	a0 = math.Tanh(a0*gain) * norm
 	a1 = math.Tanh(a1*gain) * norm
@@ -185,14 +185,14 @@ func (p *Processor) process(c *channel, x float64) float64 {
 	var z float64
 	idx := c.pos
 	for i := range p.ir[0] {
-		h := p.weights[0]*p.ir[0][i] + p.weights[1]*p.ir[1][i] + p.weights[2]*p.ir[2][i]
-		z += h * c.history[idx]
+		h := float64(p.weights[0]*p.ir[0][i]) + float64(p.weights[1]*p.ir[1][i]) + float64(p.weights[2]*p.ir[2][i])
+		z += float64(h * c.history[idx])
 		idx--
 		if idx < 0 {
 			idx = taps - 1
 		}
 	}
 	c.pos = (c.pos + 1) % taps
-	c.tone += p.tone * (z - c.tone)
-	return (1-p.bypass)*c.tone*p.out + p.bypass*dry
+	c.tone += float64(p.tone * (z - c.tone))
+	return float64((1-p.bypass)*c.tone*p.out) + float64(p.bypass*dry)
 }

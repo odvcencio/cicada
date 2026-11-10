@@ -14,6 +14,7 @@ import (
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
@@ -319,7 +320,7 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 			return report, err
 		}
 		if report.OutputPeak > 0 {
-			gain = float32(math.Pow(10, -1.0/20) / float64(report.OutputPeak))
+			gain = float32(detmath.Pow(10, -1.0/20) / float64(report.OutputPeak))
 		}
 	}
 	return renderWAV(score, opts, writer, stemsDir, gain)
@@ -722,11 +723,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	masterGain := float32(1)
 	if masterGainDB != 0 {
-		masterGain = float32(math.Pow(10, masterGainDB/20))
+		masterGain = float32(detmath.Pow(10, masterGainDB/20))
 	}
 	if masterProcessor != nil {
-		masterGain = float32(math.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
-		busState.outputGain = float32(math.Pow(10, opts.MasterGainDB/20))
+		masterGain = float32(detmath.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
+		busState.outputGain = float32(detmath.Pow(10, opts.MasterGainDB/20))
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())

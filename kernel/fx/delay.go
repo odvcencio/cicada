@@ -304,9 +304,9 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	// L/R rather than summing so a centered source keeps its first-echo peak.
 	// The existing smoothed mode coefficient also fades the input routing;
 	// stereo delay and the dry path keep their original channel separation.
-	mono := (x.left + x.right) * .5
+	mono := float64((x.left + x.right) * .5)
 	inputL := x.left + float64((mono-x.left)*d.ping)
-	inputR := x.right * (1 - d.ping)
+	inputR := float64(x.right * (1 - d.ping))
 	d.buffer[d.position] = stereo{
 		inputL + fastmath.Tanh(d.feedbackState.left*d.feedback),
 		inputR + fastmath.Tanh(d.feedbackState.right*d.feedback),
@@ -315,8 +315,8 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	if d.position == len(d.buffer) {
 		d.position = 0
 	}
-	mid := (wet.left + wet.right) * .5
-	side := (wet.left - wet.right) * .5 * d.width
+	mid := float64((wet.left + wet.right) * .5)
+	side := float64((wet.left - wet.right) * .5 * d.width)
 	outL := float64(x.left*(1-d.mix)) + float64((mid+side)*d.mix)
 	outR := float64(x.right*(1-d.mix)) + float64((mid-side)*d.mix)
 	if !finite(outL) || !finite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {

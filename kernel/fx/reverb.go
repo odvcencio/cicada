@@ -303,7 +303,7 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		l.high += float64((l.low - l.high) * (1 - r.highpass))
 		high := l.low - l.high
 		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
-		in := input[line&1] * .25
+		in := float64(input[line&1] * .25)
 		l.buffer[l.index] = in + float64(high*r.gain[line])
 		l.index++
 		if l.index == len(l.buffer) {

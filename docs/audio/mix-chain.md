@@ -286,3 +286,50 @@ wet-only and stereo-preserving. It cannot be a track insert or a master stage.
 Modulation routes to its controls are not supported yet. Portable browser kernel
 images refuse a score that declares `tape`, with a clear error; native playback
 and offline `render` and `stems` support it.
+
+## Same bits on every machine
+
+**The rule.** A score renders to the same bits on amd64 (any CPU and any
+`GOAMD64` level), arm64 and WebAssembly, from voice to exported file. Two
+things in Go can break it. Today the rule is guaranteed only for part of the
+mix chain; the rest matches in the tests but is not yet guaranteed.
+
+- **Fused multiply-add.** Go may compute `x*y + z` with one rounding instead
+  of two on arm64 and with `GOAMD64=v3`. Every product that feeds an addition
+  in `kernel/fx`, `kernel/fx/pro`, `kernel/mix`, `kernel/loudness` and
+  `kernel/dsp` is rounded by an explicit conversion first, for example
+  `a + float64(b*c)`, and CI checks that the compiler fuses none there. The
+  rest of `kernel/` and `render/` (voices, the graph, the export path in
+  `render/wav.go`) still has fusable products.
+- **Math library functions.** `math.Exp`, `math.Log`, `math.Pow`, `math.Sin`
+  and the others can differ in the last bit by target: `math.Exp` even uses an
+  FMA instruction only on amd64 CPUs that have one. The master EQ design, the
+  pro limiter, transient shaper and normalizer, the convolution FFT, the
+  loudness meter and the export gain use `kernel/dsp/detmath` instead, whose
+  functions return the same bits everywhere and are within 1 ULP of the exact
+  result. Still on the math library: the master compressor and room (they
+  build on the track compressor and reverb), the track effects in `kernel/fx`,
+  the amp and cabinet, the mix in `kernel/mix`, and the voices.
+
+The follow-up removes both gaps: no fusable product in `kernel/` and
+`render/`, no architecture-dependent `math` call between voice and exported
+file, and a digest per processor and voice on all three targets.
+
+**How to check it.**
+
+```
+go test -count=1 ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness
+```
+
+pins each processor's output as a SHA-256 digest; CI runs the same tests on
+arm64 and with `GOAMD64=v3`. To list fusable expressions, build for arm64 with
+the compiler's FMA report:
+
+```
+GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/detmath
+```
+
+Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses; CI fails
+on any in those packages. `TestRenderPathAvoidsMathLibrary` in
+`kernel/dsp/detmath` fails when the master chain or the export code calls a
+math function that `detmath` replaces.
