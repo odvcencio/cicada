@@ -178,7 +178,9 @@ func TestGolden(t *testing.T) {
 		binary.LittleEndian.PutUint32(data[4:], math.Float32bits(r))
 		_, _ = h.Write(data[:])
 	}
-	const want uint64 = 0xa04e27d4fe442884
+	// 2026-11-09: re-pinned (was 0xa04e27d4fe442884) because the saws now read
+	// band-limited tables (acid.TableOscillator) instead of a 2-point polyBLEP.
+	const want uint64 = 0x109eb78f7c45f867
 	if h.Sum64() != want {
 		t.Fatalf("golden=%016x want=%016x", h.Sum64(), want)
 	}

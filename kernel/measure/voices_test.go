@@ -61,7 +61,7 @@ func voiceCases() []voiceCase {
 		},
 		{
 			Name:        "clav",
-			Description: "Clavinet string model (kernel/voice/clav), default patch.",
+			Description: "Clavinet string model (kernel/voice/clav), default patch. Expected partials follow the stretched mode law in clav.PartialFrequency.",
 			New: func(note int) (block, error) {
 				p, err := clav.Patch("clav")
 				if err != nil {
@@ -72,6 +72,15 @@ func voiceCases() []voiceCase {
 					return nil, err
 				}
 				return keyedBlock(i, note)
+			},
+			Partials: func(note int, _ float64) []float64 {
+				var out []float64
+				for n := 1; n <= 24; n++ {
+					if f := clav.PartialFrequency(uint8(note), n); f > 0 && f < sampleRate/2 {
+						out = append(out, f)
+					}
+				}
+				return out
 			},
 		},
 		{
