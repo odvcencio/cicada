@@ -1,0 +1,355 @@
+/*
+ * /studio incremental edits. The shell engine saves piano-roll cells, Undo and
+ * Redo through one serial queue, paints them pending at once and patches only
+ * the update regions whose content changed, without a GoSX navigation.
+ * JavaScript in this file only drives and observes the browser.
+ *
+ * node workstation/browser/continuity.test.cjs --write-fixture <new-score>
+ * ./build/cicada studio <new-score> --audio null --listen 127.0.0.1:8190
+ * CICADA_STUDIO_URL=http://127.0.0.1:8190 node --test workstation/browser/studio-edits.test.cjs
+ *
+ * The suite edits the score: run it only against a fresh disposable fixture on
+ * a fresh Studio process, as CI does, because the first browser session to
+ * reach a Studio owns it. CICADA_PLAYWRIGHT_MODULE and CICADA_CHROME_PATH
+ * select local browser tooling; CICADA_HEADLESS=0 shows the browser.
+ */
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {createRequire} = require('node:module');
+const test = require('node:test');
+
+const marker = 'cicada-continuity-test: disposable fixture';
+
+function playwright() {
+  const location = process.env.CICADA_PLAYWRIGHT_MODULE;
+  if (!location) return require('playwright');
+  try {
+    const loaded = require(path.resolve(location));
+    if (loaded.chromium) return loaded;
+  } catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  }
+  return createRequire(path.resolve(location))('playwright');
+}
+
+async function until(predicate, message, timeout = 15_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.fail(message);
+}
+
+let shared;
+async function sharedBrowser() {
+  if (!shared) {
+    let executablePath = process.env.CICADA_CHROME_PATH;
+    if (!executablePath && process.platform === 'win32') {
+      executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
+        .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
+    }
+    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--mute-audio']});
+    shared = {browser, context: await browser.newContext({viewport: {width: 1440, height: 900}})};
+    const startup = new URL(process.env.CICADA_STUDIO_URL);
+    if (startup.pathname.startsWith('/__local/')) {
+      const page = await shared.context.newPage();
+      await page.goto(startup.href);
+      await page.close();
+    }
+  }
+  return shared;
+}
+
+test.after(async () => { await shared?.browser.close(); });
+
+// One page for the whole suite: every step continues from the last one, and
+// none of them may navigate.
+let session;
+async function studio() {
+  if (session) return session;
+  assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to a disposable Studio');
+  const base = new URL(process.env.CICADA_STUDIO_URL);
+  assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'use a local disposable Studio');
+  const {context} = await sharedBrowser();
+  await context.addCookies([{name: 'cicada_panes', value: '11', url: base.origin}]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15_000);
+  await page.addInitScript(() => {
+    try { localStorage.setItem('studio:layout:codeOpen', 'true'); } catch {}
+    window.__studioEdits = {navigations: 0, document: crypto.randomUUID()};
+    document.addEventListener('gosx:navigate', () => { window.__studioEdits.navigations++; });
+  });
+  const errors = [], posts = [], reads = [];
+  let documents = 0, inFlight = 0, maxInFlight = 0;
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => {
+    const target = new URL(request.url());
+    if (request.resourceType() === 'document') documents++;
+    if (target.pathname === '/__studio/regions') reads.push(target);
+  });
+  const state = async endpoint => {
+    const response = await context.request.get(new URL(endpoint, base).href);
+    assert.equal(response.status(), 200, `${endpoint} must be available`);
+    return response.json();
+  };
+  // Every foreground write goes through this route, so the steps can hold,
+  // rewrite or inspect one. Recovery checkpoints pass straight through.
+  const gates = [];
+  const rewrites = [];
+  await page.route('**/__actions/**', async route => {
+    const request = route.request();
+    const action = new URL(request.url()).pathname.split('/').pop();
+    if (request.method() !== 'POST' || /checkpoint$/.test(action) || action === 'live' || action === 'note-preview') return route.continue();
+    const payload = request.postDataJSON();
+    const record = {action, payload, status: 0, result: null, done: false};
+    posts.push(record);
+    maxInFlight = Math.max(maxInFlight, ++inFlight);
+    try {
+      const rewrite = rewrites.shift();
+      if (rewrite) rewrite(payload);
+      const gate = gates.shift();
+      if (gate) await gate;
+      const response = await route.fetch({postData: JSON.stringify(payload), maxRedirects: 0});
+      record.status = response.status();
+      record.result = await response.json();
+      await route.fulfill({response, body: JSON.stringify(record.result)});
+    } finally {
+      inFlight--;
+      record.done = true;
+    }
+  });
+  const original = await state('/api/state');
+  assert.ok(original.source.includes(marker), 'refusing to edit an unmarked score: start Studio on a --write-fixture score');
+  await page.goto(new URL('/studio?tab=arrange&dock=clip&pattern=continuity&step=1', base).href);
+  await page.locator('#studio-shell[data-shell-actions="ready"]').waitFor({timeout: 30_000});
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  const pitch = await page.locator('#detail-panel-clip .piano-roll .roll-row form input[name="pitch"]').nth(8).inputValue();
+  const cell = step => `#detail-panel-clip .piano-roll form:has(input[name="pitch"][value="${pitch}"]) .roll-cell[value="${step}"]`;
+  const region = id => page.locator(`#update-${id}`);
+  const revisionOf = id => region(id).getAttribute('data-region-revision');
+  const hold = () => { let release; gates.push(new Promise(resolve => { release = resolve; })); return () => release(); };
+  // A cell is confirmed when it shows the wanted state, carries no pending
+  // marker, and its region carries the revision the edit produced.
+  const confirmed = async (selector, active, revision) => page.waitForFunction(({selector, active, revision}) => {
+    const el = document.querySelector(selector);
+    const wrapper = el?.closest('[data-update-region]');
+    return el && el.getAttribute('data-active') === active && !el.hasAttribute('data-workspace-pending') && wrapper.getAttribute('data-region-revision') === revision;
+  }, {selector, active: String(active), revision});
+  const settled = async count => until(() => posts.length >= count && posts.slice(0, count).every(record => record.done), `only ${posts.length}/${count} writes settled`);
+  const status = () => page.locator('[data-workspace-status]').textContent();
+  const noNavigation = async () => {
+    const probe = await page.evaluate(() => window.__studioEdits);
+    assert.equal(probe.navigations, 0, 'a GoSX navigation ran during an edit');
+    assert.equal(documents, 1, 'a document request ran during an edit');
+    assert.deepEqual(errors, []);
+  };
+  session = {page, base, state, posts, reads, cell, region, revisionOf, hold, rewrites, confirmed, settled, status, noNavigation, original,
+    maxInFlight: () => maxInFlight, documentID: () => page.evaluate(() => window.__studioEdits.document)};
+  return session;
+}
+
+test('a piano-roll draw paints at once and is confirmed without a navigation', async () => {
+  const {page, state, posts, cell, revisionOf, hold, confirmed, settled, noNavigation, original} = await studio();
+  const before = await revisionOf('dock-clip');
+  const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
+  assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
+  const release = hold();
+  await page.locator(cell(15)).click();
+  // The answer is held, so this state can only be the pending paint.
+  await page.waitForFunction(selector => {
+    const el = document.querySelector(selector);
+    return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
+  }, cell(15));
+  assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
+  release();
+  await settled(1);
+  const record = posts[0];
+  assert.equal(record.status, 200, record.result?.message);
+  assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
+  assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
+  const revision = record.result.data.revision;
+  assert.ok(revision && revision !== original.revision);
+  await confirmed(cell(15), true, revision);
+  assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
+  assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
+  // Rule R1: every region the response confirmed carries the new revision in
+  // its forms; a hidden region the response did not render keeps its own.
+  const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
+    id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
+    inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
+  })));
+  for (const field of fields) {
+    if (field.stale) continue;
+    assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
+    for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+  }
+  assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
+  await noNavigation();
+});
+
+test('the answer to one draw keeps the pending paint of the next', async () => {
+  const {page, posts, cell, hold, confirmed, settled, noNavigation} = await studio();
+  const start = posts.length;
+  const releaseFirst = hold(), releaseSecond = hold();
+  await page.locator(cell(16)).click();
+  await page.locator(cell(17)).click();
+  await page.waitForFunction(selector => document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(17));
+  releaseFirst();
+  await until(() => posts.length > start && posts[start].done, 'the first draw did not settle');
+  const first = posts[start].result.data.revision;
+  await confirmed(cell(16), true, first);
+  // The second edit is still held: its cell must keep the prediction.
+  const second = await page.locator(cell(17)).evaluate(el => ({active: el.getAttribute('data-active'), pending: el.hasAttribute('data-workspace-pending'), text: el.textContent}));
+  assert.deepEqual(second, {active: 'true', pending: true, text: '●'}, 'the answer to the first draw erased the second pending paint');
+  releaseSecond();
+  await settled(start + 2);
+  assert.equal(posts[start + 1].payload.revision, first, 'the queued draw did not take the confirmed revision');
+  await confirmed(cell(17), true, posts[start + 1].result.data.revision);
+  await noNavigation();
+});
+
+test('Undo and Redo run through the same queue', async () => {
+  const {page, posts, cell, hold, confirmed, settled, noNavigation, maxInFlight} = await studio();
+  let start = posts.length;
+  // A draw and an immediate Undo: the Undo waits for the draw and takes its
+  // revision, so the pair leaves the cell as it was.
+  const release = hold();
+  await page.locator(cell(18)).click();
+  await until(() => posts.length > start, 'the draw was not sent');
+  await page.locator('#undo-form button[type=submit]').click();
+  assert.equal(await page.locator('#undo-form button[type=submit]').evaluate(el => el.hasAttribute('data-workspace-pending')), true, 'Undo was not painted pending');
+  assert.equal(posts.length, start + 1, 'Undo was sent before the draw it follows was answered');
+  release();
+  await settled(start + 2);
+  assert.deepEqual(posts.slice(start).map(record => record.action), ['pattern', 'undo']);
+  assert.equal(posts[start + 1].payload.revision, posts[start].result.data.revision, 'Undo did not run after the draw');
+  await confirmed(cell(18), false, posts[start + 1].result.data.revision);
+  start = posts.length;
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+Shift+z');
+  await settled(start + 1);
+  assert.equal(posts[start].action, 'redo');
+  await confirmed(cell(18), true, posts[start].result.data.revision);
+  start = posts.length;
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  await settled(start + 1);
+  assert.equal(posts[start].action, 'undo');
+  await confirmed(cell(18), false, posts[start].result.data.revision);
+  assert.equal(maxInFlight(), 1, 'writes were sent concurrently');
+  await noNavigation();
+});
+
+test('a validation error restores the cell and the queue continues', async () => {
+  const {page, posts, cell, rewrites, confirmed, settled, status, noNavigation} = await studio();
+  const start = posts.length;
+  rewrites.push(payload => { payload.step = '99'; });
+  await page.locator(cell(19)).click();
+  await settled(start + 1);
+  assert.equal(posts[start].status, 422);
+  await page.waitForFunction(selector => {
+    const el = document.querySelector(selector);
+    return el.getAttribute('data-active') === 'false' && !el.hasAttribute('data-workspace-pending') && !el.hasAttribute('data-pending-paint');
+  }, cell(19));
+  await until(async () => /step must be/i.test(await status()), 'the validation message was not shown');
+  assert.equal(await page.locator('[data-workspace-retry]').isVisible(), false, 'validation must not block the queue');
+  await page.locator(cell(19)).click();
+  await settled(start + 2);
+  assert.equal(posts[start + 1].status, 200);
+  await confirmed(cell(19), true, posts[start + 1].result.data.revision);
+  await noNavigation();
+});
+
+test('a stale revision restores, blocks the queue, and Refresh saved state recovers', async () => {
+  const {page, state, posts, reads, cell, rewrites, hold, confirmed, settled, status, noNavigation, original} = await studio();
+  const start = posts.length;
+  const before = await state('/api/state');
+  rewrites.push(payload => { payload.revision = original.revision; });
+  const release = hold();
+  await page.locator(cell(20)).click();
+  await page.locator(cell(21)).click(); // queued behind the refused write
+  release();
+  await settled(start + 1);
+  assert.equal(posts[start].status, 409);
+  for (const step of [20, 21]) {
+    await page.waitForFunction(selector => {
+      const el = document.querySelector(selector);
+      return el.getAttribute('data-active') === 'false' && !el.hasAttribute('data-workspace-pending');
+    }, cell(step));
+  }
+  await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+  assert.match(await status(), /saved revision [0-9a-f]{7}/i, 'the conflict did not show the saved revision');
+  assert.equal(posts.length, start + 1, 'the queued draw was sent after a conflict');
+  // Blocked: a new draw is refused without a request and without a paint.
+  await page.locator(cell(22)).click();
+  await until(async () => /refresh saved state/i.test(await status()), 'a blocked draw was not refused');
+  assert.equal(posts.length, start + 1, 'a draw was sent while blocked');
+  assert.equal(await page.locator(cell(22)).getAttribute('data-active'), 'false');
+  assert.deepEqual(await state('/api/state'), before, 'the refused write changed the score');
+  const readsBefore = reads.length;
+  await page.locator('[data-workspace-retry]').click();
+  await until(async () => /Workspace updated/i.test(await status()), 'Refresh saved state did not finish');
+  assert.ok(reads.length > readsBefore, 'Refresh saved state did not read the regions');
+  assert.equal(await page.locator('[data-workspace-retry]').isVisible(), false);
+  await page.locator(cell(22)).click();
+  await settled(start + 2);
+  assert.equal(posts[start + 1].status, 200, 'the queue did not resume after the refresh');
+  await confirmed(cell(22), true, posts[start + 1].result.data.revision);
+  await noNavigation();
+});
+
+test('a hidden region is marked stale and refreshed when it opens', async () => {
+  const {page, posts, reads, cell, region, revisionOf, confirmed, settled, noNavigation} = await studio();
+  // Background reads may refresh hidden regions while the queue is idle.
+  // Refuse those here, so only the reveal can refresh the Session view.
+  await page.route('**/__studio/regions**', route => {
+    const ids = new URL(route.request().url()).searchParams.get('ids') || '';
+    return /(^|,)dialog-history:/.test(ids) ? route.abort() : route.continue();
+  });
+  const start = posts.length;
+  await page.locator(cell(23)).click();
+  await settled(start + 1);
+  const revision = posts[start].result.data.revision;
+  await confirmed(cell(23), true, revision);
+  await until(async () => await region('center-session').getAttribute('data-region-stale') !== null, 'the hidden Session view was not marked stale');
+  assert.notEqual(await revisionOf('center-session'), revision, 'a region not rendered at the new revision advanced (rule R1)');
+  const readsBefore = reads.length;
+  await page.keyboard.press('Alt+Shift+Digit2');
+  await page.locator('#view-tab-session[aria-selected="true"]').waitFor();
+  await until(async () => await region('center-session').getAttribute('data-region-stale') === null, 'the revealed Session view stayed stale');
+  assert.equal(await revisionOf('center-session'), revision);
+  const reveal = reads.slice(readsBefore).find(target => /(^|,)center-session:/.test(target.searchParams.get('ids')));
+  assert.ok(reveal, 'the reveal did not read the Session view');
+  assert.doesNotMatch(reveal.searchParams.get('ids'), /(^|,)dialog-history:/, 'the reveal read regions that are still hidden');
+  const inputs = await page.locator('#update-center-session input[type=hidden][name=revision]').evaluateAll(nodes => nodes.map(node => node.value));
+  for (const value of inputs) assert.equal(value, revision, 'the refreshed region kept an old revision field');
+  await page.unroute('**/__studio/regions**');
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  await noNavigation();
+});
+
+test('a dirty Code draft is held while a Clip edit lands', async () => {
+  const {page, posts, cell, region, confirmed, settled, noNavigation} = await studio();
+  const editor = page.locator('#score textarea').first();
+  await editor.waitFor({state: 'attached'});
+  const codeRevision = await region('code').getAttribute('data-region-revision');
+  const fileRevision = await page.locator('#score input[name="fileRevision"]').inputValue();
+  await editor.focus();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('\n// held draft');
+  const draft = await editor.inputValue();
+  assert.match(draft, /held draft/);
+  const start = posts.length;
+  await page.locator(cell(24)).click();
+  await settled(start + 1);
+  assert.doesNotMatch(posts[start].payload.__cicada_regions, /(^|,)code:/, 'the edit asked for the held Code lens');
+  await confirmed(cell(24), true, posts[start].result.data.revision);
+  assert.equal(await editor.inputValue(), draft, 'the Code draft was replaced');
+  assert.equal(await region('code').getAttribute('data-region-revision'), codeRevision, 'the held Code lens advanced its revision');
+  assert.equal(await page.locator('#score input[name="fileRevision"]').inputValue(), fileRevision, 'the held draft lost the revision it was typed on');
+  await noNavigation();
+});

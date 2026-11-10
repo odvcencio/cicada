@@ -166,6 +166,12 @@ test-studio-shell:
 test-studio-mixer-strips:
 	node --test workstation/browser/mixer-strips.test.cjs
 
+.PHONY: test-studio-edits
+# Requires a fresh Studio process with a disposable continuity score; this suite
+# draws notes, undoes and redoes, and refuses a stale write.
+test-studio-edits:
+	node --test workstation/browser/studio-edits.test.cjs
+
 .PHONY: test-studio-columns
 # Requires a fresh Studio process and an absolute CICADA_COLUMN_PROOF_DIR.
 test-studio-columns:
