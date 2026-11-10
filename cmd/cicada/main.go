@@ -289,12 +289,18 @@ func main() {
 	var renderOptions render.Options
 	var renderTarget *renderTargetOptions
 	var midiOpts midiOptions
-	if command == "render" {
-		renderPath, renderOptions, renderTarget = renderArgs(os.Args[3:], 24)
-	} else if command == "stems" {
-		renderPath, renderOptions, renderTarget = renderArgs(os.Args[3:], 32)
-		if renderTarget != nil {
+	if command == "render" || command == "stems" {
+		args, asJSON := takeJSONFlag(os.Args[3:])
+		wantBits := 24
+		if command == "stems" {
+			wantBits = 32
+		}
+		renderPath, renderOptions, renderTarget = renderArgs(args, wantBits)
+		if command == "stems" && renderTarget != nil {
 			usage()
+		}
+		if asJSON {
+			os.Exit(renderJSONCommand(command, os.Args[2], renderPath, renderOptions, renderTarget, os.Stdout, os.Stderr))
 		}
 	} else if command == "midi" {
 		midiOpts = parseMIDIArgs(os.Args[3:])
@@ -667,19 +673,30 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 	if target != nil && target.Loudness {
 		return renderLoudnessFile(score, path, opts, *target)
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
+	report, err := renderPlainFile(score, path, opts)
 	if err != nil {
 		return err
+	}
+	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
+	return nil
+}
+
+// renderPlainFile renders a score without a loudness target into path,
+// through a temporary file that replaces path only when the render succeeds.
+func renderPlainFile(score *notation.Score, path string, opts render.Options) (render.Report, error) {
+	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
+	if err != nil {
+		return render.Report{}, err
 	}
 	defer os.Remove(file.Name())
 	if info, err := os.Stat(path); err == nil {
 		if err := file.Chmod(info.Mode().Perm()); err != nil {
 			file.Close()
-			return err
+			return render.Report{}, err
 		}
 	} else if !os.IsNotExist(err) {
 		file.Close()
-		return err
+		return render.Report{}, err
 	}
 	report, renderErr := render.WAV(score, opts, file)
 	if renderErr == nil {
@@ -687,16 +704,15 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 	}
 	closeErr := file.Close()
 	if renderErr != nil {
-		return renderErr
+		return render.Report{}, renderErr
 	}
 	if closeErr != nil {
-		return closeErr
+		return render.Report{}, closeErr
 	}
 	if err := os.Rename(file.Name(), path); err != nil {
-		return err
+		return render.Report{}, err
 	}
-	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
-	return nil
+	return report, nil
 }
 
 func renderLoudnessFile(score *notation.Score, path string, opts render.Options, target renderTargetOptions) error {
@@ -771,9 +787,29 @@ func renderStudioLoudnessFileReport(score *notation.Score, path string, opts ren
 	return renderLoudnessFileReportWithShortfall(score, path, studioShortfallPath(path), opts, target, onPass)
 }
 
-type loudnessShortfallError struct{ message string }
+// loudnessShortfallError reports a loudness render that wrote its best pass but
+// missed the target. Reason is a stable code for JSON output. Remedy, when set,
+// is the fix the documentation gives for that cause, and the message ends with
+// it.
+type loudnessShortfallError struct{ reason, message, remedy string }
 
-func (e *loudnessShortfallError) Error() string { return e.message }
+func (e *loudnessShortfallError) Error() string {
+	if e.remedy != "" {
+		return e.message + "; " + e.remedy
+	}
+	return e.message
+}
+
+// masterLimiterRemedy is the fix docs/audio/mix-chain.md gives for a target
+// that a score without a master limiter misses at the true-peak ceiling: the
+// static gain keeps the crest factor, and a limiter lets the gain go ahead of
+// it.
+const masterLimiterRemedy = "add a limiter as the last master insert (for example fx ceiling limiter { ceiling = -1dBTP } and master { insert = ceiling }, or end an existing master insert chain with -> ceiling), so the gain goes in ahead of the limiter and the limiter holds the true-peak ceiling (docs/audio/mix-chain.md, Export loudness targets)"
+
+// renderFailure is a render error with a stable reason code for JSON output.
+type renderFailure struct{ reason, message string }
+
+func (e *renderFailure) Error() string { return e.message }
 
 func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfallPath string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
 	report := loudnessFileReport{TargetLUFS: target.LoudnessTarget}
@@ -1012,7 +1048,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	}
 	if !hasBest {
 		if math.IsInf(peakFallbackExcess, 1) {
-			return report, fmt.Errorf("could not meet the true-peak ceiling %.2f dBTP and -60 dBFS DC limit in %d passes", target.TruePeakMaxDBTP, passes)
+			return report, &renderFailure{reason: "true_peak_and_dc_unmet", message: fmt.Sprintf("could not meet the true-peak ceiling %.2f dBTP and -60 dBFS DC limit in %d passes", target.TruePeakMaxDBTP, passes)}
 		}
 		bestRender, bestMeasure, bestGain = peakFallbackRender, peakFallbackMeasure, peakFallbackGain
 		bestBiasL, bestBiasR = peakFallbackBiasL, peakFallbackBiasR
@@ -1022,23 +1058,30 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	}
 	shortfallErr := (*loudnessShortfallError)(nil)
 	if math.IsNaN(bestMeasure.IntegratedLUFS) || math.IsInf(bestMeasure.IntegratedLUFS, 0) {
-		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target %.2f LUFS was not reached: render has no measurable loudness", target.LoudnessTarget)}
+		shortfallErr = &loudnessShortfallError{reason: "loudness_unmeasurable", message: fmt.Sprintf("loudness target %.2f LUFS was not reached: render has no measurable loudness", target.LoudnessTarget)}
 	} else if bestMeasure.TruePeakDBTP > target.TruePeakMaxDBTP {
-		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("true peak %.2f dBTP exceeds ceiling %.2f dBTP", bestMeasure.TruePeakDBTP, target.TruePeakMaxDBTP)}
+		shortfallErr = &loudnessShortfallError{reason: "true_peak_over_ceiling", message: fmt.Sprintf("true peak %.2f dBTP exceeds ceiling %.2f dBTP", bestMeasure.TruePeakDBTP, target.TruePeakMaxDBTP)}
 	} else if limiterMode && bestChainReduction > maxExportLimiterReductionDB {
-		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("master limiter gain reduction %.2f dB exceeds the %.1f dB maximum; achieved %.2f LUFS (target %.2f LUFS)", bestChainReduction, maxExportLimiterReductionDB, bestMeasure.IntegratedLUFS, target.LoudnessTarget)}
+		shortfallErr = &loudnessShortfallError{reason: "limiter_reduction_over_maximum", message: fmt.Sprintf("master limiter gain reduction %.2f dB exceeds the %.1f dB maximum; achieved %.2f LUFS (target %.2f LUFS)", bestChainReduction, maxExportLimiterReductionDB, bestMeasure.IntegratedLUFS, target.LoudnessTarget)}
 	} else if limiterMode && bestDelta > target.Tolerance && bestMeasure.IntegratedLUFS < target.LoudnessTarget && (inputCapped || bestChainReduction >= maxExportLimiterReductionDB-0.5) {
 		guard := fmt.Sprintf("the %.1f dB maximum master limiter gain reduction", maxExportLimiterReductionDB)
+		reason := "loudness_shortfall_at_limiter_maximum"
 		if inputCapped && bestChainReduction < maxExportLimiterReductionDB-0.5 {
 			guard = fmt.Sprintf("the +%.0f dB input gain cap ahead of the master limiter", maxExportInputGainDB)
+			reason = "loudness_shortfall_at_input_gain_cap"
 		}
-		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at %s (master limiter reduction %.2f dB, target %.2f LUFS)", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS, guard, bestChainReduction, target.LoudnessTarget)}
+		shortfallErr = &loudnessShortfallError{reason: reason, message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at %s (master limiter reduction %.2f dB, target %.2f LUFS)", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS, guard, bestChainReduction, target.LoudnessTarget)}
 	} else if bestDelta > target.Tolerance {
 		shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
 		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
-			shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at true-peak ceiling %.2f dBTP (target %.2f LUFS)", shortfall, bestMeasure.IntegratedLUFS, bestMeasure.TruePeakDBTP, target.LoudnessTarget)}
+			shortfallErr = &loudnessShortfallError{reason: "loudness_shortfall_at_true_peak_ceiling", message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at true-peak ceiling %.2f dBTP (target %.2f LUFS)", shortfall, bestMeasure.IntegratedLUFS, bestMeasure.TruePeakDBTP, target.LoudnessTarget)}
+			if !limiterMode {
+				// Without a limiter the static gain stops at the ceiling; with one,
+				// the limiter already holds it, so a limiter is not the fix.
+				shortfallErr.remedy = masterLimiterRemedy
+			}
 		} else {
-			shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}
+			shortfallErr = &loudnessShortfallError{reason: "loudness_target_missed", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}
 		}
 	}
 	destination := path
