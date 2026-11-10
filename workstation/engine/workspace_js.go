@@ -1080,11 +1080,26 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		permissionClient.Timeout = 0
 		requestClient = &permissionClient
 	}
+	// The client's own timeout cancels the request context as soon as the
+	// body reaches its end, and Go's fetch transport then aborts a request the
+	// browser may not have marked finished. Run the same deadline on a
+	// context that is cancelled only when it expires, when an abort is due.
+	if timeout := requestClient.Timeout; timeout > 0 {
+		deadline, cancel := context.WithCancel(request.Context())
+		time.AfterFunc(timeout, cancel)
+		request = request.WithContext(deadline)
+		requestClient = &http.Client{Transport: requestClient.Transport}
+	}
 	response, err := requestClient.Do(request)
 	if err != nil {
 		return projection, "", fmt.Errorf("The workspace request did not complete")
 	}
-	defer response.Body.Close()
+	defer func() {
+		// Read to the end before closing: closing a fetch body early cancels
+		// its stream, and the browser then reports the request aborted.
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
+		response.Body.Close()
+	}()
 	if job.method == http.MethodGet {
 		if response.StatusCode != http.StatusOK {
 			return projection, "", fmt.Errorf("Workspace refresh failed (%d)", response.StatusCode)
