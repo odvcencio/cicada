@@ -208,8 +208,8 @@
     },
     "voice/clav": {
       "aliasing_db": {
-        "limit": -36.1,
-        "measured_when_set": -39.152
+        "limit": -73.6,
+        "measured_when_set": -76.678
       },
       "noise_floor_dbfs": {
         "limit": -120,
@@ -366,8 +366,8 @@
     },
     "voice/strings": {
       "aliasing_db": {
-        "limit": -22.4,
-        "measured_when_set": -25.416
+        "limit": -88.9,
+        "measured_when_set": -91.978
       },
       "noise_floor_dbfs": {
         "limit": -120,
