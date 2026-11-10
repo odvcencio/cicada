@@ -13,6 +13,9 @@ const (
 	MaxNote   = 108
 	MaxVoices = 8
 	modes     = 24
+	// MaxPartialFraction is the highest mode frequency the voice sounds, as a
+	// fraction of the sample rate. New drops every mode above it.
+	MaxPartialFraction = .42
 )
 
 type Error string
@@ -120,7 +123,7 @@ func New(rate int, p Params) (*Instrument, error) {
 		for m := 1; m <= modes; m++ {
 			h := float64(m)
 			hz := PartialFrequency(uint8(note), m)
-			if hz > .42*fs {
+			if hz > MaxPartialFraction*fs {
 				break
 			}
 			a := 2 * math.Pi * hz / fs
