@@ -10,14 +10,21 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// SetProjectSettings sets the score's title, tempo, key root and scale
+// together.
+//
+// Example: {"kind":"setprojectsettings","title":"Intent catalog","tempomilli":124000,"root":"a","scale":"minor"}
 type SetProjectSettings struct {
-	Title      string `json:"title"`
-	TempoMilli int    `json:"tempomilli"`
-	Root       string `json:"root"`
-	Scale      string `json:"scale"`
+	Title      string `json:"title"`                                                               // 1–256 characters
+	TempoMilli int    `json:"tempomilli" unit:"0.001 BPM"`                                         // tempo in thousandths of a BPM, 20000–300000
+	Root       string `json:"root" values:"c,c#,d,d#,e,f,f#,g,g#,a,a#,b"`                          // key root
+	Scale      string `json:"scale" values:"minor,major,dorian,phrygian,harmonic,mixo,pent,blues"` // scale
 }
 
 func (SetProjectSettings) Kind() string { return "setprojectsettings" }
+
+// projectScales are the scales SetProjectSettings accepts.
+var projectScales = []string{"minor", "major", "dorian", "phrygian", "harmonic", "mixo", "pent", "blues"}
 
 func init() {
 	Register("setprojectsettings", func() Intent { return &SetProjectSettings{} })
@@ -52,7 +59,7 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 		}
 	}
 	validScale := false
-	for _, scale := range []string{"minor", "major", "dorian", "phrygian", "harmonic", "mixo", "pent", "blues"} {
+	for _, scale := range projectScales {
 		validScale = validScale || settings.Scale == scale
 	}
 	if rootIndex < 0 || !validScale {

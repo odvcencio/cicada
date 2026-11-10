@@ -13,68 +13,82 @@ import (
 // field is left as it is. At and Length keep the literal the author typed
 // (for example "@5.1.1" or "3bars").
 type PlacementSettings struct {
-	At      string `json:"at,omitempty"`
-	Length  string `json:"length,omitempty"`
-	Track   string `json:"track,omitempty"`
-	Content string `json:"content,omitempty"`
+	At      string `json:"at,omitempty"`      // start position, such as "@5.1.1" (bar.beat.step, counted from 1)
+	Length  string `json:"length,omitempty"`  // length, such as "2bars" or "960ticks"
+	Track   string `json:"track,omitempty"`   // the track that plays the placement
+	Content string `json:"content,omitempty"` // the pattern or clip the placement plays
 }
 
 // UpdatePlacement patches the named fields of one placement in place.
 // Unlike MoveClip and ResizeClip, it keeps the typed literals and changes any
 // number of fields in one revision, so a move and a trim never pass through an
 // overlapping state.
+//
+// Example: {"kind":"updateplacement","entity":"placement:verse","settings":{"length":"4bars"}}
 type UpdatePlacement struct {
-	Entity   EntityID           `json:"entity"`
-	Settings *PlacementSettings `json:"settings"`
+	Entity   EntityID           `json:"entity"`   // the placement, as placement:<name>
+	Settings *PlacementSettings `json:"settings"` // the fields to change; an empty field stays as it is
 }
 
 func (UpdatePlacement) Kind() string { return "updateplacement" }
 
 // AddPlacement appends a placement at the end of the arrange block.
+//
+// Example: {"kind":"addplacement","name":"outro","settings":{"at":"@5.1.1","length":"1bars","track":"bass","content":"riff"}}
 type AddPlacement struct {
-	Name     string             `json:"name"`
-	Settings *PlacementSettings `json:"settings"`
+	Name     string             `json:"name"`     // the new placement's name
+	Settings *PlacementSettings `json:"settings"` // at, length, track and content
 }
 
 func (AddPlacement) Kind() string { return "addplacement" }
 
 // CopyPlacement appends a copy of a placement under a new name; settings
 // override the copied fields.
+//
+// Example: {"kind":"copyplacement","entity":"placement:verse","name":"verse-2","settings":{"at":"@5.1.1"}}
 type CopyPlacement struct {
-	Entity   EntityID           `json:"entity"`
-	Name     string             `json:"name"`
-	Settings *PlacementSettings `json:"settings"`
+	Entity   EntityID           `json:"entity"`   // the placement to copy, as placement:<name>
+	Name     string             `json:"name"`     // the copy's name
+	Settings *PlacementSettings `json:"settings"` // fields that differ from the original, usually at
 }
 
 func (CopyPlacement) Kind() string { return "copyplacement" }
 
 // RemovePlacement removes the declaration of one placement and nothing else.
 // DeleteClip also removes the comment lines above the placement.
+//
+// Example: {"kind":"removeplacement","entity":"placement:intro"}
 type RemovePlacement struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity"` // the placement, as placement:<name>
 }
 
 func (RemovePlacement) Kind() string { return "removeplacement" }
 
 // SetMarker moves one marker.
+//
+// Example: {"kind":"setmarker","entity":"marker:chorus","settings":{"at":"@4.1.1"}}
 type SetMarker struct {
-	Entity   EntityID           `json:"entity"`
-	Settings *PlacementSettings `json:"settings"`
+	Entity   EntityID           `json:"entity"`   // the marker, as marker:<name>
+	Settings *PlacementSettings `json:"settings"` // at, the marker's new position
 }
 
 func (SetMarker) Kind() string { return "setmarker" }
 
 // AddMarker appends a marker at the end of the arrange block.
+//
+// Example: {"kind":"addmarker","name":"drop","settings":{"at":"@4.1.1"}}
 type AddMarker struct {
-	Name     string             `json:"name"`
-	Settings *PlacementSettings `json:"settings"`
+	Name     string             `json:"name"`     // the new marker's name
+	Settings *PlacementSettings `json:"settings"` // at, the marker's position
 }
 
 func (AddMarker) Kind() string { return "addmarker" }
 
 // RemoveMarker removes the declaration of one marker.
+//
+// Example: {"kind":"removemarker","entity":"marker:chorus"}
 type RemoveMarker struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity"` // the marker, as marker:<name>
 }
 
 func (RemoveMarker) Kind() string { return "removemarker" }

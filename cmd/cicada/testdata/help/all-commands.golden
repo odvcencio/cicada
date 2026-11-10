@@ -32,6 +32,17 @@ Flags:
 
 A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes.
 
+### intents
+cicada intents [--json] [kind]
+
+list the edit intents apply accepts
+
+Flags:
+  --json      write the catalog as JSON (schema cicada.intents.v1)
+  --help      show this help
+
+Lists every intent kind with its meaning. With a kind, prints its fields (JSON name, type, whether required, unit or allowed values) and an example that cicada apply accepts. The catalog is generated from the intent registry. See docs/manual/agents.md.
+
 ### fix
 cicada fix <score.cicada> [--all] [--check]
 

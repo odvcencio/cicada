@@ -929,8 +929,12 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 	return mixerFXValue{Kind: kind}, err
 }
 
+// mixerEffectKinds are the effect kinds AddEffect and the fx.<name> mixer
+// path declare.
+var mixerEffectKinds = []string{"drive", "delay", "reverb", "comp", "eq", "deesser", "ampcab", "chorus"}
+
 func knownMixerEffectKind(kind string) bool {
-	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser" || kind == "ampcab" || kind == "chorus"
+	return containsMixerString(mixerEffectKinds, kind)
 }
 
 func ValidMixerIdentifier(name string) bool {
@@ -1082,12 +1086,15 @@ func spacedMixerValue(value string) string {
 
 // AddEffect declares a new effect; it is SetParam's fx.<name> path with a
 // typed request. The effect kind is EffectKind because the envelope's "kind"
-// key names the intent.
+// key names the intent. To insert the new effect on a track, follow it with
+// setparam on param:<track>.insert.
+//
+// Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
 type AddEffect struct {
-	Name           string `json:"name"`
-	EffectKind     string `json:"effectkind"`
-	InsertOn       string `json:"inserton,omitempty"`
-	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`
+	Name           string `json:"name"`                                                                 // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
+	EffectKind     string `json:"effectkind" values:"drive,delay,reverb,comp,eq,deesser,ampcab,chorus"` // the effect's kind
+	InsertOn       string `json:"inserton,omitempty" values:"music"`                                    // music also inserts a comp on bus music; other values are refused
+	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                                             // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
 }
 
 func (AddEffect) Kind() string { return "addeffect" }

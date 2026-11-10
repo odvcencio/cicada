@@ -10,26 +10,34 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// ToggleStep changes one grid token. JSON shared accepts:
+// ToggleStep turns one grid step on or off: a rest becomes a note (1, or x on
+// a drum lane) and anything else becomes a rest. Step indexes count from 0.
+// JSON shared accepts:
 // "" (default): ask when the step comes from a shared phrase;
 // "definition": edit the phrase token;
 // "detach": expand only the use containing the step;
 // "pattern": expand every use in the pattern before editing.
 // Directly authored steps ignore "" and "detach"; "pattern" still expands
 // every use. The same shared schema applies to the other grid intents.
+//
+// Example: {"kind":"togglestep","entity":"step:riff/1"}
 type ToggleStep struct {
-	Entity EntityID `json:"entity"`
-	Shared string   `json:"shared,omitempty"`
+	Entity EntityID `json:"entity"`                                              // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
+	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // what to do when the step comes from a shared phrase; see the notes
 }
 
 func (ToggleStep) Kind() string { return "togglestep" }
 
-// SetPitch's JSON pitch is required and accepts MIDI 0–127. An omitted or
-// null pitch is refused. Shared uses ToggleStep's JSON schema.
+// SetPitch sets the pitch of one note step, or adds or removes that pitch in
+// a chord step. Pitch is required and accepts MIDI 0–127; an omitted or null
+// pitch is refused. Setting the pitch a single note already has makes it a
+// rest. Shared uses ToggleStep's JSON schema.
+//
+// Example: {"kind":"setpitch","entity":"step:riff/0","pitch":48}
 type SetPitch struct {
-	Entity       EntityID `json:"entity"`
-	Pitch        int      `json:"pitch"`
-	Shared       string   `json:"shared,omitempty"`
+	Entity       EntityID `json:"entity"`                                              // the step, as step:<pattern>/<index>
+	Pitch        int      `json:"pitch"`                                               // MIDI pitch 0–127
+	Shared       string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 	missingPitch bool
 }
 
@@ -65,26 +73,39 @@ func (in *SetPitch) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ToggleModifier turns the accent or the slide of one note step on or off.
+// The step must hold a note. Shared uses ToggleStep's JSON schema.
+//
+// Example: {"kind":"togglemodifier","entity":"step:riff/0","modifier":"accent"}
 type ToggleModifier struct {
-	Entity   EntityID `json:"entity"`
-	Modifier string   `json:"modifier"`
-	Shared   string   `json:"shared,omitempty"`
+	Entity   EntityID `json:"entity"` // the step, as step:<pattern>/<index>
+	Modifier string   `json:"modifier" values:"accent,slide"`
+	Shared   string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 }
 
 func (ToggleModifier) Kind() string { return "togglemodifier" }
 
+// CycleStep moves the ratchet or the chance of one note step to its next
+// value. The step must hold a note. Shared uses ToggleStep's JSON schema.
+//
+// Example: {"kind":"cyclestep","entity":"step:riff/0","field":"ratchet"}
 type CycleStep struct {
-	Entity EntityID `json:"entity"`
-	Field  string   `json:"field"`
-	Shared string   `json:"shared,omitempty"`
+	Entity EntityID `json:"entity"` // the step, as step:<pattern>/<index>
+	Field  string   `json:"field" values:"ratchet,chance"`
+	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 }
 
 func (CycleStep) Kind() string { return "cyclestep" }
 
+// SetDrumVelocity sets the velocity of one drum hit, written as the nearest
+// hit spelling (x, x1 to x9 or X). The step must hold a hit. Shared uses
+// ToggleStep's JSON schema.
+//
+// Example: {"kind":"setdrumvelocity","entity":"step:beat/bd/0","velocity":110}
 type SetDrumVelocity struct {
-	Entity   EntityID `json:"entity"`
-	Velocity int      `json:"velocity"`
-	Shared   string   `json:"shared,omitempty"`
+	Entity   EntityID `json:"entity"`                                              // the hit, as step:<pattern>/<lane>/<index>
+	Velocity int      `json:"velocity"`                                            // MIDI velocity 1–127
+	Shared   string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 }
 
 func (SetDrumVelocity) Kind() string { return "setdrumvelocity" }

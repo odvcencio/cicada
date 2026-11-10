@@ -11,68 +11,90 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// SetPatternSettings changes timing and transpose without changing note text.
+// SetPatternSettings changes a pattern's swing, gate and transpose without
+// changing its note text. A drum pattern keeps transpose 0.
+//
+// Example: {"kind":"setpatternsettings","entity":"pattern:riff","swing100":5600,"gate":60,"transpose":0}
 type SetPatternSettings struct {
-	Entity    EntityID `json:"entity"`
-	Swing100  int      `json:"swing100"`
-	Gate      int      `json:"gate"`
-	Transpose int      `json:"transpose"`
+	Entity    EntityID `json:"entity"`                       // the pattern, as pattern:<name>
+	Swing100  int      `json:"swing100" unit:"0.01 percent"` // swing in hundredths of a percent, 5000–7500 (50% to 75%)
+	Gate      int      `json:"gate" unit:"percent"`          // gate length, 10–100
+	Transpose int      `json:"transpose" unit:"semitones"`   // −24 to +24
 }
 
 func (SetPatternSettings) Kind() string { return "setpatternsettings" }
 
-// SetStep writes one step. Shared uses ToggleStep's JSON schema.
+// SetStep writes one step: a note, a drum hit, a tie or a rest. A note on a
+// chord step moves the whole chord. Shared uses ToggleStep's JSON schema.
+//
+// Example: {"kind":"setstep","entity":"step:riff/1","mode":"note","pitch":45,"accent":true,"slide":false,"ratchet":1,"chance":100}
 type SetStep struct {
-	Entity   EntityID `json:"entity"`
-	Mode     string   `json:"mode"`
-	Pitch    int      `json:"pitch"`
-	Accent   bool     `json:"accent"`
-	Slide    bool     `json:"slide"`
-	Ratchet  int      `json:"ratchet"`
-	Chance   int      `json:"chance"`
-	Velocity string   `json:"velocity,omitempty"`
-	Shared   string   `json:"shared,omitempty"`
+	Entity   EntityID `json:"entity"`                                              // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
+	Mode     string   `json:"mode" values:"note,hit,tie,rest"`                     // hit needs a drum pattern; tie and note need a note pattern
+	Pitch    int      `json:"pitch"`                                               // MIDI pitch 0–127 for mode note
+	Accent   bool     `json:"accent"`                                              // accent a note
+	Slide    bool     `json:"slide"`                                               // slide from a note into the next one
+	Ratchet  int      `json:"ratchet"`                                             // repeats within the step; 1 plays once
+	Chance   int      `json:"chance" unit:"percent"`                               // probability the step plays, 1–100
+	Velocity string   `json:"velocity,omitempty" values:"x,X,1,2,3,4,5,6,7,8,9"`   // drum hit spelling for mode hit: x, accented X, or a level 1–9
+	Shared   string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 }
 
 func (SetStep) Kind() string { return "setstep" }
 
+// DuplicatePattern copies a pattern under a new name. With a track, the copy
+// is written for that track's instrument, and the edit is refused unless the
+// copy renders the same on it.
+//
+// Example: {"kind":"duplicatepattern","entity":"pattern:riff","name":"riff-b"}
 type DuplicatePattern struct {
-	Entity EntityID `json:"entity"`
-	Name   string   `json:"name"`
-	Track  string   `json:"track,omitempty"`
+	Entity EntityID `json:"entity"`          // the pattern to copy, as pattern:<name>
+	Name   string   `json:"name"`            // the new pattern's name: lowercase letters, digits, _ and -, at most 64 bytes
+	Track  string   `json:"track,omitempty"` // the track the copy is for
 }
 
 func (DuplicatePattern) Kind() string { return "duplicatepattern" }
 
-// SetRange edits the selected source and, for copy, its destination. Shared
-// uses ToggleStep's JSON schema; detach expands only uses touched by the edit.
+// SetRange clears, copies, reverses, rotates or transposes a range of steps
+// in one pattern lane. It edits the selected source and, for copy, its
+// destination. Shared uses ToggleStep's JSON schema; detach expands only uses
+// touched by the edit.
+//
+// Example: {"kind":"setrange","entity":"pattern:riff","operation":"transpose","first":0,"last":3,"amount":12}
 type SetRange struct {
-	Entity    EntityID `json:"entity"`
-	Lane      string   `json:"lane,omitempty"`
-	Operation string   `json:"operation"`
-	First     int      `json:"first"`
-	Last      int      `json:"last"`
-	Target    int      `json:"target,omitempty"`
-	Amount    int      `json:"amount,omitempty"`
-	Shared    string   `json:"shared,omitempty"`
+	Entity    EntityID `json:"entity"`                                                 // the pattern, as pattern:<name>
+	Lane      string   `json:"lane,omitempty"`                                         // the drum lane; empty for a note pattern
+	Operation string   `json:"operation" values:"clear,copy,reverse,rotate,transpose"` // what to do with the steps
+	First     int      `json:"first"`                                                  // first step index, from 0
+	Last      int      `json:"last"`                                                   // last step index, inclusive
+	Target    int      `json:"target,omitempty"`                                       // first step index of the copy, for copy
+	Amount    int      `json:"amount,omitempty"`                                       // steps to rotate, or semitones to transpose, −127 to +127
+	Shared    string   `json:"shared,omitempty" values:"definition,detach,pattern"`    // as for togglestep
 }
 
 func (SetRange) Kind() string { return "setrange" }
 
-// ResizePattern changes a pattern's size. Shared uses ToggleStep's JSON
-// schema; resizing touches every use, so detach expands them all.
+// ResizePattern changes a pattern's length in steps, adding rests at the end
+// or removing the last steps. Shared uses ToggleStep's JSON schema; resizing
+// touches every use, so detach expands them all.
+//
+// Example: {"kind":"resizepattern","entity":"pattern:riff","length":16}
 type ResizePattern struct {
-	Entity EntityID `json:"entity"`
-	Length int      `json:"length"`
-	Shared string   `json:"shared,omitempty"`
+	Entity EntityID `json:"entity"`                                              // the pattern, as pattern:<name>
+	Length int      `json:"length"`                                              // the new number of steps
+	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 }
 
 func (ResizePattern) Kind() string { return "resizepattern" }
 
+// BindScene makes a scene play a pattern on a track, replacing what the
+// scene played there before.
+//
+// Example: {"kind":"bindscene","scene":"break","track":"drums","pattern":"beat"}
 type BindScene struct {
-	Scene   string `json:"scene"`
-	Track   string `json:"track"`
-	Pattern string `json:"pattern"`
+	Scene   string `json:"scene"`   // the scene's name
+	Track   string `json:"track"`   // the track's name
+	Pattern string `json:"pattern"` // the pattern's name
 }
 
 func (BindScene) Kind() string { return "bindscene" }

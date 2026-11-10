@@ -12,16 +12,22 @@ import (
 
 // SetArrangementTempo adds a bar-boundary tempo step. OldAt selects an
 // existing step to change or move; moving onto another step is refused.
+//
+// Example: {"kind":"setarrangementtempo","at":"@4.1.1","value":"132"}
 type SetArrangementTempo struct {
-	OldAt string `json:"oldat,omitempty"`
-	At    string `json:"at"`
-	Value string `json:"value"`
+	OldAt string `json:"oldat,omitempty"` // the position of the step to change or move, such as "@3.1.1"
+	At    string `json:"at"`              // the step's position, at the start of a bar, such as "@4.1.1"
+	Value string `json:"value"`           // beats per minute, 20–300, such as "132" or "96.5"
 }
 
 func (SetArrangementTempo) Kind() string { return "setarrangementtempo" }
 
+// RemoveArrangementTempo removes the tempo step at one position of the
+// arrange block.
+//
+// Example: {"kind":"removearrangementtempo","at":"@3.1.1"}
 type RemoveArrangementTempo struct {
-	At string `json:"at"`
+	At string `json:"at"` // the step's position, such as "@3.1.1"
 }
 
 func (RemoveArrangementTempo) Kind() string { return "removearrangementtempo" }

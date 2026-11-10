@@ -14,10 +14,10 @@ import (
 // PrintAsset is the audio file the host wrote for a sampler print. The file's
 // bytes are the host's; the intent only declares the asset and its clip.
 type PrintAsset struct {
-	Path   string `json:"path"`
-	SHA256 string `json:"sha256"`
-	Frames int64  `json:"frames"`
-	RateHz int    `json:"ratehz"`
+	Path   string `json:"path"`                 // the stereo WAV file, relative to the project folder
+	SHA256 string `json:"sha256"`               // the file's SHA-256, 64 lowercase hex digits
+	Frames int64  `json:"frames" unit:"frames"` // the file's length
+	RateHz int    `json:"ratehz" unit:"Hz"`     // the file's sample rate
 }
 
 // PlaceSamplerPrint declares a printed sampler performance as an asset and a
@@ -25,11 +25,13 @@ type PrintAsset struct {
 // named Name+"-clip", the asset Name+"-audio", and the placement Name. A track
 // that does not exist yet is created as an audio track. The placement is as
 // long as the print, rounded up to a tick, at the project tempo.
+//
+// Example: {"kind":"placesamplerprint","name":"print","track":"vox","at":"@1.1.1","asset":{"path":"audio/print.wav","sha256":"1eec39f9a101d87239cf2a787086c9000256ee2594d9f3051c3c99cf65d543f1","frames":4800,"ratehz":48000}}
 type PlaceSamplerPrint struct {
-	Name  string     `json:"name"`
-	Track string     `json:"track"`
-	At    string     `json:"at"`
-	Asset PrintAsset `json:"asset"`
+	Name  string     `json:"name"`  // the placement's name; the clip and asset names derive from it
+	Track string     `json:"track"` // the audio track, created when missing
+	At    string     `json:"at"`    // the placement's start, such as "@1.1.1"
+	Asset PrintAsset `json:"asset"` // the printed file
 }
 
 func (PlaceSamplerPrint) Kind() string { return "placesamplerprint" }

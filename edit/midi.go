@@ -11,12 +11,15 @@ import (
 
 // SetMIDIMapping writes one learned input to the score's logical port. Device
 // names remain local. Relearning the same input replaces its previous target.
+// The port must already be declared in the score's midi block.
+//
+// Example: {"kind":"setmidimapping","port":"pads","message":"cc","channel":1,"number":74,"target":"bass.cutoff"}
 type SetMIDIMapping struct {
-	Port    string `json:"port"`
-	Message string `json:"message"`
-	Channel int    `json:"channel"`
-	Number  int    `json:"number"`
-	Target  string `json:"target"`
+	Port    string `json:"port"`                     // the logical port's name
+	Message string `json:"message" values:"cc,note"` // a controller or a note
+	Channel int    `json:"channel"`                  // MIDI channel 1–16
+	Number  int    `json:"number"`                   // the controller or note number, 0–127
+	Target  string `json:"target"`                   // for cc, a parameter path such as bass.cutoff; for note, play, stop, launch <scene>, stop-track <track> or launch-slot <track> <pattern>
 }
 
 func (SetMIDIMapping) Kind() string { return "setmidimapping" }

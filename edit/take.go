@@ -9,24 +9,29 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// TakeAsset is the recorded audio file of a take.
 type TakeAsset struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	SHA256   string `json:"sha256"`
-	Frames   int64  `json:"frames"`
-	RateHz   int    `json:"ratehz"`
-	Channels int    `json:"channels"`
+	Name     string `json:"name"`                 // the asset's name, the same as the take's id
+	Path     string `json:"path"`                 // the WAV file, relative to the project folder
+	SHA256   string `json:"sha256"`               // the file's SHA-256, 64 lowercase hex digits
+	Frames   int64  `json:"frames" unit:"frames"` // the file's length
+	RateHz   int    `json:"ratehz" unit:"Hz"`     // the file's sample rate
+	Channels int    `json:"channels"`             // 1 or 2
 }
 
-// SelectTake retains assets and clips and updates only the selected binding.
+// SelectTake makes a scene play one recorded take on an audio track. It
+// declares the take's asset and clip when they are new, keeps the assets and
+// clips of other takes, and updates only the selected binding.
+//
+// Example: {"kind":"selecttake","id":"take-1","track":"vox","scene":"main","rate":48000,"channels":1,"asset":{"name":"take-1","path":"audio/example.wav","sha256":"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee","frames":4800,"ratehz":48000,"channels":1},"startframe":0}
 type SelectTake struct {
-	ID         string    `json:"id"`
-	Track      string    `json:"track"`
-	Scene      string    `json:"scene"`
-	Rate       int       `json:"rate"`
-	Channels   int       `json:"channels"`
-	Asset      TakeAsset `json:"asset"`
-	StartFrame int64     `json:"startframe"`
+	ID         string    `json:"id"`                       // the take's name; its clip is <id>-clip
+	Track      string    `json:"track"`                    // an existing audio track
+	Scene      string    `json:"scene"`                    // the scene that plays the take
+	Rate       int       `json:"rate" unit:"Hz"`           // the recording's sample rate
+	Channels   int       `json:"channels"`                 // 1 or 2
+	Asset      TakeAsset `json:"asset"`                    // the recorded file
+	StartFrame int64     `json:"startframe" unit:"frames"` // where the clip starts in the file
 }
 
 func (SelectTake) Kind() string { return "selecttake" }

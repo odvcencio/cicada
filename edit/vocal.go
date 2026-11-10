@@ -54,10 +54,12 @@ const VocalCompPrefix = "// cicada-vocal-comp "
 // change; every other byte stays. A song of scenes gains an arrange block of
 // ordinary placements so one vocal can span its blocks. The host prints the
 // audio (Asset names the file it wrote) and chooses the segments.
+//
+// Example: {"kind":"placevocalcomp","comp":{"track":"vox","tempoMilli":120000,"segments":[{"take":"take-1","startTick":0,"endTick":3840}],"asset":"comp"},"asset":{"path":"audio/example.wav","sha256":"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee","frames":4800,"ratehz":48000}}
 type PlaceVocalComp struct {
-	Comp     VocalComp      `json:"comp"`
-	Asset    PrintAsset     `json:"asset"`
-	Previous *VocalPrevious `json:"previous,omitempty"`
+	Comp     VocalComp      `json:"comp"`               // which take plays where
+	Asset    PrintAsset     `json:"asset"`              // the printed comp file
+	Previous *VocalPrevious `json:"previous,omitempty"` // the print this comp replaces
 }
 
 // VocalPrevious names the print this comp replaces.

@@ -7,8 +7,10 @@ import (
 )
 
 // ReplaceText saves a complete buffer verbatim, after Apply validates it.
+//
+// Example: {"kind":"replacetext","source":"cicada 2\ntitle \"Replaced\"\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main*4 }\n"}
 type ReplaceText struct {
-	Source string `json:"source"`
+	Source string `json:"source"` // the whole new score text
 }
 
 func (ReplaceText) Kind() string { return "replacetext" }
@@ -16,10 +18,12 @@ func (ReplaceText) Kind() string { return "replacetext" }
 // ReplaceDeclaration replaces one declaration's syntax span. Declaration is
 // a CST node type, or "pattern" for any pattern type. Name is empty for
 // unnamed declarations such as title_decl and seed_decl.
+//
+// Example: {"kind":"replacedeclaration","declaration":"pattern","name":"riff","text":"pattern riff { a1 . a1 . e2 . g2 . }"}
 type ReplaceDeclaration struct {
-	Declaration string `json:"declaration"`
-	Name        string `json:"name,omitempty"`
-	Text        string `json:"text"`
+	Declaration string `json:"declaration"`    // the syntax node type, such as track_decl, scene_decl or title_decl, or pattern
+	Name        string `json:"name,omitempty"` // the declaration's name; empty for title_decl, tempo_decl, key_decl and seed_decl
+	Text        string `json:"text"`           // the declaration's new text
 }
 
 func (ReplaceDeclaration) Kind() string { return "replacedeclaration" }

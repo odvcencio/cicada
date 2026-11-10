@@ -1,0 +1,73 @@
+cicada 2
+title "Intent catalog"
+tempo 120
+key a minor
+seed 7
+
+asset vocal "audio/example.wav" {
+  sha256 = "528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee"
+  format = wav
+  frames = 4800
+  rate = 48000Hz
+  channels = 1
+  source = generated
+}
+clip vocal-a vocal { start = 0frames end = 4800frames }
+
+instrument glow {
+  voice poly {
+    let tone = mix(sine(pitch), saw(pitch), timbre)
+    out = tone * env(gate, 400ms) * velocity * (0.5 + pressure * 0.5)
+  }
+}
+
+fx room reverb {}
+
+track bass acid { cutoff = 620Hz }
+track drums drums {}
+track keys piano { send room = -12dB }
+track lead glow {}
+track vox audio { level = -6dB }
+
+lfo wobble { wave = sine rate = 1bars }
+
+phrase hook { 1 . 5 . }
+
+pattern riff { a1 . c2 . e2 . a1 . }
+pattern hooked { use hook use hook }
+pattern beat drums {
+  bd: x... x...
+  sd: .... x...
+}
+pattern chords notes { [a3 c4 e4] - - . [g3 b3 d4] - - . }
+pattern phrase performance length=3840ticks {
+  gesture-group breath {
+    gesture at=0ticks bend=0ct pressure=0.1 timbre=0.5;
+  }
+  note 57 at=0ticks length=480ticks velocity=90 group=breath {
+    gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
+  }
+  note 60 at=960ticks length=480ticks velocity=90;
+}
+
+automate bass.cutoff {
+  @1.1.1 620Hz
+  @3.1.1 1.2kHz smooth
+}
+
+midi {
+  port pads
+  pads ch 1 -> lead
+}
+
+scene main {
+  bass = riff
+  drums = beat
+  keys = chords
+  lead = phrase
+  vox = vocal-a
+  bass.reso = 0.5
+}
+scene break { bass = hooked }
+
+song { main*4 break*2 }

@@ -16,25 +16,30 @@ import (
 // (an `automate <path> { ... }` block). OldAt names the point being moved; it
 // is empty for a new point. Shape is linear, step, smooth, exponential or
 // curve and defaults to linear; Curve is the tension and only applies to curve.
+// A lane that does not exist yet is created.
+//
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"smooth"}
 type SetAutomationPoint struct {
-	Entity EntityID `json:"entity"`
-	OldAt  string   `json:"oldat,omitempty"`
-	At     string   `json:"at"`
-	Value  string   `json:"value"`
-	Shape  string   `json:"shape,omitempty"`
-	Curve  float64  `json:"curve,omitempty"`
+	Entity EntityID `json:"entity"`                                                        // the parameter, as param:<owner>.<field>
+	OldAt  string   `json:"oldat,omitempty"`                                               // the position of the point to move, such as "@3.1.1"
+	At     string   `json:"at"`                                                            // the point's position, such as "@4.1.1" (bar.beat.step)
+	Value  string   `json:"value"`                                                         // the value with its unit, such as "2kHz" or "-6dB"
+	Shape  string   `json:"shape,omitempty" values:"linear,step,smooth,exponential,curve"` // how the lane moves from this point to the next
+	Curve  float64  `json:"curve,omitempty"`                                               // tension −8 to 8, for shape curve
 }
 
 func (SetAutomationPoint) Kind() string { return "setautomationpoint" }
 
 // RemoveAutomationPoint removes the point at At (or at OldAt when given) and
 // removes the lane when it was the lane's last point.
+//
+// Example: {"kind":"removeautomationpoint","entity":"param:bass.cutoff","at":"@3.1.1"}
 type RemoveAutomationPoint struct {
-	Entity EntityID `json:"entity"`
-	OldAt  string   `json:"oldat,omitempty"`
-	At     string   `json:"at"`
-	Shape  string   `json:"shape,omitempty"`
-	Curve  float64  `json:"curve,omitempty"`
+	Entity EntityID `json:"entity"`          // the parameter, as param:<owner>.<field>
+	OldAt  string   `json:"oldat,omitempty"` // the point's position, when it differs from at
+	At     string   `json:"at"`              // the point's position, such as "@3.1.1"
+	Shape  string   `json:"shape,omitempty"` // ignored; kept so a removal can carry the point it removes
+	Curve  float64  `json:"curve,omitempty"` // ignored, as shape
 }
 
 func (RemoveAutomationPoint) Kind() string { return "removeautomationpoint" }

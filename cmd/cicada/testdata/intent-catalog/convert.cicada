@@ -1,0 +1,15 @@
+cicada 2
+title "Intent catalog conversion"
+tempo 120
+key a minor
+
+track bass acid { cutoff = 620Hz }
+track drums drums {}
+
+pattern riff { a1 . c2 . e2 . a1 . }
+pattern beat drums { bd: x... x... }
+
+scene main { bass = riff drums = beat }
+scene break { bass = riff }
+
+song { main*2 break*2 }

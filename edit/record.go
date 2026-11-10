@@ -10,10 +10,14 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// RecordTake commits all recorded patterns as one validated edit.
+// RecordTake commits all recorded patterns as one validated edit. Grid timing
+// writes the notes onto each pattern's steps; played timing writes a
+// performance that keeps the exact ticks.
+//
+// Example: {"kind":"recordtake","timing":"grid","recordings":[{"track":"bass","pattern":"riff","notes":[{"tick":0,"endtick":240,"note":45,"velocity":100},{"tick":480,"endtick":720,"note":52,"velocity":90}]}]}
 type RecordTake struct {
-	Timing     string      `json:"timing,omitempty"`
-	Recordings []Recording `json:"recordings"`
+	Timing     string      `json:"timing,omitempty" values:"grid,played"` // grid is the default
+	Recordings []Recording `json:"recordings"`                            // one recording per pattern
 }
 
 func (RecordTake) Kind() string { return "recordtake" }
@@ -69,11 +73,13 @@ func init() {
 	})
 }
 
+// TakeNote is one recorded note. Ticks count from the start of the take, 960
+// per beat.
 type TakeNote struct {
-	Tick        int64            `json:"tick"`
-	EndTick     int64            `json:"endtick"`
-	Note        int              `json:"note"`
-	Velocity    int              `json:"velocity"`
+	Tick        int64            `json:"tick" unit:"ticks"`    // the note's start
+	EndTick     int64            `json:"endtick" unit:"ticks"` // the note's end
+	Note        int              `json:"note"`                 // MIDI pitch 0–127
+	Velocity    int              `json:"velocity"`             // MIDI velocity 1–127
 	NoteID      uint16           `json:"noteid,omitempty"`
 	Channel     uint8            `json:"channel,omitempty"`
 	Group       uint16           `json:"group,omitempty"`
@@ -88,9 +94,10 @@ type TakeExpression struct {
 	VibratoDepthCents *float64 `json:"vibratodepthcents,omitempty"`
 }
 
+// Recording is the notes recorded for one pattern on one track.
 type Recording struct {
-	Track   string      `json:"track"`
-	Pattern string      `json:"pattern"`
+	Track   string      `json:"track"`   // the track that was recorded
+	Pattern string      `json:"pattern"` // the pattern the notes replace
 	Notes   []TakeNote  `json:"notes"`
 	Groups  []TakeGroup `json:"groups,omitempty"`
 }

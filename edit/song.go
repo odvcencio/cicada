@@ -10,42 +10,61 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// MoveSongEntry moves one entry of the song block to another position. Song
+// entry indexes count from 0 and belong to one revision of the score.
+//
+// Example: {"kind":"movesongentry","entity":"song:0","target":1}
 type MoveSongEntry struct {
-	Entity EntityID `json:"entity"`
-	Target int      `json:"target"`
+	Entity EntityID `json:"entity"` // the entry, as song:<index>
+	Target int      `json:"target"` // the index the entry moves to
 }
 
 func (MoveSongEntry) Kind() string { return "movesongentry" }
 
+// SetSongBars sets how many bars one song entry plays its scene.
+//
+// Example: {"kind":"setsongbars","entity":"song:0","bars":8}
 type SetSongBars struct {
-	Entity EntityID `json:"entity"`
-	Bars   int      `json:"bars"`
+	Entity EntityID `json:"entity"`           // the entry, as song:<index>
+	Bars   int      `json:"bars" unit:"bars"` // 1–999
 }
 
 func (SetSongBars) Kind() string { return "setsongbars" }
 
+// AppendSongEntry adds an entry at the end of the song block.
+//
+// Example: {"kind":"appendsongentry","scene":"break","bars":2}
 type AppendSongEntry struct {
-	Scene string `json:"scene"`
-	Bars  int    `json:"bars"`
+	Scene string `json:"scene"`            // an existing scene's name
+	Bars  int    `json:"bars" unit:"bars"` // 1–999
 }
 
 func (AppendSongEntry) Kind() string { return "appendsongentry" }
 
+// DuplicateSongEntry inserts a copy of one song entry right after it.
+//
+// Example: {"kind":"duplicatesongentry","entity":"song:1"}
 type DuplicateSongEntry struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity"` // the entry, as song:<index>
 }
 
 func (DuplicateSongEntry) Kind() string { return "duplicatesongentry" }
 
+// DeleteSongEntry removes one entry of the song block. The last entry stays.
+//
+// Example: {"kind":"deletesongentry","entity":"song:1"}
 type DeleteSongEntry struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity"` // the entry, as song:<index>
 }
 
 func (DeleteSongEntry) Kind() string { return "deletesongentry" }
 
+// SetSongScene changes the scene one song entry plays.
+//
+// Example: {"kind":"setsongscene","entity":"song:1","scene":"main"}
 type SetSongScene struct {
-	Entity EntityID `json:"entity"`
-	Scene  string   `json:"scene"`
+	Entity EntityID `json:"entity"` // the entry, as song:<index>
+	Scene  string   `json:"scene"`  // an existing scene's name
 }
 
 func (SetSongScene) Kind() string { return "setsongscene" }

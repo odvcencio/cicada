@@ -10,13 +10,15 @@ import (
 
 // CreatePattern creates a grid for a track's instrument. An optional
 // scene assignment is part of the same edit, validation, and Undo entry.
+//
+// Example: {"kind":"createpattern","name":"riff-2","track":"bass","steps":16,"scene":"break","starter":"arpeggio"}
 type CreatePattern struct {
-	Name    string                 `json:"name"`
-	Track   string                 `json:"track"`
-	Steps   int                    `json:"steps"`
-	Scene   string                 `json:"scene,omitempty"`
-	Starter string                 `json:"starter,omitempty"`
-	Machine *patternmachine.Recipe `json:"machine,omitempty"`
+	Name    string                 `json:"name"`                                                                    // the new pattern's name
+	Track   string                 `json:"track"`                                                                   // the track whose instrument the grid is for
+	Steps   int                    `json:"steps"`                                                                   // the number of steps, 1–64; a machine recipe needs 16 per bar
+	Scene   string                 `json:"scene,omitempty"`                                                         // a scene that plays the new pattern on the track
+	Starter string                 `json:"starter,omitempty" values:"empty,pulse,arpeggio,chords,backbeat,machine"` // what the grid starts with; chords needs a notes pattern and backbeat a drum track
+	Machine *patternmachine.Recipe `json:"machine,omitempty"`                                                       // a pattern-machine recipe, for starter machine
 }
 
 func (CreatePattern) Kind() string { return "createpattern" }

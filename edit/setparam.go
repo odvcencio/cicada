@@ -9,7 +9,10 @@ import (
 
 // SetParam sets or resets one parameter. Entity param:<track>.<field> names an
 // instrument parameter; mixer paths (level, pan, sends, inserts, buses, effect
-// settings) go to the mixer writer.
+// settings) go to the mixer writer. cicada params lists the parameters with
+// their ranges and units, and cicada explain describes one.
+//
+// Example: {"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"}
 type SetParam struct {
 	Entity         EntityID        `json:"entity"`                   // param:<owner>.<field>
 	Value          json.RawMessage `json:"value,omitempty"`          // number or unit literal string; omitted resets to the default

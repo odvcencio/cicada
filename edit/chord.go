@@ -9,11 +9,14 @@ import (
 
 // SetChord places a voicing and its hold steps as one reversible edit. Hold
 // includes the onset. Shortening an existing hold clears its remaining ties.
+// Shared uses ToggleStep's JSON schema.
+//
+// Example: {"kind":"setchord","entity":"step:chords/0","notes":[57,60,64,67],"hold":4}
 type SetChord struct {
-	Entity EntityID `json:"entity"`
-	Notes  []int    `json:"notes"`
-	Hold   int      `json:"hold"`
-	Shared string   `json:"shared,omitempty"`
+	Entity EntityID `json:"entity"`                                              // the first step, as step:<pattern>/<index>, in a notes pattern
+	Notes  []int    `json:"notes"`                                               // MIDI pitches of the voicing, 2 to 4 notes
+	Hold   int      `json:"hold" unit:"steps"`                                   // steps the chord sounds, including the first
+	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
 }
 
 func (SetChord) Kind() string { return "setchord" }

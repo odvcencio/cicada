@@ -8,11 +8,13 @@ import (
 
 // ShapePerformancePitch changes note pitches while retaining their articulation.
 // Pivot is a stored MIDI pitch, before the pattern's transpose setting.
+//
+// Example: {"kind":"shapeperformancepitch","entity":"pattern:phrase","operation":"transpose","semitones":12}
 type ShapePerformancePitch struct {
-	Entity    EntityID `json:"entity"`
-	Operation string   `json:"operation"`
-	Semitones int      `json:"semitones,omitempty"`
-	Pivot     int      `json:"pivot,omitempty"`
+	Entity    EntityID `json:"entity"`                               // the performance pattern, as pattern:<name>
+	Operation string   `json:"operation" values:"transpose,reflect"` // shift every note, or mirror the notes around the pivot
+	Semitones int      `json:"semitones,omitempty" unit:"semitones"` // the shift for transpose, −48 to +48 and not 0
+	Pivot     int      `json:"pivot,omitempty"`                      // the MIDI pitch to mirror around, for reflect
 }
 
 func (ShapePerformancePitch) Kind() string { return "shapeperformancepitch" }
