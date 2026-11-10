@@ -127,6 +127,7 @@ the selected Live instrument. SysEx is not supported.
 | Command-D | Duplicate the selected Arrange placement |
 | Backspace / Delete | Remove the selected Arrange placement |
 | Command-L | Loop the selected placement in the song; press again to stop |
+| Command-U | Quantize every note of the pattern in the Clip tab |
 | Command-Q | Quit and stop the audio engine |
 
 **Shortcuts** in the toolbar lists the available commands. Unsupported editing

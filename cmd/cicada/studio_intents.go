@@ -208,6 +208,32 @@ func (s *studio) mixerCaptureGuard() error {
 
 var errAutomationDuringCapture = errors.New("finish the recording before editing automation")
 
+// errNotesDuringCapture refuses note batches while a take is captured. The
+// service cannot tell which pattern a capture will write, so any running
+// capture blocks them, as it blocks mixer and automation edits.
+var errNotesDuringCapture = errors.New("Finish the take before editing notes.")
+
+func editsNotes(env edits.Envelope) bool {
+	for _, intent := range env.Intents {
+		if _, ok := intent.(*edits.EditNotes); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// intentErrorResponse is the 422 body for a refused intent. A note refusal
+// also names its note as data: code CICADA-NOTES, the reason and the note's
+// start, step, pitch or lane.
+func intentErrorResponse(err error) map[string]any {
+	response := map[string]any{"error": err.Error()}
+	var refusal *edits.NoteError
+	if errors.As(err, &refusal) {
+		response["code"], response["reason"], response["note"] = "CICADA-NOTES", refusal.Code, refusal.Note()
+	}
+	return response
+}
+
 // automationCaptureGuard refuses automation point edits while a take is open,
 // with the text /api/automation always used. The caller holds s.mu.
 func (s *studio) automationCaptureGuard() error {
@@ -260,7 +286,7 @@ func sourceReceiptRequired(env edits.Envelope) bool {
 	for _, intent := range env.Intents {
 		switch intent.(type) {
 		case *edits.ToggleStep, *edits.SetPitch, *edits.ToggleModifier, *edits.CycleStep,
-			*edits.SetDrumVelocity, *edits.SetStep, *edits.SetChord, *edits.SetPatternSettings,
+			*edits.SetDrumVelocity, *edits.SetStep, *edits.SetChord, *edits.SetPatternSettings, *edits.EditNotes,
 			*edits.SetRange, *edits.ResizePattern, *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
 			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
 			*edits.ScalePerformance, *edits.ShapePerformancePitch,
@@ -303,6 +329,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	if writer == edits.ParamWriterMixer && s.captureID != "" {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": errMixerDuringCapture.Error()})
+		return
+	}
+	if s.captureID != "" && editsNotes(env) {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": errNotesDuringCapture.Error()})
 		return
 	}
 	if err := studioRecoveryConflict(s.path); err != nil {
@@ -359,7 +389,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if err != nil {
-		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		studioJSON(w, http.StatusUnprocessableEntity, intentErrorResponse(err))
 		return
 	}
 	if !env.DryRun {
