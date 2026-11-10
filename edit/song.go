@@ -101,10 +101,10 @@ func editSong(ctx *Context, intent Intent) error {
 	}
 	if action != "append" {
 		if _, err := ParseEntityID(string(entity)); err != nil {
-			return err
+			return entityError(err)
 		}
 		if entity.Kind() != KindSong {
-			return fmt.Errorf("song edit needs a song entity, got %q", entity)
+			return entityError(fmt.Errorf("song edit needs a song entity, got %q", entity))
 		}
 		index, _ = strconv.Atoi(entity.Name())
 	}

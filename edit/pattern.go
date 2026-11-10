@@ -113,10 +113,10 @@ func init() {
 
 func patternTarget(entity EntityID) (string, error) {
 	if _, err := ParseEntityID(string(entity)); err != nil {
-		return "", err
+		return "", entityError(err)
 	}
 	if entity.Kind() != KindPattern {
-		return "", fmt.Errorf("pattern edit needs a pattern entity, got %q", entity)
+		return "", entityError(fmt.Errorf("pattern edit needs a pattern entity, got %q", entity))
 	}
 	return entity.Name(), nil
 }
@@ -241,7 +241,7 @@ func patternStep(ctx *Context, id string, index int) (*Step, error) {
 			return p.Data[index], nil
 		}
 	}
-	return nil, fmt.Errorf("unknown pattern %q", id)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 func patternSettingsSource(ctx *Context, id string, settings *SetPatternSettings) ([]byte, error) {
@@ -407,7 +407,7 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 		}
 		return ReplaceSpan(updated, ctx.Options.Path, Span{start, start + len(token.Text), text, ctx.Options.Path})
 	}
-	return nil, fmt.Errorf("unknown pattern %q", id)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 var patternName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,63}$`)
@@ -623,7 +623,7 @@ func patternRangeSource(ctx *Context, id, lane string, edit *SetRange) ([]byte, 
 		}
 		return PatchSpans(local, ctx.Options.Path, edits)
 	}
-	return nil, fmt.Errorf("unknown pattern %q", id)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 func resizePatternSource(ctx *Context, id string, length int, shared string) ([]byte, error) {
@@ -696,7 +696,7 @@ func resizePatternSource(ctx *Context, id string, length int, shared string) ([]
 		}
 		return PatchSpans(local, ctx.Options.Path, edits)
 	}
-	return nil, fmt.Errorf("unknown pattern %q", id)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte, error) {

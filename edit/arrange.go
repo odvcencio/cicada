@@ -75,10 +75,10 @@ func init() {
 // resolvePlacement resolves a placement entity against the working source.
 func resolvePlacement(ctx *Context, id EntityID) (Placement, error) {
 	if _, err := ParseEntityID(string(id)); err != nil {
-		return Placement{}, err
+		return Placement{}, entityError(err)
 	}
 	if id.Kind() != KindPlacement {
-		return Placement{}, fmt.Errorf("clip edits need a placement entity, got %q", id)
+		return Placement{}, entityError(fmt.Errorf("clip edits need a placement entity, got %q", id))
 	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {

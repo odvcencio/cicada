@@ -123,10 +123,11 @@ func init() {
 
 func stepTarget(id EntityID) (pattern, lane string, index int, err error) {
 	if _, err = ParseEntityID(string(id)); err != nil {
+		err = entityError(err)
 		return
 	}
 	if id.Kind() != KindStep {
-		err = fmt.Errorf("grid edit needs a step entity, got %q", id)
+		err = entityError(fmt.Errorf("grid edit needs a step entity, got %q", id))
 		return
 	}
 	parts := id.segments()
@@ -247,7 +248,7 @@ func toggledSource(ctx *Context, patternID, laneID string, index int) ([]byte, e
 		updated = append(updated, source[end:]...)
 		return updated, nil
 	}
-	return nil, fmt.Errorf("unknown pattern %q", patternID)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", patternID))
 }
 
 var sourcePitchNames = [...]string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}
@@ -317,7 +318,7 @@ func pitchedSource(ctx *Context, patternID, laneID string, index, pitch int) ([]
 		updated = append(updated, source[end:]...)
 		return updated, nil
 	}
-	return nil, fmt.Errorf("unknown pattern %q", patternID)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", patternID))
 }
 
 // toggledChordPitch retains untouched source spellings and spacing, rather than
@@ -431,7 +432,7 @@ func toggledModifierSource(ctx *Context, patternID, laneID string, index int, mo
 		updated = append(updated, source[end:]...)
 		return updated, nil
 	}
-	return nil, fmt.Errorf("unknown pattern %q", patternID)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", patternID))
 }
 
 // cycledStepSource writes a musician-facing preset into the authored note.
@@ -514,7 +515,7 @@ func cycledStepSource(ctx *Context, patternID, laneID string, index int, kind st
 		updated = append(updated, source[end:]...)
 		return updated, nil
 	}
-	return nil, fmt.Errorf("unknown pattern %q", patternID)
+	return nil, entityError(fmt.Errorf("unknown pattern %q", patternID))
 }
 
 func drumVelocitySource(ctx *Context, patternID, laneID string, index, velocity int) ([]byte, error) {

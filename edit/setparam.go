@@ -29,7 +29,7 @@ func init() {
 func setParam(ctx *Context, intent Intent) error {
 	in := intent.(*SetParam)
 	if in.Entity.Kind() != KindParam {
-		return fmt.Errorf("setparam needs a param entity, got %q", in.Entity)
+		return entityError(fmt.Errorf("setparam needs a param entity, got %q", in.Entity))
 	}
 	if ctx.Options.ParamWriter == ParamWriterMixer {
 		return setMixerParam(ctx, in.Entity.Name(), in.Value, in.ConfirmUpgrade)

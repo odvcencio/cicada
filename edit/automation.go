@@ -72,10 +72,10 @@ func editAutomationPoint(ctx *Context, intent Intent) error {
 		}
 	}
 	if _, err := ParseEntityID(string(entity)); err != nil {
-		return err
+		return entityError(err)
 	}
 	if entity.Kind() != KindParam {
-		return fmt.Errorf("automation points need a param entity, got %q", entity)
+		return entityError(fmt.Errorf("automation points need a param entity, got %q", entity))
 	}
 	updated, err := automationPointSource(ctx, entity.Name(), point, remove)
 	if err != nil {

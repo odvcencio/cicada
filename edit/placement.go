@@ -111,7 +111,7 @@ func init() {
 // reaches the "unknown arrangement region" check, as the route always did.
 func arrangementEntityName(id EntityID, kind string) (string, error) {
 	if id.Kind() != kind {
-		return "", fmt.Errorf("%s edits need a %s entity, got %q", kind, kind, id)
+		return "", entityError(fmt.Errorf("%s edits need a %s entity, got %q", kind, kind, id))
 	}
 	return id.Name(), nil
 }

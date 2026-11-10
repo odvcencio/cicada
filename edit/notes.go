@@ -215,7 +215,7 @@ func editNotes(ctx *Context, intent Intent) error {
 		}
 		return gridSourceEdit(editGridNotes)(ctx, intent)
 	}
-	return fmt.Errorf("unknown pattern %q", id)
+	return entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 // quantizeTick rounds tick to the nearest grid line, half up, as a recorded
@@ -583,7 +583,7 @@ func editGridNotes(ctx *Context, intent Intent) error {
 		}
 	}
 	if authored == nil || compiled == nil {
-		return fmt.Errorf("unknown pattern %q", id)
+		return entityError(fmt.Errorf("unknown pattern %q", id))
 	}
 	grid := gridNotes{in: in, source: local, path: ctx.Options.Path, authored: authored, compiled: compiled, step: compiled.StepTicksOrDefault()}
 	var spans []Span

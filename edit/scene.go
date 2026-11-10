@@ -48,10 +48,10 @@ func editSceneSetting(ctx *Context, intent Intent) error {
 		entity, remove = in.Entity, true
 	}
 	if _, err := ParseEntityID(string(entity)); err != nil {
-		return err
+		return entityError(err)
 	}
 	if entity.Kind() != KindSetting {
-		return fmt.Errorf("scene setting edit needs a setting entity, got %q", entity)
+		return entityError(fmt.Errorf("scene setting edit needs a setting entity, got %q", entity))
 	}
 	scene, path, _ := strings.Cut(entity.Name(), "/")
 	updated, err := sceneSettingSource(ctx, scene, path, value, remove)

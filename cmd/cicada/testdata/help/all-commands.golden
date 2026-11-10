@@ -20,17 +20,18 @@ Flags:
 Copies score sources, referenced audio, pinned libraries, and recovery versions into a ZIP with a SHA-256 file inventory. Existing output files are refused. Restore preserves the extracted originals and refuses conflicting recovery files.
 
 ### apply
-cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]
+cicada apply <score.cicada> <intents.json> [--write] [--json] [--author <name>] [--session <id>]
 
 apply typed edit intents to a score
 
 Flags:
   --write         write the validated edits (default: print a diff only)
+  --json          write the result as JSON (schema cicada.apply.v1): revisions, diff, each intent's label, or the error with the failing intent's index, kind and field
   --author <name>  commit author (default: envelope author or cli)
   --session <id>   commit session
   --help          show this help
 
-A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes.
+A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes. An error names the failing intent as intents[<index>].<field> (<kind>); run cicada intents for every kind and its fields.
 
 ### intents
 cicada intents [--json] [kind]

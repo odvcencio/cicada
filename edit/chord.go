@@ -67,7 +67,7 @@ func setChord(ctx *Context, intent Intent) error {
 		break
 	}
 	if !found {
-		return fmt.Errorf("unknown pattern %q", id)
+		return entityError(fmt.Errorf("unknown pattern %q", id))
 	}
 	local, err := resolvePatternRange(ctx, id, "", index, last, in.Shared)
 	if err != nil {
@@ -151,7 +151,7 @@ func setChord(ctx *Context, intent Intent) error {
 		ctx.SetLabel(fmt.Sprintf("Pattern · %s step %d chord · %d steps", id, index+1, in.Hold))
 		return nil
 	}
-	return fmt.Errorf("unknown pattern %q", id)
+	return entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 // Preserve authored pitch spans and annotations when a chord keeps its size

@@ -38,11 +38,11 @@ func decodeIntent(raw json.RawMessage) (Intent, error) {
 	}
 	var kind string
 	if err := json.Unmarshal(fields["kind"], &kind); err != nil || kind == "" {
-		return nil, fmt.Errorf("intent needs a kind")
+		return nil, &FieldError{Field: "kind", Err: fmt.Errorf("intent needs a kind")}
 	}
 	make, ok := registry[kind]
 	if !ok {
-		return nil, fmt.Errorf("unknown intent kind %q", kind)
+		return nil, &FieldError{Field: "kind", Err: fmt.Errorf("unknown intent kind %q", kind)}
 	}
 	delete(fields, "kind")
 	body, _ := json.Marshal(fields)
@@ -50,7 +50,7 @@ func decodeIntent(raw json.RawMessage) (Intent, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(intent); err != nil {
-		return nil, fmt.Errorf("%s: %w", kind, err)
+		return nil, &FieldError{Field: decodeField(err), Err: fmt.Errorf("%s: %w", kind, err)}
 	}
 	return intent, nil
 }
