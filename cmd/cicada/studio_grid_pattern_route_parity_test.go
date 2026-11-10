@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/editlog"
 )
 
@@ -333,6 +334,7 @@ func TestGridPatternRoutesCommitPublicIntents(t *testing.T) {
 		{"/api/pattern", "setstep", "pattern", studioEdit{Action: "step", Pattern: "pulse", Step: 1, NoteEdit: &studioStepEdit{Mode: "note", Pitch: 62, Ratchet: 1, Chance: 100}}},
 		{"/api/pattern", "setrange", "pattern", studioEdit{Action: "range", Pattern: "pulse", Range: &studioPatternRange{Operation: "reverse", Last: 3}}},
 		{"/api/pattern", "resizepattern", "pattern", studioEdit{Action: "resize", Pattern: "pulse", Length: 8}},
+		{"/api/pattern", "editnotes", "pattern", studioEdit{Action: "notes", Pattern: "beat", Notes: &edits.EditNotes{Op: "velocity", Notes: []edits.NoteRef{{At: 0, Lane: "bd", Length: 240, Velocity: 100}}, Velocity: 127}}},
 	} {
 		t.Run(c.route+"/"+c.kind, func(t *testing.T) {
 			handler, path := studioTestHandler(t)

@@ -538,25 +538,7 @@ func drumVelocitySource(ctx *Context, patternID, laneID string, index, velocity 
 			if token.Text == "." || token.Text == "-" || token.Text == "" || token.Text[0] != 'x' && token.Text[0] != 'X' {
 				return nil, fmt.Errorf("drum step %d needs a hit before setting velocity", index+1)
 			}
-			base := "x"
-			bestDistance := intAbs(capturedVelocity("x") - velocity)
-			for level := 1; level <= 9; level++ {
-				candidate := fmt.Sprintf("x%d", level)
-				distance := intAbs(level*14 - velocity)
-				if distance < bestDistance {
-					base, bestDistance = candidate, distance
-				}
-			}
-			distance := intAbs(127 - velocity)
-			if distance < bestDistance {
-				base = "X"
-			}
-			suffixAt := strings.IndexAny(token.Text[1:], "*?%")
-			suffix := ""
-			if suffixAt >= 0 {
-				suffix = token.Text[1+suffixAt:]
-			}
-			replacement := base + suffix
+			replacement := drumLevel(velocity) + drumSuffix(token.Text)
 			start, err := Offset(source, ctx.Options.Path, token.Position)
 			if err != nil {
 				return nil, err

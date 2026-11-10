@@ -31,6 +31,10 @@ func ownedSourceContext(ctx *Context, path, id string) (*Context, []byte, error)
 	working.Options.Path = path
 	if path != ctx.Options.Path {
 		working.Options.Compiler = ownedSourceCompiler{compiler: ctx.Options.Compiler, entry: bytes.Clone(ctx.Source), path: path, files: ctx.fileOverrides()}
+	} else {
+		// The entry file owns the pattern: same compiler, source and files, so
+		// a plan already compiled for them still holds.
+		working.plan = ctx.plan
 	}
 	working.parseProject = func(source []byte, overrides map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
 		project := *ctx

@@ -364,6 +364,46 @@ Score edit instead of being discarded.
 
 ![GoSX Studio's piano roll and step inspector.](screenshots/studio-piano-roll-1440.png)
 
+### Quantize
+
+**Quantize** in the Clip tab moves every note of the pattern to the nearest
+line of the chosen grid and keeps each note's length and velocity, as a
+recorded take is snapped. Choose the grid, then select **Quantize**, or press
+**Ctrl+U** (**Cmd+U** on Mac) while the Clip tab is on screen. In a narrow
+window, open the **Edit** region first; elsewhere the shortcut does nothing.
+
+- A played performance offers Bar, Beat, 1/8, 1/8T, 1/16 (the default), 1/16T
+  and 1/32, each shorter than the loop, and a **Strength** from 1 to 100%: at
+  50% each note moves half way to its grid line. A note that rounds to the
+  loop end starts the loop.
+- A step pattern or drum lanes offer Beat and Bar when they are coarser than
+  the pattern's step and shorter than the pattern. Each note moves with its
+  hold, accent, chance, ratchet, slide and velocity. Quantize never turns a
+  step pattern into a performance.
+- Notes that land on one step join a chord only when they have the same
+  length, accent, chance and velocity, the chord stays at four pitches or
+  fewer, and none of them slides or ratchets. Otherwise nothing changes, and
+  the message names the note and what it would lose, for example
+  `step 2, e4: after quantize, it would join c4 in a chord on step 1 and lose
+  its 50% chance`.
+- The velocity row moves with each note. Expression rows (`bend:`,
+  `vibrato:`, `pressure:` and `timbre:`) stay on their steps, because they
+  describe the step rather than the note.
+- A hold (`-`) after a rest is silent. When a note lands just before one,
+  Quantize writes a rest there, so the note keeps its length and the hold
+  stays silent.
+- When the result would not fit, nothing changes and the message names the
+  note and the reason: two notes of one pitch would overlap, a note would end
+  past the loop or the pattern, two selected notes would land on one pitch or
+  one drum cell, or an acid step would need two pitches. Choose a finer grid,
+  or move the notes apart first.
+- Notes already on the grid report **Already on the grid.** and add nothing to
+  the history.
+
+Each Quantize is one source edit with one Undo entry, however many notes move.
+Other programs can send the same batch edits; see
+[Note batches](editors.md#note-batches-editnotes).
+
 ## Phrase generation
 
 **Generate** creates deterministic bass phrases from a 64-bit seed, key,

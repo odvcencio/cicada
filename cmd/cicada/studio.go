@@ -542,6 +542,7 @@ type studioEdit struct {
 	PerformancePitch      *edits.ShapePerformancePitch  `json:"performancePitch,omitempty"`
 	NoteEdit              *studioStepEdit               `json:"noteEdit,omitempty"`
 	Chord                 *edits.SetChord               `json:"chord,omitempty"`
+	Notes                 *edits.EditNotes              `json:"notes,omitempty"`
 	NewName               string                        `json:"newName,omitempty"`
 	Starter               string                        `json:"starter,omitempty"`
 	Machine               *patternmachine.Recipe        `json:"machine,omitempty"`

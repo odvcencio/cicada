@@ -703,6 +703,9 @@ jobs:
             build/studio-shell-server.log
             build/studio-mixer-strips-report.txt
             build/studio-mixer-strips-server.log
+            build/studio-notes-report.txt
+            build/studio-notes-server.log
+            build/studio-notes-proof/
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/

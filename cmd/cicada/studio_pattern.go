@@ -168,12 +168,24 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		}
 	case "bind":
 		intent = &edits.BindScene{Scene: edit.Scene, Track: edit.Track, Pattern: edit.Pattern}
+	case "notes":
+		if edit.Notes == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a note edit is required"})
+			return
+		}
+		// One batch is one intent: one compile, one write, one history entry.
+		in := *edit.Notes
+		in.Entity, in.Shared = entity, "pattern"
+		intent = &in
 	default:
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown pattern action"})
 		return
 	}
 	env.Intents = []edits.Intent{intent}
-	edit.Label = studioEditLabel(edit)
+	if edit.Action != "notes" {
+		edit.Label = studioEditLabel(edit)
+	}
+	// A note batch is labeled by its intent, which counts the notes it changed.
 	s.applyIntents(w, edit, env, edits.ParamWriterAuto, nil)
 }
 

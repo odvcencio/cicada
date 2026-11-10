@@ -59,7 +59,13 @@ func shellCommands() []command.Command {
 		{ID: "grid.snap", Title: "Snap to grid", Group: "Tools", Keys: []string{"Mod+4"}, Reserved: true},
 		{ID: "arrange.consolidate", Title: "Consolidate", Group: "Arrange", Keys: []string{"Mod+J"}, Reserved: true},
 		{ID: "arrange.group", Title: "Group", Group: "Arrange", Keys: []string{"Mod+G"}, Reserved: true},
-		{ID: "notes.quantize", Title: "Quantize notes", Group: "Arrange", Keys: []string{"Mod+U"}, Reserved: true},
+		// Quantize submits the Clip tab's form, which acts on the whole pattern,
+		// only while that tab is on screen ($notesVisible, from the engine the
+		// form mounts). Otherwise the reserved mirror consumes the chord. The
+		// workbench runs the first available match, so the live command must
+		// stay above its mirror (TestQuantizeCommandPrecedesItsMirror).
+		{ID: "notes.quantize", Title: "Quantize notes", Group: "Arrange", Keys: []string{"Mod+U"}, When: map[string]any{"$dock": "clip", "$notesVisible": true}, Action: command.Action{Submit: "#notes-quantize button[type=submit]"}},
+		{ID: "notes.quantize.elsewhere", Title: "Quantize notes", Group: "Arrange", Keys: []string{"Mod+U"}, Reserved: true},
 	}
 	// Arrow keys move the selection only while a grid cell or clip is selected;
 	// otherwise they keep scrolling and focus movement. The Clip view (S4) sets
@@ -82,7 +88,8 @@ func shellCommands() []command.Command {
 	return cmds
 }
 
-// shellToggleMirrors names the second command of each toggle pair, and the
-// keyless pane toggles behind the top bar's Library and Code buttons. The
-// shortcuts dialog lists a pair once and leaves the pane toggles out.
-var shellToggleMirrors = map[string]bool{"tool.select": true, "layout.library.show": true, "layout.library.hide": true, "layout.code.show": true, "layout.code.hide": true}
+// shellToggleMirrors names the second command of each toggle pair, the
+// reserved mirror of a guarded chord, and the keyless pane toggles behind the
+// top bar's Library and Code buttons. The shortcuts dialog lists a pair once
+// and leaves the pane toggles out.
+var shellToggleMirrors = map[string]bool{"tool.select": true, "layout.library.show": true, "layout.library.hide": true, "layout.code.show": true, "layout.code.hide": true, "notes.quantize.elsewhere": true}
