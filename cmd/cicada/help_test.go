@@ -2,9 +2,15 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -96,5 +102,127 @@ func TestUnknownCommandHelpIsConcise(t *testing.T) {
 	}
 	if got, want := stderr.String(), "cicada: unknown command \"bogus\"\nrun cicada help\n"; got != want {
 		t.Fatalf("unknown command output:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// dispatchedCommands reads the command names main.go dispatches on: every
+// string compared with os.Args[1] or with the command variable.
+func dispatchedCommands(t *testing.T) map[string]bool {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		binary, ok := node.(*ast.BinaryExpr)
+		if !ok || binary.Op != token.EQL && binary.Op != token.NEQ {
+			return true
+		}
+		literal, ok := binary.Y.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+		var operand bytes.Buffer
+		if err := printer.Fprint(&operand, token.NewFileSet(), binary.X); err != nil {
+			t.Fatal(err)
+		}
+		if operand.String() == "os.Args[1]" || operand.String() == "command" {
+			name, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commands[name] = true
+		}
+		return true
+	})
+	if len(commands) < 30 {
+		t.Fatalf("found only %d dispatched commands in main.go; has the dispatch changed shape?", len(commands))
+	}
+	return commands
+}
+
+// TestOverviewListsEveryCommand fails when main.go dispatches a command that
+// the overview (cicada help) does not list or that has no help entry.
+func TestOverviewListsEveryCommand(t *testing.T) {
+	listed := map[string]int{}
+	for _, group := range overviewGroups {
+		for _, name := range group {
+			listed[name]++
+		}
+	}
+	for name := range dispatchedCommands(t) {
+		if listed[name] != 1 {
+			t.Errorf("command %q is dispatched in main.go but listed %d times in overviewGroups", name, listed[name])
+		}
+	}
+	for name := range listed {
+		if _, ok := findCommandHelp(name); !ok {
+			t.Errorf("overview lists %q, which has no help entry", name)
+		}
+		if listed[name] > 1 {
+			t.Errorf("overview lists %q %d times", name, listed[name])
+		}
+	}
+	for _, entries := range [][]commandHelpEntry{commandHelpEntries, extraCommandHelpEntries} {
+		for _, entry := range entries {
+			if !strings.Contains(entry.name, " ") && listed[entry.name] == 0 {
+				t.Errorf("help entry %q is missing from the overview", entry.name)
+			}
+		}
+	}
+}
+
+func TestHelpJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	handled, code := handleCLIHelp([]string{"help", "--json"}, &stdout, &stderr)
+	if !handled || code != 0 || stderr.Len() != 0 {
+		t.Fatalf("help --json: handled=%t code=%d stderr=%q", handled, code, stderr.String())
+	}
+	var document struct {
+		Schema   string `json:"schema"`
+		Commands []struct {
+			Name    string   `json:"name"`
+			Summary string   `json:"summary"`
+			Usage   []string `json:"usage"`
+			Flags   []struct {
+				Name        string `json:"name"`
+				Argument    string `json:"argument"`
+				Description string `json:"description"`
+			} `json:"flags"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("help --json is not JSON: %v", err)
+	}
+	if document.Schema != helpSchema || len(document.Commands) != len(commandHelpEntries)+len(extraCommandHelpEntries) {
+		t.Fatalf("schema %q, %d commands", document.Schema, len(document.Commands))
+	}
+	found := map[string]bool{}
+	for i, command := range document.Commands {
+		if i > 0 && document.Commands[i-1].Name >= command.Name {
+			t.Fatalf("commands are not sorted at %s", command.Name)
+		}
+		found[command.Name] = true
+		if command.Summary == "" || len(command.Usage) == 0 || len(command.Flags) == 0 {
+			t.Errorf("%s: incomplete %+v", command.Name, command)
+		}
+		for _, flag := range command.Flags {
+			if !strings.HasPrefix(flag.Name, "-") || strings.ContainsAny(flag.Name, " =<") || flag.Description == "" {
+				t.Errorf("%s: flag parsed badly: %+v", command.Name, flag)
+			}
+			if flag.Name == "--loudness" && flag.Argument != "<LUFS>" || flag.Name == "--dither" && flag.Argument != "<bool>" {
+				t.Errorf("%s: flag argument parsed badly: %+v", command.Name, flag)
+			}
+		}
+	}
+	for name := range dispatchedCommands(t) {
+		if !found[name] {
+			t.Errorf("help --json lacks %s", name)
+		}
+	}
+	stdout.Reset()
+	if handled, code := handleCLIHelp([]string{"help", "render", "--json"}, &stdout, &stderr); !handled || code != 0 || !strings.Contains(stdout.String(), `"name": "render"`) || strings.Contains(stdout.String(), `"name": "stems"`) {
+		t.Fatalf("help render --json: handled=%t code=%d\n%s", handled, code, stdout.String())
 	}
 }

@@ -49,14 +49,26 @@ var commandHelpEntries = []commandHelpEntry{
 	{name: "graph", summary: "print one compiled instrument graph", usage: "cicada graph <score.cicada> <instrument>", flags: "  (no command flags)"},
 }
 
-var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
-	"Create a project, edit and validate scores, play them in Studio, or render files.\n\n" +
-	"Commands:\n" +
-	"  new, bundle, apply, intents, fix, check, fmt, play, studio, lsp\n" +
-	"  render, stems, audition, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi\n" +
-	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
-	"  events, graph, fields, params, golden, record-pack, record-kit, fit-model, transcribe, wam2, director\n\n" +
-	"Run \"cicada help <command>\" for usage and flags."
+// overviewGroups are the lines of the command overview. Every command main
+// dispatches is in exactly one; TestOverviewListsEveryCommand checks it.
+var overviewGroups = [][]string{
+	{"new", "bundle", "save-as", "lib", "apply", "intents", "fix", "check", "fmt", "play", "studio", "lsp"},
+	{"render", "stems", "audition", "verify-wav", "verify-stems", "midi", "verify-midi", "compare-midi", "import-midi"},
+	{"gen", "explain", "view", "highlight", "symbols", "convert", "compare", "validate", "ast"},
+	{"events", "graph", "fields", "params", "golden", "record-pack", "record-kit", "fit-model", "transcribe", "wam2", "director", "game-score"},
+}
+
+var shortHelpText = func() string {
+	var text strings.Builder
+	text.WriteString("Usage: cicada <command> [arguments]\n\n")
+	text.WriteString("Create a project, edit and validate scores, play them in Studio, or render files.\n\n")
+	text.WriteString("Commands:\n")
+	for _, group := range overviewGroups {
+		text.WriteString("  " + strings.Join(group, ", ") + "\n")
+	}
+	text.WriteString("\nRun \"cicada help <command>\" for usage and flags, or \"cicada help --json\" for every command as JSON.")
+	return text.String()
+}()
 
 func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -64,6 +76,14 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 		return true, 0
 	}
 	if args[0] == "help" {
+		if json, name := helpJSONArgs(args[1:]); json {
+			if !writeHelpJSON(stdout, name) {
+				fmt.Fprintf(stderr, "cicada: unknown command %q\n", name)
+				fmt.Fprintln(stderr, "run cicada help")
+				return true, 2
+			}
+			return true, 0
+		}
 		if len(args) == 1 {
 			fmt.Fprintln(stdout, shortHelpText)
 			return true, 0
@@ -104,38 +124,44 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 	return false, 0
 }
 
-func findCommandHelp(name string) (commandHelpEntry, bool) {
-	if name == "transcribe" {
-		return commandHelpEntry{name: "transcribe", summary: "transcribe a sung, hummed or solo-instrument WAV into score rows", usage: "cicada transcribe <recording.wav> [flags]", flags: "  --tempo <BPM>  20–300 BPM; 0 infers tempo (default 0)\n  --key <key>    auto or tonic major/minor (default auto)\n  --grid <grid>  1/4, 1/8 or 1/16 (default 1/16)\n  -o <file>      write a new score file instead of stdout\n  --report       write measured notes and confidence JSON to stderr\n  --help         show this help", notes: "Analysis stays local and runs outside playback. Choose one monophonic PCM WAV. Score rows snap timing to the selected grid; sparse tempo, meter and key estimates require review. Existing output files are preserved."}, true
-	}
-	if name == "fit-model" {
-		return commandHelpEntry{name: "fit-model", summary: "fit a recorded hit to a playable modal instrument", usage: "cicada fit-model -o <pack-directory> [flags] <recording.wav>", flags: "  -o <directory>  required new pack directory\n  --name <id>     instrument name (default recorded_model)\n  --hit <n>       detected hit, one-based (default 1)\n  --help          show this help", notes: "Put flags before the input. Writes measured model.json, checksummed modal renders and a playable pinned score; user recording provenance is retained."}, true
-	}
-	if name == "record-kit" {
-		return commandHelpEntry{name: "record-kit", summary: "build one drum-kit sampler pack from your own recorded takes", usage: "cicada record-kit -o <pack-directory> [flags] <recipe.json>", flags: "  -o <directory>  required new pack directory\n  --name <id>     lowercase kit name (default kit)\n  --help          show this help", notes: "Put flags before the recipe. The recipe names each piece's MIDI note and its take WAV files, which are found next to the recipe; see docs/manual/recording-instruments.md. Prints the hits and layers found for each piece and a checksummed sampler declaration. Warns about takes to record again: tails cut off, hits that merged or clipped, and takes with no room tone at the start. Audio carries the owner recording label, which records provenance and grants no redistribution rights."}, true
-	}
-	if name == "record-pack" {
-		return commandHelpEntry{name: "record-pack", summary: "slice user WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the user recording licence."}, true
-	}
-	libEntries := []commandHelpEntry{
-		{name: "lib", summary: "manage pinned source and audio libraries", usage: "cicada lib list\ncicada lib show PATH\ncicada lib new PATH [--dir DIR]\ncicada lib update [PATH]\ncicada lib vendor", notes: "Use cicada help lib <command> for details. CICADA_LIBRARY overrides the user config directory's cicada/lib folder."},
-		{name: "lib list", summary: "list available std, project, and user libraries", usage: "cicada lib list", notes: "Prints each path and resolution kind, including duplicates. Does not change pins."},
-		{name: "lib show", summary: "inspect a resolved library", usage: "cicada lib show PATH", notes: "Prints the manifest, declaration names, audio paths, SHA-256 hash, and resolution directory. Does not change pins."},
-		{name: "lib new", summary: "scaffold an edition-2 library", usage: "cicada lib new PATH [--dir DIR]", flags: "  --dir DIR   create PATH in an explicit directory\n  --help      show this help", notes: "A library path such as demo/tone is created in the user library. An absolute or dot-prefixed directory uses its final directory name as the library path. --dir preserves the full library path. Existing destinations are refused; std is reserved."},
-		{name: "lib update", summary: "pin imported library content", usage: "cicada lib update [PATH]", notes: "Update one imported library, or all imports when PATH is omitted. Prints old and new resolution kinds and SHA-256 hashes. Use only after an intended change."},
-		{name: "lib vendor", summary: "copy imported user libraries into project lib/", usage: "cicada lib vendor", notes: "Verifies current pins, stages and verifies all copies, then publishes libraries and updated pins. Includes transitive imports. Refuses different existing libraries and rolls back new copies on failure. Standard libraries stay embedded."},
-	}
-	for _, entry := range libEntries {
-		if entry.name == name {
-			return entry, true
+// helpJSONArgs reports whether the arguments after help ask for JSON, and the
+// command they name, if any: help --json [command] or help <command> --json.
+func helpJSONArgs(args []string) (bool, string) {
+	asJSON := false
+	var names []string
+	for _, arg := range args {
+		if arg == "--json" {
+			asJSON = true
+		} else {
+			names = append(names, arg)
 		}
 	}
-	if name == "save-as" {
-		return commandHelpEntry{name: "save-as", summary: "copy a score, audio, and pinned libraries", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)", notes: "Imported user and project libraries are automatically vendored and re-pinned before the target score is published."}, true
-	}
-	for _, entry := range commandHelpEntries {
-		if entry.name == name {
-			return entry, true
+	return asJSON, strings.Join(names, " ")
+}
+
+// extraCommandHelpEntries are commands whose help stays out of
+// all-commands.golden: lib and its subcommands, save-as and the recording
+// tools.
+var extraCommandHelpEntries = []commandHelpEntry{
+	{name: "transcribe", summary: "transcribe a sung, hummed or solo-instrument WAV into score rows", usage: "cicada transcribe <recording.wav> [flags]", flags: "  --tempo <BPM>  20–300 BPM; 0 infers tempo (default 0)\n  --key <key>    auto or tonic major/minor (default auto)\n  --grid <grid>  1/4, 1/8 or 1/16 (default 1/16)\n  -o <file>      write a new score file instead of stdout\n  --report       write measured notes and confidence JSON to stderr\n  --help         show this help", notes: "Analysis stays local and runs outside playback. Choose one monophonic PCM WAV. Score rows snap timing to the selected grid; sparse tempo, meter and key estimates require review. Existing output files are preserved."},
+	{name: "fit-model", summary: "fit a recorded hit to a playable modal instrument", usage: "cicada fit-model -o <pack-directory> [flags] <recording.wav>", flags: "  -o <directory>  required new pack directory\n  --name <id>     instrument name (default recorded_model)\n  --hit <n>       detected hit, one-based (default 1)\n  --help          show this help", notes: "Put flags before the input. Writes measured model.json, checksummed modal renders and a playable pinned score; user recording provenance is retained."},
+	{name: "record-kit", summary: "build one drum-kit sampler pack from your own recorded takes", usage: "cicada record-kit -o <pack-directory> [flags] <recipe.json>", flags: "  -o <directory>  required new pack directory\n  --name <id>     lowercase kit name (default kit)\n  --help          show this help", notes: "Put flags before the recipe. The recipe names each piece's MIDI note and its take WAV files, which are found next to the recipe; see docs/manual/recording-instruments.md. Prints the hits and layers found for each piece and a checksummed sampler declaration. Warns about takes to record again: tails cut off, hits that merged or clipped, and takes with no room tone at the start. Audio carries the owner recording label, which records provenance and grants no redistribution rights."},
+	{name: "record-pack", summary: "slice user WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the user recording licence."},
+	{name: "lib", summary: "manage pinned source and audio libraries", usage: "cicada lib list\ncicada lib show PATH\ncicada lib new PATH [--dir DIR]\ncicada lib update [PATH]\ncicada lib vendor", notes: "Use cicada help lib <command> for details. CICADA_LIBRARY overrides the user config directory's cicada/lib folder."},
+	{name: "lib list", summary: "list available std, project, and user libraries", usage: "cicada lib list", notes: "Prints each path and resolution kind, including duplicates. Does not change pins."},
+	{name: "lib show", summary: "inspect a resolved library", usage: "cicada lib show PATH", notes: "Prints the manifest, declaration names, audio paths, SHA-256 hash, and resolution directory. Does not change pins."},
+	{name: "lib new", summary: "scaffold an edition-2 library", usage: "cicada lib new PATH [--dir DIR]", flags: "  --dir DIR   create PATH in an explicit directory\n  --help      show this help", notes: "A library path such as demo/tone is created in the user library. An absolute or dot-prefixed directory uses its final directory name as the library path. --dir preserves the full library path. Existing destinations are refused; std is reserved."},
+	{name: "lib update", summary: "pin imported library content", usage: "cicada lib update [PATH]", notes: "Update one imported library, or all imports when PATH is omitted. Prints old and new resolution kinds and SHA-256 hashes. Use only after an intended change."},
+	{name: "lib vendor", summary: "copy imported user libraries into project lib/", usage: "cicada lib vendor", notes: "Verifies current pins, stages and verifies all copies, then publishes libraries and updated pins. Includes transitive imports. Refuses different existing libraries and rolls back new copies on failure. Standard libraries stay embedded."},
+	{name: "save-as", summary: "copy a score, audio, and pinned libraries", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)", notes: "Imported user and project libraries are automatically vendored and re-pinned before the target score is published."},
+}
+
+func findCommandHelp(name string) (commandHelpEntry, bool) {
+	for _, entries := range [][]commandHelpEntry{commandHelpEntries, extraCommandHelpEntries} {
+		for _, entry := range entries {
+			if entry.name == name {
+				return entry, true
+			}
 		}
 	}
 	return commandHelpEntry{}, false
