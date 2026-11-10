@@ -93,24 +93,37 @@ func notesProject() *project.Project {
 	return &project.Project{Edition: 2, TempoMilli: 120000, Tracks: []project.Track{{ID: "keys", Kind: "piano"}, {ID: "drums", Kind: "drums"}},
 		Patterns: []project.Pattern{
 			{ID: "played", Kind: "notes", Performance: &project.Performance{LengthTicks: 3840, Notes: []project.PerformedNote{{Note: 60, Tick: 17, EndTick: 720, Velocity: 90}}}},
-			{ID: "riff", Kind: "notes", Steps: 4, Data: []*project.Step{{Note: 60, Velocity: 100, Ratchet: 1, Probability: 100}, nil, nil, nil}},
-			{ID: "slow", Kind: "drums", Steps: 4, StepTicks: 960, Lanes: map[string][]*project.Step{"bd": {{Note: 36, Velocity: 100, Ratchet: 1, Probability: 100}, nil, nil, nil}}},
+			{ID: "long", Kind: "notes", Performance: &project.Performance{LengthTicks: 7680, Notes: []project.PerformedNote{{Note: 60, Tick: 17, EndTick: 720, Velocity: 90}}}},
+			{ID: "riff", Kind: "notes", Steps: 32, Data: append([]*project.Step{{Note: 60, Velocity: 100, Ratchet: 1, Probability: 100}}, make([]*project.Step, 31)...)},
+			{ID: "beat", Kind: "notes", Steps: 16, Data: append([]*project.Step{{Note: 60, Velocity: 100, Ratchet: 1, Probability: 100}}, make([]*project.Step, 15)...)},
+			{ID: "slow", Kind: "drums", Steps: 8, StepTicks: 960, Lanes: map[string][]*project.Step{"bd": append([]*project.Step{{Note: 36, Velocity: 100, Ratchet: 1, Probability: 100}}, make([]*project.Step, 7)...)}},
 			{ID: "bars", Kind: "drums", Steps: 2, StepTicks: 3840, Lanes: map[string][]*project.Step{"bd": {{Note: 36, Velocity: 100, Ratchet: 1, Probability: 100}, nil}}},
 		}}
 }
 
 func notesQuantizeForm(page string) string {
-	return regexp.MustCompile(`(?s)<section[^>]*class="notes-quantize".*?</section>`).FindString(page)
+	return regexp.MustCompile(`(?s)<div[^>]*class="notes-quantize".*?</p>`).FindString(page)
 }
 
 func TestClipTabRendersQuantizeForEveryPatternKind(t *testing.T) {
 	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "all-sources", Valid: true, Project: notesProject()})
-	played := notesQuantizeForm(getPage(t, client, address+"/studio?dock=clip&pattern=played"))
+	played := notesQuantizeForm(getPage(t, client, address+"/studio?dock=clip&pattern=played&track=keys&scene=main"))
 	for _, want := range []string{`id="notes-quantize"`, `action="/__actions/notes"`, `aria-labelledby="notes-quantize-title"`, `>Quantize</h4>`, `name="op" value="quantize"`, `name="pattern" value="played"`,
-		`name="source_revision" value="all-sources"`, `<option value="240" selected`, `>1/16T</option>`, `>Bar</option>`, `name="strength"`, `aria-keyshortcuts="Control+U Meta+U"`, `role="status"`} {
+		`name="source_revision" value="all-sources"`, `<option value="240" selected`, `>1/16T</option>`, `>Beat</option>`, `name="strength"`, `aria-keyshortcuts="Control+U Meta+U"`, `role="status"`, `scene=main`, `track=keys`} {
 		if !strings.Contains(played, want) {
 			t.Fatalf("performance Quantize lacks %s:\n%s", want, played)
 		}
+	}
+	// Grids as long as the pattern are left out; the redirect carries the
+	// editor's track and scene, so the form has no fields of its own for them.
+	if strings.Contains(played, `>Bar</option>`) || strings.Contains(played, `name="track"`) || strings.Contains(played, `name="scene"`) {
+		t.Fatalf("a one-bar loop must not offer Bar, and the form forwards no context fields:\n%s", played)
+	}
+	if long := notesQuantizeForm(getPage(t, client, address+"/studio?dock=clip&pattern=long")); !strings.Contains(long, `>Bar</option>`) {
+		t.Fatalf("a two-bar loop offers Bar:\n%s", long)
+	}
+	if beat := notesQuantizeForm(getPage(t, client, address+"/studio?dock=clip&pattern=beat")); !strings.Contains(beat, `<option value="960" selected`) || strings.Contains(beat, `>Bar</option>`) {
+		t.Fatalf("a one-bar step pattern offers Beat only:\n%s", beat)
 	}
 	riff := notesQuantizeForm(getPage(t, client, address+"/studio?dock=clip&pattern=riff"))
 	if !strings.Contains(riff, `<option value="960" selected`) || !strings.Contains(riff, `>Bar</option>`) || strings.Contains(riff, `name="strength"`) || strings.Contains(riff, `>1/16</option>`) {
@@ -121,7 +134,7 @@ func TestClipTabRendersQuantizeForEveryPatternKind(t *testing.T) {
 		t.Fatalf("a quarter-note drum grid offers only Bar:\n%s", slow)
 	}
 	bars := notesQuantizeForm(getPage(t, client, address+"/studio?dock=clip&pattern=bars"))
-	if strings.Contains(bars, "<form") || !strings.Contains(bars, "already starts on this pattern") {
+	if strings.Contains(bars, "<form") || !strings.Contains(bars, "No grid is coarser than this pattern") {
 		t.Fatalf("a bar grid has nothing coarser to quantize to:\n%s", bars)
 	}
 	// The shortcuts dialog lists Quantize once, as a working command.
@@ -186,5 +199,31 @@ func TestNotesActionReportsAnUnchangedPatternAndFailures(t *testing.T) {
 	failed := notesQuantizeForm(getPage(t, client, app.URL+r.Header.Get("Location")))
 	if !strings.Contains(failed, "two C4 notes would overlap") || !strings.Contains(failed, `<option value="960" selected`) {
 		t.Fatalf("a refused quantize hid its reason or lost the chosen grid:\n%s", failed)
+	}
+}
+
+// The workbench runs the first available command for a chord. The live
+// Quantize must come before its reserved mirror, or the mirror would consume
+// Mod+U even in the Clip tab; and the live one must require the Clip tab to be
+// on screen, because $dock stays "clip" while the narrow layout shows another
+// region.
+func TestQuantizeCommandPrecedesItsMirror(t *testing.T) {
+	live, mirror := -1, -1
+	for i, cmd := range shellCommands() {
+		switch cmd.ID {
+		case "notes.quantize":
+			live = i
+			if cmd.When["$notesVisible"] != true || cmd.When["$dock"] != "clip" || cmd.Reserved {
+				t.Fatalf("Quantize must need the visible Clip tab: %+v", cmd)
+			}
+		case "notes.quantize.elsewhere":
+			mirror = i
+			if !cmd.Reserved || len(cmd.When) != 0 || strings.Join(cmd.Keys, ",") != "Mod+U" {
+				t.Fatalf("the mirror must reserve Mod+U unconditionally: %+v", cmd)
+			}
+		}
+	}
+	if live < 0 || mirror < 0 || live > mirror {
+		t.Fatalf("notes.quantize at %d must precede notes.quantize.elsewhere at %d", live, mirror)
 	}
 }

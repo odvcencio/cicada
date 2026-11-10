@@ -14,6 +14,7 @@ import (
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/command"
+	"m31labs.dev/gosx/engine"
 	"m31labs.dev/gosx/server"
 )
 
@@ -113,10 +114,18 @@ type quantizeGrid struct {
 
 // quantizeGrids are the Quantize targets of a pattern. A performance uses the
 // placement snap list without Off; a step pattern or drum lanes offer Beat and
-// Bar when they are coarser than its step and a whole number of steps.
+// Bar when they are coarser than its step and a whole number of steps. A grid
+// as long as the pattern is left out: it sends every note to the start, which
+// the server always refuses.
 func quantizeGrids(p project.Pattern) []quantizeGrid {
 	if p.Performance != nil {
-		return []quantizeGrid{{"Bar", 3840}, {"Beat", 960}, {"1/8", 480}, {"1/8T", 320}, {"1/16", 240}, {"1/16T", 160}, {"1/32", 120}}
+		var grids []quantizeGrid
+		for _, grid := range []quantizeGrid{{"Bar", 3840}, {"Beat", 960}, {"1/8", 480}, {"1/8T", 320}, {"1/16", 240}, {"1/16T", 160}, {"1/32", 120}} {
+			if grid.ticks < p.Performance.LengthTicks {
+				grids = append(grids, grid)
+			}
+		}
+		return grids
 	}
 	step := int64(p.StepTicks)
 	if step == 0 {
@@ -124,7 +133,7 @@ func quantizeGrids(p project.Pattern) []quantizeGrid {
 	}
 	var grids []quantizeGrid
 	for _, grid := range []quantizeGrid{{"Beat", 960}, {"Bar", 3840}} {
-		if grid.ticks > step && grid.ticks%step == 0 {
+		if grid.ticks > step && grid.ticks%step == 0 && grid.ticks < int64(p.Steps)*step {
 			grids = append(grids, grid)
 		}
 	}
@@ -132,20 +141,33 @@ func quantizeGrids(p project.Pattern) []quantizeGrid {
 }
 
 // noteQuantize is the Clip tab's Quantize control. It acts on every note of
-// the pattern; Mod+U submits it (notes.quantize).
+// the pattern; Mod+U submits it (notes.quantize) while the Clip tab is on
+// screen, which a small engine mounted here reports as $notesVisible.
 func (s *studioApp) noteQuantize(ctx *server.Context, v workspace, csrf string, p project.Pattern, returnTo string) gosx.Node {
 	grids := quantizeGrids(p)
+	// GoSX reuses an engine whose props are unchanged across a navigation, and
+	// a reused engine can no longer write signals. The masked CSRF token is
+	// fresh for every render, as for the shell engine, so each render remounts.
+	props, _ := json.Marshal(map[string]string{"csrf": csrf})
 	section := func(children ...gosx.Node) gosx.Node {
-		return gosx.El("section", gosx.Attrs(gosx.Attr("class", "notes-quantize"), gosx.Attr("aria-labelledby", "notes-quantize-title"), gosx.Attr("data-gosx-key", "notes-quantize")),
-			gosx.El("h4", gosx.Attrs(gosx.Attr("id", "notes-quantize-title")), gosx.Text("Quantize")), gosx.Fragment(children...))
+		// A group, not a section: editor tests read the Clip panel up to its
+		// first closing section tag. The engine mount is an empty sibling of
+		// the form, so workspace updates still patch the form itself.
+		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "notes-quantize"), gosx.Attr("role", "group"), gosx.Attr("aria-labelledby", "notes-quantize-title"), gosx.Attr("data-gosx-key", "notes-quantize")),
+			gosx.El("h4", gosx.Attrs(gosx.Attr("id", "notes-quantize-title")), gosx.Text("Quantize")), gosx.Fragment(children...),
+			meterEngine(ctx, engine.Config{Name: "CicadaNotesVisibility", Kind: engine.KindSurface, MountID: "cicada-notes-visibility", Runtime: engine.RuntimeGoWASM, Props: props, RequiredCapabilities: []engine.Capability{engine.CapWASM}}, gosx.El("span", gosx.Attrs(gosx.BoolAttr("hidden")))))
 	}
 	if len(grids) == 0 {
-		return section(gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Every note already starts on this pattern's step grid.")))
+		return section(gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("No grid is coarser than this pattern's steps and shorter than the pattern, so there is nothing to quantize to.")))
 	}
+	// The pattern editor's track and scene context survives the redirect.
 	query := ctx.Request.URL.Query()
+	returnTo = patternContextURL(returnTo, query.Get("track"), query.Get("scene"))
 	grid, strength := strconv.FormatInt(grids[0].ticks, 10), "100"
-	if p.Performance != nil {
-		grid = "240"
+	for _, choice := range grids {
+		if p.Performance != nil && choice.ticks == 240 {
+			grid = "240"
+		}
 	}
 	state := action.States(ctx.Request)["notes"]
 	message := ""
@@ -169,7 +191,6 @@ func (s *studioApp) noteQuantize(ctx *server.Context, v workspace, csrf string, 
 	}
 	children := []gosx.Node{
 		hidden("pattern", p.ID), hidden("op", "quantize"), hidden("source_revision", v.SourceRevision),
-		hidden("track", query.Get("track")), hidden("scene", query.Get("scene")),
 		field("Grid", gosx.El("select", gosx.Attrs(gosx.Attr("name", "grid")), gosx.Fragment(options...))),
 	}
 	if p.Performance != nil {

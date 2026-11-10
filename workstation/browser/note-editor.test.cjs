@@ -84,7 +84,7 @@ test.after(async () => {
     fs.writeFileSync(path.join(proof, 'note-editor-report.json'), JSON.stringify({checks}, null, 2) + '\n');
   }
   await shared?.browser.close();
-});
+}, {timeout: 15000});
 
 async function openClip(pattern) {
   const base = process.env.CICADA_STUDIO_URL;
@@ -164,7 +164,7 @@ test('a played performance quantizes from the Clip tab by button and by Mod+U, o
     assert.equal(await form.locator('select[name=grid]').inputValue(), '240', '1/16 is the default grid');
     assert.equal(await form.locator('input[name=strength]').inputValue(), '100');
     assert.match(await form.getByRole('button', {name: 'Quantize', exact: true}).getAttribute('aria-keyshortcuts'), /Control\+U/);
-    if (process.env.CICADA_NOTES_PROOF_DIR) await page.locator('section.notes-quantize').screenshot({path: path.join(process.env.CICADA_NOTES_PROOF_DIR, 'note-editor-clip-1440.png')});
+    if (process.env.CICADA_NOTES_PROOF_DIR) await page.locator('.notes-quantize').screenshot({path: path.join(process.env.CICADA_NOTES_PROOF_DIR, 'note-editor-clip-1440.png')});
 
     const button = await quantizeOnce(view, () => form.getByRole('button', {name: 'Quantize', exact: true}).click(), expectTakeOnGrid, 'Quantize button');
     assert.equal(button.history[0].label, 'Notes · take · 16 notes quantized to 1/16', 'the newest history entry names the batch');
@@ -190,16 +190,33 @@ test('a played performance quantizes from the Clip tab by button and by Mod+U, o
     await view.ready();
     checks.push('a second quantize reports "Already on the grid." and adds no history entry');
 
-    // Outside the Clip tab, Mod+U is consumed and submits nothing.
-    await page.locator('#detail-tab-device').click();
-    await until(async () => await page.locator('#detail-panel-device').isVisible(), 'Device tab did not open');
-    await page.evaluate(() => document.activeElement?.blur());
-    const before = view.posts();
-    await page.keyboard.press('Control+u');
-    await new Promise(resolve => setTimeout(resolve, 400));
-    assert.equal(view.posts(), before, 'Mod+U outside the Clip tab submits no action');
-    assert.equal(await view.source(), original);
-    checks.push('outside the Clip tab Mod+U submits nothing');
+    // While the Clip tab is off screen, Mod+U is consumed and submits nothing.
+    // Key and click events run in order, so once the button's quantize that
+    // follows has landed, a POST from the chord would already have been sent.
+    const hiddenChord = async (label, hide, show) => {
+      await hide();
+      await until(async () => await page.evaluate(() => window.__gosx.commands.available('notes.quantize')) === false, `${label}: Mod+U stayed available`);
+      await page.evaluate(() => document.activeElement?.blur());
+      const before = view.notePosts();
+      await page.keyboard.press('Control+u');
+      await show();
+      await view.ready();
+      await quantizeOnce(view, () => form.getByRole('button', {name: 'Quantize', exact: true}).click(), expectTakeOnGrid, `${label}, then the button`);
+      assert.equal(view.notePosts(), before + 1, `${label}: Mod+U submitted a quantize`);
+      assert.equal(await view.source(), original);
+    };
+    await hiddenChord('Device tab shown', () => page.locator('#detail-tab-device').click(), () => page.locator('#detail-tab-clip').click());
+    checks.push('with the Device tab shown, Mod+U submits nothing');
+    await hiddenChord('narrow layout showing the view', async () => {
+      await page.setViewportSize({width: 700, height: 900});
+      await page.locator('.shell-phone-nav [data-shell-region=center]').click();
+      await until(async () => await page.locator('#studio-shell').getAttribute('data-phone-region') === 'center', 'the View region did not open');
+    }, async () => {
+      await page.locator('.shell-phone-nav [data-shell-region=detail]').click();
+      await until(async () => await page.locator('#studio-shell').getAttribute('data-phone-region') === 'detail', 'the Edit region did not open');
+    });
+    await page.setViewportSize({width: 1440, height: 900});
+    checks.push('in the narrow layout, Mod+U submits nothing until the Edit region shows the Clip tab');
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

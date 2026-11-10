@@ -59,9 +59,12 @@ func shellCommands() []command.Command {
 		{ID: "grid.snap", Title: "Snap to grid", Group: "Tools", Keys: []string{"Mod+4"}, Reserved: true},
 		{ID: "arrange.consolidate", Title: "Consolidate", Group: "Arrange", Keys: []string{"Mod+J"}, Reserved: true},
 		{ID: "arrange.group", Title: "Group", Group: "Arrange", Keys: []string{"Mod+G"}, Reserved: true},
-		// Quantize submits the Clip tab's form, which acts on the whole pattern.
-		// Outside the Clip tab the reserved mirror keeps consuming the chord.
-		{ID: "notes.quantize", Title: "Quantize notes", Group: "Arrange", Keys: []string{"Mod+U"}, When: map[string]any{"$dock": "clip"}, Action: command.Action{Submit: "#notes-quantize button[type=submit]"}},
+		// Quantize submits the Clip tab's form, which acts on the whole pattern,
+		// only while that tab is on screen ($notesVisible, from the engine the
+		// form mounts). Otherwise the reserved mirror consumes the chord. The
+		// workbench runs the first available match, so the live command must
+		// stay above its mirror (TestQuantizeCommandPrecedesItsMirror).
+		{ID: "notes.quantize", Title: "Quantize notes", Group: "Arrange", Keys: []string{"Mod+U"}, When: map[string]any{"$dock": "clip", "$notesVisible": true}, Action: command.Action{Submit: "#notes-quantize button[type=submit]"}},
 		{ID: "notes.quantize.elsewhere", Title: "Quantize notes", Group: "Arrange", Keys: []string{"Mod+U"}, Reserved: true},
 	}
 	// Arrow keys move the selection only while a grid cell or clip is selected;

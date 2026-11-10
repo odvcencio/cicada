@@ -81,6 +81,9 @@ func main() {
 	if err := enginewasm.Register("CicadaSampler", mountSampler); err != nil {
 		panic(err)
 	}
+	if err := enginewasm.Register("CicadaNotesVisibility", mountNotesVisibility); err != nil {
+		panic(err)
+	}
 	watchShellRefresh()
 	select {}
 }

@@ -173,7 +173,7 @@ func TestShellRegistersEveryCommandInTheTable(t *testing.T) {
 	}
 	// Mod+U quantizes the Clip tab's pattern; elsewhere its reserved mirror
 	// keeps the chord from reaching the browser.
-	if quantize := got["notes.quantize"]; quantize.Action.Submit != "#notes-quantize button[type=submit]" || quantize.When["$dock"] != "clip" || strings.Join(got["notes.quantize.elsewhere"].Keys, ",") != "Mod+U" {
+	if quantize := got["notes.quantize"]; quantize.Action.Submit != "#notes-quantize button[type=submit]" || quantize.When["$dock"] != "clip" || quantize.When["$notesVisible"] != true || strings.Join(got["notes.quantize.elsewhere"].Keys, ",") != "Mod+U" {
 		t.Errorf("Quantize command: %+v, mirror %+v", quantize, got["notes.quantize.elsewhere"])
 	}
 	if !got["edit.save"].AllowEditable || got["edit.undo"].AllowEditable || got["edit.redo"].AllowEditable {
