@@ -7,7 +7,7 @@ const path=require('node:path');
 test('dock resizing fits the window and preserves musical work',{timeout:120000},async t=>{
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});
- t.after(()=>browser.close());
+ t.after(() => browser.close(), {timeout: 15000});
  const page=await browser.newPage({viewport:{width:1440,height:1000}});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  const proof=process.env.CICADA_DOCK_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});

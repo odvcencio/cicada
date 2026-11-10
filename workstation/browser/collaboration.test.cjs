@@ -19,7 +19,7 @@ test('shared score respects focus, follows selection anchors, merges offline edi
   assert.ok(base, 'set CICADA_STUDIO_URL to a disposable Studio');
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(base).hostname));
   const browser = await playwright().chromium.launch({headless: true, executablePath: process.env.CICADA_CHROME_PATH || undefined, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required']});
-  t.after(() => browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const contexts = await Promise.all([browser.newContext({viewport: {width: 1440, height: 1000}}), browser.newContext({viewport: {width: 1440, height: 1000}}), browser.newContext({viewport: {width: 390, height: 844}})]);
   const pages = await Promise.all(contexts.map(context => context.newPage()));
   const errors = [];

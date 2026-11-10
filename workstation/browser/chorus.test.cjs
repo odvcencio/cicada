@@ -17,7 +17,7 @@ test('chorus mixer controls persist and support history', {timeout:120000}, asyn
   fs.mkdirSync(proof,{recursive:true});
   const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});
-  t.after(()=>browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const page=await browser.newPage({viewport:{width:1440,height:1000}}), errors=[];
   page.on('pageerror', e=>errors.push(e.message));
   page.on('response', async r=>{if (new URL(r.url()).pathname==='/__actions/mixer' && r.status()>=400) errors.push(`mixer ${r.status()}: ${(await r.text()).slice(0,400)}`)});

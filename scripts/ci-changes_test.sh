@@ -49,6 +49,7 @@ expect_groups() {
 
 # --- paths that turn everything on (the conservative fallbacks) ---
 expect_groups "workflow file" all .github/workflows/ci.yml
+expect_groups "local composite action" all .github/actions/setup-wasm-tools/action.yml
 expect_groups "PR template (a .md under .github)" all .github/pull_request_template.md
 expect_groups "Makefile" all Makefile
 expect_groups "scripts dir" all scripts/check-commit-hygiene.sh

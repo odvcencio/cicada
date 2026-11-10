@@ -208,11 +208,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Render all examples with amd64 and WASM
         run: |
           set -euo pipefail
@@ -334,11 +330,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Tool versions
         run: |
           go version
@@ -362,11 +354,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Tool versions
         run: |
           go version
@@ -396,11 +384,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Tool versions
         run: |
           go version
@@ -474,11 +458,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Tool versions
         run: |
           go version
@@ -587,11 +567,7 @@ jobs:
         with:
           go-version: '1.27.3'
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Supported Node for browser checks
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -646,11 +622,7 @@ jobs:
         with:
           go-version: '1.27.3'
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Supported Node for browser checks
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -890,12 +862,8 @@ jobs:
             go.sum
             desktop/go.sum
             workstation/go.sum
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+      - uses: ./.github/actions/setup-wasm-tools
         if: matrix.arch == 'arm64'
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.23.2'
@@ -1038,11 +1006,7 @@ jobs:
             go.sum
             desktop/go.sum
             workstation/go.sum
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.23.2'
@@ -1201,11 +1165,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Supported Node for browser checks
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -1238,11 +1198,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: One-hour memory test
         run: |
           set -euo pipefail
@@ -1274,11 +1230,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       # The runner's system Node is too old for the demo browser test, which
       # needs the global WebSocket that Node 22 provides.
       - name: Supported Node for browser checks
@@ -1358,11 +1310,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
-        with:
-          tinygo-version: '0.41.1'
-          install-binaryen: 'true'
-          binaryen-version: '133'
+      - uses: ./.github/actions/setup-wasm-tools
       - name: Supported Node for browser checks
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:

@@ -6,26 +6,18 @@
   if (window.__cicadaNativeEditorSmokeRunning) return;
   window.__cicadaNativeEditorSmokeRunning = true;
   const checks = [], errors = [], submissions = [], responses = [], mutations = [], interactions = [], pageRequests = [];
-  const sharedSnapshots = [], checkpoints = [];
-  const NativeWebSocket = window.WebSocket;
-  // Observe the real transport before the shared engine mounts. Never inject
-  // a snapshot or change its handlers, traffic, or constructor behavior.
-  window.WebSocket = new Proxy(NativeWebSocket, {
-    construct(target, args, newTarget) {
-      const socket = Reflect.construct(target, args, newTarget);
-      const address = new URL(String(args[0]), location.href);
-      if (address.host === location.host && address.pathname === '/collaboration/score') {
-        socket.addEventListener('message', event => {
-          try {
-            const message = JSON.parse(event.data);
-            if (message.event === 'state' && message.data?.document && typeof message.data.revision === 'string')
-              sharedSnapshots.push({revision: message.data.revision});
-          } catch { /* Non-state frames are outside this snapshot assertion. */ }
-        });
-      }
-      return socket;
-    },
-  });
+  const checkpoints = [];
+  // The host installs window.__cicadaSocketObserver at document start (see
+  // socketObserverScript in smoke_desktop.go), so a socket opened while the
+  // page loads is seen. Injecting the observer from this script, which runs
+  // only after the page finished loading, missed a socket that connected
+  // 0.5 s after load. It never injects a snapshot or changes the traffic.
+  const socketObserver = window.__cicadaSocketObserver;
+  const sharedSnapshots = socketObserver ? socketObserver.snapshots : [];
+  const observerSummary = () => socketObserver
+    ? ' (WebSocket observer: ' + socketObserver.sockets + ' sockets, ' + socketObserver.scoreSockets + ' to /collaboration/score, ' +
+      socketObserver.frames + ' frames, ' + sharedSnapshots.length + ' score state snapshots)'
+    : ' (WebSocket observer was not installed at document start)';
   let recoveryNavigationCSRF = '';
   function evidence(label, observed) {
     const record = {order: interactions.length + 1, ...observed};
@@ -94,7 +86,7 @@
       if (await check()) return;
       await pause();
     }
-    throw new Error('Timed out: ' + name);
+    throw new Error('Timed out: ' + name + observerSummary());
   }
   async function state(path = 'state') {
     const response = await fetch('/api/' + path, {cache: 'no-store'});

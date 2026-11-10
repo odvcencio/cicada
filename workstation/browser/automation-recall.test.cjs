@@ -6,7 +6,7 @@ test('carried curve recalls stay visible while source edits, Undo and outside-sa
  const fixture=JSON.parse(fs.readFileSync(process.env.CICADA_PRINT_FIXTURE,'utf8'));assert.equal(fixture.sceneControls,true);assert.ok(fixture.curves.startsWith('/tmp/'));
  const proof=process.env.CICADA_PRINT_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  const startup=new URL(process.env.CICADA_STUDIO_URL),base=startup.origin;assert.equal(startup.hostname,'127.0.0.1');
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(()=>browser.close());
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.goto(startup.href);await page.goto(base+'/?panel=session&curvePath=lead.level');await page.locator('#cicada-automation-curve[data-automation-ready=true]').waitFor();
  const form=page.locator('.automation-point-form'),details=page.locator('[data-automation-recalls="lead.level"]');await details.locator('summary').click();

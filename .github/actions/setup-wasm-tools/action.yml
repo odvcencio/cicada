@@ -1,0 +1,126 @@
+name: Set up TinyGo and Binaryen
+description: >-
+  Puts TinyGo and Binaryen (wasm-opt) on PATH. Restores them from the Actions
+  cache, keyed on both versions and the runner OS and architecture. On a cache
+  miss it downloads the release archives, retrying every 60 seconds for about
+  8 minutes (the upstream hosts returned HTTP 504 for 1 to 2 hours on
+  2026-11-08 and 2026-11-09, longer than the 3 short retries of
+  acifani/setup-tinygo), and checks each archive against the SHA-256 recorded
+  below. Run actions/setup-go first: `tinygo version` needs Go on PATH.
+
+inputs:
+  tinygo-version:
+    description: TinyGo release without the leading v. Needs a checksum below.
+    default: '0.41.1'
+  binaryen-version:
+    description: Binaryen release number (the version_N tag). Needs a checksum below.
+    default: '133'
+
+runs:
+  using: composite
+  steps:
+    - name: Choose archives
+      id: plan
+      shell: bash
+      env:
+        TINYGO_VERSION: ${{ inputs.tinygo-version }}
+        BINARYEN_VERSION: ${{ inputs.binaryen-version }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+        Linux-X64)   tinygo_platform=linux-amd64;  binaryen_platform=x86_64-linux ;;
+        Linux-ARM64) tinygo_platform=linux-arm64;  binaryen_platform=aarch64-linux ;;
+        macOS-X64)   tinygo_platform=darwin-amd64; binaryen_platform=x86_64-macos ;;
+        macOS-ARM64) tinygo_platform=darwin-arm64; binaryen_platform=arm64-macos ;;
+        *) echo "::error::no TinyGo or Binaryen archive recorded for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+        esac
+        # SHA-256 of each release archive. Source: the "digest" field that the
+        # GitHub API reports for each release asset, read on 2026-11-10 with
+        #   gh api repos/tinygo-org/tinygo/releases/tags/v0.41.1
+        #   gh api repos/WebAssembly/binaryen/releases/tags/version_133
+        # The linux-amd64 pair was also downloaded and hashed locally, and
+        # matched. To change a version, add the new digests here.
+        case "$TINYGO_VERSION-$tinygo_platform" in
+        0.41.1-linux-amd64)  tinygo_sha256=e156d1d93a376eef639a4143d13be07e8c463fb6cf2d7d447698ed4474d23e91 ;;
+        0.41.1-linux-arm64)  tinygo_sha256=789733bc3b5bace0bd1835a267b3ea267804a7ef1cfe69bc522c295f5226d624 ;;
+        0.41.1-darwin-amd64) tinygo_sha256=1a8e62a234d3aea20793ada2c4a628de96ed7533384f0f5dc3c3f2ffa84f9bab ;;
+        0.41.1-darwin-arm64) tinygo_sha256=c684d154d89a452cc9c7fc5dc5fc80cb6a42445b3e44b3c12ed048692de0f341 ;;
+        *) echo "::error::no SHA-256 recorded for TinyGo $TINYGO_VERSION $tinygo_platform; add it to .github/actions/setup-wasm-tools/action.yml"; exit 1 ;;
+        esac
+        case "$BINARYEN_VERSION-$binaryen_platform" in
+        133-x86_64-linux)  binaryen_sha256=2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 ;;
+        133-aarch64-linux) binaryen_sha256=89c07ea56faf38d0fbecf36ca8ec0721756716185f265b568e133d427f299bf8 ;;
+        133-x86_64-macos)  binaryen_sha256=13a9b90be775c6389ce3d1f879cb8627bea56708ba8c122983941d53a8199b95 ;;
+        133-arm64-macos)   binaryen_sha256=ad66da82ac13f163e424b1643f16c6dfcccc98b5966296b43e52d3cab04f84a8 ;;
+        *) echo "::error::no SHA-256 recorded for Binaryen $BINARYEN_VERSION $binaryen_platform; add it to .github/actions/setup-wasm-tools/action.yml"; exit 1 ;;
+        esac
+        {
+          echo "tinygo_url=https://github.com/tinygo-org/tinygo/releases/download/v${TINYGO_VERSION}/tinygo${TINYGO_VERSION}.${tinygo_platform}.tar.gz"
+          echo "tinygo_sha256=$tinygo_sha256"
+          echo "binaryen_url=https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-${binaryen_platform}.tar.gz"
+          echo "binaryen_sha256=$binaryen_sha256"
+          echo "dir=${RUNNER_TEMP}/wasm-tools"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore TinyGo and Binaryen from cache
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.plan.outputs.dir }}
+        key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-tinygo-${{ inputs.tinygo-version }}-binaryen-${{ inputs.binaryen-version }}-v1
+
+    - name: Download TinyGo and Binaryen (cache miss)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        DIR: ${{ steps.plan.outputs.dir }}
+        TINYGO_URL: ${{ steps.plan.outputs.tinygo_url }}
+        TINYGO_SHA256: ${{ steps.plan.outputs.tinygo_sha256 }}
+        BINARYEN_URL: ${{ steps.plan.outputs.binaryen_url }}
+        BINARYEN_SHA256: ${{ steps.plan.outputs.binaryen_sha256 }}
+      run: |
+        set -euo pipefail
+        sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+
+        # fetch URL EXPECTED_SHA256 DEST: up to 9 attempts, 60 s apart (about
+        # 8 minutes of waiting). A wrong checksum counts as a failed attempt.
+        fetch() {
+          local url="$1" want="$2" dest="$3" attempt got
+          for attempt in 1 2 3 4 5 6 7 8 9; do
+            if curl --fail --silent --show-error --location --connect-timeout 20 --max-time 300 --output "$dest" "$url"; then
+              got="$(sha256 "$dest")"
+              if [ "$got" = "$want" ]; then return 0; fi
+              echo "attempt $attempt: checksum of $url is $got, want $want" >&2
+            else
+              echo "attempt $attempt: download of $url failed" >&2
+            fi
+            if [ "$attempt" -lt 9 ]; then sleep 60; fi
+          done
+          echo "::error::could not download $url with checksum $want after 9 attempts"
+          return 1
+        }
+
+        rm -rf "$DIR"
+        mkdir -p "$DIR"
+        fetch "$TINYGO_URL" "$TINYGO_SHA256" "$DIR/tinygo.tar.gz"
+        fetch "$BINARYEN_URL" "$BINARYEN_SHA256" "$DIR/binaryen.tar.gz"
+        tar -xzf "$DIR/tinygo.tar.gz" -C "$DIR"
+        tar -xzf "$DIR/binaryen.tar.gz" -C "$DIR"
+        rm -f "$DIR/tinygo.tar.gz" "$DIR/binaryen.tar.gz"
+
+    - name: Add to PATH and print versions
+      shell: bash
+      env:
+        DIR: ${{ steps.plan.outputs.dir }}
+        BINARYEN_VERSION: ${{ inputs.binaryen-version }}
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        # Binaryen must come before TinyGo's bin directory, which bundles an
+        # older wasm-opt (116). Later lines in GITHUB_PATH take precedence.
+        echo "$DIR/tinygo/bin" >> "$GITHUB_PATH"
+        echo "$DIR/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+        export PATH="$DIR/binaryen-version_${BINARYEN_VERSION}/bin:$DIR/tinygo/bin:$PATH"
+        echo "wasm tools from cache: ${CACHE_HIT:-false}"
+        tinygo version
+        wasm-opt --version

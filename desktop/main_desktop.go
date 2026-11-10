@@ -176,6 +176,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if h.smokeScript != "" {
+		// Before the first navigation, so the observer exists before any page script.
+		if err := h.app.PrependBootstrapScript(socketObserverScript); err != nil {
+			return fmt.Errorf("install smoke socket observer: %w", err)
+		}
+	}
 	closeMIDI, err := attachNativeMIDI(h.app)
 	if err != nil {
 		return fmt.Errorf("configure native MIDI: %w", err)

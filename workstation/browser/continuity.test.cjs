@@ -733,4 +733,4 @@ for (let run = 1; run <= repeat; run++) {
   const suffix = repeat > 1 ? ` (run ${run} of ${repeat})` : '';
   test(`GoSX projections retain Studio edits, focus, scroll, playback and engine mounts${suffix}`, {timeout: 120_000}, scenario);
 }
-test.after(async () => { if (shared) await shared.browser.close(); });
+test.after(async () => { if (shared) await shared.browser.close(); }, {timeout: 15000});
