@@ -71,7 +71,7 @@ units, ranges, model limits and image compatibility.
 
 **Defaults:** Track level is -6 dB; mute and solo are off. The music bus has a fixed -3 dB trim, the SFX bus is at unity, and the master safety limiter remains last.
 
-**Errors:** Unknown mixer names report `CICADA-REFERENCE`. Unsupported routes or more than one insert on a track or bus report `CICADA-UNSUPPORTED`. A saved solo reports `CICADA-SOLO` during render and check.
+**Errors:** Unknown mixer names report `CICADA-REFERENCE`. Unsupported routes, or more than one insert on a bus, report `CICADA-UNSUPPORTED`. A track insert chain longer than eight stages, or more than 16 master inserts, reports `CICADA-LIMIT`. A saved solo reports `CICADA-SOLO` during render and check.
 
 **Example:** Mute and solo are ordinary saved mixer settings:
 
