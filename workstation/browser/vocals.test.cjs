@@ -11,7 +11,7 @@ test('Session waveform lanes select, trim, audition and comp vocal phrases',{tim
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
  const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'});
- const page=await context.newPage();page.setDefaultTimeout(20000);const errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));t.after(()=>browser.close());
+ const page=await context.newPage();page.setDefaultTimeout(20000);const errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));t.after(() => browser.close(), {timeout: 15000});
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'});await page.locator('#cicada-vocal-lanes[data-vocal-lanes-ready=true]').waitFor()};
  const state=async()=>(await page.request.get(base+'/api/state')).json(),takes=async()=>(await page.request.get(base+'/api/takes')).json();
  await page.goto(base+'/?panel=session',{waitUntil:'domcontentloaded'});await ready();const original=await state();assert.ok(original.source.includes('cicada-vocal-test: disposable fixture'));

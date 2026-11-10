@@ -28,7 +28,7 @@ pattern phrase performance length=3840ticks slot=3 seed=99 {
 const test=require('node:test'),assert=require('node:assert/strict');
 test('reshape a secondary played phrase with both gesture layers',{timeout:240000},async t=>{
  const base=new URL(process.env.CICADA_STUDIO_URL),proof=process.env.CICADA_TIME_PROOF_DIR;assert.equal(base.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(()=>browser.close());
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
  const page=await browser.newPage({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.exposeFunction('__cicadaTimeAudio',(label,base64)=>fs.writeFileSync(path.join(proof,label+'.wav'),Buffer.from(base64,'base64')));
  await page.exposeFunction('__cicadaTimeSubmit',async ratio=>{await page.locator('[data-performance-time=phrase] [name=scale][value="'+ratio+'"]').press('Enter');});

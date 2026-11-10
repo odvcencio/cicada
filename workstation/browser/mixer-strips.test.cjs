@@ -43,7 +43,7 @@ async function sharedContext() {
   }
   return shared.context;
 }
-test.after(async () => { await shared?.browser.close(); });
+test.after(async () => { await shared?.browser.close(); }, {timeout: 15000});
 
 async function openMixer(viewport = {width: 1440, height: 900}) {
   const base = process.env.CICADA_STUDIO_URL;

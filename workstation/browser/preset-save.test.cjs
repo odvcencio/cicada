@@ -22,7 +22,7 @@ test('save a track as a preset and undo it in GoSX Studio', {timeout:180000}, as
   const before = fs.readFileSync(score, 'utf8');
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox','--mute-audio']});
-  t.after(() => browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const page = await (await browser.newContext()).newPage(), errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(base.href);

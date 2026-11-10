@@ -6,7 +6,7 @@ async function until(fn,message){const end=Date.now()+15000;while(Date.now()<end
 test('Microphone levels and recording transport protection remain usable across panels',{timeout:90000},async t=>{
  const base=process.env.CICADA_LEVELS_URL;assert.ok(base);assert.equal(new URL(base).hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(()=>browser.close());
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],checks=[];
  page.on('pageerror',e=>errors.push(e.message));
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'})};

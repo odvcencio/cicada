@@ -29,7 +29,7 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     } finally {
       await browser.close();
     }
-  });
+  }, {timeout: 15000});
   page.on('pageerror', error => errors.push(error.message));
   const origin = new URL(process.env.CICADA_STUDIO_URL);
   const read = async name => {

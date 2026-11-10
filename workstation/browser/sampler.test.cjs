@@ -15,7 +15,7 @@ test('sampler imports, performs, chops visually, resamples and restores with Und
  const startup=new URL(process.env.CICADA_STUDIO_URL),base=startup.origin; assert.equal(startup.hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({executablePath:process.env.CICADA_CHROME_PATH,headless:true,args:['--no-sandbox','--mute-audio']});
- t.after(()=>browser.close());
+ t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
  const page=await context.newPage(); page.setDefaultTimeout(20000);
  const errors=[],checks=[];page.on('pageerror',error=>errors.push(error.message));

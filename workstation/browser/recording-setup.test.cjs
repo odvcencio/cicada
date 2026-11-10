@@ -5,7 +5,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 test('Adding a vocal track enables recording controls; Audio retains the Session route',{timeout:60000},async t=>{
  const base=process.env.CICADA_SETUP_URL;assert.ok(base);assert.equal(new URL(base).hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(()=>browser.close());
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'})};
  await page.goto(base+'/?panel=session',{waitUntil:'domcontentloaded'});await ready();const initial=await(await page.request.get(base+'/api/state')).json();assert.ok(initial.source.includes('cicada-experience-test: disposable fixture'));

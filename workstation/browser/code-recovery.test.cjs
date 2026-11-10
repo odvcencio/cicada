@@ -23,7 +23,7 @@ test('private Code copies survive restarts without changing the song', {timeout:
         fs.writeFileSync(path.join(proof, phase + '-failure.txt'), (await page.locator('body').innerText()).slice(0, 16000));
       }
     } finally { await browser.close(); }
-  });
+  }, {timeout: 15000});
   page.on('pageerror', error => errors.push(error.message));
   page.on('dialog', dialog => dialog.accept());
   const origin = new URL(process.env.CICADA_STUDIO_URL);

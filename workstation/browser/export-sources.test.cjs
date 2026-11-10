@@ -24,7 +24,7 @@ test('an unseen secondary-file save cannot replace the previous export', {timeou
     } finally {
       await browser.close();
     }
-  });
+  }, {timeout: 15000});
   page.on('pageerror', error => errors.push(error.message));
   const origin = new URL(process.env.CICADA_STUDIO_URL);
   const read = async name => {

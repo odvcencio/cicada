@@ -26,7 +26,7 @@ test('MIDI pickup follows the live automated value before taking over', {timeout
   assert.equal(base.hostname, '127.0.0.1');
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox','--mute-audio']});
-  t.after(() => browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const page = await (await browser.newContext()).newPage(), commands = [], errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('response', response => {
