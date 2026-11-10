@@ -95,7 +95,7 @@ func (c *Compressor) SetParams(p CompParams) error {
 	c.targetParams = p
 	c.targetAttack = 1 - math.Exp(-1/(p.AttackMs*.001*c.sampleRate))
 	c.targetRelease = 1 - math.Exp(-1/(p.ReleaseMs*.001*c.sampleRate))
-	c.targetKneeFloor = math.Pow(10, (p.Threshold-p.Knee/2)/20)
+	c.targetKneeFloor = math.Pow(10, (p.Threshold-float64(p.Knee/2))/20)
 	c.lastLevel = math.NaN()
 	c.targetMakeup = p.MakeupDB
 	if p.MakeupAuto {
@@ -127,7 +127,7 @@ func reductionDBFor(level, threshold, ratio, knee, kneeFloor float64) float64 {
 	if level <= kneeFloor || ratio == 1 {
 		return 0
 	}
-	over := (20/(math.Log2E*math.Ln10))*fastmath.Log2(level) - threshold
+	over := float64((20/(math.Log2E*math.Ln10))*fastmath.Log2(level)) - threshold
 	slope := 1 - 1/ratio
 	if knee == 0 || over >= knee/2 {
 		return math.Max(0, over) * slope
@@ -135,7 +135,7 @@ func reductionDBFor(level, threshold, ratio, knee, kneeFloor float64) float64 {
 	if over <= -knee/2 {
 		return 0
 	}
-	x := over + knee/2
+	x := over + float64(knee/2)
 	return slope * x * x / (2 * knee)
 }
 
@@ -151,38 +151,38 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	}
 	changed := false
 	if c.params.Threshold != c.targetParams.Threshold {
-		c.params.Threshold += (c.targetParams.Threshold - c.params.Threshold) * c.smooth
-		c.kneeFloor += (c.targetKneeFloor - c.kneeFloor) * c.smooth
+		c.params.Threshold += float64((c.targetParams.Threshold - c.params.Threshold) * c.smooth)
+		c.kneeFloor += float64((c.targetKneeFloor - c.kneeFloor) * c.smooth)
 		changed = true
 	}
 	if c.params.Ratio != c.targetParams.Ratio {
-		c.params.Ratio += (c.targetParams.Ratio - c.params.Ratio) * c.smooth
+		c.params.Ratio += float64((c.targetParams.Ratio - c.params.Ratio) * c.smooth)
 		changed = true
 	}
 	if c.params.Knee != c.targetParams.Knee {
-		c.params.Knee += (c.targetParams.Knee - c.params.Knee) * c.smooth
+		c.params.Knee += float64((c.targetParams.Knee - c.params.Knee) * c.smooth)
 		changed = true
 	}
 	if c.attack != c.targetAttack {
-		c.attack += (c.targetAttack - c.attack) * c.smooth
+		c.attack += float64((c.targetAttack - c.attack) * c.smooth)
 		changed = true
 	}
 	if c.release != c.targetRelease {
-		c.release += (c.targetRelease - c.release) * c.smooth
+		c.release += float64((c.targetRelease - c.release) * c.smooth)
 		changed = true
 	}
 	if changed {
 		c.lastLevel = math.NaN()
 	}
 	if external {
-		c.sideLP.left += (dl - c.sideLP.left) * c.sideAlpha
-		c.sideLP.right += (dr - c.sideLP.right) * c.sideAlpha
+		c.sideLP.left += float64((dl - c.sideLP.left) * c.sideAlpha)
+		c.sideLP.right += float64((dr - c.sideLP.right) * c.sideAlpha)
 		dl -= c.sideLP.left
 		dr -= c.sideLP.right
 	}
 	var level float64
 	if c.params.Detect == RMSDetector {
-		energy := (dl*dl + dr*dr) * .5
+		energy := float64((float64(dl*dl) + float64(dr*dr)) * .5)
 		c.rmsSum += energy - c.rms[c.rmsIndex]
 		c.rms[c.rmsIndex] = energy
 		c.rmsIndex++
@@ -208,9 +208,9 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	if target > c.reduction {
 		coefficient = c.attack
 	}
-	c.reduction += (target - c.reduction) * coefficient
-	c.makeup += (c.targetMakeup - c.makeup) * c.smooth
-	c.mix += (c.targetMix - c.mix) * c.smooth
+	c.reduction += float64((target - c.reduction) * coefficient)
+	c.makeup += float64((c.targetMakeup - c.makeup) * c.smooth)
+	c.mix += float64((c.targetMix - c.mix) * c.smooth)
 	// The detector, gain reduction and automation have advanced above. With
 	// zero audio the output is exactly zero for any finite gain; avoid the
 	// exponentiation without freezing an external sidechain or release.
@@ -218,8 +218,8 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 		return 0, 0
 	}
 	gain := fastmath.Exp2((c.makeup - c.reduction) * (math.Log2E * math.Ln10 / 20))
-	outL := l*(1-c.mix) + l*gain*c.mix
-	outR := r*(1-c.mix) + r*gain*c.mix
+	outL := float64(l*(1-c.mix)) + float64(l*gain*c.mix)
+	outR := float64(r*(1-c.mix)) + float64(r*gain*c.mix)
 	if !compressorFinite(outL) || !compressorFinite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
 		c.fault = true
 		return 0, 0

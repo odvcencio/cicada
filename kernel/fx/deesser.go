@@ -75,9 +75,9 @@ func (d *Deesser) Process(l, r float32) (float32, float32) {
 	in := [2]float64{float64(l), float64(r)}
 	var hi [2]float64
 	for ch := range in {
-		hi[ch] = d.b0*in[ch] + d.z1[ch]
-		d.z1[ch] = d.b1*in[ch] - d.a1*hi[ch] + d.z2[ch]
-		d.z2[ch] = d.b2*in[ch] - d.a2*hi[ch]
+		hi[ch] = float64(d.b0*in[ch]) + d.z1[ch]
+		d.z1[ch] = float64(d.b1*in[ch]) - float64(d.a1*hi[ch]) + d.z2[ch]
+		d.z2[ch] = float64(d.b2*in[ch]) - float64(d.a2*hi[ch])
 		if math.Abs(d.z1[ch]) < 1e-30 {
 			d.z1[ch] = 0
 		}
@@ -90,24 +90,24 @@ func (d *Deesser) Process(l, r float32) (float32, float32) {
 	if instant > d.envelope {
 		detector = d.detectorAttack
 	}
-	d.envelope += (instant - d.envelope) * detector
+	d.envelope += float64((instant - d.envelope) * detector)
 	target := float64(0)
 	if d.envelope > 0 {
-		over := (20/(math.Log2E*math.Ln10))*fastmath.Log2(d.envelope) - d.params.ThresholdDB
+		over := float64((20/(math.Log2E*math.Ln10))*fastmath.Log2(d.envelope)) - d.params.ThresholdDB
 		target = math.Min(d.params.RangeDB, math.Max(0, over)*(1-1/d.params.Ratio))
 	}
 	coeff := d.release
 	if target > d.reduction {
 		coeff = d.attack
 	}
-	d.reduction += (target - d.reduction) * coeff
+	d.reduction += float64((target - d.reduction) * coeff)
 	// Keep crossover and detector tails above advancing, even when the
 	// crossover is exactly zero. Attenuation cannot affect this sample then.
 	if in[0] == 0 && in[1] == 0 && hi[0] == 0 && hi[1] == 0 {
 		return 0, 0
 	}
 	attenuation := (1 - fastmath.Exp2(-d.reduction*(math.Log2E*math.Ln10/20))) * d.params.Mix
-	outL, outR := in[0]-hi[0]*attenuation, in[1]-hi[1]*attenuation
+	outL, outR := in[0]-float64(hi[0]*attenuation), in[1]-float64(hi[1]*attenuation)
 	if !finite(outL) || !finite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
 		d.fault = true
 		return 0, 0

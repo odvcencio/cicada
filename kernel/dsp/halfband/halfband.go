@@ -123,7 +123,7 @@ func (f *FIR) Upsample(input float64) (first, second float64) {
 	// inserted zero. Only the center tap can see an input sample.
 	f.history[f.position] = 0
 	f.history[f.position+Taps] = 0
-	second = 2 * (0.0 + f.coefficients[center]*f.history[f.position+Taps-center])
+	second = 2 * (0.0 + float64(f.coefficients[center]*f.history[f.position+Taps-center]))
 	f.position++
 	if f.position == Taps {
 		f.position = 0

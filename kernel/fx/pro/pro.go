@@ -5,6 +5,7 @@ package pro
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/fx"
 )
 
@@ -26,7 +27,7 @@ func clean(x float64) float64 {
 	}
 	return x
 }
-func dbGain(db float64) float64 { return math.Pow(10, db/20) }
+func dbGain(db float64) float64 { return detmath.Pow(10, db/20) }
 
 // Params describes EQ -> compression -> transients -> width -> room -> limiter.
 // Zero Params is an exact zero-latency bypass. Width.Enabled distinguishes
