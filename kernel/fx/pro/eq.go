@@ -27,10 +27,12 @@ type biquad struct {
 	z1, z2             [2]float64
 }
 
+// process rounds every product with an explicit conversion before it is added,
+// so arm64 cannot fuse a multiply-add and the output matches amd64 bit for bit.
 func (f *biquad) process(input float64, channel int) float64 {
-	output := f.b0*input + f.z1[channel]
-	f.z1[channel] = clean(f.b1*input - f.a1*output + f.z2[channel])
-	f.z2[channel] = clean(f.b2*input - f.a2*output)
+	output := float64(f.b0*input) + f.z1[channel]
+	f.z1[channel] = clean(float64(f.b1*input) - float64(f.a1*output) + f.z2[channel])
+	f.z2[channel] = clean(float64(f.b2*input) - float64(f.a2*output))
 	return output
 }
 
@@ -63,6 +65,8 @@ func NewEQ(sampleRate int, bands [4]Band) (*EQ, error) {
 	return e, nil
 }
 
+// designBand rounds products before additions, as process does, so the
+// coefficients are the same on every target.
 func designBand(rate int, p Band) biquad {
 	w := 2 * math.Pi * p.FrequencyHz / float64(rate)
 	s, c := math.Sincos(w)
@@ -71,25 +75,25 @@ func designBand(rate int, p Band) biquad {
 	var b0, b1, b2, a0, a1, a2 float64
 	switch p.Type {
 	case Peak:
-		b0, b1, b2 = 1+alpha*a, -2*c, 1-alpha*a
+		b0, b1, b2 = 1+float64(alpha*a), -2*c, 1-float64(alpha*a)
 		a0, a1, a2 = 1+alpha/a, -2*c, 1-alpha/a
 	case LowShelf, HighShelf:
 		// Fixed slope S=1 keeps shelves monotonic at all gain settings.
-		beta := math.Sqrt(2*a) * s
+		beta := float64(math.Sqrt(2*a) * s)
 		if p.Type == LowShelf {
-			b0 = a * ((a + 1) - (a-1)*c + beta)
-			b1 = 2 * a * ((a - 1) - (a+1)*c)
-			b2 = a * ((a + 1) - (a-1)*c - beta)
-			a0 = (a + 1) + (a-1)*c + beta
-			a1 = -2 * ((a - 1) + (a+1)*c)
-			a2 = (a + 1) + (a-1)*c - beta
+			b0 = a * ((a + 1) - float64((a-1)*c) + beta)
+			b1 = 2 * a * ((a - 1) - float64((a+1)*c))
+			b2 = a * ((a + 1) - float64((a-1)*c) - beta)
+			a0 = (a + 1) + float64((a-1)*c) + beta
+			a1 = -2 * ((a - 1) + float64((a+1)*c))
+			a2 = (a + 1) + float64((a-1)*c) - beta
 		} else {
-			b0 = a * ((a + 1) + (a-1)*c + beta)
-			b1 = -2 * a * ((a - 1) + (a+1)*c)
-			b2 = a * ((a + 1) + (a-1)*c - beta)
-			a0 = (a + 1) - (a-1)*c + beta
-			a1 = 2 * ((a - 1) - (a+1)*c)
-			a2 = (a + 1) - (a-1)*c - beta
+			b0 = a * ((a + 1) + float64((a-1)*c) + beta)
+			b1 = -2 * a * ((a - 1) + float64((a+1)*c))
+			b2 = a * ((a + 1) + float64((a-1)*c) - beta)
+			a0 = (a + 1) - float64((a-1)*c) + beta
+			a1 = 2 * ((a - 1) - float64((a+1)*c))
+			a2 = (a + 1) - float64((a-1)*c) - beta
 		}
 	case Highpass:
 		b0, b1, b2 = (1+c)/2, -(1 + c), (1+c)/2
