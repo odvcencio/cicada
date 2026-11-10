@@ -23,26 +23,33 @@ type intentsDocument struct {
 // intentsCommand prints the catalog of the edit intents cicada apply accepts,
 // or one kind of it. The catalog comes from the intent registry.
 func intentsCommand(args []string, stdout io.Writer) error {
-	asJSON := false
+	asJSON := hasJSONFlag(args)
+	fail := func(code string, err error) error {
+		if asJSON {
+			if writeErr := writeAgentJSON(stdout, jsonErrorDocument{Schema: intentsSchema, Error: jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
+				return writeErr
+			}
+		}
+		return err
+	}
 	var kinds []string
 	for _, arg := range args {
 		switch {
 		case arg == "--json":
-			asJSON = true
 		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("%s", intentsUsage)
+			return fail("usage", fmt.Errorf("%s", intentsUsage))
 		default:
 			kinds = append(kinds, arg)
 		}
 	}
 	if len(kinds) > 1 {
-		return fmt.Errorf("%s", intentsUsage)
+		return fail("usage", fmt.Errorf("%s", intentsUsage))
 	}
 	catalog := edits.Catalog()
 	if len(kinds) == 1 {
 		info, ok := edits.DescribeIntent(kinds[0])
 		if !ok {
-			return fmt.Errorf("unknown intent kind %q; run cicada intents for the list", kinds[0])
+			return fail("unknown_kind", fmt.Errorf("unknown intent kind %q; run cicada intents for the list", kinds[0]))
 		}
 		catalog = []edits.IntentInfo{info}
 	}

@@ -79,7 +79,7 @@ func TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain(t *testing.T) {
 	}
 	// Without a limiter the static gain stops at the ceiling; the fix is the
 	// master limiter that punchy-limiter.cicada adds.
-	if shortfall.reason != "loudness_shortfall_at_true_peak_ceiling" || shortfall.remedy != masterLimiterRemedy || !strings.HasSuffix(err.Error(), masterLimiterRemedy) {
+	if shortfall.reason != "loudness_shortfall_at_true_peak_ceiling" || shortfall.limiterCeiling == nil || *shortfall.limiterCeiling != target.TruePeakMaxDBTP || !strings.HasSuffix(err.Error(), limiterRemedySummary(target.TruePeakMaxDBTP)) {
 		t.Fatalf("the shortfall does not name the master limiter: %+v", shortfall)
 	}
 	if result.GainStage != "post_chain" || result.MasterLimiterReductionDB != 0 {
@@ -124,7 +124,7 @@ func TestExportLoudnessInputGainCapReportsShortfall(t *testing.T) {
 		t.Fatalf("shortfall does not name the input gain cap: %v", err)
 	}
 	// The score already has a master limiter, so adding one is not the fix.
-	if shortfall.reason != "loudness_shortfall_at_input_gain_cap" || shortfall.remedy != "" {
+	if shortfall.reason != "loudness_shortfall_at_input_gain_cap" || shortfall.limiterCeiling != nil {
 		t.Fatalf("limiter shortfall: %+v", shortfall)
 	}
 	t.Logf("METRIC EXPORT-INPUT-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)

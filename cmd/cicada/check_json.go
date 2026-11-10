@@ -11,10 +11,10 @@ import (
 	"unicode/utf8"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/seq"
-	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -29,6 +29,37 @@ type checkDocument struct {
 	Errors   int                `json:"errors"`
 	Warnings int                `json:"warnings"`
 	Scores   []checkScoreReport `json:"scores"`
+	Error    *jsonError         `json:"error,omitempty"`
+}
+
+// checkFailureJSON writes the document of a check that could not check its
+// scores: a usage error, or a project that cannot be read. A cicada.mod
+// error with a diagnostic code is also listed as that file's diagnostic.
+// It returns err, so the exit status stays that of the text command.
+func checkFailureJSON(stdout io.Writer, options checkOptions, manifest, code string, err error) error {
+	document := checkDocument{Schema: checkSchema, Profile: options.profile, Scores: []checkScoreReport{}, Error: &jsonError{Code: code, Message: err.Error()}}
+	var manifestErr *edition.ManifestError
+	var sourceErr *project.SourceError
+	var diagnostic *notation.Diagnostic
+	switch {
+	case errors.As(err, &manifestErr) && manifest != "":
+		diagnostic = &notation.Diagnostic{Code: manifestErr.Code, Severity: "error", Message: manifestErr.Message, Position: notation.Position{File: manifest, Line: manifestErr.Line, Column: max(manifestErr.Column, 1)}}
+	case errors.As(err, &sourceErr):
+		diagnostic = &sourceErr.Diagnostic
+	}
+	if diagnostic != nil {
+		file := diagnostic.Position.File
+		if file == "" {
+			file = manifest
+		}
+		source, _ := os.ReadFile(file)
+		document.Errors = 1
+		document.Scores = append(document.Scores, checkScoreReport{File: jsonPath(file), Diagnostics: []checkDiagnosticReport{checkDiagnosticJSON(file, source, *diagnostic, nil)}})
+	}
+	if writeErr := writeAgentJSON(stdout, document); writeErr != nil {
+		return writeErr
+	}
+	return err
 }
 
 type checkScoreReport struct {
@@ -61,11 +92,13 @@ type checkDiagnosticReport struct {
 }
 
 // checkFix is a repair the checker knows for one diagnostic: intents for
-// cicada apply, or a command to run.
+// cicada apply, or a command to run. It holds only at Revision, the score's
+// revision when it was computed: apply one fix, then check again.
 type checkFix struct {
-	Summary string            `json:"summary"`
-	Intents []json.RawMessage `json:"intents,omitempty"`
-	Command []string          `json:"command,omitempty"`
+	Summary  string            `json:"summary"`
+	Intents  []json.RawMessage `json:"intents,omitempty"`
+	Command  []string          `json:"command,omitempty"`
+	Revision string            `json:"revision"`
 }
 
 type checkBrowserReport struct {
@@ -118,7 +151,7 @@ func checkPathsJSON(paths []string, options checkOptions, stdout io.Writer) erro
 // checkScoreJSON checks one score in the order checkPathsWith does: the
 // validator, then the sampler packs, then the browser profile.
 func checkScoreJSON(path string, options checkOptions) checkScoreReport {
-	report := checkScoreReport{File: displayPath(path), Diagnostics: []checkDiagnosticReport{}}
+	report := checkScoreReport{File: jsonPath(path), Diagnostics: []checkDiagnosticReport{}}
 	add := func(source []byte, diagnostic notation.Diagnostic, inspection *scoreInspection) {
 		report.Diagnostics = append(report.Diagnostics, checkDiagnosticJSON(path, source, diagnostic, inspection))
 	}
@@ -171,7 +204,7 @@ func checkDiagnosticJSON(path string, source []byte, d notation.Diagnostic, insp
 			source = data
 		}
 	}
-	report := checkDiagnosticReport{Code: d.Code, Severity: d.Severity, Message: d.Message, File: displayPath(file), Hint: checkSuggestion(d)}
+	report := checkDiagnosticReport{Code: d.Code, Severity: d.Severity, Message: d.Message, File: jsonPath(file), Hint: checkSuggestion(d)}
 	if d.Position.Line > 0 {
 		start := sourcePosition(source, d.Position.Line, d.Position.Column)
 		end := start
@@ -192,7 +225,7 @@ func checkDiagnosticJSON(path string, source []byte, d notation.Diagnostic, insp
 			relatedSource, _ = os.ReadFile(relatedFile)
 		}
 		related := sourcePosition(relatedSource, d.Related.Line, d.Related.Column)
-		related.File = displayPath(relatedFile)
+		related.File = jsonPath(relatedFile)
 		report.Related = &related
 	}
 	if inspection != nil {
@@ -222,18 +255,131 @@ func sourcePosition(source []byte, line, column int) checkPosition {
 }
 
 // checkFixFor returns the repair the checker knows for a diagnostic, or nil.
-// Each fix is checked: an intent fix applies to the score as it is, and the
-// migration fix changes the file.
+// A fix is offered only when it is proven on the score as it is: applying it
+// alone removes this diagnostic and adds no other (the score may still have
+// other errors). Revision is the score's revision the fix was computed for.
 func checkFixFor(path string, inspection scoreInspection, d notation.Diagnostic) *checkFix {
+	if inspection.source == nil || d.Position.File != "" && d.Position.File != path {
+		return nil
+	}
 	switch {
 	case d.Code == "CICADA-ARRANGEMENT" && strings.Contains(d.Message, "must start on a step"):
 		return snapPlacementFix(path, inspection, d)
-	case d.Code == "CICADA-VERSION" && inspection.source != nil:
-		if _, changed, err := migration.FixSource(inspection.source); err == nil && changed {
-			return &checkFix{Summary: "migrate the legacy spellings with cicada fix", Command: []string{"cicada", "fix", path}}
+	case d.Code == "CICADA-VERSION":
+		fixed, manifestPath, manifest, ok := cicadaFixCandidate(path, inspection.source)
+		if ok && fixRemovesWith(path, inspection, d, fixed, manifestPath, manifest) {
+			return &checkFix{Summary: "migrate the score with cicada fix", Command: []string{"cicada", "fix", jsonPath(path)}, Revision: edits.Revision(inspection.source)}
 		}
 	}
 	return nil
+}
+
+// cicadaFixCandidate is what cicada fix <path> would write for a score that
+// is not part of a multi-file project: the fixed source and, when the fix
+// writes one, the manifest and its path. It uses the fix command's own
+// functions. ok is false when the fix would refuse, change nothing, or touch
+// other scores.
+func cicadaFixCandidate(path string, source []byte) (fixed []byte, manifestPath string, manifest []byte, ok bool) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, "", nil, false
+	}
+	root, currentEdition, manifestFile, err := fixProjectLocation(absolute)
+	if err != nil {
+		return nil, "", nil, false
+	}
+	var original []byte
+	if manifestFile != "" {
+		if original, err = os.ReadFile(manifestFile); err != nil {
+			return nil, "", nil, false
+		}
+		if parsed, err := edition.ParseProjectManifest(original); err != nil || parsed.ExplicitSources() {
+			return nil, "", nil, false
+		}
+	}
+	fixed, changed, err := fixLoadedScoreForProject(absolute, source, currentEdition)
+	if err != nil {
+		return nil, "", nil, false
+	}
+	if !changed {
+		fixed = source
+	}
+	newManifest := manifestFile == "" && hasEditionOneEdit([]fixScoreEdit{{path: absolute, before: source, fixed: fixed, changed: changed}}, currentEdition)
+	upgrade := manifestFile != "" && currentEdition == 1
+	if !changed && !newManifest && !upgrade {
+		return nil, "", nil, false
+	}
+	paths, err := projectScorePaths(root)
+	if err != nil {
+		return nil, "", nil, false
+	}
+	for _, other := range paths {
+		if filepath.Clean(other) == absolute {
+			continue
+		}
+		if legacy, err := isEditionOneScore(other, currentEdition, manifestFile != "" && !newManifest); err != nil || legacy {
+			return nil, "", nil, false
+		}
+	}
+	manifestPath = manifestFile
+	switch {
+	case newManifest:
+		name := strings.TrimSuffix(filepath.Base(absolute), ".cicada")
+		if !edition.ValidProjectName(name) {
+			return nil, "", nil, false
+		}
+		manifestPath, manifest = filepath.Join(root, "cicada.mod"), []byte("project "+name+"\ncicada 2\n")
+	case upgrade:
+		if manifest, _, err = edition.UpgradeManifestEdition(original); err != nil {
+			return nil, "", nil, false
+		}
+	}
+	return fixed, manifestPath, manifest, true
+}
+
+// fixRemoves reports whether replacing the score's text with candidate
+// removes diagnostic d and adds no diagnostic the score did not have.
+// Diagnostics are compared by code, message and file, since an edit may move
+// lines.
+func fixRemoves(path string, inspection scoreInspection, d notation.Diagnostic, candidate []byte) bool {
+	return fixRemovesWith(path, inspection, d, candidate, "", nil)
+}
+
+// fixRemovesWith is fixRemoves with the manifest the fix writes, when it
+// writes one.
+func fixRemovesWith(path string, inspection scoreInspection, d notation.Diagnostic, candidate []byte, manifestPath string, manifest []byte) bool {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	overrides := map[string][]byte{absolute: candidate}
+	var after scoreInspection
+	if manifest != nil {
+		overrides[manifestPath] = manifest
+		after, err = inspectScorePinned(path, overrides, manifestPath)
+	} else {
+		after, err = inspectScoreWith(path, overrides)
+	}
+	if err != nil {
+		return false
+	}
+	key := func(d notation.Diagnostic) string { return d.Code + "\x00" + d.Message + "\x00" + d.Position.File }
+	counts := map[string]int{}
+	for _, before := range inspection.diagnostics {
+		counts[key(before)]++
+	}
+	for _, now := range after.diagnostics {
+		counts[key(now)]--
+	}
+	if counts[key(d)] < 1 {
+		return false
+	}
+	for _, left := range counts {
+		if left < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // snapPlacementFix moves a placement that starts between steps to the
@@ -249,41 +395,22 @@ func snapPlacementFix(path string, inspection scoreInspection, d notation.Diagno
 		}
 		snapped := (placement.AtTick + seq.TicksPerStep/2) / seq.TicksPerStep * seq.TicksPerStep
 		intent := &edits.MoveClip{Entity: edits.EntityID("placement:" + placement.Name), AtTick: snapped}
-		before, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
 		s := &studio{path: path}
-		opts, err := s.editOptions(before, nil)
+		opts, err := s.editOptions(inspection.source, nil)
 		if err != nil {
 			return nil
 		}
+		opts.KeepInvalid = true
 		env := edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{intent}}
-		if result, err := edits.Apply(before, env, opts); err != nil || result.Unchanged {
+		result, err := edits.Apply(inspection.source, env, opts)
+		if err != nil || result.Unchanged || len(result.Files) != 0 || !fixRemoves(path, inspection, d, result.Source) {
 			return nil
 		}
 		raw, err := env.RawIntents()
 		if err != nil {
 			return nil
 		}
-		return &checkFix{Summary: fmt.Sprintf("move placement %s to the nearest step, tick %d", placement.Name, snapped), Intents: raw}
+		return &checkFix{Summary: fmt.Sprintf("move placement %s to the nearest step, tick %d", placement.Name, snapped), Intents: raw, Revision: edits.Revision(inspection.source)}
 	}
 	return nil
-}
-
-// displayPath shows a path under the working directory relative to it, so
-// JSON output does not carry absolute temporary paths the user did not type.
-func displayPath(path string) string {
-	if !filepath.IsAbs(path) {
-		return path
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return path
-	}
-	rel, err := filepath.Rel(wd, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return path
-	}
-	return rel
 }

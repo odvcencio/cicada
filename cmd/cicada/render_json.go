@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,9 @@ import (
 	"sort"
 	"strings"
 
+	gts "github.com/odvcencio/gotreesitter"
+	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
 )
 
@@ -44,13 +48,14 @@ type renderOutputJSON struct {
 }
 
 // renderLevelsJSON are the peak facts of a render without a loudness target.
-// Peaks are linear full-scale values, as the text summary prints them.
+// Peaks are linear full-scale values, as the text summary prints them. The
+// counts use the names of verify-wav --report.
 type renderLevelsJSON struct {
 	PreLimiterPeak  float64 `json:"pre_limiter_peak"`
 	PreLimiterOvers int64   `json:"pre_limiter_overs"`
 	OutputPeak      float64 `json:"output_peak"`
-	CeilingSamples  int64   `json:"ceiling_samples"`
-	ClippedSamples  int64   `json:"clipped_samples"`
+	CeilingCount    int64   `json:"ceiling_count"`
+	ClippedCount    int64   `json:"clipped_count"`
 }
 
 // renderLoudnessJSON is the result of a loudness target. A measurement is
@@ -74,13 +79,36 @@ type renderLoudnessJSON struct {
 	Notes                     []string `json:"notes,omitempty"`
 }
 
-// renderErrorJSON says why a render failed. Reason is a stable code; the
-// message is the text the command prints; remedy is the documented fix, when
-// the cause has one.
+// renderErrorJSON says why a render failed. Code is one of renderErrorCodes;
+// the message is the text the command prints; remedy is the documented fix,
+// when the cause has one.
 type renderErrorJSON struct {
-	Reason  string `json:"reason"`
-	Message string `json:"message"`
-	Remedy  string `json:"remedy,omitempty"`
+	Code    string            `json:"code"`
+	Message string            `json:"message"`
+	Remedy  *renderRemedyJSON `json:"remedy,omitempty"`
+}
+
+// renderRemedyJSON is a fix for a failed render. ScoreText is the exact text
+// to put in the score: when Replaces is set, it replaces that text in File
+// (the declaration it changes); otherwise it is added at the end of File.
+// Intents, when present, make the same change through cicada apply; it is
+// absent when no intent can.
+type renderRemedyJSON struct {
+	Summary   string            `json:"summary"`
+	File      string            `json:"file"`
+	Replaces  string            `json:"replaces,omitempty"`
+	ScoreText string            `json:"score_text"`
+	Intents   []json.RawMessage `json:"intents,omitempty"`
+}
+
+// renderErrorCodes are the codes of render --json and stems --json errors;
+// docs/manual/agents.md lists them and TestRenderErrorCodesAreDocumented
+// keeps the lists equal.
+var renderErrorCodes = []string{
+	"usage", "unreadable_score", "invalid_score", "export_settings", "output_exists",
+	"sampler_memory", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
+	"true_peak_over_ceiling", "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum",
+	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_target_missed",
 }
 
 // takeJSONFlag removes --json from a command's flags and reports whether it
@@ -98,24 +126,52 @@ func takeJSONFlag(args []string) ([]string, bool) {
 	return kept, found
 }
 
+// renderJSONMain runs cicada render or cicada stems when --json is among
+// the arguments: every outcome, a usage error included, prints one document.
+// It returns the exit status: 2 for a usage error, as the text command.
+func renderJSONMain(command string, args []string, stdout, stderr io.Writer) int {
+	usageFailure := func(err error) int {
+		fmt.Fprintln(stderr, err)
+		writeAgentJSON(stdout, renderDocument{Schema: renderSchema, Command: command, Outputs: []renderOutputJSON{}, Error: &renderErrorJSON{Code: "usage", Message: err.Error()}})
+		return 2
+	}
+	entry, ok := findCommandHelp(command)
+	usage := fmt.Errorf("usage: %s", entry.usage)
+	if !ok || len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return usageFailure(usage)
+	}
+	flags, _ := takeJSONFlag(args[1:])
+	wantBits := 24
+	if command == "stems" {
+		wantBits = 32
+	}
+	output, opts, target, err := parseRenderArgs(flags, wantBits, stderr)
+	if err != nil {
+		return usageFailure(err)
+	}
+	if command == "stems" && target != nil {
+		return usageFailure(usage)
+	}
+	return renderJSONCommand(command, args[0], output, opts, target, stdout, stderr)
+}
+
 // renderJSONCommand runs cicada render or cicada stems with --json: the
 // checks and the render are those of the text command, standard output gets
 // one JSON document, and diagnostics and the error go to standard error. It
 // returns the exit status.
 func renderJSONCommand(command, path, output string, opts render.Options, target *renderTargetOptions, stdout, stderr io.Writer) int {
-	document := renderDocument{Schema: renderSchema, Command: command, Score: path, Outputs: []renderOutputJSON{}}
+	document := renderDocument{Schema: renderSchema, Command: command, Score: jsonPath(path), Outputs: []renderOutputJSON{}}
+	var inspection scoreInspection
 	finish := func(err error) int {
 		if err != nil {
-			document.Error = renderErrorFor(err)
+			document.Error = renderErrorFor(err, path, inspection)
 			fmt.Fprintln(stderr, err)
 		}
 		document.OK = err == nil
-		data, marshalErr := marshalAgentJSON(document)
-		if marshalErr != nil {
-			fmt.Fprintln(stderr, marshalErr)
+		if writeErr := writeAgentJSON(stdout, document); writeErr != nil {
+			fmt.Fprintln(stderr, writeErr)
 			return 1
 		}
-		fmt.Fprintln(stdout, string(data))
 		if err != nil {
 			return 1
 		}
@@ -143,6 +199,9 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 	}
 	opts.AssetRoot = inspection.root(path)
 	if command == "stems" {
+		if _, err := os.Stat(output); err == nil {
+			return finish(&renderFailure{reason: "output_exists", message: "stem output directory already exists: " + output})
+		}
 		report, err := render.Stems(inspection.score, opts, output)
 		if err != nil {
 			return finish(err)
@@ -198,7 +257,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 		return finish(err)
 	}
 	document.FromBar, document.Bars = report.From+1, report.Bars
-	document.Levels = &renderLevelsJSON{PreLimiterPeak: float64(report.Peak), PreLimiterOvers: report.PreLimiterOvers, OutputPeak: float64(report.OutputPeak), CeilingSamples: report.CeilingSamples, ClippedSamples: report.ClippedSamples}
+	document.Levels = &renderLevelsJSON{PreLimiterPeak: float64(report.Peak), PreLimiterOvers: report.PreLimiterOvers, OutputPeak: float64(report.OutputPeak), CeilingCount: report.CeilingSamples, ClippedCount: report.ClippedSamples}
 	described, err := describeWAV(output, "mix")
 	if err != nil {
 		return finish(err)
@@ -207,17 +266,101 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 	return finish(nil)
 }
 
-// renderErrorFor gives an error its stable reason code.
-func renderErrorFor(err error) *renderErrorJSON {
+// renderErrorFor gives an error its stable code and, for a shortfall that a
+// master limiter fixes, the structured remedy for this score.
+func renderErrorFor(err error, path string, inspection scoreInspection) *renderErrorJSON {
 	var shortfall *loudnessShortfallError
 	if errors.As(err, &shortfall) {
-		return &renderErrorJSON{Reason: shortfall.reason, Message: shortfall.message, Remedy: shortfall.remedy}
+		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message}
+		if shortfall.limiterCeiling != nil {
+			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling)
+		}
+		return failure
 	}
 	var failure *renderFailure
 	if errors.As(err, &failure) {
-		return &renderErrorJSON{Reason: failure.reason, Message: failure.message}
+		return &renderErrorJSON{Code: failure.reason, Message: failure.message}
 	}
-	return &renderErrorJSON{Reason: "render_failed", Message: err.Error()}
+	var memory *instrumentpack.ResidentPCMError
+	if errors.As(err, &memory) {
+		return &renderErrorJSON{Code: "sampler_memory", Message: err.Error()}
+	}
+	if strings.Contains(err.Error(), "stem output directory already exists") {
+		return &renderErrorJSON{Code: "output_exists", Message: err.Error()}
+	}
+	return &renderErrorJSON{Code: "render_failed", Message: err.Error()}
+}
+
+// limiterRemedy builds the score text that adds a limiter at ceiling dBTP as
+// the last master insert: a new fx declaration, and the master declaration
+// with that limiter at the end of its insert chain.
+func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *renderRemedyJSON {
+	remedy := &renderRemedyJSON{Summary: limiterRemedySummary(ceiling), File: jsonPath(path)}
+	files := []notation.SourceFile{{Path: path, Source: inspection.source}}
+	if inspection.sources != nil {
+		files = inspection.sources.Files
+	}
+	names := notation.DeclarationNames(files)
+	name := "ceiling"
+	for i := 2; names[name]; i++ {
+		name = fmt.Sprintf("ceiling-%d", i)
+	}
+	fx := fmt.Sprintf("fx %s limiter { ceiling = %sdBTP }", name, formatDBTP(ceiling))
+	remedy.ScoreText = fx + "\nmaster { insert = " + name + " }"
+	for _, file := range files {
+		if file.Library != "" {
+			continue
+		}
+		master, replaced, ok := masterWithInsert(file.Source, name)
+		if ok {
+			remedy.File, remedy.Replaces, remedy.ScoreText = jsonPath(file.Path), master, fx+"\n"+replaced
+			break
+		}
+	}
+	return remedy
+}
+
+// masterWithInsert finds the master declaration of a source and returns its
+// text and the same declaration with name appended to its insert chain.
+func masterWithInsert(source []byte, name string) (string, string, bool) {
+	root, walker, err := notation.ParseTree(source)
+	if err != nil {
+		return "", "", false
+	}
+	for i := 0; i < root.NamedChildCount(); i++ {
+		node := root.NamedChild(i)
+		if walker.Type(node) != "master_decl" {
+			continue
+		}
+		text := walker.Text(node)
+		start := int(node.StartByte())
+		var insert *gts.Node
+		var find func(*gts.Node)
+		find = func(n *gts.Node) {
+			for j := 0; j < n.NamedChildCount() && insert == nil; j++ {
+				child := n.NamedChild(j)
+				if walker.Type(child) == "param_decl" && walker.Text(walker.Field(child, "name")) == "insert" {
+					insert = child
+					return
+				}
+				find(child)
+			}
+		}
+		find(node)
+		if insert != nil {
+			value := walker.Field(insert, "value")
+			at := int(value.EndByte()) - start
+			current := strings.TrimSpace(walker.Text(value))
+			if current == "none" {
+				from := int(value.StartByte()) - start
+				return text, text[:from] + name + text[at:], true
+			}
+			return text, text[:at] + " -> " + name + text[at:], true
+		}
+		closing := strings.LastIndex(text, "}")
+		return text, strings.TrimRight(text[:closing], " ") + " insert = " + name + " " + text[closing:], true
+	}
+	return "", "", false
 }
 
 func finiteValue(value float64) *float64 {
@@ -239,7 +382,7 @@ func describeWAV(path, role string) (renderOutputJSON, error) {
 	if _, err := io.ReadFull(file, riff[:]); err != nil || string(riff[:4]) != "RIFF" || string(riff[8:]) != "WAVE" {
 		return renderOutputJSON{}, fmt.Errorf("%s: not a RIFF WAVE file", path)
 	}
-	described := renderOutputJSON{Path: path, Role: role}
+	described := renderOutputJSON{Path: jsonPath(path), Role: role}
 	var blockAlign int
 	for {
 		var header [8]byte

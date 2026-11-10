@@ -7,24 +7,39 @@ format, with an example that the binary produced.
 
 The `--json` formats share these rules:
 
-- Standard output carries one JSON document and nothing else. Warnings,
+- Every run with `--json` prints exactly one JSON document on standard output,
+  on success and on every failure, a usage error included. Warnings,
   diagnostics as text and error messages go to standard error.
-- Every document has a `schema` field that names its format and version, such
-  as `cicada.check.v1`. A field is added in a compatible way; a change that
-  would break a reader gets a new version.
-- Field names are snake_case. Lists whose order has no meaning are sorted, and
-  no document carries a timestamp. Paths are the ones you passed, and a file
-  under the working folder is shown relative to it.
-- The exit status is the same as without `--json`: 0 on success and 1 on
-  failure. A failed check still writes its document with `valid` false, and a
-  failed apply or render writes one with an `error` object. A usage error (an
-  unknown flag, a missing argument) is text on standard error, with exit
-  status 2 for `render` and `stems` and 1 for the others; `apply --json`
-  writes it as a document with `error.stage` `usage`.
+- Every document has a `schema` field that names its format and version, in
+  the form `cicada.<format>.v<version>`, such as `cicada.check.v1`. A field is
+  added in a compatible way; a change that would break a reader gets a new
+  version. `cicada audition --json` also keeps its older `format` field
+  (`cicada.audition/1`) beside `schema` (`cicada.audition.v1`).
+- Keys are snake_case. Lists whose order has no meaning are sorted, and no
+  document carries a timestamp. The one older format outside these rules is
+  `cicada symbols --json`: a list of symbols without a schema, whose positions
+  use the keys `Line` and `Column`.
+- Paths follow one rule in every document: a path inside the working folder is
+  relative to it, with forward slashes (`sub/song.cicada`); a path outside it
+  is absolute.
+- A failure carries an `error` object with a stable `code` and the `message`
+  the command prints. `check` also reports `valid` false, and its diagnostics.
+- The exit status is the same as without `--json`:
 
-`cicada audition --json` (format `cicada.audition/1`) is described in
-[Audition](audition.md), and `cicada verify-wav --report` in
-[Exporting](exporting.md).
+  | Command | Success | Failure | Usage error or unknown name |
+  | --- | --- | --- | --- |
+  | `check`, `apply`, `intents`, `diagnostics`, `audition` | 0 | 1 | 1 |
+  | `render`, `stems` | 0 | 1 | 2 |
+  | `help` | 0 | — | 2 |
+
+Usage errors and unknown names have the codes `usage`, `unknown_kind`
+(`intents`), `unknown_code` (`diagnostics`) and `unknown_command` (`help`).
+
+`cicada audition --json` is described in [Audition](audition.md), and
+`cicada verify-wav --report` in [Exporting](exporting.md). The loudness fields
+use the names of `verify-wav --report` (`integrated_lufs`, `true_peak_dbtp`,
+`clipped_count`); Studio's export report calls the integrated loudness
+`achieved_lufs`.
 
 Every example below is checked: `make test-agent-surface` writes the files this
 page shows into an empty folder, runs the commands in page order with the built
@@ -106,11 +121,23 @@ For each intent:
   knows them. An `entity` is a string such as `pattern:riff`,
   `step:riff/3` (steps count from 0), `step:beat/bd/0`, `param:bass.cutoff`,
   `placement:intro`, `song:0` or `setting:main/bass.cutoff`.
-- `required` means the field has no default: a missing field is read as 0, "",
-  false or empty, so give it explicitly.
+- `required` is true when `cicada apply` refuses the intent without the
+  field. A field that is not required may be left out: it is then read as its
+  zero value (0, "", false or empty), which the intent takes as the default
+  its meaning states.
+- `required_when` names a condition under which an optional field becomes
+  required, such as `{"field": "mode", "values": ["note"]}`.
+- `one_of` lists groups of fields of which the intent needs at least one,
+  such as the fields of `updateplacement`'s `settings`.
+- `values` is the list the intent's handler checks, so a string outside it is
+  refused. A field the catalog does not list is refused too.
 - `example` is a payload that `cicada apply` accepts. Examples name the
   entities of a small test score (track `bass`, pattern `riff`, scene `main`);
   use the names of your own score.
+
+A test applies every example, removes each field it sets and checks that the
+intent is refused exactly when the catalog says the field is required, and
+replaces each listed value with one outside the list.
 
 <!-- agent-example: intents --json setpatternsettings -->
 
@@ -158,7 +185,7 @@ For each intent:
         {
           "name": "transpose",
           "type": "integer",
-          "required": true,
+          "required": false,
           "unit": "semitones",
           "meaning": "−24 to +24"
         }
@@ -216,10 +243,18 @@ the position the checker reports: `line` and `column` count from 1, columns
 count Unicode characters, and `offset` is the byte offset from the start of the
 file. The checker reports a point, so `end` marks the end of the character at
 `start`, as the language server does. `related` points at the first declaration
-of a duplicate. `hint` is the advice `cicada check` prints. `fix`, where the
-checker knows one, is a repair: `intents` for `cicada apply`, or a `command` to
-run. With `--profile browser`, `browser_profile` lists the voices each track
-reserves against the portable limits.
+of a duplicate. `hint` is the advice `cicada check` prints. With
+`--profile browser`, `browser_profile` lists the voices each track reserves
+against the portable limits.
+
+`fix`, where the checker knows one, is a repair: `intents` for `cicada apply`,
+or a `command` to run. A fix is offered only when it is proven on the score
+as it is: applying it alone removes its diagnostic and adds no other, even
+when other errors remain. It holds only at `revision`, the score's revision
+it was computed for: put that revision in the envelope, and check again after
+applying. `cicada apply` refuses a batch that leaves the score invalid, so
+when several errors have fixes, apply the fixes of one revision together in
+one batch.
 
 <!-- agent-example: check --json song.cicada -->
 
@@ -295,7 +330,8 @@ step:
                 "entity": "placement:intro",
                 "kind": "moveclip"
               }
-            ]
+            ],
+            "revision": "bb00827b7a0ef325edda51ba13ac8910483dd63feb59db92701fd5c7875c6852"
           }
         }
       ]
@@ -313,13 +349,23 @@ whether the score `changed` and was `written`, the unified `diff`, any other
 the `label` the edit history records. The batch is one revision, so the diff
 covers all of it. Without `--write` nothing is written.
 
-When an intent fails, `error` names it: `stage` is `decode` (the JSON does not
-match the kind), `apply` (the intent is refused), `validate` (the edited score
-does not compile), `revision`, `read`, `write` or `usage`. `index`, `kind` and,
-where the code knows it, `field` name the intent at fault. A refused `editnotes`
-batch also carries `code` `CICADA-NOTES`, its `reason` and the `note` (see
-[Editors](editors.md)). The text error names the intent the same way:
-`intents[1].entity (togglestep): unknown pattern "rif"`.
+When the batch fails, `error.code` is one of:
+
+<!-- apply-error-codes -->
+- `usage`: the arguments are wrong.
+- `read`: the score or the intents file cannot be read.
+- `decode`: the JSON does not match the envelope or an intent's kind.
+- `revision_mismatch`: the envelope's `revision` is not the score's.
+- `intent_refused`: an intent is refused.
+- `invalid_result`: the edited score does not compile.
+- `write`: the edit could not be written.
+<!-- /apply-error-codes -->
+
+`index`, `kind` and, where the code knows it, `field` name the intent at
+fault. A refused `editnotes` batch also carries `diagnostic` `CICADA-NOTES`,
+its `reason` and the `note` (see [Editors](editors.md)). The text error names
+the intent the same way: `intents[1].entity (togglestep): unknown pattern
+"rif"`.
 
 <!-- agent-example-file: bad.json -->
 
@@ -352,7 +398,7 @@ batch also carries `code` `CICADA-NOTES`, its `reason` and the `note` (see
   ],
   "diff": "",
   "error": {
-    "stage": "apply",
+    "code": "intent_refused",
     "message": "unknown pattern \"rif\"",
     "index": 1,
     "kind": "togglestep",
@@ -406,8 +452,9 @@ The same batch with the pattern's settings instead applies and writes:
 as its WAV header gives it (`sample_rate`, `bit_depth`, `encoding` `pcm` or
 `float`, `channels`, `frames` and `duration_seconds`), and the bar range
 (`from_bar`, `bars`). A render without a loudness target adds `levels`: the
-pre-limiter peak and overs, the output peak, and the counts of ceiling and
-clipped samples, with peaks as linear full-scale values. `cicada stems ...
+pre-limiter peak and overs, the output peak, and the counts of samples at the
+ceiling and clipped (`ceiling_count`, `clipped_count`, as `verify-wav
+--report` names them), with peaks as linear full-scale values. `cicada stems ...
 --json` lists every stem file, with `role` `stem:<file name>`.
 
 With a loudness target (`--loudness`, or `--export` with a profile that sets
@@ -453,15 +500,38 @@ measurement is `null` when there is none.
 }
 ```
 
-A render that fails carries `error`, with a stable `reason`, the `message` the
-command prints and, when the documentation gives one for that cause, the
-`remedy`. The reasons are `unreadable_score`, `invalid_score` (with the score's
-`diagnostics`), `export_settings`, `render_failed`, `true_peak_and_dc_unmet`,
-and for a loudness target the render missed: `loudness_unmeasurable`,
-`true_peak_over_ceiling`, `limiter_reduction_over_maximum`,
-`loudness_shortfall_at_limiter_maximum`, `loudness_shortfall_at_input_gain_cap`,
-`loudness_shortfall_at_true_peak_ceiling` and `loudness_target_missed`. After a
-shortfall the best pass is still written and listed in `outputs`.
+A render that fails carries `error`, with a stable `code`, the `message` the
+command prints and, when the documentation gives a fix for that cause, a
+`remedy`. The codes are:
+
+<!-- render-error-codes -->
+- `usage`: the arguments are wrong.
+- `unreadable_score`: the score cannot be read.
+- `invalid_score`: the score has errors; `diagnostics` lists them.
+- `export_settings`: the `--export` profile is unknown or cannot be applied.
+- `output_exists`: the stems folder already exists.
+- `sampler_memory`: the sampler packs exceed the resident PCM cap.
+- `render_failed`: another render or write error; the message says which.
+- `true_peak_and_dc_unmet`: no pass met the true-peak ceiling and the DC limit.
+- `loudness_unmeasurable`: the render has no measurable loudness.
+- `true_peak_over_ceiling`: the best pass is still above the true-peak ceiling.
+- `limiter_reduction_over_maximum`: the master limiter would reduce more than 6 dB.
+- `loudness_shortfall_at_limiter_maximum`: the target needs more than the master limiter's 6 dB maximum.
+- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB ahead of the master limiter.
+- `loudness_shortfall_at_true_peak_ceiling`: without a master limiter, the gain stops at the true-peak ceiling.
+- `loudness_target_missed`: the best pass is outside the tolerance for another reason.
+<!-- /render-error-codes -->
+
+After a shortfall the best pass is still written and listed in `outputs`.
+
+`remedy` has a `summary`, the `file` to change and the `score_text` to put in
+it: when `replaces` is set, `score_text` replaces that text in the file (the
+declaration it changes); otherwise it goes at the end of the file. `intents`,
+when present, makes the same change through `cicada apply`; it is absent when
+no intent can. Today only `loudness_shortfall_at_true_peak_ceiling` has a
+remedy: a limiter at the export's true-peak ceiling as the last master
+insert. No intent adds a limiter yet, so edit the score text by hand or with a
+`replacetext` intent.
 
 This score has no master limiter, so its export to −9 LUFS stops at the
 true-peak ceiling:
@@ -507,16 +577,21 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
     "gain_stage": "post_chain"
   },
   "error": {
-    "reason": "loudness_shortfall_at_true_peak_ceiling",
+    "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
-    "remedy": "add a limiter as the last master insert (for example fx ceiling limiter { ceiling = -1dBTP } and master { insert = ceiling }, or end an existing master insert chain with -> ceiling), so the gain goes in ahead of the limiter and the limiter holds the true-peak ceiling (docs/audio/mix-chain.md, Export loudness targets)"
+    "remedy": {
+      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent",
+      "file": "loud.cicada",
+      "replaces": "master { level = 6dB insert = tone }",
+      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }"
+    }
   }
 }
 ```
 
 The remedy is the one [the mix chain](../audio/mix-chain.md#export-loudness-targets)
-describes. With the limiter as the last master insert, the same export meets
-its target:
+describes. With its `score_text` in place of the master declaration, the same
+export meets its target:
 
 <!-- agent-example-file: loud-limited.cicada -->
 

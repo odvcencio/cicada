@@ -28,9 +28,10 @@ type checkJSONDocument struct {
 			End      *checkPosition `json:"end"`
 			Hint     string         `json:"hint"`
 			Fix      *struct {
-				Summary string            `json:"summary"`
-				Intents []json.RawMessage `json:"intents"`
-				Command []string          `json:"command"`
+				Summary  string            `json:"summary"`
+				Intents  []json.RawMessage `json:"intents"`
+				Command  []string          `json:"command"`
+				Revision string            `json:"revision"`
 			} `json:"fix"`
 		} `json:"diagnostics"`
 		Browser *struct {

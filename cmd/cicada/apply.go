@@ -132,7 +132,7 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	revision := edits.Revision(before)
 	result.revisionBefore = revision
 	if env.Revision != "" && env.Revision != revision {
-		return fail("revision", fmt.Errorf("score changed; intents target revision %s, file is at %s", env.Revision, revision))
+		return fail("revision_mismatch", fmt.Errorf("score changed; intents target revision %s, file is at %s", env.Revision, revision))
 	}
 	env.Revision = revision
 	if author != "" {
@@ -153,9 +153,9 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	if err != nil {
 		var located *edits.IntentError
 		if errors.As(err, &located) {
-			return fail("apply", err)
+			return fail("intent_refused", err)
 		}
-		return fail("validate", err)
+		return fail("invalid_result", err)
 	}
 	result.diff = intentDiff(before, applied, filepath.Base(path))
 	result.revisionAfter = edits.Revision(applied.Source)
@@ -239,22 +239,26 @@ type applyIntentJSON struct {
 	Label string `json:"label,omitempty"`
 }
 
-// applyErrorJSON says where an apply failed. Index, kind and field name the
-// intent at fault when the error is about one; code, reason and note carry a
-// note refusal of editnotes as data.
+// applyErrorJSON says why an apply failed. Code is one of applyErrorCodes.
+// Index, kind and field name the intent at fault when the error is about
+// one; diagnostic, reason and note carry a note refusal of editnotes as data.
 type applyErrorJSON struct {
-	Stage   string         `json:"stage"`
-	Message string         `json:"message"`
-	Index   *int           `json:"index,omitempty"`
-	Kind    string         `json:"kind,omitempty"`
-	Field   string         `json:"field,omitempty"`
-	Code    string         `json:"code,omitempty"`
-	Reason  string         `json:"reason,omitempty"`
-	Note    map[string]any `json:"note,omitempty"`
+	Code       string         `json:"code"`
+	Message    string         `json:"message"`
+	Index      *int           `json:"index,omitempty"`
+	Kind       string         `json:"kind,omitempty"`
+	Field      string         `json:"field,omitempty"`
+	Diagnostic string         `json:"diagnostic,omitempty"`
+	Reason     string         `json:"reason,omitempty"`
+	Note       map[string]any `json:"note,omitempty"`
 }
 
+// applyErrorCodes are the codes of apply --json errors; docs/manual/agents.md
+// lists them.
+var applyErrorCodes = []string{"usage", "read", "decode", "revision_mismatch", "intent_refused", "invalid_result", "write"}
+
 func writeApplyJSON(w io.Writer, result applyResult, err error) error {
-	document := applyDocument{Schema: applySchema, Score: result.path, OK: err == nil, Written: result.written, DryRun: result.dryRun, Changed: result.revisionAfter != "" && !result.unchanged, RevisionBefore: result.revisionBefore, RevisionAfter: result.revisionAfter, Intents: []applyIntentJSON{}, Files: result.files, Diff: result.diff}
+	document := applyDocument{Schema: applySchema, Score: jsonPath(result.path), OK: err == nil, Written: result.written, DryRun: result.dryRun, Changed: result.revisionAfter != "" && !result.unchanged, RevisionBefore: result.revisionBefore, RevisionAfter: result.revisionAfter, Intents: []applyIntentJSON{}, Files: result.files, Diff: result.diff}
 	for i, intent := range result.intents {
 		entry := applyIntentJSON{Index: i, Kind: intent.Kind()}
 		if i < len(result.labels) {
@@ -263,13 +267,13 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		document.Intents = append(document.Intents, entry)
 	}
 	for i := range document.Files {
-		document.Files[i] = displayPath(document.Files[i])
+		document.Files[i] = jsonPath(document.Files[i])
 	}
 	if err != nil {
-		failure := &applyErrorJSON{Stage: "apply", Message: err.Error()}
+		failure := &applyErrorJSON{Code: "intent_refused", Message: err.Error()}
 		var stage *applyFailure
 		if errors.As(err, &stage) {
-			failure.Stage = stage.stage
+			failure.Code = stage.stage
 		}
 		var located *edits.IntentError
 		if errors.As(err, &located) {
@@ -279,7 +283,7 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		}
 		var refusal *edits.NoteError
 		if errors.As(err, &refusal) {
-			failure.Code, failure.Reason, failure.Note = "CICADA-NOTES", refusal.Code, refusal.Note()
+			failure.Diagnostic, failure.Reason, failure.Note = "CICADA-NOTES", refusal.Code, refusal.Note()
 		}
 		document.Error = failure
 	}

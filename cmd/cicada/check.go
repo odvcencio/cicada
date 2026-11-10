@@ -36,10 +36,30 @@ func (i scoreInspection) root(path string) string {
 // inspectScore is the validation gate shared by per-file commands and the
 // project checker. It includes semantic conversion and engine compilation.
 func inspectScore(path string) (scoreInspection, error) {
-	sources, err := project.ReadSources(path, nil)
+	return inspectScoreWith(path, nil)
+}
+
+// inspectScoreWith inspects a score with some source files replaced by the
+// given bytes, keyed by absolute path, as a candidate edit would leave them.
+func inspectScoreWith(path string, overrides map[string][]byte) (scoreInspection, error) {
+	sources, err := project.ReadSources(path, overrides)
 	if err != nil {
 		return scoreInspection{}, err
 	}
+	return inspectSources(path, sources)
+}
+
+// inspectScorePinned inspects a score as if its project manifest were at
+// manifestPath, as a fix that writes a new cicada.mod would leave it.
+func inspectScorePinned(path string, overrides map[string][]byte, manifestPath string) (scoreInspection, error) {
+	sources, err := project.ReadSourcesPinned(path, overrides, project.Resolution{ManifestPath: manifestPath})
+	if err != nil {
+		return scoreInspection{}, err
+	}
+	return inspectSources(path, sources)
+}
+
+func inspectSources(path string, sources *project.Sources) (scoreInspection, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return scoreInspection{}, err
@@ -122,25 +142,43 @@ func parseCheckArgs(args []string) (options checkOptions, path string, err error
 func checkCommand(args []string, stdout, stderr io.Writer) error {
 	options, path, err := parseCheckArgs(args)
 	if err != nil {
+		if hasJSONFlag(args) {
+			return checkFailureJSON(stdout, checkOptions{profile: profileDesktop}, "", "usage", err)
+		}
 		return err
 	}
 	if path != "" {
 		return checkPathsWith([]string{path}, options, stdout, stderr)
 	}
+	fail := func(code string, err error) error {
+		if options.json {
+			return checkFailureJSON(stdout, options, "", code, err)
+		}
+		return err
+	}
 	root, err := projectRoot()
 	if err != nil {
+		if options.json {
+			return checkFailureJSON(stdout, options, nearestManifest(), "project_unreadable", err)
+		}
 		return err
 	}
 	paths, err := projectScorePaths(root)
 	if err != nil {
+		if options.json {
+			return checkFailureJSON(stdout, options, filepath.Join(root, "cicada.mod"), "project_unreadable", err)
+		}
 		return err
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no .cicada scores found in %s", root)
+		return fail("no_scores", fmt.Errorf("no .cicada scores found in %s", root))
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "cicada.mod")); err == nil {
 		manifest, err := edition.ParseProjectManifest(data)
 		if err != nil {
+			if options.json {
+				return checkFailureJSON(stdout, options, filepath.Join(root, "cicada.mod"), "project_unreadable", err)
+			}
 			return err
 		}
 		if manifest.ExplicitSources() {
@@ -148,6 +186,26 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	return checkPathsWith(paths, options, stdout, stderr)
+}
+
+// nearestManifest is the cicada.mod of the working folder or the closest
+// folder above it, or "" when there is none.
+func nearestManifest() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		candidate := filepath.Join(dir, "cicada.mod")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 // checkOptions are what a check run takes beyond the scores: the profile whose

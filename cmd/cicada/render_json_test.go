@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"encoding/json"
 	"math"
 	"os"
@@ -100,26 +101,61 @@ func TestStemsJSONListsEveryStem(t *testing.T) {
 	}
 }
 
-// TestRenderJSONLoudnessShortfallNamesTheRemedy renders the score without a
-// master limiter to a target it misses at the true-peak ceiling. The JSON and
-// the message name the master limiter, which punchy-limiter.cicada (the same
-// score with that limiter) shows reaches the target.
-func TestRenderJSONLoudnessShortfallNamesTheRemedy(t *testing.T) {
-	_, opts, target := exportFixture(t, "punchy-nolimiter.cicada", "loud")
-	output := filepath.Join(t.TempDir(), "short.wav")
-	result, code, stderr := runRenderJSON(t, "render", filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"), output, opts, &target)
-	if code != 1 || result.OK || result.Error == nil || result.Error.Reason != "loudness_shortfall_at_true_peak_ceiling" || result.Error.Remedy != masterLimiterRemedy {
-		t.Fatalf("shortfall: code %d %+v", code, result.Error)
+// TestRenderJSONLoudnessShortfallRemedyWorks renders the score without a
+// master limiter to targets it misses at the true-peak ceiling, for two
+// ceilings. The error carries the structured remedy for that ceiling; adding
+// its score text exactly as it says makes the same render meet the target.
+func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(stderr, masterLimiterRemedy) {
-		t.Fatalf("the message lacks the remedy:\n%s", stderr)
+	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
+	for _, ceiling := range []float64{-1, -2} {
+		t.Run(fmt.Sprint(ceiling), func(t *testing.T) {
+			dir := t.TempDir()
+			score := filepath.Join(dir, "loud.cicada")
+			if err := os.WriteFile(score, source, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			target := renderTargetOptions{LoudnessTarget: -9, TruePeakMaxDBTP: ceiling, Tolerance: 0.5, Loudness: true}
+			result, code, stderr := runRenderJSON(t, "render", score, filepath.Join(dir, "short.wav"), opts, &target)
+			failure := result.Error
+			if code != 1 || failure == nil || failure.Code != "loudness_shortfall_at_true_peak_ceiling" || failure.Remedy == nil || len(failure.Remedy.Intents) != 0 {
+				t.Fatalf("shortfall: code %d %+v", code, failure)
+			}
+			remedy := failure.Remedy
+			if !strings.Contains(remedy.ScoreText, fmt.Sprintf("ceiling = %gdBTP", ceiling)) || remedy.Summary != limiterRemedySummary(ceiling) || !strings.Contains(stderr, remedy.Summary) {
+				t.Fatalf("remedy: %+v\n%s", remedy, stderr)
+			}
+			if remedy.File != filepath.ToSlash(score) || remedy.Replaces != "master { level = 6dB insert = tone }" {
+				t.Fatalf("remedy target: %+v", remedy)
+			}
+			loudness := result.Loudness
+			if loudness == nil || loudness.TargetMet || loudness.IntegratedLUFS == nil || len(result.Outputs) != 1 {
+				t.Fatalf("loudness: %+v outputs %+v", loudness, result.Outputs)
+			}
+			fixed := strings.Replace(string(source), remedy.Replaces, remedy.ScoreText, 1)
+			if err := os.WriteFile(score, []byte(fixed), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			result, code, _ = runRenderJSON(t, "render", score, filepath.Join(dir, "fixed.wav"), opts, &target)
+			if code != 0 || !result.OK || result.Loudness == nil || !result.Loudness.TargetMet || *result.Loudness.TruePeakDBTP > ceiling {
+				t.Fatalf("after the remedy: code %d %+v %+v", code, result.Error, result.Loudness)
+			}
+			t.Logf("ceiling %g dBTP: %.2f LUFS after the remedy", ceiling, *result.Loudness.IntegratedLUFS)
+		})
 	}
-	loudness := result.Loudness
-	if loudness == nil || loudness.TargetMet || loudness.IntegratedLUFS == nil || loudness.TruePeakDBTP == nil || loudness.AppliedGainDB == nil || loudness.TargetLUFS != -9 {
-		t.Fatalf("loudness: %+v", loudness)
-	}
-	if len(result.Outputs) != 1 || result.Outputs[0].Path != output {
-		t.Fatalf("the best pass is written but not listed: %+v", result.Outputs)
+}
+
+// TestLimiterRemedyWithoutAMasterDeclaration adds the limiter and a master
+// declaration when the score has none.
+func TestLimiterRemedyWithoutAMasterDeclaration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plain.cicada")
+	source := []byte("cicada 2\ntempo 120\nfx ceiling limiter { ceiling = -1dBTP }\ntrack bass acid {}\npattern p { a1 . }\nscene main { bass = p }\nsong { main }\n")
+	remedy := limiterRemedy(path, scoreInspection{source: source}, -1.5)
+	if remedy.Replaces != "" || remedy.ScoreText != "fx ceiling-2 limiter { ceiling = -1.5dBTP }\nmaster { insert = ceiling-2 }" {
+		t.Fatalf("remedy: %+v", remedy)
 	}
 }
 
@@ -130,7 +166,7 @@ func TestRenderJSONReportsInvalidScores(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, code, _ := runRenderJSON(t, "render", score, filepath.Join(dir, "out.wav"), render.Options{SampleRate: 48000, Bits: 24}, nil)
-	if code != 1 || result.OK || result.Error == nil || result.Error.Reason != "invalid_score" || len(result.Diagnostics) == 0 || len(result.Outputs) != 0 {
+	if code != 1 || result.OK || result.Error == nil || result.Error.Code != "invalid_score" || len(result.Diagnostics) == 0 || len(result.Outputs) != 0 {
 		t.Fatalf("invalid score: code %d %+v", code, result)
 	}
 }

@@ -81,8 +81,8 @@ func TestApplyErrorsNameTheFailingIntent(t *testing.T) {
 		name, intents, stage, kind, field, reason, prose string
 	}{
 		{"decode", `{"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"},{"kind":"setpatternsettings","entity":"pattern:riff","swing100":"wide"}`, "decode", "setpatternsettings", "swing100", "", "intents[1].swing100 (setpatternsettings): "},
-		{"entity", `{"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"},{"kind":"togglestep","entity":"step:nosuch/0"}`, "apply", "togglestep", "entity", "", `intents[1].entity (togglestep): unknown pattern "nosuch"`},
-		{"note", `{"kind":"editnotes","entity":"pattern:take","op":"insert","insert":[{"at":1200,"pitch":60,"length":240,"velocity":100}]}`, "apply", "editnotes", "", "overlap", "intents[0] (editnotes): "},
+		{"entity", `{"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"},{"kind":"togglestep","entity":"step:nosuch/0"}`, "intent_refused", "togglestep", "entity", "", `intents[1].entity (togglestep): unknown pattern "nosuch"`},
+		{"note", `{"kind":"editnotes","entity":"pattern:take","op":"insert","insert":[{"at":1200,"pitch":60,"length":240,"velocity":100}]}`, "intent_refused", "editnotes", "", "overlap", "intents[0] (editnotes): "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err, score := runApplyJSON(t, tc.intents, "--write")
@@ -90,10 +90,10 @@ func TestApplyErrorsNameTheFailingIntent(t *testing.T) {
 				t.Fatalf("prose error %q, want the prefix %q", err, tc.prose)
 			}
 			failure := result.Error
-			if result.OK || result.Written || failure == nil || failure.Stage != tc.stage || failure.Index == nil || failure.Kind != tc.kind || failure.Field != tc.field || failure.Reason != tc.reason {
+			if result.OK || result.Written || failure == nil || failure.Code != tc.stage || failure.Index == nil || failure.Kind != tc.kind || failure.Field != tc.field || failure.Reason != tc.reason {
 				t.Fatalf("JSON error: %+v", failure)
 			}
-			if tc.reason != "" && (failure.Code != "CICADA-NOTES" || failure.Note["pitch"] != float64(60)) {
+			if tc.reason != "" && (failure.Diagnostic != "CICADA-NOTES" || failure.Note["pitch"] != float64(60)) {
 				t.Fatalf("note refusal as data: %+v", failure)
 			}
 			if data, _ := os.ReadFile(score); string(data) != applyJSONScore {

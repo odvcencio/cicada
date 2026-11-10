@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"m31labs.dev/cicada/instrument"
@@ -279,6 +281,9 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && (os.Args[1] == "render" || os.Args[1] == "stems") && hasJSONFlag(os.Args[2:]) {
+		os.Exit(renderJSONMain(os.Args[1], os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if len(os.Args) < 3 || (os.Args[1] != "render" && os.Args[1] != "stems" && os.Args[1] != "midi" && len(os.Args) > 5) {
 		usage()
 	}
@@ -297,17 +302,13 @@ func main() {
 	var renderTarget *renderTargetOptions
 	var midiOpts midiOptions
 	if command == "render" || command == "stems" {
-		args, asJSON := takeJSONFlag(os.Args[3:])
 		wantBits := 24
 		if command == "stems" {
 			wantBits = 32
 		}
-		renderPath, renderOptions, renderTarget = renderArgs(args, wantBits)
+		renderPath, renderOptions, renderTarget = renderArgs(os.Args[3:], wantBits)
 		if command == "stems" && renderTarget != nil {
 			usage()
-		}
-		if asJSON {
-			os.Exit(renderJSONCommand(command, os.Args[2], renderPath, renderOptions, renderTarget, os.Stdout, os.Stderr))
 		}
 	} else if command == "midi" {
 		midiOpts = parseMIDIArgs(os.Args[3:])
@@ -795,23 +796,32 @@ func renderStudioLoudnessFileReport(score *notation.Score, path string, opts ren
 }
 
 // loudnessShortfallError reports a loudness render that wrote its best pass but
-// missed the target. Reason is a stable code for JSON output. Remedy, when set,
-// is the fix the documentation gives for that cause, and the message ends with
-// it.
-type loudnessShortfallError struct{ reason, message, remedy string }
+// missed the target. Reason is a stable code for JSON output. LimiterCeiling,
+// when set, means the documented fix applies: the score has no master
+// limiter, and one at the export's true-peak ceiling (in dBTP) would let the
+// gain go in ahead of it. The message then ends with that fix.
+type loudnessShortfallError struct {
+	reason, message string
+	limiterCeiling  *float64
+}
 
 func (e *loudnessShortfallError) Error() string {
-	if e.remedy != "" {
-		return e.message + "; " + e.remedy
+	if e.limiterCeiling != nil {
+		return e.message + "; " + limiterRemedySummary(*e.limiterCeiling)
 	}
 	return e.message
 }
 
-// masterLimiterRemedy is the fix docs/audio/mix-chain.md gives for a target
+// limiterRemedySummary is the fix docs/audio/mix-chain.md gives for a target
 // that a score without a master limiter misses at the true-peak ceiling: the
-// static gain keeps the crest factor, and a limiter lets the gain go ahead of
-// it.
-const masterLimiterRemedy = "add a limiter as the last master insert (for example fx ceiling limiter { ceiling = -1dBTP } and master { insert = ceiling }, or end an existing master insert chain with -> ceiling), so the gain goes in ahead of the limiter and the limiter holds the true-peak ceiling (docs/audio/mix-chain.md, Export loudness targets)"
+// static gain keeps the crest factor, and a limiter as the last master insert
+// lets the gain go in ahead of it. No edit intent adds a limiter yet.
+func limiterRemedySummary(ceiling float64) string {
+	return fmt.Sprintf("add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent", formatDBTP(ceiling))
+}
+
+// formatDBTP writes a dBTP number as score text writes it.
+func formatDBTP(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
 
 // renderFailure is a render error with a stable reason code for JSON output.
 type renderFailure struct{ reason, message string }
@@ -1082,10 +1092,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
 		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
 			shortfallErr = &loudnessShortfallError{reason: "loudness_shortfall_at_true_peak_ceiling", message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at true-peak ceiling %.2f dBTP (target %.2f LUFS)", shortfall, bestMeasure.IntegratedLUFS, bestMeasure.TruePeakDBTP, target.LoudnessTarget)}
-			if !limiterMode {
+			if !limiterMode && target.TruePeakMaxDBTP >= -12 && target.TruePeakMaxDBTP <= 0 {
 				// Without a limiter the static gain stops at the ceiling; with one,
-				// the limiter already holds it, so a limiter is not the fix.
-				shortfallErr.remedy = masterLimiterRemedy
+				// the limiter already holds it, so a limiter is not the fix. A
+				// limiter's ceiling is -12 to 0 dBTP.
+				ceiling := target.TruePeakMaxDBTP
+				shortfallErr.limiterCeiling = &ceiling
 			}
 		} else {
 			shortfallErr = &loudnessShortfallError{reason: "loudness_target_missed", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}
@@ -1166,10 +1178,33 @@ func copyRenderFile(source, destination string) error {
 }
 
 func renderArgs(args []string, wantBits int) (string, render.Options, *renderTargetOptions) {
+	output, opts, target, err := parseRenderArgs(args, wantBits, os.Stderr)
+	var badCap *residentPCMArgError
+	if errors.As(err, &badCap) {
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", badCap.err)
+		os.Exit(2)
+	}
+	if err != nil {
+		usage()
+	}
+	return output, opts, target
+}
+
+// residentPCMArgError is a bad --max-resident-pcm value.
+type residentPCMArgError struct{ err error }
+
+func (e *residentPCMArgError) Error() string { return e.err.Error() }
+
+// parseRenderArgs reads the flags of render and stems. A usage error comes
+// back as an error instead of exiting, for --json.
+func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, render.Options, *renderTargetOptions, error) {
+	errUsage := errors.New("usage: cicada render <score.cicada> -o <out.wav> [flags]")
+	if wantBits == 32 {
+		errUsage = errors.New("usage: cicada stems <score.cicada> -o <directory> [flags]")
+	}
 	args, residentPCM, err := parseMaxResidentPCM(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cicada: %v\n", err)
-		os.Exit(2)
+		return "", render.Options{}, nil, &residentPCMArgError{err}
 	}
 	flags := flag.NewFlagSet("render", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -1188,25 +1223,30 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	loudnessTolerance := flags.Float64("loudness-tolerance", 0.5, "loudness target tolerance in LU")
 	exportName := flags.String("export", "", "named export settings block")
 	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
-		usage()
+		return "", render.Options{}, nil, errUsage
 	}
-	fromBar, err := cliBarOffset(*from, flags, os.Stderr)
+	fromBar, err := cliBarOffset(*from, flags, warning)
 	if err != nil {
-		usage()
+		return "", render.Options{}, nil, errUsage
 	}
 	duration, err := time.ParseDuration(*tail)
 	if err != nil || duration < 0 {
-		usage()
+		return "", render.Options{}, nil, errUsage
 	}
 	var target *renderTargetOptions
+	badTarget := false
 	flags.Visit(func(value *flag.Flag) {
 		if value.Name == "loudness" {
 			if math.IsNaN(*loudness) || math.IsInf(*loudness, 0) || math.IsNaN(*truePeak) || math.IsInf(*truePeak, 0) || math.IsNaN(*loudnessTolerance) || math.IsInf(*loudnessTolerance, 0) || *loudnessTolerance < 0 || *loudnessTolerance > 10 || *normalize {
-				usage()
+				badTarget = true
+				return
 			}
 			target = &renderTargetOptions{LoudnessTarget: *loudness, TruePeakMaxDBTP: *truePeak, Tolerance: *loudnessTolerance, Loudness: true}
 		}
 	})
+	if badTarget {
+		return "", render.Options{}, nil, errUsage
+	}
 	if *exportName != "" {
 		if target == nil {
 			target = &renderTargetOptions{TruePeakMaxDBTP: -1, Tolerance: 0.5}
@@ -1233,7 +1273,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM}, target
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM}, target, nil
 }
 
 func verifyWAVCommand(args []string) {

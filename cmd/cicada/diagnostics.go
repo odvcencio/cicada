@@ -20,20 +20,27 @@ type diagnosticsDocument struct {
 
 // diagnosticsCommand prints the catalog of diagnostic codes, or one code.
 func diagnosticsCommand(args []string, stdout io.Writer) error {
-	asJSON := false
+	asJSON := hasJSONFlag(args)
+	fail := func(code string, err error) error {
+		if asJSON {
+			if writeErr := writeAgentJSON(stdout, jsonErrorDocument{Schema: diagnosticsSchema, Error: jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
+				return writeErr
+			}
+		}
+		return err
+	}
 	var names []string
 	for _, arg := range args {
 		switch {
 		case arg == "--json":
-			asJSON = true
 		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("%s", diagnosticsUsage)
+			return fail("usage", fmt.Errorf("%s", diagnosticsUsage))
 		default:
 			names = append(names, arg)
 		}
 	}
 	if len(names) > 1 {
-		return fmt.Errorf("%s", diagnosticsUsage)
+		return fail("usage", fmt.Errorf("%s", diagnosticsUsage))
 	}
 	catalog := diagnostics.Catalog()
 	if len(names) == 1 {
@@ -43,7 +50,7 @@ func diagnosticsCommand(args []string, stdout io.Writer) error {
 		}
 		entry, ok := diagnostics.Lookup(code)
 		if !ok {
-			return fmt.Errorf("unknown diagnostic code %q; run cicada diagnostics for the list", names[0])
+			return fail("unknown_code", fmt.Errorf("unknown diagnostic code %q; run cicada diagnostics for the list", names[0]))
 		}
 		catalog = []diagnostics.Code{entry}
 	}

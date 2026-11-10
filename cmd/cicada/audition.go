@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,10 +14,41 @@ import (
 
 const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--json] [--max-resident-pcm <size>]"
 
+// auditionErrorDocument is what audition --json prints when it fails.
+type auditionErrorDocument struct {
+	Schema string    `json:"schema"`
+	Format string    `json:"format"`
+	Error  jsonError `json:"error"`
+}
+
+// codedError is an error with the stable code its --json document carries.
+type codedError struct {
+	code string
+	err  error
+}
+
+func (e *codedError) Error() string { return e.err.Error() }
+func (e *codedError) Unwrap() error { return e.err }
+
 func auditionCommand(args []string, stdout, stderr io.Writer) error {
+	err := auditionRun(args, stdout, stderr)
+	if err != nil && hasJSONFlag(args) {
+		code := "audition_failed"
+		var coded *codedError
+		if errors.As(err, &coded) {
+			code = coded.code
+		}
+		if writeErr := writeAgentJSON(stdout, auditionErrorDocument{Schema: scoreaudition.Schema, Format: scoreaudition.FormatVersion, Error: jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
+			return writeErr
+		}
+	}
+	return err
+}
+
+func auditionRun(args []string, stdout, stderr io.Writer) error {
 	args, residentPCM, err := parseMaxResidentPCM(args)
 	if err != nil {
-		return err
+		return &codedError{"usage", err}
 	}
 	flags := flag.NewFlagSet("audition", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -31,23 +63,23 @@ func auditionCommand(args []string, stdout, stderr io.Writer) error {
 		path, rest = rest[0], rest[1:]
 	}
 	if err := flags.Parse(rest); err != nil {
-		return fmt.Errorf("%s", auditionUsage)
+		return &codedError{"usage", fmt.Errorf("%s", auditionUsage)}
 	}
 	if path == "" && len(flags.Args()) == 1 {
 		path = flags.Args()[0]
 	} else if len(flags.Args()) != 0 || path == "" {
-		return fmt.Errorf("%s", auditionUsage)
+		return &codedError{"usage", fmt.Errorf("%s", auditionUsage)}
 	}
 	fromBar, err := cliBarOffset(*from, flags, stderr)
 	if err != nil {
-		return err
+		return &codedError{"usage", err}
 	}
 	if *bars < 0 {
-		return fmt.Errorf("--bars must not be negative")
+		return &codedError{"usage", fmt.Errorf("--bars must not be negative")}
 	}
 	inspection, err := inspectScore(path)
 	if err != nil {
-		return err
+		return &codedError{"unreadable_score", err}
 	}
 	failed := false
 	for _, d := range inspection.diagnostics {
@@ -58,7 +90,7 @@ func auditionCommand(args []string, stdout, stderr io.Writer) error {
 		failed = failed || d.Severity == "error"
 	}
 	if failed {
-		return fmt.Errorf("%s has errors", path)
+		return &codedError{"invalid_score", fmt.Errorf("%s has errors", path)}
 	}
 	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM})
 	if err != nil {

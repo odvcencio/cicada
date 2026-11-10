@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -39,7 +41,56 @@ func cicada(t *testing.T, bin, dir string, args ...string) ([]byte, int) {
 	if code != 0 {
 		t.Logf("cicada %v exited %d; stderr:\n%s", args, code, stderr.String())
 	}
+	for _, arg := range args {
+		if arg == "--json" {
+			checkJSONConventions(t, args, stdout.Bytes())
+		}
+	}
 	return stdout.Bytes(), code
+}
+
+var snakeCase = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
+
+// checkJSONConventions fails on a --json document without a schema or with a
+// key that is not snake_case. Two exceptions are deliberate: symbols --json
+// is an older format (a list of symbols whose positions use the keys Line and
+// Column), left as it is; and an intent payload, such as an example in the
+// intents catalog or a fix in check --json, uses the names its intent decodes
+// (vocal comps keep camelCase metadata names).
+func checkJSONConventions(t *testing.T, args []string, stdout []byte) {
+	t.Helper()
+	if args[0] == "symbols" {
+		return
+	}
+	var document any
+	if err := json.Unmarshal(stdout, &document); err != nil {
+		t.Errorf("cicada %v: not JSON: %v", args, err)
+		return
+	}
+	object, ok := document.(map[string]any)
+	if schema, _ := object["schema"].(string); !ok || !strings.HasPrefix(schema, "cicada.") {
+		t.Errorf("cicada %v: the document has no schema", args)
+	}
+	var walk func(value any, path string)
+	walk = func(value any, path string) {
+		switch value := value.(type) {
+		case map[string]any:
+			for key, inner := range value {
+				if !snakeCase.MatchString(key) {
+					t.Errorf("cicada %v: key %s.%s is not snake_case", args, path, key)
+				}
+				if key == "example" && strings.HasPrefix(path, "$.intents") || key == "intents" && strings.HasSuffix(path, ".fix") {
+					continue
+				}
+				walk(inner, path+"."+key)
+			}
+		case []any:
+			for _, inner := range value {
+				walk(inner, path+"[]")
+			}
+		}
+	}
+	walk(document, "$")
 }
 
 // decode parses one JSON document into v and fails the test if stdout holds

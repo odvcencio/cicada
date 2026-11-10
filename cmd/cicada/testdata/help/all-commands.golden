@@ -53,7 +53,7 @@ Flags:
   --json      write the catalog as JSON (schema cicada.diagnostics.v1)
   --help      show this help
 
-Lists every CICADA-* code with its severity and meaning. With a code (CICADA-PARAM or PARAM), prints where it is reported, what it means and how to fix it. docs/manual/diagnostics.md is generated from the same catalog.
+Lists every diagnostic code with its severity and meaning. With a code (CICADA-PARAM or PARAM), prints where it is reported, what it means and how to fix it. docs/manual/diagnostics.md is generated from the same catalog.
 
 ### fix
 cicada fix <score.cicada> [--all] [--check]

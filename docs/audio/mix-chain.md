@@ -70,10 +70,11 @@ one static gain. Where that gain goes depends on the master chain.
 | Contains a `limiter` | At the master input: after the music and SFX buses sum and the master `level`, before the chain. | Your limiter. The extra level reaches it, so it reduces peaks and a punchy mix can get louder than its natural crest allows. |
 
 Without a limiter, a target that the render misses at the true-peak ceiling
-ends its error with the fix: add a limiter as the last master insert, such as
-`fx ceiling limiter { ceiling = -1dBTP }` with `master { insert = ceiling }`.
-`cicada render --json` reports it as the reason
-`loudness_shortfall_at_true_peak_ceiling` with that `remedy`
+ends its error with the fix: add a limiter at the export's true-peak ceiling
+as the last master insert, such as `fx ceiling limiter { ceiling = -1dBTP }`
+with `master { insert = ceiling }`. `cicada render --json` reports it as the
+code `loudness_shortfall_at_true_peak_ceiling` with a `remedy` that holds the
+exact score text for that score and ceiling
 ([agent formats](../manual/agents.md#render---json)).
 
 With a limiter in the chain, the renderer keeps two guard rails:
