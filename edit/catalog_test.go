@@ -97,6 +97,7 @@ func TestIntentCatalogValuesMatchHandlers(t *testing.T) {
 		{"addeffect", "effectkind", mixerEffectKinds},
 		{"setprojectsettings", "root", sourcePitchNames[:]},
 		{"setprojectsettings", "scale", projectScales},
+		{"editnotes", "op", EditNotesOps},
 	} {
 		info, _ := DescribeIntent(check.kind)
 		var got []string

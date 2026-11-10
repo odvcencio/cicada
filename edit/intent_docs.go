@@ -175,6 +175,26 @@ var intentDocs = map[string]typeDoc{
 			"Value":     "the new value, as source text",
 		},
 	},
+	"EditNotes": {
+		Meaning: "moves, resizes, changes the velocity of, deletes, inserts or quantizes a batch of notes in one pattern as one edit",
+		Notes:   "The pattern compiles once, every named note is resolved, the operation runs in memory, and the source is written once. One request is one commit and one Undo step. A note refusal is an error with code CICADA-NOTES and one of the reasons in NoteErrorCodes (docs/manual/editors.md describes them). Entity is pattern:<id>. Op is move, resize, velocity, delete, insert or quantize. Notes names the notes to change as the client saw them; the edit is refused when any of them is missing or differs. A note is identified by its start and its pitch (Pitch is the stored MIDI pitch, before the pattern's transpose) or, in drum patterns, its lane. Quantize with no notes acts on every note of the pattern. At, Length, DT, DL and Grid are ticks (960 per beat) for every pattern kind; step patterns and drum lanes accept only whole steps. DP moves pitch in semitones, or lanes in authored lane order in drum patterns. DV changes velocity; Velocity, when set, replaces it instead. Strength is the quantize percentage (0 means 100); step patterns and drum lanes quantize at 100. Copy keeps the originals of a move. Insert lists the notes an insert adds. Shared accepts only \"pattern\": phrase uses expand inside the edited pattern.",
+		Example: "{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"insert\",\"insert\":[{\"at\":1920,\"pitch\":64,\"length\":480,\"velocity\":100}]}",
+		Fields: map[string]string{
+			"Copy":     "move: keep the originals",
+			"DL":       "resize: change of length",
+			"DP":       "move: change of pitch in semitones, or of lane in drum patterns",
+			"DT":       "move: change of start",
+			"DV":       "velocity: change, ±126, clamped to 1–127",
+			"Entity":   "the pattern, as pattern:<name>",
+			"Grid":     "quantize: grid, 30–3840",
+			"Insert":   "insert: the notes to add; at most 512",
+			"Notes":    "the notes to change, as last seen; at most 512",
+			"Op":       "the operation",
+			"Shared":   "pattern expands phrase uses inside the edited pattern",
+			"Strength": "quantize: how far starts move to the grid, 1–100; 0 means 100",
+			"Velocity": "velocity: the new value instead of dv, 1–127",
+		},
+	},
 	"InsertLibraryItem": {
 		Meaning: "imports a library and binds a track to one of its items",
 		Notes:   "The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
@@ -216,6 +236,16 @@ var intentDocs = map[string]typeDoc{
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
 			"Target": "the index the entry moves to",
+		},
+	},
+	"NoteRef": {
+		Meaning: "is one note as the editor saw it, or one note to insert",
+		Fields: map[string]string{
+			"At":       "start, 960 per beat",
+			"Lane":     "the drum lane, instead of pitch, in drum patterns",
+			"Length":   "length",
+			"Pitch":    "stored MIDI pitch 0–127, before the pattern's transpose",
+			"Velocity": "velocity 1–127",
 		},
 	},
 	"PlaceSamplerPrint": {

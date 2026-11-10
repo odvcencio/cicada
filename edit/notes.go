@@ -10,10 +10,12 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// EditNotes applies one batch of note operations to one pattern as one edit:
-// the pattern compiles once, every named note is resolved, the operation runs
-// in memory, and the source is written once. One request is one commit and one
-// Undo step.
+// EditNotes moves, resizes, changes the velocity of, deletes, inserts or
+// quantizes a batch of notes in one pattern as one edit. The pattern compiles
+// once, every named note is resolved, the operation runs in memory, and the
+// source is written once. One request is one commit and one Undo step. A note
+// refusal is an error with code CICADA-NOTES and one of the reasons in
+// NoteErrorCodes (docs/manual/editors.md describes them).
 //
 // Entity is pattern:<id>. Op is move, resize, velocity, delete, insert or
 // quantize. Notes names the notes to change as the client saw them; the edit
@@ -29,29 +31,31 @@ import (
 // percentage (0 means 100); step patterns and drum lanes quantize at 100.
 // Copy keeps the originals of a move. Insert lists the notes an insert adds.
 // Shared accepts only "pattern": phrase uses expand inside the edited pattern.
+//
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"insert","insert":[{"at":1920,"pitch":64,"length":480,"velocity":100}]}
 type EditNotes struct {
-	Entity   EntityID  `json:"entity"`
-	Op       string    `json:"op"`
-	Notes    []NoteRef `json:"notes,omitempty"`
-	DT       int64     `json:"dt,omitempty"`
-	DP       int       `json:"dp,omitempty"`
-	DL       int64     `json:"dl,omitempty"`
-	DV       int       `json:"dv,omitempty"`
-	Velocity int       `json:"velocity,omitempty"`
-	Grid     int64     `json:"grid,omitempty"`
-	Strength int       `json:"strength,omitempty"`
-	Copy     bool      `json:"copy,omitempty"`
-	Insert   []NoteRef `json:"insert,omitempty"`
-	Shared   string    `json:"shared,omitempty"`
+	Entity   EntityID  `json:"entity"`                                                  // the pattern, as pattern:<name>
+	Op       string    `json:"op" values:"move,resize,velocity,delete,insert,quantize"` // the operation
+	Notes    []NoteRef `json:"notes,omitempty"`                                         // the notes to change, as last seen; at most 512
+	DT       int64     `json:"dt,omitempty" unit:"ticks"`                               // move: change of start
+	DP       int       `json:"dp,omitempty"`                                            // move: change of pitch in semitones, or of lane in drum patterns
+	DL       int64     `json:"dl,omitempty" unit:"ticks"`                               // resize: change of length
+	DV       int       `json:"dv,omitempty"`                                            // velocity: change, ±126, clamped to 1–127
+	Velocity int       `json:"velocity,omitempty"`                                      // velocity: the new value instead of dv, 1–127
+	Grid     int64     `json:"grid,omitempty" unit:"ticks"`                             // quantize: grid, 30–3840
+	Strength int       `json:"strength,omitempty" unit:"percent"`                       // quantize: how far starts move to the grid, 1–100; 0 means 100
+	Copy     bool      `json:"copy,omitempty"`                                          // move: keep the originals
+	Insert   []NoteRef `json:"insert,omitempty"`                                        // insert: the notes to add; at most 512
+	Shared   string    `json:"shared,omitempty" values:"pattern"`                       // pattern expands phrase uses inside the edited pattern
 }
 
 // NoteRef is one note as the editor saw it, or one note to insert.
 type NoteRef struct {
-	At       int64  `json:"at"`
-	Pitch    int    `json:"pitch"`
-	Lane     string `json:"lane,omitempty"`
-	Length   int64  `json:"length"`
-	Velocity int    `json:"velocity"`
+	At       int64  `json:"at" unit:"ticks"`     // start, 960 per beat
+	Pitch    int    `json:"pitch"`               // stored MIDI pitch 0–127, before the pattern's transpose
+	Lane     string `json:"lane,omitempty"`      // the drum lane, instead of pitch, in drum patterns
+	Length   int64  `json:"length" unit:"ticks"` // length
+	Velocity int    `json:"velocity"`            // velocity 1–127
 }
 
 func (EditNotes) Kind() string { return "editnotes" }
