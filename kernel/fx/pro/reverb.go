@@ -66,7 +66,7 @@ func NewReverb(sampleRate int, p ReverbParams) (*Reverb, error) {
 	maxTap := 0
 	for channel := range r.taps {
 		for i, ms := range reflectionTimes[channel] {
-			frames := int(math.Round((ms*p.Tail.Size + p.Tail.PredelayMs) * float64(sampleRate) / 1000))
+			frames := int(math.Round((float64(ms*p.Tail.Size) + p.Tail.PredelayMs) * float64(sampleRate) / 1000))
 			r.taps[channel][i] = frames
 			maxTap = max(maxTap, frames)
 		}
@@ -103,15 +103,15 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 			}
 			// Alternate reflections cross the room rather than duplicating mono.
 			source := channel ^ (i & 1)
-			early[channel] += r.buffer[source][index] * reflectionGains[i]
+			early[channel] += float64(r.buffer[source][index] * reflectionGains[i])
 		}
 	}
 	r.index++
 	if r.index == len(r.buffer[0]) {
 		r.index = 0
 	}
-	wetL := float64(l)*(1-r.earlyMix) + early[0]*r.earlyMix
-	wetR := float64(rr)*(1-r.earlyMix) + early[1]*r.earlyMix
+	wetL := float64(float64(l)*(1-r.earlyMix)) + float64(early[0]*r.earlyMix)
+	wetR := float64(float64(rr)*(1-r.earlyMix)) + float64(early[1]*r.earlyMix)
 	// Once the entire observable tail stays below -400 dBFS for half a
 	// second, retire the FDN state before it can drift into denormals. The
 	// interval exceeds the largest allowed predelay/reflection gap.
@@ -124,9 +124,9 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	} else {
 		r.quiet = 0
 	}
-	mid, side := (wetL+wetR)*.5, (wetL-wetR)*.5*r.width
-	return float32(float64(left)*(1-r.mix) + (mid+side)*r.mix),
-		float32(float64(right)*(1-r.mix) + (mid-side)*r.mix)
+	mid, side := float64((wetL+wetR)*.5), float64((wetL-wetR)*.5*r.width)
+	return float32(float64(float64(left)*(1-r.mix)) + float64((mid+side)*r.mix)),
+		float32(float64(float64(right)*(1-r.mix)) + float64((mid-side)*r.mix))
 }
 
 func (r *Reverb) Reset() {

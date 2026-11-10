@@ -1,6 +1,10 @@
 package pro
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 const (
 	limiterTaps   = 64
@@ -62,8 +66,8 @@ func NewLimiter(sampleRate int, p LimiterParams) (*Limiter, error) {
 		ceiling: dbGain(p.CeilingDBTP - limiterMarginDB),
 		// Five attack time constants fit inside the lookahead. The margin
 		// also covers the finite exponential approach to the target gain.
-		attack:  1 - math.Exp(-5/float64(lookahead)),
-		release: 1 - math.Exp(-1/(p.ReleaseMs*.001*float64(sampleRate))),
+		attack:  1 - detmath.Exp(-5/float64(lookahead)),
+		release: 1 - detmath.Exp(-1/(p.ReleaseMs*.001*float64(sampleRate))),
 		gain:    1,
 		queue:   make([]peakEntry, lookahead+2*limiterHalf+1),
 	}
@@ -71,18 +75,18 @@ func NewLimiter(sampleRate int, p LimiterParams) (*Limiter, error) {
 		l.audio[channel] = make([]float32, l.delay+1)
 	}
 	for phase := 0; phase < limiterPhases-1; phase++ {
-		fraction := float64(phase+1) / limiterPhases
+		fraction := float64(float64(phase+1) / limiterPhases)
 		sum := 0.0
 		for tap := 0; tap < limiterTaps; tap++ {
 			x := float64(tap-(limiterHalf-1)) - fraction
 			sinc := 1.0
 			if x != 0 {
-				sinc = math.Sin(math.Pi*x) / (math.Pi * x)
+				sinc = detmath.Sin(math.Pi*x) / (math.Pi * x)
 			}
 			position := float64(tap) / (limiterTaps - 1)
-			window := .42 - .5*math.Cos(2*math.Pi*position) + .08*math.Cos(4*math.Pi*position)
-			l.coeff[tap][phase] = sinc * window
-			sum += sinc * window
+			window := .42 - float64(.5*detmath.Cos(2*math.Pi*position)) + float64(.08*detmath.Cos(4*math.Pi*position))
+			l.coeff[tap][phase] = float64(sinc * window)
+			sum += float64(sinc * window)
 		}
 		for tap := 0; tap < limiterTaps; tap++ {
 			l.coeff[tap][phase] /= sum
@@ -105,20 +109,20 @@ func (l *Limiter) detector(left, right float64) float64 {
 	for tap := 0; tap < limiterTaps; tap++ {
 		a, b := l.ring[0][start+tap], l.ring[1][start+tap]
 		h := &l.coeff[tap]
-		a0 += h[0] * a
-		a1 += h[1] * a
-		a2 += h[2] * a
-		a3 += h[3] * a
-		a4 += h[4] * a
-		a5 += h[5] * a
-		a6 += h[6] * a
-		b0 += h[0] * b
-		b1 += h[1] * b
-		b2 += h[2] * b
-		b3 += h[3] * b
-		b4 += h[4] * b
-		b5 += h[5] * b
-		b6 += h[6] * b
+		a0 += float64(h[0] * a)
+		a1 += float64(h[1] * a)
+		a2 += float64(h[2] * a)
+		a3 += float64(h[3] * a)
+		a4 += float64(h[4] * a)
+		a5 += float64(h[5] * a)
+		a6 += float64(h[6] * a)
+		b0 += float64(h[0] * b)
+		b1 += float64(h[1] * b)
+		b2 += float64(h[2] * b)
+		b3 += float64(h[3] * b)
+		b4 += float64(h[4] * b)
+		b5 += float64(h[5] * b)
+		b6 += float64(h[6] * b)
 	}
 	for _, value := range [14]float64{a0, a1, a2, a3, a4, a5, a6, b0, b1, b2, b3, b4, b5, b6} {
 		peak = math.Max(peak, math.Abs(value))
@@ -160,7 +164,7 @@ func (l *Limiter) Process(left, right float32) (float32, float32) {
 	if target < l.gain {
 		coefficient = l.attack
 	}
-	l.gain += (target - l.gain) * coefficient
+	l.gain += float64((target - l.gain) * coefficient)
 	l.audio[0][l.write], l.audio[1][l.write] = left, right
 	read := l.write + 1
 	if read == len(l.audio[0]) {
@@ -184,4 +188,4 @@ func (l *Limiter) Reset() {
 
 func (l *Limiter) LatencyFrames() int       { return l.delay }
 func (l *Limiter) Fault() bool              { return l.fault }
-func (l *Limiter) GainReductionDB() float64 { return -20 * math.Log10(l.gain) }
+func (l *Limiter) GainReductionDB() float64 { return -20 * detmath.Log10(l.gain) }

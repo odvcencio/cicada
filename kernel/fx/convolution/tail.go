@@ -159,7 +159,7 @@ func (t *tail) job() {
 				if t.phase == inverseFFT {
 					root = complex(real(root), -imag(root))
 				}
-				u, v := work[base+j], work[base+j+half]*root
+				u, v := work[base+j], mulComplex(work[base+j+half], root)
 				work[base+j], work[base+j+half] = u+v, u-v
 			}
 			t.cursor += count
@@ -200,8 +200,8 @@ func (t *tail) job() {
 			l, rr := &r.channels[0], &r.channels[1]
 			startH, startX := t.partition*bins, t.slot*bins
 			for j := t.cursor; j < t.cursor+count; j++ {
-				l.work[j] += l.impulse[startH+j] * l.history[startX+j]
-				rr.work[j] += rr.impulse[startH+j] * rr.history[startX+j]
+				l.work[j] += mulComplex(l.impulse[startH+j], l.history[startX+j])
+				rr.work[j] += mulComplex(rr.impulse[startH+j], rr.history[startX+j])
 			}
 			t.cursor += count
 			budget -= 2 * count
@@ -231,7 +231,7 @@ func (t *tail) job() {
 			count := min(budget, tailFrames-t.cursor)
 			output := t.output[t.workOut][t.channel]
 			for j := t.cursor; j < t.cursor+count; j++ {
-				output[j] = real(work[j])/float64(n) + c.overlap[j]
+				output[j] = float64(real(work[j])/float64(n)) + c.overlap[j]
 				c.overlap[j] = real(work[tailFrames+j]) / float64(n)
 				if math.IsNaN(output[j]) || math.IsInf(output[j], 0) {
 					t.fault = true

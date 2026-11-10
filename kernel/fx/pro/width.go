@@ -35,12 +35,12 @@ func (w *Width) Process(left, right float32) (float32, float32) {
 	if w.amount == 1 && !w.bass {
 		return left, right
 	}
-	mid := (float64(left) + float64(right)) * .5
-	side := (float64(left) - float64(right)) * .5
+	mid := float64((float64(left) + float64(right)) * .5)
+	side := float64((float64(left) - float64(right)) * .5)
 	if w.bass {
 		side = w.filter.process(side, 0)
 	}
-	side *= w.amount
+	side = float64(side * w.amount)
 	return float32(mid + side), float32(mid - side)
 }
 

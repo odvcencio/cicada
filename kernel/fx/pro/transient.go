@@ -1,6 +1,10 @@
 package pro
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 type TransientParams struct {
 	Enabled   bool
@@ -39,12 +43,12 @@ func NewTransient(sampleRate int, p TransientParams) (*Transient, error) {
 	}
 	rate := float64(sampleRate)
 	t := &Transient{
-		fastAttack:  1 - math.Exp(-1/(p.FastMs*.001*rate)),
-		slowAttack:  1 - math.Exp(-1/(p.SlowMs*.001*rate)),
-		release:     1 - math.Exp(-1/(p.ReleaseMs*.001*rate)),
+		fastAttack:  1 - detmath.Exp(-1/(p.FastMs*.001*rate)),
+		slowAttack:  1 - detmath.Exp(-1/(p.SlowMs*.001*rate)),
+		release:     1 - detmath.Exp(-1/(p.ReleaseMs*.001*rate)),
 		attackGain:  dbGain(p.AttackDB),
 		sustainGain: dbGain(p.SustainDB),
-		smoothing:   1 - math.Exp(-1/(.0005*rate)),
+		smoothing:   1 - detmath.Exp(-1/(.0005*rate)),
 		bypass:      p.AttackDB == 0 && p.SustainDB == 0,
 	}
 	if !t.bypass {
@@ -69,14 +73,14 @@ func (t *Transient) Process(left, right float32) (float32, float32) {
 	if level > t.slow {
 		slowCoeff = t.slowAttack
 	}
-	t.fast = clean(t.fast + (level-t.fast)*fastCoeff)
-	t.slow = clean(t.slow + (level-t.slow)*slowCoeff)
+	t.fast = clean(t.fast + float64((level-t.fast)*fastCoeff))
+	t.slow = clean(t.slow + float64((level-t.slow)*slowCoeff))
 	attack := 0.0
 	if t.fast > 1e-12 {
 		attack = math.Max(0, math.Min(1, (t.fast-t.slow)/t.fast))
 	}
-	target := t.sustainGain + attack*(t.attackGain-t.sustainGain)
-	t.gain += (target - t.gain) * t.smoothing
+	target := t.sustainGain + float64(attack*(t.attackGain-t.sustainGain))
+	t.gain += float64((target - t.gain) * t.smoothing)
 	t.audio[0][t.write], t.audio[1][t.write] = left, right
 	read := t.write + 1
 	if read == len(t.audio[0]) {

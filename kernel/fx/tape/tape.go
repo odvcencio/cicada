@@ -143,8 +143,8 @@ func New(sampleRate int, bpmMilli int64) (*Tape, error) {
 	}
 	t.maxDelay = float64(len(t.buffer) - 3)
 	for i := range wowHz {
-		t.wowStep[i] = uint32(wowHz[i]*(4294967296/r) + .5)
-		t.flutterStep[i] = uint32(flutterHz[i]*(4294967296/r) + .5)
+		t.wowStep[i] = uint32(float64(wowHz[i]*(4294967296/r)) + .5)
+		t.flutterStep[i] = uint32(float64(flutterHz[i]*(4294967296/r)) + .5)
 	}
 	if err := t.SetParams(DefaultParams()); err != nil {
 		return nil, err
@@ -325,8 +325,8 @@ func (t *Tape) Process(left, right float32) (float32, float32) {
 	if t.position == len(t.buffer) {
 		t.position = 0
 	}
-	mid := (wet.left + wet.right) * .5
-	side := (wet.left - wet.right) * .5
+	mid := float64((wet.left + wet.right) * .5)
+	side := float64((wet.left - wet.right) * .5)
 	outL := mid + side
 	outR := mid - side
 	if !finite(outL) || !finite(outR) || outL > math.MaxFloat32 || outL < -math.MaxFloat32 || outR > math.MaxFloat32 || outR < -math.MaxFloat32 {

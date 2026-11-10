@@ -15,7 +15,7 @@ import (
 // product first; an export's loudness search depends on these readings, so for
 // these inputs the digest must be the same on both. CI checks it on arm64 in
 // the PCM24 parity job.
-const meterDigest = "592fa6fd84995561a7daec23005d36dc9b11dc19439bbc1f97bd1597a540b38a"
+const meterDigest = "0d0c4ae17e48e037d7168a7bac4b101b69c862645880bffa0d2733d7de2fea24"
 
 // digestNoise returns exact float32 noise in [-0.5, 0.5) from a 32-bit
 // xorshift generator: a 24-bit integer divided by a power of two, so every

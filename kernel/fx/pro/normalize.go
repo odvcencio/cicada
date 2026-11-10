@@ -3,6 +3,7 @@ package pro
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/loudness"
 )
 
@@ -59,8 +60,8 @@ func NormalizeStereo(sampleRate int, left, right []float32, targetLUFS, ceilingD
 	requested := targetLUFS - result.Before.IntegratedLUFS
 	peak := math.Max(result.Before.TruePeak, reconstructionPeak(left, right))
 	result.Before.TruePeak = peak
-	result.Before.TruePeakDBTP = 20 * math.Log10(peak)
-	allowed := ceilingDBTP - .1 - 20*math.Log10(peak)
+	result.Before.TruePeakDBTP = 20 * detmath.Log10(peak)
+	allowed := ceilingDBTP - .1 - float64(20*detmath.Log10(peak))
 	result.AppliedGainDB = math.Min(requested, allowed)
 	result.PeakLimited = allowed < requested
 	gain := dbGain(result.AppliedGainDB)
@@ -80,7 +81,7 @@ func NormalizeStereo(sampleRate int, left, right []float32, targetLUFS, ceilingD
 	// float32 rounding reserve rather than run the long FIR a second time.
 	result.After.TruePeak = math.Max(result.After.TruePeak, peak*gain*(1+1e-7))
 	if result.After.TruePeak > 0 {
-		result.After.TruePeakDBTP = 20 * math.Log10(result.After.TruePeak)
+		result.After.TruePeakDBTP = 20 * detmath.Log10(result.After.TruePeak)
 	}
 	result.Reachable = math.Abs(result.After.IntegratedLUFS-targetLUFS) <= .5
 	return result, nil
@@ -92,13 +93,13 @@ func reconstructionPeak(left, right []float32) float64 {
 	const taps, half, phases = 64, 32, 16
 	var coeff [phases - 1][taps]float64
 	for phase := range coeff {
-		fraction, sum := float64(phase+1)/phases, 0.0
+		fraction, sum := float64(float64(phase+1)/phases), 0.0
 		for tap := range coeff[phase] {
 			x := float64(tap-(half-1)) - fraction
-			sinc := math.Sin(math.Pi*x) / (math.Pi * x)
+			sinc := detmath.Sin(math.Pi*x) / (math.Pi * x)
 			position := float64(tap) / (taps - 1)
-			window := .42 - .5*math.Cos(2*math.Pi*position) + .08*math.Cos(4*math.Pi*position)
-			coeff[phase][tap] = sinc * window
+			window := .42 - float64(.5*detmath.Cos(2*math.Pi*position)) + float64(.08*detmath.Cos(4*math.Pi*position))
+			coeff[phase][tap] = float64(sinc * window)
 			sum += coeff[phase][tap]
 		}
 		for tap := range coeff[phase] {
@@ -115,8 +116,8 @@ func reconstructionPeak(left, right []float32) float64 {
 			for tap, h := range coeff[phase] {
 				i := center + tap - (half - 1)
 				if i >= 0 && i < len(left) {
-					l += h * float64(left[i])
-					r += h * float64(right[i])
+					l += float64(h * float64(left[i]))
+					r += float64(h * float64(right[i]))
 				}
 			}
 			peak = math.Max(peak, math.Max(math.Abs(l), math.Abs(r)))

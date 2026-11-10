@@ -8,7 +8,11 @@
 // unquantized block energy for the integrated result.
 package loudness
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 const (
 	maxRate          = 96_000
@@ -63,11 +67,11 @@ type biquad struct {
 }
 
 // The meter rounds every product with an explicit conversion before it is
-// added, so arm64 cannot fuse a multiply-add in its per-sample arithmetic; an
-// export's loudness search depends on these readings. That does not make every
-// reading the same on every target: the true-peak coefficients pass through
-// math.Sin and the LUFS conversion through math.Log10, whose last bit can
-// differ between architectures. Making those deterministic is follow-up work.
+// added, so arm64 cannot fuse a multiply-add in its per-sample arithmetic, and
+// its true-peak coefficients and LUFS conversion use detmath rather than the
+// math library, whose last bit differs by target. Every reading is therefore
+// the same on amd64, arm64 and WebAssembly; an export's loudness search
+// depends on them.
 func (f *biquad) process(x float64) float64 {
 	y := float64(f.b0*x) + float64(f.b1*f.x1) + float64(f.b2*f.x2) - float64(f.a1*f.y1) - float64(f.a2*f.y2)
 	f.x2, f.x1 = f.x1, x
@@ -209,7 +213,7 @@ func (m *Meter) designTruePeakFilter() {
 			sinc := 1.0
 			if x != 0 {
 				angle := math.Pi * x
-				sinc = math.Sin(angle) / angle
+				sinc = detmath.Sin(angle) / angle
 			}
 			coefficient := float64(sinc * truePeakWindow[tap])
 			m.truePeakCoeff[phase][tap] = coefficient
@@ -523,12 +527,12 @@ func loudnessFromPower(power float64) float64 {
 	if power <= 0 {
 		return math.Inf(-1)
 	}
-	return -0.691 + float64(10*math.Log10(power))
+	return -0.691 + float64(10*detmath.Log10(power))
 }
 
 func amplitudeDB(amplitude float64) float64 {
 	if amplitude <= 0 {
 		return math.Inf(-1)
 	}
-	return 20 * math.Log10(amplitude)
+	return 20 * detmath.Log10(amplitude)
 }

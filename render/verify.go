@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/loudness"
 	"m31labs.dev/cicada/kernel/mix"
 )
@@ -122,7 +123,7 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	if err != nil {
 		return report, err
 	}
-	ceiling := math.Pow(10, mix.CeilingDB/20)
+	ceiling := detmath.Pow(10, mix.CeilingDB/20)
 	ceilingTolerance := math.Ldexp(1, -(opts.Bits-1)) / 2
 	if opts.Bits == 32 {
 		ceilingTolerance = 1e-7
@@ -222,5 +223,5 @@ func amplitudeDB(value float64) float64 {
 	if value == 0 {
 		return math.Inf(-1)
 	}
-	return 20 * math.Log10(value)
+	return 20 * detmath.Log10(value)
 }
