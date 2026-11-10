@@ -234,6 +234,7 @@ start_studio() {
 stop_studio() {
 	kill "$studio_pid"
 	wait "$studio_pid" || true
+	studio_log= # a later timeout must not print this server's log
 }
 
 ran_file=
@@ -242,11 +243,15 @@ ran_file=
 # The record is a file, so a run inside a pipeline (| tee) still counts.
 #
 # Every suite runs under a time limit (CICADA_STUDIO_SUITE_TIMEOUT seconds,
-# default 300). The slowest segment in run 42717367458 took 162 s and the
-# slowest suite report 39 s, so 300 s is a hang, not a slow run. A suite that
+# default 420). The slowest segment in run 42717367458 took 162 s and the
+# slowest suite report 39 s, so 420 s is a hang, not a slow run. Four suites
+# (grid-sources, direct-variation, performance-sources, recording-sources)
+# set a 300 s limit of their own in node:test. This outer clock also counts
+# node start-up and browser launch, so it must be longer: otherwise a run near
+# its own budget is killed here before node:test can name the slow test. A suite that
 # hits the limit fails with its name, the end of its report and the end of the
 # Studio server log, instead of waiting for the 30-minute job limit.
-suite_timeout="${CICADA_STUDIO_SUITE_TIMEOUT:-300}"
+suite_timeout="${CICADA_STUDIO_SUITE_TIMEOUT:-420}"
 studio_log=
 
 run_suite() {
