@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const stall = require('./page-stall.cjs');
 
 async function until(fn, message) {
   const end = Date.now() + 20000;
@@ -33,8 +34,20 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const storage = process.env.CICADA_PRODUCER_STORAGE || '/tmp/cicada-pro2-browser-session.json';
   assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'));
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', ...(fs.existsSync(storage) ? { storageState: storage } : {}) });
-  t.after(async () => { await desktop.storageState({ path: storage }); await browser.close(); }, {timeout: 15000});
+  // A failed step prints what the page's main thread was doing. Saving storage
+  // waits on the page, so it is skipped when the page has stopped responding.
+  const watches = [], serverLog = process.env.CICADA_STUDIO_STARTUP_LOG;
+  let finished = false;
+  t.after(async () => {
+    if (!finished || process.env.CICADA_PAGE_STALL_REPORT === '1') {
+      const reports = Promise.all(watches.map(watch => watch.report(finished ? 'requested by CICADA_PAGE_STALL_REPORT' : 'the test did not finish'))).then(texts => texts.join('\n'));
+      console.error(await stall.within(reports, 12000, 'page stall report did not finish within 12000 ms'));
+    }
+    // This file has one test, so its teardown may end the process (exitAfterMS).
+    await stall.closeBrowser(browser, { before: watches.some(watch => watch.stalled()) ? null : () => desktop.storageState({ path: storage }), beforeMS: 3000, closeMS: 3000, exitAfterMS: 20000 });
+  }, {timeout: 15000});
   const page = await desktop.newPage();
+  watches.push(await stall.watchPage(page, { serverLog }));
   page.setDefaultTimeout(20000);
   const errors = [], checks = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -302,6 +315,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   phone.setDefaultTimeout(20000);
   phone.on('pageerror', error => errors.push(error.message));
   phone.on('response', actionResponse);
+  watches.push(await stall.watchPage(phone, { serverLog }));
   await phone.goto(base + '/?panel=session&curvePath=vox.level', { waitUntil: 'domcontentloaded' });
   await ready(phone);
   await curveReady(phone);
@@ -335,5 +349,6 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   assert.deepEqual(errors, []);
   if (proof) fs.writeFileSync(path.join(proof, 'checks.json'), JSON.stringify({ checks, errors, beforeHashes, afterHashes, microphoneActivated: false, silentOutput: true, desktop: [1440,1100], phone: [390,844] }, null, 2));
   await mobile.close();
+  finished = true;
   console.log(checks.join('\n'));
 });
