@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"net/http"
 	"net/url"
 	"strconv"
 	"syscall/js"
@@ -307,7 +306,7 @@ func (u *workspaceUI) placementEdit(block js.Value, field string, value int64) {
 			break
 		}
 	}
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, controls: controls, pendingCell: block})
+	u.queue(workspaceJob{method: methodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, controls: controls, pendingCell: block})
 }
 
 func (u *placementEditorUI) placementViewChanged(event js.Value) {
@@ -364,7 +363,7 @@ func (u *workspaceUI) placementCopy(block js.Value, at int64) {
 	}
 	values := u.editValues()
 	values["action"], values["name"], values["newName"], values["at"] = "duplicate", workspaceAttr(block, "data-placement-block"), name, strconv.FormatInt(at, 10)+"ticks"
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
+	u.queue(workspaceJob{method: methodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
 }
 
 // Pattern scheduling requires sixteenth-aligned starts. Use the smallest

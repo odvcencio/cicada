@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -68,7 +67,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 			u.clearQueue()
 			u.restoreAll()
 			u.status.Set("Refreshing saved state…")
-			u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll)}
+			u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll)}
 		}
 	})
 	// A stale region refreshes when its tab, pane, section or dialog opens. A
@@ -307,7 +306,7 @@ func (u *workspaceUI) refreshStale(mode int) {
 	ctx, cancel := context.WithCancel(u.ctx)
 	u.cancelRead, u.reading = cancel, true
 	select {
-	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: regions, ctx: ctx}:
+	case u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), regions: regions, ctx: ctx}:
 	default:
 		u.reading = false
 		cancel()
@@ -436,7 +435,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	// A read that returns a revision this tab did not write reveals another
 	// change. A region it did not render still shows the song from before
 	// that change, whatever this tab saves next, until it is rendered again.
-	foreign := job.method == http.MethodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
+	foreign := job.method == methodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
 	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
 	for i := 0; i < wrappers.Length(); i++ {
 		// The pair names the saved state: a save to another project file
@@ -452,7 +451,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	if projection.Title != "" {
 		document.Set("title", projection.Title)
 	}
-	if location, safe := workspaceURL(projection.Location); safe && job.method == http.MethodPost {
+	if location, safe := workspaceURL(projection.Location); safe && job.method == methodPost {
 		// The response names the selection; the address keeps its fragment.
 		js.Global().Get("history").Call("replaceState", js.Global().Get("history").Get("state"), "", location.RequestURI()+js.Global().Get("location").Get("hash").String())
 	}
@@ -541,7 +540,7 @@ func (u *workspaceUI) refreshThenSubmit(region, form, submitter js.Value) {
 		u.idle.Stop()
 	}
 	select {
-	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: h.region + ":" + workspaceAttr(region, "data-region-digest"), hold: h, then: func(outcome int) { u.settleHold(h, outcome) }}:
+	case u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), regions: h.region + ":" + workspaceAttr(region, "data-region-digest"), hold: h, then: func(outcome int) { u.settleHold(h, outcome) }}:
 	default:
 		u.releaseHold(h, "Too many changes are waiting, so this was not sent. Submit it again.")
 	}
@@ -680,7 +679,7 @@ func engineVersion(node js.Value, fallback workspaceVersion) workspaceVersion {
 func (u *workspaceUI) advanceRegions(projection workspaceProjection, job workspaceJob, confirm func(js.Value, string)) {
 	for i, id := range append([]string{"transport"}, projection.Unchanged...) {
 		wrapper := domRegion(id)
-		if !workspacePresent(wrapper) || ruleR1(id, shellHeld(wrapper), false, i > 0, job.method == http.MethodPost) != regionAdvance {
+		if !workspacePresent(wrapper) || ruleR1(id, shellHeld(wrapper), false, i > 0, job.method == methodPost) != regionAdvance {
 			continue
 		}
 		workspaceSetRevisions(wrapper, projection)

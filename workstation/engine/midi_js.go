@@ -3,12 +3,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"syscall/js"
@@ -19,25 +16,19 @@ import (
 )
 
 func (u *liveUI) loadPortableMIDIPorts() {
-	origin := js.Global().Get("location").Get("origin").String()
-	request, err := http.NewRequestWithContext(u.ctx, http.MethodGet, origin+"/api/midi/ports", nil)
-	if err != nil {
-		return
-	}
-	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	response, err := nativeRequest{Method: methodGet, Path: "/api/midi/ports", Timeout: 5 * time.Second}.do(u.ctx)
 	if err != nil {
 		if !u.closed.Load() {
 			u.status.Set("Could not read local MIDI port settings.")
 		}
 		return
 	}
-	defer response.Body.Close()
 	var result struct {
 		Ports    map[string]string `json:"ports"`
 		Revision string            `json:"configRevision"`
 		Error    string            `json:"error"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 65537)).Decode(&result); err != nil || response.StatusCode != http.StatusOK {
+	if err := decodeLimited(response.Body, 65537, &result); err != nil || response.Status != statusOK {
 		if !u.closed.Load() {
 			if result.Error != "" {
 				u.status.Set(result.Error)
@@ -158,29 +149,19 @@ func (u *liveUI) enableNativeMIDI() {
 }
 
 func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) string {
-	origin := js.Global().Get("location").Get("origin").String()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+"/api/midi/input", bytes.NewBufferString("{}"))
-	if err != nil {
-		return "MIDI could not connect."
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-CSRF-Token", u.props.CSRF)
-	response, err := (&http.Client{}).Do(request)
+	// The input stream stays open while the controller plays, so it is read
+	// as it arrives and has no timeout; cancelling ctx closes it.
+	status, body, err := nativeRequest{Method: methodPost, Path: "/api/midi/input", Body: []byte("{}"), Headers: map[string]string{
+		"Content-Type": "application/json", "X-CSRF-Token": u.props.CSRF,
+	}}.stream(ctx)
 	if err != nil {
 		return "MIDI connection ended."
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		var failure struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(data, &failure) == nil && failure.Error != "" {
-			return failure.Error
-		}
-		return "MIDI could not connect. " + strings.TrimSpace(string(data))
+	defer body.Close()
+	if status != statusOK {
+		return midiInputRefusal(body)
 	}
-	decoder := json.NewDecoder(response.Body)
+	decoder := json.NewDecoder(body)
 	for {
 		var event midi.Event
 		if err := decoder.Decode(&event); err != nil {

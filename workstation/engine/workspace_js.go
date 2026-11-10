@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -203,7 +202,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		seenRefresh = requested
-		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()})
+		u.queue(workspaceJob{method: methodGet, current: true, form: js.Undefined()})
 	})
 	u.listen(document, "submit", u.submit)
 	u.listen(document, "click", u.click)
@@ -214,7 +213,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		owned:   u.owned,
 		blocked: func() bool { return u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 },
 		status:  u.status.Set, selectPlacement: func(block js.Value) { selectPlacement(root, block) }, placementEdit: u.placementEdit, placementCopy: u.placementCopy,
-		refresh: func(js.Value) { u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()}) },
+		refresh: func(js.Value) { u.queue(workspaceJob{method: methodGet, current: true, form: js.Undefined()}) },
 	}
 	u.listen(document, "change", u.placements.placementViewChanged)
 	u.listen(document, "click", u.placements.placementViewChanged)
@@ -374,7 +373,7 @@ func (u *workspaceUI) submit(event js.Value) {
 	// attributes so a button named action can never replace the endpoint.
 	method, target := workspaceAttr(form, "method"), workspaceAttr(form, "action")
 	if method == "" {
-		method = http.MethodGet
+		method = methodGet
 	}
 	if target == "" {
 		target = workspaceLocation()
@@ -395,7 +394,7 @@ func (u *workspaceUI) submit(event js.Value) {
 	}
 	parsed, safe := workspaceURL(target)
 	method = strings.ToUpper(method)
-	if !safe || (method != http.MethodPost && method != http.MethodGet) || (method == http.MethodPost && !strings.HasPrefix(parsed.Path, "/__actions/")) {
+	if !safe || (method != methodPost && method != methodGet) || (method == methodPost && !strings.HasPrefix(parsed.Path, "/__actions/")) {
 		return
 	}
 	if workspaceEngineOwned(form) && parsed.Path != "/__actions/source" {
@@ -403,7 +402,7 @@ func (u *workspaceUI) submit(event js.Value) {
 	}
 	// Export is a background job. GoSX's managed form and live projection own
 	// its acknowledgement; replacing the score view would close its dialog.
-	if method == http.MethodPost && (parsed.Path == "/__actions/export" || parsed.Path == "/__actions/export-midi" || parsed.Path == "/__actions/export-stems") {
+	if method == methodPost && (parsed.Path == "/__actions/export" || parsed.Path == "/__actions/export-midi" || parsed.Path == "/__actions/export-stems") {
 		return
 	}
 	// File uploads keep GoSX's native multipart transport.
@@ -416,7 +415,7 @@ func (u *workspaceUI) submit(event js.Value) {
 	if workspacePresent(submitter) && workspaceString(submitter, "name") != "" {
 		values[workspaceString(submitter, "name")] = workspaceString(submitter, "value")
 	}
-	if method == http.MethodGet {
+	if method == methodGet {
 		current, _ := url.Parse(workspaceLocation())
 		query := parsed.Query()
 		for name, value := range values {
@@ -427,12 +426,12 @@ func (u *workspaceUI) submit(event js.Value) {
 		}
 		event.Call("preventDefault")
 		event.Call("stopImmediatePropagation")
-		u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + query.Encode(), form: form, controls: workspaceControls(form)})
+		u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + query.Encode(), form: form, controls: workspaceControls(form)})
 		return
 	}
 	values["__cicada_reactive"] = "1"
 	values["__cicada_location"] = workspaceLocation()
-	job := workspaceJob{method: http.MethodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form)}
+	job := workspaceJob{method: methodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form)}
 	if workspacePresent(submitter) && (u.shell || submitter.Call("matches", ".roll-cell").Bool()) {
 		job.pendingCell = submitter
 	}
@@ -478,7 +477,7 @@ func (u *workspaceUI) click(event js.Value) {
 	if workspacePresent(target.Call("closest", "[data-workspace-retry], [data-workspace-refresh]")) {
 		event.Call("preventDefault")
 		event.Call("stopImmediatePropagation")
-		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined(), refresh: true})
+		u.queue(workspaceJob{method: methodGet, current: true, form: js.Undefined(), refresh: true})
 		return
 	}
 	anchor := target.Call("closest", "a[href]")
@@ -504,7 +503,7 @@ func (u *workspaceUI) click(event js.Value) {
 	}
 	event.Call("preventDefault")
 	event.Call("stopImmediatePropagation")
-	u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + parsed.RawQuery, fragment: parsed.Fragment, form: js.Undefined()})
+	u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + parsed.RawQuery, fragment: parsed.Fragment, form: js.Undefined()})
 }
 
 func workspaceStop(event js.Value) {
@@ -628,7 +627,7 @@ func (u *workspaceUI) selectCell(cell js.Value, step string) {
 		query.Del("lane")
 	}
 	row := cell.Call("closest", ".roll-row")
-	u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + query.Encode(), form: js.Undefined(), focusRow: workspaceAttr(row, "data-gosx-key"), focusStep: step, pendingCell: cell})
+	u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + query.Encode(), form: js.Undefined(), focusRow: workspaceAttr(row, "data-gosx-key"), focusStep: step, pendingCell: cell})
 }
 
 func (u *workspaceUI) editValues() map[string]string {
@@ -666,7 +665,7 @@ func (u *workspaceUI) keyDown(event js.Value) {
 		}
 		if action != "" {
 			workspaceStop(event)
-			u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/" + action, values: u.editValues(), confirmed: u.revision.Get(), form: js.Undefined()})
+			u.queue(workspaceJob{method: methodPost, target: "/__actions/" + action, values: u.editValues(), confirmed: u.revision.Get(), form: js.Undefined()})
 		}
 		return
 	}
@@ -710,7 +709,7 @@ func (u *workspaceUI) keyDown(event js.Value) {
 		values["pattern"], values["lane"] = workspaceAttr(grid, "data-pattern-id"), workspaceFieldValue(form, "lane")
 		values["first"], values["last"], values["target"], values["amount"] = step, step, step, "0"
 		values["octave"] = workspaceFieldValue(form, "octave")
-		u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pendingCell: cell})
+		u.queue(workspaceJob{method: methodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pendingCell: cell})
 	case "ArrowUp", "ArrowDown":
 		if workspaceAttr(cell, "data-selected") != "true" || workspaceAttr(grid, "data-pattern-kind") != "notes" {
 			return
@@ -733,7 +732,7 @@ func (u *workspaceUI) keyDown(event js.Value) {
 					offset = pitch - first
 				}
 			}
-			u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pitchDelta: delta, pitchOffset: offset, pendingCell: cell})
+			u.queue(workspaceJob{method: methodPost, target: "/__actions/pattern", values: values, confirmed: u.revision.Get(), form: js.Undefined(), pitchDelta: delta, pitchOffset: offset, pendingCell: cell})
 		}
 	}
 }
@@ -931,7 +930,7 @@ func (u *workspaceUI) run() {
 func (u *workspaceUI) runJob(job workspaceJob) bool {
 	// A shell read other than "Refresh saved state" never blocks the queue:
 	// reading again is always safe.
-	read := u.shell && job.method == http.MethodGet && !job.refresh
+	read := u.shell && job.method == methodGet && !job.refresh
 	outcome := holdFailed
 	defer func() {
 		if read && job.ctx != nil {
@@ -941,7 +940,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			job.then(outcome)
 		}
 	}()
-	if u.blocked.Load() && !job.refresh || job.method == http.MethodGet && u.shell && job.regions == "" {
+	if u.blocked.Load() && !job.refresh || job.method == methodGet && u.shell && job.regions == "" {
 		u.settle(job, true)
 		return true
 	}
@@ -966,7 +965,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if source, exists := job.values["source_revision"]; exists && (source == job.confirmedSource || fresh) {
 		job.values["source_revision"] = u.sourceRevision
 	}
-	if job.method == http.MethodPost {
+	if job.method == methodPost {
 		location := workspaceLocation()
 		if job.placementSelection != "" {
 			parsed, _ := url.Parse(location)
@@ -984,7 +983,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 		location, _ := url.Parse(workspaceLocation())
 		job.target = "/__workspace?" + location.RawQuery
 	}
-	if u.shell && job.method == http.MethodGet {
+	if u.shell && job.method == methodGet {
 		job.target = "/__studio/regions?ids=" + url.QueryEscape(job.regions) + "&location=" + url.QueryEscape(workspaceLocation())
 	}
 	u.root.Call("setAttribute", "aria-busy", "true")
@@ -1039,7 +1038,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			}
 			return true
 		}
-		if refused && (rejected.status == http.StatusBadRequest || rejected.status == http.StatusUnprocessableEntity) {
+		if refused && (rejected.status == statusBadRequest || rejected.status == statusUnprocessableEntity) {
 			// Validation has not mutated the score. Keep the draft editable
 			// and let a corrected submission use the same revision.
 			u.status.Set(err.Error())
@@ -1072,7 +1071,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	}
 	confirmedWorkspaceVersion.Set(workspaceVersion{Revision: projection.Revision, SourceRevision: projection.SourceRevision, Seq: confirmedWorkspaceVersion.Get().Seq + 1})
 	u.focusGesture(job)
-	if job.method == http.MethodPost && job.values["action"] == "chord" {
+	if job.method == methodPost && job.values["action"] == "chord" {
 		u.revealSelectedNote()
 	}
 	if job.refresh {
@@ -1081,7 +1080,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if u.shell {
 		// The shell shows only what needs attention: a server message or the
 		// end of a refresh, never a "Saved." after every gesture.
-		if job.method == http.MethodPost || job.refresh {
+		if job.method == methodPost || job.refresh {
 			u.own = workspaceVersion{Revision: projection.Revision, SourceRevision: projection.SourceRevision}
 		}
 		outcome = holdForeign
@@ -1091,14 +1090,14 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 		u.idleDelay = shellIdleRefresh
 		if job.refresh {
 			u.status.Set("Workspace updated.")
-		} else if job.method == http.MethodPost {
+		} else if job.method == methodPost {
 			u.status.Set(message)
 		}
 		return true
 	}
 	if message == "" {
 		message = "Saved."
-		if job.method == http.MethodGet {
+		if job.method == methodGet {
 			message = "Workspace updated."
 		}
 	}
@@ -1120,7 +1119,7 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 	var projection workspaceProjection
 	fetch := browser.FetchRequest{URL: js.Global().Get("location").Get("origin").String() + job.target, Method: job.method,
 		Headers: map[string]string{"Accept": "application/json", "X-Cicada-Reactive": "1"}}
-	if job.method == http.MethodPost {
+	if job.method == methodPost {
 		payload, err := json.Marshal(job.values)
 		if err != nil {
 			return projection, "", err
@@ -1133,10 +1132,10 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 		ctx = job.ctx
 	}
 	timeout := 15 * time.Second
-	if job.method == http.MethodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
+	if job.method == methodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
 		timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
 	}
-	if job.method == http.MethodPost && job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
+	if job.method == methodPost && job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
 		// Native permission waits for a human response. Closing this workspace
 		// still cancels its context; ordinary edits retain their timeout.
 		timeout = 0
@@ -1155,8 +1154,8 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 		return projection, "", fmt.Errorf("The workspace request did not complete")
 	}
 	response := struct{ StatusCode int }{fetched.Status}
-	if job.method == http.MethodGet {
-		if response.StatusCode != http.StatusOK {
+	if job.method == methodGet {
+		if response.StatusCode != statusOK {
 			return projection, "", fmt.Errorf("Workspace refresh failed (%d)", response.StatusCode)
 		}
 		err = json.Unmarshal(fetched.Body, &projection)
@@ -2263,7 +2262,7 @@ func (u *workspaceUI) watchFiles() {
 			continue
 		}
 		requested = state.Revision
-		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()})
+		u.queue(workspaceJob{method: methodGet, current: true, form: js.Undefined()})
 	}
 }
 

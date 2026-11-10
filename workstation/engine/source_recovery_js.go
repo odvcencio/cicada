@@ -3,14 +3,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"syscall/js"
@@ -136,25 +133,12 @@ func (u *workspaceUI) checkpointSources() {
 				fields["intent"] = "clear"
 			}
 			data, _ := json.Marshal(fields)
-			origin := js.Global().Get("location").Get("origin").String()
-			ctx, cancel := context.WithTimeout(u.ctx, 5*time.Second)
-			request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+"/__actions/source-checkpoint", bytes.NewReader(data))
-			if err != nil {
-				cancel()
-				continue
+			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Headers: map[string]string{
+				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+			}}.do(u.ctx)
+			if err == nil && response.Status != statusOK {
+				err = fmt.Errorf("recovery returned %d", response.Status)
 			}
-			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set("Accept", "application/json")
-			request.Header.Set("X-CSRF-Token", u.props.CSRF)
-			response, err := http.DefaultClient.Do(request)
-			if response != nil {
-				_, _ = io.Copy(io.Discard, response.Body)
-				response.Body.Close()
-				if response.StatusCode != http.StatusOK {
-					err = fmt.Errorf("recovery returned %d", response.StatusCode)
-				}
-			}
-			cancel()
 			if u.closed.Load() {
 				return
 			}

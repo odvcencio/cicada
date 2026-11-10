@@ -3,14 +3,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"sync"
 	"syscall/js"
@@ -405,21 +402,15 @@ func mountCollaboration(host enginewasm.Context) (enginewasm.Handle, error) {
 	request := func(path string, payload any, done func([]byte, error)) {
 		go func() {
 			data, _ := json.Marshal(payload)
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+path, bytes.NewReader(data))
+			response, err := nativeRequest{Method: methodPost, Path: path, Body: data, Timeout: 20 * time.Second, Headers: map[string]string{
+				"Content-Type": "application/json", "X-CSRF-Token": props.CSRF,
+			}}.do(ctx)
 			if err != nil {
 				done(nil, err)
 				return
 			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-CSRF-Token", props.CSRF)
-			response, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-			if err != nil {
-				done(nil, err)
-				return
-			}
-			defer response.Body.Close()
-			body, err := io.ReadAll(io.LimitReader(response.Body, 64<<10))
-			if err == nil && response.StatusCode != 200 {
+			body := limitBody(response.Body, 64<<10)
+			if response.Status != statusOK {
 				err = fmt.Errorf("%s", strings.TrimSpace(string(body)))
 			}
 			done(body, err)
