@@ -134,3 +134,47 @@ func TestIntentsCommandJSON(t *testing.T) {
 		t.Fatalf("unknown kind: %v", err)
 	}
 }
+
+func TestDiagnosticsCommand(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := diagnosticsCommand([]string{"--json"}, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Schema      string `json:"schema"`
+		Diagnostics []struct {
+			Code       string   `json:"code"`
+			Severities []string `json:"severities"`
+			Meaning    string   `json:"meaning"`
+			Fix        string   `json:"fix"`
+			Reasons    []struct {
+				Reason string `json:"reason"`
+			} `json:"reasons"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("diagnostics --json is not JSON: %v", err)
+	}
+	if document.Schema != diagnosticsSchema || len(document.Diagnostics) < 70 {
+		t.Fatalf("schema %q, %d codes", document.Schema, len(document.Diagnostics))
+	}
+	reasons := 0
+	for _, entry := range document.Diagnostics {
+		if entry.Meaning == "" || entry.Fix == "" || len(entry.Severities) == 0 {
+			t.Errorf("%s is incomplete", entry.Code)
+		}
+		if entry.Code == "CICADA-NOTES" {
+			reasons = len(entry.Reasons)
+		}
+	}
+	if reasons != len(edits.NoteErrorCodes) {
+		t.Fatalf("CICADA-NOTES lists %d reasons; the editor has %d", reasons, len(edits.NoteErrorCodes))
+	}
+	stdout.Reset()
+	if err := diagnosticsCommand([]string{"slide-rest"}, &stdout); err != nil || !strings.Contains(stdout.String(), "CICADA-SLIDE-REST (warning; reported by: score)") || !strings.Contains(stdout.String(), "Fix: ") {
+		t.Fatalf("diagnostics slide-rest: %v\n%s", err, stdout.String())
+	}
+	if err := diagnosticsCommand([]string{"CICADA-NOPE"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("an unknown code was accepted")
+	}
+}

@@ -44,6 +44,17 @@ Flags:
 
 Lists every intent kind with its meaning. With a kind, prints its fields (JSON name, type, whether required, unit or allowed values) and an example that cicada apply accepts. The catalog is generated from the intent registry. See docs/manual/agents.md.
 
+### diagnostics
+cicada diagnostics [--json] [code]
+
+list the diagnostic codes with their meaning and fix
+
+Flags:
+  --json      write the catalog as JSON (schema cicada.diagnostics.v1)
+  --help      show this help
+
+Lists every CICADA-* code with its severity and meaning. With a code (CICADA-PARAM or PARAM), prints where it is reported, what it means and how to fix it. docs/manual/diagnostics.md is generated from the same catalog.
+
 ### fix
 cicada fix <score.cicada> [--all] [--check]
 
