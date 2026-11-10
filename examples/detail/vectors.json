@@ -1,8 +1,8 @@
 {
-  "instrument-modulation.cicada-44100": "440004d803bde47507aebea758f31867bf4d34b558436f2467b6de07752bb164",
-  "instrument-modulation.cicada-48000": "4014e90333bc809434756e35bf2c5892d8d59b002f7e60b9256aa03d8c568ec1",
-  "instrument-modulation.cicada-96000": "09f226f69de0127f8864736924689747ebe50fe2f826a48bc9b1947782127114",
-  "modulators.cicada-44100": "3fbc0fcd7aaafcaaae6fbc22100ff1da10a88d1139c135005bdd784e6a97b9c9",
-  "modulators.cicada-48000": "cb2e73149dfb0f5a59051bfa97b81ba0177e948b4f0ff6a36f8b4a8b84924e38",
-  "modulators.cicada-96000": "43d9b83842281e4d1a135bbf476d29266a676923552c3e7fdd03826072bc3b3c"
+  "instrument-modulation.cicada-44100": "37ae53b26b0ee728d8b8084765454c60a7c80c08b37260c68883e7d1ecf8084b",
+  "instrument-modulation.cicada-48000": "f2c454d0ea7136fcc7887e844e09a6f5dd1bb3b63e23d04c04be3e7d668a5f90",
+  "instrument-modulation.cicada-96000": "7553d33afc009dec556b62fb44d6e4986348077e11c83dd907a6f3bf8ad6c4a0",
+  "modulators.cicada-44100": "aa0145deb0caa4cae24cc6a523380d0b61870b05e5667992ad5fe3c8c97ce95b",
+  "modulators.cicada-48000": "76963597409c8a99f530453d5f950e02674a5c528df1b4150a5fee455b2c8305",
+  "modulators.cicada-96000": "9aad20ef8e521fb462ec838907eba7037165173e5cf32e6093ac0d59b0618986"
 }
