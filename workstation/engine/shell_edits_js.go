@@ -296,7 +296,8 @@ func (u *workspaceUI) shellRegions(job workspaceJob, mode int) string {
 func (u *workspaceUI) refreshStale(mode int) {
 	if u.reading || u.closed.Load() {
 		// One read at a time: it covers what is stale when it runs, and an
-		// edit cancels it.
+		// edit cancels it. A region that opens meanwhile is read after it.
+		u.revealWanted = u.revealWanted || mode == regionsVisibleStale
 		return
 	}
 	regions := u.shellRegions(workspaceJob{}, mode)

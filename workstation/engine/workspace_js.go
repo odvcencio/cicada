@@ -117,6 +117,8 @@ type workspaceUI struct {
 	holds     []*shellHold
 	held      int
 	reloading bool // a page reload to show changed engines has started
+	// revealWanted: a region opened while a read ran; read it after.
+	revealWanted bool
 }
 
 type workspaceEditorBaseline struct {
@@ -914,6 +916,10 @@ func (u *workspaceUI) run() {
 				// Stale regions are read when they show, when the queue has
 				// been idle for a moment, and before a form in one is sent.
 				u.reloadIfNeeded()
+				if u.revealWanted {
+					u.revealWanted = false
+					u.refreshStale(regionsVisibleStale)
+				}
 				u.scheduleIdle()
 			}
 		}
