@@ -120,6 +120,14 @@ build-workstation-release:
 test-workstation:
 	cd workstation && go generate ./... && go test -race ./... -count=1
 
+.PHONY: engine-size-report
+# What fills the UI engine WebAssembly, by section, runtime table, package and
+# module, with the linker's reason for each large package and two floor
+# programs. Writes workstation/build/engine-size.json; see workstation/README.md.
+ENGINE_SIZE_ARGS ?=
+engine-size-report:
+	cd workstation && go run ./internal/enginesize -o build/engine-size.json $(ENGINE_SIZE_ARGS)
+
 .PHONY: test-collaboration
 test-collaboration:
 	cd workstation && GOWORK=off go test -race ./collab ./ -run 'Test(Concurrent|Undo|Transactional|SeededOffline|Collaboration)' -count=1 -v

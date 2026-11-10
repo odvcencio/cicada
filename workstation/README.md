@@ -210,6 +210,44 @@ against a disposable Studio for browser interaction checks.
 Optional CMS, admin,
 payments, Scene3D, and simulation packages are not dependencies of this editor.
 
+## UI engine size
+
+Every Studio surface shares one Go WebAssembly module, built by `go generate`
+from `engine/`. The generator fails when the file is larger than the working
+limit in `internal/enginebuild` (`MaxBytes`). To see what fills it:
+
+```sh
+make engine-size-report   # or: cd workstation && go run ./internal/enginesize
+```
+
+The report builds the engine with the generator's exact command, then once
+more without `-s` (to keep function names) and with `-dumpdep` (the linker's
+reason for keeping each symbol). It prints, and writes to
+`workstation/build/engine-size.json`:
+
+- the shipped size, raw and compressed (gzip level 9, Brotli quality 11), and
+  the headroom under the limit;
+- the file's sections: `code` is compiled functions, `data` is everything the
+  program reads from memory;
+- the data section split into read-only data (type descriptors, strings,
+  tables), the pclntab (function names and tables for stack traces and the
+  garbage collector), and initialized variables;
+- bytes per Go package and per module. Code bytes are exact. Type and other
+  data come from the package archives' symbol sizes (`go tool nm`) for the
+  symbols the linker kept. The pclntab column counts each function's name
+  exactly and shares the rest by code size, so it is an estimate;
+- for the largest packages, the linker's first path to them from the program's
+  roots, one line per package boundary. A path through `init` or `inittask`
+  means the package is kept by package initialization, not by a call Studio
+  makes;
+- two floors built the same way: an empty `main` (the Go runtime alone) and a
+  `main` that registers one no-op GoSX engine.
+
+`ENGINE_SIZE_ARGS='-overlay file.json'` (or `-modfile file.mod`, for a
+modified copy of a dependency) measures a change without editing the
+checkout. A pull request that changes the engine shows the report's top lines
+before and after; a new import that adds more than 64 KiB needs its line.
+
 ## Checks
 
 ```sh
