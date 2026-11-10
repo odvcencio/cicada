@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Intent is one typed edit. Kind is the lowercase registry key carried as
@@ -38,11 +39,11 @@ func decodeIntent(raw json.RawMessage) (Intent, error) {
 	}
 	var kind string
 	if err := json.Unmarshal(fields["kind"], &kind); err != nil || kind == "" {
-		return nil, fmt.Errorf("intent needs a kind")
+		return nil, &FieldError{Field: "kind", Err: fmt.Errorf("intent needs a kind")}
 	}
 	make, ok := registry[kind]
 	if !ok {
-		return nil, fmt.Errorf("unknown intent kind %q", kind)
+		return nil, &FieldError{Field: "kind", Err: fmt.Errorf("unknown intent kind %q", kind)}
 	}
 	delete(fields, "kind")
 	body, _ := json.Marshal(fields)
@@ -50,9 +51,35 @@ func decodeIntent(raw json.RawMessage) (Intent, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(intent); err != nil {
-		return nil, fmt.Errorf("%s: %w", kind, err)
+		return nil, &FieldError{Field: decodeField(err), Err: fmt.Errorf("%s: %w", kind, err)}
+	}
+	// A kind that refuses some fields of a struct it shares refuses them here,
+	// as the decoder refuses an unknown field.
+	for _, path := range kindRules[kind].exclude {
+		if jsonPathPresent(fields, path) {
+			name := path[strings.LastIndex(path, ".")+1:]
+			return nil, &FieldError{Field: path, Err: fmt.Errorf("%s: json: unknown field %q", kind, name)}
+		}
 	}
 	return intent, nil
+}
+
+// jsonPathPresent reports whether the dotted path names a field of the
+// decoded object fields.
+func jsonPathPresent(fields map[string]json.RawMessage, path string) bool {
+	head, rest, nested := strings.Cut(path, ".")
+	raw, ok := fields[head]
+	if !ok {
+		return false
+	}
+	if !nested {
+		return true
+	}
+	var inner map[string]json.RawMessage
+	if json.Unmarshal(raw, &inner) != nil {
+		return false
+	}
+	return jsonPathPresent(inner, rest)
 }
 
 func encodeIntent(intent Intent) (json.RawMessage, error) {

@@ -88,7 +88,14 @@ type Entity struct {
 	Revision   string
 }
 
+// Resolve finds an entity in a plan. Its errors are about the intent's entity
+// field.
 func Resolve(plan *Plan, id EntityID) (Entity, error) {
+	entity, err := resolveEntity(plan, id)
+	return entity, entityError(err)
+}
+
+func resolveEntity(plan *Plan, id EntityID) (Entity, error) {
 	if _, err := ParseEntityID(string(id)); err != nil {
 		return Entity{}, err
 	}

@@ -10,11 +10,17 @@ import (
 )
 
 type Result struct {
-	Source    []byte
-	Files     []File
-	Label     string
-	Response  map[string]any
-	Plan      *Plan // compiled candidate
+	Source []byte
+	Files  []File
+	Label  string
+	// Labels holds, for each intent in order, the history label it set, or
+	// "" when it set none.
+	Labels   []string
+	Response map[string]any
+	Plan     *Plan // compiled candidate
+	// Invalid is the compile error of a candidate that Options.KeepInvalid
+	// kept; Plan is nil then.
+	Invalid   error
 	Unchanged bool
 	// RenderChecked reports that an intent consulted the render check, so the
 	// result depends on rendered audio and not only on source text.
@@ -56,6 +62,7 @@ type Context struct {
 	files        []File
 	fileIndex    map[string]int
 	label        string
+	labelSet     bool
 	rendered     bool
 	identities   []string                // verified identity of each render comparison
 	rechecks     []func() (string, bool) // recompute each identity from the same inputs
@@ -117,7 +124,7 @@ func (c *Context) CurrentPlan() (*Plan, error) {
 	return plan, nil
 }
 
-func (c *Context) SetLabel(label string) { c.label = label }
+func (c *Context) SetLabel(label string) { c.label, c.labelSet = label, true }
 func (c *Context) Respond(key string, value any) {
 	if c.response == nil {
 		c.response = map[string]any{}
@@ -190,23 +197,33 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 		return nil, &ConflictError{Expected: env.Revision, Actual: Revision(source)}
 	}
 	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env}
-	for _, intent := range env.Intents {
+	labels := make([]string, 0, len(env.Intents))
+	for index, intent := range env.Intents {
 		handler := handlers[intent.Kind()]
 		if handler == nil {
-			return nil, fmt.Errorf("no handler for intent kind %q", intent.Kind())
+			return nil, intentError(index, intent.Kind(), fmt.Errorf("no handler for intent kind %q", intent.Kind()))
 		}
+		ctx.labelSet = false
 		if err := handler(ctx, intent); err != nil {
-			return nil, err
+			return nil, intentError(index, intent.Kind(), err)
+		}
+		if ctx.labelSet {
+			labels = append(labels, ctx.label)
+		} else {
+			labels = append(labels, "")
 		}
 		// A handler may replace Source without resolving a plan. The next
 		// intent must compile the latest entry and auxiliary bytes together.
 		ctx.plan = nil
 	}
 	plan, err := opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
+	if err != nil && opts.KeepInvalid {
+		return &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Invalid: err, Unchanged: bytes.Equal(ctx.Source, source) && len(ctx.files) == 0}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
+	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
 	if len(ctx.rechecks) > 0 {
 		result.RenderIdentity = strings.Join(ctx.identities, "\n")
 		rechecks := ctx.rechecks

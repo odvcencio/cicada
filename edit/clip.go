@@ -12,19 +12,26 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// AddAudioTrack declares a new, empty audio track in an edition-2 score.
+//
+// Example: {"kind":"addaudiotrack","name":"vocals"}
 type AddAudioTrack struct {
-	Name string `json:"name"`
+	Name string `json:"name" cicada:"required"` // the track's name: lowercase letters, digits, _ and -
 }
 
 func (AddAudioTrack) Kind() string { return "addaudiotrack" }
 
+// SetClipSettings sets an audio clip's source region, gain and fades
+// together. The region is half-open, [start, end), in source frames.
+//
+// Example: {"kind":"setclipsettings","entity":"clip:vocal-a","start":480,"end":4800,"gaindb":-2,"fadein":48,"fadeout":96}
 type SetClipSettings struct {
-	Entity  EntityID `json:"entity"`
-	Start   int64    `json:"start"`
-	End     int64    `json:"end"`
-	GainDB  float64  `json:"gaindb"`
-	FadeIn  int64    `json:"fadein"`
-	FadeOut int64    `json:"fadeout"`
+	Entity  EntityID `json:"entity" cicada:"required"`            // the clip, as clip:<name>
+	Start   int64    `json:"start" unit:"frames"`                 // first source frame
+	End     int64    `json:"end" unit:"frames" cicada:"required"` // the frame after the last, at most the asset's frame count
+	GainDB  float64  `json:"gaindb" unit:"dB"`                    // −60 to +24
+	FadeIn  int64    `json:"fadein" unit:"frames"`                // at most the region length
+	FadeOut int64    `json:"fadeout" unit:"frames"`               // at most the region length
 }
 
 func (SetClipSettings) Kind() string { return "setclipsettings" }
@@ -46,13 +53,13 @@ func editClip(ctx *Context, intent Intent) error {
 		label = "Audio track added · " + in.Name
 	case *SetClipSettings:
 		if in.Entity.Kind() != KindClip {
-			return fmt.Errorf("clip settings need a clip entity, got %q", in.Entity)
+			return entityError(fmt.Errorf("clip settings need a clip entity, got %q", in.Entity))
 		}
 		// Keep the writer's validation order for an empty Studio target:
 		// invalid settings first, then an unknown clip after parsing the score.
 		if in.Entity.Name() != "" {
 			if _, e := ParseEntityID(string(in.Entity)); e != nil {
-				return e
+				return entityError(e)
 			}
 		}
 		updated, err = clipSettingsSource(ctx, in.Entity.Name(), in)

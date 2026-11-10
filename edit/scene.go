@@ -9,15 +9,23 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// SetSceneSetting sets the value a parameter takes when a scene starts, or
+// adds that setting to the scene. The parameter must be live and automatable;
+// the scene tempo is the one bare path a scene may set.
+//
+// Example: {"kind":"setscenesetting","entity":"setting:main/bass.cutoff","value":"1.25kHz"}
 type SetSceneSetting struct {
-	Entity EntityID        `json:"entity"`
-	Value  json.RawMessage `json:"value"`
+	Entity EntityID        `json:"entity" cicada:"required"` // the setting, as setting:<scene>/<owner>.<field>
+	Value  json.RawMessage `json:"value" cicada:"required"`  // a number, or a string with a unit such as "1.25kHz" or "-6dB"; cicada params lists ranges and units
 }
 
 func (SetSceneSetting) Kind() string { return "setscenesetting" }
 
+// RemoveSceneSetting removes one parameter setting from a scene.
+//
+// Example: {"kind":"removescenesetting","entity":"setting:main/bass.reso"}
 type RemoveSceneSetting struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity" cicada:"required"` // the setting, as setting:<scene>/<owner>.<field>
 }
 
 func (RemoveSceneSetting) Kind() string { return "removescenesetting" }
@@ -40,10 +48,10 @@ func editSceneSetting(ctx *Context, intent Intent) error {
 		entity, remove = in.Entity, true
 	}
 	if _, err := ParseEntityID(string(entity)); err != nil {
-		return err
+		return entityError(err)
 	}
 	if entity.Kind() != KindSetting {
-		return fmt.Errorf("scene setting edit needs a setting entity, got %q", entity)
+		return entityError(fmt.Errorf("scene setting edit needs a setting entity, got %q", entity))
 	}
 	scene, path, _ := strings.Cut(entity.Name(), "/")
 	updated, err := sceneSettingSource(ctx, scene, path, value, remove)

@@ -46,10 +46,17 @@ func (e *Envelope) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("unsupported envelope version %d", wire.Version)
 	}
 	intents := make([]Intent, 0, len(wire.Intents))
-	for _, raw := range wire.Intents {
+	for index, raw := range wire.Intents {
 		intent, err := decodeIntent(raw)
 		if err != nil {
-			return err
+			var kind struct {
+				Kind string `json:"kind"`
+			}
+			json.Unmarshal(raw, &kind)
+			if _, known := registry[kind.Kind]; !known {
+				kind.Kind = ""
+			}
+			return intentError(index, kind.Kind, err)
 		}
 		intents = append(intents, intent)
 	}

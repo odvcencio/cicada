@@ -9,11 +9,14 @@ import (
 
 // SetChord places a voicing and its hold steps as one reversible edit. Hold
 // includes the onset. Shortening an existing hold clears its remaining ties.
+// Shared uses ToggleStep's JSON schema.
+//
+// Example: {"kind":"setchord","entity":"step:chords/0","notes":[57,60,64,67],"hold":4}
 type SetChord struct {
-	Entity EntityID `json:"entity"`
-	Notes  []int    `json:"notes"`
-	Hold   int      `json:"hold"`
-	Shared string   `json:"shared,omitempty"`
+	Entity EntityID `json:"entity" cicada:"required"`            // the first step, as step:<pattern>/<index>, in a notes pattern
+	Notes  []int    `json:"notes" cicada:"required"`             // MIDI pitches of the voicing, 2 to 4 notes
+	Hold   int      `json:"hold" unit:"steps" cicada:"required"` // steps the chord sounds, including the first
+	Shared string   `json:"shared,omitempty" values:"shared"`    // as for togglestep
 }
 
 func (SetChord) Kind() string { return "setchord" }
@@ -64,7 +67,7 @@ func setChord(ctx *Context, intent Intent) error {
 		break
 	}
 	if !found {
-		return fmt.Errorf("unknown pattern %q", id)
+		return entityError(fmt.Errorf("unknown pattern %q", id))
 	}
 	local, err := resolvePatternRange(ctx, id, "", index, last, in.Shared)
 	if err != nil {
@@ -148,7 +151,7 @@ func setChord(ctx *Context, intent Intent) error {
 		ctx.SetLabel(fmt.Sprintf("Pattern · %s step %d chord · %d steps", id, index+1, in.Hold))
 		return nil
 	}
-	return fmt.Errorf("unknown pattern %q", id)
+	return entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 // Preserve authored pitch spans and annotations when a chord keeps its size
