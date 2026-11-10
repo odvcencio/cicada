@@ -67,17 +67,19 @@ func TestIntentCatalogIsComplete(t *testing.T) {
 			if len(info.Example) == 0 {
 				t.Fatalf("%s's doc comment needs an \"Example: {...}\" line with a payload cicada apply accepts", typ.Name())
 			}
-			intent, err := decodeIntent(info.Example)
-			if err != nil {
-				t.Fatalf("example does not decode: %v\n%s", err, info.Example)
-			}
-			if intent.Kind() != info.Kind {
-				t.Fatalf("example decodes as %q", intent.Kind())
-			}
-			envelope := []byte(`{"version":1,"intents":[` + string(info.Example) + `]}`)
-			var env Envelope
-			if err := json.Unmarshal(envelope, &env); err != nil {
-				t.Fatalf("example envelope does not decode: %v", err)
+			for _, example := range info.Examples {
+				intent, err := decodeIntent(example)
+				if err != nil {
+					t.Fatalf("example does not decode: %v\n%s", err, example)
+				}
+				if intent.Kind() != info.Kind {
+					t.Fatalf("example decodes as %q", intent.Kind())
+				}
+				envelope := []byte(`{"version":1,"intents":[` + string(example) + `]}`)
+				var env Envelope
+				if err := json.Unmarshal(envelope, &env); err != nil {
+					t.Fatalf("example envelope does not decode: %v", err)
+				}
 			}
 			for _, field := range info.Fields {
 				if field.Type == "" {
@@ -86,6 +88,66 @@ func TestIntentCatalogIsComplete(t *testing.T) {
 			}
 		})
 	}
+}
+
+// selectorNames are field names that usually choose an intent's mode or
+// operation. A field with a values list and one of these names must be
+// marked cicada:"selects", so a new discriminator cannot go without examples.
+var selectorNames = map[string]bool{"mode": true, "op": true, "operation": true, "action": true, "kind": true, "sourcekind": true, "effectkind": true, "timing": true, "starter": true, "message": true, "field": true, "modifier": true, "shape": true}
+
+// TestIntentCatalogCoversEverySelectedValue requires, for every field that
+// selects an intent's mode, an example for each of its values, and that such
+// fields are marked.
+func TestIntentCatalogCoversEverySelectedValue(t *testing.T) {
+	for _, info := range Catalog() {
+		if !ast.IsExported(reflect.TypeOf(registry[info.Kind]()).Elem().Name()) {
+			continue
+		}
+		var examples []map[string]any
+		for _, raw := range info.Examples {
+			var example map[string]any
+			if err := json.Unmarshal(raw, &example); err != nil {
+				t.Fatal(err)
+			}
+			examples = append(examples, example)
+		}
+		var walk func(fields []IntentField, path []string)
+		walk = func(fields []IntentField, path []string) {
+			for _, field := range fields {
+				at := append(append([]string(nil), path...), field.Name)
+				if len(field.Values) > 0 && selectorNames[field.Name] && !field.Selects {
+					t.Errorf("%s.%s chooses among %v; mark it cicada:\"selects\" and give an example per value", info.Kind, strings.Join(at, "."), field.Values)
+				}
+				if field.Selects {
+					for _, value := range field.Values {
+						covered := false
+						for _, example := range examples {
+							got, ok := lookupPath(example, at)
+							covered = covered || ok && got == value
+						}
+						if !covered {
+							t.Errorf("%s has no example with %s %q", info.Kind, strings.Join(at, "."), value)
+						}
+					}
+				}
+				walk(field.Fields, at)
+			}
+		}
+		walk(info.Fields, nil)
+	}
+}
+
+func lookupPath(value any, path []string) (any, bool) {
+	for _, key := range path {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if value, ok = object[key]; !ok {
+			return nil, false
+		}
+	}
+	return value, true
 }
 
 // TestIntentCatalogValuesNameHandlerLists requires every values tag to name
@@ -122,8 +184,17 @@ func TestIntentCatalogRejectsUnlistedFields(t *testing.T) {
 		if !ast.IsExported(typ.Name()) {
 			continue
 		}
+		for _, raw := range info.Examples {
+			rejectsUnlistedFields(t, info, raw)
+		}
+	}
+}
+
+func rejectsUnlistedFields(t *testing.T, info IntentInfo, raw json.RawMessage) {
+	t.Helper()
+	{
 		var example map[string]any
-		if err := json.Unmarshal(info.Example, &example); err != nil {
+		if err := json.Unmarshal(raw, &example); err != nil {
 			t.Fatal(err)
 		}
 		var objects []map[string]any
@@ -159,7 +230,7 @@ func TestIntentCatalogRejectsUnlistedFields(t *testing.T) {
 				parent, _ = parent[part].(map[string]any)
 			}
 			if parent == nil {
-				t.Fatalf("%s: the example has no object for %s", info.Kind, path)
+				continue
 			}
 			parent[parts[len(parts)-1]] = "x"
 			data, _ := json.Marshal(example)
@@ -297,14 +368,11 @@ func typeDocFromComment(name, text string) (typeDoc, error) {
 	var prose []string
 	for _, line := range strings.Split(text, "\n") {
 		if example, ok := strings.CutPrefix(strings.TrimSpace(line), "Example: "); ok {
-			if doc.Example != "" {
-				return typeDoc{}, fmt.Errorf("%s has two examples", name)
-			}
 			var compact bytes.Buffer
 			if err := json.Compact(&compact, []byte(example)); err != nil {
 				return typeDoc{}, fmt.Errorf("%s example is not JSON: %w", name, err)
 			}
-			doc.Example = compact.String()
+			doc.Examples = append(doc.Examples, compact.String())
 			continue
 		}
 		prose = append(prose, line)
@@ -347,8 +415,12 @@ func renderIntentDocs(docs map[string]typeDoc) ([]byte, error) {
 		if doc.Notes != "" {
 			fmt.Fprintf(&out, "Notes: %s,\n", strconv.Quote(doc.Notes))
 		}
-		if doc.Example != "" {
-			fmt.Fprintf(&out, "Example: %s,\n", strconv.Quote(doc.Example))
+		if len(doc.Examples) > 0 {
+			out.WriteString("Examples: []string{\n")
+			for _, example := range doc.Examples {
+				fmt.Fprintf(&out, "%s,\n", strconv.Quote(example))
+			}
+			out.WriteString("},\n")
 		}
 		if len(doc.Fields) > 0 {
 			fields := make([]string, 0, len(doc.Fields))

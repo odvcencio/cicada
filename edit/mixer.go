@@ -1093,11 +1093,18 @@ func spacedMixerValue(value string) string {
 // setparam on param:<track>.insert.
 //
 // Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
+// Example: {"kind":"addeffect","name":"grit","effectkind":"drive"}
+// Example: {"kind":"addeffect","name":"hall","effectkind":"reverb"}
+// Example: {"kind":"addeffect","name":"glue","effectkind":"comp","inserton":"music"}
+// Example: {"kind":"addeffect","name":"tilt","effectkind":"eq"}
+// Example: {"kind":"addeffect","name":"soft","effectkind":"deesser"}
+// Example: {"kind":"addeffect","name":"cab","effectkind":"ampcab"}
+// Example: {"kind":"addeffect","name":"wide","effectkind":"chorus"}
 type AddEffect struct {
-	Name           string `json:"name" cicada:"required"`                            // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
-	EffectKind     string `json:"effectkind" values:"effect-kind" cicada:"required"` // the effect's kind
-	InsertOn       string `json:"inserton,omitempty" values:"insert-target"`         // music also inserts a comp on bus music; other values are refused
-	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                          // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
+	Name           string `json:"name" cicada:"required"`                                           // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
+	EffectKind     string `json:"effectkind" values:"effect-kind" cicada:"required,selects"`        // the effect's kind
+	InsertOn       string `json:"inserton,omitempty" values:"insert-target" when:"effectkind=comp"` // the bus a comp is inserted on; a comp needs it, other kinds take none
+	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                                         // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
 }
 
 func (AddEffect) Kind() string { return "addeffect" }

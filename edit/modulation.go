@@ -17,12 +17,15 @@ import (
 // before any file is written. Route it to a parameter with modulationroute.
 //
 // Example: {"kind":"addmodulator","sourcekind":"lfo","name":"drift","rate":"2bars","wave":"triangle"}
+// Example: {"kind":"addmodulator","sourcekind":"sway","name":"drift","rate":"2bars"}
+// Example: {"kind":"addmodulator","sourcekind":"contour","name":"drift","rate":"4bars"}
+// Example: {"kind":"addmodulator","sourcekind":"envelope","name":"drift","source":"drums"}
 type AddModulator struct {
-	SourceKind string `json:"sourcekind" values:"modulator-kind" cicada:"required"`   // the kind of source
-	Name       string `json:"name" cicada:"required"`                                 // the source's name
-	Rate       string `json:"rate,omitempty" when:"sourcekind=lfo|sway|contour"`      // the rate or period, such as "2bars", "1/4" or "0.5Hz"; a contour needs a musical period
-	Wave       string `json:"wave,omitempty" when:"sourcekind=lfo" values:"lfo-wave"` // the waveform, for lfo
-	Source     string `json:"source,omitempty"`                                       // the track whose level an envelope follows
+	SourceKind string `json:"sourcekind" values:"modulator-kind" cicada:"required,selects"` // the kind of source
+	Name       string `json:"name" cicada:"required"`                                       // the source's name
+	Rate       string `json:"rate,omitempty" when:"sourcekind=lfo|sway|contour"`            // the rate or period, such as "2bars", "1/4" or "0.5Hz"; a contour needs a musical period
+	Wave       string `json:"wave,omitempty" when:"sourcekind=lfo" values:"lfo-wave"`       // the waveform, for lfo
+	Source     string `json:"source,omitempty" when:"sourcekind=envelope"`                  // the track whose level an envelope follows
 }
 
 func (AddModulator) Kind() string { return "addmodulator" }
@@ -40,28 +43,38 @@ var (
 // or removes a source that no route uses.
 //
 // Example: {"kind":"editmodulator","operation":"set","source":"wobble","field":"rate","value":"4bars"}
+// Example: {"kind":"editmodulator","operation":"remove","source":"wobble"}
+// Example: {"kind":"editmodulator","operation":"point-set","source":"swell","index":1,"at":"1/2","value":"0.5"}
+// Example: {"kind":"editmodulator","operation":"point-add","source":"swell","at":"1/4","value":"0.5"}
+// Example: {"kind":"editmodulator","operation":"point-remove","source":"swell","index":1}
 type EditModulator struct {
-	Operation string `json:"operation" cicada:"required"`          // set changes a setting; remove deletes the source; the contour operations edit one point
-	Source    string `json:"source" cicada:"required"`             // the source's name
-	Field     string `json:"field,omitempty" when:"operation=set"` // the setting, for set: wave, rate, phase or loop (lfo); rate, octaves or loop (sway); period or loop (contour); attack, release or source (envelope)
-	Value     string `json:"value,omitempty" when:"operation=set"` // the new value, as source text
-	Index     int    `json:"index,omitempty"`                      // the contour point's index, from 0
-	At        string `json:"at,omitempty"`                         // the contour point's position, 0 to 1
-	Shape     string `json:"shape,omitempty"`                      // the contour point's shape
+	Operation string `json:"operation" values:"modulator-operation" cicada:"required,selects"` // set changes a setting; remove deletes the source; the contour operations edit one point
+	Source    string `json:"source" cicada:"required"`                                         // the source's name
+	Field     string `json:"field,omitempty" when:"operation=set"`                             // the setting, for set: wave, rate, phase or loop (lfo); rate, octaves or loop (sway); period or loop (contour); attack, release or source (envelope)
+	Value     string `json:"value,omitempty" when:"operation=set|point-set|point-add"`         // the new value, as source text
+	Index     int    `json:"index,omitempty" when:"operation=point-set|point-remove"`          // the contour point's index, from 0
+	At        string `json:"at,omitempty" when:"operation=point-set|point-add"`                // the contour point's position, 0 to 1
+	Shape     string `json:"shape,omitempty"`                                                  // the contour point's shape
 }
 
 func (EditModulator) Kind() string { return "editmodulator" }
+
+// modulatorOperations are what EditModulator's operation accepts.
+var modulatorOperations = valueList("modulator-operation", "set", "remove", "point-set", "point-add", "point-remove")
 
 // ModulationRoute adds, changes the depth of, or removes one identified route.
 // Source, target and mode identify a route even when a pair has both modes.
 //
 // Example: {"kind":"modulationroute","operation":"add","source":"wobble","target":"bass.cutoff","mode":"add","depth":"300Hz"}
+// Example: {"kind":"modulationroute","operation":"add","source":"wobble","target":"bass.cutoff","mode":"multiply","depth":"0.5"}
+// Example: {"kind":"modulationroute","operation":"set","source":"sweep","target":"bass.reso","mode":"add","depth":"0.3"}
+// Example: {"kind":"modulationroute","operation":"remove","source":"sweep","target":"bass.reso","mode":"add"}
 type ModulationRoute struct {
-	Operation string `json:"operation" values:"route-operation" cicada:"required"` // add a route, set its depth, or remove it
-	Source    string `json:"source" cicada:"required"`                             // the modulation source's name
-	Target    string `json:"target" cicada:"required"`                             // the parameter path, such as bass.cutoff
-	Mode      string `json:"mode" values:"route-mode" cicada:"required"`           // how the source combines with the parameter
-	Depth     string `json:"depth,omitempty" when:"operation=add|set"`             // the depth with its unit, such as "300Hz" or "2dB", for add and set
+	Operation string `json:"operation" values:"route-operation" cicada:"required,selects"` // add a route, set its depth, or remove it
+	Source    string `json:"source" cicada:"required"`                                     // the modulation source's name
+	Target    string `json:"target" cicada:"required"`                                     // the parameter path, such as bass.cutoff
+	Mode      string `json:"mode" values:"route-mode" cicada:"required,selects"`           // how the source combines with the parameter
+	Depth     string `json:"depth,omitempty" when:"operation=add|set"`                     // the depth with its unit, such as "300Hz" or "2dB", for add and set
 }
 
 func (ModulationRoute) Kind() string { return "modulationroute" }
@@ -93,6 +106,9 @@ func editModulator(ctx *Context, intent Intent) error {
 	}
 	if !modName.MatchString(in.Source) {
 		return fmt.Errorf("choose a modulation source")
+	}
+	if !containsString(modulatorOperations, in.Operation) {
+		return fmt.Errorf("choose a modulation operation")
 	}
 	score, ds, err := ctx.ParseProject()
 	if err != nil {

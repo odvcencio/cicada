@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -87,12 +88,13 @@ func TestIntentCatalogExamplesApply(t *testing.T) {
 	for _, info := range edits.Catalog() {
 		t.Run(info.Kind, func(t *testing.T) {
 			score := catalogProject(t, info.Kind)
-			diff, err := applyCatalogPayload(t, score, info.Example)
-			if err != nil {
-				t.Fatalf("example %s does not apply to %s: %v", info.Example, catalogFixture(info.Kind), err)
-			}
-			if !strings.Contains(diff, "@@") {
-				t.Fatalf("example %s changes nothing in %s", info.Example, catalogFixture(info.Kind))
+			for _, example := range info.Examples {
+				diff, err := applyCatalogPayload(t, score, example)
+				if err != nil {
+					t.Errorf("example %s does not apply to %s: %v", example, catalogFixture(info.Kind), err)
+				} else if !strings.Contains(diff, "@@") {
+					t.Errorf("example %s changes nothing in %s", example, catalogFixture(info.Kind))
+				}
 			}
 		})
 	}
@@ -120,10 +122,10 @@ func (leaf catalogLeaf) name() string {
 
 // catalogLeaves lists every field the example sets, nested objects and the
 // first element of each list of objects included.
-func catalogLeaves(t *testing.T, info edits.IntentInfo) []catalogLeaf {
+func catalogLeaves(t *testing.T, info edits.IntentInfo, raw json.RawMessage) []catalogLeaf {
 	t.Helper()
 	var example map[string]any
-	if err := json.Unmarshal(info.Example, &example); err != nil {
+	if err := json.Unmarshal(raw, &example); err != nil {
 		t.Fatal(err)
 	}
 	var leaves []catalogLeaf
@@ -138,14 +140,7 @@ func catalogLeaves(t *testing.T, info edits.IntentInfo) []catalogLeaf {
 				continue
 			}
 			at := append(append([]any(nil), path...), field.Name)
-			required := field.Required
-			if when := field.RequiredWhen; when != nil {
-				if other, ok := lookupJSON(example, strings.Split(when.Field, ".")); ok {
-					for _, want := range when.Values {
-						required = required || fmt.Sprint(other) == want
-					}
-				}
-			}
+			required := field.Required || conditionHolds(example, field.RequiredWhen)
 			leaves = append(leaves, catalogLeaf{path: at, field: field, required: required})
 			switch value := value.(type) {
 			case map[string]any:
@@ -163,6 +158,32 @@ func catalogLeaves(t *testing.T, info edits.IntentInfo) []catalogLeaf {
 	return leaves
 }
 
+// conditionHolds reports whether an example meets a required_when or one_of
+// condition; a nil condition always holds.
+func conditionHolds(example any, when *edits.FieldCondition) bool {
+	if when == nil {
+		return false
+	}
+	other, ok := lookupJSON(example, strings.Split(when.Field, "."))
+	if !ok {
+		return false
+	}
+	if when.Present {
+		return true
+	}
+	for _, want := range when.Values {
+		if fmt.Sprint(other) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// dottedName drops list indexes from a leaf name: notes[0].at is notes.at.
+func dottedName(name string) string {
+	return regexp.MustCompile(`\[\d+\]`).ReplaceAllString(name, "")
+}
+
 func containsName(names []string, want string) bool {
 	for _, name := range names {
 		if name == want {
@@ -174,6 +195,9 @@ func containsName(names []string, want string) bool {
 
 func lookupJSON(value any, path []string) (any, bool) {
 	for _, key := range path {
+		if list, ok := value.([]any); ok && len(list) > 0 {
+			value = list[0]
+		}
 		object, ok := value.(map[string]any)
 		if !ok {
 			return nil, false
@@ -187,10 +211,10 @@ func lookupJSON(value any, path []string) (any, bool) {
 
 // editedExample returns the example with the value at path removed, or
 // replaced when replace is not nil.
-func editedExample(t *testing.T, info edits.IntentInfo, path []any, replace any) []byte {
+func editedExample(t *testing.T, raw json.RawMessage, path []any, replace any) []byte {
 	t.Helper()
 	var example any
-	if err := json.Unmarshal(info.Example, &example); err != nil {
+	if err := json.Unmarshal(raw, &example); err != nil {
 		t.Fatal(err)
 	}
 	parent := example
@@ -226,53 +250,75 @@ func TestIntentCatalogFieldsAreTrue(t *testing.T) {
 	for _, info := range edits.Catalog() {
 		t.Run(info.Kind, func(t *testing.T) {
 			score := catalogProject(t, info.Kind)
-			leaves := catalogLeaves(t, info)
-			// A field that is the example's only member of a one_of group is
-			// required there: removing it empties the group.
-			for _, group := range info.OneOf {
-				var present []int
-				for i, leaf := range leaves {
-					if containsName(group, leaf.name()) {
-						present = append(present, i)
-					}
-				}
-				if len(present) == 1 {
-					leaves[present[0]].required = true
-				}
-			}
-			for _, leaf := range leaves {
-				_, err := applyCatalogPayload(t, score, editedExample(t, info, leaf.path, nil))
-				if leaf.required && err == nil {
-					t.Errorf("%s is marked required, but the example applies without it", leaf.name())
-				}
-				if !leaf.required && err != nil {
-					t.Errorf("%s is marked optional, but the example without it is refused: %v", leaf.name(), err)
-				}
-				if len(leaf.field.Values) > 0 && leaf.field.Type == "string" {
-					if _, err := applyCatalogPayload(t, score, editedExample(t, info, leaf.path, "not-a-listed-value")); err == nil {
-						t.Errorf("%s accepts a value outside its list %v", leaf.name(), leaf.field.Values)
-					}
-				}
-			}
-			for _, group := range info.OneOf {
-				var without any
-				if err := json.Unmarshal(info.Example, &without); err != nil {
-					t.Fatal(err)
-				}
-				for _, path := range group {
-					parts := strings.Split(path, ".")
-					if parent, ok := lookupJSON(without, parts[:len(parts)-1]); ok {
-						if object, ok := parent.(map[string]any); ok {
-							delete(object, parts[len(parts)-1])
-						}
-					}
-				}
-				data, _ := json.Marshal(without)
-				if _, err := applyCatalogPayload(t, score, data); err == nil {
-					t.Errorf("the example applies without any of one_of %v", group)
-				}
+			for _, example := range info.Examples {
+				checkCatalogExample(t, info, score, example)
 			}
 		})
+	}
+}
+
+// checkCatalogExample runs the required, optional, values and one_of checks
+// of TestIntentCatalogFieldsAreTrue on one example.
+func checkCatalogExample(t *testing.T, info edits.IntentInfo, score string, example json.RawMessage) {
+	t.Helper()
+	leaves := catalogLeaves(t, info, example)
+	var parsed any
+	if err := json.Unmarshal(example, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	// A field that is the example's only member of a one_of group that holds
+	// is required there: removing it empties the group.
+	for _, group := range info.OneOf {
+		if group.When != nil && !conditionHolds(parsed, group.When) {
+			continue
+		}
+		var present []int
+		for i, leaf := range leaves {
+			if containsName(group.Fields, dottedName(leaf.name())) {
+				present = append(present, i)
+			}
+		}
+		if len(present) == 1 {
+			leaves[present[0]].required = true
+		}
+	}
+	for _, leaf := range leaves {
+		_, err := applyCatalogPayload(t, score, editedExample(t, example, leaf.path, nil))
+		if leaf.required && err == nil {
+			t.Errorf("%s: %s is marked required, but the example applies without it", example, leaf.name())
+		}
+		if !leaf.required && err != nil {
+			t.Errorf("%s: %s is marked optional, but the example without it is refused: %v", example, leaf.name(), err)
+		}
+		if len(leaf.field.Values) > 0 && leaf.field.Type == "string" {
+			if _, err := applyCatalogPayload(t, score, editedExample(t, example, leaf.path, "not-a-listed-value")); err == nil {
+				t.Errorf("%s: %s accepts a value outside its list %v", example, leaf.name(), leaf.field.Values)
+			}
+		}
+	}
+	for _, group := range info.OneOf {
+		if group.When != nil && !conditionHolds(parsed, group.When) {
+			continue
+		}
+		var without any
+		if err := json.Unmarshal(example, &without); err != nil {
+			t.Fatal(err)
+		}
+		present := false
+		for _, path := range group.Fields {
+			parts := strings.Split(path, ".")
+			if parent, ok := lookupJSON(without, parts[:len(parts)-1]); ok {
+				if object, ok := parent.(map[string]any); ok {
+					_, has := object[parts[len(parts)-1]]
+					present = present || has
+					delete(object, parts[len(parts)-1])
+				}
+			}
+		}
+		data, _ := json.Marshal(without)
+		if _, err := applyCatalogPayload(t, score, data); present && err == nil {
+			t.Errorf("%s applies without any of one_of %v", example, group.Fields)
+		}
 	}
 }
 

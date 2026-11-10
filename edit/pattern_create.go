@@ -12,13 +12,18 @@ import (
 // scene assignment is part of the same edit, validation, and Undo entry.
 //
 // Example: {"kind":"createpattern","name":"riff-2","track":"bass","steps":16,"scene":"break","starter":"arpeggio"}
+// Example: {"kind":"createpattern","name":"riff-2","track":"bass","steps":16,"starter":"empty"}
+// Example: {"kind":"createpattern","name":"riff-2","track":"bass","steps":16,"starter":"pulse"}
+// Example: {"kind":"createpattern","name":"pad-2","track":"keys","steps":16,"starter":"chords"}
+// Example: {"kind":"createpattern","name":"beat-2","track":"drums","steps":16,"starter":"backbeat"}
+// Example: {"kind":"createpattern","name":"riff-2","track":"bass","steps":16,"starter":"machine","machine":{"version":1,"seed":7,"bars":1,"root":9,"scale":"minor","density":60,"motion":40}}
 type CreatePattern struct {
-	Name    string                 `json:"name" cicada:"required"`             // the new pattern's name
-	Track   string                 `json:"track" cicada:"required"`            // the track whose instrument the grid is for
-	Steps   int                    `json:"steps" cicada:"required"`            // the number of steps, 1–64; a machine recipe needs 16 per bar
-	Scene   string                 `json:"scene,omitempty"`                    // a scene that plays the new pattern on the track
-	Starter string                 `json:"starter,omitempty" values:"starter"` // what the grid starts with; chords needs a notes pattern and backbeat a drum track
-	Machine *patternmachine.Recipe `json:"machine,omitempty"`                  // a pattern-machine recipe, for starter machine
+	Name    string                 `json:"name" cicada:"required"`                                             // the new pattern's name
+	Track   string                 `json:"track" cicada:"required"`                                            // the track whose instrument the grid is for
+	Steps   int                    `json:"steps" cicada:"required"`                                            // the number of steps, 1–64; a machine recipe needs 16 per bar
+	Scene   string                 `json:"scene,omitempty"`                                                    // a scene that plays the new pattern on the track
+	Starter string                 `json:"starter,omitempty" values:"starter" cicada:"selects" when:"machine"` // what the grid starts with; chords needs a notes pattern and backbeat a drum track
+	Machine *patternmachine.Recipe `json:"machine,omitempty" when:"starter=machine"`                           // a pattern-machine recipe, for starter machine
 }
 
 func (CreatePattern) Kind() string { return "createpattern" }

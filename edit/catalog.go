@@ -17,11 +17,16 @@ import (
 //	// Example: {"kind":"setstep","entity":"step:riff/1","mode":"note","pitch":45}
 //
 // The first sentence, without the type name, is the meaning. A field's doc
-// or line comment is its meaning. Struct tags add what the handler checks:
+// or line comment is its meaning. An intent may have several Example lines;
+// the first is its main example. Struct tags add what the handler checks:
 //
 //   - cicada:"required": the intent is refused without the field;
+//   - cicada:"selects": the field selects the intent's mode or operation, so
+//     the catalog has an example for each of its values (cicada:"required,
+//     selects" for both);
 //   - when:"<field>=<a>|<b>": the field is required when another field of the
-//     same intent has one of those values;
+//     same intent has one of those values; when:"<field>" when that field is
+//     given;
 //   - values:"<list>": the accepted strings, from a list the handler itself
 //     checks (see valueLists);
 //   - unit:"...": the unit of a number.
@@ -31,15 +36,18 @@ import (
 // cmd/cicada's TestIntentCatalogFieldsAreTrue proves the required, optional
 // and values claims against cicada apply for every kind.
 
-// IntentInfo describes one intent kind. OneOf lists groups of field paths of
-// which the intent needs at least one each.
+// IntentInfo describes one intent kind. OneOf lists groups of field paths,
+// dotted from the intent's top level, of which the intent needs at least one
+// each. Example is the main example; Examples holds it and one more for each
+// value of a field that selects the intent's mode.
 type IntentInfo struct {
-	Kind    string          `json:"kind"`
-	Meaning string          `json:"meaning"`
-	Notes   string          `json:"notes,omitempty"`
-	Fields  []IntentField   `json:"fields"`
-	OneOf   [][]string      `json:"one_of,omitempty"`
-	Example json.RawMessage `json:"example"`
+	Kind     string            `json:"kind"`
+	Meaning  string            `json:"meaning"`
+	Notes    string            `json:"notes,omitempty"`
+	Fields   []IntentField     `json:"fields"`
+	OneOf    []FieldGroup      `json:"one_of,omitempty"`
+	Example  json.RawMessage   `json:"example"`
+	Examples []json.RawMessage `json:"examples"`
 }
 
 // IntentField describes one JSON field of an intent or of a nested object.
@@ -49,11 +57,13 @@ type IntentInfo struct {
 // that is not required may be left out: the decoder then reads its zero
 // value (0, "", false, null or an empty list), which the intent treats as the
 // default its meaning or notes state. RequiredWhen names the condition under
-// which an otherwise optional field becomes required.
+// which an otherwise optional field becomes required. Selects marks a field
+// whose value chooses the intent's mode or operation.
 type IntentField struct {
 	Name         string          `json:"name"`
 	Type         string          `json:"type"`
 	Items        string          `json:"items,omitempty"`
+	Selects      bool            `json:"selects,omitempty"`
 	Required     bool            `json:"required"`
 	RequiredWhen *FieldCondition `json:"required_when,omitempty"`
 	Unit         string          `json:"unit,omitempty"`
@@ -63,18 +73,28 @@ type IntentField struct {
 }
 
 // FieldCondition holds when another field of the same intent (Field, a
-// dotted path from the intent's top level) has one of Values.
+// dotted path from the intent's top level) has one of Values, or, when
+// Present is set, whenever that field is given.
 type FieldCondition struct {
-	Field  string   `json:"field"`
-	Values []string `json:"values"`
+	Field   string   `json:"field"`
+	Values  []string `json:"values,omitempty"`
+	Present bool     `json:"present,omitempty"`
+}
+
+// FieldGroup is a one_of group: the intent needs at least one of Fields
+// (dotted paths from its top level; a path through a list names a field of
+// each element), always or only when When holds.
+type FieldGroup struct {
+	Fields []string        `json:"fields"`
+	When   *FieldCondition `json:"when,omitempty"`
 }
 
 // fieldRules are what a kind requires of a struct it shares with other kinds.
 // Paths are dotted JSON names from the intent's top level.
 type fieldRules struct {
-	required []string   // always required
-	exclude  []string   // fields of the shared struct this kind refuses
-	oneOf    [][]string // groups of which at least one field is required
+	required []string     // always required
+	exclude  []string     // fields of the shared struct this kind refuses
+	oneOf    []FieldGroup // groups of which at least one field is required
 }
 
 // kindRules holds the rules of the kinds that need them. The decoder refuses
@@ -97,10 +117,10 @@ func valueList(name string, values ...string) []string {
 // typeDoc is what the doc comments of one struct type say. intent_docs.go
 // holds one per intent type and per struct type an intent nests.
 type typeDoc struct {
-	Meaning string
-	Notes   string
-	Example string
-	Fields  map[string]string
+	Meaning  string
+	Notes    string
+	Examples []string
+	Fields   map[string]string
 }
 
 // Catalog lists every registered intent kind in sorted order.
@@ -129,8 +149,12 @@ func describeIntent(kind string) IntentInfo {
 	doc := intentDocs[typ.Name()]
 	rules := kindRules[kind]
 	info := IntentInfo{Kind: kind, Meaning: doc.Meaning, Notes: doc.Notes, Fields: describeFields(typ, "", rules, 0), OneOf: rules.oneOf}
-	if doc.Example != "" {
-		info.Example = json.RawMessage(doc.Example)
+	info.Examples = []json.RawMessage{}
+	for _, example := range doc.Examples {
+		info.Examples = append(info.Examples, json.RawMessage(example))
+	}
+	if len(info.Examples) > 0 {
+		info.Example = info.Examples[0]
 	}
 	return info
 }
@@ -178,15 +202,20 @@ func describeFields(typ reflect.Type, prefix string, rules fieldRules, depth int
 		if containsString(rules.exclude, path) {
 			continue
 		}
+		flags := strings.Split(field.Tag.Get("cicada"), ",")
 		described := IntentField{
 			Name:     name,
-			Required: field.Tag.Get("cicada") == "required" || containsString(rules.required, path),
+			Selects:  containsString(flags, "selects"),
+			Required: containsString(flags, "required") || containsString(rules.required, path),
 			Unit:     field.Tag.Get("unit"),
 			Meaning:  doc.Fields[field.Name],
 		}
 		if when := field.Tag.Get("when"); when != "" {
-			other, values, _ := strings.Cut(when, "=")
-			described.RequiredWhen = &FieldCondition{Field: other, Values: strings.Split(values, "|")}
+			if other, values, ok := strings.Cut(when, "="); ok {
+				described.RequiredWhen = &FieldCondition{Field: other, Values: strings.Split(values, "|")}
+			} else {
+				described.RequiredWhen = &FieldCondition{Field: when, Present: true}
+			}
 		}
 		if list := field.Tag.Get("values"); list != "" {
 			described.Values = valueLists[list]

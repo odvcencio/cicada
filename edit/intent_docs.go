@@ -8,7 +8,9 @@ package edit
 var intentDocs = map[string]typeDoc{
 	"AddAudioTrack": {
 		Meaning: "declares a new, empty audio track in an edition-2 score",
-		Example: "{\"kind\":\"addaudiotrack\",\"name\":\"vocals\"}",
+		Examples: []string{
+			"{\"kind\":\"addaudiotrack\",\"name\":\"vocals\"}",
+		},
 		Fields: map[string]string{
 			"Name": "the track's name: lowercase letters, digits, _ and -",
 		},
@@ -16,17 +18,28 @@ var intentDocs = map[string]typeDoc{
 	"AddEffect": {
 		Meaning: "declares a new effect; it is SetParam's fx.<name> path with a typed request",
 		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. To insert the new effect on a track, follow it with setparam on param:<track>.insert.",
-		Example: "{\"kind\":\"addeffect\",\"name\":\"echo\",\"effectkind\":\"delay\"}",
+		Examples: []string{
+			"{\"kind\":\"addeffect\",\"name\":\"echo\",\"effectkind\":\"delay\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"grit\",\"effectkind\":\"drive\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"hall\",\"effectkind\":\"reverb\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"glue\",\"effectkind\":\"comp\",\"inserton\":\"music\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"tilt\",\"effectkind\":\"eq\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"soft\",\"effectkind\":\"deesser\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"cab\",\"effectkind\":\"ampcab\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"wide\",\"effectkind\":\"chorus\"}",
+		},
 		Fields: map[string]string{
 			"ConfirmUpgrade": "edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2",
 			"EffectKind":     "the effect's kind",
-			"InsertOn":       "music also inserts a comp on bus music; other values are refused",
+			"InsertOn":       "the bus a comp is inserted on; a comp needs it, other kinds take none",
 			"Name":           "the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes",
 		},
 	},
 	"AddMarker": {
 		Meaning: "appends a marker at the end of the arrange block",
-		Example: "{\"kind\":\"addmarker\",\"name\":\"drop\",\"settings\":{\"at\":\"@4.1.1\"}}",
+		Examples: []string{
+			"{\"kind\":\"addmarker\",\"name\":\"drop\",\"settings\":{\"at\":\"@4.1.1\"}}",
+		},
 		Fields: map[string]string{
 			"Name":     "the new marker's name",
 			"Settings": "at, the marker's position",
@@ -35,7 +48,12 @@ var intentDocs = map[string]typeDoc{
 	"AddModulator": {
 		Meaning: "appends one modulation source: an LFO, a sway, a contour or an envelope follower",
 		Notes:   "The completed score is validated and compiled by Apply before any file is written. Route it to a parameter with modulationroute.",
-		Example: "{\"kind\":\"addmodulator\",\"sourcekind\":\"lfo\",\"name\":\"drift\",\"rate\":\"2bars\",\"wave\":\"triangle\"}",
+		Examples: []string{
+			"{\"kind\":\"addmodulator\",\"sourcekind\":\"lfo\",\"name\":\"drift\",\"rate\":\"2bars\",\"wave\":\"triangle\"}",
+			"{\"kind\":\"addmodulator\",\"sourcekind\":\"sway\",\"name\":\"drift\",\"rate\":\"2bars\"}",
+			"{\"kind\":\"addmodulator\",\"sourcekind\":\"contour\",\"name\":\"drift\",\"rate\":\"4bars\"}",
+			"{\"kind\":\"addmodulator\",\"sourcekind\":\"envelope\",\"name\":\"drift\",\"source\":\"drums\"}",
+		},
 		Fields: map[string]string{
 			"Name":       "the source's name",
 			"Rate":       "the rate or period, such as \"2bars\", \"1/4\" or \"0.5Hz\"; a contour needs a musical period",
@@ -46,7 +64,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AddPlacement": {
 		Meaning: "appends a placement at the end of the arrange block",
-		Example: "{\"kind\":\"addplacement\",\"name\":\"outro\",\"settings\":{\"at\":\"@5.1.1\",\"length\":\"1bars\",\"track\":\"bass\",\"content\":\"riff\"}}",
+		Examples: []string{
+			"{\"kind\":\"addplacement\",\"name\":\"outro\",\"settings\":{\"at\":\"@5.1.1\",\"length\":\"1bars\",\"track\":\"bass\",\"content\":\"riff\"}}",
+		},
 		Fields: map[string]string{
 			"Name":     "the new placement's name",
 			"Settings": "at, length, track and content",
@@ -54,7 +74,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AddPreset": {
 		Meaning: "inserts an authored instrument and its track in one edit",
-		Example: "{\"kind\":\"addpreset\",\"preset\":\"warm-pad\",\"instrument\":\"pad\",\"track\":\"pad\"}",
+		Examples: []string{
+			"{\"kind\":\"addpreset\",\"preset\":\"warm-pad\",\"instrument\":\"pad\",\"track\":\"pad\"}",
+		},
 		Fields: map[string]string{
 			"Instrument": "the name of the new instrument declaration",
 			"Preset":     "a built-in patch, such as warm-pad",
@@ -63,7 +85,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AppendSongEntry": {
 		Meaning: "adds an entry at the end of the song block",
-		Example: "{\"kind\":\"appendsongentry\",\"scene\":\"break\",\"bars\":2}",
+		Examples: []string{
+			"{\"kind\":\"appendsongentry\",\"scene\":\"break\",\"bars\":2}",
+		},
 		Fields: map[string]string{
 			"Bars":  "1–999",
 			"Scene": "an existing scene's name",
@@ -71,7 +95,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"BindPerformedGroup": {
 		Meaning: "binds one note of a performance pattern to a shared gesture lane, or unbinds it",
-		Example: "{\"kind\":\"bindperformedgroup\",\"entity\":\"pattern:phrase\",\"note_index\":1,\"group\":1}",
+		Examples: []string{
+			"{\"kind\":\"bindperformedgroup\",\"entity\":\"pattern:phrase\",\"note_index\":1,\"group\":1}",
+		},
 		Fields: map[string]string{
 			"Entity":    "the performance pattern, as pattern:<name>",
 			"Group":     "the lane's index counted from 1; 0 unbinds the note",
@@ -80,7 +106,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"BindScene": {
 		Meaning: "makes a scene play a pattern on a track, replacing what the scene played there before",
-		Example: "{\"kind\":\"bindscene\",\"scene\":\"break\",\"track\":\"drums\",\"pattern\":\"beat\"}",
+		Examples: []string{
+			"{\"kind\":\"bindscene\",\"scene\":\"break\",\"track\":\"drums\",\"pattern\":\"beat\"}",
+		},
 		Fields: map[string]string{
 			"Pattern": "the pattern's name",
 			"Scene":   "the scene's name",
@@ -90,11 +118,15 @@ var intentDocs = map[string]typeDoc{
 	"ConvertSongToArrange": {
 		Meaning: "rewrites a `song` block as an `arrange` block of placements",
 		Notes:   "It writes only when the render check shows the converted score renders to the same bytes; otherwise it refuses and names the cause.",
-		Example: "{\"kind\":\"convertsongtoarrange\"}",
+		Examples: []string{
+			"{\"kind\":\"convertsongtoarrange\"}",
+		},
 	},
 	"CopyPlacement": {
 		Meaning: "appends a copy of a placement under a new name; settings override the copied fields",
-		Example: "{\"kind\":\"copyplacement\",\"entity\":\"placement:verse\",\"name\":\"verse-2\",\"settings\":{\"at\":\"@5.1.1\"}}",
+		Examples: []string{
+			"{\"kind\":\"copyplacement\",\"entity\":\"placement:verse\",\"name\":\"verse-2\",\"settings\":{\"at\":\"@5.1.1\"}}",
+		},
 		Fields: map[string]string{
 			"Entity":   "the placement to copy, as placement:<name>",
 			"Name":     "the copy's name",
@@ -104,7 +136,14 @@ var intentDocs = map[string]typeDoc{
 	"CreatePattern": {
 		Meaning: "creates a grid for a track's instrument",
 		Notes:   "An optional scene assignment is part of the same edit, validation, and Undo entry.",
-		Example: "{\"kind\":\"createpattern\",\"name\":\"riff-2\",\"track\":\"bass\",\"steps\":16,\"scene\":\"break\",\"starter\":\"arpeggio\"}",
+		Examples: []string{
+			"{\"kind\":\"createpattern\",\"name\":\"riff-2\",\"track\":\"bass\",\"steps\":16,\"scene\":\"break\",\"starter\":\"arpeggio\"}",
+			"{\"kind\":\"createpattern\",\"name\":\"riff-2\",\"track\":\"bass\",\"steps\":16,\"starter\":\"empty\"}",
+			"{\"kind\":\"createpattern\",\"name\":\"riff-2\",\"track\":\"bass\",\"steps\":16,\"starter\":\"pulse\"}",
+			"{\"kind\":\"createpattern\",\"name\":\"pad-2\",\"track\":\"keys\",\"steps\":16,\"starter\":\"chords\"}",
+			"{\"kind\":\"createpattern\",\"name\":\"beat-2\",\"track\":\"drums\",\"steps\":16,\"starter\":\"backbeat\"}",
+			"{\"kind\":\"createpattern\",\"name\":\"riff-2\",\"track\":\"bass\",\"steps\":16,\"starter\":\"machine\",\"machine\":{\"version\":1,\"seed\":7,\"bars\":1,\"root\":9,\"scale\":\"minor\",\"density\":60,\"motion\":40}}",
+		},
 		Fields: map[string]string{
 			"Machine": "a pattern-machine recipe, for starter machine",
 			"Name":    "the new pattern's name",
@@ -117,7 +156,10 @@ var intentDocs = map[string]typeDoc{
 	"CycleStep": {
 		Meaning: "moves the ratchet or the chance of one note step to its next value",
 		Notes:   "The step must hold a note. Shared uses ToggleStep's JSON schema.",
-		Example: "{\"kind\":\"cyclestep\",\"entity\":\"step:riff/0\",\"field\":\"ratchet\"}",
+		Examples: []string{
+			"{\"kind\":\"cyclestep\",\"entity\":\"step:riff/0\",\"field\":\"ratchet\"}",
+			"{\"kind\":\"cyclestep\",\"entity\":\"step:riff/0\",\"field\":\"chance\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the step, as step:<pattern>/<index>",
 			"Shared": "as for togglestep",
@@ -125,7 +167,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"DeleteClip": {
 		Meaning: "removes a placement and the comment lines attached above it",
-		Example: "{\"kind\":\"deleteclip\",\"entity\":\"placement:intro\"}",
+		Examples: []string{
+			"{\"kind\":\"deleteclip\",\"entity\":\"placement:intro\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the placement, as placement:<name>",
 		},
@@ -133,14 +177,18 @@ var intentDocs = map[string]typeDoc{
 	"DeleteSongEntry": {
 		Meaning: "removes one entry of the song block",
 		Notes:   "The last entry stays.",
-		Example: "{\"kind\":\"deletesongentry\",\"entity\":\"song:1\"}",
+		Examples: []string{
+			"{\"kind\":\"deletesongentry\",\"entity\":\"song:1\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
 		},
 	},
 	"DuplicateClip": {
 		Meaning: "places a copy of a placement directly after the original",
-		Example: "{\"kind\":\"duplicateclip\",\"entity\":\"placement:verse\"}",
+		Examples: []string{
+			"{\"kind\":\"duplicateclip\",\"entity\":\"placement:verse\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the placement, as placement:<name>",
 		},
@@ -148,7 +196,9 @@ var intentDocs = map[string]typeDoc{
 	"DuplicatePattern": {
 		Meaning: "copies a pattern under a new name",
 		Notes:   "With a track, the copy is written for that track's instrument, and the edit is refused unless the copy renders the same on it.",
-		Example: "{\"kind\":\"duplicatepattern\",\"entity\":\"pattern:riff\",\"name\":\"riff-b\"}",
+		Examples: []string{
+			"{\"kind\":\"duplicatepattern\",\"entity\":\"pattern:riff\",\"name\":\"riff-b\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the pattern to copy, as pattern:<name>",
 			"Name":   "the new pattern's name: lowercase letters, digits, _ and -, at most 64 bytes",
@@ -157,14 +207,22 @@ var intentDocs = map[string]typeDoc{
 	},
 	"DuplicateSongEntry": {
 		Meaning: "inserts a copy of one song entry right after it",
-		Example: "{\"kind\":\"duplicatesongentry\",\"entity\":\"song:1\"}",
+		Examples: []string{
+			"{\"kind\":\"duplicatesongentry\",\"entity\":\"song:1\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
 		},
 	},
 	"EditModulator": {
 		Meaning: "changes one setting or one contour point in its owning file, or removes a source that no route uses",
-		Example: "{\"kind\":\"editmodulator\",\"operation\":\"set\",\"source\":\"wobble\",\"field\":\"rate\",\"value\":\"4bars\"}",
+		Examples: []string{
+			"{\"kind\":\"editmodulator\",\"operation\":\"set\",\"source\":\"wobble\",\"field\":\"rate\",\"value\":\"4bars\"}",
+			"{\"kind\":\"editmodulator\",\"operation\":\"remove\",\"source\":\"wobble\"}",
+			"{\"kind\":\"editmodulator\",\"operation\":\"point-set\",\"source\":\"swell\",\"index\":1,\"at\":\"1/2\",\"value\":\"0.5\"}",
+			"{\"kind\":\"editmodulator\",\"operation\":\"point-add\",\"source\":\"swell\",\"at\":\"1/4\",\"value\":\"0.5\"}",
+			"{\"kind\":\"editmodulator\",\"operation\":\"point-remove\",\"source\":\"swell\",\"index\":1}",
+		},
 		Fields: map[string]string{
 			"At":        "the contour point's position, 0 to 1",
 			"Field":     "the setting, for set: wave, rate, phase or loop (lfo); rate, octaves or loop (sway); period or loop (contour); attack, release or source (envelope)",
@@ -178,7 +236,14 @@ var intentDocs = map[string]typeDoc{
 	"EditNotes": {
 		Meaning: "moves, resizes, changes the velocity of, deletes, inserts or quantizes a batch of notes in one pattern as one edit",
 		Notes:   "The pattern compiles once, every named note is resolved, the operation runs in memory, and the source is written once. One request is one commit and one Undo step. A note refusal is an error with code CICADA-NOTES and one of the reasons in NoteErrorCodes (docs/manual/editors.md describes them). Entity is pattern:<id>. Op is move, resize, velocity, delete, insert or quantize. Notes names the notes to change as the client saw them; the edit is refused when any of them is missing or differs. A note is identified by its start and its pitch (Pitch is the stored MIDI pitch, before the pattern's transpose) or, in drum patterns, its lane. Quantize with no notes acts on every note of the pattern. At, Length, DT, DL and Grid are ticks (960 per beat) for every pattern kind; step patterns and drum lanes accept only whole steps. DP moves pitch in semitones, or lanes in authored lane order in drum patterns. DV changes velocity; Velocity, when set, replaces it instead. Strength is the quantize percentage (0 means 100); step patterns and drum lanes quantize at 100. Copy keeps the originals of a move. Insert lists the notes an insert adds. Shared accepts only \"pattern\": phrase uses expand inside the edited pattern.",
-		Example: "{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"insert\",\"insert\":[{\"at\":1920,\"pitch\":64,\"length\":480,\"velocity\":100}]}",
+		Examples: []string{
+			"{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"insert\",\"insert\":[{\"at\":1920,\"pitch\":64,\"length\":480,\"velocity\":100}]}",
+			"{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"move\",\"dt\":240,\"notes\":[{\"at\":1000,\"pitch\":60,\"length\":480,\"velocity\":90}]}",
+			"{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"resize\",\"dl\":240,\"notes\":[{\"at\":1000,\"pitch\":60,\"length\":480,\"velocity\":90}]}",
+			"{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"velocity\",\"velocity\":110,\"notes\":[{\"at\":1000,\"pitch\":60,\"length\":480,\"velocity\":90}]}",
+			"{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"delete\",\"notes\":[{\"at\":1000,\"pitch\":60,\"length\":480,\"velocity\":90}]}",
+			"{\"kind\":\"editnotes\",\"entity\":\"pattern:phrase\",\"op\":\"quantize\",\"grid\":240}",
+		},
 		Fields: map[string]string{
 			"Copy":     "move: keep the originals",
 			"DL":       "resize: change of length",
@@ -198,7 +263,9 @@ var intentDocs = map[string]typeDoc{
 	"InsertLibraryItem": {
 		Meaning: "imports a library and binds a track to one of its items",
 		Notes:   "The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
-		Example: "{\"kind\":\"insertlibraryitem\",\"track\":\"glass\",\"importpath\":\"std/synth\",\"reference\":\"synth.glassbass\",\"itemkind\":\"instrument\"}",
+		Examples: []string{
+			"{\"kind\":\"insertlibraryitem\",\"track\":\"glass\",\"importpath\":\"std/synth\",\"reference\":\"synth.glassbass\",\"itemkind\":\"instrument\"}",
+		},
 		Fields: map[string]string{
 			"EffectKind":     "the effect's kind, for an effect item",
 			"ImportPath":     "the library's import path, such as std/synth",
@@ -211,7 +278,12 @@ var intentDocs = map[string]typeDoc{
 	"ModulationRoute": {
 		Meaning: "adds, changes the depth of, or removes one identified route",
 		Notes:   "Source, target and mode identify a route even when a pair has both modes.",
-		Example: "{\"kind\":\"modulationroute\",\"operation\":\"add\",\"source\":\"wobble\",\"target\":\"bass.cutoff\",\"mode\":\"add\",\"depth\":\"300Hz\"}",
+		Examples: []string{
+			"{\"kind\":\"modulationroute\",\"operation\":\"add\",\"source\":\"wobble\",\"target\":\"bass.cutoff\",\"mode\":\"add\",\"depth\":\"300Hz\"}",
+			"{\"kind\":\"modulationroute\",\"operation\":\"add\",\"source\":\"wobble\",\"target\":\"bass.cutoff\",\"mode\":\"multiply\",\"depth\":\"0.5\"}",
+			"{\"kind\":\"modulationroute\",\"operation\":\"set\",\"source\":\"sweep\",\"target\":\"bass.reso\",\"mode\":\"add\",\"depth\":\"0.3\"}",
+			"{\"kind\":\"modulationroute\",\"operation\":\"remove\",\"source\":\"sweep\",\"target\":\"bass.reso\",\"mode\":\"add\"}",
+		},
 		Fields: map[string]string{
 			"Depth":     "the depth with its unit, such as \"300Hz\" or \"2dB\", for add and set",
 			"Mode":      "how the source combines with the parameter",
@@ -223,7 +295,9 @@ var intentDocs = map[string]typeDoc{
 	"MoveClip": {
 		Meaning: "moves a placement to a new start tick",
 		Notes:   "Only the authored `at` literal changes. A beat is 960 ticks and a 4/4 bar 3840.",
-		Example: "{\"kind\":\"moveclip\",\"entity\":\"placement:verse\",\"attick\":15360}",
+		Examples: []string{
+			"{\"kind\":\"moveclip\",\"entity\":\"placement:verse\",\"attick\":15360}",
+		},
 		Fields: map[string]string{
 			"AtTick": "the new start, from the start of the arrangement",
 			"Entity": "the placement, as placement:<name>",
@@ -232,7 +306,9 @@ var intentDocs = map[string]typeDoc{
 	"MoveSongEntry": {
 		Meaning: "moves one entry of the song block to another position",
 		Notes:   "Song entry indexes count from 0 and belong to one revision of the score.",
-		Example: "{\"kind\":\"movesongentry\",\"entity\":\"song:0\",\"target\":1}",
+		Examples: []string{
+			"{\"kind\":\"movesongentry\",\"entity\":\"song:0\",\"target\":1}",
+		},
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
 			"Target": "the index the entry moves to",
@@ -251,7 +327,9 @@ var intentDocs = map[string]typeDoc{
 	"PlaceSamplerPrint": {
 		Meaning: "declares a printed sampler performance as an asset and a clip, and places it on an audio track in the arrange block",
 		Notes:   "The clip is named Name+\"-clip\", the asset Name+\"-audio\", and the placement Name. A track that does not exist yet is created as an audio track. The placement is as long as the print, rounded up to a tick, at the project tempo.",
-		Example: "{\"kind\":\"placesamplerprint\",\"name\":\"print\",\"track\":\"vox\",\"at\":\"@1.1.1\",\"asset\":{\"path\":\"audio/print.wav\",\"sha256\":\"1eec39f9a101d87239cf2a787086c9000256ee2594d9f3051c3c99cf65d543f1\",\"frames\":4800,\"ratehz\":48000}}",
+		Examples: []string{
+			"{\"kind\":\"placesamplerprint\",\"name\":\"print\",\"track\":\"vox\",\"at\":\"@1.1.1\",\"asset\":{\"path\":\"audio/print.wav\",\"sha256\":\"1eec39f9a101d87239cf2a787086c9000256ee2594d9f3051c3c99cf65d543f1\",\"frames\":4800,\"ratehz\":48000}}",
+		},
 		Fields: map[string]string{
 			"Asset": "the printed file",
 			"At":    "the placement's start, such as \"@1.1.1\"",
@@ -262,7 +340,9 @@ var intentDocs = map[string]typeDoc{
 	"PlaceVocalComp": {
 		Meaning: "writes a printed vocal comp into the score: an asset, a clip and a placement on the track, between `cicada-vocal-begin` and `cicada-vocal-end` comments",
 		Notes:   "When Previous is set, the comp's earlier print is removed first and only the managed block and the track's vocal placement change; every other byte stays. A song of scenes gains an arrange block of ordinary placements so one vocal can span its blocks. The host prints the audio (Asset names the file it wrote) and chooses the segments.",
-		Example: "{\"kind\":\"placevocalcomp\",\"comp\":{\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"take-1\",\"startTick\":0,\"endTick\":3840}],\"asset\":\"comp\"},\"asset\":{\"path\":\"audio/example.wav\",\"sha256\":\"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee\",\"frames\":4800,\"ratehz\":48000}}",
+		Examples: []string{
+			"{\"kind\":\"placevocalcomp\",\"comp\":{\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"take-1\",\"startTick\":0,\"endTick\":3840}],\"asset\":\"comp\"},\"asset\":{\"path\":\"audio/example.wav\",\"sha256\":\"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee\",\"frames\":4800,\"ratehz\":48000}}",
+		},
 		Fields: map[string]string{
 			"Asset":    "the printed comp file",
 			"Comp":     "which take plays where",
@@ -292,7 +372,9 @@ var intentDocs = map[string]typeDoc{
 	"PublishRecorded": {
 		Meaning: "adds the sampler, track, pattern and scene binding for a recording pack",
 		Notes:   "The host publishes the immutable pack before applying it.",
-		Example: "{\"kind\":\"publishrecorded\",\"name\":\"hit\",\"declaration\":\"sampler hit { asset = vocal root = c3 mode = oneshot voices = 8 }\",\"scene\":\"main\",\"level\":\"-6dB\",\"note\":\"c3\"}",
+		Examples: []string{
+			"{\"kind\":\"publishrecorded\",\"name\":\"hit\",\"declaration\":\"sampler hit { asset = vocal root = c3 mode = oneshot voices = 8 }\",\"scene\":\"main\",\"level\":\"-6dB\",\"note\":\"c3\"}",
+		},
 		Fields: map[string]string{
 			"Declaration": "the sampler declaration text",
 			"Level":       "the new track's level, such as \"-6dB\"",
@@ -307,7 +389,10 @@ var intentDocs = map[string]typeDoc{
 	"RecordTake": {
 		Meaning: "commits all recorded patterns as one validated edit",
 		Notes:   "Grid timing writes the notes onto each pattern's steps; played timing writes a performance that keeps the exact ticks.",
-		Example: "{\"kind\":\"recordtake\",\"timing\":\"grid\",\"recordings\":[{\"track\":\"bass\",\"pattern\":\"riff\",\"notes\":[{\"tick\":0,\"endtick\":240,\"note\":45,\"velocity\":100},{\"tick\":480,\"endtick\":720,\"note\":52,\"velocity\":90}]}]}",
+		Examples: []string{
+			"{\"kind\":\"recordtake\",\"timing\":\"grid\",\"recordings\":[{\"track\":\"bass\",\"pattern\":\"riff\",\"notes\":[{\"tick\":0,\"endtick\":240,\"note\":45,\"velocity\":100},{\"tick\":480,\"endtick\":720,\"note\":52,\"velocity\":90}]}]}",
+			"{\"kind\":\"recordtake\",\"timing\":\"played\",\"recordings\":[{\"track\":\"bass\",\"pattern\":\"riff\",\"notes\":[{\"tick\":0,\"endtick\":480,\"note\":45,\"velocity\":90}]}]}",
+		},
 		Fields: map[string]string{
 			"Recordings": "one recording per pattern",
 			"Timing":     "grid is the default",
@@ -322,14 +407,18 @@ var intentDocs = map[string]typeDoc{
 	},
 	"RemoveArrangementTempo": {
 		Meaning: "removes the tempo step at one position of the arrange block",
-		Example: "{\"kind\":\"removearrangementtempo\",\"at\":\"@3.1.1\"}",
+		Examples: []string{
+			"{\"kind\":\"removearrangementtempo\",\"at\":\"@3.1.1\"}",
+		},
 		Fields: map[string]string{
 			"At": "the step's position, such as \"@3.1.1\"",
 		},
 	},
 	"RemoveAutomationPoint": {
 		Meaning: "removes the point at At (or at OldAt when given) and removes the lane when it was the lane's last point",
-		Example: "{\"kind\":\"removeautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@3.1.1\"}",
+		Examples: []string{
+			"{\"kind\":\"removeautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@3.1.1\"}",
+		},
 		Fields: map[string]string{
 			"At":     "the point's position, such as \"@3.1.1\"",
 			"Curve":  "ignored, as shape",
@@ -340,7 +429,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"RemoveMarker": {
 		Meaning: "removes the declaration of one marker",
-		Example: "{\"kind\":\"removemarker\",\"entity\":\"marker:chorus\"}",
+		Examples: []string{
+			"{\"kind\":\"removemarker\",\"entity\":\"marker:chorus\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the marker, as marker:<name>",
 		},
@@ -348,14 +439,18 @@ var intentDocs = map[string]typeDoc{
 	"RemovePlacement": {
 		Meaning: "removes the declaration of one placement and nothing else",
 		Notes:   "DeleteClip also removes the comment lines above the placement.",
-		Example: "{\"kind\":\"removeplacement\",\"entity\":\"placement:intro\"}",
+		Examples: []string{
+			"{\"kind\":\"removeplacement\",\"entity\":\"placement:intro\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the placement, as placement:<name>",
 		},
 	},
 	"RemoveSceneSetting": {
 		Meaning: "removes one parameter setting from a scene",
-		Example: "{\"kind\":\"removescenesetting\",\"entity\":\"setting:main/bass.reso\"}",
+		Examples: []string{
+			"{\"kind\":\"removescenesetting\",\"entity\":\"setting:main/bass.reso\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the setting, as setting:<scene>/<owner>.<field>",
 		},
@@ -363,7 +458,9 @@ var intentDocs = map[string]typeDoc{
 	"ReplaceDeclaration": {
 		Meaning: "replaces one declaration's syntax span",
 		Notes:   "Declaration is a CST node type, or \"pattern\" for any pattern type. Name is empty for unnamed declarations such as title_decl and seed_decl.",
-		Example: "{\"kind\":\"replacedeclaration\",\"declaration\":\"pattern\",\"name\":\"riff\",\"text\":\"pattern riff { a1 . a1 . e2 . g2 . }\"}",
+		Examples: []string{
+			"{\"kind\":\"replacedeclaration\",\"declaration\":\"pattern\",\"name\":\"riff\",\"text\":\"pattern riff { a1 . a1 . e2 . g2 . }\"}",
+		},
 		Fields: map[string]string{
 			"Declaration": "the syntax node type, such as track_decl, scene_decl or title_decl, or pattern",
 			"Name":        "the declaration's name; empty for title_decl, tempo_decl, key_decl and seed_decl",
@@ -372,7 +469,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"ReplaceText": {
 		Meaning: "saves a complete buffer verbatim, after Apply validates it",
-		Example: "{\"kind\":\"replacetext\",\"source\":\"cicada 2\\ntitle \\\"Replaced\\\"\\ntempo 120\\ntrack bass acid {}\\npattern riff { a1 . c2 . }\\nscene main { bass = riff }\\nsong { main*4 }\\n\"}",
+		Examples: []string{
+			"{\"kind\":\"replacetext\",\"source\":\"cicada 2\\ntitle \\\"Replaced\\\"\\ntempo 120\\ntrack bass acid {}\\npattern riff { a1 . c2 . }\\nscene main { bass = riff }\\nsong { main*4 }\\n\"}",
+		},
 		Fields: map[string]string{
 			"Source": "the whole new score text",
 		},
@@ -380,7 +479,9 @@ var intentDocs = map[string]typeDoc{
 	"ResizeClip": {
 		Meaning: "sets a placement length",
 		Notes:   "The right edge moves; `at` is untouched.",
-		Example: "{\"kind\":\"resizeclip\",\"entity\":\"placement:verse\",\"lengthticks\":11520}",
+		Examples: []string{
+			"{\"kind\":\"resizeclip\",\"entity\":\"placement:verse\",\"lengthticks\":11520}",
+		},
 		Fields: map[string]string{
 			"Entity":      "the placement, as placement:<name>",
 			"LengthTicks": "the new length",
@@ -389,7 +490,9 @@ var intentDocs = map[string]typeDoc{
 	"ResizePattern": {
 		Meaning: "changes a pattern's length in steps, adding rests at the end or removing the last steps",
 		Notes:   "Shared uses ToggleStep's JSON schema; resizing touches every use, so detach expands them all.",
-		Example: "{\"kind\":\"resizepattern\",\"entity\":\"pattern:riff\",\"length\":16}",
+		Examples: []string{
+			"{\"kind\":\"resizepattern\",\"entity\":\"pattern:riff\",\"length\":16}",
+		},
 		Fields: map[string]string{
 			"Entity": "the pattern, as pattern:<name>",
 			"Length": "the new number of steps",
@@ -399,7 +502,9 @@ var intentDocs = map[string]typeDoc{
 	"ResizePerformance": {
 		Meaning: "changes the loop length of a performance pattern",
 		Notes:   "Notes keep their ticks; a resize that would cut a note or gesture is refused.",
-		Example: "{\"kind\":\"resizeperformance\",\"entity\":\"pattern:phrase\",\"length_ticks\":7680}",
+		Examples: []string{
+			"{\"kind\":\"resizeperformance\",\"entity\":\"pattern:phrase\",\"length_ticks\":7680}",
+		},
 		Fields: map[string]string{
 			"Entity":      "the performance pattern, as pattern:<name>",
 			"LengthTicks": "the new loop length, 30 ticks or more",
@@ -407,7 +512,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SavePreset": {
 		Meaning: "appends the declaration prepared by the host, including any direct import or snapshot of a private library instrument",
-		Example: "{\"kind\":\"savepreset\",\"track\":\"bass\",\"name\":\"dark-acid\",\"declaration\":\"\\npreset dark-acid {\\n  instrument = acid\\n  cutoff = 400Hz\\n}\\n\"}",
+		Examples: []string{
+			"{\"kind\":\"savepreset\",\"track\":\"bass\",\"name\":\"dark-acid\",\"declaration\":\"\\npreset dark-acid {\\n  instrument = acid\\n  cutoff = 400Hz\\n}\\n\"}",
+		},
 		Fields: map[string]string{
 			"Declaration": "the preset declaration text to append",
 			"Name":        "the preset's public name",
@@ -417,7 +524,9 @@ var intentDocs = map[string]typeDoc{
 	"ScalePerformance": {
 		Meaning: "changes musical timing while keeping pitches and controls",
 		Notes:   "Every tick is multiplied by numerator/denominator, so 2/1 plays at half speed and 1/2 at double speed.",
-		Example: "{\"kind\":\"scaleperformance\",\"entity\":\"pattern:phrase\",\"numerator\":1,\"denominator\":2}",
+		Examples: []string{
+			"{\"kind\":\"scaleperformance\",\"entity\":\"pattern:phrase\",\"numerator\":1,\"denominator\":2}",
+		},
 		Fields: map[string]string{
 			"Denominator": "1–16",
 			"Entity":      "the performance pattern, as pattern:<name>",
@@ -427,7 +536,9 @@ var intentDocs = map[string]typeDoc{
 	"SelectTake": {
 		Meaning: "makes a scene play one recorded take on an audio track",
 		Notes:   "It declares the take's asset and clip when they are new, keeps the assets and clips of other takes, and updates only the selected binding.",
-		Example: "{\"kind\":\"selecttake\",\"id\":\"take-1\",\"track\":\"vox\",\"scene\":\"main\",\"rate\":48000,\"channels\":1,\"asset\":{\"name\":\"take-1\",\"path\":\"audio/example.wav\",\"sha256\":\"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee\",\"frames\":4800,\"ratehz\":48000,\"channels\":1},\"startframe\":0}",
+		Examples: []string{
+			"{\"kind\":\"selecttake\",\"id\":\"take-1\",\"track\":\"vox\",\"scene\":\"main\",\"rate\":48000,\"channels\":1,\"asset\":{\"name\":\"take-1\",\"path\":\"audio/example.wav\",\"sha256\":\"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee\",\"frames\":4800,\"ratehz\":48000,\"channels\":1},\"startframe\":0}",
+		},
 		Fields: map[string]string{
 			"Asset":      "the recorded file",
 			"Channels":   "1 or 2",
@@ -441,7 +552,9 @@ var intentDocs = map[string]typeDoc{
 	"SetArrangementTempo": {
 		Meaning: "adds a bar-boundary tempo step",
 		Notes:   "OldAt selects an existing step to change or move; moving onto another step is refused.",
-		Example: "{\"kind\":\"setarrangementtempo\",\"at\":\"@4.1.1\",\"value\":\"132\"}",
+		Examples: []string{
+			"{\"kind\":\"setarrangementtempo\",\"at\":\"@4.1.1\",\"value\":\"132\"}",
+		},
 		Fields: map[string]string{
 			"At":    "the step's position, at the start of a bar, such as \"@4.1.1\"",
 			"OldAt": "the position of the step to change or move, such as \"@3.1.1\"",
@@ -451,7 +564,13 @@ var intentDocs = map[string]typeDoc{
 	"SetAutomationPoint": {
 		Meaning: "adds or edits one point of a parameter's automation lane (an `automate <path> { ..",
 		Notes:   "}` block). OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created.",
-		Example: "{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"smooth\"}",
+		Examples: []string{
+			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"smooth\"}",
+			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"linear\"}",
+			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"step\"}",
+			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"exponential\"}",
+			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"curve\",\"curve\":2}",
+		},
 		Fields: map[string]string{
 			"At":     "the point's position, such as \"@4.1.1\" (bar.beat.step)",
 			"Curve":  "tension −8 to 8, for shape curve",
@@ -464,7 +583,9 @@ var intentDocs = map[string]typeDoc{
 	"SetChord": {
 		Meaning: "places a voicing and its hold steps as one reversible edit",
 		Notes:   "Hold includes the onset. Shortening an existing hold clears its remaining ties. Shared uses ToggleStep's JSON schema.",
-		Example: "{\"kind\":\"setchord\",\"entity\":\"step:chords/0\",\"notes\":[57,60,64,67],\"hold\":4}",
+		Examples: []string{
+			"{\"kind\":\"setchord\",\"entity\":\"step:chords/0\",\"notes\":[57,60,64,67],\"hold\":4}",
+		},
 		Fields: map[string]string{
 			"Entity": "the first step, as step:<pattern>/<index>, in a notes pattern",
 			"Hold":   "steps the chord sounds, including the first",
@@ -475,7 +596,9 @@ var intentDocs = map[string]typeDoc{
 	"SetClipSettings": {
 		Meaning: "sets an audio clip's source region, gain and fades together",
 		Notes:   "The region is half-open, [start, end), in source frames.",
-		Example: "{\"kind\":\"setclipsettings\",\"entity\":\"clip:vocal-a\",\"start\":480,\"end\":4800,\"gaindb\":-2,\"fadein\":48,\"fadeout\":96}",
+		Examples: []string{
+			"{\"kind\":\"setclipsettings\",\"entity\":\"clip:vocal-a\",\"start\":480,\"end\":4800,\"gaindb\":-2,\"fadein\":48,\"fadeout\":96}",
+		},
 		Fields: map[string]string{
 			"End":     "the frame after the last, at most the asset's frame count",
 			"Entity":  "the clip, as clip:<name>",
@@ -488,7 +611,9 @@ var intentDocs = map[string]typeDoc{
 	"SetDrumVelocity": {
 		Meaning: "sets the velocity of one drum hit, written as the nearest hit spelling (x, x1 to x9 or X)",
 		Notes:   "The step must hold a hit. Shared uses ToggleStep's JSON schema.",
-		Example: "{\"kind\":\"setdrumvelocity\",\"entity\":\"step:beat/bd/0\",\"velocity\":110}",
+		Examples: []string{
+			"{\"kind\":\"setdrumvelocity\",\"entity\":\"step:beat/bd/0\",\"velocity\":110}",
+		},
 		Fields: map[string]string{
 			"Entity":   "the hit, as step:<pattern>/<lane>/<index>",
 			"Shared":   "as for togglestep",
@@ -498,7 +623,10 @@ var intentDocs = map[string]typeDoc{
 	"SetMIDIMapping": {
 		Meaning: "writes one learned input to the score's logical port",
 		Notes:   "Device names remain local. Relearning the same input replaces its previous target. The port must already be declared in the score's midi block.",
-		Example: "{\"kind\":\"setmidimapping\",\"port\":\"pads\",\"message\":\"cc\",\"channel\":1,\"number\":74,\"target\":\"bass.cutoff\"}",
+		Examples: []string{
+			"{\"kind\":\"setmidimapping\",\"port\":\"pads\",\"message\":\"cc\",\"channel\":1,\"number\":74,\"target\":\"bass.cutoff\"}",
+			"{\"kind\":\"setmidimapping\",\"port\":\"pads\",\"message\":\"note\",\"channel\":1,\"number\":36,\"target\":\"launch break\"}",
+		},
 		Fields: map[string]string{
 			"Channel": "MIDI channel 1–16",
 			"Message": "a controller or a note",
@@ -509,7 +637,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetMarker": {
 		Meaning: "moves one marker",
-		Example: "{\"kind\":\"setmarker\",\"entity\":\"marker:chorus\",\"settings\":{\"at\":\"@4.1.1\"}}",
+		Examples: []string{
+			"{\"kind\":\"setmarker\",\"entity\":\"marker:chorus\",\"settings\":{\"at\":\"@4.1.1\"}}",
+		},
 		Fields: map[string]string{
 			"Entity":   "the marker, as marker:<name>",
 			"Settings": "at, the marker's new position",
@@ -518,7 +648,9 @@ var intentDocs = map[string]typeDoc{
 	"SetParam": {
 		Meaning: "sets or resets one parameter",
 		Notes:   "Entity param:<track>.<field> names an instrument parameter; mixer paths (level, pan, sends, inserts, buses, effect settings) go to the mixer writer. cicada params lists the parameters with their ranges and units, and cicada explain describes one.",
-		Example: "{\"kind\":\"setparam\",\"entity\":\"param:bass.cutoff\",\"value\":\"900Hz\"}",
+		Examples: []string{
+			"{\"kind\":\"setparam\",\"entity\":\"param:bass.cutoff\",\"value\":\"900Hz\"}",
+		},
 		Fields: map[string]string{
 			"ConfirmUpgrade": "edition-1 scores need confirmation for mixer writes",
 			"Entity":         "param:<owner>.<field>",
@@ -528,7 +660,9 @@ var intentDocs = map[string]typeDoc{
 	"SetPatternSettings": {
 		Meaning: "changes a pattern's swing, gate and transpose without changing its note text",
 		Notes:   "A drum pattern keeps transpose 0.",
-		Example: "{\"kind\":\"setpatternsettings\",\"entity\":\"pattern:riff\",\"swing100\":5600,\"gate\":60,\"transpose\":0}",
+		Examples: []string{
+			"{\"kind\":\"setpatternsettings\",\"entity\":\"pattern:riff\",\"swing100\":5600,\"gate\":60,\"transpose\":0}",
+		},
 		Fields: map[string]string{
 			"Entity":    "the pattern, as pattern:<name>",
 			"Gate":      "gate length, 10–100",
@@ -539,7 +673,9 @@ var intentDocs = map[string]typeDoc{
 	"SetPerformanceGroup": {
 		Meaning: "adds, renames or removes one shared gesture lane of a performance pattern",
 		Notes:   "Index equal to the lane count appends.",
-		Example: "{\"kind\":\"setperformancegroup\",\"entity\":\"pattern:phrase\",\"index\":1,\"name\":\"swell\"}",
+		Examples: []string{
+			"{\"kind\":\"setperformancegroup\",\"entity\":\"pattern:phrase\",\"index\":1,\"name\":\"swell\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the performance pattern, as pattern:<name>",
 			"Index":  "the lane's index, from 0",
@@ -550,7 +686,9 @@ var intentDocs = map[string]typeDoc{
 	"SetPerformedExpression": {
 		Meaning: "edits one note-owned controller sample",
 		Notes:   "Index equal to the sample count appends; edits preserve every other note and gesture.",
-		Example: "{\"kind\":\"setperformedexpression\",\"entity\":\"pattern:phrase\",\"note_index\":0,\"index\":1,\"tick\":240,\"pitch_cents\":50,\"pressure\":0.6,\"timbre\":0.7,\"vibrato_depth_cents\":0,\"vibrato_rate_hz\":5}",
+		Examples: []string{
+			"{\"kind\":\"setperformedexpression\",\"entity\":\"pattern:phrase\",\"note_index\":0,\"index\":1,\"tick\":240,\"pitch_cents\":50,\"pressure\":0.6,\"timbre\":0.7,\"vibrato_depth_cents\":0,\"vibrato_rate_hz\":5}",
+		},
 		Fields: map[string]string{
 			"Entity":            "the performance pattern, as pattern:<name>",
 			"Index":             "the sample's index within the note, from 0",
@@ -567,7 +705,9 @@ var intentDocs = map[string]typeDoc{
 	"SetPerformedNote": {
 		Meaning: "edits, adds or removes one note of a performance pattern",
 		Notes:   "Index equal to the note count appends. Pitch is the stored MIDI pitch, before an authored pattern transpose.",
-		Example: "{\"kind\":\"setperformednote\",\"entity\":\"pattern:phrase\",\"index\":1,\"tick\":960,\"end_tick\":1920,\"pitch\":62,\"velocity\":100}",
+		Examples: []string{
+			"{\"kind\":\"setperformednote\",\"entity\":\"pattern:phrase\",\"index\":1,\"tick\":960,\"end_tick\":1920,\"pitch\":62,\"velocity\":100}",
+		},
 		Fields: map[string]string{
 			"EndTick":  "the note's end",
 			"Entity":   "the performance pattern, as pattern:<name>",
@@ -581,7 +721,9 @@ var intentDocs = map[string]typeDoc{
 	"SetPitch": {
 		Meaning: "sets the pitch of one note step, or adds or removes that pitch in a chord step",
 		Notes:   "Pitch is required and accepts MIDI 0–127; an omitted or null pitch is refused. Setting the pitch a single note already has makes it a rest. Shared uses ToggleStep's JSON schema.",
-		Example: "{\"kind\":\"setpitch\",\"entity\":\"step:riff/0\",\"pitch\":48}",
+		Examples: []string{
+			"{\"kind\":\"setpitch\",\"entity\":\"step:riff/0\",\"pitch\":48}",
+		},
 		Fields: map[string]string{
 			"Entity": "the step, as step:<pattern>/<index>",
 			"Pitch":  "MIDI pitch 0–127",
@@ -590,7 +732,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetProjectSettings": {
 		Meaning: "sets the score's title, tempo, key root and scale together",
-		Example: "{\"kind\":\"setprojectsettings\",\"title\":\"Intent catalog\",\"tempomilli\":124000,\"root\":\"a\",\"scale\":\"minor\"}",
+		Examples: []string{
+			"{\"kind\":\"setprojectsettings\",\"title\":\"Intent catalog\",\"tempomilli\":124000,\"root\":\"a\",\"scale\":\"minor\"}",
+		},
 		Fields: map[string]string{
 			"Root":       "key root",
 			"Scale":      "scale",
@@ -601,7 +745,13 @@ var intentDocs = map[string]typeDoc{
 	"SetRange": {
 		Meaning: "clears, copies, reverses, rotates or transposes a range of steps in one pattern lane",
 		Notes:   "It edits the selected source and, for copy, its destination. Shared uses ToggleStep's JSON schema; detach expands only uses touched by the edit.",
-		Example: "{\"kind\":\"setrange\",\"entity\":\"pattern:riff\",\"operation\":\"transpose\",\"first\":0,\"last\":3,\"amount\":12}",
+		Examples: []string{
+			"{\"kind\":\"setrange\",\"entity\":\"pattern:riff\",\"operation\":\"transpose\",\"first\":0,\"last\":3,\"amount\":12}",
+			"{\"kind\":\"setrange\",\"entity\":\"pattern:riff\",\"operation\":\"clear\",\"first\":0,\"last\":1}",
+			"{\"kind\":\"setrange\",\"entity\":\"pattern:riff\",\"operation\":\"copy\",\"first\":0,\"last\":1,\"target\":4}",
+			"{\"kind\":\"setrange\",\"entity\":\"pattern:riff\",\"operation\":\"reverse\",\"first\":0,\"last\":3}",
+			"{\"kind\":\"setrange\",\"entity\":\"pattern:riff\",\"operation\":\"rotate\",\"first\":0,\"last\":3,\"amount\":1}",
+		},
 		Fields: map[string]string{
 			"Amount":    "steps to rotate, or semitones to transpose, −127 to +127",
 			"Entity":    "the pattern, as pattern:<name>",
@@ -616,7 +766,9 @@ var intentDocs = map[string]typeDoc{
 	"SetSceneSetting": {
 		Meaning: "sets the value a parameter takes when a scene starts, or adds that setting to the scene",
 		Notes:   "The parameter must be live and automatable; the scene tempo is the one bare path a scene may set.",
-		Example: "{\"kind\":\"setscenesetting\",\"entity\":\"setting:main/bass.cutoff\",\"value\":\"1.25kHz\"}",
+		Examples: []string{
+			"{\"kind\":\"setscenesetting\",\"entity\":\"setting:main/bass.cutoff\",\"value\":\"1.25kHz\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the setting, as setting:<scene>/<owner>.<field>",
 			"Value":  "a number, or a string with a unit such as \"1.25kHz\" or \"-6dB\"; cicada params lists ranges and units",
@@ -625,7 +777,9 @@ var intentDocs = map[string]typeDoc{
 	"SetSharedExpression": {
 		Meaning: "edits, adds or removes one point of a shared gesture lane",
 		Notes:   "Index equal to the point count appends.",
-		Example: "{\"kind\":\"setsharedexpression\",\"entity\":\"pattern:phrase\",\"group_index\":0,\"index\":1,\"tick\":960,\"pitch_cents\":100,\"pressure\":0.8,\"timbre\":0.9}",
+		Examples: []string{
+			"{\"kind\":\"setsharedexpression\",\"entity\":\"pattern:phrase\",\"group_index\":0,\"index\":1,\"tick\":960,\"pitch_cents\":100,\"pressure\":0.8,\"timbre\":0.9}",
+		},
 		Fields: map[string]string{
 			"Entity":     "the performance pattern, as pattern:<name>",
 			"GroupIndex": "the lane's index, from 0",
@@ -639,7 +793,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetSongBars": {
 		Meaning: "sets how many bars one song entry plays its scene",
-		Example: "{\"kind\":\"setsongbars\",\"entity\":\"song:0\",\"bars\":8}",
+		Examples: []string{
+			"{\"kind\":\"setsongbars\",\"entity\":\"song:0\",\"bars\":8}",
+		},
 		Fields: map[string]string{
 			"Bars":   "1–999",
 			"Entity": "the entry, as song:<index>",
@@ -647,7 +803,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetSongScene": {
 		Meaning: "changes the scene one song entry plays",
-		Example: "{\"kind\":\"setsongscene\",\"entity\":\"song:1\",\"scene\":\"main\"}",
+		Examples: []string{
+			"{\"kind\":\"setsongscene\",\"entity\":\"song:1\",\"scene\":\"main\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
 			"Scene":  "an existing scene's name",
@@ -656,7 +814,12 @@ var intentDocs = map[string]typeDoc{
 	"SetStep": {
 		Meaning: "writes one step: a note, a drum hit, a tie or a rest",
 		Notes:   "A note on a chord step moves the whole chord. Shared uses ToggleStep's JSON schema.",
-		Example: "{\"kind\":\"setstep\",\"entity\":\"step:riff/1\",\"mode\":\"note\",\"pitch\":45,\"accent\":true,\"slide\":false,\"ratchet\":1,\"chance\":100}",
+		Examples: []string{
+			"{\"kind\":\"setstep\",\"entity\":\"step:riff/1\",\"mode\":\"note\",\"pitch\":45,\"accent\":true,\"slide\":false,\"ratchet\":1,\"chance\":100}",
+			"{\"kind\":\"setstep\",\"entity\":\"step:beat/bd/1\",\"mode\":\"hit\",\"velocity\":\"X\",\"ratchet\":1,\"chance\":100}",
+			"{\"kind\":\"setstep\",\"entity\":\"step:riff/1\",\"mode\":\"tie\",\"ratchet\":1,\"chance\":100}",
+			"{\"kind\":\"setstep\",\"entity\":\"step:riff/0\",\"mode\":\"rest\",\"ratchet\":1,\"chance\":100}",
+		},
 		Fields: map[string]string{
 			"Accent":   "accent a note",
 			"Chance":   "probability the step plays, 1–100",
@@ -672,7 +835,10 @@ var intentDocs = map[string]typeDoc{
 	"ShapePerformancePitch": {
 		Meaning: "changes note pitches while retaining their articulation",
 		Notes:   "Pivot is a stored MIDI pitch, before the pattern's transpose setting.",
-		Example: "{\"kind\":\"shapeperformancepitch\",\"entity\":\"pattern:phrase\",\"operation\":\"transpose\",\"semitones\":12}",
+		Examples: []string{
+			"{\"kind\":\"shapeperformancepitch\",\"entity\":\"pattern:phrase\",\"operation\":\"transpose\",\"semitones\":12}",
+			"{\"kind\":\"shapeperformancepitch\",\"entity\":\"pattern:phrase\",\"operation\":\"reflect\",\"pivot\":60}",
+		},
 		Fields: map[string]string{
 			"Entity":    "the performance pattern, as pattern:<name>",
 			"Operation": "shift every note, or mirror the notes around the pivot",
@@ -682,7 +848,9 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SplitClip": {
 		Meaning: "cuts a placement in two at a pattern-length boundary",
-		Example: "{\"kind\":\"splitclip\",\"entity\":\"placement:intro\",\"attick\":3840}",
+		Examples: []string{
+			"{\"kind\":\"splitclip\",\"entity\":\"placement:intro\",\"attick\":3840}",
+		},
 		Fields: map[string]string{
 			"AtTick": "where to cut, from the start of the arrangement",
 			"Entity": "the placement, as placement:<name>",
@@ -727,7 +895,10 @@ var intentDocs = map[string]typeDoc{
 	"ToggleModifier": {
 		Meaning: "turns the accent or the slide of one note step on or off",
 		Notes:   "The step must hold a note. Shared uses ToggleStep's JSON schema.",
-		Example: "{\"kind\":\"togglemodifier\",\"entity\":\"step:riff/0\",\"modifier\":\"accent\"}",
+		Examples: []string{
+			"{\"kind\":\"togglemodifier\",\"entity\":\"step:riff/0\",\"modifier\":\"accent\"}",
+			"{\"kind\":\"togglemodifier\",\"entity\":\"step:riff/0\",\"modifier\":\"slide\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the step, as step:<pattern>/<index>",
 			"Shared": "as for togglestep",
@@ -736,7 +907,9 @@ var intentDocs = map[string]typeDoc{
 	"ToggleStep": {
 		Meaning: "turns one grid step on or off: a rest becomes a note (1, or x on a drum lane) and anything else becomes a rest",
 		Notes:   "Step indexes count from 0. JSON shared accepts: \"\" (default): ask when the step comes from a shared phrase; \"definition\": edit the phrase token; \"detach\": expand only the use containing the step; \"pattern\": expand every use in the pattern before editing. Directly authored steps ignore \"\" and \"detach\"; \"pattern\" still expands every use. The same shared schema applies to the other grid intents.",
-		Example: "{\"kind\":\"togglestep\",\"entity\":\"step:riff/1\"}",
+		Examples: []string{
+			"{\"kind\":\"togglestep\",\"entity\":\"step:riff/1\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern",
 			"Shared": "what to do when the step comes from a shared phrase; see the notes",
@@ -745,7 +918,9 @@ var intentDocs = map[string]typeDoc{
 	"UpdatePlacement": {
 		Meaning: "patches the named fields of one placement in place",
 		Notes:   "Unlike MoveClip and ResizeClip, it keeps the typed literals and changes any number of fields in one revision, so a move and a trim never pass through an overlapping state.",
-		Example: "{\"kind\":\"updateplacement\",\"entity\":\"placement:verse\",\"settings\":{\"length\":\"4bars\"}}",
+		Examples: []string{
+			"{\"kind\":\"updateplacement\",\"entity\":\"placement:verse\",\"settings\":{\"length\":\"4bars\"}}",
+		},
 		Fields: map[string]string{
 			"Entity":   "the placement, as placement:<name>",
 			"Settings": "the fields to change; an empty field stays as it is",
@@ -754,7 +929,9 @@ var intentDocs = map[string]typeDoc{
 	"VaryPlacement": {
 		Meaning: "copies a placement's compiled pattern into the entry score and changes only that placement to use it",
 		Notes:   "Both changes have one history entry.",
-		Example: "{\"kind\":\"varyplacement\",\"entity\":\"placement:verse\",\"name\":\"pulse-verse\"}",
+		Examples: []string{
+			"{\"kind\":\"varyplacement\",\"entity\":\"placement:verse\",\"name\":\"pulse-verse\"}",
+		},
 		Fields: map[string]string{
 			"Entity": "the placement, as placement:<name>",
 			"Name":   "the name of the new pattern",

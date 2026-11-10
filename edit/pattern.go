@@ -28,16 +28,19 @@ func (SetPatternSettings) Kind() string { return "setpatternsettings" }
 // chord step moves the whole chord. Shared uses ToggleStep's JSON schema.
 //
 // Example: {"kind":"setstep","entity":"step:riff/1","mode":"note","pitch":45,"accent":true,"slide":false,"ratchet":1,"chance":100}
+// Example: {"kind":"setstep","entity":"step:beat/bd/1","mode":"hit","velocity":"X","ratchet":1,"chance":100}
+// Example: {"kind":"setstep","entity":"step:riff/1","mode":"tie","ratchet":1,"chance":100}
+// Example: {"kind":"setstep","entity":"step:riff/0","mode":"rest","ratchet":1,"chance":100}
 type SetStep struct {
-	Entity   EntityID `json:"entity" cicada:"required"`                  // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
-	Mode     string   `json:"mode" values:"step-mode" cicada:"required"` // hit needs a drum pattern; tie and note need a note pattern
-	Pitch    int      `json:"pitch"`                                     // MIDI pitch 0–127 for mode note
-	Accent   bool     `json:"accent"`                                    // accent a note
-	Slide    bool     `json:"slide"`                                     // slide from a note into the next one
-	Ratchet  int      `json:"ratchet" cicada:"required"`                 // repeats within the step; 1 plays once
-	Chance   int      `json:"chance" unit:"percent" cicada:"required"`   // probability the step plays, 1–100
-	Velocity string   `json:"velocity,omitempty" values:"drum-velocity"` // drum hit spelling for mode hit: x, accented X, or a level 1–9
-	Shared   string   `json:"shared,omitempty" values:"shared"`          // as for togglestep
+	Entity   EntityID `json:"entity" cicada:"required"`                                  // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
+	Mode     string   `json:"mode" values:"step-mode" cicada:"required,selects"`         // hit needs a drum pattern; tie and note need a note pattern
+	Pitch    int      `json:"pitch"`                                                     // MIDI pitch 0–127 for mode note
+	Accent   bool     `json:"accent"`                                                    // accent a note
+	Slide    bool     `json:"slide"`                                                     // slide from a note into the next one
+	Ratchet  int      `json:"ratchet" cicada:"required"`                                 // repeats within the step; 1 plays once
+	Chance   int      `json:"chance" unit:"percent" cicada:"required"`                   // probability the step plays, 1–100
+	Velocity string   `json:"velocity,omitempty" values:"drum-velocity" when:"mode=hit"` // drum hit spelling for mode hit: x, accented X, or a level 1–9
+	Shared   string   `json:"shared,omitempty" values:"shared"`                          // as for togglestep
 }
 
 func (SetStep) Kind() string { return "setstep" }
@@ -69,15 +72,19 @@ func (DuplicatePattern) Kind() string { return "duplicatepattern" }
 // touched by the edit.
 //
 // Example: {"kind":"setrange","entity":"pattern:riff","operation":"transpose","first":0,"last":3,"amount":12}
+// Example: {"kind":"setrange","entity":"pattern:riff","operation":"clear","first":0,"last":1}
+// Example: {"kind":"setrange","entity":"pattern:riff","operation":"copy","first":0,"last":1,"target":4}
+// Example: {"kind":"setrange","entity":"pattern:riff","operation":"reverse","first":0,"last":3}
+// Example: {"kind":"setrange","entity":"pattern:riff","operation":"rotate","first":0,"last":3,"amount":1}
 type SetRange struct {
-	Entity    EntityID `json:"entity" cicada:"required"`                             // the pattern, as pattern:<name>
-	Lane      string   `json:"lane,omitempty"`                                       // the drum lane; empty for a note pattern
-	Operation string   `json:"operation" values:"range-operation" cicada:"required"` // what to do with the steps
-	First     int      `json:"first"`                                                // first step index, from 0
-	Last      int      `json:"last"`                                                 // last step index, inclusive
-	Target    int      `json:"target,omitempty"`                                     // first step index of the copy, for copy
-	Amount    int      `json:"amount,omitempty"`                                     // steps to rotate, or semitones to transpose, −127 to +127
-	Shared    string   `json:"shared,omitempty" values:"shared"`                     // as for togglestep
+	Entity    EntityID `json:"entity" cicada:"required"`                                     // the pattern, as pattern:<name>
+	Lane      string   `json:"lane,omitempty"`                                               // the drum lane; empty for a note pattern
+	Operation string   `json:"operation" values:"range-operation" cicada:"required,selects"` // what to do with the steps
+	First     int      `json:"first"`                                                        // first step index, from 0
+	Last      int      `json:"last"`                                                         // last step index, inclusive
+	Target    int      `json:"target,omitempty"`                                             // first step index of the copy, for copy
+	Amount    int      `json:"amount,omitempty"`                                             // steps to rotate, or semitones to transpose, −127 to +127
+	Shared    string   `json:"shared,omitempty" values:"shared"`                             // as for togglestep
 }
 
 func (SetRange) Kind() string { return "setrange" }

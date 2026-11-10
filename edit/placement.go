@@ -105,7 +105,7 @@ func init() {
 	// needs; markers have only a position.
 	placementFields := []string{"settings.at", "settings.length", "settings.track", "settings.content"}
 	markerless := []string{"settings.length", "settings.track", "settings.content"}
-	ruleKind("updateplacement", fieldRules{oneOf: [][]string{placementFields}})
+	ruleKind("updateplacement", fieldRules{oneOf: []FieldGroup{{Fields: placementFields}}})
 	ruleKind("addplacement", fieldRules{required: placementFields})
 	ruleKind("copyplacement", fieldRules{required: []string{"settings.at"}})
 	ruleKind("setmarker", fieldRules{required: []string{"settings.at"}, exclude: markerless})

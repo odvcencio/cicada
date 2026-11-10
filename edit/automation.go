@@ -19,13 +19,17 @@ import (
 // A lane that does not exist yet is created.
 //
 // Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"smooth"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"linear"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"step"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"exponential"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"curve","curve":2}
 type SetAutomationPoint struct {
-	Entity EntityID `json:"entity" cicada:"required"`                  // the parameter, as param:<owner>.<field>
-	OldAt  string   `json:"oldat,omitempty"`                           // the position of the point to move, such as "@3.1.1"
-	At     string   `json:"at" cicada:"required"`                      // the point's position, such as "@4.1.1" (bar.beat.step)
-	Value  string   `json:"value" cicada:"required"`                   // the value with its unit, such as "2kHz" or "-6dB"
-	Shape  string   `json:"shape,omitempty" values:"automation-shape"` // how the lane moves from this point to the next
-	Curve  float64  `json:"curve,omitempty"`                           // tension −8 to 8, for shape curve
+	Entity EntityID `json:"entity" cicada:"required"`                                                // the parameter, as param:<owner>.<field>
+	OldAt  string   `json:"oldat,omitempty"`                                                         // the position of the point to move, such as "@3.1.1"
+	At     string   `json:"at" cicada:"required"`                                                    // the point's position, such as "@4.1.1" (bar.beat.step)
+	Value  string   `json:"value" cicada:"required"`                                                 // the value with its unit, such as "2kHz" or "-6dB"
+	Shape  string   `json:"shape,omitempty" values:"automation-shape" cicada:"selects" when:"curve"` // how the lane moves from this point to the next
+	Curve  float64  `json:"curve,omitempty"`                                                         // tension −8 to 8, for shape curve
 }
 
 func (SetAutomationPoint) Kind() string { return "setautomationpoint" }

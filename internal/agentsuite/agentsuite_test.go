@@ -79,7 +79,7 @@ func checkJSONConventions(t *testing.T, args []string, stdout []byte) {
 				if !snakeCase.MatchString(key) {
 					t.Errorf("cicada %v: key %s.%s is not snake_case", args, path, key)
 				}
-				if key == "example" && strings.HasPrefix(path, "$.intents") || key == "intents" && strings.HasSuffix(path, ".fix") {
+				if (key == "example" || key == "examples") && strings.HasPrefix(path, "$.intents") || key == "intents" && strings.HasSuffix(path, ".fix") {
 					continue
 				}
 				walk(inner, path+"."+key)

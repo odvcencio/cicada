@@ -33,20 +33,25 @@ import (
 // Shared accepts only "pattern": phrase uses expand inside the edited pattern.
 //
 // Example: {"kind":"editnotes","entity":"pattern:phrase","op":"insert","insert":[{"at":1920,"pitch":64,"length":480,"velocity":100}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"move","dt":240,"notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"resize","dl":240,"notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"velocity","velocity":110,"notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"delete","notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"quantize","grid":240}
 type EditNotes struct {
-	Entity   EntityID  `json:"entity" cicada:"required"`               // the pattern, as pattern:<name>
-	Op       string    `json:"op" values:"notes-op" cicada:"required"` // the operation
-	Notes    []NoteRef `json:"notes,omitempty"`                        // the notes to change, as last seen; at most 512
-	DT       int64     `json:"dt,omitempty" unit:"ticks"`              // move: change of start
-	DP       int       `json:"dp,omitempty"`                           // move: change of pitch in semitones, or of lane in drum patterns
-	DL       int64     `json:"dl,omitempty" unit:"ticks"`              // resize: change of length
-	DV       int       `json:"dv,omitempty"`                           // velocity: change, ±126, clamped to 1–127
-	Velocity int       `json:"velocity,omitempty"`                     // velocity: the new value instead of dv, 1–127
-	Grid     int64     `json:"grid,omitempty" unit:"ticks"`            // quantize: grid, 30–3840
-	Strength int       `json:"strength,omitempty" unit:"percent"`      // quantize: how far starts move to the grid, 1–100; 0 means 100
-	Copy     bool      `json:"copy,omitempty"`                         // move: keep the originals
-	Insert   []NoteRef `json:"insert,omitempty" when:"op=insert"`      // insert: the notes to add; at most 512
-	Shared   string    `json:"shared,omitempty" values:"notes-shared"` // pattern expands phrase uses inside the edited pattern
+	Entity   EntityID  `json:"entity" cicada:"required"`                              // the pattern, as pattern:<name>
+	Op       string    `json:"op" values:"notes-op" cicada:"required,selects"`        // the operation
+	Notes    []NoteRef `json:"notes,omitempty" when:"op=move|resize|velocity|delete"` // the notes to change, as last seen; at most 512
+	DT       int64     `json:"dt,omitempty" unit:"ticks"`                             // move: change of start
+	DP       int       `json:"dp,omitempty"`                                          // move: change of pitch in semitones, or of lane in drum patterns
+	DL       int64     `json:"dl,omitempty" unit:"ticks"`                             // resize: change of length
+	DV       int       `json:"dv,omitempty"`                                          // velocity: change, ±126, clamped to 1–127
+	Velocity int       `json:"velocity,omitempty"`                                    // velocity: the new value instead of dv, 1–127
+	Grid     int64     `json:"grid,omitempty" unit:"ticks" when:"op=quantize"`        // quantize: grid, 30–3840
+	Strength int       `json:"strength,omitempty" unit:"percent"`                     // quantize: how far starts move to the grid, 1–100; 0 means 100
+	Copy     bool      `json:"copy,omitempty"`                                        // move: keep the originals
+	Insert   []NoteRef `json:"insert,omitempty" when:"op=insert"`                     // insert: the notes to add; at most 512
+	Shared   string    `json:"shared,omitempty" values:"notes-shared"`                // pattern expands phrase uses inside the edited pattern
 }
 
 // NoteRef is one note as the editor saw it, or one note to insert.
@@ -72,6 +77,12 @@ var noteSharedPolicies = valueList("notes-shared", "pattern")
 
 func init() {
 	Register("editnotes", func() Intent { return &EditNotes{} })
+	// A note in notes is named by its start and its pitch, or its lane in a
+	// drum pattern; op velocity takes a new velocity or a change.
+	ruleKind("editnotes", fieldRules{required: []string{"notes.at"}, oneOf: []FieldGroup{
+		{Fields: []string{"notes.pitch", "notes.lane"}},
+		{Fields: []string{"velocity", "dv"}, When: &FieldCondition{Field: "op", Values: []string{"velocity"}}},
+	}})
 	Handle("editnotes", editNotes)
 }
 

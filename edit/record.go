@@ -15,9 +15,10 @@ import (
 // performance that keeps the exact ticks.
 //
 // Example: {"kind":"recordtake","timing":"grid","recordings":[{"track":"bass","pattern":"riff","notes":[{"tick":0,"endtick":240,"note":45,"velocity":100},{"tick":480,"endtick":720,"note":52,"velocity":90}]}]}
+// Example: {"kind":"recordtake","timing":"played","recordings":[{"track":"bass","pattern":"riff","notes":[{"tick":0,"endtick":480,"note":45,"velocity":90}]}]}
 type RecordTake struct {
-	Timing     string      `json:"timing,omitempty" values:"take-timing"` // grid is the default
-	Recordings []Recording `json:"recordings" cicada:"required"`          // one recording per pattern
+	Timing     string      `json:"timing,omitempty" values:"take-timing" cicada:"selects"` // grid is the default
+	Recordings []Recording `json:"recordings" cicada:"required"`                           // one recording per pattern
 }
 
 func (RecordTake) Kind() string { return "recordtake" }

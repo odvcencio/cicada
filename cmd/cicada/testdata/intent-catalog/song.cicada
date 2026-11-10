@@ -21,15 +21,16 @@ instrument glow {
   }
 }
 
-fx room reverb {}
-
 track bass acid { cutoff = 620Hz }
 track drums drums {}
-track keys piano { send room = -12dB }
+track keys piano {}
 track lead glow {}
 track vox audio { level = -6dB }
 
 lfo wobble { wave = sine rate = 1bars }
+lfo sweep { wave = triangle rate = 2bars }
+contour swell { period = 4bars @0 0 @1/2 1 @1 0 }
+mod sweep -> bass.reso depth = 0.2
 
 phrase hook { 1 . 5 . }
 
@@ -47,7 +48,7 @@ pattern phrase performance length=3840ticks {
   note 57 at=0ticks length=480ticks velocity=90 group=breath {
     gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
   }
-  note 60 at=960ticks length=480ticks velocity=90;
+  note 60 at=1000ticks length=480ticks velocity=90;
 }
 
 automate bass.cutoff {

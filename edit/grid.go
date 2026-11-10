@@ -83,9 +83,10 @@ func (in *SetPitch) UnmarshalJSON(data []byte) error {
 // The step must hold a note. Shared uses ToggleStep's JSON schema.
 //
 // Example: {"kind":"togglemodifier","entity":"step:riff/0","modifier":"accent"}
+// Example: {"kind":"togglemodifier","entity":"step:riff/0","modifier":"slide"}
 type ToggleModifier struct {
 	Entity   EntityID `json:"entity" cicada:"required"` // the step, as step:<pattern>/<index>
-	Modifier string   `json:"modifier" values:"modifier" cicada:"required"`
+	Modifier string   `json:"modifier" values:"modifier" cicada:"required,selects"`
 	Shared   string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 }
 
@@ -95,9 +96,10 @@ func (ToggleModifier) Kind() string { return "togglemodifier" }
 // value. The step must hold a note. Shared uses ToggleStep's JSON schema.
 //
 // Example: {"kind":"cyclestep","entity":"step:riff/0","field":"ratchet"}
+// Example: {"kind":"cyclestep","entity":"step:riff/0","field":"chance"}
 type CycleStep struct {
 	Entity EntityID `json:"entity" cicada:"required"` // the step, as step:<pattern>/<index>
-	Field  string   `json:"field" values:"cycle-field" cicada:"required"`
+	Field  string   `json:"field" values:"cycle-field" cicada:"required,selects"`
 	Shared string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 }
 
