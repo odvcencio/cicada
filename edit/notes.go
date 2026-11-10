@@ -190,8 +190,9 @@ func (in *EditNotes) Validate() error {
 			}
 		}
 	case "quantize":
-		if in.Grid < 30 || in.Grid > seq.TicksPerBar {
-			return fmt.Errorf("choose a quantize grid from 30 to %d ticks", seq.TicksPerBar)
+		// The coarsest grid is one bar; a score declares no meter yet, so 4/4.
+		if bar := (seq.MeterMap{}).BarTicks(0); in.Grid < 30 || in.Grid > bar {
+			return fmt.Errorf("choose a quantize grid from 30 to %d ticks", bar)
 		}
 		if in.Strength < 0 || in.Strength > 100 {
 			return fmt.Errorf("quantize strength must be 1–100%%")
@@ -241,7 +242,7 @@ func quantizeTick(tick, grid, strength int64) int64 {
 
 func gridLabel(ticks int64) string {
 	switch ticks {
-	case seq.TicksPerBar:
+	case seq.MeterMap{}.BarTicks(0): // a 4/4 bar: a score declares no meter yet
 		return "1 bar"
 	case seq.PPQ:
 		return "1 beat"

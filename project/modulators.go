@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -142,10 +143,7 @@ const FitTolerance = 0.10
 // pass of the song, and the rate that gives, in hertz. The song is the loop.
 // N rounds to the nearest whole cycle and is at least 1.
 func loopFit(p *Project, m Modulator) (cycles int64, authoredHz, fittedHz float64, ok bool) {
-	var ticks int64
-	for _, entry := range p.Song {
-		ticks += int64(entry.Bars) * 3840
-	}
+	ticks := p.SongEndTick()
 	if p.Arrange != nil {
 		ticks = 0
 		for _, placement := range p.Arrange.Placements {
@@ -155,7 +153,7 @@ func loopFit(p *Project, m Modulator) (cycles int64, authoredHz, fittedHz float6
 	if ticks == 0 || m.Loop != "continue" {
 		return 0, 0, 0, false
 	}
-	tempo, err := NewTempoMap(48000, int64(p.TempoMilli), SongTempoChanges(p))
+	tempo, err := NewTempoMap(p.MeterMap(), 48000, int64(p.TempoMilli), SongTempoChanges(p))
 	if err != nil {
 		return 0, 0, 0, false
 	}
@@ -472,12 +470,13 @@ func rateSource(m Modulator) string {
 	if m.RateMicroHz > 0 {
 		return strconv.FormatFloat(float64(m.RateMicroHz)/1e6, 'f', -1, 64) + "Hz"
 	}
-	if m.RateTicks%3840 == 0 {
-		return strconv.FormatInt(m.RateTicks/3840, 10) + "bars"
+	// A rate in bars counts 4/4 bars: a score declares no meter yet.
+	if bars, whole := (seq.MeterMap{}).WholeBars(0, m.RateTicks); whole {
+		return strconv.FormatInt(bars, 10) + "bars"
 	}
-	a, b := m.RateTicks, int64(3840)
+	a, b := m.RateTicks, seq.TicksPerWhole
 	for y := b; y != 0; a, y = y, a%y {
 	}
 	g := a
-	return fmt.Sprintf("%d/%d", m.RateTicks/g, 3840/g)
+	return fmt.Sprintf("%d/%d", m.RateTicks/g, seq.TicksPerWhole/g)
 }

@@ -103,9 +103,7 @@ func validateAutomation(p *Project) error {
 			end = max(end, placement.AtTick+placement.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * 3840
-		}
+		end = p.SongEndTick()
 	}
 	seen := map[string]bool{}
 	for _, lane := range p.Automation {
@@ -281,7 +279,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 
 		// Reapply held values after every authored scene switch, including
 		// sparse step lanes and points that end before the song does.
-		var boundary int64
+		var boundary, bar int64
 		for i, entry := range p.Song {
 			if i > 0 && boundary >= lane.Points[0].Tick {
 				last = math.Float32bits(float32(math.NaN()))
@@ -289,7 +287,8 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 					return nil, err
 				}
 			}
-			boundary += int64(entry.Bars) * 3840
+			bar += int64(entry.Bars)
+			boundary = p.MeterMap().BarStart(bar)
 		}
 		for _, tick := range lane.Recalls {
 			last = math.Float32bits(float32(math.NaN()))

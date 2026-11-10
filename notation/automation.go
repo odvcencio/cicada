@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 type Automation struct {
@@ -32,14 +34,20 @@ func PositionTick(at string) (int64, error) {
 	var n [3]int64
 	for i, part := range parts {
 		value, err := strconv.ParseInt(part, 10, 32)
-		if err != nil || value < 1 || i > 0 && value > 4 {
+		if err != nil || value < 1 {
 			return 0, fmt.Errorf("position needs bar >= 1, beat 1..4 and step 1..4")
 		}
 		n[i] = value
 	}
-	return (n[0]-1)*3840 + (n[1]-1)*960 + (n[2]-1)*240, nil
+	// Automation reads positions before a score's meter is known: 4/4.
+	tick, ok := seq.MeterMap{}.PositionTick(n[0], n[1], n[2])
+	if !ok {
+		return 0, fmt.Errorf("position needs bar >= 1, beat 1..4 and step 1..4")
+	}
+	return tick, nil
 }
 
 func TickPosition(tick int64) string {
-	return fmt.Sprintf("@%d.%d.%d", tick/3840+1, tick%3840/960+1, tick%960/240+1)
+	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }

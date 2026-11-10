@@ -17,6 +17,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -191,7 +192,8 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 }
 
 func automationTick(state transportSnapshot, end int64) int64 {
-	return min(end, max(int64(0), (state.Bar-1)*3840+(state.Step-1)*240))
+	// The transport reports no meter; its bars are 4/4 until a score can declare one.
+	return min(end, max(int64(0), seq.MeterMap{}.BarStart(state.Bar-1)+(state.Step-1)*seq.TicksPerStep))
 }
 
 func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Request) {

@@ -11,9 +11,11 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
-// MusicalTicks accepts exact 4/4 positions, bars, ticks, or note divisions.
-// Values outside the fixed tick resolution fail instead of being rounded.
-func MusicalTicks(value string, position bool) (int64, error) {
+// MusicalTicks accepts exact positions, bars, ticks, or note divisions. A
+// position and a bar count come from the meter map; a note division is a
+// fraction of a whole note. Values outside the fixed tick resolution fail
+// instead of being rounded.
+func MusicalTicks(meterMap seq.MeterMap, value string, position bool) (int64, error) {
 	if strings.HasPrefix(value, "@") && position {
 		parts := strings.Split(value[1:], ".")
 		if len(parts) != 3 {
@@ -27,10 +29,15 @@ func MusicalTicks(value string, position bool) (int64, error) {
 			}
 			n[i] = v
 		}
-		if n[0] > (1<<53-1)/seq.TicksPerBar || n[1] > 4 || n[2] > 4 {
+		// The bar must end by 2^53-1 ticks; a bar is at least one step long.
+		if n[0] > (1<<53-1)/seq.TicksPerStep || meterMap.BarStart(n[0]) > 1<<53-1 {
 			return 0, fmt.Errorf("position outside 4/4 grid: %q", value)
 		}
-		return (n[0]-1)*seq.TicksPerBar + (n[1]-1)*seq.PPQ + (n[2]-1)*seq.TicksPerStep, nil
+		tick, ok := meterMap.PositionTick(n[0], n[1], n[2])
+		if !ok {
+			return 0, fmt.Errorf("position outside 4/4 grid: %q", value)
+		}
+		return tick, nil
 	}
 	multiplier := int64(1)
 	number := value
@@ -39,12 +46,12 @@ func MusicalTicks(value string, position bool) (int64, error) {
 		number = strings.TrimSuffix(value, "ticks")
 	case strings.HasSuffix(value, "bars"):
 		number = strings.TrimSuffix(value, "bars")
-		multiplier = seq.TicksPerBar
+		multiplier = meterMap.BarTicks(0)
 	case strings.HasSuffix(value, "bar"):
 		number = strings.TrimSuffix(value, "bar")
-		multiplier = seq.TicksPerBar
+		multiplier = meterMap.BarTicks(0)
 	case strings.Contains(value, "/") && !position:
-		multiplier = seq.TicksPerBar
+		multiplier = seq.TicksPerWhole
 	default:
 		return 0, fmt.Errorf("expected exact ticks, bars, or note division; actual %q", value)
 	}

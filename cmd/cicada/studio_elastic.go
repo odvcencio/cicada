@@ -77,7 +77,9 @@ func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp) (takejournal.
 	if err != nil {
 		return t, err
 	}
-	target, err := project.NewTempoMap(t.Rate, c.Tempo, c.TempoChanges)
+	// A take and a comp record no meter yet, so their tempo steps sit on 4/4 bar lines.
+	var meterMap seq.MeterMap
+	target, err := project.NewTempoMap(meterMap, t.Rate, c.Tempo, c.TempoChanges)
 	if err != nil {
 		return t, err
 	}
@@ -100,7 +102,7 @@ func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp) (takejournal.
 	ticks := []int64{begin, end}
 	for _, changes := range [][]project.TempoChange{t.Timeline.TempoChanges, c.TempoChanges} {
 		for _, change := range changes {
-			tick := int64(change.Bar) * seq.TicksPerBar
+			tick := meterMap.BarStart(int64(change.Bar))
 			if tick > begin && tick < end {
 				ticks = append(ticks, tick)
 			}

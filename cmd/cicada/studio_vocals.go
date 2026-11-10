@@ -82,7 +82,9 @@ func vocalMillisecondsFrames(ms float64, rate int) int64 {
 	return int64(math.Round(ms * float64(rate) / 1000))
 }
 
-func notationTicks(value string) (int64, error) { return notation.MusicalTicks(value, true) }
+func notationTicks(value string) (int64, error) {
+	return notation.MusicalTicks(seq.MeterMap{}, value, true)
+}
 
 // The comp types live in the edit service, which writes their metadata comment.
 type (
@@ -188,7 +190,7 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	if start < 0 || end <= start || end > studioArrangementEnd(p) {
 		return nil, fmt.Errorf("choose a recording range within the full song")
 	}
-	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}, nil
+	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-p.MeterMap().BarTicks(0)), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}, nil
 }
 
 // vocalTakeSource is the candidate source for selecting a take; see
@@ -350,7 +352,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	if err := edits.ValidateVocalComp(c); err != nil {
 		return result, err
 	}
-	clock, err := project.NewTempoMap(rate, c.Tempo, c.TempoChanges)
+	clock, err := project.NewTempoMap(seq.MeterMap{}, rate, c.Tempo, c.TempoChanges)
 	if err != nil {
 		return result, err
 	}

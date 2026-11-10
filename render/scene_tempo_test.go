@@ -188,7 +188,7 @@ func TestSceneTempoOfflineMatchesKernelTiming(t *testing.T) {
 	for i := range offline.left {
 		offline.left[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[44+i*8:]))
 	}
-	tempo, err := project.NewTempoMap(48_000, int64(p.TempoMilli), project.SongTempoChanges(p))
+	tempo, err := project.NewTempoMap(p.MeterMap(), 48_000, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func renderBoth(t *testing.T, source string, rate int, bars int) (driftAudio, dr
 		offline.left[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[44+i*8:]))
 		offline.right[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[48+i*8:]))
 	}
-	tempo, err := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	tempo, err := project.NewTempoMap(p.MeterMap(), rate, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestSceneTempoRoundingBoundariesAgreeEverywhere(t *testing.T) {
 				t.Fatalf("the project keeps %v, want the canonical %v", stored, float64(milli)/1000)
 			}
 			const rate = 48_000
-			tempo, err := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+			tempo, err := project.NewTempoMap(p.MeterMap(), rate, int64(p.TempoMilli), project.SongTempoChanges(p))
 			if err != nil {
 				t.Fatal(err)
 			}

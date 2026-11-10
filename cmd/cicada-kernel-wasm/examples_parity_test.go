@@ -167,7 +167,7 @@ func TestExamplesPCM24Parity(t *testing.T) {
 						}
 						bars = int((endTick + seq.TicksPerBar - 1) / seq.TicksPerBar)
 					}
-					tempo, err := project.NewTempoMap(rate, cfg.BPMMilli, project.SongTempoChanges(p))
+					tempo, err := project.NewTempoMap(p.MeterMap(), rate, cfg.BPMMilli, project.SongTempoChanges(p))
 					if err != nil || bars == 0 {
 						t.Fatalf("song clock: %v, bars=%d", err, bars)
 					}

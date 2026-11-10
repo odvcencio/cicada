@@ -3,6 +3,8 @@ package notation
 import (
 	"bytes"
 	"testing"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 const arrangeFixture = `cicada 2
@@ -44,7 +46,7 @@ func TestArrangementExactSourceAndMusicalTime(t *testing.T) {
 		t.Fatal("format changed ticks")
 	}
 	for _, v := range []string{"1/7", "@0.1.1", "@1.5.1", "9007199254740992ticks"} {
-		if _, err := MusicalTicks(v, false); err == nil {
+		if _, err := MusicalTicks(seq.MeterMap{}, v, false); err == nil {
 			t.Fatalf("accepted %s", v)
 		}
 	}

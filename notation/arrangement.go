@@ -32,24 +32,25 @@ type Marker struct {
 	Position Position
 }
 
-// MusicalTicks accepts exact 4/4 positions, bars, ticks, or note divisions.
-// Values outside the fixed tick resolution fail instead of being rounded.
-func MusicalTicks(value string, position bool) (int64, error) {
-	return musictime.MusicalTicks(value, position)
+// MusicalTicks accepts exact positions, bars, ticks, or note divisions on a
+// meter map. Values outside the fixed tick resolution fail instead of being rounded.
+func MusicalTicks(meterMap seq.MeterMap, value string, position bool) (int64, error) {
+	return musictime.MusicalTicks(meterMap, value, position)
 }
 
 func parseArrangement(w *loweringWalker, n *gts.Node) *Arrangement {
 	a := &Arrangement{Position: w.position(n)}
+	var meterMap seq.MeterMap // a score declares no meter yet: 4/4
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		params := audioParams(w, c)
 		var at, length int64
 		for _, p := range params {
 			if p.Name == "at" {
-				at, _ = MusicalTicks(p.Value, true)
+				at, _ = MusicalTicks(meterMap, p.Value, true)
 			}
 			if p.Name == "length" {
-				length, _ = MusicalTicks(p.Value, false)
+				length, _ = MusicalTicks(meterMap, p.Value, false)
 			}
 		}
 		switch w.Type(c) {
@@ -73,6 +74,7 @@ func ValidateArrangement(s *Score) []Diagnostic {
 		ds = append(ds, Diagnostic{Code: code, Severity: "error", Message: message, Position: p})
 	}
 	a := s.Arrange
+	meterMap := s.MeterMap()
 	if s.Version != 2 {
 		add("CICADA-VERSION", "arrange requires edition 2", a.Position)
 	}
@@ -98,7 +100,7 @@ func ValidateArrangement(s *Score) []Diagnostic {
 				add("CICADA-ARRANGEMENT", "unknown arrangement field "+f.Name, f.Position)
 				continue
 			}
-			v, err := MusicalTicks(f.Value, f.Name == "at")
+			v, err := MusicalTicks(meterMap, f.Value, f.Name == "at")
 			if err != nil {
 				add("CICADA-ARRANGEMENT", err.Error(), f.ValuePosition)
 			} else if f.Name == "at" && v != at || f.Name == "length" && v != length {
@@ -171,8 +173,9 @@ func ValidateArrangement(s *Score) []Diagnostic {
 		add("CICADA-LIMIT", "arrangement supports at most 65535 tempo steps", a.Position)
 	}
 	for _, tempo := range a.Tempos {
-		at, err := MusicalTicks(tempo.At, true)
-		if err != nil || at <= previous || at >= end || at%seq.TicksPerBar != 0 || at/seq.TicksPerBar > 1<<20 {
+		at, err := MusicalTicks(meterMap, tempo.At, true)
+		bar, offset := meterMap.BarAt(at)
+		if err != nil || at <= previous || at >= end || offset != 0 || bar > 1<<20 {
 			add("CICADA-POSITION", "tempo steps must increase at bar starts within the arrangement", tempo.Position)
 		}
 		previous = at
@@ -191,7 +194,7 @@ func SetPlacementField(source []byte, name, field, value string) ([]byte, error)
 	if field != "at" && field != "length" {
 		return nil, fmt.Errorf("unknown placement field %q", field)
 	}
-	if _, err := MusicalTicks(value, field == "at"); err != nil {
+	if _, err := MusicalTicks(seq.MeterMap{}, value, field == "at"); err != nil {
 		return nil, err
 	}
 	doc, err := ParseDocument(source)

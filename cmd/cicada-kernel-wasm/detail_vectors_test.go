@@ -50,7 +50,7 @@ func detailPCM24(t *testing.T, path string, rate int) string {
 	for _, entry := range cfg.Song {
 		endTick += int64(entry.Bars) * seq.TicksPerBar
 	}
-	tempo, err := project.NewTempoMap(rate, cfg.BPMMilli, project.SongTempoChanges(p))
+	tempo, err := project.NewTempoMap(p.MeterMap(), rate, cfg.BPMMilli, project.SongTempoChanges(p))
 	if err != nil || endTick == 0 {
 		t.Fatalf("song clock: %v", err)
 	}

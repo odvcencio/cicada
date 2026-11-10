@@ -143,13 +143,13 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	if !d.Live || !d.Automatable || d.Curve == "toggle" || d.Unit == "enum" {
 		return nil, fmt.Errorf("%s has no continuous numeric automation", path)
 	}
-	tick, err := notation.MusicalTicks(point.at, true)
+	tick, err := notation.MusicalTicks(ctx.MeterMap(), point.at, true)
 	if err != nil || tick < 0 || tick > arrangementEnd(plan) || tick%240 != 0 {
 		return nil, fmt.Errorf("choose a sixteenth-note position within the song")
 	}
 	old := tick
 	if point.oldAt != "" {
-		old, err = notation.MusicalTicks(point.oldAt, true)
+		old, err = notation.MusicalTicks(ctx.MeterMap(), point.oldAt, true)
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +173,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 			return nil, err
 		}
 	}
-	text := FormatPosition(tick) + " " + literal + " " + shape
+	text := FormatPosition(ctx.MeterMap(), tick) + " " + literal + " " + shape
 	if shape == "curve" {
 		text += " " + strconv.FormatFloat(point.curve, 'f', -1, 64)
 	}
@@ -206,7 +206,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 			continue
 		}
 		count++
-		at, e := notation.MusicalTicks(w.Text(w.Field(n, "at")), true)
+		at, e := notation.MusicalTicks(ctx.MeterMap(), w.Text(w.Field(n, "at")), true)
 		if e != nil {
 			return nil, e
 		}
@@ -247,8 +247,9 @@ func arrangementEnd(plan *Plan) int64 {
 		}
 		return end
 	}
+	var meterMap seq.MeterMap // a plan carries no meter; song entries count 4/4 bars
 	for _, entry := range plan.Song {
-		end += int64(entry.Bars) * seq.TicksPerBar
+		end += meterMap.BarsTicks(end, int64(entry.Bars))
 	}
 	return end
 }

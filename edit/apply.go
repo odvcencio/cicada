@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -68,6 +69,10 @@ type Context struct {
 	rechecks     []func() (string, bool) // recompute each identity from the same inputs
 	response     map[string]any
 }
+
+// MeterMap places the edited song's bar and beat lines. A score cannot declare
+// a meter yet, so it is the 4/4 map.
+func (c *Context) MeterMap() seq.MeterMap { return seq.MeterMap{} }
 
 // Parse parses the working buffer. Recording token writers can retain the
 // complete project context when the buffer owns only part of the score.

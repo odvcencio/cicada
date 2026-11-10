@@ -2,12 +2,14 @@ package capture
 
 import "m31labs.dev/cicada/kernel/seq"
 
-// CountIn uses the engine's integer clock. The initial fixed 4/4 meter matches
-// the existing score timing. DefaultCountIn is one bar; zero bars skips it.
+// CountIn uses the engine's integer clock and clicks the beats of the meter
+// map's first bar, which is 4/4 until a score can declare a meter.
+// DefaultCountIn is one bar; zero bars skips it.
 type CountIn struct {
 	Frames int64
 	beats  [32]int64
 	count  int
+	perBar int // beats in a bar; the first of each is accented
 }
 
 func DefaultCountIn(rate int, bpmMilli int64) (CountIn, error) {
@@ -22,9 +24,11 @@ func NewCountIn(rate int, bpmMilli int64, bars int) (CountIn, error) {
 	if err != nil {
 		return CountIn{}, err
 	}
-	c := CountIn{Frames: clock.SampleAtTick(int64(bars) * seq.TicksPerBar), count: bars * 4}
+	var meterMap seq.MeterMap
+	perBar := int(meterMap.BeatsInBar(0))
+	c := CountIn{Frames: clock.SampleAtTick(meterMap.BarStart(int64(bars))), count: bars * perBar, perBar: perBar}
 	for beat := 0; beat < c.count; beat++ {
-		c.beats[beat] = clock.SampleAtTick(int64(beat) * seq.PPQ)
+		c.beats[beat] = clock.SampleAtTick(int64(beat) * meterMap.BeatTicks(0))
 	}
 	return c, nil
 }
@@ -35,7 +39,7 @@ func (c CountIn) click(output [][]float32, cursor int64, frames int) {
 		start := c.beats[beat] - cursor
 		for i := max(int64(0), start); i < min(int64(frames), start+32); i++ {
 			level := float32(0.12)
-			if beat%4 == 0 {
+			if beat%c.perBar == 0 {
 				level = 0.2
 			}
 			if (i-start)&1 != 0 {

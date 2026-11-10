@@ -126,7 +126,8 @@ func ParseModRate(text string) (ModRate, string) {
 		if !ok || r.Sign() <= 0 {
 			return ModRate{}, "expected a positive number of bars"
 		}
-		return syncedRate(r.Mul(r, big.NewRat(seq.TicksPerBar, 1)), text)
+		// A score declares no meter yet, so a bar is the 4/4 bar.
+		return syncedRate(r.Mul(r, big.NewRat(seq.MeterMap{}.BarTicks(0), 1)), text)
 	case strings.Contains(text, "/"):
 		body := text
 		num, den := int64(1), int64(1)
@@ -140,7 +141,7 @@ func ParseModRate(text string) (ModRate, string) {
 		if !ok || r.Sign() <= 0 {
 			return ModRate{}, "expected a note length such as 1/4"
 		}
-		r.Mul(r, big.NewRat(seq.TicksPerBar*num, den))
+		r.Mul(r, big.NewRat(seq.TicksPerWhole*num, den))
 		return syncedRate(r, text)
 	}
 	return ModRate{}, "expected a note length such as 1/4, a bar count such as 8bars, or a rate in Hz"

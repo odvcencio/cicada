@@ -10,7 +10,6 @@ import (
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 const FingerprintBands = 64
@@ -48,7 +47,7 @@ func EngineFingerprint(cfg engine.Config, bars int) (Fingerprint, error) {
 		return result, err
 	}
 	// The engine knows its tempo steps, so the span follows scene tempos.
-	sampleCount := player.FramesBetweenTicks(0, int64(bars)*seq.TicksPerBar)
+	sampleCount := player.FramesBetweenTicks(0, player.MeterMap().BarStart(int64(bars)))
 	if sampleCount < 1 || sampleCount > int64(^uint32(0)) {
 		return result, fmt.Errorf("fingerprint sample count is out of range")
 	}

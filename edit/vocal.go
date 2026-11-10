@@ -279,9 +279,9 @@ func vocalPlacementSource(source []byte, file string, next VocalComp, previous b
 					}
 					name, value := w.Text(w.Field(param, "name")), w.Text(w.Field(param, "value"))
 					if name == "at" {
-						at, err = notation.MusicalTicks(value, true)
+						at, err = notation.MusicalTicks(seq.MeterMap{}, value, true)
 					} else if name == "length" {
-						length, err = notation.MusicalTicks(value, false)
+						length, err = notation.MusicalTicks(seq.MeterMap{}, value, false)
 					}
 					if err != nil {
 						return nil, err
@@ -422,7 +422,7 @@ func vocalArrangementSource(source []byte, file string, plan *Plan, newline stri
 		scene := scenes[entry.Scene]
 		for _, setting := range scene.Settings {
 			if setting.Path == "tempo" && setting.Number != nil {
-				fmt.Fprintf(&text, "  tempo %s %s\n", FormatPosition(at), strconv.FormatFloat(math.Round(*setting.Number*1000)/1000, 'f', -1, 64))
+				fmt.Fprintf(&text, "  tempo %s %s\n", FormatPosition(seq.MeterMap{}, at), strconv.FormatFloat(math.Round(*setting.Number*1000)/1000, 'f', -1, 64))
 			}
 		}
 		for _, track := range plan.Tracks {
@@ -438,7 +438,7 @@ func vocalArrangementSource(source []byte, file string, plan *Plan, newline stri
 				active[track.ID] = activePart{binding, at}
 			}
 		}
-		at += int64(entry.Bars) * seq.TicksPerBar
+		at += (seq.MeterMap{}).BarsTicks(at, int64(entry.Bars))
 	}
 	for _, track := range plan.Tracks {
 		if part, ok := active[track.ID]; ok {

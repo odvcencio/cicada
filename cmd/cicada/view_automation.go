@@ -24,6 +24,7 @@ func automationViews(p *project.Project, end int64) []viewAutomationLane {
 	if end <= 0 {
 		return views
 	}
+	endBar, _ := p.MeterMap().BarAt(end)
 	for _, lane := range p.Automation {
 		resolved, err := project.ResolveParameterPath(p, lane.Path)
 		if err != nil || len(lane.Points) == 0 {
@@ -52,7 +53,7 @@ func automationViews(p *project.Project, end int64) []viewAutomationLane {
 		if unit == "unit" {
 			unit = ""
 		}
-		v := viewAutomationLane{Path: lane.Path, Unit: unit, Low: fmt.Sprintf("%g", low), High: fmt.Sprintf("%g", high), EndBar: end/3840 + 1}
+		v := viewAutomationLane{Path: lane.Path, Unit: unit, Low: fmt.Sprintf("%g", low), High: fmt.Sprintf("%g", high), EndBar: endBar + 1}
 		var path strings.Builder
 		start := lane.Points[0].Tick
 		value, _ := project.AutomationValue(p, lane, start)

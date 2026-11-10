@@ -35,7 +35,7 @@ func TestSongTempoChangesCarryAndSkipRepeats(t *testing.T) {
 	if SlowestTempoMilli(p) != 60_000 {
 		t.Fatalf("slowest tempo = %d", SlowestTempoMilli(p))
 	}
-	m, err := NewTempoMap(48_000, int64(p.TempoMilli), got)
+	m, err := NewTempoMap(p.MeterMap(), 48_000, int64(p.TempoMilli), got)
 	if err != nil {
 		t.Fatal(err)
 	}

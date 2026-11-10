@@ -43,10 +43,12 @@ func lowerArrangement(p *Project, s *notation.Score) {
 	for _, v := range s.Arrange.Markers {
 		p.Arrange.Markers = append(p.Arrange.Markers, Marker{ID: v.Name, AtTick: v.AtTick})
 	}
+	meterMap := p.MeterMap()
 	for _, v := range s.Arrange.Tempos {
-		at, _ := notation.MusicalTicks(v.At, true)
+		at, _ := notation.MusicalTicks(meterMap, v.At, true)
 		bpm, _ := strconv.ParseFloat(v.Value, 64)
-		p.Arrange.Tempos = append(p.Arrange.Tempos, TempoChange{Bar: int(at / 3840), BPMMilli: int(CanonicalTempo(bpm)*1000 + 0.5)})
+		bar, _ := meterMap.BarAt(at)
+		p.Arrange.Tempos = append(p.Arrange.Tempos, TempoChange{Bar: int(bar), BPMMilli: int(CanonicalTempo(bpm)*1000 + 0.5)})
 	}
 }
 func arrangementSource(a *Arrangement) string {

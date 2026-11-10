@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -62,7 +61,7 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 			}
 			points[setting.Path] = append(points[setting.Path], songControlPoint{tick, literal, math.Float32bits(float32(*setting.Number))})
 		}
-		tick += int64(entry.Bars) * seq.TicksPerBar
+		tick += score.MeterMap().BarsTicks(tick, int64(entry.Bars))
 	}
 
 	// Every existing curve reapplies its value at song boundaries, even if no
@@ -112,7 +111,7 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 				if i > 0 && boundary >= firstTick {
 					addRecall(boundary)
 				}
-				boundary += int64(entry.Bars) * seq.TicksPerBar
+				boundary += score.MeterMap().BarsTicks(boundary, int64(entry.Bars))
 			}
 			owner = existing.Position.File
 			if owner == "" {
@@ -130,7 +129,7 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 				addRecall(point.tick)
 				continue
 			}
-			fmt.Fprintf(&rows, "%s %s step%s  ", FormatPosition(point.tick), point.literal, nl)
+			fmt.Fprintf(&rows, "%s %s step%s  ", FormatPosition(score.MeterMap(), point.tick), point.literal, nl)
 		}
 		if existing != nil && rows.Len() == 0 && len(recalls) == 0 {
 			continue
@@ -138,7 +137,7 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 		sort.Slice(recalls, func(i, j int) bool { return recalls[i] < recalls[j] })
 		var recallRows strings.Builder
 		for _, tick := range recalls {
-			fmt.Fprintf(&recallRows, "  recall %s%s", FormatPosition(tick), nl)
+			fmt.Fprintf(&recallRows, "  recall %s%s", FormatPosition(score.MeterMap(), tick), nl)
 		}
 		var after []byte
 		if existing == nil {

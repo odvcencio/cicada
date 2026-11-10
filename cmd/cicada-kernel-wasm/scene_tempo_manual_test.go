@@ -117,7 +117,7 @@ func TestAudioWASMSceneTempoManualLaunchOnBoundaryParity(t *testing.T) {
 		}
 	}
 	// Frames per bar match what the transport did, not only what the map says.
-	tempo, _ := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	tempo, _ := project.NewTempoMap(p.MeterMap(), rate, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if native.FramesBetweenTicks(0, 6*seq.TicksPerBar) != tempo.SampleAtTick(6*seq.TicksPerBar) {
 		t.Fatal("the tempo map and the export disagree")
 	}

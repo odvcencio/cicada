@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -170,7 +169,7 @@ func sceneValueAtBar(p *project.Project, path string, targetBar int) (sceneExpla
 		for _, placement := range p.Arrange.Placements {
 			end = max(end, placement.AtTick+placement.LengthTicks)
 		}
-		bars := (end + seq.TicksPerBar - 1) / seq.TicksPerBar
+		bars := p.MeterMap().BarsUntil(end)
 		if targetBar < 1 || int64(targetBar) > bars {
 			return sceneExplainValue{}, fmt.Errorf("bar %d is outside the arrangement (which spans %d bars)", targetBar, bars)
 		}

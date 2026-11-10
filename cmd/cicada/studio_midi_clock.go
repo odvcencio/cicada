@@ -34,7 +34,7 @@ func (t *studioTransport) observeMIDIFrameLocked(f liveplay.TransportFrame, next
 		return
 	}
 	t.midiFrameWall = f.WallNanos
-	tick := (int64(f.Bar)-1)*seq.TicksPerBar + (int64(f.Beat)-1)*seq.PPQ + int64(f.Tick)
+	tick := transportFrameTick(int64(f.Bar), int64(f.Beat), int64(f.Tick))
 	if !t.midiTimeline.ObserveClock(at, tick, int64(f.TempoMilli), next) {
 		t.midiTimeline.Reset(at)
 		t.midiFrameWall = f.WallNanos

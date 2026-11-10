@@ -89,6 +89,7 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 	var placements []convertedPlacement
 	open := make(map[string]int, len(score.Tracks))
 	used := map[string]bool{}
+	meterMap := score.MeterMap()
 	var tick int64
 	for index, entry := range score.Song {
 		bars := int64(entry.Bars)
@@ -109,22 +110,22 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 			switch {
 			case action == "keep":
 				if at, ok := open[track.Name]; ok {
-					placements[at].length += bars * seq.TicksPerBar
+					placements[at].length += meterMap.BarsTicks(tick, bars)
 				}
 			case action == "off" || action == "stop" && !hasStopPattern:
 				delete(open, track.Name)
 			case hasOpen(open, track.Name) && placements[open[track.Name]].content == action:
 				// The same pattern continues: one placement per contiguous run.
-				placements[open[track.Name]].length += bars * seq.TicksPerBar
+				placements[open[track.Name]].length += meterMap.BarsTicks(tick, bars)
 			default:
 				open[track.Name] = len(placements)
 				placements = append(placements, convertedPlacement{
 					name: runName(entry.Scene, index+1, track.Name, used), track: track.Name, content: action,
-					at: tick, length: bars * seq.TicksPerBar,
+					at: tick, length: meterMap.BarsTicks(tick, bars),
 				})
 			}
 		}
-		tick += bars * seq.TicksPerBar
+		tick += meterMap.BarsTicks(tick, bars)
 	}
 	if len(placements) == 0 {
 		return nil, refuseConvert("no scene binds a pattern, so the arrange would be empty")
@@ -164,7 +165,7 @@ func convertedSource(ctx *Context, score *notation.Score, placements []converted
 	var block strings.Builder
 	block.WriteString("arrange {")
 	for _, p := range placements {
-		fmt.Fprintf(&block, "%s  place %s %s %s {%s    at = %s length = %s%s  }", nl, p.name, p.track, p.content, nl, FormatPosition(p.at), FormatLength(p.length), nl)
+		fmt.Fprintf(&block, "%s  place %s %s %s {%s    at = %s length = %s%s  }", nl, p.name, p.track, p.content, nl, FormatPosition(score.MeterMap(), p.at), FormatLength(score.MeterMap(), p.at, p.length), nl)
 	}
 	block.WriteString(nl + "}")
 	spans := []Span{{int(song.StartByte()), int(song.EndByte()), block.String(), ctx.Options.Path}}
@@ -207,10 +208,10 @@ func convertCause(ctx *Context, placements []convertedPlacement) string {
 			continue
 		}
 		if unit := pattern.LengthTicks(); unit > 0 && p.length%unit != 0 {
-			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(unit), next.at/seq.TicksPerBar+1)
+			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(unit), barNumber(ctx.MeterMap(), next.at))
 		}
 		if restarted := patterns[next.content]; hasChance(restarted) && chance == "" {
-			chance = fmt.Sprintf("pattern %s has chance steps that restart at bar %d", restarted.ID, next.at/seq.TicksPerBar+1)
+			chance = fmt.Sprintf("pattern %s has chance steps that restart at bar %d", restarted.ID, barNumber(ctx.MeterMap(), next.at))
 		}
 	}
 	if chance != "" {
@@ -219,14 +220,22 @@ func convertCause(ctx *Context, placements []convertedPlacement) string {
 	return "the converted score renders differently"
 }
 
+// describeBars spells a pattern length in 4/4 bars: a pattern carries no meter.
 func describeBars(ticks int64) string {
+	bars, whole := (seq.MeterMap{}).WholeBars(0, ticks)
 	switch {
-	case ticks == seq.TicksPerBar:
+	case whole && bars == 1:
 		return "1 bar"
-	case ticks%seq.TicksPerBar == 0:
-		return fmt.Sprintf("%d bars", ticks/seq.TicksPerBar)
+	case whole:
+		return fmt.Sprintf("%d bars", bars)
 	}
 	return fmt.Sprintf("%d ticks", ticks)
+}
+
+// barNumber is the one-based bar that holds tick.
+func barNumber(meterMap seq.MeterMap, tick int64) int64 {
+	bar, _ := meterMap.BarAt(tick)
+	return bar + 1
 }
 
 // hasChance reports a step that plays with a probability below 100: chance

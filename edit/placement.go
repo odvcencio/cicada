@@ -6,6 +6,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -238,7 +239,7 @@ func arrangementSource(source []byte, file string, op arrangementOp) ([]byte, er
 		return nil, fmt.Errorf("placement settings are required")
 	}
 	if settings.At != "" {
-		if _, err := notation.MusicalTicks(settings.At, true); err != nil {
+		if _, err := notation.MusicalTicks(seq.MeterMap{}, settings.At, true); err != nil {
 			return nil, fmt.Errorf("start: %w", err)
 		}
 	}
@@ -246,7 +247,7 @@ func arrangementSource(source []byte, file string, op arrangementOp) ([]byte, er
 		if marker {
 			return nil, fmt.Errorf("markers have a position, not a length")
 		}
-		if _, err := notation.MusicalTicks(settings.Length, false); err != nil {
+		if _, err := notation.MusicalTicks(seq.MeterMap{}, settings.Length, false); err != nil {
 			return nil, fmt.Errorf("length: %w", err)
 		}
 	}

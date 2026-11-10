@@ -40,7 +40,8 @@ func listeningPosition(tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return fmt.Sprintf("%dticks", tick)
 	}
-	return fmt.Sprintf("@%d.%d.%d", tick/seq.TicksPerBar+1, tick%seq.TicksPerBar/seq.PPQ+1, tick%seq.PPQ/seq.TicksPerStep+1)
+	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 
 func (v studioListening) label() string {
@@ -65,9 +66,7 @@ func studioArrangementEnd(p *project.Project) int64 {
 			end = max(end, place.AtTick+place.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * seq.TicksPerBar
-		}
+		end = p.SongEndTick()
 	}
 	return end
 }
@@ -186,9 +185,9 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 		}
 		v.StartTick = 0
 		for i := 0; i < v.Entry; i++ {
-			v.StartTick += int64(p.Song[i].Bars) * seq.TicksPerBar
+			v.StartTick += p.MeterMap().BarsTicks(v.StartTick, int64(p.Song[i].Bars))
 		}
-		v.EndTick = v.StartTick + int64(p.Song[v.Entry].Bars)*seq.TicksPerBar
+		v.EndTick = v.StartTick + p.MeterMap().BarsTicks(v.StartTick, int64(p.Song[v.Entry].Bars))
 	case "range":
 	default:
 		return nil, nil, fmt.Errorf("unknown listening target")
@@ -237,9 +236,9 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 		}
 	case "loop":
 		v.Kind, v.Name = "range", "Selection"
-		v.StartTick, err = notation.MusicalTicks(input.Start, true)
+		v.StartTick, err = notation.MusicalTicks(seq.MeterMap{}, input.Start, true)
 		if err == nil {
-			v.EndTick, err = notation.MusicalTicks(input.End, true)
+			v.EndTick, err = notation.MusicalTicks(seq.MeterMap{}, input.End, true)
 		}
 	}
 	if err != nil {
