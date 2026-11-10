@@ -260,7 +260,7 @@ func sourceReceiptRequired(env edits.Envelope) bool {
 	for _, intent := range env.Intents {
 		switch intent.(type) {
 		case *edits.ToggleStep, *edits.SetPitch, *edits.ToggleModifier, *edits.CycleStep,
-			*edits.SetDrumVelocity, *edits.SetStep, *edits.SetChord, *edits.SetPatternSettings,
+			*edits.SetDrumVelocity, *edits.SetStep, *edits.SetChord, *edits.SetPatternSettings, *edits.EditNotes,
 			*edits.SetRange, *edits.ResizePattern, *edits.RecordTake, *edits.SetPerformedNote, *edits.ResizePerformance, *edits.SetPerformedExpression,
 			*edits.SetPerformanceGroup, *edits.BindPerformedGroup, *edits.SetSharedExpression,
 			*edits.ScalePerformance, *edits.ShapePerformancePitch,
