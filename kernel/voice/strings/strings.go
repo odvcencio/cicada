@@ -5,6 +5,7 @@ package strings
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
@@ -87,6 +88,11 @@ type Instrument struct {
 	sustain                    bool
 	gainT, glideAlpha          float32
 	gliding                    bool
+	// tables holds one band-limited saw oscillator per voice per register
+	// (8', 16', 4'). It stays nil at sample rates with no table bank, where
+	// the 2-point polyBLEP saw is used instead.
+	tables [8][3]*acid.TableOscillator
+	rate   float64
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -112,6 +118,14 @@ func New(rate int, params Params) (*Instrument, error) {
 	}
 	for s := range i.sine {
 		i.sine[s] = float32(math.Sin(2 * math.Pi * float64(s) / 1024))
+	}
+	i.rate = sr
+	if _, err := acid.NewTableOscillator(rate); err == nil {
+		for v := range i.tables {
+			for r := range i.tables[v] {
+				i.tables[v][r], _ = acid.NewTableOscillator(rate)
+			}
+		}
 	}
 	i.attack = float32(1 / (params.Attack * sr))
 	i.release = float32(math.Exp(-4.605170186 / (params.Release * sr)))
@@ -261,6 +275,18 @@ func saw(phase, delta float32) float32 {
 	return y
 }
 
+// bandLimitedSaw returns the saw for one register of one voice. With a table
+// oscillator it reads the harmonic-limited table for the register's frequency
+// (delta cycles per sample); without one it falls back to the polyBLEP saw.
+// The float64 product has no addition after it, so no fused multiply-add can
+// change the bits.
+func (i *Instrument) bandLimitedSaw(o *acid.TableOscillator, phase, delta float32) float32 {
+	if o == nil {
+		return saw(phase, delta)
+	}
+	return float32(o.Saw(float64(phase), float64(delta)*i.rate))
+}
+
 func (i *Instrument) NextStereo() (float32, float32) {
 	if i.gliding {
 		i.gliding = !keyboard.Approach(&i.gain, i.gainT, i.glideAlpha)
@@ -287,10 +313,10 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		// Bits above the 32-bit fractional phase carry the octave divider state.
 		phase := float32((i.phases[p.class]>>p.shift)&0xffffffff) * (1.0 / 4294967296)
 		phase16 := float32((i.phases[p.class]>>(p.shift+1))&0xffffffff) * (1.0 / 4294967296)
-		y := float32(i.octave8 * saw(phase, p.delta))
-		y = float32(y + float32(i.octave16*saw(phase16, float32(p.delta*.5))))
+		y := float32(i.octave8 * i.bandLimitedSaw(i.tables[n][0], phase, p.delta))
+		y = float32(y + float32(i.octave16*i.bandLimitedSaw(i.tables[n][1], phase16, float32(p.delta*.5))))
 		if p.delta < .24 {
-			y = float32(y + float32(i.octave4*saw(wrap(float32(phase*2)), float32(p.delta*2))))
+			y = float32(y + float32(i.octave4*i.bandLimitedSaw(i.tables[n][2], wrap(float32(phase*2)), float32(p.delta*2))))
 		}
 		y = float32(y * float32(v.amp*v.velocity))
 		if v.fade < 1 {

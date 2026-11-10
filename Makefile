@@ -324,8 +324,19 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
 
-test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm
-	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1 -v | tee build/test-wasm.log"
+# CI splits the audio WASM tests in two jobs by overriding the next three
+# variables: one job skips the one-hour memory test and the other runs only it.
+# With no override, make test-wasm runs every TestAudioWASM test as before.
+TEST_WASM_RUN ?= ^TestAudioWASM
+TEST_WASM_SKIP ?=
+TEST_WASM_LOG ?= build/test-wasm.log
+
+test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm test-wasm-audio
+
+.PHONY: test-wasm-audio
+test-wasm-audio: build-kernel-wasm build-vocals-wasm
+	mkdir -p build
+	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '$(TEST_WASM_RUN)' $(if $(TEST_WASM_SKIP),-skip '$(TEST_WASM_SKIP)') -count=1 -v | tee $(TEST_WASM_LOG)"
 
 # Required unified image and opcode negotiation gates use the freshly built reactor.
 test-worklet-negotiation: build-worklets
