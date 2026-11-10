@@ -42,23 +42,23 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	var blocks []gosx.Node
 	bar := 1
 	for index, entry := range p.Song {
-		i := strconv.Itoa(index)
+		i, block := strconv.Itoa(index), targetField(songBlockKey(p.Song, index))
 		label := fmt.Sprintf("%s · bars %d–%d", entry.Scene, bar, bar+int(entry.Bars)-1)
 		play := s.form(v, csrf, "session", "transport", hidden("entry", i), submit("action", "playFrom", entry.Scene))
 		ruler = append(ruler, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-heading"), gosx.Attr("title", fmt.Sprintf("Bars %d–%d", bar, bar+int(entry.Bars)-1))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-section")), gosx.El("small", gosx.Text(fmt.Sprintf("%02d", index+1))), play),
 			barRuler(bar, int(entry.Bars))))
-		controls := []gosx.Node{s.form(v, csrf, "session", "song", hidden("action", "scene"), hidden("index", i), field("Scene", selectInput("scene", entry.Scene, sceneNames)), submit("", "", "Replace scene")), s.form(v, csrf, "session", "song", hidden("action", "bars"), hidden("index", i), field("Bars", wholeInput("bars", int(entry.Bars), 1, 999)), submit("", "", "Set length"))}
+		controls := []gosx.Node{s.form(v, csrf, "session", "song", hidden("action", "scene"), hidden("index", i), block, field("Scene", selectInput("scene", entry.Scene, sceneNames)), submit("", "", "Replace scene")), s.form(v, csrf, "session", "song", hidden("action", "bars"), hidden("index", i), block, field("Bars", wholeInput("bars", int(entry.Bars), 1, 999)), submit("", "", "Set length"))}
 		controls = append([]gosx.Node{s.listeningForm(v, csrf, selected, hidden("entry", i), submit("action", "loopSection", "Loop block"))}, controls...)
 		if index > 0 {
-			controls = append(controls, s.form(v, csrf, "session", "song", hidden("action", "move"), hidden("index", i), hidden("target", strconv.Itoa(index-1)), submit("", "", "Move earlier")))
+			controls = append(controls, s.form(v, csrf, "session", "song", hidden("action", "move"), hidden("index", i), block, hidden("target", strconv.Itoa(index-1)), submit("", "", "Move earlier")))
 		}
 		if index+1 < len(p.Song) {
-			controls = append(controls, s.form(v, csrf, "session", "song", hidden("action", "move"), hidden("index", i), hidden("target", strconv.Itoa(index+1)), submit("", "", "Move later")))
+			controls = append(controls, s.form(v, csrf, "session", "song", hidden("action", "move"), hidden("index", i), block, hidden("target", strconv.Itoa(index+1)), submit("", "", "Move later")))
 		}
-		controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), submit("action", "duplicate", "Duplicate block")))
+		controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), block, submit("action", "duplicate", "Duplicate block")))
 		if len(p.Song) > 1 {
-			controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), submit("action", "delete", "Remove block")))
+			controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), block, submit("action", "delete", "Remove block")))
 		}
 		blocks = append(blocks, gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i)), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...))))
 		bar += int(entry.Bars)

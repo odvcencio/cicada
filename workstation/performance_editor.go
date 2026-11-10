@@ -61,7 +61,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		}
 		return numberInput(name, text, strconv.FormatInt(low, 10), strconv.FormatInt(high, 10))
 	}
-	children := []gosx.Node{hidden("index", strconv.Itoa(selected)),
+	children := []gosx.Node{hidden("index", strconv.Itoa(selected)), targetField(performedNoteKey(performance.Notes, selected)),
 		field("MIDI pitch", number("pitch", int64(pitch), 0, 127)),
 		field("Start tick", number("tick", tick, 0, performance.LengthTicks-1)),
 		field("End tick", number("end_tick", end, 1, performance.LengthTicks)),
