@@ -256,7 +256,8 @@ func (bank *oscillatorBank) selectTables(pitchLog float64) oscillatorSelection {
 func (selection oscillatorSelection) saw(phase float64) float64 {
 	low := sampleSawTable(selection.low, phase)
 	high := sampleSawTable(selection.high, phase)
-	return low + (high-low)*selection.blend
+	// Rounding the product first stops arm64 from fusing a multiply-add.
+	return low + float64((high-low)*selection.blend)
 }
 
 func sampleSawTable(table *oscillatorTable, phase float64) float64 {
@@ -265,7 +266,8 @@ func sampleSawTable(table *oscillatorTable, phase float64) float64 {
 	fraction := index - float64(left)
 	a := float64(table[left&oscillatorTableMask])
 	b := float64(table[(left+1)&oscillatorTableMask])
-	return a + (b-a)*fraction
+	// Rounding the product first stops arm64 from fusing a multiply-add.
+	return a + float64((b-a)*fraction)
 }
 
 func (bank *oscillatorBank) pulse(phase, pitchLog, width float64) float64 {
