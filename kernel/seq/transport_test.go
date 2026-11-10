@@ -88,15 +88,15 @@ func TestQuantizeBoundaries(t *testing.T) {
 		{5, 3841, 7680, 16},
 		{6, 3841, 7680, 16},
 	} {
-		got, err := QuantizeTick(tc.tick, tc.q, tc.length)
+		got, err := MeterMap{}.QuantizeTick(tc.tick, tc.q, tc.length)
 		if err != nil || got != tc.want {
 			t.Fatalf("q=%d tick=%d: got %d, %v; want %d", tc.q, tc.tick, got, err, tc.want)
 		}
 	}
-	if _, err := QuantizeTick(1, 4, 16); err == nil {
+	if _, err := (MeterMap{}).QuantizeTick(1, 4, 16); err == nil {
 		t.Fatal("accepted reserved quantize")
 	}
-	if _, err := QuantizeTick(1, 3, 0); err == nil {
+	if _, err := (MeterMap{}).QuantizeTick(1, 3, 0); err == nil {
 		t.Fatal("accepted empty pattern")
 	}
 }

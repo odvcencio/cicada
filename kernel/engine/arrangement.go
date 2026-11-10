@@ -59,7 +59,7 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 		}
 	} else {
 		var err error
-		at, err = seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), 16)
+		at, err = e.MeterMap().QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), 16)
 		if err != nil {
 			e.fault(FaultQuantize)
 			return

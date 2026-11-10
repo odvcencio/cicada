@@ -1045,7 +1045,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	}
 	e.schedule = append([]ScheduleEvent(nil), cfg.Schedule...)
 	if len(cfg.Song) != 0 {
-		e.schedule = LowerSong(cfg.Song)
+		e.schedule = LowerSong(cfg.Song, e.MeterMap())
 	}
 	if err := e.prepareClips(cfg); err != nil {
 		return err
@@ -1184,7 +1184,9 @@ func (e *Engine) Reset() {
 	if e.compMusic != nil {
 		e.compMusic.Reset()
 	}
+	meterMap := e.transport.MeterMap()
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
+	e.transport.SetMeterMap(meterMap)
 	if modulationEnabled && e.graphLFO != nil {
 		e.graphLFO.absolute, e.graphLFO.cycle, e.graphLFO.loopStart = 0, -1, 0
 		e.graphLFO.clock.Sample, e.graphLFO.clock.Playing = 0, false
@@ -1380,10 +1382,10 @@ func (e *Engine) drainCommands() {
 		c := e.commands[e.commandRead%uint16(len(e.commands))]
 		e.commandRead++
 		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
-			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
+			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
 		}
 		if e.transport.Playing() && c.Tick == 0 && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
-			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
+			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
 		}
 		if e.pendingLen == len(e.pending) {
 			e.fault(FaultPendingFull)
@@ -1517,7 +1519,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
-		e.seekTick = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
+		e.seekTick = int64(c.Arg0)*cmd.SeekUnit + int64(c.Arg1)
 		if e.seekTransport(e.seekTick) != nil {
 			e.fault(FaultSeek)
 			return

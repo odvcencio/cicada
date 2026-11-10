@@ -18,7 +18,7 @@ func TestScheduleMatchesLegacySong(t *testing.T) {
 			t.Fatal(err)
 		}
 		scheduled := cfg
-		scheduled.Schedule, scheduled.Song = LowerSong(cfg.Song), nil
+		scheduled.Schedule, scheduled.Song = LowerSong(cfg.Song, seq.MeterMap{}), nil
 		timeline, err := New(scheduled)
 		if err != nil {
 			t.Fatal(err)
@@ -82,7 +82,7 @@ func TestScheduleRejectsAmbiguousAndInvalidAuthority(t *testing.T) {
 	cfg := testConfig()
 	cfg.Scenes = []Scene{{}}
 	cfg.Song = []SongEntry{{Bars: 1}}
-	cfg.Schedule = LowerSong(cfg.Song)
+	cfg.Schedule = LowerSong(cfg.Song, seq.MeterMap{})
 	if _, err := New(cfg); err == nil {
 		t.Fatal("accepted two arrangement authorities")
 	}

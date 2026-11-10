@@ -7,10 +7,12 @@ import "math/bits"
 const (
 	PPQ          int64 = 960
 	TicksPerStep int64 = PPQ / 4
-	TicksPerBar  int64 = PPQ * 4
-	minBPMMilli  int64 = 20_000
-	maxBPMMilli  int64 = 300_000
-	maxInt64     int64 = 1<<63 - 1
+	// Deprecated: a bar's length comes from a MeterMap; a whole note is
+	// TicksPerWhole. Removed once every package asks the map.
+	TicksPerBar int64 = PPQ * 4
+	minBPMMilli int64 = 20_000
+	maxBPMMilli int64 = 300_000
+	maxInt64    int64 = 1<<63 - 1
 )
 
 // Error is a kernel-local error; the kernel cannot import fmt or errors.
