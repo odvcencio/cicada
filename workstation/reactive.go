@@ -234,6 +234,13 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		}
 		result.Redirect, result.Values = "", nil
 		status = http.StatusOK
+	} else if status == http.StatusConflict && fields["__cicada_regions"] != "" {
+		// The shell's edit queue blocks on a conflict. Name the revision the
+		// service holds, as the status bar shows it, beside "Refresh saved state".
+		var saved workspace
+		if s.backend.call(r.Context(), http.MethodGet, "/api/workspace", nil, &saved) == nil && saved.Revision != "" {
+			result.Message = strings.TrimSpace(strings.TrimRight(result.Message, ". ")+". Saved revision "+strings.TrimPrefix(savedStatus(saved), "Saved · ")+".")
+		}
 	}
 	for name, values := range capture.header {
 		if name != "Location" && name != "Content-Length" {

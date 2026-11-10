@@ -102,6 +102,11 @@ func TestShellEditRefusedByTheServiceReturnsNoRegions(t *testing.T) {
 	if response.StatusCode != http.StatusConflict || result.OK || len(result.Data) != 0 || result.Values["pitch"] != "72" {
 		t.Fatalf("conflict: %d %+v", response.StatusCode, result)
 	}
+	// The queue blocks on a conflict; the message names the saved revision as
+	// the status bar shows it.
+	if !strings.HasSuffix(result.Message, "Saved revision current.") {
+		t.Errorf("conflict message %q does not name the saved revision", result.Message)
+	}
 }
 
 func TestShellRegionsEndpointReadsOnlyTheStudioPage(t *testing.T) {
