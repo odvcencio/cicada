@@ -138,11 +138,13 @@ async function studio() {
     .catch(async error => { throw new Error(`${error.message}: ${(await lagging()).join(', ')}; status: ${await status()}`); });
   // How many POSTs this page has sent to a path, of any kind.
   const sent = pathname => sentPosts.filter(sentPath => sentPath === pathname).length;
-  // Region reads go through only when every region they name is in allow;
-  // the rest fail, as if the network dropped them, and the regions stay stale.
+  // Region reads go through only when every region they name is in allow
+  // (or allow, a function, accepts the list of names); the rest fail, as if
+  // the network dropped them, and the regions stay stale.
   const readOnly = allow => page.route('**/__studio/regions**', route => {
     const ids = (new URL(route.request().url()).searchParams.get('ids') || '').split(',').filter(Boolean).map(entry => entry.split(':')[0]);
-    return ids.length && ids.every(id => allow.has(id)) ? route.continue() : route.abort();
+    const allowed = typeof allow === 'function' ? allow(ids) : ids.every(id => allow.has(id));
+    return ids.length && allowed ? route.continue() : route.abort();
   });
   const state = async endpoint => {
     const response = await context.request.get(new URL(endpoint, base).href);
@@ -918,6 +920,69 @@ test('a held form whose own values changed after the read is not sent', async ()
   await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
 });
 
+test('a click in a panel still showing the song from before another save waits for a second click, even after an own edit', async () => {
+  const {caughtUp, page, state, posts, sent, readOnly, refused, refusedRead, cell, settled, region, status} = await studio();
+  const mute = () => page.locator('#view-panel-mixer button[data-toggle=mute]').first();
+  const mixerPosts = () => sent('/__actions/mixer') + sent('/__actions/toggle');
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  // Reads that name the hidden Mixer fail (the idle read among them), so it
+  // keeps what it showed before the other client saved. After the click only
+  // the held submit's own read of the Mixer goes through.
+  let clicked = false;
+  await readOnly(ids => !ids.includes('center-mixer') || clicked && ids.length === 1);
+  try {
+    let start = posts.length;
+    await page.locator(cell(47)).click();
+    await settled(start + 1);
+    await until(async () => await region('center-mixer').getAttribute('data-region-stale') !== null, 'the hidden Mixer was not stale');
+    // Another client saves; this page learns of it by reading the Session
+    // view, a read that does not cover the hidden Mixer.
+    const other = await otherClient();
+    await other.locator(cell(48)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(48));
+    await page.keyboard.press('Alt+Shift+Digit2');
+    await page.locator('#view-tab-session[aria-selected="true"]').waitFor();
+    await until(async () => await region('center-mixer').getAttribute('data-region-foreign') !== null, 'the Mixer was not marked as showing the song from before that save');
+    // Back in the Arrange view the visible regions are read again, and an
+    // own edit succeeds. Its revision is the one the Mixer's read returns.
+    await page.keyboard.press('Alt+Shift+Digit1');
+    await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+    await until(async () => await region('dock-clip').getAttribute('data-region-stale') === null, 'the Clip region was not read again');
+    start = posts.length;
+    await page.locator(cell(49)).click();
+    await settled(start + 1);
+    assert.equal(posts[start].status, 200, posts[start].result?.message);
+    assert.notEqual(await region('center-mixer').getAttribute('data-region-foreign'), null, 'an own edit cleared the mark of a region it did not render');
+    // Open the Mixer (its read fails) and click at once.
+    const opened = refused.length;
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+    await refusedRead(opened, 'center-mixer', 'the Mixer was not read when it opened');
+    const before = await mute().getAttribute('aria-pressed'), mixer = mixerPosts();
+    clicked = true;
+    await mute().click();
+    await until(async () => anotherChange.test(await status()), 'the held click was not reported');
+    await page.waitForTimeout(300);
+    assert.equal(mixerPosts(), mixer, 'a click on a panel from before another save was sent by itself');
+    assert.equal(await region('center-mixer').getAttribute('data-region-stale'), null, 'the Mixer was not refreshed');
+    assert.notEqual(await page.locator('#view-panel-mixer form:has(button[data-toggle=mute])').first().getAttribute('data-workspace-updated'), null, 'the refreshed form was not marked');
+    // The second click is the user's own decision on the refreshed panel.
+    await mute().click();
+    await until(() => mixerPosts() === mixer + 1, 'the second click was not sent');
+    await until(async () => await mute().getAttribute('aria-pressed') !== before, 'the second click did not apply');
+    await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+    // Put the track back as it was.
+    await mute().click();
+    await until(async () => await mute().getAttribute('aria-pressed') === before, 'the mute was not undone');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+  }
+  await caughtUp();
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+});
+
 test('a held Undo is dropped after a refused edit', async () => {
   const {page, posts, cell, rewrites, hold, settled, status} = await studio();
   const undo = page.locator('#undo-form button[type=submit]');
@@ -938,23 +1003,6 @@ test('a held Undo is dropped after a refused edit', async () => {
   await page.waitForTimeout(400);
   assert.equal(posts.length, start + 1, 'the held Undo was sent after a refused edit');
   assert.match(await status(), /Undo or Redo waiting behind it was not sent/, 'the dropped Undo was not reported');
-});
-
-test('an idle page reads no region once every region it reads is current', async () => {
-  const {page, posts, reads, cell, settled, region} = await studio();
-  const start = posts.length;
-  const stale = () => page.locator('[data-update-region][data-region-stale]:not(#update-code):not([data-region-reload])').count();
-  await page.locator(cell(46)).click();
-  await settled(start + 1);
-  // The hidden regions go stale, and the idle read refreshes them once (the
-  // Code lens is read only when it shows, and a region waiting for a page
-  // load is not read).
-  await until(async () => await stale() > 0, 'the draw left no hidden region stale');
-  await until(async () => await stale() === 0, 'stale regions stayed after the idle read');
-  const before = reads.length;
-  await page.waitForTimeout(3000);
-  assert.equal(reads.length - before, 0, `region reads in 3 s on an idle page: ${reads.slice(before).map(target => target.searchParams.get('ids')).join(' | ')}`);
-  assert.equal(await region('dock-clip').getAttribute('data-region-stale'), null);
 });
 
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {
@@ -1005,4 +1053,38 @@ test('a region that needs a reload is not read again while a draft blocks the re
   const repeated = reads.slice(before).filter(target => /(^|,)dock-clip:/.test(target.searchParams.get('ids') || ''));
   assert.equal(repeated.length, 0, `the region awaiting a reload was read ${repeated.length} times in 3 s`);
   assert.ok(reads.length - before <= 2, `${reads.length - before} region reads in 3 s with a reload pending`);
+});
+
+// Last, on a page of its own: no read backoff left by an earlier step can
+// fire inside the window.
+test('an idle page reads no region once every region it reads is current', async () => {
+  const {base, cell} = await studio();
+  const {context} = await sharedBrowser();
+  const page = await context.newPage();
+  const reads = [];
+  page.on('request', request => {
+    const target = new URL(request.url());
+    if (target.pathname === '/__studio/regions') reads.push(target);
+  });
+  try {
+    await page.goto(new URL('/studio?tab=arrange&dock=clip&pattern=continuity&step=1', base).href);
+    await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor({timeout: 30_000});
+    const stale = () => page.locator('[data-update-region][data-region-stale]:not(#update-code):not([data-region-reload])').count();
+    const before = await page.locator(cell(46)).getAttribute('data-active');
+    await page.locator(cell(46)).click();
+    await page.waitForFunction(([selector, before]) => {
+      const el = document.querySelector(selector);
+      return el && el.getAttribute('data-active') !== before && !el.hasAttribute('data-workspace-pending');
+    }, [cell(46), before]);
+    // The hidden regions go stale, and the idle read refreshes them once (the
+    // Code lens is read only when it shows, and a region waiting for a page
+    // load is not read).
+    await until(async () => await stale() > 0, 'the draw left no hidden region stale');
+    await until(async () => await stale() === 0, 'stale regions stayed after the idle read');
+    const count = reads.length;
+    await page.waitForTimeout(3000);
+    assert.equal(reads.length - count, 0, `region reads in 3 s on an idle page: ${reads.slice(count).map(target => target.searchParams.get('ids')).join(' | ')}`);
+  } finally {
+    await page.close();
+  }
 });

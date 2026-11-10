@@ -45,8 +45,9 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	wrappers := domCall(root, "querySelectorAll", "[data-update-region]")
 	for i := 0; i < wrappers.Length(); i++ {
 		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") == props.Revision && workspaceAttr(wrapper, "data-region-source-revision") == props.SourceRevision {
-			domDrop(wrapper, "data-region-stale")
-			domDrop(wrapper, "data-region-reload")
+			for _, name := range []string{"data-region-stale", "data-region-reload", "data-region-foreign"} {
+				domDrop(wrapper, name)
+			}
 		}
 	}
 	watch := signal.Watch(func() {
@@ -363,6 +364,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 		domSet(wrapper, "data-region-revision", projection.Revision)
 		domSet(wrapper, "data-region-source-revision", projection.SourceRevision)
 		domDrop(wrapper, "data-region-stale")
+		domDrop(wrapper, "data-region-foreign")
 	}
 	// A region whose engines changed can only be shown by a page load. When
 	// one is visible, nothing is unsaved and no edit waits, reload before
@@ -430,12 +432,19 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	if len(projection.Regions) < 2 {
 		u.advanceRegions(projection, job, confirm)
 	}
+	// A read that returns a revision this tab did not write reveals another
+	// change. A region it did not render still shows the song from before
+	// that change, whatever this tab saves next, until it is rendered again.
+	foreign := job.method == http.MethodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
 	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
 	for i := 0; i < wrappers.Length(); i++ {
 		// The pair names the saved state: a save to another project file
 		// moves only the source revision, and forms carry both.
 		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision || workspaceAttr(wrapper, "data-region-source-revision") != projection.SourceRevision {
 			domSet(wrapper, "data-region-stale", "")
+			if foreign {
+				domSet(wrapper, "data-region-foreign", "")
+			}
 		}
 	}
 	workspaceRestoreScrolls(scrolls, x, y)
@@ -492,7 +501,9 @@ func (u *workspaceUI) reload() {
 type shellHold struct {
 	form, submitter       js.Value
 	region, values, token string
-	done                  bool
+	// foreign: when the user clicked, the region still showed the song from
+	// before another client's change, so the form never goes out by itself.
+	foreign, done bool
 }
 
 // How the read that a held submit waits for ended.
@@ -504,17 +515,18 @@ const (
 )
 
 // refreshThenSubmit holds a submit from a stale region and reads the region.
-// The form goes out by itself only when the read returns the revision of this
-// tab's own writes (the region was stale only because of them) and the form
-// would send what it showed: the same values apart from its revision fields,
-// and the same submit button. Otherwise the refreshed form is marked and the
-// user checks it and submits again. A form has at most one hold; a click while
+// The form goes out by itself only when the region was stale only because of
+// this tab's own writes: the read returns the revision of those writes, and
+// at the click the region did not still show the song from before another
+// client's change. It also has to send what it showed: the same values apart
+// from its revision fields, and the same submit button. Otherwise the
+// refreshed form is marked and the user checks it and submits again. A form has at most one hold; a click while
 // it waits does nothing, and the hold ends if its panel closes, an Undo or Redo
 // is dropped, or the queue clears. Nothing was sent before the read, so this
 // never repeats a write.
 func (u *workspaceUI) refreshThenSubmit(region, form, submitter js.Value) {
 	u.held++
-	h := &shellHold{form: form, submitter: submitter, region: workspaceAttr(region, "data-update-region"), values: shellFormValues(form, submitter), token: strconv.Itoa(u.held)}
+	h := &shellHold{form: form, submitter: submitter, region: workspaceAttr(region, "data-update-region"), values: shellFormValues(form, submitter), token: strconv.Itoa(u.held), foreign: domHas(region, "data-region-foreign")}
 	marker := submitter
 	if !workspacePresent(marker) {
 		marker = form
@@ -538,6 +550,10 @@ func (u *workspaceUI) refreshThenSubmit(region, form, submitter js.Value) {
 func (u *workspaceUI) settleHold(h *shellHold, outcome int) {
 	if !u.releaseHold(h, "") {
 		return
+	}
+	if h.foreign && outcome == holdOwn {
+		// Decided at the click: a later own write cannot make it current.
+		outcome = holdForeign
 	}
 	region := domRegion(h.region)
 	switch {
