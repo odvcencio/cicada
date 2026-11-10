@@ -198,6 +198,8 @@ func TestBoundAmpWriteMonitorsAndKeepsDryCapture(t *testing.T) {
 	var expectedMonitor float32
 	for i := 0; i < 760; i++ {
 		simulatedCapturePeriod(t, a, uint64(i*128), input, output)
+		// The ring holds 377 blocks; keep the writer within 300 of the producer.
+		paceCaptureWriter(t, recorder, uint64(i+1)*128, 128, 300)
 		for _, sample := range input[0] {
 			expectedMonitor, _ = reference.Process(sample, sample)
 		}
@@ -237,6 +239,7 @@ func TestBoundAmpWriteMonitorsAndKeepsDryCapture(t *testing.T) {
 	}
 	for i := 760; i < 780; i++ {
 		simulatedCapturePeriod(t, a, uint64(i*128), input, output)
+		paceCaptureWriter(t, recorder, uint64(i+1)*128, 128, 300)
 	}
 	// Exercise control publication while the audio callback owns the player.
 	start, done := make(chan struct{}), make(chan struct{})
