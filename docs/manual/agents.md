@@ -16,9 +16,11 @@ The `--json` formats share these rules:
   no document carries a timestamp. Paths are the ones you passed, and a file
   under the working folder is shown relative to it.
 - The exit status is the same as without `--json`: 0 on success and 1 on
-  failure. A failed command still writes its document, with an `error` object.
-  A usage error (an unknown flag, a missing argument) is still text, with exit
-  status 2 for `render` and `stems`.
+  failure. A failed check still writes its document with `valid` false, and a
+  failed apply or render writes one with an `error` object. A usage error (an
+  unknown flag, a missing argument) is text on standard error, with exit
+  status 2 for `render` and `stems` and 1 for the others; `apply --json`
+  writes it as a document with `error.stage` `usage`.
 
 `cicada audition --json` (format `cicada.audition/1`) is described in
 [Audition](audition.md), and `cicada verify-wav --report` in
