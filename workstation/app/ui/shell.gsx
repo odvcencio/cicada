@@ -187,18 +187,27 @@ component Collapsible(props: CollapsibleProps) {
 	</details>
 }
 
-type TopBarProps struct {
+// TopBar's children are the score title and the transport toolbar. The page
+// wraps the title in an update region, so it is a separate component.
+component TopBar() {
+	return <header class="gsx-dock__top shell-top">
+		<a class="brand" href="/studio" aria-label="Cicada Studio"><span class="brand-mark" aria-hidden="true"></span></a>
+		{children}
+	</header>
+}
+
+type ScoreTitleProps struct {
 	Title    string
 	Filename string
 }
 
+component ScoreTitle(props: ScoreTitleProps) {
+	return <div class="score-title"><h1>{props.Title}</h1><span class="score-sub">{props.Filename}</span></div>
+}
+
 // The transport toolbar's children are forms and command buttons from the page.
-component TopBar(props: TopBarProps) {
-	return <header class="gsx-dock__top shell-top">
-		<a class="brand" href="/studio" aria-label="Cicada Studio"><span class="brand-mark" aria-hidden="true"></span></a>
-		<div class="score-title"><h1>{props.Title}</h1><span class="score-sub">{props.Filename}</span></div>
-		<div class="shell-transport" role="toolbar" aria-label="Transport">{children}</div>
-	</header>
+component TransportBar() {
+	return <div class="shell-transport" role="toolbar" aria-label="Transport">{children}</div>
 }
 
 type TempoProps struct {
@@ -394,11 +403,10 @@ type DetailDockProps struct {
 	DeviceShown    bool
 	AutomationShown bool
 	Height         string
-	Selection      string
-	SelectionDetail string
-	TrackDetail    string
 }
 
+// DetailDock's children are the selection header and the ShellScroll that
+// holds the three tab panels. The page wraps the header in an update region.
 component DetailDock(props: DetailDockProps) {
 	return <section id="studio-detail" class="gsx-dock__bottom shell-region" aria-label="Detail dock">
 		<SplitHandleY Signal="$layout.dockHeight" Label="Resize Detail dock" Min="120" Max="640" Value={props.Height} />
@@ -408,11 +416,28 @@ component DetailDock(props: DetailDockProps) {
 				<Tab ID="detail-tab-device" Value="device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
 				<Tab ID="detail-tab-automation" Value="automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
 			</nav>
-			<p class="shell-dock-selection" data-dock-selection="clip"><strong>{props.Selection}</strong> <span>{props.SelectionDetail}</span></p>
-			<p class="shell-dock-selection" data-dock-selection="track"><span>{props.TrackDetail}</span></p>
-			<div class="shell-scroll">{children}</div>
+			{children}
 		</div>
 	</section>
+}
+
+type DockSelectionProps struct {
+	Selection       string
+	SelectionDetail string
+	TrackDetail     string
+}
+
+// DockSelection names what the detail dock edits: the Clip tab's pattern, and
+// the Device and Automation tabs' track. CSS shows the one for the open tab.
+component DockSelection(props: DockSelectionProps) {
+	return <>
+		<p class="shell-dock-selection" data-dock-selection="clip"><strong>{props.Selection}</strong> <span>{props.SelectionDetail}</span></p>
+		<p class="shell-dock-selection" data-dock-selection="track"><span>{props.TrackDetail}</span></p>
+	</>
+}
+
+component ShellScroll() {
+	return <div class="shell-scroll">{children}</div>
 }
 
 type CodeLensProps struct {

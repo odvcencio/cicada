@@ -130,7 +130,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
 .shell #view-tabs > .shell-scroll:has(> :is(#view-panel-arrange,#view-panel-session,#view-panel-mixer):not([hidden])), .shell :is(#view-panel-arrange,#view-panel-session,#view-panel-mixer) { padding:0; }
 .shell :is(#view-panel-session #live,#view-panel-mixer #mixer) > .panel-heading p { display:none; }
-.shell #view-panel-arrange > .panel:not(#arrangement) { margin-inline:12px; }
+.shell #view-panel-arrange .update-region__body > .panel:not(#arrangement) { margin-inline:12px; }
 .shell .arrange-workspace-nav { position:sticky; top:0; z-index:4; display:flex; flex-wrap:wrap; gap:4px 16px; padding:4px 12px; border-bottom:1px solid var(--border); background:var(--raised); }
 .shell .arrange-workspace-nav a { padding:4px 0; color:var(--text); text-underline-offset:3px; }
 .shell #arrangement,.shell #vocals { scroll-margin-top:52px; }
@@ -321,10 +321,14 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #studio-detail { background:var(--panel); }
 .shell #detail-tabs { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr); }
 .shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
-.shell #detail-tabs > .shell-dock-selection { grid-column:2; grid-row:1; display:flex; align-items:baseline; gap:8px; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
-.shell #detail-tabs > .shell-dock-selection strong { color:var(--amber); font-size:14px; font-weight:650; }
-.shell #detail-tabs > .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
-.shell #detail-tabs > .shell-dock-selection:has(> strong:empty) { visibility:hidden; }
-.shell #detail-tabs:has(#detail-tab-clip[aria-current="page"]) > [data-dock-selection=track],
-.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) > [data-dock-selection=clip] { display:none; }
+.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; align-items:baseline; gap:8px; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+.shell #detail-tabs .shell-dock-selection strong { color:var(--amber); font-size:14px; font-weight:650; }
+.shell #detail-tabs .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
+.shell #detail-tabs .shell-dock-selection:has(> strong:empty) { visibility:hidden; }
+.shell #detail-tabs:has(#detail-tab-clip[aria-current="page"]) [data-dock-selection=track],
+.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) [data-dock-selection=clip] { display:none; }
 .shell #detail-tabs > .shell-scroll { grid-column:1/-1; grid-row:2; }
+/* Update regions wrap the parts of the shell that an edit response patches in
+   place. The wrapper and its body add no box, so layout ignores them. */
+.update-region, .update-region__body { display:contents; }
+.shell .shell-actions [data-workspace-pending] { box-shadow:inset 0 0 0 2px var(--amber); }

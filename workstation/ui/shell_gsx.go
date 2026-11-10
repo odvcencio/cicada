@@ -95,14 +95,24 @@ func Collapsible(props CollapsibleProps, children ...gosx.Node) gosx.Node {
 	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "gsx-collapsible"), gosx.Attr("data-gosx-collapsible", props.Signal), gosx.Attr("open", props.Open)), gosx.El("summary", gosx.Expr(props.Summary)), gosx.Expr(children))
 }
 
-type TopBarProps struct {
+// TopBar's children are the score title and the transport toolbar. The page
+// wraps the title in an update region, so it is a separate component.
+func TopBar(children ...gosx.Node) gosx.Node {
+	return gosx.El("header", gosx.Attrs(gosx.Attr("class", "gsx-dock__top shell-top")), gosx.El("a", gosx.Attrs(gosx.Attr("class", "brand"), gosx.Attr("href", "/studio"), gosx.Attr("aria-label", "Cicada Studio")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "brand-mark"), gosx.Attr("aria-hidden", "true")))), gosx.Expr(children))
+}
+
+type ScoreTitleProps struct {
 	Title    string
 	Filename string
 }
 
+func ScoreTitle(props ScoreTitleProps, children ...gosx.Node) gosx.Node {
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "score-title")), gosx.El("h1", gosx.Expr(props.Title)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "score-sub")), gosx.Expr(props.Filename)))
+}
+
 // The transport toolbar's children are forms and command buttons from the page.
-func TopBar(props TopBarProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("header", gosx.Attrs(gosx.Attr("class", "gsx-dock__top shell-top")), gosx.El("a", gosx.Attrs(gosx.Attr("class", "brand"), gosx.Attr("href", "/studio"), gosx.Attr("aria-label", "Cicada Studio")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "brand-mark"), gosx.Attr("aria-hidden", "true")))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "score-title")), gosx.El("h1", gosx.Expr(props.Title)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "score-sub")), gosx.Expr(props.Filename))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-transport"), gosx.Attr("role", "toolbar"), gosx.Attr("aria-label", "Transport")), gosx.Expr(children)))
+func TransportBar(children ...gosx.Node) gosx.Node {
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-transport"), gosx.Attr("role", "toolbar"), gosx.Attr("aria-label", "Transport")), gosx.Expr(children))
 }
 
 type TempoProps struct {
@@ -263,13 +273,27 @@ type DetailDockProps struct {
 	DeviceShown     bool
 	AutomationShown bool
 	Height          string
+}
+
+// DetailDock's children are the selection header and the ShellScroll that
+// holds the three tab panels. The page wraps the header in an update region.
+func DetailDock(props DetailDockProps, children ...gosx.Node) gosx.Node {
+	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.Expr(children)))
+}
+
+type DockSelectionProps struct {
 	Selection       string
 	SelectionDetail string
 	TrackDetail     string
 }
 
-func DetailDock(props DetailDockProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "clip")), gosx.El("strong", gosx.Expr(props.Selection)), gosx.El("span", gosx.Expr(props.SelectionDetail))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "track")), gosx.El("span", gosx.Expr(props.TrackDetail))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
+// DockSelection names what the detail dock edits: the Clip tab's pattern, and
+// the Device and Automation tabs' track. CSS shows the one for the open tab.
+func DockSelection(props DockSelectionProps, children ...gosx.Node) gosx.Node {
+	return gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "clip")), gosx.El("strong", gosx.Expr(props.Selection)), gosx.El("span", gosx.Expr(props.SelectionDetail))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "track")), gosx.El("span", gosx.Expr(props.TrackDetail))))
+}
+func ShellScroll(children ...gosx.Node) gosx.Node {
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))
 }
 
 type CodeLensProps struct {
