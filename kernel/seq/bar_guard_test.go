@@ -38,6 +38,8 @@ var barLiteralAllowlist = map[string]struct {
 	"cmd/cicada/view.html":       {2, "the transport label counts 4/4 bars until pages receive the meter map (phase 5)"},
 	"host/demobrowser/page.js":   {1, "the demo transport label counts 4/4 bars (phase 5)"},
 	"host/web/capture-client.js": {1, "the recording count-in is 4/4 until the count-in follows the meter (phase 5)"},
+	// An external host with its own bar clock.
+	"sdk/gosxhost/backend.go": {1, "the GoSX worklet's bar length; it keeps its own bar clock until the descriptor carries the meter map (phase 6)"},
 }
 
 var jsBarLiteral = regexp.MustCompile(`\b3_?840\b`)

@@ -103,7 +103,8 @@ func parseRoute(w *loweringWalker, n *gts.Node) Route {
 }
 
 // ModRate is a source rate or period. A synced rate is a whole number of
-// ticks (960 per quarter note, 3840 per bar); a free rate is micro-hertz.
+// ticks (960 per quarter note, 3840 per whole note; a bar's length comes from
+// the meter map); a free rate is micro-hertz.
 type ModRate struct {
 	Free       bool
 	Ticks      int64 // synced

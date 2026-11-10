@@ -13,11 +13,7 @@
 // build can import it to decode a score pack and drive the music.
 package gosxhost
 
-import (
-	"encoding/json"
-
-	"m31labs.dev/cicada/kernel/seq"
-)
+import "encoding/json"
 
 // Backend describes the Cicada kernel to a GoSX worklet host. Its JSON form is
 // the same shape as worklet.Backend in m31labs.dev/gosx/game/audio/worklet, so
@@ -78,8 +74,11 @@ const (
 	// MaxFrames is the block size the kernel renders per call. The worklet
 	// splits each 128-frame browser quantum into blocks of at most this size.
 	MaxFrames = 128
-	// TicksPerBeat is the kernel's transport resolution: ticks per quarter note.
+	// TicksPerBeat and TicksPerBar are the kernel's transport resolution. The
+	// GoSX worklet keeps its own bar clock from TicksPerBar, so it assumes 4/4
+	// until the descriptor carries the meter map (time-signatures phase 6).
 	TicksPerBeat = 960
+	TicksPerBar  = 3840
 )
 
 // DefaultBackend returns the layout of the Cicada kernel built by
@@ -108,9 +107,7 @@ func DefaultBackend() Backend {
 		Transport: &Transport{
 			Play: 1, Stop: 2, Seek: 3,
 			Target:       255,
-			// The first bar's length, from the meter map: 4/4 until a score
-			// can declare a meter.
-			TicksPerBeat: TicksPerBeat, TicksPerBar: int(seq.MeterMap{}.BarTicks(0)),
+			TicksPerBeat: TicksPerBeat, TicksPerBar: TicksPerBar,
 			SeekBarOffset: 4, SeekTickOffset: 8, BoundaryTickOffset: 16,
 			// OpLaunchScene (10) and OpSelectPattern (9) wait for the next bar
 			// while a replacement score is pending.
