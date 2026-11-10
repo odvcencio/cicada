@@ -41,12 +41,17 @@ classify_path() {
 	# Text that a Go //go:embed or a test fixture may read: do not treat as docs.
 	project/std/* | assets/* | testdata/* | */testdata/*)
 		echo all ;;
-	# Documentation and files no build reads. Tests that read docs are listed
-	# in the "repo-checks" job, which runs on every pull request.
-	docs/* | *.md | LICENSE | editors/* | deploy/*)
+	# Every nested go.mod and go.sum turns everything on: desktop/go.mod, for
+	# one, changes the module graph that other jobs resolve.
+	*/go.mod | */go.sum)
+		echo all ;;
+	# Module-specific rules come before the documentation rule, so a README
+	# inside them is still documentation (first rule below) and a Go file is not.
+	workstation/*.md | desktop/*.md | kernel/measure/*.md | tools/gosx-size/*.md)
 		echo none ;;
-	# internal/buildaudit (root module) reads these two files.
-	workstation/go.mod | workstation/go.sum | tools/gosx-size/*)
+	# internal/buildaudit (root module) reads tools/gosx-size/go.mod; that file
+	# and workstation/go.mod are covered by the go.mod rule above.
+	tools/gosx-size/*)
 		echo root workstation studio_browser macos_desktop ;;
 	# The workstation module imports the root module; the root module never
 	# imports it (checked by scripts/ci-changes_test.sh --graph).
@@ -54,9 +59,19 @@ classify_path() {
 		echo workstation studio_browser macos_desktop ;;
 	desktop/*)
 		echo workstation macos_desktop macos_contracts ;;
-	# Imported only by its own tests and by cmd/cicada-engine-metrics.
+	# No package imports kernel/measure except cmd/cicada-engine-metrics and its
+	# own tests, so only the root group needs it. Its testdata (for example
+	# kernel/measure/testdata/tolerances.json) turns everything on through the
+	# testdata rule above; that is deliberate, because the fixtures are inputs.
 	kernel/measure/*)
 		echo root ;;
+	# A Go file is never documentation, even under docs/, editors/ or deploy/.
+	*.go)
+		echo all ;;
+	# Documentation and files no build reads. Tests that read docs run in the
+	# "repo-checks" job, which the required M0 check includes.
+	docs/* | *.md | LICENSE | editors/* | deploy/*)
+		echo none ;;
 	*)
 		echo all ;;
 	esac

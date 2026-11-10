@@ -75,6 +75,16 @@ expect_groups "one unknown path among docs" all docs/manual/README.md mystery.bi
 expect_groups "one CI path among docs" all docs/manual/README.md .github/workflows/ci.yml
 expect_groups "one kernel file among workstation files" all workstation/panels.go kernel/graph/graph.go
 
+# --- source and module files are never docs ---
+expect_groups "Go file under docs" all docs/manual/example.go
+expect_groups "Go file under editors" all editors/vscode/tool.go
+expect_groups "Go file under deploy" all deploy/demo/main.go
+expect_groups "desktop go.mod" all desktop/go.mod
+expect_groups "desktop go.sum" all desktop/go.sum
+expect_groups "measurement testdata" all kernel/measure/testdata/tolerances.json
+expect_groups "measurement README stays docs" none kernel/measure/README.md
+expect_groups "desktop README stays docs" none desktop/README.md
+
 # --- documentation and files no job reads ---
 expect_groups "docs only" none docs/manual/README.md docs/spec/features.md
 expect_groups "root README" none README.md
@@ -89,9 +99,10 @@ expect_groups "workstation readme" none workstation/README.md
 expect_groups "Studio front end" "workstation studio_browser macos_desktop" workstation/panels.go
 expect_groups "Studio browser suite" "workstation studio_browser macos_desktop" workstation/browser/shell.test.cjs
 expect_groups "Studio ui output" "workstation studio_browser macos_desktop" workstation/ui/app.gsx
-expect_groups "workstation go.mod is read by buildaudit" "root workstation studio_browser macos_desktop" workstation/go.mod
-expect_groups "workstation go.sum" "root workstation studio_browser macos_desktop" workstation/go.sum
-expect_groups "gosx size tool" "root workstation studio_browser macos_desktop" tools/gosx-size/go.mod
+expect_groups "workstation go.mod is read by buildaudit" all workstation/go.mod
+expect_groups "workstation go.sum" all workstation/go.sum
+expect_groups "gosx size tool module file" all tools/gosx-size/go.mod
+expect_groups "gosx size tool" "root workstation studio_browser macos_desktop" tools/gosx-size/main.go
 expect_groups "desktop shell" "workstation macos_desktop macos_contracts" desktop/main.go
 expect_groups "docs plus Studio front end" "workstation studio_browser macos_desktop" docs/manual/README.md workstation/panels.go
 expect_groups "Studio front end plus desktop" "workstation studio_browser macos_desktop macos_contracts" workstation/panels.go desktop/main.go

@@ -164,12 +164,35 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Supported Node for the worklet build
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
       - name: Change classifier matches the import graph
         run: bash scripts/ci-changes_test.sh --graph
+      # host/web/assets.go embeds processor.min.js, and the size budget measures
+      # it, so a stale minified file would pass the gates on an old worklet.
+      - name: Committed minified worklets are current
+        run: |
+          set -euo pipefail
+          make build-worklets
+          git diff --exit-code -- host/web/processor.min.js host/web/processor-capture.min.js
       - name: Tests that read every tracked file, the docs, or the README
         run: |
           set -euo pipefail
-          go test -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack -run '^(TestDocumentationHygiene|TestPublicHygieneRejectsViolations|TestCommitHygiene|TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot|TestDocumentationCicadaExamples|TestDocumentationExamplesUseEditionTwo|TestDocumentationEBNFMatchesGrammarDSL|TestManualMixingExampleWorksInFreshProject|TestWritingMusicOpeningScoreIsFormatted|TestRecordKitManual.*|TestAcceptedMasteringCheckRenderAndVerify|TestParameterRangesDocIsCurrent|TestBuiltInTrackParameterCatalogMatchesTable|TestBrushDocExamplesRenderAndKeepTheirBlockIndependence|TestSamplerReportsStayOutsideRepository)$'
+          tests='TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository'
+          regex="^($(echo "$tests" | tr ' ' '|'))\$"
+          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          missing=0
+          for name in $tests; do
+            if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/repo-checks.log"; then
+              echo "No PASS line for $name; was it renamed or skipped?" >&2
+              missing=1
+            fi
+          done
+          exit "$missing"
 
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
@@ -474,40 +497,60 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, m0-core, m0-kernel, m0-wasm]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require every M0 part to pass, or to be skipped because no file it covers changed
+      # This one required check also stands for the always-on jobs. The tests
+      # that read the docs and the classifier's own tests run in repo-checks
+      # and commit-hygiene, and the M0 parts are skipped when only docs change.
+      - name: Require the always-on jobs and every M0 part to be in their expected state
         env:
+          EVENT_NAME: ${{ github.event_name }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           RUN_PARTS: ${{ needs.changes.outputs.root }}
+          HYGIENE_RESULT: ${{ needs.commit-hygiene.result }}
+          REPO_CHECKS_RESULT: ${{ needs.repo-checks.result }}
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
         run: |
           set -euo pipefail
+          # Expected result of each needed job:
+          #   changes                    success on every event
+          #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
+          #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          # Anything else (failure, cancelled, or a skip that should not happen)
+          # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
-            echo "The change classifier did not succeed ($CHANGES_RESULT); M0 cannot be judged." >&2
+            echo "changes: $CHANGES_RESULT (expected success); M0 cannot be judged." >&2
             exit 1
           fi
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            always_on=success
+          else
+            always_on=skipped
+          fi
+          if [[ "$RUN_PARTS" == true ]]; then
+            part_expected=success
+          else
+            part_expected=skipped
+          fi
           status=0
-          for part in "m0-core:$CORE_RESULT" "m0-kernel:$KERNEL_RESULT" "m0-wasm:$WASM_RESULT"; do
-            name="${part%%:*}"
-            result="${part#*:}"
-            if [[ "$RUN_PARTS" == true ]]; then
-              expected=success
-            else
-              expected=skipped
-            fi
-            if [[ "$result" != "$expected" ]]; then
-              echo "$name: $result (expected $expected; the classifier said root=$RUN_PARTS)" >&2
+          check() { # check NAME RESULT EXPECTED
+            if [[ "$2" != "$3" ]]; then
+              echo "$1: $2 (expected $3; event=$EVENT_NAME, root=$RUN_PARTS)" >&2
               status=1
             else
-              echo "$name: $result"
+              echo "$1: $2"
             fi
-          done
+          }
+          check commit-hygiene "$HYGIENE_RESULT" "$always_on"
+          check repo-checks "$REPO_CHECKS_RESULT" "$always_on"
+          check m0-core "$CORE_RESULT" "$part_expected"
+          check m0-kernel "$KERNEL_RESULT" "$part_expected"
+          check m0-wasm "$WASM_RESULT" "$part_expected"
           exit "$status"
 
   workstation:
@@ -615,7 +658,8 @@ jobs:
           name: studio-browser-build
           path: ${{ runner.temp }}/studio-browser-build.tgz
           if-no-files-found: error
-          retention-days: 1
+          # Long enough that rerunning a failed shard days later still finds it.
+          retention-days: 5
           compression-level: 0
 
   # The suites that the single "Studio browser continuity" step ran one after
@@ -1253,7 +1297,9 @@ jobs:
       # runner, so jobs queued for it run one after another, and its CPU
       # budget measurements must not share the machine with other work.
       - name: M2 browser and budgets
-        run: make test-browser test-demo-browser budget-size budget-browser
+        # build-worklets first: test-chord-wasm used to pull it in, and the browser
+        # and size gates must measure a worklet built from the current processor.js.
+        run: make build-worklets test-browser test-demo-browser budget-size budget-browser
       - name: WAM2 export and reference host
         env:
           CICADA_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/cicada-wam2-evidence

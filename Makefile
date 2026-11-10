@@ -316,7 +316,7 @@ TEST_WASM_LOG ?= build/test-wasm.log
 test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm test-wasm-audio
 
 .PHONY: test-wasm-audio
-test-wasm-audio:
+test-wasm-audio: build-kernel-wasm build-vocals-wasm
 	mkdir -p build
 	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '$(TEST_WASM_RUN)' $(if $(TEST_WASM_SKIP),-skip '$(TEST_WASM_SKIP)') -count=1 -v | tee $(TEST_WASM_LOG)"
 

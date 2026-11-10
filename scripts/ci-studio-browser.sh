@@ -15,9 +15,13 @@
 # several, one per phase) on a fresh score and runs one suite against it, as
 # the single "Studio browser continuity" step did before. Each segment writes
 # its own fixture, so segments do not depend on each other and can move
-# between shards. The "# suites:" comment under a segment names the suite
-# files (workstation/browser/NAME.test.cjs) it runs; "check" compares those
-# names with the files on disk.
+# between shards. Every suite run goes through run_suite, which records
+# NAME@CONFIG. segment_runs lists what each segment must record. "run" fails
+# at the end of a shard unless every listed run was recorded, and "check"
+# derives the suite names from segment_runs (not from comments) and compares
+# them with the files on disk. CICADA_STUDIO_DRY_RUN=1 runs a shard without
+# Studio, a browser or the network, so a test can prove that the recorded
+# runs match segment_runs.
 #
 # Shard sizes come from step times in CI run 42717367458 (seconds, in the
 # comment on each segment). When a suite grows, move segments between the
@@ -37,9 +41,71 @@ shard_segments() {
 	esac
 }
 
-# Suite files in workstation/browser that no segment runs. They did not run in
-# the single step either; this list keeps the completeness check honest about
-# them. Remove a name here when you add its suite to a segment.
+# segment_runs SEGMENT prints what the segment must record with run_suite, as
+# NAME or NAME@CONFIG. NAME is the file workstation/browser/NAME.test.cjs.
+segment_runs() {
+	case "$1" in
+	shutdown_proof) ;;
+	owner_session) echo owner-session ;;
+	continuity) echo continuity ;;
+	modulation_source) echo modulation-source ;;
+	chorus) echo chorus ;;
+	pattern_machine) echo pattern-machine ;;
+	shell) echo shell ;;
+	mixer_strips) echo mixer-strips ;;
+	columns) echo columns ;;
+	first_song) echo first-song@compose first-song@reopen ;;
+	portable_song) echo portable-song@select portable-song@reopen ;;
+	code_recovery) echo code-recovery@capture code-recovery@recover code-recovery@verify ;;
+	export_sources) echo export-sources ;;
+	export_stems) echo export-stems ;;
+	collaboration) echo collaboration ;;
+	placements) echo placements ;;
+	navigation) echo arrangement-navigation ;;
+	gestures) echo placement-gestures ;;
+	precision) echo placement-precision ;;
+	startup) echo startup ;;
+	sampler_waveform) echo sampler-waveform ;;
+	autoscroll) echo placement-autoscroll ;;
+	placement_commands) echo placement-commands ;;
+	arrangement_sources) echo arrangement-sources@edit arrangement-sources@reopen ;;
+	tempo_editor) echo tempo-editor@primary-edit tempo-editor@primary-reopen tempo-editor@secondary-edit tempo-editor@secondary-reopen ;;
+	solo_clock) echo solo-clock ;;
+	portable_midi) echo portable-midi ;;
+	midi_pickup) echo midi-pickup ;;
+	macro_controls) echo macro-controls ;;
+	midi_binding) echo midi-binding ;;
+	preset_save) echo preset-save ;;
+	observation_clock) echo observation-clock ;;
+	tempo_clock) echo tempo-clock ;;
+	library_recording) echo library-recording ;;
+	pattern_song) echo pattern-song@scene-journey pattern-song@scene-reopen pattern-song@placement-journey pattern-song@placement-reopen ;;
+	pattern_grid) echo pattern-grid@journey pattern-grid@reopen ;;
+	placement_variation) echo placement-variation@journey placement-variation@reopen ;;
+	performance_time) echo performance-time@journey performance-time@reopen ;;
+	direct_variation) echo direct-variation@journey direct-variation@reopen ;;
+	sound_context) echo sound-context@journey sound-context@reopen ;;
+	performance_pitch) echo performance-pitch@journey performance-pitch@reopen ;;
+	performance_sources) echo performance-sources@journey performance-sources@reopen ;;
+	recording_sources) echo recording-sources@journey recording-sources@reopen ;;
+	grid_sources) echo grid-sources@journey grid-sources@reopen ;;
+	print_sources)
+		echo sampler@primary-sampler producer-workflow@primary-producer print-roundtrip@primary-roundtrip print-roundtrip@primary-reopen
+		echo sampler@secondary-sampler producer-workflow@secondary-producer print-roundtrip@secondary-roundtrip print-roundtrip@secondary-reopen
+		echo producer-workflow@song-producer print-roundtrip@song-roundtrip print-roundtrip@song-reopen
+		echo producer-workflow@controls-producer automation-recall@controls-automation-recall print-roundtrip@controls-roundtrip print-roundtrip@controls-reopen
+		echo producer-workflow@tempo-producer automation-recall@tempo-automation-recall tempo-arrangement@tempo-tempo-arrangement print-roundtrip@tempo-roundtrip print-roundtrip@tempo-reopen
+		;;
+	editor) echo code-editor@buffer code-editor@project ;;
+	*) return 1 ;;
+	esac
+}
+
+# Suite files in workstation/browser that no workflow runs: NEVER RUN IN CI as
+# of 2026-11-09; wiring them in is tracked separately. The old single step did
+# not run them either. This list is an exemption, not coverage: it only keeps
+# the completeness check from failing on them. Remove a name here when you add
+# its suite to a segment.
 not_run_by_ci=(
 	amp-automation
 	dock-fit
@@ -59,7 +125,7 @@ self="${BASH_SOURCE[0]}"
 # --- check ----------------------------------------------------------------
 
 check_shards() {
-	local root problems=0 seg shard name file
+	local root problems=0 seg shard name file run
 	root="$(cd -- "$(dirname -- "$self")/.." && pwd)"
 	local -A seg_shard=() suite_shard=() suite_segments=() declared=()
 
@@ -85,11 +151,16 @@ check_shards() {
 		if ! printf '%s\n' "${defined[@]}" | grep -qx "$seg"; then complain "shard ${seg_shard[$seg]} names segment $seg, which has no function"; fi
 	done
 
-	# Every suite named by a segment sits in exactly one shard. A suite may
-	# run in several segments (several configurations) if they share a shard.
+	# Every suite in segment_runs sits in exactly one shard. A suite may run in
+	# several segments (several configurations) if they share a shard.
 	for seg in "${defined[@]}"; do
 		body="$(sed -n "/^seg_${seg}() {/,/^}/p" "$self")"
-		for name in $(sed -n 's/^[[:space:]]*# suites: *//p' <<<"$body"); do
+		if ! segment_runs "$seg" > /dev/null; then
+			complain "segment $seg has no entry in segment_runs"
+			continue
+		fi
+		for run in $(segment_runs "$seg"); do
+			name="${run%%@*}"
 			declared[$name]=1
 			shard="${seg_shard[$seg]:-}"
 			if [[ -z "$shard" ]]; then continue; fi
@@ -98,11 +169,16 @@ check_shards() {
 			fi
 			suite_shard[$name]="$shard"
 			suite_segments[$name]="${suite_segments[$name]:-} $seg"
+			# The segment body must call run_suite for it (a computed name is
+			# checked at run time by the dry run).
+			if ! grep -q "run_suite \"\{0,1\}${name}[\"@ ]" <<<"$body" && ! grep -q 'run_suite "\$print_test@' <<<"$body"; then
+				complain "segment $seg lists $name in segment_runs but never calls run_suite for it"
+			fi
 		done
-		# A suite the body runs with node --test must be declared.
-		for name in $(grep -o -- '--test "\{0,1\}workstation/browser/[a-z0-9-]*\.test\.cjs' <<<"$body" | sed 's|.*/\([a-z0-9-]*\)\.test\.cjs|\1|'); do
-			if ! sed -n 's/^[[:space:]]*# suites: *//p' <<<"$body" | tr ' ' '\n' | grep -qx "$name"; then
-				complain "segment $seg runs $name but its '# suites:' comment does not name it"
+		# Every literal run_suite call must be listed.
+		for name in $(grep -o 'run_suite "\{0,1\}[a-z0-9-]*' <<<"$body" | sed 's/run_suite "\{0,1\}//'); do
+			if ! segment_runs "$seg" | tr ' ' '\n' | sed 's/@.*//' | grep -qx "$name"; then
+				complain "segment $seg calls run_suite for $name but segment_runs does not list it"
 			fi
 		done
 	done
@@ -158,6 +234,17 @@ stop_studio() {
 	wait "$studio_pid" || true
 }
 
+ran_file=
+
+# run_suite NAME[@CONFIG] COMMAND... records the run, then runs the command.
+# The record is a file, so a run inside a pipeline (| tee) still counts.
+run_suite() {
+	echo "$1" >> "$ran_file"
+	shift
+	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then return 0; fi
+	"$@"
+}
+
 # continuity_fixture NAME writes the continuity fixture score used by several suites.
 continuity_fixture() {
 	mkdir -p "$browser_root/$1"
@@ -168,9 +255,8 @@ continuity_fixture() {
 # Times are seconds in CI run 42717367458, including Studio start-up.
 
 seg_owner_session() { # 1 s
-	# suites: owner-session
 	# Runs before NODE_OPTIONS loads the owner session helper for the others.
-	NODE_OPTIONS="$base_node_options" node --test workstation/browser/owner-session.test.cjs
+	run_suite owner-session env NODE_OPTIONS="$base_node_options" node --test workstation/browser/owner-session.test.cjs
 }
 
 seg_shutdown_proof() { # 10 s
@@ -179,74 +265,66 @@ seg_shutdown_proof() { # 10 s
 }
 
 seg_continuity() { # 8 s
-	# suites: continuity
 	continuity_fixture continuity
 	start_studio "$browser_root/continuity/continuity.cicada" build/studio-continuity-server.log /
-	make test-studio-continuity | tee build/studio-continuity-report.txt
+	run_suite continuity make test-studio-continuity | tee build/studio-continuity-report.txt
 	stop_studio
 }
 
 seg_modulation_source() { # 5 s
-	# suites: modulation-source
 	mkdir -p "$browser_root/modulation"
 	export CICADA_MODULATION_SCORE="$browser_root/modulation/main.cicada"
 	export CICADA_MODULATION_PROOF_DIR="$PWD/build/modulation-source-proof"
 	node workstation/browser/modulation-source.test.cjs --write-fixture "$CICADA_MODULATION_SCORE"
 	start_studio "$CICADA_MODULATION_SCORE" build/studio-modulation-server.log /
-	make test-studio-modulation-source | tee build/studio-modulation-report.txt
+	run_suite modulation-source make test-studio-modulation-source | tee build/studio-modulation-report.txt
 	stop_studio
 }
 
 seg_chorus() { # 4 s
-	# suites: chorus
 	mkdir -p "$browser_root/chorus"
 	export CICADA_CHORUS_SCORE="$browser_root/chorus/main.cicada"
 	export CICADA_CHORUS_PROOF_DIR="$PWD/build/chorus-proof"
 	node workstation/browser/chorus.test.cjs --write-fixture "$CICADA_CHORUS_SCORE"
 	start_studio "$CICADA_CHORUS_SCORE" build/studio-chorus-server.log /
-	make test-studio-chorus | tee build/studio-chorus-report.txt
+	run_suite chorus make test-studio-chorus | tee build/studio-chorus-report.txt
 	stop_studio
 }
 
 seg_pattern_machine() { # 5 s
-	# suites: pattern-machine
 	mkdir -p "$browser_root/pattern-machine"
 	export CICADA_MACHINE_SCORE="$browser_root/pattern-machine/main.cicada"
 	export CICADA_MACHINE_PROOF="$PWD/build/pattern-machine-proof"
 	mkdir -p "$CICADA_MACHINE_PROOF"
 	node workstation/browser/pattern-machine.test.cjs --write-fixture "$CICADA_MACHINE_SCORE"
 	start_studio "$CICADA_MACHINE_SCORE" build/studio-pattern-machine-server.log /
-	make test-studio-pattern-machine | tee build/studio-pattern-machine-report.txt
+	run_suite pattern-machine make test-studio-pattern-machine | tee build/studio-pattern-machine-report.txt
 	stop_studio
 }
 
 seg_shell() { # 44 s
-	# suites: shell
 	continuity_fixture shell
 	start_studio "$browser_root/shell/continuity.cicada" build/studio-shell-server.log /
-	make test-studio-shell | tee build/studio-shell-report.txt
+	run_suite shell make test-studio-shell | tee build/studio-shell-report.txt
 	stop_studio
 }
 
 seg_mixer_strips() { # 15 s
-	# suites: mixer-strips
 	continuity_fixture mixer-strips
 	start_studio "$browser_root/mixer-strips/continuity.cicada" build/studio-mixer-strips-server.log /
-	make test-studio-mixer-strips | tee build/studio-mixer-strips-report.txt
+	run_suite mixer-strips make test-studio-mixer-strips | tee build/studio-mixer-strips-report.txt
 	stop_studio
 }
 
 seg_columns() { # 4 s
-	# suites: columns
 	continuity_fixture columns
 	export CICADA_COLUMN_PROOF_DIR="$PWD/build/studio-column-proof"
 	start_studio "$browser_root/columns/continuity.cicada" build/studio-column-server.log /
-	make test-studio-columns | tee build/studio-column-report.txt
+	run_suite columns make test-studio-columns | tee build/studio-column-report.txt
 	stop_studio
 }
 
 seg_first_song() { # 22 s
-	# suites: first-song
 	mkdir -p "$song_root"
 	local song_cli="$PWD/build/cicada" phase
 	(cd "$song_root" && "$song_cli" new first-light)
@@ -255,14 +333,13 @@ seg_first_song() { # 22 s
 		start_studio "$song_root/first-light/main.cicada" "build/studio-song-$phase-server.log" /
 		export CICADA_SONG_REOPEN=0
 		if [[ "$phase" == reopen ]]; then export CICADA_SONG_REOPEN=1; fi
-		make test-studio-first-song | tee "build/studio-song-$phase-report.txt"
+		run_suite "first-song@$phase" make test-studio-first-song | tee "build/studio-song-$phase-report.txt"
 		stop_studio
 	done
 	unset CICADA_SONG_REOPEN
 }
 
 seg_portable_song() { # 18 s
-	# suites: portable-song
 	local portable_score phase
 	export CICADA_PORTABLE_FIXTURE="$PWD/build/studio-portable-fixture.json"
 	export CICADA_PORTABLE_PROOF_DIR="$PWD/build/studio-portable-proof"
@@ -277,122 +354,109 @@ seg_portable_song() { # 18 s
 		start_studio "$portable_score" "build/studio-portable-$phase-server.log" /
 		export CICADA_PORTABLE_REOPEN=0
 		if [[ "$phase" == reopen ]]; then export CICADA_PORTABLE_REOPEN=1; fi
-		make test-studio-portable-song | tee "build/studio-portable-$phase-report.txt"
+		run_suite "portable-song@$phase" make test-studio-portable-song | tee "build/studio-portable-$phase-report.txt"
 		stop_studio
 	done
 	unset CICADA_PORTABLE_REOPEN
 }
 
 seg_code_recovery() { # 9 s
-	# suites: code-recovery
 	local phase
 	cp -R examples/studio-project "$browser_root/code-recovery"
 	export CICADA_CODE_RECOVERY_PROOF="$PWD/build/studio-code-recovery-proof"
 	for phase in capture recover verify; do
 		start_studio "$browser_root/code-recovery/main.cicada" "build/studio-code-recovery-$phase-server.log" /
 		export CICADA_CODE_RECOVERY_PHASE="$phase"
-		make test-studio-code-recovery | tee "build/studio-code-recovery-$phase-report.txt"
+		run_suite "code-recovery@$phase" make test-studio-code-recovery | tee "build/studio-code-recovery-$phase-report.txt"
 		stop_studio
 	done
 	unset CICADA_CODE_RECOVERY_PHASE
 }
 
 seg_export_sources() { # 5 s
-	# suites: export-sources
 	mkdir -p "$song_root"
 	cp -R examples/studio-project "$song_root/export-sources"
 	export CICADA_EXPORT_PROOF_DIR="$PWD/build/studio-export-proof"
 	start_studio "$song_root/export-sources/main.cicada" build/studio-export-server.log /
-	make test-studio-export-sources | tee build/studio-export-report.txt
+	run_suite export-sources make test-studio-export-sources | tee build/studio-export-report.txt
 	stop_studio
 }
 
 seg_export_stems() { # 5 s
-	# suites: export-stems
 	mkdir -p "$song_root"
 	cp -R examples/studio-project "$song_root/export-stems"
 	export CICADA_STEMS_PROOF_DIR="$PWD/build/studio-stems-proof"
 	start_studio "$song_root/export-stems/main.cicada" build/studio-stems-server.log /
-	make test-studio-export-stems | tee build/studio-stems-report.txt
+	run_suite export-stems make test-studio-export-stems | tee build/studio-stems-report.txt
 	stop_studio
 }
 
 seg_collaboration() { # 5 s
-	# suites: collaboration
 	continuity_fixture collaboration
 	start_studio "$browser_root/collaboration/continuity.cicada" build/studio-collaboration-server.log /
-	make test-studio-collaboration | tee build/studio-collaboration-report.txt
+	run_suite collaboration make test-studio-collaboration | tee build/studio-collaboration-report.txt
 	stop_studio
 }
 
 seg_placements() { # 24 s
-	# suites: placements
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/placements.cicada"
 	export CICADA_PLACEMENT_PROOF_DIR="$PWD/build/studio-placement-proof"
 	export CICADA_PLACEMENT_BUILD="make build-workstation-release"
 	start_studio "$browser_root/placements.cicada" build/studio-placement-server.log
-	make test-studio-placements | tee build/studio-placement-report.txt
+	run_suite placements make test-studio-placements | tee build/studio-placement-report.txt
 	stop_studio
 }
 
 seg_navigation() { # 12 s
-	# suites: arrangement-navigation
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/navigation.cicada"
 	start_studio "$browser_root/navigation.cicada" build/studio-navigation-server.log
-	CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-proof" node --test workstation/browser/arrangement-navigation.test.cjs | tee build/studio-navigation-report.txt
+	run_suite arrangement-navigation env CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-proof" node --test workstation/browser/arrangement-navigation.test.cjs | tee build/studio-navigation-report.txt
 	stop_studio
 }
 
 seg_gestures() { # 21 s
-	# suites: placement-gestures
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/gestures.cicada"
 	start_studio "$browser_root/gestures.cicada" build/studio-gestures-server.log
-	CICADA_GESTURE_SCORE="$browser_root/gestures.cicada" CICADA_GESTURE_PROOF_DIR="$PWD/build/studio-gestures-proof" node --test workstation/browser/placement-gestures.test.cjs | tee build/studio-gestures-report.txt
+	run_suite placement-gestures env CICADA_GESTURE_SCORE="$browser_root/gestures.cicada" CICADA_GESTURE_PROOF_DIR="$PWD/build/studio-gestures-proof" node --test workstation/browser/placement-gestures.test.cjs | tee build/studio-gestures-report.txt
 	stop_studio
 }
 
 seg_precision() { # 30 s
-	# suites: placement-precision
 	node workstation/browser/placement-precision.test.cjs --write-fixture "$browser_root/precision.cicada"
 	start_studio "$browser_root/precision.cicada" build/studio-precision-server.log
-	CICADA_PRECISION_PROOF_DIR="$PWD/build/studio-precision-proof" node --test workstation/browser/placement-precision.test.cjs | tee build/studio-precision-report.txt
+	run_suite placement-precision env CICADA_PRECISION_PROOF_DIR="$PWD/build/studio-precision-proof" node --test workstation/browser/placement-precision.test.cjs | tee build/studio-precision-report.txt
 	stop_studio
 }
 
 seg_startup() { # 13 s
-	# suites: startup
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/startup.cicada"
 	start_studio "$browser_root/startup.cicada" build/studio-startup-server.log
-	CICADA_STARTUP_PROOF_DIR="$PWD/build/studio-startup-proof" node --test workstation/browser/startup.test.cjs | tee build/studio-startup-report.txt
+	run_suite startup env CICADA_STARTUP_PROOF_DIR="$PWD/build/studio-startup-proof" node --test workstation/browser/startup.test.cjs | tee build/studio-startup-report.txt
 	stop_studio
 }
 
 seg_sampler_waveform() { # 6 s
-	# suites: sampler-waveform
 	node workstation/browser/sampler-waveform.test.cjs --write-fixture "$browser_root/sampler-waveform.cicada"
 	start_studio "$browser_root/sampler-waveform.cicada" build/studio-sampler-waveform-server.log
-	CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-sampler-waveform-proof" node --test workstation/browser/sampler-waveform.test.cjs | tee build/studio-sampler-waveform-report.txt
+	run_suite sampler-waveform env CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-sampler-waveform-proof" node --test workstation/browser/sampler-waveform.test.cjs | tee build/studio-sampler-waveform-report.txt
 	stop_studio
 }
 
 seg_autoscroll() { # 27 s
-	# suites: placement-autoscroll
 	node workstation/browser/placement-autoscroll.test.cjs --write-fixture "$browser_root/autoscroll.cicada"
 	start_studio "$browser_root/autoscroll.cicada" build/studio-autoscroll-server.log
-	CICADA_AUTOSCROLL_PROOF_DIR="$PWD/build/studio-autoscroll-proof" node --test workstation/browser/placement-autoscroll.test.cjs | tee build/studio-autoscroll-report.txt
+	run_suite placement-autoscroll env CICADA_AUTOSCROLL_PROOF_DIR="$PWD/build/studio-autoscroll-proof" node --test workstation/browser/placement-autoscroll.test.cjs | tee build/studio-autoscroll-report.txt
 	stop_studio
 }
 
 seg_placement_commands() { # 13 s
-	# suites: placement-commands
 	node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
 	start_studio "$browser_root/placement-commands.cicada" build/studio-placement-commands-server.log
-	node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
+	run_suite placement-commands node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
 	stop_studio
 }
 
 seg_arrangement_sources() { # 22 s
-	# suites: arrangement-sources
 	local phase
 	node workstation/browser/arrangement-sources.test.cjs --write-fixture "$browser_root/arrangement-sources" > build/studio-arrangement-sources-fixture.json
 	export CICADA_ARRANGEMENT_FIXTURE="$PWD/build/studio-arrangement-sources-fixture.json"
@@ -401,14 +465,13 @@ seg_arrangement_sources() { # 22 s
 		start_studio "$browser_root/arrangement-sources/main.cicada" "build/studio-arrangement-sources-$phase-server.log"
 		export CICADA_ARRANGEMENT_REOPEN=0
 		if [[ "$phase" == reopen ]]; then export CICADA_ARRANGEMENT_REOPEN=1; fi
-		node --test workstation/browser/arrangement-sources.test.cjs | tee "build/studio-arrangement-sources-$phase-report.txt"
+		run_suite "arrangement-sources@$phase" node --test workstation/browser/arrangement-sources.test.cjs | tee "build/studio-arrangement-sources-$phase-report.txt"
 		stop_studio
 	done
 	unset CICADA_ARRANGEMENT_REOPEN
 }
 
 seg_tempo_editor() { # 43 s
-	# suites: tempo-editor
 	local tempo_layout tempo_phase tempo_args
 	for tempo_layout in primary secondary; do
 		tempo_args=()
@@ -420,7 +483,7 @@ seg_tempo_editor() { # 43 s
 			start_studio "$browser_root/tempo-$tempo_layout/main.cicada" "build/studio-tempo-$tempo_layout-$tempo_phase-server.log"
 			export CICADA_TEMPO_REOPEN=0
 			if [[ "$tempo_phase" == reopen ]]; then export CICADA_TEMPO_REOPEN=1; fi
-			node --test workstation/browser/tempo-editor.test.cjs | tee "build/studio-tempo-$tempo_layout-$tempo_phase-report.txt"
+			run_suite "tempo-editor@$tempo_layout-$tempo_phase" node --test workstation/browser/tempo-editor.test.cjs | tee "build/studio-tempo-$tempo_layout-$tempo_phase-report.txt"
 			stop_studio
 		done
 	done
@@ -428,83 +491,73 @@ seg_tempo_editor() { # 43 s
 }
 
 seg_solo_clock() { # 19 s
-	# suites: solo-clock
 	node workstation/browser/solo-clock.test.cjs --write-fixture "$browser_root/solo-clock.cicada"
 	start_studio "$browser_root/solo-clock.cicada" build/studio-solo-clock-server.log
-	CICADA_SOLO_SCORE="$browser_root/solo-clock.cicada" CICADA_SOLO_PROOF_DIR="$PWD/build/studio-solo-clock-proof" node --test workstation/browser/solo-clock.test.cjs | tee build/studio-solo-clock-report.txt
+	run_suite solo-clock env CICADA_SOLO_SCORE="$browser_root/solo-clock.cicada" CICADA_SOLO_PROOF_DIR="$PWD/build/studio-solo-clock-proof" node --test workstation/browser/solo-clock.test.cjs | tee build/studio-solo-clock-report.txt
 	stop_studio
 }
 
 seg_portable_midi() { # 5 s
-	# suites: portable-midi
 	node workstation/browser/portable-midi.test.cjs --write-fixture "$browser_root/portable-midi"
 	start_studio "$browser_root/portable-midi/main.cicada" build/studio-portable-midi-server.log
-	CICADA_PORTABLE_MIDI_SCORE="$browser_root/portable-midi/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-portable-midi-proof" node --test workstation/browser/portable-midi.test.cjs | tee build/studio-portable-midi-report.txt
+	run_suite portable-midi env CICADA_PORTABLE_MIDI_SCORE="$browser_root/portable-midi/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-portable-midi-proof" node --test workstation/browser/portable-midi.test.cjs | tee build/studio-portable-midi-report.txt
 	stop_studio
 }
 
 seg_midi_pickup() { # 2 s
-	# suites: midi-pickup
 	node workstation/browser/midi-pickup.test.cjs --write-fixture "$browser_root/midi-pickup"
 	start_studio "$browser_root/midi-pickup/main.cicada" build/studio-midi-pickup-server.log
-	node --test workstation/browser/midi-pickup.test.cjs | tee build/studio-midi-pickup-report.txt
+	run_suite midi-pickup node --test workstation/browser/midi-pickup.test.cjs | tee build/studio-midi-pickup-report.txt
 	stop_studio
 }
 
 seg_macro_controls() { # 3 s
-	# suites: macro-controls
 	node workstation/browser/macro-controls.test.cjs --write-fixture "$browser_root/macro-controls"
 	start_studio "$browser_root/macro-controls/main.cicada" build/studio-macro-controls-server.log
-	CICADA_MACRO_PROOF_DIR="$PWD/build/studio-macro-controls-proof" node --test workstation/browser/macro-controls.test.cjs | tee build/studio-macro-controls-report.txt
+	run_suite macro-controls env CICADA_MACRO_PROOF_DIR="$PWD/build/studio-macro-controls-proof" node --test workstation/browser/macro-controls.test.cjs | tee build/studio-macro-controls-report.txt
 	stop_studio
 }
 
 seg_midi_binding() { # 3 s
-	# suites: midi-binding
 	# The fixture generator is the portable-midi one, as before.
 	node workstation/browser/portable-midi.test.cjs --write-fixture "$browser_root/midi-binding"
 	start_studio "$browser_root/midi-binding/main.cicada" build/studio-midi-binding-server.log
-	CICADA_PORTABLE_MIDI_SCORE="$browser_root/midi-binding/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-midi-binding-proof" node --test workstation/browser/midi-binding.test.cjs | tee build/studio-midi-binding-report.txt
+	run_suite midi-binding env CICADA_PORTABLE_MIDI_SCORE="$browser_root/midi-binding/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-midi-binding-proof" node --test workstation/browser/midi-binding.test.cjs | tee build/studio-midi-binding-report.txt
 	stop_studio
 }
 
 seg_preset_save() { # 3 s
-	# suites: preset-save
 	node workstation/browser/preset-save.test.cjs --write-fixture "$browser_root/preset-save"
 	start_studio "$browser_root/preset-save/main.cicada" build/studio-preset-save-server.log
-	CICADA_PRESET_SCORE="$browser_root/preset-save/main.cicada" CICADA_PRESET_PROOF_DIR="$PWD/build/studio-preset-save-proof" node --test workstation/browser/preset-save.test.cjs | tee build/studio-preset-save-report.txt
+	run_suite preset-save env CICADA_PRESET_SCORE="$browser_root/preset-save/main.cicada" CICADA_PRESET_PROOF_DIR="$PWD/build/studio-preset-save-proof" node --test workstation/browser/preset-save.test.cjs | tee build/studio-preset-save-report.txt
 	stop_studio
 }
 
 seg_observation_clock() { # 4 s
-	# suites: observation-clock
 	local observation_score
 	go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-observation-clock-fixture.json
 	export CICADA_OBSERVATION_FIXTURE="$PWD/build/studio-observation-clock-fixture.json"
 	observation_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_OBSERVATION_FIXTURE")"
 	start_studio "$observation_score" build/studio-observation-clock-server.log
-	CICADA_OBSERVATION_PROOF_DIR="$PWD/build/studio-observation-clock-proof" node --test workstation/browser/observation-clock.test.cjs | tee build/studio-observation-clock-report.txt
+	run_suite observation-clock env CICADA_OBSERVATION_PROOF_DIR="$PWD/build/studio-observation-clock-proof" node --test workstation/browser/observation-clock.test.cjs | tee build/studio-observation-clock-report.txt
 	stop_studio
 }
 
 seg_tempo_clock() { # 7 s
-	# suites: tempo-clock
 	node workstation/browser/tempo-clock.test.cjs --write-fixture "$browser_root/tempo-clock.cicada"
 	start_studio "$browser_root/tempo-clock.cicada" build/studio-tempo-clock-server.log
-	CICADA_TEMPO_CLOCK_PROOF_DIR="$PWD/build/studio-tempo-clock-proof" node --test workstation/browser/tempo-clock.test.cjs | tee build/studio-tempo-clock-report.txt
+	run_suite tempo-clock env CICADA_TEMPO_CLOCK_PROOF_DIR="$PWD/build/studio-tempo-clock-proof" node --test workstation/browser/tempo-clock.test.cjs | tee build/studio-tempo-clock-report.txt
 	stop_studio
 }
 
 seg_library_recording() { # 5 s
-	# suites: library-recording
 	node workstation/browser/library-recording.test.cjs --write-fixture "$browser_root/library-recording.cicada"
 	start_studio "$browser_root/library-recording.cicada" build/studio-library-recording-server.log
-	CICADA_LIBRARY_RECORDING_PROOF_DIR="$PWD/build/studio-library-recording-proof" node --test workstation/browser/library-recording.test.cjs | tee build/studio-library-recording-report.txt
+	run_suite library-recording env CICADA_LIBRARY_RECORDING_PROOF_DIR="$PWD/build/studio-library-recording-proof" node --test workstation/browser/library-recording.test.cjs | tee build/studio-library-recording-report.txt
 	stop_studio
 }
 
 seg_pattern_song() { # 132 s
-	# suites: pattern-song
 	local song_layout song_phase song_args
 	for song_layout in scene placement; do
 		song_args=()
@@ -515,14 +568,13 @@ seg_pattern_song() { # 132 s
 			CICADA_PATTERN_SONG_REOPEN=0
 			if [[ "$song_phase" == reopen ]]; then CICADA_PATTERN_SONG_REOPEN=1; fi
 			export CICADA_PATTERN_SONG_REOPEN
-			CICADA_PATTERN_SONG_PROOF_DIR="$PWD/build/studio-pattern-song-$song_layout-proof" node --test workstation/browser/pattern-song.test.cjs | tee "build/studio-pattern-song-$song_layout-$song_phase-report.txt"
+			run_suite "pattern-song@$song_layout-$song_phase" env CICADA_PATTERN_SONG_PROOF_DIR="$PWD/build/studio-pattern-song-$song_layout-proof" node --test workstation/browser/pattern-song.test.cjs | tee "build/studio-pattern-song-$song_layout-$song_phase-report.txt"
 			stop_studio
 		done
 	done
 }
 
 seg_pattern_grid() { # 65 s
-	# suites: pattern-grid
 	local grid_phase
 	node workstation/browser/pattern-grid.test.cjs --write-fixture "$browser_root/pattern-grid.cicada"
 	for grid_phase in journey reopen; do
@@ -530,13 +582,12 @@ seg_pattern_grid() { # 65 s
 		CICADA_PATTERN_GRID_REOPEN=0
 		if [[ "$grid_phase" == reopen ]]; then CICADA_PATTERN_GRID_REOPEN=1; fi
 		export CICADA_PATTERN_GRID_REOPEN
-		CICADA_PATTERN_GRID_PROOF_DIR="$PWD/build/studio-pattern-grid-proof" node --test workstation/browser/pattern-grid.test.cjs | tee "build/studio-pattern-grid-$grid_phase-report.txt"
+		run_suite "pattern-grid@$grid_phase" env CICADA_PATTERN_GRID_PROOF_DIR="$PWD/build/studio-pattern-grid-proof" node --test workstation/browser/pattern-grid.test.cjs | tee "build/studio-pattern-grid-$grid_phase-report.txt"
 		stop_studio
 	done
 }
 
 seg_placement_variation() { # 27 s
-	# suites: placement-variation
 	local variation_phase
 	go -C workstation run ./browser/testdata/placement-variation "$browser_root/placement-variation" > build/studio-placement-variation-fixture.json
 	for variation_phase in journey reopen; do
@@ -544,13 +595,12 @@ seg_placement_variation() { # 27 s
 		CICADA_VARIATION_REOPEN=0
 		if [[ "$variation_phase" == reopen ]]; then CICADA_VARIATION_REOPEN=1; fi
 		export CICADA_VARIATION_REOPEN
-		CICADA_VARIATION_PROOF_DIR="$PWD/build/studio-placement-variation-proof" node --test workstation/browser/placement-variation.test.cjs | tee "build/studio-placement-variation-$variation_phase-report.txt"
+		run_suite "placement-variation@$variation_phase" env CICADA_VARIATION_PROOF_DIR="$PWD/build/studio-placement-variation-proof" node --test workstation/browser/placement-variation.test.cjs | tee "build/studio-placement-variation-$variation_phase-report.txt"
 		stop_studio
 	done
 }
 
 seg_performance_time() { # 19 s
-	# suites: performance-time
 	local time_phase
 	node workstation/browser/performance-time.test.cjs --write-fixture "$browser_root/performance-time" > build/studio-performance-time-fixture.json
 	for time_phase in journey reopen; do
@@ -558,7 +608,7 @@ seg_performance_time() { # 19 s
 		CICADA_TIME_REOPEN=0
 		if [[ "$time_phase" == reopen ]]; then CICADA_TIME_REOPEN=1; fi
 		export CICADA_TIME_REOPEN
-		CICADA_TIME_PROOF_DIR="$PWD/build/studio-performance-time-proof" node --test workstation/browser/performance-time.test.cjs | tee "build/studio-performance-time-$time_phase-report.txt"
+		run_suite "performance-time@$time_phase" env CICADA_TIME_PROOF_DIR="$PWD/build/studio-performance-time-proof" node --test workstation/browser/performance-time.test.cjs | tee "build/studio-performance-time-$time_phase-report.txt"
 		if [[ "$time_phase" == journey ]]; then stop_studio; fi
 	done
 	python3 workstation/browser/performance-time-audio.py --cicada build/cicada --proof build/studio-performance-time-proof
@@ -566,7 +616,6 @@ seg_performance_time() { # 19 s
 }
 
 seg_direct_variation() { # 40 s
-	# suites: direct-variation
 	local direct_phase
 	go -C workstation run ./browser/testdata/direct-variation "$browser_root/direct-variation" > build/studio-direct-variation-fixture.json
 	for direct_phase in journey reopen; do
@@ -574,7 +623,7 @@ seg_direct_variation() { # 40 s
 		CICADA_DIRECT_REOPEN=0
 		if [[ "$direct_phase" == reopen ]]; then CICADA_DIRECT_REOPEN=1; fi
 		export CICADA_DIRECT_REOPEN
-		CICADA_DIRECT_PROOF_DIR="$PWD/build/studio-direct-variation-proof" node --test workstation/browser/direct-variation.test.cjs | tee "build/studio-direct-variation-$direct_phase-report.txt"
+		run_suite "direct-variation@$direct_phase" env CICADA_DIRECT_PROOF_DIR="$PWD/build/studio-direct-variation-proof" node --test workstation/browser/direct-variation.test.cjs | tee "build/studio-direct-variation-$direct_phase-report.txt"
 		if [[ "$direct_phase" == journey ]]; then stop_studio; fi
 	done
 	python3 workstation/browser/direct-variation-audio.py --cicada build/cicada --proof build/studio-direct-variation-proof --fixture build/studio-direct-variation-fixture.json
@@ -582,7 +631,6 @@ seg_direct_variation() { # 40 s
 }
 
 seg_sound_context() { # 13 s
-	# suites: sound-context
 	local context_phase
 	node workstation/browser/sound-context.test.cjs --write-fixture "$browser_root/sound-context" > build/studio-sound-context-fixture.json
 	for context_phase in journey reopen; do
@@ -590,13 +638,12 @@ seg_sound_context() { # 13 s
 		CICADA_CONTEXT_REOPEN=0
 		if [[ "$context_phase" == reopen ]]; then CICADA_CONTEXT_REOPEN=1; fi
 		export CICADA_CONTEXT_REOPEN
-		CICADA_CONTEXT_PROOF_DIR="$PWD/build/studio-sound-context-proof" node --test workstation/browser/sound-context.test.cjs | tee "build/studio-sound-context-$context_phase-report.txt"
+		run_suite "sound-context@$context_phase" env CICADA_CONTEXT_PROOF_DIR="$PWD/build/studio-sound-context-proof" node --test workstation/browser/sound-context.test.cjs | tee "build/studio-sound-context-$context_phase-report.txt"
 		stop_studio
 	done
 }
 
 seg_performance_pitch() { # 20 s
-	# suites: performance-pitch
 	local pitch_phase
 	node workstation/browser/performance-pitch.test.cjs --write-fixture "$browser_root/performance-pitch" > build/studio-performance-pitch-fixture.json
 	for pitch_phase in journey reopen; do
@@ -604,7 +651,7 @@ seg_performance_pitch() { # 20 s
 		CICADA_PITCH_REOPEN=0
 		if [[ "$pitch_phase" == reopen ]]; then CICADA_PITCH_REOPEN=1; fi
 		export CICADA_PITCH_REOPEN
-		CICADA_PITCH_PROOF_DIR="$PWD/build/studio-performance-pitch-proof" node --test workstation/browser/performance-pitch.test.cjs | tee "build/studio-performance-pitch-$pitch_phase-report.txt"
+		run_suite "performance-pitch@$pitch_phase" env CICADA_PITCH_PROOF_DIR="$PWD/build/studio-performance-pitch-proof" node --test workstation/browser/performance-pitch.test.cjs | tee "build/studio-performance-pitch-$pitch_phase-report.txt"
 		if [[ "$pitch_phase" == journey ]]; then stop_studio; fi
 	done
 	python3 workstation/browser/performance-pitch-audio.py --cicada build/cicada --proof build/studio-performance-pitch-proof
@@ -612,7 +659,6 @@ seg_performance_pitch() { # 20 s
 }
 
 seg_performance_sources() { # 17 s
-	# suites: performance-sources
 	local sources_phase
 	node workstation/browser/performance-sources.test.cjs --write-fixture "$browser_root/performance-sources" > build/studio-performance-sources-fixture.json
 	export CICADA_SOURCES_FIXTURE="$PWD/build/studio-performance-sources-fixture.json"
@@ -621,7 +667,7 @@ seg_performance_sources() { # 17 s
 		CICADA_SOURCES_REOPEN=0
 		if [[ "$sources_phase" == reopen ]]; then CICADA_SOURCES_REOPEN=1; fi
 		export CICADA_SOURCES_REOPEN
-		CICADA_SOURCES_PROOF_DIR="$PWD/build/studio-performance-sources-proof" node --test workstation/browser/performance-sources.test.cjs | tee "build/studio-performance-sources-$sources_phase-report.txt"
+		run_suite "performance-sources@$sources_phase" env CICADA_SOURCES_PROOF_DIR="$PWD/build/studio-performance-sources-proof" node --test workstation/browser/performance-sources.test.cjs | tee "build/studio-performance-sources-$sources_phase-report.txt"
 		if [[ "$sources_phase" == journey ]]; then stop_studio; fi
 	done
 	python3 workstation/browser/performance-sources-audio.py --cicada build/cicada --proof build/studio-performance-sources-proof
@@ -629,7 +675,6 @@ seg_performance_sources() { # 17 s
 }
 
 seg_recording_sources() { # 36 s
-	# suites: recording-sources
 	local record_sources_phase
 	node workstation/browser/recording-sources.test.cjs --write-fixture "$browser_root/recording-sources" > build/studio-recording-sources-fixture.json
 	export CICADA_RECORD_SOURCES_FIXTURE="$PWD/build/studio-recording-sources-fixture.json"
@@ -638,7 +683,7 @@ seg_recording_sources() { # 36 s
 		CICADA_RECORD_SOURCES_REOPEN=0
 		if [[ "$record_sources_phase" == reopen ]]; then CICADA_RECORD_SOURCES_REOPEN=1; fi
 		export CICADA_RECORD_SOURCES_REOPEN
-		CICADA_RECORD_SOURCES_PROOF_DIR="$PWD/build/studio-recording-sources-proof" node --test workstation/browser/recording-sources.test.cjs | tee "build/studio-recording-sources-$record_sources_phase-report.txt"
+		run_suite "recording-sources@$record_sources_phase" env CICADA_RECORD_SOURCES_PROOF_DIR="$PWD/build/studio-recording-sources-proof" node --test workstation/browser/recording-sources.test.cjs | tee "build/studio-recording-sources-$record_sources_phase-report.txt"
 		if [[ "$record_sources_phase" == journey ]]; then stop_studio; fi
 	done
 	python3 workstation/browser/recording-sources-audio.py --cicada build/cicada --proof build/studio-recording-sources-proof
@@ -646,7 +691,6 @@ seg_recording_sources() { # 36 s
 }
 
 seg_grid_sources() { # 63 s
-	# suites: grid-sources
 	local grid_sources_phase
 	node workstation/browser/grid-sources.test.cjs --write-fixture "$browser_root/grid-sources" > build/studio-grid-sources-fixture.json
 	export CICADA_GRID_SOURCES_FIXTURE="$PWD/build/studio-grid-sources-fixture.json"
@@ -655,7 +699,7 @@ seg_grid_sources() { # 63 s
 		CICADA_GRID_SOURCES_REOPEN=0
 		if [[ "$grid_sources_phase" == reopen ]]; then CICADA_GRID_SOURCES_REOPEN=1; fi
 		export CICADA_GRID_SOURCES_REOPEN
-		CICADA_GRID_SOURCES_PROOF_DIR="$PWD/build/studio-grid-sources-proof" node --test workstation/browser/grid-sources.test.cjs | tee "build/studio-grid-sources-$grid_sources_phase-report.txt"
+		run_suite "grid-sources@$grid_sources_phase" env CICADA_GRID_SOURCES_PROOF_DIR="$PWD/build/studio-grid-sources-proof" node --test workstation/browser/grid-sources.test.cjs | tee "build/studio-grid-sources-$grid_sources_phase-report.txt"
 		if [[ "$grid_sources_phase" == journey ]]; then stop_studio; fi
 	done
 	python3 workstation/browser/grid-sources-audio.py --cicada build/cicada --proof build/studio-grid-sources-proof
@@ -663,7 +707,6 @@ seg_grid_sources() { # 63 s
 }
 
 seg_print_sources() { # 162 s
-	# suites: sampler producer-workflow print-roundtrip automation-recall tempo-arrangement
 	local print_layout print_args print_phases print_phase print_test
 	for print_layout in primary secondary song controls tempo; do
 		print_args=()
@@ -701,7 +744,7 @@ seg_print_sources() { # 162 s
 			if [[ "$print_phase" == producer ]]; then print_test=producer-workflow; fi
 			if [[ "$print_phase" == roundtrip || "$print_phase" == reopen ]]; then print_test=print-roundtrip; fi
 			if [[ "$print_phase" == reopen ]]; then export CICADA_PRINT_REOPEN=1; fi
-			node --test "workstation/browser/$print_test.test.cjs" | tee "build/studio-print-$print_layout-$print_phase-report.txt"
+			run_suite "$print_test@$print_layout-$print_phase" node --test "workstation/browser/$print_test.test.cjs" | tee "build/studio-print-$print_layout-$print_phase-report.txt"
 			stop_studio
 		done
 		unset CICADA_SAMPLER_ARRANGEMENT_SOURCE CICADA_PRODUCER_ARRANGEMENT_SOURCE CICADA_PRINT_REOPEN
@@ -709,7 +752,6 @@ seg_print_sources() { # 162 s
 }
 
 seg_editor() { # 22 s
-	# suites: code-editor
 	local editor_mode editor_score
 	for editor_mode in buffer project; do
 		if [[ "$editor_mode" == project ]]; then
@@ -723,7 +765,7 @@ seg_editor() { # 22 s
 			export CICADA_EDITOR_PROJECT=0
 		fi
 		start_studio "$editor_score" "build/studio-editor-$editor_mode-server.log"
-		node --test workstation/browser/code-editor.test.cjs | tee "build/studio-editor-$editor_mode-report.txt"
+		run_suite "code-editor@$editor_mode" node --test workstation/browser/code-editor.test.cjs | tee "build/studio-editor-$editor_mode-report.txt"
 		stop_studio
 	done
 }
@@ -731,34 +773,62 @@ seg_editor() { # 22 s
 # --- run ------------------------------------------------------------------
 
 run_shard() {
-	local shard="$1" seg
+	local shard="$1" seg run missing=0
 	segments="$(shard_segments "$shard")"
 
-	browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$shard"
+	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then
+		# No Studio, browser, network or toolchain: stub what segments call.
+		browser_root="${CICADA_STUDIO_DRY_ROOT:?set CICADA_STUDIO_DRY_ROOT}"
+		base_node_options=
+		studio_port=0
+		export CICADA_STUDIO_URL=http://127.0.0.1:0
+		node() { return 0; }
+		go() { return 0; }
+		python3() { return 0; }
+		start_studio() { studio_pid=0; }
+		stop_studio() { return 0; }
+		continuity_fixture() { mkdir -p "$browser_root/$1"; }
+	else
+		browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$shard"
+		mkdir -p "$browser_root" build
+		npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
+		export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
+		local tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
+		export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+		if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
+			mkdir -p "$tool_root"
+			curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+			unzip -q "$browser_root/chrome.zip" -d "$browser_root"
+			mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
+		fi
+		base_node_options="${NODE_OPTIONS:-}"
+		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
+		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
+		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
+		trap 'kill "${studio_pid:-}" 2>/dev/null || true; wait "${studio_pid:-}" 2>/dev/null || true' EXIT
+	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"
-	npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
-	export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
-	local tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
-	export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
-	if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
-		mkdir -p "$tool_root"
-		curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
-		unzip -q "$browser_root/chrome.zip" -d "$browser_root"
-		mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
-	fi
-	base_node_options="${NODE_OPTIONS:-}"
-	export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
-
-	studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
-	export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-	trap 'kill "${studio_pid:-}" 2>/dev/null || true; wait "${studio_pid:-}" 2>/dev/null || true' EXIT
+	ran_file="$browser_root/ran-suites.txt"
+	: > "$ran_file"
 
 	for seg in $segments; do
 		echo "::group::segment $seg"
 		"seg_$seg"
 		echo "::endgroup::"
 	done
+
+	# A suite whose command was deleted or skipped leaves no record: fail.
+	for seg in $segments; do
+		for run in $(segment_runs "$seg"); do
+			if ! grep -qxF -- "$run" "$ran_file"; then
+				echo "FAIL: shard $shard did not run $run (segment $seg)" >&2
+				missing=1
+			fi
+		done
+	done
+	if [[ "$missing" == 1 ]]; then return 1; fi
+	echo "shard $shard ran all $(wc -l < "$ran_file") recorded suite runs"
 }
 
 case "${1:-}" in
