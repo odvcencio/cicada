@@ -62,8 +62,14 @@ type biquad struct {
 	y1, y2     float64
 }
 
+// The meter rounds every product with an explicit conversion before it is
+// added, so arm64 cannot fuse a multiply-add in its per-sample arithmetic; an
+// export's loudness search depends on these readings. That does not make every
+// reading the same on every target: the true-peak coefficients pass through
+// math.Sin and the LUFS conversion through math.Log10, whose last bit can
+// differ between architectures. Making those deterministic is follow-up work.
 func (f *biquad) process(x float64) float64 {
-	y := f.b0*x + f.b1*f.x1 + f.b2*f.x2 - f.a1*f.y1 - f.a2*f.y2
+	y := float64(f.b0*x) + float64(f.b1*f.x1) + float64(f.b2*f.x2) - float64(f.a1*f.y1) - float64(f.a2*f.y2)
 	f.x2, f.x1 = f.x1, x
 	f.y2, f.y1 = f.y1, y
 	return y
@@ -164,17 +170,33 @@ func resampleBiquad(b, a [3]float64, sourceRate, rate int) ([3]float64, [3]float
 	d2 := (a[0] - a[1] + a[2]) / (4 * src * src)
 	f := float64(rate)
 	bn := [3]float64{
-		n2*4*f*f + n1*2*f + n0,
-		-n2*8*f*f + 2*n0,
-		n2*4*f*f - n1*2*f + n0,
+		float64(n2*4*f*f) + float64(n1*2*f) + n0,
+		float64(-n2*8*f*f) + float64(2*n0),
+		float64(n2*4*f*f) - float64(n1*2*f) + n0,
 	}
 	dn := [3]float64{
-		d2*4*f*f + d1*2*f + d0,
-		-d2*8*f*f + 2*d0,
-		d2*4*f*f - d1*2*f + d0,
+		float64(d2*4*f*f) + float64(d1*2*f) + d0,
+		float64(-d2*8*f*f) + float64(2*d0),
+		float64(d2*4*f*f) - float64(d1*2*f) + d0,
 	}
 	return [3]float64{bn[0] / dn[0], bn[1] / dn[0], bn[2] / dn[0]},
 		[3]float64{1, dn[1] / dn[0], dn[2] / dn[0]}
+}
+
+// truePeakWindow is the Blackman window of the true-peak interpolator,
+// 0.42 - 0.5*cos(2*pi*n/23) + 0.08*cos(4*pi*n/23) for tap n, stored as the
+// exact values that formula gives on amd64. The standard library's math.Cos is
+// compiled with fused multiply-adds on arm64 and returns a different last bit
+// for cos(8*pi/23), which moved the window at n = 4, so computing the window at
+// run time made true-peak readings depend on the target.
+// TestTruePeakWindowIsBlackman checks the table.
+var truePeakWindow = [truePeakTaps]float64{
+	-0x1p-56, 0x1.c3dd5f54e907p-08, 0x1.e4e486f3d0364p-06, 0x1.2c16e8badc7aep-04,
+	0x1.2691f1e704ff2p-03, 0x1.f58b8e7dc9194p-03, 0x1.7fdcf5a00e655p-02, 0x1.0cfefce30eb1cp-01,
+	0x1.5cf4182730ce8p-01, 0x1.a5f4a564e93fep-01, 0x1.ddcdb03497adcp-01, 0x1.fc18c0f4bd1fp-01,
+	0x1.fc18c0f4bd1fp-01, 0x1.ddcdb03497adep-01, 0x1.a5f4a564e93fdp-01, 0x1.5cf4182730ce9p-01,
+	0x1.0cfefce30eb1dp-01, 0x1.7fdcf5a00e65ap-02, 0x1.f58b8e7dc919p-03, 0x1.2691f1e704feep-03,
+	0x1.2c16e8badc7bdp-04, 0x1.e4e486f3d037ep-06, 0x1.c3dd5f54e907p-08, -0x1p-56,
 }
 
 func (m *Meter) designTruePeakFilter() {
@@ -189,9 +211,7 @@ func (m *Meter) designTruePeakFilter() {
 				angle := math.Pi * x
 				sinc = math.Sin(angle) / angle
 			}
-			position := float64(tap) / float64(truePeakTaps-1)
-			window := 0.42 - 0.5*math.Cos(2*math.Pi*position) + 0.08*math.Cos(4*math.Pi*position)
-			coefficient := sinc * window
+			coefficient := float64(sinc * truePeakWindow[tap])
 			m.truePeakCoeff[phase][tap] = coefficient
 			sum += coefficient
 		}
@@ -239,10 +259,10 @@ func (m *Meter) ProcessSample(left, right float32) bool {
 	if absR > m.samplePeak {
 		m.samplePeak = absR
 	}
-	m.samplePowerSum += l*l + r*r
+	m.samplePowerSum += float64(l*l) + float64(r*r)
 	yL := m.filterRLBL.process(m.filterShelfL.process(l))
 	yR := m.filterRLBR.process(m.filterShelfR.process(r))
-	energy := yL*yL + yR*yR
+	energy := float64(yL*yL) + float64(yR*yR)
 	index := m.windowWrite
 	oldMoment, oldShort := 0.0, 0.0
 	if m.frames >= uint64(m.momentFrames) {
@@ -372,8 +392,8 @@ func (m *Meter) processTruePeak(left, right float64) {
 					}
 					ringIndex := int(sampleIndex % truePeakRingSize)
 					coefficient := m.truePeakCoeff[phase][tap]
-					peakL += m.truePeakRingL[ringIndex] * coefficient
-					peakR += m.truePeakRingR[ringIndex] * coefficient
+					peakL += float64(m.truePeakRingL[ringIndex] * coefficient)
+					peakR += float64(m.truePeakRingR[ringIndex] * coefficient)
 				}
 			}
 			peakL, peakR = math.Abs(peakL), math.Abs(peakR)
@@ -484,7 +504,12 @@ func histogramIndex(level float64) int {
 }
 
 func firstBinAtLeast(level float64) int {
-	index := int(math.Ceil((level-histMin)*histResolution - 0.5))
+	// A fused multiply-subtract would give the same bin. Where the product is
+	// at least 1, 0.5 is a whole multiple of its float64 spacing, so rounding
+	// once or twice lands on the same value; below that the bin clamps to 0
+	// either way. The conversion only keeps the rule that every product is
+	// rounded; no test can tell the two apart.
+	index := int(math.Ceil(float64((level-histMin)*histResolution) - 0.5))
 	if index < 0 {
 		return 0
 	}
@@ -498,7 +523,7 @@ func loudnessFromPower(power float64) float64 {
 	if power <= 0 {
 		return math.Inf(-1)
 	}
-	return -0.691 + 10*math.Log10(power)
+	return -0.691 + float64(10*math.Log10(power))
 }
 
 func amplitudeDB(amplitude float64) float64 {
