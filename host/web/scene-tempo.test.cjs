@@ -15,7 +15,7 @@ const frames = (from, to) => {
   return from >= bar ? Math.ceil((to - from) * 60000 * rate / (60000 * 960)) : at(to) - at(from);
 };
 
-async function harness(asset, framesFn = frames) {
+async function harness(asset, framesFn = frames, nextBar = tick => (Math.floor(tick / bar) + 1) * bar) {
   let Type, port;
   const messages = [], instances = [];
   instances.counts = [];
@@ -32,6 +32,7 @@ async function harness(asset, framesFn = frames) {
         gosx_audio_out_ptr: () => 49152, gosx_audio_msg_drain: () => 0,
         gosx_audio_cmd_commit: count => instance.commits.push(new Uint8Array(memory.buffer, 8192, count * 24).slice()),
         gosx_audio_tick_frames: (from, to) => framesFn(from, to),
+        gosx_audio_next_bar: tick => nextBar(tick),
         gosx_audio_render(count) {
           instances.counts.push(count);
           if (instance === instances[1] && !instance.rendered) instances.swapAt = instances[0].rendered;
@@ -99,5 +100,26 @@ for (const asset of ['processor.js', 'processor.min.js', 'processor-capture.min.
     assert.ok(h.instances.counts.every(n => Number.isInteger(n) && n > 0 && n <= 128), `render lengths ${h.instances.counts.filter(n => !(n > 0 && n <= 128))}`);
     const swap = h.instances[1].commits.find(bytes => bytes[0] === 3 && bytes[24] === 1);
     assert.ok(swap && swap[4] === 1, 'the new engine seeks to bar 2');
+  });
+}
+
+// The kernel's meter map places bar lines; the worklet keeps no bar length. A
+// kernel whose bars last 7680 ticks (8/4) at 120 BPM ends its first bar at frame
+// 192000, so a staged edit swaps there and seeks to tick 7680, not to 3840.
+for (const asset of ['processor.js', 'processor.min.js', 'processor-capture.min.js']) {
+  test(`${asset}: a live edit swaps on the kernel's bar line`, async () => {
+    const long = 2 * bar;
+    const h = await harness(asset, (from, to) => Math.ceil((to - from) * 60000 * rate / (120000 * 960)), tick => (Math.floor(tick / long) + 1) * long);
+    const command = op => { const bytes = new Uint8Array(24); bytes[0] = op; bytes[1] = 255; h.port().onmessage({ data: { t: 'c', bytes } }); };
+    command(1);
+    const quantum = [[new Float32Array(128), new Float32Array(128)]];
+    const run = count => { for (let i = 0; i < count; i += 128) h.instance.process([], quantum); };
+    run(1280);
+    h.port().onmessage({ data: { t: 'i', i: h.image, r: 'edit' } });
+    while (!h.messages.some(m => m.t === 't')) { run(128); await new Promise(resolve => setImmediate(resolve)); }
+    run(200000 - h.instances[0].rendered);
+    assert.equal(h.instances.swapAt, 192000, `the edit landed after ${h.instances.swapAt} frames, want 192000`);
+    const swap = h.instances[1].commits.find(bytes => bytes[0] === 3 && bytes[24] === 1);
+    assert.ok(swap && swap[4] === 2 && swap[8] === 0, 'the new engine seeks to tick 7680');
   });
 }

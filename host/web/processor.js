@@ -7,7 +7,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     const MESSAGE_BYTES = 512 * 16;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
-    let capture, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
+    let capture, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick, stallNext = false, memoryPeak = 0;
     const instances = [];
     let memoryCount = 0;
     const memoryBytes = () => {
@@ -84,6 +84,8 @@ class CicadaKernel extends AudioWorkletProcessor {
         };
       } catch (error) { instances[slot] = null; throw error; }
     };
+    // The kernel's meter map places every bar line; the worklet keeps no bar length.
+    const toBar = tick => nextBarTick = active.x.next_bar(tick);
     // Shared fixed little-endian tick writer: no temporary view or allocation.
     const putTick = (bytes, at, tick) => {
       for (let j = 0; j < 8; j++) { bytes[at + j] = tick; tick = Math.floor(tick / 256); }
@@ -103,7 +105,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       bpm = next.b;
       engineSample = anchorSample = 0;
       anchorTick = tick;
-      nextBarTick = tick + 3840;
+      toBar(tick);
       if (tick) fadeLeft = fadeTotal;
       flush();
     };
@@ -179,7 +181,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (seekTick !== null) {
         anchorSample = engineSample;
         anchorTick = seekTick;
-        nextBarTick = (Math.floor(seekTick / 3840) + 1) * 3840;
+        toBar(seekTick);
         if (starts) { release(previous); previous = null; fadeLeft = fadeTotal; }
       }
       if (starts) { playing = true; post({ t: 's', p: true }); }
@@ -188,7 +190,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     // The kernel owns the tempo map, so a scene tempo moves the bar boundary.
     const sampleAtTick = tick => anchorSample + active.x.tick_frames(anchorTick, tick);
     const swapAtBoundary = (tick) => {
-      if (!pending?.x) { nextBarTick += 3840; return; }
+      if (!pending?.x) return void toBar(nextBarTick);
       const next = pending;
       swapView.setUint32(4, tick / 3840, true);
       next.d.set(swap, 0);
@@ -245,7 +247,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           // A tempo increase can put the kernel's bar line behind the playhead.
           while (engineSample >= boundary) {
             if (pending) swapAtBoundary(nextBarTick);
-            else nextBarTick += 3840;
+            else toBar(nextBarTick);
             boundary = sampleAtTick(nextBarTick);
           }
           const frames = Math.min(128, left.length - offset, pending ? boundary - engineSample : left.length - offset);
@@ -268,7 +270,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           engineSample += frames;
           offset += frames;
           if (pending && engineSample >= boundary) swapAtBoundary(nextBarTick);
-          else if (!pending && engineSample >= boundary) nextBarTick += 3840;
+          else if (!pending && engineSample >= boundary) toBar(nextBarTick);
         }
         if (!(callbacks & 7) && ready) {
           if (drain(active, true) || previous && drain(previous, false)) { release(active); release(previous); active = previous = null; playing = false; post(stoppedMessage); left.fill(0); right.fill(0); }
@@ -305,6 +307,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     create(o.i).then(next => {
       active = next;
       bpm = next.b;
+      toBar(0);
       post({ t: 'r', r: o.r, mem: next.x.memory.buffer.byteLength, c: preciseClock, p: next.p });
     }, error => {
       post({ t: 'e', e: String(error) });
