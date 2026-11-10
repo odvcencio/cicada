@@ -66,6 +66,22 @@ async function sharedBrowser() {
 
 test.after(async () => { await shared?.browser.close(); }, {timeout: 15000});
 
+// A second client of the same Studio: another browser context with the
+// owner's session, which edits the score while the suite's page is stale.
+let otherPage;
+async function otherClient() {
+  const {browser, context} = await sharedBrowser();
+  const {base} = await studio();
+  if (!otherPage) {
+    const other = await browser.newContext({viewport: {width: 1440, height: 900}, storageState: await context.storageState()});
+    otherPage = await other.newPage();
+    otherPage.setDefaultTimeout(15_000);
+  }
+  await otherPage.goto(new URL('/studio?tab=arrange&dock=clip&pattern=continuity&step=1', base).href);
+  await otherPage.locator('#studio-shell[data-shell-edits="ready"]').waitFor({timeout: 30_000});
+  return otherPage;
+}
+
 // One page for the whole suite: every step continues from the last one, and
 // none of them may navigate.
 let session;
@@ -83,13 +99,50 @@ async function studio() {
     window.__studioEdits = {navigations: 0, document: crypto.randomUUID()};
     document.addEventListener('gosx:navigate', () => { window.__studioEdits.navigations++; });
   });
-  const errors = [], posts = [], reads = [];
+  const errors = [], posts = [], reads = [], sentPosts = [];
   let documents = 0, inFlight = 0, maxInFlight = 0;
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => {
     const target = new URL(request.url());
     if (request.resourceType() === 'document') documents++;
     if (target.pathname === '/__studio/regions') reads.push(target);
+    if (request.method() === 'POST') sentPosts.push(target.pathname);
+  });
+  // Region reads that failed (readOnly refused them), so a step can wait
+  // until a read it must not see has been refused before allowing others.
+  const refused = [];
+  page.on('requestfailed', request => {
+    const target = new URL(request.url());
+    if (target.pathname === '/__studio/regions') refused.push(target);
+  });
+  // A view switch can read a region several times while its panels change;
+  // wait for the refused reads of the region to stop before allowing one.
+  const refusedRead = async (since, id, message) => {
+    const matches = () => refused.slice(since).filter(target => new RegExp(`(^|,)${id}:`).test(target.searchParams.get('ids'))).length;
+    await until(() => matches() > 0, message);
+    let seen = -1;
+    await until(async () => {
+      const now = matches();
+      if (now === seen) return true;
+      seen = now;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      return false;
+    }, message);
+  };
+  // After a step refused reads: wait until the idle read (its wait doubles
+  // after each failure, up to 8 s) has brought every region up to date.
+  // A hidden region whose engines changed waits, stale, for a page load
+  // until it shows; the idle read skips it.
+  const lagging = () => page.evaluate(() => [...document.querySelectorAll('[data-update-region][data-region-stale]:not(#update-code):not([data-region-reload])')].map(node => node.dataset.updateRegion));
+  const caughtUp = async () => until(async () => (await lagging()).length === 0, 'the page did not catch up with the saved song', 30_000)
+    .catch(async error => { throw new Error(`${error.message}: ${(await lagging()).join(', ')}; status: ${await status()}`); });
+  // How many POSTs this page has sent to a path, of any kind.
+  const sent = pathname => sentPosts.filter(sentPath => sentPath === pathname).length;
+  // Region reads go through only when every region they name is in allow;
+  // the rest fail, as if the network dropped them, and the regions stay stale.
+  const readOnly = allow => page.route('**/__studio/regions**', route => {
+    const ids = (new URL(route.request().url()).searchParams.get('ids') || '').split(',').filter(Boolean).map(entry => entry.split(':')[0]);
+    return ids.length && ids.every(id => allow.has(id)) ? route.continue() : route.abort();
   });
   const state = async endpoint => {
     const response = await context.request.get(new URL(endpoint, base).href);
@@ -148,7 +201,7 @@ async function studio() {
     assert.equal(documents, 1, 'a document request ran during an edit');
     assert.deepEqual(errors, []);
   };
-  session = {page, base, state, posts, reads, cell, region, revisionOf, hold, rewrites, confirmed, settled, status, noNavigation, original,
+  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, rewrites, confirmed, settled, status, noNavigation, original,
     maxInFlight: () => maxInFlight, documentID: () => page.evaluate(() => window.__studioEdits.document)};
   return session;
 }
@@ -534,8 +587,8 @@ test('a form in a stale region is sent only after its region is read', async () 
   await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
 });
 
-test('a stale region whose text changed still sends a form whose values did not', async () => {
-  const {page, state, posts, cell, settled, region, status} = await studio();
+test('a stale region whose text changed still sends a form whose values did not, once', async () => {
+  const {page, state, posts, sent, cell, settled, region, status} = await studio();
   await page.keyboard.press('Alt+Shift+Digit1');
   const dialog = page.locator('#export-dialog');
   const render = page.locator('#export-render-button');
@@ -563,7 +616,7 @@ test('a stale region whose text changed still sends a form whose values did not'
   let exportPost = null;
   page.on('request', request => { if (!exportPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/export') exportPost = request; });
   await page.route('**/__studio/regions**', route => { held.push(route); });
-  const previous = (await state('/api/export')).id;
+  const previous = (await state('/api/export')).id, exports = sent('/__actions/export');
   try {
     try {
       const start = posts.length;
@@ -572,6 +625,10 @@ test('a stale region whose text changed still sends a form whose values did not'
       await until(() => held.length > 0, 'the write was not followed by a read');
       await open();
       assert.notEqual(await region('dialog-export').getAttribute('data-region-stale'), null, 'the Export dialog was not stale');
+      // Held, the button shows the queue's pending marker; a second click
+      // while it waits does nothing.
+      await render.click();
+      assert.notEqual(await render.getAttribute('data-workspace-pending'), null, 'the held submit was not marked pending');
       await render.click();
       await page.waitForTimeout(300);
       assert.equal(exportPost, null, 'a form in a stale region was sent before its region was read');
@@ -587,9 +644,41 @@ test('a stale region whose text changed still sends a form whose values did not'
     assert.ok(response && response.status() < 400, `the export was refused: ${response && response.status()}`);
     await finished(previous);
     assert.doesNotMatch(await status(), /changed since it was shown/);
+    assert.equal(sent('/__actions/export') - exports, 1, 'the export was not sent exactly once');
+    assert.equal(await render.getAttribute('data-workspace-pending'), null, 'the pending marker stayed');
   } finally {
     if (!(await dialog.evaluate(node => node.hidden))) await close();
   }
+});
+
+test('Escape cancels an export held for its stale dialog', async () => {
+  const {page, posts, sent, cell, settled, region, status} = await studio();
+  const dialog = page.locator('#export-dialog');
+  const render = page.locator('#export-render-button');
+  const held = [];
+  await page.route('**/__studio/regions**', route => { held.push(route); });
+  const exports = sent('/__actions/export');
+  try {
+    const start = posts.length;
+    await page.locator(cell(30)).click();
+    await settled(start + 1);
+    await until(() => held.length > 0, 'the write was not followed by a read');
+    await page.locator('[data-gosx-disclosure-target="#export-dialog"]').click();
+    await until(async () => !(await dialog.evaluate(node => node.hidden)), 'the Export dialog did not open');
+    assert.notEqual(await region('dialog-export').getAttribute('data-region-stale'), null, 'the Export dialog was not stale');
+    await render.click();
+    assert.notEqual(await render.getAttribute('data-workspace-pending'), null, 'the held submit was not marked pending');
+    await page.keyboard.press('Escape');
+    await until(async () => await dialog.evaluate(node => node.hidden), 'Escape did not close the Export dialog');
+    assert.equal(await render.getAttribute('data-workspace-pending'), null, 'the cancelled submit stayed pending');
+    assert.match(await status(), /not sent/i, 'the cancelled export was not reported');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+    for (const route of held) await route.continue().catch(() => {});
+  }
+  await until(async () => await region('dialog-export').getAttribute('data-region-stale') === null, 'the Export dialog was never read');
+  await page.waitForTimeout(500);
+  assert.equal(sent('/__actions/export'), exports, 'an export was sent after Escape');
 });
 
 test('Quantize from a stale Clip tab is sent only after the tab is read, with the saved revision', async () => {
@@ -644,6 +733,228 @@ test('Quantize from a stale Clip tab is sent only after the tab is read, with th
     await settled(start + 1);
     await until(async () => (await state('/api/state')).source === saved.source, 'Undo did not restore the notes');
   }
+});
+
+// The tests below show the rule for a held submit: it goes out by itself only
+// when its region's read returns the revision of this page's own writes.
+// After another client's save it is not sent; the user sees the refreshed
+// panel and a notice, and submits again if they still want to.
+const anotherChange = /Another change to the song was saved, so this was not sent/;
+
+test('Undo after another client saved is not sent, and that save survives', async () => {
+  const {caughtUp, page, state, posts, readOnly, cell, settled, region, status} = await studio();
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  const allow = new Set();
+  await readOnly(allow);
+  try {
+    // A draw here leaves the hidden Mixer stale; its idle read fails.
+    let start = posts.length;
+    await page.locator(cell(40)).click();
+    await settled(start + 1);
+    await until(async () => await region('center-mixer').getAttribute('data-region-stale') !== null, 'the hidden Mixer was not stale');
+    // Another client saves a note this page has not seen.
+    const other = await otherClient();
+    await other.locator(cell(41)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(41));
+    const theirs = await state('/api/state');
+    // Opening the Mixer reads it at that save's revision, so every region
+    // the read did not cover, the Undo button's among them, is now stale.
+    allow.add('center-mixer');
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await until(async () => await region('actions').getAttribute('data-region-stale') !== null, 'the Undo button did not go stale');
+    allow.clear();
+    allow.add('actions');
+    start = posts.length;
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Control+z');
+    await until(async () => anotherChange.test(await status()), 'the held Undo was not reported');
+    await page.waitForTimeout(300);
+    assert.equal(posts.length, start, 'the Undo was sent after another client saved');
+    assert.equal(await region('actions').getAttribute('data-region-stale'), null, 'the Undo button was not refreshed');
+    assert.notEqual(await page.locator('#undo-form').getAttribute('data-workspace-updated'), null, 'the refreshed Undo was not marked');
+    assert.equal(await page.locator('#undo-form button[type=submit]').getAttribute('data-workspace-pending'), null, 'the Undo stayed pending');
+    assert.equal((await state('/api/state')).source, theirs.source, "the other client's save was undone");
+  } finally {
+    await page.unroute('**/__studio/regions**');
+  }
+  await caughtUp();
+  // With reads allowed again, the page shows the other client's note.
+  await until(async () => await page.locator(cell(41)).getAttribute('data-active') === 'true', "the other client's note did not appear");
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+});
+
+test('Remove block after another client inserted a block earlier is not sent', async () => {
+  const {caughtUp, page, state, posts, refused, refusedRead, sent, readOnly, cell, settled, region, status} = await studio();
+  const blocks = source => (source.match(/song\s*\{([^}]*)\}/)?.[1] || '').trim().split(/\s+/);
+  // Two blocks to choose from: main, then alternate.
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  const add = page.locator('#update-center-arrange form:has(input[name=action][value=append])');
+  await add.locator('select[name=scene]').selectOption('alternate');
+  await add.locator('input[name=bars]').fill('4');
+  await add.getByRole('button', {name: 'Add to arrangement'}).click();
+  await until(async () => blocks((await state('/api/state')).source).length === 2, 'the block was not added');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#update-center-arrange details[data-song-index]').count() === 2, 'the page did not show two blocks');
+  // A draw with the Arrange view hidden leaves it stale.
+  await page.keyboard.press('Alt+Shift+Digit3');
+  await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+  const allow = new Set();
+  await readOnly(allow);
+  try {
+    const start = posts.length;
+    await page.locator(cell(42)).click();
+    await settled(start + 1);
+    await until(async () => await region('center-arrange').getAttribute('data-region-stale') !== null, 'the hidden Arrange view was not stale');
+    // Another client copies the first block, which moves alternate to 3.
+    const other = await otherClient();
+    await other.locator('#update-center-arrange details[data-song-index="0"] > summary').click();
+    await other.locator('#update-center-arrange details[data-song-index="0"]').getByRole('button', {name: 'Duplicate block'}).click();
+    await until(async () => blocks((await state('/api/state')).source).length === 3, 'the other client did not copy the block');
+    const theirs = await state('/api/state');
+    // This page still shows main, alternate (the read the Arrange view
+    // makes when it opens fails). Its user removes alternate.
+    const opened = refused.length;
+    await page.keyboard.press('Alt+Shift+Digit1');
+    await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+    await refusedRead(opened, 'center-arrange', 'the Arrange view was not read when it opened');
+    assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 2, 'the stale view already showed the copy');
+    const second = page.locator('#update-center-arrange details[data-song-index="1"]');
+    await second.locator('summary').click();
+    allow.add('center-arrange');
+    const songs = sent('/__actions/song');
+    await second.getByRole('button', {name: 'Remove block'}).click();
+    await until(async () => anotherChange.test(await status()), 'the held removal was not reported');
+    await page.waitForTimeout(300);
+    assert.equal(sent('/__actions/song'), songs, 'Remove block was sent after another client changed the song');
+    assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 3, 'the page does not show the copied block');
+    assert.equal((await state('/api/state')).source, theirs.source, 'the song changed');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+  }
+  await caughtUp();
+});
+
+test('a piano-roll click on a cell another client just filled is not sent', async () => {
+  const {caughtUp, page, state, posts, readOnly, cell, settled, region, status} = await studio();
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  const allow = new Set();
+  await readOnly(allow);
+  try {
+    let start = posts.length;
+    await page.locator(cell(43)).click();
+    await settled(start + 1);
+    await until(async () => await region('center-mixer').getAttribute('data-region-stale') !== null, 'the hidden Mixer was not stale');
+    const other = await otherClient();
+    await other.locator(cell(44)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(44));
+    const theirs = await state('/api/state');
+    // Reading the Mixer finds that save and leaves this Clip region stale:
+    // it still shows the cell empty.
+    allow.add('center-mixer');
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await until(async () => await region('dock-clip').getAttribute('data-region-stale') !== null, 'the Clip region did not go stale');
+    assert.equal(await page.locator(cell(44)).getAttribute('data-active'), 'false');
+    allow.clear();
+    allow.add('dock-clip');
+    start = posts.length;
+    // Meant as "add this note"; sent now it would delete the other note.
+    await page.locator(cell(44)).click();
+    await until(async () => anotherChange.test(await status()), 'the held click was not reported');
+    await page.waitForTimeout(300);
+    assert.equal(posts.length, start, 'the click was sent after another client filled the cell');
+    assert.equal(await page.locator(cell(44)).getAttribute('data-active'), 'true', 'the refreshed cell does not show the other note');
+    assert.equal((await state('/api/state')).source, theirs.source, "the other client's note was removed");
+  } finally {
+    await page.unroute('**/__studio/regions**');
+  }
+  await caughtUp();
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+});
+
+test('a held form whose own values changed after the read is not sent', async () => {
+  const {caughtUp, page, posts, sent, readOnly, refused, refusedRead, settled, region, status} = await studio();
+  const mute = () => page.locator('#view-panel-mixer button[data-toggle=mute]').first();
+  await page.keyboard.press('Alt+Shift+Digit3');
+  await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+  const before = await mute().getAttribute('aria-pressed');
+  await mute().click();
+  await until(async () => await mute().getAttribute('aria-pressed') !== before, 'the mute did not apply');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  // Undo the mute with the Mixer hidden: the Mixer is stale and still shows
+  // the track muted.
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  const allow = new Set();
+  await readOnly(allow);
+  try {
+    const start = posts.length;
+    await page.locator('#undo-form button[type=submit]').click();
+    await settled(start + 1);
+    await until(async () => await region('center-mixer').getAttribute('data-region-stale') !== null, 'the hidden Mixer was not stale');
+    const opened = refused.length;
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+    await refusedRead(opened, 'center-mixer', 'the Mixer was not read when it opened');
+    assert.notEqual(await mute().getAttribute('aria-pressed'), before, 'the stale Mixer already showed the Undo');
+    // The read returns this page's own revision, but the button it holds now
+    // says the opposite of what the user saw: nothing is sent.
+    allow.add('center-mixer');
+    const mixer = sent('/__actions/mixer') + sent('/__actions/toggle');
+    await mute().click();
+    await until(async () => /changed since it was shown/.test(await status()), 'the changed form was not reported');
+    await page.waitForTimeout(300);
+    assert.equal(sent('/__actions/mixer') + sent('/__actions/toggle'), mixer, 'a form whose values changed was sent');
+    assert.equal(await mute().getAttribute('aria-pressed'), before, 'the refreshed Mixer does not show the Undo');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+  }
+  await caughtUp();
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+});
+
+test('a held Undo is dropped after a refused edit', async () => {
+  const {page, posts, cell, rewrites, hold, settled, status} = await studio();
+  const undo = page.locator('#undo-form button[type=submit]');
+  const start = posts.length;
+  rewrites.push(payload => { payload.step = '99'; });
+  const release = hold();
+  await page.locator(cell(45)).click();
+  await until(() => posts.length > start, 'the draw was not sent');
+  // The Undo button's region goes stale only after another client's save is
+  // found; mark it stale here, so the Undo is held behind the refused draw.
+  await page.evaluate(() => document.querySelector('#update-actions').setAttribute('data-region-stale', ''));
+  await undo.click();
+  assert.notEqual(await undo.getAttribute('data-workspace-pending'), null, 'the Undo was not held');
+  release();
+  await settled(start + 1);
+  assert.equal(posts[start].status, 422);
+  await until(async () => await undo.getAttribute('data-workspace-pending') === null, 'the held Undo stayed pending');
+  await page.waitForTimeout(400);
+  assert.equal(posts.length, start + 1, 'the held Undo was sent after a refused edit');
+  assert.match(await status(), /Undo or Redo waiting behind it was not sent/, 'the dropped Undo was not reported');
+});
+
+test('an idle page reads no region once every region it reads is current', async () => {
+  const {page, posts, reads, cell, settled, region} = await studio();
+  const start = posts.length;
+  const stale = () => page.locator('[data-update-region][data-region-stale]:not(#update-code):not([data-region-reload])').count();
+  await page.locator(cell(46)).click();
+  await settled(start + 1);
+  // The hidden regions go stale, and the idle read refreshes them once (the
+  // Code lens is read only when it shows, and a region waiting for a page
+  // load is not read).
+  await until(async () => await stale() > 0, 'the draw left no hidden region stale');
+  await until(async () => await stale() === 0, 'stale regions stayed after the idle read');
+  const before = reads.length;
+  await page.waitForTimeout(3000);
+  assert.equal(reads.length - before, 0, `region reads in 3 s on an idle page: ${reads.slice(before).map(target => target.searchParams.get('ids')).join(' | ')}`);
+  assert.equal(await region('dock-clip').getAttribute('data-region-stale'), null);
 });
 
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {

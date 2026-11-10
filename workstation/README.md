@@ -70,6 +70,13 @@ rather than assuming that examples on `main` are supported by the pinned version
   queue is idle. A region's revision fields advance only when the server
   rendered it at the new revision, so a stale region's write is refused.
   Other forms keep GoSX's managed navigation, which refreshes every region.
+  A submit from a stale region is held while its region is read. It goes out
+  by itself only when the read returns the revision of the tab's own writes
+  and the form would send what it showed; after another client's change the
+  user sees the refreshed panel and a notice, and submits again. Forms that act
+  on an item by its position (a song block, a contour point, a played note, a
+  gesture point, a shared lane) carry `target_key`, and an action refuses a
+  key that no longer names the item at that position.
 - Routine edits must preserve page and nested-grid scroll, focus, selection,
   expanded controls, unrelated unsaved fields, and mounted audio/input engines.
   Same-panel selection uses a workspace projection and replaces only the deep

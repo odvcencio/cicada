@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"syscall/js"
 	"time"
@@ -32,8 +33,22 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		return func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true}
+	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
 	u.seedEditorBaseline()
+	// A page reload ends the old queue. A notice it left for the user shows
+	// here, and markers it left on regions this render shows fresh are gone.
+	storage := js.Global().Get("sessionStorage")
+	if notice := storage.Call("getItem", shellNotice); notice.Type() == js.TypeString {
+		u.status.Set(notice.String())
+		storage.Call("removeItem", shellNotice)
+	}
+	wrappers := domCall(root, "querySelectorAll", "[data-update-region]")
+	for i := 0; i < wrappers.Length(); i++ {
+		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") == props.Revision && workspaceAttr(wrapper, "data-region-source-revision") == props.SourceRevision {
+			domDrop(wrapper, "data-region-stale")
+			domDrop(wrapper, "data-region-reload")
+		}
+	}
 	watch := signal.Watch(func() {
 		if node := domCall(root, "querySelector", "[data-workspace-status]"); workspacePresent(node) {
 			node.Set("textContent", u.status.Get())
@@ -55,8 +70,25 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 			u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll)}
 		}
 	})
-	// A stale region refreshes when its tab, pane, section or dialog opens.
-	reveal := js.FuncOf(func(js.Value, []js.Value) any {
+	// A stale region refreshes when its tab, pane, section or dialog opens. A
+	// submit held in a region that closed (Escape, another tab) is not sent.
+	reveal := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		// Only a real change counts: rewriting an attribute with the value it
+		// had (a tab list resyncing its panels) must not read again, or a
+		// failing read would repeat for as long as the page lives.
+		changed := false
+		for i := 0; len(args) > 0 && i < args[0].Length() && !changed; i++ {
+			record := args[0].Index(i)
+			changed = !record.Get("oldValue").Equal(domCall(record.Get("target"), "getAttribute", record.Get("attributeName").String()))
+		}
+		if !changed {
+			return nil
+		}
+		for _, h := range append([]*shellHold(nil), u.holds...) {
+			if !shellVisible(domRegion(h.region)) {
+				u.releaseHold(h, shellClosed)
+			}
+		}
 		if !u.blocked.Load() && !u.closed.Load() {
 			if !u.busy.Load() {
 				u.reloadIfNeeded()
@@ -68,8 +100,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	// Watch the tab panels, sections, panes and dialogs that hold regions, not
 	// their contents: engines inside regions change these attributes too.
 	observer := js.Global().Get("MutationObserver").New(reveal)
-	options := map[string]any{"attributes": true, "attributeFilter": []any{"hidden", "open", "data-phone-region"}}
-	wrappers := domCall(root, "querySelectorAll", "[data-update-region]")
+	options := map[string]any{"attributes": true, "attributeOldValue": true, "attributeFilter": []any{"hidden", "open", "data-phone-region"}}
 	var watched []js.Value
 	for i := 0; i < wrappers.Length(); i++ {
 	ancestors:
@@ -407,15 +438,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			domSet(wrapper, "data-region-stale", "")
 		}
 	}
-	for _, scroll := range scrolls {
-		if scroll.node.Get("isConnected").Bool() {
-			scroll.node.Set("scrollTop", scroll.top)
-			scroll.node.Set("scrollLeft", scroll.left)
-		}
-	}
-	if js.Global().Get("scrollX").Float() != x || js.Global().Get("scrollY").Float() != y {
-		js.Global().Call("scrollTo", x, y)
-	}
+	workspaceRestoreScrolls(scrolls, x, y)
 	if projection.Title != "" {
 		document.Set("title", projection.Title)
 	}
@@ -454,6 +477,7 @@ func (u *workspaceUI) reloadIfNeeded() {
 // until the new page binds a fresh one.
 func (u *workspaceUI) reload() {
 	u.blocked.Store(true)
+	u.reloading = true
 	u.status.Set("Updating Studio to show the saved song…")
 	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("navigation")) && gosx.Get("navigation").Get("revalidate").Type() == js.TypeFunction {
 		navigation := gosx.Get("navigation")
@@ -463,66 +487,158 @@ func (u *workspaceUI) reload() {
 	js.Global().Get("location").Call("reload")
 }
 
-// refreshThenSubmit reads a stale region before a form in it is sent. If the
-// form would send the same values after the read, apart from its revision
-// fields, it goes out once with the fresh revisions. If its values changed,
-// the refreshed form stays for the user to check and submit again. Text
-// around the form, such as a render status, may change without stopping the
-// submit. Nothing was sent before the read, so this never repeats a write.
+// A held submit: a POST form in a stale region waits for its region's read
+// (rule R1: nothing is sent from a region on an older revision).
+type shellHold struct {
+	form, submitter       js.Value
+	region, values, token string
+	done                  bool
+}
+
+// How the read that a held submit waits for ended.
+const (
+	holdDropped = iota // taken off the queue; whoever dropped it tells the user
+	holdFailed         // the read failed or the region is still stale
+	holdForeign        // the read found a revision this tab did not write
+	holdOwn            // the read found the revision of this tab's own writes
+)
+
+// refreshThenSubmit holds a submit from a stale region and reads the region.
+// The form goes out by itself only when the read returns the revision of this
+// tab's own writes (the region was stale only because of them) and the form
+// would send what it showed: the same values apart from its revision fields,
+// and the same submit button. Otherwise the refreshed form is marked and the
+// user checks it and submits again. A form has at most one hold; a click while
+// it waits does nothing, and the hold ends if its panel closes, an Undo or Redo
+// is dropped, or the queue clears. Nothing was sent before the read, so this
+// never repeats a write.
 func (u *workspaceUI) refreshThenSubmit(region, form, submitter js.Value) {
-	id, digest, values := workspaceAttr(region, "data-update-region"), workspaceAttr(region, "data-region-digest"), shellFormValues(form, submitter)
-	select {
-	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: id + ":" + digest, then: func(applied bool) {
-		switch {
-		case !applied || !form.Get("isConnected").Bool() || domHas(domRegion(id), "data-region-stale"):
-			u.status.Set("This panel could not be refreshed, so nothing was saved. Submit it again.")
-		case shellFormValues(form, submitter) != values:
-			u.status.Set("This panel changed since it was shown. Check it and submit again.")
-		case workspacePresent(submitter):
-			form.Call("requestSubmit", submitter)
-		default:
-			form.Call("requestSubmit")
-		}
-	}}:
-	default:
-		u.status.Set("Too many changes are waiting, so this panel was not sent. Submit it again.")
+	u.held++
+	h := &shellHold{form: form, submitter: submitter, region: workspaceAttr(region, "data-update-region"), values: shellFormValues(form, submitter), token: strconv.Itoa(u.held)}
+	marker := submitter
+	if !workspacePresent(marker) {
+		marker = form
 	}
+	// The queue's pending marker, tagged with the hold so it can be found
+	// again: a region patch may replace the button and carries both over.
+	domSet(marker, "data-workspace-held", h.token)
+	workspacePending(workspaceJob{pendingCell: marker}, 1)
+	u.holds = append(u.holds, h)
+	if u.idle != nil {
+		u.idle.Stop()
+	}
+	select {
+	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: h.region + ":" + workspaceAttr(region, "data-region-digest"), hold: h, then: func(outcome int) { u.settleHold(h, outcome) }}:
+	default:
+		u.releaseHold(h, "Too many changes are waiting, so this was not sent. Submit it again.")
+	}
+}
+
+// settleHold ends a hold once its read has run, and sends the form if it may.
+func (u *workspaceUI) settleHold(h *shellHold, outcome int) {
+	if !u.releaseHold(h, "") {
+		return
+	}
+	region := domRegion(h.region)
+	switch {
+	case outcome == holdDropped:
+	case u.reloading && outcome == holdForeign:
+		// The read needs a page reload to show; nothing is sent meanwhile,
+		// and the notice outlives the reload.
+		js.Global().Get("sessionStorage").Call("setItem", shellNotice, shellForeign)
+	case u.reloading && outcome == holdOwn:
+		js.Global().Get("sessionStorage").Call("setItem", shellNotice, shellChanged)
+	case outcome == holdFailed || u.blocked.Load() || !h.form.Get("isConnected").Bool() || domHas(region, "data-region-stale"):
+		u.status.Set("This panel could not be refreshed, so nothing was saved. Submit it again.")
+	case !shellVisible(region):
+		u.status.Set(shellClosed)
+	case outcome == holdForeign:
+		domSet(h.form, "data-workspace-updated", "")
+		u.status.Set(shellForeign)
+	case shellFormValues(h.form, h.submitter) != h.values:
+		domSet(h.form, "data-workspace-updated", "")
+		u.status.Set(shellChanged)
+	case workspacePresent(h.submitter):
+		h.form.Call("requestSubmit", h.submitter)
+	default:
+		h.form.Call("requestSubmit")
+	}
+}
+
+const (
+	shellClosed  = "This was not sent: its panel closed before it showed the saved song."
+	shellForeign = "Another change to the song was saved, so this was not sent. Check the updated panel and submit again."
+	shellChanged = "This panel changed since it was shown. Check it and submit again."
+	shellNotice  = "cicada.shell-notice"
+)
+
+// shellHolding reports whether a form has a submit waiting for a read. The
+// hold lives here, not in the DOM: a region patch rewrites the form's
+// attributes.
+func (u *workspaceUI) shellHolding(form js.Value) bool {
+	for _, h := range u.holds {
+		if h.form.Equal(form) {
+			return true
+		}
+	}
+	return false
+}
+
+// releaseHold ends a hold, with a message for the user if one is given. It
+// reports false when the hold had already ended.
+func (u *workspaceUI) releaseHold(h *shellHold, message string) bool {
+	if h.done {
+		return false
+	}
+	h.done = true
+	markers := domCall(js.Global().Get("document"), "querySelectorAll", `[data-workspace-held="`+h.token+`"]`)
+	for i := 0; i < markers.Length(); i++ {
+		domDrop(markers.Index(i), "data-workspace-held")
+		workspacePending(workspaceJob{pendingCell: markers.Index(i)}, -1)
+	}
+	for i, held := range u.holds {
+		if held == h {
+			u.holds = append(u.holds[:i], u.holds[i+1:]...)
+			break
+		}
+	}
+	if message != "" {
+		u.status.Set(message)
+	}
+	return true
 }
 
 // shellFormValues is what a form would send, without the fields a read
-// renews (the CSRF token and the revisions), plus its submit button.
+// renews (the CSRF token and the revisions), and the state of its submit
+// button: its name and value, whether it is pressed, active or disabled, and
+// whether it is still on the page.
 //
 //go:noinline
 func shellFormValues(form, submitter js.Value) string {
-	params := js.Global().Get("URLSearchParams").New(js.Global().Get("FormData").New(form))
-	for _, name := range []string{"csrf_token", "revision", "source_revision", "fileRevision", "diskRevision"} {
-		params.Call("delete", name)
-	}
-	values := params.Call("toString").String()
+	var out strings.Builder
+	workspaceFormEntries(form, func(name, value string) {
+		switch name {
+		case "csrf_token", "revision", "source_revision", "fileRevision", "diskRevision":
+			return
+		}
+		out.WriteString(name + "=" + value + "\n")
+	})
 	if workspacePresent(submitter) {
-		values += " " + workspaceString(submitter, "name") + "=" + workspaceString(submitter, "value") + " " + fmt.Sprint(submitter.Get("disabled").Bool(), submitter.Get("isConnected").Bool())
+		out.WriteString(workspaceString(submitter, "name") + "=" + workspaceString(submitter, "value") + "\n" + workspaceAttr(submitter, "aria-pressed") + "\n" + workspaceAttr(submitter, "data-active") + "\n" + fmt.Sprint(submitter.Get("disabled").Bool(), submitter.Get("isConnected").Bool()))
 	}
-	return values
+	return out.String()
 }
 
-// dropHistory removes queued Undo and Redo after a refused edit: they were
-// meant for the edit that did not happen and would undo an earlier one.
+// dropHistory removes queued and held Undo and Redo after a refused edit: they
+// were meant for the edit that did not happen and would undo an earlier one.
 func (u *workspaceUI) dropHistory() {
-	var keep []workspaceJob
-	dropped := false
-	for len(u.jobs) > 0 {
-		job := <-u.jobs
-		if job.target == "/__actions/undo" || job.target == "/__actions/redo" {
-			u.settle(job, true)
-			dropped = true
-			continue
+	if u.drain(func(job workspaceJob) bool {
+		if job.hold != nil {
+			id := workspaceAttr(job.hold.form, "id")
+			return id == "undo-form" || id == "redo-form"
 		}
-		keep = append(keep, job)
-	}
-	for _, job := range keep {
-		u.jobs <- job
-	}
-	if dropped {
+		return job.target == "/__actions/undo" || job.target == "/__actions/redo"
+	}) > 0 {
 		u.status.Set(u.status.Get() + " The Undo or Redo waiting behind it was not sent.")
 	}
 }
@@ -550,20 +666,7 @@ func (u *workspaceUI) advanceRegions(projection workspaceProjection, job workspa
 		if !workspacePresent(wrapper) || ruleR1(id, shellHeld(wrapper), false, i > 0, job.method == http.MethodPost) != regionAdvance {
 			continue
 		}
-		fields := domCall(wrapper, "querySelectorAll", "input[type=hidden]:is([name=revision],[name=source_revision],[name=fileRevision],[name=diskRevision])")
-		for j := 0; j < fields.Length(); j++ {
-			field, value := fields.Index(j), projection.FileRevision
-			switch workspaceAttr(field, "name") {
-			case "revision":
-				value = projection.Revision
-			case "source_revision":
-				value = projection.SourceRevision
-			}
-			if value != "" && workspaceString(field, "value") != "" {
-				field.Set("value", value)
-				field.Set("defaultValue", value)
-			}
-		}
+		workspaceSetRevisions(wrapper, projection)
 		confirm(wrapper, "")
 	}
 }

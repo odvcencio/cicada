@@ -75,8 +75,10 @@ type workspaceJob struct {
 	// context that lets an edit cancel a background read of stale regions.
 	regions string
 	ctx     context.Context
-	// then runs after a shell region read, with whether it was applied.
-	then func(bool)
+	// hold is the submit a shell region read releases; then runs after the
+	// read with its outcome (shell_edits_js.go).
+	hold *shellHold
+	then func(int)
 }
 
 type workspaceUI struct {
@@ -108,6 +110,13 @@ type workspaceUI struct {
 	cancelRead func()
 	idle       *time.Timer
 	idleDelay  time.Duration
+	// own is the revision this tab's own writes (or its page load, or a
+	// "Refresh saved state") last produced; holds are the submits waiting
+	// for a region read.
+	own       workspaceVersion
+	holds     []*shellHold
+	held      int
+	reloading bool // a page reload to show changed engines has started
 }
 
 type workspaceEditorBaseline struct {
@@ -341,6 +350,12 @@ func (u *workspaceUI) submit(event js.Value) {
 	}
 	submitter := event.Get("submitter")
 	if u.shell {
+		if u.shellHolding(form) {
+			// One hold per form: a second click while it waits does nothing.
+			workspaceStop(event)
+			return
+		}
+		domDrop(form, "data-workspace-updated")
 		// Transport commands carry no score revision check and never wait.
 		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
 			// A form in a stale region still carries an older revision. Read
@@ -395,15 +410,7 @@ func (u *workspaceUI) submit(event js.Value) {
 		return
 	}
 	values := map[string]string{}
-	entries := js.Global().Get("FormData").New(form).Call("entries")
-	for {
-		entry := entries.Call("next")
-		if entry.Get("done").Bool() {
-			break
-		}
-		pair := entry.Get("value")
-		values[pair.Index(0).String()] = pair.Index(1).String()
-	}
+	workspaceFormEntries(form, func(name, value string) { values[name] = value })
 	if workspacePresent(submitter) && workspaceString(submitter, "name") != "" {
 		values[workspaceString(submitter, "name")] = workspaceString(submitter, "value")
 	}
@@ -858,27 +865,37 @@ func (u *workspaceUI) queue(job workspaceJob) {
 	}
 }
 
-// clearQueue drops every queued job, restores its paint and reports how many
-// were the user's own (not background reads). A submit held for a region
-// read hears that it was not sent.
-func (u *workspaceUI) clearQueue() (dropped int) {
-	for {
-		select {
-		case job := <-u.jobs:
-			u.settle(job, true)
-			if job.ctx != nil {
-				// A dropped background read no longer holds the read slot.
-				u.reading = false
-				continue
-			}
-			if job.then != nil {
-				job.then(false)
-			}
-			dropped++
-		default:
-			return dropped
+// clearQueue drops every queued job; see drain.
+func (u *workspaceUI) clearQueue() int {
+	return u.drain(func(workspaceJob) bool { return true })
+}
+
+// drain removes the queued jobs drop selects, restores their paint, releases
+// their held submits and reports how many were the user's own (background
+// reads are not). The caller tells the user.
+func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped int) {
+	var keep []workspaceJob
+	for len(u.jobs) > 0 {
+		job := <-u.jobs
+		if !drop(job) {
+			keep = append(keep, job)
+			continue
 		}
+		u.settle(job, true)
+		if job.ctx != nil {
+			// A dropped background read no longer holds the read slot.
+			u.reading = false
+			continue
+		}
+		if job.then != nil {
+			job.then(holdDropped)
+		}
+		dropped++
 	}
+	for _, job := range keep {
+		u.jobs <- job
+	}
+	return dropped
 }
 
 func (u *workspaceUI) run() {
@@ -894,14 +911,10 @@ func (u *workspaceUI) run() {
 				return
 			}
 			if u.shell && len(u.jobs) == 0 {
+				// Stale regions are read when they show, when the queue has
+				// been idle for a moment, and before a form in one is sent.
 				u.reloadIfNeeded()
-				if job.method == http.MethodPost && !u.blocked.Load() {
-					// Read the regions this write left stale straight away,
-					// so a form there is current before the user reaches it.
-					u.refreshStale(regionsStale)
-				} else {
-					u.scheduleIdle()
-				}
+				u.scheduleIdle()
 			}
 		}
 	}
@@ -913,13 +926,13 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	// A shell read other than "Refresh saved state" never blocks the queue:
 	// reading again is always safe.
 	read := u.shell && job.method == http.MethodGet && !job.refresh
-	applied := false
+	outcome := holdFailed
 	defer func() {
 		if read && job.ctx != nil {
 			u.reading = false
 		}
 		if job.then != nil {
-			job.then(applied)
+			job.then(outcome)
 		}
 	}()
 	if u.blocked.Load() && !job.refresh || job.method == http.MethodGet && u.shell && job.regions == "" {
@@ -1062,7 +1075,13 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if u.shell {
 		// The shell shows only what needs attention: a server message or the
 		// end of a refresh, never a "Saved." after every gesture.
-		applied = true
+		if job.method == http.MethodPost || job.refresh {
+			u.own = workspaceVersion{Revision: projection.Revision, SourceRevision: projection.SourceRevision}
+		}
+		outcome = holdForeign
+		if u.own.Revision == projection.Revision && u.own.SourceRevision == projection.SourceRevision {
+			outcome = holdOwn
+		}
 		u.idleDelay = shellIdleRefresh
 		if job.refresh {
 			u.status.Set("Workspace updated.")
@@ -1233,6 +1252,55 @@ func (u *workspaceUI) captureScrolls() []workspaceScroll {
 	}
 	u.scrolls = retained
 	return append([]workspaceScroll(nil), retained...)
+}
+
+// workspaceRestoreScrolls puts back scroll positions captured before a patch.
+func workspaceRestoreScrolls(scrolls []workspaceScroll, x, y float64) {
+	for _, scroll := range scrolls {
+		if scroll.node.Get("isConnected").Bool() {
+			scroll.node.Set("scrollTop", scroll.top)
+			scroll.node.Set("scrollLeft", scroll.left)
+		}
+	}
+	if js.Global().Get("scrollX").Float() != x || js.Global().Get("scrollY").Float() != y {
+		js.Global().Call("scrollTo", x, y)
+	}
+}
+
+// workspaceSetRevisions writes a projection's revisions into the hidden
+// revision fields under scope. An empty value, or a field rendered empty,
+// is left alone, and so is the file revision of an unsaved Code draft: a
+// later save of the draft takes the merge path.
+func workspaceSetRevisions(scope js.Value, projection workspaceProjection) {
+	fields := domCall(scope, "querySelectorAll", "input[type=hidden]:is([name=revision],[name=source_revision],[name=fileRevision],[name=diskRevision])")
+	editor := domCall(scope, "querySelector", "textarea")
+	for i := 0; i < fields.Length(); i++ {
+		field, value := fields.Index(i), projection.FileRevision
+		switch name := workspaceAttr(field, "name"); name {
+		case "revision":
+			value = projection.Revision
+		case "source_revision":
+			value = projection.SourceRevision
+		case "fileRevision":
+			if workspacePresent(editor) && workspaceDirty(editor) {
+				continue
+			}
+		}
+		if value != "" && workspaceString(field, "value") != "" {
+			field.Set("value", value)
+			field.Set("defaultValue", value)
+		}
+	}
+}
+
+// workspaceFormEntries calls visit with each name and value a form sends, in
+// order.
+func workspaceFormEntries(form js.Value, visit func(name, value string)) {
+	entries := js.Global().Get("FormData").New(form).Call("entries")
+	for entry := entries.Call("next"); !entry.Get("done").Bool(); entry = entries.Call("next") {
+		pair := entry.Get("value")
+		visit(pair.Index(0).String(), pair.Index(1).String())
+	}
 }
 
 func workspaceReadDraft(control js.Value) workspaceDraft {
@@ -1585,6 +1653,9 @@ func workspaceHTMLPreserve(current, next *html.Node) {
 			return
 		}
 	}
+	if held, exists := workspaceHTMLAttr(current, "data-workspace-held"); exists {
+		workspaceHTMLSetAttr(next, "data-workspace-held", held)
+	}
 	if pending, exists := workspaceHTMLAttr(current, "data-workspace-pending"); exists {
 		workspaceHTMLSetAttr(next, "data-workspace-pending", pending)
 		// A still-pending piano-roll prediction survives the answer to an
@@ -1743,40 +1814,8 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 	u.syncTools()
 	// Owned editor/live DOM is retained, including its nested forms. A
 	// confirmed projection still advances those forms' concurrency token.
-	revisions := u.root.Call("querySelectorAll", "input[type=hidden][name=revision]")
-	for i := 0; i < revisions.Length(); i++ {
-		control := revisions.Index(i)
-		control.Set("value", projection.Revision)
-		control.Set("defaultValue", projection.Revision)
-	}
-	if projection.FileRevision != "" {
-		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=fileRevision],input[type=hidden][name=diskRevision]")
-		for i := 0; i < fields.Length(); i++ {
-			control := fields.Index(i)
-			if workspaceAttr(control, "name") == "fileRevision" {
-				editor := u.root.Call("querySelector", "textarea")
-				if workspacePresent(editor) && workspaceDirty(editor) {
-					continue
-				}
-			}
-			control.Set("value", projection.FileRevision)
-			control.Set("defaultValue", projection.FileRevision)
-		}
-	}
-	if projection.SourceRevision != "" {
-		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=source_revision]")
-		for i := 0; i < fields.Length(); i++ {
-			fields.Index(i).Set("value", projection.SourceRevision)
-			fields.Index(i).Set("defaultValue", projection.SourceRevision)
-		}
-	}
-	for _, scroll := range scrolls {
-		if scroll.node.Get("isConnected").Bool() {
-			scroll.node.Set("scrollTop", scroll.top)
-			scroll.node.Set("scrollLeft", scroll.left)
-		}
-	}
-	js.Global().Call("scrollTo", x, y)
+	workspaceSetRevisions(u.root, projection)
+	workspaceRestoreScrolls(scrolls, x, y)
 	if projection.Title != "" {
 		document.Set("title", projection.Title)
 	}
