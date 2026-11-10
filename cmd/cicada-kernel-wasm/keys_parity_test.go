@@ -38,9 +38,12 @@ func TestAudioWASMKeysScoreParity(t *testing.T) {
 			}
 		})
 	}
+	// 2026-11-09: re-pinned (the string_machine patch changed) because the strings
+	// voice now reads band-limited tables instead of a 2-point polyBLEP. Native
+	// and WebAssembly output still match for every patch.
 	expected := map[int]string{
-		44100: "ba8ac2d4d4cdc519c3641f1993d6c35966d6fb4d64a117ceb14f0b2f3ff07b56",
-		48000: "6944309e14f42b2778388883f170bd7af71c55d0b1a69d7450606a7582f27622",
+		44100: "d5d61045626cc333c8017283a23bc1b7569d22282cc79702668b50b9dbb28ed2",
+		48000: "7e310f9c8f7e0be65a4ee38fa0d8139f3200210d337ee1f9f29322c2bc0927d0",
 	}
 	for _, rate := range []int{44100, 48000} {
 		golden := sha256.Sum256(hashes[rate])

@@ -50,6 +50,19 @@ func Patch(name string) (Params, error) {
 	return p, nil
 }
 
+// PartialFrequency is the frequency in Hz of string mode `mode` (1..24) of a
+// note. Mode 1 sits at equal temperament; higher modes stretch with the square
+// of the mode number. It returns 0 for a note or mode out of range. New uses it
+// to tune the modes, so the two cannot drift apart.
+func PartialFrequency(note uint8, mode int) float64 {
+	if note < MinNote || note > MaxNote || mode < 1 || mode > modes {
+		return 0
+	}
+	f := 440 * math.Exp2(float64(int(note)-69)/12)
+	h := float64(mode)
+	return f * h * math.Sqrt((1+.000015*h*h)/(1+.000015))
+}
+
 type mode struct{ c, s, r, release, impulse, a, b float32 }
 type state struct{ q, p float32 }
 type key struct {
@@ -102,12 +115,11 @@ func New(rate int, p Params) (*Instrument, error) {
 	i.tailR = float32(math.Exp(-1 / (.003 * fs)))
 	for note := MinNote; note <= MaxNote; note++ {
 		k := &i.keys[note-MinNote]
-		f := 440 * math.Exp2(float64(note-69)/12)
 		t60 := (2.4 - 2*p.Mute) * math.Exp2(float64(60-note)/48)
 		k.lifetime = int(min(12., t60*1.5) * fs)
 		for m := 1; m <= modes; m++ {
 			h := float64(m)
-			hz := f * h * math.Sqrt((1+.000015*h*h)/(1+.000015))
+			hz := PartialFrequency(uint8(note), m)
 			if hz > .42*fs {
 				break
 			}
