@@ -584,8 +584,8 @@ func TestModulationMixBatchPreservesPCM(t *testing.T) {
 		name, want string
 		panFirst   bool
 	}{
-		{name: "gain-first", want: "fe70d2c629265180b040020d268a10cef6cf6ad1b9f1863c44456c5b812ba6eb"},
-		{name: "pan-first", want: "fe70d2c629265180b040020d268a10cef6cf6ad1b9f1863c44456c5b812ba6eb", panFirst: true},
+		{name: "gain-first", want: "2efabec8a377d0fb2964233397876eaa034ca92de0c8835e53962d1f8a149937"},
+		{name: "pan-first", want: "2efabec8a377d0fb2964233397876eaa034ca92de0c8835e53962d1f8a149937", panFirst: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := modConfig(t)

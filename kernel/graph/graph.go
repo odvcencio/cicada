@@ -582,13 +582,7 @@ func (v *Voice) nextSample(substep uint64) float32 {
 			if n.Op == Diode {
 				feedback = 2.8 * clamp(c, 0, 1)
 			}
-			// Products round before additions so arm64 cannot contract an FMA.
-			input := float32(math.Tanh(float64(a - float32(feedback*s.filter[3]))))
-			for stage := 0; stage < 4; stage++ {
-				s.filter[stage] += float32(coef * (input - s.filter[stage]))
-				input = s.filter[stage]
-			}
-			y = s.filter[3]
+			y = ladder(&s.filter, coef, feedback, a)
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			if frequency != s.coefficientInput {
@@ -625,6 +619,11 @@ func (v *Voice) nextSample(substep uint64) float32 {
 	return out
 }
 
+// ladderInputLimit bounds a ladder's input. With feedback at most 3.2 the
+// tanh argument is at least a third of the input, far past the point where a
+// float32 tanh is exactly 1.
+const ladderInputLimit = 1e4
+
 func clamp(x, lo, hi float32) float32 {
 	if x < lo {
 		return lo
@@ -652,4 +651,40 @@ func polyBLEP(phase, dt float32) float32 {
 		return float32(t*t) + t + t + 1
 	}
 	return 0
+}
+
+// ladder runs one sample of a four-stage ladder: trapezoidal (zero-delay)
+// one-pole stages whose corners sit at the cutoff, with the resonance feedback
+// solved within the sample. As in an analog ladder, the cutoff is the stage
+// corner: without resonance the response is 3 dB down at about 0.435 times the
+// cutoff, and the resonant peak sits just below the cutoff (0.92 times it at
+// resonance 0.9) and approaches it as resonance rises, at every cutoff. coef
+// is g/(1+g) with g = tan(pi*cutoff/rate).
+//
+// Each stage is out = coef*in + (1-coef)*state, so the output is
+// coef^4*in + S, where S collects the stage states. Solving
+// y = coef^4*(x - k*y) + S for y gives the feedback estimate; the input then
+// saturates through tanh. Products round to float32 before additions so arm64
+// cannot contract an FMA and results stay identical across targets.
+//
+// The input is held to +-1e4 so an infinite sample cannot turn the estimate
+// into Inf - Inf and leave NaN in the stage states. tanh already returns
+// exactly +-1 for any input that large, so no finite render changes.
+func ladder(state *[4]float32, coef, feedback, x float32) float32 {
+	x = clamp(x, -ladderInputLimit, ladderInputLimit)
+	rest := 1 - coef
+	g2 := float32(coef * coef)
+	g3 := float32(g2 * coef)
+	g4 := float32(g3 * coef)
+	stateSum := float32(float32(g3*rest)*state[0]) + float32(float32(g2*rest)*state[1]) +
+		float32(float32(coef*rest)*state[2]) + float32(rest*state[3])
+	estimate := (float32(g4*x) + stateSum) / (1 + float32(feedback*g4))
+	input := float32(math.Tanh(float64(x - float32(feedback*estimate))))
+	for stage := 0; stage < 4; stage++ {
+		step := float32(coef * (input - state[stage]))
+		out := step + state[stage]
+		state[stage] = out + step
+		input = out
+	}
+	return input
 }

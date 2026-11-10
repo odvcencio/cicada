@@ -51,10 +51,25 @@ func onePole(g, hz float64) float64 {
 }
 
 func graphFilterResponses() []responseCase {
+	// Ladder and diode: four trapezoidal one-poles, each the bilinear image of
+	// 1/(s+1) with its corner prewarped to the cutoff.
 	cascade := func(cutoff float64) func(float64) float64 {
-		t := math.Tan(math.Pi * cutoff / sampleRate)
-		g := t / (1 + t)
-		return func(hz float64) float64 { return 4 * db(onePole(g, hz)) }
+		g := math.Tan(math.Pi * cutoff / sampleRate)
+		return func(hz float64) float64 {
+			w := math.Tan(math.Pi*hz/sampleRate) / g
+			return 4 * db(1/math.Hypot(1, w))
+		}
+	}
+	// With resonance the loop closes around the four stages: L^4 / (1 + k L^4),
+	// where L is one stage and k the feedback. This pins the within-sample
+	// feedback solve, including where the peak sits.
+	resonant := func(cutoff, k float64) func(float64) float64 {
+		g := math.Tan(math.Pi * cutoff / sampleRate)
+		return func(hz float64) float64 {
+			stage := 1 / complex(1, math.Tan(math.Pi*hz/sampleRate)/g)
+			loop := stage * stage * stage * stage
+			return db(cmplx.Abs(loop / (1 + complex(k, 0)*loop)))
+		}
 	}
 	lowpass := func(cutoff float64) func(float64) float64 {
 		g := 1 - math.Exp(-2*math.Pi*cutoff/sampleRate)
@@ -79,17 +94,23 @@ func graphFilterResponses() []responseCase {
 	}
 	pts1 := []float64{250, 500, 1000, 2000, 4000, 8000}
 	pts4 := []float64{1000, 2000, 4000, 8000, 16000}
+	ptsPeak := []float64{250, 500, 800, 900, 950, 1000, 1100, 1400, 2000, 4000}
 	var out []responseCase
 	for _, c := range []struct {
-		name string
-		op   graph.Op
-	}{{"ladder", graph.Ladder}, {"diode", graph.Diode}} {
+		name     string
+		op       graph.Op
+		feedback float64 // loop gain at resonance 1
+	}{{"ladder", graph.Ladder, 3.2}, {"diode", graph.Diode, 2.8}} {
 		for _, fc := range []float64{1000, 5000} {
 			out = append(out, responseCase{
 				Name: fmt.Sprintf("%s_fc%.0f_res0", c.name, fc), Hz: pts1, NominalHz: fc,
 				Expected: cascade(fc), Measure: graphGain(c.op, fc, 0),
 			})
 		}
+		out = append(out, responseCase{
+			Name: c.name + "_fc1000_res0.9", Hz: ptsPeak,
+			Expected: resonant(1000, .9*c.feedback), Measure: graphGain(c.op, 1000, .9),
+		})
 	}
 	out = append(out,
 		responseCase{Name: "lowpass_fc1000", Hz: pts1, NominalHz: 1000, Expected: lowpass(1000), Measure: graphGain(graph.Lowpass, 1000, 0)},

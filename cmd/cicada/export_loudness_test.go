@@ -19,10 +19,12 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-// noLimiterWAVSHA256 is the output of the pre-change renderer for
+// noLimiterWAVSHA256 is the renderer's output for
 // testdata/export-loudness/punchy-nolimiter.cicada with export "loud". A chain
-// without a limiter must keep producing exactly these bytes.
-const noLimiterWAVSHA256 = "dc6bea2bcdc3a890666d1e91b75a946576762871fa24ecbb2d761042b31a0328"
+// without a limiter must keep producing exactly these bytes. Re-pinned on
+// 2026-11-09 when the acid drive moved inside the 2x section (its bass track is
+// an acid voice).
+const noLimiterWAVSHA256 = "b6a49df4f677fa6d50f7026bae202d87493b9fff528ce9acc5b4727de27c9e03"
 
 func exportFixture(t *testing.T, name, export string) (inspection scoreInspection, opts render.Options, target renderTargetOptions) {
 	t.Helper()
