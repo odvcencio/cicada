@@ -2,11 +2,11 @@
    the panels drop their card chrome and long descriptions. Device groups read
    as a numbered signal chain. */
 .shell #detail-panel-device #device-editor,
-.shell #detail-panel-automation > .panel { margin:0; padding:0; border:0; border-radius:0; background:none; }
+.shell #detail-panel-automation .update-region__body > .panel { margin:0; padding:0; border:0; border-radius:0; background:none; }
 .shell #detail-panel-device #device-editor > .panel-heading p,
-.shell #detail-panel-automation > .panel > .panel-heading p { display:none; }
+.shell #detail-panel-automation .update-region__body > .panel > .panel-heading p { display:none; }
 .shell #detail-panel-device #device-editor > .panel-heading h2,
-.shell #detail-panel-automation > .panel > .panel-heading h2 { color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+.shell #detail-panel-automation .update-region__body > .panel > .panel-heading h2 { color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
 .shell #detail-panel-device #device-editor > .panel-heading { margin-bottom:6px; }
 
 .shell #detail-panel-device .device-track-picker { margin-bottom:8px; }

@@ -31,6 +31,10 @@ type workspaceProjection struct {
 	WriteSourceRevision string `json:"writeSourceRevision,omitempty"`
 	Saved               bool   `json:"saved,omitempty"`
 	RefreshRequired     bool   `json:"refreshRequired,omitempty"`
+	// The /studio shell's update regions: the visible regions whose content
+	// changed, and those the server rendered unchanged at this revision.
+	Regions   []regionHTML `json:"regions,omitempty"`
+	Unchanged []string     `json:"unchanged,omitempty"`
 }
 
 // Keep the native acknowledgment outside the action result: selecting a
@@ -154,6 +158,9 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		if _, err := workspaceLocation(ctx.FormData["__cicada_location"]); err != nil {
 			return action.Validation(err.Error(), nil, ctx.FormData)
 		}
+		if _, err := parseRegionRequest(ctx.FormData["__cicada_regions"]); err != nil {
+			return action.Validation(err.Error(), nil, ctx.FormData)
+		}
 		fields = make(map[string]string, len(ctx.FormData))
 		for key, value := range ctx.FormData {
 			fields[key] = value
@@ -194,10 +201,16 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		var projection workspaceProjection
 		var err error
 		if target, parseErr := url.Parse(location); parseErr == nil && target.Path == "/studio" {
-			// The shell does not apply a projection: after a save it reloads. Its
-			// engines read this response through size caps, and the whole shell can
-			// exceed them (the Code lens holds the source), so return a receipt.
-			projection = workspaceProjection{Revision: receipt.Revision, SourceRevision: receipt.SourceRevision, Location: location}
+			if requested, _ := parseRegionRequest(fields["__cicada_regions"]); len(requested) > 0 {
+				// The shell's edit queue names the update regions it shows, with
+				// their digests. Read once and return only the changed ones.
+				projection, err = s.shellRegions(r, location, requested)
+			} else {
+				// Engines that save from the shell read this response through size
+				// caps, and the whole shell can exceed them (the Code lens holds the
+				// source), so they get a receipt and refresh the page themselves.
+				projection = workspaceProjection{Revision: receipt.Revision, SourceRevision: receipt.SourceRevision, Location: location}
+			}
 		} else {
 			projection, err = s.projection(r, location)
 		}
@@ -221,6 +234,13 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		}
 		result.Redirect, result.Values = "", nil
 		status = http.StatusOK
+	} else if status == http.StatusConflict && fields["__cicada_regions"] != "" {
+		// The shell's edit queue blocks on a conflict. Name the revision the
+		// service holds, as the status bar shows it, beside "Refresh saved state".
+		var saved workspace
+		if s.backend.call(r.Context(), http.MethodGet, "/api/workspace", nil, &saved) == nil && saved.Revision != "" {
+			result.Message = strings.TrimSpace(strings.TrimRight(result.Message, ". ") + ". Saved revision " + strings.TrimPrefix(savedStatus(saved), "Saved · ") + ".")
+		}
 	}
 	for name, values := range capture.header {
 		if name != "Location" && name != "Content-Length" {

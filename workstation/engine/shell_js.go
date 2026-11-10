@@ -28,17 +28,21 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
-	confirmedWorkspaceVersion.Set(workspaceVersion{recoveryProps.Revision, recoveryProps.SourceRevision})
+	confirmedWorkspaceVersion.Set(workspaceVersion{Revision: recoveryProps.Revision, SourceRevision: recoveryProps.SourceRevision})
+	// The edit queue seeds the Code editor's clean baseline, so it binds first.
+	releaseEdits := bindShellEdits(ctx, root, recoveryProps)
 	releaseSourceRecovery := bindSourceRecovery(ctx, root, recoveryProps.CSRF)
 	releaseNavigation, err := bindShellNavigation(host, root)
 	if err != nil {
 		releaseSourceRecovery()
+		releaseEdits()
 		cancel()
 		return nil, err
 	}
 	releaseLayoutFit, err := bindShellLayoutFit(host, root)
 	if err != nil {
 		releaseSourceRecovery()
+		releaseEdits()
 		releaseNavigation()
 		cancel()
 		return nil, err
@@ -127,6 +131,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	return enginewasm.HandleFunc(func() {
 		cancel()
 		releaseSourceRecovery()
+		releaseEdits()
 		releaseNavigation()
 		releaseLayoutFit()
 		releasePlacementCommands()

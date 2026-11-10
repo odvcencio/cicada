@@ -22,6 +22,9 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		if err := actionValues(ctx); err != nil {
 			return err
 		}
+		if err := s.checkTarget(ctx, path); err != nil {
+			return err
+		}
 		data, err := payload(ctx.FormData)
 		if err != nil {
 			return action.Validation(err.Error(), nil, ctx.FormData)
