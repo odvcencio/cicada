@@ -95,6 +95,7 @@ type studioMeterSnapshot struct {
 	sequence uint64
 	frame    liveplay.MeterFrame
 	loudness liveplay.LoudnessSnapshot
+	analysis liveplay.AnalysisSnapshot
 }
 
 // snapshotFrames carries the latest binary telemetry frames, base64-encoded.
@@ -873,16 +874,6 @@ func (t *studioTransport) resetLoudness() {
 	}
 }
 
-func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
-	t.mu.Lock()
-	stream := t.stream
-	t.mu.Unlock()
-	if stream != nil {
-		return stream.Loudness()
-	}
-	return liveplay.LoudnessSnapshot{}
-}
-
 // healthFramePeriod is the interval between published health frames (twice a
 // second).
 const healthFramePeriod = 500 * time.Millisecond
@@ -910,7 +901,7 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player, he
 		case event := <-stream.Events():
 			t.markLanded(event)
 		case frame := <-stream.Meters():
-			t.publishMeter(frame, stream.Loudness())
+			t.publishMeter(frame, stream.Loudness(), stream.Analysis())
 		case <-ticker.C:
 			t.poll()
 		case <-telemetryTicker.C:
@@ -942,15 +933,12 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player, he
 	}
 }
 
-func (t *studioTransport) publishMeter(frame liveplay.MeterFrame, loudnessSnapshots ...liveplay.LoudnessSnapshot) {
+// publishMeter stores one meter frame with the loudness and analysis of the
+// stream that produced it, so a stream swap cannot pair a frame with another
+// stream's readings.
+func (t *studioTransport) publishMeter(frame liveplay.MeterFrame, loudness liveplay.LoudnessSnapshot, analysis liveplay.AnalysisSnapshot) {
 	sequence := t.meterSequence.Add(1)
-	snapshot := studioMeterSnapshot{sequence: sequence, frame: frame}
-	if len(loudnessSnapshots) != 0 {
-		snapshot.loudness = loudnessSnapshots[0]
-	} else {
-		snapshot.loudness = t.loudness()
-	}
-	t.latestMeter.Store(&snapshot)
+	t.latestMeter.Store(&studioMeterSnapshot{sequence: sequence, frame: frame, loudness: loudness, analysis: analysis})
 }
 
 func (t *studioTransport) markLanded(event liveplay.Event) {

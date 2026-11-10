@@ -347,7 +347,7 @@ func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) 
 		Sequence: 1, MomentaryLUFS: -18.2, ShortTermLUFS: -17.9, IntegratedLUFS: -18.4, RangeLU: 4.1,
 		TruePeakDBTP: -1.2, SamplePeakDBFS: -1.5, DroppedBlocks: 3,
 		HasMomentary: true, HasShortTerm: true, HasIntegrated: true, HasRange: true, HasTruePeak: true, HasSamplePeak: true,
-	})
+	}, liveplay.AnalysisSnapshot{})
 	var meter struct {
 		Type    string                                 `json:"type"`
 		Tick    int64                                  `json:"tick"`
