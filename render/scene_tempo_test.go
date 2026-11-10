@@ -50,7 +50,7 @@ func TestSceneTempoWAVFramesAreTheSumOfTheSegments(t *testing.T) {
 	// main*2 at 120, slower at 100, slowest at 84, outro*2 at 66.
 	var want int64
 	for _, segment := range []struct{ bars, bpm int64 }{{2, 120_000}, {1, 100_000}, {1, 84_000}, {2, 66_000}} {
-		want += ceilFrames(segment.bars*seq.TicksPerBar, segment.bpm, 48_000)
+		want += ceilFrames(segment.bars*ticksPerBar, segment.bpm, 48_000)
 	}
 	want += 48_000
 	if report.Frames != want || report.Bars != 6 {
@@ -192,8 +192,8 @@ func TestSceneTempoOfflineMatchesKernelTiming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if int64(n) != tempo.SampleAtTick(6*seq.TicksPerBar) {
-		t.Fatalf("offline length %d, tempo map %d", n, tempo.SampleAtTick(6*seq.TicksPerBar))
+	if int64(n) != tempo.SampleAtTick(6*ticksPerBar) {
+		t.Fatalf("offline length %d, tempo map %d", n, tempo.SampleAtTick(6*ticksPerBar))
 	}
 	player, err := engine.New(cfg)
 	if err != nil {
@@ -254,7 +254,7 @@ func renderBoth(t *testing.T, source string, rate int, bars int) (driftAudio, dr
 	if err != nil {
 		t.Fatal(err)
 	}
-	end := int(tempo.SampleAtTick(int64(bars) * seq.TicksPerBar))
+	end := int(tempo.SampleAtTick(int64(bars) * ticksPerBar))
 	latency := driftLatency(t, cfg)
 	total := n + latency
 	player, err := engine.New(cfg)
@@ -346,7 +346,7 @@ func TestSceneTempoRoundingBoundariesAgreeEverywhere(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := tempo.SampleAtTick(5 * seq.TicksPerBar)
+			want := tempo.SampleAtTick(5 * ticksPerBar)
 			cfg, err := project.CompileEngine(p, rate, 128)
 			if err != nil {
 				t.Fatal(err)
@@ -355,10 +355,10 @@ func TestSceneTempoRoundingBoundariesAgreeEverywhere(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := player.TempoAtTick(2 * seq.TicksPerBar); got != int64(milli) {
+			if got := player.TempoAtTick(2 * ticksPerBar); got != int64(milli) {
 				t.Fatalf("the engine plays %d milli-BPM, the project says %d", got, milli)
 			}
-			if got := player.FramesBetweenTicks(0, 5*seq.TicksPerBar); got != want {
+			if got := player.FramesBetweenTicks(0, 5*ticksPerBar); got != want {
 				t.Fatalf("engine frames %d, tempo map %d", got, want)
 			}
 			// The engine's transport, not only its map, reaches bar 5 there.
@@ -367,7 +367,7 @@ func TestSceneTempoRoundingBoundariesAgreeEverywhere(t *testing.T) {
 			reached := int64(-1)
 			for frame := int64(0); frame < want+256 && reached < 0; frame += 128 {
 				player.Render(l[:], r[:])
-				if player.TransportSample() >= want && player.LiveClock().TickAtSample(want) >= 5*seq.TicksPerBar {
+				if player.TransportSample() >= want && player.LiveClock().TickAtSample(want) >= 5*ticksPerBar {
 					reached = want
 				}
 			}

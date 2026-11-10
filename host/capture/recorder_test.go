@@ -15,7 +15,7 @@ func TestCountInDefaultAndIntegerClock(t *testing.T) {
 	}
 	c, err = DefaultCountIn(44100, 137333)
 	clock, _ := seq.NewClock(44100, 137333)
-	if err != nil || c.Frames != clock.SampleAtTick(seq.TicksPerBar) {
+	if err != nil || c.Frames != clock.SampleAtTick(ticksPerBar) {
 		t.Fatalf("fractional tempo count-in = %+v, %v", c, err)
 	}
 	if _, err := NewCountIn(48000, 120000, 9); err == nil {

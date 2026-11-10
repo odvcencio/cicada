@@ -11,7 +11,7 @@ import (
 )
 
 func TestListeningRangeStopsAtExactExclusiveEndAndLoopsAtPickup(t *testing.T) {
-	for _, start := range []int64{0, 320, seq.TicksPerBar + seq.PPQ} {
+	for _, start := range []int64{0, 320, ticksPerBar + seq.PPQ} {
 		for _, loop := range []bool{false, true} {
 			p, err := New(meterScore(t, "range", -12), 48_000)
 			if err != nil {
@@ -39,7 +39,7 @@ func TestListeningRangeStopsAtExactExclusiveEndAndLoopsAtPickup(t *testing.T) {
 				t.Fatal(err)
 			}
 			if loop {
-				want := Position{Bar: start/seq.TicksPerBar + 1, Step: start%seq.TicksPerBar/seq.TicksPerStep + 1}
+				want := Position{Bar: start/ticksPerBar + 1, Step: start%ticksPerBar/seq.TicksPerStep + 1}
 				if p.RangeFinished() || p.RangeCycles() != 1 || p.Position() != want {
 					t.Fatalf("pickup loop: finished=%v cycles=%d position=%+v want=%+v", p.RangeFinished(), p.RangeCycles(), p.Position(), want)
 				}
@@ -61,7 +61,7 @@ func TestListeningJumpWaitsForStereoFrameAndClearContinuesSong(t *testing.T) {
 	defer p.Close()
 	var part [8]byte
 	_, _ = io.ReadFull(p, part[:3])
-	r := PlaybackRange{StartTick: 4*seq.TicksPerBar + seq.PPQ, EndTick: 5 * seq.TicksPerBar, Loop: true}
+	r := PlaybackRange{StartTick: 4*ticksPerBar + seq.PPQ, EndTick: 5 * ticksPerBar, Loop: true}
 	if err := p.PlayRange(r); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestShortLoopTakesLatestEditAndNewBoundsWithoutAudioAllocations(t *testing.
 	var pcm [blockFrames * 8]byte
 	_, _ = io.ReadFull(p, pcm[:])
 	next := testScore(t, "updated", 150_000)
-	r = PlaybackRange{StartTick: 3*seq.TicksPerBar + 320, EndTick: 3*seq.TicksPerBar + 640, Loop: true}
+	r = PlaybackRange{StartTick: 3*ticksPerBar + 320, EndTick: 3*ticksPerBar + 640, Loop: true}
 	next.Range = &r
 	if err := p.Offer(next); err != nil {
 		t.Fatal(err)

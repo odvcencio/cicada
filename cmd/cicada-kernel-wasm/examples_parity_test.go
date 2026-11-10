@@ -18,7 +18,6 @@ import (
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -160,12 +159,12 @@ func TestExamplesPCM24Parity(t *testing.T) {
 					for _, entry := range cfg.Song {
 						bars += int(entry.Bars)
 					}
-					endTick := int64(bars) * seq.TicksPerBar
+					endTick := int64(bars) * ticksPerBar
 					if p.Arrange != nil {
 						for _, placement := range p.Arrange.Placements {
 							endTick = max(endTick, placement.AtTick+placement.LengthTicks)
 						}
-						bars = int((endTick + seq.TicksPerBar - 1) / seq.TicksPerBar)
+						bars = int((endTick + ticksPerBar - 1) / ticksPerBar)
 					}
 					tempo, err := project.NewTempoMap(p.MeterMap(), rate, cfg.BPMMilli, project.SongTempoChanges(p))
 					if err != nil || bars == 0 {
@@ -175,10 +174,10 @@ func TestExamplesPCM24Parity(t *testing.T) {
 					// must agree between native and WASM and with the tempo map.
 					for from := 0; from < bars; from += 3 {
 						for bar := from + 1; bar <= bars; bar++ {
-							got := math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(float64(int64(from)*seq.TicksPerBar)), math.Float64bits(float64(int64(bar)*seq.TicksPerBar))))
-							want := native.FramesBetweenTicks(int64(from)*seq.TicksPerBar, int64(bar)*seq.TicksPerBar)
-							if from == 0 && want != tempo.SampleAtTick(int64(bar)*seq.TicksPerBar) || int64(got) != want {
-								t.Fatalf("frames from bar %d to bar %d: WASM %v, native %d, tempo map %d", from, bar, got, want, tempo.SampleAtTick(int64(bar)*seq.TicksPerBar))
+							got := math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(float64(int64(from)*ticksPerBar)), math.Float64bits(float64(int64(bar)*ticksPerBar))))
+							want := native.FramesBetweenTicks(int64(from)*ticksPerBar, int64(bar)*ticksPerBar)
+							if from == 0 && want != tempo.SampleAtTick(int64(bar)*ticksPerBar) || int64(got) != want {
+								t.Fatalf("frames from bar %d to bar %d: WASM %v, native %d, tempo map %d", from, bar, got, want, tempo.SampleAtTick(int64(bar)*ticksPerBar))
 							}
 						}
 					}

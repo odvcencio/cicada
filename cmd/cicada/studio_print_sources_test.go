@@ -20,7 +20,6 @@ import (
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -139,7 +138,7 @@ func TestSecondarySamplerPrintUndoRedoAndReopen(t *testing.T) {
 func TestSecondaryVocalPrintPreviewRecompUndoAndReopen(t *testing.T) {
 	isolateState(t)
 	s, entry, part, partPath := printSourcesStudio(t, t.TempDir())
-	first := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .2)
+	first := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .2)
 	seen, err := project.ReadScoreRevision(s.path)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +189,7 @@ func TestSecondaryVocalPrintPreviewRecompUndoAndReopen(t *testing.T) {
 	if r := studioCall(t, s.routes(), "/api/automation", studioEdit{Action: "automation-point-set", Path: "vox.level", Revision: studioRevision(currentWithVocal), Value: json.RawMessage(`{"at":"@1.1.1","value":"-9dB","shape":"linear"}`)}); r.Code != 200 {
 		t.Fatal("vocal automation after print", r.Code, r.Body.String())
 	}
-	second := fakeTimelineTake(t, s, seq.TicksPerBar, 2*seq.TicksPerBar, 192000, .6)
+	second := fakeTimelineTake(t, s, ticksPerBar, 2*ticksPerBar, 192000, .6)
 	current, _ := os.ReadFile(s.path)
 	seen, _ = project.ReadScoreRevision(s.path)
 	request = studioEdit{Action: "comp", Revision: studioRevision(current), SourceRevision: seen, TakeID: second.ID, Recording: &studioRecordingSettings{Start: "@2.1.1", End: "@3.1.1"}}
@@ -229,7 +228,7 @@ func TestSecondaryPrintsRejectUnseenAndMidCommitWrites(t *testing.T) {
 				if kind == "sampler" {
 					payload = printSamplerCommand(t, s)
 				} else {
-					take := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .2)
+					take := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .2)
 					seen, _ := project.ReadScoreRevision(s.path)
 					payload = studioEdit{Action: "select", TakeID: take.ID, Revision: studioRevision(entry), SourceRevision: seen}
 					route = "/api/takes"
@@ -275,9 +274,9 @@ func TestSecondaryVocalCrashChild(t *testing.T) {
 	} else {
 		s, _, _, _ = printSourcesStudio(t, dir)
 	}
-	target := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .2)
+	target := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .2)
 	if os.Getenv("CICADA_PRINT_CRASH_RETAINED") == "1" {
-		other := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .6)
+		other := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .6)
 		for _, id := range []string{target.ID, other.ID} {
 			source, _ := os.ReadFile(s.path)
 			if err := s.commitTake(id, studioRevision(source), nil); err != nil {
@@ -383,7 +382,7 @@ func TestSongSourcesVocalPreviewHistoryAudioAndReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	take := fakeTimelineTake(t, s, 0, 6*seq.TicksPerBar, 576000, 0)
+	take := fakeTimelineTake(t, s, 0, 6*ticksPerBar, 576000, 0)
 	rawPath := filepath.Join(filepath.Dir(s.path), take.Asset.Path)
 	raw, _ := os.ReadFile(rawPath)
 	rawHash := sha256.Sum256(raw)
@@ -485,7 +484,7 @@ func TestSongSourcesVocalRejectsUnseenAndMidCommitSaves(t *testing.T) {
 	for _, mid := range []bool{false, true} {
 		t.Run(fmt.Sprintf("mid=%v", mid), func(t *testing.T) {
 			s, entry, song, owner := songSourcesStudio(t, t.TempDir())
-			take := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .2)
+			take := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .2)
 			seen, err := project.ReadScoreRevision(s.path)
 			if err != nil {
 				t.Fatal(err)

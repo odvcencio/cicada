@@ -43,7 +43,7 @@ func fakeTimelineTake(t *testing.T, s *studio, start, end int64, frames int, val
 func fakeTimelineTakeAt(t *testing.T, s *studio, start, end int64, frames int, value float32, tempoMilli int64) takejournal.Take {
 	t.Helper()
 	source, _ := os.ReadFile(s.path)
-	timeline := &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: tempoMilli}
+	timeline := &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-ticksPerBar), TempoMilli: tempoMilli}
 	id, err := s.takes.BeginTimeline("vox", "session", studioRevision(source), 48000, 1, timeline)
 	if err != nil {
 		t.Fatal(err)
@@ -74,12 +74,12 @@ func TestVocalCompFullSongPunchAndRetainedPasses(t *testing.T) {
 	s := newTakeStudio(t, t.TempDir())
 	source := []byte(strings.Replace(strings.Replace(audioTakeScore, "cicada 2\n", "cicada 2\ntempo 120\n", 1), "song { main }", "song { main*2 }", 1))
 	os.WriteFile(s.path, source, 0600)
-	a := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .1)
+	a := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .1)
 	if err := s.commitTake(a.ID, a.Expected, nil); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := os.ReadFile(s.path)
-	b := fakeTimelineTake(t, s, seq.TicksPerBar, 2*seq.TicksPerBar, 192000, .7)
+	b := fakeTimelineTake(t, s, ticksPerBar, 2*ticksPerBar, 192000, .7)
 	next, err := s.vocalTakeSource(first, b, &studioRecordingSettings{Start: "@2.1.1", End: "@3.1.1"})
 	if err != nil {
 		t.Fatal(err)
@@ -140,8 +140,8 @@ func TestVocalSceneConversionPreservesBacking(t *testing.T) {
 	os.WriteFile(s.path, source, 0600)
 	// A silent take: the comp adds the arrange block and a placement but no sound,
 	// so the render must equal the scene song's.
-	takeFrames := int(seq.Clock{SampleRate: 48000, BPMMilli: 137333}.SampleAtTick(5 * seq.TicksPerBar))
-	take := fakeTimelineTakeAt(t, s, 0, 5*seq.TicksPerBar, takeFrames, 0, 137333)
+	takeFrames := int(seq.Clock{SampleRate: 48000, BPMMilli: 137333}.SampleAtTick(5 * ticksPerBar))
+	take := fakeTimelineTakeAt(t, s, 0, 5*ticksPerBar, takeFrames, 0, 137333)
 	candidate, err := s.vocalTakeSource(source, take, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func TestVocalSceneConversionPreservesBacking(t *testing.T) {
 	a, b := makeEngine(source), makeEngine(candidate)
 	left, right := make([]float32, 128), make([]float32, 128)
 	ll, rr := make([]float32, 128), make([]float32, 128)
-	frames := seq.Clock{SampleRate: 48000, BPMMilli: 137333}.SampleAtTick(5 * seq.TicksPerBar)
+	frames := seq.Clock{SampleRate: 48000, BPMMilli: 137333}.SampleAtTick(5 * ticksPerBar)
 	for at := int64(0); at < frames; at += 128 {
 		a.Render(left, right)
 		b.Render(ll, rr)
@@ -189,7 +189,7 @@ func TestVocalFullLengthBeyondOldAssetLimit(t *testing.T) {
 	s := newTakeStudio(t, t.TempDir())
 	source := []byte(strings.Replace(strings.Replace(audioTakeScore, "cicada 2\n", "cicada 2\ntempo 120\n", 1), "song { main }", "song { main*93 }", 1))
 	os.WriteFile(s.path, source, 0600)
-	take := fakeTimelineTake(t, s, 0, 93*seq.TicksPerBar, 93*96000, .2)
+	take := fakeTimelineTake(t, s, 0, 93*ticksPerBar, 93*96000, .2)
 	if err := s.commitTake(take.ID, take.Expected, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestVocalNativePunchAutoSavesAndRetainsRawInput(t *testing.T) {
 	for _, place := range p.Arrange.Placements {
 		if place.Track == "vox" {
 			found = true
-			if place.AtTick != seq.TicksPerBar || place.LengthTicks != seq.TicksPerBar {
+			if place.AtTick != ticksPerBar || place.LengthTicks != ticksPerBar {
 				t.Fatalf("punch placement %+v", place)
 			}
 		}

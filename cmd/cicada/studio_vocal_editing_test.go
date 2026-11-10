@@ -11,13 +11,12 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func vocalRampTake(t *testing.T, s *studio) takejournal.Take {
 	t.Helper()
 	source, _ := os.ReadFile(s.path)
-	timeline := &takejournal.Timeline{EndTick: 2 * seq.TicksPerBar, TempoMilli: 120000}
+	timeline := &takejournal.Timeline{EndTick: 2 * ticksPerBar, TempoMilli: 120000}
 	id, err := s.takes.BeginTimeline("vox", "session", studioRevision(source), 48000, 1, timeline)
 	if err != nil {
 		t.Fatal(err)
@@ -68,9 +67,9 @@ func TestVocalEditingOffsetFadesAndImmutablePrints(t *testing.T) {
 			t.Fatal("timing/fade choices lost")
 		}
 	}
-	a := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .125)
-	b := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .375)
-	comp := vocalComp{Track: "vox", Tempo: 120000, Segments: []vocalSegment{{Take: a.ID, Start: 0, End: seq.TicksPerBar, FadeMS: &fade}, {Take: b.ID, Start: seq.TicksPerBar, End: 2 * seq.TicksPerBar, FadeMS: &fade, CrossfadeMS: &cross}}}
+	a := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .125)
+	b := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .375)
+	comp := vocalComp{Track: "vox", Tempo: 120000, Segments: []vocalSegment{{Take: a.ID, Start: 0, End: ticksPerBar, FadeMS: &fade}, {Take: b.ID, Start: ticksPerBar, End: 2 * ticksPerBar, FadeMS: &fade, CrossfadeMS: &cross}}}
 	asset, err := s.printVocalComp(comp, 48000)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +87,7 @@ func TestVocalEditingOffsetFadesAndImmutablePrints(t *testing.T) {
 	}
 	// A punch ending at the join supplies no outgoing handle after it; a bounded
 	// one-sided crossfade still reaches the incoming pass without a zero dip.
-	aPunch := fakeTimelineTake(t, s, 0, seq.TicksPerBar, 96000, .125)
+	aPunch := fakeTimelineTake(t, s, 0, ticksPerBar, 96000, .125)
 	comp.Segments[0].Take = aPunch.ID
 	bounded, err := s.printVocalComp(comp, 48000)
 	if err != nil {

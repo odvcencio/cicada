@@ -589,7 +589,7 @@ func TestLayerMaskAppliesAtNextBar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := e.transport.SeekTick(seq.TicksPerBar - 10); err != nil {
+	if err := e.transport.SeekTick(ticksPerBar - 10); err != nil {
 		t.Fatal(err)
 	}
 	if !e.PushBatch([]cmd.Command{
@@ -647,10 +647,10 @@ func TestRestartAndNextBarPatternEdit(t *testing.T) {
 			if message.Tick == seq.PPQ {
 				atBeat = message.A
 			}
-			if message.Tick == seq.TicksPerBar-seq.TicksPerStep {
+			if message.Tick == ticksPerBar-seq.TicksPerStep {
 				beforeEdit = message.A
 			}
-			if message.Tick == seq.TicksPerBar {
+			if message.Tick == ticksPerBar {
 				afterEdit = message.A
 			}
 		}

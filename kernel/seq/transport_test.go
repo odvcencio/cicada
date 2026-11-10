@@ -26,11 +26,11 @@ func TestTransportStopPlayAndSeek(t *testing.T) {
 	if start != PPQ || end != 2*PPQ {
 		t.Fatalf("resume moved incorrectly: %d..%d", start, end)
 	}
-	if err := transport.SeekTick(4 * TicksPerBar); err != nil {
+	if err := transport.SeekTick(4 * ticksPerBar); err != nil {
 		t.Fatal(err)
 	}
 	start, end = transport.Advance(24_000)
-	if start != 4*TicksPerBar || end != 4*TicksPerBar+PPQ {
+	if start != 4*ticksPerBar || end != 4*ticksPerBar+PPQ {
 		t.Fatalf("seek: %d..%d", start, end)
 	}
 }
@@ -42,15 +42,15 @@ func TestTempoChangeAtBarBoundary(t *testing.T) {
 	if err := transport.QueueTempo(240_000); err != nil {
 		t.Fatal(err)
 	}
-	if tempo, tick := transport.PendingTempo(); tempo != 240_000 || tick != TicksPerBar {
+	if tempo, tick := transport.PendingTempo(); tempo != 240_000 || tick != ticksPerBar {
 		t.Fatalf("wrong pending tempo %d at %d", tempo, tick)
 	}
 	start, end := transport.Advance(72_000)
-	if start != PPQ || end != TicksPerBar || transport.BPMMilli() != 240_000 {
+	if start != PPQ || end != ticksPerBar || transport.BPMMilli() != 240_000 {
 		t.Fatalf("boundary: %d..%d tempo=%d", start, end, transport.BPMMilli())
 	}
 	_, end = transport.Advance(12_000)
-	if end != TicksPerBar+PPQ {
+	if end != ticksPerBar+PPQ {
 		t.Fatalf("new tempo beat ended at %d", end)
 	}
 }
@@ -59,18 +59,18 @@ func TestTempoAtAlreadyEnteredBoundaryDoesNotRewind(t *testing.T) {
 	transport, _ := NewTransport(48_000, 120_000)
 	transport.Play()
 	transport.Advance(96_001)
-	if transport.Tick() != TicksPerBar {
+	if transport.Tick() != ticksPerBar {
 		t.Fatalf("expected bar boundary tick, got %d", transport.Tick())
 	}
 	if err := transport.QueueTempo(240_000); err != nil {
 		t.Fatal(err)
 	}
 	_, end := transport.Advance(12)
-	if end != TicksPerBar {
+	if end != ticksPerBar {
 		t.Fatalf("tempo change rewound one sample and reached tick %d", end)
 	}
 	_, end = transport.Advance(1)
-	if end != TicksPerBar+1 {
+	if end != ticksPerBar+1 {
 		t.Fatalf("new tempo did not advance from block start: %d", end)
 	}
 }

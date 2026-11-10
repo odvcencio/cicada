@@ -11,7 +11,6 @@ import (
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -48,7 +47,7 @@ func detailPCM24(t *testing.T, path string, rate int) string {
 	}
 	var endTick int64
 	for _, entry := range cfg.Song {
-		endTick += int64(entry.Bars) * seq.TicksPerBar
+		endTick += int64(entry.Bars) * ticksPerBar
 	}
 	tempo, err := project.NewTempoMap(p.MeterMap(), rate, cfg.BPMMilli, project.SongTempoChanges(p))
 	if err != nil || endTick == 0 {

@@ -14,7 +14,6 @@ import (
 
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -25,7 +24,7 @@ func vocalGainFixture(t *testing.T) (*studio, []byte, takejournal.Take) {
 	if err := os.WriteFile(s.path, source, 0600); err != nil {
 		t.Fatal(err)
 	}
-	return s, source, fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .125)
+	return s, source, fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .125)
 }
 
 func vocalGainPrint(t *testing.T, s *studio, source []byte) (project.Asset, []byte) {

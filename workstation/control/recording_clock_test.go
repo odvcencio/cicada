@@ -76,12 +76,12 @@ func TestNativeNoteClockCommitsBeatsToTheirPlayedSteps(t *testing.T) {
 					sample := clock.SampleAtTick(want) - int64(age)*48000/int64(time.Second)
 					tick := clock.TickAtSample(sample)
 					frame := liveplay.TransportFrame{
-						Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1),
+						Bar: int32(tick/ticksPerBar + 1), Beat: int32(tick%ticksPerBar/seq.PPQ + 1),
 						Tick: int32(tick % seq.PPQ), TempoMilli: uint32(bpm * 1000), Playing: true,
 					}
 					var raw [liveplay.TransportFrameSize]byte
 					frame.Encode(raw[:])
-					state := PlaybackState{Playing: true, Bar: int64(frame.Bar), Step: tick%seq.TicksPerBar/seq.TicksPerStep + 1}
+					state := PlaybackState{Playing: true, Bar: int64(frame.Bar), Step: tick%ticksPerBar/seq.TicksPerStep + 1}
 					state.Frames.Transport = base64.StdEncoding.EncodeToString(raw[:])
 					if delivery.known {
 						age := int64(delivery.age)
