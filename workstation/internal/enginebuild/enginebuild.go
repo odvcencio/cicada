@@ -14,10 +14,19 @@ const Package = "./engine"
 // The size report links without -s to keep function names for attribution.
 const ReleaseLDFlags = "-s -w"
 
-// MaxBytes is the working limit on the raw bytes of the shipped engine file.
-// `go generate` fails above it. 16,777,216 bytes (16 MiB) is the ceiling
-// (decision 6 of decisions/2026-11-10-stewardship-and-direction).
-const MaxBytes = 16 << 20
+// MaxBytes is the working limit on the raw bytes of the shipped engine file;
+// `go generate` fails above it.
+//
+// Measured on 2026-11-10: 11,493,199 bytes, after the engine stopped calling
+// net/http's client (make engine-size-report). The limit is that size plus
+// 524,288 bytes (512 KiB), rounded up to a multiple of 65,536 (the engine
+// modules design, step S2). Raise it only through a recorded decision, and
+// never above Ceiling.
+const MaxBytes = 12_058_624
+
+// Ceiling is the most the engine may ever be: 16,777,216 bytes (16 MiB),
+// decision 6 of decisions/2026-11-10-stewardship-and-direction.
+const Ceiling = 16 << 20
 
 // Env returns the environment of every engine build: the host environment
 // with the browser target and no workspace.

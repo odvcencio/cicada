@@ -49,9 +49,11 @@ rather than assuming that examples on `main` are supported by the pinned version
   `go generate ./...` transpiles components, includes their stylesheet, and
   builds the content-addressed Go/WASM engine module. Generation is part of the
   GoSX build hook and CI checks that checked-in projections remain reproducible.
-  The shared UI module has a 16 MiB build limit. Keep host compiler and storage
-  dependencies out of it: sampler controls use `host/padsampler/protocol`, and
-  position controls use `musictime` for exact tick conversion.
+  The shared UI module has a working size limit (see "UI engine size"). Keep
+  host compiler and storage dependencies out of it: sampler controls use
+  `host/padsampler/protocol`, and position controls use `musictime` for exact
+  tick conversion. Send requests with `nativeRequest` (`engine/fetch_js.go`),
+  not `net/http`.
 - Use GoSX's programmatic `server.Page` API for this private, single-score
   workspace. Navigation changes the selected panel without a client router.
   The framework handles history, managed forms, runtime loading, and disposal.
@@ -207,8 +209,10 @@ available. Run `make test-collaboration` for the seeded convergence, offline
 PCM24, role, undo, and reconnect checks, and `make test-studio-collaboration`
 against a disposable Studio for browser interaction checks.
 
-Optional CMS, admin,
-payments, Scene3D, and simulation packages are not dependencies of this editor.
+Optional CMS, admin, payments, and simulation packages are not dependencies of
+this editor. GoSX's `engine/wasm` package still imports its Scene3D package
+(`gosx/scene`), so the UI engine links Scene3D's initialization without using
+it; `make engine-size-report` shows the cost.
 
 ## UI engine size
 
