@@ -72,6 +72,11 @@ var shortHelpText = func() string {
 }()
 
 func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
+	if len(args) > 0 && args[0] != "help" && hasJSONFlag(args) {
+		if handled, code := handleJSONHelp(args, stdout, stderr); handled {
+			return true, code
+		}
+	}
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprintln(stdout, shortHelpText)
 		return true, 0
@@ -125,6 +130,43 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 		return true, 2
 	}
 	return false, 0
+}
+
+// handleJSONHelp answers the help requests of a run with --json: --help with
+// no command prints the help document, <command> --help prints that
+// command's entry, and an unknown command prints an error document.
+func handleJSONHelp(args []string, stdout, stderr io.Writer) (bool, int) {
+	onlyFlags := true
+	for _, arg := range args {
+		onlyFlags = onlyFlags && (arg == "--json" || arg == "--help" || arg == "-h")
+	}
+	if onlyFlags {
+		writeHelpJSON(stdout, "")
+		return true, 0
+	}
+	name := args[0]
+	if name == "lib" && len(args) > 1 {
+		if _, ok := findCommandHelp("lib " + args[1]); ok {
+			name += " " + args[1]
+		}
+	}
+	if _, ok := findCommandHelp(name); ok {
+		for _, arg := range args[1:] {
+			if arg == "--help" || arg == "-h" {
+				writeHelpJSON(stdout, name)
+				return true, 0
+			}
+		}
+		return false, 0
+	}
+	if strings.HasPrefix(name, "-") {
+		return false, 0
+	}
+	message := fmt.Sprintf("cicada: unknown command %q", name)
+	writeAgentJSON(stdout, jsonErrorDocument{Schema: helpSchema, Error: jsonError{Code: "unknown_command", Message: message}})
+	fmt.Fprintln(stderr, message)
+	fmt.Fprintln(stderr, "run cicada help")
+	return true, 2
 }
 
 // helpJSONArgs reports whether the arguments after help ask for JSON, and the

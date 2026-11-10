@@ -41,6 +41,16 @@ use the names of `verify-wav --report` (`integrated_lufs`, `true_peak_dbtp`,
 `clipped_count`); Studio's export report calls the integrated loudness
 `achieved_lufs`.
 
+## Reading the formats
+
+A client that reads these documents should:
+
+1. Check `schema` first and refuse a version it does not know: compare the
+   whole string, such as `cicada.check.v1`.
+2. Ignore fields it does not know.
+3. Rely on this: within one version, fields are only added. A field's meaning
+   or type changes only with a new version.
+
 Every example below is checked: `make test-agent-surface` writes the files this
 page shows into an empty folder, runs the commands in page order with the built
 binary, and fails if a value shown here differs from the output. Long outputs
@@ -126,18 +136,118 @@ For each intent:
   zero value (0, "", false or empty), which the intent takes as the default
   its meaning states.
 - `required_when` names a condition under which an optional field becomes
-  required, such as `{"field": "mode", "values": ["note"]}`.
+  required: another field of the intent has one of `values`, or, with
+  `present`, is given at all. In the example below `setstep` needs
+  `velocity` when its `mode` is `hit`.
 - `one_of` lists groups of fields of which the intent needs at least one,
-  such as the fields of `updateplacement`'s `settings`.
+  always or only while its `when` holds. Field names in `one_of`, and in a
+  condition's `field`, are dotted paths from the intent's top level; a path
+  through a list, such as `notes.pitch`, names a field of each element.
 - `values` is the list the intent's handler checks, so a string outside it is
   refused. A field the catalog does not list is refused too.
-- `example` is a payload that `cicada apply` accepts. Examples name the
-  entities of a small test score (track `bass`, pattern `riff`, scene `main`);
-  use the names of your own score.
+- `selects` marks a field that chooses the intent's mode or operation, such
+  as `mode` or `op`.
+- `examples` are payloads that `cicada apply` accepts: one for each value of
+  every field that `selects`, the first also given as `example`. Examples name
+  the entities of a small test score (track `bass`, pattern `riff`, scene
+  `main`); use the names of your own score.
 
 A test applies every example, removes each field it sets and checks that the
-intent is refused exactly when the catalog says the field is required, and
-replaces each listed value with one outside the list.
+intent is refused exactly when the catalog says the field is required (or
+required by a `required_when` or `one_of` the example meets), and replaces each
+listed value with one outside the list.
+
+<!-- agent-example: intents --json setstep -->
+
+```json
+{
+  "schema": "cicada.intents.v1",
+  "intents": [
+    {
+      "kind": "setstep",
+      "fields": [
+        {
+          "name": "entity"
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "selects": true,
+          "required": true,
+          "values": [
+            "note",
+            "hit",
+            "tie",
+            "rest"
+          ]
+        },
+        {
+          "name": "pitch"
+        },
+        {
+          "name": "accent"
+        },
+        {
+          "name": "slide"
+        },
+        {
+          "name": "ratchet"
+        },
+        {
+          "name": "chance"
+        },
+        {
+          "name": "velocity",
+          "type": "string",
+          "required": false,
+          "required_when": {
+            "field": "mode",
+            "values": [
+              "hit"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+`editnotes` names each note in `notes` by its pitch or, in a drum pattern, its
+lane, and its `velocity` operation takes a new value or a change:
+
+<!-- agent-example: intents --json editnotes -->
+
+```json
+{
+  "schema": "cicada.intents.v1",
+  "intents": [
+    {
+      "kind": "editnotes",
+      "one_of": [
+        {
+          "fields": [
+            "notes.pitch",
+            "notes.lane"
+          ]
+        },
+        {
+          "fields": [
+            "velocity",
+            "dv"
+          ],
+          "when": {
+            "field": "op",
+            "values": [
+              "velocity"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
 <!-- agent-example: intents --json setpatternsettings -->
 
@@ -524,9 +634,12 @@ command prints and, when the documentation gives a fix for that cause, a
 
 After a shortfall the best pass is still written and listed in `outputs`.
 
-`remedy` has a `summary`, the `file` to change and the `score_text` to put in
-it: when `replaces` is set, `score_text` replaces that text in the file (the
-declaration it changes); otherwise it goes at the end of the file. `intents`,
+`remedy` has a `summary`, the `file` to change, the file's `revision` when the
+render read it (the form `cicada apply` uses), and the `score_text` to put in
+it: when `replaces` is set, `score_text` replaces that text, which occurs
+exactly once in the file at that revision (the declaration it changes);
+otherwise it goes at the end of the file. The remedy holds only while the file
+is at `revision`: after any other change, render again. `intents`,
 when present, makes the same change through `cicada apply`; it is absent when
 no intent can. Today only `loudness_shortfall_at_true_peak_ceiling` has a
 remedy: a limiter at the export's true-peak ceiling as the last master
@@ -582,6 +695,7 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
     "remedy": {
       "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent",
       "file": "loud.cicada",
+      "revision": "9a1336e210d4e6fddfde19678baf455fd45a31dbb38177789e133de2ac384d5f",
       "replaces": "master { level = 6dB insert = tone }",
       "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }"
     }

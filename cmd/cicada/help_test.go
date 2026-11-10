@@ -226,3 +226,57 @@ func TestHelpJSON(t *testing.T) {
 		t.Fatalf("help render --json: handled=%t code=%d\n%s", handled, code, stdout.String())
 	}
 }
+
+// TestHelpWithJSONPrintsOneDocument covers --help and unknown commands when
+// --json is given: each prints one document.
+func TestHelpWithJSONPrintsOneDocument(t *testing.T) {
+	for _, tc := range []struct {
+		args    []string
+		code    int
+		command string
+		error   string
+	}{
+		{[]string{"check", "--help", "--json"}, 0, "check", ""},
+		{[]string{"lib", "update", "--help", "--json"}, 0, "lib update", ""},
+		{[]string{"--help", "--json"}, 0, "", ""},
+		{[]string{"nosuch", "--json"}, 2, "", "unknown_command"},
+	} {
+		var stdout, stderr bytes.Buffer
+		handled, code := handleCLIHelp(tc.args, &stdout, &stderr)
+		var document struct {
+			Schema   string `json:"schema"`
+			Commands []struct {
+				Name string `json:"name"`
+			} `json:"commands"`
+			Error *struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		decoder := json.NewDecoder(&stdout)
+		if err := decoder.Decode(&document); err != nil || decoder.More() {
+			t.Fatalf("%v: standard output is not one document: %v", tc.args, err)
+		}
+		if !handled || code != tc.code || document.Schema != helpSchema {
+			t.Fatalf("%v: handled=%t code=%d schema %q", tc.args, handled, code, document.Schema)
+		}
+		switch {
+		case tc.error != "":
+			if document.Error == nil || document.Error.Code != tc.error || document.Error.Message == "" {
+				t.Fatalf("%v: error %+v", tc.args, document.Error)
+			}
+		case tc.command != "":
+			if len(document.Commands) != 1 || document.Commands[0].Name != tc.command {
+				t.Fatalf("%v: commands %+v", tc.args, document.Commands)
+			}
+		default:
+			if len(document.Commands) < 40 {
+				t.Fatalf("%v: %d commands", tc.args, len(document.Commands))
+			}
+		}
+	}
+	// A command run with --json and no --help is the command's business.
+	if handled, _ := handleCLIHelp([]string{"check", "--json"}, &bytes.Buffer{}, &bytes.Buffer{}); handled {
+		t.Fatal("check --json was taken as a help request")
+	}
+}

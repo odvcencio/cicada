@@ -2,14 +2,15 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/render"
 )
 
@@ -128,7 +129,7 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 			if !strings.Contains(remedy.ScoreText, fmt.Sprintf("ceiling = %gdBTP", ceiling)) || remedy.Summary != limiterRemedySummary(ceiling) || !strings.Contains(stderr, remedy.Summary) {
 				t.Fatalf("remedy: %+v\n%s", remedy, stderr)
 			}
-			if remedy.File != filepath.ToSlash(score) || remedy.Replaces != "master { level = 6dB insert = tone }" {
+			if remedy.File != filepath.ToSlash(score) || remedy.Replaces != "master { level = 6dB insert = tone }" || remedy.Revision != edits.Revision(source) || strings.Count(string(source), remedy.Replaces) != 1 {
 				t.Fatalf("remedy target: %+v", remedy)
 			}
 			loudness := result.Loudness
@@ -138,6 +139,11 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 			fixed := strings.Replace(string(source), remedy.Replaces, remedy.ScoreText, 1)
 			if err := os.WriteFile(score, []byte(fixed), 0o644); err != nil {
 				t.Fatal(err)
+			}
+			// An agent that compares revisions sees that the file has changed
+			// since the remedy was computed, so the remedy no longer holds.
+			if now, err := os.ReadFile(score); err != nil || edits.Revision(now) == remedy.Revision {
+				t.Fatalf("the remedy's revision does not tell a changed file: %v", err)
 			}
 			result, code, _ = runRenderJSON(t, "render", score, filepath.Join(dir, "fixed.wav"), opts, &target)
 			if code != 0 || !result.OK || result.Loudness == nil || !result.Loudness.TargetMet || *result.Loudness.TruePeakDBTP > ceiling {

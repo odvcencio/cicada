@@ -362,3 +362,58 @@ func TestErrorCodesAreDocumented(t *testing.T) {
 		}
 	}
 }
+
+// TestDocumentedExamplesDecode decodes every output example in
+// docs/manual/agents.md into the Go type of its format, with a decoder that
+// ignores unknown fields as a client should, and requires a known schema.
+// A shown value of the wrong type, or an unknown schema, fails.
+func TestDocumentedExamplesDecode(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(), "docs", "manual", "agents.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formats := map[string]func() any{
+		helpSchema:        func() any { return &helpDocument{} },
+		intentsSchema:     func() any { return &intentsDocument{} },
+		diagnosticsSchema: func() any { return &diagnosticsDocument{} },
+		checkSchema:       func() any { return &checkDocument{} },
+		applySchema:       func() any { return &applyDocument{} },
+		renderSchema:      func() any { return &renderDocument{} },
+	}
+	fence := strings.Repeat("`", 3)
+	lines := strings.Split(string(data), "\n")
+	decoded := 0
+	for i := 0; i < len(lines); i++ {
+		if !strings.HasPrefix(strings.TrimSpace(lines[i]), "<!-- agent-example: ") {
+			continue
+		}
+		start := i + 1
+		for start < len(lines) && strings.TrimSpace(lines[start]) != fence+"json" {
+			start++
+		}
+		end := start + 1
+		for end < len(lines) && strings.TrimSpace(lines[end]) != fence {
+			end++
+		}
+		body := []byte(strings.Join(lines[start+1:end], "\n"))
+		var header struct {
+			Schema string `json:"schema"`
+		}
+		if err := json.Unmarshal(body, &header); err != nil {
+			t.Fatalf("agents.md:%d: %v", i+1, err)
+		}
+		make, ok := formats[header.Schema]
+		if !ok {
+			t.Errorf("agents.md:%d: unknown schema %q", i+1, header.Schema)
+			continue
+		}
+		if err := json.Unmarshal(body, make()); err != nil {
+			t.Errorf("agents.md:%d: the %s example does not decode: %v", i+1, header.Schema, err)
+		}
+		decoded++
+		i = end
+	}
+	if decoded < 10 {
+		t.Fatalf("decoded only %d examples", decoded)
+	}
+}

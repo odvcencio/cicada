@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
@@ -89,13 +90,16 @@ type renderErrorJSON struct {
 }
 
 // renderRemedyJSON is a fix for a failed render. ScoreText is the exact text
-// to put in the score: when Replaces is set, it replaces that text in File
-// (the declaration it changes); otherwise it is added at the end of File.
-// Intents, when present, make the same change through cicada apply; it is
-// absent when no intent can.
+// to put in the score: when Replaces is set, it replaces that text, which
+// occurs exactly once in File at Revision (the declaration it changes);
+// otherwise it is added at the end of File. Revision is File's revision when
+// the render read it, in the form cicada apply uses: a remedy holds only
+// while the file is at that revision. Intents, when present, make the same
+// change through cicada apply; it is absent when no intent can.
 type renderRemedyJSON struct {
 	Summary   string            `json:"summary"`
 	File      string            `json:"file"`
+	Revision  string            `json:"revision"`
 	Replaces  string            `json:"replaces,omitempty"`
 	ScoreText string            `json:"score_text"`
 	Intents   []json.RawMessage `json:"intents,omitempty"`
@@ -295,7 +299,7 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 // the last master insert: a new fx declaration, and the master declaration
 // with that limiter at the end of its insert chain.
 func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *renderRemedyJSON {
-	remedy := &renderRemedyJSON{Summary: limiterRemedySummary(ceiling), File: jsonPath(path)}
+	remedy := &renderRemedyJSON{Summary: limiterRemedySummary(ceiling), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
 	files := []notation.SourceFile{{Path: path, Source: inspection.source}}
 	if inspection.sources != nil {
 		files = inspection.sources.Files
@@ -312,10 +316,15 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 			continue
 		}
 		master, replaced, ok := masterWithInsert(file.Source, name)
-		if ok {
-			remedy.File, remedy.Replaces, remedy.ScoreText = jsonPath(file.Path), master, fx+"\n"+replaced
-			break
+		if !ok {
+			continue
 		}
+		if strings.Count(string(file.Source), master) != 1 {
+			// Replacing text that occurs twice would be ambiguous.
+			return nil
+		}
+		remedy.File, remedy.Revision, remedy.Replaces, remedy.ScoreText = jsonPath(file.Path), edits.Revision(file.Source), master, fx+"\n"+replaced
+		break
 	}
 	return remedy
 }
