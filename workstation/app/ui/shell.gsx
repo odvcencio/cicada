@@ -530,6 +530,15 @@ component HiddenField(props: HiddenFieldProps) {
 	return <input type="hidden" name={props.Name} value={props.Value} />
 }
 
+// EditFeedback reports the shell's edit queue: a refused or failed save and the
+// explicit recovery action. CSS hides it while it is empty.
+component EditFeedback() {
+	return <div class="workspace-feedback">
+		<span data-workspace-status role="status" aria-live="polite"></span>
+		<button type="button" data-workspace-retry hidden>Refresh saved state</button>
+	</div>
+}
+
 component CaptureHint() {
 	return <p class="transport-capture-hint" data-transport-capture-hint hidden>Recording in progress. Stop saves your take; finish it before changing playback.</p>
 }

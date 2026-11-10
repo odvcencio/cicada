@@ -61,6 +61,15 @@ rather than assuming that examples on `main` are supported by the pinned version
   through GoSX's `vm.ReconcileTrees` and framework DOM patch receiver, without
   a document fetch or navigation. Every source mutation carries a disk revision;
   Cicada's existing CST patchers remain authoritative.
+- The `/studio` shell is split into update regions: wrappers with an id, a
+  content digest and the revision they were rendered at. Piano-roll cells,
+  Undo and Redo go through the shell engine's serial edit queue: the cell or
+  button paints pending at once, and the action response carries HTML only
+  for the visible regions whose digest changed. Hidden regions are marked
+  stale and read again from `GET /__studio/regions` when they open or the
+  queue is idle. A region's revision fields advance only when the server
+  rendered it at the new revision, so a stale region's write is refused.
+  Other forms keep GoSX's managed navigation, which refreshes every region.
 - Routine edits must preserve page and nested-grid scroll, focus, selection,
   expanded controls, unrelated unsaved fields, and mounted audio/input engines.
   Same-panel selection uses a workspace projection and replaces only the deep

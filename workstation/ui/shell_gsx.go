@@ -367,6 +367,12 @@ type HiddenFieldProps struct {
 func HiddenField(props HiddenFieldProps, children ...gosx.Node) gosx.Node {
 	return gosx.El("input", gosx.Attrs(gosx.Attr("type", "hidden"), gosx.Attr("name", props.Name), gosx.Attr("value", props.Value)))
 }
+
+// EditFeedback reports the shell's edit queue: a refused or failed save and the
+// explicit recovery action. CSS hides it while it is empty.
+func EditFeedback(children ...gosx.Node) gosx.Node {
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "workspace-feedback")), gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-workspace-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"))), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-workspace-retry"), gosx.BoolAttr("hidden")), gosx.Text("Refresh saved state")))
+}
 func CaptureHint(children ...gosx.Node) gosx.Node {
 	return gosx.El("p", gosx.Attrs(gosx.Attr("class", "transport-capture-hint"), gosx.BoolAttr("data-transport-capture-hint"), gosx.BoolAttr("hidden")), gosx.Text("Recording in progress. Stop saves your take; finish it before changing playback."))
 }

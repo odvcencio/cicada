@@ -44,6 +44,9 @@ type workspaceProjection struct {
 	WriteRevision       string `json:"writeRevision"`
 	WriteSourceRevision string `json:"writeSourceRevision"`
 	RefreshRequired     bool   `json:"refreshRequired"`
+	// The /studio shell's update regions (shell_edits_js.go).
+	Regions   []regionUpdate `json:"regions"`
+	Unchanged []string       `json:"unchanged"`
 }
 
 type workspaceControl struct {
@@ -69,6 +72,10 @@ type workspaceJob struct {
 	focusStep          string
 	pendingCell        js.Value
 	placementSelection string
+	// The /studio shell's update regions this job names ("id:digest,…"), and a
+	// context that lets an edit cancel a background read of stale regions.
+	regions string
+	ctx     context.Context
 }
 
 type workspaceUI struct {
@@ -93,6 +100,12 @@ type workspaceUI struct {
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
+	// shell is set on /studio, where the queue patches update regions
+	// (shell_edits_js.go) instead of the whole workspace.
+	shell      bool
+	cancelRead func()
+	idle       *time.Timer
+	idleDelay  time.Duration
 }
 
 type workspaceEditorBaseline struct {
@@ -325,6 +338,9 @@ func (u *workspaceUI) submit(event js.Value) {
 		return
 	}
 	submitter := event.Get("submitter")
+	if u.shell && !shellCaptures(form, submitter) {
+		return
+	}
 	// HTML named controls can shadow form.action/form.method. Read markup
 	// attributes so a button named action can never replace the endpoint.
 	method, target := workspaceAttr(form, "method"), workspaceAttr(form, "action")
@@ -396,11 +412,14 @@ func (u *workspaceUI) submit(event js.Value) {
 	values["__cicada_reactive"] = "1"
 	values["__cicada_location"] = workspaceLocation()
 	job := workspaceJob{method: http.MethodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form)}
-	if workspacePresent(submitter) && submitter.Call("matches", ".roll-cell").Bool() {
+	if workspacePresent(submitter) && (u.shell || submitter.Call("matches", ".roll-cell").Bool()) {
 		job.pendingCell = submitter
 	}
 	event.Call("preventDefault")
 	event.Call("stopImmediatePropagation")
+	if u.shell && !u.shellPaint(job) {
+		return
+	}
 	u.queue(job)
 }
 
@@ -831,7 +850,7 @@ func (u *workspaceUI) clearQueue() {
 	for {
 		select {
 		case job := <-u.jobs:
-			workspacePending(job, -1)
+			u.settle(job, true)
 		default:
 			return
 		}
@@ -851,6 +870,9 @@ func (u *workspaceUI) run() {
 			if !open {
 				return
 			}
+			if u.shell && len(u.jobs) == 0 {
+				u.scheduleIdle()
+			}
 		}
 	}
 }
@@ -858,8 +880,8 @@ func (u *workspaceUI) run() {
 // runJob sends one queued gesture or refresh and applies its projection. It
 // reports false once the engine has closed.
 func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
-	if u.blocked.Load() && !job.refresh {
-		workspacePending(job, -1)
+	if u.blocked.Load() && !job.refresh || job.method == http.MethodGet && u.shell && job.regions == "" {
+		u.settle(job, true)
 		return true
 	}
 	if job.pitchDelta != 0 {
@@ -872,12 +894,15 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		job.confirmed = u.revision.Get()
 		job.confirmedSource = u.sourceRevision
 	}
-	if revision, exists := job.values["revision"]; exists && revision == job.confirmed {
+	// On /studio a form in a fresh update region holds the last confirmed
+	// revision; one in a stale region keeps its own, and the service refuses it.
+	fresh := u.shell && workspacePresent(job.form) && !workspacePresent(job.form.Call("closest", "[data-region-stale]"))
+	if revision, exists := job.values["revision"]; exists && (revision == job.confirmed || fresh) {
 		// Only advance our own queued gestures. A form already stale when
 		// queued keeps its stale revision for authoritative rejection.
 		job.values["revision"] = u.revision.Get()
 	}
-	if source, exists := job.values["source_revision"]; exists && source == job.confirmedSource {
+	if source, exists := job.values["source_revision"]; exists && (source == job.confirmedSource || fresh) {
 		job.values["source_revision"] = u.sourceRevision
 	}
 	if job.method == http.MethodPost {
@@ -890,13 +915,21 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 			location = parsed.RequestURI()
 		}
 		job.values["__cicada_location"] = location
+		if u.shell {
+			job.values["__cicada_regions"] = u.shellRegions(job, regionsVisible)
+		}
 	}
 	if job.current {
 		location, _ := url.Parse(workspaceLocation())
 		job.target = "/__workspace?" + location.RawQuery
 	}
+	if u.shell && job.method == http.MethodGet {
+		job.target = "/__studio/regions?ids=" + url.QueryEscape(job.regions) + "&location=" + url.QueryEscape(workspaceLocation())
+	}
 	u.root.Call("setAttribute", "aria-busy", "true")
-	u.status.Set("Saving…")
+	if !u.shell {
+		u.status.Set("Saving…")
+	}
 	if job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
 		u.status.Set("Checking microphone permission…")
 	}
@@ -912,7 +945,12 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 				projection.Location = location.String()
 			}
 		}
-		err = u.apply(projection, job)
+		if u.shell {
+			u.settle(job, false)
+			err = u.applyRegions(projection, job)
+		} else {
+			err = u.apply(projection, job)
+		}
 		if err == nil && job.fragment != "" {
 			target := js.Global().Get("document").Call("getElementById", job.fragment)
 			if workspacePresent(target) && u.root.Call("contains", target).Bool() {
@@ -920,11 +958,27 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 			}
 		}
 	}
-	workspacePending(job, -1)
+	var rejected *workspaceRequestError
+	refused := errors.As(err, &rejected)
+	saved := refused && rejected.saved
+	if !u.shell {
+		workspacePending(job, -1)
+	} else if err != nil && !saved {
+		// A refused or failed edit restores its cell. A saved one whose
+		// confirmation failed keeps its pending paint until the refresh.
+		u.settle(job, true)
+	}
 	u.root.Call("removeAttribute", "aria-busy")
 	if err != nil {
-		var rejected *workspaceRequestError
-		if errors.As(err, &rejected) && (rejected.status == http.StatusBadRequest || rejected.status == http.StatusUnprocessableEntity) {
+		if u.shell && job.ctx != nil {
+			// A background read of stale regions failed or an edit cancelled it.
+			// The regions stay stale; the next idle period tries again later.
+			if job.ctx.Err() == nil {
+				u.idleDelay = min(2*u.idleDelay, 8*time.Second)
+			}
+			return true
+		}
+		if refused && (rejected.status == http.StatusBadRequest || rejected.status == http.StatusUnprocessableEntity) {
 			// Validation has not mutated the score. Keep the draft editable
 			// and let a corrected submission use the same revision.
 			u.status.Set(err.Error())
@@ -934,6 +988,9 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 		// second time. Re-read canonical state before another edit.
 		u.blocked.Store(true)
 		u.clearQueue()
+		if u.shell && !saved {
+			u.restoreAll()
+		}
 		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
 		return true
 	}
@@ -955,6 +1012,17 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 	if job.refresh {
 		u.blocked.Store(false)
 	}
+	if u.shell {
+		// The shell shows only what needs attention: a server message or the
+		// end of a refresh, never a "Saved." after every gesture.
+		u.idleDelay = shellIdleRefresh
+		if job.refresh {
+			u.status.Set("Workspace updated.")
+		} else if job.method == http.MethodPost {
+			u.status.Set(message)
+		}
+		return true
+	}
 	if message == "" {
 		message = "Saved."
 		if job.method == http.MethodGet {
@@ -968,6 +1036,9 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 type workspaceRequestError struct {
 	status  int
 	message string
+	// saved: the write was saved, but the page could not confirm it. It must
+	// never be sent again.
+	saved bool
 }
 
 func (err *workspaceRequestError) Error() string { return err.message }
@@ -982,7 +1053,11 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		}
 		body = bytes.NewReader(payload)
 	}
-	request, err := http.NewRequestWithContext(u.ctx, job.method, js.Global().Get("location").Get("origin").String()+job.target, body)
+	ctx := u.ctx
+	if job.ctx != nil {
+		ctx = job.ctx
+	}
+	request, err := http.NewRequestWithContext(ctx, job.method, js.Global().Get("location").Get("origin").String()+job.target, body)
 	if err != nil {
 		return projection, "", err
 	}
@@ -1033,16 +1108,16 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		for name, message := range result.FieldErrors {
 			result.Message += " " + name + ": " + message
 		}
-		return projection, "", &workspaceRequestError{response.StatusCode, result.Message}
+		return projection, "", &workspaceRequestError{response.StatusCode, result.Message, false}
 	}
 	if result.Data.RefreshRequired || (result.Data.WriteRevision != "" && result.Data.WriteRevision != result.Data.Revision && result.Data.WriteRevision != result.Data.FileRevision) {
 		if result.Message == "" {
 			result.Message = "Saved. The score changed before the workspace refreshed."
 		}
-		return projection, "", fmt.Errorf("%s", result.Message)
+		return projection, "", &workspaceRequestError{response.StatusCode, result.Message, true}
 	}
 	if result.Data.WriteSourceRevision != "" && result.Data.WriteSourceRevision != result.Data.SourceRevision {
-		return projection, "", fmt.Errorf("Saved. Project files changed before the workspace refreshed.")
+		return projection, "", &workspaceRequestError{response.StatusCode, "Saved. Project files changed before the workspace refreshed.", true}
 	}
 	return result.Data, result.Message, nil
 }
@@ -1451,6 +1526,33 @@ func workspaceHTMLPreserve(current, next *html.Node) {
 	}
 	if pending, exists := workspaceHTMLAttr(current, "data-workspace-pending"); exists {
 		workspaceHTMLSetAttr(next, "data-workspace-pending", pending)
+		// A still-pending piano-roll prediction survives the answer to an
+		// earlier edit. The incoming render is its new confirmed state.
+		if _, painted := workspaceHTMLAttr(current, "data-pending-paint"); painted {
+			active, _ := workspaceHTMLAttr(next, "data-active")
+			workspaceHTMLSetAttr(next, "data-confirmed-active", active)
+			workspaceHTMLSetAttr(next, "data-confirmed-text", workspaceHTMLText(next))
+			workspaceHTMLSetAttr(next, "data-pending-paint", "")
+			for _, name := range []string{"data-active", "aria-pressed"} {
+				if value, ok := workspaceHTMLAttr(current, name); ok {
+					workspaceHTMLSetAttr(next, name, value)
+				}
+			}
+			for next.FirstChild != nil {
+				next.RemoveChild(next.FirstChild)
+			}
+			if text := workspaceHTMLText(current); text != "" {
+				next.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+			}
+			return
+		}
+	}
+	// Browser state that the server never renders: the shell's record of an
+	// edited control and its baseline, and an open disclosure's trigger.
+	for _, name := range []string{"data-edited", "data-baseline", "aria-expanded"} {
+		if value, exists := workspaceHTMLAttr(current, name); exists {
+			workspaceHTMLSetAttr(next, name, value)
+		}
 	}
 	if current.Data == "details" {
 		_, open := workspaceHTMLAttr(current, "open")
@@ -1569,20 +1671,95 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 	if !workspacePresent(current) {
 		return fmt.Errorf("The server returned an invalid workspace root")
 	}
+	scrolls := u.captureScrolls()
+	x, y := js.Global().Get("scrollX").Float(), js.Global().Get("scrollY").Float()
+	nodes, ops, err := u.applyTree(current, "cicada-workspace", projection.HTML, job, phase)
+	if err != nil {
+		return err
+	}
+	u.syncTools()
+	// Owned editor/live DOM is retained, including its nested forms. A
+	// confirmed projection still advances those forms' concurrency token.
+	revisions := u.root.Call("querySelectorAll", "input[type=hidden][name=revision]")
+	for i := 0; i < revisions.Length(); i++ {
+		control := revisions.Index(i)
+		control.Set("value", projection.Revision)
+		control.Set("defaultValue", projection.Revision)
+	}
+	if projection.FileRevision != "" {
+		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=fileRevision],input[type=hidden][name=diskRevision]")
+		for i := 0; i < fields.Length(); i++ {
+			control := fields.Index(i)
+			if workspaceAttr(control, "name") == "fileRevision" {
+				editor := u.root.Call("querySelector", "textarea")
+				if workspacePresent(editor) && workspaceDirty(editor) {
+					continue
+				}
+			}
+			control.Set("value", projection.FileRevision)
+			control.Set("defaultValue", projection.FileRevision)
+		}
+	}
+	if projection.SourceRevision != "" {
+		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=source_revision]")
+		for i := 0; i < fields.Length(); i++ {
+			fields.Index(i).Set("value", projection.SourceRevision)
+			fields.Index(i).Set("defaultValue", projection.SourceRevision)
+		}
+	}
+	for _, scroll := range scrolls {
+		if scroll.node.Get("isConnected").Bool() {
+			scroll.node.Set("scrollTop", scroll.top)
+			scroll.node.Set("scrollLeft", scroll.left)
+		}
+	}
+	js.Global().Call("scrollTo", x, y)
+	if projection.Title != "" {
+		document.Set("title", projection.Title)
+	}
+	if projection.Location != "" {
+		if location, safe := workspaceURL(projection.Location); safe {
+			js.Global().Get("history").Call("replaceState", js.Null(), "", location.RequestURI()+workspaceFragment(location))
+		}
+	}
+	phase("finish")
+	// Canonical take lanes can gain new passes or comp regions while retaining
+	// their delegated pointer controls and already loaded waveform geometry.
+	// The Go consumers are called directly: a DOM listener in Go would run
+	// nested inside this call to JavaScript (see workspaceUpdated). The event
+	// stays for page scripts.
+	workspaceUpdated.run()
+	document.Call("dispatchEvent", js.Global().Get("Event").New("cicada:workspace-updated"))
+	if location, _ := url.Parse(workspaceLocation()); location.Query().Get("__workspace_profile") == "1" || workspaceAttr(u.root, "data-workspace-profile") == "true" {
+		measurements["nodes"] = float64(nodes)
+		measurements["ops"] = float64(ops)
+		encoded, _ := json.Marshal(measurements)
+		u.root.Call("setAttribute", "data-workspace-timing", string(encoded))
+	}
+	return nil
+}
+
+// applyTree patches one server-rendered subtree in place. current is the first
+// element child of the element whose id is patchID, and markup is its new
+// rendering. It keeps engine mounts, open details, unsaved controls and pending
+// markers, diffs the two trees in Go and applies GoSX's patch receiver. It
+// returns the size of the new tree and the number of patch operations.
+func (u *workspaceUI) applyTree(current js.Value, patchID, markup string, job workspaceJob, phase func(string)) (int, int, error) {
+	if phase == nil {
+		phase = func(string) {}
+	}
 	// Browser-native serialization is one boundary crossing. Parse and walk the
 	// snapshots in Go so a large piano roll does not require thousands of DOM
 	// property reads for every queued note.
 	previousHTML, err := workspaceParseHTML(workspaceString(current, "outerHTML"))
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	nextHTML, err := workspaceParseHTML(projection.HTML)
+	nextHTML, err := workspaceParseHTML(markup)
 	if err != nil || previousHTML.Data != nextHTML.Data {
-		return fmt.Errorf("The server returned an invalid workspace root")
+		return 0, 0, fmt.Errorf("The server returned an invalid workspace root")
 	}
 	phase("parse")
-	scrolls := u.captureScrolls()
-	x, y := js.Global().Get("scrollX").Float(), js.Global().Get("scrollY").Float()
 	defaults := workspaceHTMLDefaults(nextHTML)
 	var accepted []js.Value
 	for _, control := range job.controls {
@@ -1644,17 +1821,19 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 	ops := vm.ReconcileTrees(previousTree, nextTree, nil)
 	encoded, err := workspaceEncodePatches(ops)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	phase("diff")
-	u.patch.Invoke("cicada-workspace", string(encoded))
+	u.patch.Invoke(patchID, string(encoded))
 	phase("patch")
 	for _, control := range accepted {
 		if control.Get("isConnected").Bool() {
 			workspaceAcceptControl(control)
 		}
 	}
-	workspaceSetDefaults(u.root.Get("firstElementChild"), defaults)
+	if patched := js.Global().Get("document").Call("getElementById", patchID); workspacePresent(patched) && workspacePresent(patched.Get("firstElementChild")) {
+		workspaceSetDefaults(patched.Get("firstElementChild"), defaults)
+	}
 	for _, editor := range editorUpdates {
 		if !editor.node.Get("isConnected").Bool() {
 			continue
@@ -1663,6 +1842,10 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 			if workspaceString(editor.node, "value") != editor.value {
 				editor.node.Set("value", editor.value)
 			}
+			// The new canonical text is the clean baseline before the editor
+			// sees it, so recovery and the unsaved-work check do not read the
+			// update as a draft.
+			editor.node.Set("defaultValue", editor.value)
 			editor.node.Call("setSelectionRange", editor.start, editor.end, editor.direction)
 			// Let the editor's own renderer normalize and rehighlight its buffer.
 			// This is synchronous; a real in-flight draft was excluded above.
@@ -1673,68 +1856,13 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 		// rewrite a normalized buffer. Unchanged saves preserve the exact caret.
 		rendered := workspaceString(editor.node, "value")
 		editor.node.Set("defaultValue", rendered)
+		if editor.node.Call("hasAttribute", "data-baseline").Bool() {
+			editor.node.Call("setAttribute", "data-baseline", rendered)
+		}
+		editor.node.Call("removeAttribute", "data-edited")
 		u.editors[editor.key] = workspaceEditorBaseline{editor.raw, rendered}
 	}
-	u.syncTools()
-	// Owned editor/live DOM is retained, including its nested forms. A
-	// confirmed projection still advances those forms' concurrency token.
-	revisions := u.root.Call("querySelectorAll", "input[type=hidden][name=revision]")
-	for i := 0; i < revisions.Length(); i++ {
-		control := revisions.Index(i)
-		control.Set("value", projection.Revision)
-		control.Set("defaultValue", projection.Revision)
-	}
-	if projection.FileRevision != "" {
-		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=fileRevision],input[type=hidden][name=diskRevision]")
-		for i := 0; i < fields.Length(); i++ {
-			control := fields.Index(i)
-			if workspaceAttr(control, "name") == "fileRevision" {
-				editor := u.root.Call("querySelector", "textarea")
-				if workspacePresent(editor) && workspaceDirty(editor) {
-					continue
-				}
-			}
-			control.Set("value", projection.FileRevision)
-			control.Set("defaultValue", projection.FileRevision)
-		}
-	}
-	if projection.SourceRevision != "" {
-		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=source_revision]")
-		for i := 0; i < fields.Length(); i++ {
-			fields.Index(i).Set("value", projection.SourceRevision)
-			fields.Index(i).Set("defaultValue", projection.SourceRevision)
-		}
-	}
-	for _, scroll := range scrolls {
-		if scroll.node.Get("isConnected").Bool() {
-			scroll.node.Set("scrollTop", scroll.top)
-			scroll.node.Set("scrollLeft", scroll.left)
-		}
-	}
-	js.Global().Call("scrollTo", x, y)
-	if projection.Title != "" {
-		document.Set("title", projection.Title)
-	}
-	if projection.Location != "" {
-		if location, safe := workspaceURL(projection.Location); safe {
-			js.Global().Get("history").Call("replaceState", js.Null(), "", location.RequestURI()+workspaceFragment(location))
-		}
-	}
-	phase("finish")
-	// Canonical take lanes can gain new passes or comp regions while retaining
-	// their delegated pointer controls and already loaded waveform geometry.
-	// The Go consumers are called directly: a DOM listener in Go would run
-	// nested inside this call to JavaScript (see workspaceUpdated). The event
-	// stays for page scripts.
-	workspaceUpdated.run()
-	document.Call("dispatchEvent", js.Global().Get("Event").New("cicada:workspace-updated"))
-	if location, _ := url.Parse(workspaceLocation()); location.Query().Get("__workspace_profile") == "1" || workspaceAttr(u.root, "data-workspace-profile") == "true" {
-		measurements["nodes"] = float64(len(nextTree.Nodes))
-		measurements["ops"] = float64(len(ops))
-		encoded, _ := json.Marshal(measurements)
-		u.root.Call("setAttribute", "data-workspace-timing", string(encoded))
-	}
-	return nil
+	return len(nextTree.Nodes), len(ops), nil
 }
 
 // GoSX's SetValue operation deliberately updates the live value property. A

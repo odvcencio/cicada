@@ -202,6 +202,11 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	tab, dock := p.tab, p.dock
 	region := oneOf(query.Get("region"), shellPhones)
 	ctx.Runtime().ManagedScript("/studio-startup.js", server.ManagedScriptOptions{Role: server.ManagedScriptRoleLifecycle}, gosx.BoolAttr("defer"))
+	// The shell engine applies edit responses with GoSX's patch receiver.
+	// Engine-only pages do not load it implicitly; register GoSX's own asset.
+	if runtimeRoot() != "" {
+		ctx.Runtime().ManagedScript("/gosx/patch.js", server.ManagedScriptOptions{Role: server.ManagedScriptRolePatch})
+	}
 	state := p.transport()
 	browserOpen, codeOpen := shellPanes(ctx.Request)
 	registerShell(ctx, tab, dock, browserOpen, codeOpen)
@@ -290,7 +295,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ID: "studio-workbench", LeftSignal: "$layout.browserWidth", RightSignal: "$layout.codeWidth", BottomSignal: "$layout.dockHeight",
 		Left: strconv.Itoa(shellBrowserWidth), Right: strconv.Itoa(shellCodeWidth), Bottom: strconv.Itoa(shellDockHeight),
 	}, top, browser, center, code, detail, status)
-	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, workbench, phone, dialogs), view, true
+	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, workbench, phone, dialogs, ui.EditFeedback()), view, true
 }
 
 type dockClip struct{ name, detail string }
