@@ -102,6 +102,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"setstep":                &edits.SetStep{Entity: "step:melody/0", Mode: "note", Pitch: 62, Ratchet: 1, Chance: 100, Shared: "pattern"},
 		"duplicatepattern":       &edits.DuplicatePattern{Entity: "pattern:melody", Name: "copy"},
 		"setrange":               &edits.SetRange{Entity: "pattern:melody", Operation: "clear", First: 0, Last: 0, Shared: "pattern"},
+		"editnotes":              &edits.EditNotes{Entity: "pattern:melody", Op: "move", Notes: []edits.NoteRef{{At: 0, Pitch: 60, Length: 240, Velocity: 100}}, DT: 240, Shared: "pattern"},
 		"resizepattern":          &edits.ResizePattern{Entity: "pattern:melody", Length: 8, Shared: "pattern"},
 		"bindscene":              &edits.BindScene{Scene: "main", Track: "lead", Pattern: "empty"},
 		"movesongentry":          &edits.MoveSongEntry{Entity: "song:0", Target: 1},
@@ -199,7 +200,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						t.Fatal("intent mutated a supplied source buffer")
 					}
 					switch kind {
-					case "togglestep", "setpitch", "togglemodifier", "cyclestep", "setdrumvelocity", "setstep", "setpatternsettings", "setrange", "resizepattern", "setchord", "setmidimapping":
+					case "togglestep", "setpitch", "togglemodifier", "cyclestep", "setdrumvelocity", "setstep", "setpatternsettings", "setrange", "resizepattern", "setchord", "setmidimapping", "editnotes":
 						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
 							t.Fatalf("grid edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)
 						}

@@ -172,6 +172,11 @@ test-studio-mixer-strips:
 test-studio-edits:
 	node --test workstation/browser/studio-edits.test.cjs
 
+.PHONY: test-studio-notes
+# Requires a fresh Studio process on note-editor.test.cjs --write-fixture; this suite quantizes and undoes.
+test-studio-notes:
+	node --test workstation/browser/note-editor.test.cjs
+
 .PHONY: test-studio-columns
 # Requires a fresh Studio process and an absolute CICADA_COLUMN_PROOF_DIR.
 test-studio-columns:

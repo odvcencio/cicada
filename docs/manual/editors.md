@@ -166,6 +166,107 @@ samples retain the later value; gates retain at least one tick. A resulting
 same-pitch overlap is refused. Owned secondary pattern sources are supported;
 libraries remain read-only. The Studio route also requires `source_revision`.
 
+### Note batches: `editnotes`
+
+`editnotes` changes many notes of one pattern in one edit: one commit and one
+Undo entry, however many notes it names. It works on played performances,
+step patterns (including chords, holds and the `velocity:` row) and drum
+lanes. A step pattern or drum lanes refuse what their grid cannot hold; the
+intent never turns a step pattern into a performance.
+
+| Field | Meaning | Unit and range |
+| --- | --- | --- |
+| `entity` | `pattern:name` | required |
+| `op` | `move`, `resize`, `velocity`, `delete`, `insert` or `quantize` | required |
+| `notes` | The notes to change, as the client last saw them: `at`, `pitch` (or `lane` for a drum hit), `length`, `velocity` | at most 512 |
+| `notes[].at`, `notes[].length` | Start and length | ticks (960 per beat), 0 to 2^40 |
+| `notes[].pitch` | Stored MIDI pitch, before the pattern's `transpose` | 0–127 |
+| `notes[].lane` | Drum lane name | drum lanes only |
+| `notes[].velocity` | The note's velocity | 1–127 |
+| `dt` | `move`: change of start | ticks, ±2^40 |
+| `dp` | `move`: change of pitch, or of lane in authored lane order for drums | semitones or lanes, ±127 |
+| `dl` | `resize`: change of length | ticks, ±2^40 |
+| `dv` | `velocity`: change, clamped to 1–127 | ±126 |
+| `velocity` | `velocity`: the new value instead of `dv`; setting both is refused | 1–127 |
+| `grid` | `quantize`: grid | ticks, 30–3840 |
+| `strength` | `quantize`: how far each start moves to its grid line; 0 means 100 | percent, 1–100; 100 only in step patterns and drum lanes |
+| `copy` | `move`: keep the originals | boolean |
+| `insert` | `insert`: notes to add, with the same fields as `notes` | at most 512 |
+| `shared` | Only `pattern`: phrase uses expand inside the edited pattern | optional |
+
+In step patterns and drum lanes, `at`, `length`, `dt`, `dl` and `grid` must be
+whole steps of the pattern (`step=`, 240 ticks by default). A note is
+identified by its start and its pitch or lane; every named note must still
+exist with the same length and velocity, or the batch is refused.
+`quantize` with no `notes` acts on every note. Notes keep their own accent,
+chance, ratchet, slide and velocity, and the velocity row moves with them;
+expression rows (`bend:`, `vibrato:`, `pressure:`, `timbre:`) stay on their
+steps. Notes that land on one step merge into a chord only when their length,
+accent, chance and velocity match.
+
+Studio's pattern route takes the batch as `notes`, without `entity` or
+`shared`, and requires `source_revision`:
+
+```json
+{"revision": "<disk revision>", "source_revision": "<project receipt>",
+ "action": "notes", "pattern": "take",
+ "notes": {"op": "quantize", "grid": 240}}
+```
+
+The Studio window's typed action `POST /__actions/notes` carries the same
+batch as the string field `edit`, with `"v": 1` added.
+
+A batch that changes nothing returns 200 with `unchanged: true` and a
+`message` (`Already on the grid.` or `Nothing changed.`) and writes no
+history. A stale `revision` or `source_revision`, or a take being captured,
+returns 409. A refused batch returns 422; when the refusal is about one
+note, the body names it as data as well as in `error`:
+
+```json
+{"error": "step 2, e4: after quantize, it would join c4 in a chord on step 1 and lose its 50% chance and play at velocity 100 instead of 60; ...",
+ "code": "CICADA-NOTES", "reason": "chord-modifiers",
+ "note": {"at": 240, "step": 2, "pitch": 64}}
+```
+
+`note.at` is the start in ticks where the request found the note, `step` is
+one-based (step patterns and drum lanes only), and `pitch` or `lane`
+identifies it. The reasons are:
+
+| `reason` | The note… |
+| --- | --- |
+| `invalid-note` | has a start, length, pitch or velocity outside its range |
+| `note-changed` | is missing, or its length or velocity differs; select it again |
+| `no-lanes` | names a lane in a pattern without drum lanes |
+| `not-whole-steps` | does not start or end on the pattern's step grid |
+| `outside-pattern`, `outside-lanes`, `outside-loop` | would leave the pattern's steps, its lanes, or the performance loop |
+| `pitch-range` | would leave MIDI 0–127, counting the pattern's `transpose` |
+| `too-short` | would become shorter than one step or one tick |
+| `gesture-cut` | would end before its last gesture point |
+| `overlap` | would overlap another note: the same pitch in a performance, or any note in a step pattern |
+| `same-pitch`, `same-cell` | would land on the pitch or drum cell of another selected note |
+| `chord-pitches-equal` | would equal another pitch of its own chord |
+| `chord-size` | would make a chord of more than four pitches |
+| `chord-articulation` | would make a chord with a note that slides or ratchets |
+| `chord-length`, `chord-modifiers` | would join a chord of another length, or with another accent, chance or velocity |
+| `acid-one-pitch` | would put a second pitch on an acid step |
+| `fixed-length` | is a drum hit, which lasts one step |
+| `unknown-lane` | names a drum lane the pattern does not have |
+
+Other refusals (an unknown `op`, a grid that is not a whole number of steps,
+deleting every note of a performance, acid tuplet groups) carry only `error`.
+
+Examples, each one `editnotes` intent:
+
+- Played performance, quantize to 1/16: `{"op": "quantize", "grid": 240}`
+  turns `note 64 at=250ticks length=200ticks velocity=105;` into
+  `note 64 at=240ticks length=200ticks velocity=105;`.
+- Step pattern, move g4 of a chord two steps later:
+  `{"op": "move", "dt": 480, "notes": [{"at": 0, "pitch": 67, "length": 480, "velocity": 80}]}`
+  turns `[c4 e4 g4]^?70 - . . c5` into `[c4 e4]^?70 - g4^?70 - c5`.
+- Drum lanes, set a hit's velocity:
+  `{"op": "velocity", "velocity": 56, "notes": [{"at": 3120, "lane": "sd", "length": 240, "velocity": 126}]}`
+  turns the `sd` hit `x9*2` on step 14 into `x4*2`.
+
 Studio's arrangement panel uses a second set of arrange intents that keep the
 position and length text you type, such as `@5.1.1` or `3bars`:
 `updateplacement` (change `at`, `length`, `track` or `content` together, so a

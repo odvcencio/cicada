@@ -212,14 +212,16 @@ func replaceProjectPerformance(ctx *Context, id string, performance *seq.Perform
 	if err != nil {
 		return err
 	}
-	declarations, err := textDeclarations(before)
+	// One parse finds the declaration and its comments.
+	document, err := notation.ParseDocument(before)
 	if err != nil {
 		return err
 	}
-	var target *textDeclaration
-	for i := range declarations {
-		if declarations[i].start == at && declarationMatches(declarations[i].kind, "pattern") {
-			target = &declarations[i]
+	var target *gts.Node
+	for i := 0; i < document.Root.NamedChildCount(); i++ {
+		node := document.Root.NamedChild(i)
+		if kind := document.Walker.Type(node); kind != "comment" && int(node.StartByte()) == at && declarationMatches(kind, "pattern") {
+			target = node
 			break
 		}
 	}
@@ -227,17 +229,13 @@ func replaceProjectPerformance(ctx *Context, id string, performance *seq.Perform
 		return fmt.Errorf("performed pattern source no longer matches")
 	}
 	var replacement strings.Builder
-	fmt.Fprintf(&replacement, "pattern %s performance length=%dticks", target.name, performance.LengthTicks)
+	fmt.Fprintf(&replacement, "pattern %s performance length=%dticks", document.Walker.Text(document.Walker.Field(target, "name")), performance.LengthTicks)
 	for _, attribute := range authored.Attrs {
 		if attribute.Name == "slot" || attribute.Name == "seed" || preserveTranspose && attribute.Name == "transpose" {
 			fmt.Fprintf(&replacement, " %s=%s", attribute.Name, attribute.Value)
 		}
 	}
 	replacement.WriteString(" {\n")
-	document, err := notation.ParseDocument([]byte(target.text))
-	if err != nil {
-		return err
-	}
 	// Retain every authored comment when replacing the grid representation.
 	var comments func(*gts.Node)
 	comments = func(node *gts.Node) {
@@ -249,7 +247,7 @@ func replaceProjectPerformance(ctx *Context, id string, performance *seq.Perform
 			comments(node.NamedChild(i))
 		}
 	}
-	comments(document.Root)
+	comments(target)
 	for _, group := range performance.Groups {
 		replacement.WriteString(notation.PerformedGroupSource(group))
 	}
@@ -258,7 +256,7 @@ func replaceProjectPerformance(ctx *Context, id string, performance *seq.Perform
 	}
 	replacement.WriteString("}")
 	text := strings.ReplaceAll(replacement.String(), "\n", Newline(before))
-	after, err := ReplaceSpan(before, file, Span{target.start, target.end, text, file})
+	after, err := ReplaceSpan(before, file, Span{int(target.StartByte()), int(target.EndByte()), text, file})
 	if err != nil {
 		return err
 	}
