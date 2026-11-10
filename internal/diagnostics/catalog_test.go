@@ -25,10 +25,23 @@ const repositoryRoot = "../.."
 // documentation, fixtures, and this catalog.
 var skippedDirs = map[string]bool{".git": true, "build": true, "node_modules": true, ".recovery": true, "docs": true, "testdata": true, "dist": true}
 
+// partialCodeLiterals are the string literals that hold the CICADA- prefix
+// without a whole code, and why each is not a code built at run time. The
+// key is the file and the literal.
+var partialCodeLiterals = map[string]string{
+	"lsp/multifile.go CICADA-LIB-":              "prefix test on a reported code",
+	"lsp/multifile.go CICADA-ASSET-":            "prefix test on a reported code",
+	"cmd/cicada/fix_libraries.go CICADA-LIB-":   "prefix test on a reported code",
+	"cmd/cicada/fix_libraries.go CICADA-ASSET-": "prefix test on a reported code",
+	"project/model.go CICADA-":                  "prefix test on an error's code",
+	"cmd/cicada/diagnostics.go CICADA-":         "completes the code a user types for cicada diagnostics",
+}
+
 // emittedCodes finds every code the repository's code can emit: CICADA-*
 // inside a Go string literal of a non-test file, or anywhere in a non-test
-// JavaScript or HTML file. A match followed by "-" is a prefix test such as
-// strings.HasPrefix(code, "CICADA-LIB-"), not a code.
+// JavaScript or HTML file. A CICADA- prefix that does not start a whole code
+// (the prefix alone, "CICADA-LIB-" or "CICADA-%s") could build a code at run
+// time, so it fails the test unless partialCodeLiterals explains it.
 func emittedCodes(t *testing.T) map[string][]string {
 	t.Helper()
 	catalogDir, err := filepath.Abs(".")
@@ -38,10 +51,25 @@ func emittedCodes(t *testing.T) map[string][]string {
 	found := map[string][]string{}
 	add := func(text, where string) {
 		for _, at := range codePattern.FindAllStringIndex(text, -1) {
-			if at[1] < len(text) && text[at[1]] == '-' {
+			if at[1] < len(text) && (text[at[1]] == '-' || text[at[1]] == '%') {
 				continue
 			}
 			found[text[at[0]:at[1]]] = append(found[text[at[0]:at[1]]], where)
+		}
+		for i := strings.Index(text, "CICADA-"); i >= 0; {
+			match := codePattern.FindStringIndex(text[i:])
+			whole := match != nil && match[0] == 0 && (i+match[1] == len(text) || !strings.ContainsRune("-%", rune(text[i+match[1]])))
+			if !whole {
+				key := filepath.ToSlash(where) + " " + text
+				if _, ok := partialCodeLiterals[key]; !ok {
+					t.Errorf("%s: %q holds the CICADA- prefix without a whole code; a code built at run time must be catalogued and listed in partialCodeLiterals", where, text)
+				}
+			}
+			next := strings.Index(text[i+1:], "CICADA-")
+			if next < 0 {
+				break
+			}
+			i += 1 + next
 		}
 	}
 	err = filepath.WalkDir(repositoryRoot, func(path string, entry os.DirEntry, err error) error {
