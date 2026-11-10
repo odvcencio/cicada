@@ -3,12 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +16,7 @@ import (
 	"time"
 
 	"golang.org/x/net/html"
+	"m31labs.dev/gosx/client/browser"
 	"m31labs.dev/gosx/client/vm"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 	"m31labs.dev/gosx/signal"
@@ -858,14 +857,13 @@ func (u *workspaceUI) clearQueue() {
 }
 
 func (u *workspaceUI) run() {
-	client := &http.Client{Timeout: 15 * time.Second}
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		case job := <-u.jobs:
 			u.busy.Store(true)
-			open := u.runJob(client, job)
+			open := u.runJob(job)
 			u.busy.Store(false)
 			if !open {
 				return
@@ -879,7 +877,7 @@ func (u *workspaceUI) run() {
 
 // runJob sends one queued gesture or refresh and applies its projection. It
 // reports false once the engine has closed.
-func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
+func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if u.blocked.Load() && !job.refresh || job.method == http.MethodGet && u.shell && job.regions == "" {
 		u.settle(job, true)
 		return true
@@ -933,7 +931,7 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 	if job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
 		u.status.Set("Checking microphone permission…")
 	}
-	projection, message, err := u.request(client, job)
+	projection, message, err := u.request(job)
 	if u.closed.Load() {
 		workspacePending(job, -1)
 		return false
@@ -1043,68 +1041,50 @@ type workspaceRequestError struct {
 
 func (err *workspaceRequestError) Error() string { return err.message }
 
-func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceProjection, string, error) {
+func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, error) {
 	var projection workspaceProjection
-	var body io.Reader
+	fetch := browser.FetchRequest{URL: js.Global().Get("location").Get("origin").String() + job.target, Method: job.method,
+		Headers: map[string]string{"Accept": "application/json", "X-Cicada-Reactive": "1"}}
 	if job.method == http.MethodPost {
 		payload, err := json.Marshal(job.values)
 		if err != nil {
 			return projection, "", err
 		}
-		body = bytes.NewReader(payload)
+		fetch.ContentType, fetch.Body = "application/json", payload
+		fetch.Headers["X-CSRF-Token"] = u.props.CSRF
 	}
 	ctx := u.ctx
 	if job.ctx != nil {
 		ctx = job.ctx
 	}
-	request, err := http.NewRequestWithContext(ctx, job.method, js.Global().Get("location").Get("origin").String()+job.target, body)
-	if err != nil {
-		return projection, "", err
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("X-Cicada-Reactive", "1")
-	if job.method == http.MethodPost {
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("X-CSRF-Token", u.props.CSRF)
-	}
-	requestClient := client
+	timeout := 15 * time.Second
 	if job.method == http.MethodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
-		copy := *client
-		copy.Timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
-		requestClient = &copy
+		timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
 	}
 	if job.method == http.MethodPost && job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
 		// Native permission waits for a human response. Closing this workspace
 		// still cancels its context; ordinary edits retain their timeout.
-		permissionClient := *client
-		permissionClient.Timeout = 0
-		requestClient = &permissionClient
+		timeout = 0
 	}
-	// The client's own timeout cancels the request context as soon as the
-	// body reaches its end, and Go's fetch transport then aborts a request the
-	// browser may not have marked finished. Run the same deadline on a
-	// context that is cancelled only when it expires, when an abort is due.
-	if timeout := requestClient.Timeout; timeout > 0 {
-		deadline, cancel := context.WithCancel(request.Context())
-		time.AfterFunc(timeout, cancel)
-		request = request.WithContext(deadline)
-		requestClient = &http.Client{Transport: requestClient.Transport}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
-	response, err := requestClient.Do(request)
-	if err != nil {
+	// The browser reads the whole body (nativeFetch, fetch_js.go). Go's
+	// net/http transport streams it instead, and a stream released just after
+	// its last chunk races the browser's end of the request, which then
+	// reports the request aborted.
+	fetched, err := nativeFetch(ctx, fetch)
+	if err != nil || len(fetched.Body) > 12<<20 {
 		return projection, "", fmt.Errorf("The workspace request did not complete")
 	}
-	defer func() {
-		// Read to the end before closing: closing a fetch body early cancels
-		// its stream, and the browser then reports the request aborted.
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
-		response.Body.Close()
-	}()
+	response := struct{ StatusCode int }{fetched.Status}
 	if job.method == http.MethodGet {
 		if response.StatusCode != http.StatusOK {
 			return projection, "", fmt.Errorf("Workspace refresh failed (%d)", response.StatusCode)
 		}
-		err = json.NewDecoder(io.LimitReader(response.Body, 12<<20)).Decode(&projection)
+		err = json.Unmarshal(fetched.Body, &projection)
 		return projection, "", err
 	}
 	var result struct {
@@ -1113,7 +1093,7 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		FieldErrors map[string]string   `json:"fieldErrors"`
 		Data        workspaceProjection `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 12<<20)).Decode(&result); err != nil {
+	if err := json.Unmarshal(fetched.Body, &result); err != nil {
 		return projection, "", fmt.Errorf("The server returned an incomplete workspace response")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 || !result.OK {
@@ -1645,7 +1625,9 @@ func workspaceHTMLTree(root *html.Node) *vm.ResolvedTree {
 		tree.Nodes = append(tree.Nodes, resolved)
 		position := 0
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			childIndex := appendNode(child, fmt.Sprintf("%s/%d", path, position))
+			// Plain concatenation: fmt.Sprintf per node dominated tree building
+			// for a large piano roll in Go/WASM.
+			childIndex := appendNode(child, path+"/"+strconv.Itoa(position))
 			if childIndex >= 0 {
 				tree.Nodes[index].Children = append(tree.Nodes[index].Children, childIndex)
 			}
@@ -1763,6 +1745,8 @@ func (u *workspaceUI) applyTree(current js.Value, patchID, markup string, job wo
 	if phase == nil {
 		phase = func(string) {}
 	}
+	workspaceFormKeys = make([]workspaceFormKey, 0, 32)
+	defer func() { workspaceFormKeys = nil }()
 	// Browser-native serialization is one boundary crossing. Parse and walk the
 	// snapshots in Go so a large piano roll does not require thousands of DOM
 	// property reads for every queued note.
@@ -1840,6 +1824,7 @@ func (u *workspaceUI) applyTree(current js.Value, patchID, markup string, job wo
 	}
 	phase("diff")
 	u.patch.Invoke(patchID, string(encoded))
+	workspaceFormKeys = nil
 	phase("patch")
 	for _, control := range accepted {
 		if control.Get("isConnected").Bool() {
@@ -2009,6 +1994,17 @@ func workspaceKeepControl(node js.Value, job workspaceJob) bool {
 	return workspaceDirty(node)
 }
 
+// workspaceFormKeys caches form identities while applyTree reads the DOM
+// before its patch: each costs 17 queries, and every control asks for its
+// form's identity several times. The patch can change a form's hidden fields,
+// so the cache ends there; nil means no caching.
+type workspaceFormKey struct {
+	form js.Value
+	key  string
+}
+
+var workspaceFormKeys []workspaceFormKey
+
 func workspaceIdentity(node js.Value) string {
 	if node.Get("nodeType").Int() != 1 {
 		return ""
@@ -2022,6 +2018,14 @@ func workspaceIdentity(node js.Value) string {
 		key = "key:" + value
 	}
 	if strings.EqualFold(workspaceString(node, "tagName"), "form") {
+		if workspaceFormKeys != nil {
+			for _, known := range workspaceFormKeys {
+				if known.form.Equal(node) {
+					return known.key
+				}
+			}
+			defer func() { workspaceFormKeys = append(workspaceFormKeys, workspaceFormKey{node, key}) }()
+		}
 		// A step inspector is a different semantic form when its hidden step,
 		// lane or pattern changes, even when its visual container keeps an ID.
 		key += "/form:" + workspaceAttr(node, "action")
