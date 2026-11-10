@@ -18,8 +18,8 @@ test('an unseen secondary-file save cannot replace the previous export', {timeou
   t.after(async () => {
     try {
       if (!complete) {
-        await page.screenshot({path: path.join(proof, 'failure.png')});
-        fs.writeFileSync(path.join(proof, 'failure.txt'), (await page.locator('body').innerText()).slice(0, 12000));
+        await page.screenshot({path: path.join(proof, 'failure.png'), timeout: 5000});
+        fs.writeFileSync(path.join(proof, 'failure.txt'), (await page.locator('body').innerText({timeout: 5000})).slice(0, 12000));
       }
     } finally {
       await browser.close();

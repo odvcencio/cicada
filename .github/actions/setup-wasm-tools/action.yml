@@ -15,6 +15,17 @@ inputs:
   binaryen-version:
     description: Binaryen release number (the version_N tag). Needs a checksum below.
     default: '133'
+  retry-window-seconds:
+    description: >-
+      A download attempt starts only while fewer than this many seconds have
+      passed since the step began (both archives share the window). Worst case
+      for the step: the window, plus one last attempt of at most 120 s, plus
+      extraction (a few seconds): 480 + 120 = about 10 minutes by default.
+      Jobs with a short timeout-minutes pass a smaller window: macOS desktop
+      (arm64, 15 minutes, 10.5 used in run 42802154623) passes 60, which allows
+      one attempt per archive (the first failure at 120 s already passes the
+      window): a worst case of about 4 minutes, leaving about 0.5 minutes of margin.
+    default: '480'
 
 runs:
   using: composite
@@ -67,7 +78,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.plan.outputs.dir }}
-        key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-tinygo-${{ inputs.tinygo-version }}-binaryen-${{ inputs.binaryen-version }}-v1
+        key: wasm-tools-${{ runner.os }}-${{ runner.arch }}-tinygo-${{ inputs.tinygo-version }}-binaryen-${{ inputs.binaryen-version }}-${{ hashFiles('.github/actions/setup-wasm-tools/action.yml') }}
 
     - name: Download TinyGo and Binaryen (cache miss)
       if: steps.cache.outputs.cache-hit != 'true'
@@ -78,25 +89,31 @@ runs:
         TINYGO_SHA256: ${{ steps.plan.outputs.tinygo_sha256 }}
         BINARYEN_URL: ${{ steps.plan.outputs.binaryen_url }}
         BINARYEN_SHA256: ${{ steps.plan.outputs.binaryen_sha256 }}
+        RETRY_WINDOW: ${{ inputs.retry-window-seconds }}
       run: |
         set -euo pipefail
         sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 
-        # fetch URL EXPECTED_SHA256 DEST: up to 9 attempts, 60 s apart (about
-        # 8 minutes of waiting). A wrong checksum counts as a failed attempt.
+        # fetch URL EXPECTED_SHA256 DEST: a failed download (network error or
+        # HTTP status) is retried 60 s later while the shared retry window is
+        # open; an attempt is capped at 120 s. A checksum mismatch cannot get
+        # better by waiting, so it fails at once.
+        start=$SECONDS
         fetch() {
-          local url="$1" want="$2" dest="$3" attempt got
-          for attempt in 1 2 3 4 5 6 7 8 9; do
-            if curl --fail --silent --show-error --location --connect-timeout 20 --max-time 300 --output "$dest" "$url"; then
+          local url="$1" want="$2" dest="$3" attempt=0 got
+          while :; do
+            attempt=$((attempt + 1))
+            if curl --fail --silent --show-error --location --connect-timeout 20 --max-time 120 --output "$dest" "$url"; then
               got="$(sha256 "$dest")"
               if [ "$got" = "$want" ]; then return 0; fi
-              echo "attempt $attempt: checksum of $url is $got, want $want" >&2
-            else
-              echo "attempt $attempt: download of $url failed" >&2
+              echo "::error::checksum of $url is $got, want $want; not retrying"
+              return 1
             fi
-            if [ "$attempt" -lt 9 ]; then sleep 60; fi
+            echo "attempt $attempt: download of $url failed" >&2
+            if [ $((SECONDS - start + 60)) -ge "$RETRY_WINDOW" ]; then break; fi
+            sleep 60
           done
-          echo "::error::could not download $url with checksum $want after 9 attempts"
+          echo "::error::could not download $url after $attempt attempts"
           return 1
         }
 

@@ -19,8 +19,8 @@ test('private Code copies survive restarts without changing the song', {timeout:
   t.after(async () => {
     try {
       if (!complete) {
-        await page.screenshot({path: path.join(proof, phase + '-failure.png')});
-        fs.writeFileSync(path.join(proof, phase + '-failure.txt'), (await page.locator('body').innerText()).slice(0, 16000));
+        await page.screenshot({path: path.join(proof, phase + '-failure.png'), timeout: 5000});
+        fs.writeFileSync(path.join(proof, phase + '-failure.txt'), (await page.locator('body').innerText({timeout: 5000})).slice(0, 16000));
       }
     } finally { await browser.close(); }
   }, {timeout: 15000});
