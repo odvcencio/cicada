@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const stall = require('./page-stall.cjs');
 
 async function until(fn, message) {
   const end = Date.now() + 20000;
@@ -33,7 +34,12 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const storage = process.env.CICADA_PRODUCER_STORAGE || '/tmp/cicada-pro2-browser-session.json';
   assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'));
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', ...(fs.existsSync(storage) ? { storageState: storage } : {}) });
-  t.after(async () => { await desktop.storageState({ path: storage }); await browser.close(); }, {timeout: 15000});
+  // A failed step prints what each open page's main thread was doing, and the
+  // browser closes even if a page froze (page-stall.cjs). This file has one
+  // test, so its teardown may end the process.
+  const serverLog = process.env.CICADA_STUDIO_STARTUP_LOG;
+  const watches = [await stall.watchContext(desktop, { serverLog })];
+  stall.teardown(t, browser, { watch: watches, before: () => desktop.storageState({ path: storage }), exitWhenDone: true });
   const page = await desktop.newPage();
   page.setDefaultTimeout(20000);
   const errors = [], checks = [];
@@ -298,6 +304,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   checks.push('drawn and button-created points stay drafts until saved; repeated keyboard moves replace one point; curve shape/deletion support Undo');
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce', storageState: await desktop.storageState() });
+  watches.push(await stall.watchContext(mobile, { serverLog }));
   const phone = await mobile.newPage();
   phone.setDefaultTimeout(20000);
   phone.on('pageerror', error => errors.push(error.message));
