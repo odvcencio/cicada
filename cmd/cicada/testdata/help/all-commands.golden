@@ -56,13 +56,14 @@ Flags:
 With --all, the score path is optional; run the command from the project folder.
 
 ### check
-cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]
+cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [--json] [score.cicada]
 
 validate one score or the current project
 
 Flags:
   --profile <name>           limits to check against: desktop (default) or browser
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)
+  --json                     write the result as JSON (schema cicada.check.v1): each diagnostic with its position and any known fix
   --help                     show this help
 
 The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted.
