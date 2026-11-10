@@ -181,3 +181,16 @@ func TestShellBarAndStepReadoutStaysOutsideEveryRegion(t *testing.T) {
 		walk(region)
 	}
 }
+
+func TestEnginePropsHashIgnoresOnlyVolatileFields(t *testing.T) {
+	base := engineProps([]byte(`{"csrf":"masked:a","revision":"r1","sourceRevision":"s1","pattern":"p","audition":"step=1"}`))
+	if got := engineProps([]byte(`{"csrf":"masked:b","revision":"r2","sourceRevision":"s2","pattern":"p","audition":"step=9"}`)); got != base {
+		t.Error("the token, revisions or page query changed the engine props hash")
+	}
+	if got := engineProps([]byte(`{"csrf":"masked:a","revision":"r1","sourceRevision":"s1","pattern":"q","audition":"step=1"}`)); got == base {
+		t.Error("a changed engine prop left the hash unchanged")
+	}
+	if engineProps([]byte(`not json`)) == "" || len(base) != 12 {
+		t.Errorf("hash %q", base)
+	}
+}

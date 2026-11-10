@@ -64,7 +64,7 @@ async function sharedBrowser() {
   return shared;
 }
 
-test.after(async () => { await shared?.browser.close(); });
+test.after(async () => { await shared?.browser.close(); }, {timeout: 15000});
 
 // One page for the whole suite: every step continues from the last one, and
 // none of them may navigate.
@@ -103,7 +103,8 @@ async function studio() {
   await page.route('**/__actions/**', async route => {
     const request = route.request();
     const action = new URL(request.url()).pathname.split('/').pop();
-    if (request.method() !== 'POST' || /checkpoint$/.test(action) || action === 'live' || action === 'note-preview') return route.continue();
+    // Only the queue's writes are recorded; engine and GoSX writes pass through.
+    if (request.method() !== 'POST' || !['pattern', 'undo', 'redo'].includes(action) || !/json/.test(request.headers()['content-type'] || '')) return route.continue();
     const payload = request.postDataJSON();
     const record = {action, payload, status: 0, result: null, done: false};
     posts.push(record);
@@ -263,6 +264,27 @@ test('a validation error restores the cell and the queue continues', async () =>
   await noNavigation();
 });
 
+test('a refused draw drops the Undo queued behind it', async () => {
+  const {page, posts, cell, rewrites, hold, settled, noNavigation} = await studio();
+  const start = posts.length;
+  rewrites.push(payload => { payload.step = '99'; });
+  const release = hold();
+  await page.locator(cell(25)).click();
+  await until(() => posts.length > start, 'the draw was not sent');
+  // This Undo was meant for the draw. If the draw is refused, it would undo
+  // the user's previous saved edit instead.
+  await page.locator('#undo-form button[type=submit]').click();
+  release();
+  await settled(start + 1);
+  assert.equal(posts[start].status, 422);
+  await page.waitForFunction(() => !document.querySelector('#undo-form button[type=submit]').hasAttribute('data-workspace-pending'));
+  await page.waitForTimeout(400);
+  assert.equal(posts.length, start + 1, 'the Undo queued behind a refused draw was sent');
+  assert.match(await page.locator('[data-workspace-status]').textContent(), /Undo or Redo waiting behind it was not sent/, 'the dropped Undo was not reported');
+  assert.equal(await page.locator(cell(25)).getAttribute('data-active'), 'false');
+  await noNavigation();
+});
+
 test('a stale revision restores, blocks the queue, and Refresh saved state recovers', async () => {
   const {page, state, posts, reads, cell, rewrites, hold, confirmed, settled, status, noNavigation, original} = await studio();
   const start = posts.length;
@@ -301,6 +323,60 @@ test('a stale revision restores, blocks the queue, and Refresh saved state recov
   await noNavigation();
 });
 
+test('a network failure restores the cell, blocks, and is never resent', async () => {
+  const {page, state, posts, cell, confirmed, settled, status, noNavigation} = await studio();
+  const before = await state('/api/state');
+  let aborted = 0;
+  await page.route('**/__actions/pattern', route => { aborted++; return route.abort('failed'); });
+  await page.locator(cell(26)).click();
+  await until(() => aborted === 1, 'the draw did not reach the network');
+  await page.waitForFunction(selector => {
+    const el = document.querySelector(selector);
+    return el.getAttribute('data-active') === 'false' && !el.hasAttribute('data-workspace-pending');
+  }, cell(26));
+  await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+  assert.match(await status(), /did not complete/i);
+  await page.waitForTimeout(400);
+  assert.equal(aborted, 1, 'a failed write was sent again');
+  assert.deepEqual(await state('/api/state'), before);
+  await page.unroute('**/__actions/pattern');
+  await page.locator('[data-workspace-retry]').click();
+  await until(async () => /Workspace updated/i.test(await status()), 'Refresh saved state did not finish');
+  const start = posts.length;
+  await page.locator(cell(26)).click();
+  await settled(start + 1);
+  await confirmed(cell(26), true, posts[start].result.data.revision);
+  await noNavigation();
+});
+
+test('a saved write whose view cannot be confirmed keeps its paint pending until a refresh', async () => {
+  const {page, state, cell, region, status, noNavigation} = await studio();
+  await page.route('**/__actions/pattern', async route => {
+    const response = await route.fetch();
+    const result = await response.json();
+    // Model another editor's save between the write and its view.
+    result.data = {...result.data, refreshRequired: true};
+    result.message = 'Saved. The score changed before the workspace refreshed.';
+    await route.fulfill({response, body: JSON.stringify(result)});
+  });
+  const before = await state('/api/state');
+  await page.locator(cell(27)).click();
+  await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+  const painted = await page.locator(cell(27)).evaluate(el => ({active: el.getAttribute('data-active'), pending: el.hasAttribute('data-workspace-pending')}));
+  assert.deepEqual(painted, {active: 'true', pending: true}, 'a saved but unconfirmed write lost its pending paint');
+  const saved = await state('/api/state');
+  assert.notEqual(saved.revision, before.revision, 'the write was not saved');
+  await page.unroute('**/__actions/pattern');
+  await page.locator('[data-workspace-retry]').click();
+  await until(async () => /Workspace updated/i.test(await status()), 'Refresh saved state did not finish');
+  await page.waitForFunction(({selector, revision}) => {
+    const el = document.querySelector(selector);
+    return el.getAttribute('data-active') === 'true' && !el.hasAttribute('data-workspace-pending') && el.closest('[data-update-region]').dataset.regionRevision === revision;
+  }, {selector: cell(27), revision: saved.revision});
+  assert.equal(await region('dock-clip').getAttribute('data-region-stale'), null);
+  await noNavigation();
+});
+
 test('a hidden region is marked stale and refreshed when it opens', async () => {
   const {page, posts, reads, cell, region, revisionOf, confirmed, settled, noNavigation} = await studio();
   // Background reads may refresh hidden regions while the queue is idle.
@@ -332,6 +408,76 @@ test('a hidden region is marked stale and refreshed when it opens', async () => 
   await noNavigation();
 });
 
+test('Loop part after a draw sends the revision its region shows', async () => {
+  const {page, state, cell, posts, settled, confirmed, noNavigation} = await studio();
+  const start = posts.length;
+  await page.locator(cell(28)).click();
+  await settled(start + 1);
+  await confirmed(cell(28), true, posts[start].result.data.revision);
+  const loop = page.locator('#detail-panel-clip [data-sound-preview]').first();
+  await page.waitForFunction(el => !el.disabled, await loop.elementHandle());
+  const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/sound-preview' && /"action":"pattern"/.test(request.postData() || ''));
+  const answered = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/__actions/sound-preview' && /"action":"pattern"/.test(response.request().postData() || ''));
+  await loop.click();
+  const payload = (await sent).postDataJSON();
+  assert.equal(payload.revision, (await state('/api/state')).revision, 'the preview engine sent the revision it was mounted with');
+  assert.equal((await answered).status(), 200, 'the preview was refused after a draw');
+  // Stop the loop again.
+  if (await loop.getAttribute('aria-pressed') === 'true') await loop.click();
+  await noNavigation();
+});
+
+test('the Code editor stays mounted while other regions are patched', async () => {
+  const {page, posts, cell, settled, confirmed, region, noNavigation} = await studio();
+  const editor = await page.locator('#score textarea').elementHandle();
+  let start = posts.length;
+  await page.locator(cell(29)).click();
+  await settled(start + 1);
+  await confirmed(cell(29), true, posts[start].result.data.revision);
+  await page.waitForTimeout(400);
+  assert.equal(await editor.evaluate(node => node.isConnected && node === document.querySelector('#score textarea')), true, 'a draw replaced the visible Code editor');
+  // Hidden, the Code lens is left stale; it is read when it opens again.
+  await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=hide]').click();
+  await page.waitForFunction(() => !document.querySelector('#studio-code > details').open);
+  start = posts.length;
+  await page.locator(cell(29)).click();
+  await settled(start + 1);
+  const revision = posts[start].result.data.revision;
+  await confirmed(cell(29), false, revision);
+  await page.waitForTimeout(600);
+  assert.equal(await editor.evaluate(node => node.isConnected), true, 'a background read replaced the hidden Code editor');
+  assert.notEqual(await region('code').getAttribute('data-region-stale'), null, 'the hidden Code lens was read in the background');
+  await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
+  await until(async () => await region('code').getAttribute('data-region-revision') === revision, 'the opened Code lens was not read');
+  assert.equal(await editor.evaluate(node => node.isConnected && node === document.querySelector('#score textarea')), true, 'opening Code replaced its editor');
+  await noNavigation();
+});
+
+test('Code typed while a response is applied is held with its file revision', async () => {
+  const {page, posts, cell, settled, region} = await studio();
+  const fileRevision = await page.locator('#score input[name="fileRevision"]').inputValue();
+  // Type as soon as the Clip region changes, which is while the rest of the
+  // response is still being applied.
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      const editor = document.querySelector('#score textarea');
+      editor.value += '\n// typed during an apply';
+      editor.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+    observer.observe(document.querySelector('#update-dock-clip'), {subtree: true, attributes: true, childList: true, characterData: true});
+  });
+  const start = posts.length;
+  await page.locator(cell(30)).click();
+  await settled(start + 1);
+  const revision = posts[start].result.data.revision;
+  await page.waitForFunction(r => document.querySelector('#update-dock-clip').dataset.regionRevision === r, revision);
+  await page.waitForTimeout(400);
+  assert.match(await page.locator('#score textarea').inputValue(), /typed during an apply/, 'the Code draft was replaced');
+  assert.equal(await page.locator('#score input[name="fileRevision"]').inputValue(), fileRevision, 'the draft took a file revision it was not typed on');
+  assert.notEqual(await region('code').getAttribute('data-region-revision'), revision, 'a held Code lens was confirmed fresh');
+});
+
 test('a dirty Code draft is held while a Clip edit lands', async () => {
   const {page, posts, cell, region, confirmed, settled, noNavigation} = await studio();
   const editor = page.locator('#score textarea').first();
@@ -352,4 +498,88 @@ test('a dirty Code draft is held while a Clip edit lands', async () => {
   assert.equal(await region('code').getAttribute('data-region-revision'), codeRevision, 'the held Code lens advanced its revision');
   assert.equal(await page.locator('#score input[name="fileRevision"]').inputValue(), fileRevision, 'the held draft lost the revision it was typed on');
   await noNavigation();
+});
+
+test('a form in a stale region is sent only after its region is read', async () => {
+  const {page, posts, cell, settled, region} = await studio();
+  // Hold the reads that follow a write, so the hidden Mixer stays stale.
+  const held = [];
+  let mixerPost = null;
+  page.on('request', request => { if (!mixerPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/mixer') mixerPost = request; });
+  await page.route('**/__studio/regions**', route => { held.push(route); });
+  const mute = () => page.locator('#view-panel-mixer button[data-toggle=mute]').first();
+  let pressed;
+  try {
+    const start = posts.length;
+    await page.locator(cell(32)).click();
+    await settled(start + 1);
+    await until(() => held.length > 0, 'the write was not followed by a read');
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+    assert.notEqual(await region('center-mixer').getAttribute('data-region-stale'), null, 'the Mixer was not stale');
+    pressed = await mute().getAttribute('aria-pressed');
+    await mute().click();
+    await page.waitForTimeout(300);
+    assert.equal(mixerPost, null, 'a form in a stale region was sent before its region was read');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+    for (const route of held) await route.continue().catch(() => {});
+  }
+  await until(() => mixerPost !== null, 'the form was not sent once its region was current');
+  const response = await mixerPost.response();
+  assert.ok(response && response.status() < 400, `the mixer write was refused: ${response && response.status()}`);
+  // Put the track back as it was.
+  await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
+  await mute().click();
+  await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+});
+
+test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {
+  const {page, state, posts, cell, hold, settled} = await studio();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.keyboard.press('Alt+Shift+Digit1');
+  const before = (await state('/api/state')).revision;
+  const release = hold();
+  const start = posts.length;
+  await page.locator(cell(33)).click();
+  await until(() => posts.length > start, 'the draw was not sent');
+  // A step link is a GoSX navigation: it disposes the shell engine.
+  await page.locator('#detail-panel-clip .piano-roll .step-number').nth(2).click();
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '3');
+  release();
+  await settled(start + 1);
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  assert.notEqual((await state('/api/state')).revision, before, 'the write sent before the navigation was lost');
+  // The new page was rendered before that write landed, so it is one save
+  // behind; a write from it would be refused. Load the saved state again.
+  await page.locator('#detail-panel-clip .piano-roll .step-number').nth(3).click();
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '4');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  const next = posts.length;
+  await page.locator(cell(34)).click();
+  await settled(next + 1);
+  assert.equal(posts[next].status, 200, posts[next].result?.message);
+  assert.deepEqual(errors, []);
+});
+
+test('a region that needs a reload is not read again while a draft blocks the reload', async () => {
+  const {page, posts, reads, cell, settled, region} = await studio();
+  // An unsaved Code draft means the shell must not reload. Then make the Clip
+  // region's engine look changed, so its next patch needs a reload.
+  const editor = page.locator('#score textarea').first();
+  await editor.focus();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('\n// unsaved draft');
+  await page.locator('#cicada-pattern-preview').evaluate(node => node.setAttribute('data-engine-props', 'changed'));
+  const start = posts.length;
+  await page.locator(cell(31)).click();
+  await settled(start + 1);
+  await until(async () => await region('dock-clip').getAttribute('data-region-reload') !== null, 'the region was not marked for a reload');
+  await page.locator('#studio-refresh-notice').waitFor({state: 'visible'});
+  const before = reads.length;
+  await page.waitForTimeout(3000);
+  const repeated = reads.slice(before).filter(target => /(^|,)dock-clip:/.test(target.searchParams.get('ids') || ''));
+  assert.equal(repeated.length, 0, `the region awaiting a reload was read ${repeated.length} times in 3 s`);
+  assert.ok(reads.length - before <= 2, `${reads.length - before} region reads in 3 s with a reload pending`);
 });
