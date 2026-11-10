@@ -14,6 +14,20 @@ permissions:
 env:
   WASMOPT: wasm-opt
 
+# Skipped jobs and the required check (read before editing the jobs below)
+#
+# The repository ruleset on main requires one status check, "M0 language and
+# kernel". GitHub counts a job that `if:` skipped as passing, and it skips a
+# job by default when a job it `needs` failed or was cancelled. So a required
+# job that simply `needs` its parts would turn green exactly when a part
+# fails. The job named "M0 language and kernel" therefore runs with
+# `if: always()` and fails by itself unless every part either succeeded or was
+# skipped on purpose (the `changes` job said the pull request cannot affect it).
+# Keep that name on that aggregate job, and never give a part the same name.
+#
+# Which jobs a pull request runs comes from scripts/ci-changes.sh (see the
+# `changes` job). Pushes to main, the nightly schedule and manual runs set
+# every group to true, so they run every job.
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
@@ -21,8 +35,54 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Classifies a pull request from its changed files so that jobs a change cannot
+  # affect are skipped. The rules and their evidence are in scripts/ci-changes.sh;
+  # scripts/ci-changes_test.sh tests them. Push, schedule and manual runs set
+  # every output to true.
+  changes:
+    name: Classify changed files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      root: ${{ steps.classify.outputs.root }}
+      studio_cli: ${{ steps.classify.outputs.studio_cli }}
+      parity: ${{ steps.classify.outputs.parity }}
+      workstation: ${{ steps.classify.outputs.workstation }}
+      studio_browser: ${{ steps.classify.outputs.studio_browser }}
+      macos_desktop: ${{ steps.classify.outputs.macos_desktop }}
+      macos_contracts: ${{ steps.classify.outputs.macos_contracts }}
+      m2: ${{ steps.classify.outputs.m2 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # The three-dot diff below needs the merge base.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify the changed files
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            # --no-renames lists both the old and the new path of a move.
+            git -c core.quotepath=off diff --name-only --no-renames "$PR_BASE_SHA...$PR_HEAD_SHA" > "$RUNNER_TEMP/changed-files.txt"
+            echo "Changed files:"
+            cat "$RUNNER_TEMP/changed-files.txt"
+            bash scripts/ci-changes.sh < "$RUNNER_TEMP/changed-files.txt" > "$RUNNER_TEMP/groups.txt"
+          else
+            bash scripts/ci-changes.sh --all > "$RUNNER_TEMP/groups.txt"
+          fi
+          echo "Groups:"
+          cat "$RUNNER_TEMP/groups.txt"
+          cat "$RUNNER_TEMP/groups.txt" >> "$GITHUB_OUTPUT"
+
   native-go127:
     name: Native Go 1.27.3 (core minimum remains 1.25)
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
     runs-on: ubuntu-24.04
     # One cold build of every package plus the whole test suite on one runner;
     # the other jobs split the same work across runners. The cmd/cicada tests
@@ -76,9 +136,45 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash scripts/check-commit-hygiene.sh "$PR_BASE_SHA" "$PR_HEAD_SHA"
+      # These tests need only bash, so they run on every pull request, even
+      # one that changes only documentation.
+      - name: Test the change classifier and the Studio browser shard lists
+        run: |
+          set -euo pipefail
+          bash scripts/ci-changes_test.sh
+          bash scripts/ci-studio-browser_test.sh
+          bash scripts/ci-studio-browser.sh check
+
+  # Runs on every pull request, including one that changes only documentation.
+  # TestDocumentationHygiene reads every tracked file, and the other tests read
+  # the manual, the specification, the README or the parameter tables. The
+  # jobs that would otherwise run them (Studio CLI, native, M0) can be skipped.
+  repo-checks:
+    name: Repository and documentation checks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Change classifier matches the import graph
+        run: bash scripts/ci-changes_test.sh --graph
+      - name: Tests that read every tracked file, the docs, or the README
+        run: |
+          set -euo pipefail
+          go test -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack -run '^(TestDocumentationHygiene|TestPublicHygieneRejectsViolations|TestCommitHygiene|TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot|TestDocumentationCicadaExamples|TestDocumentationExamplesUseEditionTwo|TestDocumentationEBNFMatchesGrammarDSL|TestManualMixingExampleWorksInFreshProject|TestWritingMusicOpeningScoreIsFormatted|TestRecordKitManual.*|TestAcceptedMasteringCheckRenderAndVerify|TestParameterRangesDocIsCurrent|TestBuiltInTrackParameterCatalogMatchesTable|TestBrushDocExamplesRenderAndKeepTheirBlockIndependence|TestSamplerReportsStayOutsideRepository)$'
 
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
+    needs: changes
+    if: ${{ needs.changes.outputs.parity == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -114,8 +210,8 @@ jobs:
 
   parity-arm64:
     name: PCM24 parity (amd64, arm64, WASM)
-    needs: parity-amd64
-    if: ${{ !cancelled() }}
+    needs: [changes, parity-amd64]
+    if: ${{ !cancelled() && needs.changes.outputs.parity == 'true' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 25
     env:
@@ -190,6 +286,8 @@ jobs:
 
   studio-cli:
     name: Studio CLI tests (shard ${{ matrix.shard }}/3)
+    needs: changes
+    if: ${{ needs.changes.outputs.studio_cli == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -216,8 +314,12 @@ jobs:
       - name: cmd/cicada tests
         run: make test-cmd-shard SHARD=${{ matrix.shard }}/3
 
-  m0:
-    name: M0 language and kernel
+  # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
+  # aggregate. Every command that was in the single job is in exactly one part.
+  m0-core:
+    name: M0 grammar and Go tests
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -240,17 +342,43 @@ jobs:
           set -euo pipefail
           make grammar-check
           make test-ci-core
+      - name: Save gate reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m0-core-reports
+          if-no-files-found: error
+          path: build/grammar-doctor.txt
+
+  m0-kernel:
+    name: M0 kernel, golden, realtime, CLI and generator
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - name: Tool versions
+        run: |
+          go version
+          tinygo version
+      - name: Kernel tests, vet, golden and realtime gates
+        run: |
+          set -euo pipefail
+          mkdir -p build
           make test-kernel
           go vet ./...
           make test-golden | tee build/golden-report.txt
           make test-alloc test-timing | tee build/realtime-report.txt
-      - name: Audio WASM and size gate
-        run: |
-          set -euo pipefail
-          make probe-wasm
-          make test-kernel-wasm | tee build/kernel-wasm-report.txt
-          make test-sampler-wasm | tee build/sampler-wasm-report.txt
-          make test-keys-wasm | tee build/keys-wasm-report.txt
       - name: Native acid benchmark
         run: |
           set -euo pipefail
@@ -286,16 +414,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: m0-m1-gate-reports
+          name: m0-kernel-reports
           if-no-files-found: error
           path: |
-            build/grammar-doctor.txt
             build/golden-report.txt
             build/realtime-report.txt
-            build/kernel-wasm-report.txt
-            build/sampler-wasm-report.txt
-            build/keys-wasm-report.txt
-            build/cicada-loudness.wasm
             build/acid-bench-report.txt
             build/m0-cli-report.txt
             build/m1-phrase-wasm-report.txt
@@ -305,14 +428,97 @@ jobs:
             build/m1-ci/first-acid.mid
             build/first-acid.wav
 
+  m0-wasm:
+    name: M0 audio WASM and size gate
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - name: Tool versions
+        run: |
+          go version
+          tinygo version
+      - name: Audio WASM and size gate
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make probe-wasm
+          make test-kernel-wasm | tee build/kernel-wasm-report.txt
+          make test-sampler-wasm | tee build/sampler-wasm-report.txt
+          make test-keys-wasm | tee build/keys-wasm-report.txt
+      - name: Save gate reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m0-wasm-reports
+          if-no-files-found: error
+          path: |
+            build/kernel-wasm-report.txt
+            build/sampler-wasm-report.txt
+            build/keys-wasm-report.txt
+            build/cicada-loudness.wasm
+
+  # The required status check. See the comment above `concurrency:`. This job
+  # must keep `if: always()`: without it GitHub skips the job when a part fails,
+  # and a skipped required check counts as passing.
+  m0:
+    name: M0 language and kernel
+    needs: [changes, m0-core, m0-kernel, m0-wasm]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every M0 part to pass, or to be skipped because no file it covers changed
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RUN_PARTS: ${{ needs.changes.outputs.root }}
+          CORE_RESULT: ${{ needs.m0-core.result }}
+          KERNEL_RESULT: ${{ needs.m0-kernel.result }}
+          WASM_RESULT: ${{ needs.m0-wasm.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANGES_RESULT" != success ]]; then
+            echo "The change classifier did not succeed ($CHANGES_RESULT); M0 cannot be judged." >&2
+            exit 1
+          fi
+          status=0
+          for part in "m0-core:$CORE_RESULT" "m0-kernel:$KERNEL_RESULT" "m0-wasm:$WASM_RESULT"; do
+            name="${part%%:*}"
+            result="${part#*:}"
+            if [[ "$RUN_PARTS" == true ]]; then
+              expected=success
+            else
+              expected=skipped
+            fi
+            if [[ "$result" != "$expected" ]]; then
+              echo "$name: $result (expected $expected; the classifier said root=$RUN_PARTS)" >&2
+              status=1
+            else
+              echo "$name: $result"
+            fi
+          done
+          exit "$status"
+
   workstation:
     name: GoSX workstation and Tymbal boundary
+    needs: changes
+    if: ${{ needs.changes.outputs.workstation == 'true' }}
     runs-on: ubuntu-24.04
-    # Cold builds and the full Studio journey/reopen matrix exceed 30 minutes.
+    # The Studio browser suites run in the studio-build and studio-browser jobs.
     timeout-minutes: 45
     env:
       GOWORK: off
-      CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       # The pinned GoSX TinyGo runtime compiler still uses its Go 1.25 lane.
@@ -353,777 +559,108 @@ jobs:
           set -euo pipefail
           (cd workstation && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../build/cicada-workstation.exe .)
           (cd desktop && go test ./... && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../build/cicada-studio.exe .)
-      - name: Studio browser continuity
-        shell: bash
+      - name: Change classifier matches the workstation module's imports
+        run: bash scripts/ci-changes_test.sh --graph-workstation
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gosx-workstation-build
+          path: |
+            workstation/dist/build.json
+            build/workstation-gosx-size.json
+
+  # Builds what the Studio browser suites run against once, so each shard does
+  # not rebuild it. The tar keeps file modes (build/cicada stays executable).
+  studio-build:
+    name: Studio build for the browser shards
+    needs: changes
+    if: ${{ needs.changes.outputs.studio_browser == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      # The pinned GoSX TinyGo runtime compiler still uses its Go 1.25 lane.
+      # Install that SDK separately; do not make TinyGo consume native Go 1.27.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.25.9'
+          cache: false
+      - name: Retain the compatible TinyGo SDK
+        run: echo "GOSX_TINYGO_GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - name: Supported Node for browser checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Build the production workstation, Studio, and the kernel WASM
+        run: make build-workstation-release build-core build-kernel-wasm
+      - name: Pack every file the build created
         run: |
           set -euo pipefail
-          browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          mkdir -p "$browser_root"
-          npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
-          export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
-          tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
-          export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
-          if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
-            mkdir -p "$tool_root"
-            curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
-            unzip -q "$browser_root/chrome.zip" -d "$browser_root"
-            mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
-          fi
-          node --test workstation/browser/owner-session.test.cjs
-          export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
-          # Each suite edits its score and may persist assets and shared drafts.
-          # A fresh process alone does not reset those durable sidecars.
-          for suite in continuity shell mixer-strips columns collaboration; do
-            mkdir -p "$browser_root/$suite"
-            node workstation/browser/continuity.test.cjs --write-fixture "$browser_root/$suite/continuity.cicada"
-          done
-          make build-core build-kernel-wasm
-          python3 scripts/check-studio-shutdown.py --cicada build/cicada --output build/studio-shutdown-proof
-          studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
-          export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-          ./build/cicada studio "$browser_root/continuity/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-continuity-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          trap 'kill "$studio_pid" 2>/dev/null || true; wait "$studio_pid" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-continuity | tee build/studio-continuity-report.txt
-          # Use a new Studio process so its first authenticated session owns it.
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          mkdir -p "$browser_root/modulation"
-          export CICADA_MODULATION_SCORE="$browser_root/modulation/main.cicada"
-          export CICADA_MODULATION_PROOF_DIR="$PWD/build/modulation-source-proof"
-          node workstation/browser/modulation-source.test.cjs --write-fixture "$CICADA_MODULATION_SCORE"
-          ./build/cicada studio "$CICADA_MODULATION_SCORE" --audio null --listen "127.0.0.1:$studio_port" > build/studio-modulation-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-modulation-source | tee build/studio-modulation-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          mkdir -p "$browser_root/chorus"
-          export CICADA_CHORUS_SCORE="$browser_root/chorus/main.cicada"
-          export CICADA_CHORUS_PROOF_DIR="$PWD/build/chorus-proof"
-          node workstation/browser/chorus.test.cjs --write-fixture "$CICADA_CHORUS_SCORE"
-          ./build/cicada studio "$CICADA_CHORUS_SCORE" --audio null --listen "127.0.0.1:$studio_port" > build/studio-chorus-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-chorus | tee build/studio-chorus-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          mkdir -p "$browser_root/pattern-machine"
-          export CICADA_MACHINE_SCORE="$browser_root/pattern-machine/main.cicada"
-          export CICADA_MACHINE_PROOF="$PWD/build/pattern-machine-proof"
-          mkdir -p "$CICADA_MACHINE_PROOF"
-          node workstation/browser/pattern-machine.test.cjs --write-fixture "$CICADA_MACHINE_SCORE"
-          ./build/cicada studio "$CICADA_MACHINE_SCORE" --audio null --listen "127.0.0.1:$studio_port" > build/studio-pattern-machine-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-pattern-machine | tee build/studio-pattern-machine-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          ./build/cicada studio "$browser_root/shell/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-shell-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-shell | tee build/studio-shell-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          ./build/cicada studio "$browser_root/mixer-strips/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-mixer-strips-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-mixer-strips | tee build/studio-mixer-strips-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          export CICADA_COLUMN_PROOF_DIR="$PWD/build/studio-column-proof"
-          ./build/cicada studio "$browser_root/columns/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-column-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-columns | tee build/studio-column-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          song_root="$browser_root/song"
-          mkdir -p "$song_root"
-          song_cli="$PWD/build/cicada"
-          (cd "$song_root" && "$song_cli" new first-light)
-          export CICADA_SONG_PROOF_DIR="$PWD/build/studio-song-proof"
-          for phase in compose reopen; do
-            ./build/cicada studio "$song_root/first-light/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-song-$phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            export CICADA_SONG_REOPEN=0
-            if [[ "$phase" == reopen ]]; then export CICADA_SONG_REOPEN=1; fi
-            make test-studio-first-song | tee "build/studio-song-$phase-report.txt"
-            kill "$studio_pid"
-            wait "$studio_pid" || true
-          done
-          unset CICADA_SONG_REOPEN
-          export CICADA_PORTABLE_FIXTURE="$PWD/build/studio-portable-fixture.json"
-          export CICADA_PORTABLE_PROOF_DIR="$PWD/build/studio-portable-proof"
-          go -C workstation run ./browser/testdata/portable-song > "$CICADA_PORTABLE_FIXTURE"
-          portable_score="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["score"])' "$CICADA_PORTABLE_FIXTURE")"
-          ./build/cicada midi "$portable_score" -o build/studio-portable-notes.mid --report 2> build/studio-portable-midi-report.json
-          python3 -c 'import json; r=json.load(open("build/studio-portable-midi-report.json")); assert r["notes"] > 0 and r["audio_tracks_omitted"] == ["guitar"], r'
-          ./build/cicada verify-midi build/studio-portable-notes.mid --ppq 960 --type 1
-          ./build/cicada midi "$portable_score" -o build/studio-portable-pattern.mid --pattern tone.melody
-          ./build/cicada verify-midi build/studio-portable-pattern.mid --ppq 960 --type 1
-          for phase in select reopen; do
-            ./build/cicada studio "$portable_score" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-portable-$phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            export CICADA_PORTABLE_REOPEN=0
-            if [[ "$phase" == reopen ]]; then export CICADA_PORTABLE_REOPEN=1; fi
-            make test-studio-portable-song | tee "build/studio-portable-$phase-report.txt"
-            kill "$studio_pid"
-            wait "$studio_pid" || true
-          done
-          unset CICADA_PORTABLE_REOPEN
-          cp -R examples/studio-project "$browser_root/code-recovery"
-          export CICADA_CODE_RECOVERY_PROOF="$PWD/build/studio-code-recovery-proof"
-          for phase in capture recover verify; do
-            ./build/cicada studio "$browser_root/code-recovery/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-code-recovery-$phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            export CICADA_CODE_RECOVERY_PHASE="$phase"
-            make test-studio-code-recovery | tee "build/studio-code-recovery-$phase-report.txt"
-            kill "$studio_pid"
-            wait "$studio_pid" || true
-          done
-          unset CICADA_CODE_RECOVERY_PHASE
-          cp -R examples/studio-project "$song_root/export-sources"
-          export CICADA_EXPORT_PROOF_DIR="$PWD/build/studio-export-proof"
-          ./build/cicada studio "$song_root/export-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-export-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-export-sources | tee build/studio-export-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          cp -R examples/studio-project "$song_root/export-stems"
-          export CICADA_STEMS_PROOF_DIR="$PWD/build/studio-stems-proof"
-          ./build/cicada studio "$song_root/export-stems/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-stems-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-export-stems | tee build/studio-stems-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          ./build/cicada studio "$browser_root/collaboration/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-collaboration | tee build/studio-collaboration-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placements.test.cjs --write-fixture "$browser_root/placements.cicada"
-          export CICADA_PLACEMENT_PROOF_DIR="$PWD/build/studio-placement-proof"
-          export CICADA_PLACEMENT_BUILD="make build-workstation-release"
-          ./build/cicada studio "$browser_root/placements.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-placement-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          make test-studio-placements | tee build/studio-placement-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placements.test.cjs --write-fixture "$browser_root/navigation.cicada"
-          ./build/cicada studio "$browser_root/navigation.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-navigation-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-proof" node --test workstation/browser/arrangement-navigation.test.cjs | tee build/studio-navigation-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placements.test.cjs --write-fixture "$browser_root/gestures.cicada"
-          ./build/cicada studio "$browser_root/gestures.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-gestures-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_GESTURE_SCORE="$browser_root/gestures.cicada" CICADA_GESTURE_PROOF_DIR="$PWD/build/studio-gestures-proof" node --test workstation/browser/placement-gestures.test.cjs | tee build/studio-gestures-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placement-precision.test.cjs --write-fixture "$browser_root/precision.cicada"
-          ./build/cicada studio "$browser_root/precision.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-precision-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_PRECISION_PROOF_DIR="$PWD/build/studio-precision-proof" node --test workstation/browser/placement-precision.test.cjs | tee build/studio-precision-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placements.test.cjs --write-fixture "$browser_root/startup.cicada"
-          ./build/cicada studio "$browser_root/startup.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-startup-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_STARTUP_PROOF_DIR="$PWD/build/studio-startup-proof" node --test workstation/browser/startup.test.cjs | tee build/studio-startup-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/sampler-waveform.test.cjs --write-fixture "$browser_root/sampler-waveform.cicada"
-          ./build/cicada studio "$browser_root/sampler-waveform.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-sampler-waveform-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-sampler-waveform-proof" node --test workstation/browser/sampler-waveform.test.cjs | tee build/studio-sampler-waveform-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placement-autoscroll.test.cjs --write-fixture "$browser_root/autoscroll.cicada"
-          ./build/cicada studio "$browser_root/autoscroll.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-autoscroll-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_AUTOSCROLL_PROOF_DIR="$PWD/build/studio-autoscroll-proof" node --test workstation/browser/placement-autoscroll.test.cjs | tee build/studio-autoscroll-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
-          ./build/cicada studio "$browser_root/placement-commands.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-placement-commands-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/arrangement-sources.test.cjs --write-fixture "$browser_root/arrangement-sources" > build/studio-arrangement-sources-fixture.json
-          export CICADA_ARRANGEMENT_FIXTURE="$PWD/build/studio-arrangement-sources-fixture.json"
-          export CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-sources-proof"
-          for phase in edit reopen; do
-            ./build/cicada studio "$browser_root/arrangement-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-arrangement-sources-$phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            export CICADA_ARRANGEMENT_REOPEN=0
-            if [[ "$phase" == reopen ]]; then export CICADA_ARRANGEMENT_REOPEN=1; fi
-            node --test workstation/browser/arrangement-sources.test.cjs | tee "build/studio-arrangement-sources-$phase-report.txt"
-            if [[ "$phase" == edit ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          unset CICADA_ARRANGEMENT_REOPEN
-          for tempo_layout in primary secondary; do
-            tempo_args=()
-            if [[ "$tempo_layout" == primary ]]; then tempo_args+=(--primary); fi
-            node workstation/browser/tempo-editor.test.cjs --write-fixture "$browser_root/tempo-$tempo_layout" "${tempo_args[@]}" > "build/studio-tempo-$tempo_layout-fixture.json"
-            export CICADA_TEMPO_FIXTURE="$PWD/build/studio-tempo-$tempo_layout-fixture.json"
-            export CICADA_TEMPO_PROOF_DIR="$PWD/build/studio-tempo-$tempo_layout-proof"
-            for tempo_phase in edit reopen; do
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-              ./build/cicada studio "$browser_root/tempo-$tempo_layout/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-tempo-$tempo_layout-$tempo_phase-server.log" 2>&1 &
-              studio_pid=$!
-              export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-              for _ in $(seq 1 100); do
-                if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-                kill -0 "$studio_pid"
-                sleep 0.1
-              done
-              export CICADA_TEMPO_REOPEN=0
-              if [[ "$tempo_phase" == reopen ]]; then export CICADA_TEMPO_REOPEN=1; fi
-              node --test workstation/browser/tempo-editor.test.cjs | tee "build/studio-tempo-$tempo_layout-$tempo_phase-report.txt"
-            done
-          done
-          unset CICADA_TEMPO_REOPEN
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/solo-clock.test.cjs --write-fixture "$browser_root/solo-clock.cicada"
-          ./build/cicada studio "$browser_root/solo-clock.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-solo-clock-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_SOLO_SCORE="$browser_root/solo-clock.cicada" CICADA_SOLO_PROOF_DIR="$PWD/build/studio-solo-clock-proof" node --test workstation/browser/solo-clock.test.cjs | tee build/studio-solo-clock-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/portable-midi.test.cjs --write-fixture "$browser_root/portable-midi"
-          ./build/cicada studio "$browser_root/portable-midi/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-portable-midi-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_PORTABLE_MIDI_SCORE="$browser_root/portable-midi/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-portable-midi-proof" node --test workstation/browser/portable-midi.test.cjs | tee build/studio-portable-midi-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/midi-pickup.test.cjs --write-fixture "$browser_root/midi-pickup"
-          ./build/cicada studio "$browser_root/midi-pickup/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-midi-pickup-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          node --test workstation/browser/midi-pickup.test.cjs | tee build/studio-midi-pickup-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/macro-controls.test.cjs --write-fixture "$browser_root/macro-controls"
-          ./build/cicada studio "$browser_root/macro-controls/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-macro-controls-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_MACRO_PROOF_DIR="$PWD/build/studio-macro-controls-proof" node --test workstation/browser/macro-controls.test.cjs | tee build/studio-macro-controls-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/portable-midi.test.cjs --write-fixture "$browser_root/midi-binding"
-          ./build/cicada studio "$browser_root/midi-binding/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-midi-binding-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_PORTABLE_MIDI_SCORE="$browser_root/midi-binding/main.cicada" CICADA_PORTABLE_MIDI_PROOF_DIR="$PWD/build/studio-midi-binding-proof" node --test workstation/browser/midi-binding.test.cjs | tee build/studio-midi-binding-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/preset-save.test.cjs --write-fixture "$browser_root/preset-save"
-          ./build/cicada studio "$browser_root/preset-save/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-preset-save-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_PRESET_SCORE="$browser_root/preset-save/main.cicada" CICADA_PRESET_PROOF_DIR="$PWD/build/studio-preset-save-proof" node --test workstation/browser/preset-save.test.cjs | tee build/studio-preset-save-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-observation-clock-fixture.json
-          export CICADA_OBSERVATION_FIXTURE="$PWD/build/studio-observation-clock-fixture.json"
-          observation_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_OBSERVATION_FIXTURE")"
-          ./build/cicada studio "$observation_score" --audio null --listen "127.0.0.1:$studio_port" > build/studio-observation-clock-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_OBSERVATION_PROOF_DIR="$PWD/build/studio-observation-clock-proof" node --test workstation/browser/observation-clock.test.cjs | tee build/studio-observation-clock-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/tempo-clock.test.cjs --write-fixture "$browser_root/tempo-clock.cicada"
-          ./build/cicada studio "$browser_root/tempo-clock.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-tempo-clock-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_TEMPO_CLOCK_PROOF_DIR="$PWD/build/studio-tempo-clock-proof" node --test workstation/browser/tempo-clock.test.cjs | tee build/studio-tempo-clock-report.txt
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/library-recording.test.cjs --write-fixture "$browser_root/library-recording.cicada"
-          ./build/cicada studio "$browser_root/library-recording.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-library-recording-server.log 2>&1 &
-          studio_pid=$!
-          export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-          for _ in $(seq 1 100); do
-            if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-            kill -0 "$studio_pid"
-            sleep 0.1
-          done
-          CICADA_LIBRARY_RECORDING_PROOF_DIR="$PWD/build/studio-library-recording-proof" node --test workstation/browser/library-recording.test.cjs | tee build/studio-library-recording-report.txt
-          for song_layout in scene placement; do
-            kill "$studio_pid"
-            wait "$studio_pid" || true
-            song_args=()
-            if [[ "$song_layout" == placement ]]; then song_args+=(--placement); fi
-            node workstation/browser/pattern-song.test.cjs --write-fixture "$browser_root/pattern-song-$song_layout.cicada" "${song_args[@]}"
-            for song_phase in journey reopen; do
-              ./build/cicada studio "$browser_root/pattern-song-$song_layout.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-pattern-song-$song_layout-$song_phase-server.log" 2>&1 &
-              studio_pid=$!
-              export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-              for _ in $(seq 1 100); do
-                if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-                kill -0 "$studio_pid"
-                sleep 0.1
-              done
-              CICADA_PATTERN_SONG_REOPEN=0
-              if [[ "$song_phase" == reopen ]]; then CICADA_PATTERN_SONG_REOPEN=1; fi
-              export CICADA_PATTERN_SONG_REOPEN
-              CICADA_PATTERN_SONG_PROOF_DIR="$PWD/build/studio-pattern-song-$song_layout-proof" node --test workstation/browser/pattern-song.test.cjs | tee "build/studio-pattern-song-$song_layout-$song_phase-report.txt"
-              if [[ "$song_phase" == journey ]]; then
-                kill "$studio_pid"
-                wait "$studio_pid" || true
-              fi
-            done
-          done
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/pattern-grid.test.cjs --write-fixture "$browser_root/pattern-grid.cicada"
-          for grid_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/pattern-grid.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-pattern-grid-$grid_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_PATTERN_GRID_REOPEN=0
-            if [[ "$grid_phase" == reopen ]]; then CICADA_PATTERN_GRID_REOPEN=1; fi
-            export CICADA_PATTERN_GRID_REOPEN
-            CICADA_PATTERN_GRID_PROOF_DIR="$PWD/build/studio-pattern-grid-proof" node --test workstation/browser/pattern-grid.test.cjs | tee "build/studio-pattern-grid-$grid_phase-report.txt"
-            if [[ "$grid_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          go -C workstation run ./browser/testdata/placement-variation "$browser_root/placement-variation" > build/studio-placement-variation-fixture.json
-          for variation_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/placement-variation/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-placement-variation-$variation_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_VARIATION_REOPEN=0
-            if [[ "$variation_phase" == reopen ]]; then CICADA_VARIATION_REOPEN=1; fi
-            export CICADA_VARIATION_REOPEN
-            CICADA_VARIATION_PROOF_DIR="$PWD/build/studio-placement-variation-proof" node --test workstation/browser/placement-variation.test.cjs | tee "build/studio-placement-variation-$variation_phase-report.txt"
-            if [[ "$variation_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/performance-time.test.cjs --write-fixture "$browser_root/performance-time" > build/studio-performance-time-fixture.json
-          for time_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/performance-time/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-time-$time_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_TIME_REOPEN=0
-            if [[ "$time_phase" == reopen ]]; then CICADA_TIME_REOPEN=1; fi
-            export CICADA_TIME_REOPEN
-            CICADA_TIME_PROOF_DIR="$PWD/build/studio-performance-time-proof" node --test workstation/browser/performance-time.test.cjs | tee "build/studio-performance-time-$time_phase-report.txt"
-            if [[ "$time_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          python3 workstation/browser/performance-time-audio.py --cicada build/cicada --proof build/studio-performance-time-proof
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          go -C workstation run ./browser/testdata/direct-variation "$browser_root/direct-variation" > build/studio-direct-variation-fixture.json
-          for direct_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/direct-variation/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-direct-variation-$direct_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_DIRECT_REOPEN=0
-            if [[ "$direct_phase" == reopen ]]; then CICADA_DIRECT_REOPEN=1; fi
-            export CICADA_DIRECT_REOPEN
-            CICADA_DIRECT_PROOF_DIR="$PWD/build/studio-direct-variation-proof" node --test workstation/browser/direct-variation.test.cjs | tee "build/studio-direct-variation-$direct_phase-report.txt"
-            if [[ "$direct_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          python3 workstation/browser/direct-variation-audio.py --cicada build/cicada --proof build/studio-direct-variation-proof --fixture build/studio-direct-variation-fixture.json
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/sound-context.test.cjs --write-fixture "$browser_root/sound-context" > build/studio-sound-context-fixture.json
-          for context_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/sound-context/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-sound-context-$context_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_CONTEXT_REOPEN=0
-            if [[ "$context_phase" == reopen ]]; then CICADA_CONTEXT_REOPEN=1; fi
-            export CICADA_CONTEXT_REOPEN
-            CICADA_CONTEXT_PROOF_DIR="$PWD/build/studio-sound-context-proof" node --test workstation/browser/sound-context.test.cjs | tee "build/studio-sound-context-$context_phase-report.txt"
-            if [[ "$context_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/performance-pitch.test.cjs --write-fixture "$browser_root/performance-pitch" > build/studio-performance-pitch-fixture.json
-          for pitch_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/performance-pitch/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-pitch-$pitch_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_PITCH_REOPEN=0
-            if [[ "$pitch_phase" == reopen ]]; then CICADA_PITCH_REOPEN=1; fi
-            export CICADA_PITCH_REOPEN
-            CICADA_PITCH_PROOF_DIR="$PWD/build/studio-performance-pitch-proof" node --test workstation/browser/performance-pitch.test.cjs | tee "build/studio-performance-pitch-$pitch_phase-report.txt"
-            if [[ "$pitch_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          python3 workstation/browser/performance-pitch-audio.py --cicada build/cicada --proof build/studio-performance-pitch-proof
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/performance-sources.test.cjs --write-fixture "$browser_root/performance-sources" > build/studio-performance-sources-fixture.json
-          export CICADA_SOURCES_FIXTURE="$PWD/build/studio-performance-sources-fixture.json"
-          for sources_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/performance-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-performance-sources-$sources_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_SOURCES_REOPEN=0
-            if [[ "$sources_phase" == reopen ]]; then CICADA_SOURCES_REOPEN=1; fi
-            export CICADA_SOURCES_REOPEN
-            CICADA_SOURCES_PROOF_DIR="$PWD/build/studio-performance-sources-proof" node --test workstation/browser/performance-sources.test.cjs | tee "build/studio-performance-sources-$sources_phase-report.txt"
-            if [[ "$sources_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          python3 workstation/browser/performance-sources-audio.py --cicada build/cicada --proof build/studio-performance-sources-proof
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/recording-sources.test.cjs --write-fixture "$browser_root/recording-sources" > build/studio-recording-sources-fixture.json
-          export CICADA_RECORD_SOURCES_FIXTURE="$PWD/build/studio-recording-sources-fixture.json"
-          for record_sources_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/recording-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-recording-sources-$record_sources_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_RECORD_SOURCES_REOPEN=0
-            if [[ "$record_sources_phase" == reopen ]]; then CICADA_RECORD_SOURCES_REOPEN=1; fi
-            export CICADA_RECORD_SOURCES_REOPEN
-            CICADA_RECORD_SOURCES_PROOF_DIR="$PWD/build/studio-recording-sources-proof" node --test workstation/browser/recording-sources.test.cjs | tee "build/studio-recording-sources-$record_sources_phase-report.txt"
-            if [[ "$record_sources_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          python3 workstation/browser/recording-sources-audio.py --cicada build/cicada --proof build/studio-recording-sources-proof
-          kill "$studio_pid"
-          wait "$studio_pid" || true
-          node workstation/browser/grid-sources.test.cjs --write-fixture "$browser_root/grid-sources" > build/studio-grid-sources-fixture.json
-          export CICADA_GRID_SOURCES_FIXTURE="$PWD/build/studio-grid-sources-fixture.json"
-          for grid_sources_phase in journey reopen; do
-            ./build/cicada studio "$browser_root/grid-sources/main.cicada" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-grid-sources-$grid_sources_phase-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            CICADA_GRID_SOURCES_REOPEN=0
-            if [[ "$grid_sources_phase" == reopen ]]; then CICADA_GRID_SOURCES_REOPEN=1; fi
-            export CICADA_GRID_SOURCES_REOPEN
-            CICADA_GRID_SOURCES_PROOF_DIR="$PWD/build/studio-grid-sources-proof" node --test workstation/browser/grid-sources.test.cjs | tee "build/studio-grid-sources-$grid_sources_phase-report.txt"
-            if [[ "$grid_sources_phase" == journey ]]; then
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-            fi
-          done
-          python3 workstation/browser/grid-sources-audio.py --cicada build/cicada --proof build/studio-grid-sources-proof
-          for print_layout in primary secondary song controls tempo; do
-            print_args=()
-            print_phases=(sampler producer roundtrip reopen)
-            if [[ "$print_layout" == primary ]]; then print_args+=(--primary-arrangement); fi
-            if [[ "$print_layout" == song ]]; then
-              print_args+=(--scene-song --sampler-bank)
-              print_phases=(producer roundtrip reopen)
-            fi
-            if [[ "$print_layout" == controls ]]; then
-              print_args+=(--scene-controls --sampler-bank)
-              print_phases=(producer automation-recall roundtrip reopen)
-            fi
-            if [[ "$print_layout" == tempo ]]; then
-              print_args+=(--scene-tempo --sampler-bank)
-              print_phases=(producer automation-recall tempo-arrangement roundtrip reopen)
-            fi
-            go -C workstation run ./browser/testdata/print-sources "${print_args[@]}" > "build/studio-print-$print_layout-fixture.json"
-            export CICADA_PRINT_FIXTURE="$PWD/build/studio-print-$print_layout-fixture.json"
-            export CICADA_PRODUCER_SCORE="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_PRINT_FIXTURE")"
-            export CICADA_PRODUCER_STORAGE="$(dirname "$CICADA_PRODUCER_SCORE")/session.json"
-            export CICADA_PRINT_PROOF_DIR="$PWD/build/studio-print-$print_layout-proof/roundtrip"
-            export CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-print-$print_layout-proof/sampler"
-            export CICADA_PRODUCER_PROOF_DIR="$PWD/build/studio-print-$print_layout-proof/producer"
-            if [[ "$print_layout" != primary ]]; then
-              export CICADA_SAMPLER_ARRANGEMENT_SOURCE="$(node -e 'process.stdout.write(require(process.argv[1]).arrangement)' "$CICADA_PRINT_FIXTURE")"
-              export CICADA_PRODUCER_ARRANGEMENT_SOURCE="$CICADA_SAMPLER_ARRANGEMENT_SOURCE"
-            fi
-            for print_phase in "${print_phases[@]}"; do
-              kill "$studio_pid"
-              wait "$studio_pid" || true
-              ./build/cicada studio "$CICADA_PRODUCER_SCORE" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-print-$print_layout-$print_phase-server.log" 2>&1 &
-              studio_pid=$!
-              export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-              for _ in $(seq 1 100); do
-                if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-                kill -0 "$studio_pid"
-                sleep 0.1
-              done
-              export CICADA_PRODUCER_URL="$CICADA_STUDIO_URL" CICADA_PRINT_REOPEN=0
-              print_test="$print_phase"
-              if [[ "$print_phase" == producer ]]; then print_test=producer-workflow; fi
-              if [[ "$print_phase" == roundtrip || "$print_phase" == reopen ]]; then print_test=print-roundtrip; fi
-              if [[ "$print_phase" == reopen ]]; then export CICADA_PRINT_REOPEN=1; fi
-              node --test "workstation/browser/$print_test.test.cjs" | tee "build/studio-print-$print_layout-$print_phase-report.txt"
-            done
-            unset CICADA_SAMPLER_ARRANGEMENT_SOURCE CICADA_PRODUCER_ARRANGEMENT_SOURCE CICADA_PRINT_REOPEN
-          done
-          for editor_mode in buffer project; do
-            kill "$studio_pid"
-            wait "$studio_pid" || true
-            if [[ "$editor_mode" == project ]]; then
-              node workstation/browser/code-editor.test.cjs --write-project "$browser_root/editor-project"
-              editor_score="$browser_root/editor-project/main.cicada"
-              export CICADA_EDITOR_PROJECT=1
-              export CICADA_EDITOR_PROJECT_ROOT="$browser_root/editor-project"
-            else
-              node workstation/browser/code-editor.test.cjs --write-fixture "$browser_root/editor.cicada"
-              editor_score="$browser_root/editor.cicada"
-              export CICADA_EDITOR_PROJECT=0
-            fi
-            ./build/cicada studio "$editor_score" --audio null --listen "127.0.0.1:$studio_port" > "build/studio-editor-$editor_mode-server.log" 2>&1 &
-            studio_pid=$!
-            export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
-            for _ in $(seq 1 100); do
-              if curl --silent --fail "$CICADA_STUDIO_URL/api/state" > /dev/null; then break; fi
-              kill -0 "$studio_pid"
-              sleep 0.1
-            done
-            node --test workstation/browser/code-editor.test.cjs | tee "build/studio-editor-$editor_mode-report.txt"
-          done
+          # Untracked files, ignored ones included: build/ and workstation/dist/.
+          git ls-files --others -z | tar --null --files-from=- -czf "$RUNNER_TEMP/studio-browser-build.tgz"
+          ls -l "$RUNNER_TEMP/studio-browser-build.tgz"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: studio-browser-build
+          path: ${{ runner.temp }}/studio-browser-build.tgz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  # The suites that the single "Studio browser continuity" step ran one after
+  # another, in four parallel shards. scripts/ci-studio-browser.sh lists the
+  # shards and checks that every suite is in exactly one.
+  studio-browser:
+    name: Studio browser suites (shard ${{ matrix.shard }}/4)
+    needs: [changes, studio-build]
+    if: ${{ needs.changes.outputs.studio_browser == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      GOWORK: off
+      CHROME_VERSION: 152.0.7977.64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Supported Node for browser checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: studio-browser-build
+          path: ${{ runner.temp }}/studio-browser-build
+      - name: Unpack the build outputs
+        run: tar -xzf "$RUNNER_TEMP/studio-browser-build/studio-browser-build.tgz"
+      - name: Shards cover every suite once
+        run: bash scripts/ci-studio-browser.sh check
+      - name: Studio browser continuity
+        shell: bash
+        run: bash scripts/ci-studio-browser.sh run ${{ matrix.shard }}
       - name: Save Studio continuity reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: studio-continuity-reports
+          name: studio-continuity-reports-${{ matrix.shard }}
           if-no-files-found: warn
           path: |
             build/studio-continuity-report.txt
@@ -1259,16 +796,11 @@ jobs:
             build/studio-print-*-proof/
             build/studio-editor-*-report.txt
             build/studio-editor-*-server.log
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: gosx-workstation-build
-          path: |
-            workstation/dist/build.json
-            build/workstation-gosx-size.json
 
   macos-desktop:
     name: macOS desktop (${{ matrix.arch }})
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: changes
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && needs.changes.outputs.macos_desktop == 'true' }}
     runs-on: ${{ matrix.runner }}
     # Full Studio on arm64; Intel compiles the app and exercises the native
     # host/bridge without rebuilding portable WASM. Neither waits on another job.
@@ -1366,7 +898,8 @@ jobs:
 
   macos-native-contracts:
     name: macOS platform contracts (${{ matrix.arch }})
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: changes
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && needs.changes.outputs.macos_contracts == 'true' }}
     runs-on: ${{ matrix.runner }}
     # Independent of packaging: both Mac checks start together and are bounded.
     timeout-minutes: 10
@@ -1592,11 +1125,86 @@ jobs:
             build/performed-gesture-studio.log
             build/performed-gesture-wasm.log
 
+  # The audio WASM tests (make test-wasm) have no CPU budget, so they run on
+  # hosted runners in parallel with the browser gates on the reference machine.
+  # Together the two jobs run the same tests as `make test-wasm`: this one skips
+  # the one-hour memory test and m2-wasm-memory runs only that test.
+  m2-wasm-parity:
+    name: M2 audio WASM parity (all but the one-hour memory test)
+    needs: changes
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && needs.changes.outputs.m2 == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - name: Supported Node for browser checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Audio WASM tests and chord tests
+        run: make test-wasm TEST_WASM_SKIP='^TestAudioWASMMemoryStableForOneHour$'
+      - name: Save M2 WASM reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m2-wasm-parity-reports
+          if-no-files-found: warn
+          path: |
+            build/test-wasm.log
+            build/test-chord-wasm.log
+            build/chord-wasm-report.txt
+
+  m2-wasm-memory:
+    name: M2 audio WASM one-hour memory test
+    needs: changes
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && needs.changes.outputs.m2 == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - name: One-hour memory test
+        run: |
+          set -euo pipefail
+          make build-kernel-wasm build-vocals-wasm test-wasm-audio TEST_WASM_RUN='^TestAudioWASMMemoryStableForOneHour$' TEST_WASM_LOG=build/test-wasm-memory.log
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '--- PASS: TestAudioWASMMemoryStableForOneHour' build/test-wasm-memory.log
+      - name: Save M2 WASM reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m2-wasm-memory-reports
+          if-no-files-found: warn
+          path: build/test-wasm-memory.log
+
   m2-pr:
     name: M2 AudioWorklet gates
+    needs: changes
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2 == 'true' }}
     # This job runs on the self-hosted reference machine, so a pull request from
     # a fork must not run it.
-    if: (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 40
     env:
@@ -1640,8 +1248,12 @@ jobs:
           go version
           tinygo version
           node --version
-      - name: M2 parity, browser, and budgets
-        run: make test-wasm test-chord-wasm test-browser test-demo-browser budget-size budget-browser
+      # make test-wasm and test-chord-wasm moved to the m2-wasm-parity and
+      # m2-wasm-memory jobs on hosted runners. The reference machine has one
+      # runner, so jobs queued for it run one after another, and its CPU
+      # budget measurements must not share the machine with other work.
+      - name: M2 browser and budgets
+        run: make test-browser test-demo-browser budget-size budget-browser
       - name: WAM2 export and reference host
         env:
           CICADA_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/cicada-wam2-evidence
