@@ -286,14 +286,14 @@ func TestExportLoudnessMasterCacheKeepsTheSearchResultIdentical(t *testing.T) {
 		full, fullWAV, _, fullErr := search(false, lufs)
 		cached, cachedWAV, replays, cachedErr := search(true, lufs)
 		t.Logf("METRIC EXPORT-MASTER-CACHE target=%g passes=%d replays=%d lufs=%.3f gain=%+.3f", lufs, cached.Passes, replays, cached.AchievedLUFS, cached.AppliedGainDB)
-		if fmt.Sprint(fullErr) != fmt.Sprint(cachedErr) || !reflect.DeepEqual(full, cached) {
+		if fmt.Sprint(fullErr) != fmt.Sprint(cachedErr) || !sameSearchResult(full, cached) {
 			t.Fatalf("target %g LUFS: cached search differs:\n got %+v (%v)\nwant %+v (%v)", lufs, cached, cachedErr, full, fullErr)
 		}
 		if !bytes.Equal(fullWAV, cachedWAV) {
 			t.Fatalf("target %g LUFS: cached search wrote different audio", lufs)
 		}
-		if replays != cached.Passes-1 {
-			t.Fatalf("target %g LUFS: %d of %d passes replayed, want every pass after the first", lufs, replays, cached.Passes)
+		if replays != cached.Passes-cached.Repeats-1 {
+			t.Fatalf("target %g LUFS: %d of %d rendered passes replayed, want every rendered pass after the first", lufs, replays, cached.Passes-cached.Repeats)
 		}
 	}
 }
@@ -329,7 +329,7 @@ func TestExportLoudnessRunsInFullWhenTheMasterCacheCannotBeCreated(t *testing.T)
 		return nil, errors.New("no space left on device")
 	}
 	got, gotWAV, gotErr := search()
-	if len(cachedPasses) != got.Passes || got.Passes < 2 {
+	if len(cachedPasses) != got.Passes-got.Repeats || got.Passes < 2 {
 		t.Fatalf("the search without a cache rendered %d passes and reported %d", len(cachedPasses), got.Passes)
 	}
 	for pass, cached := range cachedPasses {
@@ -337,7 +337,7 @@ func TestExportLoudnessRunsInFullWhenTheMasterCacheCannotBeCreated(t *testing.T)
 			t.Fatalf("pass %d used a cache that could not be created", pass+1)
 		}
 	}
-	if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !reflect.DeepEqual(got, want) || !bytes.Equal(gotWAV, wantWAV) {
+	if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !sameSearchResult(got, want) || !bytes.Equal(gotWAV, wantWAV) {
 		t.Fatalf("search without a cache differs:\n got %+v (%v)\nwant %+v (%v)", got, gotErr, want, wantErr)
 	}
 }
@@ -504,7 +504,7 @@ func TestExportLoudnessFreesTheMasterCacheWhenAStepFails(t *testing.T) {
 		return faults, result, wav, err
 	}
 	base, want, wantWAV, wantErr := search(t, "", 0)
-	if want.Passes < 3 || len(base.cached) != want.Passes || !base.cached[0] || !base.cached[1] || base.calls["copy"] < 2 {
+	if want.Passes < 3 || len(base.cached) != want.Passes-want.Repeats || !base.cached[0] || !base.cached[1] || base.calls["copy"] < 2 {
 		t.Fatalf("the search must replay from a finished capture and copy twice: %d passes, cached %v, %d copies", want.Passes, base.cached, base.calls["copy"])
 	}
 	for _, test := range []struct {
@@ -522,14 +522,14 @@ func TestExportLoudnessFreesTheMasterCacheWhenAStepFails(t *testing.T) {
 			if faults.failures == 0 {
 				t.Fatal("the test injected no failure")
 			}
-			if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !reflect.DeepEqual(got, want) || !bytes.Equal(gotWAV, wantWAV) {
+			if fmt.Sprint(gotErr) != fmt.Sprint(wantErr) || !sameSearchResult(got, want) || !bytes.Equal(gotWAV, wantWAV) {
 				t.Fatalf("search after a failed %s differs:\n got %+v (%v)\nwant %+v (%v)", test.step, got, gotErr, want, wantErr)
 			}
 			// Only a pass that failed is rendered twice. Passes up to the failure
 			// had the cache; the repeat and every later pass run without it.
-			wantPasses := want.Passes + 1
+			wantPasses := want.Passes - want.Repeats + 1
 			if test.step == "copy" {
-				wantPasses = want.Passes
+				wantPasses = want.Passes - want.Repeats
 			}
 			if len(faults.cached) != wantPasses {
 				t.Fatalf("rendered %d passes, want %d; by cache: %v", len(faults.cached), wantPasses, faults.cached)

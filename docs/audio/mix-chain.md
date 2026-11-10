@@ -92,11 +92,16 @@ passes. The render summary reports the applied gain, the gain stage (`master_inp
 chain limiter's largest gain reduction, and the largest gain reduction of any
 limiter. Review these numbers and run `cicada verify-wav` on the result.
 
-When a master chain follows the direct renderer, only the first pass
-synthesizes the mix. It stores the signal that enters the chain in a temporary
-file next to the output, and later passes play that signal back through the
-chain with the new gain. The result matches rendering every pass in full. The
-scheduled renderer renders each pass in full.
+Only the first pass synthesizes the mix, on both renderers and with or without
+a master chain. It stores the signal that enters the master stage (the summed
+buses, before the master `level` and the export gain) in a temporary file next
+to the output, and later passes play that signal back through the master
+gain, the chain and the safety limiter with the new gain. A pass whose gain
+differs from an earlier pass's by less than the renderer's gain can show is not
+rendered at all: it reuses that pass's audio and measurement. The result
+matches rendering every pass in full, byte for byte. The render summary counts
+the full syntheses, the cached replays and the repeated passes, and lists each
+pass's gain, loudness and true peak.
 
 The file takes about 23 MB per minute at 48 kHz, counted from the start of the
 song to the end of the exported range plus its tail, so an export of the last

@@ -63,21 +63,29 @@ type renderLevelsJSON struct {
 // null when there is none: no pass finished, or the render is too short or
 // too quiet to measure.
 type renderLoudnessJSON struct {
-	TargetLUFS                float64  `json:"target_lufs"`
-	ToleranceLU               float64  `json:"tolerance_lu"`
-	TruePeakMaxDBTP           float64  `json:"true_peak_max_dbtp"`
-	IntegratedLUFS            *float64 `json:"integrated_lufs"`
-	TruePeakDBTP              *float64 `json:"true_peak_dbtp"`
-	SamplePeakDBFS            *float64 `json:"sample_peak_dbfs"`
-	AppliedGainDB             *float64 `json:"applied_gain_db"`
-	TargetMet                 bool     `json:"target_met"`
-	Passes                    int      `json:"passes"`
-	GainStage                 string   `json:"gain_stage,omitempty"`
-	MasterLimiterReductionDB  float64  `json:"master_limiter_reduction_db"`
-	LargestLimiterReductionDB float64  `json:"largest_limiter_reduction_db"`
-	DCCorrectionLeftFS        float64  `json:"dc_correction_left_fs"`
-	DCCorrectionRightFS       float64  `json:"dc_correction_right_fs"`
-	Notes                     []string `json:"notes,omitempty"`
+	TargetLUFS      float64  `json:"target_lufs"`
+	ToleranceLU     float64  `json:"tolerance_lu"`
+	TruePeakMaxDBTP float64  `json:"true_peak_max_dbtp"`
+	IntegratedLUFS  *float64 `json:"integrated_lufs"`
+	TruePeakDBTP    *float64 `json:"true_peak_dbtp"`
+	SamplePeakDBFS  *float64 `json:"sample_peak_dbfs"`
+	AppliedGainDB   *float64 `json:"applied_gain_db"`
+	TargetMet       bool     `json:"target_met"`
+	Passes          int      `json:"passes"`
+	// Syntheses, Replays and Repeats count how the passes got their audio:
+	// rendered in full, replayed from the first pass's stored mix, or not
+	// rendered because they would have written an earlier pass's audio. They
+	// add up to Passes. PassLog has one entry per pass, in order.
+	Syntheses                 int            `json:"syntheses"`
+	Replays                   int            `json:"replays"`
+	Repeats                   int            `json:"repeats"`
+	PassLog                   []loudnessPass `json:"pass_log"`
+	GainStage                 string         `json:"gain_stage,omitempty"`
+	MasterLimiterReductionDB  float64        `json:"master_limiter_reduction_db"`
+	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
+	DCCorrectionLeftFS        float64        `json:"dc_correction_left_fs"`
+	DCCorrectionRightFS       float64        `json:"dc_correction_right_fs"`
+	Notes                     []string       `json:"notes,omitempty"`
 }
 
 // renderErrorJSON says why a render failed. Code is one of renderErrorCodes;
@@ -233,7 +241,10 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 	}
 	if target != nil && target.Loudness {
 		report, err := renderLoudnessFileReport(inspection.score, output, opts, *target, nil)
-		loudness := &renderLoudnessJSON{TargetLUFS: target.LoudnessTarget, ToleranceLU: target.Tolerance, TruePeakMaxDBTP: target.TruePeakMaxDBTP, Passes: report.Passes, Notes: report.Notes}
+		loudness := &renderLoudnessJSON{TargetLUFS: target.LoudnessTarget, ToleranceLU: target.Tolerance, TruePeakMaxDBTP: target.TruePeakMaxDBTP, Passes: report.Passes, Syntheses: report.Syntheses, Replays: report.Replays, Repeats: report.Repeats, PassLog: report.PassLog, Notes: report.Notes}
+		if loudness.PassLog == nil {
+			loudness.PassLog = []loudnessPass{}
+		}
 		var shortfall *loudnessShortfallError
 		written := err == nil || errors.As(err, &shortfall)
 		if written {

@@ -25,6 +25,13 @@ import (
 )
 
 func main() {
+	args, err := startCPUProfileFlag(os.Args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cicada:", err)
+		os.Exit(2)
+	}
+	os.Args = args
+	defer stopCPUProfile()
 	if handled, exitCode := handleCLIHelp(os.Args[1:], os.Stdout, os.Stderr); handled {
 		if exitCode != 0 {
 			os.Exit(exitCode)
@@ -136,7 +143,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "apply" {
 		if err := applyCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -157,7 +164,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		if err := checkCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -245,7 +252,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "audition" {
 		if err := auditionCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -282,7 +289,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "render" || os.Args[1] == "stems") && hasJSONFlag(os.Args[2:]) {
-		os.Exit(renderJSONMain(os.Args[1], os.Args[2:], os.Stdout, os.Stderr))
+		exitProcess(renderJSONMain(os.Args[1], os.Args[2:], os.Stdout, os.Stderr))
 	}
 	if len(os.Args) < 3 || (os.Args[1] != "render" && os.Args[1] != "stems" && os.Args[1] != "midi" && len(os.Args) > 5) {
 		usage()
@@ -371,7 +378,7 @@ func main() {
 		renderOptions.AssetDir = inspection.root(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	case "stems":
 		renderOptions.AssetRoot = inspection.root(path)
@@ -379,7 +386,7 @@ func main() {
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate)
 	case "midi":
@@ -689,9 +696,42 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 	return nil
 }
 
+// newNormalizeMasterCache creates the temporary file that lets the second
+// render of peak normalization replay the first one's mix; tests replace it.
+var newNormalizeMasterCache = render.NewMasterCache
+
 // renderPlainFile renders a score without a loudness target into path,
 // through a temporary file that replaces path only when the render succeeds.
+//
+// Peak normalization renders the song twice: once to measure the output peak
+// and once more with the gain that puts that peak at -1 dBFS. The second
+// render differs from the first only in that output gain, which enters after
+// the mix, so it replays the first render's stored mix (render.MasterCache)
+// and writes the same bytes. The cache only saves time: when its file cannot
+// be created the render runs in full, and when the render fails while the
+// cache exists (the cache took the disk space the output needed, or could not
+// be read back) the cache is removed and the render runs once more without it.
 func renderPlainFile(score *notation.Score, path string, opts render.Options) (render.Report, error) {
+	if !opts.Normalize || opts.MasterCache != nil {
+		return renderPlainFileOnce(score, path, opts)
+	}
+	cache, err := newNormalizeMasterCache(filepath.Dir(path))
+	if err != nil {
+		return renderPlainFileOnce(score, path, opts)
+	}
+	cached := opts
+	cached.MasterCache = cache
+	report, err := renderPlainFileOnce(score, path, cached)
+	// Close empties the file before it removes it, so the space comes back
+	// even when the removal fails; there is nothing more to do with its error.
+	cache.Close()
+	if err == nil {
+		return report, nil
+	}
+	return renderPlainFileOnce(score, path, opts)
+}
+
+func renderPlainFileOnce(score *notation.Score, path string, opts render.Options) (render.Report, error) {
 	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
 	if err != nil {
 		return render.Report{}, err
@@ -726,8 +766,11 @@ func renderPlainFile(score *notation.Score, path string, opts render.Options) (r
 func renderLoudnessFile(score *notation.Score, path string, opts render.Options, target renderTargetOptions) error {
 	report, err := renderLoudnessFileReport(score, path, opts, target, nil)
 	if report.Passes > 0 {
-		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
-			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
+		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d (full syntheses %d, cached replays %d, repeats %d), largest limiter gain reduction %.2f dB\n",
+			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.Syntheses, report.Replays, report.Repeats, report.LargestLimiterReductionDB)
+		for i, pass := range report.PassLog {
+			fmt.Printf("%s: pass %d: %s\n", path, i+1, pass)
+		}
 		for _, note := range report.Notes {
 			fmt.Printf("%s: note: %s\n", path, note)
 		}
@@ -743,13 +786,23 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 }
 
 type loudnessFileReport struct {
-	TargetLUFS                float64 `json:"target_lufs"`
-	AchievedLUFS              float64 `json:"achieved_lufs"`
-	TruePeakDBTP              float64 `json:"true_peak_dbtp"`
-	SamplePeakDBFS            float64 `json:"sample_peak_dbfs"`
-	AppliedGainDB             float64 `json:"applied_gain_db"`
-	Passes                    int     `json:"passes"`
-	LargestLimiterReductionDB float64 `json:"largest_limiter_reduction_db"`
+	TargetLUFS     float64 `json:"target_lufs"`
+	AchievedLUFS   float64 `json:"achieved_lufs"`
+	TruePeakDBTP   float64 `json:"true_peak_dbtp"`
+	SamplePeakDBFS float64 `json:"sample_peak_dbfs"`
+	AppliedGainDB  float64 `json:"applied_gain_db"`
+	Passes         int     `json:"passes"`
+	// Syntheses counts the passes that rendered the song in full, Replays the
+	// passes that replayed the first pass's stored mix instead (see
+	// render.MasterCache), and Repeats the passes that were not rendered
+	// because they would have written the audio of an earlier pass (see
+	// render.SameAudio); together they are Passes. PassLog has one entry per
+	// pass, in order.
+	Syntheses                 int            `json:"syntheses"`
+	Replays                   int            `json:"replays"`
+	Repeats                   int            `json:"repeats"`
+	PassLog                   []loudnessPass `json:"pass_log,omitempty"`
+	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
 	// MasterLimiterReductionDB is the largest gain reduction of a limiter in
 	// the score's master chain. GainStage is "master_input" when the export gain
 	// runs ahead of the master chain (a chain with a limiter on either renderer,
@@ -768,6 +821,51 @@ type loudnessFileReport struct {
 	From       int   `json:"-"`
 	Frames     int64 `json:"-"`
 	SampleRate int   `json:"-"`
+}
+
+// How a pass of the loudness search got its audio.
+const (
+	passSynthesized = "synthesized" // rendered the song in full
+	passReplayed    = "replayed"    // replayed the first pass's stored mix (render.MasterCache)
+	passRepeated    = "repeated"    // not rendered: it would have written the audio of an earlier pass
+)
+
+// loudnessPass is what one pass of the loudness search applied and measured.
+// A measurement is nil when it is not a finite number, for example the
+// loudness of a silent render.
+type loudnessPass struct {
+	GainDB         float64  `json:"gain_db"`
+	IntegratedLUFS *float64 `json:"integrated_lufs"`
+	TruePeakDBTP   *float64 `json:"true_peak_dbtp"`
+	// Render is passSynthesized, passReplayed or passRepeated. SameAs is, for
+	// a repeated pass, the number of the pass whose audio and measurement it
+	// shares.
+	Render string `json:"render"`
+	SameAs int    `json:"same_as,omitempty"`
+}
+
+func newLoudnessPass(gain float64, measurement render.VerifyReport, how string, sameAs int) loudnessPass {
+	finite := func(value float64) *float64 {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil
+		}
+		return &value
+	}
+	return loudnessPass{GainDB: gain, IntegratedLUFS: finite(measurement.IntegratedLUFS), TruePeakDBTP: finite(measurement.TruePeakDBTP), Render: how, SameAs: sameAs}
+}
+
+func (p loudnessPass) String() string {
+	number := func(value *float64, unit string) string {
+		if value == nil {
+			return "unmeasurable"
+		}
+		return fmt.Sprintf("%.2f %s", *value, unit)
+	}
+	how := p.Render
+	if p.Render == passRepeated {
+		how = fmt.Sprintf("not rendered: same audio as pass %d", p.SameAs)
+	}
+	return fmt.Sprintf("gain %+.2f dB, %s, true peak %s, %s", p.GainDB, number(p.IntegratedLUFS, "LUFS"), number(p.TruePeakDBTP, "dBTP"), how)
 }
 
 func renderLoudnessFileReport(score *notation.Score, path string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
@@ -872,11 +970,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
 		}
 	}
-	// Every pass differs only in export gain and DC correction. When a master
-	// chain follows the direct renderer's mix, later passes replay the first
-	// pass's mix instead of synthesizing it again; the scheduled engine renders
-	// in full each time. The cache only saves time. If its file cannot be
-	// created, every pass renders in full.
+	// Every pass differs only in export gain and DC correction, and both enter
+	// after the mix that the master stage receives. Passes after the first
+	// therefore replay the first pass's stored mix through the master stage
+	// instead of synthesizing it again, on both renderers, with or without a
+	// master chain (see render.MasterCache). The cache only saves time. If its
+	// file cannot be created, every pass renders in full.
 	//
 	// A finished capture keeps its file, next to the output, for the rest of the
 	// search, and the file takes disk space that the export's own files need. A
@@ -885,11 +984,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	// and so does a pass that cannot read the cache back. Every later pass then
 	// renders in full, as it does when the cache cannot be created.
 	var masterCache *render.MasterCache
-	if hasMasterChain && !render.UsesScheduledEngine(score, opts) {
-		if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
-			masterCache = cache
-			defer masterCache.Close()
-		}
+	if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
+		masterCache = cache
+		defer masterCache.Close()
 	}
 	dropMasterCache := func() {
 		// Close empties the file before it removes it, so the space comes back
@@ -904,6 +1001,14 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			err = copyLoudnessFile(candidatePath, bestPath)
 		}
 		return err
+	}
+	// last is the most recent pass that was rendered. Its audio is in the
+	// candidate file until the next rendered pass replaces it.
+	var last struct {
+		options     render.Options
+		report      render.Report
+		measurement render.VerifyReport
+		pass        int
 	}
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
@@ -924,27 +1029,50 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
 		passOptions.MasterCache = masterCache
 		passOptions.Normalize = false
-		passReport, err := renderLoudnessPass(score, passOptions, candidatePath)
-		if err != nil && masterCache != nil {
-			dropMasterCache()
-			passOptions.MasterCache = nil
+		var passReport render.Report
+		var measurement render.VerifyReport
+		how, sameAs := passSynthesized, 0
+		if last.pass > 0 && render.SameAudio(score, last.options, passOptions) {
+			// The gain moved by less than the renderer's gain factors can show,
+			// so this pass would write the bytes that the last rendered pass
+			// wrote, which the candidate file still holds, and measure the
+			// same. The search goes on from that measurement unchanged.
+			passReport, measurement, how, sameAs = last.report, last.measurement, passRepeated, last.pass
+			report.Repeats++
+		} else {
+			replaysBefore := masterCache.Replays()
 			passReport, err = renderLoudnessPass(score, passOptions, candidatePath)
+			if err == nil && masterCache.Replays() > replaysBefore {
+				how = passReplayed
+			}
+			if err != nil && masterCache != nil {
+				dropMasterCache()
+				passOptions.MasterCache = nil
+				passReport, err = renderLoudnessPass(score, passOptions, candidatePath)
+			}
+			if err != nil {
+				return report, err
+			}
+			if how == passReplayed {
+				report.Replays++
+			} else {
+				report.Syntheses++
+			}
+			measurement, err = render.VerifyWAV(candidatePath, render.VerifyOptions{
+				SampleRate: passReport.SampleRate,
+				Bits:       opts.Bits,
+				Bars:       passReport.Bars,
+				From:       passReport.From,
+				TailSec:    opts.TailSec,
+				PeakMaxDB:  100,
+				DCMaxDB:    100,
+			})
+			if err != nil {
+				return report, err
+			}
+			last.options, last.report, last.measurement, last.pass = passOptions, passReport, measurement, pass
 		}
-		if err != nil {
-			return report, err
-		}
-		measurement, err := render.VerifyWAV(candidatePath, render.VerifyOptions{
-			SampleRate: passReport.SampleRate,
-			Bits:       opts.Bits,
-			Bars:       passReport.Bars,
-			From:       passReport.From,
-			TailSec:    opts.TailSec,
-			PeakMaxDB:  100,
-			DCMaxDB:    100,
-		})
-		if err != nil {
-			return report, err
-		}
+		report.PassLog = append(report.PassLog, newLoudnessPass(gain, measurement, how, sameAs))
 		peakSafe := measurement.TruePeakDBTP <= target.TruePeakMaxDBTP
 		dcSafe := measurement.DCDB <= -60
 		chainReduction := passReport.MaxMasterChainLimiterReductionDB

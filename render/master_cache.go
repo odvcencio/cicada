@@ -11,21 +11,33 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// MasterCache lets repeated direct renders of one score skip synthesis.
+// MasterCache lets repeated renders of one score skip synthesis.
 //
 // A render that sets Options.MasterCache stores the signal that enters the
-// master stage as it renders: the summed music and SFX buses, before the export
-// gain, the master chain, the DC correction and the safety limiter. A later
-// render of the same score and range replays that signal through the master
-// stage instead of synthesizing it again, and writes the same bytes and report
-// as a full render. Loudness targeting relies on this, because each of its
-// passes changes only the export gain and the DC correction.
+// master stage as it renders: the summed music and SFX buses after their mutes
+// and the master mute, before the authored master level, the export gain, the
+// master chain, the DC correction and the safety limiter. A later render of the
+// same score and range replays that signal through the master stage instead of
+// synthesizing it again, and writes the same bytes and report as a full render.
+// Loudness targeting relies on this, because each of its passes changes only
+// the export gain and the DC correction, and so does peak normalization, whose
+// second render changes only the output gain.
+//
+// Both renderers use it, with or without a master chain. The direct renderer
+// replays the stored signal through its own master stage (renderBlock); the
+// scheduled engine replays it through the engine's master stage
+// (engine.Engine.RenderMasterWithTaps), the same code a full render runs. Every
+// gain that differs between the passes enters after the stored signal, so the
+// nonlinear stages after it (the master chain and the safety limiter) run again
+// on each replay and see exactly the input a full render gives them.
 //
 // The signal lives in a temporary file of 8 bytes per frame, from the start of
-// the song to the end of the rendered range and its tail, even when the render
-// starts at a later bar. Only the direct renderer with a master chain uses the
-// cache; the scheduled engine, stem renders and renders that set NoteTap ignore
-// it. A render whose score, range (From, Bars, TailSec), SampleRate, Block,
+// the song to the end of the rendered range, its tail and the latency of the
+// track inserts, the master chain and (on the scheduled engine) the safety
+// limiter, even when the render starts at a later bar: 384 KB per second of
+// audio at 48 kHz, so about 71 MB for a three-minute song. Nothing of it stays
+// in memory beyond one block. Stem renders and renders that set NoteTap ignore
+// the cache. A render whose score, range (From, Bars, TailSec), SampleRate, Block,
 // AssetRoot, AssetDir or SamplerBaseline differs from the stored capture
 // replaces that capture. If the file cannot be written, for example because the
 // disk is full, the cache turns itself off, empties its file to give the space

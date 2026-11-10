@@ -71,6 +71,21 @@ func cacheScoreVariant(t *testing.T, replacements ...string) *notation.Score {
 	return cacheScoreWithMaster(t, masterCacheChain, replacements...)
 }
 
+// scheduledCacheReplacements give the acid track a serial EQ insert, which
+// only the scheduled engine renders.
+var scheduledCacheReplacements = []string{"fx delay delay {}", "fx delay delay {}\nfx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }", "track acid acid { level = -12dB insert = drive", "track acid acid { level = -12dB insert = cleanup"}
+
+// scheduledCacheScore is masterCacheScore with the given master on the
+// scheduled engine.
+func scheduledCacheScore(t *testing.T, master string) *notation.Score {
+	t.Helper()
+	score := cacheScoreWithMaster(t, master, scheduledCacheReplacements...)
+	if !UsesScheduledEngine(score, Options{}) {
+		t.Fatal("the variant does not use the scheduled engine")
+	}
+	return score
+}
+
 func renderCacheBytes(t *testing.T, score *notation.Score, opts Options) ([]byte, Report) {
 	t.Helper()
 	var out bytes.Buffer
@@ -106,6 +121,18 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 		{"excerpt", cacheScoreVariant(t), Options{SampleRate: 48000, From: 1, Bars: 1, TailSec: .3}},
 		{"small blocks", cacheScoreVariant(t), Options{SampleRate: 48000, Bars: 1, Block: 48, TailSec: .05}},
 		{"odd blocks", cacheScoreVariant(t), Options{SampleRate: 48000, Bars: 1, Block: 1000, TailSec: .1}},
+		// Without a master chain every gain change is linear until the safety
+		// limiter, which the replay runs again.
+		{"no master chain", cacheScoreWithMaster(t, "master { level = 3dB }"), Options{SampleRate: 48000, TailSec: .2}},
+		{"no master block", cacheScoreWithMaster(t, ""), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"no master chain, excerpt", cacheScoreWithMaster(t, "master { level = -2dB }"), Options{SampleRate: 44100, From: 1, Bars: 1, TailSec: .3}},
+		// The scheduled engine replays through its own master stage.
+		{"scheduled, chain with limiter", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, TailSec: .2}},
+		{"scheduled, chain without limiter", scheduledCacheScore(t, "fx tone eq { type = highpass frequency = 25Hz }\nfx glue comp { threshold = -18dB }\nmaster { insert = tone -> glue }"), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }"), Options{SampleRate: 48000, TailSec: .2}},
+		{"scheduled, excerpt", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, From: 1, Bars: 1, TailSec: .3}},
+		{"scheduled, small blocks", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, Bars: 1, Block: 48, TailSec: .05}},
+		{"scheduled, odd blocks", scheduledCacheScore(t, "master { level = -2dB }"), Options{SampleRate: 44100, Bars: 1, Block: 1000, TailSec: .1}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cache := newTestMasterCache(t)
@@ -191,17 +218,13 @@ func TestMasterCacheIgnoredWhereItCannotApply(t *testing.T) {
 		score *notation.Score
 		opts  func(*Options)
 	}{
-		{"no master chain", cacheScoreWithMaster(t, "master { level = 3dB }"), func(*Options) {}},
 		{"note tap", cacheScoreVariant(t), func(o *Options) { o.NoteTap = func(int, seq.Event) {} }},
-		{"scheduled engine", cacheScoreVariant(t, "fx delay delay {}", "fx delay delay {}\nfx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }", "track acid acid { level = -12dB insert = drive", "track acid acid { level = -12dB insert = cleanup"), func(*Options) {}},
+		{"note tap, scheduled engine", scheduledCacheScore(t, masterCacheChain), func(o *Options) { o.NoteTap = func(int, seq.Event) {} }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cache := newTestMasterCache(t)
 			opts := base
 			test.opts(&opts)
-			if test.name == "scheduled engine" && !UsesScheduledEngine(test.score, opts) {
-				t.Fatal("the variant does not use the scheduled engine")
-			}
 			want, wantReport := renderCacheBytes(t, test.score, opts)
 			opts.MasterCache = cache
 			for range 2 {
@@ -215,43 +238,59 @@ func TestMasterCacheIgnoredWhereItCannotApply(t *testing.T) {
 			}
 		})
 	}
-	t.Run("stems", func(t *testing.T) {
-		cache := newTestMasterCache(t)
-		opts := base
-		opts.MasterCache = cache
-		var out bytes.Buffer
-		if _, err := renderWithOptions(cacheScoreVariant(t), opts, &out, filepath.Join(t.TempDir(), "stems")); err != nil {
-			t.Fatal(err)
-		}
-		if cache.ready || cache.Replays() != 0 {
-			t.Fatal("a stem render used the cache")
-		}
-	})
+	for _, test := range []struct {
+		name  string
+		score *notation.Score
+	}{
+		{"stems", cacheScoreVariant(t)},
+		{"stems, scheduled engine", scheduledCacheScore(t, masterCacheChain)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cache := newTestMasterCache(t)
+			opts := base
+			opts.MasterCache = cache
+			var out bytes.Buffer
+			if _, err := renderWithOptions(test.score, opts, &out, filepath.Join(t.TempDir(), "stems")); err != nil {
+				t.Fatal(err)
+			}
+			if cache.ready || cache.Replays() != 0 {
+				t.Fatal("a stem render used the cache")
+			}
+		})
+	}
 }
 
 // A render that fails part way must not leave a partial capture behind.
 func TestMasterCacheFailedCaptureIsRetried(t *testing.T) {
-	cache := newTestMasterCache(t)
-	score := cacheScoreVariant(t)
-	opts := Options{SampleRate: 48000, TailSec: .1}
-	want, wantReport := renderCacheBytes(t, score, opts)
-	opts.MasterCache = cache
-	failing := &failAfter{limit: len(want) / 2}
-	if _, err := WAV(score, opts, failing); !errors.Is(err, errCacheTestWrite) {
-		t.Fatalf("render with a failing writer: %v", err)
-	}
-	if cache.ready {
-		t.Fatal("a failed capture is marked ready")
-	}
-	for i, wantReplays := range []int{0, 1} {
-		got, gotReport := renderCacheBytes(t, score, opts)
-		if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
-			t.Fatalf("render %d after the failure differs from a full render", i)
+	forEachRenderer(t, func(t *testing.T, score *notation.Score) {
+		cache := newTestMasterCache(t)
+		opts := Options{SampleRate: 48000, TailSec: .1}
+		want, wantReport := renderCacheBytes(t, score, opts)
+		opts.MasterCache = cache
+		failing := &failAfter{limit: len(want) / 2}
+		if _, err := WAV(score, opts, failing); !errors.Is(err, errCacheTestWrite) {
+			t.Fatalf("render with a failing writer: %v", err)
 		}
-		if cache.Replays() != wantReplays {
-			t.Fatalf("render %d: %d replays, want %d", i, cache.Replays(), wantReplays)
+		if cache.ready {
+			t.Fatal("a failed capture is marked ready")
 		}
-	}
+		for i, wantReplays := range []int{0, 1} {
+			got, gotReport := renderCacheBytes(t, score, opts)
+			if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
+				t.Fatalf("render %d after the failure differs from a full render", i)
+			}
+			if cache.Replays() != wantReplays {
+				t.Fatalf("render %d: %d replays, want %d", i, cache.Replays(), wantReplays)
+			}
+		}
+	})
+}
+
+// forEachRenderer runs test on masterCacheScore with its master chain on the
+// direct renderer and on the scheduled engine.
+func forEachRenderer(t *testing.T, test func(*testing.T, *notation.Score)) {
+	t.Run("direct", func(t *testing.T) { test(t, cacheScoreVariant(t)) })
+	t.Run("scheduled", func(t *testing.T) { test(t, scheduledCacheScore(t, masterCacheChain)) })
 }
 
 // A capture that fails after an earlier capture succeeded must not leave the
@@ -344,72 +383,74 @@ func (f *fullDiskFile) Write(p []byte) (int, error) {
 // the render still has its own output to write there. The render finishes with
 // the bytes a render without a cache gives, and the cache stays off.
 func TestMasterCacheFullDiskGivesItsSpaceBack(t *testing.T) {
-	cache := newTestMasterCache(t)
-	score := cacheScoreVariant(t)
-	opts := Options{SampleRate: 48000, TailSec: .1}
-	want, wantReport := renderCacheBytes(t, score, opts)
-	opts.MasterCache = cache
-	// Room for three 4096-frame blocks and a part of the fourth.
-	disk := &fullDiskFile{File: cache.file.(*os.File), room: 3*4096*8 + 100}
-	cache.file = disk
-	for i := range 2 {
-		got, gotReport := renderCacheBytes(t, score, opts)
-		if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
-			t.Fatalf("render %d on a full disk differs from a full render", i)
+	forEachRenderer(t, func(t *testing.T, score *notation.Score) {
+		cache := newTestMasterCache(t)
+		opts := Options{SampleRate: 48000, TailSec: .1}
+		want, wantReport := renderCacheBytes(t, score, opts)
+		opts.MasterCache = cache
+		// Room for three 4096-frame blocks and a part of the fourth.
+		disk := &fullDiskFile{File: cache.file.(*os.File), room: 3*4096*8 + 100}
+		cache.file = disk
+		for i := range 2 {
+			got, gotReport := renderCacheBytes(t, score, opts)
+			if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
+				t.Fatalf("render %d on a full disk differs from a full render", i)
+			}
+			if i == 0 && disk.room != 0 {
+				t.Fatalf("the disk did not fill: %d bytes of room left", disk.room)
+			}
 		}
-		if i == 0 && disk.room != 0 {
-			t.Fatalf("the disk did not fill: %d bytes of room left", disk.room)
+		if !cache.disabled || cache.ready || cache.Replays() != 0 {
+			t.Fatalf("cache state after the disk filled: disabled=%v ready=%v replays=%d", cache.disabled, cache.ready, cache.Replays())
 		}
-	}
-	if !cache.disabled || cache.ready || cache.Replays() != 0 {
-		t.Fatalf("cache state after the disk filled: disabled=%v ready=%v replays=%d", cache.disabled, cache.ready, cache.Replays())
-	}
-	info, err := os.Stat(disk.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Size() != 0 {
-		t.Fatalf("the cache that failed still holds %d bytes of disk space", info.Size())
-	}
+		info, err := os.Stat(disk.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() != 0 {
+			t.Fatalf("the cache that failed still holds %d bytes of disk space", info.Size())
+		}
+	})
 }
 
 // A stored signal that cannot be read back fails the render that replays it,
 // because that render has already written part of its output. The cache turns
 // itself off and gives its space back, and the next render runs in full.
 func TestMasterCacheReadFailureTurnsTheCacheOff(t *testing.T) {
-	cache := newTestMasterCache(t)
-	score := cacheScoreVariant(t)
-	opts := Options{SampleRate: 48000, TailSec: .1}
-	want, wantReport := renderCacheBytes(t, score, opts)
-	opts.MasterCache = cache
-	renderCacheBytes(t, score, opts)
-	if !cache.ready {
-		t.Fatal("the capture is not ready")
-	}
-	// Cut the stored signal short, as a failing disk or another process could.
-	if err := cache.file.Truncate(cache.frames * 8 / 3); err != nil {
-		t.Fatal(err)
-	}
-	var partial bytes.Buffer
-	if _, err := WAV(score, opts, &partial); err == nil || !strings.Contains(err.Error(), "read master cache") {
-		t.Fatalf("replay of a cut cache: %v", err)
-	}
-	if partial.Len() == 0 || partial.Len() >= len(want) {
-		t.Fatalf("the failed replay wrote %d of %d bytes; it should fail part way", partial.Len(), len(want))
-	}
-	if !cache.disabled || cache.ready {
-		t.Fatalf("cache state after a failed read: disabled=%v ready=%v", cache.disabled, cache.ready)
-	}
-	if info, err := os.Stat(cache.file.Name()); err != nil || info.Size() != 0 {
-		t.Fatalf("the cache that failed still holds its file: %v (%v)", info, err)
-	}
-	got, gotReport := renderCacheBytes(t, score, opts)
-	if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
-		t.Fatal("render after the failed read differs from a full render")
-	}
-	if cache.Replays() != 1 {
-		t.Fatalf("%d replays, want only the one that failed", cache.Replays())
-	}
+	forEachRenderer(t, func(t *testing.T, score *notation.Score) {
+		cache := newTestMasterCache(t)
+		opts := Options{SampleRate: 48000, TailSec: .1}
+		want, wantReport := renderCacheBytes(t, score, opts)
+		opts.MasterCache = cache
+		renderCacheBytes(t, score, opts)
+		if !cache.ready {
+			t.Fatal("the capture is not ready")
+		}
+		// Cut the stored signal short, as a failing disk or another process could.
+		if err := cache.file.Truncate(cache.frames * 8 / 3); err != nil {
+			t.Fatal(err)
+		}
+		var partial bytes.Buffer
+		if _, err := WAV(score, opts, &partial); err == nil || !strings.Contains(err.Error(), "read master cache") {
+			t.Fatalf("replay of a cut cache: %v", err)
+		}
+		if partial.Len() == 0 || partial.Len() >= len(want) {
+			t.Fatalf("the failed replay wrote %d of %d bytes; it should fail part way", partial.Len(), len(want))
+		}
+		if !cache.disabled || cache.ready {
+			t.Fatalf("cache state after a failed read: disabled=%v ready=%v", cache.disabled, cache.ready)
+		}
+		if info, err := os.Stat(cache.file.Name()); err != nil || info.Size() != 0 {
+			t.Fatalf("the cache that failed still holds its file: %v (%v)", info, err)
+		}
+		got, gotReport := renderCacheBytes(t, score, opts)
+		if !bytes.Equal(got, want) || !reflect.DeepEqual(gotReport, wantReport) {
+			t.Fatal("render after the failed read differs from a full render")
+		}
+		if cache.Replays() != 1 {
+			t.Fatalf("%d replays, want only the one that failed", cache.Replays())
+		}
+	})
 }
 
 // endBlock is the one place a capture can fail after rendering has started.
