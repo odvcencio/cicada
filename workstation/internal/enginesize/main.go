@@ -1,6 +1,6 @@
 // Command enginesize reports what fills Studio's UI engine WebAssembly.
 //
-//	cd workstation && go run ./internal/enginesize [-o build/engine-size.json] [-top 30] [-overlay file.json] [-modfile file.mod]
+//	cd workstation && go run ./internal/enginesize [-o build/engine-size.json] [-top 30] [-overlay file.json] [-modfile file.mod] [-wasm file]
 //
 // -overlay and -modfile pass through to go build and go list, for a
 // differential build: -overlay replaces files of this module, -modfile can
@@ -16,7 +16,8 @@
 //   - data: from the sizes of the read-only and data symbols in each package
 //     archive (`go tool nm`) that the linker kept;
 //   - pclntab (function tables for stack traces and the garbage collector):
-//     function names exactly, the rest shared out by code size (an estimate).
+//     function names exactly, the rest shared out by code size (an estimate);
+//   - findfunctab (the PC to function lookup): shared out by function count.
 //
 // It also builds two floor programs from the same toolchain and flags: an
 // empty main, and a main that registers one no-op GoSX engine.
@@ -46,6 +47,9 @@ import (
 
 const enginePath = "m31labs.dev/cicada/workstation/engine"
 
+// maxDataSegments is cmd/link's cap on WebAssembly data segments (wasm/asm.go).
+const maxDataSegments = 100000
+
 type fileSize struct {
 	Raw    int `json:"raw"`
 	Gzip   int `json:"gzip_9"`
@@ -67,6 +71,7 @@ type packageSize struct {
 	Types   int    `json:"type_data"`
 	Data    int    `json:"other_data"`
 	Pcln    int    `json:"pclntab_estimate"`
+	Lookup  int    `json:"findfunctab_estimate"`
 }
 
 type groupSize struct {
@@ -90,6 +95,7 @@ type report struct {
 	Sections   []wasmSection          `json:"sections"`
 	Regions    []regionSize           `json:"data_regions"`
 	Code       int                    `json:"code_bytes"`
+	Segments   int                    `json:"data_segments"`
 	Attributed int                    `json:"attributed_bytes"`
 	Packages   []packageSize          `json:"packages"`
 	Groups     []groupSize            `json:"groups"`
@@ -105,13 +111,14 @@ func main() {
 	overlay := flag.String("overlay", "", "go build -overlay file, for a differential build")
 	modfile := flag.String("modfile", "", "go build -modfile file, for a differential build against a modified dependency")
 	floors := flag.Bool("floors", true, "also build the empty and one-engine floor programs")
+	keep := flag.String("wasm", "", "also write the shipped engine file here")
 	flag.Parse()
-	if err := run(*output, *top, *overlay, *modfile, *floors); err != nil {
+	if err := run(*output, *top, *overlay, *modfile, *keep, *floors); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(output string, top int, userOverlay, modfile string, floors bool) error {
+func run(output string, top int, userOverlay, modfile, keep string, floors bool) error {
 	work, err := os.MkdirTemp("", "cicada-engine-size-")
 	if err != nil {
 		return err
@@ -132,6 +139,11 @@ func run(output string, top int, userOverlay, modfile string, floors bool) error
 	shipped, err := os.ReadFile(shippedPath)
 	if err != nil {
 		return err
+	}
+	if keep != "" {
+		if err := os.WriteFile(keep, shipped, 0o644); err != nil {
+			return err
+		}
 	}
 	namedPath := filepath.Join(work, "named.wasm")
 	deps, err := combined(enginebuild.Command(namedPath, "-w -dumpdep", overlayArgs...))
@@ -234,12 +246,19 @@ func run(output string, top int, userOverlay, modfile string, floors bool) error
 		r.Notes = append(r.Notes, "data regions: "+err.Error())
 	}
 	r.Regions = regions
-	// pclntab: function names exactly; the other tables by code share.
+	// pclntab: function names exactly; the other tables by code share. The
+	// function lookup table: by function count, as every function spans the
+	// same number of buckets.
 	if layout.pclntab > 0 && r.Code > 0 {
 		rest := layout.pclntab - layout.funcnames
 		for pkg, s := range sizes {
 			s.Pcln = nameBytes[pkg] + int(int64(rest)*int64(s.Code)/int64(r.Code))
+			s.Lookup = int(int64(layout.findfunctab) * int64(s.Funcs) / int64(len(module.Functions)))
 		}
+	}
+	r.Segments = len(module.Segments)
+	if r.Segments >= maxDataSegments {
+		r.Notes = append(r.Notes, fmt.Sprintf("the data section has %d segments, the Go linker's cap: past it, runs of zero bytes are written out instead of skipped", r.Segments))
 	}
 	modules := map[string]string{}
 	for _, p := range list {
@@ -252,7 +271,7 @@ func run(output string, top int, userOverlay, modfile string, floors bool) error
 			s.Module = "std"
 		}
 		s.Group = groupOf(pkg, s.Module)
-		s.Total = s.Code + s.Types + s.Data + s.Pcln
+		s.Total = s.Code + s.Types + s.Data + s.Pcln + s.Lookup
 		r.Attributed += s.Total
 		r.Packages = append(r.Packages, *s)
 		g := groups[s.Group]
@@ -418,8 +437,10 @@ func groupOf(pkg, module string) string {
 }
 
 type moduleLayout struct {
-	pclntab, funcnames int
+	pclntab, funcnames, findfunctab int
 }
+
+const findfunctabName = "findfunctab (PC to function lookup)"
 
 type span struct {
 	name       string
@@ -462,11 +483,16 @@ func dataRegions(m *wasmModule) ([]regionSize, moduleLayout, error) {
 		{"pclntab: file names", file0, file1},
 		{"pclntab: pc-value tables", pc0, pc1},
 		{"pclntab: function table", fn0, fn1},
+		// runtime.findfunctab maps a PC to its function: 4 bytes per 4 KiB
+		// of PCs and 1 per 256 bytes (cmd/link findfunctab). A js/wasm PC is
+		// the function index shifted left 16 bits, so each function costs
+		// 16 buckets, 320 bytes, before zero runs are left out of the file.
+		{findfunctabName, u(152), u(152) + 4*((u(168)-u(160)+4095)/4096) + (u(168)-u(160)+255)/256},
 		{"noptrdata", u(192), u(200)},
 		{"data", u(208), u(216)},
 	}
 	for i, s := range spans {
-		ordered := i == 0 || i >= len(spans)-2 || spans[i-1].end <= s.start
+		ordered := i == 0 || i >= len(spans)-3 || spans[i-1].end <= s.start
 		if s.end < s.start || s.end-s.start > 1<<30 || !ordered || u(200) != u(208) {
 			return nil, layout, fmt.Errorf("module table layout not recognised (%s %#x..%#x); update dataRegions for %s", s.name, s.start, s.end, runtime.Version())
 		}
@@ -497,6 +523,7 @@ func dataRegions(m *wasmModule) ([]regionSize, moduleLayout, error) {
 		}
 	}
 	layout.funcnames = bytesIn["pclntab: function names"]
+	layout.findfunctab = bytesIn[findfunctabName]
 	out = append(out, regionSize{"data section header", m.DataOverhead})
 	return out, layout, nil
 }

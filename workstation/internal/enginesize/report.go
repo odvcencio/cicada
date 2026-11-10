@@ -19,19 +19,19 @@ func printReport(w io.Writer, r report, top int) {
 		fmt.Fprintf(w, "  %12s %s  %s\n", comma(s.Bytes), pct(s.Bytes), s.Name)
 	}
 	if len(r.Regions) > 0 {
-		fmt.Fprintf(w, "\nData section by runtime table\n")
+		fmt.Fprintf(w, "\nData section by runtime table (%s segments)\n", comma(r.Segments))
 		for _, s := range r.Regions {
 			fmt.Fprintf(w, "  %12s %s  %s\n", comma(s.Bytes), pct(s.Bytes), s.Name)
 		}
 	}
 
-	fmt.Fprintf(w, "\nTop %d packages (total = code + type data + other data + pclntab estimate)\n", top)
-	fmt.Fprintf(w, "  %12s %6s %11s %10s %10s %10s  %s\n", "total", "share", "code", "types", "data", "pclntab", "package")
+	fmt.Fprintf(w, "\nTop %d packages (total = code + type data + other data + pclntab and findfunctab estimates)\n", top)
+	fmt.Fprintf(w, "  %12s %6s %11s %7s %10s %10s %10s %10s  %s\n", "total", "share", "code", "funcs", "types", "data", "pclntab", "lookup", "package")
 	for i, p := range r.Packages {
 		if i == top {
 			break
 		}
-		fmt.Fprintf(w, "  %12s %s %11s %10s %10s %10s  %s\n", comma(p.Total), pct(p.Total), comma(p.Code), comma(p.Types), comma(p.Data), comma(p.Pcln), p.Package)
+		fmt.Fprintf(w, "  %12s %s %11s %7s %10s %10s %10s %10s  %s\n", comma(p.Total), pct(p.Total), comma(p.Code), comma(p.Funcs), comma(p.Types), comma(p.Data), comma(p.Pcln), comma(p.Lookup), p.Package)
 	}
 
 	fmt.Fprintf(w, "\nTop %d groups (module, or the standard library's first path element)\n", min(top, len(r.Groups)))
