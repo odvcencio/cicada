@@ -6,7 +6,7 @@ async function until(fn,label){const end=Date.now()+30000;while(Date.now()<end){
 test('track amp automation uses the saved playback path and keeps a grid-aligned pass',{timeout:120000},async t=>{
  const base=process.env.CICADA_STUDIO_URL, fixture=process.env.CICADA_AMP_AUTOMATION_FIXTURE, proof=process.env.CICADA_AMP_AUTOMATION_PROOF_DIR;
  assert.equal(new URL(base).hostname,'127.0.0.1');assert.ok(path.isAbsolute(fixture)&&path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});t.after(()=>browser.close());
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  const read=async name=>(await (await page.request.get(new URL('/api/'+name,base).href)).json());
  const ready=async()=>{await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();await until(async()=>await page.locator('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]').count()===0,'managed forms')};

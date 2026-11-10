@@ -6,7 +6,7 @@ test('Native64-track meters and recording buffers remain usable on desktop and p
  for(const base of [capacity,vocal]){assert.ok(base);assert.equal(new URL(base).hostname,'127.0.0.1')}
  assert.ok(proof&&path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(()=>browser.close());
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
  const errors=[],desktop=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await desktop.newPage();
  page.on('pageerror',e=>errors.push(e.message));
  const ready=async p=>{await p.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await p.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'})};

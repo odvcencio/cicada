@@ -90,6 +90,24 @@ run_check "excused suite that runs" fail "suite shell is listed in not_run_by_ci
 run_check "listed suite without a file" fail "no file workstation/browser/ghost.test.cjs" \
 	's|^\tchorus) echo chorus ;;|\tchorus) echo chorus ghost ;;|'
 
+# A suite that outlives the time limit must fail with its name in the output,
+# and one that finishes in time must pass with its output intact.
+cp "$repo/scripts/ci-studio-browser.sh" "$scratch/scripts/ci-studio-browser.sh"
+status=0
+output="$(cd "$scratch" && CICADA_STUDIO_SUITE_TIMEOUT=2 bash scripts/ci-studio-browser.sh run-suite hung-suite sh -c 'echo started; sleep 30' 2>&1)" || status=$?
+if [[ "$status" == 0 ]] || ! grep -q 'suite hung-suite timed out after 2s' <<<"$output" || ! grep -q '^started$' <<<"$output"; then
+	echo "FAIL: suite time limit: exit status $status" >&2
+	echo "$output" >&2
+	failures=$((failures + 1))
+fi
+status=0
+output="$(cd "$scratch" && CICADA_STUDIO_SUITE_TIMEOUT=2 bash scripts/ci-studio-browser.sh run-suite quick-suite sh -c 'echo finished' 2>&1)" || status=$?
+if [[ "$status" != 0 ]] || ! grep -q '^finished$' <<<"$output"; then
+	echo "FAIL: suite inside the time limit: exit status $status" >&2
+	echo "$output" >&2
+	failures=$((failures + 1))
+fi
+
 if [[ "$failures" -gt 0 ]]; then
 	echo "$failures failure(s)" >&2
 	exit 1

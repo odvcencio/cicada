@@ -28,7 +28,7 @@ test('modulation sources and contour points save, undo, and survive reload', {ti
   fs.mkdirSync(proof, {recursive:true});
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox','--mute-audio']});
-  t.after(() => browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const context = await browser.newContext({viewport:{width:1440,height:1000}}), page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('response', async response => {

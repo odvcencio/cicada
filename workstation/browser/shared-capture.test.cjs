@@ -19,7 +19,7 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
   fs.mkdirSync(proof,{recursive:true});
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});
-  t.after(() => browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const context = await browser.newContext();
   const bootstrap = await context.newPage();
   await bootstrap.goto(startup.href);

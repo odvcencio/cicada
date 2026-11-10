@@ -28,7 +28,7 @@ test('secondary arrangement controls, source conflicts, WAV and reopen', {timeou
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],checks=[];
  await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{get:()=>'MacIntel'}));
  let completed=false;
- t.after(async()=>{if(!completed){await page.screenshot({path:path.join(proof,'failure.png'),timeout:5000}).catch(()=>{});fs.writeFileSync(path.join(proof,'failure.html'),await page.content().catch(()=>''))}await browser.close()});
+ t.after(async()=>{if(!completed){await page.screenshot({path:path.join(proof,'failure.png'),timeout:5000}).catch(()=>{});fs.writeFileSync(path.join(proof,'failure.html'),await page.content().catch(()=>''))}await browser.close()},{timeout:15000});
  page.on('pageerror',error=>errors.push(error.message));
  const read=async name=>{const response=await page.request.get(origin+'/api/'+name);assert.equal(response.status(),200);return response.json()};
  const owner=()=>fs.readFileSync(fixture.arrangement,'utf8');

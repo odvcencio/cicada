@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
@@ -98,6 +99,32 @@ func simulatedCapturePeriod(t *testing.T, a *backendStudioAudio, frame uint64, i
 	a.captureInput(capture.Block{DeviceEpoch: 1, DeviceFrame: frame, SampleRate: a.actual.SampleRate, Period: a.actual.FramesPerPeriod, Frames: len(output[0]), Layout: capture.LayoutStereo}, input)
 	if err := a.renderPeriod(input, output); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// paceCaptureWriter blocks the synthetic producer while the recorder's writer
+// is more than maxQueued blocks behind. pushedFrames counts every frame pushed
+// into the capture ring so far. A real device delivers one block per period
+// (about 2.7 ms at 128 frames and 48 kHz); a test loop delivers them in
+// microseconds, so on a loaded CI runner the writer's journal fsyncs fall
+// behind and the ring overruns, which marks the take incomplete. Waiting for
+// the writer keeps the test about what it names. The wait fails after 10 s.
+func paceCaptureWriter(t *testing.T, r *capture.Recorder, pushedFrames uint64, blockFrames, maxQueued int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		snapshot := r.Snapshot()
+		if snapshot.Error != "" {
+			t.Fatalf("capture writer failed while pacing the test producer: %s", snapshot.Error)
+		}
+		queued := int64(pushedFrames) - int64(snapshot.WrittenFrames)
+		if queued <= int64(maxQueued*blockFrames) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("capture writer stalled: %d frames (%d blocks) queued after 10s, written %d of %d pushed", queued, queued/int64(blockFrames), snapshot.WrittenFrames, pushedFrames)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -225,6 +252,7 @@ func TestCaptureCountInSplitsDevicePeriodAndRetainsRaw(t *testing.T) {
 		for total <= c.Frames {
 			simulatedCapturePeriod(t, a, uint64(total), in, out)
 			total += int64(period)
+			paceCaptureWriter(t, r, uint64(total), period, 800)
 			if source.frames != int(max(int64(0), total-c.Frames)) {
 				t.Fatalf("period %d: rendered %d frames at %d; count-in %d", period, source.frames, total, c.Frames)
 			}

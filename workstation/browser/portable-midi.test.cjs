@@ -36,7 +36,7 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   assert(path.isAbsolute(scorePath), 'use a disposable absolute score path');
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox','--mute-audio']});
-  t.after(() => browser.close());
+  t.after(() => browser.close(), {timeout: 15000});
   const context = await browser.newContext(), page = await context.newPage(), errors = [], actions = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('response', response => {

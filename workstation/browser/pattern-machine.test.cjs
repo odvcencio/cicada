@@ -6,7 +6,7 @@ if (process.argv[2]==='--write-fixture') {
 test('generate, vary, audition and keep editable machine patterns', {timeout:150000}, async t=>{
  const base=process.env.CICADA_STUDIO_URL, score=process.env.CICADA_MACHINE_SCORE, proof=process.env.CICADA_MACHINE_PROOF;
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});t.after(()=>browser.close());
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}), page=await context.newPage(), errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  const before=fs.readFileSync(score,'utf8');

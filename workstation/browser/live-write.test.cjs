@@ -4,7 +4,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 test('prepare live amp Write before capture, keep and reopen',{timeout:120000},async t=>{
  const base=new URL(process.env.CICADA_STUDIO_URL),proof=process.env.CICADA_LIVE_WRITE_PROOF_DIR,score=process.env.CICADA_LIVE_WRITE_SCORE;
  assert.equal(base.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof)&&path.isAbsolute(score));fs.mkdirSync(proof,{recursive:true});
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright'),browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});t.after(()=>browser.close());
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright'),browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox','--mute-audio']});t.after(() => browser.close(), {timeout: 15000});
  const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.exposeFunction('__liveWriteEvidence',async name=>{await page.locator('#detail-panel-automation .automation-recording').screenshot({path:path.join(proof,name+'.png')})});
  await page.addInitScript(()=>{window.__liveWriteResult=result=>{window.__liveWriteResultValue=result}});

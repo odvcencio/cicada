@@ -792,4 +792,4 @@ test('part loops preserve paused playback and drafts with keyboard control', {ti
   }
 });
 
-test.after(async () => { if (shared) await shared.browser.close(); });
+test.after(async () => { if (shared) await shared.browser.close(); }, {timeout: 15000});

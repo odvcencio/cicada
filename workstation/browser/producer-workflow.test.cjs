@@ -33,7 +33,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const storage = process.env.CICADA_PRODUCER_STORAGE || '/tmp/cicada-pro2-browser-session.json';
   assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'));
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', ...(fs.existsSync(storage) ? { storageState: storage } : {}) });
-  t.after(async () => { await desktop.storageState({ path: storage }); await browser.close(); });
+  t.after(async () => { await desktop.storageState({ path: storage }); await browser.close(); }, {timeout: 15000});
   const page = await desktop.newPage();
   page.setDefaultTimeout(20000);
   const errors = [], checks = [];
