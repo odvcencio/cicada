@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"m31labs.dev/cicada/kernel/analysis"
 )
 
 func TestHostLoudnessMatchesBS1770StereoOneKilohertzReference(t *testing.T) {
@@ -144,4 +146,95 @@ func TestLoudnessResetClearsIntegratedAndRangeOnWorker(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("reset request did not clear integrated loudness and range")
+}
+
+func pushStereoSine(t *testing.T, meter *liveLoudness, rate, seconds int, right func(float32) float32) {
+	t.Helper()
+	var left, rightBlock [blockFrames]float32
+	total := rate * seconds
+	phase := 0
+	for sent := 0; sent < total; {
+		frames := min(blockFrames, total-sent)
+		for frame := 0; frame < frames; frame++ {
+			sample := float32(0.25 * math.Sin(2*math.Pi*1000*float64(phase)/float64(rate)))
+			left[frame], rightBlock[frame] = sample, right(sample)
+			phase = (phase + 1) % rate
+		}
+		for meter.ring.write.Load()-meter.ring.read.Load() >= loudnessBlockCount-2 {
+			runtime.Gosched()
+		}
+		if !meter.ring.push(left[:frames], rightBlock[:frames]) {
+			t.Fatal("block dropped")
+		}
+		sent += frames
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for meter.ring.read.Load() != meter.ring.write.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestHostAnalysisSeesOneKilohertzToneAndResets(t *testing.T) {
+	const rate = 48_000
+	meter, err := newLiveLoudness(rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer meter.close()
+	pushStereoSine(t, meter, rate, 2, func(s float32) float32 { return s })
+
+	var result AnalysisSnapshot
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		result = meter.analysis()
+		if result.HasSpectrum && result.HasCorrelation {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !result.HasSpectrum || !result.HasCorrelation {
+		t.Fatalf("analysis missing: spectrum=%t correlation=%t", result.HasSpectrum, result.HasCorrelation)
+	}
+	peak := 0
+	for i, v := range result.Spectrum {
+		if v > result.Spectrum[peak] {
+			peak = i
+		}
+	}
+	low, high := analysis.BandHz(rate, peak)
+	if low > 1000 || high <= 1000 {
+		t.Fatalf("peak in band %d (%.0f..%.0f Hz), want the band holding 1 kHz", peak, low, high)
+	}
+	if math.Abs(result.Correlation-1) > 0.01 {
+		t.Fatalf("correlation %.4f, want near +1", result.Correlation)
+	}
+
+	meter.resetMeter()
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		result = meter.analysis()
+		if !result.HasSpectrum && !result.HasCorrelation {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("reset did not clear the analysis snapshot")
+}
+
+func TestHostAnalysisSeesInvertedChannels(t *testing.T) {
+	const rate = 48_000
+	meter, err := newLiveLoudness(rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer meter.close()
+	pushStereoSine(t, meter, rate, 2, func(s float32) float32 { return -s })
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if r := meter.analysis(); r.HasCorrelation && math.Abs(r.Correlation+1) < 0.01 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("correlation did not reach -1: %+v", meter.analysis().Correlation)
 }

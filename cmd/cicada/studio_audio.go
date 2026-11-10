@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/host/schedule"
 	webhost "m31labs.dev/cicada/host/web"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/analysis"
 	"m31labs.dev/cicada/project"
 	"math"
 	"net/http"
@@ -553,6 +554,22 @@ func studioMeters(frame liveplay.MeterFrame, loudnessSnapshots ...liveplay.Loudn
 		}
 	}
 	return result
+}
+
+// studioAnalysis builds the "analysis" object of /api/meters: the master phase
+// correlation (null when a channel is silent) and the 64-band spectrum. It
+// returns nil while no spectrum has been measured, so the key is left out.
+func studioAnalysis(snapshot liveplay.AnalysisSnapshot) map[string]any {
+	if !snapshot.HasSpectrum || snapshot.SampleRate <= 0 {
+		return nil
+	}
+	_, high := analysis.BandHz(snapshot.SampleRate, analysis.Bands-1)
+	bands := make([]float32, analysis.Bands)
+	copy(bands, snapshot.Spectrum[:])
+	return map[string]any{
+		"correlation": nullableLoudness(snapshot.Correlation, snapshot.HasCorrelation),
+		"spectrum":    map[string]any{"low_hz": analysis.LowHz, "high_hz": high, "bands_db": bands},
+	}
 }
 
 func nullableLoudness(value float64, valid bool) any {
