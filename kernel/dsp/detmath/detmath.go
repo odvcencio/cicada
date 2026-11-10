@@ -16,6 +16,11 @@
 // splitting). The functions are written for coefficient design and control
 // rate, not the sample loop; see the benchmarks for their cost.
 //
+// Every exported function starts with x = float64(x). The conversion rounds an
+// argument that a caller computed as a product, so that if the compiler ever
+// inlines the function, that product cannot fuse with the function's first
+// addition.
+//
 // Accuracy, measured against 320-bit math/big references in the tests: every
 // function is within 1 unit in the last place (ULP) of the exact result over
 // its documented domain; the measured maxima are listed on each function.
@@ -129,12 +134,14 @@ func expDD(xh, xl float64) (hi, lo float64, m int) {
 // Exp returns e^x. Measured error: at most 0.51 ULP for results of at least
 // 2^-1022 (smaller results are subnormal and rounded twice).
 func Exp(x float64) float64 {
+	x = float64(x) // see the package comment
 	hi, lo, m := expDD(x, 0)
 	return math.Ldexp(hi+lo, m)
 }
 
 // Exp2 returns 2^x, exact for integers. Measured error: at most 0.51 ULP.
 func Exp2(x float64) float64 {
+	x = float64(x) // see the package comment
 	switch {
 	case x != x:
 		return x
@@ -154,6 +161,7 @@ func Exp2(x float64) float64 {
 // Exp10 returns 10^x, exact where 10^x is a representable integer. Measured
 // error: at most 0.51 ULP. Pow(10, x) uses it.
 func Exp10(x float64) float64 {
+	x = float64(x) // see the package comment
 	if x != x {
 		return x
 	}
@@ -205,6 +213,7 @@ func logDD(x float64) (hi, lo float64) {
 
 // Log returns the natural logarithm of x. Measured error: at most 0.51 ULP.
 func Log(x float64) float64 {
+	x = float64(x) // see the package comment
 	switch {
 	case x != x || x == math.Inf(1):
 		return x
@@ -220,6 +229,7 @@ func Log(x float64) float64 {
 // Log2 returns the base-2 logarithm of x, exact for powers of two. Measured
 // error: at most 0.51 ULP.
 func Log2(x float64) float64 {
+	x = float64(x) // see the package comment
 	if x != x || x <= 0 || x == math.Inf(1) {
 		return Log(x)
 	}
@@ -234,6 +244,7 @@ func Log2(x float64) float64 {
 // Log10 returns the base-10 logarithm of x, exact for 10^n with integer n
 // from 0 to 22. Measured error: at most 0.51 ULP.
 func Log10(x float64) float64 {
+	x = float64(x) // see the package comment
 	if x != x || x <= 0 || x == math.Inf(1) {
 		return Log(x)
 	}
@@ -243,8 +254,9 @@ func Log10(x float64) float64 {
 }
 
 // Pow returns x^y. Special cases follow math.Pow. Measured error: at most
-// 0.51 ULP where |y log x| <= 64; it grows slowly beyond, see the tests.
+// 0.52 ULP for x from 1e-12 to 1e12 and |y| up to 40.
 func Pow(x, y float64) float64 {
+	x, y = float64(x), float64(y) // see the package comment
 	switch {
 	case y == 0 || x == 1:
 		return 1
@@ -313,8 +325,9 @@ func Pow(x, y float64) float64 {
 	return r
 }
 
-// Tanh returns the hyperbolic tangent of x. Measured error: at most 0.51 ULP.
+// Tanh returns the hyperbolic tangent of x. Measured error: at most 0.52 ULP.
 func Tanh(x float64) float64 {
+	x = float64(x) // see the package comment
 	a := math.Abs(x)
 	switch {
 	case x != x:
@@ -343,25 +356,37 @@ func Tanh(x float64) float64 {
 }
 
 const (
-	halfPi1   = 0x1.921fb544p+00 // 33 bits: k*halfPi1 is exact for |k| < 2^20
-	halfPi2   = 0x1.0b4611a6p-34 // 33 bits
-	halfPi3   = 0x1.3198a2e037073p-69
+	// pi/2 = halfPi1 + halfPi2 + halfPi3 + halfPi4 to 2^-152. The first three
+	// have 33 significant bits, so k*halfPi1, k*halfPi2 and k*halfPi3 are exact
+	// for |k| < 2^20.
+	halfPi1   = 0x1.921fb544p+00
+	halfPi2   = 0x1.0b4611a6p-34
+	halfPi3   = 0x1.3198a2ep-69
+	halfPi4   = 0x1.b839a252049c1p-104
 	twoOverPi = 0x1.45f306dc9c883p-01
+
+	// TrigLimit bounds the argument of Sin, Cos, Sincos and Tan: they return
+	// NaN for |x| >= TrigLimit (2^20*pi/2, about 1.647e6). Inside it the
+	// reduction modulo pi/2 is exact to about 2^-130, which keeps every result
+	// within 1 ULP even next to a multiple of pi/2.
+	TrigLimit = 0x1p20 * halfPi1
 )
 
 // reduce returns r = x - k*pi/2 as rh + rl with |r| <= pi/4 (plus rounding),
-// and k mod 4. The reduction is accurate for |x| < 2^20*pi/2; beyond that it
-// is still the same on every target but loses accuracy.
+// and k mod 4, for |x| < TrigLimit. The quadrant comes from k - 4*floor(k/4)
+// in float64, never from converting a large k to an integer.
 func reduce(x float64) (rh, rl float64, quadrant int) {
 	if x > -math.Pi/4 && x < math.Pi/4 {
 		return x, 0, 0
 	}
 	k := math.Round(float64(x * twoOverPi))
 	t := x - float64(k*halfPi1) // exact
-	rh, rl = twoSum(t, -float64(k*halfPi2))
-	rl -= float64(k * halfPi3)
-	rh, rl = fastTwoSum(rh, rl)
-	return rh, rl, int(int64(k) & 3)
+	h, e1 := twoSum(t, -float64(k*halfPi2))
+	h, e2 := twoSum(h, -float64(k*halfPi3))
+	p, pe := twoProd(k, halfPi4)
+	l := ((e1 + e2) - p) - pe
+	rh, rl = twoSum(h, l)
+	return rh, rl, int(k - float64(4*math.Floor(float64(k/4))))
 }
 
 // sinKernel returns sin(rh + rl) as a double-double for |rh| <= pi/4.
@@ -392,9 +417,10 @@ func cosKernel(rh, rl float64) (hi, lo float64) {
 	return fastTwoSum(w, tail)
 }
 
-// Sincos returns Sin(x) and Cos(x).
+// Sincos returns Sin(x) and Cos(x). See Sin and Cos for the domain.
 func Sincos(x float64) (sin, cos float64) {
-	if x != x || math.IsInf(x, 0) {
+	x = float64(x)                          // see the package comment
+	if !(x > -TrigLimit && x < TrigLimit) { // NaN, infinite or out of range
 		return math.NaN(), math.NaN()
 	}
 	if x > -0x1p-27 && x < 0x1p-27 {
@@ -415,18 +441,20 @@ func Sincos(x float64) (sin, cos float64) {
 	return s, c
 }
 
-// Sin returns the sine of x. Measured error: at most 0.51 ULP for
-// |x| < 2^20*pi/2.
+// Sin returns the sine of x for |x| < TrigLimit and NaN otherwise. Measured
+// error: at most 0.75 ULP, including arguments next to multiples of pi/2.
 func Sin(x float64) float64 { s, _ := Sincos(x); return s }
 
-// Cos returns the cosine of x. Measured error: at most 0.51 ULP for
-// |x| < 2^20*pi/2.
+// Cos returns the cosine of x for |x| < TrigLimit and NaN otherwise. Measured
+// error: at most 0.75 ULP, including arguments next to multiples of pi/2.
 func Cos(x float64) float64 { _, c := Sincos(x); return c }
 
-// Tan returns the tangent of x. Measured error: at most 0.51 ULP for
-// |x| < 2^20*pi/2.
+// Tan returns the tangent of x for |x| < TrigLimit and NaN otherwise.
+// Measured error: at most 0.85 ULP, including arguments next to multiples of
+// pi/2.
 func Tan(x float64) float64 {
-	if x != x || math.IsInf(x, 0) {
+	x = float64(x)                          // see the package comment
+	if !(x > -TrigLimit && x < TrigLimit) { // NaN, infinite or out of range
 		return math.NaN()
 	}
 	if x > -0x1p-27 && x < 0x1p-27 {

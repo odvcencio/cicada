@@ -41,6 +41,28 @@ func points(n int, parts ...[]float64) []float64 {
 	return out
 }
 
+// nearHalfPiMultiples returns, for n values of k spread over [1, 2^20), the
+// doubles nearest k*pi/2 and their two neighbours each side: the arguments
+// whose reduction loses the most bits.
+func nearHalfPiMultiples(n int) []float64 {
+	halfPi := refQuo(refPi, refInt(2))
+	var out []float64
+	for i := 0; i < n; i++ {
+		k := int64(Exp2(float64(i) * 20 / float64(n)))
+		x, _ := refMul(refInt(k), halfPi).Float64()
+		if x >= TrigLimit {
+			continue
+		}
+		a, b := x, x
+		out = append(out, x)
+		for j := 0; j < 2; j++ {
+			a, b = math.Nextafter(a, 0), math.Nextafter(b, math.Inf(1))
+			out = append(out, a, -b)
+		}
+	}
+	return out
+}
+
 type accuracyCase struct {
 	name   string
 	f      func(float64) float64
@@ -68,13 +90,13 @@ var accuracyCases = []accuracyCase{
 		return points(n, logSweep(1e-307, 1e308, n), sweep(0.5, 2, n), sweep(1, 1e6, n/4))
 	}},
 	{"Sin", Sin, refSin, func(n int) []float64 {
-		return points(n, sweep(-7, 7, n), sweep(-1e4, 1e4, n), logSweep(1e-12, 1, n/4))
+		return points(n, sweep(-7, 7, n), sweep(-TrigLimit, TrigLimit, n), logSweep(1e-12, 1, n/4), nearHalfPiMultiples(n/8))
 	}},
 	{"Cos", Cos, refCos, func(n int) []float64 {
-		return points(n, sweep(-7, 7, n), sweep(-1e4, 1e4, n), logSweep(1e-12, 1, n/4))
+		return points(n, sweep(-7, 7, n), sweep(-TrigLimit, TrigLimit, n), logSweep(1e-12, 1, n/4), nearHalfPiMultiples(n/8))
 	}},
 	{"Tan", Tan, refTan, func(n int) []float64 {
-		return points(n, sweep(-7, 7, n), sweep(-1e4, 1e4, n), logSweep(1e-12, 1, n/4))
+		return points(n, sweep(-7, 7, n), sweep(-TrigLimit, TrigLimit, n), logSweep(1e-12, 1, n/4), nearHalfPiMultiples(n/8))
 	}},
 	{"Tanh", Tanh, refTanh, func(n int) []float64 {
 		return points(n, sweep(-23, 23, n), sweep(-1, 1, n), logSweep(1e-10, 0.2, n/4))
@@ -181,7 +203,7 @@ func TestSpecialValues(t *testing.T) {
 // identityDigest pins the bits of every function over a fixed sweep. The
 // functions use no operation that differs by target, so CI requires the same
 // digest on arm64 (the PCM24 parity job) and with GOAMD64=v3.
-const identityDigest = "9cc933929dc31c6116a31531702b1205efa14ce78d681f1513c3183b4f5136c2"
+const identityDigest = "0ad93a6fe609c723e1fc684a586556a7c85a613d92227cd78df152af53a85745"
 
 func TestIdentityDigest(t *testing.T) {
 	h := sha256.New()
@@ -202,6 +224,28 @@ func TestIdentityDigest(t *testing.T) {
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != identityDigest {
 		t.Fatalf("detmath identity digest = %s, want %s", got, identityDigest)
+	}
+}
+
+// outOfRangeDigest pins the bits that the trigonometric functions return at
+// and beyond TrigLimit, for infinities and for NaN: NaN on every target.
+const outOfRangeDigest = "77fb1dc61506281cd32c9dff3ce98f5e0a82cc2df6df8497a7d6b0d8bf3b6caa"
+
+func TestTrigOutOfRange(t *testing.T) {
+	h := sha256.New()
+	var word [8]byte
+	for _, x := range []float64{TrigLimit, -TrigLimit, math.Nextafter(TrigLimit, 0), 1e10, -1e18, 1e20, 1.45e19, math.MaxFloat64, math.Inf(1), math.Inf(-1), math.NaN()} {
+		s, c := Sincos(x)
+		for _, v := range []float64{Sin(x), Cos(x), Tan(x), s, c} {
+			binary.LittleEndian.PutUint64(word[:], math.Float64bits(v))
+			h.Write(word[:])
+		}
+		if inRange := x > -TrigLimit && x < TrigLimit; inRange == math.IsNaN(Sin(x)) {
+			t.Errorf("Sin(%v) = %v; want NaN only outside the domain", x, Sin(x))
+		}
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != outOfRangeDigest {
+		t.Fatalf("out-of-range digest = %s, want %s", got, outOfRangeDigest)
 	}
 }
 

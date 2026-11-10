@@ -81,10 +81,10 @@ func NewLimiter(sampleRate int, p LimiterParams) (*Limiter, error) {
 			x := float64(tap-(limiterHalf-1)) - fraction
 			sinc := 1.0
 			if x != 0 {
-				sinc = detmath.Sin(math.Pi*x) / (math.Pi * x)
+				sinc = detmath.Sin(float64(math.Pi*x)) / (math.Pi * x)
 			}
 			position := float64(tap) / (limiterTaps - 1)
-			window := .42 - float64(.5*detmath.Cos(2*math.Pi*position)) + float64(.08*detmath.Cos(4*math.Pi*position))
+			window := .42 - float64(.5*detmath.Cos(float64(2*math.Pi*position))) + float64(.08*detmath.Cos(float64(4*math.Pi*position)))
 			l.coeff[tap][phase] = float64(sinc * window)
 			sum += float64(sinc * window)
 		}

@@ -105,7 +105,9 @@ func TanSmall(x float64) float64 {
 		x = limit
 	}
 	if x < -0.3 || x > 0.3 {
-		half := tanCentral(x * .5)
+		// Round tanCentral's product: the compiler turns 2*half into half+half,
+		// which arm64 would otherwise fuse with it.
+		half := float64(tanCentral(float64(x * .5)))
 		return 2 * half / (1 - float64(half*half))
 	}
 	return tanCentral(x)

@@ -212,7 +212,7 @@ func (m *Meter) designTruePeakFilter() {
 			x := offset - fraction
 			sinc := 1.0
 			if x != 0 {
-				angle := math.Pi * x
+				angle := float64(math.Pi * x)
 				sinc = detmath.Sin(angle) / angle
 			}
 			coefficient := float64(sinc * truePeakWindow[tap])

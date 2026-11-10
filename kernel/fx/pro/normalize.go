@@ -96,9 +96,9 @@ func reconstructionPeak(left, right []float32) float64 {
 		fraction, sum := float64(float64(phase+1)/phases), 0.0
 		for tap := range coeff[phase] {
 			x := float64(tap-(half-1)) - fraction
-			sinc := detmath.Sin(math.Pi*x) / (math.Pi * x)
+			sinc := detmath.Sin(float64(math.Pi*x)) / (math.Pi * x)
 			position := float64(tap) / (taps - 1)
-			window := .42 - float64(.5*detmath.Cos(2*math.Pi*position)) + float64(.08*detmath.Cos(4*math.Pi*position))
+			window := .42 - float64(.5*detmath.Cos(float64(2*math.Pi*position))) + float64(.08*detmath.Cos(float64(4*math.Pi*position)))
 			coeff[phase][tap] = float64(sinc * window)
 			sum += coeff[phase][tap]
 		}
