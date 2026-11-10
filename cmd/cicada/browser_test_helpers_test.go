@@ -753,10 +753,26 @@ func (b *browserChrome) click(selector string) {
 		}
 		return
 	}
+	// A page that is still laying out reports a 0x0 box at 0,0. Poll until the
+	// element has a size and is visible, then click its center.
 	var point struct{ X, Y float64 }
-	encoded := b.eval(`(()=>{const e=document.querySelector(` + strconvQuote(selector) + `);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}})()`)
-	if err := json.Unmarshal(encoded, &point); err != nil || point.X <= 0 || point.Y <= 0 {
-		b.t.Fatalf("cannot click %s at %s", selector, encoded)
+	measure := `(()=>{const e=document.querySelector(` + strconvQuote(selector) + `);if(!e)return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.left+r.width/2,y:r.top+r.height/2,width:r.width,height:r.height,visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'}})()`
+	deadline := time.Now().Add(5 * time.Second)
+	var last json.RawMessage
+	for {
+		last = b.eval(measure)
+		var box struct {
+			X, Y, Width, Height float64
+			Visible             bool
+		}
+		if err := json.Unmarshal(last, &box); err == nil && box.Visible && box.Width > 0 && box.Height > 0 && box.X > 0 && box.Y > 0 {
+			point.X, point.Y = box.X, box.Y
+			break
+		}
+		if time.Now().After(deadline) {
+			b.t.Fatalf("cannot click %s: no visible element with a size after 5s; last measured box %s", selector, last)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	for _, event := range []string{"mousePressed", "mouseReleased"} {
 		b.mustCall("Input.dispatchMouseEvent", map[string]any{"type": event, "x": point.X, "y": point.Y, "button": "left", "clickCount": 1})

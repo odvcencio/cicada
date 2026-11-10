@@ -5,7 +5,7 @@ test('converted tempo steps, recorded clocks and selection durations survive the
  const fixture=JSON.parse(fs.readFileSync(process.env.CICADA_PRINT_FIXTURE,'utf8'));assert.equal(fixture.sceneTempo,true);assert.ok(fixture.score.startsWith('/tmp/'));
  const proof=process.env.CICADA_PRINT_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  const startup=new URL(process.env.CICADA_STUDIO_URL);assert.equal(startup.hostname,'127.0.0.1');
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(()=>browser.close());
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
  const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(startup.href);await page.goto(startup.origin+'/?panel=session');await page.locator('#cicada-vocal-lanes[data-vocal-lanes-ready=true]').waitFor();
  const kernel=fs.readFileSync(process.env.CICADA_KERNEL_WASM||path.resolve(__dirname,'../../build/cicada-kernel.wasm'));await page.evaluate(async bytes=>{await WebAssembly.compile(new Uint8Array(bytes))},Array.from(kernel));

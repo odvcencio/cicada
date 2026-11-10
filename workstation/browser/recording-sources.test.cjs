@@ -13,7 +13,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 test('retained grid and played takes commit to owned project sources',{timeout:300000},async t=>{
  const base=new URL(process.env.CICADA_STUDIO_URL),proof=process.env.CICADA_RECORD_SOURCES_PROOF_DIR,fixture=JSON.parse(fs.readFileSync(process.env.CICADA_RECORD_SOURCES_FIXTURE,'utf8'));assert.equal(base.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  fs.writeFileSync(path.join(proof,'fixture.json'),JSON.stringify(fixture,null,2)+'\n');
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});const page=await browser.newPage({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  // Keep every mount on the native fallback, including Linux projections.
  // The shared workflow supplies packets in memory and intercepts the endpoint.
  await page.addInitScript(()=>Object.defineProperty(navigator,'requestMIDIAccess',{value:undefined}));

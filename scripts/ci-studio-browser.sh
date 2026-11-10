@@ -218,6 +218,7 @@ song_root=
 # start_studio SCORE LOG [HEALTH_PATH] starts Studio on SCORE and waits for it.
 start_studio() {
 	local health="${3:-/api/state}"
+	studio_log="$2"
 	./build/cicada studio "$1" --audio null --listen "127.0.0.1:$studio_port" > "$2" 2>&1 &
 	studio_pid=$!
 	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
@@ -238,11 +239,32 @@ ran_file=
 
 # run_suite NAME[@CONFIG] COMMAND... records the run, then runs the command.
 # The record is a file, so a run inside a pipeline (| tee) still counts.
+#
+# Every suite runs under a time limit (CICADA_STUDIO_SUITE_TIMEOUT seconds,
+# default 300). The slowest segment in run 42717367458 took 162 s and the
+# slowest suite report 39 s, so 300 s is a hang, not a slow run. A suite that
+# hits the limit fails with its name, the end of its report and the end of the
+# Studio server log, instead of waiting for the 30-minute job limit.
+suite_timeout="${CICADA_STUDIO_SUITE_TIMEOUT:-300}"
+studio_log=
+
 run_suite() {
-	echo "$1" >> "$ran_file"
+	local name="$1" status=0 report
+	echo "$name" >> "$ran_file"
 	shift
 	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then return 0; fi
-	"$@"
+	report="$(mktemp "${TMPDIR:-/tmp}/ci-studio-suite.XXXXXX")"
+	# pipefail (set above) makes $? the command's status, not tee's.
+	timeout -k 15 "$suite_timeout" "$@" | tee "$report" || status=$?
+	if [[ "$status" == 124 || "$status" == 137 ]]; then
+		echo "FAIL: suite $name timed out after ${suite_timeout}s (exit $status)" >&2
+		echo "--- last 60 lines of the report of $name ---" >&2
+		tail -n 60 "$report" >&2 || true
+		echo "--- last 60 lines of the Studio server log ${studio_log:-(none)} ---" >&2
+		if [[ -n "$studio_log" ]]; then tail -n 60 "$studio_log" >&2 || true; fi
+	fi
+	rm -f "$report"
+	return "$status"
 }
 
 # continuity_fixture NAME writes the continuity fixture score used by several suites.
@@ -835,6 +857,11 @@ case "${1:-}" in
 run) run_shard "${2:?shard number}" ;;
 list) shard_segments "${2:?shard number}" ;;
 check) check_shards ;;
+run-suite) # run-suite NAME COMMAND...: one suite under the time limit (used by the test)
+	ran_file="${CICADA_STUDIO_RAN_FILE:-/dev/null}"
+	shift
+	run_suite "$@"
+	;;
 *)
 	echo "usage: $0 run SHARD | list SHARD | check" >&2
 	exit 2

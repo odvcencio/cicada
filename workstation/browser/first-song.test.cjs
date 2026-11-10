@@ -5,7 +5,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const reopening=process.env.CICADA_SONG_REOPEN==='1';
 test(reopening?'reopen the song and reproduce its WAV':'compose, arrange and export a song through Studio controls',{timeout:180000},async t=>{
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright'),proof=process.env.CICADA_SONG_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});t.after(()=>browser.close());
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});t.after(() => browser.close(), {timeout: 15000});
  const page=await browser.newPage({viewport:{width:1280,height:840},acceptDownloads:true}),errors=[],steps=[];
  page.on('pageerror',e=>errors.push(e.message));const writes=[];page.on('request',request=>{if(request.method()==='POST')writes.push(new URL(request.url()).pathname);});
  const origin=new URL(process.env.CICADA_STUDIO_URL);await page.goto(origin.href);await page.goto(new URL('/studio',origin).href);

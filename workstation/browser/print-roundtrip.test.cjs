@@ -7,7 +7,7 @@ test('printed audio and comp metadata survive WAV export and a fresh process', {
  const fixture=JSON.parse(fs.readFileSync(process.env.CICADA_PRINT_FIXTURE,'utf8')),proof=process.env.CICADA_PRINT_PROOF_DIR;
  const startup=new URL(process.env.CICADA_STUDIO_URL),base=startup.origin;
  assert.equal(startup.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio']});t.after(()=>browser.close());
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio']});t.after(() => browser.close(), {timeout: 15000});
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
  const read=async name=>{const r=await page.request.get(base+'/api/'+name);assert.equal(r.status(),200);return r.json()};
  const sources=()=>({entry:fs.readFileSync(fixture.score,'utf8'),arrangement:fs.readFileSync(fixture.arrangement,'utf8'),...(fixture.scenes?{scenes:fs.readFileSync(fixture.scenes,'utf8')}:{}),...(fixture.curves?{curves:fs.readFileSync(fixture.curves,'utf8')}:{})});

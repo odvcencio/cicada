@@ -18,7 +18,7 @@ test('tempo forms move, change and remove steps with history, source conflicts, 
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']}),context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],checks=[];
  page.on('pageerror',error=>errors.push(error.message));let completed=false;
- t.after(async()=>{if(!completed)await page.screenshot({path:path.join(proof,'failure.png'),timeout:5000}).catch(()=>{});await browser.close()});
+ t.after(async()=>{if(!completed)await page.screenshot({path:path.join(proof,'failure.png'),timeout:5000}).catch(()=>{});await browser.close()},{timeout:15000});
  const owner=()=>fs.readFileSync(fixture.owner,'utf8'),read=async name=>{const r=await page.request.get(origin+'/api/'+name);assert.equal(r.status(),200);return r.json()};
  const ready=async()=>{await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();await page.waitForFunction(()=>window.__gosx?.ready&&!document.querySelector('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]'))};
  const open=async()=>{await ready();const details=page.locator('[data-arrangement-tempos]');if(await details.getAttribute('open')===null)await details.locator(':scope > summary').click();return details};

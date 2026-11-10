@@ -8,7 +8,7 @@ const path=require('node:path');
 test('sidebars fit the song, collapse into rails and preserve edits',{timeout:120000},async t=>{
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});
- t.after(()=>browser.close());
+ t.after(() => browser.close(), {timeout: 15000});
  const page=await browser.newPage({viewport:{width:1920,height:900}});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  const proof=process.env.CICADA_COLUMN_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
