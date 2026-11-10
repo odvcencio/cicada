@@ -3,7 +3,10 @@ package edit_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,6 +49,26 @@ func expectNotesRefusal(t *testing.T, source string, in *edit.EditNotes, want st
 	_, err := notesEdit(t, source, in)
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("%s: want refusal containing %q, got %v", in.Op, want, err)
+	}
+}
+
+// expectNoteError checks a refusal that names its note: the message, the
+// reason code and the note's identity as structured fields.
+func expectNoteError(t *testing.T, source string, in *edit.EditNotes, code, want string, note map[string]any) {
+	t.Helper()
+	_, err := notesEdit(t, source, in)
+	var refusal *edit.NoteError
+	if !errors.As(err, &refusal) {
+		t.Fatalf("%s: want a NoteError %q, got %v", in.Op, code, err)
+	}
+	if refusal.Code != code || !strings.Contains(refusal.Error(), want) {
+		t.Fatalf("%s: got code %q, message %q; want %q containing %q", in.Op, refusal.Code, refusal.Error(), code, want)
+	}
+	if !slices.Contains(edit.NoteErrorCodes, code) {
+		t.Fatalf("code %q is not listed in NoteErrorCodes", code)
+	}
+	if note != nil && !reflect.DeepEqual(refusal.Note(), note) {
+		t.Fatalf("%s: note %v, want %v", in.Op, refusal.Note(), note)
 	}
 }
 
@@ -121,24 +144,39 @@ func TestEditNotesRefusesWhatAPerformanceCannotHold(t *testing.T) {
 	gesture := edit.NoteRef{At: 470, Pitch: 67, Length: 100, Velocity: 90}
 	all := []edit.NoteRef{{At: 17, Pitch: 60, Length: 703, Velocity: 82}, ref, gesture}
 	for _, c := range []struct {
+		name, code, want string
+		in               *edit.EditNotes
+	}{
+		{"missing note", "note-changed", "note 64 (E4) at tick 251: a selected note changed (no note of this pitch starts at this tick); select the notes again", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 251, Pitch: 64, Length: 200, Velocity: 105}}, DT: 240}},
+		{"changed velocity", "note-changed", "note 64 (E4) at tick 250: a selected note changed (its velocity is 105, not 100)", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 250, Pitch: 64, Length: 200, Velocity: 100}}, DT: 240}},
+		{"changed length", "note-changed", "(it lasts 200 ticks, not 210)", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 250, Pitch: 64, Length: 210, Velocity: 105}}, DT: 240}},
+		{"named twice", "note-changed", "(the batch names it twice)", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref, ref}, DT: 240}},
+		{"before the start", "outside-loop", "note 64 (E4) at tick 250: move would start it at tick -230, before the loop starts", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: -480}},
+		{"past the loop end", "outside-loop", "note 64 (E4) at tick 250: move would end it at tick 3950, past the loop end at tick 3840", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: 3500}},
+		{"pitch range", "pitch-range", "note 64 (E4) at tick 250: move would make it MIDI 134, which with the pattern transpose of +0 leaves 0–127", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DP: 70}},
+		{"same-pitch overlap", "overlap", "note 64 (E4) at tick 250: move would put it at tick 50 to 250 as C4, over the C4 at tick 17 to 720; a pitch plays one note at a time, so move one of them first", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: -200, DP: -4}},
+		{"copy overlap", "overlap", "note 64 (E4) at tick 250: copy would put it at tick 300 to 500 as E4, over the E4 at tick 250 to 450", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: 50, Copy: true}},
+		{"too short", "too-short", "note 64 (E4) at tick 250: resize would leave it 0 ticks long", &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{ref}, DL: -200}},
+		{"cut gesture", "gesture-cut", "note 67 (G4) at tick 470: resize to 40 ticks would cut its gesture point at 50 ticks; a note cannot become shorter than its last gesture point", &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{gesture}, DL: -60}},
+		{"drum lane", "no-lanes", `note 64 (E4) at tick 250: a played performance has no drum lanes, so lane "bd" cannot be named`, &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 250, Pitch: 64, Lane: "bd", Length: 200, Velocity: 105}}}},
+		{"inserted past the end", "outside-loop", "note 72 (C5) at tick 3800: insert would end it at tick 4280, past the loop end at tick 3840", &edit.EditNotes{Op: "insert", Insert: []edit.NoteRef{{At: 3800, Pitch: 72, Length: 480, Velocity: 96}}}},
+		{"invalid note", "invalid-note", "notes[0] (at 250, pitch 64, length 200, velocity 128)", &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 250, Pitch: 64, Length: 200, Velocity: 128}}}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.in.Entity = "pattern:take"
+			expectNoteError(t, notesPerformance, c.in, c.code, c.want, nil)
+		})
+	}
+	for _, c := range []struct {
 		name string
 		in   *edit.EditNotes
 		want string
 	}{
-		{"missing note", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 251, Pitch: 64, Length: 200, Velocity: 105}}, DT: 240}, "a selected note changed"},
-		{"changed velocity", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 250, Pitch: 64, Length: 200, Velocity: 100}}, DT: 240}, "a selected note changed"},
-		{"named twice", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref, ref}, DT: 240}, "a selected note changed"},
-		{"before the start", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: -480}, "before the start of the loop"},
-		{"past the loop end", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: 3500}, "past the loop end"},
-		{"pitch range", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DP: 70}, "MIDI 0–127"},
-		{"same-pitch overlap", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{ref}, DT: -200, DP: -4}, "two C4 notes would overlap"},
-		{"cut gesture", &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{gesture}, DL: -60}, "shorter than its last point"},
 		{"no note left", &edit.EditNotes{Op: "delete", Notes: all}, "keeps at least one note"},
-		{"drum lane", &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 250, Pitch: 64, Lane: "bd", Length: 200, Velocity: 105}}}, "no drum lanes"},
-		{"inserted past the end", &edit.EditNotes{Op: "insert", Insert: []edit.NoteRef{{At: 3800, Pitch: 72, Length: 480, Velocity: 96}}}, "past the loop end"},
 		{"unknown op", &edit.EditNotes{Op: "stretch"}, "choose a note operation"},
 		{"shared policy", &edit.EditNotes{Op: "quantize", Grid: 240, Shared: "detach"}, "shared must be"},
 		{"grid", &edit.EditNotes{Op: "quantize", Grid: 7}, "quantize grid"},
+		{"velocity and dv", &edit.EditNotes{Op: "velocity", Notes: []edit.NoteRef{ref}, Velocity: 90, DV: 8}, "set velocity (a new value) or dv (a change), not both"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			c.in.Entity = "pattern:take"
@@ -148,9 +186,9 @@ func TestEditNotesRefusesWhatAPerformanceCannotHold(t *testing.T) {
 	// Two notes of one pitch rounding to the same grid line, and a start that
 	// rounds later past the loop end.
 	crowded := performanceWith("  note 60 at=130ticks length=200ticks velocity=82;\n", "  note 60 at=350ticks length=100ticks velocity=82;\n")
-	expectNotesRefusal(t, crowded, &edit.EditNotes{Entity: "pattern:take", Op: "quantize", Grid: 240}, "two C4 notes would overlap at tick 240; a pitch plays one note at a time, so choose a finer grid")
+	expectNoteError(t, crowded, &edit.EditNotes{Entity: "pattern:take", Op: "quantize", Grid: 240}, "overlap", "note 60 (C4) at tick 350: quantize would put it at tick 240 to 340 as C4, over the C4 at tick 240 to 440; a pitch plays one note at a time, so choose a finer grid", map[string]any{"at": int64(350), "pitch": 60})
 	late := performanceWith("  note 60 at=3500ticks length=330ticks velocity=82;\n")
-	expectNotesRefusal(t, late, &edit.EditNotes{Entity: "pattern:take", Op: "quantize", Grid: 240}, "past the loop end")
+	expectNoteError(t, late, &edit.EditNotes{Entity: "pattern:take", Op: "quantize", Grid: 240}, "outside-loop", "note 60 (C4) at tick 3500: quantize would move it to tick 3600 and end it at tick 3930, past the loop end at tick 3840", nil)
 	var full []string
 	for i := range 512 {
 		full = append(full, fmt.Sprintf("  note %d at=%dticks length=5ticks velocity=90;\n", 36+i%64, i*7))
@@ -264,18 +302,18 @@ func TestEditNotesEditsStepPatternChordsTiesAndVelocity(t *testing.T) {
 }
 
 func TestEditNotesMergesAndCollapsesChords(t *testing.T) {
-	source := strings.Replace(stepMoves, "[c4 e4 g4]^?70 - . . c5 . . . // keep\n  velocity: 80 . . . 100 . . .", "[c4 e4]^ . g4 . c5 . . . // keep\n  velocity: 80 . 90 . 100 . . .", 1)
-	g4 := stepRef(2, 67, 1, 90)
-	// Same start and length: the moved note joins the chord, which keeps its accent and velocity.
-	expectNotesSource(t, source, strings.Replace(source, "[c4 e4]^ . g4 .", "[c4 e4 g4]^ . . .", 1), &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{g4}, DT: -480})
+	source := strings.Replace(stepMoves, "[c4 e4 g4]^?70 - . . c5 . . . // keep", "[c4 e4]^ . g4^ . c5 . . . // keep", 1)
+	g4 := stepRef(2, 67, 1, 80)
+	// Same start, length, accent, chance and velocity: the moved note joins the chord.
+	expectNotesSource(t, source, strings.Replace(source, "[c4 e4]^ . g4^ .", "[c4 e4 g4]^ . . .", 1), &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{g4}, DT: -480})
 	// Same start and pitch: the moved note (e4 up 3 semitones, g4) replaces the
-	// stationary g4 and carries its chord's accent and velocity; one pitch is
+	// unselected g4 and carries its chord's accent and velocity; one pitch is
 	// left in the chord, which becomes a single note.
 	e4 := stepRef(0, 64, 1, 80)
-	replaced := strings.NewReplacer("[c4 e4]^ . g4 .", "c4^ . g4^ .", "velocity: 80 . 90", "velocity: 80 . 80").Replace(source)
+	replaced := strings.Replace(source, "[c4 e4]^ . g4^ .", "c4^ . g4^ .", 1)
 	expectNotesSource(t, source, replaced, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{e4}, DT: 480, DP: 3})
 	// Moving one voice onto another of its own chord is refused.
-	expectNotesRefusal(t, source, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{stepRef(0, 60, 1, 80)}, DP: 4}, "two pitches of one chord would become equal")
+	expectNoteError(t, source, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{stepRef(0, 60, 1, 80)}, DP: 4}, "chord-pitches-equal", "step 1, c4: move would make it e4, equal to another pitch of its chord on step 1", nil)
 }
 
 func TestEditNotesRefusesWhatAStepGridCannotHold(t *testing.T) {
@@ -285,28 +323,73 @@ func TestEditNotesRefusesWhatAStepGridCannotHold(t *testing.T) {
 	slide := strings.Replace(stepMoves, "[c4 e4 g4]^?70 - . . c5", "[c4 e4 g4]^?70 . . . c5~", 1)
 	transposed := strings.Replace(stepMoves, "pattern p notes {", "pattern p notes transpose=24 {", 1)
 	for _, c := range []struct {
-		name, source string
-		in           *edit.EditNotes
-		want         string
+		name, source, code, want string
+		in                       *edit.EditNotes
 	}{
-		{"into a hold", stepMoves, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: -720}, "notes would overlap at step 2"},
-		{"over a later onset", stepMoves, &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{g4}, DL: 720}, "notes would overlap at step 5"},
-		{"past the end", stepMoves, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: 960}, "past the pattern start or end"},
-		{"resize past the end", stepMoves, &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{c5}, DL: 960}, "past the pattern end"},
-		{"different length", stepMoves, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: -960}, "share one length"},
-		{"fifth pitch", strings.Replace(four, "c5", "d5", 1), &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{stepRef(4, 74, 1, 100)}, DT: -960}, "at most 4 pitches"},
-		{"slide in a chord", slide, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{stepRef(4, 72, 1, 100)}, DT: -960}, "cannot slide or ratchet"},
-		{"pitch range", stepMoves, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DP: 56}, "MIDI 0–127"},
-		{"pitch range with transpose", transposed, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DP: 40}, "counting the pattern transpose"},
-		{"part of a step", stepMoves, &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: 100}, "whole steps of 240 ticks"},
-		{"tie alone", stepMoves, &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{stepRef(1, 67, 1, 80)}}, "a selected note changed"},
-		{"stale length", stepMoves, &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{stepRef(0, 67, 1, 80)}}, "a selected note changed"},
+		{"into a hold", stepMoves, "overlap", "step 5, c5: move would put it on step 2, inside the c4 and e4 and g4 on step 1, which holds through step 2; a new note ends the one before it", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: -720}},
+		{"over a later onset", stepMoves, "overlap", "step 1, c4: resize would hold it through step 5, over the c5 on step 5", &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{g4}, DL: 720}},
+		{"past the end", stepMoves, "outside-pattern", "step 5, c5: move would put it on step 9, 1 step long, past the pattern end (the pattern has 8 steps)", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: 960}},
+		{"resize past the end", stepMoves, "outside-pattern", "step 5, c5: resize to 5 steps would hold it past the pattern end at step 8", &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{c5}, DL: 960}},
+		{"too short", stepMoves, "too-short", "step 1, c4: resize would leave it 0 steps long", &edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{g4}, DL: -480}},
+		{"different length", stepMoves, "chord-length", "step 5, c5: move would start it, 1 step long, on step 1 with c4 and e4 and g4, 2 steps long; notes that start together share one length", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DT: -960}},
+		{"fifth pitch", strings.Replace(four, "c5", "d5", 1), "chord-size", "step 5, d5: move would add it to the chord of c4 and e4 and g4 and b4 on step 1, making 5 pitches; a chord holds at most 4", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{stepRef(4, 74, 1, 100)}, DT: -960}},
+		{"slide in a chord", slide, "chord-articulation", "step 5, c5: move would make a chord of c5 and c4 and e4 and g4 on step 1, and one of them slides or ratchets", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{stepRef(4, 72, 1, 100)}, DT: -960}},
+		{"pitch range", stepMoves, "pitch-range", "step 5, c5: move would make it MIDI 128, which with the pattern transpose of +0 leaves 0–127", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DP: 56}},
+		{"pitch range with transpose", transposed, "pitch-range", "step 5, c5: move would make it MIDI 112, which with the pattern transpose of +24 leaves 0–127", &edit.EditNotes{Op: "move", Notes: []edit.NoteRef{c5}, DP: 40}},
+		{"tie alone", stepMoves, "note-changed", "the g4 at tick 240: a selected note changed (that step holds the note from step 1; a hold cannot be selected alone)", &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{stepRef(1, 67, 1, 80)}}},
+		{"stale length", stepMoves, "note-changed", "the g4 at tick 0: a selected note changed (it lasts 480 ticks, not 240)", &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{stepRef(0, 67, 1, 80)}}},
+		{"off the step grid", stepMoves, "note-changed", "the c5 at tick 970: a selected note changed (it does not start on a 240-tick step)", &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 970, Pitch: 72, Length: 240, Velocity: 100}}}},
+		{"lane in a notes pattern", stepMoves, "no-lanes", "a notes pattern has no drum lanes", &edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 960, Pitch: 72, Lane: "bd", Length: 240, Velocity: 100}}}},
+		{"insert off the grid", stepMoves, "not-whole-steps", "the d4 at tick 1500: insert needs a start and a length of whole 240-tick steps", &edit.EditNotes{Op: "insert", Insert: []edit.NoteRef{{At: 1500, Pitch: 62, Length: 240, Velocity: 100}}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			c.in.Entity = "pattern:p"
-			expectNotesRefusal(t, c.source, c.in, c.want)
+			expectNoteError(t, c.source, c.in, c.code, c.want, nil)
 		})
 	}
+	expectNoteError(t, stepMoves, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{c5}, DT: 960}, "outside-pattern", "step 5, c5", map[string]any{"at": int64(960), "step": 5, "pitch": 72})
+	expectNotesRefusal(t, stepMoves, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{c5}, DT: 100}, "a move of 100 ticks is not a whole number of 240-tick steps")
+}
+
+const mixedDynamics = `cicada 2
+instrument pad { voice poly { out = sine(pitch) * env(gate, 300ms) * 0.1 } }
+track keys pad {}
+pattern p notes {
+  c4 e4?50 . .
+  velocity: 100 60 . .
+}
+scene verse { keys=p }
+song { verse }
+`
+
+// A merge keeps one accent, chance and velocity for the chord. Quantize
+// refuses to drop the moved note's own and names what it would lose; notes
+// whose dynamics match still merge.
+func TestEditNotesRefusesAMergeThatChangesDynamics(t *testing.T) {
+	expectNoteError(t, mixedDynamics, &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960}, "chord-modifiers",
+		"step 2, e4: after quantize, it would join c4 in a chord on step 1 and lose its 50% chance and play at velocity 100 instead of 60; notes that start together share accent, chance and velocity, so make them match first",
+		map[string]any{"at": int64(240), "step": 2, "pitch": 64})
+	accented := strings.NewReplacer("c4 e4?50", "c4^ e4", "velocity: 100 60", "velocity: 100 .").Replace(mixedDynamics)
+	expectNoteError(t, accented, &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960}, "chord-modifiers", "step 2, e4: after quantize, it would join c4 in a chord on step 1 and take an accent from c4", nil)
+	matching := strings.NewReplacer("c4 e4?50", "c4 e4", "velocity: 100 60", "velocity: 100 .").Replace(mixedDynamics)
+	expectNotesSource(t, matching, strings.Replace(matching, "c4 e4 . .", "[c4 e4] . . .", 1), &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960})
+}
+
+// A hold after a rest is silent. A note placed just before it would absorb it
+// and grow; the edit writes a rest there instead, so the note keeps its length.
+func TestEditNotesKeepsSilentHoldsSilent(t *testing.T) {
+	source := strings.Replace(stepMoves, "[c4 e4 g4]^?70 - . . c5 . . . // keep\n  velocity: 80 . . . 100 . . .", ". . . c4 . - . . // keep", 1)
+	expectNotesSource(t, source, strings.Replace(source, ". . . c4 . - . .", ". . . . c4 . . .", 1), &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960})
+	// Untouched, the silent hold stays as written.
+	expectNotesSource(t, source, strings.Replace(source, ". . . c4 . - . .", ". . c4 . . - . .", 1), &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{stepRef(3, 60, 1, 100)}, DT: -240})
+}
+
+// A chord that loses all but one voice keeps its comment, on a line that ends
+// like the rest of the file.
+func TestEditNotesKeepsChordCommentLineEndings(t *testing.T) {
+	source := strings.Replace(editableChord, "  c4 e4]^?70 - - - e4 . . . }", "  c4 e4]^?70 - - - g4 . . . }", 1)
+	want := strings.Replace(source, "[a3 // keep this voicing annotation\n  c4 e4]^?70", "// keep this voicing annotation\na3^?70", 1)
+	expectNotesSource(t, source, want, &edit.EditNotes{Entity: "pattern:harmony", Op: "delete", Notes: []edit.NoteRef{stepRef(0, 60, 4, 100), stepRef(0, 64, 4, 100)}})
 }
 
 func TestEditNotesAddsAVelocityRowWhenNeeded(t *testing.T) {
@@ -337,7 +420,7 @@ func TestEditNotesExpandsPhraseUsesInsideThePattern(t *testing.T) {
 
 func TestEditNotesRefusesAcidChordsAndTupletGroups(t *testing.T) {
 	acid := "track bass acid {}\npattern p acid { c4 . e4 . }\nscene main { bass=p }\nsong { main }\n"
-	expectNotesRefusal(t, acid, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{stepRef(2, 64, 1, 100)}, DT: -480}, "an acid pattern plays one pitch per step")
+	expectNoteError(t, acid, &edit.EditNotes{Entity: "pattern:p", Op: "move", Notes: []edit.NoteRef{stepRef(2, 64, 1, 100)}, DT: -480}, "acid-one-pitch", "step 3, e4: move would put it on step 1 with c4; an acid pattern plays one pitch per step", nil)
 	tuplet := "track bass acid {}\npattern p acid { [c4 e4 g4] . e4 . }\nscene main { bass=p }\nsong { main }\n"
 	expectNotesRefusal(t, tuplet, &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960}, "tuplet groups")
 }
@@ -365,25 +448,24 @@ func TestEditNotesEditsDrumLanes(t *testing.T) {
 	expectNotesSource(t, drumNotes, strings.Replace(drumNotes, "bd: x . . x", "bd: . . . x", 1), &edit.EditNotes{Entity: "pattern:beat", Op: "delete", Notes: []edit.NoteRef{{At: 0, Lane: "bd", Length: 240, Velocity: 100}}})
 	expectNotesSource(t, drumNotes, strings.Replace(drumNotes, "bd: x . . x", "bd: x X . x", 1), &edit.EditNotes{Entity: "pattern:beat", Op: "insert", Insert: []edit.NoteRef{{At: 240, Lane: "bd", Length: 240, Velocity: 127}}})
 	for _, c := range []struct {
-		in   *edit.EditNotes
-		want string
+		in         *edit.EditNotes
+		code, want string
 	}{
-		{&edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{hit}, DL: 240}, "drum hits have a fixed length"},
-		{&edit.EditNotes{Op: "move", Notes: []edit.NoteRef{hit}, DP: 1}, "past the first or last lane"},
-		{&edit.EditNotes{Op: "move", Notes: []edit.NoteRef{hit}, DT: 960}, "past the pattern start or end"},
-		{&edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 0, Lane: "bd", Length: 240, Velocity: 100}, {At: 720, Lane: "bd", Length: 240, Velocity: 100}}, DT: 0, DP: 0}, ""},
-		{&edit.EditNotes{Op: "quantize", Grid: 3840}, "two selected hits would land on bd step 1"},
-		{&edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 240, Lane: "bd", Length: 240, Velocity: 100}}}, "a selected note changed"},
-		{&edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 0, Lane: "cp", Length: 240, Velocity: 100}}}, "a selected note changed"},
+		{&edit.EditNotes{Op: "resize", Notes: []edit.NoteRef{hit}, DL: 240}, "fixed-length", "sd step 14: drum hits have a fixed length of one step"},
+		{&edit.EditNotes{Op: "move", Notes: []edit.NoteRef{hit}, DP: 1}, "outside-lanes", "sd step 14: move by +1 lanes would leave the pattern's 2 lanes"},
+		{&edit.EditNotes{Op: "move", Notes: []edit.NoteRef{hit}, DT: 960}, "outside-pattern", "sd step 14: move would put it on step 18, outside the pattern's 16 steps"},
+		{&edit.EditNotes{Op: "quantize", Grid: 3840}, "same-cell", "bd step 4: quantize would put it on bd step 1, where another selected hit lands or stays"},
+		{&edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 240, Lane: "bd", Length: 240, Velocity: 100}}}, "note-changed", "the hit at tick 240 in lane bd: a selected hit changed (no hit is there)"},
+		{&edit.EditNotes{Op: "delete", Notes: []edit.NoteRef{{At: 0, Lane: "cp", Length: 240, Velocity: 100}}}, "note-changed", `the hit at tick 0 in lane cp: a selected hit changed (the pattern has no lane "cp")`},
+		{&edit.EditNotes{Op: "insert", Insert: []edit.NoteRef{{At: 0, Lane: "cp", Length: 240, Velocity: 100}}}, "unknown-lane", `pattern beat has no drum lane "cp"`},
+		{&edit.EditNotes{Op: "insert", Insert: []edit.NoteRef{{At: 0, Lane: "bd", Length: 480, Velocity: 100}}}, "fixed-length", "a drum hit lasts one 240-tick step, not 480 ticks"},
 	} {
 		c.in.Entity = "pattern:beat"
-		if c.want == "" {
-			if result := mustNotesEdit(t, drumNotes, c.in); !result.Unchanged {
-				t.Fatal("a move by zero changed the pattern")
-			}
-			continue
-		}
-		expectNotesRefusal(t, drumNotes, c.in, c.want)
+		expectNoteError(t, drumNotes, c.in, c.code, c.want, nil)
+	}
+	expectNoteError(t, drumNotes, &edit.EditNotes{Entity: "pattern:beat", Op: "resize", Notes: []edit.NoteRef{hit}, DL: 240}, "fixed-length", "sd step 14", map[string]any{"at": int64(3120), "step": 14, "lane": "sd"})
+	if result := mustNotesEdit(t, drumNotes, &edit.EditNotes{Entity: "pattern:beat", Op: "move", Notes: []edit.NoteRef{{At: 0, Lane: "bd", Length: 240, Velocity: 100}, {At: 720, Lane: "bd", Length: 240, Velocity: 100}}}); !result.Unchanged {
+		t.Fatal("a move by zero changed the pattern")
 	}
 }
 
@@ -399,7 +481,7 @@ func TestFidelityRule2_EditNotesTouchesOnlyItsTokens(t *testing.T) {
 	}
 	// Selected notes that land together are refused, never silently replaced.
 	repeated := strings.Replace(stepMoves, "c5 . . . // keep", "c5 c5 . . // keep", 1)
-	expectNotesRefusal(t, repeated, &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960}, "two selected notes would land on the same pitch")
+	expectNoteError(t, repeated, &edit.EditNotes{Entity: "pattern:p", Op: "quantize", Grid: 960}, "same-pitch", "step 6, c5: quantize would put it on step 5 as c5, where another selected c5 lands or stays", map[string]any{"at": int64(1200), "step": 6, "pitch": 72})
 }
 
 func TestEditNotesOneBatchOfSixteenNotes(t *testing.T) {
@@ -495,4 +577,43 @@ func BenchmarkEditNotesQuantize64Steps(b *testing.B) {
 
 func sourceNoteName(pitch int) string {
 	return [...]string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}[pitch%12] + fmt.Sprint(pitch/12-1)
+}
+
+type countingCompiler struct {
+	compiler edit.Compiler
+	calls    *int
+}
+
+func (c countingCompiler) Compile(source []byte, files map[string][]byte) (*edit.Plan, error) {
+	*c.calls++
+	return c.compiler.Compile(source, files)
+}
+
+// One batch compiles the score twice, to resolve the notes and to check the
+// candidate, and parses the project at most twice more: Studio's host
+// ParseProject is the expensive call these counts guard.
+func TestEditNotesCompilesTwiceAndParsesTheProjectAtMostTwice(t *testing.T) {
+	for _, c := range []struct {
+		name, source string
+		in           *edit.EditNotes
+		parses       int
+	}{
+		{"performance", notesPerformance, &edit.EditNotes{Entity: "pattern:take", Op: "quantize", Grid: 240}, 1},
+		{"step pattern", stepNotes, &edit.EditNotes{Entity: "pattern:harmony", Op: "quantize", Grid: 960}, 2},
+		{"drum lanes", drumNotes, &edit.EditNotes{Entity: "pattern:beat", Op: "quantize", Grid: 960}, 2},
+	} {
+		compiles, parses := 0, 0
+		opts := edit.Options{Compiler: countingCompiler{gridCompiler{}, &compiles}, ParseProject: func(source []byte, _ map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
+			parses++
+			score, ds := notation.Parse(source)
+			return score, ds, nil
+		}}
+		result, err := edit.Apply([]byte(c.source), edit.Envelope{Version: 1, Intents: []edit.Intent{c.in}}, opts)
+		if err != nil || result.Unchanged {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if compiles != 2 || parses != c.parses {
+			t.Fatalf("%s: %d compiles and %d project parses, want 2 and %d", c.name, compiles, parses, c.parses)
+		}
+	}
 }

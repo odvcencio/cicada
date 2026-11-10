@@ -68,8 +68,49 @@ func init() {
 	Handle("editnotes", editNotes)
 }
 
-// errNoteChanged is the refusal for a named note that is missing or differs.
-var errNoteChanged = fmt.Errorf("a selected note changed; select the notes again")
+// NoteError is a refusal about one note. Error() names the note for a person;
+// Code and the note's identity let a host report it as data. At is the start in
+// ticks. Step is one-based in step patterns and drum lanes, and 0 in played
+// performances. Pitch is the stored MIDI pitch; drum hits have a Lane instead.
+type NoteError struct {
+	Code    string
+	At      int64
+	Step    int
+	Pitch   *int
+	Lane    string
+	Message string
+}
+
+func (e *NoteError) Error() string { return e.Message }
+
+// Note returns the note's identity as JSON-ready fields.
+func (e *NoteError) Note() map[string]any {
+	note := map[string]any{"at": e.At}
+	if e.Step > 0 {
+		note["step"] = e.Step
+	}
+	if e.Pitch != nil {
+		note["pitch"] = *e.Pitch
+	}
+	if e.Lane != "" {
+		note["lane"] = e.Lane
+	}
+	return note
+}
+
+// NoteErrorCodes lists every reason code a NoteError can carry.
+var NoteErrorCodes = []string{
+	"invalid-note", "note-changed", "no-lanes", "not-whole-steps", "outside-pattern",
+	"outside-lanes", "outside-loop", "pitch-range", "too-short", "gesture-cut",
+	"overlap", "same-pitch", "same-cell", "chord-pitches-equal", "chord-size",
+	"chord-articulation", "chord-length", "chord-modifiers", "acid-one-pitch",
+	"fixed-length", "unknown-lane",
+}
+
+// performedNoteError names a note of a played performance by pitch and tick.
+func performedNoteError(code string, at int64, pitch int, format string, args ...any) *NoteError {
+	return &NoteError{Code: code, At: at, Pitch: &pitch, Message: fmt.Sprintf("note %d (%s) at tick %d: ", pitch, notePitchName(pitch), at) + fmt.Sprintf(format, args...)}
+}
 
 // Validate checks the shape of a batch without reading a score.
 func (in *EditNotes) Validate() error {
@@ -87,14 +128,19 @@ func (in *EditNotes) Validate() error {
 		return fmt.Errorf("note edits expand phrase uses inside the pattern; shared must be \"pattern\"")
 	}
 	const tickLimit = int64(1) << 40
-	refs := append(append([]NoteRef(nil), in.Notes...), in.Insert...)
-	for _, ref := range refs {
-		if ref.At < 0 || ref.At > tickLimit || ref.Length < 0 || ref.Length > tickLimit || ref.Pitch < 0 || ref.Pitch > 127 || ref.Velocity < 0 || ref.Velocity > 127 {
-			return fmt.Errorf("each note needs a start and length of 0 to 2^40 ticks, MIDI pitch 0–127 and velocity 0–127")
+	for field, refs := range map[string][]NoteRef{"notes": in.Notes, "insert": in.Insert} {
+		for i, ref := range refs {
+			if ref.At < 0 || ref.At > tickLimit || ref.Length < 0 || ref.Length > tickLimit || ref.Pitch < 0 || ref.Pitch > 127 || ref.Velocity < 0 || ref.Velocity > 127 {
+				pitch := ref.Pitch
+				return &NoteError{Code: "invalid-note", At: ref.At, Pitch: &pitch, Lane: ref.Lane, Message: fmt.Sprintf("%s[%d] (at %d, pitch %d, length %d, velocity %d): a note needs a start and length of 0 to 2^40 ticks, MIDI pitch 0–127 and velocity 0–127", field, i, ref.At, ref.Pitch, ref.Length, ref.Velocity)}
+			}
 		}
 	}
 	if in.DT < -tickLimit || in.DT > tickLimit || in.DL < -tickLimit || in.DL > tickLimit || in.DP < -127 || in.DP > 127 || in.DV < -126 || in.DV > 126 || in.Velocity < 0 || in.Velocity > 127 {
-		return fmt.Errorf("note changes are out of range")
+		return fmt.Errorf("note changes are out of range: dt and dl within ±2^40 ticks, dp within ±127, dv within ±126, velocity 1–127")
+	}
+	if in.Velocity != 0 && in.DV != 0 {
+		return fmt.Errorf("set velocity (a new value) or dv (a change), not both")
 	}
 	switch in.Op {
 	case "move":
@@ -224,6 +270,14 @@ func notesLabel(id string, in *EditNotes, count int) string {
 	return fmt.Sprintf("Notes · %s · %d %s added", id, count, noun)
 }
 
+// opName is the operation's name as a person reads it in a refusal.
+func opName(in *EditNotes) string {
+	if in.Op == "move" && in.Copy {
+		return "copy"
+	}
+	return in.Op
+}
+
 func clampVelocity(value int) int {
 	return max(1, min(127, value))
 }
@@ -278,16 +332,25 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 	var selected []int
 	seen := map[int]bool{}
 	for _, ref := range in.Notes {
+		changed := func(why string, args ...any) error {
+			return performedNoteError("note-changed", ref.At, ref.Pitch, "a selected note changed ("+why+"); select the notes again", args...)
+		}
 		if ref.Lane != "" {
-			return fmt.Errorf("a played performance has no drum lanes")
+			return performedNoteError("no-lanes", ref.At, ref.Pitch, "a played performance has no drum lanes, so lane %q cannot be named", ref.Lane)
 		}
 		index, ok := byKey[key{ref.At, ref.Pitch}]
-		if !ok || seen[index] {
-			return errNoteChanged
+		if !ok {
+			return changed("no note of this pitch starts at this tick")
+		}
+		if seen[index] {
+			return changed("the batch names it twice")
 		}
 		note := performance.Notes[index]
-		if note.EndTick-note.Tick != ref.Length || int(note.Velocity) != ref.Velocity {
-			return errNoteChanged
+		if note.EndTick-note.Tick != ref.Length {
+			return changed("it lasts %d ticks, not %d", note.EndTick-note.Tick, ref.Length)
+		}
+		if int(note.Velocity) != ref.Velocity {
+			return changed("its velocity is %d, not %d", note.Velocity, ref.Velocity)
 		}
 		seen[index] = true
 		selected = append(selected, index)
@@ -300,29 +363,36 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 	pitchOK := func(pitch int) bool {
 		return pitch >= 0 && pitch <= 127 && pitch+transpose >= 0 && pitch+transpose <= 127
 	}
+	// origins[i] is note i as the request found it, so a refusal can name it.
+	origins := append([]seq.PerformedNote(nil), performance.Notes...)
 	length := performance.LengthTicks
 	changed := 0
 	switch in.Op {
 	case "move":
 		var copies []seq.PerformedNote
 		for _, index := range selected {
-			note := performance.Notes[index]
+			original := performance.Notes[index]
+			note := original
 			note.Tick += in.DT
 			note.EndTick += in.DT
 			pitch := int(note.Note) + in.DP
+			refuse := func(code, format string, args ...any) error {
+				return performedNoteError(code, original.Tick, int(original.Note), opName(in)+" "+format, args...)
+			}
 			if note.Tick < 0 {
-				return fmt.Errorf("notes cannot move before the start of the loop")
+				return refuse("outside-loop", "would start it at tick %d, before the loop starts", note.Tick)
 			}
 			if note.EndTick > length {
-				return fmt.Errorf("a moved note would end past the loop end at tick %d; lengthen the loop first", length)
+				return refuse("outside-loop", "would end it at tick %d, past the loop end at tick %d; lengthen the loop first", note.EndTick, length)
 			}
 			if !pitchOK(pitch) {
-				return fmt.Errorf("a moved note would leave MIDI 0–127, counting the pattern transpose")
+				return refuse("pitch-range", "would make it MIDI %d, which with the pattern transpose of %+d leaves 0–127", pitch, transpose)
 			}
 			note.Note = uint8(pitch)
 			if in.Copy {
 				note.Expressions = append([]seq.PerformedExpression(nil), note.Expressions...)
 				copies = append(copies, note)
+				origins = append(origins, original)
 			} else {
 				performance.Notes[index] = note
 			}
@@ -336,13 +406,13 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 			note := &performance.Notes[index]
 			end := note.EndTick + in.DL
 			if end <= note.Tick {
-				return fmt.Errorf("a note must stay at least one tick long")
+				return performedNoteError("too-short", note.Tick, int(note.Note), "resize would leave it %d ticks long; a note lasts at least one tick", end-note.Tick)
 			}
 			if end > length {
-				return fmt.Errorf("a note cannot end past the loop end at tick %d; lengthen the loop first", length)
+				return performedNoteError("outside-loop", note.Tick, int(note.Note), "resize would end it at tick %d, past the loop end at tick %d; lengthen the loop first", end, length)
 			}
 			if last := len(note.Expressions) - 1; last >= 0 && note.Expressions[last].Tick > end-note.Tick {
-				return fmt.Errorf("a note with gesture points cannot become shorter than its last point")
+				return performedNoteError("gesture-cut", note.Tick, int(note.Note), "resize to %d ticks would cut its gesture point at %d ticks; a note cannot become shorter than its last gesture point", end-note.Tick, note.Expressions[last].Tick)
 			}
 			if end != note.EndTick {
 				changed++
@@ -365,20 +435,23 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 		sort.Sort(sort.Reverse(sort.IntSlice(selected)))
 		for _, index := range selected {
 			performance.Notes = append(performance.Notes[:index], performance.Notes[index+1:]...)
+			origins = append(origins[:index], origins[index+1:]...)
 		}
 		changed = len(selected)
 	case "insert":
 		for _, ref := range in.Insert {
 			if ref.Lane != "" {
-				return fmt.Errorf("a played performance has no drum lanes")
+				return performedNoteError("no-lanes", ref.At, ref.Pitch, "a played performance has no drum lanes, so lane %q cannot be named", ref.Lane)
 			}
 			if ref.At+ref.Length > length {
-				return fmt.Errorf("an inserted note would end past the loop end at tick %d; lengthen the loop first", length)
+				return performedNoteError("outside-loop", ref.At, ref.Pitch, "insert would end it at tick %d, past the loop end at tick %d; lengthen the loop first", ref.At+ref.Length, length)
 			}
 			if !pitchOK(ref.Pitch) {
-				return fmt.Errorf("an inserted note must stay inside MIDI 0–127, counting the pattern transpose")
+				return performedNoteError("pitch-range", ref.At, ref.Pitch, "insert would place MIDI %d, which with the pattern transpose of %+d leaves 0–127", ref.Pitch, transpose)
 			}
-			performance.Notes = append(performance.Notes, seq.PerformedNote{Tick: ref.At, EndTick: ref.At + ref.Length, Note: uint8(ref.Pitch), Velocity: uint8(ref.Velocity)})
+			inserted := seq.PerformedNote{Tick: ref.At, EndTick: ref.At + ref.Length, Note: uint8(ref.Pitch), Velocity: uint8(ref.Velocity)}
+			performance.Notes = append(performance.Notes, inserted)
+			origins = append(origins, inserted)
 		}
 		changed = len(in.Insert)
 	case "quantize":
@@ -394,7 +467,7 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 			}
 			end := note.EndTick + tick - note.Tick
 			if end > length {
-				return fmt.Errorf("quantizing would move the %s at tick %d past the loop end; lengthen the loop or choose a finer grid", notePitchName(int(note.Note)), note.Tick)
+				return performedNoteError("outside-loop", note.Tick, int(note.Note), "quantize would move it to tick %d and end it at tick %d, past the loop end at tick %d; lengthen the loop or choose a finer grid", tick, end, length)
 			}
 			note.Tick, note.EndTick = tick, end
 			changed++
@@ -406,7 +479,7 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 	if len(performance.Notes) > seq.MaxPerformanceNotes {
 		return fmt.Errorf("a performance may contain at most %d notes", seq.MaxPerformanceNotes)
 	}
-	if err := performedOverlap(performance.Notes, in.Op == "quantize"); err != nil {
+	if err := performedOverlap(performance.Notes, origins, in); err != nil {
 		return err
 	}
 	if err := performance.Validate(); err != nil {
@@ -419,9 +492,10 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 	return nil
 }
 
-// performedOverlap names the first pair of same-pitch gates that overlap.
-// seq.Performance.Validate refuses them too, without saying where.
-func performedOverlap(notes []seq.PerformedNote, quantize bool) error {
+// performedOverlap names the first pair of same-pitch gates that overlap,
+// by the note the batch moved, as the request found it. seq.Performance.Validate
+// refuses them too, without saying where.
+func performedOverlap(notes, origins []seq.PerformedNote, in *EditNotes) error {
 	order := make([]int, len(notes))
 	for i := range order {
 		order[i] = i
@@ -433,15 +507,24 @@ func performedOverlap(notes []seq.PerformedNote, quantize bool) error {
 		}
 		return x.Tick < y.Tick
 	})
+	same := func(a, b seq.PerformedNote) bool {
+		return a.Tick == b.Tick && a.EndTick == b.EndTick && a.Note == b.Note
+	}
 	for i := 1; i < len(order); i++ {
-		previous, note := notes[order[i-1]], notes[order[i]]
-		if previous.Note == note.Note && note.Tick < previous.EndTick {
-			hint := "move one of them first"
-			if quantize {
-				hint = "choose a finer grid"
-			}
-			return fmt.Errorf("two %s notes would overlap at tick %d; a pitch plays one note at a time, so %s", notePitchName(int(note.Note)), note.Tick, hint)
+		earlier, later := order[i-1], order[i]
+		if notes[earlier].Note != notes[later].Note || notes[later].Tick >= notes[earlier].EndTick {
+			continue
 		}
+		culprit, other := later, earlier
+		if same(notes[later], origins[later]) {
+			culprit, other = earlier, later
+		}
+		hint := "move one of them first"
+		if in.Op == "quantize" {
+			hint = "choose a finer grid"
+		}
+		note, origin, them := notes[culprit], origins[culprit], notes[other]
+		return performedNoteError("overlap", origin.Tick, int(origin.Note), "%s would put it at tick %d to %d as %s, over the %s at tick %d to %d; a pitch plays one note at a time, so %s", opName(in), note.Tick, note.EndTick, notePitchName(int(note.Note)), notePitchName(int(them.Note)), them.Tick, them.EndTick, hint)
 	}
 	return nil
 }
@@ -454,19 +537,30 @@ func editGridNotes(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	if err := patternPreflight(ctx); err != nil {
-		return err
-	}
-	// Expand phrase uses inside this pattern, as range edits do, so each step
-	// has its own token. The expansion is written only with a real change.
-	local, err := independentPatternSource(ctx, id)
-	if err != nil {
-		return err
-	}
-	working := sourceContext(ctx, local)
+	// One parse validates the project (gridSourceEdit gives this context the
+	// whole project) and finds the pattern. Phrase uses are expanded inside
+	// this pattern, as range edits do, only when it has any; the expansion is
+	// written only with a real change.
+	local := ctx.Source
+	working := ctx
 	score, ds := working.Parse()
 	if score == nil || hasErrors(ds) {
-		return fmt.Errorf("pattern must validate before a note edit")
+		return fmt.Errorf("score must validate before a note edit")
+	}
+	uses := false
+	for _, pattern := range score.Patterns {
+		for _, part := range pattern.Parts {
+			uses = uses || pattern.Name == id && part.Use != nil
+		}
+	}
+	if uses {
+		if local, err = independentPatternSource(ctx, id); err != nil {
+			return err
+		}
+		working = sourceContext(ctx, local)
+		if score, ds = working.Parse(); score == nil || hasErrors(ds) {
+			return fmt.Errorf("pattern must validate after expanding its phrase uses")
+		}
 	}
 	plan, err := working.CurrentPlan()
 	if err != nil || plan == nil {
@@ -522,9 +616,56 @@ type gridNotes struct {
 // whole converts a tick amount to whole steps, refusing anything else.
 func (g gridNotes) whole(ticks int64, what string) (int, error) {
 	if ticks%g.step != 0 {
-		return 0, fmt.Errorf("%s must be whole steps of %d ticks in this pattern; quantize a performance before pasting it into a step pattern", what, g.step)
+		return 0, fmt.Errorf("%s of %d ticks is not a whole number of %d-tick steps in this pattern; quantize a performance before pasting it into a step pattern", what, ticks, g.step)
 	}
 	return int(ticks / g.step), nil
+}
+
+func stepsText(n int) string {
+	if n == 1 {
+		return "1 step"
+	}
+	return strconv.Itoa(n) + " steps"
+}
+
+// noteAt names a note of a step pattern by its one-based step and spelling.
+func (g gridNotes) noteAt(code string, step, pitch int, format string, args ...any) *NoteError {
+	return &NoteError{Code: code, At: int64(step) * g.step, Step: step + 1, Pitch: &pitch, Message: fmt.Sprintf("step %d, %s: ", step+1, sourcePitch(pitch)) + fmt.Sprintf(format, args...)}
+}
+
+// origin returns where the request found an onset: its source step and its
+// first pitch before the batch moved it.
+func (g gridNotes) origin(o *stepOnset) (step, pitch int) {
+	if o.origin == nil {
+		return o.start, o.pitches()[0]
+	}
+	if o.base != nil {
+		return o.origin.start, o.pitches()[0] - o.shift
+	}
+	return o.origin.start, o.add[0].pitch - g.in.DP
+}
+
+// hitAt names a drum hit by its lane and one-based step.
+func (g gridNotes) hitAt(code string, step int, lane, format string, args ...any) *NoteError {
+	return &NoteError{Code: code, At: int64(step) * g.step, Step: step + 1, Lane: lane, Message: fmt.Sprintf("%s step %d: ", lane, step+1) + fmt.Sprintf(format, args...)}
+}
+
+// refAt names a note exactly as a request named it, for a start that is not a
+// whole step or a step outside the pattern.
+func (g gridNotes) refAt(code string, ref NoteRef, format string, args ...any) *NoteError {
+	pitch := ref.Pitch
+	err := &NoteError{Code: code, At: ref.At, Lane: ref.Lane}
+	if ref.Lane != "" {
+		err.Message = fmt.Sprintf("the hit at tick %d in lane %s: ", ref.At, ref.Lane)
+	} else {
+		err.Pitch = &pitch
+		err.Message = fmt.Sprintf("the %s at tick %d: ", sourcePitch(pitch), ref.At)
+	}
+	if ref.At%g.step == 0 {
+		err.Step = int(ref.At/g.step) + 1
+	}
+	err.Message += fmt.Sprintf(format, args...)
+	return err
 }
 
 // quantizeSteps returns the grid in steps, or 0 when the step grid is already
@@ -619,12 +760,25 @@ func (g gridNotes) drums() ([]Span, int, error) {
 	seen := map[cell]bool{}
 	for _, ref := range in.Notes {
 		l, ok := laneIndex[ref.Lane]
-		if !ok || ref.At%g.step != 0 || ref.Length != g.step {
-			return nil, 0, errNoteChanged
+		changed := func(why string, args ...any) error {
+			return g.refAt("note-changed", ref, "a selected hit changed ("+why+"); select the notes again", args...)
+		}
+		switch {
+		case !ok:
+			return nil, 0, changed("the pattern has no lane %q", ref.Lane)
+		case ref.At%g.step != 0:
+			return nil, 0, changed("it does not start on a %d-tick step", g.step)
+		case ref.Length != g.step:
+			return nil, 0, changed("a hit lasts one %d-tick step, not %d ticks", g.step, ref.Length)
 		}
 		c := cell{l, int(ref.At / g.step)}
-		if c.step >= count || hit(c) == nil || seen[c] || int(hit(c).Velocity) != ref.Velocity {
-			return nil, 0, errNoteChanged
+		switch {
+		case c.step >= count || hit(c) == nil:
+			return nil, 0, changed("no hit is there")
+		case seen[c]:
+			return nil, 0, changed("the batch names it twice")
+		case int(hit(c).Velocity) != ref.Velocity:
+			return nil, 0, changed("its velocity is %d, not %d", hit(c).Velocity, ref.Velocity)
 		}
 		seen[c] = true
 		selected = append(selected, c)
@@ -667,7 +821,7 @@ func (g gridNotes) drums() ([]Span, int, error) {
 		for _, from := range order {
 			to := moves[from]
 			if taken[to] {
-				return fmt.Errorf("two selected hits would land on %s step %d; choose a finer grid or fewer hits", lanes[to.lane].Name, to.step+1)
+				return g.hitAt("same-cell", from.step, lanes[from.lane].Name, "%s would put it on %s step %d, where another selected hit lands or stays; choose a finer grid or fewer hits", opName(in), lanes[to.lane].Name, to.step+1)
 			}
 			taken[to] = true
 			after[to] = text[from] // a moved hit replaces an unselected hit in its cell
@@ -684,10 +838,10 @@ func (g gridNotes) drums() ([]Span, int, error) {
 		for _, from := range selected {
 			to := cell{from.lane + in.DP, from.step + dt}
 			if to.lane < 0 || to.lane >= len(lanes) {
-				return nil, 0, fmt.Errorf("selected hits cannot move past the first or last lane")
+				return nil, 0, g.hitAt("outside-lanes", from.step, lanes[from.lane].Name, "%s by %+d lanes would leave the pattern's %d lanes", opName(in), in.DP, len(lanes))
 			}
 			if to.step < 0 || to.step >= count {
-				return nil, 0, fmt.Errorf("selected hits cannot move past the pattern start or end")
+				return nil, 0, g.hitAt("outside-pattern", from.step, lanes[from.lane].Name, "%s would put it on step %d, outside the pattern's %d steps", opName(in), to.step+1, count)
 			}
 			if to != from {
 				moves[from] = to
@@ -714,7 +868,8 @@ func (g gridNotes) drums() ([]Span, int, error) {
 		}
 		changed = len(moves)
 	case "resize":
-		return nil, 0, fmt.Errorf("drum hits have a fixed length; change ratchet in the inspector instead")
+		first := selected[0]
+		return nil, 0, g.hitAt("fixed-length", first.step, lanes[first.lane].Name, "drum hits have a fixed length of one step; change ratchet in the inspector instead")
 	case "velocity":
 		for _, c := range selected {
 			text := after[c]
@@ -733,17 +888,17 @@ func (g gridNotes) drums() ([]Span, int, error) {
 		for _, ref := range in.Insert {
 			l, ok := laneIndex[ref.Lane]
 			if !ok {
-				return nil, 0, fmt.Errorf("pattern %s has no drum lane %q", g.compiled.ID, ref.Lane)
+				return nil, 0, g.refAt("unknown-lane", ref, "pattern %s has no drum lane %q", g.compiled.ID, ref.Lane)
 			}
-			at, err := g.whole(ref.At, "an inserted hit")
-			if err != nil {
-				return nil, 0, err
+			if ref.At%g.step != 0 {
+				return nil, 0, g.refAt("not-whole-steps", ref, "insert needs a start on a %d-tick step", g.step)
 			}
+			at := int(ref.At / g.step)
 			if ref.Length != g.step {
-				return nil, 0, fmt.Errorf("a drum hit lasts one %d-tick step", g.step)
+				return nil, 0, g.refAt("fixed-length", ref, "a drum hit lasts one %d-tick step, not %d ticks", g.step, ref.Length)
 			}
 			if at >= count {
-				return nil, 0, fmt.Errorf("an inserted hit must start inside the pattern")
+				return nil, 0, g.refAt("outside-pattern", ref, "insert would put it on step %d, outside the pattern's %d steps", at+1, count)
 			}
 			after[cell{l, at}] = drumLevel(ref.Velocity)
 		}
@@ -875,7 +1030,7 @@ func voiceText(voice stepVoice) string {
 // comments and modifiers wherever the onset keeps them.
 func (o *stepOnset) text() (string, error) {
 	if o.base == nil {
-		return spelledOnset(o.add, o.suffix, nil), nil
+		return spelledOnset(o.add, o.suffix, nil, ""), nil
 	}
 	token := o.base.token
 	chord := len(token.ChordPitches) > 0
@@ -895,7 +1050,7 @@ func (o *stepOnset) text() (string, error) {
 	if !chord || o.shift != 0 {
 		// A single note gaining voices, or a transposed part of a chord: spell
 		// the voices again with the base modifiers and comments.
-		return spelledOnset(o.voices(), o.base.suffix(), token.ChordComments), nil
+		return spelledOnset(o.voices(), o.base.suffix(), token.ChordComments, token.Text), nil
 	}
 	// Remove the voices that left, keeping the spacing and comments of the rest.
 	kept := map[int]bool{}
@@ -920,7 +1075,7 @@ func (o *stepOnset) text() (string, error) {
 	}
 	total := len(o.keep) + len(o.add)
 	if total == 1 {
-		return spelledOnset(o.voices(), token.ChordModifiers, token.ChordComments), nil
+		return spelledOnset(o.voices(), token.ChordModifiers, token.ChordComments, token.Text), nil
 	}
 	if len(o.add) > 0 {
 		var names []string
@@ -952,10 +1107,22 @@ func (o *stepOnset) text() (string, error) {
 	return string(updated), err
 }
 
-func spelledOnset(voices []stepVoice, suffix string, comments []string) string {
+// spelledOnset writes voices as one note or a chord. Comments kept from a
+// chord go before it, on lines ending like the chord's own text.
+func spelledOnset(voices []stepVoice, suffix string, comments []string, text string) string {
 	prefix := ""
 	if len(comments) > 0 {
-		prefix = strings.Join(comments, "\n") + "\n"
+		newline := "\n"
+		if strings.Contains(text, "\r\n") {
+			newline = "\r\n"
+		}
+		// A comment's text keeps a CRLF file's carriage return; join the
+		// comments with the file's own line ending instead.
+		lines := make([]string, len(comments))
+		for i, comment := range comments {
+			lines[i] = strings.TrimRight(comment, "\r")
+		}
+		prefix = strings.Join(lines, newline) + newline
 	}
 	if len(voices) == 1 {
 		return prefix + voiceText(voices[0]) + suffix
@@ -1013,12 +1180,21 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 	type voiceKey struct{ source, voice int }
 	selected := map[voiceKey]bool{}
 	for _, ref := range in.Notes {
-		if ref.Lane != "" || ref.At%g.step != 0 {
-			return nil, 0, errNoteChanged
+		changed := func(why string, args ...any) error {
+			return g.refAt("note-changed", ref, "a selected note changed ("+why+"); select the notes again", args...)
+		}
+		if ref.Lane != "" {
+			return nil, 0, g.refAt("no-lanes", ref, "a %s pattern has no drum lanes", g.authored.Kind)
+		}
+		if ref.At%g.step != 0 {
+			return nil, 0, changed("it does not start on a %d-tick step", g.step)
 		}
 		start := int(ref.At / g.step)
-		if start >= count || owner[start] < 0 || sources[owner[start]].start != start {
-			return nil, 0, errNoteChanged
+		if start >= count || owner[start] < 0 {
+			return nil, 0, changed("no note starts on that step")
+		}
+		if sources[owner[start]].start != start {
+			return nil, 0, changed("that step holds the note from step %d; a hold cannot be selected alone", sources[owner[start]].start+1)
 		}
 		source := sources[owner[start]]
 		voice := -1
@@ -1028,8 +1204,15 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 			}
 		}
 		key := voiceKey{owner[start], voice}
-		if voice < 0 || selected[key] || int64(source.length)*g.step != ref.Length || source.velocity != ref.Velocity {
-			return nil, 0, errNoteChanged
+		switch {
+		case voice < 0:
+			return nil, 0, changed("no note of this pitch starts on that step")
+		case selected[key]:
+			return nil, 0, changed("the batch names it twice")
+		case int64(source.length)*g.step != ref.Length:
+			return nil, 0, changed("it lasts %d ticks, not %d", int64(source.length)*g.step, ref.Length)
+		case source.velocity != ref.Velocity:
+			return nil, 0, changed("its velocity is %d, not %d", source.velocity, ref.Velocity)
 		}
 		selected[key] = true
 	}
@@ -1128,10 +1311,10 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 			if touched(s) && dl != 0 {
 				onset.length += dl
 				if onset.length < 1 {
-					return nil, 0, fmt.Errorf("a note must stay at least one step long")
+					return nil, 0, g.noteAt("too-short", source.start, source.pitches[0], "resize would leave it %s long; a note lasts at least one step", stepsText(onset.length))
 				}
 				if source.start+onset.length > count {
-					return nil, 0, fmt.Errorf("a note cannot extend past the pattern end")
+					return nil, 0, g.noteAt("outside-pattern", source.start, source.pitches[0], "resize to %s would hold it past the pattern end at step %d", stepsText(onset.length), count)
 				}
 				changed += len(source.pitches)
 			}
@@ -1169,17 +1352,12 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 		}
 		for _, ref := range in.Insert {
 			if ref.Lane != "" {
-				return nil, 0, fmt.Errorf("a notes pattern has no drum lanes")
+				return nil, 0, g.refAt("no-lanes", ref, "a %s pattern has no drum lanes", g.authored.Kind)
 			}
-			at, err := g.whole(ref.At, "an inserted note")
-			if err != nil {
-				return nil, 0, err
+			if ref.At%g.step != 0 || ref.Length%g.step != 0 {
+				return nil, 0, g.refAt("not-whole-steps", ref, "insert needs a start and a length of whole %d-tick steps (got %d ticks long); quantize a performance before pasting it into a step pattern", g.step, ref.Length)
 			}
-			length, err := g.whole(ref.Length, "an inserted note's length")
-			if err != nil {
-				return nil, 0, err
-			}
-			moving = append(moving, &stepOnset{start: at, length: length, velocity: ref.Velocity, add: []stepVoice{{pitch: ref.Pitch}}})
+			moving = append(moving, &stepOnset{start: int(ref.At / g.step), length: int(ref.Length / g.step), velocity: ref.Velocity, add: []stepVoice{{pitch: ref.Pitch}}})
 		}
 		changed = len(in.Insert)
 	}
@@ -1192,12 +1370,18 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 		after[onset.start] = onset
 	}
 	for _, onset := range moving {
+		// Refusals name the note where the request found it.
+		from, first := g.origin(onset)
 		if onset.start < 0 || onset.start+onset.length > count {
-			return nil, 0, fmt.Errorf("selected notes cannot move past the pattern start or end")
+			where := "past the pattern end"
+			if onset.start < 0 {
+				where = "before step 1"
+			}
+			return nil, 0, g.noteAt("outside-pattern", from, first, "%s would put it on step %d, %s long, %s (the pattern has %d steps)", opName(in), onset.start+1, stepsText(onset.length), where, count)
 		}
 		for _, pitch := range onset.pitches() {
 			if pitch < 0 || pitch > 127 || pitch+transpose < 0 || pitch+transpose > 127 {
-				return nil, 0, fmt.Errorf("a note would leave MIDI 0–127, counting the pattern transpose")
+				return nil, 0, g.noteAt("pitch-range", from, first, "%s would make it MIDI %d, which with the pattern transpose of %+d leaves 0–127", opName(in), pitch, transpose)
 			}
 		}
 		existing := after[onset.start]
@@ -1205,9 +1389,9 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 			after[onset.start] = onset
 			continue
 		}
-		merged, err := mergeOnsets(existing, onset, acid)
+		merged, err := g.mergeOnsets(existing, onset, acid)
 		if err != nil {
-			return nil, 0, fmt.Errorf("step %d: %w", onset.start+1, err)
+			return nil, 0, err
 		}
 		after[onset.start] = merged
 	}
@@ -1218,19 +1402,27 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 	sort.Ints(starts)
 	for i, start := range starts {
 		onset := after[start]
-		if len(onset.pitches()) > 1 {
+		pitches := onset.pitches()
+		if len(pitches) > 1 {
 			if acid {
-				return nil, 0, fmt.Errorf("step %d: an acid pattern plays one pitch per step", start+1)
+				return nil, 0, g.noteAt("acid-one-pitch", start, pitches[1], "%s would put %d pitches on this step; an acid pattern plays one pitch per step", opName(in), len(pitches))
 			}
-			if len(onset.pitches()) > 4 {
-				return nil, 0, fmt.Errorf("step %d: a chord holds at most 4 pitches", start+1)
+			if len(pitches) > 4 {
+				return nil, 0, g.noteAt("chord-size", start, pitches[4], "%s would make it a fifth pitch of the chord on this step; a chord holds at most 4 pitches", opName(in))
 			}
 			if onset.hasArticulation() {
-				return nil, 0, fmt.Errorf("step %d: a chord cannot slide or ratchet", start+1)
+				return nil, 0, g.noteAt("chord-articulation", start, pitches[0], "%s would make a chord of a note that slides or ratchets; a chord cannot slide or ratchet", opName(in))
 			}
 		}
 		if i+1 < len(starts) && start+onset.length > starts[i+1] {
-			return nil, 0, fmt.Errorf("notes would overlap at step %d; a new note ends the one before it, so move or shorten one first", starts[i+1]+1)
+			next := after[starts[i+1]]
+			const hint = "a new note ends the one before it, so move or shorten one first"
+			if !next.stationary {
+				from, first := g.origin(next)
+				return nil, 0, g.noteAt("overlap", from, first, "%s would put it on step %d, inside the %s on step %d, which holds through step %d; %s", opName(in), next.start+1, spelledPitches(pitches), start+1, start+onset.length, hint)
+			}
+			from, first := g.origin(onset)
+			return nil, 0, g.noteAt("overlap", from, first, "%s would hold it through step %d, over the %s on step %d; %s", opName(in), start+onset.length, spelledPitches(next.pitches()), next.start+1, hint)
 		}
 	}
 	// Write each step whose content changed, and the velocity row.
@@ -1244,8 +1436,24 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 			covered[k] = start
 		}
 	}
+	// A hold after a rest is silent: it extends nothing (kernel/seq extends a
+	// gate only through holds that follow it). silent marks those holds before
+	// the edit, wrapping from the last step to the first as the loop does; a
+	// hold after the last step is not assumed silent.
+	silent := make([]bool, count)
+	for i := range silent {
+		previous := i - 1
+		if i == 0 {
+			previous = count - 1
+		}
+		silent[i] = data[i] != nil && data[i].Tie && owner[i] < 0 && (data[previous] == nil || previous < i && silent[previous])
+	}
 	for i, token := range tokens {
 		var want string
+		previous := i - 1
+		if i == 0 {
+			previous = count - 1
+		}
 		switch {
 		case covered[i] == i:
 			text, err := after[i].text()
@@ -1256,6 +1464,10 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 		case covered[i] >= 0:
 			want = "-"
 		case owner[i] >= 0:
+			want = "."
+		case silent[i] && covered[previous] >= 0:
+			// A placed note would absorb this silent hold and grow longer:
+			// write a rest so the note keeps its length and the hold stays silent.
 			want = "."
 		default:
 			want = token.Text // a rest, or a hold that follows a rest
@@ -1279,30 +1491,65 @@ func (g gridNotes) stepPattern() ([]Span, int, error) {
 	return append(spans, rowSpans...), changed, nil
 }
 
-// mergeOnsets lands a moved onset on a step that already has one. The same
-// pitch is replaced; otherwise onsets of the same length merge into one chord
-// that keeps the first onset's modifiers and velocity. Anything else is refused.
-func mergeOnsets(existing, moved *stepOnset, acid bool) (*stepOnset, error) {
+// stepModifiers are what the voices of one step share: accent, slide,
+// ratchet, chance and the velocity row's value.
+type stepModifiers struct {
+	accent, slide             bool
+	ratchet, chance, velocity int
+}
+
+func (o *stepOnset) modifiers() stepModifiers {
+	m := stepModifiers{ratchet: 1, chance: 100, velocity: o.velocity}
+	source := o.origin
+	if o.base != nil {
+		source = o.base
+	}
+	if source != nil && source.step != nil {
+		m.accent, m.slide = source.step.Accent, source.step.Slide
+		m.ratchet, m.chance = max(1, int(source.step.Ratchet)), int(source.step.Probability)
+		if m.chance == 0 {
+			m.chance = 100
+		}
+	}
+	return m
+}
+
+func spelledPitches(pitches []int) string {
+	names := make([]string, len(pitches))
+	for i, pitch := range pitches {
+		names[i] = sourcePitch(pitch)
+	}
+	return strings.Join(names, " and ")
+}
+
+// mergeOnsets lands a moved onset on a step that already has one. A moved note
+// replaces an unselected note of the same pitch. Otherwise onsets of the same
+// length and the same accent, slide, ratchet, chance and velocity merge into
+// one chord. Anything else is refused and names the note that would change.
+func (g gridNotes) mergeOnsets(existing, moved *stepOnset, acid bool) (*stepOnset, error) {
+	in := g.in
+	from, first := g.origin(moved)
+	landing := moved.start + 1
 	movedPitches := map[int]bool{}
 	for _, pitch := range moved.pitches() {
 		movedPitches[pitch] = true
 	}
 	// A moved note replaces a stationary note of the same pitch, unless both
 	// come from one chord: its pitches must stay distinct.
-	collide := func() error {
+	collide := func(pitch int) error {
 		if !existing.stationary || existing.pinned {
-			return fmt.Errorf("two selected notes would land on the same pitch")
+			return g.noteAt("same-pitch", from, first, "%s would put it on step %d as %s, where another selected %s lands or stays; choose a finer grid or move one first", opName(in), landing, sourcePitch(pitch), sourcePitch(pitch))
 		}
 		if existing.origin != nil && existing.origin == moved.origin {
-			return fmt.Errorf("two pitches of one chord would become equal")
+			return g.noteAt("chord-pitches-equal", from, first, "%s would make it %s, equal to another pitch of its chord on step %d", opName(in), sourcePitch(pitch), landing)
 		}
 		return nil
 	}
 	var keep []int
 	for _, i := range existing.keep {
-		if !movedPitches[existing.base.pitches[i]+existing.shift] {
+		if pitch := existing.base.pitches[i] + existing.shift; !movedPitches[pitch] {
 			keep = append(keep, i)
-		} else if err := collide(); err != nil {
+		} else if err := collide(pitch); err != nil {
 			return nil, err
 		}
 	}
@@ -1310,21 +1557,53 @@ func mergeOnsets(existing, moved *stepOnset, acid bool) (*stepOnset, error) {
 	for _, voice := range existing.add {
 		if !movedPitches[voice.pitch] {
 			add = append(add, voice)
-		} else if err := collide(); err != nil {
+		} else if err := collide(voice.pitch); err != nil {
 			return nil, err
 		}
 	}
 	if len(keep)+len(add) == 0 {
 		return moved, nil
 	}
+	name, joining := spelledPitches(moved.pitches()), spelledPitches(existing.pitches())
+	subject := "it"
+	if len(moved.pitches()) > 1 {
+		subject = name
+	}
 	if existing.length != moved.length {
-		return nil, fmt.Errorf("notes that start together share one length; the moved note's length differs")
+		return nil, g.noteAt("chord-length", from, first, "%s would start %s, %s long, on step %d with %s, %s long; notes that start together share one length", opName(in), subject, stepsText(moved.length), landing, joining, stepsText(existing.length))
 	}
 	if acid {
-		return nil, fmt.Errorf("an acid pattern plays one pitch per step")
+		return nil, g.noteAt("acid-one-pitch", from, first, "%s would put %s on step %d with %s; an acid pattern plays one pitch per step", opName(in), subject, landing, joining)
+	}
+	if total := len(keep) + len(add) + len(moved.pitches()); total > 4 {
+		return nil, g.noteAt("chord-size", from, first, "%s would add %s to the chord of %s on step %d, making %d pitches; a chord holds at most 4", opName(in), subject, joining, landing, total)
 	}
 	if moved.hasArticulation() || existing.hasArticulation() {
-		return nil, fmt.Errorf("a chord cannot slide or ratchet")
+		return nil, g.noteAt("chord-articulation", from, first, "%s would make a chord of %s and %s on step %d, and one of them slides or ratchets; a chord cannot slide or ratchet", opName(in), name, joining, landing)
+	}
+	// The chord keeps one accent, chance and velocity: refuse to drop or impose
+	// the moved note's own.
+	mine, theirs := moved.modifiers(), existing.modifiers()
+	var changes []string
+	if mine.chance != theirs.chance {
+		if mine.chance < 100 {
+			changes = append(changes, fmt.Sprintf("lose its %d%% chance", mine.chance))
+		} else {
+			changes = append(changes, fmt.Sprintf("take a %d%% chance from %s", theirs.chance, joining))
+		}
+	}
+	if mine.accent != theirs.accent {
+		if mine.accent {
+			changes = append(changes, "lose its accent")
+		} else {
+			changes = append(changes, "take an accent from "+joining)
+		}
+	}
+	if mine.velocity != theirs.velocity {
+		changes = append(changes, fmt.Sprintf("play at velocity %d instead of %d", theirs.velocity, mine.velocity))
+	}
+	if len(changes) > 0 {
+		return nil, g.noteAt("chord-modifiers", from, first, "after %s, %s would join %s in a chord on step %d and %s; notes that start together share accent, chance and velocity, so make them match first", opName(in), subject, joining, landing, strings.Join(changes, " and "))
 	}
 	merged := *existing
 	merged.keep, merged.add = keep, add
