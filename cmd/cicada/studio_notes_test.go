@@ -124,7 +124,7 @@ func TestStudioNotesRefusalsLeaveTheScore(t *testing.T) {
 		code int
 		want string
 	}{
-		{&edit.EditNotes{Op: "quantize", Grid: 240}, http.StatusUnprocessableEntity, "two E2 notes would overlap at tick 240"},
+		{&edit.EditNotes{Op: "quantize", Grid: 240}, http.StatusUnprocessableEntity, "note 40 (E2) at tick 350: quantize would put it at tick 240 to 340 as E2, over the E2 at tick 240 to 440"},
 		{&edit.EditNotes{Op: "stretch"}, http.StatusUnprocessableEntity, "choose a note operation"},
 		{&edit.EditNotes{Op: "move", Notes: []edit.NoteRef{{At: 130, Pitch: 40, Length: 200, Velocity: 60}}, DT: 4000}, http.StatusUnprocessableEntity, "past the loop end"},
 	} {
@@ -132,6 +132,11 @@ func TestStudioNotesRefusalsLeaveTheScore(t *testing.T) {
 		if code != c.code || !strings.Contains(fmt.Sprint(reply["error"]), c.want) || !bytes.Equal(notesRead(t, path), before) {
 			t.Fatalf("%s: %d %v", c.in.Op, code, reply)
 		}
+	}
+	// A note refusal names its note as data as well as in the message.
+	code, reply := notesCall(t, handler, path, "take", &edit.EditNotes{Op: "quantize", Grid: 240}, true)
+	if note, _ := reply["note"].(map[string]any); code != http.StatusUnprocessableEntity || reply["code"] != "CICADA-NOTES" || reply["reason"] != "overlap" || note["at"] != float64(350) || note["pitch"] != float64(40) || note["step"] != nil {
+		t.Fatalf("structured refusal: %d %v", code, reply)
 	}
 	if r := studioCall(t, handler, "/api/pattern", studioEdit{Revision: studioRevision(before), SourceRevision: studioProjectReceipt(t, path), Action: "notes", Pattern: "take"}); r.Code != http.StatusBadRequest {
 		t.Fatalf("a notes action without an edit: %d %s", r.Code, r.Body.String())
@@ -188,4 +193,34 @@ func TestStudioNotesQuantize500Timing(t *testing.T) {
 		t.Fatalf("500-note quantize: %d %v", code, reply)
 	}
 	t.Logf("500-note quantize through /api/pattern: %s", elapsed.Round(time.Millisecond))
+}
+
+// A capture may end in a write to the score; a note batch waits for it, as
+// mixer and automation edits do.
+func TestStudioNotesWaitForARunningCapture(t *testing.T) {
+	isolateState(t)
+	source, _ := notesStudioScore(4)
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.shutdown() })
+	s.mu.Lock()
+	s.captureID = "take-in-progress"
+	s.mu.Unlock()
+	handler := s.routes()
+	code, reply := notesCall(t, handler, path, "take", &edit.EditNotes{Op: "quantize", Grid: 240}, true)
+	if code != http.StatusConflict || reply["error"] != "Finish the take before editing notes." || string(notesRead(t, path)) != source || len(studioHistoryEdits(t, handler)) != 0 {
+		t.Fatalf("a note batch during a capture: %d %v", code, reply)
+	}
+	s.mu.Lock()
+	s.captureID = ""
+	s.mu.Unlock()
+	if code, reply := notesCall(t, handler, path, "take", &edit.EditNotes{Op: "quantize", Grid: 240}, true); code != http.StatusOK || reply["unchanged"] == true {
+		t.Fatalf("after the capture: %d %v", code, reply)
+	}
 }
