@@ -94,14 +94,14 @@ function installActionProbe() {
     }).observe({type: 'long-animation-frame', buffered: true});
   } catch {}
 
-  // Confirm signal. A cell is confirmed when the server has answered: the
-  // region that holds it carries a new revision. Today /studio has no region
-  // attribute, so the scope is the page: the first hidden "revision" input,
-  // which GoSX's soft navigation replaces only when it reconciles the page
-  // fetched after the save. An optimistic paint changes the cell but not that
-  // revision, so it cannot satisfy this check. When Phase 1 adds
-  // data-region-revision, the closest ancestor that carries it takes over with
-  // no change to the callers.
+  // Confirm signal. A cell is confirmed when the server has answered: it shows
+  // the wanted state, carries no pending marker, and the update region that
+  // holds it carries a new data-region-revision. The shell sets that revision
+  // only when the server rendered the region at the new revision (rule R1), so
+  // the pending paint, which changes the cell first, cannot satisfy this check.
+  // A page without update regions (main before the incremental shell) falls
+  // back to the first hidden "revision" input, which GoSX's soft navigation
+  // replaces only when it reconciles the page fetched after the save.
   function revisionOf(el) {
     const scoped = el && el.closest('[data-region-revision]');
     if (scoped) return 'region:' + scoped.getAttribute('data-region-revision');
@@ -112,6 +112,9 @@ function installActionProbe() {
   function pendingMarker(el, base) {
     if (!el) return null;
     if (el.closest('[data-workspace-pending]')) return 'data-workspace-pending';
+    // Undo and Redo predict nothing: their button carries the pending marker.
+    const control = sample.pendingSelector ? document.querySelector(sample.pendingSelector) : null;
+    if (control?.closest('[data-workspace-pending]')) return 'data-workspace-pending (button)';
     if (el.closest('[aria-busy="true"]')) return 'aria-busy';
     if (sample.kind === 'select') {
       if (el.getAttribute('data-selected') === 'true' && base.selected !== 'true') return 'data-selected';
@@ -163,8 +166,9 @@ function installActionProbe() {
       navigations: navTimes.length, firstNavigateMs: navTimes.length ? rel(navTimes[0]) : null,
       longTasks: {count: tasks.length, totalMs: +tasks.reduce((sum, [, ms]) => sum + ms, 0).toFixed(1),
         maxMs: +Math.max(0, ...tasks.map(([, ms]) => ms)).toFixed(1)},
-      fetches: fetches.filter(f => f.path.startsWith('/__actions/') || f.path === '/studio'),
-      otherFetches: fetches.filter(f => !(f.path.startsWith('/__actions/') || f.path === '/studio')).length,
+      fetches: fetches.filter(f => f.path.startsWith('/__actions/') || f.path === '/studio' || f.path === '/__studio/regions'),
+      otherFetches: fetches.filter(f => !(f.path.startsWith('/__actions/') || f.path === '/studio' || f.path === '/__studio/regions')).length,
+      regionTiming: (() => { try { return JSON.parse(document.querySelector('#studio-shell')?.getAttribute('data-workspace-timing') || 'null'); } catch { return null; } })(),
       frames: sample.frames,
     };
     if (probe.trace) {
@@ -202,7 +206,7 @@ function installActionProbe() {
     armed = null;
     const el = spec.selector ? document.querySelector(spec.selector) : null;
     sample = {
-      kind: spec.kind, selector: spec.selector, active: spec.active, param: spec.param, key: spec.key,
+      kind: spec.kind, selector: spec.selector, pendingSelector: spec.pendingSelector, active: spec.active, param: spec.param, key: spec.key,
       start: event.timeStamp || performance.now(), last: null, frames: [], obs: {}, pub: {}, cb: {},
       pendingName: null, gosxName: null,
       startRevision: revisionOf(el),
@@ -396,8 +400,8 @@ async function run() {
     for (let index = 0; index < warmups + trials; index++) {
       await useDraw(page);
       const selector = await selectNote(page);
-      const edit = (kind, active, input, route, interact) =>
-        measure(page, {kind: 'edit', selector, active: String(active), input, route}, interact);
+      const edit = (kind, active, input, route, interact, pendingSelector) =>
+        measure(page, {kind: 'edit', selector, pendingSelector, active: String(active), input, route}, interact);
 
       const drawn = await edit('draw', true, {type: 'pointerdown'}, '/__actions/pattern', () => page.locator(selector).click());
       const edited = await json(page, origin, '/api/state');
@@ -406,14 +410,14 @@ async function run() {
       await verifyPlayback();
 
       await page.evaluate(() => document.activeElement?.blur());
-      const reverted = await edit('undo', false, chord, '/__actions/undo', () => page.keyboard.press(undoKeys));
+      const reverted = await edit('undo', false, chord, '/__actions/undo', () => page.keyboard.press(undoKeys), '#undo-form button[type=submit]');
       const undone = await json(page, origin, '/api/state');
       assert.equal(undone.source, original.source, 'Undo did not restore the exact source bytes');
       assert.ok(undone.revision && undone.revision !== edited.revision, 'Undo did not change revision');
       await verifyPlayback();
 
       await page.evaluate(() => document.activeElement?.blur());
-      const redone = await edit('redo', true, {...chord, shift: true}, '/__actions/redo', () => page.keyboard.press(redoKeys));
+      const redone = await edit('redo', true, {...chord, shift: true}, '/__actions/redo', () => page.keyboard.press(redoKeys), '#redo-form button[type=submit]');
       const again = await json(page, origin, '/api/state');
       assert.equal(again.source, edited.source, 'Redo did not restore the drawn source bytes');
       assert.ok(again.revision && again.revision !== undone.revision, 'Redo did not change revision');
@@ -421,7 +425,7 @@ async function run() {
 
       // Cleanup Undo, not sampled: leaves the score as it started.
       await page.evaluate(() => document.activeElement?.blur());
-      await edit('undo', false, chord, '/__actions/undo', () => page.keyboard.press(undoKeys));
+      await edit('undo', false, chord, '/__actions/undo', () => page.keyboard.press(undoKeys), '#undo-form button[type=submit]');
       restored = await json(page, origin, '/api/state');
       assert.equal(restored.source, original.source, 'Cleanup Undo did not restore the exact source bytes');
       assert.deepEqual(errors, []);
@@ -483,6 +487,8 @@ async function run() {
         fetchPageMs: post && get ? diff(get.responseEndMs, post.responseEndMs) : null,
         applyMs: get && sample.firstNavigateMs != null ? diff(sample.firstNavigateMs, get.responseEndMs) : null,
         navigateToFrameMs: sample.firstNavigateMs != null ? diff(sample.ms, sample.firstNavigateMs) : null,
+        // derived: the region apply path (no page GET): answer to confirmed frame
+        responseToFrameMs: post && !get ? diff(sample.firstFrameMs, post.responseEndMs) : null,
       };
     };
     const median = values => summarize(values.filter(v => v != null)).medianMs;
@@ -547,7 +553,7 @@ async function run() {
       generatedAt: new Date().toISOString(), git: {commit: git(['rev-parse', 'HEAD']), branch: git(['rev-parse', '--abbrev-ref', 'HEAD'])},
       browser: browser.version(), host: {platform: process.platform, cpus: os.cpus().length, loadBefore, loadAfter: os.loadavg()},
       fixture: fixture.name, viewport: viewportName, playback, warmups, trials, trace,
-      confirmSignal: 'cell matches, no pending marker, page revision input changed (region revision when present)',
+      confirmSignal: 'cell matches, no pending marker on the cell, and its update region data-region-revision changed (page revision input on pages without regions)',
       sourceRevision: original.revision, fixtureSha256: createHash('sha256').update(original.source).digest('hex'),
       sourceRestored: restored.source === original.source,
       selection: {kind: targets[0]?.kind ?? null, targets: targets.map(t => t.key), note: selectionNote},
@@ -558,7 +564,7 @@ async function run() {
       measured: ['input to confirmed frame', 'input to pending frame', 'POST and GET request/response times (Resource Timing)',
         'gosx:navigate event time', 'long tasks', 'frame gaps'],
       derived: ['fetchPageMs = GET responseEnd - POST responseEnd', 'applyMs = gosx:navigate - GET responseEnd',
-        'navigateToFrameMs = confirmed - gosx:navigate'],
+        'navigateToFrameMs = confirmed - gosx:navigate', 'responseToFrameMs = confirmed first frame - POST responseEnd (region path)'],
     };
     const text = JSON.stringify(report);
     if (process.env.CICADA_BENCH_REPORT) {
