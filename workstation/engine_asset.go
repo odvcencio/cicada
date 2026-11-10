@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -105,5 +107,31 @@ func meterEngine(ctx *server.Context, cfg engine.Config, fallback gosx.Node) gos
 		return fallback
 	}
 	cfg.WASMPath = path
+	// The /studio shell patches update regions without remounting engines.
+	// Name the props each engine mounts with, without the fields that change
+	// on every render or save, so a region's digest changes when they do and
+	// the shell reloads instead of leaving the engine on stale props.
+	if cfg.MountAttrs == nil {
+		cfg.MountAttrs = map[string]any{}
+	}
+	cfg.MountAttrs["data-engine-props"] = engineProps(cfg.Props)
 	return ctx.Engine(cfg, fallback)
+}
+
+// engineVolatileProps are the engine props that change with every render or
+// save: the masked CSRF token, revisions the engine reads from its region, and
+// the page query, which engines read from the address.
+var engineVolatileProps = []string{"csrf", "revision", "sourceRevision", "source_revision", "projectRevision", "fileRevision", "audition"}
+
+// engineProps is a short hash of an engine's props without engineVolatileProps.
+func engineProps(props []byte) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(props, &fields) == nil {
+		for _, name := range engineVolatileProps {
+			delete(fields, name)
+		}
+		props, _ = json.Marshal(fields)
+	}
+	sum := sha256.Sum256(props)
+	return hex.EncodeToString(sum[:6])
 }

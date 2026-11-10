@@ -188,7 +188,7 @@ func (p *shellPage) renderRegion(id string) (string, string, bool) {
 // region renders an update region with its wrapper for the page.
 func (p *shellPage) region(id string) gosx.Node {
 	body, digest, _ := p.renderRegion(id)
-	return gosx.RawHTML(regionWrapper(id, digest, p.view.Revision, body))
+	return gosx.RawHTML(regionWrapper(id, digest, p.view.Revision, p.view.SourceRevision, body))
 }
 
 // shellContent renders the shell and returns the workspace it was built from;

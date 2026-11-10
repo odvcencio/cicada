@@ -75,6 +75,8 @@ type workspaceJob struct {
 	// context that lets an edit cancel a background read of stale regions.
 	regions string
 	ctx     context.Context
+	// then runs after a shell region read, with whether it was applied.
+	then func(bool)
 }
 
 type workspaceUI struct {
@@ -102,6 +104,7 @@ type workspaceUI struct {
 	// shell is set on /studio, where the queue patches update regions
 	// (shell_edits_js.go) instead of the whole workspace.
 	shell      bool
+	reading    bool // a background read of stale regions is queued or running
 	cancelRead func()
 	idle       *time.Timer
 	idleDelay  time.Duration
@@ -225,7 +228,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "scroll", u.scrolled)
 	u.revealSelectedNote()
 	root.Call("setAttribute", "data-workspace-reactive", "ready")
-	confirmedWorkspaceVersion.Set(workspaceVersion{props.Revision, props.SourceRevision})
+	confirmedWorkspaceVersion.Set(workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision})
 	go u.run()
 	go u.watchFiles()
 	go u.checkpointSources()
@@ -337,8 +340,18 @@ func (u *workspaceUI) submit(event js.Value) {
 		return
 	}
 	submitter := event.Get("submitter")
-	if u.shell && !shellCaptures(form, submitter) {
-		return
+	if u.shell {
+		// Transport commands carry no score revision check and never wait.
+		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+			// A form in a stale region still carries an older revision. Read
+			// the region first; nothing is sent until it is current.
+			workspaceStop(event)
+			u.refreshThenSubmit(region, form, submitter)
+			return
+		}
+		if !shellCaptures(form, submitter) {
+			return
+		}
 	}
 	// HTML named controls can shadow form.action/form.method. Read markup
 	// attributes so a button named action can never replace the endpoint.
@@ -845,13 +858,25 @@ func (u *workspaceUI) queue(job workspaceJob) {
 	}
 }
 
-func (u *workspaceUI) clearQueue() {
+// clearQueue drops every queued job, restores its paint and reports how many
+// were the user's own (not background reads). A submit held for a region
+// read hears that it was not sent.
+func (u *workspaceUI) clearQueue() (dropped int) {
 	for {
 		select {
 		case job := <-u.jobs:
 			u.settle(job, true)
+			if job.ctx != nil {
+				// A dropped background read no longer holds the read slot.
+				u.reading = false
+				continue
+			}
+			if job.then != nil {
+				job.then(false)
+			}
+			dropped++
 		default:
-			return
+			return dropped
 		}
 	}
 }
@@ -869,7 +894,14 @@ func (u *workspaceUI) run() {
 				return
 			}
 			if u.shell && len(u.jobs) == 0 {
-				u.scheduleIdle()
+				u.reloadIfNeeded()
+				if job.method == http.MethodPost && !u.blocked.Load() {
+					// Read the regions this write left stale straight away,
+					// so a form there is current before the user reaches it.
+					u.refreshStale(regionsStale)
+				} else {
+					u.scheduleIdle()
+				}
 			}
 		}
 	}
@@ -878,6 +910,18 @@ func (u *workspaceUI) run() {
 // runJob sends one queued gesture or refresh and applies its projection. It
 // reports false once the engine has closed.
 func (u *workspaceUI) runJob(job workspaceJob) bool {
+	// A shell read other than "Refresh saved state" never blocks the queue:
+	// reading again is always safe.
+	read := u.shell && job.method == http.MethodGet && !job.refresh
+	applied := false
+	defer func() {
+		if read && job.ctx != nil {
+			u.reading = false
+		}
+		if job.then != nil {
+			job.then(applied)
+		}
+	}()
 	if u.blocked.Load() && !job.refresh || job.method == http.MethodGet && u.shell && job.regions == "" {
 		u.settle(job, true)
 		return true
@@ -968,10 +1012,10 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	}
 	u.root.Call("removeAttribute", "aria-busy")
 	if err != nil {
-		if u.shell && job.ctx != nil {
-			// A background read of stale regions failed or an edit cancelled it.
-			// The regions stay stale; the next idle period tries again later.
-			if job.ctx.Err() == nil {
+		if read {
+			// A read of stale regions failed or an edit cancelled it. The
+			// regions stay stale; the next idle period tries again later.
+			if job.ctx == nil || job.ctx.Err() == nil {
 				u.idleDelay = min(2*u.idleDelay, 8*time.Second)
 			}
 			return true
@@ -980,6 +1024,9 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			// Validation has not mutated the score. Keep the draft editable
 			// and let a corrected submission use the same revision.
 			u.status.Set(err.Error())
+			if u.shell {
+				u.dropHistory()
+			}
 			return true
 		}
 		// A failed/ambiguous mutation is never automatically submitted a
@@ -995,14 +1042,16 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if projection.WriteRevision == "" && (projection.Revision != u.revision.Get() || projection.SourceRevision != u.sourceRevision) {
 		// A read can discover somebody else's edit. Queued gestures
 		// based on the old projection must not be rebased over it.
-		u.clearQueue()
+		if dropped := u.clearQueue(); u.shell && dropped > 0 {
+			u.status.Set(fmt.Sprintf("Another change to the song was saved, so %d waiting edit(s) were not sent. Make them again.", dropped))
+		}
 	}
 	u.revision.Set(projection.Revision)
 	u.sourceRevision = projection.SourceRevision
 	if projection.ProjectRevision != "" {
 		u.projectRevision.Store(projection.ProjectRevision)
 	}
-	confirmedWorkspaceVersion.Set(workspaceVersion{projection.Revision, projection.SourceRevision})
+	confirmedWorkspaceVersion.Set(workspaceVersion{Revision: projection.Revision, SourceRevision: projection.SourceRevision, Seq: confirmedWorkspaceVersion.Get().Seq + 1})
 	u.focusGesture(job)
 	if job.method == http.MethodPost && job.values["action"] == "chord" {
 		u.revealSelectedNote()
@@ -1013,6 +1062,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if u.shell {
 		// The shell shows only what needs attention: a server message or the
 		// end of a refresh, never a "Saved." after every gesture.
+		applied = true
 		u.idleDelay = shellIdleRefresh
 		if job.refresh {
 			u.status.Set("Workspace updated.")
@@ -1094,6 +1144,10 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 		Data        workspaceProjection `json:"data"`
 	}
 	if err := json.Unmarshal(fetched.Body, &result); err != nil {
+		if text := strings.TrimSpace(string(fetched.Body)); response.StatusCode >= 400 && text != "" && len(text) < 300 {
+			// A refusal before the action ran (a viewer's 403) is plain text.
+			return projection, "", &workspaceRequestError{response.StatusCode, text, false}
+		}
 		return projection, "", fmt.Errorf("The server returned an incomplete workspace response")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 || !result.OK {
@@ -1281,7 +1335,7 @@ func workspaceHTMLIdentity(node *html.Node) string {
 	}
 	if node.Data == "form" {
 		action, _ := workspaceHTMLAttr(node, "action")
-		key += "/form:" + action
+		key += "/form:" + workspaceActionPath(action)
 		fields := map[string]string{}
 		workspaceHTMLWalk(node, func(child *html.Node) {
 			if child.Type == html.ElementNode && child.Data == "input" {
@@ -1314,6 +1368,18 @@ func workspaceHTMLIdentity(node *html.Node) string {
 		return key
 	}
 	return ""
+}
+
+// workspaceActionPath drops the origin from a form action. GoSX's managed
+// navigation can leave the page's actions absolute while the server renders
+// them relative; both name the same form.
+func workspaceActionPath(action string) string {
+	if at := strings.Index(action, "://"); at >= 0 {
+		if path := strings.IndexByte(action[at+3:], '/'); path >= 0 {
+			return action[at+3+path:]
+		}
+	}
+	return action
 }
 
 func workspaceHTMLDraftKey(node *html.Node) string {
@@ -1886,7 +1952,9 @@ func workspaceSetDefaults(root js.Value, defaults map[string]workspaceDraft) {
 				control.Set("value", value)
 			}
 		}
-		if baseline.checked != nil {
+		// Only an input has a checked state: a select or textarea that shares
+		// a draft key with an input must not be read as one.
+		if baseline.checked != nil && tag == "input" {
 			checked := control.Get("checked").Bool()
 			control.Set("defaultChecked", *baseline.checked)
 			control.Set("checked", checked)
@@ -2028,7 +2096,7 @@ func workspaceIdentity(node js.Value) string {
 		}
 		// A step inspector is a different semantic form when its hidden step,
 		// lane or pattern changes, even when its visual container keeps an ID.
-		key += "/form:" + workspaceAttr(node, "action")
+		key += "/form:" + workspaceActionPath(workspaceAttr(node, "action"))
 		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "file"} {
 			field := node.Call("querySelector", "input[type=hidden][name="+name+"]")
 			if workspacePresent(field) {

@@ -28,7 +28,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
-	confirmedWorkspaceVersion.Set(workspaceVersion{recoveryProps.Revision, recoveryProps.SourceRevision})
+	confirmedWorkspaceVersion.Set(workspaceVersion{Revision: recoveryProps.Revision, SourceRevision: recoveryProps.SourceRevision})
 	// The edit queue seeds the Code editor's clean baseline, so it binds first.
 	releaseEdits := bindShellEdits(ctx, root, recoveryProps)
 	releaseSourceRecovery := bindSourceRecovery(ctx, root, recoveryProps.CSRF)

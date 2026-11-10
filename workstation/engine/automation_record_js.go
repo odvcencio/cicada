@@ -142,7 +142,7 @@ func bindAutomationRecording(u *curveEditor) func() {
 }
 
 func (r *curveRecordingUI) post(command string, number float64) error {
-	version := confirmedWorkspaceVersion.Get()
+	version := engineVersion(r.form, confirmedWorkspaceVersion.Get())
 	values := map[string]string{"csrf_token": workspaceFieldValue(r.form, "csrf_token"), "revision": version.Revision, "source_revision": version.SourceRevision, "command": command, "path": r.editor.props.Path, "number": strconv.FormatFloat(number, 'g', -1, 64)}
 	if r.take != nil {
 		values["takeId"] = r.take.ID
@@ -219,7 +219,7 @@ func (r *curveRecordingUI) run() {
 		case <-r.ctx.Done():
 			return
 		case command := <-r.jobs:
-			keepVersion := confirmedWorkspaceVersion.Get()
+			keepVersion := engineVersion(r.form, confirmedWorkspaceVersion.Get())
 			keepID := ""
 			if command == "keep" && r.take != nil {
 				keepID = r.take.ID

@@ -30,8 +30,8 @@ func regionBody(content string) string {
 	return `<div class="update-region__body">` + content + `</div>`
 }
 
-func regionWrapper(id, digest, revision, body string) string {
-	return `<div id="update-` + id + `" class="update-region" data-update-region="` + id + `" data-region-digest="` + digest + `" data-region-revision="` + html.EscapeString(revision) + `">` + body + `</div>`
+func regionWrapper(id, digest, revision, sourceRevision, body string) string {
+	return `<div id="update-` + id + `" class="update-region" data-update-region="` + id + `" data-region-digest="` + digest + `" data-region-revision="` + html.EscapeString(revision) + `" data-region-source-revision="` + html.EscapeString(sourceRevision) + `">` + body + `</div>`
 }
 
 // regionDigest is the first 16 hex digits of the SHA-256 of a region body

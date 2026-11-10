@@ -58,12 +58,31 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	// A stale region refreshes when its tab, pane, section or dialog opens.
 	reveal := js.FuncOf(func(js.Value, []js.Value) any {
 		if !u.blocked.Load() && !u.closed.Load() {
+			if !u.busy.Load() {
+				u.reloadIfNeeded()
+			}
 			u.refreshStale(regionsVisibleStale)
 		}
 		return nil
 	})
+	// Watch the tab panels, sections, panes and dialogs that hold regions, not
+	// their contents: engines inside regions change these attributes too.
 	observer := js.Global().Get("MutationObserver").New(reveal)
-	observer.Call("observe", root, map[string]any{"subtree": true, "attributes": true, "attributeFilter": []any{"hidden", "open", "data-phone-region"}})
+	options := map[string]any{"attributes": true, "attributeFilter": []any{"hidden", "open", "data-phone-region"}}
+	wrappers := domCall(root, "querySelectorAll", "[data-update-region]")
+	var watched []js.Value
+	for i := 0; i < wrappers.Length(); i++ {
+	ancestors:
+		for node := wrappers.Index(i).Get("parentElement"); workspacePresent(node) && u.owned(node); node = node.Get("parentElement") {
+			for _, seen := range watched {
+				if seen.Equal(node) {
+					continue ancestors
+				}
+			}
+			watched = append(watched, node)
+			observer.Call("observe", node, options)
+		}
+	}
 	domSet(root, "data-shell-edits", "ready")
 	go u.run()
 	return func() {
@@ -223,7 +242,9 @@ func (u *workspaceUI) shellRegions(job workspaceJob, mode int) string {
 		}
 		wrapper := domRegion(id)
 		if !workspacePresent(wrapper) || shellHeld(wrapper) ||
-			mode >= regionsStale && !domHas(wrapper, "data-region-stale") ||
+			// Background reads skip the Code lens (it is read when it shows,
+			// Phase 3 owns its updates) and regions that need a page reload.
+			mode >= regionsStale && (!domHas(wrapper, "data-region-stale") || domHas(wrapper, "data-region-reload") || mode == regionsStale && id == "code") ||
 			(mode == regionsVisible || mode == regionsVisibleStale) && !shellVisible(wrapper) {
 			continue
 		}
@@ -241,18 +262,22 @@ func (u *workspaceUI) shellRegions(job workspaceJob, mode int) string {
 // refreshStale queues a cancellable read of the stale regions: only the
 // visible ones when a region opens, all of them when the queue is idle.
 func (u *workspaceUI) refreshStale(mode int) {
-	regions := u.shellRegions(workspaceJob{}, mode)
-	if regions == "" || u.closed.Load() {
+	if u.reading || u.closed.Load() {
+		// One read at a time: it covers what is stale when it runs, and an
+		// edit cancels it.
 		return
 	}
-	if u.cancelRead != nil {
-		u.cancelRead()
+	regions := u.shellRegions(workspaceJob{}, mode)
+	if regions == "" {
+		return
 	}
 	ctx, cancel := context.WithCancel(u.ctx)
-	u.cancelRead = cancel
+	u.cancelRead, u.reading = cancel, true
 	select {
 	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: regions, ctx: ctx}:
 	default:
+		u.reading = false
+		cancel()
 	}
 }
 
@@ -276,7 +301,10 @@ func (u *workspaceUI) scheduleIdle() {
 func shellEnginesKept(wrapper js.Value, markup string) bool {
 	mounts := domCall(wrapper, "querySelectorAll", "[data-gosx-engine]")
 	for i := 0; i < mounts.Length(); i++ {
-		if !strings.Contains(markup, `id="`+workspaceAttr(mounts.Index(i), "id")+`"`) {
+		// data-engine-props hashes the props the engine mounted with, without
+		// its revision fields. A change means only a remount brings them.
+		props := workspaceAttr(mounts.Index(i), "data-engine-props")
+		if !strings.Contains(markup, `id="`+workspaceAttr(mounts.Index(i), "id")+`"`) || props != "" && !strings.Contains(markup, `data-engine-props="`+props+`"`) {
 			return false
 		}
 	}
@@ -302,9 +330,21 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			domSet(wrapper, "data-region-digest", digest)
 		}
 		domSet(wrapper, "data-region-revision", projection.Revision)
+		domSet(wrapper, "data-region-source-revision", projection.SourceRevision)
 		domDrop(wrapper, "data-region-stale")
 	}
-	reload := false
+	// A region whose engines changed can only be shown by a page load. When
+	// one is visible, nothing is unsaved and no edit waits, reload before
+	// applying anything: the page must not look saved, and accept the next
+	// edit, while a reload is on its way.
+	for _, update := range projection.Regions {
+		if wrapper := domRegion(update.ID); workspacePresent(wrapper) && !shellHeld(wrapper) && !shellEnginesKept(wrapper, update.HTML) && shellVisible(wrapper) && len(u.jobs) == 0 && !hasUnsavedWork() {
+			u.reload()
+			return nil
+		}
+	}
+	scrolls := u.captureScrolls()
+	x, y := js.Global().Get("scrollX").Float(), js.Global().Get("scrollY").Float()
 	for i, update := range projection.Regions {
 		if i == 1 {
 			// The first region is the one the user is looking at. Confirm the
@@ -312,7 +352,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			u.advanceRegions(projection, job, confirm)
 		}
 		wrapper := domRegion(update.ID)
-		if !workspacePresent(wrapper) || ruleR1(update.ID, shellHeld(wrapper), true, false, false) != regionPatch {
+		if !workspacePresent(wrapper) {
 			continue
 		}
 		if i > 0 {
@@ -322,13 +362,36 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 				return nil
 			}
 		}
-		if !shellEnginesKept(wrapper, update.HTML) {
-			// Not patched, so not confirmed fresh: it keeps its revision
-			// fields (rule R1) and the page reloads below.
-			reload = true
+		// Checked after the yield: a keystroke handled there can make the
+		// Code editor dirty, and a held region is never patched.
+		if ruleR1(update.ID, shellHeld(wrapper), true, false, false) != regionPatch {
 			continue
 		}
-		if _, _, patchErr := u.applyTree(wrapper.Get("firstElementChild"), "update-"+update.ID, update.HTML, job, nil); patchErr != nil {
+		if !shellEnginesKept(wrapper, update.HTML) {
+			// Not patched, so not confirmed fresh: it keeps its revision
+			// fields (rule R1). Background reads skip it; the page reloads
+			// once it shows, nothing is unsaved and no edit waits.
+			domSet(wrapper, "data-region-reload", "")
+			continue
+		}
+		// A draft typed into the Code editor keeps the file revision it was
+		// typed on, so a later save takes the merge path instead of
+		// overwriting the newer file.
+		files := domCall(wrapper, "querySelectorAll", "input[type=hidden]:is([name=fileRevision],[name=diskRevision])")
+		kept := make([]string, files.Length())
+		for j := range kept {
+			kept[j] = workspaceString(files.Index(j), "value")
+		}
+		if _, _, patchErr := u.applyTree(domCall(wrapper, "querySelector", ".update-region__body"), "update-"+update.ID, update.HTML, job, nil); patchErr != nil {
+			continue
+		}
+		if shellHeld(wrapper) {
+			if files = domCall(wrapper, "querySelectorAll", "input[type=hidden]:is([name=fileRevision],[name=diskRevision])"); files.Length() == len(kept) {
+				for j, value := range kept {
+					files.Index(j).Set("value", value)
+					files.Index(j).Set("defaultValue", value)
+				}
+			}
 			continue
 		}
 		confirm(wrapper, update.Digest)
@@ -338,9 +401,20 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	}
 	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
 	for i := 0; i < wrappers.Length(); i++ {
-		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision {
+		// The pair names the saved state: a save to another project file
+		// moves only the source revision, and forms carry both.
+		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision || workspaceAttr(wrapper, "data-region-source-revision") != projection.SourceRevision {
 			domSet(wrapper, "data-region-stale", "")
 		}
+	}
+	for _, scroll := range scrolls {
+		if scroll.node.Get("isConnected").Bool() {
+			scroll.node.Set("scrollTop", scroll.top)
+			scroll.node.Set("scrollLeft", scroll.left)
+		}
+	}
+	if js.Global().Get("scrollX").Float() != x || js.Global().Get("scrollY").Float() != y {
+		js.Global().Call("scrollTo", x, y)
 	}
 	if projection.Title != "" {
 		document.Set("title", projection.Title)
@@ -351,11 +425,101 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	}
 	workspaceUpdated.run()
 	document.Call("dispatchEvent", js.Global().Get("Event").New("cicada:workspace-updated"))
-	if reload {
-		// Reload, unless that would discard unsaved work; then the notice asks.
-		refreshShell()
-	}
+	u.reloadIfNeeded()
 	return nil
+}
+
+// reloadIfNeeded loads the page again when a region that needs it shows and
+// no edit waits. Unsaved work keeps the page; the refresh notice asks instead.
+func (u *workspaceUI) reloadIfNeeded() {
+	if u.blocked.Load() || len(u.jobs) > 0 {
+		return
+	}
+	wrappers := domCall(u.root, "querySelectorAll", "[data-region-reload]")
+	for i := 0; i < wrappers.Length(); i++ {
+		if shellVisible(wrappers.Index(i)) {
+			if hasUnsavedWork() {
+				refreshShell()
+			} else {
+				u.reload()
+			}
+			return
+		}
+	}
+}
+
+// reload renders the page again the way an edit did before update regions:
+// GoSX's same-URL revalidation reconciles the page and remounts the engines
+// whose props changed, without a document load. The queue stays blocked
+// until the new page binds a fresh one.
+func (u *workspaceUI) reload() {
+	u.blocked.Store(true)
+	u.status.Set("Updating Studio to show the saved song…")
+	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("navigation")) && gosx.Get("navigation").Get("revalidate").Type() == js.TypeFunction {
+		navigation := gosx.Get("navigation")
+		navigation.Call("revalidate")
+		return
+	}
+	js.Global().Get("location").Call("reload")
+}
+
+// refreshThenSubmit reads a stale region before a form in it is sent. If the
+// server reports the region unchanged, the user saw current content and the
+// form goes out once, with the fresh revision fields. If the content changed,
+// the refreshed form stays for the user to check and submit again. Nothing
+// was sent before the read, so this never repeats a write.
+func (u *workspaceUI) refreshThenSubmit(region, form, submitter js.Value) {
+	id, digest := workspaceAttr(region, "data-update-region"), workspaceAttr(region, "data-region-digest")
+	select {
+	case u.jobs <- workspaceJob{method: http.MethodGet, form: js.Undefined(), regions: id + ":" + digest, then: func(applied bool) {
+		switch {
+		case !applied || !form.Get("isConnected").Bool():
+			u.status.Set("This panel could not be refreshed, so nothing was saved. Submit it again.")
+		case workspaceAttr(domRegion(id), "data-region-digest") != digest:
+			u.status.Set("This panel changed since it was shown. Check it and submit again.")
+		case workspacePresent(submitter) && submitter.Get("isConnected").Bool():
+			form.Call("requestSubmit", submitter)
+		default:
+			form.Call("requestSubmit")
+		}
+	}}:
+	default:
+	}
+}
+
+// dropHistory removes queued Undo and Redo after a refused edit: they were
+// meant for the edit that did not happen and would undo an earlier one.
+func (u *workspaceUI) dropHistory() {
+	var keep []workspaceJob
+	dropped := false
+	for len(u.jobs) > 0 {
+		job := <-u.jobs
+		if job.target == "/__actions/undo" || job.target == "/__actions/redo" {
+			u.settle(job, true)
+			dropped = true
+			continue
+		}
+		keep = append(keep, job)
+	}
+	for _, job := range keep {
+		u.jobs <- job
+	}
+	if dropped {
+		u.status.Set(u.status.Get() + " The Undo or Redo waiting behind it was not sent.")
+	}
+}
+
+// engineVersion is the revision an engine writes with: its update region's,
+// so rule R1 covers engines too (a stale region's engine is refused). Outside
+// the shell it is the fallback.
+func engineVersion(node js.Value, fallback workspaceVersion) workspaceVersion {
+	if !workspacePresent(node) || node.Get("closest").Type() != js.TypeFunction {
+		return fallback
+	}
+	if region := domCall(node, "closest", "[data-update-region]"); workspacePresent(region) && workspaceAttr(region, "data-region-revision") != "" {
+		return workspaceVersion{Revision: workspaceAttr(region, "data-region-revision"), SourceRevision: workspaceAttr(region, "data-region-source-revision"), Seq: fallback.Seq}
+	}
+	return fallback
 }
 
 // advanceRegions confirms what R1 lets through without HTML: regions the

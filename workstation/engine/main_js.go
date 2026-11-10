@@ -22,7 +22,12 @@ type pair struct {
 
 // All Studio surfaces share this module. A confirmed workspace revision can
 // advance live commands without disposing their input leases or held notes.
-type workspaceVersion struct{ Revision, SourceRevision string }
+type workspaceVersion struct {
+	Revision, SourceRevision string
+	// Seq advances on every shell apply, so engines re-read their region's
+	// revision when a stale region becomes fresh without a new revision.
+	Seq uint64
+}
 
 var confirmedWorkspaceVersion = signal.New(workspaceVersion{})
 
