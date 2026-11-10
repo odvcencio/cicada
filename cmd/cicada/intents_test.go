@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,56 +28,249 @@ func catalogFixture(kind string) string {
 	return "song.cicada"
 }
 
+// catalogProject copies an intent's fixture score into a new folder with the
+// audio files and library pins its example needs, and returns the score.
+func catalogProject(t *testing.T, kind string) string {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join("testdata", "intent-catalog", catalogFixture(kind)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	score := filepath.Join(dir, "catalog.cicada")
+	if err := os.WriteFile(score, source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "audio"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The examples that print or record audio name these files and their
+	// SHA-256: example.wav (mono, also song.cicada's asset) and print.wav
+	// (stereo, as a sampler print is).
+	for name, channels := range map[string]int{"example.wav": 1, "print.wav": 2} {
+		if err := os.WriteFile(filepath.Join(dir, "audio", name), testwav.Bytes(48000, channels, 16, 4800, 1), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if kind == "insertlibraryitem" {
+		// cicada apply does not pin libraries (Studio pins them before it
+		// applies the intent), so the project pins std/synth first, as the
+		// intent's notes tell a caller to.
+		_, pins, err := studioLibraryPins(score, edits.LibraryImport(source, "std/synth"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(pins.Path, pins.After, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return score
+}
+
+// applyCatalogPayload runs one intent through cicada apply as a dry run and
+// returns the diff.
+func applyCatalogPayload(t *testing.T, score string, intent []byte) (string, error) {
+	t.Helper()
+	envelope := filepath.Join(filepath.Dir(score), "intents.json")
+	if err := os.WriteFile(envelope, []byte(`{"version":1,"intents":[`+string(intent)+`]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	err := applyCommandWithHooks([]string{score, envelope}, &stdout, nil)
+	return stdout.String(), err
+}
+
 // TestIntentCatalogExamplesApply runs every catalog example through cicada
 // apply, as a dry run, against the fixture scores in testdata/intent-catalog,
 // and requires a change. A new intent must bring an example that applies.
 func TestIntentCatalogExamplesApply(t *testing.T) {
-	fixtures := filepath.Join("testdata", "intent-catalog")
 	for _, info := range edits.Catalog() {
 		t.Run(info.Kind, func(t *testing.T) {
-			fixture := catalogFixture(info.Kind)
-			source, err := os.ReadFile(filepath.Join(fixtures, fixture))
+			score := catalogProject(t, info.Kind)
+			diff, err := applyCatalogPayload(t, score, info.Example)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("example %s does not apply to %s: %v", info.Example, catalogFixture(info.Kind), err)
 			}
-			dir := t.TempDir()
-			score := filepath.Join(dir, "catalog.cicada")
-			if err := os.WriteFile(score, source, 0o644); err != nil {
-				t.Fatal(err)
+			if !strings.Contains(diff, "@@") {
+				t.Fatalf("example %s changes nothing in %s", info.Example, catalogFixture(info.Kind))
 			}
-			if err := os.MkdirAll(filepath.Join(dir, "audio"), 0o755); err != nil {
-				t.Fatal(err)
+		})
+	}
+}
+
+// catalogLeaf is one field the example sets, with what the catalog says of it.
+type catalogLeaf struct {
+	path     []any // object keys and array indexes from the intent's top level
+	field    edits.IntentField
+	required bool // required, or required_when holds in the example
+}
+
+func (leaf catalogLeaf) name() string {
+	var parts []string
+	for _, step := range leaf.path {
+		switch step := step.(type) {
+		case string:
+			parts = append(parts, step)
+		case int:
+			parts[len(parts)-1] += fmt.Sprintf("[%d]", step)
+		}
+	}
+	return strings.Join(parts, ".")
+}
+
+// catalogLeaves lists every field the example sets, nested objects and the
+// first element of each list of objects included.
+func catalogLeaves(t *testing.T, info edits.IntentInfo) []catalogLeaf {
+	t.Helper()
+	var example map[string]any
+	if err := json.Unmarshal(info.Example, &example); err != nil {
+		t.Fatal(err)
+	}
+	var leaves []catalogLeaf
+	var walk func(object map[string]any, fields []edits.IntentField, path []any)
+	walk = func(object map[string]any, fields []edits.IntentField, path []any) {
+		for _, field := range fields {
+			value, ok := object[field.Name]
+			if !ok {
+				if field.Required {
+					t.Errorf("the example lacks %v.%s, which the catalog marks required", path, field.Name)
+				}
+				continue
 			}
-			// The examples that print or record audio name these files and
-			// their SHA-256: example.wav (mono, also song.cicada's asset) and
-			// print.wav (stereo, as a sampler print is).
-			for name, channels := range map[string]int{"example.wav": 1, "print.wav": 2} {
-				if err := os.WriteFile(filepath.Join(dir, "audio", name), testwav.Bytes(48000, channels, 16, 4800, 1), 0o644); err != nil {
-					t.Fatal(err)
+			at := append(append([]any(nil), path...), field.Name)
+			required := field.Required
+			if when := field.RequiredWhen; when != nil {
+				if other, ok := lookupJSON(example, strings.Split(when.Field, ".")); ok {
+					for _, want := range when.Values {
+						required = required || fmt.Sprint(other) == want
+					}
 				}
 			}
-			if info.Kind == "insertlibraryitem" {
-				// cicada apply does not pin libraries (Studio pins them before it
-				// applies the intent), so the project pins std/synth first, as
-				// the intent's notes tell a caller to.
-				_, pins, err := studioLibraryPins(score, edits.LibraryImport(source, "std/synth"))
-				if err != nil {
+			leaves = append(leaves, catalogLeaf{path: at, field: field, required: required})
+			switch value := value.(type) {
+			case map[string]any:
+				walk(value, field.Fields, at)
+			case []any:
+				if len(value) > 0 {
+					if element, ok := value[0].(map[string]any); ok {
+						walk(element, field.Fields, append(at, 0))
+					}
+				}
+			}
+		}
+	}
+	walk(example, info.Fields, nil)
+	return leaves
+}
+
+func containsName(names []string, want string) bool {
+	for _, name := range names {
+		if name == want {
+			return true
+		}
+	}
+	return false
+}
+
+func lookupJSON(value any, path []string) (any, bool) {
+	for _, key := range path {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if value, ok = object[key]; !ok {
+			return nil, false
+		}
+	}
+	return value, true
+}
+
+// editedExample returns the example with the value at path removed, or
+// replaced when replace is not nil.
+func editedExample(t *testing.T, info edits.IntentInfo, path []any, replace any) []byte {
+	t.Helper()
+	var example any
+	if err := json.Unmarshal(info.Example, &example); err != nil {
+		t.Fatal(err)
+	}
+	parent := example
+	for _, step := range path[:len(path)-1] {
+		switch step := step.(type) {
+		case string:
+			parent = parent.(map[string]any)[step]
+		case int:
+			parent = parent.([]any)[step]
+		}
+	}
+	key := path[len(path)-1].(string)
+	if replace == nil {
+		delete(parent.(map[string]any), key)
+	} else {
+		parent.(map[string]any)[key] = replace
+	}
+	data, err := json.Marshal(example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// TestIntentCatalogFieldsAreTrue checks what intents --json says of each
+// field against cicada apply, for every kind: an example without a field the
+// catalog marks required (or required by a required_when the example meets)
+// is refused; an example without an optional field still applies; a string
+// outside a field's values is refused; and an example without every field of
+// a one_of group is refused. A field the example leaves out is optional by
+// the example itself.
+func TestIntentCatalogFieldsAreTrue(t *testing.T) {
+	for _, info := range edits.Catalog() {
+		t.Run(info.Kind, func(t *testing.T) {
+			score := catalogProject(t, info.Kind)
+			leaves := catalogLeaves(t, info)
+			// A field that is the example's only member of a one_of group is
+			// required there: removing it empties the group.
+			for _, group := range info.OneOf {
+				var present []int
+				for i, leaf := range leaves {
+					if containsName(group, leaf.name()) {
+						present = append(present, i)
+					}
+				}
+				if len(present) == 1 {
+					leaves[present[0]].required = true
+				}
+			}
+			for _, leaf := range leaves {
+				_, err := applyCatalogPayload(t, score, editedExample(t, info, leaf.path, nil))
+				if leaf.required && err == nil {
+					t.Errorf("%s is marked required, but the example applies without it", leaf.name())
+				}
+				if !leaf.required && err != nil {
+					t.Errorf("%s is marked optional, but the example without it is refused: %v", leaf.name(), err)
+				}
+				if len(leaf.field.Values) > 0 && leaf.field.Type == "string" {
+					if _, err := applyCatalogPayload(t, score, editedExample(t, info, leaf.path, "not-a-listed-value")); err == nil {
+						t.Errorf("%s accepts a value outside its list %v", leaf.name(), leaf.field.Values)
+					}
+				}
+			}
+			for _, group := range info.OneOf {
+				var without any
+				if err := json.Unmarshal(info.Example, &without); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(pins.Path, pins.After, 0o644); err != nil {
-					t.Fatal(err)
+				for _, path := range group {
+					parts := strings.Split(path, ".")
+					if parent, ok := lookupJSON(without, parts[:len(parts)-1]); ok {
+						if object, ok := parent.(map[string]any); ok {
+							delete(object, parts[len(parts)-1])
+						}
+					}
 				}
-			}
-			envelope := filepath.Join(dir, "intents.json")
-			if err := os.WriteFile(envelope, []byte(`{"version":1,"intents":[`+string(info.Example)+`]}`), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			var stdout bytes.Buffer
-			if err := applyCommandWithHooks([]string{score, envelope}, &stdout, nil); err != nil {
-				t.Fatalf("example %s does not apply to %s: %v", info.Example, fixture, err)
-			}
-			if !strings.Contains(stdout.String(), "@@") {
-				t.Fatalf("example %s changes nothing in %s", info.Example, fixture)
+				data, _ := json.Marshal(without)
+				if _, err := applyCatalogPayload(t, score, data); err == nil {
+					t.Errorf("the example applies without any of one_of %v", group)
+				}
 			}
 		})
 	}

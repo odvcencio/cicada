@@ -1,8 +1,14 @@
 package edit
 
 import (
+	"fmt"
+	"strings"
+
 	"m31labs.dev/cicada/notation"
 )
+
+// sharedPolicies are the values of a grid intent's shared field; "" asks.
+var sharedPolicies = valueList("shared", "definition", "detach", "pattern")
 
 func gridSourceEdit(handler Handler) Handler {
 	return func(ctx *Context, intent Intent) error {
@@ -101,6 +107,9 @@ func gridSourceTarget(intent Intent) (id, lane string, index int, shared string,
 		id, lane, index, err = stepTarget(entity)
 	} else {
 		id, err = patternTarget(entity)
+	}
+	if _, notes := intent.(*EditNotes); err == nil && !notes && shared != "" && !containsString(sharedPolicies, shared) {
+		err = &FieldError{Field: "shared", Err: fmt.Errorf("shared must be %s, or left out", strings.Join(sharedPolicies, ", "))}
 	}
 	return
 }

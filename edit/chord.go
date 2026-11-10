@@ -13,10 +13,10 @@ import (
 //
 // Example: {"kind":"setchord","entity":"step:chords/0","notes":[57,60,64,67],"hold":4}
 type SetChord struct {
-	Entity EntityID `json:"entity"`                                              // the first step, as step:<pattern>/<index>, in a notes pattern
-	Notes  []int    `json:"notes"`                                               // MIDI pitches of the voicing, 2 to 4 notes
-	Hold   int      `json:"hold" unit:"steps"`                                   // steps the chord sounds, including the first
-	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity EntityID `json:"entity" cicada:"required"`            // the first step, as step:<pattern>/<index>, in a notes pattern
+	Notes  []int    `json:"notes" cicada:"required"`             // MIDI pitches of the voicing, 2 to 4 notes
+	Hold   int      `json:"hold" unit:"steps" cicada:"required"` // steps the chord sounds, including the first
+	Shared string   `json:"shared,omitempty" values:"shared"`    // as for togglestep
 }
 
 func (SetChord) Kind() string { return "setchord" }

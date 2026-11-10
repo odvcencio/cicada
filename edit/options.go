@@ -72,6 +72,11 @@ const (
 )
 
 type Options struct {
+	// KeepInvalid makes Apply return the edited source even when it does not
+	// compile, with the compile error in Result.Invalid and no Plan. A host
+	// uses it to compare diagnostics before and after an edit, as cicada
+	// check does to prove a fix; such a result must never be written.
+	KeepInvalid bool
 	// ParamWriter pins SetParam to one writer. It belongs to the route that
 	// calls Apply, so it is not part of any intent's JSON.
 	ParamWriter ParamWriter

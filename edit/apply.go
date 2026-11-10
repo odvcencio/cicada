@@ -15,9 +15,12 @@ type Result struct {
 	Label  string
 	// Labels holds, for each intent in order, the history label it set, or
 	// "" when it set none.
-	Labels    []string
-	Response  map[string]any
-	Plan      *Plan // compiled candidate
+	Labels   []string
+	Response map[string]any
+	Plan     *Plan // compiled candidate
+	// Invalid is the compile error of a candidate that Options.KeepInvalid
+	// kept; Plan is nil then.
+	Invalid   error
 	Unchanged bool
 	// RenderChecked reports that an intent consulted the render check, so the
 	// result depends on rendered audio and not only on source text.
@@ -214,6 +217,9 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 		ctx.plan = nil
 	}
 	plan, err := opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
+	if err != nil && opts.KeepInvalid {
+		return &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Invalid: err, Unchanged: bytes.Equal(ctx.Source, source) && len(ctx.files) == 0}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

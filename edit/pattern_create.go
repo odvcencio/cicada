@@ -13,12 +13,12 @@ import (
 //
 // Example: {"kind":"createpattern","name":"riff-2","track":"bass","steps":16,"scene":"break","starter":"arpeggio"}
 type CreatePattern struct {
-	Name    string                 `json:"name"`                                                                    // the new pattern's name
-	Track   string                 `json:"track"`                                                                   // the track whose instrument the grid is for
-	Steps   int                    `json:"steps"`                                                                   // the number of steps, 1–64; a machine recipe needs 16 per bar
-	Scene   string                 `json:"scene,omitempty"`                                                         // a scene that plays the new pattern on the track
-	Starter string                 `json:"starter,omitempty" values:"empty,pulse,arpeggio,chords,backbeat,machine"` // what the grid starts with; chords needs a notes pattern and backbeat a drum track
-	Machine *patternmachine.Recipe `json:"machine,omitempty"`                                                       // a pattern-machine recipe, for starter machine
+	Name    string                 `json:"name" cicada:"required"`             // the new pattern's name
+	Track   string                 `json:"track" cicada:"required"`            // the track whose instrument the grid is for
+	Steps   int                    `json:"steps" cicada:"required"`            // the number of steps, 1–64; a machine recipe needs 16 per bar
+	Scene   string                 `json:"scene,omitempty"`                    // a scene that plays the new pattern on the track
+	Starter string                 `json:"starter,omitempty" values:"starter"` // what the grid starts with; chords needs a notes pattern and backbeat a drum track
+	Machine *patternmachine.Recipe `json:"machine,omitempty"`                  // a pattern-machine recipe, for starter machine
 }
 
 func (CreatePattern) Kind() string { return "createpattern" }

@@ -18,27 +18,36 @@ import (
 //
 // Example: {"kind":"addmodulator","sourcekind":"lfo","name":"drift","rate":"2bars","wave":"triangle"}
 type AddModulator struct {
-	SourceKind string `json:"sourcekind" values:"lfo,sway,contour,envelope"`            // the kind of source
-	Name       string `json:"name"`                                                     // the source's name
-	Rate       string `json:"rate,omitempty"`                                           // the rate or period, such as "2bars", "1/4" or "0.5Hz"; a contour needs a musical period
-	Wave       string `json:"wave,omitempty" values:"sine,triangle,square,sample-hold"` // the waveform, for lfo
-	Source     string `json:"source,omitempty"`                                         // the track whose level an envelope follows
+	SourceKind string `json:"sourcekind" values:"modulator-kind" cicada:"required"`   // the kind of source
+	Name       string `json:"name" cicada:"required"`                                 // the source's name
+	Rate       string `json:"rate,omitempty" when:"sourcekind=lfo|sway|contour"`      // the rate or period, such as "2bars", "1/4" or "0.5Hz"; a contour needs a musical period
+	Wave       string `json:"wave,omitempty" when:"sourcekind=lfo" values:"lfo-wave"` // the waveform, for lfo
+	Source     string `json:"source,omitempty"`                                       // the track whose level an envelope follows
 }
 
 func (AddModulator) Kind() string { return "addmodulator" }
+
+// modulatorKinds, lfoWaves, routeOperations and routeModes are what the
+// modulation intents accept.
+var (
+	modulatorKinds  = valueList("modulator-kind", "lfo", "sway", "contour", "envelope")
+	lfoWaves        = valueList("lfo-wave", "sine", "triangle", "square", "sample-hold")
+	routeOperations = valueList("route-operation", "add", "set", "remove")
+	routeModes      = valueList("route-mode", "add", "multiply")
+)
 
 // EditModulator changes one setting or one contour point in its owning file,
 // or removes a source that no route uses.
 //
 // Example: {"kind":"editmodulator","operation":"set","source":"wobble","field":"rate","value":"4bars"}
 type EditModulator struct {
-	Operation string `json:"operation"`       // set changes a setting; remove deletes the source; the contour operations edit one point
-	Source    string `json:"source"`          // the source's name
-	Field     string `json:"field,omitempty"` // the setting, for set: wave, rate, phase or loop (lfo); rate, octaves or loop (sway); period or loop (contour); attack, release or source (envelope)
-	Value     string `json:"value,omitempty"` // the new value, as source text
-	Index     int    `json:"index,omitempty"` // the contour point's index, from 0
-	At        string `json:"at,omitempty"`    // the contour point's position, 0 to 1
-	Shape     string `json:"shape,omitempty"` // the contour point's shape
+	Operation string `json:"operation" cicada:"required"`          // set changes a setting; remove deletes the source; the contour operations edit one point
+	Source    string `json:"source" cicada:"required"`             // the source's name
+	Field     string `json:"field,omitempty" when:"operation=set"` // the setting, for set: wave, rate, phase or loop (lfo); rate, octaves or loop (sway); period or loop (contour); attack, release or source (envelope)
+	Value     string `json:"value,omitempty" when:"operation=set"` // the new value, as source text
+	Index     int    `json:"index,omitempty"`                      // the contour point's index, from 0
+	At        string `json:"at,omitempty"`                         // the contour point's position, 0 to 1
+	Shape     string `json:"shape,omitempty"`                      // the contour point's shape
 }
 
 func (EditModulator) Kind() string { return "editmodulator" }
@@ -48,11 +57,11 @@ func (EditModulator) Kind() string { return "editmodulator" }
 //
 // Example: {"kind":"modulationroute","operation":"add","source":"wobble","target":"bass.cutoff","mode":"add","depth":"300Hz"}
 type ModulationRoute struct {
-	Operation string `json:"operation" values:"add,set,remove"` // add a route, set its depth, or remove it
-	Source    string `json:"source"`                            // the modulation source's name
-	Target    string `json:"target"`                            // the parameter path, such as bass.cutoff
-	Mode      string `json:"mode" values:"add,multiply"`        // how the source combines with the parameter
-	Depth     string `json:"depth,omitempty"`                   // the depth with its unit, such as "300Hz" or "2dB", for add and set
+	Operation string `json:"operation" values:"route-operation" cicada:"required"` // add a route, set its depth, or remove it
+	Source    string `json:"source" cicada:"required"`                             // the modulation source's name
+	Target    string `json:"target" cicada:"required"`                             // the parameter path, such as bass.cutoff
+	Mode      string `json:"mode" values:"route-mode" cicada:"required"`           // how the source combines with the parameter
+	Depth     string `json:"depth,omitempty" when:"operation=add|set"`             // the depth with its unit, such as "300Hz" or "2dB", for add and set
 }
 
 func (ModulationRoute) Kind() string { return "modulationroute" }
@@ -236,9 +245,12 @@ func addModulator(ctx *Context, intent Intent) error {
 		return fmt.Errorf("choose a source name")
 	}
 	var text string
+	if !containsString(modulatorKinds, in.SourceKind) {
+		return fmt.Errorf("choose lfo, sway, contour or envelope")
+	}
 	switch in.SourceKind {
 	case "lfo":
-		if _, err := notation.ParseModRate(in.Rate); err != "" || (in.Wave != "sine" && in.Wave != "triangle" && in.Wave != "square" && in.Wave != "sample-hold") {
+		if _, err := notation.ParseModRate(in.Rate); err != "" || !containsString(lfoWaves, in.Wave) {
 			return fmt.Errorf("choose a waveform and rate")
 		}
 		text = fmt.Sprintf("lfo %s { wave = %s rate = %s }", in.Name, in.Wave, in.Rate)
@@ -278,7 +290,7 @@ func editModulationRoute(ctx *Context, intent Intent) error {
 			return err
 		}
 	}
-	if !modName.MatchString(in.Source) || !modName.MatchString(in.Target) || (in.Mode != "add" && in.Mode != "multiply") {
+	if !modName.MatchString(in.Source) || !modName.MatchString(in.Target) || !containsString(routeModes, in.Mode) {
 		return fmt.Errorf("choose a source, target and route mode")
 	}
 	if in.Operation != "remove" {
@@ -299,7 +311,7 @@ func editModulationRoute(ctx *Context, intent Intent) error {
 		ctx.SetLabel("Modulation · added route")
 		return nil
 	}
-	if in.Operation != "set" && in.Operation != "remove" {
+	if !containsString(routeOperations, in.Operation) {
 		return fmt.Errorf("choose a route operation")
 	}
 	score, ds, err := ctx.ParseProject()

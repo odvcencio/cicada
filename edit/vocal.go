@@ -23,7 +23,7 @@ import (
 type VocalSegment struct {
 	Take   string  `json:"take"`
 	Start  int64   `json:"startTick"`
-	End    int64   `json:"endTick"`
+	End    int64   `json:"endTick" cicada:"required"`
 	GainDB float64 `json:"gainDB,omitempty"`
 	// Positive offset reads later source frames at the same song position. Raw
 	// take coordinates remain immutable; trimming either side keeps this mapping.
@@ -37,11 +37,11 @@ type VocalSegment struct {
 // comment.
 type VocalComp struct {
 	Elastic      bool                    `json:"elastic,omitempty"`
-	Track        string                  `json:"track"`
-	Tempo        int64                   `json:"tempoMilli"`
+	Track        string                  `json:"track" cicada:"required"`
+	Tempo        int64                   `json:"tempoMilli" cicada:"required"`
 	TempoChanges []musictime.TempoChange `json:"tempoChanges,omitempty"`
-	Segments     []VocalSegment          `json:"segments"`
-	Asset        string                  `json:"asset"`
+	Segments     []VocalSegment          `json:"segments" cicada:"required"`
+	Asset        string                  `json:"asset" cicada:"required"`
 }
 
 // VocalCompPrefix starts the metadata comment line of a vocal comp.
@@ -57,14 +57,14 @@ const VocalCompPrefix = "// cicada-vocal-comp "
 //
 // Example: {"kind":"placevocalcomp","comp":{"track":"vox","tempoMilli":120000,"segments":[{"take":"take-1","startTick":0,"endTick":3840}],"asset":"comp"},"asset":{"path":"audio/example.wav","sha256":"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee","frames":4800,"ratehz":48000}}
 type PlaceVocalComp struct {
-	Comp     VocalComp      `json:"comp"`               // which take plays where
-	Asset    PrintAsset     `json:"asset"`              // the printed comp file
-	Previous *VocalPrevious `json:"previous,omitempty"` // the print this comp replaces
+	Comp     VocalComp      `json:"comp" cicada:"required"`  // which take plays where
+	Asset    PrintAsset     `json:"asset" cicada:"required"` // the printed comp file
+	Previous *VocalPrevious `json:"previous,omitempty"`      // the print this comp replaces
 }
 
 // VocalPrevious names the print this comp replaces.
 type VocalPrevious struct {
-	Asset string `json:"asset"`
+	Asset string `json:"asset" cicada:"required"`
 }
 
 func (PlaceVocalComp) Kind() string { return "placevocalcomp" }

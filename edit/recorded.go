@@ -11,14 +11,14 @@ import (
 //
 // Example: {"kind":"publishrecorded","name":"hit","declaration":"sampler hit { asset = vocal root = c3 mode = oneshot voices = 8 }","scene":"main","level":"-6dB","note":"c3"}
 type PublishRecorded struct {
-	Name        string `json:"name"`                // the sampler's name
-	Declaration string `json:"declaration"`         // the sampler declaration text
-	Track       string `json:"track,omitempty"`     // the new track's name (default: the sampler's name)
-	Pattern     string `json:"pattern,omitempty"`   // the new pattern's name (default: the sampler's name)
-	Scene       string `json:"scene"`               // the scene that plays the new pattern
-	ScenePath   string `json:"scenepath,omitempty"` // the source file that holds the scene, when it is not the score
-	Level       string `json:"level"`               // the new track's level, such as "-6dB"
-	Note        string `json:"note"`                // the pitch the new pattern plays, such as c3
+	Name        string `json:"name" cicada:"required"`        // the sampler's name
+	Declaration string `json:"declaration" cicada:"required"` // the sampler declaration text
+	Track       string `json:"track,omitempty"`               // the new track's name (default: the sampler's name)
+	Pattern     string `json:"pattern,omitempty"`             // the new pattern's name (default: the sampler's name)
+	Scene       string `json:"scene"`                         // the scene that plays the new pattern
+	ScenePath   string `json:"scenepath,omitempty"`           // the source file that holds the scene, when it is not the score
+	Level       string `json:"level" cicada:"required"`       // the new track's level, such as "-6dB"
+	Note        string `json:"note"`                          // the pitch the new pattern plays, such as c3
 }
 
 func (PublishRecorded) Kind() string { return "publishrecorded" }

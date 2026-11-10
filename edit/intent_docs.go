@@ -699,8 +699,21 @@ var intentDocs = map[string]typeDoc{
 			"SHA256":   "the file's SHA-256, 64 lowercase hex digits",
 		},
 	},
-	"TakeExpression": {},
-	"TakeGroup":      {},
+	"TakeExpression": {
+		Meaning: "is one controller sample of a recorded note or shared lane",
+		Fields: map[string]string{
+			"PitchCents": "bend, −9600 to 9600",
+			"Pressure":   "0 to 1",
+			"Tick":       "time from the note's start, or in the loop for a lane",
+			"Timbre":     "0 to 1",
+		},
+	},
+	"TakeGroup": {
+		Meaning: "is one recorded shared gesture lane",
+		Fields: map[string]string{
+			"Points": "at least one point",
+		},
+	},
 	"TakeNote": {
 		Meaning: "is one recorded note",
 		Notes:   "Ticks count from the start of the take, 960 per beat.",

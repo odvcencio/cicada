@@ -15,9 +15,9 @@ import (
 //
 // Example: {"kind":"setarrangementtempo","at":"@4.1.1","value":"132"}
 type SetArrangementTempo struct {
-	OldAt string `json:"oldat,omitempty"` // the position of the step to change or move, such as "@3.1.1"
-	At    string `json:"at"`              // the step's position, at the start of a bar, such as "@4.1.1"
-	Value string `json:"value"`           // beats per minute, 20–300, such as "132" or "96.5"
+	OldAt string `json:"oldat,omitempty"`         // the position of the step to change or move, such as "@3.1.1"
+	At    string `json:"at" cicada:"required"`    // the step's position, at the start of a bar, such as "@4.1.1"
+	Value string `json:"value" cicada:"required"` // beats per minute, 20–300, such as "132" or "96.5"
 }
 
 func (SetArrangementTempo) Kind() string { return "setarrangementtempo" }
@@ -27,7 +27,7 @@ func (SetArrangementTempo) Kind() string { return "setarrangementtempo" }
 //
 // Example: {"kind":"removearrangementtempo","at":"@3.1.1"}
 type RemoveArrangementTempo struct {
-	At string `json:"at"` // the step's position, such as "@3.1.1"
+	At string `json:"at" cicada:"required"` // the step's position, such as "@3.1.1"
 }
 
 func (RemoveArrangementTempo) Kind() string { return "removearrangementtempo" }

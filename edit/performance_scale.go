@@ -12,9 +12,9 @@ import (
 //
 // Example: {"kind":"scaleperformance","entity":"pattern:phrase","numerator":1,"denominator":2}
 type ScalePerformance struct {
-	Entity      EntityID `json:"entity"`      // the performance pattern, as pattern:<name>
-	Numerator   int      `json:"numerator"`   // 1–16
-	Denominator int      `json:"denominator"` // 1–16
+	Entity      EntityID `json:"entity" cicada:"required"`      // the performance pattern, as pattern:<name>
+	Numerator   int      `json:"numerator" cicada:"required"`   // 1–16
+	Denominator int      `json:"denominator" cicada:"required"` // 1–16
 }
 
 func (ScalePerformance) Kind() string { return "scaleperformance" }

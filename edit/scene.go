@@ -15,8 +15,8 @@ import (
 //
 // Example: {"kind":"setscenesetting","entity":"setting:main/bass.cutoff","value":"1.25kHz"}
 type SetSceneSetting struct {
-	Entity EntityID        `json:"entity"` // the setting, as setting:<scene>/<owner>.<field>
-	Value  json.RawMessage `json:"value"`  // a number, or a string with a unit such as "1.25kHz" or "-6dB"; cicada params lists ranges and units
+	Entity EntityID        `json:"entity" cicada:"required"` // the setting, as setting:<scene>/<owner>.<field>
+	Value  json.RawMessage `json:"value" cicada:"required"`  // a number, or a string with a unit such as "1.25kHz" or "-6dB"; cicada params lists ranges and units
 }
 
 func (SetSceneSetting) Kind() string { return "setscenesetting" }
@@ -25,7 +25,7 @@ func (SetSceneSetting) Kind() string { return "setscenesetting" }
 //
 // Example: {"kind":"removescenesetting","entity":"setting:main/bass.reso"}
 type RemoveSceneSetting struct {
-	Entity EntityID `json:"entity"` // the setting, as setting:<scene>/<owner>.<field>
+	Entity EntityID `json:"entity" cicada:"required"` // the setting, as setting:<scene>/<owner>.<field>
 }
 
 func (RemoveSceneSetting) Kind() string { return "removescenesetting" }

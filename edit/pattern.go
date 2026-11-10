@@ -16,10 +16,10 @@ import (
 //
 // Example: {"kind":"setpatternsettings","entity":"pattern:riff","swing100":5600,"gate":60,"transpose":0}
 type SetPatternSettings struct {
-	Entity    EntityID `json:"entity"`                       // the pattern, as pattern:<name>
-	Swing100  int      `json:"swing100" unit:"0.01 percent"` // swing in hundredths of a percent, 5000–7500 (50% to 75%)
-	Gate      int      `json:"gate" unit:"percent"`          // gate length, 10–100
-	Transpose int      `json:"transpose" unit:"semitones"`   // −24 to +24
+	Entity    EntityID `json:"entity" cicada:"required"`                       // the pattern, as pattern:<name>
+	Swing100  int      `json:"swing100" unit:"0.01 percent" cicada:"required"` // swing in hundredths of a percent, 5000–7500 (50% to 75%)
+	Gate      int      `json:"gate" unit:"percent" cicada:"required"`          // gate length, 10–100
+	Transpose int      `json:"transpose" unit:"semitones"`                     // −24 to +24
 }
 
 func (SetPatternSettings) Kind() string { return "setpatternsettings" }
@@ -29,18 +29,26 @@ func (SetPatternSettings) Kind() string { return "setpatternsettings" }
 //
 // Example: {"kind":"setstep","entity":"step:riff/1","mode":"note","pitch":45,"accent":true,"slide":false,"ratchet":1,"chance":100}
 type SetStep struct {
-	Entity   EntityID `json:"entity"`                                              // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
-	Mode     string   `json:"mode" values:"note,hit,tie,rest"`                     // hit needs a drum pattern; tie and note need a note pattern
-	Pitch    int      `json:"pitch"`                                               // MIDI pitch 0–127 for mode note
-	Accent   bool     `json:"accent"`                                              // accent a note
-	Slide    bool     `json:"slide"`                                               // slide from a note into the next one
-	Ratchet  int      `json:"ratchet"`                                             // repeats within the step; 1 plays once
-	Chance   int      `json:"chance" unit:"percent"`                               // probability the step plays, 1–100
-	Velocity string   `json:"velocity,omitempty" values:"x,X,1,2,3,4,5,6,7,8,9"`   // drum hit spelling for mode hit: x, accented X, or a level 1–9
-	Shared   string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity   EntityID `json:"entity" cicada:"required"`                  // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
+	Mode     string   `json:"mode" values:"step-mode" cicada:"required"` // hit needs a drum pattern; tie and note need a note pattern
+	Pitch    int      `json:"pitch"`                                     // MIDI pitch 0–127 for mode note
+	Accent   bool     `json:"accent"`                                    // accent a note
+	Slide    bool     `json:"slide"`                                     // slide from a note into the next one
+	Ratchet  int      `json:"ratchet" cicada:"required"`                 // repeats within the step; 1 plays once
+	Chance   int      `json:"chance" unit:"percent" cicada:"required"`   // probability the step plays, 1–100
+	Velocity string   `json:"velocity,omitempty" values:"drum-velocity"` // drum hit spelling for mode hit: x, accented X, or a level 1–9
+	Shared   string   `json:"shared,omitempty" values:"shared"`          // as for togglestep
 }
 
 func (SetStep) Kind() string { return "setstep" }
+
+// stepModes, drumVelocities and rangeOperations are what SetStep's mode and
+// velocity and SetRange's operation accept.
+var (
+	stepModes       = valueList("step-mode", "note", "hit", "tie", "rest")
+	drumVelocities  = valueList("drum-velocity", "x", "X", "1", "2", "3", "4", "5", "6", "7", "8", "9")
+	rangeOperations = valueList("range-operation", "clear", "copy", "reverse", "rotate", "transpose")
+)
 
 // DuplicatePattern copies a pattern under a new name. With a track, the copy
 // is written for that track's instrument, and the edit is refused unless the
@@ -48,9 +56,9 @@ func (SetStep) Kind() string { return "setstep" }
 //
 // Example: {"kind":"duplicatepattern","entity":"pattern:riff","name":"riff-b"}
 type DuplicatePattern struct {
-	Entity EntityID `json:"entity"`          // the pattern to copy, as pattern:<name>
-	Name   string   `json:"name"`            // the new pattern's name: lowercase letters, digits, _ and -, at most 64 bytes
-	Track  string   `json:"track,omitempty"` // the track the copy is for
+	Entity EntityID `json:"entity" cicada:"required"` // the pattern to copy, as pattern:<name>
+	Name   string   `json:"name" cicada:"required"`   // the new pattern's name: lowercase letters, digits, _ and -, at most 64 bytes
+	Track  string   `json:"track,omitempty"`          // the track the copy is for
 }
 
 func (DuplicatePattern) Kind() string { return "duplicatepattern" }
@@ -62,14 +70,14 @@ func (DuplicatePattern) Kind() string { return "duplicatepattern" }
 //
 // Example: {"kind":"setrange","entity":"pattern:riff","operation":"transpose","first":0,"last":3,"amount":12}
 type SetRange struct {
-	Entity    EntityID `json:"entity"`                                                 // the pattern, as pattern:<name>
-	Lane      string   `json:"lane,omitempty"`                                         // the drum lane; empty for a note pattern
-	Operation string   `json:"operation" values:"clear,copy,reverse,rotate,transpose"` // what to do with the steps
-	First     int      `json:"first"`                                                  // first step index, from 0
-	Last      int      `json:"last"`                                                   // last step index, inclusive
-	Target    int      `json:"target,omitempty"`                                       // first step index of the copy, for copy
-	Amount    int      `json:"amount,omitempty"`                                       // steps to rotate, or semitones to transpose, −127 to +127
-	Shared    string   `json:"shared,omitempty" values:"definition,detach,pattern"`    // as for togglestep
+	Entity    EntityID `json:"entity" cicada:"required"`                             // the pattern, as pattern:<name>
+	Lane      string   `json:"lane,omitempty"`                                       // the drum lane; empty for a note pattern
+	Operation string   `json:"operation" values:"range-operation" cicada:"required"` // what to do with the steps
+	First     int      `json:"first"`                                                // first step index, from 0
+	Last      int      `json:"last"`                                                 // last step index, inclusive
+	Target    int      `json:"target,omitempty"`                                     // first step index of the copy, for copy
+	Amount    int      `json:"amount,omitempty"`                                     // steps to rotate, or semitones to transpose, −127 to +127
+	Shared    string   `json:"shared,omitempty" values:"shared"`                     // as for togglestep
 }
 
 func (SetRange) Kind() string { return "setrange" }
@@ -80,9 +88,9 @@ func (SetRange) Kind() string { return "setrange" }
 //
 // Example: {"kind":"resizepattern","entity":"pattern:riff","length":16}
 type ResizePattern struct {
-	Entity EntityID `json:"entity"`                                              // the pattern, as pattern:<name>
-	Length int      `json:"length"`                                              // the new number of steps
-	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity EntityID `json:"entity" cicada:"required"`         // the pattern, as pattern:<name>
+	Length int      `json:"length" cicada:"required"`         // the new number of steps
+	Shared string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 }
 
 func (ResizePattern) Kind() string { return "resizepattern" }
@@ -92,9 +100,9 @@ func (ResizePattern) Kind() string { return "resizepattern" }
 //
 // Example: {"kind":"bindscene","scene":"break","track":"drums","pattern":"beat"}
 type BindScene struct {
-	Scene   string `json:"scene"`   // the scene's name
-	Track   string `json:"track"`   // the track's name
-	Pattern string `json:"pattern"` // the pattern's name
+	Scene   string `json:"scene" cicada:"required"`   // the scene's name
+	Track   string `json:"track" cicada:"required"`   // the track's name
+	Pattern string `json:"pattern" cicada:"required"` // the pattern's name
 }
 
 func (BindScene) Kind() string { return "bindscene" }
@@ -318,6 +326,9 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 		token := steps[index]
 		text := "."
 		chordWritten := false
+		if !containsString(stepModes, edit.Mode) {
+			return nil, fmt.Errorf("choose note, hit, tie, or rest")
+		}
 		switch edit.Mode {
 		case "rest":
 		case "tie":
@@ -380,12 +391,12 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 			if !drums {
 				return nil, fmt.Errorf("hits require a drum pattern")
 			}
-			if edit.Velocity == "x" || edit.Velocity == "X" {
-				text = edit.Velocity
-			} else if len(edit.Velocity) == 1 && edit.Velocity[0] >= '1' && edit.Velocity[0] <= '9' {
-				text = "x" + edit.Velocity
-			} else {
+			if !containsString(drumVelocities, edit.Velocity) {
 				return nil, fmt.Errorf("choose a drum velocity from x1–x9, normal x, or accented X")
+			}
+			text = edit.Velocity
+			if edit.Velocity != "x" && edit.Velocity != "X" {
+				text = "x" + edit.Velocity
 			}
 		default:
 			return nil, fmt.Errorf("choose note, hit, tie, or rest")
@@ -531,6 +542,9 @@ func duplicatePatternSource(ctx *Context, id, name, track string) ([]byte, error
 func patternRangeSource(ctx *Context, id, lane string, edit *SetRange) ([]byte, error) {
 	if edit == nil || edit.First < 0 || edit.Last < edit.First || edit.Amount < -127 || edit.Amount > 127 {
 		return nil, fmt.Errorf("choose a valid step range and shift −127 to +127")
+	}
+	if !containsString(rangeOperations, edit.Operation) {
+		return nil, fmt.Errorf("choose clear, copy, reverse, rotate, or transpose")
 	}
 	local, err := resolvePatternRange(ctx, id, lane, edit.First, edit.Last, edit.Shared)
 	if err != nil {

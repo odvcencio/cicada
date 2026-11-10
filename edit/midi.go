@@ -15,14 +15,17 @@ import (
 //
 // Example: {"kind":"setmidimapping","port":"pads","message":"cc","channel":1,"number":74,"target":"bass.cutoff"}
 type SetMIDIMapping struct {
-	Port    string `json:"port"`                     // the logical port's name
-	Message string `json:"message" values:"cc,note"` // a controller or a note
-	Channel int    `json:"channel"`                  // MIDI channel 1–16
-	Number  int    `json:"number"`                   // the controller or note number, 0–127
-	Target  string `json:"target"`                   // for cc, a parameter path such as bass.cutoff; for note, play, stop, launch <scene>, stop-track <track> or launch-slot <track> <pattern>
+	Port    string `json:"port" cicada:"required"`                          // the logical port's name
+	Message string `json:"message" values:"midi-message" cicada:"required"` // a controller or a note
+	Channel int    `json:"channel" cicada:"required"`                       // MIDI channel 1–16
+	Number  int    `json:"number"`                                          // the controller or note number, 0–127
+	Target  string `json:"target" cicada:"required"`                        // for cc, a parameter path such as bass.cutoff; for note, play, stop, launch <scene>, stop-track <track> or launch-slot <track> <pattern>
 }
 
 func (SetMIDIMapping) Kind() string { return "setmidimapping" }
+
+// midiMessages are the inputs SetMIDIMapping learns.
+var midiMessages = valueList("midi-message", "cc", "note")
 
 func init() {
 	Register("setmidimapping", func() Intent { return &SetMIDIMapping{} })
@@ -37,7 +40,7 @@ func setMIDIMapping(ctx *Context, intent Intent) error {
 	if !midiName.MatchString(in.Port) || in.Channel < 1 || in.Channel > 16 || in.Number < 0 || in.Number > 127 {
 		return fmt.Errorf("invalid MIDI port, channel, or input")
 	}
-	if in.Message != "cc" && in.Message != "note" {
+	if !containsString(midiMessages, in.Message) {
 		return fmt.Errorf("MIDI Learn accepts a controller or note")
 	}
 	if in.Message == "cc" && !midiPath.MatchString(in.Target) {

@@ -3,6 +3,7 @@ package edit
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -87,29 +88,117 @@ func TestIntentCatalogIsComplete(t *testing.T) {
 	}
 }
 
-// TestIntentCatalogValuesMatchHandlers keeps the values tags that copy a
-// handler's list in step with that list.
-func TestIntentCatalogValuesMatchHandlers(t *testing.T) {
-	for _, check := range []struct {
-		kind, field string
-		want        []string
-	}{
-		{"addeffect", "effectkind", mixerEffectKinds},
-		{"setprojectsettings", "root", sourcePitchNames[:]},
-		{"setprojectsettings", "scale", projectScales},
-		{"editnotes", "op", EditNotesOps},
-	} {
-		info, _ := DescribeIntent(check.kind)
-		var got []string
-		for _, field := range info.Fields {
-			if field.Name == check.field {
-				got = field.Values
+// TestIntentCatalogValuesNameHandlerLists requires every values tag to name
+// a list a handler registered with valueList, so the catalog shows the list
+// the handler checks and nothing else.
+func TestIntentCatalogValuesNameHandlerLists(t *testing.T) {
+	used := map[string]bool{}
+	for name := range catalogTypeNames() {
+		typ := catalogType(name)
+		for i := 0; i < typ.NumField(); i++ {
+			list := typ.Field(i).Tag.Get("values")
+			if list == "" {
+				continue
 			}
-		}
-		if !reflect.DeepEqual(got, check.want) {
-			t.Errorf("%s.%s lists %v; the handler accepts %v", check.kind, check.field, got, check.want)
+			if _, ok := valueLists[list]; !ok {
+				t.Errorf("%s.%s: values %q names no handler list", name, typ.Field(i).Name, list)
+			}
+			used[list] = true
 		}
 	}
+	for list := range valueLists {
+		if !used[list] {
+			t.Errorf("handler list %q is not shown by any field", list)
+		}
+	}
+}
+
+// TestIntentCatalogRejectsUnlistedFields adds a field the catalog does not
+// list to every object of every example (an unknown name, and each field of a
+// shared struct the kind excludes) and requires the decoder to refuse it.
+func TestIntentCatalogRejectsUnlistedFields(t *testing.T) {
+	for _, info := range Catalog() {
+		typ := reflect.TypeOf(registry[info.Kind]()).Elem()
+		if !ast.IsExported(typ.Name()) {
+			continue
+		}
+		var example map[string]any
+		if err := json.Unmarshal(info.Example, &example); err != nil {
+			t.Fatal(err)
+		}
+		var objects []map[string]any
+		var collect func(map[string]any)
+		collect = func(object map[string]any) {
+			objects = append(objects, object)
+			for _, value := range object {
+				switch value := value.(type) {
+				case map[string]any:
+					collect(value)
+				case []any:
+					for _, element := range value {
+						if inner, ok := element.(map[string]any); ok {
+							collect(inner)
+						}
+					}
+				}
+			}
+		}
+		collect(example)
+		for i := range objects {
+			objects[i]["unlisted_field"] = 1
+			data, _ := json.Marshal(example)
+			delete(objects[i], "unlisted_field")
+			if _, err := decodeIntent(data); err == nil {
+				t.Errorf("%s: the decoder accepts an unlisted field in %s", info.Kind, data)
+			}
+		}
+		for _, path := range kindRules[info.Kind].exclude {
+			parts := strings.Split(path, ".")
+			parent := example
+			for _, part := range parts[:len(parts)-1] {
+				parent, _ = parent[part].(map[string]any)
+			}
+			if parent == nil {
+				t.Fatalf("%s: the example has no object for %s", info.Kind, path)
+			}
+			parent[parts[len(parts)-1]] = "x"
+			data, _ := json.Marshal(example)
+			delete(parent, parts[len(parts)-1])
+			var field *FieldError
+			if _, err := decodeIntent(data); !errors.As(err, &field) || field.Field != path {
+				t.Errorf("%s: the decoder accepts the excluded field %s: %v", info.Kind, path, err)
+			}
+		}
+	}
+}
+
+// catalogType returns the struct type of a catalog type name.
+func catalogType(name string) reflect.Type {
+	var found reflect.Type
+	var visit func(reflect.Type)
+	visit = func(typ reflect.Type) {
+		typ = indirect(typ)
+		if typ.Kind() == reflect.Slice {
+			visit(typ.Elem())
+			return
+		}
+		if typ.Kind() != reflect.Struct || found != nil {
+			return
+		}
+		if typ.Name() == name {
+			found = typ
+			return
+		}
+		for i := 0; i < typ.NumField(); i++ {
+			if typ.Field(i).IsExported() {
+				visit(typ.Field(i).Type)
+			}
+		}
+	}
+	for _, kind := range Kinds() {
+		visit(reflect.TypeOf(registry[kind]()))
+	}
+	return found
 }
 
 // catalogTypeNames lists the Go names of the intent types and of the struct

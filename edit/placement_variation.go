@@ -9,8 +9,8 @@ import (
 //
 // Example: {"kind":"varyplacement","entity":"placement:verse","name":"pulse-verse"}
 type VaryPlacement struct {
-	Entity EntityID `json:"entity"` // the placement, as placement:<name>
-	Name   string   `json:"name"`   // the name of the new pattern
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
+	Name   string   `json:"name" cicada:"required"`   // the name of the new pattern
 }
 
 func (VaryPlacement) Kind() string { return "varyplacement" }

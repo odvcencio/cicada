@@ -17,8 +17,8 @@ import (
 //
 // Example: {"kind":"moveclip","entity":"placement:verse","attick":15360}
 type MoveClip struct {
-	Entity EntityID `json:"entity"`              // the placement, as placement:<name>
-	AtTick int64    `json:"attick" unit:"ticks"` // the new start, from the start of the arrangement
+	Entity EntityID `json:"entity" cicada:"required"`              // the placement, as placement:<name>
+	AtTick int64    `json:"attick" unit:"ticks" cicada:"required"` // the new start, from the start of the arrangement
 }
 
 func (MoveClip) Kind() string { return "moveclip" }
@@ -27,8 +27,8 @@ func (MoveClip) Kind() string { return "moveclip" }
 //
 // Example: {"kind":"resizeclip","entity":"placement:verse","lengthticks":11520}
 type ResizeClip struct {
-	Entity      EntityID `json:"entity"`                   // the placement, as placement:<name>
-	LengthTicks int64    `json:"lengthticks" unit:"ticks"` // the new length
+	Entity      EntityID `json:"entity" cicada:"required"`                   // the placement, as placement:<name>
+	LengthTicks int64    `json:"lengthticks" unit:"ticks" cicada:"required"` // the new length
 }
 
 func (ResizeClip) Kind() string { return "resizeclip" }
@@ -37,8 +37,8 @@ func (ResizeClip) Kind() string { return "resizeclip" }
 //
 // Example: {"kind":"splitclip","entity":"placement:intro","attick":3840}
 type SplitClip struct {
-	Entity EntityID `json:"entity"`              // the placement, as placement:<name>
-	AtTick int64    `json:"attick" unit:"ticks"` // where to cut, from the start of the arrangement
+	Entity EntityID `json:"entity" cicada:"required"`              // the placement, as placement:<name>
+	AtTick int64    `json:"attick" unit:"ticks" cicada:"required"` // where to cut, from the start of the arrangement
 }
 
 func (SplitClip) Kind() string { return "splitclip" }
@@ -47,7 +47,7 @@ func (SplitClip) Kind() string { return "splitclip" }
 //
 // Example: {"kind":"duplicateclip","entity":"placement:verse"}
 type DuplicateClip struct {
-	Entity EntityID `json:"entity"` // the placement, as placement:<name>
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
 }
 
 func (DuplicateClip) Kind() string { return "duplicateclip" }
@@ -56,7 +56,7 @@ func (DuplicateClip) Kind() string { return "duplicateclip" }
 //
 // Example: {"kind":"deleteclip","entity":"placement:intro"}
 type DeleteClip struct {
-	Entity EntityID `json:"entity"` // the placement, as placement:<name>
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
 }
 
 func (DeleteClip) Kind() string { return "deleteclip" }

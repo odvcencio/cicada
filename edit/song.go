@@ -15,8 +15,8 @@ import (
 //
 // Example: {"kind":"movesongentry","entity":"song:0","target":1}
 type MoveSongEntry struct {
-	Entity EntityID `json:"entity"` // the entry, as song:<index>
-	Target int      `json:"target"` // the index the entry moves to
+	Entity EntityID `json:"entity" cicada:"required"` // the entry, as song:<index>
+	Target int      `json:"target"`                   // the index the entry moves to
 }
 
 func (MoveSongEntry) Kind() string { return "movesongentry" }
@@ -25,8 +25,8 @@ func (MoveSongEntry) Kind() string { return "movesongentry" }
 //
 // Example: {"kind":"setsongbars","entity":"song:0","bars":8}
 type SetSongBars struct {
-	Entity EntityID `json:"entity"`           // the entry, as song:<index>
-	Bars   int      `json:"bars" unit:"bars"` // 1–999
+	Entity EntityID `json:"entity" cicada:"required"`           // the entry, as song:<index>
+	Bars   int      `json:"bars" unit:"bars" cicada:"required"` // 1–999
 }
 
 func (SetSongBars) Kind() string { return "setsongbars" }
@@ -35,8 +35,8 @@ func (SetSongBars) Kind() string { return "setsongbars" }
 //
 // Example: {"kind":"appendsongentry","scene":"break","bars":2}
 type AppendSongEntry struct {
-	Scene string `json:"scene"`            // an existing scene's name
-	Bars  int    `json:"bars" unit:"bars"` // 1–999
+	Scene string `json:"scene" cicada:"required"`            // an existing scene's name
+	Bars  int    `json:"bars" unit:"bars" cicada:"required"` // 1–999
 }
 
 func (AppendSongEntry) Kind() string { return "appendsongentry" }
@@ -45,7 +45,7 @@ func (AppendSongEntry) Kind() string { return "appendsongentry" }
 //
 // Example: {"kind":"duplicatesongentry","entity":"song:1"}
 type DuplicateSongEntry struct {
-	Entity EntityID `json:"entity"` // the entry, as song:<index>
+	Entity EntityID `json:"entity" cicada:"required"` // the entry, as song:<index>
 }
 
 func (DuplicateSongEntry) Kind() string { return "duplicatesongentry" }
@@ -54,7 +54,7 @@ func (DuplicateSongEntry) Kind() string { return "duplicatesongentry" }
 //
 // Example: {"kind":"deletesongentry","entity":"song:1"}
 type DeleteSongEntry struct {
-	Entity EntityID `json:"entity"` // the entry, as song:<index>
+	Entity EntityID `json:"entity" cicada:"required"` // the entry, as song:<index>
 }
 
 func (DeleteSongEntry) Kind() string { return "deletesongentry" }
@@ -63,8 +63,8 @@ func (DeleteSongEntry) Kind() string { return "deletesongentry" }
 //
 // Example: {"kind":"setsongscene","entity":"song:1","scene":"main"}
 type SetSongScene struct {
-	Entity EntityID `json:"entity"` // the entry, as song:<index>
-	Scene  string   `json:"scene"`  // an existing scene's name
+	Entity EntityID `json:"entity" cicada:"required"` // the entry, as song:<index>
+	Scene  string   `json:"scene" cicada:"required"`  // an existing scene's name
 }
 
 func (SetSongScene) Kind() string { return "setsongscene" }

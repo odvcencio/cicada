@@ -16,7 +16,7 @@ import (
 //
 // Example: {"kind":"addaudiotrack","name":"vocals"}
 type AddAudioTrack struct {
-	Name string `json:"name"` // the track's name: lowercase letters, digits, _ and -
+	Name string `json:"name" cicada:"required"` // the track's name: lowercase letters, digits, _ and -
 }
 
 func (AddAudioTrack) Kind() string { return "addaudiotrack" }
@@ -26,12 +26,12 @@ func (AddAudioTrack) Kind() string { return "addaudiotrack" }
 //
 // Example: {"kind":"setclipsettings","entity":"clip:vocal-a","start":480,"end":4800,"gaindb":-2,"fadein":48,"fadeout":96}
 type SetClipSettings struct {
-	Entity  EntityID `json:"entity"`                // the clip, as clip:<name>
-	Start   int64    `json:"start" unit:"frames"`   // first source frame
-	End     int64    `json:"end" unit:"frames"`     // the frame after the last, at most the asset's frame count
-	GainDB  float64  `json:"gaindb" unit:"dB"`      // −60 to +24
-	FadeIn  int64    `json:"fadein" unit:"frames"`  // at most the region length
-	FadeOut int64    `json:"fadeout" unit:"frames"` // at most the region length
+	Entity  EntityID `json:"entity" cicada:"required"`            // the clip, as clip:<name>
+	Start   int64    `json:"start" unit:"frames"`                 // first source frame
+	End     int64    `json:"end" unit:"frames" cicada:"required"` // the frame after the last, at most the asset's frame count
+	GainDB  float64  `json:"gaindb" unit:"dB"`                    // −60 to +24
+	FadeIn  int64    `json:"fadein" unit:"frames"`                // at most the region length
+	FadeOut int64    `json:"fadeout" unit:"frames"`               // at most the region length
 }
 
 func (SetClipSettings) Kind() string { return "setclipsettings" }

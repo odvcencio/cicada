@@ -26,8 +26,8 @@ type PlacementSettings struct {
 //
 // Example: {"kind":"updateplacement","entity":"placement:verse","settings":{"length":"4bars"}}
 type UpdatePlacement struct {
-	Entity   EntityID           `json:"entity"`   // the placement, as placement:<name>
-	Settings *PlacementSettings `json:"settings"` // the fields to change; an empty field stays as it is
+	Entity   EntityID           `json:"entity" cicada:"required"`   // the placement, as placement:<name>
+	Settings *PlacementSettings `json:"settings" cicada:"required"` // the fields to change; an empty field stays as it is
 }
 
 func (UpdatePlacement) Kind() string { return "updateplacement" }
@@ -36,8 +36,8 @@ func (UpdatePlacement) Kind() string { return "updateplacement" }
 //
 // Example: {"kind":"addplacement","name":"outro","settings":{"at":"@5.1.1","length":"1bars","track":"bass","content":"riff"}}
 type AddPlacement struct {
-	Name     string             `json:"name"`     // the new placement's name
-	Settings *PlacementSettings `json:"settings"` // at, length, track and content
+	Name     string             `json:"name" cicada:"required"`     // the new placement's name
+	Settings *PlacementSettings `json:"settings" cicada:"required"` // at, length, track and content
 }
 
 func (AddPlacement) Kind() string { return "addplacement" }
@@ -47,9 +47,9 @@ func (AddPlacement) Kind() string { return "addplacement" }
 //
 // Example: {"kind":"copyplacement","entity":"placement:verse","name":"verse-2","settings":{"at":"@5.1.1"}}
 type CopyPlacement struct {
-	Entity   EntityID           `json:"entity"`   // the placement to copy, as placement:<name>
-	Name     string             `json:"name"`     // the copy's name
-	Settings *PlacementSettings `json:"settings"` // fields that differ from the original, usually at
+	Entity   EntityID           `json:"entity" cicada:"required"`   // the placement to copy, as placement:<name>
+	Name     string             `json:"name" cicada:"required"`     // the copy's name
+	Settings *PlacementSettings `json:"settings" cicada:"required"` // fields that differ from the original, usually at
 }
 
 func (CopyPlacement) Kind() string { return "copyplacement" }
@@ -59,7 +59,7 @@ func (CopyPlacement) Kind() string { return "copyplacement" }
 //
 // Example: {"kind":"removeplacement","entity":"placement:intro"}
 type RemovePlacement struct {
-	Entity EntityID `json:"entity"` // the placement, as placement:<name>
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
 }
 
 func (RemovePlacement) Kind() string { return "removeplacement" }
@@ -68,8 +68,8 @@ func (RemovePlacement) Kind() string { return "removeplacement" }
 //
 // Example: {"kind":"setmarker","entity":"marker:chorus","settings":{"at":"@4.1.1"}}
 type SetMarker struct {
-	Entity   EntityID           `json:"entity"`   // the marker, as marker:<name>
-	Settings *PlacementSettings `json:"settings"` // at, the marker's new position
+	Entity   EntityID           `json:"entity" cicada:"required"`   // the marker, as marker:<name>
+	Settings *PlacementSettings `json:"settings" cicada:"required"` // at, the marker's new position
 }
 
 func (SetMarker) Kind() string { return "setmarker" }
@@ -78,8 +78,8 @@ func (SetMarker) Kind() string { return "setmarker" }
 //
 // Example: {"kind":"addmarker","name":"drop","settings":{"at":"@4.1.1"}}
 type AddMarker struct {
-	Name     string             `json:"name"`     // the new marker's name
-	Settings *PlacementSettings `json:"settings"` // at, the marker's position
+	Name     string             `json:"name" cicada:"required"`     // the new marker's name
+	Settings *PlacementSettings `json:"settings" cicada:"required"` // at, the marker's position
 }
 
 func (AddMarker) Kind() string { return "addmarker" }
@@ -88,7 +88,7 @@ func (AddMarker) Kind() string { return "addmarker" }
 //
 // Example: {"kind":"removemarker","entity":"marker:chorus"}
 type RemoveMarker struct {
-	Entity EntityID `json:"entity"` // the marker, as marker:<name>
+	Entity EntityID `json:"entity" cicada:"required"` // the marker, as marker:<name>
 }
 
 func (RemoveMarker) Kind() string { return "removemarker" }
@@ -101,6 +101,15 @@ func init() {
 	Register("setmarker", func() Intent { return &SetMarker{} })
 	Register("addmarker", func() Intent { return &AddMarker{} })
 	Register("removemarker", func() Intent { return &RemoveMarker{} })
+	// PlacementSettings is shared, so each kind states which of its fields it
+	// needs; markers have only a position.
+	placementFields := []string{"settings.at", "settings.length", "settings.track", "settings.content"}
+	markerless := []string{"settings.length", "settings.track", "settings.content"}
+	ruleKind("updateplacement", fieldRules{oneOf: [][]string{placementFields}})
+	ruleKind("addplacement", fieldRules{required: placementFields})
+	ruleKind("copyplacement", fieldRules{required: []string{"settings.at"}})
+	ruleKind("setmarker", fieldRules{required: []string{"settings.at"}, exclude: markerless})
+	ruleKind("addmarker", fieldRules{required: []string{"settings.at"}, exclude: markerless})
 	for _, kind := range []string{"updateplacement", "addplacement", "copyplacement", "removeplacement", "setmarker", "addmarker", "removemarker"} {
 		Handle(kind, editArrangement)
 	}

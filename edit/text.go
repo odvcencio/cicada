@@ -10,7 +10,7 @@ import (
 //
 // Example: {"kind":"replacetext","source":"cicada 2\ntitle \"Replaced\"\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main*4 }\n"}
 type ReplaceText struct {
-	Source string `json:"source"` // the whole new score text
+	Source string `json:"source" cicada:"required"` // the whole new score text
 }
 
 func (ReplaceText) Kind() string { return "replacetext" }
@@ -21,9 +21,9 @@ func (ReplaceText) Kind() string { return "replacetext" }
 //
 // Example: {"kind":"replacedeclaration","declaration":"pattern","name":"riff","text":"pattern riff { a1 . a1 . e2 . g2 . }"}
 type ReplaceDeclaration struct {
-	Declaration string `json:"declaration"`    // the syntax node type, such as track_decl, scene_decl or title_decl, or pattern
-	Name        string `json:"name,omitempty"` // the declaration's name; empty for title_decl, tempo_decl, key_decl and seed_decl
-	Text        string `json:"text"`           // the declaration's new text
+	Declaration string `json:"declaration" cicada:"required"`                                                                                                                                                                                                                                                                     // the syntax node type, such as track_decl, scene_decl or title_decl, or pattern
+	Name        string `json:"name,omitempty" when:"declaration=instrument_decl|preset_decl|kit_decl|track_decl|phrase_decl|pattern|acid_pattern|note_pattern|drum_pattern|performance_pattern|scene_decl|fx_decl|bus_decl|export_decl|asset_decl|clip_decl|sampler_decl|lfo_decl|envelope_decl|sway_decl|contour_decl|mod_decl"` // the declaration's name; empty for title_decl, tempo_decl, key_decl and seed_decl
+	Text        string `json:"text" cicada:"required"`                                                                                                                                                                                                                                                                            // the declaration's new text
 }
 
 func (ReplaceDeclaration) Kind() string { return "replacedeclaration" }

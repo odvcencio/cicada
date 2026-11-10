@@ -11,12 +11,12 @@ import (
 
 // TakeAsset is the recorded audio file of a take.
 type TakeAsset struct {
-	Name     string `json:"name"`                 // the asset's name, the same as the take's id
-	Path     string `json:"path"`                 // the WAV file, relative to the project folder
-	SHA256   string `json:"sha256"`               // the file's SHA-256, 64 lowercase hex digits
-	Frames   int64  `json:"frames" unit:"frames"` // the file's length
-	RateHz   int    `json:"ratehz" unit:"Hz"`     // the file's sample rate
-	Channels int    `json:"channels"`             // 1 or 2
+	Name     string `json:"name" cicada:"required"`                 // the asset's name, the same as the take's id
+	Path     string `json:"path" cicada:"required"`                 // the WAV file, relative to the project folder
+	SHA256   string `json:"sha256" cicada:"required"`               // the file's SHA-256, 64 lowercase hex digits
+	Frames   int64  `json:"frames" unit:"frames" cicada:"required"` // the file's length
+	RateHz   int    `json:"ratehz" unit:"Hz" cicada:"required"`     // the file's sample rate
+	Channels int    `json:"channels" cicada:"required"`             // 1 or 2
 }
 
 // SelectTake makes a scene play one recorded take on an audio track. It
@@ -25,12 +25,12 @@ type TakeAsset struct {
 //
 // Example: {"kind":"selecttake","id":"take-1","track":"vox","scene":"main","rate":48000,"channels":1,"asset":{"name":"take-1","path":"audio/example.wav","sha256":"528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee","frames":4800,"ratehz":48000,"channels":1},"startframe":0}
 type SelectTake struct {
-	ID         string    `json:"id"`                       // the take's name; its clip is <id>-clip
-	Track      string    `json:"track"`                    // an existing audio track
-	Scene      string    `json:"scene"`                    // the scene that plays the take
+	ID         string    `json:"id" cicada:"required"`     // the take's name; its clip is <id>-clip
+	Track      string    `json:"track" cicada:"required"`  // an existing audio track
+	Scene      string    `json:"scene" cicada:"required"`  // the scene that plays the take
 	Rate       int       `json:"rate" unit:"Hz"`           // the recording's sample rate
 	Channels   int       `json:"channels"`                 // 1 or 2
-	Asset      TakeAsset `json:"asset"`                    // the recorded file
+	Asset      TakeAsset `json:"asset" cicada:"required"`  // the recorded file
 	StartFrame int64     `json:"startframe" unit:"frames"` // where the clip starts in the file
 }
 

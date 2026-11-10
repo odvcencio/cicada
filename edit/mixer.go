@@ -80,7 +80,7 @@ func mixerSourceWithParser(source []byte, path string, raw json.RawMessage, pars
 		line := lineNumberAt(updated, bytes.Index(updated, []byte("fx "+name+" ")))
 		changed := LineRange{Start: line, End: line}
 		if request.InsertOn != "" {
-			if request.InsertOn != "music" || kind != "comp" {
+			if !containsString(insertTargets, request.InsertOn) || kind != "comp" {
 				return nil, "", "", LineRange{}, unsupportedMixerRoute("a compressor can only be inserted on bus music")
 			}
 			placed, _, _, insertedRange, insertErr := mixerSourceWithParser(updated, "music.insert", json.RawMessage(strconv.Quote(name)), parse)
@@ -931,7 +931,10 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 
 // mixerEffectKinds are the effect kinds AddEffect and the fx.<name> mixer
 // path declare.
-var mixerEffectKinds = []string{"drive", "delay", "reverb", "comp", "eq", "deesser", "ampcab", "chorus"}
+var mixerEffectKinds = valueList("effect-kind", "drive", "delay", "reverb", "comp", "eq", "deesser", "ampcab", "chorus")
+
+// insertTargets are the buses AddEffect's inserton accepts, for a comp.
+var insertTargets = valueList("insert-target", "music")
 
 func knownMixerEffectKind(kind string) bool {
 	return containsMixerString(mixerEffectKinds, kind)
@@ -1091,10 +1094,10 @@ func spacedMixerValue(value string) string {
 //
 // Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
 type AddEffect struct {
-	Name           string `json:"name"`                                                                 // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
-	EffectKind     string `json:"effectkind" values:"drive,delay,reverb,comp,eq,deesser,ampcab,chorus"` // the effect's kind
-	InsertOn       string `json:"inserton,omitempty" values:"music"`                                    // music also inserts a comp on bus music; other values are refused
-	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                                             // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
+	Name           string `json:"name" cicada:"required"`                            // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
+	EffectKind     string `json:"effectkind" values:"effect-kind" cicada:"required"` // the effect's kind
+	InsertOn       string `json:"inserton,omitempty" values:"insert-target"`         // music also inserts a comp on bus music; other values are refused
+	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                          // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
 }
 
 func (AddEffect) Kind() string { return "addeffect" }

@@ -22,11 +22,17 @@ import (
 //
 // Example: {"kind":"togglestep","entity":"step:riff/1"}
 type ToggleStep struct {
-	Entity EntityID `json:"entity"`                                              // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
-	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // what to do when the step comes from a shared phrase; see the notes
+	Entity EntityID `json:"entity" cicada:"required"`         // the step: step:<pattern>/<index>, or step:<pattern>/<lane>/<index> on a drum pattern
+	Shared string   `json:"shared,omitempty" values:"shared"` // what to do when the step comes from a shared phrase; see the notes
 }
 
 func (ToggleStep) Kind() string { return "togglestep" }
+
+// modifierValues and cycleFields are what ToggleModifier and CycleStep accept.
+var (
+	modifierValues = valueList("modifier", "accent", "slide")
+	cycleFields    = valueList("cycle-field", "ratchet", "chance")
+)
 
 // SetPitch sets the pitch of one note step, or adds or removes that pitch in
 // a chord step. Pitch is required and accepts MIDI 0–127; an omitted or null
@@ -35,9 +41,9 @@ func (ToggleStep) Kind() string { return "togglestep" }
 //
 // Example: {"kind":"setpitch","entity":"step:riff/0","pitch":48}
 type SetPitch struct {
-	Entity       EntityID `json:"entity"`                                              // the step, as step:<pattern>/<index>
-	Pitch        int      `json:"pitch"`                                               // MIDI pitch 0–127
-	Shared       string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity       EntityID `json:"entity" cicada:"required"`         // the step, as step:<pattern>/<index>
+	Pitch        int      `json:"pitch" cicada:"required"`          // MIDI pitch 0–127
+	Shared       string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 	missingPitch bool
 }
 
@@ -78,9 +84,9 @@ func (in *SetPitch) UnmarshalJSON(data []byte) error {
 //
 // Example: {"kind":"togglemodifier","entity":"step:riff/0","modifier":"accent"}
 type ToggleModifier struct {
-	Entity   EntityID `json:"entity"` // the step, as step:<pattern>/<index>
-	Modifier string   `json:"modifier" values:"accent,slide"`
-	Shared   string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity   EntityID `json:"entity" cicada:"required"` // the step, as step:<pattern>/<index>
+	Modifier string   `json:"modifier" values:"modifier" cicada:"required"`
+	Shared   string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 }
 
 func (ToggleModifier) Kind() string { return "togglemodifier" }
@@ -90,9 +96,9 @@ func (ToggleModifier) Kind() string { return "togglemodifier" }
 //
 // Example: {"kind":"cyclestep","entity":"step:riff/0","field":"ratchet"}
 type CycleStep struct {
-	Entity EntityID `json:"entity"` // the step, as step:<pattern>/<index>
-	Field  string   `json:"field" values:"ratchet,chance"`
-	Shared string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity EntityID `json:"entity" cicada:"required"` // the step, as step:<pattern>/<index>
+	Field  string   `json:"field" values:"cycle-field" cicada:"required"`
+	Shared string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 }
 
 func (CycleStep) Kind() string { return "cyclestep" }
@@ -103,9 +109,9 @@ func (CycleStep) Kind() string { return "cyclestep" }
 //
 // Example: {"kind":"setdrumvelocity","entity":"step:beat/bd/0","velocity":110}
 type SetDrumVelocity struct {
-	Entity   EntityID `json:"entity"`                                              // the hit, as step:<pattern>/<lane>/<index>
-	Velocity int      `json:"velocity"`                                            // MIDI velocity 1–127
-	Shared   string   `json:"shared,omitempty" values:"definition,detach,pattern"` // as for togglestep
+	Entity   EntityID `json:"entity" cicada:"required"`         // the hit, as step:<pattern>/<lane>/<index>
+	Velocity int      `json:"velocity" cicada:"required"`       // MIDI velocity 1–127
+	Shared   string   `json:"shared,omitempty" values:"shared"` // as for togglestep
 }
 
 func (SetDrumVelocity) Kind() string { return "setdrumvelocity" }
@@ -388,7 +394,7 @@ func sourcePitch(pitch int) string {
 // token belongs to a phrase used by multiple pattern steps.
 func toggledModifierSource(ctx *Context, patternID, laneID string, index int, modifier string) ([]byte, error) {
 	source := ctx.Source
-	if patternID == "" || laneID != "" || index < 0 || modifier != "accent" && modifier != "slide" {
+	if patternID == "" || laneID != "" || index < 0 || !containsString(modifierValues, modifier) {
 		return nil, fmt.Errorf("a note pattern, nonnegative step, and accent or slide are required")
 	}
 	score, diagnostics := ctx.Parse()
@@ -439,7 +445,7 @@ func toggledModifierSource(ctx *Context, patternID, laneID string, index int, mo
 // A phrase expansion points to the shared phrase token, as other grid edits do.
 func cycledStepSource(ctx *Context, patternID, laneID string, index int, kind string) ([]byte, error) {
 	source := ctx.Source
-	if patternID == "" || laneID != "" || index < 0 || kind != "ratchet" && kind != "chance" {
+	if patternID == "" || laneID != "" || index < 0 || !containsString(cycleFields, kind) {
 		return nil, fmt.Errorf("a note pattern, nonnegative step, and ratchet or chance are required")
 	}
 	score, diagnostics := ctx.Parse()

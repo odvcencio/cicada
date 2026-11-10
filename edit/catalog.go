@@ -17,36 +17,81 @@ import (
 //	// Example: {"kind":"setstep","entity":"step:riff/1","mode":"note","pitch":45}
 //
 // The first sentence, without the type name, is the meaning. A field's doc
-// or line comment is its meaning. Two optional struct tags add what the
-// handler checks: values:"a,b,c" lists the accepted strings and unit:"..."
-// names the unit of a number. TestIntentDocsAreCurrent regenerates
-// intent_docs.go and fails when it is stale.
+// or line comment is its meaning. Struct tags add what the handler checks:
+//
+//   - cicada:"required": the intent is refused without the field;
+//   - when:"<field>=<a>|<b>": the field is required when another field of the
+//     same intent has one of those values;
+//   - values:"<list>": the accepted strings, from a list the handler itself
+//     checks (see valueLists);
+//   - unit:"...": the unit of a number.
+//
+// A struct that several kinds share (PlacementSettings) gets per-kind rules
+// from kindRules instead. TestIntentDocsAreCurrent regenerates intent_docs.go;
+// cmd/cicada's TestIntentCatalogFieldsAreTrue proves the required, optional
+// and values claims against cicada apply for every kind.
 
-// IntentInfo describes one intent kind.
+// IntentInfo describes one intent kind. OneOf lists groups of field paths of
+// which the intent needs at least one each.
 type IntentInfo struct {
 	Kind    string          `json:"kind"`
 	Meaning string          `json:"meaning"`
 	Notes   string          `json:"notes,omitempty"`
 	Fields  []IntentField   `json:"fields"`
+	OneOf   [][]string      `json:"one_of,omitempty"`
 	Example json.RawMessage `json:"example"`
 }
 
 // IntentField describes one JSON field of an intent or of a nested object.
 // Fields keep the order of the Go struct.
 //
-// Required is true when the field has no omitempty: the decoder reads an
-// absent field as its zero value (0, "", false, null or an empty list), so a
-// caller gives it explicitly. A field that is not required may be left out;
-// the intent then uses the default its meaning or notes state.
+// Required is true when the intent is refused without the field. A field
+// that is not required may be left out: the decoder then reads its zero
+// value (0, "", false, null or an empty list), which the intent treats as the
+// default its meaning or notes state. RequiredWhen names the condition under
+// which an otherwise optional field becomes required.
 type IntentField struct {
-	Name     string        `json:"name"`
-	Type     string        `json:"type"`
-	Items    string        `json:"items,omitempty"`
-	Required bool          `json:"required"`
-	Unit     string        `json:"unit,omitempty"`
-	Values   []string      `json:"values,omitempty"`
-	Meaning  string        `json:"meaning,omitempty"`
-	Fields   []IntentField `json:"fields,omitempty"`
+	Name         string          `json:"name"`
+	Type         string          `json:"type"`
+	Items        string          `json:"items,omitempty"`
+	Required     bool            `json:"required"`
+	RequiredWhen *FieldCondition `json:"required_when,omitempty"`
+	Unit         string          `json:"unit,omitempty"`
+	Values       []string        `json:"values,omitempty"`
+	Meaning      string          `json:"meaning,omitempty"`
+	Fields       []IntentField   `json:"fields,omitempty"`
+}
+
+// FieldCondition holds when another field of the same intent (Field, a
+// dotted path from the intent's top level) has one of Values.
+type FieldCondition struct {
+	Field  string   `json:"field"`
+	Values []string `json:"values"`
+}
+
+// fieldRules are what a kind requires of a struct it shares with other kinds.
+// Paths are dotted JSON names from the intent's top level.
+type fieldRules struct {
+	required []string   // always required
+	exclude  []string   // fields of the shared struct this kind refuses
+	oneOf    [][]string // groups of which at least one field is required
+}
+
+// kindRules holds the rules of the kinds that need them. The decoder refuses
+// an excluded field as it refuses an unknown one.
+var kindRules = map[string]fieldRules{}
+
+func ruleKind(kind string, rules fieldRules) { kindRules[kind] = rules }
+
+// valueLists are the accepted strings of the fields whose values tag names
+// them. Each list is the one its handler checks against, so the catalog and
+// the handler cannot disagree.
+var valueLists = map[string][]string{}
+
+// valueList registers a handler's list under name and returns it.
+func valueList(name string, values ...string) []string {
+	valueLists[name] = values
+	return values
 }
 
 // typeDoc is what the doc comments of one struct type say. intent_docs.go
@@ -82,7 +127,8 @@ func describeIntent(kind string) IntentInfo {
 		typ = typ.Elem()
 	}
 	doc := intentDocs[typ.Name()]
-	info := IntentInfo{Kind: kind, Meaning: doc.Meaning, Notes: doc.Notes, Fields: describeFields(typ, 0)}
+	rules := kindRules[kind]
+	info := IntentInfo{Kind: kind, Meaning: doc.Meaning, Notes: doc.Notes, Fields: describeFields(typ, "", rules, 0), OneOf: rules.oneOf}
 	if doc.Example != "" {
 		info.Example = json.RawMessage(doc.Example)
 	}
@@ -103,7 +149,7 @@ func EnvelopeFields() []IntentField {
 
 const maxCatalogDepth = 4
 
-func describeFields(typ reflect.Type, depth int) []IntentField {
+func describeFields(typ reflect.Type, prefix string, rules fieldRules, depth int) []IntentField {
 	fields := []IntentField{}
 	if typ.Kind() != reflect.Struct || depth > maxCatalogDepth {
 		return fields
@@ -117,25 +163,33 @@ func describeFields(typ reflect.Type, depth int) []IntentField {
 		if !field.IsExported() {
 			continue
 		}
-		name, options, _ := strings.Cut(field.Tag.Get("json"), ",")
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		if name == "-" {
 			continue
 		}
 		if field.Anonymous && name == "" {
-			fields = append(fields, describeFields(indirect(field.Type), depth)...)
+			fields = append(fields, describeFields(indirect(field.Type), prefix, rules, depth)...)
 			continue
 		}
 		if name == "" {
 			name = field.Name
 		}
+		path := prefix + name
+		if containsString(rules.exclude, path) {
+			continue
+		}
 		described := IntentField{
 			Name:     name,
-			Required: !hasOption(options, "omitempty"),
+			Required: field.Tag.Get("cicada") == "required" || containsString(rules.required, path),
 			Unit:     field.Tag.Get("unit"),
 			Meaning:  doc.Fields[field.Name],
 		}
-		if values := field.Tag.Get("values"); values != "" {
-			described.Values = strings.Split(values, ",")
+		if when := field.Tag.Get("when"); when != "" {
+			other, values, _ := strings.Cut(when, "=")
+			described.RequiredWhen = &FieldCondition{Field: other, Values: strings.Split(values, "|")}
+		}
+		if list := field.Tag.Get("values"); list != "" {
+			described.Values = valueLists[list]
 		}
 		described.Type, described.Items = jsonType(field.Type)
 		element := indirect(field.Type)
@@ -143,16 +197,16 @@ func describeFields(typ reflect.Type, depth int) []IntentField {
 			element = indirect(element.Elem())
 		}
 		if element.Kind() == reflect.Struct && described.Type != "entity" {
-			described.Fields = describeFields(element, depth+1)
+			described.Fields = describeFields(element, path+".", rules, depth+1)
 		}
 		fields = append(fields, described)
 	}
 	return fields
 }
 
-func hasOption(options, want string) bool {
-	for _, option := range strings.Split(options, ",") {
-		if option == want {
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}
