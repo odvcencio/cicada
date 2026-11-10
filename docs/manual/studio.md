@@ -364,6 +364,29 @@ Score edit instead of being discarded.
 
 ![GoSX Studio's piano roll and step inspector.](screenshots/studio-piano-roll-1440.png)
 
+### Quantize
+
+**Quantize** in the Clip tab moves every note of the pattern to the nearest
+line of the chosen grid and keeps each note's length and velocity, as a
+recorded take is snapped. Choose the grid, then select **Quantize**, or press
+**Ctrl+U** (**Cmd+U** on Mac) while the Clip tab is showing.
+
+- A played performance offers Bar, Beat, 1/8, 1/8T, 1/16 (the default), 1/16T
+  and 1/32, and a **Strength** from 1 to 100%: at 50% each note moves half way
+  to its grid line. A note that rounds to the loop end starts the loop.
+- A step pattern or drum lanes offer Beat and Bar, the grids coarser than the
+  pattern's step; notes keep their holds, chords, accents and velocities.
+  Notes of one length that land on one step join a chord of up to four
+  pitches. Quantize never turns a step pattern into a performance.
+- When the result would not fit, nothing changes and the reason is shown: two
+  notes of one pitch would overlap, a note would end past the loop, two hits
+  would share one drum cell, or an acid step would need two pitches. Choose a
+  finer grid, or move the notes apart first.
+- Notes already on the grid report **Already on the grid.** and add nothing to
+  the history.
+
+Each Quantize is one source edit with one Undo entry, however many notes move.
+
 ## Phrase generation
 
 **Generate** creates deterministic bass phrases from a 64-bit seed, key,
