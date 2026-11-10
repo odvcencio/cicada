@@ -173,6 +173,7 @@ decimals. Levels below the floor read -120.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `schema` | string | Always `cicada.audition.v1`, named as the other `--json` formats are ([agent formats](agents.md)). |
 | `format` | string | Always `cicada.audition/1`. |
 | `title` | string | Score title. |
 | `sample_rate` | number | Render rate in Hz (48000). |

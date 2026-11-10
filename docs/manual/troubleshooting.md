@@ -14,6 +14,9 @@ valid but still fail a name, type, unit, range, or engine check.
 
 ## Notation errors
 
+Every code, with its meaning and fix, is in [Diagnostic codes](diagnostics.md);
+`cicada diagnostics <code>` prints one. The most common:
+
 - **`CICADA-SYNTAX`** — check braces, spelling, separators, and whether the
   construct exists in edition 2; see the [language reference](../spec/README.md).
 - **`CICADA-REFERENCE`** — check that a track, pattern, scene, instrument, kit,

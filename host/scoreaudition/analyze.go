@@ -18,8 +18,12 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-// FormatVersion names the JSON schema of Report.
-const FormatVersion = "cicada.audition/1"
+// FormatVersion names the JSON schema of Report. Schema names it the way the
+// other --json formats do; both stay.
+const (
+	FormatVersion = "cicada.audition/1"
+	Schema        = "cicada.audition.v1"
+)
 
 // Options selects the render and the bar range.
 type Options struct {
@@ -35,6 +39,7 @@ type Options struct {
 }
 
 type Report struct {
+	Schema       string          `json:"schema"`
 	Format       string          `json:"format"`
 	Title        string          `json:"title"`
 	SampleRate   int             `json:"sample_rate"`
@@ -249,7 +254,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 
 	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From}
 	r := &a.Report
-	r.Format, r.Title, r.SampleRate = FormatVersion, p.Title, rate
+	r.Schema, r.Format, r.Title, r.SampleRate = Schema, FormatVersion, p.Title, rate
 	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
 
 	// Read the stems and sum the pitched ones: the heard harmony comes from

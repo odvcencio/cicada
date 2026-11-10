@@ -10,13 +10,22 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// RecordTake commits all recorded patterns as one validated edit.
+// RecordTake commits all recorded patterns as one validated edit. Grid timing
+// writes the notes onto each pattern's steps; played timing writes a
+// performance that keeps the exact ticks.
+//
+// Example: {"kind":"recordtake","timing":"grid","recordings":[{"track":"bass","pattern":"riff","notes":[{"tick":0,"endtick":240,"note":45,"velocity":100},{"tick":480,"endtick":720,"note":52,"velocity":90}]}]}
+// Example: {"kind":"recordtake","timing":"played","recordings":[{"track":"bass","pattern":"riff","notes":[{"tick":0,"endtick":480,"note":45,"velocity":90}]}]}
 type RecordTake struct {
-	Timing     string      `json:"timing,omitempty"`
-	Recordings []Recording `json:"recordings"`
+	Timing     string      `json:"timing,omitempty" values:"take-timing" cicada:"selects"` // grid is the default
+	Recordings []Recording `json:"recordings" cicada:"required"`                           // one recording per pattern
 }
 
 func (RecordTake) Kind() string { return "recordtake" }
+
+// takeTimings are what RecordTake's timing accepts; "" means grid.
+var takeTimings = valueList("take-timing", "grid", "played")
+
 func init() {
 	Register("recordtake", func() Intent { return &RecordTake{} })
 	Handle("recordtake", func(ctx *Context, intent Intent) error {
@@ -24,7 +33,7 @@ func init() {
 		if in.Timing == "played" {
 			return recordPerformedTake(ctx, in.Recordings)
 		}
-		if in.Timing != "" && in.Timing != "grid" {
+		if in.Timing != "" && !containsString(takeTimings, in.Timing) {
 			return fmt.Errorf("take timing must be grid or played")
 		}
 		if len(in.Recordings) == 0 {
@@ -69,35 +78,40 @@ func init() {
 	})
 }
 
+// TakeNote is one recorded note. Ticks count from the start of the take, 960
+// per beat.
 type TakeNote struct {
-	Tick        int64            `json:"tick"`
-	EndTick     int64            `json:"endtick"`
-	Note        int              `json:"note"`
-	Velocity    int              `json:"velocity"`
+	Tick        int64            `json:"tick" unit:"ticks"`          // the note's start
+	EndTick     int64            `json:"endtick" unit:"ticks"`       // the note's end
+	Note        int              `json:"note"`                       // MIDI pitch 0–127
+	Velocity    int              `json:"velocity" cicada:"required"` // MIDI velocity 1–127
 	NoteID      uint16           `json:"noteid,omitempty"`
 	Channel     uint8            `json:"channel,omitempty"`
 	Group       uint16           `json:"group,omitempty"`
 	Expressions []TakeExpression `json:"expressions,omitempty"`
 }
 
+// TakeExpression is one controller sample of a recorded note or shared lane.
 type TakeExpression struct {
-	Tick              int64    `json:"tick"`
-	PitchCents        float64  `json:"pitchcents"`
-	Pressure          float64  `json:"pressure"`
-	Timbre            float64  `json:"timbre"`
+	Tick              int64    `json:"tick" unit:"ticks"`       // time from the note's start, or in the loop for a lane
+	PitchCents        float64  `json:"pitchcents" unit:"cents"` // bend, −9600 to 9600
+	Pressure          float64  `json:"pressure"`                // 0 to 1
+	Timbre            float64  `json:"timbre"`                  // 0 to 1
 	VibratoDepthCents *float64 `json:"vibratodepthcents,omitempty"`
 }
 
+// Recording is the notes recorded for one pattern on one track.
 type Recording struct {
-	Track   string      `json:"track"`
-	Pattern string      `json:"pattern"`
-	Notes   []TakeNote  `json:"notes"`
+	Track   string      `json:"track" cicada:"required"`   // the track that was recorded
+	Pattern string      `json:"pattern" cicada:"required"` // the pattern the notes replace
+	Notes   []TakeNote  `json:"notes" cicada:"required"`
 	Groups  []TakeGroup `json:"groups,omitempty"`
 }
 
+// TakeGroup is one recorded shared gesture lane.
 type TakeGroup struct {
 	Kind   string           `json:"kind,omitempty"`
-	Points []TakeExpression `json:"points"`
+	Points []TakeExpression `json:"points" cicada:"required"` // at least one point
 }
 
 type recordedStep struct {

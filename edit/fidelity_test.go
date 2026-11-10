@@ -141,12 +141,18 @@ func TestFidelityRule6_SharedPhraseAsks(t *testing.T) {
 		}
 	}
 	direct := bytes.Replace(fixture, []byte("use riff*2"), []byte("1 . 5 . use riff"), 1)
-	for _, policy := range []string{"", "definition", "detach", "ignored"} {
+	for _, policy := range []string{"", "definition", "detach"} {
 		got, err := apply(direct, &ToggleStep{Entity: "step:pulse/0", Shared: policy})
 		want := bytes.Replace(direct, []byte("{ 1 . 5 . use riff }"), []byte("{ . . 5 . use riff }"), 1)
 		if err != nil || !bytes.Equal(got.Source, want) {
 			t.Fatalf("direct step policy %q: %+v, %v", policy, got, err)
 		}
+	}
+	// A policy outside the list is refused, so a misspelled one is not
+	// silently ignored (the intent catalog lists the accepted values).
+	var field *FieldError
+	if _, err := apply(direct, &ToggleStep{Entity: "step:pulse/0", Shared: "ignored"}); !errors.As(err, &field) || field.Field != "shared" {
+		t.Fatalf("unknown policy: %v", err)
 	}
 	mixed := bytes.Replace(fixture, []byte("use riff*2"), []byte("1 . use riff"), 1)
 	got, err := apply(mixed, &ToggleStep{Entity: "step:pulse/0", Shared: "pattern"})

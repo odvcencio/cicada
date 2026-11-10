@@ -80,7 +80,7 @@ func mixerSourceWithParser(source []byte, path string, raw json.RawMessage, pars
 		line := lineNumberAt(updated, bytes.Index(updated, []byte("fx "+name+" ")))
 		changed := LineRange{Start: line, End: line}
 		if request.InsertOn != "" {
-			if request.InsertOn != "music" || kind != "comp" {
+			if !containsString(insertTargets, request.InsertOn) || kind != "comp" {
 				return nil, "", "", LineRange{}, unsupportedMixerRoute("a compressor can only be inserted on bus music")
 			}
 			placed, _, _, insertedRange, insertErr := mixerSourceWithParser(updated, "music.insert", json.RawMessage(strconv.Quote(name)), parse)
@@ -929,8 +929,15 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 	return mixerFXValue{Kind: kind}, err
 }
 
+// mixerEffectKinds are the effect kinds AddEffect and the fx.<name> mixer
+// path declare.
+var mixerEffectKinds = valueList("effect-kind", "drive", "delay", "reverb", "comp", "eq", "deesser", "ampcab", "chorus")
+
+// insertTargets are the buses AddEffect's inserton accepts, for a comp.
+var insertTargets = valueList("insert-target", "music")
+
 func knownMixerEffectKind(kind string) bool {
-	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser" || kind == "ampcab" || kind == "chorus"
+	return containsMixerString(mixerEffectKinds, kind)
 }
 
 func ValidMixerIdentifier(name string) bool {
@@ -1082,12 +1089,22 @@ func spacedMixerValue(value string) string {
 
 // AddEffect declares a new effect; it is SetParam's fx.<name> path with a
 // typed request. The effect kind is EffectKind because the envelope's "kind"
-// key names the intent.
+// key names the intent. To insert the new effect on a track, follow it with
+// setparam on param:<track>.insert.
+//
+// Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
+// Example: {"kind":"addeffect","name":"grit","effectkind":"drive"}
+// Example: {"kind":"addeffect","name":"hall","effectkind":"reverb"}
+// Example: {"kind":"addeffect","name":"glue","effectkind":"comp","inserton":"music"}
+// Example: {"kind":"addeffect","name":"tilt","effectkind":"eq"}
+// Example: {"kind":"addeffect","name":"soft","effectkind":"deesser"}
+// Example: {"kind":"addeffect","name":"cab","effectkind":"ampcab"}
+// Example: {"kind":"addeffect","name":"wide","effectkind":"chorus"}
 type AddEffect struct {
-	Name           string `json:"name"`
-	EffectKind     string `json:"effectkind"`
-	InsertOn       string `json:"inserton,omitempty"`
-	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`
+	Name           string `json:"name" cicada:"required"`                                           // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
+	EffectKind     string `json:"effectkind" values:"effect-kind" cicada:"required,selects"`        // the effect's kind
+	InsertOn       string `json:"inserton,omitempty" values:"insert-target" when:"effectkind=comp"` // the bus a comp is inserted on; a comp needs it, other kinds take none
+	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                                         // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
 }
 
 func (AddEffect) Kind() string { return "addeffect" }

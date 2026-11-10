@@ -13,40 +13,50 @@ import (
 )
 
 // MoveClip moves a placement to a new start tick. Only the authored `at`
-// literal changes.
+// literal changes. A beat is 960 ticks and a 4/4 bar 3840.
+//
+// Example: {"kind":"moveclip","entity":"placement:verse","attick":15360}
 type MoveClip struct {
-	Entity EntityID `json:"entity"`
-	AtTick int64    `json:"attick"`
+	Entity EntityID `json:"entity" cicada:"required"`              // the placement, as placement:<name>
+	AtTick int64    `json:"attick" unit:"ticks" cicada:"required"` // the new start, from the start of the arrangement
 }
 
 func (MoveClip) Kind() string { return "moveclip" }
 
 // ResizeClip sets a placement length. The right edge moves; `at` is untouched.
+//
+// Example: {"kind":"resizeclip","entity":"placement:verse","lengthticks":11520}
 type ResizeClip struct {
-	Entity      EntityID `json:"entity"`
-	LengthTicks int64    `json:"lengthticks"`
+	Entity      EntityID `json:"entity" cicada:"required"`                   // the placement, as placement:<name>
+	LengthTicks int64    `json:"lengthticks" unit:"ticks" cicada:"required"` // the new length
 }
 
 func (ResizeClip) Kind() string { return "resizeclip" }
 
 // SplitClip cuts a placement in two at a pattern-length boundary.
+//
+// Example: {"kind":"splitclip","entity":"placement:intro","attick":3840}
 type SplitClip struct {
-	Entity EntityID `json:"entity"`
-	AtTick int64    `json:"attick"`
+	Entity EntityID `json:"entity" cicada:"required"`              // the placement, as placement:<name>
+	AtTick int64    `json:"attick" unit:"ticks" cicada:"required"` // where to cut, from the start of the arrangement
 }
 
 func (SplitClip) Kind() string { return "splitclip" }
 
 // DuplicateClip places a copy of a placement directly after the original.
+//
+// Example: {"kind":"duplicateclip","entity":"placement:verse"}
 type DuplicateClip struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
 }
 
 func (DuplicateClip) Kind() string { return "duplicateclip" }
 
 // DeleteClip removes a placement and the comment lines attached above it.
+//
+// Example: {"kind":"deleteclip","entity":"placement:intro"}
 type DeleteClip struct {
-	Entity EntityID `json:"entity"`
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
 }
 
 func (DeleteClip) Kind() string { return "deleteclip" }
@@ -65,10 +75,10 @@ func init() {
 // resolvePlacement resolves a placement entity against the working source.
 func resolvePlacement(ctx *Context, id EntityID) (Placement, error) {
 	if _, err := ParseEntityID(string(id)); err != nil {
-		return Placement{}, err
+		return Placement{}, entityError(err)
 	}
 	if id.Kind() != KindPlacement {
-		return Placement{}, fmt.Errorf("clip edits need a placement entity, got %q", id)
+		return Placement{}, entityError(fmt.Errorf("clip edits need a placement entity, got %q", id))
 	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {

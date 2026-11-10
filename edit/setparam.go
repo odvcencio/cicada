@@ -9,9 +9,12 @@ import (
 
 // SetParam sets or resets one parameter. Entity param:<track>.<field> names an
 // instrument parameter; mixer paths (level, pan, sends, inserts, buses, effect
-// settings) go to the mixer writer.
+// settings) go to the mixer writer. cicada params lists the parameters with
+// their ranges and units, and cicada explain describes one.
+//
+// Example: {"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"}
 type SetParam struct {
-	Entity         EntityID        `json:"entity"`                   // param:<owner>.<field>
+	Entity         EntityID        `json:"entity" cicada:"required"` // param:<owner>.<field>
 	Value          json.RawMessage `json:"value,omitempty"`          // number or unit literal string; omitted resets to the default
 	ConfirmUpgrade bool            `json:"confirmupgrade,omitempty"` // edition-1 scores need confirmation for mixer writes
 }
@@ -26,7 +29,7 @@ func init() {
 func setParam(ctx *Context, intent Intent) error {
 	in := intent.(*SetParam)
 	if in.Entity.Kind() != KindParam {
-		return fmt.Errorf("setparam needs a param entity, got %q", in.Entity)
+		return entityError(fmt.Errorf("setparam needs a param entity, got %q", in.Entity))
 	}
 	if ctx.Options.ParamWriter == ParamWriterMixer {
 		return setMixerParam(ctx, in.Entity.Name(), in.Value, in.ConfirmUpgrade)

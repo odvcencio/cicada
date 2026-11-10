@@ -36,10 +36,30 @@ func (i scoreInspection) root(path string) string {
 // inspectScore is the validation gate shared by per-file commands and the
 // project checker. It includes semantic conversion and engine compilation.
 func inspectScore(path string) (scoreInspection, error) {
-	sources, err := project.ReadSources(path, nil)
+	return inspectScoreWith(path, nil)
+}
+
+// inspectScoreWith inspects a score with some source files replaced by the
+// given bytes, keyed by absolute path, as a candidate edit would leave them.
+func inspectScoreWith(path string, overrides map[string][]byte) (scoreInspection, error) {
+	sources, err := project.ReadSources(path, overrides)
 	if err != nil {
 		return scoreInspection{}, err
 	}
+	return inspectSources(path, sources)
+}
+
+// inspectScorePinned inspects a score as if its project manifest were at
+// manifestPath, as a fix that writes a new cicada.mod would leave it.
+func inspectScorePinned(path string, overrides map[string][]byte, manifestPath string) (scoreInspection, error) {
+	sources, err := project.ReadSourcesPinned(path, overrides, project.Resolution{ManifestPath: manifestPath})
+	if err != nil {
+		return scoreInspection{}, err
+	}
+	return inspectSources(path, sources)
+}
+
+func inspectSources(path string, sources *project.Sources) (scoreInspection, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return scoreInspection{}, err
@@ -83,64 +103,82 @@ func inspectScore(path string) (scoreInspection, error) {
 }
 
 // checkUsage is the usage line of the check command.
-const checkUsage = "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]"
+const checkUsage = "usage: cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [--json] [score.cicada]"
 
 // parseCheckArgs reads the optional profile, the optional cap on decoded
-// sampler-pack PCM (zero selects the default) and the score path. The score may
-// come before or after the flags.
-func parseCheckArgs(args []string) (profile, path string, limit int64, err error) {
+// sampler-pack PCM (zero selects the default), the JSON switch and the score
+// path. The score may come before or after the flags.
+func parseCheckArgs(args []string) (options checkOptions, path string, err error) {
 	errUsage := fmt.Errorf("%s", checkUsage)
-	args, limit, err = parseMaxResidentPCM(args)
+	args, limit, err := parseMaxResidentPCM(args)
 	if err != nil {
-		return "", "", 0, err
+		return checkOptions{}, "", err
 	}
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	name := flags.String("profile", profileDesktop, "limits to check: desktop or browser")
+	asJSON := flags.Bool("json", false, "write the result as JSON")
 	var scores []string
 	rest := args
 	if len(rest) > 0 && len(rest[0]) > 0 && rest[0][0] != '-' {
 		scores, rest = []string{rest[0]}, rest[1:]
 	}
 	if err := flags.Parse(rest); err != nil {
-		return "", "", 0, errUsage
+		return checkOptions{}, "", errUsage
 	}
 	scores = append(scores, flags.Args()...)
 	if len(scores) > 1 || len(scores) == 1 && filepath.Ext(scores[0]) != ".cicada" {
-		return "", "", 0, errUsage
+		return checkOptions{}, "", errUsage
 	}
 	if *name != profileDesktop && *name != profileBrowser {
-		return "", "", 0, fmt.Errorf("unknown profile %q (valid: desktop, browser)", *name)
+		return checkOptions{}, "", fmt.Errorf("unknown profile %q (valid: desktop, browser)", *name)
 	}
 	if len(scores) == 1 {
 		path = scores[0]
 	}
-	return *name, path, limit, nil
+	return checkOptions{profile: *name, maxResidentPCM: limit, json: *asJSON}, path, nil
 }
 
 func checkCommand(args []string, stdout, stderr io.Writer) error {
-	profile, path, limit, err := parseCheckArgs(args)
+	options, path, err := parseCheckArgs(args)
 	if err != nil {
+		if hasJSONFlag(args) {
+			return checkFailureJSON(stdout, checkOptions{profile: profileDesktop}, "", "usage", err)
+		}
 		return err
 	}
-	options := checkOptions{profile: profile, maxResidentPCM: limit}
 	if path != "" {
 		return checkPathsWith([]string{path}, options, stdout, stderr)
 	}
+	fail := func(code string, err error) error {
+		if options.json {
+			return checkFailureJSON(stdout, options, "", code, err)
+		}
+		return err
+	}
 	root, err := projectRoot()
 	if err != nil {
+		if options.json {
+			return checkFailureJSON(stdout, options, nearestManifest(), "project_unreadable", err)
+		}
 		return err
 	}
 	paths, err := projectScorePaths(root)
 	if err != nil {
+		if options.json {
+			return checkFailureJSON(stdout, options, filepath.Join(root, "cicada.mod"), "project_unreadable", err)
+		}
 		return err
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no .cicada scores found in %s", root)
+		return fail("no_scores", fmt.Errorf("no .cicada scores found in %s", root))
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "cicada.mod")); err == nil {
 		manifest, err := edition.ParseProjectManifest(data)
 		if err != nil {
+			if options.json {
+				return checkFailureJSON(stdout, options, filepath.Join(root, "cicada.mod"), "project_unreadable", err)
+			}
 			return err
 		}
 		if manifest.ExplicitSources() {
@@ -150,12 +188,33 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 	return checkPathsWith(paths, options, stdout, stderr)
 }
 
+// nearestManifest is the cicada.mod of the working folder or the closest
+// folder above it, or "" when there is none.
+func nearestManifest() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		candidate := filepath.Join(dir, "cicada.mod")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
 // checkOptions are what a check run takes beyond the scores: the profile whose
-// limits apply and the cap on decoded sampler-pack PCM, in bytes, where zero is
-// the default.
+// limits apply, the cap on decoded sampler-pack PCM, in bytes, where zero is
+// the default, and whether to write JSON instead of text.
 type checkOptions struct {
 	profile        string
 	maxResidentPCM int64
+	json           bool
 }
 
 func checkPaths(paths []string, stdout, stderr io.Writer) error {
@@ -167,6 +226,9 @@ func checkPathsProfile(paths []string, profile string, stdout, stderr io.Writer)
 }
 
 func checkPathsWith(paths []string, options checkOptions, stdout, stderr io.Writer) error {
+	if options.json {
+		return checkPathsJSON(paths, options, stdout)
+	}
 	failed := 0
 	for _, path := range paths {
 		inspection, err := inspectScore(path)
