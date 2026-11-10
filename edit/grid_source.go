@@ -59,6 +59,9 @@ func gridSourceEdit(handler Handler) Handler {
 		}
 		ctx.Source = stageProjectSource(ctx, path, before, working.Source)
 		ctx.SetLabel(working.label)
+		for key, value := range working.response {
+			ctx.Respond(key, value)
+		}
 		return nil
 	}
 }
@@ -88,6 +91,8 @@ func gridSourceTarget(intent Intent) (id, lane string, index int, shared string,
 		entity, shared, step = in.Entity, in.Shared, false
 	case *SetRange:
 		entity, lane, index, shared, step = in.Entity, in.Lane, in.First, in.Shared, false
+	case *EditNotes:
+		entity, shared, step = in.Entity, in.Shared, false
 	default:
 		scoped = false
 		return
