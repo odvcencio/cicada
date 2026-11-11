@@ -13,7 +13,6 @@ func init() {
 	declareReasons("deletetrack", "last_track", "reseeds_random_choices", "result_invalid", "score_invalid", "track_in_use", "unknown_track")
 	declareReasons("duplicatescene", "invalid_name", "name_taken", "result_invalid", "score_invalid", "unknown_scene")
 	declareReasons("editnotes", "gesture-cut", "invalid-note", "no-lanes", "note-changed", "outside-loop", "overlap", "pitch-range", "too-short")
-	declareReasons("insertlibraryitem", "voice_change_invalid", "voice_changes_sound", "voice_input_unmodeled", "voice_params_unsupported")
 	declareReasons("placevocalcomp", "invalid_value", "value_out_of_range")
 	declareReasons("removeautomationpoint", "invalid_value", "value_out_of_range")
 	declareReasons("removeeffect", "declared_in_other_file", "effect_in_use", "route_in_other_file", "score_invalid", "unknown_effect")
@@ -22,5 +21,4 @@ func init() {
 	declareReasons("setautomationpoint", "invalid_value", "value_out_of_range")
 	declareReasons("setparam", "convolution_needs_asset", "declared_in_other_file", "edition_upgrade_needed", "effect_is_return", "effect_route", "effect_single_instance", "insert_anchor_ambiguous", "insert_chain_full", "insert_position_conflict", "invalid_name", "invalid_value", "music_insert_taken", "name_taken", "settings_invalid", "sidechain_unavailable", "unknown_asset", "unknown_effect_kind", "unknown_insert_anchor", "unknown_insert_target", "unknown_setting", "unknown_sidechain_track", "value_out_of_range")
 	declareReasons("setscenesetting", "invalid_value", "value_out_of_range")
-	declareReasons("settrackvoice", "result_invalid", "score_invalid", "unknown_track", "voice_change_invalid", "voice_changes_sound", "voice_input_unmodeled", "voice_invalid", "voice_params_unsupported", "voice_unchanged")
 }
