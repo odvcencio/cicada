@@ -105,6 +105,29 @@ func TestNewProjectIsFormattedAndChecksWithStarterTracksAndScenes(t *testing.T) 
 	}
 }
 
+// TestNewProjectPassesEveryCheckProfile keeps what cicada new writes valid
+// under every check profile, with and without --json: a new project must
+// not start with an error, however it will be played. (A master limiter
+// would let the starter render to a loudness target, but a browser image
+// cannot carry a master insert, so the starter has none.)
+func TestNewProjectPassesEveryCheckProfile(t *testing.T) {
+	root := inTempWorkingDirectory(t)
+	if err := newProject("fresh", os.WriteFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Join(root, "fresh")); err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range []string{profileDesktop, profileBrowser} {
+		for _, args := range [][]string{{"--profile", profile}, {"--profile", profile, "main.cicada"}, {"--profile", profile, "--json", "main.cicada"}} {
+			var stdout, stderr bytes.Buffer
+			if err := checkCommand(args, &stdout, &stderr); err != nil {
+				t.Fatalf("cicada check %v on a new project: %v\n%s%s", args, err, stdout.String(), stderr.String())
+			}
+		}
+	}
+}
+
 func TestManualMixingExampleWorksInFreshProject(t *testing.T) {
 	root := inTempWorkingDirectory(t)
 	if err := newProject("fresh", os.WriteFile); err != nil {

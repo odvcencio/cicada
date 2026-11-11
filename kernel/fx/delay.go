@@ -3,6 +3,8 @@ package fx
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
 
@@ -159,7 +161,7 @@ func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
 		sampleRate: float64(sampleRate), bpmMilli: float64(bpmMilli),
 		buffer:   make([]stereo, 4*sampleRate+2),
 		fadeStep: 1 / (.02 * float64(sampleRate)),
-		smooth:   1 - math.Exp(-1/(.005*float64(sampleRate))),
+		smooth:   1 - detmath.Exp(-1/(.005*float64(sampleRate))),
 	}
 	if err := d.SetParams(DefaultDelayParams()); err != nil {
 		return nil, err
@@ -207,7 +209,7 @@ func (d *Delay) SetParams(p DelayParams) error {
 	d.params = p
 	d.changeTime(frames)
 	d.targetFeedback = p.Feedback
-	d.targetDamp = 1 - math.Exp(-2*math.Pi*p.DampHz/d.sampleRate)
+	d.targetDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/d.sampleRate)
 	d.targetWidth, d.targetMix = p.Width, p.Mix
 	d.highpass.Set(p.HighpassHz, d.sampleRate)
 	d.targetPing = 0

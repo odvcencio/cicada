@@ -383,13 +383,16 @@ guaranteed.
   package that produces audio a user hears, records or exports.
 - **Math library functions.** `math.Exp`, `math.Log`, `math.Pow`, `math.Sin`
   and the others can differ in the last bit by target: `math.Exp` even uses an
-  FMA instruction only on amd64 CPUs that have one. The master EQ design, the
-  pro limiter, transient shaper and normalizer, the convolution FFT, the
-  loudness meter and the export gain use `kernel/dsp/detmath` instead, whose
-  functions return the same bits everywhere and are within 1 ULP of the exact
-  result. Still on the math library: the master compressor and room (they
-  build on the track compressor and reverb), the track effects in `kernel/fx`,
-  the amp and cabinet, the mix in `kernel/mix`, and the voices.
+  FMA instruction only on amd64 CPUs that have one. Every processor in
+  `kernel/fx` and its subpackages (the master EQ, compressor, limiter,
+  transient shaper, width, room and normalizer, the convolution FFT, and the
+  track effects: amp and cabinet, chorus, compressor, de-esser, delay, drive,
+  reverb and tape), the mix in `kernel/mix`, the loudness meter and the export
+  gain use `kernel/dsp/detmath` instead, whose functions return the same bits
+  everywhere and are within 1 ULP of the exact result. Still on the math
+  library: the engine (master gain, parameter smoothing), automation curves,
+  the graph interpreter, vibrato, spatial audio and the voices; each such file
+  is listed with its exact count in the source guard below.
 
 The follow-up removes the rest: no architecture-dependent `math` call
 between voice and exported file, and a digest per processor and voice on all
@@ -410,9 +413,14 @@ GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/.
 ```
 
 Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses; CI fails
-on any. `TestRenderPathAvoidsMathLibrary` in
-`kernel/dsp/detmath` fails when the master chain or the export code calls a
-math function that `detmath` replaces.
+on any. `TestRenderPathAvoidsMathLibrary` in `kernel/dsp/detmath` reads every
+Go file in `kernel/` and `render/`, the loudness search in
+`cmd/cicada/main.go` and the automation curves in `project/automation.go`, and
+fails on any `math` function outside a short list of exact ones (`Sqrt`,
+`Abs`, `Floor`, `Ldexp`, bit conversions and the like). Files that still call
+the others are listed with their exact count, so a new call fails; analysis
+code that never produces audio (`kernel/analysis`, `render/fingerprint.go`) is
+exempt.
 
 The exported file itself is compared too. `TestExampleWAVParity` in
 `cmd/cicada` runs `cicada render` on example scores four ways (plain,
