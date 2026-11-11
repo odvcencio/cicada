@@ -148,8 +148,8 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		return edits.Options{}, err
 	}
 	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard, CaptureGuard: s.automationCaptureGuard}
-	// A voice change compares every diagnostic of cicada check before and
-	// after it.
+	// The structural intents name every problem cicada check finds in a
+	// change.
 	opts.Diagnose = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
 		staged := make(map[string][]byte, len(files)+1)
 		for path, data := range files {
@@ -426,14 +426,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if err != nil {
-		// The revisions a resend must carry, so a yes to a refusal answers
-		// exactly the state the refusal described.
-		response := intentErrorResponse(err)
-		var reason *edits.ReasonError
-		if errors.As(err, &reason) && reason.Reason == "voice_changes_sound" {
-			response["revision"], response["revisions"] = studioRevision(current), fileRevisions(opts)
-		}
-		studioJSON(w, http.StatusUnprocessableEntity, response)
+		studioJSON(w, http.StatusUnprocessableEntity, intentErrorResponse(err))
 		return
 	}
 	if !env.DryRun {
