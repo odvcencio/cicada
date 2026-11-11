@@ -353,7 +353,10 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 				if kind == "" {
 					kind = effect.Name
 				}
-				if kind == "eq" || kind == "comp" || kind == "deesser" || kind == "ampcab" {
+				// The direct mixer builds only a drive insert (compileTracksAll).
+				// Every other kind, chorus included, runs in the engine; the
+				// direct mixer used to play a single chorus as no insert.
+				if kind != "drive" {
 					return true
 				}
 			}
