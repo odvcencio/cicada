@@ -601,7 +601,7 @@ func (v *Voice) nextSample(substep uint64) float32 {
 			blend := clamp(c, 0, 1)
 			y = float32(a*(1-blend)) + float32(b*blend)
 		case Tanh:
-			y = float32(detmath.Tanh(float64(a)))
+			y = detmath.Tanh32(a) // float32(detmath.Tanh(float64(a))), bit for bit
 		case Exp2:
 			y = float32(detmath.Exp2(float64(clamp(a, -8, 8))))
 		case Clamp:
@@ -681,7 +681,8 @@ func ladder(state *[4]float32, coef, feedback, x float32) float32 {
 	stateSum := float32(float32(g3*rest)*state[0]) + float32(float32(g2*rest)*state[1]) +
 		float32(float32(coef*rest)*state[2]) + float32(rest*state[3])
 	estimate := (float32(g4*x) + stateSum) / (1 + float32(feedback*g4))
-	input := float32(detmath.Tanh(float64(x - float32(feedback*estimate))))
+	// Tanh32 is float32(detmath.Tanh(float64(v))) bit for bit, at less cost.
+	input := detmath.Tanh32(x - float32(feedback*estimate))
 	for stage := 0; stage < 4; stage++ {
 		step := float32(coef * (input - state[stage]))
 		out := step + state[stage]
