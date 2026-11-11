@@ -5,9 +5,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall/js"
 	"time"
 
@@ -129,7 +132,7 @@ func (u *liveUI) enableNativeMIDI() {
 	u.query("[data-live-control=midi]").Set("textContent", "Disconnect MIDI")
 	u.status.Set("Connecting MIDI inputs…")
 	go func() {
-		message := u.readNativeMIDI(ctx, generation)
+		message, stalled := u.readNativeMIDI(ctx, generation)
 		canceled := ctx.Err() != nil
 		cancel()
 		if u.closed.Load() || generation != u.nativeMIDIGeneration {
@@ -144,31 +147,58 @@ func (u *liveUI) enableNativeMIDI() {
 		if canceled {
 			message = "MIDI disconnected."
 		}
+		if stalled && !canceled {
+			// A silent stream holds the controller hostage: say so and open a
+			// new one, as a user clicking Enable MIDI again would.
+			u.enableNativeMIDI()
+			u.status.Set(message)
+			return
+		}
 		u.status.Set(message + " Keyboard and pointer notes remain available.")
 	}()
 }
 
-func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) string {
+// readNativeMIDI reads Studio's native MIDI stream until it ends and says
+// how it ended. stalled reports that nothing, not even Studio's
+// once-a-second heartbeat, arrived for nativeMIDISilence.
+func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) (message string, stalled bool) {
 	// The input stream stays open while the controller plays, so it is read
-	// as it arrives and has no timeout; cancelling ctx closes it.
+	// as it arrives with no overall timeout; cancelling ctx closes it, and so
+	// does the silence watchdog.
+	streamCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	var quiet atomic.Bool
+	watchdog := time.AfterFunc(nativeMIDISilence, func() { quiet.Store(true); stop() })
+	defer watchdog.Stop()
 	status, body, err := nativeRequest{Method: methodPost, Path: "/api/midi/input", Body: []byte("{}"), Headers: map[string]string{
 		"Content-Type": "application/json", "X-CSRF-Token": u.props.CSRF,
-	}}.stream(ctx)
+	}}.stream(streamCtx)
 	if err != nil {
-		return "MIDI connection ended."
+		if quiet.Load() {
+			return nativeMIDIStalled, true
+		}
+		consoleWarn("native MIDI input", err)
+		return "MIDI input did not connect: the request to Studio failed. Connect again to retry.", false
 	}
 	defer body.Close()
 	if status != statusOK {
-		return midiInputRefusal(body)
+		return midiInputRefusal(body), false
 	}
 	decoder := json.NewDecoder(body)
 	for {
 		var event midi.Event
 		if err := decoder.Decode(&event); err != nil {
-			return "MIDI connection ended. Connect again to resume."
+			if quiet.Load() && ctx.Err() == nil {
+				return nativeMIDIStalled, true
+			}
+			if !errors.Is(err, io.EOF) {
+				consoleWarn("native MIDI input", err)
+			}
+			return midiStreamEnd(err), false
 		}
+		watchdog.Reset(nativeMIDISilence)
 		if ctx.Err() != nil || u.closed.Load() || generation != u.nativeMIDIGeneration {
-			return "MIDI disconnected."
+			return "MIDI disconnected.", false
 		}
 		if event.Position != nil {
 			u.syncMIDIClock(event.Position.Epoch)
@@ -206,12 +236,12 @@ func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) string {
 				continue
 			}
 			if event.Length < 2 || event.Length > 3 {
-				return "MIDI input returned an invalid message."
+				return "MIDI input returned an invalid message.", false
 			}
 			values := []any{event.Data[0], event.Data[1], event.Data[2]}
 			u.midiMessageAt(fmt.Sprintf("native:%s:g%d", event.Device, event.Group), js.ValueOf(values), at)
 		case "error":
-			return event.Message
+			return event.Message, false
 		}
 	}
 }

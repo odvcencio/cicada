@@ -191,12 +191,14 @@ func jsErrorMessage(value js.Value) string {
 // body of limit+1 bytes. Any other body is read whole, as before, and at most
 // limit+1 bytes are copied into Go.
 //
-// Reading the body chunk by chunk through its stream reader, which would stop
-// any oversized body at the limit, left an occasional action response neither
-// drained nor aborted: the edit then failed and the page kept its old revision
-// (an Undo after Save in WKWebView, and the edit-latency benchmark in Chrome).
-// Until that is understood, a compressed or chunked oversized body is still
-// buffered by the browser.
+// Known limit: Studio's responses are compressed (GoSX compresses text of
+// 1 KiB or more), so they state no usable length, and the browser buffers an
+// oversized one whole before it is refused. A chunk-by-chunk read through the
+// stream reader would stop at the limit; it was tried and withdrawn because
+// Chrome sometimes reported a fully read response as net::ERR_ABORTED at the
+// moment the reader saw the end (2 of 151 streamed reads in one benchmark
+// run, none of 400 in a plain JavaScript loop), which hung the latency
+// benchmark's response checks. The cause is not known.
 func (c *fetchCall) readBody(limit int) ([]byte, error) {
 	if limit > 0 && c.contentLength() > limit {
 		c.abort()
@@ -311,6 +313,13 @@ func (b *nativeStreamBody) Close() error {
 	}
 	b.call.abort()
 	return nil
+}
+
+// consoleWarn keeps a request's technical cause in the browser console, where
+// the status line shows a plain sentence.
+func consoleWarn(what string, err error) {
+	defer func() { _ = recover() }()
+	js.Global().Get("console").Call("warn", "Cicada: "+what+": "+err.Error())
 }
 
 // do sends a request to this page's origin and reads its response, at most

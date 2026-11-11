@@ -660,7 +660,8 @@ func (u *samplerUI) resample(form js.Value) {
 			"Content-Type": "application/json", "Accept": "application/json", "X-Cicada-Reactive": "1", "X-CSRF-Token": values["csrf_token"],
 		}}.do(u.ctx)
 		if err != nil {
-			u.status("Resampling failed; your performance is retained. " + err.Error())
+			consoleWarn("Sampler resample", err)
+			u.status(resampleFailureText(err))
 			return
 		}
 		var result struct {

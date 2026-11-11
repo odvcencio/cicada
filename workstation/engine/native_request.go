@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -30,9 +31,17 @@ const (
 // http.Client call: Timeout bounds the whole exchange, body included, as
 // http.Client.Timeout did, and zero means no timeout. Limit is the most body
 // bytes the caller reads, as io.LimitReader did: the response it returns has at
-// most Limit+1 body bytes, and a response that states a larger length is
-// aborted before its body is read (fetch_js.go, readBody). Zero reads the
-// whole body.
+// most Limit+1 body bytes, so a caller never decodes more than its limit. Zero
+// reads the whole body.
+//
+// Known limit: io.LimitReader also stopped the download at Limit. Here a
+// response is aborted unread only when it states an uncompressed length over
+// Limit, and Studio's own responses never do: GoSX compresses every text
+// response of 1 KiB or more (gosx server/server.go, CompressionMiddleware;
+// internal/httpcompress/policy.go, MinimumSize and Compressible), and Studio
+// does not turn that off. So the browser buffers an oversized Studio response
+// whole before the engine refuses it. The cost is memory, from a trusted
+// server on loopback (fetch_js.go, readBody).
 type nativeRequest struct {
 	Method  string
 	Path    string // origin-relative, for example "/__actions/live"
@@ -160,6 +169,45 @@ func noteRecoveryResult(response browser.FetchResponse, saved any) (found bool, 
 		return false, err
 	}
 	return true, nil
+}
+
+// liveFailureText is what the Live panel says when an action fails: the
+// service's own message when it answered, otherwise a plain sentence. The
+// technical cause goes to the console (live_js.go).
+func liveFailureText(err error) string {
+	var failure *liveActionFailure
+	if errors.As(err, &failure) {
+		return failure.Message
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "Studio took too long to answer, so the last Live action may not have applied. Check that Studio is still running."
+	}
+	return "The last Live action did not reach Studio or its answer could not be read. Check that Studio is still running."
+}
+
+// resampleFailureText is the Sampler's message when its resample request
+// fails before Studio answers.
+func resampleFailureText(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "Resampling failed: Studio took too long to answer. Your performance is retained; try again."
+	}
+	return "Resampling failed: the request did not reach Studio. Your performance is retained; check that Studio is still running and try again."
+}
+
+// nativeMIDISilence is how long the native MIDI stream may stay silent.
+// Studio writes a heartbeat line every second (cmd/cicada/studio_midi_input.go),
+// so five seconds without a line means the stream has stalled.
+const nativeMIDISilence = 5 * time.Second
+
+const nativeMIDIStalled = "MIDI input stopped responding: nothing arrived for 5 seconds, not even Studio's heartbeat. Reconnecting…"
+
+// midiStreamEnd says how the native MIDI stream ended, from the decoder's
+// error: Studio closing the stream cleanly, or the connection breaking.
+func midiStreamEnd(err error) string {
+	if errors.Is(err, io.EOF) {
+		return "MIDI input ended: Studio closed the stream. Connect again to resume."
+	}
+	return "MIDI input failed: the connection to Studio broke. Connect again to resume."
 }
 
 // midiInputRefusal says why the service refused the MIDI input stream, from

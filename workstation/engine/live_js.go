@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -298,7 +299,11 @@ func (u *liveUI) runCommands() {
 			}
 			data, err := u.post(u.ctx, job.Action, job.Values)
 			if err != nil && !u.closed.Load() {
-				u.status.Set(err.Error())
+				var failure *liveActionFailure
+				if !errors.As(err, &failure) {
+					consoleWarn("Live action "+job.Action, err)
+				}
+				u.status.Set(liveFailureText(err))
 			}
 			if err == nil && job.Action == "note-preview" && !u.closed.Load() {
 				var retained struct {

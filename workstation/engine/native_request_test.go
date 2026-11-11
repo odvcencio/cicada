@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -224,5 +225,35 @@ func TestMIDIInputRefusalReadsTheErrorBody(t *testing.T) {
 	long := strings.Repeat("z", 5000)
 	if got := midiInputRefusal(strings.NewReader(long)); got != "MIDI could not connect. "+long[:4096] {
 		t.Fatalf("refusal read %d bytes, want 4096", len(got)-len("MIDI could not connect. "))
+	}
+}
+
+func TestFailureTextsAreSentencesNotTransportErrors(t *testing.T) {
+	network := requestError("POST", testOrigin+"/__actions/live", errors.New("browser: fetch transport: Failed to fetch"))
+	timeout := requestError("POST", testOrigin+"/__actions/live", context.DeadlineExceeded)
+	refused := &liveActionFailure{Status: 409, Message: "Live lease expired. Reopen Live to resume."}
+	if got := liveFailureText(refused); got != refused.Message {
+		t.Errorf("a refusal keeps the service's message, got %q", got)
+	}
+	for _, err := range []error{network, timeout} {
+		for _, text := range []string{liveFailureText(err), resampleFailureText(err)} {
+			if strings.Contains(text, "browser:") || strings.Contains(text, "http://") || strings.Contains(text, "fetch") {
+				t.Errorf("message shows the transport error: %q", text)
+			}
+		}
+	}
+	if !strings.Contains(liveFailureText(timeout), "too long") || !strings.HasPrefix(resampleFailureText(network), "Resampling failed") {
+		t.Errorf("timeouts and network errors read differently: %q, %q", liveFailureText(timeout), resampleFailureText(network))
+	}
+}
+
+func TestMIDIStreamEndingsAreToldApart(t *testing.T) {
+	clean := midiStreamEnd(io.EOF)
+	broken := midiStreamEnd(errors.New("browser: reading response body: network error"))
+	if clean == broken || !strings.Contains(clean, "closed the stream") || !strings.Contains(broken, "broke") {
+		t.Fatalf("clean end %q, broken stream %q", clean, broken)
+	}
+	if midiStreamEnd(io.ErrUnexpectedEOF) != broken {
+		t.Fatal("a stream cut inside an event is a broken stream")
 	}
 }
