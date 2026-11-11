@@ -229,7 +229,8 @@ func New(rate int, params Params) (*Instrument, error) {
 		hz := 440 * detmath.Exp2(float64(i+wheelMin-69)/12)
 		p.wheelStep[i] = uint32(float64(hz/fs*4294967296) + .5)
 		p.wheelPhase[i] = uint32(i+1) * 2654435761
-		p.wheelGain[i] = float32(1 / math.Sqrt(1+detmath.Pow(hz/10500, 2)))
+		x := hz / 10500 // x*x equals the former Pow(x, 2) on all 91 wheels
+		p.wheelGain[i] = float32(1 / math.Sqrt(1+float64(x*x)))
 	}
 	for i := range p.keys {
 		k := &p.keys[i]
