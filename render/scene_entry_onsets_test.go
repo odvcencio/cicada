@@ -63,12 +63,15 @@ pattern idle { c3 . . . }
 // start the pattern's first note there. The scheduled renderer used to rebuild
 // the track's events after the frame's release pass, so that release stopped
 // the note pass and the first note of the pass was dropped (in Studio as well).
-// Both render paths must start the same notes at the same ticks.
+// A scene tempo change rebuilds every track, so a track that keeps its pattern
+// lost its note at the switch too. Both render paths must start the same notes
+// at the same ticks.
 func TestSceneEntryStartsTheFirstNoteOnBothRenderPaths(t *testing.T) {
 	const bar = seq.TicksPerBar
 	cases := []struct {
 		name, patterns, song string
-		want                 []int64 // onsets of track lead
+		track                int     // the track whose onsets want lists
+		want                 []int64 // onsets of that track
 	}{
 		{
 			name:     "whole-bar tie bound at bar 3",
@@ -94,6 +97,13 @@ func TestSceneEntryStartsTheFirstNoteOnBothRenderPaths(t *testing.T) {
 			song:     "song { x*2 y*2 }",
 			want:     []int64{0, bar, 2 * bar, 3 * bar},
 		},
+		{
+			name:     "scene tempo change keeps the pattern",
+			patterns: "track pulse m {}\npattern pl { step = 1/4 gate = 100% e4 e4 e4 e4 }\nscene x { lead = idle pulse = pl }\nscene y { lead = idle pulse = pl tempo = 90 }\n",
+			song:     "song { x*2 y*2 }",
+			track:    1,
+			want:     idleBars(4),
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -103,8 +113,8 @@ func TestSceneEntryStartsTheFirstNoteOnBothRenderPaths(t *testing.T) {
 			if !reflect.DeepEqual(direct, scheduled) {
 				t.Errorf("onsets differ between render paths:\ndirect    %v\nscheduled %v", direct, scheduled)
 			}
-			if fmt.Sprint(scheduled[0]) != fmt.Sprint(c.want) {
-				t.Errorf("scheduled onsets %v, want %v", scheduled[0], c.want)
+			if fmt.Sprint(scheduled[c.track]) != fmt.Sprint(c.want) {
+				t.Errorf("scheduled onsets of track %d %v, want %v", c.track, scheduled[c.track], c.want)
 			}
 		})
 	}

@@ -127,7 +127,19 @@ func (e sceneEntry) message(pattern, track string, tick int64) string {
 	}
 	until := "the pattern has no later note"
 	if e.next >= 0 {
-		until = fmt.Sprintf("the track is silent until bar %d, beat %d", e.next/seq.TicksPerBar+1, e.next%seq.TicksPerBar/960+1)
+		until = "the track is silent until " + songPosition(e.next)
 	}
 	return fmt.Sprintf("%s, %s: scene patterns keep the song's phase, so that note began before the scene and %s; place the pattern with arrange to start it from its first step", where, held, until)
+}
+
+// songPosition writes a song tick as @bar.beat.sixteenth, the form arrange
+// placements use, and adds the remaining ticks (960 to a beat) when the tick
+// falls between sixteenths.
+func songPosition(tick int64) string {
+	const sixteenth = seq.TicksPerBar / 16
+	at := fmt.Sprintf("@%d.%d.%d", tick/seq.TicksPerBar+1, tick%seq.TicksPerBar/(4*sixteenth)+1, tick%(4*sixteenth)/sixteenth+1)
+	if rest := tick % sixteenth; rest != 0 {
+		at += fmt.Sprintf(" plus %d ticks", rest)
+	}
+	return at
 }

@@ -51,13 +51,39 @@ song { a*1 b*4 }
 	}
 	d := ds[0]
 	t.Log(d.Message)
-	for _, want := range []string{"pattern sub on track low enters at bar 2 on step 3 of 8", "inside the note that step 1 starts", "silent until bar 3, beat 1", "arrange"} {
+	for _, want := range []string{"pattern sub on track low enters at bar 2 on step 3 of 8", "inside the note that step 1 starts", "silent until @3.1.1", "arrange"} {
 		if !strings.Contains(d.Message, want) {
 			t.Errorf("message %q lacks %q", d.Message, want)
 		}
 	}
 	if d.Severity != "warning" || d.Position.Line != 8 {
 		t.Errorf("severity %q at line %d, want a warning on the scene binding (line 8)", d.Severity, d.Position.Line)
+	}
+}
+
+// A grid that does not divide the bar enters inside a cell; the warning gives
+// the next note's position to the sixteenth, not the beat (here a 3/16 grid
+// bound at bar 2 enters 240 ticks into its sixth cell, a c4 still held).
+func TestSceneEntryInsideACellGivesTheNextNoteToTheSixteenth(t *testing.T) {
+	source := sceneEntryHead + `pattern odd { step = 3/16 c4 d4 e4 f4 g4 }
+scene a { low = idle }
+scene b { low = odd }
+song { a*1 b*2 }
+`
+	ds := sceneEntryDiagnostics(t, source)
+	if len(ds) != 1 {
+		t.Fatalf("got %d CICADA-SCENE-ENTRY diagnostics, want 1: %+v", len(ds), ds)
+	}
+	t.Log(ds[0].Message)
+	for _, want := range []string{"enters at bar 2 on step 1 of 5", "after the start of its note", "silent until @2.1.3"} {
+		if !strings.Contains(ds[0].Message, want) {
+			t.Errorf("message %q lacks %q", ds[0].Message, want)
+		}
+	}
+	for tick, want := range map[int64]string{0: "@1.1.1", 4560: "@2.1.4", 4600: "@2.1.4 plus 40 ticks", 7680 + 2*960 + 3*240: "@3.3.4"} {
+		if got := songPosition(tick); got != want {
+			t.Errorf("songPosition(%d) = %q, want %q", tick, got, want)
+		}
 	}
 }
 
