@@ -1,4 +1,8 @@
-// Use a disposable, freshly launched macOS Studio with --audio null.
+// Use a disposable, freshly launched Studio with --audio null, on macOS or Linux.
+// On Linux (CI) the suite adapts the macOS-only parts of the workflow: Cmd+S is
+// sent as Ctrl+S and Web MIDI is switched off, and the Web MIDI half accepts
+// "nativeMIDI":false because only the macOS app serves true. On macOS it runs
+// the workflow unchanged. The macOS app also runs this workflow in CI.
 // CICADA_STUDIO_URL=<startup URL> CICADA_SHARED_CAPTURE_PROOF_DIR=<absolute dir>
 // Run each kind against a fresh disposable server. Set CICADA_CAPTURE_KIND=channel
 // for ordinary channels; omit it for MPE.
@@ -53,9 +57,9 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
       await page.screenshot({path:path.join(proof,name+'-captured-lanes.png')});
     });
     try {
-      // The workflow saves with Cmd+S, which the macOS app turns into the editor's
-      // save. The editor in a plain browser saves on Ctrl+S, so send that instead.
-      await page.addInitScript(() => addEventListener('keydown',event => {
+      // The workflow saves with Cmd+S. In GoSX the editor's Mod key is Meta on
+      // macOS and Ctrl elsewhere, so off macOS send Ctrl+S instead.
+      if (process.platform !== 'darwin') await page.addInitScript(() => addEventListener('keydown',event => {
         if (!event.metaKey || event.ctrlKey || event.key.toLowerCase() !== 's' || event.__cmdAsCtrl) return;
         event.stopImmediatePropagation();
         const forwarded = new KeyboardEvent('keydown',{key:event.key,code:event.code,ctrlKey:true,bubbles:true,cancelable:true});
@@ -64,7 +68,7 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
       },true));
       // The workflow supplies its own MIDI stream through the native endpoint, so
       // keep the page off Web MIDI, which has no permission in a headless browser.
-      await page.addInitScript(() => Object.defineProperty(navigator,'requestMIDIAccess',{value:undefined}));
+      if (process.platform !== 'darwin') await page.addInitScript(() => Object.defineProperty(navigator,'requestMIDIAccess',{value:undefined}));
       await page.addInitScript(workflow);
       await page.goto(new URL('/studio',startup).href);
       await page.waitForFunction(() => window.__cicadaCaptureSmokeResult,null,{timeout:75_000});

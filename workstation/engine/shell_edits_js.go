@@ -35,6 +35,8 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	ctx, cancel := context.WithCancel(ctx)
 	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
 	u.seedEditorBaseline()
+	// A page that replaced the old one in place can keep the old lock.
+	u.syncHistoryLock()
 	// A page reload ends the old queue. A notice it left for the user shows
 	// here, and markers it left on regions this render shows fresh are gone.
 	storage := js.Global().Get("sessionStorage")
@@ -57,6 +59,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		if node := domCall(root, "querySelector", "[data-workspace-retry]"); workspacePresent(node) {
 			node.Set("hidden", !u.blocked.Load())
 		}
+		u.syncHistoryLock()
 	})
 	document := js.Global().Get("document")
 	u.listen(document, "submit", u.submit)
@@ -481,6 +484,33 @@ func (u *workspaceUI) reloadIfNeeded() {
 	}
 }
 
+// syncHistoryLock keeps Undo and Redo unusable while the queue is blocked: a
+// page update or a refresh of saved state is on its way, the buttons still
+// belong to the song as it was before the last edit, and a press would be
+// ignored without a word. It disables them and remembers what they showed; the
+// fresh page, or the end of the block, puts that back. It leaves a button alone
+// while lockHistory holds it after a Keep.
+func (u *workspaceUI) syncHistoryLock() {
+	blocked := u.blocked.Load()
+	for _, selector := range []string{"#undo-form button", "#redo-form button"} {
+		button := js.Global().Get("document").Call("querySelector", selector)
+		if !workspacePresent(button) {
+			continue
+		}
+		if form := button.Call("closest", "form"); workspacePresent(form) && domHas(form, "data-history-refresh-pending") {
+			continue
+		}
+		switch held := domHas(button, "data-history-block"); {
+		case blocked && !held:
+			domSet(button, "data-history-block", fmt.Sprint(button.Get("disabled").Bool()))
+			button.Set("disabled", true)
+		case !blocked && held:
+			button.Set("disabled", workspaceAttr(button, "data-history-block") == "true")
+			domDrop(button, "data-history-block")
+		}
+	}
+}
+
 // reload renders the page again the way an edit did before update regions:
 // GoSX's same-URL revalidation reconciles the page and remounts the engines
 // whose props changed, without a document load. The queue stays blocked
@@ -488,6 +518,7 @@ func (u *workspaceUI) reloadIfNeeded() {
 func (u *workspaceUI) reload() {
 	u.blocked.Store(true)
 	u.reloading = true
+	u.syncHistoryLock()
 	u.status.Set("Updating Studio to show the saved song…")
 	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("navigation")) && gosx.Get("navigation").Get("revalidate").Type() == js.TypeFunction {
 		navigation := gosx.Get("navigation")

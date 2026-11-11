@@ -4,7 +4,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const stall=require('./page-stall.cjs');
 // --write-fixture PATH writes the disposable score this suite needs: an edition-2 score with a vocal (audio) track.
-if(process.argv[2]==='--write-fixture'){const target=path.resolve(process.argv[3]);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,'cicada 2\n// cicada-pro-recording-test: disposable fixture\ntitle "Recording levels"\ntempo 120\nseed 42\ntrack vox audio {}\ntrack bass acid {}\npattern pulse notes steps=16 { 1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 . }\nscene main { bass=pulse }\nsong { main*8 }\n');process.exit(0)}
+if(process.argv[2]==='--write-fixture'){const target=path.resolve(process.argv[3]);if(fs.existsSync(target))throw new Error('Use a new disposable path');fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,'cicada 2\n// cicada-pro-recording-test: disposable fixture\ntitle "Recording levels"\ntempo 120\nseed 42\ntrack vox audio {}\ntrack bass acid {}\npattern pulse notes steps=16 { 1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 . }\nscene main { bass=pulse }\nsong { main*8 }\n');process.exit(0)}
 async function until(fn,message){const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,50))}assert.fail(message)}
 test('Microphone levels and recording transport protection remain usable across panels',{timeout:90000},async t=>{
  const base=process.env.CICADA_LEVELS_URL;assert.ok(base);assert.equal(new URL(base).hostname,'127.0.0.1');

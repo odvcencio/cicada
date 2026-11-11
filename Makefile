@@ -229,7 +229,7 @@ test-studio-dock-fit:
 	node --test workstation/browser/dock-fit.test.cjs
 
 .PHONY: test-studio-meter-performance
-# Requires a fresh Studio and CICADA_METERS_URL; it counts canvas paints, not time.
+# Requires a fresh Studio and CICADA_METERS_URL; it checks for no repaint of unchanged meters and for a poll gap of at most 100 ms (page clock).
 test-studio-meter-performance:
 	node --test workstation/browser/meter-performance.test.cjs
 
@@ -264,6 +264,23 @@ test-studio-shared-capture:
 # Run once with CICADA_PERFORMANCE_PART=capacity (CICADA_CAPACITY_URL) and once with =buffer (CICADA_BUFFER_URL), each on a fresh Studio.
 test-studio-performance:
 	node --test workstation/browser/performance.test.cjs
+
+.PHONY: test-studio-scene-launch-keys
+# Requires a fresh Studio on a continuity.test.cjs fixture.
+test-studio-scene-launch-keys:
+	node --test workstation/browser/scene-launch-keys.test.cjs
+
+.PHONY: test-studio-live-write
+# Requires Studio with a synthetic microphone: build the harness (go test -c ./cmd/cicada), start
+# TestSyntheticStudioUIHarness on live-fixture.cjs --no-curve, and put cicada-workstation in front of it.
+# Set CICADA_LIVE_WRITE_SCORE and CICADA_LIVE_WRITE_PROOF_DIR. scripts/ci-studio-browser.sh live_write shows how.
+test-studio-live-write:
+	node --test workstation/browser/live-write.test.cjs
+
+.PHONY: test-studio-live-write-uncertain
+# As test-studio-live-write, on a fresh Studio per CICADA_LIVE_WRITE_FAILURE (reject, lost, timeout, late).
+test-studio-live-write-uncertain:
+	node --test workstation/browser/live-write-uncertain.test.cjs
 
 .PHONY: test-studio-amp-automation
 # Requires a fresh Studio on amp-automation.test.cjs --write-fixture DIR (score DIR/main.cicada).

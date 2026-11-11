@@ -35,8 +35,8 @@ shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
-	3) echo "owner_session page_stall pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
-	4) echo "shutdown_proof grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor" ;;
+	3) echo "owner_session page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
+	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
 }
@@ -109,6 +109,8 @@ segment_runs() {
 	shared_capture) echo shared-capture@mpe shared-capture@channel ;;
 	performance) echo performance@capacity performance@buffer ;;
 	amp_automation) echo amp-automation ;;
+	scene_launch_keys) echo scene-launch-keys ;;
+	live_write) echo live-write live-write-uncertain@reject live-write-uncertain@lost live-write-uncertain@timeout live-write-uncertain@late ;;
 	*) return 1 ;;
 	esac
 }
@@ -117,14 +119,7 @@ segment_runs() {
 # This list is an exemption, not coverage: it only keeps the completeness check
 # from failing on them. Remove a name here when you add its suite to a segment.
 not_run_by_ci=(
-	# 2026-11-10: needs the Go test harness TestSyntheticStudioUIHarness in
-	# cmd/cicada (synthetic microphone input) and a score with no amp_drive
-	# curve; a Studio started with --audio null cannot supply that input.
-	# It needs a compiled test binary, so it is not wired into a shard yet.
-	live-write
-	# 2026-11-10: same harness as live-write, run once per failure mode
-	# (CICADA_LIVE_WRITE_FAILURE=reject, lost, timeout, late).
-	live-write-uncertain
+	# (none: every suite file runs in a shard)
 )
 
 self="${BASH_SOURCE[0]}"
@@ -241,6 +236,48 @@ stop_studio() {
 	kill "$studio_pid"
 	wait "$studio_pid" || true
 	studio_log= # a later timeout must not print this server's log
+}
+
+# start_synthetic_studio SCORE NAME starts Studio with a synthetic microphone:
+# the Go test harness TestSyntheticStudioUIHarness serves the domain API with
+# synthetic PCM, and cicada-workstation serves the page in front of it. No
+# device is opened. It sets studio_pid to the workstation. stop_synthetic_studio
+# stops all three processes.
+synthetic_pids=()
+start_synthetic_studio() {
+	local score="$1" name="$2" manifest backend token _
+	manifest="$PWD/build/studio-$name-manifest.json"
+	rm -f "$manifest"
+	CICADA_SYNTHETIC_SCORE="$score" CICADA_SYNTHETIC_MANIFEST="$manifest" ./build/cicada-synthetic-ui.test -test.run '^TestSyntheticStudioUIHarness$' > "build/studio-$name-harness.log" 2>&1 &
+	synthetic_pids=($!)
+	for _ in $(seq 1 100); do
+		if [[ -s "$manifest" ]]; then break; fi
+		kill -0 "${synthetic_pids[0]}"
+		sleep 0.1
+	done
+	backend="$(node -e 'process.stdout.write(require(process.argv[1]).backend)' "$manifest")"
+	token="$(node -e 'process.stdout.write(require(process.argv[1]).token)' "$manifest")"
+	# The workstation exits when its stdin closes; a sleeper holds it open.
+	exec {synthetic_stdin}< <(sleep 3600)
+	synthetic_pids+=($!)
+	studio_log="build/studio-$name-server.log"
+	CICADA_BACKEND_TOKEN="$token" ./build/cicada-workstation --backend "$backend" --listen "127.0.0.1:$studio_port" --state-dir "$browser_root/$name-state" --parent-watch <&"$synthetic_stdin" > "$studio_log" 2>&1 &
+	studio_pid=$!
+	exec {synthetic_stdin}<&-
+	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+	for _ in $(seq 1 100); do
+		if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+		kill -0 "$studio_pid"
+		sleep 0.1
+	done
+}
+
+stop_synthetic_studio() {
+	local pid
+	for pid in "$studio_pid" "${synthetic_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+	for pid in "$studio_pid" "${synthetic_pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+	synthetic_pids=()
+	studio_log=
 }
 
 ran_file=
@@ -621,7 +658,7 @@ seg_dock_fit() { # new; 5 s locally
 }
 
 seg_meter_performance() { # new; 5 s locally
-	# Despite the name this counts canvas paints, not time, so it is a correctness test.
+	# Despite the name this is a correctness test: no canvas paint while the meters are unchanged, and the poller keeps up (median gap between meter requests at most 100 ms, timed on the page clock).
 	continuity_fixture meter-performance
 	start_studio "$browser_root/meter-performance/continuity.cicada" build/studio-meter-performance-server.log /
 	run_suite meter-performance env CICADA_METERS_URL="$CICADA_STUDIO_URL" CICADA_METERS_PROOF_DIR="$PWD/build/studio-meter-performance-proof" make test-studio-meter-performance | tee build/studio-meter-performance-report.txt
@@ -682,6 +719,30 @@ seg_performance() { # new; 15 s locally
 		start_studio "$browser_root/performance/main.cicada" "build/studio-performance-$performance_part-server.log" /
 		run_suite "performance@$performance_part" env CICADA_PERFORMANCE_PART="$performance_part" CICADA_CAPACITY_URL="$CICADA_STUDIO_URL" CICADA_BUFFER_URL="$CICADA_STUDIO_URL" CICADA_PERFORMANCE_PROOF_DIR="$PWD/build/studio-performance-proof" make test-studio-performance | tee "build/studio-performance-$performance_part-report.txt"
 		stop_studio
+	done
+}
+
+seg_scene_launch_keys() { # new; about 10 s locally
+	continuity_fixture scene-launch-keys
+	start_studio "$browser_root/scene-launch-keys/continuity.cicada" build/studio-scene-launch-keys-server.log /
+	run_suite scene-launch-keys make test-studio-scene-launch-keys | tee build/studio-scene-launch-keys-report.txt
+	stop_studio
+}
+
+seg_live_write() { # new; about 3 minutes locally, most of it the harness build and five Studio starts
+	# These suites need a synthetic microphone: build the harness test binary
+	# once, then start it with a score that has no amp_drive curve.
+	local live_score live_mode
+	go test -c -o build/cicada-synthetic-ui.test ./cmd/cicada
+	live_score="$(node workstation/browser/live-fixture.cjs "$browser_root/live-write" --no-curve)"
+	start_synthetic_studio "$live_score" live-write
+	run_suite live-write env CICADA_LIVE_WRITE_SCORE="$live_score" CICADA_LIVE_WRITE_PROOF_DIR="$PWD/build/studio-live-write-proof" make test-studio-live-write | tee build/studio-live-write-report.txt
+	stop_synthetic_studio
+	for live_mode in reject lost timeout late; do
+		live_score="$(node workstation/browser/live-fixture.cjs "$browser_root/live-write-$live_mode" --no-curve)"
+		start_synthetic_studio "$live_score" "live-write-$live_mode"
+		run_suite "live-write-uncertain@$live_mode" env CICADA_LIVE_WRITE_FAILURE="$live_mode" CICADA_LIVE_WRITE_PROOF_DIR="$PWD/build/studio-live-write-proof" make test-studio-live-write-uncertain | tee "build/studio-live-write-$live_mode-report.txt"
+		stop_synthetic_studio
 	done
 }
 
@@ -923,6 +984,8 @@ run_shard() {
 		python3() { return 0; }
 		start_studio() { studio_pid=0; }
 		stop_studio() { return 0; }
+		start_synthetic_studio() { studio_pid=0; }
+		stop_synthetic_studio() { return 0; }
 		continuity_fixture() { mkdir -p "$browser_root/$1"; }
 	else
 		browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$shard"
@@ -941,7 +1004,7 @@ run_shard() {
 		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
 		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-		trap 'kill "${studio_pid:-}" 2>/dev/null || true; wait "${studio_pid:-}" 2>/dev/null || true' EXIT
+		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true' EXIT
 	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"

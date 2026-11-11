@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync/atomic"
 	"syscall/js"
 	"time"
@@ -69,12 +70,36 @@ func publishCapture(ctx context.Context) {
 	}
 }
 
+// actionForms returns the forms under root that selector matches and whose
+// action is path. It compares the path alone: GoSX's managed navigation can
+// rewrite the attribute to an absolute URL, and an action may carry a query.
+func actionForms(root js.Value, selector, path string) []js.Value {
+	var forms []js.Value
+	list := root.Call("querySelectorAll", selector)
+	for i := 0; i < list.Length(); i++ {
+		form := list.Index(i)
+		action := workspaceActionPath(workspaceAttr(form, "action"))
+		if cut := strings.IndexAny(action, "?#"); cut >= 0 {
+			action = action[:cut]
+		}
+		if action == path {
+			forms = append(forms, form)
+		}
+	}
+	return forms
+}
+
 func syncCaptureControls(root js.Value, state control.CaptureState, busy bool) {
 	locked := state.Active != "" && state.Capture != nil && (state.Capture.Recording || state.Capture.Completed)
 	root.Call("setAttribute", "data-recording-transport-locked", fmt.Sprint(locked))
-	buttons := root.Call("querySelectorAll", "form[action$='/__actions/transport'] button")
-	for i := 0; i < buttons.Length(); i++ {
-		button := buttons.Index(i)
+	var buttons []js.Value
+	for _, form := range actionForms(root, "form", "/__actions/transport") {
+		list := form.Call("querySelectorAll", "button")
+		for i := 0; i < list.Length(); i++ {
+			buttons = append(buttons, list.Index(i))
+		}
+	}
+	for _, button := range buttons {
 		action := ""
 		if workspaceAttr(button, "name") == "action" {
 			action = workspaceAttr(button, "value")

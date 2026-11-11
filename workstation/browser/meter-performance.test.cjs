@@ -19,6 +19,7 @@ test('Meter layout stays cached while live levels, clipping, track names and vie
   const context = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce', storageState: process.env.CICADA_METERS_STORAGE_STATE});
   watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));
   await context.addInitScript(() => {
+    performance.setResourceTimingBufferSize(100000);
     window.meterPaints = {fillRect: 0, fillText: 0, measureText: 0};
     for (const name of Object.keys(window.meterPaints)) {
       const original = CanvasRenderingContext2D.prototype[name];
@@ -30,9 +31,8 @@ test('Meter layout stays cached while live levels, clipping, track names and vie
   });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  let peak = -6, prefix = 'track', requests = 0;
+  let peak = -6, prefix = 'track';
   await page.route('**/api/meters', route => {
-    requests++;
     const tracks = Object.fromEntries(Array.from({length: 64}, (_, i) => [prefix + String(i).padStart(2, '0'), {peak, rms: peak - 3}]));
     return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({tracks, master: {peak, rms: peak - 3}})});
   });
@@ -45,10 +45,17 @@ test('Meter layout stays cached while live levels, clipping, track names and vie
   await waitPixel([136, 217, 187]);
   await page.waitForTimeout(300);
   await page.evaluate(() => { for (const key in window.meterPaints) window.meterPaints[key] = 0; });
-  const firstRequests = requests;
-  await page.waitForTimeout(600);
+  // Time the poller on the page's own clock, from the browser's resource
+  // timing, so a slow test process or a busy runner cannot skew the rate: the
+  // meters are polled about 20 times a second, so consecutive requests must be
+  // at most 100 ms apart at the median (the old check: 6 requests in 600 ms).
+  const since = await page.evaluate(() => performance.now());
+  await page.waitForFunction(since => performance.getEntriesByType('resource').filter(e => e.name.includes('/api/meters') && e.startTime > since).length >= 8, since, {timeout: 20000});
+  const starts = await page.evaluate(since => performance.getEntriesByType('resource').filter(e => e.name.includes('/api/meters') && e.startTime > since).map(e => e.startTime).sort((a, b) => a - b), since);
+  const gaps = starts.slice(1).map((value, i) => value - starts[i]).sort((a, b) => a - b);
+  const medianGap = gaps[Math.floor(gaps.length / 2)];
   const steadyPaints = await page.evaluate(() => ({...window.meterPaints}));
-  assert.ok(requests - firstRequests >= 6, 'Live meter polling slowed down.');
+  assert.ok(medianGap <= 100, `Live meter polling slowed down: median gap ${medianGap.toFixed(1)} ms over ${starts.length} requests.`);
   assert.deepEqual(steadyPaints, {fillRect: 0, fillText: 0, measureText: 0}, 'An unchanged layout or level was repainted.');
 
   peak = -40;

@@ -2,8 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const stall=require('./page-stall.cjs');
 // --write-fixture PATH writes the disposable score this suite needs: 64 tracks (63 synths and the vocal track "vox"), silent null audio.
-// One Studio serves both checks, so CICADA_CAPACITY_URL and CICADA_BUFFER_URL can be the same address.
-if(process.argv[2]==='--write-fixture'){const target=path.resolve(process.argv[3]);fs.mkdirSync(path.dirname(target),{recursive:true});const synths=Array.from({length:63},(_,i)=>'track s'+String(i).padStart(2,'0')+' acid {}');fs.writeFileSync(target,['cicada 2','// cicada-performance-test: disposable fixture','title "Sixty-four tracks"','tempo 120','seed 42','track vox audio {}',...synths,'pattern pulse notes steps=16 { c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 }','scene main { '+synths.map((_,i)=>'s'+String(i).padStart(2,'0')+'=pulse').join(' ')+' }','song { main*8 }',''].join('\n'));process.exit(0)}
+// Run on two Studios, one per half (see CICADA_PERFORMANCE_PART below): playback leaves the audio runtime armed, which locks the audio form.
+if(process.argv[2]==='--write-fixture'){const target=path.resolve(process.argv[3]);if(fs.existsSync(target))throw new Error('Use a new disposable path');fs.mkdirSync(path.dirname(target),{recursive:true});const synths=Array.from({length:63},(_,i)=>'track s'+String(i).padStart(2,'0')+' acid {}');fs.writeFileSync(target,['cicada 2','// cicada-performance-test: disposable fixture','title "Sixty-four tracks"','tempo 120','seed 42','track vox audio {}',...synths,'pattern pulse notes steps=16 { c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 c4 }','scene main { '+synths.map((_,i)=>'s'+String(i).padStart(2,'0')+'=pulse').join(' ')+' }','song { main*8 }',''].join('\n'));process.exit(0)}
 
 test('Native64-track meters and recording buffers remain usable on desktop and phone',{timeout:120000},async t=>{
  const capacity=process.env.CICADA_CAPACITY_URL,vocal=process.env.CICADA_BUFFER_URL,proof=process.env.CICADA_PERFORMANCE_PROOF_DIR;
@@ -35,5 +35,5 @@ test('Native64-track meters and recording buffers remain usable on desktop and p
  }
 
  if(part!=='capacity'){const audio=require('./audio-performance.cjs');await audio.checkAudioPerformance({browser,base:vocal,proof,ready,errors,watches,context:part==='buffer'?desktop:undefined})}
- assert.deepEqual(errors,[]);fs.writeFileSync(path.join(proof,part==='both'?'browser-proof.json':'browser-proof-'+part+'.json'),JSON.stringify({nativeTracks:64,allMetersVisible:true,mobileOverflow:false,bufferChoices:[64,128,256,512,1024],microphoneActivated:false,errors},null,2)+'\n');
+ assert.deepEqual(errors,[]);fs.writeFileSync(path.join(proof,part==='both'?'browser-proof.json':'browser-proof-'+part+'.json'),JSON.stringify({part,...(part!=='buffer'?{nativeTracks:64,allMetersVisible:true,mobileOverflow:false}:{}),...(part!=='capacity'?{bufferChoices:[64,128,256,512,1024],microphoneActivated:false}:{}),errors},null,2)+'\n');
 });

@@ -844,6 +844,9 @@ jobs:
             build/studio-amp-automation-report.txt
             build/studio-amp-automation-server.log
             build/studio-amp-automation-proof/
+            build/studio-scene-launch-keys-report.txt
+            build/studio-scene-launch-keys-server.log
+            build/studio-live-write-*
             build/studio-shared-capture-*-report.txt
             build/studio-shared-capture-*-server.log
             build/studio-shared-capture-proof/
