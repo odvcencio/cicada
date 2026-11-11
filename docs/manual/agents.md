@@ -731,6 +731,7 @@ agent can choose `jobs` for speed alone.
 {
   "schema": "cicada.render.v1",
   "command": "render",
+  "score": "song.cicada",
   "ok": true,
   "from_bar": 1,
   "bars": 2,
