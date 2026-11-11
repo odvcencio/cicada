@@ -109,7 +109,7 @@ gate_input() {
 	cmd/cicada-kernel-wasm/* | cmd/cicada-wasm-size/*) return 0 ;;
 	cmd/cicada/browser_test.go | cmd/cicada/browser_soak_helpers_test.go | cmd/cicada/browser_test_helpers_test.go | cmd/cicada/browser_cpu_node.js) return 0 ;;
 	cmd/cicada/studio.go | cmd/cicada/studio_audio.go) return 0 ;;
-	internal/soaktiming/* | internal/paramdefs/* | internal/filetarget/*) return 0 ;;
+	internal/soaktiming/* | internal/paramdefs/* | internal/filetarget/* | internal/renderlanes/*) return 0 ;;
 	kernel/measure/*) return 1 ;; # test-only; nothing the gate builds imports it
 	kernel/* | host/web/* | host/schedule/* | host/kernelimage/* | host/sampleasset/* | host/irasset/*) return 0 ;;
 	host/keyboard/* | host/instrumentpack/* | host/audioencoding/*) return 0 ;;
