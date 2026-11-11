@@ -242,18 +242,21 @@ type applyIntentJSON struct {
 // applyErrorJSON says why an apply failed. Code is one of applyErrorCodes.
 // Index, kind and field name the intent at fault when the error is about
 // one; reason names why an intent was refused when it says (with uses, the
-// references that block it); diagnostic and note carry a note refusal of
-// editnotes as data.
+// references that block it, file, the other source file the edit would have
+// to change, and range, the bounds a value broke); diagnostic and note carry
+// a note refusal of editnotes as data.
 type applyErrorJSON struct {
-	Code       string         `json:"code"`
-	Message    string         `json:"message"`
-	Index      *int           `json:"index,omitempty"`
-	Kind       string         `json:"kind,omitempty"`
-	Field      string         `json:"field,omitempty"`
-	Diagnostic string         `json:"diagnostic,omitempty"`
-	Reason     string         `json:"reason,omitempty"`
-	Note       map[string]any `json:"note,omitempty"`
-	Uses       []string       `json:"uses,omitempty"`
+	Code       string            `json:"code"`
+	Message    string            `json:"message"`
+	Index      *int              `json:"index,omitempty"`
+	Kind       string            `json:"kind,omitempty"`
+	Field      string            `json:"field,omitempty"`
+	Diagnostic string            `json:"diagnostic,omitempty"`
+	Reason     string            `json:"reason,omitempty"`
+	Note       map[string]any    `json:"note,omitempty"`
+	Uses       []string          `json:"uses,omitempty"`
+	File       string            `json:"file,omitempty"`
+	Range      *edits.ValueRange `json:"range,omitempty"`
 }
 
 // applyErrorCodes are the codes of apply --json errors; docs/manual/agents.md
@@ -290,7 +293,10 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		}
 		var reason *edits.ReasonError
 		if errors.As(err, &reason) {
-			failure.Reason, failure.Uses = reason.Reason, reason.Uses
+			failure.Reason, failure.Uses, failure.Range = reason.Reason, reason.Uses, reason.Range
+			if reason.File != "" {
+				failure.File = jsonPath(reason.File)
+			}
 		}
 		document.Error = failure
 	}

@@ -86,7 +86,7 @@ func TestRouteParity_Mixer(t *testing.T) {
 func TestRouteParity_MixerErrors(t *testing.T) {
 	fixture := []byte(studioMixerScore)
 	for _, c := range []struct{ path, value, want string }{
-		{"bass.pan", `2`, "value must be within -1..1"}, {"ghost.level", `-3`, "unknown mixer owner \"ghost\""}, {"bass.send.nowhere", `0.1`, "send references unknown effect nowhere"}, {"fx.tape", `{"kind":"nothing"}`, "unknown effect kind \"nothing\"; the kinds are drive, delay, reverb, comp, eq, deesser, ampcab, chorus, tape, transient, width, limiter, convolution"}, {"fx.room", `{"kind":"delay"}`, "room already names an effect, a track or a bus"}, {"bass.cutoff", `0.5`, "unsupported mixer field \"cutoff\""},
+		{"bass.pan", `2`, "pan 2 is outside -1 to 1"}, {"ghost.level", `-3`, "unknown mixer owner \"ghost\""}, {"bass.send.nowhere", `0.1`, "send references unknown effect nowhere"}, {"fx.tape", `{"kind":"nothing"}`, "unknown effect kind \"nothing\"; the kinds are drive, delay, reverb, comp, eq, deesser, ampcab, chorus, tape, transient, width, limiter, convolution"}, {"fx.room", `{"kind":"delay"}`, "room already names an effect, a track or a bus"}, {"bass.cutoff", `0.5`, "unsupported mixer field \"cutoff\""},
 	} {
 		assertRoute(t, fixture, "/api/mixer", studioEdit{Path: c.path, Value: json.RawMessage(c.value)}, 422, nil, "", c.want)
 	}

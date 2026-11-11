@@ -125,6 +125,9 @@ For each intent:
 
 - `meaning` is one line; `notes` adds what else the intent's documentation
   says.
+- `reasons` lists the codes the intent's refusals can carry, the `reason` of
+  an `apply --json` error (below). A test derives the list from the code, so
+  an agent can match on it.
 - Each field has its JSON `name`, its `type` (`string`, `integer`, `number`,
   `boolean`, `entity`, `object`, `array` with `items`, or `any`), whether it is
   `required`, and its `unit`, allowed `values` and `meaning` where the code
@@ -472,10 +475,13 @@ When the batch fails, `error.code` is one of:
 <!-- /apply-error-codes -->
 
 `index`, `kind` and, where the code knows it, `field` name the intent at
-fault. When an intent states why it refused, `reason` carries a stable code,
-and `uses` lists what still refers to the entity when that is the reason
-(each intent's `notes` in `cicada intents` names its reasons; `addeffect` and
-`removeeffect` are examples). A refused `editnotes` batch also carries
+fault. When an intent states why it refused, `reason` carries a stable code
+from the intent's `reasons` list in `cicada intents --json`. Where they
+apply, `uses` lists what still refers to the entity, `file` names another
+source file of the project that holds what the edit would have to change
+(an edit writes only the score it is given), and `range` gives the
+`parameter`, the `value` given, `min`, `max` and `unit` of a value outside
+its range (reason `value_out_of_range`). A refused `editnotes` batch also carries
 `diagnostic` `CICADA-NOTES`, its `reason` and the `note` (see
 [Editors](editors.md)). The text error names
 the intent the same way: `intents[1].entity (togglestep): unknown pattern
@@ -650,6 +656,11 @@ remedy: a limiter at the export's true-peak ceiling as the last master
 insert. Its `intents` hold the `addeffect` intent that adds that limiter; put
 them in an envelope with the remedy's `revision` and run `cicada apply
 <score> <envelope> --write`. `score_text` describes the same change as text.
+In an edition-1 score the intent carries `confirmupgrade`, because a mixer
+write upgrades the score to edition 2, and `summary` says so; `score_text`
+keeps edition 1. When the master chain already holds 16 inserts, the most it
+takes, the remedy has neither `score_text` nor `intents`: `summary` says to
+remove a master insert first.
 
 This score has no master limiter, so its export to −9 LUFS stops at the
 true-peak ceiling:
