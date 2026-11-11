@@ -115,7 +115,7 @@ func (v *Voice) nextUncached() float32 {
 					}
 					y += polyBLEP(phase, dt) - polyBLEP(frac(phase+0.5), dt)
 				case Sine:
-					y = float32(detmath.Sin(2 * math.Pi * float64(phase)))
+					y = float32(detmath.SinPi(2 * float64(phase)))
 				}
 				s.phase = frac(phase + dt)
 			}

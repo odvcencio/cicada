@@ -101,7 +101,7 @@ func (q *qualityState) oscillate(i int, op Op, hz, width, internalRate float32) 
 		// Acid keeps its historical bipolar pulse behavior in its own voice.
 		out = s.oscillator.Pulse(s.phase, frequency, w) - (2*w - 1)
 	case Sine:
-		out = detmath.Sin(2 * math.Pi * s.phase)
+		out = detmath.SinPi(2 * s.phase)
 	}
 	s.phase += frequency / float64(internalRate)
 	if s.phase >= 1 {

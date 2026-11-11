@@ -542,7 +542,7 @@ func (v *Voice) nextSample(substep uint64) float32 {
 						offset -= math.Floor(offset)
 					}
 					if !math.IsNaN(offset) {
-						y = float32(detmath.Sin(2 * math.Pi * (float64(phase) + offset)))
+						y = float32(detmath.SinPi(2 * (float64(phase) + offset)))
 					}
 				}
 				s.phase = frac(phase + dt)
