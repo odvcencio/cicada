@@ -248,7 +248,7 @@ jobs:
       - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|Tanh32FastPathExhaustive)$' -count=1
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|Tanh32FastPathExhaustive)$' -count=1
           GOAMD64=v3 scripts/check-fma.sh
       # The arm64 job compares its exported WAV files with these hashes.
       - name: Hash the WAV files cicada render writes for the parity subset
@@ -336,7 +336,7 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange|Tanh32FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange|Tanh32FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
@@ -347,7 +347,8 @@ jobs:
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive; do
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive \
+            TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1
