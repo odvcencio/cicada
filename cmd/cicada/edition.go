@@ -46,11 +46,8 @@ func newCommand(args []string) error {
 
 // starterBody is the score `cicada new` writes after its title line: drums, an
 // FM bass line and poly-keys chords, in two scenes that differ so the song has
-// a break, and a limiter at -1 dBTP as the master insert, so a render to a
-// loudness target such as -14 LUFS puts its gain ahead of the limiter instead
-// of stopping at the true-peak ceiling. It is already formatted and passes
-// `cicada fix --check`, which is why the break stops the drums with `stop`,
-// the canonical word, not `off`.
+// a break. It is already formatted and passes `cicada fix --check`, which is
+// why the break stops the drums with `stop`, the canonical word, not `off`.
 // examples/first-song holds the same score under a fixed title, and
 // TestStarterMatchesFirstSongExample keeps the two identical.
 const starterBody = `
@@ -64,14 +61,6 @@ track bass fm_bass {}
 
 track chords poly_keys {
   octave = 3
-}
-
-fx ceiling limiter {
-  ceiling = -1dBTP
-}
-
-master {
-  insert = ceiling
 }
 
 pattern beat drums {

@@ -53,8 +53,7 @@ cd night-circuit
 
 The starter plays three tracks: drums, an FM bass line, and chords on the
 poly keys patch. Its second scene, `break`, stops the drums, so the song has
-two parts. A limiter on the master bus holds the true peak at -1 dBTP, so
-`cicada render main.cicada -o song.wav --loudness -14` meets its target. The bass and chords use built-in keyboard patches, which `play`,
+two parts. The bass and chords use built-in keyboard patches, which `play`,
 Studio and `render` run natively. A browser page needs the separate keyboard
 module for them: the portable AudioWorklet and WAM host use the module built
 with `make build-keys-wasm`, and the [browser demo](browser-demo.md) runs only

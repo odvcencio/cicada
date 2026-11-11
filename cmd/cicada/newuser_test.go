@@ -87,14 +87,12 @@ func TestNewProjectIsFormattedAndChecksWithStarterTracksAndScenes(t *testing.T) 
 	// The three starter tracks must fit the browser profile's track and voice
 	// limits. The profile does not tell you that fm_bass and poly_keys also need
 	// the separate keyboard module, which the core-kernel browser demo lacks.
-	// The master limiter, which lets a new project render to a loudness target,
-	// is the one thing the profile refuses: a browser image carries no master
-	// processor.
-	var profile, profileErr bytes.Buffer
-	err = checkCommand([]string{"--profile", "browser"}, &profile, &profileErr)
-	report := profile.String() + profileErr.String()
-	if err == nil || !strings.Contains(report, "3 of 16 tracks") || strings.Count(report, "error ") != 1 || !strings.Contains(report, "error CICADA-LIMIT: browser profile: prepared master processor") {
-		t.Fatalf("cicada check --profile browser: %v\nstdout:\n%s\nstderr:\n%s", err, profile.String(), profileErr.String())
+	var profile bytes.Buffer
+	if err := checkCommand([]string{"--profile", "browser"}, &profile, &stderr); err != nil {
+		t.Fatalf("cicada check --profile browser: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(profile.String(), "3 of 16 tracks") {
+		t.Fatalf("browser profile report: %s", profile.String())
 	}
 	ignore, err := os.ReadFile(filepath.Join(root, "fresh", ".gitignore"))
 	if err != nil {
@@ -103,6 +101,29 @@ func TestNewProjectIsFormattedAndChecksWithStarterTracksAndScenes(t *testing.T) 
 	for _, pattern := range []string{".cicada-studio-*", "*.revision", ".cicada/", "cicada.local"} {
 		if !strings.Contains(string(ignore), pattern) {
 			t.Errorf(".gitignore is missing %q", pattern)
+		}
+	}
+}
+
+// TestNewProjectPassesEveryCheckProfile keeps what cicada new writes valid
+// under every check profile, with and without --json: a new project must
+// not start with an error, however it will be played. (A master limiter
+// would let the starter render to a loudness target, but a browser image
+// cannot carry a master insert, so the starter has none.)
+func TestNewProjectPassesEveryCheckProfile(t *testing.T) {
+	root := inTempWorkingDirectory(t)
+	if err := newProject("fresh", os.WriteFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Join(root, "fresh")); err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range []string{profileDesktop, profileBrowser} {
+		for _, args := range [][]string{{"--profile", profile}, {"--profile", profile, "main.cicada"}, {"--profile", profile, "--json", "main.cicada"}} {
+			var stdout, stderr bytes.Buffer
+			if err := checkCommand(args, &stdout, &stderr); err != nil {
+				t.Fatalf("cicada check %v on a new project: %v\n%s%s", args, err, stdout.String(), stderr.String())
+			}
 		}
 	}
 }

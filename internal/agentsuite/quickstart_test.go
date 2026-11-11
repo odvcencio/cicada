@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -158,6 +159,25 @@ func (q *quickStart) checkScore(score string) (quickCheck, int) {
 		q.t.Fatalf("check --json %s: exit %d %+v", score, code, check)
 	}
 	return check, code
+}
+
+// browserProfile checks main.cicada with --profile browser and requires it
+// to pass, or to fail only because the browser image cannot carry the master
+// insert.
+func (q *quickStart) browserProfile(pass bool) {
+	q.t.Helper()
+	var check quickCheck
+	stdout, code := q.run("check", "--profile", "browser", "--json", "main.cicada")
+	decode(q.t, "check --profile browser --json", stdout, &check)
+	if pass {
+		if code != 0 || !check.Valid {
+			q.t.Fatalf("check --profile browser: exit %d %+v", code, check)
+		}
+		return
+	}
+	if code != 1 || check.Valid || len(check.Scores) != 1 || len(check.Scores[0].Diagnostics) != 1 || !strings.Contains(check.Scores[0].Diagnostics[0].Message, "master processor") {
+		q.t.Fatalf("check --profile browser with a master limiter: exit %d %+v; the quick start says only the master insert is refused", code, check)
+	}
 }
 
 // check runs the loop's step 3 and returns the score's revision.
@@ -390,40 +410,41 @@ func followQuickStart(t *testing.T, bin string) {
 		t.Fatalf("the quick start is %d bytes; its budget is %d", agents.GuideBytes, agentguide.QuickStartBudget)
 	}
 
-	// Step 1: start a project. Its song renders to -14 LUFS as it is.
-	q.uses("cicada new demo", "main.cicada")
+	// Step 1: start a project. Its song passes check on both profiles.
+	q.uses("cicada new demo", "main.cicada", "check --profile browser")
 	stdout, code = q.run("new", "demo")
 	if code != 0 || string(stdout) != "demo/main.cicada\n" {
 		t.Fatalf("new demo: exit %d, printed %q", code, stdout)
 	}
 	q.dir = filepath.Join(q.root, "demo")
 	revision := q.check()
-	lufs, peak := q.rendersToTarget()
-	t.Logf("the song cicada new writes renders to %.2f LUFS at %.2f dBTP", lufs, peak)
+	q.browserProfile(true)
 
-	// Mistake 1: the same song without its master limiter (removed with
-	// replacetext) misses -14 LUFS at the true-peak ceiling; the remedy's
-	// intents put the limiter back. A missed target still writes its best try.
-	q.uses("replacetext", "source", "loudness_shortfall_at_true_peak_ceiling", "error.remedy.intents", "remedy.revision", "--write")
-	unlimited := regexp.MustCompile(`(?s)\nfx [a-z_-]+ limiter \{[^}]*\}\n|\nmaster \{[^}]*\}\n`).ReplaceAllString(string(q.read("main.cicada")), "")
-	if strings.Contains(unlimited, "limiter") || strings.Contains(unlimited, "master") {
-		t.Fatalf("could not remove the limiter from the new song:\n%s", unlimited)
-	}
-	revision = q.edit("replacetext without the limiter", revision, map[string]any{"kind": "replacetext", "source": unlimited})
-	if err := os.Remove(filepath.Join(q.dir, "mix.wav")); err != nil {
-		t.Fatal(err)
-	}
+	// Mistake 1, on that song: it has no master limiter, so -14 LUFS fails at
+	// the true-peak ceiling. A missed target still writes its best try.
+	q.uses("loudness_shortfall_at_true_peak_ceiling", "error.remedy.intents", "remedy.revision", "--write", "loudness.integrated_lufs")
 	rendered, code := q.render("--loudness", "-14")
-	if code != 1 || rendered.OK || rendered.Error == nil || rendered.Error.Code != "loudness_shortfall_at_true_peak_ceiling" || rendered.Error.Remedy == nil || len(rendered.Error.Remedy.Intents) == 0 || rendered.Error.Remedy.Revision != revision {
-		t.Fatalf("render of the song without a limiter to -14 LUFS: exit %d %+v; the quick start's mistake 1 says it fails with loudness_shortfall_at_true_peak_ceiling and a remedy with intents", code, rendered.Error)
+	if code != 1 || rendered.OK || rendered.Error == nil || rendered.Error.Code != "loudness_shortfall_at_true_peak_ceiling" || rendered.Error.Remedy == nil || len(rendered.Error.Remedy.Intents) == 0 || rendered.Error.Remedy.Revision != revision || rendered.Loudness == nil || rendered.Loudness.IntegratedLUFS == nil {
+		t.Fatalf("render of the new song to -14 LUFS: exit %d %+v; the quick start's mistake 1 says it fails with loudness_shortfall_at_true_peak_ceiling and a remedy with intents", code, rendered.Error)
 	}
 	if _, err := os.Stat(filepath.Join(q.dir, "mix.wav")); err != nil || len(rendered.Outputs) != 1 {
 		t.Fatalf("a missed target wrote no best try: %v", err)
 	}
+	// For the browser: a target at or below the loudness it reached is met
+	// with no limiter, and the project still passes the browser profile.
+	reached := strconv.FormatFloat(math.Floor(*rendered.Loudness.IntegratedLUFS*10)/10, 'f', 1, 64)
+	if aimed, code := q.render("--loudness", reached); code != 0 || !aimed.OK || !aimed.Loudness.TargetMet {
+		t.Fatalf("render of the new song at the reached %s LUFS: exit %d %+v", reached, code, aimed.Error)
+	}
+	q.browserProfile(true)
+	// The way out: the remedy's intents add the limiter; -14 LUFS is then met,
+	// and the browser profile refuses the master insert.
 	remedy := rendered.Error.Remedy
 	q.edit("the remedy's intents", remedy.Revision, anySlice(remedy.Intents)...)
 	q.check()
-	q.rendersToTarget()
+	lufs, peak := q.rendersToTarget()
+	t.Logf("the song cicada new writes, with the remedy's limiter, renders to %.2f LUFS at %.2f dBTP; without it, %s LUFS", lufs, peak, reached)
+	q.browserProfile(false)
 
 	// Step 2: write the quick start's score.
 	q.write("main.cicada", []byte(q.block("<!-- agent-example-file: main.cicada -->")))

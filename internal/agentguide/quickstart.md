@@ -6,11 +6,11 @@ the exit status (0 is success).
 
 ## The loop
 
-1. Start: `cicada new demo` makes the project folder `demo` with a working
-   song in `main.cicada`. Run every other command inside `demo`.
+1. Start: `cicada new demo` makes the project folder `demo` with a song in
+   `main.cicada`. Run every other command inside `demo`.
 2. Write: replace `main.cicada` with your score (next section).
 3. Check: `cicada check --json main.cicada`. Go on when `valid` is true.
-   `scores[0].revision` is the revision your next edit must send.
+   `scores[0].revision` is what your next edit must send.
 4. Render: `cicada render main.cicada -o mix.wav --loudness -14 --json`. Go on
    when `ok` and `loudness.target_met` are true.
 5. Listen: `cicada audition main.cicada --json`.
@@ -30,7 +30,7 @@ demo/main.cicada
 
 ## The score
 
-Eight bars of drums, acid bass and piano:
+Eight bars, three tracks:
 
 <!-- agent-example-file: main.cicada -->
 
@@ -79,7 +79,7 @@ master { insert = ceiling }
 
 ```json
 {"schema": "cicada.check.v1", "valid": true, "scores": [
-  {"file": "main.cicada", "valid": true, "diagnostics": [],
+  {"file": "main.cicada", "valid": true,
    "revision": "310f3c57244d24e1cf9eaf3e7185a80ff284c8a83af140b3901552fc07a15e32"}]}
 ```
 
@@ -113,8 +113,7 @@ master { insert = ceiling }
 
 ## The envelope
 
-A batch is checked whole and written as one revision, or not at all. This one
-answers the report:
+A batch is checked whole and written as one revision, or not at all:
 
 <!-- agent-example-file: edit.json -->
 
@@ -135,7 +134,7 @@ answers the report:
 ```
 
 - `revision` is the SHA-256 of the score file in hex. Always send it: apply
-  refuses with `revision_mismatch` if the file changed after you read it.
+  refuses (`revision_mismatch`) if the file changed since.
 - Without `--write`, apply writes nothing and returns the `diff`.
 - `entity` names what an intent changes: `param:<track>.<control>`,
   `pattern:<name>`, `step:<pattern>/<index>` (from 0), or on drums
@@ -146,12 +145,12 @@ answers the report:
 
 ## Reading a refusal
 
-A refusal exits non-zero. For `apply` and `render` the document has `error`
-with a stable `code` (branch on it) and a `message`.
+A refusal exits non-zero; `apply` and `render` give `error` with a stable
+`code` (branch on it) and a `message`.
 
-- `check`: `valid` is false. Each of `scores[].diagnostics` has `code`,
-  `message`, `start.line`, `start.column`, often a `hint`, and sometimes a
-  `fix` whose `intents` you apply with `fix.revision`.
+- `check`: each of `scores[].diagnostics` has `code`, `message`,
+  `start.line`, `start.column`, often a `hint`, and sometimes a `fix` whose
+  `intents` you apply with `fix.revision`.
 - `apply`: `error.code` is <!-- apply-error-codes -->`intent_refused`,
   `invalid_result` (the result does not check), `revision_mismatch`, `decode`,
   `read`, `write` or `usage`<!-- /apply-error-codes -->. `error.index` (from
@@ -163,10 +162,13 @@ with a stable `code` (branch on it) and a `message`.
 
 ## Three mistakes to avoid
 
-1. A loudness target with no master limiter: `render` can exit 1 with
-   `loudness_shortfall_at_true_peak_ceiling`, even at -14 LUFS. Way out: apply
-   `error.remedy.intents` (they add the limiter) with `remedy.revision` and
-   `--write`, then render again.
+1. A loudness target with no master limiter: the song `cicada new` writes
+   fails at -14 LUFS with `loudness_shortfall_at_true_peak_ceiling`. Way out:
+   apply `error.remedy.intents` (the limiter) with `remedy.revision` and
+   `--write`, then render again. The project then fails
+   `check --profile browser`, as a browser image cannot carry a master insert
+   yet; for the browser, keep the target at or below the error's
+   `loudness.integrated_lufs`.
 2. Reusing a revision after a write: `revision_mismatch`. Way out: send
    `revision_after` from the last apply, or run `check --json` again.
 3. Guessing a name or a control: `apply` exits 1 with `intent_refused` and a
@@ -179,7 +181,7 @@ with a stable `code` (branch on it) and a `message`.
 
 ## Look things up
 
-- `cicada intents --json --index`: every intent kind and its meaning.
+- `cicada intents --json --index`: every kind and its meaning.
 - `cicada intents --json <kind>`: a kind's fields and examples.
 - `cicada symbols --json <score>`: the names a score defines.
 - `cicada explain <score> <track>.<control>`: a control's value.
