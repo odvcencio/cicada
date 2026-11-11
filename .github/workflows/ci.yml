@@ -1023,6 +1023,36 @@ jobs:
             build/studio-library-recording-report.txt
             build/studio-library-recording-server.log
             build/studio-library-recording-proof/
+            build/studio-dock-fit-report.txt
+            build/studio-dock-fit-server.log
+            build/studio-dock-fit-proof/
+            build/studio-meter-performance-report.txt
+            build/studio-meter-performance-server.log
+            build/studio-meter-performance-proof/
+            build/studio-recording-setup-report.txt
+            build/studio-recording-setup-server.log
+            build/studio-recording-setup-proof/
+            build/studio-recording-levels-report.txt
+            build/studio-recording-levels-server.log
+            build/studio-recording-levels-proof/
+            build/studio-vocals-report.txt
+            build/studio-vocals-server.log
+            build/studio-vocals-proof/
+            build/studio-vocal-levels-report.txt
+            build/studio-vocal-levels-server.log
+            build/studio-vocal-levels-proof/
+            build/studio-performance-*-report.txt
+            build/studio-performance-*-server.log
+            build/studio-performance-proof/
+            build/studio-amp-automation-report.txt
+            build/studio-amp-automation-server.log
+            build/studio-amp-automation-proof/
+            build/studio-scene-launch-keys-report.txt
+            build/studio-scene-launch-keys-server.log
+            build/studio-live-write-*
+            build/studio-shared-capture-*-report.txt
+            build/studio-shared-capture-*-server.log
+            build/studio-shared-capture-proof/
             build/studio-pattern-song-*-report.txt
             build/studio-pattern-song-*-server.log
             build/studio-pattern-song-*-proof/

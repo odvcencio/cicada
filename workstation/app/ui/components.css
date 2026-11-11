@@ -23,7 +23,7 @@ select { background:var(--raised); }
 button { cursor:pointer; }
 button:hover { background:var(--hover); }
 button[aria-pressed=true] { border-color:var(--amber); color:var(--amber); }
-button:disabled { opacity:.55; cursor:default; }
+button:disabled, button[aria-disabled=true] { opacity:.55; cursor:default; }
 :focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 .studio { max-width:1800px; margin:auto; overflow-anchor:none; }
 .masthead { display:flex; gap:30px; align-items:center; padding:20px 28px; border-bottom:1px solid var(--border); }

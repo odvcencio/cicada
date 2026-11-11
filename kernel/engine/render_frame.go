@@ -17,6 +17,7 @@ func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR
 		return false
 	}
 	e.processPatternEvents(seq.NoteOff)
+	e.rescheduled = false
 	e.advanceSong()
 	if e.faulted {
 		clear(outL[frame:])
@@ -45,6 +46,15 @@ func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR
 		clear(outL[frame:])
 		clear(outR[frame:])
 		return false
+	}
+	// A scene, pattern or chain switch above can rebuild a track's events at
+	// this sample, after the release pass. The new events can hold a release
+	// here, such as the end of a tie from the pattern's previous pass, and the
+	// note pass stops at an unprocessed release, so the note that starts at
+	// the switch was skipped as already past on the next frame. Process those
+	// releases first; a frame without a switch keeps its single release pass.
+	if e.rescheduled {
+		e.processPatternEvents(seq.NoteOff)
 	}
 	e.processPatternEvents(seq.NoteOn)
 	e.processPatternEvents(seq.NoteExpression)
