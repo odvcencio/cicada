@@ -19,30 +19,32 @@ type Gate struct {
 func exactly(n int) *int { return &n }
 
 // gates are twice what the CI runner class (GitHub ubuntu-24.04, 4 CPUs)
-// measured, or half for real time, taking the slower of the first two
-// report-mode runs on 2026-11-10 (CI runs 42909300273 and its successor on the
-// same pull request, medians of 5). The runners differed by up to 1.6 times on
-// the parsing steps: help 4.1 and 5.5 ms, check 36.5 and 51.2 ms, a one-intent
-// apply 108.5 and 162.7 ms, 50 intents 1.42 and 2.28 s, the medium song at
-// 15.2x and 16.2x real time, the large song's first 16 bars at 3.66x and
-// 3.69x, their audition at 422 and 447 MiB. The plan's first proposals
-// (plan.cicada.speed, "Gates") were 20 ms, 100 ms, 300 ms, 3 s, 20x, 1.5x and
-// 2 GB; the runner renders the medium song below the proposed 20x, so that
-// gate starts at 7.6x. The count gate (one full synthesis) takes no margin and
-// is the hard gate for the loudness render. The loudness render's time over a
-// plain render's (the plan's F1 exit criterion, at most 1.5) is reported, not
-// gated: three runner samples gave 1.30, 1.31 and 1.35, too close to 1.5 for a
-// gate that must not fail by chance, and twice the measured value would be no
-// check at all.
+// measured, or half for real time, taking the slower runner (medians of 5,
+// pull request #318, 2026-11-10). Runner instances differed by up to 1.6 times
+// on the parsing steps and by 1.4 times on renders: help 4.1 to 5.5 ms, check
+// 36.5 to 51.2 ms, a one-intent apply 108.5 to 162.7 ms, 50 intents 1.42 to
+// 2.28 s, the medium song at 11.4x to 19.7x real time. The large song's
+// render and audition cover its first 8 bars (16 bars made the job take six
+// minutes on a slow runner): 4.44x real time and 233 MiB on a fast runner,
+// where its first 16 bars ran at 3.69x against 2.76x on a slow one, so the
+// slow runner's 8 bars are taken as 4.44 * 2.76 / 3.69 = 3.3x. The plan's
+// first proposals (plan.cicada.speed, "Gates") were 20 ms, 100 ms, 300 ms,
+// 3 s, 20x, 1.5x and 2 GB; the runners render the medium song below 20x, so
+// that gate starts at 5.7x. The count gate (one full synthesis) takes no
+// margin and is the hard gate for the loudness render. The loudness render's
+// time over a plain render's (the plan's F1 exit criterion, at most 1.5) is
+// reported, not gated: runner samples gave 1.24 to 1.39, too close to 1.5 for
+// a gate that must not fail by chance, and twice the measured value would be
+// no check at all.
 var gates = []Gate{
 	{Step: "help", Metric: "median_ms", Max: 11},
 	{Step: "check:large", Metric: "median_ms", Max: 102},
 	{Step: "apply1:large", Metric: "median_ms", Max: 325},
 	{Step: "apply50:large", Metric: "median_ms", Max: 4570},
-	{Step: "render:medium", Metric: "realtime", Min: 7.6},
-	{Step: "render:large", Metric: "realtime", Min: 1.83},
+	{Step: "render:medium", Metric: "realtime", Min: 5.7},
+	{Step: "render:large", Metric: "realtime", Min: 1.65},
 	{Step: "loudness:medium", Metric: "syntheses", Exact: exactly(1)},
-	{Step: "audition:large", Metric: "peak_rss_mb", Max: 894},
+	{Step: "audition:large", Metric: "peak_rss_mb", Max: 466},
 }
 
 // GateOutcome is a gate checked against a measured value.
