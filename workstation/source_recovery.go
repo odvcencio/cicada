@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/gosx/action"
 )
@@ -21,6 +22,15 @@ func (s *studioApp) checkpointSource(ctx *action.Context) error {
 		return action.Validation("Invalid Code recovery receipt.", nil, nil)
 	}
 	owner := workspaceOwner(ctx.Request)
+	s.draftMu.Lock()
+	saved := s.savedSources[owner+"\x00"+f["file"]]
+	s.draftMu.Unlock()
+	if f["intent"] != "clear" && saved != "" && sourceFingerprint(strings.ReplaceAll(f["content"], "\r\n", "\n")) == saved {
+		// A checkpoint of the text this owner just saved, sent before the
+		// editor learned of the save: nothing to recover.
+		ctx.FormData = nil
+		return ctx.Success("No unsaved Code edits. The score file has them.", map[string]any{"id": id, "sequence": sequence})
+	}
 	if f["intent"] == "clear" {
 		err = s.notes.closeSource(owner, id, f["file"], f["recoveryParentId"], f["recoveryParentHash"])
 	} else {

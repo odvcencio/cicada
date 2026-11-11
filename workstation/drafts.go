@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -167,10 +168,25 @@ func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, []savedSou
 // workflows use its presence to avoid replacing a score with unsaved work.
 func (s *studioApp) clearSourceDraft(r *http.Request, file string, fields map[string]string) error {
 	owner := workspaceOwner(r)
+	saved := sourceFingerprint(strings.ReplaceAll(fields["content"], "\r\n", "\n"))
 	if s.notes != nil {
 		id := fields["recoveryId"]
 		if id != "" {
 			if err := s.notes.closeSource(owner, id, file, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
+				return err
+			}
+		}
+		// Retire every other copy of what was just saved, too: a copy the
+		// save did not name (an earlier capture, or one from an editor not
+		// yet told of an earlier save) holds no unsaved work.
+		if _, ok := fields["content"]; ok {
+			copies, err := s.notes.sourceCopies(owner, file)
+			for _, copy := range copies {
+				if sourceFingerprint(strings.ReplaceAll(copy.Source, "\r\n", "\n")) == saved {
+					err = errors.Join(err, s.notes.closeSource(owner, copy.ID, file, "", ""))
+				}
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -188,6 +204,12 @@ func (s *studioApp) clearSourceDraft(r *http.Request, file string, fields map[st
 		if d.Owner == owner && d.Kind == "source" && (receipt == "" || d.Expires.After(expires)) {
 			receipt, expires = id, d.Expires
 		}
+	}
+	if _, ok := fields["content"]; ok && owner != "" {
+		if s.savedSources == nil {
+			s.savedSources = map[string]string{}
+		}
+		s.savedSources[owner+"\x00"+file] = saved
 	}
 	s.draftMu.Unlock()
 	store := session.Current(r)
