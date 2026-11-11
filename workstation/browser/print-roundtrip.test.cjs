@@ -1,14 +1,16 @@
 // Finish and reopen the synthetic printed-source song after the workflow checks.
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),test=require('node:test');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),test=require('node:test'),stall=require('./page-stall.cjs');
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 async function until(check,label){const end=Date.now()+45000;while(Date.now()<end){if(await check())return;await new Promise(resolve=>setTimeout(resolve,50))}assert.fail(label)}
 test('printed audio and comp metadata survive WAV export and a fresh process', {timeout:150000},async t=>{
  const fixture=JSON.parse(fs.readFileSync(process.env.CICADA_PRINT_FIXTURE,'utf8')),proof=process.env.CICADA_PRINT_PROOF_DIR;
  const startup=new URL(process.env.CICADA_STUDIO_URL),base=startup.origin;
  assert.equal(startup.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio']});t.after(() => browser.close(), {timeout: 15000});
- const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch(stall.withChromeLog({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio']},chromium));
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],checks=[];
+ // A failed step reports what the page was doing, and the browser closes even if it froze (page-stall.cjs).
+ stall.teardown(t,browser,{watch:await stall.watchContext(page.context(),{serverLog:process.env.CICADA_STUDIO_STARTUP_LOG}),exitWhenDone:true});page.on('pageerror',e=>errors.push(e.message));
  const read=async name=>{const r=await page.request.get(base+'/api/'+name);assert.equal(r.status(),200);return r.json()};
  const sources=()=>({entry:fs.readFileSync(fixture.score,'utf8'),arrangement:fs.readFileSync(fixture.arrangement,'utf8'),...(fixture.scenes?{scenes:fs.readFileSync(fixture.scenes,'utf8')}:{}),...(fixture.curves?{curves:fs.readFileSync(fixture.curves,'utf8')}:{})});
  const rawHashes=async()=>{const state=await read('takes');return state.takes.map(take=>{const file=path.resolve(path.dirname(fixture.score),take.asset.path);const actual=hash(fs.readFileSync(file));assert.equal(actual,take.asset.sha256);return {id:take.id,sha256:actual}}).sort((a,b)=>a.id.localeCompare(b.id))};

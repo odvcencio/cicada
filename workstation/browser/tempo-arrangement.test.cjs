@@ -1,12 +1,14 @@
 // Packaged tempo conversion, recording clocks and musical waveform geometry.
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),stall=require('./page-stall.cjs');
 test('converted tempo steps, recorded clocks and selection durations survive the real Studio interface',{timeout:90000},async t=>{
  const fixture=JSON.parse(fs.readFileSync(process.env.CICADA_PRINT_FIXTURE,'utf8'));assert.equal(fixture.sceneTempo,true);assert.ok(fixture.score.startsWith('/tmp/'));
  const proof=process.env.CICADA_PRINT_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  const startup=new URL(process.env.CICADA_STUDIO_URL);assert.equal(startup.hostname,'127.0.0.1');
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
- const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');const browser=await chromium.launch(stall.withChromeLog({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']},chromium));
+ const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
+ // A failed step reports what each page was doing, and the browser closes even if a page froze (page-stall.cjs).
+ const watches=[await stall.watchContext(context,{serverLog:process.env.CICADA_STUDIO_STARTUP_LOG})];stall.teardown(t,browser,{watch:watches,exitWhenDone:true});page.on('pageerror',e=>errors.push(e.message));
  await page.goto(startup.href);await page.goto(startup.origin+'/?panel=session');await page.locator('#cicada-vocal-lanes[data-vocal-lanes-ready=true]').waitFor();
  const kernel=fs.readFileSync(process.env.CICADA_KERNEL_WASM||path.resolve(__dirname,'../../build/cicada-kernel.wasm'));await page.evaluate(async bytes=>{await WebAssembly.compile(new Uint8Array(bytes))},Array.from(kernel));
  const read=async route=>{const r=await page.request.get(startup.origin+'/api/'+route);assert.equal(r.status(),200);return r.json()};
@@ -19,6 +21,6 @@ test('converted tempo steps, recorded clocks and selection durations survive the
  const first=takes.takes.find(take=>take.timeline.startTick===0);await page.locator(`[data-vocal-take="${first.id}"] [data-vocal-pick]`).click();await page.locator('[data-vocal-readout]').filter({hasText:'15.74 s'}).waitFor();
  await page.locator('[data-waveform-state=ready]').nth(2).waitFor();assert.equal(await page.locator('[data-waveform-state=error]').count(),0);
  await page.locator(`[data-vocal-take="${first.id}"]`).screenshot({path:path.join(proof,'tempo-waveform.png')});
- const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,storageState:await context.storageState()}),phone=await phoneContext.newPage();await phone.goto(startup.origin+'/?panel=session');await phone.locator('[data-arrangement-tempos] summary').click();assert.equal(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await phone.locator('[data-arrangement-tempos]').screenshot({path:path.join(proof,'tempo-mobile.png')});await phoneContext.close();
+ const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,storageState:await context.storageState()});watches.push(await stall.watchContext(phoneContext,{serverLog:process.env.CICADA_STUDIO_STARTUP_LOG}));const phone=await phoneContext.newPage();await phone.goto(startup.origin+'/?panel=session');await phone.locator('[data-arrangement-tempos] summary').click();assert.equal(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await phone.locator('[data-arrangement-tempos]').screenshot({path:path.join(proof,'tempo-mobile.png')});await phoneContext.close();
  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(proof,'tempo-report.json'),JSON.stringify({steps,selectionSeconds:'15.74',checks:['portable kernel compiles in Chrome','all five scene tempos carried to arrangement','raw take and comp clocks retained','musical selection duration uses changing tempo','all three waveforms load','desktop and phone tempo steps remain legible'],errors},null,2)+'\n');
 });

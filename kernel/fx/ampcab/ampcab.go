@@ -6,6 +6,8 @@ import (
 	"errors"
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
 
@@ -53,6 +55,9 @@ type Processor struct {
 	smooth, drive, tone, out, bypass float64
 	targetTone, targetOut, dcAlpha   float64
 	weights                          [3]float64
+	// normGain and norm cache 1/tanh(gain) for the drive's current gain: both
+	// channels use it every frame, and it changes only while the drive moves.
+	normGain, norm float64
 }
 
 func New(rate int, params Params) (*Processor, error) {
@@ -62,14 +67,14 @@ func New(rate int, params Params) (*Processor, error) {
 	if err := params.Validate(); err != nil {
 		return nil, err
 	}
-	p := &Processor{rate: rate, smooth: 1 - math.Exp(-1/(.02*float64(rate))), dcAlpha: math.Exp(-2 * math.Pi * 20 / float64(rate))}
+	p := &Processor{rate: rate, smooth: 1 - detmath.Exp(-1/(.02*float64(rate))), dcAlpha: detmath.Exp(-2 * math.Pi * 20 / float64(rate))}
 	for i := range p.ir { // Original causal damped speaker responses, sampled at the target rate.
 		freq := []float64{2600, 1800, 3600}[i]
 		decay := []float64{.00065, .00085, .00048}[i]
 		var sum float64
 		for j := 0; j < taps; j++ {
 			t := float64(j) / float64(rate)
-			p.ir[i][j] = float64(math.Exp(-t/decay) * (1 + float64(.25*math.Cos(2*math.Pi*freq*t))))
+			p.ir[i][j] = float64(detmath.Exp(-t/decay) * (1 + float64(.25*detmath.Cos(2*math.Pi*freq*t))))
 			sum += p.ir[i][j]
 		}
 		for j := range p.ir[i] {
@@ -91,8 +96,8 @@ func (p *Processor) SetParams(v Params) error {
 		return err
 	}
 	p.params = v
-	p.targetTone = 1 - math.Exp(-2*math.Pi*(1200+float64(6800*v.Tone))/float64(p.rate))
-	p.targetOut = math.Pow(10, v.Output/20)
+	p.targetTone = 1 - detmath.Exp(-2*math.Pi*(1200+float64(6800*v.Tone))/float64(p.rate))
+	p.targetOut = detmath.Pow(10, v.Output/20)
 	return nil
 }
 
@@ -157,9 +162,13 @@ func (p *Processor) Process(l, r float32) (float32, float32) {
 		target = 1
 	}
 	p.bypass += float64(p.smooth * (target - p.bypass))
-	return float32(p.process(&p.left, float64(l))), float32(p.process(&p.right, float64(r)))
+	gain := 1 + float64(12*p.drive)
+	if gain != p.normGain {
+		p.normGain, p.norm = gain, 1/detmath.Tanh(gain)
+	}
+	return float32(p.process(&p.left, float64(l), gain)), float32(p.process(&p.right, float64(r), gain))
 }
-func (p *Processor) process(c *channel, x float64) float64 {
+func (p *Processor) process(c *channel, x, gain float64) float64 {
 	if math.IsNaN(x) || math.IsInf(x, 0) {
 		x = 0
 	}
@@ -171,12 +180,11 @@ func (p *Processor) process(c *channel, x float64) float64 {
 	a, b := c.up1.Upsample(filtered)
 	a0, a1 := c.up2.Upsample(a)
 	b0, b1 := c.up2.Upsample(b)
-	gain := 1 + float64(12*p.drive)
-	norm := 1 / math.Tanh(gain)
-	a0 = math.Tanh(a0*gain) * norm
-	a1 = math.Tanh(a1*gain) * norm
-	b0 = math.Tanh(b0*gain) * norm
-	b1 = math.Tanh(b1*gain) * norm
+	norm := p.norm
+	a0 = detmath.Tanh(a0*gain) * norm
+	a1 = detmath.Tanh(a1*gain) * norm
+	b0 = detmath.Tanh(b0*gain) * norm
+	b1 = detmath.Tanh(b1*gain) * norm
 	a0, a1, b0, b1, c.phase = c.phase, a0, a1, b0, b1
 	a = c.down2.Downsample(a0, a1)
 	b = c.down2.Downsample(b0, b1)

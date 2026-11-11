@@ -4,6 +4,8 @@ package fx
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
@@ -86,7 +88,7 @@ func NewDrive(sampleRate int) (*Drive, error) {
 		return nil, validationError("unsupported drive sample rate")
 	}
 	d := &Drive{
-		sampleRate: float64(sampleRate), smooth: 1 - math.Exp(-1/(.005*float64(sampleRate))),
+		sampleRate: float64(sampleRate), smooth: 1 - detmath.Exp(-1/(.005*float64(sampleRate))),
 		upLeft: halfband.New(), upRight: halfband.New(),
 		softLeft: halfband.New(), softRight: halfband.New(),
 		hardLeft: halfband.New(), hardRight: halfband.New(),
@@ -117,7 +119,7 @@ func (d *Drive) SetParams(p DriveParams) error {
 		return err
 	}
 	d.params = p
-	d.targetPre = math.Pow(10, p.GainDB/20)
+	d.targetPre = detmath.Pow(10, p.GainDB/20)
 	position := p.GainDB * 32 / 36
 	index := int(position)
 	if index >= 32 {
@@ -129,7 +131,7 @@ func (d *Drive) SetParams(p DriveParams) error {
 		d.targetWeights[shape] = 0
 	}
 	d.targetWeights[p.Shape] = 1
-	d.targetTone = 1 - math.Exp(-2*math.Pi*p.ToneHz/d.sampleRate)
+	d.targetTone = 1 - detmath.Exp(-2*math.Pi*p.ToneHz/d.sampleRate)
 	d.targetMix = p.Mix
 	return nil
 }
@@ -155,12 +157,17 @@ func (d *Drive) Reset() {
 func (d *Drive) buildTables() {
 	const amplitude = 0.251188643150958 // -12 dBFS peak reference
 	inputRMS := amplitude / math.Sqrt2
+	// One period of the reference sine, computed once for every shape and gain.
+	var sine [1024]float64
+	for sample := range sine {
+		sine[sample] = amplitude * detmath.Sin(2*math.Pi*float64(sample)/1024)
+	}
 	for shape := DriveShape(0); shape < driveShapes; shape++ {
 		for index := range d.table[shape] {
-			pre := math.Pow(10, float64(index)*36/(32*20))
+			pre := detmath.Pow(10, float64(index)*36/(32*20))
 			var power float64
 			for sample := 0; sample < 1024; sample++ {
-				x := amplitude * math.Sin(2*math.Pi*float64(sample)/1024)
+				x := sine[sample]
 				y := shapeSample(shape, x*pre)
 				power += float64(y * y)
 			}
@@ -176,7 +183,9 @@ func shapeSample(shape DriveShape, input float64) float64 {
 	case Hard:
 		return math.Max(-1, math.Min(1, input))
 	case Fold:
-		return math.Sin(math.Pi / 2 * input)
+		// sin(pi/2 * input), with the exact reduction of SinPi: it runs four
+		// times per frame for every shape, so its cost matters.
+		return detmath.SinPi(0.5 * input)
 	case Diode:
 		if input > 0 {
 			return fastmath.Tanh(input)
