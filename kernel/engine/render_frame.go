@@ -56,7 +56,13 @@ func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR
 	if modulationEnabled && e.graphLFO != nil {
 		e.syncGraphLFOClock()
 	}
-	e.rawPlaying = e.transport.Playing()
+	// Offline render lanes read rawPlaying (nextClipStereo) while this
+	// goroutine runs the control of later frames of the same segment. The
+	// transport starts and stops only at segment boundaries, so inside a
+	// segment the value never changes; store it only when it does.
+	if playing := e.transport.Playing(); playing != e.rawPlaying {
+		e.rawPlaying = playing
+	}
 	return true
 }
 

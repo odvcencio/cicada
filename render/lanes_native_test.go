@@ -142,3 +142,33 @@ func TestDirectLanesFaultMatchesSerial(t *testing.T) {
 		}
 	}
 }
+
+// An audio clip track reads the transport's playing state while the render
+// goroutine runs the control of later frames; the scheduled engine must give
+// the serial bytes with the clip on any lane. Under the race detector this
+// also checks that nothing the control path writes inside a segment is read
+// by a lane.
+func TestAudioClipLanesAreBitIdentical(t *testing.T) {
+	defer renderlanes.ForceEveryLane()()
+	dir, score := audioRenderFixture(t, true)
+	if !UsesScheduledEngine(score, Options{}) {
+		t.Fatal("the audio fixture must render on the scheduled engine")
+	}
+	render := func(jobs int) []byte {
+		var out bytes.Buffer
+		report, err := WAV(score, Options{AssetDir: dir, SampleRate: 48000, Bits: 32, Jobs: jobs}, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := min(jobs, 2); report.Lanes != want {
+			t.Fatalf("jobs %d set up %d lanes, want %d", jobs, report.Lanes, want)
+		}
+		return out.Bytes()
+	}
+	serial := render(1)
+	for _, jobs := range []int{2, 2, 2} {
+		if !bytes.Equal(serial, render(jobs)) {
+			t.Fatalf("jobs %d: bytes differ from the serial render", jobs)
+		}
+	}
+}
