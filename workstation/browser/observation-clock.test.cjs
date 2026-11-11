@@ -1,11 +1,13 @@
 // Age injection changes only the UI transport response, never audio or source.
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),stall=require('./page-stall.cjs');
 async function until(check,label){const end=Date.now()+30000;while(Date.now()<end){if(await check())return;await new Promise(r=>setTimeout(r,50))}assert.fail(label)}
 test('old render data cannot appear fresh through a responsive transport endpoint',{timeout:90000},async t=>{
  const fixture=JSON.parse(fs.readFileSync(process.env.CICADA_OBSERVATION_FIXTURE,'utf8')),proof=process.env.CICADA_OBSERVATION_PROOF_DIR,startup=new URL(process.env.CICADA_STUDIO_URL);assert.equal(startup.hostname,'127.0.0.1');assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  const source=fs.readFileSync(fixture.score,'utf8');assert.ok(source.includes('cicada-print-sources-test: disposable fixture'));
- const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright'),browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']}),context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));t.after(() => browser.close(), {timeout: 15000});
+ const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright'),browser=await chromium.launch(stall.withChromeLog({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--mute-audio','--no-sandbox']},chromium)),context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
+ // A failed step reports what the page was doing, and the browser closes even if it froze (page-stall.cjs).
+ stall.teardown(t,browser,{watch:await stall.watchContext(context,{serverLog:process.env.CICADA_STUDIO_STARTUP_LOG}),exitWhenDone:true});
  let mode='fresh',intercepts=0;const seen={};
  await page.route('**/api/transport',async route=>{const response=await route.fetch(),value=await response.json();intercepts++;seen[mode]=(seen[mode]||0)+1;if(mode!=='fresh'){value.frameAgeNanos=mode==='future'?-1:2e9;value.playing=mode!=='paused'}await route.fulfill({response,json:value})});
  const read=async route=>{const r=await page.request.get(startup.origin+'/api/'+route);assert.equal(r.status(),200);return r.json()};
