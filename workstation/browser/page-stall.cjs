@@ -417,9 +417,34 @@ async function debuggerStacks(pid, tool, sudo, timeout) {
   if (!blocks.length) return `  ${tool}: no stacks (${text.trim().split('\n').slice(-2).join(' / ').slice(0, 200) || 'no output'})`;
   const isMain = block => new RegExp(`(LWP ${pid}\\)|^TID ${pid}:)`).test(block.split('\n')[0]);
   return blocks.sort((a, b) => isMain(b) - isMain(a)).map(block => {
-    const lines = block.split('\n').filter(l => l.trim());
+    const lines = block.split('\n').filter(l => l.trim() && !/^\[Inferior \d+ .*detached\]/.test(l));
     return lines.slice(0, isMain(block) ? 26 : 4).map(l => '  ' + l.slice(0, 160)).join('\n');
   }).join('\n').split('\n').slice(0, 160).join('\n');
+}
+
+// elfBuildID reads the GNU build ID note of a 64-bit little-endian ELF file
+// (Chrome on Linux) without binutils.
+function elfBuildID(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const read = (offset, length) => { const buffer = Buffer.alloc(length); fs.readSync(fd, buffer, 0, length, offset); return buffer; };
+    const header = read(0, 64);
+    if (header.toString('latin1', 1, 4) !== 'ELF' || header[4] !== 2 || header[5] !== 1) return '';
+    const phoff = Number(header.readBigUInt64LE(32)), phentsize = header.readUInt16LE(54), phnum = header.readUInt16LE(56);
+    for (let i = 0; i < phnum; i++) {
+      const ph = read(phoff + i * phentsize, phentsize);
+      if (ph.readUInt32LE(0) !== 4) continue; // PT_NOTE
+      const notes = read(Number(ph.readBigUInt64LE(8)), Math.min(Number(ph.readBigUInt64LE(32)), 1 << 16));
+      for (let at = 0; at + 12 <= notes.length;) {
+        const namesz = notes.readUInt32LE(at), descsz = notes.readUInt32LE(at + 4), type = notes.readUInt32LE(at + 8);
+        const name = at + 12, desc = name + ((namesz + 3) & ~3);
+        if (type === 3 && notes.toString('latin1', name, name + 3) === 'GNU') return notes.toString('hex', desc, desc + descsz);
+        at = desc + ((descsz + 3) & ~3);
+      }
+    }
+  } catch {} finally { if (fd !== undefined) fs.closeSync(fd); }
+  return '';
 }
 
 // nativeStacks describes every Chrome process from outside, within budgetMS.
@@ -470,7 +495,7 @@ async function nativeStacks(browser, budgetMS) {
   // Chrome's frames are bare addresses: print the executable's build ID and
   // where its code is mapped, so an address can be resolved against symbols later.
   const exe = (await run(sudo ? 'sudo' : 'readlink', sudo ? ['-n', 'readlink', `/proc/${processes[0].pid}/exe`] : [`/proc/${processes[0].pid}/exe`], 2000)).trim();
-  const id = exe ? ((await run('readelf', ['-n', exe], 3000)).match(/Build ID: ([0-9a-f]+)/) || [])[1] : '';
+  const id = exe ? elfBuildID(exe) : '';
   lines.push(`native: executable ${exe || '?'} build ID ${id || '?'}`);
   for (const p of interesting) {
     if (left() < 3000) { lines.push(`native: no time left for ${tool} on ${p.pid} ${p.label}`); continue; }
