@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const stall=require('./page-stall.cjs');
 
 const channelCapture = process.env.CICADA_CAPTURE_KIND === 'channel';
 test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent notes and shared release tails on desktop and phone',{timeout:180_000},async t => {
@@ -19,8 +20,10 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
   fs.mkdirSync(proof,{recursive:true});
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});
-  t.after(() => browser.close(), {timeout: 15000});
+  const watches = [];
+  stall.teardown(t, browser, { watch: watches, exitWhenDone: true });
   const context = await browser.newContext();
+  watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));
   const bootstrap = await context.newPage();
   await bootstrap.goto(startup.href);
   await bootstrap.close();
@@ -50,6 +53,18 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
       await page.screenshot({path:path.join(proof,name+'-captured-lanes.png')});
     });
     try {
+      // The workflow saves with Cmd+S, which the macOS app turns into the editor's
+      // save. The editor in a plain browser saves on Ctrl+S, so send that instead.
+      await page.addInitScript(() => addEventListener('keydown',event => {
+        if (!event.metaKey || event.ctrlKey || event.key.toLowerCase() !== 's' || event.__cmdAsCtrl) return;
+        event.stopImmediatePropagation();
+        const forwarded = new KeyboardEvent('keydown',{key:event.key,code:event.code,ctrlKey:true,bubbles:true,cancelable:true});
+        forwarded.__cmdAsCtrl = true;
+        event.target.dispatchEvent(forwarded);
+      },true));
+      // The workflow supplies its own MIDI stream through the native endpoint, so
+      // keep the page off Web MIDI, which has no permission in a headless browser.
+      await page.addInitScript(() => Object.defineProperty(navigator,'requestMIDIAccess',{value:undefined}));
       await page.addInitScript(workflow);
       await page.goto(new URL('/studio',startup).href);
       await page.waitForFunction(() => window.__cicadaCaptureSmokeResult,null,{timeout:75_000});
@@ -78,7 +93,9 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
     if (!route.request().isNavigationRequest()) return route.continue();
     const response = await route.fetch();
     const body = await response.text();
-    assert.ok(body.includes('"nativeMIDI":true'),'the fixture must find the native capability before choosing Web MIDI');
+    // Only the macOS app serves "nativeMIDI":true. Elsewhere Studio already
+    // chooses Web MIDI, so the replacement below has nothing to change.
+    assert.ok(body.includes('"nativeMIDI":true') || body.includes('"nativeMIDI":false'),'the served engine props must carry the native MIDI capability before Web MIDI is chosen');
     patched++;
     await route.fulfill({response,body:body.replaceAll('"nativeMIDI":true','"nativeMIDI":false')});
   });

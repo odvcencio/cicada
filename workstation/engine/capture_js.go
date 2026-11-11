@@ -72,7 +72,7 @@ func publishCapture(ctx context.Context) {
 func syncCaptureControls(root js.Value, state control.CaptureState, busy bool) {
 	locked := state.Active != "" && state.Capture != nil && (state.Capture.Recording || state.Capture.Completed)
 	root.Call("setAttribute", "data-recording-transport-locked", fmt.Sprint(locked))
-	buttons := root.Call("querySelectorAll", "form[action='/__actions/transport'] button")
+	buttons := root.Call("querySelectorAll", "form[action$='/__actions/transport'] button")
 	for i := 0; i < buttons.Length(); i++ {
 		button := buttons.Index(i)
 		action := ""

@@ -34,8 +34,8 @@ shard_count=4
 shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
-	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup" ;;
-	3) echo "owner_session page_stall pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits" ;;
+	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
+	3) echo "owner_session page_stall pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
@@ -100,27 +100,31 @@ segment_runs() {
 		echo producer-workflow@tempo-producer automation-recall@tempo-automation-recall tempo-arrangement@tempo-tempo-arrangement print-roundtrip@tempo-roundtrip print-roundtrip@tempo-reopen
 		;;
 	editor) echo code-editor@buffer code-editor@project ;;
+	dock_fit) echo dock-fit ;;
+	meter_performance) echo meter-performance ;;
+	recording_setup) echo recording-setup ;;
+	recording_levels) echo recording-levels ;;
+	vocals) echo vocals ;;
+	vocal_levels) echo vocal-levels ;;
+	shared_capture) echo shared-capture@mpe shared-capture@channel ;;
+	performance) echo performance@capacity performance@buffer ;;
+	amp_automation) echo amp-automation ;;
 	*) return 1 ;;
 	esac
 }
 
-# Suite files in workstation/browser that no workflow runs: NEVER RUN IN CI as
-# of 2026-11-09; wiring them in is tracked separately. The old single step did
-# not run them either. This list is an exemption, not coverage: it only keeps
-# the completeness check from failing on them. Remove a name here when you add
-# its suite to a segment.
+# Suite files in workstation/browser that no shard runs, each with the reason.
+# This list is an exemption, not coverage: it only keeps the completeness check
+# from failing on them. Remove a name here when you add its suite to a segment.
 not_run_by_ci=(
-	amp-automation
-	dock-fit
+	# 2026-11-10: needs the Go test harness TestSyntheticStudioUIHarness in
+	# cmd/cicada (synthetic microphone input) and a score with no amp_drive
+	# curve; a Studio started with --audio null cannot supply that input.
+	# It needs a compiled test binary, so it is not wired into a shard yet.
 	live-write
+	# 2026-11-10: same harness as live-write, run once per failure mode
+	# (CICADA_LIVE_WRITE_FAILURE=reject, lost, timeout, late).
 	live-write-uncertain
-	meter-performance
-	performance
-	recording-levels
-	recording-setup
-	shared-capture
-	vocal-levels
-	vocals
 )
 
 self="${BASH_SOURCE[0]}"
@@ -605,6 +609,87 @@ seg_library_recording() { # 5 s
 	node workstation/browser/library-recording.test.cjs --write-fixture "$browser_root/library-recording.cicada"
 	start_studio "$browser_root/library-recording.cicada" build/studio-library-recording-server.log
 	run_suite library-recording env CICADA_LIBRARY_RECORDING_PROOF_DIR="$PWD/build/studio-library-recording-proof" node --test workstation/browser/library-recording.test.cjs | tee build/studio-library-recording-report.txt
+	stop_studio
+}
+
+seg_dock_fit() { # new; 5 s locally
+	continuity_fixture dock-fit
+	export CICADA_DOCK_PROOF_DIR="$PWD/build/studio-dock-fit-proof"
+	start_studio "$browser_root/dock-fit/continuity.cicada" build/studio-dock-fit-server.log /
+	run_suite dock-fit make test-studio-dock-fit | tee build/studio-dock-fit-report.txt
+	stop_studio
+}
+
+seg_meter_performance() { # new; 5 s locally
+	# Despite the name this counts canvas paints, not time, so it is a correctness test.
+	continuity_fixture meter-performance
+	start_studio "$browser_root/meter-performance/continuity.cicada" build/studio-meter-performance-server.log /
+	run_suite meter-performance env CICADA_METERS_URL="$CICADA_STUDIO_URL" CICADA_METERS_PROOF_DIR="$PWD/build/studio-meter-performance-proof" make test-studio-meter-performance | tee build/studio-meter-performance-report.txt
+	stop_studio
+}
+
+seg_recording_setup() { # new; 5 s locally
+	node workstation/browser/recording-setup.test.cjs --write-fixture "$browser_root/recording-setup/main.cicada"
+	start_studio "$browser_root/recording-setup/main.cicada" build/studio-recording-setup-server.log /
+	run_suite recording-setup env CICADA_SETUP_URL="$CICADA_STUDIO_URL" CICADA_VOCAL_PROOF_DIR="$PWD/build/studio-recording-setup-proof" make test-studio-recording-setup | tee build/studio-recording-setup-report.txt
+	stop_studio
+}
+
+seg_recording_levels() { # new; 10 s locally
+	node workstation/browser/recording-levels.test.cjs --write-fixture "$browser_root/recording-levels/main.cicada"
+	start_studio "$browser_root/recording-levels/main.cicada" build/studio-recording-levels-server.log /
+	run_suite recording-levels env CICADA_LEVELS_URL="$CICADA_STUDIO_URL" CICADA_LEVELS_PROOF_DIR="$PWD/build/studio-recording-levels-proof" make test-studio-recording-levels | tee build/studio-recording-levels-report.txt
+	stop_studio
+}
+
+seg_vocals() { # new; 15 s locally
+	local vocals_score
+	go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-vocals-fixture.json
+	vocals_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$PWD/build/studio-vocals-fixture.json")"
+	start_studio "$vocals_score" build/studio-vocals-server.log /
+	run_suite vocals env CICADA_VOCAL_PROOF_DIR="$PWD/build/studio-vocals-proof" make test-studio-vocals | tee build/studio-vocals-report.txt
+	stop_studio
+}
+
+seg_vocal_levels() { # new; 15 s locally
+	local levels_score
+	go -C workstation run ./browser/testdata/print-sources > build/studio-vocal-levels-fixture.json
+	levels_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$PWD/build/studio-vocal-levels-fixture.json")"
+	start_studio "$levels_score" build/studio-vocal-levels-server.log /
+	run_suite vocal-levels env CICADA_LEVELING_URL="$CICADA_STUDIO_URL" CICADA_LEVELING_SCORE="$levels_score" CICADA_LEVELING_PROOF_DIR="$PWD/build/studio-vocal-levels-proof" make test-studio-vocal-levels | tee build/studio-vocal-levels-report.txt
+	stop_studio
+}
+
+seg_shared_capture() { # new; 35 s locally
+	# One fresh Studio per kind: the suite rewrites the score and claims edit access.
+	local capture_kind capture_env
+	for capture_kind in mpe channel; do
+		continuity_fixture "shared-capture-$capture_kind"
+		capture_env=()
+		if [[ "$capture_kind" == channel ]]; then capture_env+=(CICADA_CAPTURE_KIND=channel); fi
+		start_studio "$browser_root/shared-capture-$capture_kind/continuity.cicada" "build/studio-shared-capture-$capture_kind-server.log" /
+		run_suite "shared-capture@$capture_kind" env CICADA_SHARED_CAPTURE_PROOF_DIR="$PWD/build/studio-shared-capture-proof" "${capture_env[@]}" make test-studio-shared-capture | tee "build/studio-shared-capture-$capture_kind-report.txt"
+		stop_studio
+	done
+}
+
+seg_performance() { # new; 15 s locally
+	# Two Studios: playback leaves the audio runtime armed, which locks the audio
+	# form the buffer check uses, so each half starts on a fresh process.
+	local performance_part
+	node workstation/browser/performance.test.cjs --write-fixture "$browser_root/performance/main.cicada"
+	for performance_part in capacity buffer; do
+		start_studio "$browser_root/performance/main.cicada" "build/studio-performance-$performance_part-server.log" /
+		run_suite "performance@$performance_part" env CICADA_PERFORMANCE_PART="$performance_part" CICADA_CAPACITY_URL="$CICADA_STUDIO_URL" CICADA_BUFFER_URL="$CICADA_STUDIO_URL" CICADA_PERFORMANCE_PROOF_DIR="$PWD/build/studio-performance-proof" make test-studio-performance | tee "build/studio-performance-$performance_part-report.txt"
+		stop_studio
+	done
+}
+
+seg_amp_automation() { # new; 10 s locally
+	local amp_score
+	amp_score="$(node workstation/browser/amp-automation.test.cjs --write-fixture "$browser_root/amp-automation")"
+	start_studio "$amp_score" build/studio-amp-automation-server.log /
+	run_suite amp-automation env CICADA_AMP_AUTOMATION_FIXTURE="$amp_score" CICADA_AMP_AUTOMATION_PROOF_DIR="$PWD/build/studio-amp-automation-proof" make test-studio-amp-automation | tee build/studio-amp-automation-report.txt
 	stop_studio
 }
 

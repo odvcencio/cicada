@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const stall=require('./page-stall.cjs');
 
 test('Meter layout stays cached while live levels, clipping, track names and viewport update', {timeout: 60000}, async t => {
   const base = process.env.CICADA_METERS_URL;
@@ -13,8 +14,10 @@ test('Meter layout stays cached while live levels, clipping, track names and vie
   if (proof) assert.ok(path.isAbsolute(proof));
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox']});
-  t.after(() => browser.close(), {timeout: 15000});
+  const watches = [];
+  stall.teardown(t, browser, {watch: watches, exitWhenDone: true});
   const context = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce', storageState: process.env.CICADA_METERS_STORAGE_STATE});
+  watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));
   await context.addInitScript(() => {
     window.meterPaints = {fillRect: 0, fillText: 0, measureText: 0};
     for (const name of Object.keys(window.meterPaints)) {

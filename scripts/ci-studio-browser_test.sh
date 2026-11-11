@@ -84,7 +84,7 @@ run_check "unlisted suite call" fail "calls run_suite for chorus but segment_run
 
 # A suite listed as not run that a segment runs.
 run_check "excused suite that runs" fail "suite shell is listed in not_run_by_ci" \
-	's|^\tamp-automation$|\tamp-automation\n\tshell|'
+	's|^\tlive-write$|\tlive-write\n\tshell|'
 
 # A listed suite with no file on disk.
 run_check "listed suite without a file" fail "no file workstation/browser/ghost.test.cjs" \
