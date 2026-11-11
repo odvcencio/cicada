@@ -65,12 +65,15 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			}
 		}
 		if busy.Swap(true) {
+			shellSay("The last command is still running, so this one did nothing. Try again.")
 			return nil
 		}
 		go func() {
 			defer busy.Store(false)
 			if id == "transport.loop" || id == "edit.duplicate" || id == "edit.delete" {
-				submitPlacementCommand(ctx, root, id)
+				if message := submitPlacementCommand(ctx, root, id); message != "" {
+					shellSay(message)
+				}
 				return
 			}
 			selector := ""
@@ -80,6 +83,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 					Playing bool `json:"playing"`
 				}
 				if !readNativeProjection(ctx, "/api/transport", &state) {
+					shellSay("Play did not start: Studio did not answer. Try again.")
 					return
 				}
 				action := "play"
@@ -119,6 +123,8 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			button := root.Call("querySelector", selector)
 			if workspacePresent(button) && !button.Get("disabled").Bool() {
 				button.Call("closest", "form").Call("requestSubmit", button)
+			} else {
+				shellSay("That command is not available here now.")
 			}
 		}()
 		return nil

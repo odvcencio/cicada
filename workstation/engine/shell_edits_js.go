@@ -23,6 +23,16 @@ import (
 
 const shellIdleRefresh = 250 * time.Millisecond
 
+// shellUI is the bound shell's edit queue; shellSay shows a message in its
+// status line, so a keyboard command that does nothing can say why.
+var shellUI *workspaceUI
+
+func shellSay(message string) {
+	if shellUI != nil {
+		shellUI.status.Set(message)
+	}
+}
+
 func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) func() {
 	patch := js.Undefined()
 	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("host")) && workspacePresent(gosx.Get("host").Get("patch")) {
@@ -116,6 +126,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		}
 	}
 	domSet(root, "data-shell-edits", "ready")
+	shellUI = u
 	go u.run()
 	return func() {
 		if u.closed.Swap(true) {
@@ -135,6 +146,9 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		u.clearQueue()
 		u.restoreAll()
 		domDrop(root, "data-shell-edits")
+		if shellUI == u {
+			shellUI = nil
+		}
 	}
 }
 
@@ -655,7 +669,7 @@ func (u *workspaceUI) dropHistory() {
 			return id == "undo-form" || id == "redo-form"
 		}
 		return job.target == "/__actions/undo" || job.target == "/__actions/redo"
-	}) > 0 {
+	}) != "" {
 		u.status.Set(u.status.Get() + " The Undo or Redo waiting behind it was not sent.")
 	}
 }

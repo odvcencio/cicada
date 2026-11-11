@@ -351,15 +351,19 @@ func (u *workspaceUI) submit(event js.Value) {
 		return
 	}
 	submitter := event.Get("submitter")
+	transport := workspaceTransportFree(form, submitter)
 	if u.shell {
+		if transport {
+			// GoSX's managed form sends it at once; no stale-region hold.
+			return
+		}
 		if u.shellHolding(form) {
 			// One hold per form: a second click while it waits does nothing.
 			workspaceStop(event)
 			return
 		}
 		domDrop(form, "data-workspace-updated")
-		// Transport commands carry no score revision check and never wait.
-		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
 			// A form in a stale region still carries an older revision. Read
 			// the region first; nothing is sent until it is current.
 			workspaceStop(event)
@@ -432,6 +436,11 @@ func (u *workspaceUI) submit(event js.Value) {
 	}
 	values["__cicada_reactive"] = "1"
 	values["__cicada_location"] = workspaceLocation()
+	if transport {
+		workspaceStop(event)
+		go u.sendTransport(parsed.RequestURI(), values, workspaceLabel(submitter, js.Undefined()))
+		return
+	}
 	job := workspaceJob{method: http.MethodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form)}
 	if workspacePresent(submitter) && (u.shell || submitter.Call("matches", ".roll-cell").Bool()) {
 		job.pendingCell = submitter
@@ -862,20 +871,19 @@ func (u *workspaceUI) queue(job workspaceJob) {
 	default:
 		workspacePending(job, -1)
 		u.blocked.Store(true)
-		u.clearQueue()
-		u.status.Set("The edit queue is full. Refresh the workspace; drafts are retained.")
+		u.status.Set("The edit queue is full, so this edit was not sent. Refresh the workspace; drafts are retained." + workspaceNotSent(u.clearQueue()))
 	}
 }
 
 // clearQueue drops every queued job; see drain.
-func (u *workspaceUI) clearQueue() int {
+func (u *workspaceUI) clearQueue() string {
 	return u.drain(func(workspaceJob) bool { return true })
 }
 
 // drain removes the queued jobs drop selects, restores their paint, releases
-// their held submits and reports how many were the user's own (background
-// reads are not). The caller tells the user.
-func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped int) {
+// their held submits and names the user's own jobs it dropped ("Undo, Play";
+// background reads are not named). The caller tells the user.
+func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped string) {
 	var keep []workspaceJob
 	for len(u.jobs) > 0 {
 		job := <-u.jobs
@@ -892,7 +900,14 @@ func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped int) {
 		if job.then != nil {
 			job.then(holdDropped)
 		}
-		dropped++
+		if dropped != "" {
+			dropped += ", "
+		}
+		button := job.pendingCell
+		if job.hold != nil {
+			button = job.hold.submitter
+		}
+		dropped += workspaceLabel(button, job.form)
 	}
 	for _, job := range keep {
 		u.jobs <- job
@@ -1051,18 +1066,19 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 		// A failed/ambiguous mutation is never automatically submitted a
 		// second time. Re-read canonical state before another edit.
 		u.blocked.Store(true)
-		u.clearQueue()
+		dropped := u.clearQueue()
 		if u.shell && !saved {
 			u.restoreAll()
 		}
-		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
+		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained." + workspaceNotSent(dropped))
 		return true
 	}
+	notice := ""
 	if projection.WriteRevision == "" && (projection.Revision != u.revision.Get() || projection.SourceRevision != u.sourceRevision) {
 		// A read can discover somebody else's edit. Queued gestures
 		// based on the old projection must not be rebased over it.
-		if dropped := u.clearQueue(); u.shell && dropped > 0 {
-			u.status.Set(fmt.Sprintf("Another change to the song was saved, so %d waiting edit(s) were not sent. Make them again.", dropped))
+		if dropped := u.clearQueue(); dropped != "" {
+			notice = "Another change to the song was saved, so this was not sent: " + dropped + ". Make it again."
 		}
 	}
 	u.revision.Set(projection.Revision)
@@ -1089,11 +1105,15 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			outcome = holdOwn
 		}
 		u.idleDelay = shellIdleRefresh
-		if job.refresh {
-			u.status.Set("Workspace updated.")
-		} else if job.method == http.MethodPost {
-			u.status.Set(message)
+		switch {
+		case notice != "":
+			message = notice
+		case job.refresh:
+			message = "Workspace updated."
+		case job.method != http.MethodPost:
+			return true
 		}
+		u.status.Set(message)
 		return true
 	}
 	if message == "" {
@@ -1102,8 +1122,54 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			message = "Workspace updated."
 		}
 	}
+	if notice != "" {
+		message = notice
+	}
 	u.status.Set(message)
 	return true
+}
+
+// workspaceNotSent ends a message with the jobs a queue clear dropped.
+func workspaceNotSent(dropped string) string {
+	if dropped == "" {
+		return ""
+	}
+	return " Not sent: " + dropped + "."
+}
+
+// workspaceLabel names the button that sent something, for a message: its
+// accessible name, else its text; without a button, its form's first one.
+func workspaceLabel(button, form js.Value) string {
+	if !workspacePresent(button) && workspacePresent(form) {
+		button = domCall(form, "querySelector", "button")
+	}
+	if !workspacePresent(button) {
+		return "an edit"
+	}
+	if label := workspaceAttr(button, "aria-label"); label != "" {
+		return label
+	}
+	return workspaceString(button, "textContent")
+}
+
+// workspaceTransportFree reports a transport button (name action) the service
+// runs without a score revision check: play, pause, stop, full song, return
+// to start and stopping a track. It never waits behind a score write, and no queue clear
+// can drop it. Launch, slot, play-from and the listening commands name a scene,
+// block or pattern; the service checks their revision, so they wait like edits.
+func workspaceTransportFree(form, submitter js.Value) bool {
+	return workspacePresent(submitter) && strings.Contains(" play pause stop fullSong home trackStop ", " "+workspaceAttr(submitter, "value")+" ") && strings.HasSuffix(workspaceAttr(form, "action"), "/__actions/transport")
+}
+
+// sendTransport sends a transport command at once, beside the queue. It
+// changes no score, so its answer only reports: playback state is shown by
+// the live transport readouts, not by the score view.
+func (u *workspaceUI) sendTransport(target string, values map[string]string, label string) {
+	_, message, err := u.request(workspaceJob{method: http.MethodPost, target: target, values: values})
+	if err != nil {
+		message = label + " did not run: " + err.Error()
+	}
+	u.status.Set(message)
 }
 
 type workspaceRequestError struct {

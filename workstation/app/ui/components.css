@@ -208,6 +208,10 @@ td button { width:100%; }
 .notices:not(:empty) { margin:14px 28px; padding:12px 16px; background:var(--raised); border-left:3px solid var(--amber); }
 .workspace-feedback { position:fixed; bottom:14px; right:14px; z-index:20; display:flex; gap:10px; align-items:center; max-width:calc(100vw - 28px); padding:8px 12px; background:var(--raised); border:1px solid var(--border); border-radius:6px; font-size:13px; }
 .workspace-feedback:has([data-workspace-status]:empty):has([data-workspace-retry][hidden]) { display:none; }
+/* The message never takes a click meant for what lies under it (the phone
+   navigation sits there); only the recovery button does. */
+.workspace-feedback { pointer-events:none; }
+.workspace-feedback [data-workspace-retry] { pointer-events:auto; }
 .lane .action-form { display:flex; align-items:center; gap:6px; }
 .error { color:var(--coral); }
 #export .form-status { flex-basis:100%; margin:0; }
