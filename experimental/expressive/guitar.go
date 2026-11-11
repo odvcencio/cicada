@@ -1,8 +1,10 @@
 package expressive
 
 import (
-	"m31labs.dev/cicada/kernel/dsp/halfband"
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
 
 // Guitar is a plucked traveling-wave loop with pick-position excitation,
@@ -92,25 +94,25 @@ func (g *Guitar) SetExpressionImmediate(e Expression) {
 	g.hz = g.target
 }
 func (g *Guitar) Next() float64 {
-	alpha := 1 - math.Exp(-1/(.008*g.sr))
+	alpha := 1 - detmath.Exp(-1/(.008*g.sr))
 	g.control.Position += float64(alpha * (g.e.Position - g.control.Position))
 	g.control.Brightness += float64(alpha * (g.e.Brightness - g.control.Brightness))
 	g.control.Vibrato += float64(alpha * (g.e.Vibrato - g.control.Vibrato))
 	g.control.Damping += float64(alpha * (g.e.Damping - g.control.Damping))
 	g.control.Drive += float64(alpha * (g.e.Drive - g.control.Drive))
-	g.hz += float64((g.target - g.hz) * (1 - math.Exp(-1/(.008*g.sr))))
+	g.hz += float64((g.target - g.hz) * (1 - detmath.Exp(-1/(.008*g.sr))))
 	g.phase += 5 / g.sr
 	if g.phase >= 1 {
 		g.phase -= 1
 	}
-	f := g.hz * math.Exp2(g.control.Vibrato*math.Sin(2*math.Pi*g.phase)/1200)
+	f := g.hz * detmath.Exp2(g.control.Vibrato*detmath.Sin(2*math.Pi*g.phase)/1200)
 	period := g.sr / f
 	x := g.loop.read(period - 1)
 	t60 := 4.5 / (1 + float64(35*g.control.Damping))
 	if g.released {
 		t60 = .12
 	}
-	gain := math.Exp(-6.907755 / (f * t60))
+	gain := detmath.Exp(-6.907755 / (f * t60))
 	a := gain * (1 - g.control.Brightness) / 4
 	b := gain * (1 + g.control.Brightness) / 2
 	feedback := float64(float64(a*x)+float64(b*g.loss1)) + float64(a*g.loss2)
@@ -139,7 +141,7 @@ func NewAmp(sr int) Amp {
 	if sr < 8000 || sr > 192000 {
 		sr = 48000
 	}
-	return Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - math.Exp(-2*math.Pi*5500/float64(sr))}
+	return Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - detmath.Exp(-2*math.Pi*5500/float64(sr))}
 }
 func (a *Amp) Reset() {
 	a.up1.Reset()
@@ -151,12 +153,15 @@ func (a *Amp) Reset() {
 	a.dcIn = 0
 	a.dcOut = 0
 }
-func logcosh(x float64) float64 { v := math.Abs(x); return v + math.Log1p(math.Exp(-2*v)) - math.Ln2 }
+func logcosh(x float64) float64 {
+	v := math.Abs(x)
+	return v + detmath.Log1p(detmath.Exp(-2*v)) - math.Ln2
+}
 func (a *Amp) clip(x float64, stage int) float64 {
 	p := a.previous[stage]
 	a.previous[stage] = x
 	if math.Abs(x-p) < 1e-6 {
-		return math.Tanh((x + p) * .5)
+		return detmath.Tanh((x + p) * .5)
 	}
 	return (logcosh(x) - logcosh(p)) / (x - p)
 }
