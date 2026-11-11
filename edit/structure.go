@@ -19,11 +19,9 @@ import (
 // Preset instead declares a patch from the instrument library as a new
 // instrument, named instrument or after the track, as addpreset does. The
 // new track plays nothing until a scene binds a pattern to it (bindscene) or
-// a placement puts one on it.
-//
-// Refusals carry a reason: score_invalid, voice_and_preset, invalid_name,
-// name_taken, track_limit, unknown_preset, voice_invalid (the uses list the
-// problems the voice causes).
+// a placement puts one on it. A voice the score cannot play is refused with
+// voice_invalid, and uses lists the problems. The catalog's reasons list
+// names every refusal code.
 //
 // Example: {"kind":"addtrack","name":"pad","voice":"piano"}
 // Example: {"kind":"addtrack","name":"pad","preset":"warm-pad","instrument":"warm"}
@@ -41,9 +39,10 @@ func (AddTrack) Kind() string { return "addtrack" }
 // track_in_use while anything else names the track: automation, a scene
 // setting, a modulation route, an envelope source, a MIDI mapping, a live
 // macro, stinger or layer, an arrangement placement or a compressor
-// sidechain. The refusal lists them in uses. Other reasons: score_invalid,
-// unknown_track, track_in_other_file, result_invalid (deleting the last track
-// leaves no track).
+// sidechain. The refusal lists them in uses. Deleting the last track is
+// refused with result_invalid. A track another file of the project declares
+// is refused with declared_in_other_file and that file: the edit changes only
+// the entry. The catalog's reasons list names every refusal code.
 //
 // Example: {"kind":"deletetrack","track":"keys"}
 type DeleteTrack struct {
@@ -60,8 +59,7 @@ func (DeleteTrack) Kind() string { return "deletetrack" }
 // dropparams those settings are removed and the label names them. A pattern
 // of a kind the new voice cannot play, or another reference the new voice
 // cannot take, is refused with reason voice_change_invalid, listing the
-// problems in uses. Other reasons: score_invalid, unknown_track,
-// track_in_other_file, voice_invalid, voice_unchanged.
+// problems in uses. The catalog's reasons list names every refusal code.
 //
 // Example: {"kind":"settrackvoice","track":"keys","voice":"glow"}
 // Example: {"kind":"settrackvoice","track":"lead","voice":"acid","dropparams":true}
@@ -75,8 +73,8 @@ func (SetTrackVoice) Kind() string { return "settrackvoice" }
 
 // AddScene adds an empty scene after the last scene. Bind patterns to it with
 // bindscene and play it with appendsongentry. In the song, a track a scene
-// does not bind keeps playing what the scene before it selected. Refusals
-// carry a reason: score_invalid, invalid_name, name_taken.
+// does not bind keeps playing what the scene before it selected. The
+// catalog's reasons list names every refusal code.
 //
 // Example: {"kind":"addscene","name":"drop"}
 type AddScene struct {
@@ -86,9 +84,8 @@ type AddScene struct {
 func (AddScene) Kind() string { return "addscene" }
 
 // DuplicateScene copies a scene, with its bindings, settings and the comments
-// inside it, under a new name right after the original. Refusals carry a
-// reason: score_invalid, unknown_scene, scene_in_other_file, invalid_name,
-// name_taken.
+// inside it, under a new name right after the original. The catalog's
+// reasons list names every refusal code.
 //
 // Example: {"kind":"duplicatescene","scene":"main","name":"main-2"}
 type DuplicateScene struct {
@@ -102,9 +99,8 @@ func (DuplicateScene) Kind() string { return "duplicatescene" }
 // reason scene_in_use while the song, a live state or a MIDI launch mapping
 // names it; uses lists them. With cascade the scene's song entries are
 // removed with it; live states and MIDI mappings still refuse, and so does
-// a song that would be left empty (reason song_would_be_empty). Other
-// reasons: score_invalid, unknown_scene, scene_in_other_file,
-// result_invalid.
+// a song that would be left empty (reason song_would_be_empty). The
+// catalog's reasons list names every refusal code.
 //
 // Example: {"kind":"deletescene","scene":"outro"}
 type DeleteScene struct {
@@ -120,9 +116,8 @@ func (DeleteScene) Kind() string { return "deletescene" }
 // uses lists them. With cascade, each scene binding of the pattern becomes
 // off (the track stops in that scene; an omitted binding would keep the
 // previous pattern playing) and its placements are removed; chains, stingers
-// and MIDI mappings still refuse. Other reasons: score_invalid,
-// unknown_pattern, pattern_in_other_file, result_invalid (deleting the last
-// pattern leaves none).
+// and MIDI mappings still refuse. Deleting the last pattern is refused with
+// result_invalid. The catalog's reasons list names every refusal code.
 //
 // Example: {"kind":"deletepattern","pattern":"fill"}
 type DeletePattern struct {
@@ -136,13 +131,11 @@ func (DeletePattern) Kind() string { return "deletepattern" }
 // scene bindings and settings, the song, automation, modulation routes and
 // envelope sources, MIDI mappings, live states, stingers, layers and macros,
 // track chains, arrangement placements and compressor sidechains. Comments
-// and all other text stay as they are.
-//
-// Refusals carry a reason: score_invalid, unknown_entity (not a track,
-// pattern or scene), unknown_track, unknown_pattern, unknown_scene,
-// track_in_other_file, pattern_in_other_file, scene_in_other_file,
-// name_unchanged, invalid_name, name_taken, rename_incomplete (a reference
-// in another file would be left dangling; the uses list it).
+// and all other text stay as they are. An entity another file of the project
+// declares is refused with declared_in_other_file and that file; a rename
+// that would leave a reference in another file dangling is refused with
+// rename_incomplete, and uses lists it. The catalog's reasons list names
+// every refusal code.
 //
 // Example: {"kind":"rename","entity":"track:bass","name":"sub"}
 // Example: {"kind":"rename","entity":"pattern:riff","name":"riff-a"}
@@ -229,10 +222,10 @@ func diagnosticUses(ds []notation.Diagnostic) []string {
 	uses := make([]string, 0, len(ds))
 	for _, d := range ds {
 		if d.Position.Line == 0 {
-			uses = append(uses, d.Message)
+			uses = append(uses, d.Text())
 			continue
 		}
-		uses = append(uses, fmt.Sprintf("%s (line %d)", d.Message, d.Position.Line))
+		uses = append(uses, fmt.Sprintf("%s (line %d)", d.Text(), d.Position.Line))
 	}
 	return uses
 }
@@ -422,7 +415,7 @@ func addTrack(ctx *Context, intent Intent) error {
 		return err
 	}
 	if len(errs) > 0 {
-		return &ReasonError{Reason: "voice_invalid", Field: "voice", Uses: diagnosticUses(errs), Message: fmt.Sprintf("a track cannot play %q: %s", in.Voice, errs[0].Message)}
+		return &ReasonError{Reason: "voice_invalid", Field: "voice", Uses: diagnosticUses(errs), Message: fmt.Sprintf("a track cannot play %q: %s", in.Voice, errs[0].Text())}
 	}
 	ctx.Source, ctx.plan = updated, nil
 	ctx.SetLabel("Track " + in.Name + " added, playing " + in.Voice)
@@ -443,22 +436,85 @@ func qualifiedVoice(voice string) bool {
 	return true
 }
 
-// entityUses parses the entry source's names and finds one entity's. A name
-// the project declares in another file is refused.
-func entityUses(ctx *Context, kind, name, field string, declared bool) ([]nameUse, nameUse, error) {
+// entityUses parses the entry source's names and finds one entity's uses,
+// with its declaration. missing builds the refusal for a name the entry does
+// not declare.
+func entityUses(ctx *Context, kind, name string, missing func() error) ([]nameUse, error) {
 	all, err := nameUses(ctx.Source)
 	if err != nil {
-		return nil, nameUse{}, err
+		return nil, err
 	}
 	uses := usesOf(all, kind, name)
-	decl, ok := declaredInEntry(uses)
-	if !ok {
-		if declared {
-			return nil, nameUse{}, refuse(kind+"_in_other_file", field, "%s %s is declared in another file of the project; edit that file", kind, name)
-		}
-		return nil, nameUse{}, refuse("unknown_"+kind, field, "unknown %s %q", kind, name)
+	if _, ok := declaredInEntry(uses); !ok {
+		return nil, missing()
 	}
-	return uses, decl, nil
+	return uses, nil
+}
+
+// declaredElsewhere refuses an entity that another file of the project
+// declares: the edit changes only the entry.
+func declaredElsewhere(kind, name, field, file string) error {
+	return &ReasonError{Reason: "declared_in_other_file", Field: field, File: file, Message: fmt.Sprintf("%s %s is declared in %s, another file of the project; this edit changes only the entry", kind, name, file)}
+}
+
+// missingTrack, missingPattern and missingScene refuse a name the entry does
+// not declare: declared_in_other_file when another file does, else unknown.
+func missingTrack(ctx *Context, score *notation.Score, name, field string) func() error {
+	return func() error {
+		if file := declaringFile(ctx, score, KindTrack, name); file != "" {
+			return declaredElsewhere("track", name, field, file)
+		}
+		return refuse("unknown_track", field, "unknown track %q", name)
+	}
+}
+
+func missingPattern(ctx *Context, score *notation.Score, name, field string) func() error {
+	return func() error {
+		if file := declaringFile(ctx, score, KindPattern, name); file != "" {
+			return declaredElsewhere("pattern", name, field, file)
+		}
+		return refuse("unknown_pattern", field, "unknown pattern %q", name)
+	}
+}
+
+func missingScene(ctx *Context, score *notation.Score, name, field string) func() error {
+	return func() error {
+		if file := declaringFile(ctx, score, KindScene, name); file != "" {
+			return declaredElsewhere("scene", name, field, file)
+		}
+		return refuse("unknown_scene", field, "unknown scene %q", name)
+	}
+}
+
+// declaringFile returns the file of the project that declares a track, a
+// pattern or a scene when it is not the entry, else "".
+func declaringFile(ctx *Context, score *notation.Score, kind, name string) string {
+	var position notation.Position
+	found := false
+	switch kind {
+	case KindTrack:
+		for _, track := range score.Tracks {
+			if track.Name == name {
+				position, found = track.Position, true
+			}
+		}
+	case KindPattern:
+		for _, pattern := range score.Patterns {
+			if pattern.Name == name {
+				position, found = pattern.Position, true
+			}
+		}
+	case KindScene:
+		for _, scene := range score.Scenes {
+			if scene.Name == name {
+				position, found = scene.Position, true
+			}
+		}
+	}
+	if !found || position.File == "" || position.File == ctx.Options.Path {
+		return ""
+	}
+	return position.File
 }
 
 func useNames(uses []nameUse) []string {
@@ -475,7 +531,7 @@ func deleteTrack(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	uses, _, err := entityUses(ctx, "track", in.Track, "track", trackDeclared(score, in.Track))
+	uses, err := entityUses(ctx, KindTrack, in.Track, missingTrack(ctx, score, in.Track, "track"))
 	if err != nil {
 		return err
 	}
@@ -533,7 +589,7 @@ func setTrackVoice(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := entityUses(ctx, "track", in.Track, "track", trackDeclared(score, in.Track)); err != nil {
+	if _, err := entityUses(ctx, KindTrack, in.Track, missingTrack(ctx, score, in.Track, "track")); err != nil {
 		return err
 	}
 	if !patternName.MatchString(in.Voice) && !qualifiedVoice(in.Voice) {
@@ -682,7 +738,7 @@ func duplicateScene(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := entityUses(ctx, "scene", in.Scene, "scene", sceneDeclared(score, in.Scene)); err != nil {
+	if _, err := entityUses(ctx, KindScene, in.Scene, missingScene(ctx, score, in.Scene, "scene")); err != nil {
 		return err
 	}
 	if err := validNewName("scene", in.Name); err != nil {
@@ -715,7 +771,7 @@ func deleteScene(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	uses, _, err := entityUses(ctx, "scene", in.Scene, "scene", sceneDeclared(score, in.Scene))
+	uses, err := entityUses(ctx, KindScene, in.Scene, missingScene(ctx, score, in.Scene, "scene"))
 	if err != nil {
 		return err
 	}
@@ -783,7 +839,7 @@ func deletePattern(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	uses, _, err := entityUses(ctx, "pattern", in.Pattern, "pattern", patternDeclared(score, in.Pattern))
+	uses, err := entityUses(ctx, KindPattern, in.Pattern, missingPattern(ctx, score, in.Pattern, "pattern"))
 	if err != nil {
 		return err
 	}
@@ -887,16 +943,14 @@ func renameEntity(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	var declared bool
+	missing := missingTrack(ctx, score, old, "entity")
 	switch kind {
-	case KindTrack:
-		declared = trackDeclared(score, old)
 	case KindPattern:
-		declared = patternDeclared(score, old)
+		missing = missingPattern(ctx, score, old, "entity")
 	case KindScene:
-		declared = sceneDeclared(score, old)
+		missing = missingScene(ctx, score, old, "entity")
 	}
-	uses, _, err := entityUses(ctx, kind, old, "entity", declared)
+	uses, err := entityUses(ctx, kind, old, missing)
 	if err != nil {
 		return err
 	}
