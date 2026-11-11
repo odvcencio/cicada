@@ -150,7 +150,9 @@ check_shards() {
 		if [[ -z "${seg_shard[$seg]:-}" ]]; then complain "segment $seg is in no shard"; fi
 	done
 	for seg in "${!seg_shard[@]}"; do
-		if ! printf '%s\n' "${defined[@]}" | grep -qx "$seg"; then complain "shard ${seg_shard[$seg]} names segment $seg, which has no function"; fi
+		# A here-string, not a pipe: grep -q exits at its first match, and under
+		# pipefail the writer's broken pipe would read as "no function".
+		if ! grep -qx -- "$seg" <<<"$(printf '%s\n' "${defined[@]}")"; then complain "shard ${seg_shard[$seg]} names segment $seg, which has no function"; fi
 	done
 
 	# Every suite in segment_runs sits in exactly one shard. A suite may run in
@@ -179,7 +181,7 @@ check_shards() {
 		done
 		# Every literal run_suite call must be listed.
 		for name in $(grep -o 'run_suite "\{0,1\}[a-z0-9-]*' <<<"$body" | sed 's/run_suite "\{0,1\}//'); do
-			if ! segment_runs "$seg" | tr ' ' '\n' | sed 's/@.*//' | grep -qx "$name"; then
+			if ! grep -qx -- "$name" <<<"$(segment_runs "$seg" | tr ' ' '\n' | sed 's/@.*//')"; then
 				complain "segment $seg calls run_suite for $name but segment_runs does not list it"
 			fi
 		done
