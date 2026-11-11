@@ -2153,7 +2153,9 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 			params := e.delayA.Params()
 			switch id {
 			case kernel.ParamFxDelayHighpass:
-				params.HighpassHz = echoHighpassHz(value)
+				if fx.EchoHighpassEnabled {
+					params.HighpassHz = echoHighpassHz(value)
+				}
 			case kernel.ParamFxDelayTime:
 				params.Division, params.TimeMs = fx.FreeDelay, float64(value)
 			case kernel.ParamFxDelayFeedback:
@@ -2177,7 +2179,9 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 			params := e.tapeA.Params()
 			switch id {
 			case kernel.ParamFxTapeHighpass:
-				params.HighpassHz = echoHighpassHz(value)
+				if fx.EchoHighpassEnabled {
+					params.HighpassHz = echoHighpassHz(value)
+				}
 			case kernel.ParamFxTapeTime:
 				params.Division, params.TimeMs = fx.FreeDelay, float64(value)
 			case kernel.ParamFxTapeFeedback:

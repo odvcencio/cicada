@@ -298,10 +298,12 @@ and offline `render` and `stems` support it.
 
 ## Echo highpass
 
-`highpass` puts a one-pole high-pass filter inside the feedback loop of the
-`delay` and `tape` returns, beside the `damp` low-pass. Every repeat passes it
-once more, so each repeat loses more of its lows than the one before and the
-echo thins out to its snap: the dub echo throw. It is off unless you set it.
+`highpass` puts a one-pole high-pass filter where the signal enters the echo
+line of the `delay` and `tape` returns: the send and the feedback together.
+The first repeat has passed it once, and every later repeat once more, so the
+echo is thin from its first repeat and thins further to its snap: the dub echo
+throw. The `damp` low-pass sits in the feedback alone, so repeat n has passed
+the high-pass n times and `damp` n − 1 times. It is off unless you set it.
 
 ```cicada
 cicada 2
@@ -314,9 +316,8 @@ song { main*8 }
 automate echo.highpass { @1.1.1 250Hz @5.1.1 1200Hz exponential @8.1.1 120Hz exponential }
 ```
 
-The first repeat is the dry send, delayed; from the second on, each repeat has
-passed the filter once more. `examples/fx/dub-echo-highpass.cicada` plays the
-same move with an off-beat stab.
+`examples/fx/dub-echo-highpass.cicada` plays the same move with an off-beat
+stab.
 
 | Control | Unit | Range | Default |
 | --- | --- | --- | --- |
@@ -331,19 +332,22 @@ route: routes reach track mixer and voice parameters, and a route to an echo
 control reports `CICADA-ROUTE`.
 
 What it does to each repeat, measured by
-`TestEchoHighpassRepeatsLoseTheirLows` in `kernel/measure` (250 ms, feedback
-0.8, `damp` at 16 kHz; dB lost from one repeat to the next):
+`TestEchoHighpassRepeatsLoseTheirLows` in `kernel/measure` at 48 kHz (250 ms,
+feedback 0.8, `damp` at 16 kHz; the first repeat's level below the burst, then
+the dB each later repeat loses against the one before; 44.1 and 96 kHz agree
+within 0.3 dB):
 
-| `highpass` | 80 Hz burst | 2 kHz burst |
-| --- | --- | --- |
-| off | 1.9 | 2.0 |
-| 100 Hz | 6.1 | 2.1 |
-| 300 Hz | 13.8 | 2.3 |
-| 1000 Hz | 24.4 | 3.5 |
+| `highpass` | 80 Hz: first repeat | 80 Hz: per repeat | 2 kHz: first repeat | 2 kHz: per repeat |
+| --- | --- | --- | --- | --- |
+| off | 0 | 1.9 | 0 | 2.0 |
+| 100 Hz | 4.2 | 6.1 | 0.1 | 2.1 |
+| 300 Hz | 11.9 | 13.8 | 0.3 | 2.3 |
+| 1000 Hz | 22.5 | 24.4 | 1.5 | 3.5 |
 
-Off, both fall only by the feedback. With a cutoff, the low burst also loses
-the one-pole response at 80 Hz on every pass, while the high burst keeps
-nearly all of its level.
+Off, the first repeat is the send at full level and each later one falls by
+the feedback alone. With a cutoff, the low burst loses the one-pole response
+at 80 Hz on the way into the line and again on every pass, while the high
+burst keeps nearly all of its level.
 
 An echo without `highpass` never runs the filter: its output is the same bits
 as before the control existed. The filter rounds every product before it adds

@@ -90,9 +90,9 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 		case tapeEnabled && id >= kernel.ParamFxTapeTime && id <= kernel.ParamFxTapeDamp:
 			t := &base.tape
 			return float32([...]float64{t.TimeMs, t.Feedback, t.Wow, t.Flutter, t.Saturation, t.DampHz}[id-kernel.ParamFxTapeTime]), id != kernel.ParamFxTapeTime || t.Division == fx.FreeDelay
-		case id == kernel.ParamFxDelayHighpass:
+		case fx.EchoHighpassEnabled && id == kernel.ParamFxDelayHighpass:
 			return echoHighpassControl(d.HighpassHz), true
-		case tapeEnabled && id == kernel.ParamFxTapeHighpass:
+		case fx.EchoHighpassEnabled && tapeEnabled && id == kernel.ParamFxTapeHighpass:
 			return echoHighpassControl(base.tape.HighpassHz), true
 		case id >= kernel.ParamFxReverbSize && id <= kernel.ParamFxReverbMix:
 			return float32([...]float64{r.Size, r.DecaySec * 1000, r.DampHz, r.HighpassHz, r.PredelayMs, r.Mix}[id-kernel.ParamFxReverbSize]), true

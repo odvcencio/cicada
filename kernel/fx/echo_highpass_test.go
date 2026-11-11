@@ -7,10 +7,14 @@ import (
 	"m31labs.dev/cicada/kernel/internal/bitdigest"
 )
 
-// echoHighpassDigest pins the delay's output and loop state with the in-loop
+// echoHighpassDigest pins the delay's output and loop state with the
 // high-pass on, switched to a new cutoff, turned off and turned on half way,
-// at three rates. CI checks the same digest on arm64.
-const echoHighpassDigest = "6bcebd00f80965e3a9a99f35a61cbeb312fb94d7093dc131c101ff48c0843870"
+// at three rates. CI checks the same digest on arm64. Pinned 11 November 2026
+// from amd64 (chi-1, Go 1.25.1) and arm64 (george-mbp, Go 1.26.5), which agree,
+// after main's #327 moved the delay's smoother and damp coefficients to
+// detmath and the high-pass moved to the line input (the first repeat is now
+// filtered too).
+const echoHighpassDigest = "7dcbd1a99ea15f859619da7fc517a244d95c9de161f164f19a1a7f9e02d7d570"
 
 func TestEchoHighpassDigest(t *testing.T) {
 	d := bitdigest.New()

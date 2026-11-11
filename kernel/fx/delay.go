@@ -211,7 +211,9 @@ func (d *Delay) SetParams(p DelayParams) error {
 	d.targetFeedback = p.Feedback
 	d.targetDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/d.sampleRate)
 	d.targetWidth, d.targetMix = p.Width, p.Mix
-	d.highpass.Set(p.HighpassHz, d.sampleRate)
+	if EchoHighpassEnabled {
+		d.highpass.Set(p.HighpassHz, d.sampleRate)
+	}
 	d.targetPing = 0
 	if p.PingPong {
 		d.targetPing = 1
@@ -257,7 +259,9 @@ func (d *Delay) Reset() {
 	d.excited = false
 	d.oldFrames, d.fade = d.newFrames, 1
 	d.feedback, d.damp, d.ping, d.width, d.mix = d.targetFeedback, d.targetDamp, d.targetPing, d.targetWidth, d.targetMix
-	d.highpass.Reset()
+	if EchoHighpassEnabled {
+		d.highpass.Reset()
+	}
 }
 
 func (d *Delay) read(frames float64) stereo {
@@ -294,7 +298,9 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	d.ping += float64((d.targetPing - d.ping) * d.smooth)
 	d.width += float64((d.targetWidth - d.width) * d.smooth)
 	d.mix += float64((d.targetMix - d.mix) * d.smooth)
-	d.highpass.Advance(d.smooth)
+	if EchoHighpassEnabled {
+		d.highpass.Advance(d.smooth)
+	}
 	if left == 0 && right == 0 && !d.excited {
 		// Both read heads and the feedback filter contain exact zeros.
 		if d.fade < 1 {
@@ -329,14 +335,15 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	mono := float64((x.left + x.right) * .5)
 	inputL := x.left + float64((mono-x.left)*d.ping)
 	inputR := float64(x.right * (1 - d.ping))
-	loopL, loopR := d.feedbackState.left, d.feedbackState.right
-	if d.highpass.Active() {
-		loopL, loopR = d.highpass.Process(loopL, loopR)
+	lineL := inputL + fastmath.Tanh(d.feedbackState.left*d.feedback)
+	lineR := inputR + fastmath.Tanh(d.feedbackState.right*d.feedback)
+	if EchoHighpassEnabled && d.highpass.Active() {
+		// The high-pass filters what enters the line, the send and the
+		// feedback together, so the first repeat has passed it once and each
+		// later repeat once more; damp filters only the feedback.
+		lineL, lineR = d.highpass.Process(lineL, lineR)
 	}
-	d.buffer[d.position] = stereo{
-		inputL + fastmath.Tanh(loopL*d.feedback),
-		inputR + fastmath.Tanh(loopR*d.feedback),
-	}
+	d.buffer[d.position] = stereo{lineL, lineR}
 	d.position++
 	if d.position == len(d.buffer) {
 		d.position = 0

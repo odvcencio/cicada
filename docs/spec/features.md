@@ -96,7 +96,7 @@ song { main }
 
 **Syntax (EBNF):** `highpass` is a setting of a `delay` or `tape` effect block, `highpass = frequency | "off"`, and the parameter path `<echo>.highpass` in scene settings and `automate` lanes.
 
-**Meaning:** A one-pole high-pass filter inside the echo's feedback loop, beside the `damp` low-pass. Every repeat passes it once more, so each repeat loses more of its lows than the one before. The first repeat is the delayed send, unfiltered. Turning the filter on or off fades its effect in or out over the echo's 5 ms smoother; a new cutoff glides through the same smoother. See [Echo highpass](../audio/mix-chain.md#echo-highpass) for the measured effect per repeat.
+**Meaning:** A one-pole high-pass filter where the signal enters the echo line, the send and the feedback together, beside the `damp` low-pass, which filters the feedback alone. The first repeat has passed it once and each later repeat once more, so repeat n has passed the high-pass n times and `damp` n − 1 times. Turning the filter on or off fades its effect in or out over the echo's 5 ms smoother; a new cutoff glides through the same smoother. See [Echo highpass](../audio/mix-chain.md#echo-highpass) for the measured effect per repeat.
 
 **Types and units:** A frequency from 20 Hz to 2 kHz, or `off`. Automation interpolates on a logarithmic curve.
 

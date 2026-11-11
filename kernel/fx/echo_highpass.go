@@ -6,11 +6,12 @@ import (
 	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
-// EchoHighpass is the one-pole high-pass inside the feedback loop of the delay
-// and tape echo returns, the counterpart of their damp low-pass. It subtracts
-// a one-pole low-pass of the loop signal from that signal, so every pass
-// through the loop removes more of the lows and the repeats thin out: the dub
-// echo that fades to a whisper.
+// EchoHighpass is the one-pole high-pass of the delay and tape echo returns,
+// the counterpart of their damp low-pass. It filters what enters the echo
+// line, the send and the feedback together, so the first repeat has passed it
+// once and every later repeat once more: the repeats thin out, the dub echo
+// that fades to a whisper. It subtracts a one-pole low-pass of its input from
+// that input.
 //
 // An echo that never turns the filter on never runs it: Active stays false
 // and the loop computes exactly what it did before the filter existed. Turning
