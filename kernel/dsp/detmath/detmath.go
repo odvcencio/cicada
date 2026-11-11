@@ -779,18 +779,26 @@ func SinPi(x float64) float64 {
 	r := x - float64(0.5*q)
 	th, tl := twoProd(r, piHi)
 	th, tl = fastTwoSum(th, tl+float64(r*piLo))
-	switch int(q - float64(4*math.Floor(float64(q/4)))) {
+	// The quadrant is q mod 4; q is a whole number, so below 2^52 an integer
+	// conversion gives it exactly, and above that the float formula does.
+	var quadrant int
+	if q > -0x1p52 && q < 0x1p52 {
+		quadrant = int(int64(q) & 3)
+	} else {
+		quadrant = int(q - float64(4*math.Floor(float64(q/4))))
+	}
+	switch quadrant {
 	case 1:
-		h, l := cosKernel(th, tl)
+		h, l := cosPiKernel(th, tl)
 		return h + l
 	case 2:
-		h, l := sinKernel(th, tl)
+		h, l := sinPiKernel(th, tl)
 		return -(h + l)
 	case 3:
-		h, l := cosKernel(th, tl)
+		h, l := cosPiKernel(th, tl)
 		return -(h + l)
 	}
-	h, l := sinKernel(th, tl)
+	h, l := sinPiKernel(th, tl)
 	return h + l
 }
 
@@ -817,4 +825,40 @@ func Tanh32(x float32) float32 {
 		return r
 	}
 	return float32(Tanh(v))
+}
+
+// sinPiKernel is sinKernel with its polynomial evaluated by Estrin's scheme
+// instead of Horner's: the same series, every product rounded, but about half
+// the chain of dependent operations. SinPi's error bound is measured with it.
+func sinPiKernel(rh, rl float64) (hi, lo float64) {
+	z := float64(rh * rh)
+	z2 := float64(z * z)
+	z4 := float64(z2 * z2)
+	a0 := -1.0/6 + float64(z*(1.0/120))
+	a1 := -1.0/5040 + float64(z*(1.0/362880))
+	a2 := -1.0/39916800 + float64(z*(1.0/6227020800))
+	a3 := -1.0/1307674368000 + float64(z*(1.0/355687428096000))
+	b0 := a0 + float64(z2*a1)
+	b1 := a2 + float64(z2*a3)
+	p := (b0 + float64(z4*b1)) + float64(float64(z4*z4)*(-1.0/121645100408832000))
+	tail := float64(float64(rh*z)*p) + float64(rl*(1-float64(0.5*z)))
+	return fastTwoSum(rh, tail)
+}
+
+// cosPiKernel is cosKernel with Estrin's scheme for its polynomial.
+func cosPiKernel(rh, rl float64) (hi, lo float64) {
+	z, zl := twoSquare(rh)
+	z2 := float64(z * z)
+	z4 := float64(z2 * z2)
+	a0 := 1.0/24 + float64(z*(-1.0/720))
+	a1 := 1.0/40320 + float64(z*(-1.0/3628800))
+	a2 := 1.0/479001600 + float64(z*(-1.0/87178291200))
+	a3 := 1.0/20922789888000 + float64(z*(-1.0/6402373705728000))
+	b0 := a0 + float64(z2*a1)
+	b1 := a2 + float64(z2*a3)
+	q := (b0 + float64(z4*b1)) + float64(float64(z4*z4)*(1.0/2432902008176640000))
+	hz := float64(0.5 * z)
+	w := 1 - hz
+	tail := (((1 - w) - hz) - float64(0.5*zl)) + (float64(z2*q) - float64(rh*rl))
+	return fastTwoSum(w, tail)
 }

@@ -57,7 +57,7 @@ func TestSinPiAccuracy(t *testing.T) {
 
 // sinPiDigest pins the bits of SinPi over a fixed sweep; CI requires the same
 // digest on arm64 and with GOAMD64=v3.
-const sinPiDigest = "d84bd292e78b0b1f0bb1aa7bcef5ba65911d0cf69e073eb69b7ddcac2c430e24"
+const sinPiDigest = "853a5279a8203f7bbd64ed6be03cffe740f0886407c27cc626cb9bff5759b3f4"
 
 func TestSinPiDigest(t *testing.T) {
 	h := sha256.New()
