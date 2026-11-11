@@ -291,6 +291,7 @@ Flags:
   --bars <n>                 bars to analyze; 0 means through song end
   --tracks <a,b>             analyze only these tracks and the mix; an unknown name fails with the valid names
   --peaks <n>                true-peak moments of the mix to list, 0 to 100 (default 10; 0 lists none)
+  --bar-bands                add each track's level in each band per bar (tracks[].bar_bands_db; seven numbers per track per bar)
   --image-width <px>         widest picture in pixels (default 1600; 0 keeps one full-resolution strip)
   --json                     write the report as JSON (format cicada.audition/1)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)

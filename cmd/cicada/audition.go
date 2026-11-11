@@ -14,7 +14,7 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--tracks <a,b>] [--peaks <n>] [--image-width <px>] [--json] [--max-resident-pcm <size>]"
+const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--tracks <a,b>] [--peaks <n>] [--bar-bands] [--image-width <px>] [--json] [--max-resident-pcm <size>]"
 
 // auditionErrorDocument is what audition --json prints when it fails.
 type auditionErrorDocument struct {
@@ -86,6 +86,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	tracks := flags.String("tracks", "", "analyze only these tracks (comma-separated) and the mix")
 	peaks := flags.Int("peaks", scoreaudition.DefaultPeaks, "true-peak moments to list; 0 lists none")
 	imageWidth := flags.Int("image-width", scoreaudition.DefaultImageWidth, "widest picture in pixels; 0 keeps one full strip")
+	barBands := flags.Bool("bar-bands", false, "add each track's band levels per bar to the JSON")
 	// Accept the score before or after the flags.
 	var path string
 	rest := args
@@ -132,7 +133,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if failed {
 		return &codedError{"invalid_score", fmt.Errorf("%s has errors", path)}
 	}
-	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Tracks: splitTrackList(*tracks), Peaks: peakCount})
+	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Tracks: splitTrackList(*tracks), Peaks: peakCount, BarBands: *barBands})
 	if err != nil {
 		var unknown *render.UnknownTrackError
 		if errors.As(err, &unknown) {

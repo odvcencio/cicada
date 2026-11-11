@@ -222,10 +222,14 @@ func TestLowBandOwnersAlternate(t *testing.T) {
 		t.Errorf("one repeats %d %d %d %d, want 6 3 3 3", one.NoteBars, one.SameAsPreviousBar, one.SameAsFourBarsBefore, one.LongestSameRun)
 	}
 	// The 40-80 Hz band holds the content; the others hold window leakage,
-	// attack clicks and the quiet ticks, over 30 dB under it, and have no owner.
+	// attack and release clicks and the quiet ticks. Above 80 Hz they are over
+	// 30 dB under it and have no owner. In 20-40 Hz the frames on the bar line,
+	// where one sine stops and the other starts, catch the clicks at 25 to
+	// 30 dB under the 40-80 Hz band.
+	sub := bandIndex(t, "sub")
 	for _, bar := range a.Report.Bars {
 		for k, o := range bar.Bands {
-			if k != low && !o.Quiet {
+			if k == sub && bar.Bands[low].LevelDB-o.LevelDB < 25 || k != low && k != sub && !o.Quiet {
 				t.Errorf("bar %d: band %s %+v is not quiet", bar.Bar, o.Band, o)
 			}
 		}

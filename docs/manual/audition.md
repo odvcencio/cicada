@@ -21,6 +21,7 @@ cicada audition song.cicada --tracks bass,kick,logdrum --json
 | `--bars <n>` | Bars to analyze; 0 means through the song end. |
 | `--tracks <a,b,c>` | Analyze only these tracks and the mix. Only their stems are written and read, so the run needs less memory and disk. A name the score does not have is an error that lists the score's tracks (`unknown_track` with `valid_tracks` in JSON). See [Choosing tracks](#choosing-tracks). |
 | `--peaks <n>` | How many true-peak moments of the mix to list, 0 to 100 (default 10; 0 lists none). |
+| `--bar-bands` | Add each track's level in each band per bar to the JSON (`tracks[].bar_bands_db`). |
 | `--image-width <px>` | Widest picture in pixels (default 1600; at least 200). 0 keeps one full-resolution strip of each picture, as before. |
 | `--json` | Print the report as JSON instead of text. |
 | `--max-resident-pcm <size>` | Cap on the decoded audio of the score's sampler packs, such as `2GiB` (default 1 GiB). `CICADA_MAX_RESIDENT_PCM` sets it when the flag is omitted. A score over the cap is refused before any pack is read. |
@@ -150,9 +151,12 @@ Hz, hold the FFT bins whose centre frequency f is in `low <= f < high`:
 | `presence` | 1,600-5,000 Hz |
 | `air` | 5,000-20,000 Hz |
 
-The energy comes from the transforms the report already makes for the band
-measure of each stem: an 8,192-point Hann-windowed FFT (5.86 Hz per bin at
-48 kHz) centred on every sixteenth note. A bar sums its 16 frames. A share is
+The energy comes from 8,192-point Hann-windowed FFTs (5.86 Hz per bin at
+48 kHz) of each stem, two per sixteenth note: the frame the report already
+makes for its band measure, in the middle of each sixteenth, and one more on
+each sixteenth's start. Frames therefore come every half sixteenth (101 ms at
+74 BPM) and overlap at any tempo, so a hit on the grid weighs as much as a held
+note. A bar sums the 32 frames centred in it. A share is
 the track's energy over the sum of the analyzed tracks' energies in that band;
 effect returns are not tracks and are left out. `*` marks a **collision**: two
 tracks each hold more than 25% of the band. A band is `quiet`, with no owner,
@@ -324,7 +328,7 @@ energy (ITU-R BS.1770-4, the render's loudness meter; short-term = 3 s window en
 
    bar  sub           low           bass          low-mid       mid           presence      air
      6  quiet         quiet         quiet         drums 100     quiet         drums 100     drums 100
-     7  quiet         drums 63*     drums 62*     drums 64*     bass 94       bass 91       drums 84
+     7  bass 72       drums 64*     drums 56*     drums 88      bass 82       bass 85       drums 91
   low 40-80 Hz collisions: 2 of 8 bars (7-8); pairs: sub+drums 2
 
   track        notes =prev    =4  run  bars 1-8
@@ -340,13 +344,13 @@ confirm what emptied: the bass and the sub do not sound in bars 5 and 6 (`··`)
 and the drums drop to `▄▂`, 14 and 20 dB under their loudest bar, because only
 the hats play. Bar 6 has no owner below 160 Hz at all.
 
-Then the low end. In bars 7 and 8 the kick holds 63% of 40-80 Hz and the sub
-the rest (`bars[6].bands[1]` reads `"owner": "drums", "share_pct": 63,
-"second": "sub", "second_share_pct": 29.5, "collision": true`). Both are over
-25%, so the bar collides: the sub and the kick share the band in which a mix
-usually gives the bottom to one of them. Duck the sub under the kick, move the
-sub an octave, or give the kick less body. The groove bars do not collide in
-`low`: the kick owns it alone (89%), because the acid bass puts most of its
+Then the low end. In bars 7 and 8 the kick holds 64% of 40-80 Hz and the sub
+most of the rest (`bars[6].bands[1]` reads `"owner": "drums", "share_pct":
+63.8, "second": "sub", "second_share_pct": 29.5, "collision": true`). Both are
+over 25%, so the bar collides: the sub and the kick share the band in which a
+mix usually gives the bottom to one of them. Duck the sub under the kick, move
+the sub an octave, or give the kick less body. The groove bars do not collide
+in `low`: the kick owns it (90%), because the acid bass puts most of its
 energy above 125 Hz. Both effects show in `energy.png` (the dip at bar 5) and
 in `spectrogram.png` (the empty floor in bars 5 and 6 and the bright 50-100 Hz
 band from bar 7).
@@ -409,7 +413,7 @@ floored at -120; null means the method cannot give a value.
 | `tracks[].same_as_four_bars_before` | number | Bars whose played notes equal the bar four before. |
 | `tracks[].longest_same_run` | number | Longest stretch of identical consecutive bars, in bars; 0 when no bar equals the one before. |
 | `tracks[].bands_db` | array | The track's level in each band over the range, dB re a full-scale RMS. |
-| `tracks[].bar_bands_db` | array | The same per bar: one array of seven per bar. |
+| `tracks[].bar_bands_db` | array | The same per bar: one array of seven per bar. Only with `--bar-bands`: it is the largest part of the document (seven numbers per track per bar). |
 | `tracks[].section_bands_db` | array | The same per section, in `sections[]` order. |
 | `sections[].integrated_lufs` | number or null | Integrated loudness over the section's ticks, from a meter started at the section start. |
 | `sections[].loudness_range_lu` | number | Loudness range of the section. |
@@ -435,14 +439,12 @@ The measures are heuristics from the rendered audio, not a transcription.
 
 The added measures have these limits:
 
-- Band energy uses the frames of the existing band measure, centred on each
-  sixteenth note. At tempos under about 88 BPM the 170 ms frames leave gaps
-  between them, and at every tempo the Hann window weights the middle of each
-  sixteenth most, so the first milliseconds of a hit on the grid weigh less
-  than a held note. A kick's share reads lower than a method with evenly
-  overlapped frames gives. A frame also reaches up to 85 ms past its
-  sixteenth, so the first hit of the next bar can leak into a bar's last frame
-  (the quiet rules hide it in a drop-out).
+- Band frames are tied to the sixteenth-note grid, not spaced evenly in time.
+  A frame reaches 85 ms on each side of its centre, so the frame on a bar line
+  holds the end of the bar before, and the last frame of a bar the start of
+  the next; the quiet rules hide that in a drop-out. Frames centred on the grid
+  catch the attack and release clicks of notes that start and stop there, a
+  little energy across every band.
 - A bin belongs to one band, but the window spreads a tone over its
   neighbouring bins: about -6 dB one bin (5.86 Hz) away and about -30 dB two
   to three bins away. A tone within about 15 Hz of a band edge therefore also

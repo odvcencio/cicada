@@ -32,9 +32,10 @@ type mixInput struct {
 	notes      *noteLog
 	acts       []barActivity
 	played     []bool
-	bandFrames [][][numBands]float64 // per track, one frame per sixteenth (nil when silent)
+	bandFrames [][][numBands]float64 // per track, two frames per sixteenth (nil when silent)
 	sections   []sectionSpan         // aligned with Report.Sections
 	peaks      int
+	barBands   bool
 }
 
 func (a *Analysis) measureMix(in mixInput) error {
@@ -165,7 +166,9 @@ func (a *Analysis) measureMix(in mixInput) error {
 func (a *Analysis) measureBands(in mixInput, use []bool) {
 	r := &a.Report
 	bars, tracks := in.bars, len(in.ids)
-	const perBar = 16
+	// Two frames per sixteenth: frame j is centred on tick fromTick + j*120.
+	const perBar = 32
+	half := seq.TicksPerStep / 2
 	// energy[b][band][track], summed over the bar's sixteenth frames.
 	energy := make([][numBands][]float64, bars)
 	for b := range energy {
@@ -184,7 +187,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	frameSection := make([]int, bars*perBar)
 	for f := range frameSection {
 		frameSection[f] = -1
-		centre := in.fromTick + int64(f)*seq.TicksPerStep + seq.TicksPerStep/2
+		centre := in.fromTick + int64(f)*half
 		for si, sp := range in.sections {
 			if centre >= sp.lo && centre < sp.hi {
 				frameSection[f] = si
@@ -298,7 +301,9 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	for ti := range r.Tracks {
 		tr := &r.Tracks[ti]
 		tr.BandsDB = make([]float64, numBands)
-		tr.BarBandsDB = make([][]float64, bars)
+		if in.barBands {
+			tr.BarBandsDB = make([][]float64, bars)
+		}
 		tr.SectionBandsDB = make([][]float64, len(in.sections))
 		for k := 0; k < numBands; k++ {
 			tr.BandsDB[k] = round(bandLevelDB(whole[ti][k], totalFrames, chromaFFT), 1)
