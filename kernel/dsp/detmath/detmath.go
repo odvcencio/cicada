@@ -869,6 +869,9 @@ func SinPiNear(x float64) float64 {
 	if x == 0 {
 		return x
 	}
+	if a := math.Abs(x); a >= 0x1p1023 && a <= math.MaxFloat64 {
+		return 0 // an even integer, where 2*x would overflow: +0, as SinPi gives
+	}
 	q := math.Round(float64(2 * x))
 	r := x - float64(0.5*q) // exact, as in SinPi
 	t := float64(r * math.Pi)
@@ -1023,7 +1026,7 @@ func OneMinusExpNeg2Pi32(u float32) float32 {
 	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24)))))))) // e^r - 1 to r^5/120 < 2^-44
 	ki := int(k)
 	e := float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52)
-	v := 1 - e
+	v := 1 - float64(e) // e is a product: keep arm64 from fusing it into the subtraction
 	const margin = 0x1p-32
 	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {
 		return r

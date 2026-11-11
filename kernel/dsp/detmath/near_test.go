@@ -76,6 +76,16 @@ func TestSinPiNearAccuracy(t *testing.T) {
 // CI requires the same digest on arm64 and with GOAMD64=v3.
 const nearDigest = "469349933654dbedc4a18c93f4cb31b9ccbb6be2c2a05bb2f1e603cf79a80aed"
 
+// SinPiNear gives SinPi's signed zero at every integer, including those where
+// 2*x would overflow.
+func TestSinPiNearIntegers(t *testing.T) {
+	for _, x := range []float64{1, -1, 2, -2, 3, 0x1p52 + 1, -0x1p52 - 1, 0x1p53, 0x1p1023, -0x1p1023, math.MaxFloat64, -math.MaxFloat64, 0x1.8p1022} {
+		if got, want := SinPiNear(x), SinPi(x); got != 0 || math.Signbit(got) != math.Signbit(want) {
+			t.Errorf("SinPiNear(%v) = %v, want %v", x, got, want)
+		}
+	}
+}
+
 func TestNearDigest(t *testing.T) {
 	h := sha256.New()
 	var word [8]byte
