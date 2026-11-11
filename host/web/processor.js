@@ -192,7 +192,9 @@ class CicadaKernel extends AudioWorkletProcessor {
     const swapAtBoundary = (tick) => {
       if (!pending?.x) return void toBar(nextBarTick);
       const next = pending;
+      // A seek encodes its tick as Arg0*3840 + Arg1; a bar line need not be a multiple of 3840.
       swapView.setUint32(4, tick / 3840, true);
+      putTick(swap, 8, tick % 3840);
       next.d.set(swap, 0);
       next.x.cmd_commit(2);
       promote(next, tick);
