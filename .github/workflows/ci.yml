@@ -621,6 +621,11 @@ jobs:
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
           git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
+      # What fills the UI engine WebAssembly, logged on every run. It reports;
+      # the limit is enforced by go generate above.
+      - name: UI engine size report (does not fail the job)
+        continue-on-error: true
+        run: make engine-size-report
       - name: Windows workstation and desktop
         run: |
           set -euo pipefail
@@ -634,6 +639,7 @@ jobs:
           path: |
             workstation/dist/build.json
             build/workstation-gosx-size.json
+            workstation/build/engine-size.json
 
   # Builds what the Studio browser suites run against once, so each shard does
   # not rebuild it. The tar keeps file modes (build/cicada stays executable).
@@ -745,6 +751,8 @@ jobs:
             build/studio-notes-report.txt
             build/studio-notes-server.log
             build/studio-notes-proof/
+            build/studio-engine-requests-report.txt
+            build/studio-engine-requests-server.log
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/
