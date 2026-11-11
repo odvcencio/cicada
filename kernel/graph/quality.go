@@ -202,7 +202,7 @@ func (s *svfState) next(input, cutoff, resonance, rate, baseRate float32) float3
 	}
 	v3 := float64(input) - s.ic2
 	v1 := float64(s.a1*s.ic1) + float64(s.a2*v3)
-	v2 := float64(float64(s.ic2)+float64(s.a2*s.ic1)) + float64(s.a3*v3)
+	v2 := float64(s.ic2+float64(s.a2*s.ic1)) + float64(s.a3*v3)
 	s.ic1 = 2*v1 - s.ic1
 	s.ic2 = 2*v2 - s.ic2
 	if math.Abs(s.ic1) < 1e-20 {

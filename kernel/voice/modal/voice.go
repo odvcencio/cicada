@@ -241,7 +241,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	// This mildly curved response leaves headroom for overlapping strikes.
 	level := .9 * vel * math.Sqrt(vel)
 	hardness := vel * vel
-	contact := (float64(r.soft) + float64((r.hard-r.soft)*hardness)) * (1 + float64(.045*(float64(variation)-1.5)))
+	contact := (r.soft + float64((r.hard-r.soft)*hardness)) * (1 + float64(.045*(float64(variation)-1.5)))
 	s.contact = max(4, int(math.Round(contact*v.rate)))
 	s.excitation = s.contact
 	s.force, s.noiseMix = 2/float64(s.contact), r.noise
@@ -304,8 +304,8 @@ func (v *Voice) retune(s *strike, note uint8) {
 			continue
 		}
 		sin, cos := math.Sincos(2 * math.Pi * m.freq / v.rate)
-		m.dc = (float64(m.radius*cos) - float64(m.c)) / float64(s.glide)
-		m.ds = (float64(m.radius*sin) - float64(m.s)) / float64(s.glide)
+		m.dc = (float64(m.radius*cos) - m.c) / float64(s.glide)
+		m.ds = (float64(m.radius*sin) - m.s) / float64(s.glide)
 	}
 	s.note, s.keyUp = note, false
 }

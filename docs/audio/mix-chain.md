@@ -301,6 +301,13 @@ guaranteed.
   `render` imports, on arm64 and with `GOAMD64=v3` (CI builds them with
   `-d=fmahash=vy` and fails on any report). A product is rounded with an
   explicit `float32(...)` or `float64(...)`, for example `a + float64(b*c)`.
+  Go may also fuse across statements, so a conversion of a plain value is
+  needed where that value is itself a product: a variable set from a product
+  in an earlier statement (`s1 := state*inv` then `float64(g*u) + float64(s1)`),
+  a parameter of a function the compiler inlines into a caller that passes a
+  product, and `v` in `2*v`, which the compiler rewrites as `v + v`. Elsewhere
+  such a conversion prevents nothing and is left out; the compiler's report
+  decides which are needed.
   Not yet covered: `cmd/cicada` (live monitor mixing in
   `studio_audio_devices.go`) and the `host/` packages that `render` does not
   import; a later pull request in this series extends the check to every

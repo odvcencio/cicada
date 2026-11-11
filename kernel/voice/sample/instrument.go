@@ -479,7 +479,7 @@ func (p *Instrument) NextStereo() (float32, float32) {
 				}
 			}
 			if p.config.Cutoff > 0 {
-				alpha := float64(v.cutoffLow) + float64((v.cutoffHigh-v.cutoffLow)*filter)
+				alpha := v.cutoffLow + float64((v.cutoffHigh-v.cutoffLow)*filter)
 				v.filterL += float64((l - v.filterL) * alpha)
 				v.filterR += float64((r - v.filterR) * alpha)
 				l, r = v.filterL, v.filterR

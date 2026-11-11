@@ -169,7 +169,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	for v := range i.voices {
 		seed = seed*1664525 + 1013904223
 		signed := float64(seed>>8)/8388607.5 - 1
-		i.detuneRatios[v] = float32(math.Pow(2, (float64(params.Detune)+float64(signed*params.Drift))/1200))
+		i.detuneRatios[v] = float32(math.Pow(2, (params.Detune+float64(signed*params.Drift))/1200))
 		i.driftAmounts[v] = float32(params.Drift * .00057762265)
 		i.driftRates[v] = float32((.071 + float64(float64(v)*.013)) / sr)
 		pan := float64(float64(v)/7*.6) - .3

@@ -113,14 +113,14 @@ func (b *Brass) tick() float64 {
 	opening := math.Max(0, .15+float64(.5*lip))
 	// Solve u = opening*sign(dp)*sqrt(abs(dp)) with dp=P-2*pMinus-u.
 	// The rationalized quadratic avoids cancellation at small pressure.
-	p := mouth - float64(2*float64(incoming))
+	p := mouth - float64(2*incoming)
 	den := math.Sqrt(float64(opening*opening)+float64(4*math.Abs(p))) + opening
 	flow := 0.
 	if den > 1e-15 {
 		flow = math.Copysign(2*opening*math.Abs(p)/den, p)
 	}
 	b.flow = flow
-	wave := float64(flow) + float64(incoming)
+	wave := flow + incoming
 	if !finite(wave) || math.Abs(wave) > 32 {
 		b.lip1 = 0
 		b.lip2 = 0

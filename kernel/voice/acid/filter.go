@@ -16,7 +16,7 @@ func (f *filterState) processLadder(input, G, g, k, savage float64) float64 {
 	s1, s2, s3, s4 := f.state[0]*inv, f.state[1]*inv, f.state[2]*inv, f.state[3]*inv
 	g4 := G * G * G * G
 	denominator := 1 + float64(k*g4)
-	u := fastmath.Tanh((float64(input) - float64(k*feedback(f.last, savage))) / (denominator))
+	u := fastmath.Tanh((input - float64(k*feedback(f.last, savage))) / (denominator))
 	var y1, y2, y3, y4 float64
 	for pass := 0; pass < 2; pass++ {
 		y1 = float64(G*u) + float64(s1)
@@ -26,7 +26,7 @@ func (f *filterState) processLadder(input, G, g, k, savage float64) float64 {
 		if pass == 0 {
 			// The current estimate already contains the saved stage states.
 			// Subtracting their sum again overdrives the feedback loop.
-			u = fastmath.Tanh((float64(input) - float64(k*feedback(y4, savage))) / denominator)
+			u = fastmath.Tanh((input - float64(k*feedback(y4, savage))) / denominator)
 		}
 	}
 	f.state[0] = flush(2*y1 - f.state[0])
@@ -42,7 +42,7 @@ func (f *filterState) processDiode(input, G, g, k, savage float64) float64 {
 	s1, s2, s3, s4 := f.state[0]*inv, f.state[1]*inv, f.state[2]*inv, f.state[3]*inv
 	coefficients := prepareDiode(G, s1, s2, s3, s4)
 	first := coefficients.solve(input, k)
-	refinedInput := float64(input) - float64(k*feedback(first[3], savage))
+	refinedInput := input - float64(k*feedback(first[3], savage))
 	y := coefficients.solve(refinedInput, 0)
 	for index := range f.state {
 		f.state[index] = flush(2*y[index] - f.state[index])
@@ -58,11 +58,11 @@ func (f *filterState) processDiodeShaped(input, G, k, savage, inv, a3, a2, invDe
 	b3 := (float64((G/2)*s4) + float64(s3)) * invDen3
 	b2 := (float64((G/2)*b3) + float64(s2)) * invDen2
 	d := float64(G*(float64(a3*b2)+float64(b3))) + float64(s4)
-	y1 := (float64((G/2)*(float64(float64(input)-float64(k*d))+float64(b2))) + float64(s1)) * invFirstDen
+	y1 := (float64((G/2)*(float64(input-float64(k*d))+float64(b2))) + float64(s1)) * invFirstDen
 	y2 := float64(a2*y1) + float64(b2)
 	y3 := float64(a3*y2) + float64(b3)
 	y4 := float64(G*y3) + float64(s4)
-	refinedInput := float64(input) - float64(k*feedback(y4, savage))
+	refinedInput := input - float64(k*feedback(y4, savage))
 	y1 = (float64((G/2)*(float64(refinedInput)+float64(b2))) + float64(s1)) * invRefinedDen
 	y2 = float64(a2*y1) + float64(b2)
 	y3 = float64(a3*y2) + float64(b3)
@@ -82,11 +82,11 @@ func (f *filterState) processDiodeShapedNormal(input, G, k, inv, a3, a2, invDen3
 	b3 := (float64((G/2)*s4) + float64(s3)) * invDen3
 	b2 := (float64((G/2)*b3) + float64(s2)) * invDen2
 	d := float64(G*(float64(a3*b2)+float64(b3))) + float64(s4)
-	y1 := (float64((G/2)*(float64(float64(input)-float64(k*d))+float64(b2))) + float64(s1)) * invFirstDen
+	y1 := (float64((G/2)*(float64(input-float64(k*d))+float64(b2))) + float64(s1)) * invFirstDen
 	y2 := float64(a2*y1) + float64(b2)
 	y3 := float64(a3*y2) + float64(b3)
 	y4 := float64(G*y3) + float64(s4)
-	refinedInput := float64(input) - float64(k*fastmath.Tanh(y4))
+	refinedInput := input - float64(k*fastmath.Tanh(y4))
 	y1 = (float64((G/2)*(float64(refinedInput)+float64(b2))) + float64(s1)) * invRefinedDen
 	y2 = float64(a2*y1) + float64(b2)
 	y3 = float64(a3*y2) + float64(b3)
@@ -107,19 +107,19 @@ type diodeCoefficients struct {
 
 func prepareDiode(G, s1, s2, s3, s4 float64) diodeCoefficients {
 	a3 := (G / 2) / (1 - float64(G*G/2))
-	b3 := (float64((G/2)*s4) + float64(s3)) / (1 - float64(G*G/2))
+	b3 := (float64((G/2)*s4) + s3) / (1 - float64(G*G/2))
 	a2 := (G / 2) / (1 - float64(G*a3/2))
-	b2 := (float64((G/2)*b3) + float64(s2)) / (1 - float64(G*a3/2))
+	b2 := (float64((G/2)*b3) + s2) / (1 - float64(G*a3/2))
 	c := G * a3 * a2
-	d := float64(G*(float64(a3*b2)+float64(b3))) + float64(s4)
+	d := float64(G*(float64(a3*b2)+b3)) + s4
 	return diodeCoefficients{G: G, s1: s1, s4: s4, a3: a3, b3: b3, a2: a2, b2: b2, c: c, d: d}
 }
 
 func (coefficients diodeCoefficients) solve(input, k float64) [4]float64 {
-	y1 := (float64((coefficients.G/2)*(float64(input)-float64(k*coefficients.d)+coefficients.b2)) + float64(coefficients.s1)) / (float64(1-float64(coefficients.G*coefficients.a2/2)) + float64(coefficients.G*k*coefficients.c/2))
-	y2 := float64(coefficients.a2*y1) + float64(coefficients.b2)
-	y3 := float64(coefficients.a3*y2) + float64(coefficients.b3)
-	y4 := float64(coefficients.G*y3) + float64(coefficients.s4)
+	y1 := (float64((coefficients.G/2)*(input-float64(k*coefficients.d)+coefficients.b2)) + coefficients.s1) / (float64(1-float64(coefficients.G*coefficients.a2/2)) + float64(coefficients.G*k*coefficients.c/2))
+	y2 := float64(coefficients.a2*y1) + coefficients.b2
+	y3 := float64(coefficients.a3*y2) + coefficients.b3
+	y4 := float64(coefficients.G*y3) + coefficients.s4
 	return [4]float64{y1, y2, y3, y4}
 }
 

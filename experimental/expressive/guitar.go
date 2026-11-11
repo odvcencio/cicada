@@ -117,7 +117,7 @@ func (g *Guitar) Next() float64 {
 	g.loss2 = g.loss1
 	g.loss1 = x
 	g.loop.push(feedback)
-	pickup := float64(x) - float64(.72*g.loop.read(period*clamp(g.control.Position, .05, .45)))
+	pickup := x - float64(.72*g.loop.read(period*clamp(g.control.Position, .05, .45)))
 	hp := float64(pickup-g.dcIn) + float64(.995*g.dcOut)
 	g.dcIn = pickup
 	g.dcOut = hp

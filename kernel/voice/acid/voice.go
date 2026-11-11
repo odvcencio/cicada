@@ -1,5 +1,12 @@
 // Package acid implements Cicada's built-in monophonic acid voice. It is
 // separate from the user-authored graph executor and has its own DSP state.
+//
+// Rounding: every product that feeds an addition is rounded with float64(...)
+// so that arm64 cannot fuse it into a multiply-add (docs/audio/mix-chain.md).
+// Some conversions wrap a plain variable, as s2 in float64(G*y1) + float64(s2):
+// s2 is itself a product from an earlier statement (f.state[1]*inv), and Go may
+// fuse across statements. Such a conversion is kept only where the compiler's
+// fusion report shows that it is needed.
 package acid
 
 import (

@@ -264,7 +264,7 @@ func (v *Voice) Hit(velocity uint8) {
 	v.sequence++
 	s.noise = v.seed ^ uint32(v.profile+1)*0x9e3779b9 ^ (variation+1)*0x85ebca6b
 	jitter := [4]float64{-.75, .25, .75, -.25}[variation]
-	position := min(1, max(0, float64(float64(v.params.Position)+float64(.018*jitter))+float64(v.params.Humanize*jitter)))
+	position := min(1, max(0, float64(v.params.Position+float64(.018*jitter))+float64(v.params.Humanize*jitter)))
 	vel := float64(min(velocity, 127)) / 127
 	strength := vel * math.Sqrt(vel) * (1 + float64(.25*v.params.Humanize*jitter))
 	hardness := vel * vel
@@ -384,29 +384,37 @@ func (v *Voice) nextStrike(s *strike) float64 {
 		return 0
 	}
 	body, energy := 0.0, 0.0
-	for i := 0; i < s.count; i++ {
-		m := &s.modes[i]
-		if m.x == 0 && m.y == 0 {
+	// The bend test and the mode state are read once per mode into locals, so
+	// the loop does the same arithmetic as before with fewer loads and stores.
+	bend, bendAlpha := recipes[v.profile].bend != 0, s.bendAlpha
+	modes := s.modes[:s.count]
+	for i := range modes {
+		m := &modes[i]
+		mx, my := m.x, m.y
+		if mx == 0 && my == 0 {
 			continue
 		}
-		if recipes[v.profile].bend != 0 {
+		c, sn := m.c, m.s
+		if bend {
 			// Convex pole interpolation follows the relaxing membrane
 			// tension without trigonometry or unstable rotating coefficients.
-			m.c += float64(s.bendAlpha * (m.targetC - m.c))
-			m.s += float64(s.bendAlpha * (m.targetS - m.s))
+			c += float64(bendAlpha * (m.targetC - c))
+			sn += float64(bendAlpha * (m.targetS - sn))
+			m.c, m.s = c, sn
 		}
-		x := float64(m.c*m.x) - float64(m.s*m.y)
-		m.y = float64(m.s*m.x) + float64(m.c*m.y)
-		m.x = x
-		if math.Abs(m.x)+math.Abs(m.y) < 1e-9 {
+		x := float64(c*mx) - float64(sn*my)
+		y := float64(sn*mx) + float64(c*my)
+		size := math.Abs(x) + math.Abs(y)
+		if size < 1e-9 {
 			m.x, m.y = 0, 0
 			continue
 		}
-		body += m.y
-		energy += math.Abs(m.x) + math.Abs(m.y)
+		m.x, m.y = x, y
+		body += y
+		energy += size
 	}
 	s.wireFollower += float64(s.followerA * (math.Abs(body) - s.wireFollower))
-	noiseLevel := float64(s.noiseAmp) + float64(s.bodyCoupling*s.wireFollower)
+	noiseLevel := s.noiseAmp + float64(s.bodyCoupling*s.wireFollower)
 	if s.swell != 0 {
 		x := float64(s.stroke.c*s.stroke.x) - float64(s.stroke.s*s.stroke.y)
 		s.stroke.y = float64(s.stroke.s*s.stroke.x) + float64(s.stroke.c*s.stroke.y)
