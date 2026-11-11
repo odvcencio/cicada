@@ -100,11 +100,11 @@ build-core:
 
 # Times an agent's loop with build/cicada on the reference scores and checks
 # the speed gates in cmd/cicada-bench/gates.go; BENCH_ARGS=--enforce fails on
-# a gate. The large song's render and audition cover its first 16 bars.
+# a gate. The large song's render and audition cover its first 8 bars.
 .PHONY: bench-agent-loop test-render-identity
 BENCH_ARGS ?=
 bench-agent-loop: build-core
-	go run ./cmd/cicada-bench --cicada build/cicada --large-bars 16 --json build/bench-agent-loop.json $(BENCH_ARGS)
+	go run ./cmd/cicada-bench --cicada build/cicada --large-bars 8 --json build/bench-agent-loop.json $(BENCH_ARGS)
 
 # Renders every example score with and without the stored mix (render.MasterCache)
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.

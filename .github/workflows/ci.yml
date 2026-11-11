@@ -372,10 +372,11 @@ jobs:
 
   # Speed gates for an agent's loop (plan.cicada.speed, row F7): process start,
   # check, apply, render, a loudness render and audition on the reference
-  # scores, as the median of 5 runs. Pull requests and pushes report; the
-  # nightly run enforces the gates (cmd/cicada-bench/gates.go). It is not a
-  # required check. The large song's render and audition cover its first 16
-  # bars, so the job stays near five minutes.
+  # scores, as the median of 5 runs after one warm-up run. Pull requests and
+  # pushes report; the nightly run enforces the gates
+  # (cmd/cicada-bench/gates.go). It is not a required check. The large song's
+  # render and audition cover its first 8 bars, so the job stays under five
+  # minutes on the slower runners (16 bars took 6m07s with the warm-up).
   bench:
     name: Agent loop speed
     needs: changes
