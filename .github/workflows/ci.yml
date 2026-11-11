@@ -707,7 +707,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, workstation]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -725,12 +725,16 @@ jobs:
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
+          RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
+          WORKSTATION_RESULT: ${{ needs.workstation.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
           #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          #   workstation                success when workstation=true, skipped otherwise
+          #                              (its go generate enforces the UI engine size limit)
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -761,6 +765,11 @@ jobs:
           check m0-core "$CORE_RESULT" "$part_expected"
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
+          if [[ "$RUN_WORKSTATION" == true ]]; then
+            check workstation "$WORKSTATION_RESULT" success
+          else
+            check workstation "$WORKSTATION_RESULT" skipped
+          fi
           exit "$status"
 
   workstation:

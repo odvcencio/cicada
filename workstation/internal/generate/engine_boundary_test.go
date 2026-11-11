@@ -30,12 +30,18 @@ func TestBrowserEngineKeepsHostDependenciesOut(t *testing.T) {
 // Calling net/http's client linked its js/wasm transport, which misreported
 // finished responses, and its TLS, HTTP/2 and certificate code: moving nine
 // call sites to fetch took the engine from 16,733,505 to 11,493,199 bytes
-// (2026-11-10, make engine-size-report). This walks the whole js/wasm
-// dependency graph, so no package the engine imports can bring the client
-// back. The standard library may import net/http and crypto/tls among itself;
-// GoSX's hub client imports net/http for one header type, which the linker
-// keeps only as package initialization (remove it from the list when GoSX
-// drops that import).
+// (2026-11-10, make engine-size-report).
+//
+// What this guarantees: no package in the engine's js/wasm dependency graph
+// other than the standard library and GoSX's hub/client imports net/http or
+// crypto/tls directly, so a Cicada package (or a new third-party one) cannot
+// bring the client back. What it does not: net/http, crypto/tls, crypto/x509
+// and mime/multipart are still linked through hub/client, which imports
+// net/http for one header type (the linker keeps only its package
+// initialization); a new dependency reached through hub/client would pass
+// here. TestBrowserEngineStandardLibraryIsKnown catches that case: any
+// standard-library package new to the graph fails it. Remove hub/client from
+// the list below when GoSX drops that import.
 func TestBrowserEngineSendsRequestsThroughFetch(t *testing.T) {
 	allowed := map[string]bool{"m31labs.dev/gosx/hub/client": true}
 	for _, pkg := range engineGraph(t, enginebuild.Tags) {
@@ -46,6 +52,38 @@ func TestBrowserEngineSendsRequestsThroughFetch(t *testing.T) {
 			if dep == "net/http" || strings.HasPrefix(dep, "net/http/") || dep == "crypto/tls" {
 				t.Errorf("%s imports %s; the browser engine sends requests with nativeRequest (engine/native_request.go)", pkg.path, dep)
 			}
+		}
+	}
+}
+
+// Every standard-library package in the engine's graph must be listed in
+// testdata/engine-std-packages.txt. A new one fails until someone adds it with
+// a reason, after checking its size (make engine-size-report).
+func TestBrowserEngineStandardLibraryIsKnown(t *testing.T) {
+	data, err := os.ReadFile("testdata/engine-std-packages.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line, _, _ = strings.Cut(line, "#")
+		if line = strings.TrimSpace(line); line != "" {
+			known[line] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, pkg := range engineGraph(t, enginebuild.Tags) {
+		if !pkg.standard {
+			continue
+		}
+		seen[pkg.path] = true
+		if !known[pkg.path] {
+			t.Errorf("the browser engine now links standard-library package %s; add it to testdata/engine-std-packages.txt with a reason, or remove the import that brings it", pkg.path)
+		}
+	}
+	for pkg := range known {
+		if !seen[pkg] {
+			t.Logf("%s is listed but no longer linked; remove it from testdata/engine-std-packages.txt", pkg)
 		}
 	}
 }
