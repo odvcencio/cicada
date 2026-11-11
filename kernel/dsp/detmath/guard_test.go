@@ -24,10 +24,11 @@ import (
 // rounded (Sqrt, FMA), conversions to and from bits, and exact operations
 // (Abs, Floor, Ldexp, Mod and the like). This package replaces the others.
 //
-// mathAllowlist names the files that still use other math functions, with the
+// mathAllowlist names files that may still use other math functions, with the
 // exact number of uses: a new use fails, and a removed one asks for the entry
-// to be lowered. Decision 9 of 2026-11-10 (hypha://m31labs/cicada,
-// decisions/2026-11-10-stewardship-and-direction) empties it.
+// to be lowered. It is empty since 2026-11-10 (Decision 9 of
+// hypha://m31labs/cicada, decisions/2026-11-10-stewardship-and-direction) and
+// should stay so.
 //
 // notRenderPath names files that never produce audio: analysis and display
 // code, whose results are read by people and agents but never rendered.
@@ -52,28 +53,7 @@ var mathConstants = map[string]bool{
 	"MaxUint": true, "MaxUint8": true, "MaxUint16": true, "MaxUint32": true, "MaxUint64": true,
 }
 
-var mathAllowlist = map[string]int{
-	"kernel/voice/acid/oscillator.go":       3,
-	"kernel/voice/acid/table_oscillator.go": 1,
-	"kernel/voice/acid/voice.go":            13,
-	"kernel/voice/clav/clav.go":             13,
-	"kernel/voice/drum/kit.go":              38,
-	"kernel/voice/drum/sampler.go":          1,
-	"kernel/voice/ep/ep.go":                 21,
-	"kernel/voice/fm/fm.go":                 10,
-	"kernel/voice/guitar/voice.go":          2,
-	"kernel/voice/keyboard/catalog.go":      1,
-	"kernel/voice/modal/fitted.go":          4,
-	"kernel/voice/modal/voice.go":           11,
-	"kernel/voice/modeledkit/voice.go":      15,
-	"kernel/voice/organ/organ.go":           11,
-	"kernel/voice/piano/piano.go":           26,
-	"kernel/voice/polykeys/polykeys.go":     15,
-	"kernel/voice/sample/instrument.go":     2,
-	"kernel/voice/sample/src.go":            1,
-	"kernel/voice/sample/voice.go":          2,
-	"kernel/voice/strings/strings.go":       8,
-}
+var mathAllowlist = map[string]int{}
 
 var notRenderPath = map[string]string{
 	"kernel/analysis/correlation.go": "analysis for Studio meters and audition reports",

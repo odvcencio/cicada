@@ -298,9 +298,7 @@ and offline `render` and `stems` support it.
 
 **The rule.** A score renders to the same bits on amd64 (any CPU and any
 `GOAMD64` level), arm64 and WebAssembly, from voice to exported file. Two
-things in Go can break it. Fusion is ruled out everywhere on that path; the
-math library is not yet, so part of it matches in the tests without being
-guaranteed.
+things in Go can break it, and both are ruled out everywhere on that path.
 
 - **Fused multiply-add.** Go may compute `x*y + z` with one rounding instead
   of two on arm64 and with `GOAMD64=v3`. What is guaranteed: the compiler
@@ -330,13 +328,13 @@ guaranteed.
   everywhere and are within 1 ULP of the exact result. So do the engine
   (master gain, track gains, parameter smoothing), the automation curves, the
   graph interpreter (oscillators, filters, ladder, comb), vibrato, spatial
-  audio and the export schedule. Still on the math library: the voices in
-  `kernel/voice`; each such file is listed with its exact count in the source
-  guard below.
+  audio, the export schedule and every voice in `kernel/voice`. No file on the
+  path from voice to exported file calls an architecture-dependent `math`
+  function; the source guard below enforces it.
 
-The follow-up removes the rest: no architecture-dependent `math` call
-between voice and exported file, and a digest per processor and voice on all
-three targets.
+Still to come: a digest per voice on all three targets (the processors have
+theirs), and the fusion check for the packages outside `kernel/` and `render/`
+that produce audio a user hears (live monitor mixing in `cmd/cicada`).
 
 **How to check it.**
 
