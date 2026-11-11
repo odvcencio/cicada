@@ -341,8 +341,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	mono = i.lp
 	left, right := mono, mono
 	if i.ensemble > 0 {
-		i.bbd = subnormal.Flush(float32(i.bbd + float32(i.bbdAlpha*float32(mono-i.bbd))))
-		i.delay[i.write] = i.bbd
+		bbd := subnormal.Flush(float32(i.bbd + float32(i.bbdAlpha*float32(mono-i.bbd))))
+		i.bbd, i.delay[i.write] = bbd, bbd
 		var taps [3]float32
 		for c := range taps {
 			i.slow[c] = wrap(float32(i.slow[c] + i.slowRate[c]))

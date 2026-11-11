@@ -45,4 +45,4 @@ func TestReleaseStateIsNeverSubnormal(t *testing.T) {
 
 // pinnedReleaseHash is the float32 output of TestReleaseStateIsNeverSubnormal
 // (2 s held, 30 s released, 48 kHz), produced alike on amd64 and arm64.
-const pinnedReleaseHash = 0
+const pinnedReleaseHash = 0x7f80a02e481d6467

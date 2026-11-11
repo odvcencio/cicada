@@ -60,6 +60,6 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 // (0.5 s of noise, then silence, 60 s, 48 kHz), produced alike on amd64 and
 // arm64.
 const (
-	pinnedReverbTailHash      = 0
-	pinnedReverbShortTailHash = 0
+	pinnedReverbTailHash      = 0xbf36da93f46a780b
+	pinnedReverbShortTailHash = 0x68fa14f35e106a6c
 )

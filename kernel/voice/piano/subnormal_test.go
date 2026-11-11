@@ -44,4 +44,4 @@ func TestDecayingStateIsNeverSubnormal(t *testing.T) {
 
 // pinnedHeldChordHash is the float32 output of TestDecayingStateIsNeverSubnormal
 // (16 s held, 30 s released, 48 kHz), produced alike on amd64 and arm64.
-const pinnedHeldChordHash = 0
+const pinnedHeldChordHash = 0xdec0db2755ca2d92

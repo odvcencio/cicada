@@ -38,11 +38,11 @@
 // re-enters the subnormal range, and the differences can add up; and for the
 // electric piano (G < 2^17, stated where Flush is used, as every processor's
 // G is) the two master gains at +24 dB give G' up to 2^25. Measured
-// instead, on amd64: rendering the 146 example scores that need no sample packs
-// with and without the flush, 24-bit and loudness-targeted WAVs were
-// byte-identical and the largest float32
-// difference was 4.4e-36 (2^-117.5), 39 binary orders of magnitude inside the
-// 2^-78 that the 24-bit argument needs.
+// instead, on amd64: rendering the 146 example scores that need no sample
+// packs with and without the flushes, the 24-bit and the -14 LUFS WAVs were
+// byte-identical, and the largest float32 difference was 1.8e-36 (2^-118.8),
+// about 40 binary orders of magnitude inside the 2^-78 that the 24-bit
+// argument needs.
 //
 // Flush adds a compare and a branch per call, which on arm64 (no subnormal
 // penalty) is pure cost: a flush at every store made the electric piano 21%

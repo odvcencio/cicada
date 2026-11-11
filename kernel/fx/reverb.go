@@ -36,18 +36,22 @@ type allpass struct {
 }
 
 func (a *allpass) process(input float64) float64 {
-	delayed := a.buffer[a.index]
+	// The buffer and index are read once into locals so that the flush's
+	// branch does not make the compiler load them and check the bounds again.
+	buffer, index := a.buffer, a.index
+	delayed := buffer[index]
 	// Round feedback products before addition, matching native amd64 and WASM.
 	output := delayed - float64(.7*input)
 	// The diffusers and delay lines are flushed out of float64 subnormal
 	// numbers (kernel/dsp/subnormal) where they are stored, and the damping
 	// filters by flushSubnormals; a silent tail otherwise reaches them in
 	// seconds and never leaves.
-	a.buffer[a.index] = subnormal.Flush64(input + float64(.7*output))
-	a.index++
-	if a.index == len(a.buffer) {
-		a.index = 0
+	buffer[index] = subnormal.Flush64(input + float64(.7*output))
+	index++
+	if index == len(buffer) {
+		index = 0
 	}
+	a.index = index
 	return output
 }
 
@@ -314,11 +318,13 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		high := l.low - l.high
 		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
 		in := float64(input[line&1] * .25)
-		l.buffer[l.index] = subnormal.Flush64(in + float64(high*r.gain[line]))
-		l.index++
-		if l.index == len(l.buffer) {
-			l.index = 0
+		buffer, index := l.buffer, l.index
+		buffer[index] = subnormal.Flush64(in + float64(high*r.gain[line]))
+		index++
+		if index == len(buffer) {
+			index = 0
 		}
+		l.index = index
 		if line&1 == 0 {
 			wetL += taps[line]
 		} else {

@@ -102,7 +102,7 @@ func (h *Hash) Report() string {
 }
 
 // CheckPin fails the test when h does not match pinned, a hash that amd64 and
-// arm64 produced alike. With CICADA_DECAY_HASHES=1 it logs the hashes instead,
+// arm64 produced alike. With CICADA_DECAY_HASHES=1 it also logs the hashes,
 // which is how a pin is made: run the test on both architectures, compare the
 // logged sums, and pin a sum only when they agree. A pinned value of zero
 // means not pinned; the test then only logs.
@@ -110,9 +110,8 @@ func CheckPin(t testing.TB, name string, h *Hash, pinned uint64) {
 	t.Helper()
 	if os.Getenv("CICADA_DECAY_HASHES") == "1" || pinned == 0 {
 		t.Logf("DECAY-HASH %s %s", name, h.Report())
-		return
 	}
-	if h.Sum() != pinned {
+	if pinned != 0 && h.Sum() != pinned {
 		t.Fatalf("%s output changed: %#016x, pinned %#016x (rerun with CICADA_DECAY_HASHES=1 for the per-second hashes)", name, h.Sum(), pinned)
 	}
 }

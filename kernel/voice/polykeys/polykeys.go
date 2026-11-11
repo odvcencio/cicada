@@ -474,8 +474,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		// subnormal numbers (kernel/dsp/subnormal) at every sample; the other
 		// filters are swept by flushSubnormals. Their gain to the output is
 		// below 4.
-		i.chorusLP[0] = subnormal.Flush(float32(i.chorusLP[0] + float32(i.chorusInput*float32(mono-i.chorusLP[0]))))
-		i.delay[i.write] = i.chorusLP[0]
+		lp := subnormal.Flush(float32(i.chorusLP[0] + float32(i.chorusInput*float32(mono-i.chorusLP[0]))))
+		i.chorusLP[0], i.delay[i.write] = lp, lp
 		var taps [3]float32
 		for c := range taps {
 			i.chorusPhases[c] = wrap(float32(i.chorusPhases[c] + i.chorusRates[c]))
@@ -516,8 +516,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 
 // flushFrames is how often, in samples, flushSubnormals runs. A decaying
 // filter state can stay subnormal for at most this many samples. Flushing
-// the output filters at every sample cost 3% of a held chord and 11% of the
-// release on arm64, which has no subnormal penalty to win back.
+// the output filters at every sample instead cost 11% of the release on
+// arm64, which has no subnormal penalty to win back.
 const flushFrames = 256
 
 // flushSubnormals replaces subnormal values in the output filters with zeros

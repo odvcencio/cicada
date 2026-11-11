@@ -32,7 +32,7 @@ func newHeldChord(t testing.TB, rate int) *Instrument {
 
 // pinnedHeldChordHash is the float32 output of TestHeldChordStateIsNeverSubnormal
 // (16 s held, 30 s released, 48 kHz), produced alike on amd64 and arm64.
-const pinnedHeldChordHash = 0
+const pinnedHeldChordHash = 0x5e0add3af9bcc789
 
 // A held chord and its release must never leave recursive state in subnormal
 // numbers, which most processors handle many times slower than normal ones.
