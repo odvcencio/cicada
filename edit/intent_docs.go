@@ -89,6 +89,30 @@ var intentDocs = map[string]typeDoc{
 			"Track":      "the name of the new track that plays it",
 		},
 	},
+	"AddScene": {
+		Meaning: "adds an empty scene after the last scene",
+		Notes:   "Bind patterns to it with bindscene and play it with appendsongentry. In the song, a track a scene does not bind keeps playing what the scene before it selected. Refusals carry a reason: score_invalid, invalid_name, name_taken.",
+		Examples: []string{
+			"{\"kind\":\"addscene\",\"name\":\"drop\"}",
+		},
+		Fields: map[string]string{
+			"Name": "the new scene's name",
+		},
+	},
+	"AddTrack": {
+		Meaning: "adds a track after the last track",
+		Notes:   "Voice names what the track plays: a built-in voice (acid, drums, piano, a modal or keyboard voice) or an instrument, kit, sampler or preset the score declares or imports. Preset instead declares a patch from the instrument library as a new instrument, named instrument or after the track, as addpreset does. The new track plays nothing until a scene binds a pattern to it (bindscene) or a placement puts one on it. Refusals carry a reason: score_invalid, voice_and_preset, invalid_name, name_taken, track_limit, unknown_preset, voice_invalid (the uses list the problems the voice causes).",
+		Examples: []string{
+			"{\"kind\":\"addtrack\",\"name\":\"pad\",\"voice\":\"piano\"}",
+			"{\"kind\":\"addtrack\",\"name\":\"pad\",\"preset\":\"warm-pad\",\"instrument\":\"warm\"}",
+		},
+		Fields: map[string]string{
+			"Instrument": "the name of the instrument a preset declares; default the track's name",
+			"Name":       "the new track's name",
+			"Preset":     "a patch from the instrument library, such as warm-pad",
+			"Voice":      "a built-in voice, or a declared or imported instrument, kit, sampler or preset",
+		},
+	},
 	"AppendSongEntry": {
 		Meaning: "adds an entry at the end of the song block",
 		Examples: []string{
@@ -180,6 +204,28 @@ var intentDocs = map[string]typeDoc{
 			"Entity": "the placement, as placement:<name>",
 		},
 	},
+	"DeletePattern": {
+		Meaning: "removes a pattern and the comment lines above it",
+		Notes:   "Refused with reason pattern_in_use while a scene binds it, or a track chain, an arrangement placement, a live stinger or a MIDI launch mapping names it; uses lists them. With cascade, each scene binding of the pattern becomes off (the track stops in that scene; an omitted binding would keep the previous pattern playing) and its placements are removed; chains, stingers and MIDI mappings still refuse. Other reasons: score_invalid, unknown_pattern, pattern_in_other_file, result_invalid (deleting the last pattern leaves none).",
+		Examples: []string{
+			"{\"kind\":\"deletepattern\",\"pattern\":\"fill\"}",
+		},
+		Fields: map[string]string{
+			"Cascade": "set its scene bindings to off and remove its placements",
+			"Pattern": "the pattern's name",
+		},
+	},
+	"DeleteScene": {
+		Meaning: "removes a scene and the comment lines above it",
+		Notes:   "Refused with reason scene_in_use while the song, a live state or a MIDI launch mapping names it; uses lists them. With cascade the scene's song entries are removed with it; live states and MIDI mappings still refuse, and so does a song that would be left empty (reason song_would_be_empty). Other reasons: score_invalid, unknown_scene, scene_in_other_file, result_invalid.",
+		Examples: []string{
+			"{\"kind\":\"deletescene\",\"scene\":\"outro\"}",
+		},
+		Fields: map[string]string{
+			"Cascade": "also remove the song entries that play the scene",
+			"Scene":   "the scene's name",
+		},
+	},
 	"DeleteSongEntry": {
 		Meaning: "removes one entry of the song block",
 		Notes:   "The last entry stays.",
@@ -188,6 +234,16 @@ var intentDocs = map[string]typeDoc{
 		},
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
+		},
+	},
+	"DeleteTrack": {
+		Meaning: "removes a track: its declaration, the comment lines above it, and its bindings in scenes",
+		Notes:   "Its patterns stay. Refused with reason track_in_use while anything else names the track: automation, a scene setting, a modulation route, an envelope source, a MIDI mapping, a live macro, stinger or layer, an arrangement placement or a compressor sidechain. The refusal lists them in uses. Other reasons: score_invalid, unknown_track, track_in_other_file, result_invalid (deleting the last track leaves no track).",
+		Examples: []string{
+			"{\"kind\":\"deletetrack\",\"track\":\"keys\"}",
+		},
+		Fields: map[string]string{
+			"Track": "the track's name",
 		},
 	},
 	"DuplicateClip": {
@@ -209,6 +265,17 @@ var intentDocs = map[string]typeDoc{
 			"Entity": "the pattern to copy, as pattern:<name>",
 			"Name":   "the new pattern's name: lowercase letters, digits, _ and -, at most 64 bytes",
 			"Track":  "the track the copy is for",
+		},
+	},
+	"DuplicateScene": {
+		Meaning: "copies a scene, with its bindings, settings and the comments inside it, under a new name right after the original",
+		Notes:   "Refusals carry a reason: score_invalid, unknown_scene, scene_in_other_file, invalid_name, name_taken.",
+		Examples: []string{
+			"{\"kind\":\"duplicatescene\",\"scene\":\"main\",\"name\":\"main-2\"}",
+		},
+		Fields: map[string]string{
+			"Name":  "the copy's name",
+			"Scene": "the scene to copy",
 		},
 	},
 	"DuplicateSongEntry": {
@@ -469,6 +536,19 @@ var intentDocs = map[string]typeDoc{
 		},
 		Fields: map[string]string{
 			"Entity": "the setting, as setting:<scene>/<owner>.<field>",
+		},
+	},
+	"Rename": {
+		Meaning: "renames a track, a pattern or a scene and every reference to it: scene bindings and settings, the song, automation, modulation routes and envelope sources, MIDI mappings, live states, stingers, layers and macros, track chains, arrangement placements and compressor sidechains",
+		Notes:   "Comments and all other text stay as they are. Refusals carry a reason: score_invalid, unknown_entity (not a track, pattern or scene), unknown_track, unknown_pattern, unknown_scene, track_in_other_file, pattern_in_other_file, scene_in_other_file, name_unchanged, invalid_name, name_taken, rename_incomplete (a reference in another file would be left dangling; the uses list it).",
+		Examples: []string{
+			"{\"kind\":\"rename\",\"entity\":\"track:bass\",\"name\":\"sub\"}",
+			"{\"kind\":\"rename\",\"entity\":\"pattern:riff\",\"name\":\"riff-a\"}",
+			"{\"kind\":\"rename\",\"entity\":\"scene:main\",\"name\":\"verse\"}",
+		},
+		Fields: map[string]string{
+			"Entity": "track:<name>, pattern:<name> or scene:<name>",
+			"Name":   "the new name",
 		},
 	},
 	"ReplaceDeclaration": {
@@ -846,6 +926,19 @@ var intentDocs = map[string]typeDoc{
 			"Shared":   "as for togglestep",
 			"Slide":    "slide from a note into the next one",
 			"Velocity": "drum hit spelling for mode hit: x, accented X, or a level 1–9",
+		},
+	},
+	"SetTrackVoice": {
+		Meaning: "changes what a track plays to another voice: a built-in voice, or an instrument, kit, sampler or preset the score declares or imports",
+		Notes:   "The track keeps its name, mixer settings and scene bindings. A setting of the old voice that the new one does not have is refused with reason voice_params_unsupported, listing the settings in uses; with dropparams those settings are removed and the label names them. A pattern of a kind the new voice cannot play, or another reference the new voice cannot take, is refused with reason voice_change_invalid, listing the problems in uses. Other reasons: score_invalid, unknown_track, track_in_other_file, voice_invalid, voice_unchanged.",
+		Examples: []string{
+			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"glow\"}",
+			"{\"kind\":\"settrackvoice\",\"track\":\"lead\",\"voice\":\"acid\",\"dropparams\":true}",
+		},
+		Fields: map[string]string{
+			"DropParams": "remove the settings the new voice does not have",
+			"Track":      "the track's name",
+			"Voice":      "the new voice",
 		},
 	},
 	"ShapePerformancePitch": {

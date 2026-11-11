@@ -103,6 +103,19 @@ definitions, assignments and library pins remain intact. The copy has no
 explicit slot; Studio supplies its full project receipt and opens the copy with
 the chosen sound and scene context.
 
+Tracks, scenes and patterns have structural intents: `addtrack`,
+`deletetrack`, `settrackvoice`, `addscene`, `duplicatescene`, `deletescene`,
+`deletepattern` and `rename`. A delete is refused while something else still
+names the entity, and the refusal's `uses` lists each place with its line.
+With `cascade`, `deletescene` also removes the scene's song entries, and
+`deletepattern` sets the pattern's scene bindings to `off` and removes its
+placements, in the same edit. `settrackvoice` refuses a track setting the new
+voice does not have unless `dropparams` removes it; the edit's label names
+the settings it dropped. `rename` updates every reference to the track,
+pattern or scene, and is refused rather than written half done when the
+result would not validate. `cicada intents` lists each one's fields and
+refusal reasons.
+
 The envelope can include `revision`, `author`, `session`, and `dryrun`. A supplied
 revision must match the exact score bytes; omit it to use the current revision.
 `dryrun: true` prevents writes even with `--write`. `--author` and `--session`
