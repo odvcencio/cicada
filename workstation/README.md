@@ -52,8 +52,8 @@ rather than assuming that examples on `main` are supported by the pinned version
   The shared UI module has a working size limit (see "UI engine size"). Keep
   host compiler and storage dependencies out of it: sampler controls use
   `host/padsampler/protocol`, and position controls use `musictime` for exact
-  tick conversion. Send requests with `nativeRequest` (`engine/fetch_js.go`),
-  not `net/http`.
+  tick conversion. Send requests with `nativeRequest`
+  (`engine/native_request.go`), not `net/http`.
 - Use GoSX's programmatic `server.Page` API for this private, single-score
   workspace. Navigation changes the selected panel without a client router.
   The framework handles history, managed forms, runtime loading, and disposal.
@@ -217,7 +217,9 @@ it; `make engine-size-report` shows the cost.
 ## UI engine size
 
 Every Studio surface shares one Go WebAssembly module, built by `go generate`
-from `engine/`. The generator fails when the file is larger than the working
+from `engine/` with the build tags in `internal/enginebuild` (`Tags`; GoSX's
+`gosx_runtime_core` leaves out its canvas-board adapter and the image decoders
+it imports). The generator fails when the file is larger than the working
 limit in `internal/enginebuild` (`MaxBytes`). To see what fills it:
 
 ```sh

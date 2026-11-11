@@ -367,7 +367,7 @@ type listedPackage struct {
 }
 
 func listPackages(overlayArgs []string) ([]listedPackage, error) {
-	args := append([]string{"list", "-deps", "-export", "-f", "{{.ImportPath}}\t{{.Export}}\t{{with .Module}}{{.Path}}{{end}}"}, overlayArgs...)
+	args := append([]string{"list", "-tags=" + enginebuild.Tags, "-deps", "-export", "-f", "{{.ImportPath}}\t{{.Export}}\t{{with .Module}}{{.Path}}{{end}}"}, overlayArgs...)
 	command := exec.Command("go", append(args, enginebuild.Package)...)
 	command.Env = enginebuild.Env()
 	out, err := command.Output()

@@ -13,7 +13,7 @@ func TestWorkingLimitStaysUnderTheCeiling(t *testing.T) {
 
 func TestCommandBuildsTheEngineForTheBrowser(t *testing.T) {
 	command := Command("out.wasm", ReleaseLDFlags, "-overlay", "o.json")
-	want := []string{"go", "build", "-trimpath", "-buildvcs=false", "-ldflags=-s -w", "-o", "out.wasm", "-overlay", "o.json", "./engine"}
+	want := []string{"go", "build", "-trimpath", "-buildvcs=false", "-tags=gosx_runtime_core", "-ldflags=-s -w", "-o", "out.wasm", "-overlay", "o.json", "./engine"}
 	if len(command.Args) != len(want) {
 		t.Fatalf("args = %q", command.Args)
 	}
