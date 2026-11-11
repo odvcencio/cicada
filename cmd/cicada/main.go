@@ -28,115 +28,118 @@ func main() {
 	args, err := startCPUProfileFlag(os.Args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cicada:", err)
-		os.Exit(2)
+		exitProcess(2)
 	}
 	os.Args = args
 	defer stopCPUProfile()
+	if len(os.Args) > 1 && os.Args[1] == "render" {
+		armInterruptCleanup()
+	}
 	if handled, exitCode := handleCLIHelp(os.Args[1:], os.Stdout, os.Stderr); handled {
 		if exitCode != 0 {
-			os.Exit(exitCode)
+			exitProcess(exitCode)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "transcribe" {
 		if err := transcribeCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "wam2" {
 		if err := wam2Command(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "director" {
 		if err := directorCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "game-score" {
 		if err := gameScoreCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fit-model" {
 		if err := fitModelCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "record-pack" {
 		if err := recordPackCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "record-kit" {
 		if err := recordKitCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "lib" {
 		if err := libCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "studio" {
 		if err := studioCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "lsp" {
 		if len(os.Args) != 2 {
 			fmt.Fprintln(os.Stderr, "usage: cicada lsp")
-			os.Exit(2)
+			exitProcess(2)
 		}
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "save-as" {
 		if err := saveAsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "bundle" {
 		if err := bundleCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "new" {
 		if err := newCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fix" {
 		if err := fixCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -150,14 +153,14 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "diagnostics" {
 		if err := diagnosticsCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "intents" {
 		if err := intentsCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -171,7 +174,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "play" {
 		if err := playCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -179,7 +182,7 @@ func main() {
 		data, err := project.FieldsJSON()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		fmt.Println(string(data))
 		return
@@ -187,7 +190,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "params" {
 		if len(os.Args) != 2 {
 			fmt.Fprintln(os.Stderr, "usage: cicada params")
-			os.Exit(2)
+			exitProcess(2)
 		}
 		fmt.Println(project.ParamsJSON())
 		return
@@ -195,7 +198,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "view" {
 		if err := viewCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -208,24 +211,24 @@ func main() {
 			}
 			if err := explainParameter(args[0], args[1], location, os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 			return
 		}
 		if len(os.Args) < 3 || len(os.Args) > 4 || (len(os.Args) == 4 && os.Args[3] != "--json") {
 			fmt.Fprintln(os.Stderr, "usage: cicada explain <construct[.field]> [--json] | cicada explain <score.cicada> <path> [@bar[.beat[.step]]]")
-			os.Exit(2)
+			exitProcess(2)
 		}
 		if err := explain(os.Args[2], len(os.Args) == 4); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "gen" {
 		if err := generatorCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -263,28 +266,28 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "verify-midi" {
 		if err := verifyMIDICommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "compare-midi" {
 		if err := compareMIDICommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "import-midi" {
 		if err := importMIDICommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "golden" {
 		if err := goldenCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -327,7 +330,7 @@ func main() {
 	inspection, err := inspectScore(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
 	// Audio assets and sampler packs resolve from the project folder, where
@@ -336,7 +339,7 @@ func main() {
 	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
 		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 	var programs map[string]*instrument.Program
@@ -354,7 +357,7 @@ func main() {
 		}
 	}
 	if hasErrors {
-		os.Exit(1)
+		exitProcess(1)
 	}
 	switch command {
 	case "validate":
@@ -364,13 +367,13 @@ func main() {
 	case "events":
 		if err := emitEvents(score, os.Args[3], os.Args[4]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	case "graph":
 		program := programs[os.Args[3]]
 		if program == nil {
 			fmt.Fprintln(os.Stderr, "unknown instrument", os.Args[3])
-			os.Exit(1)
+			exitProcess(1)
 		}
 		writeJSON(program)
 	case "render":
@@ -393,7 +396,7 @@ func main() {
 		midiOpts.libraryAliases = score.LibraryAliases
 		if err := midiFile(semantic, midiOpts); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 }
@@ -412,7 +415,7 @@ func verifyStemsCommand(args []string) {
 	report, err := render.VerifyStems(nil, args[0], render.VerifyStemsOptions{ResidualMaxDB: *residual})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	fmt.Printf("%s: %d float32 stems, %d frames, pre-comp residual %.2f dBFS\n", args[0], report.Files, report.Frames, report.ResidualPeakDB)
 }
@@ -447,7 +450,7 @@ func usage() {
 		if entry, ok := findCommandHelp(os.Args[1]); ok {
 			fmt.Fprintln(os.Stderr, "usage: "+entry.usage)
 			fmt.Fprintln(os.Stderr, "run cicada help "+entry.name+" for its flags")
-			os.Exit(2)
+			exitProcess(2)
 		}
 	}
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
@@ -460,7 +463,7 @@ func usage() {
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
 		"convert <in> -o <out> | compare --semantic <a> <b> | view <in.cicada|in.json> -o <out.html> | fields | params | explain <construct[.field]> [--json] | explain <score.cicada> <path> [@bar[.beat[.step]]] | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
-	os.Exit(2)
+	exitProcess(2)
 }
 
 func formatCommand(args []string) {
@@ -468,7 +471,7 @@ func formatCommand(args []string) {
 		check := len(args) == 1 && args[0] == "--check"
 		if err := formatProjectCommand(check, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -487,7 +490,7 @@ func formatCommand(args []string) {
 	source, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	var formatted []byte
 	if filepath.Ext(path) == ".json" {
@@ -507,7 +510,7 @@ func formatCommand(args []string) {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	switch mode {
 	case "--check":
@@ -515,19 +518,19 @@ func formatCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "--- "+path)
 			fmt.Fprintln(os.Stderr, "+++ "+path+" (formatted)")
 			fmt.Fprint(os.Stderr, simpleDiff(source, formatted))
-			os.Exit(1)
+			exitProcess(1)
 		}
 	case "-w":
 		if !bytes.Equal(source, formatted) {
 			if err := writeAtomic(path, formatted); err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 		}
 	default:
 		if _, err := os.Stdout.Write(formatted); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 }
@@ -711,24 +714,38 @@ var newNormalizeMasterCache = render.NewMasterCache
 // be created the render runs in full, and when the render fails while the
 // cache exists (the cache took the disk space the output needed, or could not
 // be read back) the cache is removed and the render runs once more without it.
+// Any other failure is returned as it is. CICADA_RENDER_NO_REUSE=1 renders
+// both times in full.
 func renderPlainFile(score *notation.Score, path string, opts render.Options) (render.Report, error) {
-	if !opts.Normalize || opts.MasterCache != nil {
-		return renderPlainFileOnce(score, path, opts)
+	removeStaleRenderFiles(filepath.Dir(path))
+	if !opts.Normalize || opts.MasterCache != nil || !renderReuseAllowed() {
+		return renderPlainFileAttempt(score, path, opts)
 	}
 	cache, err := newNormalizeMasterCache(filepath.Dir(path))
 	if err != nil {
-		return renderPlainFileOnce(score, path, opts)
+		return renderPlainFileAttempt(score, path, opts)
 	}
 	cached := opts
 	cached.MasterCache = cache
-	report, err := renderPlainFileOnce(score, path, cached)
+	report, err := renderPlainFileAttempt(score, path, cached)
 	// Close empties the file before it removes it, so the space comes back
 	// even when the removal fails; there is nothing more to do with its error.
 	cache.Close()
-	if err == nil {
-		return report, nil
+	if err == nil || !masterCacheFault(err) {
+		return report, err
 	}
-	return renderPlainFileOnce(score, path, opts)
+	return renderPlainFileAttempt(score, path, opts)
+}
+
+// renderPlainFileAttempt renders into path once; tests replace it to count
+// the attempts.
+var renderPlainFileAttempt = renderPlainFileOnce
+
+// masterCacheFault reports whether a render failed because of its stored mix:
+// the mix could not be read back, or the disk ran out of the space that the
+// cache file takes.
+func masterCacheFault(err error) bool {
+	return errors.Is(err, render.ErrMasterCacheRead) || isNoSpace(err)
 }
 
 func renderPlainFileOnce(score *notation.Score, path string, opts render.Options) (render.Report, error) {
@@ -737,6 +754,7 @@ func renderPlainFileOnce(score *notation.Score, path string, opts render.Options
 		return render.Report{}, err
 	}
 	defer os.Remove(file.Name())
+	defer removeOnInterrupt(file.Name())()
 	if info, err := os.Stat(path); err == nil {
 		if err := file.Chmod(info.Mode().Perm()); err != nil {
 			file.Close()
@@ -929,11 +947,13 @@ func (e *renderFailure) Error() string { return e.message }
 func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfallPath string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
 	report := loudnessFileReport{TargetLUFS: target.LoudnessTarget}
 	dir := filepath.Dir(path)
+	removeStaleRenderFiles(dir)
 	candidate, err := os.CreateTemp(dir, ".cicada-loudness-candidate-*")
 	if err != nil {
 		return report, err
 	}
 	candidatePath := candidate.Name()
+	defer removeOnInterrupt(candidatePath)()
 	if err := candidate.Close(); err != nil {
 		os.Remove(candidatePath)
 		return report, err
@@ -944,11 +964,16 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		return report, err
 	}
 	bestPath := best.Name()
+	defer removeOnInterrupt(bestPath)()
 	if err := best.Close(); err != nil {
 		os.Remove(bestPath)
 		return report, err
 	}
 	defer os.Remove(bestPath)
+	// CICADA_RENDER_NO_REUSE=1 renders every pass in full: no stored mix and
+	// no repeated passes. The result is the same; it is there to work around,
+	// and to bisect, a difference that the reuse would cause.
+	reuse := renderReuseAllowed()
 
 	var bestRender render.Report
 	var bestMeasure render.VerifyReport
@@ -984,9 +1009,11 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	// and so does a pass that cannot read the cache back. Every later pass then
 	// renders in full, as it does when the cache cannot be created.
 	var masterCache *render.MasterCache
-	if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
-		masterCache = cache
-		defer masterCache.Close()
+	if reuse {
+		if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
+			masterCache = cache
+			defer masterCache.Close()
+		}
 	}
 	dropMasterCache := func() {
 		// Close empties the file before it removes it, so the space comes back
@@ -1032,7 +1059,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		var passReport render.Report
 		var measurement render.VerifyReport
 		how, sameAs := passSynthesized, 0
-		if last.pass > 0 && render.SameAudio(score, last.options, passOptions) {
+		if reuse && last.pass > 0 && render.SameAudio(score, last.options, passOptions) {
 			// The gain moved by less than the renderer's gain factors can show,
 			// so this pass would write the bytes that the last rendered pass
 			// wrote, which the candidate file still holds, and measure the
@@ -1310,7 +1337,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	var badCap *residentPCMArgError
 	if errors.As(err, &badCap) {
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badCap.err)
-		os.Exit(2)
+		exitProcess(2)
 	}
 	if err != nil {
 		usage()
@@ -1451,12 +1478,12 @@ func verifyWAVCommand(args []string) {
 	if *jsonReport {
 		if reportErr := writeVerifyJSON(report); reportErr != nil {
 			fmt.Fprintln(os.Stderr, reportErr)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	fmt.Printf("%s: %d frames, peak %s dBFS, DC %s dBFS; true peak %s dBTP, RMS %s dBFS, integrated %s LUFS, loudness range %.2f LU, maximum momentary %s LUFS, maximum short-term %s LUFS, clipped samples %d, ceiling samples %d\n",
 		path, report.Frames, formatDB(report.PeakDB), formatDB(report.DCDB), formatDB(report.TruePeakDBTP), formatDB(report.RMSDBFS),
@@ -1523,7 +1550,7 @@ func writeJSON(v any) {
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 }
 

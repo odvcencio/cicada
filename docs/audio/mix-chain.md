@@ -101,7 +101,8 @@ differs from an earlier pass's by less than the renderer's gain can show is not
 rendered at all: it reuses that pass's audio and measurement. The result
 matches rendering every pass in full, byte for byte. The render summary counts
 the full syntheses, the cached replays and the repeated passes, and lists each
-pass's gain, loudness and true peak.
+pass's gain, loudness and true peak. `CICADA_RENDER_NO_REUSE=1` turns the reuse
+off, so every pass synthesizes the song (see the [CLI reference](../cli.md)).
 
 The file takes about 23 MB per minute at 48 kHz, counted from the start of the
 song to the end of the exported range plus its tail, so an export of the last

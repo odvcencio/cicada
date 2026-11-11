@@ -3,8 +3,10 @@
 // reference scores, prints a table, writes JSON, and with --enforce fails when
 // a speed gate does not hold.
 //
-// Each step runs the binary as a separate process, as an agent does, and keeps
-// the median of --runs runs. Run it from the repository root:
+// Each step runs the binary as a separate process, as an agent does, once to
+// warm up and then --runs times, and keeps the median. The output names the
+// CPUs the runs could use; pin them with taskset on Linux. Run it from the
+// repository root:
 //
 //	go build -o build/cicada ./cmd/cicada
 //	go run ./cmd/cicada-bench --cicada build/cicada --json build/bench.json
@@ -18,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,22 +78,34 @@ type Result struct {
 	ExitCode  int `json:"exit_code"`
 }
 
+// LoudnessRatio is a loudness render's time over a plain render's.
+type LoudnessRatio struct {
+	Step  string  `json:"step"`
+	Ratio float64 `json:"ratio"`
+}
+
 // Report is the JSON document --json writes. It follows the conventions of
 // the cicada --json documents (docs/manual/agents.md): a schema field,
 // snake_case keys, and paths relative to the working folder when inside it.
 type Report struct {
-	Schema     string        `json:"schema"`
-	Cicada     string        `json:"cicada"`
-	GOOS       string        `json:"goos"`
-	GOARCH     string        `json:"goarch"`
-	CPUs       int           `json:"cpus"`
-	LoadBefore string        `json:"load_before,omitempty"`
-	LoadAfter  string        `json:"load_after,omitempty"`
-	Runs       int           `json:"runs"`
-	Results    []Result      `json:"results"`
-	Gates      []GateOutcome `json:"gates"`
-	Enforced   bool          `json:"enforced"`
-	Passed     bool          `json:"passed"`
+	Schema string `json:"schema"`
+	Cicada string `json:"cicada"`
+	GOOS   string `json:"goos"`
+	GOARCH string `json:"goarch"`
+	CPUs   int    `json:"cpus"`
+	// CPUList is the processors the runs may use, as the host reports it
+	// (Linux: the affinity list, such as 4-7 under taskset), or "all".
+	CPUList    string   `json:"cpu_list"`
+	LoadBefore string   `json:"load_before,omitempty"`
+	LoadAfter  string   `json:"load_after,omitempty"`
+	Runs       int      `json:"runs"`
+	Results    []Result `json:"results"`
+	// LoudnessRatios are each loudness render's median over the plain render
+	// of the same score and bars: reported, not gated.
+	LoudnessRatios []LoudnessRatio `json:"loudness_ratios,omitempty"`
+	Gates          []GateOutcome   `json:"gates"`
+	Enforced       bool            `json:"enforced"`
+	Passed         bool            `json:"passed"`
 }
 
 func main() {
@@ -189,8 +204,8 @@ func run(o options, out io.Writer) (Report, error) {
 		return Report{}, err
 	}
 	defer os.RemoveAll(work)
-	report := Report{Schema: "cicada.bench.v1", Cicada: displayPath(binary), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, CPUs: runtime.NumCPU(), LoadBefore: loadAverage(), Runs: o.runs, Enforced: o.enforce}
-	fmt.Fprintf(out, "cicada-bench: %s on %s/%s, %d CPUs, load %s, %d runs per step\n", binary, runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), report.LoadBefore, o.runs)
+	report := Report{Schema: "cicada.bench.v1", Cicada: displayPath(binary), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, CPUs: runtime.NumCPU(), CPUList: cpuList(), LoadBefore: loadAverage(), Runs: o.runs, Enforced: o.enforce}
+	fmt.Fprintf(out, "cicada-bench: %s on %s/%s, %d CPUs (%s), load %s, %d runs per step after 1 warm-up run\n", binary, runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), report.CPUList, report.LoadBefore, o.runs)
 	for _, step := range o.steps {
 		result, err := measure(o, binary, work, step)
 		if err != nil {
@@ -200,6 +215,14 @@ func run(o options, out io.Writer) (Report, error) {
 		report.Results = append(report.Results, result)
 	}
 	report.LoadAfter = loadAverage()
+	for _, result := range report.Results {
+		if strings.HasPrefix(result.Step, "loudness:") {
+			if ratio := loudnessRatio(result, report.Results); !math.IsNaN(ratio) {
+				report.LoudnessRatios = append(report.LoudnessRatios, LoudnessRatio{Step: result.Step, Ratio: ratio})
+				fmt.Fprintf(out, "%s takes %.2f times the plain render (reported, not a gate)\n", result.Step, ratio)
+			}
+		}
+	}
 	report.Gates, report.Passed = checkGates(report.Results)
 	fmt.Fprintln(out, "gates:")
 	for _, gate := range report.Gates {
@@ -255,7 +278,8 @@ func measure(o options, binary, work, step string) (Result, error) {
 		args = append(args, "--bars", strconv.Itoa(result.Bars))
 	}
 	result.Args = args
-	for range o.runs {
+	// The first run warms the file cache and is not counted.
+	for run := range o.runs + 1 {
 		started := time.Now()
 		command := exec.Command(binary, args...)
 		command.Dir = dir
@@ -274,6 +298,9 @@ func measure(o options, binary, work, step string) (Result, error) {
 		// and exits 1; that is a result, not a failure of the benchmark.
 		if result.ExitCode != 0 && !(kind == "loudness" && strings.Contains(stdout.String(), "passes")) {
 			return result, fmt.Errorf("%s exited %d: %s", strings.Join(args, " "), result.ExitCode, lastLine(stderr.String()))
+		}
+		if run == 0 {
+			continue
 		}
 		result.RunsMS = append(result.RunsMS, float64(elapsed.Microseconds())/1000)
 		if command.ProcessState != nil {
@@ -431,6 +458,20 @@ func formatMS(ms float64) string {
 func lastLine(text string) string {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	return lines[len(lines)-1]
+}
+
+// cpuList names the processors this process, and so every run it starts, may
+// use: the Linux affinity list (pin with taskset to choose them), or "all"
+// where the host does not restrict them.
+func cpuList() string {
+	if data, err := os.ReadFile("/proc/self/status"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if list, ok := strings.CutPrefix(line, "Cpus_allowed_list:"); ok {
+				return "CPUs " + strings.TrimSpace(list)
+			}
+		}
+	}
+	return "all"
 }
 
 // loadAverage returns the 1, 5 and 15 minute load averages, or "" where the

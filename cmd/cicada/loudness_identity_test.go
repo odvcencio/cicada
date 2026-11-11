@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -18,10 +17,11 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-// The stored mix (render.MasterCache) only saves time: a render that replays
-// it, a loudness search whose later passes replay it, and a peak-normalized
-// render whose second render replays it must write the same bytes, and report
-// the same numbers, as renders that synthesize the song every time.
+// Reuse only saves time: a render that replays the stored mix
+// (render.MasterCache), a loudness search whose later passes replay it or
+// repeat an earlier pass, and a peak-normalized render whose second render
+// replays it must write the same bytes, and report the same numbers, as renders
+// that synthesize the song every time (CICADA_RENDER_NO_REUSE=1).
 //
 // TestRenderCacheIdentity checks one short score for each master path on every
 // test run. With CICADA_RENDER_IDENTITY_SWEEP=1 it checks every example score
@@ -226,16 +226,17 @@ func checkNormalizeIdentity(t *testing.T, score *notation.Score, opts render.Opt
 	}
 }
 
-// checkLoudnessSearchIdentity runs the loudness search with every pass in full
-// (the cache cannot be created) and with the cache, and compares the files and
-// the reports. Only the counts of syntheses and replays may differ.
+// checkLoudnessSearchIdentity runs the loudness search with every pass
+// synthesized in full (CICADA_RENDER_NO_REUSE=1: no stored mix and no repeated
+// passes) and as it runs by default, and compares the files and the reports.
+// Only how each pass got its audio may differ.
 func checkLoudnessSearchIdentity(t *testing.T, score *notation.Score, opts render.Options, target renderTargetOptions) {
 	t.Helper()
-	defer func(create func(string) (*render.MasterCache, error)) { newLoudnessMasterCache = create }(newLoudnessMasterCache)
-	search := func(cached bool) (loudnessFileReport, []byte, error) {
-		newLoudnessMasterCache = render.NewMasterCache
-		if !cached {
-			newLoudnessMasterCache = func(string) (*render.MasterCache, error) { return nil, errors.New("cache disabled by the test") }
+	search := func(reuse bool) (loudnessFileReport, []byte, error) {
+		if reuse {
+			t.Setenv(renderNoReuseEnv, "")
+		} else {
+			t.Setenv(renderNoReuseEnv, "1")
 		}
 		path := filepath.Join(t.TempDir(), "search.wav")
 		result, err := renderLoudnessFileReport(score, path, opts, target, nil)
@@ -247,6 +248,7 @@ func checkLoudnessSearchIdentity(t *testing.T, score *notation.Score, opts rende
 	}
 	full, fullWAV, fullErr := search(false)
 	cached, cachedWAV, cachedErr := search(true)
+	t.Setenv(renderNoReuseEnv, "")
 	sum := sha256.Sum256(cachedWAV)
 	t.Logf("METRIC RENDER-CACHE-SEARCH target=%g passes=%d syntheses=%d->%d replays=%d repeats=%d lufs=%.3f gain=%+.3f sha256=%x err=%v", target.LoudnessTarget, cached.Passes, full.Syntheses, cached.Syntheses, cached.Replays, cached.Repeats, cached.AchievedLUFS, cached.AppliedGainDB, sum, cachedErr)
 	if fmt.Sprint(fullErr) != fmt.Sprint(cachedErr) || !sameSearchResult(full, cached) {
@@ -255,8 +257,8 @@ func checkLoudnessSearchIdentity(t *testing.T, score *notation.Score, opts rende
 	if !bytes.Equal(fullWAV, cachedWAV) {
 		t.Fatalf("target %g LUFS: search with the cache wrote different audio", target.LoudnessTarget)
 	}
-	if full.Syntheses+full.Repeats != full.Passes || full.Replays != 0 {
-		t.Fatalf("target %g LUFS: search without a cache reports %d syntheses, %d replays and %d repeats in %d passes", target.LoudnessTarget, full.Syntheses, full.Replays, full.Repeats, full.Passes)
+	if full.Syntheses != full.Passes || full.Replays != 0 || full.Repeats != 0 {
+		t.Fatalf("target %g LUFS: search without reuse reports %d syntheses, %d replays and %d repeats in %d passes", target.LoudnessTarget, full.Syntheses, full.Replays, full.Repeats, full.Passes)
 	}
 	if cached.Syntheses != 1 || cached.Replays+cached.Repeats != cached.Passes-1 {
 		t.Fatalf("target %g LUFS: search with the cache synthesized %d times, replayed %d times and repeated %d passes of %d, want 1 synthesis", target.LoudnessTarget, cached.Syntheses, cached.Replays, cached.Repeats, cached.Passes)
@@ -264,16 +266,14 @@ func checkLoudnessSearchIdentity(t *testing.T, score *notation.Score, opts rende
 }
 
 // sameSearchResult reports whether two loudness searches found the same result:
-// every field except whether a rendered pass synthesized the song or replayed
-// the stored mix.
+// every field except how each pass got its audio (synthesized, replayed from
+// the stored mix, or repeated from an earlier pass) and the counts of each.
 func sameSearchResult(a, b loudnessFileReport) bool {
 	for _, r := range []*loudnessFileReport{&a, &b} {
-		r.Syntheses, r.Replays = 0, 0
+		r.Syntheses, r.Replays, r.Repeats = 0, 0, 0
 		r.PassLog = slices.Clone(r.PassLog)
 		for i := range r.PassLog {
-			if r.PassLog[i].Render == passReplayed {
-				r.PassLog[i].Render = passSynthesized
-			}
+			r.PassLog[i].Render, r.PassLog[i].SameAs = passSynthesized, 0
 		}
 	}
 	return reflect.DeepEqual(a, b)

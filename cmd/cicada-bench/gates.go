@@ -7,11 +7,10 @@ import (
 )
 
 // Gate is one speed limit on one step. A time or memory gate has Max, a
-// real-time or ratio gate has Min or Max, and a count gate has Exact, which
-// takes no margin.
+// real-time gate has Min, and a count gate has Exact, which takes no margin.
 type Gate struct {
 	Step   string
-	Metric string // median_ms, realtime, syntheses, peak_rss_mb or loudness_ratio
+	Metric string // median_ms, realtime, syntheses or peak_rss_mb
 	Max    float64
 	Min    float64
 	Exact  *int
@@ -29,9 +28,12 @@ func exactly(n int) *int { return &n }
 // 3.69x, their audition at 422 and 447 MiB. The plan's first proposals
 // (plan.cicada.speed, "Gates") were 20 ms, 100 ms, 300 ms, 3 s, 20x, 1.5x and
 // 2 GB; the runner renders the medium song below the proposed 20x, so that
-// gate starts at 7.6x. The count gate (one full synthesis) and the loudness
-// ratio (the F1 exit criterion: a loudness render in at most 1.5 times a
-// plain render; 1.30 and 1.31 measured) take no margin.
+// gate starts at 7.6x. The count gate (one full synthesis) takes no margin and
+// is the hard gate for the loudness render. The loudness render's time over a
+// plain render's (the plan's F1 exit criterion, at most 1.5) is reported, not
+// gated: three runner samples gave 1.30, 1.31 and 1.35, too close to 1.5 for a
+// gate that must not fail by chance, and twice the measured value would be no
+// check at all.
 var gates = []Gate{
 	{Step: "help", Metric: "median_ms", Max: 11},
 	{Step: "check:large", Metric: "median_ms", Max: 102},
@@ -40,7 +42,6 @@ var gates = []Gate{
 	{Step: "render:medium", Metric: "realtime", Min: 7.6},
 	{Step: "render:large", Metric: "realtime", Min: 1.83},
 	{Step: "loudness:medium", Metric: "syntheses", Exact: exactly(1)},
-	{Step: "loudness:medium", Metric: "loudness_ratio", Max: 1.5},
 	{Step: "audition:large", Metric: "peak_rss_mb", Max: 894},
 }
 
@@ -71,9 +72,6 @@ func checkGates(results []Result) ([]GateOutcome, bool) {
 				continue
 			}
 			value := metric(result, gate.Metric)
-			if gate.Metric == "loudness_ratio" {
-				value = loudnessRatio(result, results)
-			}
 			outcome := GateOutcome{Step: gate.Step, Metric: gate.Metric, Value: value}
 			switch {
 			case gate.Exact != nil:
@@ -111,7 +109,8 @@ func metric(r Result, name string) float64 {
 }
 
 // loudnessRatio is a loudness render's median wall time over the median of
-// the plain render of the same size, or NaN when that render did not run.
+// the plain render of the same size, or NaN when that render did not run. It
+// is reported, not gated.
 func loudnessRatio(loudness Result, results []Result) float64 {
 	_, size, _ := strings.Cut(loudness.Step, ":")
 	for _, plain := range results {

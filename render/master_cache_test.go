@@ -96,7 +96,22 @@ func renderCacheBytes(t *testing.T, score *notation.Score, opts Options) ([]byte
 	return out.Bytes(), report
 }
 
+// newTestMasterCache is a cache whose file keeps its name, so tests can find,
+// inspect and damage it by name. NewMasterCache removes the name on Unix; the
+// tests that use it say so.
 func newTestMasterCache(t *testing.T) *MasterCache {
+	t.Helper()
+	file, err := os.CreateTemp(t.TempDir(), MasterCacheFilePattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := NewMasterCacheFile(file)
+	t.Cleanup(func() { cache.Close() })
+	return cache
+}
+
+// newProductionMasterCache is a cache as NewMasterCache makes it.
+func newProductionMasterCache(t *testing.T) *MasterCache {
 	t.Helper()
 	cache, err := NewMasterCache(t.TempDir())
 	if err != nil {
@@ -135,7 +150,7 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 		{"scheduled, odd blocks", scheduledCacheScore(t, "master { level = -2dB }"), Options{SampleRate: 44100, Bars: 1, Block: 1000, TailSec: .1}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			cache := newTestMasterCache(t)
+			cache := newProductionMasterCache(t)
 			replays := 0
 			for i, change := range []func(*Options){
 				func(o *Options) {},
@@ -502,8 +517,17 @@ func TestMasterCacheCloseRemovesTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-		t.Fatalf("a new cache should leave one file, found %d", len(entries))
+	// On Unix the file has no name from the start, so an interrupted render
+	// leaves nothing behind; elsewhere it keeps its name until Close.
+	named := 1
+	if unlinksOpenFiles {
+		named = 0
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != named {
+		t.Fatalf("a new cache should leave %d named files, found %d", named, len(entries))
+	}
+	if info, err := cache.file.(*os.File).Stat(); err != nil || info.Size() != 0 {
+		t.Fatalf("the cache file is not open and empty: %v %v", info, err)
 	}
 	score := cacheScoreVariant(t)
 	renderCacheBytes(t, score, Options{SampleRate: 48000, Bars: 1, TailSec: .05, MasterCache: cache})

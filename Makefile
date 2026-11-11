@@ -98,10 +98,6 @@ build-core:
 	mkdir -p build
 	GOFLAGS=-buildvcs=false go build -o build/cicada ./cmd/cicada
 
-# The agent task suite (internal/agentsuite) drives build/cicada through one
-# scripted task that reads only JSON: help, intents, symbols, check, apply,
-# render to a loudness target and audition. It must finish within 2 minutes.
-# It also runs the examples of docs/manual/agents.md against the binary.
 # Times an agent's loop with build/cicada on the reference scores and checks
 # the speed gates in cmd/cicada-bench/gates.go; BENCH_ARGS=--enforce fails on
 # a gate. The large song's render and audition cover its first 16 bars.
@@ -115,6 +111,10 @@ bench-agent-loop: build-core
 test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
 
+# The agent task suite (internal/agentsuite) drives build/cicada through one
+# scripted task that reads only JSON: help, intents, symbols, check, apply,
+# render to a loudness target and audition. It must finish within 2 minutes.
+# It also runs the examples of docs/manual/agents.md against the binary.
 .PHONY: test-agent-surface
 test-agent-surface: build-core
 	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentDocumentationExamples)$$' -count=1 -v

@@ -344,10 +344,19 @@ func TestExportLoudnessRunsInFullWhenTheMasterCacheCannotBeCreated(t *testing.T)
 
 var errTestNoSpace = errors.New("no space left on device")
 
+// namedMasterCache is a master cache whose file keeps its name in dir.
+func namedMasterCache(dir string) (*render.MasterCache, error) {
+	file, err := os.CreateTemp(dir, render.MasterCacheFilePattern)
+	if err != nil {
+		return nil, err
+	}
+	return render.NewMasterCacheFile(file), nil
+}
+
 // cacheFilesIn lists the master cache files in dir.
 func cacheFilesIn(t *testing.T, dir string) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(dir, ".cicada-master-cache-*"))
+	files, err := filepath.Glob(filepath.Join(dir, render.MasterCacheFilePattern))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,6 +412,9 @@ func installDiskFaults(t *testing.T, dir, step string, from int, always bool) *d
 		loudnessRenderPass, newLoudnessMasterCache, openLoudnessPassFile, copyLoudnessFile = pass, create, open, copyFile
 	})
 	d := &diskFaults{t: t, dir: dir, step: step, from: from, always: always, calls: map[string]int{}}
+	// The faults are keyed to the cache file being on the disk, so the cache
+	// keeps its name here; NewMasterCache removes the name at once on Unix.
+	newLoudnessMasterCache = namedMasterCache
 	loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
 		d.cached = append(d.cached, opts.MasterCache != nil)
 		if d.failures > 0 && opts.MasterCache == nil && len(cacheFilesIn(t, dir)) > 0 {

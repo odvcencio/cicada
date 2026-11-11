@@ -584,7 +584,9 @@ has one entry per pass, in order: the `gain_db` it applied, its measured
 `integrated_lufs` and `true_peak_dbtp`, and `render`, which is `synthesized`,
 `replayed` or `repeated` (with `same_as`, the number of the pass it repeats).
 The audio and every other number are the same as when each pass synthesizes
-the song.
+the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
+does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
+to check whether reuse caused a difference you see.
 
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 

@@ -71,6 +71,23 @@ twice in the same way: its second render replays the first one's mix. When the
 temporary file cannot be written, for example on a full disk, every render runs
 in full.
 
+Set `CICADA_RENDER_NO_REUSE=1` to turn all reuse off: every loudness pass and
+both normalization renders synthesize the song in full, and the counts show
+only syntheses. The output must be the same byte for byte; the variable is
+there to work around a difference you find, and to show whether reuse caused
+it.
+
+```sh
+CICADA_RENDER_NO_REUSE=1 cicada render song.cicada -o song.wav --loudness -14
+```
+
+On Linux and macOS the stored mix has no name in the folder, so its space
+returns however the render ends. On Windows it keeps its name until the render
+ends. If a render is interrupted (Ctrl-C), it removes its temporary files
+before it exits; files that a killed render leaves behind (names that start
+with `.cicada-render-`, `.cicada-loudness-` or `.cicada-master-cache-`) are
+removed by the next render in that folder once they are a day old.
+
 ## Libraries
 
 Run library commands from the project folder, except `new`, which needs no

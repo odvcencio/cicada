@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -31,7 +32,8 @@ import (
 // nonlinear stages after it (the master chain and the safety limiter) run again
 // on each replay and see exactly the input a full render gives them.
 //
-// The signal lives in a temporary file of 8 bytes per frame, from the start of
+// The signal lives in a temporary file of 8 bytes per frame (see NewMasterCache
+// for when the file has a name), from the start of
 // the song to the end of the rendered range, its tail and the latency of the
 // track inserts, the master chain and (on the scheduled engine) the safety
 // limiter, even when the render starts at a later bar: 384 KB per second of
@@ -90,13 +92,44 @@ type masterCacheKey struct {
 	baseline   bool
 }
 
-// NewMasterCache creates the cache's temporary file in dir.
+// ErrMasterCacheRead marks a render that failed because the stored signal could
+// not be read back. That render has already written part of its output; the
+// cache has turned itself off, so the same render runs in full when repeated.
+var ErrMasterCacheRead = errors.New("master cache cannot be read back")
+
+type masterCacheReadError struct {
+	what string
+	err  error
+}
+
+func (e *masterCacheReadError) Error() string        { return e.what + ": " + e.err.Error() }
+func (e *masterCacheReadError) Unwrap() error        { return e.err }
+func (e *masterCacheReadError) Is(target error) bool { return target == ErrMasterCacheRead }
+
+// MasterCacheFilePattern is the name pattern of the cache's temporary file, as
+// os.CreateTemp takes it.
+const MasterCacheFilePattern = ".cicada-master-cache-*"
+
+// NewMasterCache creates the cache's temporary file in dir. On Unix the file's
+// name is removed at once and the file lives on as the open descriptor alone,
+// so its space returns to the disk however the process ends, an interrupt or a
+// crash included. Windows cannot remove the name of a file that is open, so
+// there the file keeps its name until Close; a caller that can be interrupted
+// removes stale files that match MasterCacheFilePattern itself.
 func NewMasterCache(dir string) (*MasterCache, error) {
-	file, err := os.CreateTemp(dir, ".cicada-master-cache-*")
+	file, err := os.CreateTemp(dir, MasterCacheFilePattern)
 	if err != nil {
 		return nil, err
 	}
-	return &MasterCache{file: file}, nil
+	unlinkOpenFile(file)
+	return NewMasterCacheFile(file), nil
+}
+
+// NewMasterCacheFile makes a cache that stores its signal in file, which must
+// be empty and open for reading and writing. Close empties the file, closes it
+// and removes it by name; a name that no longer exists is not an error.
+func NewMasterCacheFile(file *os.File) *MasterCache {
+	return &MasterCache{file: file}
 }
 
 // Close empties the temporary file and removes it, so a file that cannot be
@@ -135,7 +168,7 @@ func (c *MasterCache) begin(key masterCacheKey, frames int64) (use, replay bool,
 	c.position = 0
 	if c.ready && c.key == key && c.frames == frames {
 		if _, err := c.file.Seek(0, io.SeekStart); err != nil {
-			return false, false, fmt.Errorf("rewind master cache: %w", err)
+			return false, false, &masterCacheReadError{"rewind master cache", err}
 		}
 		c.replays++
 		return true, true, nil
@@ -160,7 +193,7 @@ func (c *MasterCache) beginBlock(frames int, replay bool) error {
 		return nil
 	}
 	if c.position+int64(frames) > c.frames {
-		return fmt.Errorf("master cache holds %d frames, render asked for more", c.frames)
+		return &masterCacheReadError{"read master cache", fmt.Errorf("it holds %d frames, the render asked for more", c.frames)}
 	}
 	if cap(c.scratch) < frames*8 {
 		c.scratch = make([]byte, frames*8)
@@ -168,7 +201,7 @@ func (c *MasterCache) beginBlock(frames int, replay bool) error {
 	data := c.scratch[:frames*8]
 	if _, err := io.ReadFull(c.file, data); err != nil {
 		c.fail()
-		return fmt.Errorf("read master cache: %w", err)
+		return &masterCacheReadError{"read master cache", err}
 	}
 	if cap(c.block) < frames*2 {
 		c.block = make([]float32, 0, frames*2)

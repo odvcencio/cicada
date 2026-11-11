@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,10 +40,10 @@ func TestGates(t *testing.T) {
 	results := []Result{
 		{Step: "help", MedianMS: 5},
 		{Step: "render:medium", MedianMS: 6000, Realtime: 15},
-		{Step: "loudness:medium", MedianMS: 7800, Syntheses: 2},
+		{Step: "loudness:medium", MedianMS: 9100, Syntheses: 2},
 	}
 	outcomes, passed := checkGates(results)
-	if passed || len(outcomes) != 4 {
+	if passed || len(outcomes) != 3 {
 		t.Fatalf("outcomes %+v passed %v", outcomes, passed)
 	}
 	for _, outcome := range outcomes {
@@ -52,16 +53,13 @@ func TestGates(t *testing.T) {
 	}
 	results[2].Syntheses = 1
 	if _, passed := checkGates(results); !passed {
-		t.Fatal("one synthesis should pass the exact gate")
+		t.Fatal("one synthesis should pass the exact gate; the time ratio is not a gate")
 	}
-	// A loudness render that takes more than 1.5 plain renders fails.
-	results[2].MedianMS = 9100
-	if _, passed := checkGates(results); passed {
-		t.Fatal("a loudness render at 1.52 plain renders should fail")
+	if ratio := loudnessRatio(results[2], results); ratio < 1.51 || ratio > 1.52 {
+		t.Fatalf("loudness ratio %g, want 9100/6000", ratio)
 	}
-	// Without the plain render the ratio is unknown, which fails.
-	if outcomes, _ := checkGates(results[2:]); len(outcomes) != 2 || outcomes[1].Passed {
-		t.Fatalf("ratio without a plain render: %+v", outcomes)
+	if ratio := loudnessRatio(results[2], results[2:]); !math.IsNaN(ratio) {
+		t.Fatalf("ratio without a plain render: %g", ratio)
 	}
 }
 
