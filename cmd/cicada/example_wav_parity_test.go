@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -319,6 +320,94 @@ func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
 		}
 		if summary := notes[len(notes)-1]; summary != "1 of 6 renders identical to the reference, 1 known differences" {
 			t.Errorf("all=%v: summary %q", all, summary)
+		}
+	}
+}
+
+// wavPins pins the WAV bytes of renders ("score mode", modes as in
+// wavParityModes) that a deterministic-math change moved on purpose, so the
+// next change to them is visible. Each value was rendered on amd64 and equals
+// the arm64 render (full sweep); the engine's samples also match WebAssembly
+// (PCM24 parity). Renders of the full-length songs are checked only with
+// CICADA_WAV_PARITY_ALL=1 (the nightly sweep): they take about a minute each.
+// After an intended change, print the new values with
+//
+//	CICADA_WAV_PINS_PRINT=1 go test ./cmd/cicada -run '^TestExampleWAVPins$' -count=1 -v
+//
+// and update them only with the reason in the pull request.
+var wavPins = map[string]string{
+	// Changed by #327 (track effects and the mix on detmath, the reverb's
+	// modulation on SinPi); the songs use those effects. Checked nightly.
+	"examples/songs/anywhere-you-are.cicada lufs-14":      "39330e1d4f603da02cf865216abb2eb80f06bfc496490eac5d4b7d2211b4ca45",
+	"examples/songs/anywhere-you-are.cicada lufs-9":       "39330e1d4f603da02cf865216abb2eb80f06bfc496490eac5d4b7d2211b4ca45",
+	"examples/songs/anywhere-you-are.cicada normalize":    "f13fb48eb7550731451e389a1aefe84febfc6d26a0d8615c2f81536510af11f0",
+	"examples/songs/anywhere-you-are.cicada plain":        "051334258267379cce101cb218d1d886766a7040e67de124dd1a018a87d33abf",
+	"examples/songs/lanterns-after-rain.cicada lufs-14":   "68123218cd22ed9e74092a7099b728a79909a82be408061b7eb9c96da89a4f07",
+	"examples/songs/lanterns-after-rain.cicada lufs-9":    "a4003b204b58473ae51df34cd91a0617cfa8ae4aba092d56aed084bc7f4d3a56",
+	"examples/songs/lanterns-after-rain.cicada normalize": "6d3fdb76d7c65450a67e6f61fe06bdc48b163c86df6913d9da455a0e27f3cd59",
+	"examples/songs/lanterns-after-rain.cicada plain":     "60804c0ad760d91a37bab057e6b41bd141b76358f2cbb5f9128cb6a91f839963",
+	"examples/songs/neon-causeway.cicada lufs-14":         "549247a83b59edca4368368c126cbc2e236a882f50209cc685e8772d035d6c7e",
+	"examples/songs/tidal-glass.cicada lufs-14":           "a4154b36c1826be587058327a6252f2e8807387c13eb0528f1e8c7e91ca978ff",
+	"examples/songs/tidal-glass.cicada normalize":         "b93d7287cc90965500295f8a76d854049f477495366000b067cc885fa8a2de5f",
+}
+
+func TestExampleWAVPins(t *testing.T) {
+	if len(wavPins) == 0 {
+		t.Log("no pinned renders")
+		return
+	}
+	all := os.Getenv("CICADA_WAV_PARITY_ALL") == "1"
+	byScore := map[string][]string{}
+	for key := range wavPins {
+		score, mode, _ := strings.Cut(key, " ")
+		if strings.HasPrefix(score, "examples/songs/") && !all {
+			continue
+		}
+		byScore[score] = append(byScore[score], mode)
+	}
+	var scores []string
+	for score := range byScore {
+		scores = append(scores, score)
+	}
+	sort.Strings(scores)
+	root := repositoryRoot()
+	var mu sync.Mutex
+	got := map[string]wavHash{}
+	t.Run("render", func(t *testing.T) {
+		for _, score := range scores {
+			for _, mode := range wavParityModes {
+				if !slices.Contains(byScore[score], mode.name) {
+					continue
+				}
+				key := score + " " + mode.name
+				t.Run(strings.ReplaceAll(key, "/", "_"), func(t *testing.T) {
+					t.Parallel()
+					wav := filepath.Join(t.TempDir(), "out.wav")
+					_, status := runMain(t, root, append([]string{"render", score, "-o", wav}, mode.args...)...)
+					result := wavHash{sum: "none", status: status}
+					if data, err := os.ReadFile(wav); err == nil {
+						sum := sha256.Sum256(data)
+						result.sum = hex.EncodeToString(sum[:])
+					}
+					mu.Lock()
+					got[key] = result
+					mu.Unlock()
+				})
+			}
+		}
+	})
+	keys := make([]string, 0, len(got))
+	for key := range got {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if os.Getenv("CICADA_WAV_PINS_PRINT") == "1" {
+			t.Logf("\t%q: %q,", key, got[key].sum)
+			continue
+		}
+		if got[key].sum != wavPins[key] {
+			t.Errorf("%s: WAV sha256 %s (exit %d), pinned %s", key, got[key].sum, got[key].status, wavPins[key])
 		}
 	}
 }

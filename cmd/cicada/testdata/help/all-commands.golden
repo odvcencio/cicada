@@ -7,6 +7,17 @@ Flags:
   (no command flags)
   --help      show this help
 
+### agents
+cicada agents [--json]
+
+print the quick start for AI agents
+
+Flags:
+  --json      write the quick start as JSON (schema cicada.agents.v1) with its size in bytes and the commands that look up the rest
+  --help      show this help
+
+The quick start teaches the loop (new, check, render, audition, apply), enough of the score language for a song with drums, bass and chords, the edit envelope, how to read a refusal and where to look things up. It is docs/manual/agent-quickstart.md, built into the binary, so it needs no repository checkout.
+
 ### bundle
 cicada bundle <score.cicada> <bundle.zip>
   cicada bundle --restore-history <extracted-score.cicada>
@@ -35,12 +46,13 @@ Flags:
 A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes. An error names the failing intent as intents[<index>].<field> (<kind>); run cicada intents for every kind and its fields.
 
 ### intents
-cicada intents [--json] [kind]
+cicada intents [--json] [--index | kind]
 
 list the edit intents apply accepts
 
 Flags:
   --json      write the catalog as JSON (schema cicada.intents.v1)
+  --index     with --json, list only each kind and its meaning (schema cicada.intents_index.v1)
   --help      show this help
 
 Lists every intent kind with its meaning. With a kind, prints its fields (JSON name, type, whether required, unit or allowed values) and an example that cicada apply accepts. The catalog is generated from the intent registry. See docs/manual/agents.md.

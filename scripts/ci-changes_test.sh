@@ -68,6 +68,7 @@ expect_groups "blank lines only" all ""
 expect_groups "embedded std library text" all project/std/README.md
 expect_groups "asset readme" all assets/ir/README.md
 expect_groups "fixture readme" all-but-gates host/recording/testdata/README.md
+expect_groups "embedded agent quick start" all-but-gates internal/agentguide/quickstart.md
 expect_groups "top-level testdata" all-but-gates testdata/edition1/examples/first-acid.cicada
 expect_groups "example score" all examples/first-acid.cicada
 expect_groups "root Go package" all notation/parse.go
