@@ -1,9 +1,7 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -109,18 +107,26 @@ func removeInterruptFiles() {
 	}
 }
 
-// outputFolderError reports, before a render starts, that the folder of its
-// output WAV does not exist. The render writes a temporary file there first,
-// so without this check the error named that file instead of the folder.
-// Other errors are left to the render, which reports them.
-func outputFolderError(path string) error {
+// ensureOutputFolder creates the missing folders above an output file, as
+// stems, audition and Studio's export do for theirs, so every command that
+// writes to -o behaves the same. A folder that cannot be created is an
+// *outputNotWritableError that names it.
+func ensureOutputFolder(path string) error {
 	dir := filepath.Dir(path)
-	info, err := os.Stat(dir)
-	switch {
-	case err == nil && !info.IsDir():
-		return &renderFailure{reason: "output_folder_missing", message: fmt.Sprintf("output folder %s is a file, not a folder", dir)}
-	case errors.Is(err, fs.ErrNotExist):
-		return &renderFailure{reason: "output_folder_missing", message: fmt.Sprintf("output folder %s does not exist; create it (mkdir -p %s), then render again", dir, dir)}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return &outputNotWritableError{folder: dir, err: err}
 	}
 	return nil
 }
+
+// outputNotWritableError is an output folder that cannot be created.
+type outputNotWritableError struct {
+	folder string
+	err    error
+}
+
+func (e *outputNotWritableError) Error() string {
+	return fmt.Sprintf("output folder %s cannot be created: %v", e.folder, e.err)
+}
+
+func (e *outputNotWritableError) Unwrap() error { return e.err }

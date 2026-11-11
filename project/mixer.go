@@ -246,8 +246,8 @@ func compileExport(source notation.Export) (Export, error) {
 			}
 			out.Bits = &number
 		case "tail":
-			if value.Number == nil || value.Unit != "ms" || *value.Number < 0 || *value.Number > 30000 {
-				return Export{}, fmt.Errorf("export tail must be 0 to 30s")
+			if value.Number == nil || value.Unit != "ms" || *value.Number < 0 || *value.Number > MaxRenderTailSeconds*1000 {
+				return Export{}, fmt.Errorf("export tail must be 0 to %ds", MaxRenderTailSeconds)
 			}
 			out.Tail = &value
 		case "loudness":

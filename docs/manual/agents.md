@@ -723,8 +723,9 @@ command prints and, when the documentation gives a fix for that cause, a
 - `invalid_score`: the score has errors; `diagnostics` lists them.
 - `export_settings`: the `--export` profile is unknown or cannot be applied.
 - `output_exists`: the stems folder already exists.
-- `output_folder_missing`: the folder of the `-o` WAV does not exist; the
-  message names it. `render` does not create it.
+- `output_not_writable`: the folder of the `-o` WAV is missing and cannot be
+  created; the message names it. A missing folder that can be created is
+  created, as by every command that writes to `-o`.
 - `sampler_memory`: the sampler packs exceed the resident PCM cap.
 - `render_failed`: another render or write error; the message says which.
 - `true_peak_and_dc_unmet`: no pass met the true-peak ceiling and the DC limit.

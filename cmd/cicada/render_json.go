@@ -47,6 +47,11 @@ type renderOutputJSON struct {
 	Channels        int     `json:"channels"`
 	Frames          int64   `json:"frames"`
 	DurationSeconds float64 `json:"duration_seconds"`
+	// TailEndPeakDBFS is the sample peak of the file's last 100 ms in dBFS, or
+	// null when they are digital silence (dither alone reads about -90 dBFS
+	// at 16 bits): a value well above that says the tail was still sounding
+	// where the file ends, so a longer --tail would keep more of it.
+	TailEndPeakDBFS *float64 `json:"tail_end_peak_dbfs"`
 }
 
 // renderLevelsJSON are the peak facts of a render without a loudness target.
@@ -125,7 +130,7 @@ type renderRemedyJSON struct {
 // docs/manual/agents.md lists them and TestRenderErrorCodesAreDocumented
 // keeps the lists equal.
 var renderErrorCodes = []string{
-	"usage", "flag_out_of_range", "unreadable_score", "invalid_score", "export_settings", "output_exists", "output_folder_missing",
+	"usage", "flag_out_of_range", "unreadable_score", "invalid_score", "export_settings", "output_exists", "output_not_writable",
 	"sampler_memory", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
 	"true_peak_over_ceiling", "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum",
 	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_target_missed",
@@ -255,8 +260,8 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 		}
 		return finish(nil)
 	}
-	if err := outputFolderError(output); err != nil {
-		return finish(err)
+	if err := ensureOutputFolder(output); err != nil {
+		return finish(&renderFailure{reason: "output_not_writable", message: err.Error()})
 	}
 	if target != nil && target.Loudness {
 		report, err := renderLoudnessFileReport(inspection.score, output, opts, *target, nil)
@@ -514,6 +519,11 @@ func describeWAV(path, role string) (renderOutputJSON, error) {
 			}
 			described.Frames = size / int64(blockAlign)
 			described.DurationSeconds = math.Round(float64(described.Frames)/float64(described.SampleRate)*1e6) / 1e6
+			peak, err := tailEndPeak(file, described, blockAlign)
+			if err != nil {
+				return renderOutputJSON{}, fmt.Errorf("%s: %w", path, err)
+			}
+			described.TailEndPeakDBFS = peak
 			return described, nil
 		default:
 			if _, err := file.Seek(size+size%2, io.SeekCurrent); err != nil {
@@ -521,4 +531,43 @@ func describeWAV(path, role string) (renderOutputJSON, error) {
 			}
 		}
 	}
+}
+
+// tailEndPeak reads the last 100 ms of a WAV data chunk, which starts at the
+// file's current offset, and returns their sample peak in dBFS, or nil when
+// they are silent.
+func tailEndPeak(file io.ReadSeeker, described renderOutputJSON, blockAlign int) (*float64, error) {
+	frames := min(described.Frames, int64(described.SampleRate/10))
+	if frames == 0 || described.Channels == 0 {
+		return nil, nil
+	}
+	if _, err := file.Seek((described.Frames-frames)*int64(blockAlign), io.SeekCurrent); err != nil {
+		return nil, err
+	}
+	data := make([]byte, frames*int64(blockAlign))
+	if _, err := io.ReadFull(file, data); err != nil {
+		return nil, fmt.Errorf("short data chunk")
+	}
+	width := described.BitDepth / 8
+	peak := 0.0
+	for at := 0; at+width <= len(data); at += width {
+		var v float64
+		switch {
+		case described.Encoding == "float" && width == 4:
+			v = float64(math.Float32frombits(binary.LittleEndian.Uint32(data[at:])))
+		case width == 2:
+			v = float64(int16(binary.LittleEndian.Uint16(data[at:]))) / 32768
+		case width == 3:
+			n := int32(data[at]) | int32(data[at+1])<<8 | int32(data[at+2])<<16
+			v = float64(n<<8>>8) / 8388608
+		case width == 4:
+			v = float64(int32(binary.LittleEndian.Uint32(data[at:]))) / 2147483648
+		}
+		peak = math.Max(peak, math.Abs(v))
+	}
+	if peak == 0 {
+		return nil, nil
+	}
+	db := 20 * math.Log10(peak)
+	return &db, nil
 }

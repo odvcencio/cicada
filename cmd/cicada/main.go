@@ -695,7 +695,7 @@ const (
 )
 
 func renderFile(score *notation.Score, path string, opts render.Options, target *renderTargetOptions) error {
-	if err := outputFolderError(path); err != nil {
+	if err := ensureOutputFolder(path); err != nil {
 		return err
 	}
 	if target != nil && target.Loudness {
@@ -1511,8 +1511,18 @@ func verifyWAVCommand(args []string) {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
-	if err != nil || duration < 0 {
+	if err != nil {
 		usage()
+	}
+	if duration < 0 || duration.Seconds() > render.MaxTailSeconds {
+		// The same refusal render and stems give, so the two commands agree on
+		// the range; --report writes it as a structured error.
+		failure := tailRangeError(*tail, duration)
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", failure)
+		if *jsonReport {
+			writeAgentJSON(os.Stderr, map[string]any{"error": &renderErrorJSON{Code: "flag_out_of_range", Message: failure.Error(), Flag: failure.flag, Value: failure.value, Bound: failure.bound, Limit: failure.limit}})
+		}
+		exitProcess(2)
 	}
 	checkLUFS := false
 	checkTruePeak := false
