@@ -62,8 +62,12 @@ func checkFailureJSON(stdout io.Writer, options checkOptions, manifest, code str
 	return err
 }
 
+// checkScoreReport is one score's result. Revision is the SHA-256 of the
+// score's bytes in hex, the form cicada apply checks an envelope's revision
+// against; it is empty only when the score cannot be read.
 type checkScoreReport struct {
 	File        string                  `json:"file"`
+	Revision    string                  `json:"revision,omitempty"`
 	Valid       bool                    `json:"valid"`
 	Diagnostics []checkDiagnosticReport `json:"diagnostics"`
 	Browser     *checkBrowserReport     `json:"browser_profile,omitempty"`
@@ -156,6 +160,13 @@ func checkScoreJSON(path string, options checkOptions) checkScoreReport {
 		report.Diagnostics = append(report.Diagnostics, checkDiagnosticJSON(path, source, diagnostic, inspection))
 	}
 	inspection, err := inspectScore(path)
+	// The revision is of the bytes the checker read, so a fix's revision and
+	// the score's agree; a score the checker could not inspect is read again.
+	if inspection.source != nil {
+		report.Revision = edits.Revision(inspection.source)
+	} else if source, readErr := os.ReadFile(path); readErr == nil {
+		report.Revision = edits.Revision(source)
+	}
 	if err != nil {
 		var sourceErr *project.SourceError
 		if errors.As(err, &sourceErr) {

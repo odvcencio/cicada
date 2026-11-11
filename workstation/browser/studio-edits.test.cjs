@@ -378,6 +378,64 @@ test('a stale revision restores, blocks the queue, and Refresh saved state recov
   await noNavigation();
 });
 
+test('Undo and Redo stay locked at every step of a Refresh saved state, and a press is refused with a message', async () => {
+  const {page, posts, cell, rewrites, hold, settled, status, noNavigation, original} = await studio();
+  const start = posts.length;
+  const undo = page.locator('#undo-form button'), redo = page.locator('#redo-form button');
+  const locked = async () => (await undo.getAttribute('aria-disabled')) === 'true' && (await redo.getAttribute('aria-disabled')) === 'true';
+  // Block the queue with a refused write.
+  rewrites.push(payload => { payload.revision = original.revision; });
+  const release = hold();
+  await page.locator(cell(23)).click();
+  release();
+  await settled(start + 1);
+  assert.equal(posts[start].status, 409);
+  await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+  assert.equal(await locked(), true, 'Undo and Redo were not locked while the queue was blocked');
+  assert.match(await undo.getAttribute('data-history-lock'), /queue/);
+  assert.equal(await undo.evaluate(button => button.disabled), false, 'the lock must use aria-disabled, which keeps focus, not disabled');
+  // A press while blocked is refused with a message, not sent.
+  const sentBefore = posts.length;
+  await undo.click({force: true}); // Playwright treats aria-disabled as not enabled; a user can still press it
+  assert.match(await status(), /Undo and Redo are waiting/i, 'a press while blocked gave no message');
+  assert.equal(posts.length, sentBefore, 'a press while blocked was sent');
+  await page.locator('#studio-shell').click({position: {x: 2, y: 2}});
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+Shift+z');
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(posts.length, sentBefore, 'the keyboard shortcut sent an Undo or Redo while blocked');
+  // Watch every DOM change during the refresh. The engine yields between region patches, so an observer callback
+  // runs in each gap: the lock must be on the buttons in all of them while the refresh is under way. (Before the
+  // fix a patch replaced the buttons and the lock came back only at the end.)
+  await page.evaluate(() => {
+    window.__gapViolations = [];
+    const check = () => {
+      const text = document.querySelector('[data-workspace-status]')?.textContent || '';
+      const retry = document.querySelector('[data-workspace-retry]');
+      const blocked = retry && !retry.hidden && !/Workspace updated/i.test(text);
+      const button = document.querySelector('#undo-form button');
+      if (blocked && button && button.getAttribute('aria-disabled') !== 'true') window.__gapViolations.push(text);
+    };
+    window.__gapObserver = new MutationObserver(check);
+    window.__gapObserver.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
+  });
+  await page.locator('[data-workspace-retry]').click();
+  await until(async () => /Workspace updated/i.test(await status()), 'Refresh saved state did not finish');
+  await until(async () => !(await locked()) && (await undo.getAttribute('data-history-lock')) === null, 'the lock stayed after the refresh');
+  const violations = await page.evaluate(() => { window.__gapObserver.disconnect(); return window.__gapViolations; });
+  assert.deepEqual(violations, [], 'Undo and Redo were unlocked while the refresh was still under way');
+  // Unlocked: a press is applied (Undo, then Redo to leave the score as it was).
+  await undo.click();
+  await settled(sentBefore + 1);
+  assert.equal(posts[sentBefore].action, 'undo');
+  assert.equal(posts[sentBefore].status, 200, JSON.stringify(posts[sentBefore].result));
+  await until(async () => (await redo.getAttribute('aria-disabled')) === null, 'Redo stayed locked after Undo');
+  await redo.click();
+  await settled(sentBefore + 2);
+  assert.equal(posts[sentBefore + 1].status, 200, JSON.stringify(posts[sentBefore + 1].result));
+  await noNavigation();
+});
+
 test('a network failure restores the cell, blocks, and is never resent', async () => {
   const {page, state, posts, cell, confirmed, settled, status, noNavigation} = await studio();
   const before = await state('/api/state');

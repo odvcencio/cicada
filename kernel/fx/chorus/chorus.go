@@ -5,6 +5,8 @@ package chorus
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/modulate"
 )
 
@@ -60,7 +62,7 @@ func New(sampleRate int, params Params) (*Processor, error) {
 		return nil, err
 	}
 	r := float64(sampleRate)
-	p := &Processor{rate: r, params: params, current: params, smooth: 1 - math.Exp(-1/(.01*r)), lowpass: 1 - math.Exp(-2*math.Pi*6500/r), ring: make([]frame, int(math.Ceil(.028*r))+2)}
+	p := &Processor{rate: r, params: params, current: params, smooth: 1 - detmath.Exp(-1/(.01*r)), lowpass: 1 - detmath.Exp(-2*math.Pi*6500/r), ring: make([]frame, int(math.Ceil(.028*r))+2)}
 	for i, hz := range [...]float64{5.73, 6.347, 6.964} {
 		p.fastStep[i] = uint32(float64(hz*(4294967296/r)) + .5)
 	}

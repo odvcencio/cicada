@@ -97,6 +97,8 @@ assignments, a pattern cell to queue one track, or **Stop** to stop a track.
 Launches use the score's `live { land = ... }` timing, or the next bar if it is
 not set. **Keep** preserves that track's slot.
 
+**F1** to **F8** launch the first to the eighth scene, as selecting its header does. They work only while the Session view is showing; in Arrange or Mixer they do nothing.
+
 **Arrange** shows scene blocks across all tracks, their bar ranges, and inherited
 patterns. Click a scene header to play from that block, or a pattern clip to
 open its editor. Expand a block to replace its scene, set its length, duplicate

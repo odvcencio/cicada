@@ -357,6 +357,12 @@ func (u *workspaceUI) submit(event js.Value) {
 			workspaceStop(event)
 			return
 		}
+		if id := workspaceAttr(form, "id"); (id == "undo-form" || id == "redo-form") && history.Locked() {
+			// The buttons stay focusable while locked; the lock refuses the press and says so.
+			workspaceStop(event)
+			u.status.Set("Undo and Redo are waiting for Studio to finish updating. Press again in a moment.")
+			return
+		}
 		domDrop(form, "data-workspace-updated")
 		// Transport commands carry no score revision check and never wait.
 		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
@@ -862,6 +868,7 @@ func (u *workspaceUI) queue(job workspaceJob) {
 	default:
 		workspacePending(job, -1)
 		u.blocked.Store(true)
+		u.syncHistoryLock()
 		u.clearQueue()
 		u.status.Set("The edit queue is full. Refresh the workspace; drafts are retained.")
 	}
@@ -1051,6 +1058,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 		// A failed/ambiguous mutation is never automatically submitted a
 		// second time. Re-read canonical state before another edit.
 		u.blocked.Store(true)
+		u.syncHistoryLock()
 		u.clearQueue()
 		if u.shell && !saved {
 			u.restoreAll()
@@ -1077,6 +1085,7 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	}
 	if job.refresh {
 		u.blocked.Store(false)
+		u.syncHistoryLock()
 	}
 	if u.shell {
 		// The shell shows only what needs attention: a server message or the
