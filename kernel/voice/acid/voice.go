@@ -12,6 +12,8 @@ package acid
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
 	"m31labs.dev/cicada/kernel/expression"
@@ -121,13 +123,13 @@ func (v *Voice) SetParams(p Params) error {
 	}
 	v.params = p
 	v.targetParams, v.paramAlpha = p, 0
-	v.capDecay = math.Exp(-1 / ((.08 + float64(.17*p.Resonance)) * v.sampleRate))
-	v.releaseDecay = math.Exp(-4.6 / (p.Release * v.sampleRate))
-	v.holdDecay = math.Exp(-1 / (3 * v.sampleRate))
-	v.pitchAlpha = 1 - math.Exp(-1/(p.Slide*v.sampleRate))
-	v.accentAlpha = 1 - math.Exp(-1/(.0015*v.sampleRate))
-	v.switchAlpha = 1 - math.Exp(-1/(.02*v.sampleRate))
-	v.drivePre = math.Pow(10, p.Drive*36/20)
+	v.capDecay = detmath.Exp(-1 / ((.08 + float64(.17*p.Resonance)) * v.sampleRate))
+	v.releaseDecay = detmath.Exp(-4.6 / (p.Release * v.sampleRate))
+	v.holdDecay = detmath.Exp(-1 / (3 * v.sampleRate))
+	v.pitchAlpha = 1 - detmath.Exp(-1/(p.Slide*v.sampleRate))
+	v.accentAlpha = 1 - detmath.Exp(-1/(.0015*v.sampleRate))
+	v.switchAlpha = 1 - detmath.Exp(-1/(.02*v.sampleRate))
+	v.drivePre = detmath.Pow(10, p.Drive*36/20)
 	v.detuneRatio = fastmath.Exp2(p.Detune / 1200)
 	v.pitchCached = false
 	table := p.Drive * 32
@@ -138,7 +140,7 @@ func (v *Voice) SetParams(p Params) error {
 	}
 	frac := table - float64(index)
 	v.drivePost = float64(v.driveTable[index]*(1-frac)) + float64(v.driveTable[index+1]*frac)
-	v.level = math.Pow(10, p.LevelDB/20)
+	v.level = detmath.Pow(10, p.LevelDB/20)
 	v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
 	v.prepareRestingDiode()
 	return nil
@@ -197,10 +199,10 @@ func (v *Voice) buildDriveTable() {
 	const inputAmplitude = 0.251188643150958
 	inputRMS := inputAmplitude / math.Sqrt2
 	for i := range v.driveTable {
-		pre := math.Pow(10, float64(i)*36/(32*20))
+		pre := detmath.Pow(10, float64(i)*36/(32*20))
 		var outputPower float64
 		for sample := 0; sample < 1024; sample++ {
-			x := inputAmplitude * math.Sin(2*math.Pi*float64(sample)/1024)
+			x := inputAmplitude * detmath.Sin(2*math.Pi*float64(sample)/1024)
 			y := fastmath.Tanh(pre * x)
 			outputPower += float64(y * y)
 		}
@@ -213,7 +215,7 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 	if note > 127 {
 		note = 127
 	}
-	target := math.Log2(440) + (float64(note)-69+v.params.Tune+v.params.Fine/100)/12
+	target := detmath.Log2(440) + (float64(note)-69+v.params.Tune+v.params.Fine/100)/12
 	if slide && v.gate {
 		v.targetLog = target
 		return
@@ -222,9 +224,9 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 	v.phaseA, v.phaseB, v.phaseSub = 0, .37, 0
 	v.gate, v.attacking, v.accented = true, true, accent
 	v.meg, v.vca = 1, 0
-	v.megDecay = math.Exp(-4.6 / (v.params.Decay * v.sampleRate))
+	v.megDecay = detmath.Exp(-4.6 / (v.params.Decay * v.sampleRate))
 	if accent {
-		v.megDecay = math.Exp(-4.6 / (.2 * v.sampleRate))
+		v.megDecay = detmath.Exp(-4.6 / (.2 * v.sampleRate))
 		v.sweepStrength = 1 + v.cap
 		v.cap = min(.6, v.cap+.3)
 		v.accentTarget = 1 + v.params.Accent
