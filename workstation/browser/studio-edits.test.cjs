@@ -552,7 +552,7 @@ test('a recovery copy of the text a Code save writes does not keep the Code edit
   await undoCode(page, state, posts, settled, before);
 });
 
-test('a checkpoint of the saved text that lands after the save keeps no copy, and its window says so', async () => {
+test('a checkpoint of the saved text that lands after the save keeps no copy, and its window then follows the file', async () => {
   const {page, state, posts, settled} = await studio();
   const other = await otherClient();
   assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
@@ -570,20 +570,40 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
     await until(() => held.length > 0, 'the other window sent no checkpoint');
     await typeAtEnd(page, phrase);
     await saveCode(page, state, text);
+    // Every recovery status the other window shows, even one a region
+    // update replaces at once.
+    await other.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
     await other.unroute('**/__actions/source-checkpoint');
     for (const route of held.splice(0)) await route.continue().catch(() => {});
     const landed = () => answers.find(response => response.status() === 200 && response.request().postDataJSON().content === text);
     await until(() => landed(), 'the held checkpoint did not land');
     const answer = await landed().json();
     assert.equal(answer.data.kept, false, 'a copy of the text the file has was kept');
-    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'No unsaved Code edits. The score file has this text.',
+    await until(() => other.evaluate(() => window.__recoveryStatus.includes('No unsaved Code edits. The score file has this text.')),
       'the other window did not say that the file has its text');
+    assert.ok(!(await other.evaluate(() => window.__recoveryStatus.some(text => /Recovery copy kept/.test(text || '')))), 'the other window said a copy was kept');
+    // Its editor takes the file's text as its own, so it is no longer held.
+    await until(async () => await other.locator('#score textarea').first().evaluate(node => node.value === node.defaultValue) && !(await codeUnsaved(other)),
+      'the other window still holds the saved text as an edit');
   } finally {
     stop();
     await other.unroute('**/__actions/source-checkpoint');
   }
   assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
   await undoCode(page, state, posts, settled, before);
+  // The text is in neither the file nor a copy now, so the other window must
+  // not keep showing it. Like any editor without changes, its Code region
+  // is marked stale by the Undo and is read when it shows again (background
+  // reads skip the Code lens); a held one would keep the text.
+  await until(async () => await other.locator('#update-code').getAttribute('data-region-stale') !== null, 'the other window did not see the Undo', 30_000);
+  await other.locator('.shell-pane-toggle[data-pane=code][data-pane-action=hide]').click();
+  await other.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
+  await until(async () => await other.locator('#score textarea').first().inputValue() === before.source.replace(/\r\n/g, '\n'),
+    'the other window did not follow the Undo', 30_000);
 });
 
 test('a save does not stop another window that typed the same text from keeping its later typing', async () => {

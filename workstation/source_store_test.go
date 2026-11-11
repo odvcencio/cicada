@@ -41,7 +41,7 @@ func TestSourceCopiesSurviveRestartAndKeepOtherWriters(t *testing.T) {
 	if _, err := store.saveSource("owner", parent); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.closeSource("owner", child.ID, child.File, child.Sequence, child.ParentID, child.ParentHash); err != nil {
+	if err := store.closeSource("owner", child.ID, child.File, child.Sequence, false, child.ParentID, child.ParentHash); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.saveSource("owner", child); !errors.Is(err, errSourceCheckpoint) {
@@ -142,8 +142,9 @@ func TestACopyClosedForMatchingTheFileIsGuardedAndReopens(t *testing.T) {
 	}
 }
 
-// Save, Discard and a clean editor close a copy for good, but only up to the
-// last edit they knew of.
+// Save and Discard close a copy up to the last edit they knew of: an edit
+// already kept is left as it is, and a later one opens the copy again. A
+// clean editor closes its copy for good.
 func TestClosingACopyKeepsEditsNewerThanTheRequest(t *testing.T) {
 	store, _, err := openNoteStore(t.TempDir())
 	if err != nil {
@@ -153,20 +154,66 @@ func TestClosingACopyKeepsEditsNewerThanTheRequest(t *testing.T) {
 	if _, err := store.saveSource("owner", copy); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.closeSource("owner", copy.ID, copy.File, 2, "", ""); err != nil {
+	if err := store.closeSource("owner", copy.ID, copy.File, 2, false, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 1 {
 		t.Fatal("a save that knew of edit 2 closed edit 3", copies, err)
 	}
-	if err := store.closeSource("owner", copy.ID, copy.File, 3, "", ""); err != nil {
+	if err := store.closeSource("owner", copy.ID, copy.File, 3, false, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 0 {
 		t.Fatal("the copy was not closed", copies, err)
 	}
-	copy.Sequence = 4
 	if _, err := store.saveSource("owner", copy); !errors.Is(err, errSourceCheckpoint) {
-		t.Fatal("a closed copy was revived", err)
+		t.Fatal("a delayed checkpoint revived the closed copy", err)
+	}
+	copy.Sequence, copy.Source = 4, "// typed after the save landed\n"
+	if _, err := store.saveSource("owner", copy); err != nil {
+		t.Fatal("an edit after the save was refused", err)
+	}
+	if err := store.closeSource("owner", copy.ID, copy.File, 4, true, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	copy.Sequence = 5
+	if _, err := store.saveSource("owner", copy); !errors.Is(err, errSourceCheckpoint) {
+		t.Fatal("a copy closed for good was revived", err)
+	}
+}
+
+// A copy closed for matching the file is reopened unless its window wrote
+// since.
+func TestReopeningACopyClosedForMatchingTheFile(t *testing.T) {
+	store, _, err := openNoteStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy, err := store.saveSource("owner", savedSource{ID: newNoteID(), Sequence: 1, File: "main.cicada", Revision: "saved", Source: "// X\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed, err := store.closeSourceCopy("owner", copy); !closed || err != nil {
+		t.Fatal(closed, err)
+	}
+	if err := store.reopenSourceCopy("owner", copy); err != nil {
+		t.Fatal(err)
+	}
+	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 1 || copies[0].Source != copy.Source || !copies[0].Updated.Equal(copy.Updated) {
+		t.Fatal("the copy was not reopened as it was", copies, err)
+	}
+	if closed, err := store.closeSourceCopy("owner", copy); !closed || err != nil {
+		t.Fatal(closed, err)
+	}
+	newer := copy
+	newer.Sequence, newer.Source = 2, "// typed since\n"
+	if _, err := store.saveSource("owner", newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.reopenSourceCopy("owner", copy); err != nil {
+		t.Fatal(err)
+	}
+	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 1 || copies[0].Source != newer.Source {
+		t.Fatal("reopening replaced a newer edit", copies, err)
 	}
 }

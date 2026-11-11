@@ -93,7 +93,9 @@ func (u *workspaceUI) sourceStatus(text string) {
 }
 
 // Recovery never uses the workspace mutation queue: it must not save the
-// score, replace the editor, or delay musical edits and transport commands.
+// score, replace the editor's text, or delay musical edits and transport
+// commands. Studio answers a checkpoint after reading only the file's
+// revision, which takes no service lock.
 func (u *workspaceUI) checkpointSources() {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -148,10 +150,12 @@ func (u *workspaceUI) checkpointSources() {
 			request.Header.Set("X-CSRF-Token", u.props.CSRF)
 			response, err := http.DefaultClient.Do(request)
 			// Studio says whether it kept a copy: it keeps none of text the
-			// file already has. Older versions do not say, and keep one.
+			// file already has, and names that file's revision. Older
+			// versions do not say, and keep one.
 			var reply struct {
 				Data struct {
-					Kept *bool `json:"kept"`
+					Kept     *bool  `json:"kept"`
+					Revision string `json:"revision"`
 				} `json:"data"`
 			}
 			if response != nil {
@@ -175,7 +179,8 @@ func (u *workspaceUI) checkpointSources() {
 				continue
 			}
 			current.dirty = false
-			if current.clean {
+			if current.clean || !kept {
+				// Closed: an edit after this starts a new copy.
 				delete(u.sources, file)
 			}
 			if workspacePresent(current.control) && current.control.Get("isConnected").Bool() {
@@ -198,6 +203,16 @@ func (u *workspaceUI) checkpointSources() {
 				if current.clean {
 					u.sourceStatus("No unsaved Code edits.")
 				} else if !kept {
+					// The file has this text: the editor takes it, at the file's
+					// revision, as its own, so the Code panel is no longer held
+					// and follows the file like an editor without changes.
+					if form := current.control.Call("closest", "form"); reply.Data.Revision != "" && current.control.Get("value").String() == snapshot.content {
+						current.control.Set("defaultValue", snapshot.content)
+						if field := workspaceField(form, "fileRevision"); workspacePresent(field) {
+							field.Set("value", reply.Data.Revision)
+						}
+						form.Call("removeAttribute", "data-code-unsaved")
+					}
 					u.sourceStatus("No unsaved Code edits. The score file has this text.")
 				} else {
 					u.sourceStatus("Recovery copy kept on this device. Use Save file to apply edits to the song.")

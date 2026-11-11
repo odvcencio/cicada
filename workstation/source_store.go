@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	edits "m31labs.dev/cicada/edit"
 )
 
 var errSourceCheckpoint = errors.New("a newer or finished recovery copy already exists")
@@ -32,15 +34,21 @@ func sourceFingerprint(source string) string { return fmt.Sprintf("%x", sha256.S
 func sourcePath(owner, id string) string     { return "sources/" + noteOwnerPrefix(owner) + id + ".json" }
 
 // sameSourceText reports whether a recovery copy holds exactly the text of a
-// file. Only line breaks are normalized, because a browser cannot keep them:
-// a textarea reports CRLF and a lone CR as LF, and a form sends LF as CRLF.
-// Every other difference, a missing final newline included, is a change.
+// file. CRLF counts as LF, because a browser cannot keep it apart: a textarea
+// reports CRLF as LF, and a form sends LF as CRLF. Every other difference is
+// a change: a lone CR (the grammar keeps one inside strings and comments) and
+// a missing final newline included.
 func sameSourceText(copy, file string) bool {
-	if copy == file {
-		return true
-	}
-	lines := strings.NewReplacer("\r\n", "\n", "\r", "\n")
-	return lines.Replace(copy) == lines.Replace(file)
+	return copy == file || strings.ReplaceAll(copy, "\r\n", "\n") == strings.ReplaceAll(file, "\r\n", "\n")
+}
+
+// sameSourceRevision is sameSourceText for a file known by its revision
+// (edits.Revision of its bytes): the copy's text matches if its LF or CRLF
+// form has that revision. A file that mixes LF and CRLF never matches, so
+// its copies are kept.
+func sameSourceRevision(copy, revision string) bool {
+	lf := strings.ReplaceAll(copy, "\r\n", "\n")
+	return revision != "" && (edits.Revision([]byte(lf)) == revision || edits.Revision([]byte(strings.ReplaceAll(lf, "\n", "\r\n"))) == revision)
 }
 
 func validSourceFile(file string) bool {
@@ -161,11 +169,15 @@ func (s *noteStore) getSource(owner, id string) (savedSource, error) {
 	return saved, err
 }
 
-// Tombstones also reject a delayed checkpoint that arrives after Save or
-// Discard. sequence is the last edit the request knew of: a copy that has
-// newer edits keeps them. A fork retires its parent only if that parent has
-// not been edited.
-func (s *noteStore) closeSource(owner, id, file string, sequence uint64, parentID, parentHash string) error {
+// A closed copy refuses a delayed checkpoint, one whose sequence is at or
+// below the closed record's. sequence is the last edit the request (Save or
+// Discard) knew of: the copy is closed at that sequence, so an edit typed
+// after the request, whenever its checkpoint lands, is kept again; a copy
+// that already holds newer edits is left as it is. final closes the copy for
+// every later sequence, for an editor that has returned to the file's text
+// and starts a new copy when it is edited again. A fork retires its parent
+// only if that parent has not been edited, at the parent's own sequence.
+func (s *noteStore) closeSource(owner, id, file string, sequence uint64, final bool, parentID, parentHash string) error {
 	if owner == "" || !validNoteID(id) || !validSourceFile(file) {
 		return fmt.Errorf("invalid Code recovery receipt")
 	}
@@ -177,8 +189,11 @@ func (s *noteStore) closeSource(owner, id, file string, sequence uint64, parentI
 		if err == nil && current.File != file {
 			return errSourceCheckpoint
 		}
-		closed := savedSource{Version: 1, ID: id, File: file, Sequence: ^uint64(0), State: "closed", Updated: time.Now().UTC()}
-		if err != nil || current.State == "closed" || current.Sequence <= sequence {
+		closed := savedSource{Version: 1, ID: id, File: file, Sequence: sequence, State: "closed", Updated: time.Now().UTC()}
+		if final {
+			closed.Sequence = ^uint64(0)
+		}
+		if err != nil || current.State == "ready" && current.Sequence <= sequence || current.State == "closed" && current.Sequence < closed.Sequence {
 			if err := writeSource(root, owner, closed); err != nil {
 				return err
 			}
@@ -192,8 +207,7 @@ func (s *noteStore) closeSource(owner, id, file string, sequence uint64, parentI
 				return err
 			}
 			if parent.File == file && parent.State == "ready" && sourceFingerprint(parent.Source) == parentHash {
-				closed.ID = parentID
-				return writeSource(root, owner, closed)
+				return writeSource(root, owner, savedSource{Version: 1, ID: parentID, File: file, Revision: parent.Revision, Sequence: parent.Sequence, State: "closed", Updated: time.Now().UTC()})
 			}
 		}
 		return nil
@@ -225,4 +239,23 @@ func (s *noteStore) closeSourceCopy(owner string, listed savedSource) (bool, err
 		return writeSource(root, owner, savedSource{Version: 1, ID: current.ID, File: current.File, Revision: current.Revision, Sequence: current.Sequence, State: "closed", Updated: time.Now().UTC()})
 	})
 	return closed && err == nil, err
+}
+
+// reopenSourceCopy undoes closeSourceCopy when the file turned out to have
+// moved on: the copy is ready again unless its window has written since.
+func (s *noteStore) reopenSourceCopy(owner string, copy savedSource) error {
+	if owner == "" || !validNoteID(copy.ID) {
+		return fmt.Errorf("invalid Code recovery receipt")
+	}
+	return s.locked(func(root *os.Root) error {
+		current, err := loadSource(root, owner, copy.ID)
+		if err != nil {
+			return err
+		}
+		if current.State != "closed" || current.Sequence != copy.Sequence {
+			return nil
+		}
+		copy.Version, copy.State = 1, "ready"
+		return writeSource(root, owner, copy)
+	})
 }

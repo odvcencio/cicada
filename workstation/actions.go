@@ -87,13 +87,17 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 			if err := s.clearSourceDraft(ctx.Request, ctx.FormData["file"], ctx.FormData); err != nil {
 				return action.Error(503, "The file was saved, but its recovery copy could not be retired. The copy is retained: "+err.Error())
 			}
-			if text, saved := ctx.FormData["content"]; saved && s.notes != nil {
-				// Other copies of the text just written, such as another
-				// window's, hold no unsaved work. A copy that cannot be read
-				// is skipped: the save has already succeeded.
+			var written struct {
+				Source *string `json:"source"`
+			}
+			if _, saved := ctx.FormData["content"]; saved && s.notes != nil && json.Unmarshal(response, &written) == nil && written.Source != nil {
+				// Other copies of the text the service wrote (it can differ
+				// from the text sent), such as another window's, hold no
+				// unsaved work. A copy that cannot be read is skipped: the
+				// save has already succeeded.
 				owner := workspaceOwner(ctx.Request)
 				copies, _ := s.notes.sourceCopies(owner, ctx.FormData["file"])
-				s.closeCopiesOfFile(owner, ctx.FormData["file"], text, copies)
+				s.closeCopiesOfFile(ctx.Request.Context(), owner, ctx.FormData["file"], *written.Source, copies)
 			}
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}

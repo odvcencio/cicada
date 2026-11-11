@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -124,17 +125,28 @@ func (s *studioApp) storeFileDraft(source, revision, owner, kind, file string) (
 
 // closeCopiesOfFile closes the owner's recovery copies of file that hold
 // exactly text, the file's text as just read or written, and returns the
-// copies that differ. A copy edited after it was listed is kept. Closing is
-// housekeeping: a copy that cannot be read or closed is left as it is, and
-// the caller's work goes on.
-func (s *studioApp) closeCopiesOfFile(owner, file, text string, copies []savedSource) []savedSource {
+// copies that differ. A copy edited after it was listed is kept. If the file
+// no longer holds text once they are closed, or its revision cannot be read,
+// they are reopened. Closing is housekeeping: a copy that cannot be read or
+// closed is left as it is, and the caller's work goes on.
+func (s *studioApp) closeCopiesOfFile(ctx context.Context, owner, file, text string, copies []savedSource) []savedSource {
 	kept := make([]savedSource, 0, len(copies))
+	var closed []savedSource
 	for _, copy := range copies {
 		if copy.File != file || !sameSourceText(copy.Source, text) {
 			kept = append(kept, copy)
 			continue
 		}
-		_, _ = s.notes.closeSourceCopy(owner, copy)
+		if ok, err := s.notes.closeSourceCopy(owner, copy); ok && err == nil {
+			closed = append(closed, copy)
+		}
+	}
+	if len(closed) > 0 {
+		if revision, ok := s.fileRevision(ctx, file); !ok || !sameSourceRevision(text, revision) {
+			for _, copy := range closed {
+				_ = s.notes.reopenSourceCopy(owner, copy)
+			}
+		}
 	}
 	return kept
 }
@@ -150,7 +162,7 @@ func (s *studioApp) sourceDraft(r *http.Request, file, disk string) (draft, []sa
 	}
 	if s.notes != nil {
 		copies, err := s.notes.sourceCopies(owner, file)
-		copies = s.closeCopiesOfFile(owner, file, disk, copies)
+		copies = s.closeCopiesOfFile(r.Context(), owner, file, disk, copies)
 		selected := r.URL.Query().Get("codeDraft")
 		s.draftMu.Lock()
 		var volatile draft
@@ -190,12 +202,14 @@ func (s *studioApp) clearSourceDraft(r *http.Request, file string, fields map[st
 	if s.notes != nil {
 		id := fields["recoveryId"]
 		if id != "" {
-			// The last edit the form knew of; without one, close the copy.
+			// The last edit the form knew of: an edit typed after Save or
+			// Discard is kept. Without one, the copy is closed for good.
 			sequence, err := strconv.ParseUint(fields["recoverySequence"], 10, 64)
-			if err != nil || sequence == 0 {
+			final := err != nil || sequence == 0
+			if final {
 				sequence = ^uint64(0)
 			}
-			if err := s.notes.closeSource(owner, id, file, sequence, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
+			if err := s.notes.closeSource(owner, id, file, sequence, final, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
 				return err
 			}
 		}
