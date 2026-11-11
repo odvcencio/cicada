@@ -417,6 +417,15 @@ func followQuickStart(t *testing.T, bin string) {
 		t.Fatalf("new demo: exit %d, printed %q", code, stdout)
 	}
 	q.dir = filepath.Join(q.root, "demo")
+	// cicada new writes the quick start into the project as AGENTS.md, and
+	// cicada agents reference prints the core reference.
+	if written, err := os.ReadFile(filepath.Join(q.dir, "AGENTS.md")); err != nil || !strings.HasSuffix(string(written), q.guide) {
+		t.Fatalf("the new project's AGENTS.md does not hold the quick start: %v", err)
+	}
+	stdout, code = q.run("agents", "reference")
+	if reference := string(stdout); code != 0 || !strings.HasPrefix(reference, "# Cicada core reference for agents\n") || !strings.Contains(reference, "\n## Edit intents\n") || len(reference) > agentguide.ReferenceBudget {
+		t.Fatalf("agents reference: exit %d, %d bytes", code, len(stdout))
+	}
 	revision := q.check()
 	q.browserProfile(true)
 

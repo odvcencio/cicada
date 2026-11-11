@@ -17,6 +17,12 @@ import _ "embed"
 //go:embed quickstart.md
 var QuickStart string
 
+// Reference is the core reference, docs/manual/agent-reference.md, which
+// Build generates from the manual and the catalogs.
+//
+//go:embed reference.md
+var Reference string
+
 // QuickStartBudget is the largest the quick start may be, in bytes: about
 // 2,000 tokens at four bytes a token.
 const QuickStartBudget = 8000

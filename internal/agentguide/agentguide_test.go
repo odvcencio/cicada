@@ -51,3 +51,29 @@ func TestLookupsAreInTheQuickStart(t *testing.T) {
 		at += index
 	}
 }
+
+func TestBuildHelpers(t *testing.T) {
+	for _, tc := range []struct{ dir, target, want string }{
+		{"docs/manual", "docs/audio/mix-chain.md", "../audio/mix-chain.md"},
+		{"docs/manual", "docs/manual/keys.md", "keys.md"},
+		{".", "docs/manual/keys.md", "docs/manual/keys.md"},
+		{"docs/manual", "examples/x.cicada", "../../examples/x.cicada"},
+	} {
+		if got := relative(tc.dir, tc.target); got != tc.want {
+			t.Errorf("relative(%q, %q) = %q, want %q", tc.dir, tc.target, got, tc.want)
+		}
+	}
+	if got := rebaseLinks("see [a](keys.md#x) and [b](https://e.org) and [c](#here)", "docs/manual", "."); got != "see [a](docs/manual/keys.md#x) and [b](https://e.org) and [c](#here)" {
+		t.Errorf("rebaseLinks: %q", got)
+	}
+	page := "# T\n\n## A\n\ntext\n\n```sh\n# not a heading\n```\n\n### A.1\n\nmore\n\n## B\n\nlast\n"
+	if got, err := section(page, "## A"); err != nil || got != "## A\n\ntext\n\n```sh\n# not a heading\n```\n\n### A.1\n\nmore\n" {
+		t.Errorf("section ## A: %q %v", got, err)
+	}
+	if got, err := section(page, "# T"); err != nil || got != "# T\n" {
+		t.Errorf("section # T: %q %v", got, err)
+	}
+	if _, err := section(page, "## C"); err == nil {
+		t.Error("section of a missing heading succeeded")
+	}
+}

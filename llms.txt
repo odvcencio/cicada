@@ -1,0 +1,47 @@
+# Cicada
+
+> Cicada is a music workstation in which a song is a readable text score. The
+> same score renders to the same audio on every machine and in the browser.
+
+An agent starts with `cicada agents`, which prints the quick start: write a
+score, `cicada check --json`, `cicada render --json`, `cicada audition --json`,
+then edit it with `cicada apply`. `cicada agents reference` prints the core reference.
+
+## Start here
+
+- [Cicada quick start for agents](docs/manual/agent-quickstart.md): the one page an AI agent reads first, which `cicada agents` prints: the loop, a song, the edit envelope, refusals and the listening report
+- [Cicada core reference for agents](docs/manual/agent-reference.md): the quick start, the language, sound and formats in brief, and one line for every command, edit intent, diagnostic code and effect route; `cicada agents reference` prints it
+- [Agents and JSON output](docs/manual/agents.md): drive Cicada from a program: the JSON of `help`, `intents`, `diagnostics`, `check`, `apply` and `render`
+
+## Language
+
+- [Writing music](docs/manual/writing-music.md): build a score from tracks, patterns, pitches, drum rows, scenes, and songs
+- [Composing a complete song](docs/manual/composing-songs.md): develop a loop into a form, voice chords, align grids, shape transitions, and study three demo songs
+- [Cicada source edition 2](docs/spec/edition-2.md): what edition 2 of the language adds and changes
+- [Language extensions](docs/spec/features.md): every feature of the language, with its rules
+
+## Sound and delivery
+
+- [Exporting](docs/manual/exporting.md): render WAV, stems, and MIDI
+- [Audition: check what a score sounds like](docs/manual/audition.md): check what a score sounds like: heard key, chords, per-track level, brightness, decay and rhythm, with images
+- [Opt-in mix chain](docs/audio/mix-chain.md): track inserts, sends, master effects, and how loudness targets use the master limiter
+- [Parameter ranges](docs/manual/parameter-ranges.md): the allowed range of every voice, drum and effect setting, as the diagnostics report it
+
+## Reference
+
+- [Diagnostic codes](docs/manual/diagnostics.md): every `CICADA-*` code with its meaning and fix
+- [Troubleshooting](docs/manual/troubleshooting.md): diagnose notation, editor, playback, and export problems
+- [CLI reference](docs/cli.md): every command and flag of the cicada binary
+
+## Optional
+
+- [Cicada Studio on Mac](docs/manual/macos.md): use the native app, files, CoreAudio devices, recording, and Mac shortcuts
+- [Cicada Studio](docs/manual/studio.md): edit source and grids, launch scenes, arrange the song, and inspect edit history
+- [Modeled percussion](docs/manual/modeled-percussion.md): play struck bars, drums and plates, and work the vibraphone's damper pedal
+- [Pad sampler](docs/manual/sampler.md): chop samples, play sixteen pads, apply effects, record performances, and resample them into Session
+- [Editors and notation tools](docs/manual/editors.md): use the LSP, VS Code extension, formatter, quick fixes, highlighting, and symbol lookup
+- [Managing libraries](docs/manual/libraries.md): create, inspect, pin, and vendor reusable declarations and audio; copy projects with Save As
+- [Live playback and mixing](docs/manual/next-level.md): use native audio, host macros, MIDI, and mixer settings
+- [Modulation](docs/manual/modulation.md): create sources and route them to track controls
+- [Hosting Cicada's audio engine](docs/manual/engine-host.md): integrate Cicada's Go or TinyGo audio engine
+- [Measure engine performance](docs/manual/engine-metrics.md): run synthetic sessions and compare CPU and offline render costs between builds

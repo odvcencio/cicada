@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/internal/agentguide"
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -113,6 +114,7 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 			_ = os.Remove(filepath.Join(dir, "main.cicada"))
 			_ = os.Remove(filepath.Join(dir, "cicada.mod"))
 			_ = os.Remove(filepath.Join(dir, ".gitignore"))
+			_ = os.Remove(filepath.Join(dir, "AGENTS.md"))
 			_ = os.Remove(dir)
 		}
 	}()
@@ -134,6 +136,11 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 		return err
 	}
 	if err := writeFile(filepath.Join(dir, ".gitignore"), gitignore, 0644); err != nil {
+		return err
+	}
+	// An agent that opens the project reads its AGENTS.md first: the quick
+	// start this binary carries.
+	if err := writeFile(filepath.Join(dir, "AGENTS.md"), []byte(agentguide.ProjectAgents()), 0644); err != nil {
 		return err
 	}
 	complete = true

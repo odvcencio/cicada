@@ -116,6 +116,12 @@ test-render-identity:
 # render to a loudness target and audition. It must finish within 2 minutes.
 # It starts by following the quick start that cicada agents prints, and runs the
 # examples of docs/manual/agents.md and docs/manual/agent-quickstart.md too.
+# Regenerates the agent front door: the core reference, llms.txt,
+# llms-full.txt, AGENTS.md's generated region and the pages the binary embeds.
+.PHONY: agent-front-door
+agent-front-door:
+	CICADA_UPDATE_AGENT_FRONT_DOOR=1 go test ./cmd/cicada -run '^TestAgentFrontDoorIsCurrent$$' -count=1
+
 .PHONY: test-agent-surface
 test-agent-surface: build-core
 	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentDocumentationExamples)$$' -count=1 -v
