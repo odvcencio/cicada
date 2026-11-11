@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -104,4 +107,20 @@ func removeInterruptFiles() {
 	for path := range interruptFiles.paths {
 		_ = os.Remove(path)
 	}
+}
+
+// outputFolderError reports, before a render starts, that the folder of its
+// output WAV does not exist. The render writes a temporary file there first,
+// so without this check the error named that file instead of the folder.
+// Other errors are left to the render, which reports them.
+func outputFolderError(path string) error {
+	dir := filepath.Dir(path)
+	info, err := os.Stat(dir)
+	switch {
+	case err == nil && !info.IsDir():
+		return &renderFailure{reason: "output_folder_missing", message: fmt.Sprintf("output folder %s is a file, not a folder", dir)}
+	case errors.Is(err, fs.ErrNotExist):
+		return &renderFailure{reason: "output_folder_missing", message: fmt.Sprintf("output folder %s does not exist; create it (mkdir -p %s), then render again", dir, dir)}
+	}
+	return nil
 }

@@ -246,11 +246,11 @@ shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
 
 **Meaning:** A lane changes a registered parameter over song time. Lanes are top-level declarations with absolute song positions. Interpolation uses the parameter's control space: for frequency and time parameters that space is logarithmic, so `exponential` has the same meaning as `linear` there. `linear_period` is not a supported shape.
 
-**Types and units:** Positions are one-based bar.beat.sixteenth values (beats and steps 1–4), within the song including its end boundary. Point values use the addressed parameter's registered type and unit. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
+**Types and units:** Positions are one-based bar.beat.sixteenth values (beats and steps 1–4), within the song including its end boundary. Point values use the addressed parameter's registered type and unit. A send lane (`a.send.reverb`, or `a.send.hall` by the effect's declared name) takes a linear gain from 0 to 1 or, as a track block's send line does, a level from −60 dB to 0 dB, converted to the same linear gain as `send hall = -6dB`. The lane holds and interpolates linear gain, so a ramp from `-6dB` to `0dB` is a straight line in gain: halfway it is 0.75 (−2.5 dB), not −3 dB. Add points, or use `curve`, for a ramp that is even in dB. A lane written in linear gain compiles exactly as before. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
 
 **Defaults:** `linear` is the default incoming segment shape. The lane contributes no value before its first point and holds its last value afterward. Song loops repeat the lane; seeks reconstruct the current value. At authored scene boundaries, automation takes precedence over scene settings on the same path.
 
-**Errors:** Invalid positions and out-of-order points report `CICADA-POSITION`; unresolved paths report `CICADA-REFERENCE`; incompatible units report `CICADA-UNIT`. Unsupported shapes, including `linear_period`, report `CICADA-UNSUPPORTED`. Duplicate paths report `CICADA-DUPLICATE`.
+**Errors:** Invalid positions and out-of-order points report `CICADA-POSITION`; unresolved paths report `CICADA-REFERENCE`; incompatible units report `CICADA-UNIT`, whose message names the unit the parameter takes and the value it refused. Unsupported shapes, including `linear_period`, report `CICADA-UNSUPPORTED`. Duplicate paths report `CICADA-DUPLICATE`, as do two spellings of one control, such as `a.send.hall` and `a.send.reverb`.
 
 **Example:** `exponential` uses the existing linear interpolation rule in control space:
 

@@ -3,6 +3,7 @@ package paramdefs
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -36,7 +37,7 @@ func ValidateLiteral(d Descriptor, literal string) (code string, err error) {
 		want = "unit"
 	}
 	if unit != want {
-		return fail("CICADA-PRESET-UNIT", "expected unit "+d.Unit)
+		return fail("CICADA-PRESET-UNIT", "expected "+UnitExpectation(d)+"; got "+literal)
 	}
 	if number < d.Min || number > d.Max {
 		return fail("CICADA-PRESET-RANGE", fmt.Sprintf("value is outside %g..%g", d.Min, d.Max))
@@ -85,4 +86,54 @@ func samplerRoots() []string {
 		}
 	}
 	return values
+}
+
+// UnitExpectation says in words which unit a numeric setting takes, for an
+// error about a value with the wrong unit: "a frequency in Hz", "a plain
+// number without a unit". It never returns an empty unit name.
+func UnitExpectation(d Descriptor) string {
+	if IsTrackSend(d) {
+		return fmt.Sprintf("a linear gain from 0 to 1, or a level in dB from %ddB to %ddB", SendMinDB, SendMaxDB)
+	}
+	switch strings.ToLower(d.Unit) {
+	case "hz":
+		return "a frequency in Hz"
+	case "ms":
+		return "a time in ms"
+	case "db":
+		return "a level in dB"
+	case "dbtp":
+		return "a level in dBTP"
+	case "lufs":
+		return "a loudness in LUFS"
+	case "semitone":
+		return "a number of semitones without a unit"
+	case "cent":
+		return "a number of cents without a unit"
+	case "bpm":
+		return "a tempo in beats per minute without a unit"
+	case "", "unit", "ratio":
+		return "a plain number without a unit"
+	}
+	return "a value in " + d.Unit
+}
+
+// ValueWithUnit writes a number in a base unit as an author writes it, for
+// a message that shows the value it refuses: 200Hz, -6dB, 300ms, or "5
+// without a unit".
+func ValueWithUnit(number float64, unit string) string {
+	text := strconv.FormatFloat(number, 'g', -1, 64)
+	switch strings.ToLower(unit) {
+	case "", "unit", "ratio":
+		return text + " without a unit"
+	case "hz":
+		return text + "Hz"
+	case "db":
+		return text + "dB"
+	case "dbtp":
+		return text + "dBTP"
+	case "lufs":
+		return text + "LUFS"
+	}
+	return text + unit
 }

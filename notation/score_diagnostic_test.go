@@ -17,26 +17,22 @@ func TestDiagnosticPrintsItsCodeOnce(t *testing.T) {
 	}
 }
 
-// A send path that names the effect, as a track's send line does, gets a hint
-// with the slot path to use instead.
+// A send path may name the effect, as a track's send line does; a send path
+// that names an effect that is not a send return gets a hint with the paths.
 func TestSendPathNamedByEffectGetsAHint(t *testing.T) {
-	source := "cicada 2\ntempo 120\nfx echo tape { time = 1/8 }\nfx hall reverb { size = 0.5 }\ntrack keys acid { send echo = 0.2 send hall = 0.2 }\npattern p acid { 1 . 3 . }\nscene s { keys = p keys.send.echo = 0.1 keys.send.hall = 0.1 }\nsong { s }\n"
+	source := "cicada 2\ntempo 120\nfx echo tape { time = 1/8 }\nfx hall reverb { size = 0.5 }\nfx grit drive {}\ntrack keys acid { send echo = 0.2 send hall = 0.2 insert = grit }\npattern p acid { 1 . 3 . }\nscene s { keys = p keys.send.echo = 0.1 keys.send.hall = -6dB }\nsong { s }\n"
 	score, ds := Parse([]byte(source))
 	if score == nil {
 		t.Fatalf("parse: %+v", ds)
 	}
-	ds = append(ds, Validate(score)...)
-	want := map[string]bool{"the send to echo is send.delay": false, "the send to hall is send.reverb": false}
-	for _, d := range ds {
-		for text := range want {
-			if strings.Contains(d.Message, text) {
-				want[text] = true
-			}
+	if ds = append(ds, Validate(score)...); len(ds) != 0 {
+		t.Fatalf("send paths by effect name: %+v", ds)
+	}
+	score, _ = Parse([]byte(strings.Replace(source, "keys.send.hall = -6dB", "keys.send.grit = 0.1", 1)))
+	for _, d := range Validate(score) {
+		if strings.Contains(d.Message, "only the delay and reverb returns have track send paths") {
+			return
 		}
 	}
-	for text, seen := range want {
-		if !seen {
-			t.Errorf("no diagnostic says %q: %+v", text, ds)
-		}
-	}
+	t.Fatal("no diagnostic names the send paths for a send to a drive")
 }

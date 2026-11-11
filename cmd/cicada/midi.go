@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/cicada/render"
 	"m31labs.dev/cicada/smf"
 )
 
@@ -19,6 +21,9 @@ type midiOptions struct {
 	bars            int
 	report          bool
 	libraryAliases  map[string]string
+	// draws names the renderer that plays the score, so the file repeats
+	// its chance and humanize draws.
+	draws smf.Options
 }
 
 func parseMIDIArgs(args []string) midiOptions {
@@ -38,9 +43,9 @@ func midiFile(p *project.Project, opts midiOptions) error {
 	var file smf.File
 	var err error
 	if opts.pattern != "" {
-		file, err = smf.FromPattern(p, midiPatternID(p, opts.pattern, opts.libraryAliases))
+		file, err = smf.FromPatternWith(p, midiPatternID(p, opts.pattern, opts.libraryAliases), opts.draws)
 	} else {
-		file, err = smf.FromProject(p, opts.bars)
+		file, err = smf.FromProjectWith(p, opts.bars, opts.draws)
 	}
 	if err != nil {
 		return err
@@ -205,4 +210,9 @@ func compareMIDICommand(args []string) error {
 	}
 	fmt.Println("equal")
 	return nil
+}
+
+// midiDraws names the renderer that plays score, as render chooses it.
+func midiDraws(score *notation.Score) smf.Options {
+	return smf.Options{SceneRenderer: !render.UsesScheduledEngine(score, render.Options{})}
 }

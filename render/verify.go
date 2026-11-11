@@ -58,8 +58,8 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	if opts.Bits != 16 && opts.Bits != 24 && opts.Bits != 32 || opts.Bars < 1 || opts.Bars > 256 || opts.From < 0 || opts.From+opts.Bars > 256 {
 		return report, fmt.Errorf("verify-wav requires 16, 24, or 32 float bits and a bar range within 256 bars")
 	}
-	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
-		return report, fmt.Errorf("tail must be 0 to 10 seconds")
+	if err := checkTail(opts.TailSec); err != nil {
+		return report, err
 	}
 	if opts.CheckLUFS && (math.IsNaN(opts.LUFSTarget) || math.IsInf(opts.LUFSTarget, 0) || math.IsNaN(opts.LUFSTolerance) || math.IsInf(opts.LUFSTolerance, 0) || opts.LUFSTolerance < 0) {
 		return report, fmt.Errorf("loudness target and tolerance must be finite, with a non-negative tolerance")

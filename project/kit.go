@@ -73,7 +73,7 @@ func CompileKitWithSamplers(kit Kit, programs map[string]*instrument.Program, sa
 		}
 		for _, node := range program.Nodes {
 			if node.Op == "mod" || node.Op == "lfo" {
-				return nil, fmt.Errorf("CICADA-UNSUPPORTED: graph modulators and LFOs are not supported inside drum kits")
+				return nil, fmt.Errorf("CICADA-UNSUPPORTED: kit %s lane %s plays instrument %s, which reads %s(); graph modulators and LFOs are not supported inside drum kits, so play the instrument on its own track to modulate it", kit.ID, source, target, node.Op)
 			}
 		}
 		graph, err := instrument.Lower(program, nil)

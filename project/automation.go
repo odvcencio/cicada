@@ -108,6 +108,11 @@ func validateAutomation(p *Project) error {
 		}
 	}
 	seen := map[string]bool{}
+	type slot struct {
+		track uint8
+		id    uint16
+	}
+	slots := map[slot]string{}
 	for _, lane := range p.Automation {
 		if seen[lane.Path] {
 			return fmt.Errorf("CICADA-DUPLICATE: automation path %s", lane.Path)
@@ -117,6 +122,13 @@ func validateAutomation(p *Project) error {
 		if err != nil {
 			return err
 		}
+		// Two spellings of one control, such as a.send.hall and
+		// a.send.reverb, would fight over it.
+		key := slot{resolved.Track, uint16(resolved.ID)}
+		if other, ok := slots[key]; ok {
+			return fmt.Errorf("CICADA-DUPLICATE: automation paths %s and %s set the same control", other, lane.Path)
+		}
+		slots[key] = lane.Path
 		if !resolved.Descriptor.Automatable || !resolved.Descriptor.Live || resolved.Descriptor.Unit == "enum" || resolved.Descriptor.Curve == "toggle" {
 			return fmt.Errorf("CICADA-UNSUPPORTED: %s has no continuous numeric control", lane.Path)
 		}

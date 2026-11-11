@@ -26,8 +26,14 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if opts.Block == 0 {
 		opts.Block = 4096
 	}
-	if opts.Block < 1 || opts.Block > 4096 || opts.TailSec < 0 || opts.TailSec > 10 || math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 {
-		return report, fmt.Errorf("invalid scheduled render options")
+	if err := checkTail(opts.TailSec); err != nil {
+		return report, err
+	}
+	if opts.Block < 1 || opts.Block > 4096 {
+		return report, fmt.Errorf("render block must be 1 to 4096 frames")
+	}
+	if math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 {
+		return report, fmt.Errorf("master gain is outside -120 to +24 dB")
 	}
 	p, ds := project.FromScore(score)
 	if p == nil {

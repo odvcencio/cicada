@@ -15,6 +15,10 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// MaxRenderTailSeconds is the longest render tail, in seconds, an export
+// block or the render commands take (render.MaxTailSeconds).
+const MaxRenderTailSeconds = 60
+
 var acceptedScales = map[string]bool{
 	"minor": true, "major": true, "dorian": true, "phrygian": true,
 	"harmonic": true, "pent": true, "mixo": true, "blues": true,
@@ -902,8 +906,8 @@ func validateExports(exports []Export) error {
 		if export.Bits != nil && *export.Bits != 16 && *export.Bits != 24 && *export.Bits != 32 {
 			return fmt.Errorf("export %s bits must be 16, 24, or 32", export.ID)
 		}
-		if export.Tail != nil && (!validValue(*export.Tail) || export.Tail.Number == nil || export.Tail.Unit != "ms" || *export.Tail.Number < 0 || *export.Tail.Number > 10000) {
-			return fmt.Errorf("CICADA-UNSUPPORTED: export %s tail is outside the renderer's 0 to 10 second range", export.ID)
+		if export.Tail != nil && (!validValue(*export.Tail) || export.Tail.Number == nil || export.Tail.Unit != "ms" || *export.Tail.Number < 0 || *export.Tail.Number > MaxRenderTailSeconds*1000) {
+			return fmt.Errorf("CICADA-UNSUPPORTED: export %s tail is outside the renderer's 0 to %d second range", export.ID, MaxRenderTailSeconds)
 		}
 		if export.Loudness != nil && (!validValue(*export.Loudness) || export.Loudness.Number == nil || export.Loudness.Unit != "lufs" && export.Loudness.Unit != "lu" || *export.Loudness.Number < -70 || *export.Loudness.Number > 0) {
 			return fmt.Errorf("export %s loudness must be -70 to 0 LUFS", export.ID)

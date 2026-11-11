@@ -96,6 +96,12 @@ type renderErrorJSON struct {
 	Code    string            `json:"code"`
 	Message string            `json:"message"`
 	Remedy  *renderRemedyJSON `json:"remedy,omitempty"`
+	// Flag, Value, Bound and Limit name the flag value outside its range
+	// when Code is flag_out_of_range: --tail 61s crosses the maximum 60s.
+	Flag  string `json:"flag,omitempty"`
+	Value string `json:"value,omitempty"`
+	Bound string `json:"bound,omitempty"`
+	Limit string `json:"limit,omitempty"`
 }
 
 // renderRemedyJSON is a fix for a failed render. ScoreText is the exact text
@@ -119,7 +125,7 @@ type renderRemedyJSON struct {
 // docs/manual/agents.md lists them and TestRenderErrorCodesAreDocumented
 // keeps the lists equal.
 var renderErrorCodes = []string{
-	"usage", "unreadable_score", "invalid_score", "export_settings", "output_exists",
+	"usage", "flag_out_of_range", "unreadable_score", "invalid_score", "export_settings", "output_exists", "output_folder_missing",
 	"sampler_memory", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
 	"true_peak_over_ceiling", "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum",
 	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_target_missed",
@@ -160,6 +166,14 @@ func renderJSONMain(command string, args []string, stdout, stderr io.Writer) int
 		wantBits = 32
 	}
 	output, opts, target, err := parseRenderArgs(flags, wantBits, stderr)
+	var badRange *flagRangeError
+	if errors.As(err, &badRange) {
+		fmt.Fprintln(stderr, err)
+		writeAgentJSON(stdout, renderDocument{Schema: renderSchema, Command: command, Score: jsonPath(args[0]), Outputs: []renderOutputJSON{}, Error: &renderErrorJSON{
+			Code: "flag_out_of_range", Message: err.Error(), Flag: badRange.flag, Value: badRange.value, Bound: badRange.bound, Limit: badRange.limit,
+		}})
+		return 2
+	}
 	if err != nil {
 		return usageFailure(err)
 	}
@@ -240,6 +254,9 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			document.Outputs = append(document.Outputs, described)
 		}
 		return finish(nil)
+	}
+	if err := outputFolderError(output); err != nil {
+		return finish(err)
 	}
 	if target != nil && target.Loudness {
 		report, err := renderLoudnessFileReport(inspection.score, output, opts, *target, nil)

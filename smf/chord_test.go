@@ -5,6 +5,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -90,9 +91,9 @@ func TestChordMIDIExportsEveryPitchAndSharedTies(t *testing.T) {
 	}
 }
 
-// This records an inherited interchange limitation separately from pitch and
-// timing coverage. It must not be interpreted as realized chance-event parity.
-func TestKnownMIDIChanceIterationZeroMismatch(t *testing.T) {
+// The export used to draw every repeat of a chance chord with pass zero, so
+// MIDI held 16 chords where playback held 10. It now draws as playback does.
+func TestMIDIChanceChordsMatchPlayback(t *testing.T) {
 	source := `tempo 120 key d minor seed 7 instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } } track keys piano {} pattern a notes { [d4 f4]?50 } scene verse { keys=a } song { verse }`
 	score, ds := notation.Parse([]byte(source))
 	p, ds := project.FromScore(score)
@@ -113,15 +114,19 @@ func TestKnownMIDIChanceIterationZeroMismatch(t *testing.T) {
 	if overflow {
 		t.Fatal("event overflow")
 	}
-	onsets := 0
+	var onsets []int64
 	for _, event := range events[:n] {
 		if event.Kind == seq.NoteOn {
-			onsets++
+			onsets = append(onsets, event.Tick)
 		}
 	}
-	midiOnsets := len(file.Tracks[1].Notes) / 2
-	t.Logf("KNOWN INHERITED LIMITATION: realized playback%d cohorts vs MIDI%d cohorts (export uses iteration0 on repeats)", onsets, midiOnsets)
-	if onsets != 10 || midiOnsets != 16 {
-		t.Fatalf("inherited chance behavior changed: playback%d MIDI%d; review separately", onsets, midiOnsets)
+	var midiOnsets []int64
+	for i, note := range file.Tracks[1].Notes {
+		if i%2 == 0 {
+			midiOnsets = append(midiOnsets, note.Tick)
+		}
+	}
+	if len(onsets) != 10 || !slices.Equal(onsets, midiOnsets) {
+		t.Fatalf("chord onsets: playback %v, MIDI %v", onsets, midiOnsets)
 	}
 }

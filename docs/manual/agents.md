@@ -657,10 +657,15 @@ command prints and, when the documentation gives a fix for that cause, a
 
 <!-- render-error-codes -->
 - `usage`: the arguments are wrong.
+- `flag_out_of_range`: a flag value is outside the range the command takes;
+  `flag`, `value`, `bound` (`maximum` or `minimum`) and `limit` name it, as
+  in `--tail 61s` against the `60s` maximum. Exit status 2, as for `usage`.
 - `unreadable_score`: the score cannot be read.
 - `invalid_score`: the score has errors; `diagnostics` lists them.
 - `export_settings`: the `--export` profile is unknown or cannot be applied.
 - `output_exists`: the stems folder already exists.
+- `output_folder_missing`: the folder of the `-o` WAV does not exist; the
+  message names it. `render` does not create it.
 - `sampler_memory`: the sampler packs exceed the resident PCM cap.
 - `render_failed`: another render or write error; the message says which.
 - `true_peak_and_dc_unmet`: no pass met the true-peak ceiling and the DC limit.

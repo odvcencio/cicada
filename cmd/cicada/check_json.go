@@ -197,6 +197,7 @@ func checkScoreJSON(path string, options checkOptions) checkScoreReport {
 }
 
 func checkDiagnosticJSON(path string, source []byte, d notation.Diagnostic, inspection *scoreInspection) checkDiagnosticReport {
+	d = d.SingleCode()
 	file := path
 	if d.Position.File != "" && d.Position.File != path {
 		file = d.Position.File

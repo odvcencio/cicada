@@ -217,7 +217,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			}
 			gain := *send.Level.Number
 			if send.Level.Unit == "db" {
-				gain = math.Pow(10, gain/20)
+				gain = paramdefs.SendGainFromDB(gain)
 			}
 			switch semanticEffectKind(effect) {
 			case "delay", "tape":

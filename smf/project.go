@@ -22,13 +22,31 @@ type probabilityIdentity struct {
 	slot  uint8
 }
 
-// FromProject compiles the first pass of an arrangement into type 1 MIDI. The
-// probability hash always uses iteration zero, as specified for interchange.
-func FromProject(p *project.Project, bars int) (File, error) {
-	return fromProject(p, bars, nil)
+// Options name the renderer whose draws the export repeats.
+type Options struct {
+	// SceneRenderer is true when the direct scene renderer plays the score,
+	// that is when render.UsesScheduledEngine reports false. It draws a drum
+	// hit's humanize offset with the hit's General MIDI note, where the
+	// scheduled engine draws it with the lane's index. An arrangement always
+	// plays on the scheduled engine, so its placements ignore this.
+	SceneRenderer bool
 }
 
-func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (File, error) {
+// FromProject compiles an arrangement into type 1 MIDI with the scheduled
+// engine's draws; FromProjectWith takes the renderer that plays the score.
+func FromProject(p *project.Project, bars int) (File, error) {
+	return fromProject(p, bars, nil, Options{})
+}
+
+// FromProjectWith compiles an arrangement into type 1 MIDI. Chance (?N) and
+// humanize use the draws playback makes, from the pattern seed, track, slot,
+// pass and step, so the file holds the notes and velocities the renderer
+// named by opts plays.
+func FromProjectWith(p *project.Project, bars int, opts Options) (File, error) {
+	return fromProject(p, bars, nil, opts)
+}
+
+func fromProject(p *project.Project, bars int, identity *probabilityIdentity, opts Options) (File, error) {
 	var file File
 	cfg, err := project.CompileNoteSchedule(p)
 	if err != nil {
@@ -160,7 +178,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 					continue
 				}
 				if chained[ti] {
-					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.TrackKinds[ti] == engine.VoiceDrums, &held[ti])
+					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.TrackKinds[ti] == engine.VoiceDrums, opts.SceneRenderer, &held[ti])
 					continue
 				}
 				slot := slots[ti]
@@ -182,7 +200,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 					grid := pattern.GridTicks()
 					first := (boundary + grid - 1) / grid
 					for absoluteStep := first; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
-						appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, lane, isDrum, channels[ti], &held[ti][0])
+						appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, lane, isDrum, opts.SceneRenderer, channels[ti], &held[ti][0])
 					}
 				}
 				if cfg.TrackKinds[ti] == engine.VoiceDrums {
@@ -193,7 +211,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 						}
 						grid := pattern.GridTicks()
 						for absoluteStep := (boundary + grid - 1) / grid; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
-							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, drum.MIDINotes[lane], true, channels[ti], &held[ti][lane])
+							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, drum.MIDINotes[lane], true, opts.SceneRenderer, channels[ti], &held[ti][lane])
 						}
 					}
 				} else {
@@ -211,7 +229,13 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 
 // FromPattern exports a selected pattern with its first compatible track.
 // A short pattern loops to fill one bar; longer patterns retain their length.
+// It uses the scheduled engine's draws; FromPatternWith takes the renderer.
 func FromPattern(p *project.Project, patternID string) (File, error) {
+	return FromPatternWith(p, patternID, Options{})
+}
+
+// FromPatternWith is FromPattern with the draws of the renderer opts names.
+func FromPatternWith(p *project.Project, patternID string, opts Options) (File, error) {
 	if err := project.ValidateProject(p); err != nil {
 		return File{}, err
 	}
@@ -267,17 +291,23 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	}
 	clone.Song = []project.SongEntry{{Scene: "midi-pattern", Bars: uint16(bars)}}
 	clone.Title = patternID
-	return fromProject(&clone, bars, &probabilityIdentity{track: uint8(selected), slot: uint8(selectedSlot)})
+	return fromProject(&clone, bars, &probabilityIdentity{track: uint8(selected), slot: uint8(selectedSlot)}, opts)
 }
 
-func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
-	appendStepOffset(track, pattern, absoluteStep, 0, trackIndex, probabilityTrack, probabilitySlot, drumPitch, isDrum, channel, held)
+func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum, drawWithPitch bool, channel uint8, held *heldNote) {
+	appendStepOffset(track, pattern, absoluteStep, 0, trackIndex, probabilityTrack, probabilitySlot, drumPitch, isDrum, drawWithPitch, channel, held)
 }
 
-func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tickOffset int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
+// appendStepOffset writes one step's notes. drawWithPitch draws a drum hit's
+// humanize offset with its General MIDI note, as the scene renderer does;
+// otherwise with the lane index the step carries, as the scheduled engine does.
+func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tickOffset int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum, drawWithPitch bool, channel uint8, held *heldNote) {
 	index := uint8(absoluteStep % int64(pattern.Len))
+	// absoluteStep counts from the pattern's start, as the sequencer's local
+	// step does, so the pass is the sequencer's loop iteration.
+	pass := absoluteStep / int64(pattern.Len)
 	step, err := seq.UnpackStep(pattern.Steps[index])
-	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, 0, index) {
+	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, pass, index) {
 		return
 	}
 	start := tickOffset + absoluteStep*pattern.GridTicks()
@@ -310,12 +340,18 @@ func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tic
 		}
 		gate := max(int64(30), (segmentEnd-onset)*int64(pattern.GatePercent)/100)
 		pitch := uint8(int(step.Note) + int(pattern.Transpose))
-		velocity := step.Velocity
+		// The same humanize draw as playback.
+		drawNote := step.Note
+		if isDrum && drawWithPitch {
+			drawNote = drumPitch
+		}
+		played := seq.HumanizeVelocity(step.Velocity, pattern.Humanize, pattern.Seed, probabilityTrack, probabilitySlot, pass, index, ratchet, drawNote)
+		velocity := played
 		if velocity == 0 {
 			velocity = 100
 		}
 		if isDrum {
-			pitch, velocity = drumPitch, step.Velocity
+			pitch, velocity = drumPitch, played
 		} else if step.Accent && velocity == 100 {
 			velocity = 127
 		}
@@ -345,7 +381,7 @@ func closeAt(track *TrackChunk, held *heldNote, tick int64) {
 	held.valid = false
 }
 
-func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64, trackIndex, channel uint8, isDrum bool, held *[drum.LaneCount]heldNote) {
+func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64, trackIndex, channel uint8, isDrum, drawWithPitch bool, held *[drum.LaneCount]heldNote) {
 	var period int64
 	for _, slot := range bank.Chain {
 		p := &bank.Slots[slot]
@@ -371,10 +407,10 @@ func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64,
 				}
 				if isDrum {
 					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-						appendStepOffset(track, &bank.Drums[slot][lane], index, start, trackIndex, trackIndex, slot, drum.MIDINotes[lane], true, channel, &held[lane])
+						appendStepOffset(track, &bank.Drums[slot][lane], index, start, trackIndex, trackIndex, slot, drum.MIDINotes[lane], true, drawWithPitch, channel, &held[lane])
 					}
 				} else {
-					appendStepOffset(track, p, index, start, trackIndex, trackIndex, slot, 0, false, channel, &held[0])
+					appendStepOffset(track, p, index, start, trackIndex, trackIndex, slot, 0, false, false, channel, &held[0])
 				}
 			}
 			start += length

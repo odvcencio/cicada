@@ -460,8 +460,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
-		return report, fmt.Errorf("tail must be 0 to 10 seconds")
+	if err := checkTail(opts.TailSec); err != nil {
+		return report, err
 	}
 	clock, err := seq.NewClock(opts.SampleRate, score.TempoMilli)
 	if err != nil {

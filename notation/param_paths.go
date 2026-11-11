@@ -142,6 +142,9 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := notationParameterVoiceKind(score, track.Kind)
+		if alias, ok := paramdefs.SendAlias(setting, scoreEffectKind(score)); ok && !registryTrackPath(setting, kind) {
+			setting = alias
+		}
 		for _, descriptor := range paramdefs.Registry {
 			if descriptor.Scope != "track" || descriptor.Path != setting || !paramdefs.HasVoice(descriptor, kind) {
 				continue
@@ -266,6 +269,13 @@ func validateSceneValue(descriptor paramdefs.Descriptor, path, source string) er
 	if err != nil {
 		return sceneValueMismatch(descriptor, source)
 	}
+	if paramdefs.IsTrackSend(descriptor) && unit == "db" {
+		// A send takes dB as a track block's send line does.
+		if math.IsNaN(value) || value < paramdefs.SendMinDB || value > paramdefs.SendMaxDB {
+			return fmt.Errorf("%s is outside the send level range %ddB to %ddB", source, paramdefs.SendMinDB, paramdefs.SendMaxDB)
+		}
+		return nil
+	}
 	want := strings.ToLower(descriptor.Unit)
 	if want == "bpm" || want == "ratio" || want == "" || want == "semitone" || want == "cent" {
 		want = "unit"
@@ -311,6 +321,9 @@ func sceneValueExpectation(descriptor paramdefs.Descriptor) string {
 		return "one of " + strings.Join(words, ", ")
 	}
 	example := sceneValueNumber(descriptor, descriptor.Default)
+	if paramdefs.IsTrackSend(descriptor) {
+		return paramdefs.UnitExpectation(descriptor)
+	}
 	var expected string
 	switch strings.ToLower(descriptor.Unit) {
 	case "hz":
@@ -382,12 +395,28 @@ func ParameterVoiceKind(score *Score, kind string) string {
 
 // sendPathHint is paramdefs.SendPathHint over the score's effects.
 func sendPathHint(score *Score, setting string) string {
-	return paramdefs.SendPathHint(setting, func(name string) (string, bool) {
+	return paramdefs.SendPathHint(setting, scoreEffectKind(score))
+}
+
+// scoreEffectKind reports the kind of a declared effect of the score.
+func scoreEffectKind(score *Score) func(string) (string, bool) {
+	return func(name string) (string, bool) {
 		for _, effect := range score.Effects {
 			if effect.Name == name {
 				return effect.Kind, true
 			}
 		}
 		return "", false
-	})
+	}
+}
+
+// registryTrackPath reports whether setting is a registered track path of the
+// voice kind, such as send.delay. A send alias never hides one.
+func registryTrackPath(setting, kind string) bool {
+	for _, descriptor := range paramdefs.Registry {
+		if descriptor.Scope == "track" && descriptor.Path == setting && paramdefs.HasVoice(descriptor, kind) {
+			return true
+		}
+	}
+	return false
 }
