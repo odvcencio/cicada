@@ -1162,12 +1162,16 @@ func workspaceTransportFree(form, submitter js.Value) bool {
 }
 
 // sendTransport sends a transport command at once, beside the queue. It
-// changes no score, so its answer only reports: playback state is shown by
-// the live transport readouts, not by the score view.
+// changes no score; its view (the panel shows what is playing) is applied
+// only while nothing is queued and the score has not moved, and otherwise
+// comes with the next refresh.
 func (u *workspaceUI) sendTransport(target string, values map[string]string, label string) {
-	_, message, err := u.request(workspaceJob{method: http.MethodPost, target: target, values: values})
+	job := workspaceJob{method: http.MethodPost, target: target, values: values, form: js.Undefined()}
+	projection, message, err := u.request(job)
 	if err != nil {
 		message = label + " did not run: " + err.Error()
+	} else if !u.busy.Load() && len(u.jobs) == 0 && !u.closed.Load() && projection.Revision == u.revision.Get() {
+		u.apply(projection, job)
 	}
 	u.status.Set(message)
 }
