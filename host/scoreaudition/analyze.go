@@ -47,6 +47,10 @@ type Options struct {
 	// BarBands adds each track's band levels per bar (tracks[].bar_bands_db),
 	// seven numbers per track per bar.
 	BarBands bool
+	// NoBands skips band ownership (bands, bars[].bands, sections[].bands and
+	// the tracks' band levels), which takes about an eighth of an audition's
+	// CPU time.
+	NoBands bool
 }
 
 type Report struct {
@@ -120,8 +124,8 @@ type BarReport struct {
 	// under 3 s of the range precede it.
 	ShortTermLUFS  *float64    `json:"short_term_lufs"`
 	SamplePeakDBFS float64     `json:"sample_peak_dbfs"`
-	Sounding       []string    `json:"sounding"` // tracks that sound in the bar
-	Bands          []BandOwner `json:"bands"`
+	Sounding       []string    `json:"sounding"`        // tracks that sound in the bar
+	Bands          []BandOwner `json:"bands,omitempty"` // absent with Options.NoBands
 }
 
 type TrackReport struct {
@@ -157,9 +161,9 @@ type TrackReport struct {
 	LongestSameRun       int `json:"longest_same_run"`
 	// Band levels in dB re a full-scale RMS, in band order: over the range,
 	// per bar and per section.
-	BandsDB        []float64   `json:"bands_db"`
+	BandsDB        []float64   `json:"bands_db,omitempty"`
 	BarBandsDB     [][]float64 `json:"bar_bands_db,omitempty"` // only with Options.BarBands
-	SectionBandsDB [][]float64 `json:"section_bands_db"`
+	SectionBandsDB [][]float64 `json:"section_bands_db,omitempty"`
 }
 
 type SectionReport struct {
@@ -182,8 +186,8 @@ type SectionReport struct {
 	TruePeakDBTP     float64       `json:"true_peak_dbtp"`
 	ShortTermMaxLUFS *float64      `json:"short_term_max_lufs"`
 	ShortTermMinLUFS *float64      `json:"short_term_min_lufs"`
-	VsLoudestLU      *float64      `json:"vs_loudest_lu"` // integrated re the loudest section
-	Bands            []SectionBand `json:"bands"`
+	VsLoudestLU      *float64      `json:"vs_loudest_lu"`   // integrated re the loudest section
+	Bands            []SectionBand `json:"bands,omitempty"` // absent with Options.NoBands
 }
 
 // Analysis holds the report and the data behind the images.
@@ -615,7 +619,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
 		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
-		bandFrames[ti] = bandPower(s, chromaPlan, binBand, layout)
+		if !opts.NoBands {
+			bandFrames[ti] = bandPower(s, chromaPlan, binBand, layout)
+		}
 		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
 		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, baseSample, opts.From, bars, acts[ti])
@@ -762,7 +768,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	err = a.measureMix(mixInput{
 		mix: mix, stems: stems, ids: ids, selected: selected, rate: rate, clock: clock, base: baseSample,
 		fromTick: fromTick, bars: bars, barSample: barSample, notes: &notes, acts: acts, played: played,
-		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, barBands: opts.BarBands,
+		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, barBands: opts.BarBands, noBands: opts.NoBands,
 	})
 	if err != nil {
 		return nil, err

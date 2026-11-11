@@ -2,6 +2,7 @@ package scoreaudition
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -394,5 +395,45 @@ func TestBandFramesWeighEveryInstant(t *testing.T) {
 		if math.Abs(d) > 0.5 || math.Abs(d-got[0]) > 0.05 {
 			t.Errorf("bursts at placement %d read %.2f dB against the held sine (first placement %.2f dB)", i, d, got[0])
 		}
+	}
+}
+
+// TestPowFramesSquareMagFrames: the band frames' power is the square of the
+// magnitude the other measures use, to rounding.
+func TestPowFramesSquareMagFrames(t *testing.T) {
+	s := stereo{L: make([]float32, 20000), R: make([]float32, 20000)}
+	for i := range s.L {
+		s.L[i] = float32(math.Sin(float64(i)*0.031) + 0.3*math.Sin(float64(i)*0.7))
+		s.R[i] = float32(-0.5 * math.Sin(float64(i)*0.011))
+	}
+	plan := newPlan(chromaFFT)
+	start := func(i int) int { return i*5000 - 3000 }
+	var mags [][]float64
+	magFrames(s, plan, 4, start, func(_ int, mag []float64) { mags = append(mags, append([]float64(nil), mag...)) })
+	powFrames(s, plan, 4, start, func(i int, pow []float64) {
+		for k, p := range pow {
+			want := mags[i][k] * mags[i][k]
+			if math.Abs(p-want) > 1e-9*math.Max(want, 1e-6) {
+				t.Fatalf("frame %d bin %d: power %g, magnitude squared %g", i, k, p, want)
+			}
+		}
+	})
+}
+
+// TestNoBands: without band ownership the band fields are absent and the
+// other measures are unchanged.
+func TestNoBands(t *testing.T) {
+	with := analyzeWith(t, levels, Options{})
+	without := analyzeWith(t, levels, Options{NoBands: true})
+	r := without.Report
+	if r.Bands != nil || r.Bars[0].Bands != nil || r.Sections[0].Bands != nil || r.Tracks[0].BandsDB != nil {
+		t.Fatalf("band fields remain: %+v", r.Bands)
+	}
+	data, err := json.Marshal(r)
+	if err != nil || bytes.Contains(data, []byte(`"bands`)) {
+		t.Errorf("JSON still has band fields: %v", err)
+	}
+	if *with.Report.Loudness.IntegratedLUFS != *r.Loudness.IntegratedLUFS || with.Report.Bars[1].Sounding[0] != r.Bars[1].Sounding[0] {
+		t.Error("other measures changed")
 	}
 }

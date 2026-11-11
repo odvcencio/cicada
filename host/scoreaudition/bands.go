@@ -132,10 +132,10 @@ func bandPower(s stereo, plan *fftPlan, binBand []int8, layout bandLayout) [][nu
 		if b+1 < len(layout.barStart) {
 			hi = min(layout.barStart[b+1], s.Len())
 		}
-		magFrames(s.Slice(lo, hi), plan, f-first, func(i int) int { return layout.start[first+i] }, func(i int, mag []float64) {
+		powFrames(s.Slice(lo, hi), plan, f-first, func(i int) int { return layout.start[first+i] }, func(i int, pow []float64) {
 			for k, band := range binBand {
 				if band >= 0 {
-					out[first+i][band] += float64(mag[k] * mag[k])
+					out[first+i][band] += pow[k]
 				}
 			}
 		})

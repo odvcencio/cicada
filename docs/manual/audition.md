@@ -22,6 +22,7 @@ cicada audition song.cicada --tracks bass,kick,logdrum --json
 | `--tracks <a,b,c>` | Analyze only these tracks and the mix. Only their stems are written and read, so the run needs less memory and disk. A name the score does not have is an error that lists the score's tracks (`unknown_track` with `valid_tracks` in JSON). See [Choosing tracks](#choosing-tracks). |
 | `--peaks <n>` | How many true-peak moments of the mix to list, 0 to 100 (default 10; 0 lists none). |
 | `--bar-bands` | Add each track's level in each band per bar to the JSON (`tracks[].bar_bands_db`). |
+| `--no-bands` | Skip band ownership, about an eighth of the audition's CPU time (see [Cost](#cost)). The band fields are then absent. |
 | `--image-width <px>` | Widest picture in pixels (default 1600; at least 200). 0 keeps one full-resolution strip of each picture, as before. |
 | `--json` | Print the report as JSON instead of text. |
 | `--max-resident-pcm <size>` | Cap on the decoded audio of the score's sampler packs, such as `2GiB` (default 1 GiB). `CICADA_MAX_RESIDENT_PCM` sets it when the flag is omitted. A score over the cap is refused before any pack is read. |
@@ -407,7 +408,7 @@ floored at -120; null means the method cannot give a value.
 | `bars[].short_term_lufs` | number or null | Short-term loudness of the 3 s window that ends at the bar's end; null while under 3 s of the range precede it. |
 | `bars[].sample_peak_dbfs` | number | Highest sample of the mix in the bar. |
 | `bars[].sounding` | array | Tracks that sound in the bar (the activity rule above), in score order. |
-| `bars[].bands[]` | array | Seven entries in band order: `band`, `level_db` (the analyzed tracks summed, dB re a full-scale RMS, so a full-scale sine reads -3), `quiet`, `owner` and `share_pct`, `second` and `second_share_pct`, `collision`. `owner` and `second` are absent when the band is quiet. |
+| `bars[].bands[]` | array | Absent with `--no-bands`. Seven entries in band order: `band`, `level_db` (the analyzed tracks summed, dB re a full-scale RMS, so a full-scale sine reads -3), `quiet`, `owner` and `share_pct`, `second` and `second_share_pct`, `collision`. `owner` and `second` are absent when the band is quiet. |
 | `tracks[].bar_level_db` | array | The stem's RMS in each bar, dB re its loudest bar (-120 when silent). |
 | `tracks[].sounding` | array | One boolean per bar: the track sounds there. |
 | `tracks[].note_bars` | number | Bars where the track starts a note. |
@@ -425,7 +426,7 @@ floored at -120; null means the method cannot give a value.
 | `sections[].bands[]` | array | As `bars[].bands[]` over the section's frames, plus `collision_bars`: bars whose first tick is in the section and whose band collides. |
 | `selected_tracks` | array | Tracks chosen with `--tracks`, in score order. Absent without it. |
 | `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu`, `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`, `loudest_section`, `quietest_section`, `section_spread_lu` (loudest minus quietest), and `short_term_per_beat_lufs`: one value per quarter note, the 3 s window that ends where the beat ends. Absent at a sample rate the meter does not support. |
-| `bands` | object | `names`, `edges_hz` (eight edges for seven bands), `collision_share_pct` (25), `quiet_below_band_db` (30), `quiet_below_span_db` (30), `quiet_below_range_db` (40), and `collisions[]`: per band, `band`, `bars` (one-based bars with a collision) and `pairs` (`tracks`, the two colliding tracks in score order, and `bars`, how often), most frequent first. |
+| `bands` | object | Absent with `--no-bands`. `names`, `edges_hz` (eight edges for seven bands), `collision_share_pct` (25), `quiet_below_band_db` (30), `quiet_below_span_db` (30), `quiet_below_range_db` (40), and `collisions[]`: per band, `band`, `bars` (one-based bars with a collision) and `pairs` (`tracks`, the two colliding tracks in score order, and `bars`, how often), most frequent first. |
 | `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
 | `peaks[]` | array | Highest true peaks first: `rank`, `at` (a position), `true_peak_dbtp`, `sample_peak_dbfs`, and `tracks[]` (`id`, `share_pct`, `peak_dbfs`: the track's own sample peak in those 5 ms). Empty with `--peaks 0`. |
 | `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width`, `height`, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
@@ -484,9 +485,23 @@ Each non-silent bar includes `stereo.channel_correlation` (uncentered L/R correl
 
 ## Cost
 
-The added measures reuse the render and the transforms the report already
-makes; nothing is rendered twice. They add two passes of the loudness meter
-over the mix (about 5.5 ms per second of audio each on a 2026 x86 desktop)
-and a little arithmetic per transform. `--tracks` lowers the memory, because
-the report keeps every analyzed stem in memory as 32-bit float: about 23 MB
-per track per minute of song.
+The added measures reuse the render, the stems and the note events the report
+already has; nothing is rendered twice. Their cost is arithmetic on the stems
+in memory. A CPU profile of `audition --json` on the four-track, 95-second
+reference song `examples/songs/lanterns-after-rain.cicada` (13.1 s of CPU in
+all) puts them at about a fifth of the run:
+
+| Part | CPU | Share |
+| --- | --- | --- |
+| Band ownership: one 8,192-point transform every 2,048 samples of each stem | 1.71 s | 13% |
+| Loudness: two passes of the meter over the mix (whole range, then sections and peaks) | 0.90 s | 7% |
+| The rest (activity, repeats, silences) | under 0.1 s | under 1% |
+| The render that makes the stems, for comparison | 6.34 s | 48% |
+
+Band ownership grows with the number of tracks and the length; the loudness
+passes only with the length. `--no-bands` skips band ownership. Memory does
+not change measurably: the report already holds every analyzed stem in memory
+as 32-bit float, about 23 MB per track per minute of song, and `--tracks`
+lowers that. The JSON grows: about 300 KB for a three-minute song of twelve
+or twenty-four tracks, plus about 140 bytes per track per bar with
+`--bar-bands`.

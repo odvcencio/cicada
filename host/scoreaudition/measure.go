@@ -37,6 +37,7 @@ type mixInput struct {
 	sections   []sectionSpan // aligned with Report.Sections
 	peaks      int
 	barBands   bool
+	noBands    bool
 }
 
 func (a *Analysis) measureMix(in mixInput) error {
@@ -144,7 +145,9 @@ func (a *Analysis) measureMix(in mixInput) error {
 		SilenceMinS: silenceMinS, Silences: findSilences(in.mix, rate, in.clock, in.base)}
 
 	// Band ownership, from the per-sixteenth transforms of each stem.
-	a.measureBands(in, use)
+	if !in.noBands {
+		a.measureBands(in, use)
+	}
 
 	// Peaks.
 	n := in.peaks
