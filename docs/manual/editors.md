@@ -120,7 +120,13 @@ voice lacks is refused unless `dropparams` removes it, a parameter path or
 pattern the new voice cannot take is refused, and a change that plays but
 sounds different (drum lanes the new kit does not play, a row or mark the
 old voice played and the new one ignores, such as a pressure row on acid) is
-refused unless `acceptchanges` accepts it. The
+refused unless `acceptchanges` accepts it. The check knows every musical
+input a pattern can carry (the marks and brackets on steps, the velocity
+and expression rows, pattern settings, the velocity and gestures of
+performed notes, drum hits) and what each voice does with it. Brackets, for
+example, play as a tuplet on acid and as a chord on piano, so a change
+between the two is refused. A pattern or voice it does not model is refused with
+`voice_input_unmodeled` rather than let through. The
 engine seeds chance and humanize by a track's position and a pattern's slot,
 so a delete that moves a track or slot playing such a pattern is refused
 unless `reseed` accepts it. What a flag accepts is listed in the intent's
