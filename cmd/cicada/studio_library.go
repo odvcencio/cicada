@@ -381,7 +381,7 @@ func (s *studio) libraryInsert(w http.ResponseWriter, r *http.Request) {
 			return edits.Envelope{}, err
 		}
 		opts.Compiler.(*studioCompiler).validationFiles = map[string][]byte{pins.Path: pins.After}
-		intent := &edits.InsertLibraryItem{Track: edit.Track, ImportPath: item.Path, Reference: libraryReference(item), ItemKind: kind, EffectKind: libraryEffectKind(sources, item), AcceptChanges: edit.AcceptChanges}
+		intent := &edits.InsertLibraryItem{Track: edit.Track, ImportPath: item.Path, Reference: libraryReference(item), ItemKind: kind, EffectKind: libraryEffectKind(sources, item)}
 		if kind == "effect" && item.Kind == "preset" {
 			intent.PresetInstance = "library-" + studioRevision([]byte(intent.Reference))[:8]
 		}
