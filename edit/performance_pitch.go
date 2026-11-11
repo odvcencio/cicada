@@ -8,11 +8,14 @@ import (
 
 // ShapePerformancePitch changes note pitches while retaining their articulation.
 // Pivot is a stored MIDI pitch, before the pattern's transpose setting.
+//
+// Example: {"kind":"shapeperformancepitch","entity":"pattern:phrase","operation":"transpose","semitones":12}
+// Example: {"kind":"shapeperformancepitch","entity":"pattern:phrase","operation":"reflect","pivot":60}
 type ShapePerformancePitch struct {
-	Entity    EntityID `json:"entity"`
-	Operation string   `json:"operation"`
-	Semitones int      `json:"semitones,omitempty"`
-	Pivot     int      `json:"pivot,omitempty"`
+	Entity    EntityID `json:"entity" cicada:"required"`                                        // the performance pattern, as pattern:<name>
+	Operation string   `json:"operation" values:"pitch-operation" cicada:"required,selects"`    // shift every note, or mirror the notes around the pivot
+	Semitones int      `json:"semitones,omitempty" when:"operation=transpose" unit:"semitones"` // the shift for transpose, −48 to +48 and not 0
+	Pivot     int      `json:"pivot,omitempty" when:"operation=reflect"`                        // the MIDI pitch to mirror around, for reflect
 }
 
 func (ShapePerformancePitch) Kind() string { return "shapeperformancepitch" }
@@ -22,9 +25,15 @@ func init() {
 	Handle("shapeperformancepitch", editPerformance)
 }
 
+// pitchOperations are what ShapePerformancePitch's operation accepts.
+var pitchOperations = valueList("pitch-operation", "transpose", "reflect")
+
 func shapePerformancePitch(p *seq.Performance, transpose int, in *ShapePerformancePitch) error {
 	if err := p.Validate(); err != nil {
 		return err
+	}
+	if !containsString(pitchOperations, in.Operation) {
+		return fmt.Errorf("choose transpose or reflect for pitch shaping")
 	}
 	switch in.Operation {
 	case "transpose":

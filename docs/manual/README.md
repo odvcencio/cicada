@@ -97,6 +97,10 @@ together.
   drum and effect setting, as the diagnostics report it.
 - [Troubleshooting](troubleshooting.md) — diagnose notation, editor, playback,
   and export problems.
+- [Diagnostic codes](diagnostics.md) — every `CICADA-*` code with its meaning
+  and fix.
+- [Agents and JSON output](agents.md) — drive Cicada from a program: the JSON
+  of `help`, `intents`, `diagnostics`, `check`, `apply` and `render`.
 
 The manual's `cicada` examples are checked by the real score validator in the
 Go test suite. The specification explains the [example checks and

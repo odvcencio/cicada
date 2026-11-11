@@ -13,6 +13,8 @@ import (
 // ConvertSongToArrange rewrites a `song` block as an `arrange` block of
 // placements. It writes only when the render check shows the converted score
 // renders to the same bytes; otherwise it refuses and names the cause.
+//
+// Example: {"kind":"convertsongtoarrange"}
 type ConvertSongToArrange struct{}
 
 func (ConvertSongToArrange) Kind() string { return "convertsongtoarrange" }

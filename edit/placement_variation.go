@@ -6,9 +6,11 @@ import (
 
 // VaryPlacement copies a placement's compiled pattern into the entry score and
 // changes only that placement to use it. Both changes have one history entry.
+//
+// Example: {"kind":"varyplacement","entity":"placement:verse","name":"pulse-verse"}
 type VaryPlacement struct {
-	Entity EntityID `json:"entity"`
-	Name   string   `json:"name"`
+	Entity EntityID `json:"entity" cicada:"required"` // the placement, as placement:<name>
+	Name   string   `json:"name" cicada:"required"`   // the name of the new pattern
 }
 
 func (VaryPlacement) Kind() string { return "varyplacement" }

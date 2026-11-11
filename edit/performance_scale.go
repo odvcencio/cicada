@@ -7,10 +7,14 @@ import (
 )
 
 // ScalePerformance changes musical timing while keeping pitches and controls.
+// Every tick is multiplied by numerator/denominator, so 2/1 plays at half
+// speed and 1/2 at double speed.
+//
+// Example: {"kind":"scaleperformance","entity":"pattern:phrase","numerator":1,"denominator":2}
 type ScalePerformance struct {
-	Entity      EntityID `json:"entity"`
-	Numerator   int      `json:"numerator"`
-	Denominator int      `json:"denominator"`
+	Entity      EntityID `json:"entity" cicada:"required"`      // the performance pattern, as pattern:<name>
+	Numerator   int      `json:"numerator" cicada:"required"`   // 1–16
+	Denominator int      `json:"denominator" cicada:"required"` // 1–16
 }
 
 func (ScalePerformance) Kind() string { return "scaleperformance" }

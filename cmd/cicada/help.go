@@ -13,9 +13,11 @@ type commandHelpEntry struct {
 var commandHelpEntries = []commandHelpEntry{
 	{name: "new", summary: "create an edition-2 project", usage: "cicada new <name>", flags: "  (no command flags)"},
 	{name: "bundle", summary: "package a portable score with provenance", usage: "cicada bundle <score.cicada> <bundle.zip>\n  cicada bundle --restore-history <extracted-score.cicada>", flags: "  --restore-history  restore inventoried recovery versions after extraction", notes: "Copies score sources, referenced audio, pinned libraries, and recovery versions into a ZIP with a SHA-256 file inventory. Existing output files are refused. Restore preserves the extracted originals and refuses conflicting recovery files."},
-	{name: "apply", summary: "apply typed edit intents to a score", usage: "cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]", flags: "  --write         write the validated edits (default: print a diff only)\n  --author <name>  commit author (default: envelope author or cli)\n  --session <id>   commit session\n  --help          show this help", notes: "A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes."},
+	{name: "apply", summary: "apply typed edit intents to a score", usage: "cicada apply <score.cicada> <intents.json> [--write] [--json] [--author <name>] [--session <id>]", flags: "  --write         write the validated edits (default: print a diff only)\n  --json          write the result as JSON (schema cicada.apply.v1): revisions, diff, each intent's label, or the error with the failing intent's index, kind and field\n  --author <name>  commit author (default: envelope author or cli)\n  --session <id>   commit session\n  --help          show this help", notes: "A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes. An error names the failing intent as intents[<index>].<field> (<kind>); run cicada intents for every kind and its fields."},
+	{name: "intents", summary: "list the edit intents apply accepts", usage: "cicada intents [--json] [kind]", flags: "  --json      write the catalog as JSON (schema cicada.intents.v1)\n  --help      show this help", notes: "Lists every intent kind with its meaning. With a kind, prints its fields (JSON name, type, whether required, unit or allowed values) and an example that cicada apply accepts. The catalog is generated from the intent registry. See docs/manual/agents.md."},
+	{name: "diagnostics", summary: "list the diagnostic codes with their meaning and fix", usage: "cicada diagnostics [--json] [code]", flags: "  --json      write the catalog as JSON (schema cicada.diagnostics.v1)\n  --help      show this help", notes: "Lists every diagnostic code with its severity and meaning. With a code (CICADA-PARAM or PARAM), prints where it is reported, what it means and how to fix it. docs/manual/diagnostics.md is generated from the same catalog."},
 	{name: "fix", summary: "migrate legacy source spellings", usage: "cicada fix <score.cicada> [--all] [--check]", flags: "  --all       migrate every edition-1 score under the project folder together\n  --check     report required source or manifest changes without writing\n  --help      show this help", notes: "With --all, the score path is optional; run the command from the project folder."},
-	{name: "check", summary: "validate one score or the current project", usage: "cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [score.cicada]", flags: "  --profile <name>           limits to check against: desktop (default) or browser\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)\n  --help                     show this help", notes: "The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted."},
+	{name: "check", summary: "validate one score or the current project", usage: "cicada check [--profile desktop|browser] [--max-resident-pcm <size>] [--json] [score.cicada]", flags: "  --profile <name>           limits to check against: desktop (default) or browser\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)\n  --json                     write the result as JSON (schema cicada.check.v1): each diagnostic with its position and any known fix\n  --help                     show this help", notes: "The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted."},
 	{name: "fmt", summary: "format a score or current project", usage: "cicada fmt [--check|-w] [score.cicada]", flags: "  --check     report formatting changes without writing\n  -w          write formatted source\n  --help      show this help"},
 	{name: "play", summary: "play and watch a score", usage: "cicada play [score.cicada] [--audio tymbal|oto|null] [--max-resident-pcm <size>]", flags: "  --audio <name>             select tymbal, oto, or null\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)\n  --help                     show this help", notes: "CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a score whose packs decode to more is refused, with the cap and the size measured in the message. A reloaded score reuses the packs already in memory; a reload that points a sampler at another pack holds both until the new score takes over at the next bar. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB."},
 	{name: "studio", summary: "open the local workstation", usage: "cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] [--max-resident-pcm <size>]", flags: "  --listen <addr>            loopback address; default 127.0.0.1:0\n  --audio <name>             select tymbal, oto, or null\n  --lsp-stdio                serve LSP on stdin/stdout and Studio on stderr\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)\n  --help                     show this help", notes: "CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when --max-resident-pcm is omitted."},
@@ -29,8 +31,8 @@ var commandHelpEntries = []commandHelpEntry{
 	{name: "compare", summary: "compare two projects", usage: "cicada compare --semantic <a> <b>", flags: "  --semantic  compare compiled project meaning\n  --help      show this help"},
 	{name: "highlight", summary: "print source with syntax highlighting", usage: "cicada highlight [--html|--spans] <score.cicada>", flags: "  --html    write HTML highlighting\n  --spans   write JSON highlighting spans\n  --help    show this help"},
 	{name: "symbols", summary: "list source definitions and references", usage: "cicada symbols [--refs] [--json] <score.cicada>", flags: "  --refs   include references as well as definitions\n  --json   write the symbol list as JSON\n  --help   show this help"},
-	{name: "render", summary: "render a score to WAV", usage: "cicada render <score.cicada> -o <out.wav> [flags]", flags: "  -o <file>                    required output WAV path\n  --rate <Hz>                  sample rate (default 48000)\n  --bits <16|24|32>            WAV bit depth (default 24)\n  --from <bar>                 one-based start bar (default 1)\n  --bars <n>                   bars to render; 0 means through song end\n  --tail <duration>            render tail (default 3s)\n  --dither=<bool>              deterministic TPDF dither for integer PCM (default true)\n  --normalize=<bool>           peak normalize to -1 dBFS (default false)\n  --block <frames>             offline block size (default 4096)\n  --loudness <LUFS>            target integrated loudness\n  --true-peak-max <dBTP>       maximum true peak for loudness rendering (default -1)\n  --loudness-tolerance <LU>    target tolerance (default 0.5)\n  --sampler-baseline           compare one recorded layer/take and 2 ms release\n  --max-resident-pcm <size>    cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)\n  --export <name>              use a named export profile\n  --help                       show this help", notes: "Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB."},
-	{name: "stems", summary: "render separate float32 WAV stems", usage: "cicada stems <score.cicada> -o <directory> [flags]", flags: "  -o <directory>             required output directory\n  --rate <Hz>                sample rate (default 48000)\n  --bits 32                  float32 output only\n  --from <bar>               one-based start bar (default 1)\n  --bars <n>                 bars to render; 0 means through song end\n  --tail <duration>          render tail (default 3s)\n  --dither=<bool>            deterministic TPDF dither option\n  --normalize=<bool>         peak normalization option\n  --block <frames>           offline block size (default 4096)\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)\n  --help                     show this help", notes: "Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1."},
+	{name: "render", summary: "render a score to WAV", usage: "cicada render <score.cicada> -o <out.wav> [flags] [--json]", flags: "  -o <file>                    required output WAV path\n  --rate <Hz>                  sample rate (default 48000)\n  --bits <16|24|32>            WAV bit depth (default 24)\n  --from <bar>                 one-based start bar (default 1)\n  --bars <n>                   bars to render; 0 means through song end\n  --tail <duration>            render tail (default 3s)\n  --dither=<bool>              deterministic TPDF dither for integer PCM (default true)\n  --normalize=<bool>           peak normalize to -1 dBFS (default false)\n  --block <frames>             offline block size (default 4096)\n  --loudness <LUFS>            target integrated loudness\n  --true-peak-max <dBTP>       maximum true peak for loudness rendering (default -1)\n  --loudness-tolerance <LU>    target tolerance (default 0.5)\n  --sampler-baseline           compare one recorded layer/take and 2 ms release\n  --max-resident-pcm <size>    cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)\n  --export <name>              use a named export profile\n  --json                       write what was rendered as JSON (schema cicada.render.v1); on failure, an error with a reason code\n  --help                       show this help", notes: "Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB."},
+	{name: "stems", summary: "render separate float32 WAV stems", usage: "cicada stems <score.cicada> -o <directory> [flags]", flags: "  -o <directory>             required output directory\n  --rate <Hz>                sample rate (default 48000)\n  --bits 32                  float32 output only\n  --from <bar>               one-based start bar (default 1)\n  --bars <n>                 bars to render; 0 means through song end\n  --tail <duration>          render tail (default 3s)\n  --dither=<bool>            deterministic TPDF dither option\n  --normalize=<bool>         peak normalization option\n  --block <frames>           offline block size (default 4096)\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)\n  --json                     list the stem files as JSON (schema cicada.render.v1)\n  --help                     show this help", notes: "Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1."},
 	{name: "audition", summary: "report what a score sounds like", usage: "cicada audition <score.cicada> [flags]", flags: "  -o <directory>             write spectrogram.png, chroma.png and rhythm.png\n  --from <bar>               one-based start bar (default 1)\n  --bars <n>                 bars to analyze; 0 means through song end\n  --json                     write the report as JSON (format cicada.audition/1)\n  --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)\n  --help                     show this help", notes: "Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted."},
 	{name: "verify-wav", summary: "verify WAV samples and timing", usage: "cicada verify-wav <file.wav> [flags]", flags: "  --rate <Hz>                 expected sample rate (default 48000)\n  --bits <16|24|32>           expected bit depth (default 24)\n  --from <bar>                one-based start bar (default 1)\n  --bars <n>                  expected bars (required)\n  --tail <duration>           expected tail (default 3s)\n  --peak-max-db <dBFS>        peak ceiling (default -0.3)\n  --dc-max-db <dBFS>          DC ceiling (default -60)\n  --lufs <LUFS>               integrated-loudness target\n  --lufs-tolerance <LU>       loudness tolerance (default 0.5)\n  --true-peak-max <dBTP>      true-peak ceiling\n  --report                    write JSON report to stderr\n  --help                      show this help", notes: "Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1."},
 	{name: "verify-stems", summary: "verify a stem directory", usage: "cicada verify-stems <directory> [flags]", flags: "  --tap <name>             verification tap (default pre-comp)\n  --residual-max-db <dBFS> maximum bus-sum residual (default -80)\n  --help                   show this help"},
@@ -48,21 +50,48 @@ var commandHelpEntries = []commandHelpEntry{
 	{name: "graph", summary: "print one compiled instrument graph", usage: "cicada graph <score.cicada> <instrument>", flags: "  (no command flags)"},
 }
 
-var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
-	"Create a project, edit and validate scores, play them in Studio, or render files.\n\n" +
-	"Commands:\n" +
-	"  new, bundle, apply, fix, check, fmt, play, studio, lsp\n" +
-	"  render, stems, audition, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi\n" +
-	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
-	"  events, graph, fields, params, golden, record-pack, record-kit, fit-model, transcribe, wam2, director\n\n" +
-	"Run \"cicada help <command>\" for usage and flags."
+// overviewGroups are the lines of the command overview. Every command main
+// dispatches is in exactly one; TestOverviewListsEveryCommand checks it.
+var overviewGroups = [][]string{
+	{"new", "bundle", "save-as", "lib", "apply", "intents", "fix", "check", "diagnostics", "fmt", "play", "studio", "lsp"},
+	{"render", "stems", "audition", "verify-wav", "verify-stems", "midi", "verify-midi", "compare-midi", "import-midi"},
+	{"gen", "explain", "view", "highlight", "symbols", "convert", "compare", "validate", "ast"},
+	{"events", "graph", "fields", "params", "golden", "record-pack", "record-kit", "fit-model", "transcribe", "wam2", "director", "game-score"},
+}
+
+var shortHelpText = func() string {
+	var text strings.Builder
+	text.WriteString("Usage: cicada <command> [arguments]\n\n")
+	text.WriteString("Create a project, edit and validate scores, play them in Studio, or render files.\n\n")
+	text.WriteString("Commands:\n")
+	for _, group := range overviewGroups {
+		text.WriteString("  " + strings.Join(group, ", ") + "\n")
+	}
+	text.WriteString("\nRun \"cicada help <command>\" for usage and flags, or \"cicada help --json\" for every command as JSON.")
+	return text.String()
+}()
 
 func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
+	if len(args) > 0 && args[0] != "help" && hasJSONFlag(args) {
+		if handled, code := handleJSONHelp(args, stdout, stderr); handled {
+			return true, code
+		}
+	}
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprintln(stdout, shortHelpText)
 		return true, 0
 	}
 	if args[0] == "help" {
+		if json, name := helpJSONArgs(args[1:]); json {
+			if !writeHelpJSON(stdout, name) {
+				message := fmt.Sprintf("cicada: unknown command %q", name)
+				writeAgentJSON(stdout, jsonErrorDocument{Schema: helpSchema, Error: jsonError{Code: "unknown_command", Message: message}})
+				fmt.Fprintln(stderr, message)
+				fmt.Fprintln(stderr, "run cicada help")
+				return true, 2
+			}
+			return true, 0
+		}
 		if len(args) == 1 {
 			fmt.Fprintln(stdout, shortHelpText)
 			return true, 0
@@ -103,38 +132,81 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 	return false, 0
 }
 
-func findCommandHelp(name string) (commandHelpEntry, bool) {
-	if name == "transcribe" {
-		return commandHelpEntry{name: "transcribe", summary: "transcribe a sung, hummed or solo-instrument WAV into score rows", usage: "cicada transcribe <recording.wav> [flags]", flags: "  --tempo <BPM>  20–300 BPM; 0 infers tempo (default 0)\n  --key <key>    auto or tonic major/minor (default auto)\n  --grid <grid>  1/4, 1/8 or 1/16 (default 1/16)\n  -o <file>      write a new score file instead of stdout\n  --report       write measured notes and confidence JSON to stderr\n  --help         show this help", notes: "Analysis stays local and runs outside playback. Choose one monophonic PCM WAV. Score rows snap timing to the selected grid; sparse tempo, meter and key estimates require review. Existing output files are preserved."}, true
+// handleJSONHelp answers the help requests of a run with --json: --help with
+// no command prints the help document, <command> --help prints that
+// command's entry, and an unknown command prints an error document.
+func handleJSONHelp(args []string, stdout, stderr io.Writer) (bool, int) {
+	onlyFlags := true
+	for _, arg := range args {
+		onlyFlags = onlyFlags && (arg == "--json" || arg == "--help" || arg == "-h")
 	}
-	if name == "fit-model" {
-		return commandHelpEntry{name: "fit-model", summary: "fit a recorded hit to a playable modal instrument", usage: "cicada fit-model -o <pack-directory> [flags] <recording.wav>", flags: "  -o <directory>  required new pack directory\n  --name <id>     instrument name (default recorded_model)\n  --hit <n>       detected hit, one-based (default 1)\n  --help          show this help", notes: "Put flags before the input. Writes measured model.json, checksummed modal renders and a playable pinned score; user recording provenance is retained."}, true
+	if onlyFlags {
+		writeHelpJSON(stdout, "")
+		return true, 0
 	}
-	if name == "record-kit" {
-		return commandHelpEntry{name: "record-kit", summary: "build one drum-kit sampler pack from your own recorded takes", usage: "cicada record-kit -o <pack-directory> [flags] <recipe.json>", flags: "  -o <directory>  required new pack directory\n  --name <id>     lowercase kit name (default kit)\n  --help          show this help", notes: "Put flags before the recipe. The recipe names each piece's MIDI note and its take WAV files, which are found next to the recipe; see docs/manual/recording-instruments.md. Prints the hits and layers found for each piece and a checksummed sampler declaration. Warns about takes to record again: tails cut off, hits that merged or clipped, and takes with no room tone at the start. Audio carries the owner recording label, which records provenance and grants no redistribution rights."}, true
-	}
-	if name == "record-pack" {
-		return commandHelpEntry{name: "record-pack", summary: "slice user WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the user recording licence."}, true
-	}
-	libEntries := []commandHelpEntry{
-		{name: "lib", summary: "manage pinned source and audio libraries", usage: "cicada lib list\ncicada lib show PATH\ncicada lib new PATH [--dir DIR]\ncicada lib update [PATH]\ncicada lib vendor", notes: "Use cicada help lib <command> for details. CICADA_LIBRARY overrides the user config directory's cicada/lib folder."},
-		{name: "lib list", summary: "list available std, project, and user libraries", usage: "cicada lib list", notes: "Prints each path and resolution kind, including duplicates. Does not change pins."},
-		{name: "lib show", summary: "inspect a resolved library", usage: "cicada lib show PATH", notes: "Prints the manifest, declaration names, audio paths, SHA-256 hash, and resolution directory. Does not change pins."},
-		{name: "lib new", summary: "scaffold an edition-2 library", usage: "cicada lib new PATH [--dir DIR]", flags: "  --dir DIR   create PATH in an explicit directory\n  --help      show this help", notes: "A library path such as demo/tone is created in the user library. An absolute or dot-prefixed directory uses its final directory name as the library path. --dir preserves the full library path. Existing destinations are refused; std is reserved."},
-		{name: "lib update", summary: "pin imported library content", usage: "cicada lib update [PATH]", notes: "Update one imported library, or all imports when PATH is omitted. Prints old and new resolution kinds and SHA-256 hashes. Use only after an intended change."},
-		{name: "lib vendor", summary: "copy imported user libraries into project lib/", usage: "cicada lib vendor", notes: "Verifies current pins, stages and verifies all copies, then publishes libraries and updated pins. Includes transitive imports. Refuses different existing libraries and rolls back new copies on failure. Standard libraries stay embedded."},
-	}
-	for _, entry := range libEntries {
-		if entry.name == name {
-			return entry, true
+	name := args[0]
+	if name == "lib" && len(args) > 1 {
+		if _, ok := findCommandHelp("lib " + args[1]); ok {
+			name += " " + args[1]
 		}
 	}
-	if name == "save-as" {
-		return commandHelpEntry{name: "save-as", summary: "copy a score, audio, and pinned libraries", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)", notes: "Imported user and project libraries are automatically vendored and re-pinned before the target score is published."}, true
+	if _, ok := findCommandHelp(name); ok {
+		for _, arg := range args[1:] {
+			if arg == "--help" || arg == "-h" {
+				writeHelpJSON(stdout, name)
+				return true, 0
+			}
+		}
+		return false, 0
 	}
-	for _, entry := range commandHelpEntries {
-		if entry.name == name {
-			return entry, true
+	if strings.HasPrefix(name, "-") {
+		return false, 0
+	}
+	message := fmt.Sprintf("cicada: unknown command %q", name)
+	writeAgentJSON(stdout, jsonErrorDocument{Schema: helpSchema, Error: jsonError{Code: "unknown_command", Message: message}})
+	fmt.Fprintln(stderr, message)
+	fmt.Fprintln(stderr, "run cicada help")
+	return true, 2
+}
+
+// helpJSONArgs reports whether the arguments after help ask for JSON, and the
+// command they name, if any: help --json [command] or help <command> --json.
+func helpJSONArgs(args []string) (bool, string) {
+	asJSON := false
+	var names []string
+	for _, arg := range args {
+		if arg == "--json" {
+			asJSON = true
+		} else {
+			names = append(names, arg)
+		}
+	}
+	return asJSON, strings.Join(names, " ")
+}
+
+// extraCommandHelpEntries are commands whose help stays out of
+// all-commands.golden: lib and its subcommands, save-as and the recording
+// tools.
+var extraCommandHelpEntries = []commandHelpEntry{
+	{name: "transcribe", summary: "transcribe a sung, hummed or solo-instrument WAV into score rows", usage: "cicada transcribe <recording.wav> [flags]", flags: "  --tempo <BPM>  20–300 BPM; 0 infers tempo (default 0)\n  --key <key>    auto or tonic major/minor (default auto)\n  --grid <grid>  1/4, 1/8 or 1/16 (default 1/16)\n  -o <file>      write a new score file instead of stdout\n  --report       write measured notes and confidence JSON to stderr\n  --help         show this help", notes: "Analysis stays local and runs outside playback. Choose one monophonic PCM WAV. Score rows snap timing to the selected grid; sparse tempo, meter and key estimates require review. Existing output files are preserved."},
+	{name: "fit-model", summary: "fit a recorded hit to a playable modal instrument", usage: "cicada fit-model -o <pack-directory> [flags] <recording.wav>", flags: "  -o <directory>  required new pack directory\n  --name <id>     instrument name (default recorded_model)\n  --hit <n>       detected hit, one-based (default 1)\n  --help          show this help", notes: "Put flags before the input. Writes measured model.json, checksummed modal renders and a playable pinned score; user recording provenance is retained."},
+	{name: "record-kit", summary: "build one drum-kit sampler pack from your own recorded takes", usage: "cicada record-kit -o <pack-directory> [flags] <recipe.json>", flags: "  -o <directory>  required new pack directory\n  --name <id>     lowercase kit name (default kit)\n  --help          show this help", notes: "Put flags before the recipe. The recipe names each piece's MIDI note and its take WAV files, which are found next to the recipe; see docs/manual/recording-instruments.md. Prints the hits and layers found for each piece and a checksummed sampler declaration. Warns about takes to record again: tails cut off, hits that merged or clipped, and takes with no room tone at the start. Audio carries the owner recording label, which records provenance and grants no redistribution rights."},
+	{name: "record-pack", summary: "slice user WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the user recording licence."},
+	{name: "lib", summary: "manage pinned source and audio libraries", usage: "cicada lib list\ncicada lib show PATH\ncicada lib new PATH [--dir DIR]\ncicada lib update [PATH]\ncicada lib vendor", notes: "Use cicada help lib <command> for details. CICADA_LIBRARY overrides the user config directory's cicada/lib folder."},
+	{name: "lib list", summary: "list available std, project, and user libraries", usage: "cicada lib list", notes: "Prints each path and resolution kind, including duplicates. Does not change pins."},
+	{name: "lib show", summary: "inspect a resolved library", usage: "cicada lib show PATH", notes: "Prints the manifest, declaration names, audio paths, SHA-256 hash, and resolution directory. Does not change pins."},
+	{name: "lib new", summary: "scaffold an edition-2 library", usage: "cicada lib new PATH [--dir DIR]", flags: "  --dir DIR   create PATH in an explicit directory\n  --help      show this help", notes: "A library path such as demo/tone is created in the user library. An absolute or dot-prefixed directory uses its final directory name as the library path. --dir preserves the full library path. Existing destinations are refused; std is reserved."},
+	{name: "lib update", summary: "pin imported library content", usage: "cicada lib update [PATH]", notes: "Update one imported library, or all imports when PATH is omitted. Prints old and new resolution kinds and SHA-256 hashes. Use only after an intended change."},
+	{name: "lib vendor", summary: "copy imported user libraries into project lib/", usage: "cicada lib vendor", notes: "Verifies current pins, stages and verifies all copies, then publishes libraries and updated pins. Includes transitive imports. Refuses different existing libraries and rolls back new copies on failure. Standard libraries stay embedded."},
+	{name: "save-as", summary: "copy a score, audio, and pinned libraries", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)", notes: "Imported user and project libraries are automatically vendored and re-pinned before the target score is published."},
+}
+
+func findCommandHelp(name string) (commandHelpEntry, bool) {
+	for _, entries := range [][]commandHelpEntry{commandHelpEntries, extraCommandHelpEntries} {
+		for _, entry := range entries {
+			if entry.name == name {
+				return entry, true
+			}
 		}
 	}
 	return commandHelpEntry{}, false

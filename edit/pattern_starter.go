@@ -8,7 +8,14 @@ import (
 // Relative degrees keep starting ideas in the score's key and the instrument's
 // home register. Degrees 1, 3, 5 and 7 exist in all eight supported scales.
 // These are ordinary editable grids, with no generator state to recover.
+// patternStarters are what CreatePattern's starter accepts; machine also
+// needs a recipe.
+var patternStarters = valueList("starter", "empty", "pulse", "arpeggio", "chords", "backbeat", "machine")
+
 func patternStarter(starter, kind string, lanes []string, steps int) (map[string]string, error) {
+	if starter != "" && !containsString(patternStarters, starter) {
+		return nil, fmt.Errorf("choose an empty grid, pulse, arpeggio, held chords or backbeat")
+	}
 	switch starter {
 	case "", "empty", "pulse":
 	case "arpeggio":

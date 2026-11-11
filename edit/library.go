@@ -8,25 +8,32 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// InsertLibraryItem edits text for a library item resolved by the host.
-// PresetInstance names an effect instance when Reference is an effect preset.
+// InsertLibraryItem imports a library and binds a track to one of its items.
+// The host resolves the library first. PresetInstance names an effect
+// instance when Reference is an effect preset. cicada apply does not pin
+// libraries: the project's cicada.sum must already pin the library, or the
+// edit is refused with CICADA-LIB-HASH (Studio pins it before applying).
+//
+// Example: {"kind":"insertlibraryitem","track":"glass","importpath":"std/synth","reference":"synth.glassbass","itemkind":"instrument"}
 type InsertLibraryItem struct {
-	Track          string `json:"track"`
-	ImportPath     string `json:"importpath"`
-	Reference      string `json:"reference"`
-	ItemKind       string `json:"itemkind"`
-	EffectKind     string `json:"effectkind,omitempty"`
-	PresetInstance string `json:"presetinstance,omitempty"`
+	Track          string `json:"track" cicada:"required"`      // the track to bind, or the name of a new track
+	ImportPath     string `json:"importpath" cicada:"required"` // the library's import path, such as std/synth
+	Reference      string `json:"reference" cicada:"required"`  // the qualified item, such as synth.glassbass
+	ItemKind       string `json:"itemkind"`                     // what the item is, such as instrument, preset or effect
+	EffectKind     string `json:"effectkind,omitempty"`         // the effect's kind, for an effect item
+	PresetInstance string `json:"presetinstance,omitempty"`     // the effect instance's name, for an effect preset
 }
 
 func (InsertLibraryItem) Kind() string { return "insertlibraryitem" }
 
 // SavePreset appends the declaration prepared by the host, including any
 // direct import or snapshot of a private library instrument.
+//
+// Example: {"kind":"savepreset","track":"bass","name":"dark-acid","declaration":"\npreset dark-acid {\n  instrument = acid\n  cutoff = 400Hz\n}\n"}
 type SavePreset struct {
-	Track       string `json:"track"`
-	Name        string `json:"name"`
-	Declaration string `json:"declaration"`
+	Track       string `json:"track"`                  // the track the preset comes from, for the history label
+	Name        string `json:"name" cicada:"required"` // the preset's public name
+	Declaration string `json:"declaration"`            // the preset declaration text to append
 }
 
 func (SavePreset) Kind() string { return "savepreset" }
