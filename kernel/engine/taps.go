@@ -16,6 +16,10 @@ type TapFrame struct {
 	// MasterLimiterReductionDB is the gain reduction of any limiter inside the
 	// prepared master processor, zero when there is none.
 	MasterLimiterReductionDB float64
+	// ExportLimiterReductionDB is the gain reduction of the master
+	// processor's last limiter, the one an export's loudness gain drives, zero
+	// when there is none.
+	ExportLimiterReductionDB float64
 	LimiterReductionDB       float64
 }
 

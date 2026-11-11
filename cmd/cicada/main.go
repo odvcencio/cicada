@@ -824,8 +824,10 @@ type loudnessFileReport struct {
 	Repeats                   int            `json:"repeats"`
 	PassLog                   []loudnessPass `json:"pass_log,omitempty"`
 	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
-	// MasterLimiterReductionDB is the largest gain reduction of a limiter in
-	// the score's master chain. GainStage is "before_last_limiter" when the
+	// MasterLimiterReductionDB is the largest gain reduction of the score's
+	// last master limiter, the one the export gain drives and the 6 dB
+	// maximum bounds; LargestLimiterReductionDB also counts any limiter ahead
+	// of it and the safety limiter. GainStage is "before_last_limiter" when the
 	// master chain has a limiter: the export gain enters after the inserts
 	// ahead of the last limiter, which run as in playback. It is "post_chain"
 	// when the chain has no limiter, or there is no chain: the gain enters
@@ -1107,7 +1109,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		report.PassLog = append(report.PassLog, newLoudnessPass(gain, measurement, how, sameAs))
 		peakSafe := measurement.TruePeakDBTP <= target.TruePeakMaxDBTP
 		dcSafe := measurement.DCDB <= -60
-		chainReduction := passReport.MaxMasterChainLimiterReductionDB
+		// The guard reads the chain's last limiter, the one the export gain
+		// drives; a limiter ahead of it runs as in playback, whatever the gain.
+		chainReduction := passReport.MaxExportLimiterReductionDB
 		limiterSafe := !limiterMode || chainReduction <= maxExportLimiterReductionDB
 		safe := peakSafe && dcSafe && limiterSafe
 		if dcSafe && !(peakSafe && limiterSafe) && !hasBest {
@@ -1284,7 +1288,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	report.AppliedGainDB = bestGain
 	report.Passes = passes
 	report.LargestLimiterReductionDB = math.Max(bestRender.MaxLimiterGainReductionDB, bestRender.MaxMasterChainLimiterReductionDB)
-	report.MasterLimiterReductionDB = bestRender.MaxMasterChainLimiterReductionDB
+	report.MasterLimiterReductionDB = bestRender.MaxExportLimiterReductionDB
 	report.GainStage = "post_chain"
 	report.limiterMode = limiterMode
 	if limiterMode {

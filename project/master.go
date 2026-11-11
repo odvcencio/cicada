@@ -79,6 +79,9 @@ type masterChain struct {
 	// the chain. gain is 1 in playback.
 	gainAt int
 	gain   float32
+	// exportLimiter is the index in limiters of the chain's last limiter, the
+	// one the export gain drives, or -1 when the chain has none.
+	exportLimiter int
 }
 
 // ExportGainPoint is where an export's loudness gain enters the master stage.
@@ -151,7 +154,7 @@ type limiterReading struct {
 }
 
 func newMasterChain(stages []engine.StereoProcessor, lastLimiter int) *masterChain {
-	c := &masterChain{stages: stages, gainAt: lastLimiter, gain: 1}
+	c := &masterChain{stages: stages, gainAt: lastLimiter, gain: 1, exportLimiter: -1}
 	if lastLimiter < 0 {
 		c.gainAt = len(stages)
 	} else if lastLimiter == 0 {
@@ -161,6 +164,9 @@ func newMasterChain(stages []engine.StereoProcessor, lastLimiter int) *masterCha
 		limiter, ok := stage.(interface{ LimiterGainReductionDB() float64 })
 		if !ok {
 			continue
+		}
+		if i == lastLimiter {
+			c.exportLimiter = len(c.limiters)
 		}
 		reading := limiterReading{stage: limiter}
 		for _, later := range stages[i+1:] {
@@ -189,6 +195,22 @@ func (c *masterChain) LimiterGainReductionDB() float64 {
 		}
 	}
 	return reduction
+}
+
+// ExportLimiterGainReductionDB is the gain reduction of the chain's last
+// limiter, the one the export gain drives, lined up with the chain output frame
+// as LimiterGainReductionDB is; zero when the chain has no limiter. A limiter
+// ahead of it runs as in playback, so its reduction does not depend on the
+// export gain. Call it once after each Process.
+func (c *masterChain) ExportLimiterGainReductionDB() float64 {
+	if c.exportLimiter < 0 {
+		return 0
+	}
+	l := &c.limiters[c.exportLimiter]
+	if l.ring == nil {
+		return l.stage.LimiterGainReductionDB()
+	}
+	return l.delayed
 }
 
 func (c *masterChain) Process(l, r float32) (float32, float32) {

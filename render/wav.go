@@ -39,9 +39,9 @@ type Options struct {
 	Bars            int // zero renders from From through the song end
 	From            int // zero-based start bar; zero starts at the song beginning
 	TailSec         float64
-	Dither          *bool   // nil enables deterministic TPDF on integer formats
-	Normalize       bool    // peak normalize the post-limiter output to -1 dBFS
-	Block           int     // zero selects 4096 frames
+	Dither          *bool // nil enables deterministic TPDF on integer formats
+	Normalize       bool  // peak normalize the post-limiter output to -1 dBFS
+	Block           int   // zero selects 4096 frames
 	// MasterGainDB is the export gain, such as a loudness target's. It is
 	// makeup gain into the last limiter, not into the mix: it enters the
 	// master stage at the chain's project.ExportGainPoint, after every master
@@ -89,14 +89,18 @@ type Report struct {
 	// MaxMasterChainLimiterReductionDB is the largest gain reduction of a
 	// limiter declared in the score's master insert chain.
 	MaxMasterChainLimiterReductionDB float64
-	writtenFrames                    int64
-	skipFrames                       int
-	rangeSkip                        int64
-	metricStart                      int64
-	metricEnd                        int64
-	chainStart                       int64
-	chainEnd                         int64
-	tempoChanges                     []project.TempoChange
+	// MaxExportLimiterReductionDB is the largest gain reduction of the master
+	// chain's last limiter, the one the export gain (MasterGainDB) drives. A
+	// limiter ahead of it runs as in playback.
+	MaxExportLimiterReductionDB float64
+	writtenFrames               int64
+	skipFrames                  int
+	rangeSkip                   int64
+	metricStart                 int64
+	metricEnd                   int64
+	chainStart                  int64
+	chainEnd                    int64
+	tempoChanges                []project.TempoChange
 }
 
 // masterChainWindow returns the half-open range of render sample positions
@@ -119,6 +123,14 @@ func masterChainWindow(from int, fromFrame, endFrame int64, insertLatency, maste
 func (r *Report) noteMasterChainReduction(at int64, db float64) {
 	if at >= r.chainStart && at < r.chainEnd {
 		r.MaxMasterChainLimiterReductionDB = max(r.MaxMasterChainLimiterReductionDB, db)
+	}
+}
+
+// noteExportLimiterReduction records the last chain limiter's reduction read
+// at render sample position at, over the same window.
+func (r *Report) noteExportLimiterReduction(at int64, db float64) {
+	if at >= r.chainStart && at < r.chainEnd {
+		r.MaxExportLimiterReductionDB = max(r.MaxExportLimiterReductionDB, db)
 	}
 }
 
@@ -174,6 +186,7 @@ type trackRuntime struct {
 type busMixerState struct {
 	masterProcessor      engine.StereoProcessor
 	masterLimiter        interface{ LimiterGainReductionDB() float64 }
+	exportLimiter        interface{ ExportLimiterGainReductionDB() float64 }
 	masterCache          *MasterCache // captures or replays the signal entering the master stage
 	cacheReplay          bool
 	outputGain           float32
@@ -511,6 +524,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	busState := busMixerState{masterProcessor: masterProcessor, outputGain: 1}
 	busState.masterLimiter, _ = masterProcessor.(interface{ LimiterGainReductionDB() float64 })
+	busState.exportLimiter, _ = masterProcessor.(interface{ ExportLimiterGainReductionDB() float64 })
 	authoredGainDB, hasLevel := authoredMasterLevelDB(semantic)
 	masterGainDB, masterGain, chainGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil, project.MasterExportGainPoint(semantic))
 	if chainGain != 1 {
@@ -1875,6 +1889,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			if busState.masterLimiter != nil {
 				report.noteMasterChainReduction(sample, busState.masterLimiter.LimiterGainReductionDB())
+			}
+			if busState.exportLimiter != nil {
+				report.noteExportLimiterReduction(sample, busState.exportLimiter.ExportLimiterGainReductionDB())
 			}
 			left *= busState.outputGain
 			right *= busState.outputGain

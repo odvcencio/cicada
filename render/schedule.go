@@ -204,6 +204,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 				}
 			}
 			report.noteMasterChainReduction(position+int64(i), tap.MasterLimiterReductionDB)
+			report.noteExportLimiterReduction(position+int64(i), tap.ExportLimiterReductionDB)
 			report.MaxLimiterGainReductionDB = max(report.MaxLimiterGainReductionDB, tap.LimiterReductionDB)
 			if stems != nil {
 				for t := range p.Tracks {
