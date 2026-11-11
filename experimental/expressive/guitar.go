@@ -17,6 +17,11 @@ type Guitar struct {
 	released                        bool
 	rng                             uint32
 	amp                             Amp
+	// smooth is the control smoothing coefficient, 1 - e^(-1/(0.008*sr)),
+	// fixed by the rate. gainArg and gain cache the loop gain e^gainArg, which
+	// changes only while the pitch or damping moves. Both give the bits the
+	// per-sample computation gave.
+	smooth, gainArg, gain float64
 }
 
 func NewGuitar(sampleRate int) *Guitar {
@@ -24,6 +29,8 @@ func NewGuitar(sampleRate int) *Guitar {
 		sampleRate = 48000
 	}
 	g := &Guitar{sr: float64(sampleRate), hz: 110, target: 110, rng: 1}
+	g.smooth = 1 - detmath.Exp(-1/(.008*g.sr))
+	g.gainArg = math.NaN() // no gain computed yet
 	g.loop.init(sampleRate/20 + 8)
 	g.amp = NewAmp(sampleRate)
 	g.e = Expression{PitchHz: 110, Position: .22, Brightness: .7}
@@ -94,25 +101,31 @@ func (g *Guitar) SetExpressionImmediate(e Expression) {
 	g.hz = g.target
 }
 func (g *Guitar) Next() float64 {
-	alpha := 1 - detmath.Exp(-1/(.008*g.sr))
+	alpha := g.smooth
 	g.control.Position += float64(alpha * (g.e.Position - g.control.Position))
 	g.control.Brightness += float64(alpha * (g.e.Brightness - g.control.Brightness))
 	g.control.Vibrato += float64(alpha * (g.e.Vibrato - g.control.Vibrato))
 	g.control.Damping += float64(alpha * (g.e.Damping - g.control.Damping))
 	g.control.Drive += float64(alpha * (g.e.Drive - g.control.Drive))
-	g.hz += float64((g.target - g.hz) * (1 - detmath.Exp(-1/(.008*g.sr))))
+	g.hz += float64((g.target - g.hz) * alpha)
 	g.phase += 5 / g.sr
 	if g.phase >= 1 {
 		g.phase -= 1
 	}
-	f := g.hz * detmath.Exp2(g.control.Vibrato*detmath.Sin(2*math.Pi*g.phase)/1200)
+	f := g.hz
+	if g.control.Vibrato != 0 { // with no vibrato the factor is 2^(±0) = 1 exactly
+		f = g.hz * detmath.Exp2(g.control.Vibrato*detmath.Sin(2*math.Pi*g.phase)/1200)
+	}
 	period := g.sr / f
 	x := g.loop.read(period - 1)
 	t60 := 4.5 / (1 + float64(35*g.control.Damping))
 	if g.released {
 		t60 = .12
 	}
-	gain := detmath.Exp(-6.907755 / (f * t60))
+	if arg := -6.907755 / (f * t60); arg != g.gainArg {
+		g.gainArg, g.gain = arg, detmath.Exp(arg)
+	}
+	gain := g.gain
 	a := gain * (1 - g.control.Brightness) / 4
 	b := gain * (1 + g.control.Brightness) / 2
 	feedback := float64(float64(a*x)+float64(b*g.loss1)) + float64(a*g.loss2)
@@ -133,6 +146,9 @@ type Amp struct {
 	up1, up2, down1, down2  halfband.FIR
 	previous                [2]float64
 	low, dcIn, dcOut, alpha float64
+	// previousLogcosh[stage] is logcosh(previous[stage]), kept so each sample
+	// computes logcosh once; the values are the ones a second call gave.
+	previousLogcosh [2]float64
 }
 
 // NewAmp uses the same supported-rate policy as the experimental voices: rates
@@ -141,7 +157,9 @@ func NewAmp(sr int) Amp {
 	if sr < 8000 || sr > 192000 {
 		sr = 48000
 	}
-	return Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - detmath.Exp(-2*math.Pi*5500/float64(sr))}
+	a := Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - detmath.Exp(-2*math.Pi*5500/float64(sr))}
+	a.previousLogcosh = [2]float64{logcosh(0), logcosh(0)}
+	return a
 }
 func (a *Amp) Reset() {
 	a.up1.Reset()
@@ -149,6 +167,7 @@ func (a *Amp) Reset() {
 	a.down1.Reset()
 	a.down2.Reset()
 	a.previous = [2]float64{}
+	a.previousLogcosh = [2]float64{logcosh(0), logcosh(0)}
 	a.low = 0
 	a.dcIn = 0
 	a.dcOut = 0
@@ -158,12 +177,13 @@ func logcosh(x float64) float64 {
 	return v + detmath.Log1p(detmath.Exp(-2*v)) - math.Ln2
 }
 func (a *Amp) clip(x float64, stage int) float64 {
-	p := a.previous[stage]
-	a.previous[stage] = x
+	p, lp := a.previous[stage], a.previousLogcosh[stage]
+	lx := logcosh(x)
+	a.previous[stage], a.previousLogcosh[stage] = x, lx
 	if math.Abs(x-p) < 1e-6 {
 		return detmath.Tanh((x + p) * .5)
 	}
-	return (logcosh(x) - logcosh(p)) / (x - p)
+	return (lx - lp) / (x - p)
 }
 func (a *Amp) Next(x, drive float64) float64 {
 	drive = clamp(drive, 0, 1)
