@@ -106,6 +106,31 @@ func twoProd(a, b float64) (p, e float64) {
 	return p, e
 }
 
+// twoProdSplit is twoProd(a, b) for a constant b whose halves bh + bl, as
+// split gives them, are constants too: the same bits without splitting b on
+// every call. TestConstantSplits checks each pair.
+func twoProdSplit(a, b, bh, bl float64) (p, e float64) {
+	p = float64(a * b)
+	var ah, al float64
+	if a > 0x1p995 || a < -0x1p995 {
+		ah, al = splitHuge(a)
+	} else {
+		t := float64(splitter * a)
+		ah = t - (t - a)
+		al = a - ah
+	}
+	e = ((float64(ah*bh) - p) + float64(ah*bl) + float64(al*bh)) + float64(al*bl)
+	return p, e
+}
+
+// The halves split gives for the constants twoProdSplit multiplies by.
+const (
+	ln2HiH, ln2HiL     = 0x1.62e43p-01, -0x1.05c611p-29
+	ln10HiH, ln10HiL   = 0x1.26bb1b8p+01, 0x1.daaa8bp-26
+	halfPi4H, halfPi4L = 0x1.b839a28p-104, -0x1.6fdb1f8p-131
+	piHiH, piHiL       = 0x1.921fb58p+01, -0x1.dde974p-26
+)
+
 // twoSquare returns twoProd(a, a), splitting a once.
 func twoSquare(a float64) (p, e float64) {
 	p = float64(a * a)
@@ -222,7 +247,7 @@ func Exp2(x float64) float64 {
 	}
 	k := math.Round(x * 64) // exact
 	f := x - float64(k/64)  // exact: |f| <= 1/128
-	rh, rl := twoProd(f, ln2Hi)
+	rh, rl := twoProdSplit(f, ln2Hi, ln2HiH, ln2HiL)
 	rl += float64(f * ln2Lo)
 	hi, lo, m := expReduced(int(k), rh, rl)
 	return scale(hi+lo, m)
@@ -241,7 +266,7 @@ func Exp10(x float64) float64 {
 	if x < -324 {
 		return 0
 	}
-	h, l := twoProd(x, ln10Hi)
+	h, l := twoProdSplit(x, ln10Hi, ln10HiH, ln10HiL)
 	l += float64(x * ln10Lo)
 	h, l = fastTwoSum(h, l)
 	hi, lo, m := expDD(h, l)
@@ -508,7 +533,7 @@ func reduce(x float64) (rh, rl float64, quadrant int) {
 	t := x - float64(k*halfPi1) // exact
 	h, e1 := twoSum(t, -float64(k*halfPi2))
 	h, e2 := twoSum(h, -float64(k*halfPi3))
-	p, pe := twoProd(k, halfPi4)
+	p, pe := twoProdSplit(k, halfPi4, halfPi4H, halfPi4L)
 	l := ((e1 + e2) - p) - pe
 	rh, rl = twoSum(h, l)
 	return rh, rl, int(k - float64(4*math.Floor(float64(k/4))))
@@ -834,7 +859,7 @@ func SinPi(x float64) float64 {
 	// Exact: q is 0, or q/2 is within 1/4 of x and at least 1/2, so x and q/2
 	// are within a factor of two of each other (Sterbenz).
 	r := x - float64(0.5*q)
-	th, tl := twoProd(r, piHi)
+	th, tl := twoProdSplit(r, piHi, piHiH, piHiL)
 	th, tl = fastTwoSum(th, tl+float64(r*piLo))
 	// The quadrant is q mod 4; q is a whole number, so below 2^52 an integer
 	// conversion gives it exactly, and above that the float formula does.
