@@ -133,7 +133,7 @@ all. This one raises the bass, lowers the drums and rewrites the bass line:
 
 ```json
 {"schema": "cicada.apply.v1", "ok": true, "written": true,
- "revision_after": "b9abc55609cb441bf8625c106f547e58808db6d671e1d7df7ce07aa18334ea8e"}
+ "revision_after": "157ddfb89b2ad22a8ce78f68ca2e0a8d65881efeb189390352474943261b9c2c"}
 ```
 
 - `revision` is the SHA-256 of the score file in hex. Always send it: apply
@@ -157,7 +157,8 @@ with a stable `code` (branch on it) and a `message`.
 - `apply`: `error.code` is `intent_refused`, `invalid_result` (the result does
   not check), `revision_mismatch`, `decode`, `read`, `write` or `usage`.
   `error.index` (from 0), `error.kind` and, when known, `error.field` name the
-  intent at fault. Nothing is written; fix it and resend the whole batch.
+  intent at fault; `error.reason`, when present, is a stable code for why.
+  Nothing is written; fix that intent and resend the whole batch.
 - `render`: `error.code` names the cause; `error.remedy` may say what to change.
   A missed loudness target still writes its best attempt.
 
@@ -165,10 +166,8 @@ with a stable `code` (branch on it) and a `message`.
 
 1. Rendering to a loudness target with no master limiter: `render` exits 1
    with `loudness_shortfall_at_true_peak_ceiling`, even at -14 LUFS for the
-   song `cicada new` writes. Way out: put `error.remedy.score_text` in place of
-   `remedy.replaces` (at the end when `replaces` is absent), send the new text
-   as the `source` of a `replacetext` intent with `remedy.revision`, and render
-   again.
+   song `cicada new` writes. Way out: apply `error.remedy.intents` (they add
+   the limiter) with `remedy.revision` and `--write`, then render again.
 2. Reusing a revision after a write: `apply` exits 1 with
    `revision_mismatch`. Way out: send `revision_after` from the last apply,
    or run `check --json` again.

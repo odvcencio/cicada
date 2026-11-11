@@ -170,9 +170,8 @@ type quickRender struct {
 	Error *struct {
 		Code   string `json:"code"`
 		Remedy *struct {
-			Revision  string `json:"revision"`
-			Replaces  string `json:"replaces"`
-			ScoreText string `json:"score_text"`
+			Revision string           `json:"revision"`
+			Intents  []map[string]any `json:"intents"`
 		} `json:"remedy"`
 	} `json:"error"`
 }
@@ -298,21 +297,15 @@ func followQuickStart(t *testing.T, bin string) {
 	q.dir = filepath.Join(q.dir, "demo")
 
 	// Mistake 1, on the song cicada new writes: a loudness target and no
-	// master limiter. The way out is the remedy's text, as replacetext.
-	q.uses("cicada render main.cicada -o mix.wav --loudness -14 --json", "loudness_shortfall_at_true_peak_ceiling", "error.remedy.score_text", "remedy.replaces", "replaces", "replacetext", "source", "remedy.revision")
+	// master limiter. The way out is the remedy's intents.
+	q.uses("cicada render main.cicada -o mix.wav --loudness -14 --json", "loudness_shortfall_at_true_peak_ceiling", "error.remedy.intents", "remedy.revision", "--write")
 	revision := q.check()
 	rendered, code := q.render("--loudness", "-14")
-	if code != 1 || rendered.OK || rendered.Error == nil || rendered.Error.Code != "loudness_shortfall_at_true_peak_ceiling" || rendered.Error.Remedy == nil || rendered.Error.Remedy.ScoreText == "" || rendered.Error.Remedy.Revision != revision {
-		t.Fatalf("render of the new project to -14 LUFS: exit %d %+v; the quick start's mistake 1 says it fails with loudness_shortfall_at_true_peak_ceiling", code, rendered.Error)
+	if code != 1 || rendered.OK || rendered.Error == nil || rendered.Error.Code != "loudness_shortfall_at_true_peak_ceiling" || rendered.Error.Remedy == nil || len(rendered.Error.Remedy.Intents) == 0 || rendered.Error.Remedy.Revision != revision {
+		t.Fatalf("render of the new project to -14 LUFS: exit %d %+v; the quick start's mistake 1 says it fails with loudness_shortfall_at_true_peak_ceiling and a remedy with intents", code, rendered.Error)
 	}
 	remedy := rendered.Error.Remedy
-	source := string(q.read("main.cicada"))
-	if remedy.Replaces != "" {
-		source = strings.Replace(source, remedy.Replaces, remedy.ScoreText, 1)
-	} else {
-		source = strings.TrimRight(source, "\n") + "\n" + remedy.ScoreText + "\n"
-	}
-	fixed, code := q.apply(map[string]any{"version": 1, "revision": remedy.Revision, "intents": []any{map[string]any{"kind": "replacetext", "source": source}}}, true)
+	fixed, code := q.apply(map[string]any{"version": 1, "revision": remedy.Revision, "intents": remedy.Intents}, true)
 	if code != 0 || !fixed.OK || !fixed.Written {
 		t.Fatalf("apply of the remedy: exit %d %+v", code, fixed.Error)
 	}
@@ -342,7 +335,7 @@ func followQuickStart(t *testing.T, bin string) {
 	}
 
 	// Step 6: the quick start's batch at our revision; preview, then write.
-	q.uses("cicada apply main.cicada edit.json --json", "--write", "written", "diff", "revision_after")
+	q.uses("cicada apply main.cicada edit.json --json", "--write", "written", "diff", "revision_after", "replacedeclaration", "replacetext", "source")
 	var envelope map[string]any
 	if err := json.Unmarshal([]byte(q.block("<!-- agent-example-file: edit.json -->")), &envelope); err != nil {
 		t.Fatalf("the quick start's edit.json: %v", err)
