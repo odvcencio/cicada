@@ -266,17 +266,17 @@ func (v *clipVoice) NextStereo() (float32, float32) {
 			gain = min(gain, frame/float64(clip.fadeIn))
 		}
 		if clip.fadeOut > 0 {
-			gain = min(gain, (float64(clip.region.End-clip.region.Start)-frame)/float64(clip.fadeOut))
+			gain = min(gain, (float64(clip.region.End-clip.region.Start)-float64(frame))/float64(clip.fadeOut))
 		}
 		gain = max(0, gain)
-		left += float64(l) * gain
-		right += float64(r) * gain
+		left += float64(float64(l) * gain)
+		right += float64(float64(r) * gain)
 		v.position[slot]++
 	}
 	if v.tailRemaining > 0 {
 		gain := float64(v.tailRemaining) / float64(v.tailFrames)
-		left += float64(v.tailL) * gain
-		right += float64(v.tailR) * gain
+		left += float64(float64(v.tailL) * gain)
+		right += float64(float64(v.tailR) * gain)
 		v.tailRemaining--
 	}
 	v.lastL, v.lastR = float32(left), float32(right)

@@ -55,7 +55,7 @@ func (g *Guitar) NoteOn(hz, velocity float64) {
 		g.rng ^= g.rng >> 17
 		g.rng ^= g.rng << 5
 		noise := float64(int32(g.rng)) / 2147483648
-		g.loop.push(g.velocity * (.65*(2*v-1) + .06*noise))
+		g.loop.push(g.velocity * (float64(.65*(2*v-1)) + float64(.06*noise)))
 	}
 }
 func (g *Guitar) NoteOff() { g.released = true }
@@ -93,12 +93,12 @@ func (g *Guitar) SetExpressionImmediate(e Expression) {
 }
 func (g *Guitar) Next() float64 {
 	alpha := 1 - math.Exp(-1/(.008*g.sr))
-	g.control.Position += alpha * (g.e.Position - g.control.Position)
-	g.control.Brightness += alpha * (g.e.Brightness - g.control.Brightness)
-	g.control.Vibrato += alpha * (g.e.Vibrato - g.control.Vibrato)
-	g.control.Damping += alpha * (g.e.Damping - g.control.Damping)
-	g.control.Drive += alpha * (g.e.Drive - g.control.Drive)
-	g.hz += (g.target - g.hz) * (1 - math.Exp(-1/(.008*g.sr)))
+	g.control.Position += float64(alpha * (g.e.Position - g.control.Position))
+	g.control.Brightness += float64(alpha * (g.e.Brightness - g.control.Brightness))
+	g.control.Vibrato += float64(alpha * (g.e.Vibrato - g.control.Vibrato))
+	g.control.Damping += float64(alpha * (g.e.Damping - g.control.Damping))
+	g.control.Drive += float64(alpha * (g.e.Drive - g.control.Drive))
+	g.hz += float64((g.target - g.hz) * (1 - math.Exp(-1/(.008*g.sr))))
 	g.phase += 5 / g.sr
 	if g.phase >= 1 {
 		g.phase -= 1
@@ -106,19 +106,19 @@ func (g *Guitar) Next() float64 {
 	f := g.hz * math.Exp2(g.control.Vibrato*math.Sin(2*math.Pi*g.phase)/1200)
 	period := g.sr / f
 	x := g.loop.read(period - 1)
-	t60 := 4.5 / (1 + 35*g.control.Damping)
+	t60 := 4.5 / (1 + float64(35*g.control.Damping))
 	if g.released {
 		t60 = .12
 	}
 	gain := math.Exp(-6.907755 / (f * t60))
 	a := gain * (1 - g.control.Brightness) / 4
 	b := gain * (1 + g.control.Brightness) / 2
-	feedback := a*x + b*g.loss1 + a*g.loss2
+	feedback := float64(float64(a*x)+float64(b*g.loss1)) + float64(a*g.loss2)
 	g.loss2 = g.loss1
 	g.loss1 = x
 	g.loop.push(feedback)
-	pickup := x - .72*g.loop.read(period*clamp(g.control.Position, .05, .45))
-	hp := pickup - g.dcIn + .995*g.dcOut
+	pickup := x - float64(.72*g.loop.read(period*clamp(g.control.Position, .05, .45)))
+	hp := float64(pickup-g.dcIn) + float64(.995*g.dcOut)
 	g.dcIn = pickup
 	g.dcOut = hp
 	return g.amp.Next(hp*.7, g.control.Drive)
@@ -167,14 +167,14 @@ func (a *Amp) Next(x, drive float64) float64 {
 	var out [2]float64
 	for i, h := range hi {
 		p, q := a.up2.Upsample(h)
-		p = a.clip(a.clip(p*(1+18*drive), 0)*(1+3*drive), 1)
-		q = a.clip(a.clip(q*(1+18*drive), 0)*(1+3*drive), 1)
+		p = a.clip(a.clip(p*(1+float64(18*drive)), 0)*(1+float64(3*drive)), 1)
+		q = a.clip(a.clip(q*(1+float64(18*drive)), 0)*(1+float64(3*drive)), 1)
 		out[i] = a.down2.Downsample(p, q)
 	}
 	y := a.down1.Downsample(out[0], out[1])
-	hp := y - a.dcIn + .995*a.dcOut
+	hp := float64(y-a.dcIn) + float64(.995*a.dcOut)
 	a.dcIn = y
 	a.dcOut = hp
-	a.low += a.alpha * (hp - a.low)
+	a.low += float64(a.alpha * (hp - a.low))
 	return .7 * a.low
 }

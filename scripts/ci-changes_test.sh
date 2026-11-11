@@ -157,6 +157,8 @@ go_deps() { # go_deps GOOS TAGS PACKAGE...  (run in the root module)
 if [[ "${1:-}" == "--graph" ]]; then
 	check_imports studio_cli "cmd/cicada" < <(go_deps linux "" ./cmd/cicada)
 	check_imports parity "cmd/cicada-kernel-wasm" < <(go_deps linux "wasm_integration" ./cmd/cicada-kernel-wasm)
+	# The parity jobs also run TestExampleWAVParity in cmd/cicada.
+	check_imports parity "cmd/cicada (WAV parity)" < <(go_deps linux "" ./cmd/cicada)
 	check_imports m2 "M2 gates" < <(go_deps linux "wasm_integration chord_wasm browser" \
 		./cmd/cicada-kernel-wasm ./cmd/cicada ./host/demobrowser ./cmd/cicada-demo ./host/wam2)
 	check_imports studio_browser "Studio browser (cmd/cicada and the kernel WASM)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-kernel-wasm)
