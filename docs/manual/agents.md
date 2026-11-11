@@ -30,10 +30,12 @@ The `--json` formats share these rules:
   | --- | --- | --- | --- |
   | `check`, `apply`, `intents`, `diagnostics`, `audition` | 0 | 1 | 1 |
   | `render`, `stems` | 0 | 1 | 2 |
+  | `params`, `explain` | 0 | 1 | 2 for a usage error, 1 for an unknown name |
   | `help` | 0 | — | 2 |
 
 Usage errors and unknown names have the codes `usage`, `unknown_kind`
-(`intents`), `unknown_code` (`diagnostics`) and `unknown_command` (`help`).
+(`intents`), `unknown_code` (`diagnostics`), `unknown_command` (`help`),
+`no_match` (`params`), and `unknown_thing` and `unknown_track` (`explain`).
 
 `cicada audition --json` is described in [Audition](audition.md), and
 `cicada verify-wav --report` in [Exporting](exporting.md). The loudness fields

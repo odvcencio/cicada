@@ -135,13 +135,15 @@ Flags:
   --help      show this help
 
 ### params
-cicada params
+cicada params [<filter>] [--json]
 
-print the parameter catalog as JSON
+list every sound control with its range, default, meaning and direction
 
 Flags:
-  (no command flags)
+  --json      write the control catalog as JSON (schema cicada.params.v1)
   --help      show this help
+
+With --json, lists every control of every voice, keyboard patch, library patch, effect and mixer strip: its type, unit, range, default, where a score sets it, whether it can change while playing, what it does, and which way it moves level, brightness, attack and decay (stated, measured or unknown). A filter keeps the controls whose ID starts with it, such as fm_bass or fm_bass.op3, and the owners they belong to. Without arguments, prints the live-parameter registry as a JSON array, as before. See docs/manual/agents.md.
 
 ### view
 cicada view <score.cicada|project.json> -o <view.html>
@@ -153,16 +155,19 @@ Flags:
   --help      show this help
 
 ### explain
+cicada explain <control|voice|patch|effect> [--json] [--probe]
+cicada explain track:<name> <score.cicada> [--json]
 cicada explain <construct[.field]> [--json]
 cicada explain <score.cicada> <path> [@bar[.beat[.step]]]
 
-explain a language item or parameter value
+explain a control, voice, effect, track, language item or parameter value
 
 Flags:
-  --json      print construct details as JSON
+  --json      write the explanation as JSON (schema cicada.explain.v1 for controls, owners and tracks)
+  --probe     render the probe phrase at low, default and high values and report what changed (schema cicada.probe.v1)
   --help      show this help
 
-Score locations use bar numbers starting at 1.
+A control is owner.name, such as fm_bass.op3_level; an owner is a voice, keyboard patch, library patch, effect kind or mixer strip, such as fm_bass or delay. track:<name> lists the controls that track's voice and mixer strip accept, their current values and which the track overrides. Score locations use bar numbers starting at 1.
 
 ### gen
 cicada gen [flags]

@@ -207,7 +207,30 @@ jobs:
           make test-agent-surface | tee "$RUNNER_TEMP/agent-surface.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           grep -q -- '^--- PASS: TestAgentTaskSuite ' "$RUNNER_TEMP/agent-surface.log"
+          grep -q -- '^--- PASS: TestAgentBrighterBassTask ' "$RUNNER_TEMP/agent-surface.log"
           grep -q -- '^--- PASS: TestAgentDocumentationExamples ' "$RUNNER_TEMP/agent-surface.log"
+
+  # Every probeable sound control rendered at three values and compared with
+  # internal/controls/directions.json, which cicada params and cicada explain
+  # read for their measured directions. Pull requests probe a sample in the
+  # host/soundprobe unit test; the nightly run probes all of them.
+  sound-probe-nightly:
+    name: Measured sound directions (every control)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Probe every control
+        run: |
+          set -euo pipefail
+          CICADA_PROBE_ALL=1 go test ./host/soundprobe -run '^TestMeasuredDirectionsMatchTheTable$' -count=1 -v -timeout 25m
 
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
@@ -463,6 +486,7 @@ jobs:
           make test-agent-surface | tee build/agent-surface-report.txt
           # go test exits 0 when -run matches nothing, for example after a rename.
           grep -q -- '^--- PASS: TestAgentTaskSuite ' build/agent-surface-report.txt
+          grep -q -- '^--- PASS: TestAgentBrighterBassTask ' build/agent-surface-report.txt
           grep -q -- '^--- PASS: TestAgentDocumentationExamples ' build/agent-surface-report.txt
       - name: Save gate reports
         if: always()
