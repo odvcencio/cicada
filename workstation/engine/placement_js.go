@@ -11,6 +11,7 @@ import (
 	"syscall/js"
 
 	"m31labs.dev/cicada/kernel/seq"
+	studiocontrol "m31labs.dev/cicada/workstation/control"
 )
 
 type placementDrag struct {
@@ -174,7 +175,7 @@ func (u *placementEditorUI) previewPlacementDrag(drag *placementDrag) {
 	drag.block.Call("setAttribute", "data-placement-preview", field)
 	value := strconv.FormatInt(next, 10) + "ticks"
 	if !drag.resize && next%seq.TicksPerStep == 0 {
-		bar, beat, step, _ := seq.MeterMap{}.Position(next)
+		bar, beat, step := studiocontrol.GridPosition(next)
 		value = fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 	}
 	message := workspaceAttr(drag.block, "data-placement-block") + " · " + field + " " + value
@@ -276,7 +277,7 @@ func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 	}
 	delta := placementCompatibleStep(block, field == "length", placementSnap(block))
 	if event.Get("shiftKey").Bool() {
-		delta = seq.MeterMap{}.BarTicks(0)
+		delta = studiocontrol.GridBarTicks()
 	}
 	if key == "ArrowLeft" {
 		delta = -delta
@@ -324,10 +325,13 @@ func (u *placementEditorUI) placementViewChanged(event js.Value) {
 }
 
 // Quantize deltas rather than positions, retaining an authored off-grid offset.
+// The Bar and Beat snap values the server renders from the song's meter map;
+// the engine's grid is the same base meter.
+var barSnap, beatSnap = strconv.FormatInt(studiocontrol.GridBarTicks(), 10), strconv.FormatInt(studiocontrol.GridBeatTicks(), 10)
+
 func normalizedPlacementSnap(value string) string {
-	var meterMap seq.MeterMap // the server renders Bar and Beat from the song's map: 4/4 until Studio receives one
 	switch value {
-	case strconv.FormatInt(meterMap.BarTicks(0), 10), strconv.FormatInt(meterMap.BeatTicks(0), 10), "480", "320", "240", "160", "120", "1":
+	case barSnap, beatSnap, "480", "320", "240", "160", "120", "1":
 		return value
 	}
 	return "240"

@@ -11,7 +11,7 @@ import (
 	"syscall/js"
 	"time"
 
-	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/workstation/control"
 )
 
 var placementViewPublisher = &sharedLoop{start: func(ctx context.Context) { go runPlacementView(ctx) }}
@@ -192,7 +192,7 @@ func (v *placementView) event(event js.Value) {
 			block := root.Call("querySelector", "[data-placement-selected=true]")
 			if workspacePresent(block) {
 				v.stopFollow()
-				ticks := v.bars() * float64(seq.MeterMap{}.BarTicks(0))
+				ticks := v.bars() * float64(control.GridBarTicks())
 				width := v.world.Call("getBoundingClientRect").Get("width").Float() - v.labelWidth()
 				v.scroll.Set("scrollLeft", math.Max(0, float64(placementTicks(block, "data-placement-at"))*width/ticks-16))
 			}
@@ -226,7 +226,7 @@ func (v *placementView) draw() {
 		}
 		return
 	}
-	ticks := v.bars() * float64(seq.MeterMap{}.BarTicks(0))
+	ticks := v.bars() * float64(control.GridBarTicks())
 	tick := math.Min(ticks, math.Max(0, head.At(time.Since(update.At))))
 	label := v.labelWidth()
 	width := v.world.Call("getBoundingClientRect").Get("width").Float() - label

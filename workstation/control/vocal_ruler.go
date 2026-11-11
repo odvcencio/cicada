@@ -1,10 +1,6 @@
 package control
 
-import (
-	"math"
-
-	"m31labs.dev/cicada/kernel/seq"
-)
+import "math"
 
 // VocalRulerTicks returns a bounded set of bar labels for the visible waveform
 // width. An unmeasured or collapsed surface waits for its next resize rather
@@ -14,8 +10,7 @@ func VocalRulerTicks(end int64, width float64) []int64 {
 	if end <= 0 || end > 1<<40 || width <= 0 || math.IsNaN(width) || math.IsInf(width, 0) {
 		return nil
 	}
-	// The browser engine receives no meter map yet, so bars are 4/4.
-	barTicks := seq.MeterMap{}.BarTicks(0)
+	barTicks := GridBarTicks()
 	bars := max(1., float64(end)/float64(barTicks))
 	lastSpacing := (end-1)/barTicks + 1
 	spacing := int64(1)

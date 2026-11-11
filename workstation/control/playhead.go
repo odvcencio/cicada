@@ -51,8 +51,8 @@ type Playhead struct {
 }
 
 func (s PlaybackState) Playhead() Playhead {
-	var meterMap seq.MeterMap // the browser engine receives no meter map yet: 4/4
-	p := Playhead{Tick: meterMap.BarStart(max(0, s.Bar-1)) + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range, NextTempo: s.NextTempo}
+	barTicks, beatTicks := GridBarTicks(), GridBeatTicks()
+	p := Playhead{Tick: max(0, s.Bar-1)*barTicks + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range, NextTempo: s.NextTempo}
 	if s.FrameAgeNanos != nil {
 		p.Age = time.Duration(*s.FrameAgeNanos)
 		if p.Age >= 0 {
@@ -69,11 +69,10 @@ func (s PlaybackState) Playhead() Playhead {
 	beat := int64(int32(binary.LittleEndian.Uint32(b[56:])))
 	tick := int64(int32(binary.LittleEndian.Uint32(b[60:])))
 	tempo := int64(binary.LittleEndian.Uint32(b[22:]))
-	if bar < 1 || beat < 1 || beat > meterMap.BeatsInBar(bar-1) || tick < 0 || tick >= meterMap.BeatTicks(bar-1) || tempo < 20000 || tempo > 300000 {
+	if bar < 1 || beat < 1 || beat > barTicks/beatTicks || tick < 0 || tick >= beatTicks || tempo < 20000 || tempo > 300000 {
 		return p
 	}
-	beatTick, _ := meterMap.PositionTick(bar, beat, 1)
-	p.Tick, p.Tempo = beatTick+tick, tempo
+	p.Tick, p.Tempo = (bar-1)*barTicks+(beat-1)*beatTicks+tick, tempo
 	return p
 }
 

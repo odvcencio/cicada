@@ -302,16 +302,16 @@ func vocalPos(tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return strconv.FormatInt(tick, 10) + "ticks"
 	}
-	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	bar, beat, step := control.GridPosition(tick)
 	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 func (u *vocalLanesUI) grid() int64 {
 	value := u.root.Call("querySelector", "select[name=vocalSnap]").Get("value").String()
 	switch value {
 	case "beat":
-		return seq.MeterMap{}.BeatTicks(0)
+		return control.GridBeatTicks()
 	case "bar":
-		return seq.MeterMap{}.BarTicks(0)
+		return control.GridBarTicks()
 	case "free":
 		return 1
 	default:
@@ -682,7 +682,7 @@ func (u *vocalLanesUI) zoom(center bool) {
 	if value != "song" {
 		bars, _ := strconv.Atoi(strings.Fields(value)[0])
 		if bars > 0 {
-			width = max(viewport, label+max(1., viewport-label)*float64(u.props.End)/float64(seq.MeterMap{}.BarStart(int64(bars))))
+			width = max(viewport, label+max(1., viewport-label)*float64(u.props.End)/float64(int64(bars)*control.GridBarTicks()))
 		}
 	}
 	width = min(2000000., width)
@@ -691,7 +691,7 @@ func (u *vocalLanesUI) zoom(center bool) {
 		return
 	}
 	u.world.Get("style").Set("width", fmt.Sprintf("%.2fpx", width))
-	u.world.Get("style").Call("setProperty", "--vocal-grid", fmt.Sprintf("%.6f%%", 100*float64(seq.MeterMap{}.BarTicks(0))/float64(u.props.End)))
+	u.world.Get("style").Call("setProperty", "--vocal-grid", fmt.Sprintf("%.6f%%", 100*float64(control.GridBarTicks())/float64(u.props.End)))
 	if center {
 		u.scroll.Set("scrollLeft", float64(u.region.Start)/float64(u.props.End)*(width-label))
 	}
@@ -699,8 +699,7 @@ func (u *vocalLanesUI) zoom(center bool) {
 	ruler.Call("replaceChildren")
 	for _, tick := range ticks {
 		span := js.Global().Get("document").Call("createElement", "span")
-		bar, _ := seq.MeterMap{}.BarAt(tick)
-		span.Set("textContent", strconv.FormatInt(bar+1, 10))
+		span.Set("textContent", strconv.FormatInt(tick/control.GridBarTicks()+1, 10))
 		span.Get("style").Set("left", fmt.Sprintf("%.6f%%", 100*float64(tick)/float64(u.props.End)))
 		ruler.Call("appendChild", span)
 	}
