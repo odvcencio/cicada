@@ -52,6 +52,7 @@ jobs:
       macos_desktop: ${{ steps.classify.outputs.macos_desktop }}
       macos_contracts: ${{ steps.classify.outputs.macos_contracts }}
       m2: ${{ steps.classify.outputs.m2 }}
+      bench: ${{ steps.classify.outputs.bench }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -461,6 +462,86 @@ jobs:
         run: make test-cmd-shard-check SHARDS=3
       - name: cmd/cicada tests
         run: make test-cmd-shard SHARD=${{ matrix.shard }}/3
+
+  # Speed gates for an agent's loop (plan.cicada.speed, row F7): process start,
+  # check, apply, render, a loudness render and audition on the reference
+  # scores, as the median of 5 runs after one warm-up run. Pull requests and
+  # pushes report; the nightly run enforces the gates
+  # (cmd/cicada-bench/gates.go). It is not a required check. The large song's
+  # render and audition cover its first 8 bars, so the job stays under five
+  # minutes on the slower runners (16 bars took 6m07s with the warm-up).
+  bench:
+    name: Agent loop speed
+    needs: changes
+    if: ${{ needs.changes.outputs.bench == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build cicada
+        run: make build-core
+      - name: Measure
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          enforce=()
+          if [[ "$EVENT_NAME" == schedule ]]; then enforce=(--enforce); fi
+          make bench-agent-loop BENCH_ARGS="${enforce[*]}" | tee build/bench-agent-loop.txt
+      - name: Save the measurements
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: bench-agent-loop
+          if-no-files-found: warn
+          path: |
+            build/bench-agent-loop.json
+            build/bench-agent-loop.txt
+
+  # Every example score, rendered in full with and without the stored mix that
+  # loudness passes and peak normalization replay (render.MasterCache), must
+  # write the same bytes: plain, normalized, and at two loudness targets. The
+  # pull request tests run one short score per master path; this is the whole
+  # sweep, nightly, on both architectures.
+  render-identity:
+    name: Render cache identity sweep (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Sweep
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-render-identity | tee build/render-identity.log
+      - name: Save the sweep log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: render-identity-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: build/render-identity.log
 
   # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
   # aggregate. Every command that was in the single job is in exactly one part.

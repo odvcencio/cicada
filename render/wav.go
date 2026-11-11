@@ -53,7 +53,7 @@ type Options struct {
 	// MaxResidentPCM caps, in bytes, the decoded PCM of all sampler packs the
 	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
 	MaxResidentPCM int64
-	// MasterCache, when set, lets repeated direct renders of one score skip
+	// MasterCache, when set, lets repeated renders of one score skip
 	// synthesis: a render replays the signal that entered the master stage when
 	// it differs from the stored capture only in MasterInputGainDB,
 	// MasterGainDB, MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A
@@ -509,11 +509,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	busState := busMixerState{masterProcessor: masterProcessor, outputGain: 1}
 	busState.masterLimiter, _ = masterProcessor.(interface{ LimiterGainReductionDB() float64 })
-	masterGainDB := opts.MasterGainDB
-	if masterProcessor == nil {
-		masterGainDB += opts.MasterInputGainDB
-	}
-	authoredGainDB := float64(0)
+	authoredGainDB, hasLevel := authoredMasterLevelDB(semantic)
+	masterGainDB, masterGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil)
 	for _, bus := range semantic.Buses {
 		switch bus.ID {
 		case "music":
@@ -524,10 +521,6 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	if semantic.Master != nil {
 		busState.masterMute = semantic.Master.Mixer.Mute
-		if level := semantic.Master.Mixer.Level; level != nil && level.Unit == "db" && level.Number != nil {
-			authoredGainDB = *level.Number
-			masterGainDB += authoredGainDB
-		}
 	}
 	if math.IsNaN(masterGainDB) || math.IsInf(masterGainDB, 0) || masterGainDB < -120 || masterGainDB > 24 {
 		return report, fmt.Errorf("combined master gain is out of range")
@@ -721,17 +714,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err := writeWAVHeaderTempo(writer, opts.SampleRate, opts.Bits, uint32(dataBytes), len(report.tempoChanges)); err != nil {
 		return report, err
 	}
-	masterGain := float32(1)
-	if masterGainDB != 0 {
-		masterGain = float32(detmath.Pow(10, masterGainDB/20))
-	}
-	if masterProcessor != nil {
-		masterGain = float32(detmath.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
-		busState.outputGain = float32(detmath.Pow(10, opts.MasterGainDB/20))
-	}
+	busState.outputGain = outputGain
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
-	if cache := opts.MasterCache; cache != nil && masterProcessor != nil && stemsDir == "" && opts.NoteTap == nil {
+	if cache := opts.MasterCache; cache != nil && stemsDir == "" && opts.NoteTap == nil {
 		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
 		use, replay, err := cache.begin(key, renderFrames+int64(insertLatency+masterLatency))
 		if err != nil {
@@ -942,6 +928,41 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	return report, nil
+}
+
+// authoredMasterLevelDB returns the master level the score sets in dB, and
+// whether it sets one. Both renderers apply it with the export gain.
+func authoredMasterLevelDB(p *project.Project) (float64, bool) {
+	if p.Master == nil {
+		return 0, false
+	}
+	if level := p.Master.Mixer.Level; level != nil && level.Unit == "db" && level.Number != nil {
+		return *level.Number, true
+	}
+	return 0, false
+}
+
+// directMasterGains returns the combined master gain in dB that a direct
+// render reports, and the gain factors its master stage applies ahead of the
+// master chain (with the authored level) and after it. Without a master chain
+// every gain goes in ahead of the safety limiter as one factor.
+func directMasterGains(opts Options, authoredGainDB float64, hasLevel, hasChain bool) (gainDB float64, before, after float32) {
+	gainDB = opts.MasterGainDB
+	if !hasChain {
+		gainDB += opts.MasterInputGainDB
+	}
+	if hasLevel {
+		gainDB += authoredGainDB
+	}
+	before, after = 1, 1
+	if gainDB != 0 {
+		before = float32(detmath.Pow(10, gainDB/20))
+	}
+	if hasChain {
+		before = float32(detmath.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
+		after = float32(detmath.Pow(10, opts.MasterGainDB/20))
+	}
+	return gainDB, before, after
 }
 
 // finishWAV drains the safety limiter and appends the timing chunk.
