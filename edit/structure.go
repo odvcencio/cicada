@@ -69,14 +69,15 @@ func (DeleteTrack) Kind() string { return "deletetrack" }
 // (automation, scene setting, modulation route, MIDI or live mapping) it does
 // not take, or any other problem the change adds to cicada check is refused
 // with voice_change_invalid, and uses lists every one. A change that plays
-// but sounds different, such as drum lanes the new kit does not play or a
-// row or mark the old voice played and the new one ignores (a pressure row on
-// acid, accent on piano: notation.VoiceReads), is refused with
-// voice_changes_sound unless acceptchanges accepts it; the result's warnings
-// then name each.
+// but sounds different, such as drum lanes the new kit does not play, or an
+// input whose effect differs between the voices (a pressure row or gesture
+// acid ignores, brackets that are a tuplet on acid and a chord on piano:
+// notation.VoiceInputs), is refused with voice_changes_sound unless
+// acceptchanges accepts it; the result's warnings then name each. An input or
+// a voice the check does not model is refused with voice_input_unmodeled.
 //
 // Example: {"kind":"settrackvoice","track":"keys","voice":"glow"}
-// Example: {"kind":"settrackvoice","track":"lead","voice":"acid","dropparams":true}
+// Example: {"kind":"settrackvoice","track":"keys","voice":"glow","dropparams":true}
 // Example: {"kind":"settrackvoice","track":"keys","voice":"glow","acceptchanges":true}
 type SetTrackVoice struct {
 	Track         string `json:"track" cicada:"required"` // the track's name
@@ -498,6 +499,9 @@ func setTrackVoice(ctx *Context, intent Intent) error {
 	}
 	if len(change.invalid) > 0 {
 		return &ReasonError{Reason: "voice_change_invalid", Field: "voice", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Voice, strings.Join(change.invalid, "; "))}
+	}
+	if len(change.unmodeled) > 0 {
+		return &ReasonError{Reason: "voice_input_unmodeled", Field: "voice", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Voice, strings.Join(change.unmodeled, "; "))}
 	}
 	var dropped []string
 	for _, s := range change.unsupported {

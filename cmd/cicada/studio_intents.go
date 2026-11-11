@@ -374,6 +374,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	if s.history != nil {
 		bar, step := s.historyPosition()
+		s.history.setMultiFile(studioProjectHasSeveralFiles(s.path))
 		s.history.observe(current, bar, step)
 	}
 	if studioRevision(current) != edit.Revision {
@@ -399,6 +400,14 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		}
 	}
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
+	if len(env.Revisions) == 0 {
+		env.Revisions = edit.Revisions
+	}
+	// Other files the intents were computed against, as cicada apply checks.
+	if err := checkFileRevisions(opts, env.Revisions); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "code": "revision_mismatch", "revision": studioRevision(current), "revisions": fileRevisions(opts)})
+		return
+	}
 	if env.Author == "" {
 		env.Author = edit.Author
 	}
@@ -417,7 +426,14 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if err != nil {
-		studioJSON(w, http.StatusUnprocessableEntity, intentErrorResponse(err))
+		// The revisions a resend must carry, so a yes to a refusal answers
+		// exactly the state the refusal described.
+		response := intentErrorResponse(err)
+		var reason *edits.ReasonError
+		if errors.As(err, &reason) && reason.Reason == "voice_changes_sound" {
+			response["revision"], response["revisions"] = studioRevision(current), fileRevisions(opts)
+		}
+		studioJSON(w, http.StatusUnprocessableEntity, response)
 		return
 	}
 	if !env.DryRun {

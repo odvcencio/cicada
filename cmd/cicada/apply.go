@@ -37,7 +37,7 @@ type applyResult struct {
 	warnings        [][]string
 	files           []string
 	sources         []string             // the project's source paths, which messages name as jsonPath does
-	fileRevisions   []edits.FileRevision // the revision of each source file the apply read, by jsonPath
+	fileRevisions   []edits.FileRevision // the revision of each source file the apply read, relative to the project folder
 }
 
 // pathsAsJSON rewrites the project's source paths in text as jsonPath writes
@@ -178,20 +178,12 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	}
 	for _, file := range opts.Sources {
 		result.sources = append(result.sources, file.Path)
-		if file.Library == "" {
-			result.fileRevisions = append(result.fileRevisions, edits.FileRevision{Path: jsonPath(file.Path), Revision: edits.Revision(file.Source)})
-		}
 	}
+	result.fileRevisions = fileRevisions(opts)
 	// The envelope's revision covers the entry; revisions covers the other
 	// files the intents were computed against.
-	for _, want := range env.Revisions {
-		data, err := os.ReadFile(want.Path)
-		if err != nil {
-			return fail("revision_mismatch", fmt.Errorf("%s: %w", want.Path, err))
-		}
-		if got := edits.Revision(data); got != want.Revision {
-			return fail("revision_mismatch", fmt.Errorf("%s changed; intents target revision %s, file is at %s", want.Path, want.Revision, got))
-		}
+	if err := checkFileRevisions(opts, env.Revisions); err != nil {
+		return fail("revision_mismatch", err)
 	}
 	applied, err := edits.Apply(before, env, opts)
 	if err != nil {

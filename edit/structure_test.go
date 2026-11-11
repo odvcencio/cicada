@@ -76,7 +76,8 @@ func TestDeleteTrackRemovesItsBindings(t *testing.T) {
 }
 
 func TestSetTrackVoiceRefusesOrDropsSettings(t *testing.T) {
-	structureCase(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "acid"}, strings.Replace(structureScore, "track keys piano {}", "track keys acid {}", 1))
+	// keys plays chords, which acid plays as a tuplet: accepted here.
+	structureCase(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "acid", AcceptChanges: true}, strings.Replace(structureScore, "track keys piano {}", "track keys acid {}", 1))
 	structureRefusal(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_params_unsupported", "voice", "piano has no setting cutoff", "setting cutoff (line 4)")
 	structureCase(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, strings.Replace(structureScore, "track bass acid { cutoff = 620Hz }", "track bass piano {}", 1))
 	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "nosuch"}, "voice_invalid", "voice", `a track cannot play "nosuch"`)

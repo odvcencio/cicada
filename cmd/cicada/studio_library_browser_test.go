@@ -114,7 +114,7 @@ func TestBrowserStudioLibraryAsksBeforeChangingSound(t *testing.T) {
 	chrome.eval(`window.__asked=[];window.confirm=q=>{window.__asked.push(q);return false};true`)
 	chrome.click(".library-row button:last-child")
 	chrome.waitFor("document.querySelector('#library-status').textContent.includes('Not inserted')", 10*time.Second)
-	chrome.eval(`(()=>{if(!window.__asked[0]||!window.__asked[0].includes('its accent marks have no effect'))throw new Error('no question: '+window.__asked[0]);if(document.querySelector('#source-editor').value.includes('synth.glassbass'))throw new Error('a no inserted');return true})()`)
+	chrome.eval(`(()=>{if(!window.__asked[0]||!window.__asked[0].includes('accent: acid plays it'))throw new Error('no question: '+window.__asked[0]);if(document.querySelector('#source-editor').value.includes('synth.glassbass'))throw new Error('a no inserted');return true})()`)
 	chrome.eval(`window.confirm=()=>true;true`)
 	chrome.click(".library-row button:last-child")
 	chrome.waitFor("document.querySelector('#source-editor').value.includes('track lead synth.glassbass')", 10*time.Second)

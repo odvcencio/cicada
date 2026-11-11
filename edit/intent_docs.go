@@ -941,10 +941,10 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetTrackVoice": {
 		Meaning: "changes what a track plays to another voice: a built-in voice, or an instrument, kit, sampler or preset the score declares or imports",
-		Notes:   "The track keeps its name, mixer settings, scene bindings and chain. Nothing changes silently. A track setting the new voice lacks is refused with voice_params_unsupported, unless dropparams removes it (the label names each). A pattern the new voice cannot play, a parameter path (automation, scene setting, modulation route, MIDI or live mapping) it does not take, or any other problem the change adds to cicada check is refused with voice_change_invalid, and uses lists every one. A change that plays but sounds different, such as drum lanes the new kit does not play or a row or mark the old voice played and the new one ignores (a pressure row on acid, accent on piano: notation.VoiceReads), is refused with voice_changes_sound unless acceptchanges accepts it; the result's warnings then name each.",
+		Notes:   "The track keeps its name, mixer settings, scene bindings and chain. Nothing changes silently. A track setting the new voice lacks is refused with voice_params_unsupported, unless dropparams removes it (the label names each). A pattern the new voice cannot play, a parameter path (automation, scene setting, modulation route, MIDI or live mapping) it does not take, or any other problem the change adds to cicada check is refused with voice_change_invalid, and uses lists every one. A change that plays but sounds different, such as drum lanes the new kit does not play, or an input whose effect differs between the voices (a pressure row or gesture acid ignores, brackets that are a tuplet on acid and a chord on piano: notation.VoiceInputs), is refused with voice_changes_sound unless acceptchanges accepts it; the result's warnings then name each. An input or a voice the check does not model is refused with voice_input_unmodeled.",
 		Examples: []string{
 			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"glow\"}",
-			"{\"kind\":\"settrackvoice\",\"track\":\"lead\",\"voice\":\"acid\",\"dropparams\":true}",
+			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"glow\",\"dropparams\":true}",
 			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"glow\",\"acceptchanges\":true}",
 		},
 		Fields: map[string]string{

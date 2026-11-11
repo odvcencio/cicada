@@ -3,6 +3,7 @@ package edit
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -122,7 +123,28 @@ func describe(ctx *Context, path string, use notation.NameUse) string {
 	if path == ctx.Options.Path {
 		return use.Use
 	}
-	return strings.Replace(use.Use, fmt.Sprintf("(line %d)", use.Line), fmt.Sprintf("(%s line %d)", path, use.Line), 1)
+	return strings.Replace(use.Use, fmt.Sprintf("(line %d)", use.Line), fmt.Sprintf("(%s line %d)", projectPath(ctx, path), use.Line), 1)
+}
+
+// projectPath names a source file relative to the project folder (the
+// manifest's, or the entry's when there is none), with forward slashes.
+func projectPath(ctx *Context, path string) string {
+	base := ctx.Options.Path
+	if ctx.Options.ManifestPath != "" {
+		base = ctx.Options.ManifestPath
+	}
+	root, err := filepath.Abs(filepath.Dir(base))
+	if err != nil {
+		return path
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	if relative, err := filepath.Rel(root, absolute); err == nil && !strings.HasPrefix(relative, "..") {
+		return filepath.ToSlash(relative)
+	}
+	return filepath.ToSlash(path)
 }
 
 // diagnosticText names a diagnostic for a refusal: its message without the
@@ -132,7 +154,7 @@ func diagnosticText(ctx *Context, d notation.Diagnostic) string {
 	case d.Position.Line == 0:
 		return d.Text()
 	case d.Position.File != "" && d.Position.File != ctx.Options.Path:
-		return fmt.Sprintf("%s (%s line %d)", d.Text(), d.Position.File, d.Position.Line)
+		return fmt.Sprintf("%s (%s line %d)", d.Text(), projectPath(ctx, d.Position.File), d.Position.Line)
 	}
 	return fmt.Sprintf("%s (line %d)", d.Text(), d.Position.Line)
 }
@@ -352,6 +374,7 @@ type voiceChange struct {
 	unsupported  []trackSetting // the track's own settings the new voice lacks
 	invalid      []string       // problems the language refuses
 	changes      []string       // changes to the sound with no error
+	unmodeled    []string       // inputs or voices the description does not model
 }
 
 // checkVoiceChange compares the project before and after the staged voice
@@ -450,50 +473,71 @@ func checkVoiceChange(st *staged, score *notation.Score, track, oldKind, newKind
 		}
 	}
 	// Changes the language accepts but that change what plays: drum lanes the
-	// new voice does not play, and rows and marks it ignores that the old
-	// voice played (notation.VoiceReads, checked against renders).
+	// new voice does not play, and every input whose effect differs between
+	// the two voices (notation.VoiceInputs, checked against both renderers).
+	// An input or a voice the description does not model is refused.
 	oldLanes, newLanes := notation.VoiceLanes(score, oldKind), notation.VoiceLanes(score, newKind)
-	oldReads, newReads := notation.VoiceReads(score, oldKind), notation.VoiceReads(score, newKind)
+	oldInputs, newInputs := notation.VoiceInputs(score, oldKind), notation.VoiceInputs(score, newKind)
 	for _, name := range patternsOf(score, track) {
 		pattern, ok := findPattern(score, name)
 		if !ok {
 			continue
 		}
-		if pattern.Kind == "drums" {
-			if newLanes == nil {
-				continue
-			}
+		where := fmt.Sprintf("pattern %s (line %d)", name, pattern.Position.Line)
+		if pattern.Kind == "drums" && newLanes != nil {
 			for _, lane := range pattern.Lanes {
 				if containsString(newLanes, lane.Name) || !laneHasHits(lane) || oldLanes != nil && !containsString(oldLanes, lane.Name) {
 					continue
 				}
 				change.changes = append(change.changes, fmt.Sprintf("pattern %s lane %s (line %d): %s does not play lane %s, so its hits go silent", name, lane.Name, lane.Position.Line, newKind, lane.Name))
 			}
+		}
+		inputs, err := notation.PatternInputs(pattern)
+		if err != nil {
+			change.unmodeled = append(change.unmodeled, fmt.Sprintf("%s: %v", where, err))
 			continue
 		}
-		if newReads == nil {
+		if len(inputs) == 0 {
 			continue
 		}
-		for _, input := range notation.PatternInputs(pattern) {
-			read, described := newReads[input]
+		if newInputs == nil {
+			change.unmodeled = append(change.unmodeled, fmt.Sprintf("%s: the voice check does not model %s", where, newKind))
+			continue
+		}
+		for _, input := range inputs {
+			effect, described := newInputs[input]
+			before := oldInputs[input]
 			switch {
-			case !described && !diagnose:
-				change.invalid = append(change.invalid, fmt.Sprintf("pattern %s (line %d): %s refuses the %s rows or marks", name, pattern.Position.Line, newKind, input))
-			case described && !read && (oldReads == nil || oldReads[input]):
-				change.changes = append(change.changes, fmt.Sprintf("pattern %s (line %d): %s no effect on %s", name, pattern.Position.Line, inputName(input), newKind))
+			case !described:
+				change.unmodeled = append(change.unmodeled, fmt.Sprintf("%s: the voice check does not model what %s does with %s", where, newKind, input))
+			case effect == notation.EffectRefuses:
+				if !diagnose {
+					change.invalid = append(change.invalid, fmt.Sprintf("%s: %s refuses its %s", where, newKind, input))
+				}
+			case before == effect, before == "" && effect != notation.EffectIgnores:
+			case before == "":
+				change.changes = append(change.changes, fmt.Sprintf("%s: %s: %s %s", where, input, newKind, effectText(effect)))
+			default:
+				change.changes = append(change.changes, fmt.Sprintf("%s: %s: %s %s, %s %s", where, input, oldKind, effectText(before), newKind, effectText(effect)))
 			}
 		}
 	}
 	return change, nil
 }
 
-// inputName names a row or mark for a message, with its verb.
-func inputName(input string) string {
-	switch input {
-	case notation.InputAccent, notation.InputSlide, notation.InputRatchet, notation.InputChance:
-		return "its " + input + " marks have"
+// effectText words what a voice does with an input.
+func effectText(effect string) string {
+	switch effect {
+	case notation.EffectTuplet:
+		return "plays it as a tuplet"
+	case notation.EffectChord:
+		return "plays it as a chord"
+	case notation.EffectRefuses:
+		return "refuses it"
+	case notation.EffectIgnores:
+		return "ignores it"
 	}
-	return "its " + input + " row has"
+	return "plays it"
 }
 
 // findPattern finds a pattern by the name a track binds, an import alias's

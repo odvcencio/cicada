@@ -232,6 +232,9 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 	if len(change.invalid) > 0 {
 		return nil, &ReasonError{Reason: "voice_change_invalid", Field: "reference", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Reference, strings.Join(change.invalid, "; "))}
 	}
+	if len(change.unmodeled) > 0 {
+		return nil, &ReasonError{Reason: "voice_input_unmodeled", Field: "reference", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Reference, strings.Join(change.unmodeled, "; "))}
+	}
 	if len(change.changes) > 0 && !in.AcceptChanges {
 		return nil, &ReasonError{Reason: "voice_changes_sound", Field: "reference", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Reference, strings.Join(change.changes, "; "))}
 	}

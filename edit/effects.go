@@ -516,9 +516,21 @@ func attachedComments(source []byte, root, decl *gts.Node, lineStart int) int {
 		if root.NamedChild(i).StartByte() != decl.StartByte() {
 			continue
 		}
-		next := root.NamedChild(i + 1)
+		// The declaration's own trailing comment is a sibling node too: look
+		// past comments to the next declaration.
 		lang, err := notation.Language()
-		if err == nil && next.Type(lang) == decl.Type(lang) {
+		if err != nil {
+			break
+		}
+		j := i + 1
+		for j < root.NamedChildCount() && root.NamedChild(j).Type(lang) == "comment" {
+			j++
+		}
+		if j == root.NamedChildCount() {
+			break
+		}
+		next := root.NamedChild(j)
+		if next.Type(lang) == decl.Type(lang) {
 			gap := source[decl.EndByte():next.StartByte()]
 			if bytes.Count(gap, []byte("\n")) <= 1 {
 				return lineStart
@@ -570,6 +582,16 @@ func removeTopLevelDeclaration(source []byte, root, decl *gts.Node) []byte {
 		}
 		if next < len(source) && source[next] == '\n' {
 			end = next + 1
+		}
+	}
+	// At the end of the file, the blank lines the removal leaves before it go
+	// too, so the file ends with one newline.
+	if end == len(source) {
+		for start >= 2 && source[start-1] == '\n' && (source[start-2] == '\n' || source[start-2] == '\r' && start >= 3 && source[start-3] == '\n') {
+			start--
+			if source[start-1] == '\r' {
+				start--
+			}
 		}
 	}
 	return replaceMixerSpan(source, start, end, nil)

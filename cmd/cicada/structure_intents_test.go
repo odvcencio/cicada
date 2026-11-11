@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -338,5 +340,100 @@ func TestEnvelopeRevisionsCoverOtherFiles(t *testing.T) {
 	}
 	if data, _ := os.ReadFile("main.cicada"); strings.Contains(string(data), "organ") {
 		t.Fatal("a refused batch wrote the entry")
+	}
+}
+
+// TestRevisionPathsAreProjectRelative: an envelope's revisions name files
+// relative to the project folder wherever apply runs from, and a path that
+// is not one of the project's sources is refused without being read. Studio
+// checks the same field through the same code.
+func TestRevisionPathsAreProjectRelative(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"cicada.mod":        "project mf\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/more.cicada\"\n",
+		"main.cicada":       "tempo 120\ntrack bass acid {}\ntrack keys piano {}\npattern riff { a1 . c2 . }\nscene main { bass = riff keys = riff }\nsong { main }\n",
+		"parts/more.cicada": "automate keys.level { @1.1.1 -6dB }\n",
+	})
+	more, _ := os.ReadFile(filepath.Join(dir, "parts", "more.cicada"))
+	t.Chdir(filepath.Dir(dir))
+	main := filepath.Join(filepath.Base(dir), "main.cicada")
+	rename := `{"kind":"rename","entity":"track:keys","name":"organ"}`
+	for _, tc := range []struct {
+		name, revisions, code string
+	}{
+		{"relative to the project", `[{"path":"parts/more.cicada","revision":"` + edits.Revision(more) + `"}]`, ""},
+		{"not a source", `[{"path":"/etc/hostname","revision":"x"}]`, "revision_mismatch"},
+		{"changed", `[{"path":"parts/more.cicada","revision":"` + strings.Repeat("0", 64) + `"}]`, "revision_mismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envelope := filepath.Join(dir, "env.json")
+			if err := os.WriteFile(envelope, []byte(`{"version":1,"revisions":`+tc.revisions+`,"intents":[`+rename+`]}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			_ = applyCommandWithHooks([]string{main, envelope, "--json"}, &out, nil)
+			var result applyJSONResult
+			if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			code := ""
+			if result.Error != nil {
+				code = result.Error.Code
+			}
+			if code != tc.code || tc.name == "not a source" && !strings.Contains(result.Error.Message, "/etc/hostname is not a source file of this project") {
+				t.Fatalf("%+v", result.Error)
+			}
+		})
+	}
+	h, err := studioHandler(filepath.Join(dir, "main.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, _ := os.ReadFile(filepath.Join(dir, "main.cicada"))
+	body := `{"version":1,"revision":"` + edits.Revision(source) + `","revisions":[{"path":"parts/more.cicada","revision":"` + strings.Repeat("0", 64) + `"}],"intents":[` + rename + `]}`
+	recorder := studioCallRaw(t, h, "/api/intents", body)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "revision_mismatch") {
+		t.Fatalf("Studio ignored revisions: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+// TestStudioDoesNotHalfUndoAnOutsideMultiFileChange: a rename made with
+// cicada apply changes the score and another file. Studio sees only the
+// score change, so it records it without offering Undo, and refuses an Undo
+// request rather than restore the score alone.
+func TestStudioDoesNotHalfUndoAnOutsideMultiFileChange(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"cicada.mod":        "project mf\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/more.cicada\"\n",
+		"main.cicada":       "tempo 120\ntrack bass acid {}\ntrack keys piano {}\npattern riff { a1 . c2 . }\nscene main { bass = riff keys = riff }\nsong { main }\n",
+		"parts/more.cicada": "automate keys.level { @1.1.1 -6dB }\n",
+	})
+	main := filepath.Join(dir, "main.cicada")
+	h, err := studioHandler(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := applyIntents(t, main, `{"kind":"rename","entity":"track:keys","name":"organ"}`); !result.OK || !result.Written {
+		t.Fatalf("rename: %+v", result.Error)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/history", nil)
+	request.Host = "127.0.0.1:1234"
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, request)
+	var history struct {
+		CanUndo bool `json:"canUndo"`
+		Edits   []struct {
+			Outside bool `json:"outside"`
+		} `json:"edits"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &history); err != nil || history.CanUndo || len(history.Edits) == 0 || !history.Edits[0].Outside {
+		t.Fatalf("history offers an Undo of an outside multi-file change: %v %s", err, recorder.Body.String())
+	}
+	current, _ := os.ReadFile(main)
+	undo := studioCall(t, h, "/api/undo", studioEdit{Revision: studioRevision(current)})
+	more, _ := os.ReadFile(filepath.Join(dir, "parts", "more.cicada"))
+	if undo.Code != http.StatusConflict || !strings.Contains(string(more), "organ.level") {
+		t.Fatalf("undo: %d %s\n%s", undo.Code, undo.Body.String(), more)
+	}
+	if after, _ := os.ReadFile(main); string(after) != string(current) {
+		t.Fatal("undo restored the score alone")
 	}
 }

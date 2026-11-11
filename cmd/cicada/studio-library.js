@@ -81,10 +81,12 @@
       try {
         stop();
         let response = await post(endpoint, extra), result = await response.json();
-        if (!response.ok && result.reason === 'voice_changes_sound' && Array.isArray(result.uses)) {
+        // A yes answers this refusal only: the resend carries the revisions the
+        // refusal was made at, and a newer refusal asks again.
+        for (let asked = 0; !response.ok && result.reason === 'voice_changes_sound' && Array.isArray(result.uses) && asked < 3; asked++) {
           const question = 'This changes what the track plays:\n- ' + result.uses.join('\n- ') + '\n\nInsert anyway?';
           if (!root.confirm(question)) { status('Not inserted: ' + result.uses.join('; ')); return false; }
-          response = await post(endpoint, Object.assign({}, extra, {acceptChanges:true}));
+          response = await post(endpoint, Object.assign({}, extra, {revision:result.revision, revisions:result.revisions, acceptChanges:true}));
           result = await response.json();
         }
         if (!response.ok) throw new Error(result.error || 'Library edit failed');
