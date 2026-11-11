@@ -34,10 +34,9 @@ import (
 // them, so a poll cannot nest. Cancellation aborts the request through its
 // AbortController, which rejects the pending promise.
 //
-// The body is read up to limit+1 bytes. A body longer than limit stops the
-// read and aborts the request, so an oversized response costs at most limit
-// bytes plus one chunk; the caller sees the oversize as a body longer than
-// limit. A limit of zero or less reads the whole body.
+// The caller sees at most limit+1 body bytes; a body longer than limit means
+// the response was larger (see readBody). A limit of zero or less reads the
+// whole body.
 func nativeFetch(ctx context.Context, request browser.FetchRequest, limit int) (response browser.FetchResponse, err error) {
 	defer func() {
 		if value := recover(); value != nil {
@@ -186,46 +185,34 @@ func jsErrorMessage(value js.Value) string {
 	return value.String()
 }
 
-// readBody reads at most limit+1 bytes of the body (all of it when limit is
-// zero or less). A body that can only fit, because it is not compressed and
-// its Content-Length is within the limit, is read in one step; any other body
-// is read chunk by chunk, and the request is aborted once the limit is passed.
+// readBody returns at most limit+1 bytes of the body (all of it when limit is
+// zero or less). A response that states an uncompressed length over the limit
+// is aborted before any of its body is read, and its oversize is reported as a
+// body of limit+1 bytes. Any other body is read whole, as before, and at most
+// limit+1 bytes are copied into Go.
+//
+// Reading the body chunk by chunk through its stream reader, which would stop
+// any oversized body at the limit, left an occasional action response neither
+// drained nor aborted: the edit then failed and the page kept its old revision
+// (an Undo after Save in WKWebView, and the edit-latency benchmark in Chrome).
+// Until that is understood, a compressed or chunked oversized body is still
+// buffered by the browser.
 func (c *fetchCall) readBody(limit int) ([]byte, error) {
-	length := c.contentLength()
-	if limit <= 0 || length >= 0 && length <= limit {
-		buffer, err := c.await(c.response.Call("arrayBuffer"))
-		if err != nil {
-			return nil, err
-		}
-		array := js.Global().Get("Uint8Array").New(buffer)
-		body := make([]byte, array.Get("byteLength").Int())
-		js.CopyBytesToGo(body, array)
-		return body, nil
+	if limit > 0 && c.contentLength() > limit {
+		c.abort()
+		return make([]byte, limit+1), nil
 	}
-	stream := c.response.Get("body")
-	if stream.IsNull() || stream.IsUndefined() {
-		return []byte{}, nil
+	buffer, err := c.await(c.response.Call("arrayBuffer"))
+	if err != nil {
+		return nil, err
 	}
-	reader := stream.Call("getReader")
-	body := make([]byte, 0, min(limit+1, max(length, 64<<10)))
-	for {
-		result, err := c.await(reader.Call("read"))
-		if err != nil {
-			return nil, err
-		}
-		if result.Get("done").Bool() {
-			return body, nil
-		}
-		chunk := result.Get("value")
-		take := min(chunk.Get("byteLength").Int(), limit+1-len(body))
-		start := len(body)
-		body = append(body, make([]byte, take)...)
-		js.CopyBytesToGo(body[start:], chunk)
-		if len(body) > limit {
-			c.abort()
-			return body, nil
-		}
+	array := js.Global().Get("Uint8Array").New(buffer)
+	if n := array.Get("byteLength").Int(); limit > 0 && n > limit+1 {
+		array = array.Call("subarray", 0, limit+1)
 	}
+	body := make([]byte, array.Get("byteLength").Int())
+	js.CopyBytesToGo(body, array)
+	return body, nil
 }
 
 // contentLength is the body's length when the response states it and is not

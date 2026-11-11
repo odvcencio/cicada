@@ -37,8 +37,8 @@ song { verse*8 }
 }
 
 // A body larger than the port read's 64 KiB limit, sent in 16 KiB chunks
-// 5 ms apart: all of it takes about 2.6 s, so a reader that stops at the
-// limit closes the connection long before the end.
+// 5 ms apart: all of it takes about 2.6 s. With ?declare=1 the response states
+// its length, and the engine must abort it before reading.
 const bigBody = {chunk: 16 << 10, total: 8 << 20, every: 5};
 
 function startServer() {
@@ -48,13 +48,16 @@ function startServer() {
     if (url.pathname === '/big') {
       const record = {written: 0, finished: false, closedAt: 0};
       state.big.push(record);
-      res.writeHead(200, {'content-type': 'application/json'});
-      res.write('{"ports":{"keys":"');
+      const head = '{"ports":{"keys":"', tail = '"}}';
+      res.writeHead(200, url.searchParams.has('declare')
+        ? {'content-type': 'application/json', 'content-length': String(head.length + bigBody.total + tail.length)}
+        : {'content-type': 'application/json'});
+      res.write(head);
       const timer = setInterval(() => {
         if (record.written >= bigBody.total) {
           clearInterval(timer);
           record.finished = true;
-          res.end('"}}');
+          res.end(tail);
           return;
         }
         res.write('x'.repeat(bigBody.chunk));
@@ -134,7 +137,8 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
       if (mode.startsWith('status:')) {
         return route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: mode.slice(7)})});
       }
-      if (mode === 'oversize') return route.continue({url: origin + '/big'});
+      if (mode === 'oversize') return route.continue({url: origin + '/big?declare=1'});
+      if (mode === 'oversize-chunked') return route.continue({url: origin + '/big'});
       return route.continue();
     });
     await openLive(page);
@@ -160,8 +164,8 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
     const waited = Date.now() - started;
     assert.ok(waited >= 4_500 && waited < 9_000, `the read timed out after ${waited} ms, want about 5 s`);
     await until(() => failed.length > before, 'the timed-out request was aborted');
-    // An oversized body: the engine stops reading past its 64 KiB limit and
-    // aborts, so the server stops long before the 8 MiB it would send.
+    // An oversized body that states its length: the engine aborts it before
+    // reading, so the server stops long before the 8 MiB it would send.
     await reload('status:third');
     await until(async () => await status(page) === 'third', 'the third error body is shown');
     await reload('oversize');
@@ -170,6 +174,11 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
     const big = state.big[0];
     assert.equal(big.finished, false, 'the engine read the whole oversized body');
     assert.ok(big.written < 2 << 20, `the server wrote ${big.written} bytes before the engine aborted; want well under ${bigBody.total}`);
+    // A chunked oversized body (no stated length) is read whole, then refused.
+    await reload('status:third, chunked');
+    await until(async () => await status(page) === 'third, chunked', 'the next error body is shown');
+    await reload('oversize-chunked');
+    await until(async () => await status(page) === unreadable, 'the chunked oversized body is refused', 15_000);
     // Dispose during a request: the request is aborted and nothing is shown.
     await reload('status:fourth');
     await until(async () => await status(page) === 'fourth', 'the fourth error body is shown');

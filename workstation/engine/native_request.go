@@ -29,9 +29,10 @@ const (
 // nativeRequest is one request to Studio's own origin. It replaces an
 // http.Client call: Timeout bounds the whole exchange, body included, as
 // http.Client.Timeout did, and zero means no timeout. Limit is the most body
-// bytes the caller reads, as io.LimitReader did: the transport stops reading
-// and aborts the request once the body passes Limit, so the response it
-// returns has at most Limit+1 bytes. Zero reads the whole body.
+// bytes the caller reads, as io.LimitReader did: the response it returns has at
+// most Limit+1 body bytes, and a response that states a larger length is
+// aborted before its body is read (fetch_js.go, readBody). Zero reads the
+// whole body.
 type nativeRequest struct {
 	Method  string
 	Path    string // origin-relative, for example "/__actions/live"
