@@ -41,9 +41,9 @@ func (c *Correlation) Process(left, right []float32) {
 		if l != l || r != r || l-l != 0 || r-r != 0 {
 			l, r = 0, 0
 		}
-		sll = d*sll + l*l
-		srr = d*srr + r*r
-		slr = d*slr + l*r
+		sll = float64(d*sll) + float64(l*l)
+		srr = float64(d*srr) + float64(r*r)
+		slr = float64(d*slr) + float64(l*r)
 	}
 	if sll < correlationDenorm {
 		sll = 0

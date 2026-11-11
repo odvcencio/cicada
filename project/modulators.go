@@ -164,7 +164,7 @@ func loopFit(p *Project, m Modulator) (cycles int64, authoredHz, fittedHz float6
 		authoredHz = float64(ticks) / float64(m.RateTicks) / seconds
 	case m.RateMicroHz > 0:
 		authoredHz = float64(m.RateMicroHz) / 1e6
-		cycles = int64(authoredHz*seconds + .5)
+		cycles = int64(float64(authoredHz*seconds) + .5)
 	default:
 		return 0, 0, 0, false
 	}

@@ -193,9 +193,9 @@ func automationValue(lane AutomationLane, tick int64, logarithmic bool) (float64
 	}
 	x, y := *a.Value.Number, *b.Value.Number
 	if logarithmic {
-		return math.Exp(math.Log(x) + (math.Log(y)-math.Log(x))*t), true
+		return math.Exp(float64(math.Log(x)) + float64((math.Log(y)-math.Log(x))*t)), true
 	}
-	return x + (y-x)*t, true
+	return x + float64((y-x)*t), true
 }
 
 const (

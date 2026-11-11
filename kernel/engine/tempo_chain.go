@@ -13,7 +13,7 @@ import (
 // transport tempo applies.
 // sceneTempoMilli converts a scene tempo setting to thousandths of a BPM.
 func sceneTempoMilli(setting SceneSetting) int64 {
-	return int64(setting.Value*1000 + .5) // tempos are positive
+	return int64(float32(setting.Value*1000) + .5) // tempos are positive
 }
 
 // stepClock moves a clock to a new tempo at a tick, as the transport does.

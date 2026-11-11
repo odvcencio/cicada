@@ -230,10 +230,10 @@ func New(sampleRate int, params Params) (*Instrument, error) {
 	var sum float64
 	for i := range f.fir {
 		x := float64(i) - float64(firSize-1)/2
-		window := .42 - .5*math.Cos(2*math.Pi*float64(i)/float64(firSize-1)) + .08*math.Cos(4*math.Pi*float64(i)/float64(firSize-1))
+		window := float64(.42-float64(.5*math.Cos(2*math.Pi*float64(i)/float64(firSize-1)))) + float64(.08*math.Cos(4*math.Pi*float64(i)/float64(firSize-1)))
 		coefficient := math.Sin(2*math.Pi*.2*x) / (math.Pi * x) * window
 		f.fir[i] = float32(coefficient)
-		sum += 2 * coefficient
+		sum += float64(2 * float64(coefficient))
 	}
 	for i := range f.fir {
 		f.fir[i] = float32(float64(f.fir[i]) / sum)
@@ -261,20 +261,20 @@ func (f *Instrument) prepareKey(index int, p Params) {
 		k.phaseStep = uint32(min(hz, guard) / internalRate * 4294967296.)
 		var deviation float64
 		for j := i + 1; j < Operators; j++ {
-			deviation += float64(p.Routing[i][j]) * float64(f.keys[index].ops[j].level) * bandwidth[j]
+			deviation += float64(float64(p.Routing[i][j]) * float64(f.keys[index].ops[j].level) * bandwidth[j])
 		}
-		deviation += float64(o.Feedback) * float64(k.level) * hz
+		deviation += float64(float64(o.Feedback) * float64(k.level) * hz)
 		// Carson-style significant-sideband guard. The 0.8 reserve leaves
 		// room for weak higher-order sidebands before the decimator stop band.
 		scale := 1.
 		if deviation > 0 {
-			scale = min(1., max(0., (guard-hz)*.8/deviation))
+			scale = min(1., max(0., (float64(guard)-float64(hz))*.8/deviation))
 		}
 		for j := i + 1; j < Operators; j++ {
 			k.route[j] = float32(float64(p.Routing[i][j]) * scale)
 		}
 		k.feedback = float32(float64(o.Feedback) * scale)
-		bandwidth[i] = min(guard, hz+deviation*scale)
+		bandwidth[i] = min(guard, float64(hz)+float64(deviation*scale))
 		if k.level == 0 {
 			bandwidth[i] = 0
 		}

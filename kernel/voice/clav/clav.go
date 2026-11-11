@@ -63,7 +63,7 @@ func PartialFrequency(note uint8, mode int) float64 {
 	}
 	f := 440 * math.Exp2(float64(int(note)-69)/12)
 	h := float64(mode)
-	return f * h * math.Sqrt((1+.000015*h*h)/(1+.000015))
+	return f * h * math.Sqrt((1+float64(.000015*h*h))/(1+.000015))
 }
 
 type mode struct{ c, s, r, release, impulse, a, b float32 }
@@ -110,7 +110,7 @@ func New(rate int, p Params) (*Instrument, error) {
 	if p.Mute < 0 || p.Mute > 1 || p.Tangent < .05 || p.Tangent > .45 || p.Click < 0 || p.Click > 1 || p.Drive < 0 || p.Drive > 1 || p.Gain < 0 || p.Gain > 2 {
 		return nil, Error("clav parameter outside range")
 	}
-	i := &Instrument{params: p, rate: rate, drive: float32(1 + 4*p.Drive), gain: float32(.55 * p.Gain)}
+	i := &Instrument{params: p, rate: rate, drive: float32(1 + float64(4*p.Drive)), gain: float32(.55 * p.Gain)}
 	fs := float64(rate)
 	i.dcPole = float32(math.Exp(-2 * math.Pi * 25 / fs))
 	i.lowAlpha = float32(1 - math.Exp(-2*math.Pi*min(11000., fs*.22)/fs))
@@ -129,7 +129,7 @@ func New(rate int, p Params) (*Instrument, error) {
 			a := 2 * math.Pi * hz / fs
 			// Tangent impulse excites string modes at its contact point. Yarn
 			// damps short wavelengths more strongly, rather than lowering gain.
-			decay := t60 / (1 + (.014+.09*p.Mute)*h*h)
+			decay := t60 / (1 + float64((.014+float64(.09*p.Mute))*h*h))
 			k.modes[k.count] = mode{c: float32(math.Cos(a)), s: float32(math.Sin(a)), r: float32(math.Exp(-6.907755 / (decay * fs))), release: float32(math.Exp(-6.907755 / (.035 * fs))), impulse: float32(math.Sin(math.Pi*h*p.Tangent) / h), a: float32(math.Sin(math.Pi * h * .12)), b: float32(math.Sin(math.Pi * h * .72))}
 			k.count++
 		}
@@ -312,7 +312,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("clav drive must be 0..1")
 		}
-		i.driveT = float32(1 + 4*float64(value))
+		i.driveT = float32(1 + float64(4*float64(value)))
 	case controlGain:
 		if !keyboard.InRange(value, 0, 2) {
 			return Error("clav gain must be 0..2")

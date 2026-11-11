@@ -70,7 +70,7 @@ func Validate(s *keyboard.Spec) error {
 	case s.Patch >= 14 && s.Patch <= 16:
 		var level float32
 		for op := 0; op < 6; op++ {
-			level += s.Controls[5+op*12] * s.Controls[14+op*12]
+			level += float32(s.Controls[5+op*12] * s.Controls[14+op*12])
 		}
 		if level == 0 {
 			return fmt.Errorf("FM keys need an audible carrier")

@@ -164,7 +164,7 @@ func (s *delayState) linear(ring []float32, input, samples float32) float32 {
 func (s *delayState) comb(ring []float32, input, period, feedback, damping float32) float32 {
 	if s.period != period || s.damping != damping {
 		w := 2 * math.Pi / float64(period)
-		phaseDelay := math.Atan2(float64(damping)*math.Sin(w), 1-float64(damping)*math.Cos(w)) / w
+		phaseDelay := math.Atan2(float64(damping)*math.Sin(w), 1-float64(float64(damping)*math.Cos(w))) / w
 		delay := math.Max(2, float64(period)-phaseDelay)
 		s.integer = int(delay - .5)
 		fraction := delay - float64(s.integer)

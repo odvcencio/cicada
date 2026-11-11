@@ -179,7 +179,7 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 			}
 			tap := mix.Track{Left: v.mix.Left * v.muteGain, Right: v.mix.Right * v.muteGain}
 			if positioned.enabled {
-				mono := float32((left+right)*.5) * float32(positioned.gain*v.muteGain)
+				mono := float32((float32(left)+float32(right))*.5) * float32(positioned.gain*v.muteGain)
 				if v.sourceOff {
 					mono = 0
 				}

@@ -199,7 +199,7 @@ func New(rate int, params Params) (*Instrument, error) {
 		p.percussionGain = .09
 	}
 	p.scannerA = float32((math.Tan(math.Pi*2400/fs) - 1) / (math.Tan(math.Pi*2400/fs) + 1))
-	p.scannerStep = uint32(6.9/fs*4294967296 + .5)
+	p.scannerStep = uint32(float64(6.9/fs*4294967296) + .5)
 	if params.Scanner != ScannerOff {
 		depth := (int(params.Scanner) - 1) % 3
 		p.scannerDepth = [...]float32{5, 10, 17}[depth]
@@ -225,7 +225,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	p.sine[tableSize] = 0
 	for i := range p.wheelStep {
 		hz := 440 * math.Exp2(float64(i+wheelMin-69)/12)
-		p.wheelStep[i] = uint32(hz/fs*4294967296 + .5)
+		p.wheelStep[i] = uint32(float64(hz/fs*4294967296) + .5)
 		p.wheelPhase[i] = uint32(i+1) * 2654435761
 		p.wheelGain[i] = float32(1 / math.Sqrt(1+math.Pow(hz/10500, 2)))
 	}
@@ -390,7 +390,7 @@ func (p *Instrument) NoteOff(note uint8) {
 		v := &p.voices[i]
 		if v.active && v.note == note && v.held {
 			v.held = false
-			v.click += .004 * p.params.KeyClick
+			v.click += float32(.004 * p.params.KeyClick)
 		}
 	}
 }
@@ -461,8 +461,8 @@ func (p *Instrument) nextVoice(v *voice) float32 {
 	v.noise ^= v.noise >> 17
 	v.noise ^= v.noise << 5
 	n := float32(int32(v.noise)) / 2147483648
-	v.clickLow += float32(p.clickAlpha * float32(n-v.clickLow))
-	tone += float32(v.click * float32(n-v.clickLow))
+	v.clickLow += float32(p.clickAlpha * float32(float32(n)-float32(v.clickLow)))
+	tone += float32(v.click * float32(float32(n)-float32(v.clickLow)))
 	v.click = float32(v.click * p.clickDecay)
 	v.last = tone
 	if v.contactAge < p.rate {
