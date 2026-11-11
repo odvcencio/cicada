@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -95,13 +96,14 @@ type renderErrorJSON struct {
 // otherwise it is added at the end of File. Revision is File's revision when
 // the render read it, in the form cicada apply uses: a remedy holds only
 // while the file is at that revision. Intents, when present, make the same
-// change through cicada apply; it is absent when no intent can.
+// change through cicada apply on the score the render read, in an envelope
+// with Revision; it is absent when no intent can.
 type renderRemedyJSON struct {
 	Summary   string            `json:"summary"`
 	File      string            `json:"file"`
 	Revision  string            `json:"revision"`
 	Replaces  string            `json:"replaces,omitempty"`
-	ScoreText string            `json:"score_text"`
+	ScoreText string            `json:"score_text,omitempty"`
 	Intents   []json.RawMessage `json:"intents,omitempty"`
 }
 
@@ -299,7 +301,16 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 // the last master insert: a new fx declaration, and the master declaration
 // with that limiter at the end of its insert chain.
 func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *renderRemedyJSON {
-	remedy := &renderRemedyJSON{Summary: limiterRemedySummary(ceiling), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
+	score := inspection.score
+	if score == nil {
+		score, _ = notation.Parse(inspection.source)
+	}
+	remedy := &renderRemedyJSON{Summary: limiterRemedySummaryFor(score, ceiling), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
+	if score != nil && len(masterInsertChain(score)) >= maxRemedyMasterInserts {
+		// A 17th insert fails validation: the summary says what to remove
+		// first, and no score text or intent is offered.
+		return remedy
+	}
 	files := []notation.SourceFile{{Path: path, Source: inspection.source}}
 	if inspection.sources != nil {
 		files = inspection.sources.Files
@@ -310,6 +321,16 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 		name = fmt.Sprintf("ceiling-%d", i)
 	}
 	fx := fmt.Sprintf("fx %s limiter { ceiling = %sdBTP }", name, formatDBTP(ceiling))
+	// The same change as intents: addeffect declares the limiter with the
+	// ceiling and appends it to the master insert chain.
+	envelope := edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{&edits.AddEffect{
+		Name: name, EffectKind: "limiter", InsertOn: "master",
+		Settings: map[string]json.RawMessage{"ceiling": json.RawMessage(strconv.Quote(formatDBTP(ceiling) + "dBTP"))},
+		// A mixer write upgrades an edition-1 score to edition 2; the
+		// summary says so.
+		ConfirmUpgrade: score != nil && score.Version == 1,
+	}}}
+	raw, rawErr := envelope.RawIntents()
 	remedy.ScoreText = fx + "\nmaster { insert = " + name + " }"
 	for _, file := range files {
 		if file.Library != "" {
@@ -326,7 +347,46 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 		remedy.File, remedy.Revision, remedy.Replaces, remedy.ScoreText = jsonPath(file.Path), edits.Revision(file.Source), master, fx+"\n"+replaced
 		break
 	}
+	// cicada apply edits the score it is given, so the intents are offered
+	// only when the change belongs to that file.
+	if rawErr == nil && remedy.File == jsonPath(path) {
+		remedy.Intents = raw
+	}
 	return remedy
+}
+
+// limiterRemedySummaryFor fits the summary to the score. A master chain that
+// already holds 16 inserts takes no limiter until one is removed; an
+// edition-1 score is upgraded to edition 2 by the addeffect intent, which
+// carries the confirmation.
+func limiterRemedySummaryFor(score *notation.Score, ceiling float64) string {
+	if score != nil && len(masterInsertChain(score)) >= maxRemedyMasterInserts {
+		return fmt.Sprintf("the master insert chain is full (%d inserts, the most it takes), so a limiter cannot be added as it is: remove a master insert first (setparam param:master.insert with a shorter chain, or removeeffect), then add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert (docs/audio/mix-chain.md, Export loudness targets)", maxRemedyMasterInserts, formatDBTP(ceiling))
+	}
+	summary := limiterRemedySummary(ceiling)
+	if score != nil && score.Version == 1 {
+		summary += "; this score uses edition 1, and applying the intent upgrades it to edition 2 (the intent sets confirmupgrade), while the score text keeps edition 1"
+	}
+	return summary
+}
+
+// maxRemedyMasterInserts is the most inserts a master chain takes.
+const maxRemedyMasterInserts = 16
+
+// masterInsertChain lists the master's inserts in order.
+func masterInsertChain(score *notation.Score) []string {
+	var chain []string
+	for _, param := range score.Master {
+		if param.Name != "insert" || strings.TrimSpace(param.Value) == "none" {
+			continue
+		}
+		for _, name := range strings.Split(param.Value, "->") {
+			if name = strings.TrimSpace(name); name != "" {
+				chain = append(chain, name)
+			}
+		}
+	}
+	return chain
 }
 
 // masterWithInsert finds the master declaration of a source and returns its

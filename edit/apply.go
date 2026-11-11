@@ -68,6 +68,26 @@ type Context struct {
 	identities   []string                // verified identity of each render comparison
 	rechecks     []func() (string, bool) // recompute each identity from the same inputs
 	response     map[string]any
+	running      int          // the index of the intent that runs
+	final        []finalCheck // checks that run after the last intent
+}
+
+// finalCheck is a check an intent leaves for the end of the envelope, when
+// later intents have had their turn; a failure names that intent.
+type finalCheck struct {
+	index int
+	kind  string
+	check func(*Context) error
+}
+
+// afterIntents runs check after the envelope's last intent and before the
+// compile, and reports its error as the running intent's.
+func (c *Context) afterIntents(check func(*Context) error) {
+	kind := ""
+	if c.running < len(c.Envelope.Intents) {
+		kind = c.Envelope.Intents[c.running].Kind()
+	}
+	c.final = append(c.final, finalCheck{index: c.running, kind: kind, check: check})
 }
 
 // MeterMap places the edited song's bar and beat lines. A score cannot declare
@@ -208,7 +228,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 		if handler == nil {
 			return nil, intentError(index, intent.Kind(), fmt.Errorf("no handler for intent kind %q", intent.Kind()))
 		}
-		ctx.labelSet = false
+		ctx.labelSet, ctx.running = false, index
 		if err := handler(ctx, intent); err != nil {
 			return nil, intentError(index, intent.Kind(), err)
 		}
@@ -220,6 +240,12 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 		// A handler may replace Source without resolving a plan. The next
 		// intent must compile the latest entry and auxiliary bytes together.
 		ctx.plan = nil
+	}
+	for _, final := range ctx.final {
+		ctx.plan = nil
+		if err := final.check(ctx); err != nil {
+			return nil, intentError(final.index, final.kind, err)
+		}
 	}
 	plan, err := opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
 	if err != nil && opts.KeepInvalid {

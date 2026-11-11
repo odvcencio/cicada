@@ -28,8 +28,11 @@ type mixerSendValue struct {
 }
 
 type mixerFXValue struct {
-	Kind     string `json:"kind"`
-	InsertOn string `json:"insertOn,omitempty"`
+	Kind     string                     `json:"kind"`
+	InsertOn string                     `json:"insertOn,omitempty"`
+	Before   string                     `json:"before,omitempty"`
+	After    string                     `json:"after,omitempty"`
+	Settings map[string]json.RawMessage `json:"settings,omitempty"`
 }
 
 // mixerSource writes one mixer gesture into the smallest CST span. It
@@ -66,24 +69,76 @@ func mixerSourceWithParser(source []byte, path string, raw json.RawMessage, pars
 		}
 		kind := request.Kind
 		if !ValidMixerIdentifier(name) {
-			return nil, "", "", LineRange{}, fmt.Errorf("invalid effect name %q", name)
+			return nil, "", "", LineRange{}, refuse("invalid_name", "name", "invalid effect name %q: use lowercase letters, digits, _ and -, at most 64 bytes", name)
 		}
-		for _, effect := range score.Effects {
-			if effect.Name == name {
-				return nil, "", "", LineRange{}, fmt.Errorf("effect %s already exists", name)
-			}
+		if mixerNameTaken(score, name) {
+			return nil, "", "", LineRange{}, refuse("name_taken", "name", "%s already names an effect, a track or a bus", name)
 		}
 		if !knownMixerEffectKind(kind) {
-			return nil, "", "", LineRange{}, fmt.Errorf("unknown effect kind %q", kind)
+			return nil, "", "", LineRange{}, refuse("unknown_effect_kind", "effectkind", "unknown effect kind %q; the kinds are %s", kind, strings.Join(mixerEffectKinds, ", "))
 		}
-		updated := insertTopLevelFX(source, root, walker, name, kind)
+		route, chain, err := checkNewEffect(score, name, kind, request.InsertOn)
+		if err != nil {
+			return nil, "", "", LineRange{}, err
+		}
+		if err := checkEntryOwnsTarget(score, root, walker, route, request.InsertOn); err != nil {
+			return nil, "", "", LineRange{}, err
+		}
+		chain, err = placeInChain(chain, name, request)
+		if err != nil {
+			return nil, "", "", LineRange{}, err
+		}
+		if kind == "convolution" {
+			if err := checkConvolutionAsset(score, request.Settings["asset"]); err != nil {
+				return nil, "", "", LineRange{}, err
+			}
+		}
+		if raw, ok := request.Settings["sidechain"]; ok && kind == "comp" {
+			literal, err := effectSettingLiteral(kind, "sidechain", raw, route == "master")
+			if err != nil {
+				return nil, "", "", LineRange{}, &FieldError{Field: "settings.sidechain", Err: err}
+			}
+			if err := checkSidechain(score, route, literal, "settings.sidechain"); err != nil {
+				return nil, "", "", LineRange{}, err
+			}
+		}
+		declaration, err := effectDeclaration(name, kind, request.Settings, route == "master")
+		if err != nil {
+			return nil, "", "", LineRange{}, err
+		}
+		declaration = strings.ReplaceAll(declaration, "\n", Newline(source))
+		at := topLevelAppendOffset(source, root, walker)
+		updated := replaceMixerSpan(source, at, at, []byte(topLevelSeparator(source, at, declaration)))
 		line := lineNumberAt(updated, bytes.Index(updated, []byte("fx "+name+" ")))
 		changed := LineRange{Start: line, End: line}
-		if request.InsertOn != "" {
-			if !containsString(insertTargets, request.InsertOn) || kind != "comp" {
-				return nil, "", "", LineRange{}, unsupportedMixerRoute("a compressor can only be inserted on bus music")
+		// Settings that pass their own checks can still break a rule of the
+		// language; say so before the route is written.
+		if _, declared, err := parse(updated); err != nil {
+			return nil, "", "", LineRange{}, err
+		} else {
+			for _, d := range declared {
+				if d.Severity == "error" {
+					return nil, "", "", LineRange{}, &ReasonError{Reason: "settings_invalid", Field: "settings", Message: fmt.Sprintf("effect %s does not validate: %s", name, d.Text())}
+				}
 			}
-			placed, _, _, insertedRange, insertErr := mixerSourceWithParser(updated, "music.insert", json.RawMessage(strconv.Quote(name)), parse)
+		}
+		if route == "master" && !score.HasMaster {
+			// A new master declaration is written whole, in the layout cicada
+			// fmt gives it.
+			newRoot, newWalker, err := notation.ParseTree(updated)
+			if err != nil {
+				return nil, "", "", LineRange{}, err
+			}
+			newline := Newline(updated)
+			block := "master {" + newline + "  insert = " + name + newline + "}"
+			updated = insertTopLevelMixerBlock(updated, newRoot, newWalker, "master_decl", "master", block)
+			changed.End = lineNumberAt(updated, bytes.Index(updated, []byte(block))+len(block)-1)
+			route = ""
+		}
+		if route != "" {
+			owner := request.InsertOn
+			value := json.RawMessage(strconv.Quote(strings.Join(chain, " -> ")))
+			placed, _, _, insertedRange, insertErr := mixerSourceWithParser(updated, owner+".insert", value, parse)
 			if insertErr != nil {
 				return nil, "", "", LineRange{}, insertErr
 			}
@@ -156,18 +211,19 @@ func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, fiel
 			break
 		}
 	}
-	descriptor, ok := mixerFXDescriptor(kind, field)
-	if !ok {
-		return nil, "", "", LineRange{}, fmt.Errorf("unknown %s setting %q", kind, field)
-	}
-	literal, err := CanonicalMixerLiteral(descriptor, raw)
+	literal, err := effectSettingLiteral(kind, field, raw, onMaster(score, owner))
 	if err != nil {
 		return nil, "", "", LineRange{}, err
+	}
+	if kind == "comp" && field == "sidechain" {
+		if err := checkSidechain(score, effectInsertRoute(score, owner), literal, "value"); err != nil {
+			return nil, "", "", LineRange{}, err
+		}
 	}
 	var found *gts.Node
 	for i := 0; i < decl.NamedChildCount(); i++ {
 		child := decl.NamedChild(i)
-		if walker.Type(child) == "param_decl" && walker.Text(walker.Field(child, "name")) == descriptor.Source {
+		if walker.Type(child) == "param_decl" && walker.Text(walker.Field(child, "name")) == field {
 			found = child
 			break
 		}
@@ -179,8 +235,8 @@ func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, fiel
 		updated := replaceMixerSpan(source, start, end, []byte(literal))
 		return updated, old, literal, SourceRangeAt(updated, start, start+len(literal)), nil
 	}
-	updated := insertMixerSetting(source, walker, decl, "fx_decl", descriptor.Source, literal, descriptorOrder(kind, descriptor.Source))
-	line := lineNumberAt(updated, findInsertedValue(updated, descriptor.Source, literal, int(decl.StartByte())))
+	updated := insertMixerSetting(source, walker, decl, "fx_decl", field, literal, descriptorOrder(kind, field))
+	line := lineNumberAt(updated, findInsertedValue(updated, field, literal, int(decl.StartByte())))
 	return updated, "absent", literal, LineRange{Start: line, End: line}, nil
 }
 
@@ -226,7 +282,7 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 		return withMute, before, after, changed, nil
 	}
 	if field == "pan" {
-		literal, err := mixerNumericLiteral(raw, -1, 1, mixerDisplayStep(declKind, field, .01), "")
+		literal, err := mixerNumericLiteral(field, raw, -1, 1, mixerDisplayStep(declKind, field, .01), "")
 		if err != nil {
 			return nil, "", "", LineRange{}, err
 		}
@@ -448,6 +504,9 @@ func removeMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target 
 			}
 			start = lineStart
 			end = lineEnd
+		} else if start > 0 && source[start-1] == ' ' {
+			// An inline send takes the space before it, so no double space is left.
+			start--
 		}
 		updated := replaceMixerSpan(source, start, end, nil)
 		line := max(1, lineNumberAt(updated, max(0, start-1)))
@@ -457,10 +516,9 @@ func removeMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target 
 }
 
 func insertMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKind, field, literal string, order int) []byte {
-	var insertAt int
-	for i := 0; i < decl.NamedChildCount(); i++ {
+	var anchor *gts.Node
+	for i := 0; i < decl.NamedChildCount() && anchor == nil; i++ {
 		child := decl.NamedChild(i)
-		name := ""
 		candidate := child
 		if declKind != "fx_decl" {
 			if walker.Type(child) != "mix_setting" || child.NamedChildCount() == 0 {
@@ -469,8 +527,7 @@ func insertMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, decl
 			candidate = child.NamedChild(0)
 			if walker.Type(candidate) == "send_decl" {
 				if order < mixerFieldOrder("send") {
-					insertAt = attachedCommentStart(source, int(child.StartByte()), int(decl.StartByte()))
-					break
+					anchor = child
 				}
 				continue
 			}
@@ -481,7 +538,7 @@ func insertMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, decl
 		if declKind == "fx_decl" && walker.Type(child) != "param_decl" {
 			continue
 		}
-		name = walker.Text(walker.Field(candidate, "name"))
+		name := walker.Text(walker.Field(candidate, "name"))
 		candidateOrder := mixerFieldOrder(name)
 		if declKind == "fx_decl" {
 			kind := walker.Text(walker.Field(decl, "kind"))
@@ -491,25 +548,14 @@ func insertMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, decl
 			candidateOrder = descriptorOrder(kind, name)
 		}
 		if candidateOrder > order {
-			insertAt = attachedCommentStart(source, int(child.StartByte()), int(decl.StartByte()))
-			break
+			anchor = child
 		}
 	}
-	if insertAt == 0 {
-		insertAt = closeBraceLineStart(source, int(decl.StartByte()), int(decl.EndByte()))
-	}
-	line := "  " + field + " = " + literal + "\n"
-	if insertAt == int(decl.EndByte())-1 { // Empty or inline closing brace.
-		if insertAt > 0 && source[insertAt-1] != '\n' {
-			line = "\n" + line
-		}
-		line = strings.TrimSuffix(line, "\n") + "\n"
-	}
-	return replaceMixerSpan(source, insertAt, insertAt, []byte(line))
+	return insertBlockEntry(source, walker, decl, anchor, field+" = "+literal)
 }
 
 func insertMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target, literal string) []byte {
-	var insertAt int
+	var anchor *gts.Node
 	for i := 0; i < decl.NamedChildCount(); i++ {
 		child := decl.NamedChild(i)
 		if walker.Type(child) != "mix_setting" || child.NamedChildCount() == 0 {
@@ -518,18 +564,87 @@ func insertMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target,
 		content := child.NamedChild(0)
 		if walker.Type(content) == "param_decl" && walker.Text(walker.Field(content, "name")) == "out" ||
 			walker.Type(content) == "send_decl" && walker.Text(walker.Field(content, "to")) > target {
-			insertAt = attachedCommentStart(source, int(child.StartByte()), int(decl.StartByte()))
+			anchor = child
 			break
 		}
 	}
-	if insertAt == 0 {
-		insertAt = closeBraceLineStart(source, int(decl.StartByte()), int(decl.EndByte()))
+	return insertBlockEntry(source, walker, decl, anchor, literal)
+}
+
+// insertBlockEntry writes one setting into a declaration's block before
+// anchor or, with no anchor, last, in the layout cicada fmt gives a block
+// with settings. A block whose braces share a line ("{}", "{ a = 1 }") is
+// expanded: each setting on its own line, indented two spaces past the
+// declaration, and the closing brace on its own line. In a block that is
+// already expanded the setting gets its own line with the indentation of the
+// block's settings, and comment lines attached above the anchor stay with
+// it. Text after the closing brace, such as a comment, stays where it is.
+// New lines use the file's newline.
+func insertBlockEntry(source []byte, walker *walk.Walker, decl *gts.Node, anchor *gts.Node, entry string) []byte {
+	newline := Newline(source)
+	start, end := int(decl.StartByte()), int(decl.EndByte())
+	open := start + bytes.IndexByte(source[start:end], '{')
+	close := end - 1
+	if !bytes.Contains(source[open:close], []byte("\n")) {
+		declLine := bytes.LastIndexByte(source[:start], '\n') + 1
+		outer := source[declLine:start]
+		outer = outer[:len(outer)-len(bytes.TrimLeft(outer, " \t"))]
+		indent := string(outer) + "  "
+		var text strings.Builder
+		text.WriteString("{" + newline)
+		for i := 0; i < decl.NamedChildCount(); i++ {
+			child := decl.NamedChild(i)
+			if int(child.StartByte()) <= open || walker.Type(child) == "comment" {
+				continue
+			}
+			if anchor != nil && child.StartByte() == anchor.StartByte() {
+				text.WriteString(indent + entry + newline)
+			}
+			text.WriteString(indent + walker.Text(child) + newline)
+		}
+		if anchor == nil {
+			text.WriteString(indent + entry + newline)
+		}
+		text.WriteString(string(outer) + "}")
+		return replaceMixerSpan(source, open, close+1, []byte(text.String()))
 	}
-	line := "  " + literal + "\n"
-	if insertAt == int(decl.EndByte())-1 && insertAt > 0 && source[insertAt-1] != '\n' {
-		line = "\n" + line
+	if anchor != nil {
+		at := int(anchor.StartByte())
+		lineStart := bytes.LastIndexByte(source[:at], '\n') + 1
+		if len(bytes.TrimSpace(source[lineStart:at])) > 0 {
+			return replaceMixerSpan(source, at, at, []byte(entry+" "))
+		}
+		indent := string(source[lineStart:at])
+		at = attachedCommentStart(source, at, start)
+		return replaceMixerSpan(source, at, at, []byte(indent+entry+newline))
 	}
-	return replaceMixerSpan(source, insertAt, insertAt, []byte(line))
+	closeLine := bytes.LastIndexByte(source[:close], '\n') + 1
+	if len(bytes.TrimSpace(source[closeLine:close])) == 0 {
+		return replaceMixerSpan(source, closeLine, closeLine, []byte(blockIndent(source, walker, decl, closeLine, close)+entry+newline))
+	}
+	before := close
+	for before > open+1 && (source[before-1] == ' ' || source[before-1] == '\t') {
+		before--
+	}
+	return replaceMixerSpan(source, before, close, []byte(" "+entry+" "))
+}
+
+// blockIndent is the indentation of a block's settings: that of the last
+// setting that starts its own line, else the closing brace's plus two spaces.
+func blockIndent(source []byte, walker *walk.Walker, decl *gts.Node, closeLine, close int) string {
+	indent := string(source[closeLine:close]) + "  "
+	for i := 0; i < decl.NamedChildCount(); i++ {
+		child := decl.NamedChild(i)
+		if walker.Type(child) == "comment" {
+			continue
+		}
+		at := int(child.StartByte())
+		lineStart := bytes.LastIndexByte(source[:at], '\n') + 1
+		if lineStart > int(decl.StartByte()) && len(bytes.TrimSpace(source[lineStart:at])) == 0 {
+			indent = string(source[lineStart:at])
+		}
+	}
+	return indent
 }
 
 func closeBraceLineStart(source []byte, start, end int) int {
@@ -575,17 +690,37 @@ func canonicalSendLiteral(raw json.RawMessage, displayStep ...float64) (string, 
 	}
 	if strings.HasSuffix(strings.ToLower(value), "db") {
 		n, parseErr := strconv.ParseFloat(value[:len(value)-2], 64)
-		if parseErr != nil || !finiteMixer(n) || n < -60 || n > 0 {
-			return "", fmt.Errorf("send level must be between -60 and 0 dB")
+		if parseErr != nil || !finiteMixer(n) {
+			return "", fmt.Errorf("send level must be a unitless gain or dB")
+		}
+		if n < -60 || n > 0 {
+			return "", outOfRange("send level", value, -60, 0, "dB", "send level must be between -60 and 0 dB")
 		}
 		n = roundMixer(n, step)
 		return formatMixerNumber(n) + "dB", nil
 	}
 	n, parseErr := strconv.ParseFloat(value, 64)
-	if parseErr != nil || !finiteMixer(n) || n < 0 || n > 1 {
-		return "", fmt.Errorf("send level must be between 0 and 1")
+	if parseErr != nil || !finiteMixer(n) {
+		return "", fmt.Errorf("send level must be a unitless gain or dB")
+	}
+	if n < 0 || n > 1 {
+		return "", outOfRange("send level", value, 0, 1, "", "send level must be between 0 and 1")
 	}
 	return formatMixerNumber(roundMixer(n, step)), nil
+}
+
+// invalidValue refuses a value that is not of the parameter's form, with
+// reason invalid_value. Its field is the intent's value; a caller that knows
+// a better one wraps it.
+func invalidValue(format string, args ...any) error {
+	return &ReasonError{Reason: "invalid_value", Field: "value", Message: fmt.Sprintf(format, args...)}
+}
+
+// outOfRange refuses a value outside a parameter's range with reason
+// value_out_of_range, the parameter, the value given, the range and the unit.
+// Its field is the intent's value; a caller that knows a better one wraps it.
+func outOfRange(parameter, value string, min, max float64, unit, message string) error {
+	return &ReasonError{Reason: "value_out_of_range", Field: "value", Message: message, Range: &ValueRange{Parameter: parameter, Value: value, Min: min, Max: max, Unit: unit}}
 }
 
 func mixerDisplayStep(declKind, field string, fallback float64) float64 {
@@ -622,22 +757,28 @@ func mixerLevelLiteral(raw json.RawMessage, step float64) (string, bool, error) 
 		value = strings.TrimSuffix(value, "db")
 	}
 	n, parseErr := strconv.ParseFloat(value, 64)
-	if parseErr != nil || !finiteMixer(n) || n < -60 || n > 6 {
+	if parseErr == nil && finiteMixer(n) && (n < -60 || n > 6) {
+		return "", false, outOfRange("level", value+suffix, -60, 6, "dB", "level must be -60 to +6 dB or off")
+	}
+	if parseErr != nil || !finiteMixer(n) {
 		return "", false, fmt.Errorf("level must be -60 to +6 dB or off")
 	}
 	n = roundMixer(n, step)
 	return formatMixerNumber(n) + suffix, false, nil
 }
 
-func mixerNumericLiteral(raw json.RawMessage, minValue, maxValue, step float64, unit string) (string, error) {
+func mixerNumericLiteral(parameter string, raw json.RawMessage, minValue, maxValue, step float64, unit string) (string, error) {
 	value, err := jsonStringOrNumber(raw)
 	if err != nil {
-		return "", fmt.Errorf("value must be numeric")
+		return "", fmt.Errorf("%s must be numeric", parameter)
 	}
 	value = strings.TrimSuffix(value, unit)
 	n, parseErr := strconv.ParseFloat(value, 64)
-	if parseErr != nil || !finiteMixer(n) || n < minValue || n > maxValue {
-		return "", fmt.Errorf("value must be within %g..%g", minValue, maxValue)
+	if parseErr != nil || !finiteMixer(n) {
+		return "", fmt.Errorf("%s must be numeric", parameter)
+	}
+	if n < minValue || n > maxValue {
+		return "", outOfRange(parameter, value+unit, minValue, maxValue, unit, fmt.Sprintf("%s %s is outside %g to %g", parameter, value+unit, minValue, maxValue))
 	}
 	return formatMixerNumber(roundMixer(n, step)) + unit, nil
 }
@@ -675,6 +816,8 @@ func CanonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage)
 	switch strings.ToLower(descriptor.Unit) {
 	case "db":
 		unit = "dB"
+	case "dbtp":
+		unit = "dBTP"
 	case "hz":
 		unit = "Hz"
 	case "ms":
@@ -686,16 +829,19 @@ func CanonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage)
 	}
 	number, suffix, err := parseMixerUnitValue(value, unit)
 	if err != nil {
-		return "", err
+		if unit != "" {
+			return "", invalidValue("%s %q is not a number in %s, such as %s", descriptor.Source, value, unit, formatMixerNumber(descriptor.Max)+unit)
+		}
+		return "", invalidValue("%s %q is not a number", descriptor.Source, value)
 	}
 	if strings.EqualFold(descriptor.Unit, "bpm") && suffix != "" {
-		return "", fmt.Errorf("%s is a plain number of beats per minute", descriptor.Source)
+		return "", invalidValue("%s is a plain number of beats per minute", descriptor.Source)
 	}
 	if unit != "" && suffix != "" && suffix != unit {
-		return "", fmt.Errorf("%s requires %s", descriptor.Source, unit)
+		return "", invalidValue("%s requires %s, not %s", descriptor.Source, unit, suffix)
 	}
-	if number < descriptor.Min || number > descriptor.Max {
-		return "", fmt.Errorf("value is outside %g..%g", descriptor.Min, descriptor.Max)
+	if (number < descriptor.Min || number > descriptor.Max) && !containsFloat(descriptor.Isolated, number) {
+		return "", outOfRange(descriptor.Source, value, descriptor.Min, descriptor.Max, unit, paramdefs.RangeText(descriptor, descriptor.Source, value, number < descriptor.Min))
 	}
 	if descriptor.ID == "fx.chorus.voices" && math.Trunc(number) != number {
 		return "", fmt.Errorf("chorus voices must be an integer")
@@ -704,7 +850,7 @@ func CanonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage)
 }
 
 func parseMixerUnitValue(value, canonicalUnit string) (float64, string, error) {
-	suffixes := []string{"kHz", "Hz", "ms", "dB", "s", "khz", "hz", "db"}
+	suffixes := []string{"dBTP", "kHz", "Hz", "ms", "dB", "s", "khz", "hz", "dbtp", "db"}
 	suffix := ""
 	for _, candidate := range suffixes {
 		if strings.HasSuffix(value, candidate) {
@@ -725,6 +871,8 @@ func parseMixerUnitValue(value, canonicalUnit string) (float64, string, error) {
 		suffix = "ms"
 	} else if strings.EqualFold(suffix, "db") && canonicalUnit == "dB" {
 		suffix = "dB"
+	} else if strings.EqualFold(suffix, "dbtp") && canonicalUnit == "dBTP" {
+		suffix = "dBTP"
 	} else if strings.EqualFold(suffix, "hz") && canonicalUnit == "Hz" {
 		suffix = "Hz"
 	} else if suffix == "ms" && canonicalUnit == "ms" {
@@ -799,26 +947,23 @@ func insertTopLevelMixerBlock(source []byte, root *gts.Node, walker *walk.Walker
 	return replaceMixerSpan(source, at, at, []byte(topLevelSeparator(source, at, declaration)))
 }
 
-func insertTopLevelFX(source []byte, root *gts.Node, walker *walk.Walker, name, kind string) []byte {
-	declaration := "fx " + name + " " + kind + " {}"
-	at := topLevelAppendOffset(source, root, walker)
-	return replaceMixerSpan(source, at, at, []byte(topLevelSeparator(source, at, declaration)))
-}
-
 func topLevelSeparator(source []byte, at int, declaration string) string {
+	newline := Newline(source)
 	newlines := 0
-	for i := at - 1; i >= 0 && source[i] == '\n'; i-- {
-		newlines++
+	for i := at - 1; i >= 0 && (source[i] == '\n' || source[i] == '\r'); i-- {
+		if source[i] == '\n' {
+			newlines++
+		}
 	}
-	prefix := "\n\n"
+	prefix := newline + newline
 	if newlines == 1 {
-		prefix = "\n"
+		prefix = newline
 	} else if newlines >= 2 {
 		prefix = ""
 	}
-	suffix := "\n"
+	suffix := newline
 	if at < len(source) {
-		suffix = "\n\n"
+		suffix = newline + newline
 	}
 	return prefix + declaration + suffix
 }
@@ -930,11 +1075,8 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 }
 
 // mixerEffectKinds are the effect kinds AddEffect and the fx.<name> mixer
-// path declare.
-var mixerEffectKinds = valueList("effect-kind", "drive", "delay", "reverb", "comp", "eq", "deesser", "ampcab", "chorus")
-
-// insertTargets are the buses AddEffect's inserton accepts, for a comp.
-var insertTargets = valueList("insert-target", "music")
+// path declare: every kind the language has.
+var mixerEffectKinds = valueList("effect-kind", "drive", "delay", "reverb", "comp", "eq", "deesser", "ampcab", "chorus", "tape", "transient", "width", "limiter", "convolution")
 
 func knownMixerEffectKind(kind string) bool {
 	return containsMixerString(mixerEffectKinds, kind)
@@ -994,6 +1136,15 @@ func jsonBool(raw json.RawMessage) (bool, error) {
 }
 
 func finiteMixer(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
+
+func containsFloat(values []float64, want float64) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
 func roundMixer(value, step float64) float64 {
 	if step <= 0 {
 		return value
@@ -1087,24 +1238,48 @@ func spacedMixerValue(value string) string {
 	return value
 }
 
-// AddEffect declares a new effect; it is SetParam's fx.<name> path with a
-// typed request. The effect kind is EffectKind because the envelope's "kind"
-// key names the intent. To insert the new effect on a track, follow it with
-// setparam on param:<track>.insert.
+// AddEffect declares a new effect and, with InsertOn, inserts it in one
+// edit. The effect kind is EffectKind because the envelope's "kind" key names
+// the intent. It is SetParam's fx.<name> path with a typed request. Where a
+// kind may go follows the language: drive, deesser, ampcab and chorus are
+// track inserts; eq a track or master insert; comp a track, bus music or
+// master insert; transient, width, limiter and convolution master inserts;
+// delay, tape and reverb send returns (one delay or tape, one reverb), which
+// a track reaches with setparam param:<track>.send.<name>. Bus sfx takes no
+// inserts. Comp, transient, width, limiter and convolution work only in an
+// insert chain: give inserton, or set the chain with a later setparam
+// param:<owner>.insert in the same envelope; if no intent of the envelope
+// does, this intent is refused with effect_needs_insert. A track takes eight
+// inserts and master sixteen; the new effect goes at the end of the chain,
+// or in front of Before or behind After. Settings are set as setparam
+// param:<name>.<field> sets them; only the compressor on bus music takes a
+// sidechain, a track of the score, music or sfx. The edit writes only the
+// entry file: an insert target declared in another file is refused with
+// declared_in_other_file. An edition-1 score needs ConfirmUpgrade, since a
+// mixer write upgrades it to edition 2. The catalog's reasons list names
+// every refusal code.
 //
 // Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
-// Example: {"kind":"addeffect","name":"grit","effectkind":"drive"}
+// Example: {"kind":"addeffect","name":"fuzz","effectkind":"drive","inserton":"bass"}
 // Example: {"kind":"addeffect","name":"hall","effectkind":"reverb"}
 // Example: {"kind":"addeffect","name":"glue","effectkind":"comp","inserton":"music"}
-// Example: {"kind":"addeffect","name":"tilt","effectkind":"eq"}
-// Example: {"kind":"addeffect","name":"soft","effectkind":"deesser"}
-// Example: {"kind":"addeffect","name":"cab","effectkind":"ampcab"}
-// Example: {"kind":"addeffect","name":"wide","effectkind":"chorus"}
+// Example: {"kind":"addeffect","name":"tilt","effectkind":"eq","inserton":"keys","settings":{"type":"high_shelf","frequency":"6kHz","gain":"2dB"}}
+// Example: {"kind":"addeffect","name":"soft","effectkind":"deesser","inserton":"lead"}
+// Example: {"kind":"addeffect","name":"cab","effectkind":"ampcab","inserton":"bass"}
+// Example: {"kind":"addeffect","name":"wide","effectkind":"chorus","inserton":"keys"}
+// Example: {"kind":"addeffect","name":"warble","effectkind":"tape"}
+// Example: {"kind":"addeffect","name":"punch","effectkind":"transient","inserton":"master","settings":{"attack":"3dB"}}
+// Example: {"kind":"addeffect","name":"stereo","effectkind":"width","inserton":"master","settings":{"amount":1.2,"bass_mono":"120Hz"}}
+// Example: {"kind":"addeffect","name":"ceiling","effectkind":"limiter","inserton":"master","settings":{"ceiling":"-2dBTP"}}
+// Example: {"kind":"addeffect","name":"space","effectkind":"convolution","inserton":"master","settings":{"asset":"vocal","mix":0.2}}
 type AddEffect struct {
-	Name           string `json:"name" cicada:"required"`                                           // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
-	EffectKind     string `json:"effectkind" values:"effect-kind" cicada:"required,selects"`        // the effect's kind
-	InsertOn       string `json:"inserton,omitempty" values:"insert-target" when:"effectkind=comp"` // the bus a comp is inserted on; a comp needs it, other kinds take none
-	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`                                         // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
+	Name           string                     `json:"name" cicada:"required"`                                                        // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
+	EffectKind     string                     `json:"effectkind" values:"effect-kind" cicada:"required,selects"`                     // the effect's kind
+	InsertOn       string                     `json:"inserton,omitempty" when:"effectkind=comp|transient|width|limiter|convolution"` // a track's name, music or master: where to insert the effect; these kinds need it unless a later intent sets the chain
+	Before         string                     `json:"before,omitempty"`                                                              // an insert of that chain to put the new effect in front of; default the end of the chain
+	After          string                     `json:"after,omitempty"`                                                               // an insert of that chain to put the new effect behind
+	Settings       map[string]json.RawMessage `json:"settings,omitempty" when:"effectkind=convolution"`                              // initial settings, field to value, such as {"ceiling":"-2dBTP"}; a convolution needs its asset
+	ConfirmUpgrade bool                       `json:"confirmupgrade,omitempty"`                                                      // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
 }
 
 func (AddEffect) Kind() string { return "addeffect" }
@@ -1116,11 +1291,45 @@ func init() {
 
 func addEffect(ctx *Context, intent Intent) error {
 	in := intent.(*AddEffect)
-	raw, err := json.Marshal(mixerFXValue{Kind: in.EffectKind, InsertOn: in.InsertOn})
+	raw, err := json.Marshal(mixerFXValue{Kind: in.EffectKind, InsertOn: in.InsertOn, Before: in.Before, After: in.After, Settings: in.Settings})
 	if err != nil {
 		return err
 	}
-	return setMixerParam(ctx, "fx."+in.Name, raw, in.ConfirmUpgrade)
+	if err := setMixerParam(ctx, "fx."+in.Name, raw, in.ConfirmUpgrade); err != nil {
+		return err
+	}
+	if in.InsertOn == "" && effectNeedsInsert[in.EffectKind] {
+		// A later intent of the envelope may put it in a chain; if none does,
+		// the refusal names this intent rather than the compile.
+		name, kind := in.Name, in.EffectKind
+		ctx.afterIntents(func(ctx *Context) error {
+			score, _, err := ctx.ParseProject()
+			if err != nil || score == nil || effectInsertRoute(score, name) != "" {
+				return err
+			}
+			return refuse("effect_needs_insert", "inserton", "a %s works only in an insert chain, and no intent of this envelope put %s in one: give inserton %s, or set the chain with setparam param:<owner>.insert", kind, name, strings.ReplaceAll(effectRouteNames(kind), "a track", "a track name"))
+		})
+	}
+	return nil
+}
+
+// mixerNameTaken reports whether a name is already an effect, a track or a
+// bus, the namespace the mixer shares.
+func mixerNameTaken(score *notation.Score, name string) bool {
+	if name == "music" || name == "sfx" || name == "master" || FindNotationEffect(score, name) != nil {
+		return true
+	}
+	for _, track := range score.Tracks {
+		if track.Name == name {
+			return true
+		}
+	}
+	for _, bus := range score.Buses {
+		if bus.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // paramWriterFor resolves owner.field for the generic intent surface. An
@@ -1195,7 +1404,7 @@ func setMixerParam(ctx *Context, path string, raw json.RawMessage, confirm bool)
 	working := bytes.Clone(ctx.Source)
 	if score.Version == 1 {
 		if !confirm {
-			return errors.New("This score uses edition 1. Upgrade to edition 2 to save mixer changes?")
+			return refuse("edition_upgrade_needed", "confirmupgrade", "This score uses edition 1. Upgrade to edition 2 to save mixer changes?")
 		}
 		if ctx.Options.UpgradeEdition == nil {
 			return ErrNoUpgrade

@@ -117,6 +117,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"addaudiotrack":          &edits.AddAudioTrack{Name: "vox"},
 		"setparam":               &edits.SetParam{Entity: "param:lead.level", Value: json.RawMessage(`-3`)},
 		"addeffect":              &edits.AddEffect{Name: "grit", EffectKind: "drive"},
+		"removeeffect":           &edits.RemoveEffect{Name: "grit"},
 		"addpreset":              &edits.AddPreset{Preset: "warm-pad", Instrument: "voice", Track: "new-keys"},
 		"insertlibraryitem":      &edits.InsertLibraryItem{Track: "lead", ImportPath: "part.cicada", Reference: "voice", ItemKind: "instrument"},
 		"savepreset":             &edits.SavePreset{Track: "lead", Name: "bright", Declaration: "\npreset bright { instrument=acid cutoff=900Hz }\n"},
