@@ -2,9 +2,9 @@ package project
 
 import (
 	"fmt"
-	"math"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
@@ -13,7 +13,7 @@ import (
 func validateGraphDelayNote(program graph.Program, sampleRate, note int) error {
 	depth := baselineVibratoDepth(program)
 	for _, cents := range []float32{-depth, depth} {
-		pitch := float32(440 * math.Exp2(float64(note-69)/12+float64(cents)/1200))
+		pitch := float32(440 * detmath.Exp2(float64(note-69)/12+float64(cents)/1200))
 		if err := graph.ValidateDelayPitch(program, sampleRate, pitch); err != nil {
 			return err
 		}
@@ -54,7 +54,7 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 					depth += point.Params.VibratoDepthCents
 				}
 				for _, cents := range [...]float32{point.Params.PitchCents - depth, point.Params.PitchCents + depth} {
-					pitch := float32(440 * math.Exp2(float64(int(note.Note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
+					pitch := float32(440 * detmath.Exp2(float64(int(note.Note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
 					if err := graph.ValidateDelayPitch(program, sampleRate, pitch); err != nil {
 						return err
 					}
@@ -87,7 +87,7 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 		}
 		for _, note := range notes[:count] {
 			for _, cents := range [...]float32{bend - depth, bend + depth} {
-				pitch := float32(440 * math.Exp2(float64(int(note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
+				pitch := float32(440 * detmath.Exp2(float64(int(note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
 				if err := graph.ValidateDelayPitch(program, sampleRate, pitch); err != nil {
 					return err
 				}
