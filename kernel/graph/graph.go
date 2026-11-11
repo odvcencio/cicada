@@ -575,7 +575,8 @@ func (v *Voice) nextSample(substep uint64) float32 {
 		case Ladder, Diode:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			if frequency != s.coefficientInput {
-				g := float32(detmath.Tan(math.Pi * float64(frequency/v.sampleRate)))
+				// float32(detmath.Tan(math.Pi*float64(u))) bit for bit, at less cost.
+				g := detmath.TanPi32(frequency / v.sampleRate)
 				s.coefficient = g / (1 + g)
 				s.coefficientInput = frequency
 			}
@@ -588,7 +589,8 @@ func (v *Voice) nextSample(substep uint64) float32 {
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			if frequency != s.coefficientInput {
-				s.coefficient = float32(1 - detmath.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
+				// float32(1 - detmath.Exp(-2*math.Pi*float64(u))) bit for bit, at less cost.
+				s.coefficient = detmath.OneMinusExpNeg2Pi32(frequency / v.sampleRate)
 				s.coefficientInput = frequency
 			}
 			coef := s.coefficient

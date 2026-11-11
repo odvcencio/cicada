@@ -939,3 +939,112 @@ func cosPiKernel(rh, rl float64) (hi, lo float64) {
 	tail := (((1 - w) - hz) - float64(0.5*zl)) + (float64(z2*q) - float64(rh*rl))
 	return fastTwoSum(w, tail)
 }
+
+// TanPi returns tan(pi*x): the exact reduction of SinPi (x = q/2 + r, |r| <=
+// 1/4), its kernels on pi*r as a double-double, and the quotient sin/cos (or
+// -cos/sin for odd q) in double-double. It is NaN at odd multiples of 1/2, for
+// infinities and for NaN, and keeps the sign of zero. Measured error: at most
+// 0.90 ULP (TestTanPiAccuracy, dense sweep).
+func TanPi(x float64) float64 {
+	x = float64(x) // see the package comment
+	if x == 0 {
+		return x
+	}
+	const (
+		piHi = 0x1.921fb54442d18p+01 // pi = piHi + piLo to 2^-108
+		piLo = 0x1.1a62633145c07p-53
+	)
+	q := math.Round(float64(2 * x)) // 2*x is exact
+	r := x - float64(0.5*q)         // exact (see SinPi)
+	th, tl := twoProd(r, piHi)
+	th, tl = fastTwoSum(th, tl+float64(r*piLo))
+	sh, sl := sinPiKernel(th, tl)
+	ch, cl := cosPiKernel(th, tl)
+	odd := false
+	if q > -0x1p52 && q < 0x1p52 {
+		odd = int64(q)&1 != 0
+	} else {
+		odd = q-float64(2*math.Floor(float64(q/2))) != 0
+	}
+	if odd {
+		qh, ql := divDD(ch, cl, sh, sl)
+		return -(qh + ql)
+	}
+	qh, ql := divDD(sh, sl, ch, cl)
+	return qh + ql
+}
+
+// TanPi32 returns float32(Tan(math.Pi*float64(u))), bit for bit, for every
+// float32 u (checked over all 2^32 inputs), at a fraction of the cost: for
+// 2^-30 <= |u| <= 0.46 it evaluates tan(pi*|u|) in plain float64 with short
+// series (error near 2^-36) and rounds that to float32 only when every value
+// within a relative 2^-32 of it rounds the same way; otherwise, and outside
+// that range, it computes the expression itself.
+func TanPi32(u float32) float32 {
+	a := float64(u)
+	if a < 0 {
+		a = -a
+	}
+	if !(a >= 0x1p-30 && a <= 0.46) {
+		return float32(Tan(math.Pi * float64(u)))
+	}
+	// tan(pi*a) = s/c with the series on t = pi*a for a <= 1/4, and
+	// cot(pi*(1/2 - a)) = c/s on t = pi*(1/2 - a) above (1/2 - a is exact).
+	t := float64(math.Pi * a)
+	above := a > 0.25
+	if above {
+		t = float64(math.Pi * (0.5 - a))
+	}
+	z := float64(t * t)
+	ps := -1.0 / 39916800 // sin(t)/t - 1 = z*ps(z), through t^11
+	ps = 1.0/362880 + float64(z*ps)
+	ps = -1.0/5040 + float64(z*ps)
+	ps = 1.0/120 + float64(z*ps)
+	ps = -1.0/6 + float64(z*ps)
+	s := t + float64(float64(t*z)*ps)
+	pc := 1.0 / 479001600 // cos(t) - 1 = z*pc(z), through t^12
+	pc = -1.0/3628800 + float64(z*pc)
+	pc = 1.0/40320 + float64(z*pc)
+	pc = -1.0/720 + float64(z*pc)
+	pc = 1.0/24 + float64(z*pc)
+	pc = -0.5 + float64(z*pc)
+	c := 1 + float64(z*pc)
+	v := s / c
+	if above {
+		v = c / s
+	}
+	const margin = 0x1p-32
+	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {
+		if u < 0 {
+			return -r
+		}
+		return r
+	}
+	return float32(Tan(math.Pi * float64(u)))
+}
+
+// OneMinusExpNeg2Pi32 returns float32(1 - Exp(-2*math.Pi*float64(u))), bit for
+// bit, for every float32 u (checked over all 2^32 inputs), at a fraction of
+// the cost: for 2^-20 <= u <= 0.5 it evaluates e^y, y = -2*pi*u, in plain
+// float64 from the same 2^(j/64) table as Exp and a short series (error near
+// 2^-50 of e^y), and rounds 1 - e^y to float32 only when every value within a
+// relative 2^-32 of it rounds the same way; otherwise, and outside that
+// range, it computes the expression itself.
+func OneMinusExpNeg2Pi32(u float32) float32 {
+	x := float64(u)
+	if !(x >= 0x1p-20 && x <= 0.5) {
+		return float32(1 - Exp(-2*math.Pi*float64(u)))
+	}
+	y := float64(-2 * math.Pi * x)
+	k := math.Round(float64(y * sixtyFourOverLn2))
+	r := (y - float64(k*ln2Over64Hi)) - float64(k*ln2Over64Lo)
+	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24)))))))) // e^r - 1 to r^5/120 < 2^-44
+	ki := int(k)
+	e := float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52)
+	v := 1 - e
+	const margin = 0x1p-32
+	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {
+		return r
+	}
+	return float32(1 - Exp(-2*math.Pi*float64(u)))
+}
