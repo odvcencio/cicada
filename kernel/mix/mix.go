@@ -1,7 +1,11 @@
 // Package mix provides the M0 dry music bus and linked master limiter.
 package mix
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 const MusicGainDB = -3.0
 const MusicGain = .7079457843841379
@@ -14,8 +18,8 @@ func NewTrack(gainDB, pan float64, mute bool) Track {
 		return Track{}
 	}
 	angle := (pan + 1) * math.Pi / 4
-	gain := math.Pow(10, gainDB/20)
-	return Track{Left: float32(gain * math.Cos(angle)), Right: float32(gain * math.Sin(angle))}
+	gain := detmath.Pow(10, gainDB/20)
+	return Track{Left: float32(gain * detmath.Cos(angle)), Right: float32(gain * detmath.Sin(angle))}
 }
 
 type Dry struct{ Left, Right, SFXLeft, SFXRight float32 }
@@ -67,7 +71,7 @@ func NewLimiter(sampleRate int) (*Limiter, error) {
 		return nil, Error("unsupported limiter sample rate")
 	}
 	lookahead := int(math.Round(float64(sampleRate) * .0015))
-	return &Limiter{lookahead: lookahead, gain: 1, releaseAlpha: 1 - math.Exp(-1/(.05*float64(sampleRate))), ceiling: math.Pow(10, CeilingDB/20)}, nil
+	return &Limiter{lookahead: lookahead, gain: 1, releaseAlpha: 1 - detmath.Exp(-1/(.05*float64(sampleRate))), ceiling: detmath.Pow(10, CeilingDB/20)}, nil
 }
 
 type Error string
@@ -84,7 +88,7 @@ func (l *Limiter) GainReductionDB() float64 {
 	if l.gain <= 0 {
 		return math.Inf(1)
 	}
-	return -20 * math.Log10(l.gain)
+	return -20 * detmath.Log10(l.gain)
 }
 
 func (l *Limiter) Reset() {

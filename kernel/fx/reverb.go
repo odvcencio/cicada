@@ -1,6 +1,10 @@
 package fx
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // ReverbParams describes the bounded eight-line feedback delay network.
 // Mix is normally one for a mixer return.
@@ -119,7 +123,7 @@ func NewReverb(sampleRate int) (*Reverb, error) {
 	r := &Reverb{
 		sampleRate: float64(sampleRate),
 		fadeStep:   1 / (.005 * float64(sampleRate)),
-		smooth:     1 - math.Exp(-1/(.005*float64(sampleRate))),
+		smooth:     1 - detmath.Exp(-1/(.005*float64(sampleRate))),
 		phaseStep:  2 * math.Pi * .3 / float64(sampleRate),
 	}
 	for channel := range r.input {
@@ -167,7 +171,7 @@ func (r *Reverb) SetParams(p ReverbParams) error {
 			changedSize = true
 		}
 		r.newLength[line] = frames
-		r.targetGain[line] = math.Pow(10, -3*frames/(p.DecaySec*r.sampleRate))
+		r.targetGain[line] = detmath.Pow(10, -3*frames/(p.DecaySec*r.sampleRate))
 	}
 	if initial {
 		r.lengthFade = 1
@@ -179,8 +183,8 @@ func (r *Reverb) SetParams(p ReverbParams) error {
 		r.oldPre = float64(r.oldPre*(1-r.preFade)) + float64(r.newPre*r.preFade)
 		r.newPre, r.preFade = pre, 0
 	}
-	r.targetDamp = 1 - math.Exp(-2*math.Pi*p.DampHz/r.sampleRate)
-	r.targetHP = math.Exp(-2 * math.Pi * p.HighpassHz / r.sampleRate)
+	r.targetDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/r.sampleRate)
+	r.targetHP = detmath.Exp(-2 * math.Pi * p.HighpassHz / r.sampleRate)
 	r.targetMix = p.Mix
 	return nil
 }
@@ -267,7 +271,7 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
-	modulation := float64(3 * math.Sin(r.phase))
+	modulation := float64(3 * detmath.Sin(r.phase))
 	r.phase += r.phaseStep
 	if r.phase >= 2*math.Pi {
 		r.phase -= 2 * math.Pi
