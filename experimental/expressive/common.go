@@ -37,6 +37,6 @@ func (d *delay) read(n float64) float64 {
 	}
 	i := int(p)
 	f := p - float64(i)
-	return d.data[i]*(1-f) + d.data[(i+1)%len(d.data)]*f
+	return float64(d.data[i]*(1-f)) + float64(d.data[(i+1)%len(d.data)]*f)
 }
 func (d *delay) push(x float64) { d.data[d.pos] = x; d.pos = (d.pos + 1) % len(d.data) }

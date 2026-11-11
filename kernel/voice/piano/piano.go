@@ -97,7 +97,7 @@ func New(sampleRate int) (*Instrument, error) {
 	frequencies := [...]float64{73, 109, 164, 233, 349, 523, 784, 1174, 1760, 2640, 3960, 5940}
 	for i, f := range frequencies {
 		// Broad, lossy plate modes: an analytic soundboard, with no recorded IR.
-		p.board[i] = newResonator(f, 1/(math.Pi*(18+.22*f)), fs, .012)
+		p.board[i] = newResonator(f, 1/(math.Pi*(18+float64(.22*f))), fs, .012)
 	}
 	return p, nil
 }
@@ -109,9 +109,9 @@ func noteFrequency(note int) float64 { return 440 * math.Exp2(float64(note-69)/1
 func Stiffness(note uint8) float64 {
 	n := float64(note)
 	if n < 48 {
-		return .00012 + .00018*math.Exp2((36-n)/12)
+		return .00012 + float64(.00018*math.Exp2((36-n)/12))
 	}
-	return .00012 + .00016*math.Exp2((n-60)/12)
+	return .00012 + float64(.00016*math.Exp2((n-60)/12))
 }
 
 // PartialFrequency is the normalized stiff-string dispersion law. Partial 1
@@ -122,7 +122,7 @@ func PartialFrequency(note uint8, partial int) float64 {
 	}
 	b := Stiffness(note)
 	n := float64(partial)
-	return noteFrequency(int(note)) * n * math.Sqrt((1+b*n*n)/(1+b))
+	return noteFrequency(int(note)) * n * math.Sqrt((1+float64(b*n*n))/(1+b))
 }
 
 func (p *Instrument) prepareKey(index int) {
@@ -153,7 +153,7 @@ func (p *Instrument) prepareKey(index int) {
 		for stringIndex := 0; stringIndex < strings; stringIndex++ {
 			detune := 0.
 			if strings > 1 {
-				detune = (float64(stringIndex) - float64(strings-1)*.5) * 1.4
+				detune = (float64(stringIndex) - float64(float64(strings-1)*.5)) * 1.4
 			}
 			hz := PartialFrequency(uint8(note), partial) * math.Exp2(detune/1200)
 			if hz >= .42*fs {
@@ -162,7 +162,7 @@ func (p *Instrument) prepareKey(index int) {
 			omega := 2 * math.Pi * hz
 			// Higher partials lose energy sooner; unison beating survives into
 			// the aftersound. The loss is applied to the exact modal rotation.
-			tau := t60 / 6.907755 / (1 + .025*float64(partial*partial) + hz/16000)
+			tau := t60 / 6.907755 / (1 + float64(.025*float64(partial*partial)) + hz/16000)
 			rho := math.Exp(-1 / (tau * fs))
 			angle := omega / fs
 			strike := math.Sin(math.Pi * float64(partial) * position)
@@ -177,7 +177,7 @@ func (p *Instrument) prepareKey(index int) {
 				// Finite plate radiation falls below its first broad modes. This
 				// suppresses subsonic/very low bridge force without removing the
 				// bass string's audible upper-partial structure.
-				bridge: float32(sign * f * float64(partial) * .18 / float64(strings) * hz * hz / (hz*hz + 110*110)),
+				bridge: float32(sign * f * float64(partial) * .18 / float64(strings) * hz * hz / (float64(hz*hz) + 110*110)),
 			}
 			k.count++
 			m := &k.modes[k.count-1]
