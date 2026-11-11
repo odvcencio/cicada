@@ -24,7 +24,7 @@ const ReleaseLDFlags = "-s -w"
 // MaxBytes is the working limit on the raw bytes of the shipped engine file;
 // `go generate` fails above it.
 //
-// Measured on 2026-11-11: 11,121,364 bytes, after the engine stopped calling
+// Measured on 2026-11-11: 11,130,262 bytes, after the engine stopped calling
 // net/http's client and was built with Tags (make engine-size-report). The
 // limit is that size plus 524,288 bytes (512 KiB), rounded up to a multiple of
 // 65,536 (the engine modules design, step S2). Raise it only through a

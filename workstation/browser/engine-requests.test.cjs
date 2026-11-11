@@ -169,7 +169,8 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
     const page = await context.newPage();
     let mode = 'pass';
     const held = [], failed = [], finished = [];
-    const ports = request => new URL(request.url()).pathname === '/api/midi/ports';
+    // A route that continues to the test server reports the request under its new URL.
+    const ports = request => ['/api/midi/ports', '/big', '/bigjson'].includes(new URL(request.url()).pathname);
     page.on('requestfailed', request => { if (ports(request)) failed.push(request.failure()?.errorText || ''); });
     page.on('requestfinished', request => { if (ports(request)) finished.push(Date.now()); });
     await page.route('**/api/midi/ports', async route => {
