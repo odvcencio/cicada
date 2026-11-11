@@ -111,6 +111,17 @@ bench-agent-loop: build-core
 test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
 
+# The two render paths (the direct mixer and the scheduled engine) must play the
+# same notes. TestRenderPathsAgree is part of every Go test run of ./render; this
+# target runs it alone. The audio target compares the float32 bytes of every
+# comparable score over whole songs at 48 kHz and only reports (nightly).
+.PHONY: test-render-paths test-render-paths-audio
+test-render-paths:
+	go test ./render -run '^TestRenderPathsAgree$$' -count=1 -v
+
+test-render-paths-audio:
+	CICADA_PATHS_AUDIO=full go test ./render -run '^TestRenderPathsAudio$$' -count=1 -timeout=60m -v
+
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
 # render to a loudness target and audition. It must finish within 2 minutes.

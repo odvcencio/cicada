@@ -554,6 +554,38 @@ jobs:
           if-no-files-found: warn
           path: build/render-identity.log
 
+  # The direct mixer and the scheduled engine must play the same notes
+  # (TestRenderPathsAgree, part of "Native tests, every package but cmd/cicada"
+  # on every pull request that changes Go code). Nightly, the same scores are
+  # rendered through both paths in full and their float32 output is compared
+  # byte for byte. The step reports and never fails: where the audio differs
+  # without an event difference, the log says by how much.
+  render-paths-audio:
+    name: Render paths, audio comparison report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-render-paths-audio | tee build/render-paths-audio.log
+      - name: Save the report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: render-paths-audio
+          if-no-files-found: warn
+          path: build/render-paths-audio.log
+
   # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
   # aggregate. Every command that was in the single job is in exactly one part.
   m0-core:
