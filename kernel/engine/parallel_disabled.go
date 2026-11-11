@@ -17,6 +17,14 @@ func (e *Engine) EnableParallel(workers int) error {
 	}
 	return nil
 }
+
+// EnableOfflineParallel keeps the serial render in browser kernels.
+func (e *Engine) EnableOfflineParallel(lanes int) error {
+	if lanes < 1 {
+		return engineError("offline rendering needs at least one lane")
+	}
+	return nil
+}
 func (e *Engine) parallelAvailable() bool                               { return false }
 func (e *Engine) ParallelWorkers() int                                  { return 1 }
 func (e *Engine) ParallelPriority() string                              { return "serial" }

@@ -574,6 +574,42 @@ one), `loudness` gives the target and tolerance, the measured
 (`gain_stage`), the master limiter's gain reduction and the DC correction. A
 measurement is `null` when there is none.
 
+`jobs` and `lanes` say how the render used the processor. `--jobs N` (on
+`render`, `stems` and `audition`) lets up to N render lanes synthesize tracks at
+once; the default, 0, picks the usable CPUs (the processors the process may run
+on), and `--jobs 1` renders serially. `jobs` is that resolved count. `lanes` is
+the number of lanes the render set up: `jobs` capped at the number of tracks,
+or 1 when the render stays serial (one track, `--jobs 1`, or graph LFOs on the
+scheduled renderer, whose clock is serial). A stretch of the song with too
+little work to pay for a hand-off runs on fewer lanes, and the cicada process
+never runs more lanes at once than it has processors, even with several
+renders at once; other processes are not counted, so give each of several
+concurrent `cicada` processes a smaller `--jobs`. Every `--jobs` value writes
+the same bytes: lanes only synthesize each track's own signal between notes and
+other control changes, and the tracks are always mixed in track order, so an
+agent can choose `jobs` for speed alone.
+
+<!-- agent-example: render song.cicada -o song-two-lanes.wav --bars 2 --jobs 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "ok": true,
+  "from_bar": 1,
+  "bars": 2,
+  "jobs": 2,
+  "lanes": 2,
+  "outputs": [
+    {
+      "path": "song-two-lanes.wav",
+      "role": "mix",
+      "frames": 336000
+    }
+  ]
+}
+```
+
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 
 ```json

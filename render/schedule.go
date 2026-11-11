@@ -75,6 +75,13 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	fromFrame := tempoMap.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
 	endFrame := tempoMap.SampleAtTick(endTick)
 	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
+	// Lanes synthesize each segment's tracks; the engine still mixes them in
+	// track order on this goroutine, so every job count writes the same bytes.
+	report.Jobs = resolveJobs(opts.Jobs)
+	if err := player.EnableOfflineParallel(report.Jobs); err != nil {
+		return report, err
+	}
+	report.Lanes = player.ParallelWorkers()
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)

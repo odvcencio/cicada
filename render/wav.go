@@ -69,6 +69,14 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// Jobs is the most render lanes, goroutines that synthesize tracks at the
+	// same time, that the render may use: 1 renders serially, and zero
+	// selects the usable processors (runtime.GOMAXPROCS). A render never sets
+	// up more lanes than the song has tracks. Every value writes the same
+	// bytes: lanes only synthesize each track's own signal between control
+	// changes, and the render mixes the tracks in track order as the serial
+	// render does. Report.Jobs and Report.Lanes say what the render chose.
+	Jobs int
 }
 
 type Report struct {
@@ -95,6 +103,13 @@ type Report struct {
 	chainStart                       int64
 	chainEnd                         int64
 	tempoChanges                     []project.TempoChange
+	// Jobs is the job count the render resolved from Options.Jobs: the most
+	// lanes it was allowed. Lanes is the number of lanes it set up: Jobs
+	// capped at the song's tracks, or 1 when the render was serial (one
+	// track, Jobs 1, or a score with graph LFOs on the scheduled engine). A
+	// segment with little work runs on fewer lanes, and the process never
+	// runs more lanes at once than runtime.GOMAXPROCS.
+	Jobs, Lanes int
 }
 
 // masterChainWindow returns the half-open range of render sample positions
@@ -178,6 +193,9 @@ type busMixerState struct {
 	musicMute, musicSolo bool
 	sfxMute, sfxSolo     bool
 	masterMute           bool
+	// lanes, when set, synthesizes the tracks of each segment on several
+	// goroutines before renderBlock mixes them (Options.Jobs).
+	lanes *trackLanes
 }
 
 type sceneTransition struct {
@@ -582,6 +600,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			tracks[i].chain = append(tracks[i].chain, ref.Text)
 		}
 	}
+	jobs := resolveJobs(opts.Jobs)
+	report.Jobs, report.Lanes = jobs, plannedLanes(jobs, len(tracks))
 	stopIsAction := true
 	for _, pattern := range score.Patterns {
 		if pattern.Name == "stop" {
@@ -743,6 +763,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		if replay {
 			return renderMasterReplay(writer, score, opts, cache, report, &encoder, limiter, busState, masterGain, block)
 		}
+	}
+	// Only synthesis uses lanes; a replay above has none to synthesize.
+	if lanes := newTrackLanes(tracks, jobs, opts.Block); lanes != nil {
+		defer lanes.close()
+		busState.lanes = lanes
 	}
 	eventCapacity := 0
 	for i := range tracks {
@@ -1612,6 +1637,11 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, masterBiasL, masterBiasR, masterGain float32, busState busMixerState, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
+	lanes := busState.lanes
+	if lanes != nil {
+		lanes.begin()
+		defer lanes.finish()
+	}
 	cache := busState.masterCache
 	if cache != nil {
 		if err := cache.beginBlock(frames, busState.cacheReplay); err != nil {
@@ -1703,6 +1733,22 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			eventIndex++
 		}
+		if lanes != nil && frame >= lanes.end {
+			// The tracks' own signals are fixed until the next event or
+			// automation point, so lanes may synthesize them up to there.
+			end := frames
+			if eventIndex < len(events) {
+				if next := events[eventIndex].event.Sample - start; next > int64(frame) && next < int64(end) {
+					end = int(next)
+				}
+			}
+			if len(tracks) > 0 {
+				if next, ok := tracks[0].automation.nextAutomation(); ok && next-start > int64(frame) && next-start < int64(end) {
+					end = int(next - start)
+				}
+			}
+			lanes.prepare(tracks, frame, end)
+		}
 		var dry mix.Dry
 		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for ti := range tracks {
@@ -1710,38 +1756,14 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				tracks[ti].parameters.advance(&tracks[ti])
 			}
 			var l, r float32
-			if tracks[ti].drums != nil {
-				l, r = tracks[ti].drums.NextStereo()
-				if tracks[ti].drums.Fault() {
-					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
-				}
-			} else if voice, ok := tracks[ti].voice.(*pianoVoice); ok {
-				l, r = voice.NextStereo()
-			} else if tracks[ti].prepared != nil {
-				l, r = tracks[ti].prepared.NextStereo()
-			} else if tracks[ti].legacyPoly != nil {
-				l, r = tracks[ti].legacyPoly.NextStereo()
-			} else if tracks[ti].poly != nil {
-				l = tracks[ti].poly.Next()
-				r = l
+			var err error
+			if lanes != nil && lanes.prepared {
+				l, r, err = lanes.sample(ti, frame)
 			} else {
-				if voice, ok := tracks[ti].voice.(*packVoice); ok {
-					l, r = voice.NextStereo()
-					if voice.fault != nil {
-						return fmt.Errorf("sampler %s: %w", tracks[ti].name, voice.fault)
-					}
-				} else {
-					mono := tracks[ti].voice.Next()
-					l, r = mono, mono
-				}
+				l, r, err = tracks[ti].nextRaw()
 			}
-			if tracks[ti].insert != nil {
-				l, r = tracks[ti].insert.Process(l, r)
-				if tracks[ti].insert.Fault() {
-					return fmt.Errorf("drive DSP fault on %s", tracks[ti].name)
-				}
-			} else if tracks[ti].align != nil {
-				l, r = tracks[ti].align.Process(l, r)
+			if err != nil {
+				return err
 			}
 			if tracks[ti].sendA > 0 && !tracks[ti].muted {
 				if tracks[ti].sendAPre {
@@ -1909,6 +1931,46 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		return stems.flush()
 	}
 	return nil
+}
+
+// nextRaw renders one frame of the track's own signal: its voice and its
+// drive insert or latency alignment, before the mixer. It touches only the
+// track's own state, so tracks may render on different goroutines.
+func (track *trackRuntime) nextRaw() (l, r float32, err error) {
+	if track.drums != nil {
+		l, r = track.drums.NextStereo()
+		if track.drums.Fault() {
+			return 0, 0, fmt.Errorf("drum DSP fault on %s", track.name)
+		}
+	} else if voice, ok := track.voice.(*pianoVoice); ok {
+		l, r = voice.NextStereo()
+	} else if track.prepared != nil {
+		l, r = track.prepared.NextStereo()
+	} else if track.legacyPoly != nil {
+		l, r = track.legacyPoly.NextStereo()
+	} else if track.poly != nil {
+		l = track.poly.Next()
+		r = l
+	} else {
+		if voice, ok := track.voice.(*packVoice); ok {
+			l, r = voice.NextStereo()
+			if voice.fault != nil {
+				return 0, 0, fmt.Errorf("sampler %s: %w", track.name, voice.fault)
+			}
+		} else {
+			mono := track.voice.Next()
+			l, r = mono, mono
+		}
+	}
+	if track.insert != nil {
+		l, r = track.insert.Process(l, r)
+		if track.insert.Fault() {
+			return 0, 0, fmt.Errorf("drive DSP fault on %s", track.name)
+		}
+	} else if track.align != nil {
+		l, r = track.align.Process(l, r)
+	}
+	return l, r, nil
 }
 
 func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, buffer []byte, report *Report) error {

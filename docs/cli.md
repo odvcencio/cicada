@@ -34,6 +34,27 @@ its pack. See [instrument packs](sampler/packs.md#memory-limits).
 cicada render song.cicada -o song.wav --max-resident-pcm 2GiB
 ```
 
+## Render lanes
+
+`cicada render`, `cicada stems` and `cicada audition` take `--jobs N`: up to N
+render lanes synthesize the song's tracks at the same time. The default, 0,
+uses the processors the process may run on (`taskset` and container CPU limits
+count); `--jobs 1` renders serially, as releases before this option did. A
+render never sets up more lanes than the song has tracks, so a one-track song
+always renders serially, and one heavy track (an electric piano holding
+eight voices, say) bounds how much faster more lanes can make a song. Every
+value writes the same bytes. The summary line and `--json` report `jobs` and
+`lanes`; see [render --json](manual/agents.md#render---json). One cicada
+process never runs more lanes at once than it has processors; when you run
+several `cicada` processes at once, give each a share with `--jobs`.
+
+```sh
+cicada render song.cicada -o song.wav --jobs 4
+```
+
+Library callers set `render.Options.Jobs` the same way and read
+`render.Report.Jobs` and `render.Report.Lanes`.
+
 ## Libraries
 
 Run library commands from the project folder, except `new`, which needs no

@@ -36,6 +36,10 @@ type Options struct {
 	// bytes. Zero selects the default cap. The compile that reads the track
 	// kinds and the render that makes the stems share one copy of each pack.
 	MaxResidentPCM int64
+	// Jobs is the most render lanes the stem render may use, as
+	// render.Options.Jobs: zero selects the usable processors and 1 renders
+	// serially. Every value gives the same stems and the same report.
+	Jobs int
 }
 
 type Report struct {
@@ -226,7 +230,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, Jobs: opts.Jobs}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}

@@ -473,6 +473,14 @@ type offlineControl struct {
 	Setting engine.SceneSetting
 }
 
+// nextAutomation is the sample of the first automation point not applied yet.
+func (p *sceneParameters) nextAutomation() (int64, bool) {
+	if p == nil || p.automationIndex >= len(p.automation) {
+		return 0, false
+	}
+	return p.automation[p.automationIndex].Sample, true
+}
+
 func (p *sceneParameters) advanceAutomation(sample int64) error {
 	if p == nil {
 		return nil

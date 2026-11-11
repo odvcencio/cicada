@@ -235,6 +235,17 @@ jobs:
           GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
           GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/... 2>&1 | { grep -E 'fmahash triggered.*kernel/(fx|mix|loudness|dsp)/' || true; } | tee "$RUNNER_TEMP/v3-fma.log"
           if [ -s "$RUNNER_TEMP/v3-fma.log" ]; then echo "fusable multiply-adds in the master chain (listed above)" >&2; exit 1; fi
+      - name: Race-check the render lanes
+        run: |
+          set -euo pipefail
+          # Render lanes must stay bit-identical to the serial render; a data
+          # race between lanes would be a determinism bug, so the lane tests
+          # run under the race detector with every segment on every lane.
+          go test -race ./internal/renderlanes ./kernel/engine -run '^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|BudgetLimitsConcurrentPools)' -count=1 -v | tee "$RUNNER_TEMP/lanes-race.log"
+          go test -race ./render -run '^TestDirectLanes' -count=1 -v | tee -a "$RUNNER_TEMP/lanes-race.log"
+          for name in TestOfflineParallelRenderIsBitIdentical TestOfflineParallelFaultMatchesSerial TestRunRendersEveryTrackOnce TestDirectLanesAreBitIdentical TestDirectLanesFaultMatchesSerial; do
+            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/lanes-race.log" || { echo "No PASS line for $name" >&2; exit 1; }
+          done
       - name: Save amd64 PCM and the tested kernel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -333,6 +344,12 @@ jobs:
             fi
           done
           exit "$missing"
+      - name: Require every render job count to write the serial render's bytes on arm64
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          go test ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parity/parallel-identity.txt
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parity/parallel-identity.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -342,6 +359,7 @@ jobs:
           path: |
             build/parity/report.txt
             build/parity/modulate.txt
+            build/parity/parallel-identity.txt
 
   studio-cli:
     name: Studio CLI tests (shard ${{ matrix.shard }}/3)
@@ -1018,6 +1036,56 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: build/native-*.log
+
+  # Every example score, rendered in full with --jobs 1 and with 2, 4, 8 and
+  # the automatic job count, plain and at -14 LUFS, must write the same bytes
+  # (render lanes). Pull requests run a short subset on amd64 (cmd/cicada
+  # tests) and arm64 (parity-arm64); this is the whole sweep, nightly, on both
+  # architectures, followed by the subset under the race detector.
+  parallel-identity:
+    name: Render lanes identity sweep (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Sweep
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          mkdir -p build
+          make test-parallel-identity | tee build/parallel-identity.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity.log
+      - name: Subset under the race detector
+        run: |
+          set -euo pipefail
+          go test -race -timeout=40m ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parallel-identity-race.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity-race.log
+      - name: Save the sweep log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parallel-identity-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            build/parallel-identity.log
+            build/parallel-identity-race.log
 
   macos-desktop-full:
     name: macOS desktop exhaustive (${{ matrix.arch }})

@@ -236,6 +236,12 @@ test-timing:
 test-golden:
 	go run ./cmd/cicada golden
 
+# Renders every example score with --jobs 1 and with 2, 4, 8 and the automatic
+# job count, plain and at -14 LUFS, and compares the bytes (render lanes).
+.PHONY: test-parallel-identity
+test-parallel-identity:
+	CICADA_PARALLEL_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=1 -timeout=110m -v
+
 test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
 
