@@ -84,11 +84,11 @@ func (encoder *wavEncoder) writeFrame(dst []byte, left, right float32, ceiling f
 			continue
 		}
 		maxPCM := float64(int64(1)<<(encoder.bits-1) - 1)
-		quantized := float64(value) * maxPCM
+		quantized := float64(float64(value) * maxPCM)
 		if encoder.dither {
 			first := encoder.rng[channel].next() >> 8
 			second := encoder.rng[channel].next() >> 8
-			quantized += float64(int64(first)-int64(second)) / (1 << 24)
+			quantized += float64(float64(int64(first)-int64(second)) / (1 << 24))
 		}
 		pcm := int32(math.RoundToEven(quantized))
 		pcm = max(-int32(maxPCM)-1, min(int32(maxPCM), pcm))

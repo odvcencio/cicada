@@ -133,7 +133,7 @@ func New(rate int, p Params) (*Instrument, error) {
 	if p.PickupPosition < 0 || p.PickupPosition > 1 || p.PickupDistance < .2 || p.PickupDistance > 2 || p.HammerFelt < 0 || p.HammerFelt > 1 || p.Decay < .3 || p.Decay > 20 || p.Release < .02 || p.Release > 2 || p.Drive < 0 || p.Drive > 1 || p.Tremolo < 0 || p.Tremolo > 1 || p.TremoloRate < .1 || p.TremoloRate > 12 || p.Pan < 0 || p.Pan > 1 || p.Gain < 0 || p.Gain > 2 {
 		return nil, Error("electric piano parameter outside range")
 	}
-	i := &Instrument{params: p, rate: rate, gap: float32(p.PickupDistance), offset: float32((p.PickupPosition - .5) * .75), drive: float32(1 + 5*p.Drive), amp: float32(p.Gain * .34), lfoP: 1}
+	i := &Instrument{params: p, rate: rate, gap: float32(p.PickupDistance), offset: float32((p.PickupPosition - .5) * .75), drive: float32(1 + float64(5*p.Drive)), amp: float32(p.Gain * .34), lfoP: 1}
 	i.live = liveControls{trem: float32(p.Tremolo), pan: float32(p.Pan), rate: float32(p.TremoloRate)}
 	i.live.tremT, i.live.panT, i.live.rateT, i.live.driveT, i.live.ampT = i.live.trem, i.live.pan, i.live.rate, i.drive, i.amp
 	fs := float64(rate * p.Oversample)
@@ -163,17 +163,17 @@ func New(rate int, p Params) (*Instrument, error) {
 				continue
 			}
 			a = 2 * math.Pi * hz / fs
-			t60 := p.Decay * math.Exp2(float64(60-n)/35) / (1 + .34*float64(m*m))
+			t60 := p.Decay * math.Exp2(float64(60-n)/35) / (1 + float64(.34*float64(m*m)))
 			if p.Model == Tine && m == 1 {
 				t60 *= .82
 			}
 			if p.Model == Tine && m >= 2 {
 				h := float64(m - 2)
-				t60 = min(t60, 0.6*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+				t60 = min(t60, 0.6*math.Exp2(float64(60-n)/50)/(1+float64(.7*h*h)))
 			}
 			if p.Model == Reed && m >= 1 {
 				h := float64(m - 1)
-				t60 = min(t60, .5*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+				t60 = min(t60, .5*math.Exp2(float64(60-n)/50)/(1+float64(.7*h*h)))
 			}
 			k.modes[m] = rotation{c: float32(math.Cos(a)), s: float32(math.Sin(a)), r: float32(math.Exp(-6.907755 / (t60 * fs))), weight: float32(weights[m])}
 		}
@@ -368,7 +368,7 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	norm := float32(1.5) - float32(.5*float32(float32(q*q)+float32(p*p)))
 	i.lfoQ = float32(q * norm)
 	i.lfoP = float32(p * norm)
-	trem := float32(1) - float32(i.live.trem*float32(.5+.5*q))
+	trem := float32(1) - float32(i.live.trem*float32(.5+float32(.5*q)))
 	pan := float32(i.live.pan * i.live.trem * q)
 	y = float32(dc*i.amp) * trem
 	l := float32(y*float32(1-pan)) + i.stealL
@@ -433,7 +433,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("electric piano drive must be 0..1")
 		}
-		l.driveT = float32(1 + 5*float64(value))
+		l.driveT = float32(1 + float64(5*float64(value)))
 	case controlTremolo:
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("electric piano tremolo must be 0..1")

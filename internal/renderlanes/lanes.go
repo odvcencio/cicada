@@ -673,7 +673,9 @@ func (p *Pool) observe(count int, mix int64) {
 			*cost, *measured = perFrame, true
 			return
 		}
-		*cost += costWeight * (perFrame - *cost)
+		// Rounded before the add, as the render path's arithmetic is, so the
+		// compiler never fuses it (the CI fmahash check covers this package).
+		*cost += float64(costWeight * (perFrame - *cost))
 	}
 	for track := 0; track < p.tracks; track++ {
 		update(&p.cost[track], &p.measured[track], float64(p.took[track])/float64(count))
