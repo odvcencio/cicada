@@ -170,7 +170,7 @@ func buildOscillatorBank(sampleRate float64) *oscillatorBank {
 	byHarmonics := make(map[int]*oscillatorTable)
 	for bin := range bank.tables {
 		upperFrequency := math.Exp2(oscillatorMinPitchLog + float64(bin+1)/12)
-		harmonics := int((sampleRate/2 - 100) / upperFrequency)
+		harmonics := int((float64(sampleRate/2) - 100) / upperFrequency)
 		if harmonics > oscillatorTableSize/4 {
 			harmonics = oscillatorTableSize / 4
 		}
@@ -224,9 +224,9 @@ func inverseOscillatorFFT(data []complex128) {
 		for base := 0; base < n; base += span {
 			rotation := complex(1, 0)
 			for i := 0; i < span/2; i++ {
-				even, odd := data[base+i], data[base+i+span/2]*rotation
+				even, odd := data[base+i], mulComplex(data[base+i+span/2], rotation)
 				data[base+i], data[base+i+span/2] = even+odd, even-odd
-				rotation *= root
+				rotation = mulComplex(rotation, root)
 			}
 		}
 	}
@@ -263,7 +263,7 @@ func (selection oscillatorSelection) saw(phase float64) float64 {
 func sampleSawTable(table *oscillatorTable, phase float64) float64 {
 	index := phase * oscillatorTableSize
 	left := int(index)
-	fraction := index - float64(left)
+	fraction := float64(index) - float64(left)
 	a := float64(table[left&oscillatorTableMask])
 	b := float64(table[(left+1)&oscillatorTableMask])
 	// Rounding the product first stops arm64 from fusing a multiply-add.
@@ -280,4 +280,13 @@ func (selection oscillatorSelection) pulse(phase, width float64) float64 {
 		shifted++
 	}
 	return selection.saw(shifted) - selection.saw(phase) + 2*width - 1
+}
+
+// mulComplex is a*b as Go computes it, (ac-bd) + (ad+bc)i, with every product
+// rounded by an explicit conversion. arm64 fuses the products of a plain
+// complex multiplication into multiply-adds; this form gives the same bits on
+// every target.
+func mulComplex(a, b complex128) complex128 {
+	ar, ai, br, bi := real(a), imag(a), real(b), imag(b)
+	return complex(float64(ar*br)-float64(ai*bi), float64(ar*bi)+float64(ai*br))
 }

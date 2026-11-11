@@ -29,9 +29,9 @@ func newFFTPlan(n int) *fftPlan {
 			}
 		}
 		p.rev[i] = r
-		w := 0.5 - 0.5*math.Cos(2*math.Pi*float64(i)/float64(n))
+		w := 0.5 - float64(0.5*math.Cos(2*math.Pi*float64(i)/float64(n)))
 		p.window[i] = w
-		p.winSumSq += w * w
+		p.winSumSq += float64(w * w)
 	}
 	return p
 }
@@ -51,8 +51,8 @@ func (p *fftPlan) transform(re, im []float64) {
 			for k := 0; k < half; k++ {
 				wr, wi := p.cos[k*step], p.sin[k*step]
 				a, b := start+k, start+k+half
-				tr := re[b]*wr - im[b]*wi
-				ti := re[b]*wi + im[b]*wr
+				tr := float64(re[b]*wr) - float64(im[b]*wi)
+				ti := float64(re[b]*wi) + float64(im[b]*wr)
 				re[b], im[b] = re[a]-tr, im[a]-ti
 				re[a], im[a] = re[a]+tr, im[a]+ti
 			}
