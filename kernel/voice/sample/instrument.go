@@ -163,7 +163,7 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 		v.configure(rate, z.Region)
 		for _, key := range []uint8{z.KeyLow, z.KeyHigh} {
 			for _, sign := range []float64{-1, 1} {
-				v.params.FineTuneCents = config.TuneCents + z.TuneCents + sign*h.Cents
+				v.params.FineTuneCents = float64(config.TuneCents+z.TuneCents) + float64(sign*h.Cents)
 				if _, err := v.playbackRatio(key); err != nil {
 					return nil, err
 				}
@@ -180,7 +180,7 @@ func (p *Instrument) jitter() float64 {
 	x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9
 	x = (x ^ (x >> 27)) * 0x94d049bb133111eb
 	x ^= x >> 31
-	return float64(x>>11)/float64(uint64(1)<<53)*2 - 1
+	return float64(float64(float64(x>>11)/float64(uint64(1)<<53))*2) - 1
 }
 
 // selectZones selects the neighbouring velocity centres, then the recorded
@@ -273,7 +273,7 @@ func (p *Instrument) NoteOnMix(note, velocity uint8, gainL, gainR float64) (Hand
 		return Handle{}, validationError("sample note has no attack zone")
 	}
 	h := p.config.Humanize
-	vel := uint8(max(1, min(127, int(math.Round(float64(velocity)+p.jitter()*h.Velocity)))))
+	vel := uint8(max(1, min(127, int(math.Round(float64(velocity)+float64(p.jitter()*h.Velocity))))))
 	// Humanization cannot escape a mapped velocity range.
 	zs, weights, ok := p.selectZones(note, vel, false, p.rr[group])
 	if !ok || p.zones[zs[0]].Group != uint8(group) {
@@ -332,7 +332,7 @@ func (p *Instrument) NoteOnMix(note, velocity uint8, gainL, gainR float64) (Hand
 		}
 		z := p.zones[index]
 		v.attack[i].configure(p.rate, z.Region)
-		v.attack[i].params = Params{Gain: 1, FineTuneCents: p.config.TuneCents + z.TuneCents + cents}
+		v.attack[i].params = Params{Gain: 1, FineTuneCents: float64(p.config.TuneCents+z.TuneCents) + float64(cents)}
 		_ = v.attack[i].NoteOn(note, 127)
 		v.gain[i] = weights[i] * z.Gain * p.config.Gain * float64(vel) / 127
 	}
@@ -466,20 +466,20 @@ func (p *Instrument) NextStereo() (float32, float32) {
 			for j := 0; j < 2; j++ {
 				if v.zones[j] >= 0 {
 					a, b := v.attack[j].NextStereo()
-					l += float64(a) * v.gain[j] * amp
-					r += float64(b) * v.gain[j] * amp
+					l += float64(float64(a) * v.gain[j] * amp)
+					r += float64(float64(b) * v.gain[j] * amp)
 					attackActive = attackActive || v.attack[j].Active()
 				}
 				if v.releaseStarted {
 					a, b := v.release[j].NextStereo()
 					fade := min(1, float64(v.releaseAge+1)/float64(p.rate/500))
-					l += float64(a) * v.releaseGain[j] * fade
-					r += float64(b) * v.releaseGain[j] * fade
+					l += float64(float64(a) * v.releaseGain[j] * fade)
+					r += float64(float64(b) * v.releaseGain[j] * fade)
 					releaseActive = releaseActive || v.release[j].Active()
 				}
 			}
 			if p.config.Cutoff > 0 {
-				alpha := v.cutoffLow + (v.cutoffHigh-v.cutoffLow)*filter
+				alpha := float64(v.cutoffLow) + float64((v.cutoffHigh-v.cutoffLow)*filter)
 				v.filterL += float64((l - v.filterL) * alpha)
 				v.filterR += float64((r - v.filterR) * alpha)
 				l, r = v.filterL, v.filterR
@@ -501,8 +501,8 @@ func (p *Instrument) NextStereo() (float32, float32) {
 		outL, outR := float64(l*v.mixL), float64(r*v.mixR)
 		if v.tail > 0 {
 			fade := float64(v.tail) / float64(p.rate/500)
-			outL += float64(v.tailL) * fade
-			outR += float64(v.tailR) * fade
+			outL += float64(float64(v.tailL) * fade)
+			outR += float64(float64(v.tailR) * fade)
 			v.tail--
 		}
 		v.lastL, v.lastR = float32(outL), float32(outR)

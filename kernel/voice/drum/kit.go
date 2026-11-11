@@ -142,12 +142,12 @@ func (f *filter) configure(cutoff, q, rate float64) {
 }
 
 func (f *filter) next(input float64) (band, high float64) {
-	v3 := input - f.ic2
+	v3 := float64(input) - float64(f.ic2)
 	v1 := float64(f.a1*f.ic1) + float64(f.a2*v3)
 	v2 := f.ic2 + float64(f.a2*f.ic1) + float64(f.a3*v3)
 	f.ic1 = float64(2*v1) - f.ic1
 	f.ic2 = float64(2*v2) - f.ic2
-	return v1, input - float64(f.k*v1) - v2
+	return v1, float64(input) - float64(f.k*v1) - v2
 }
 
 type state struct {
@@ -558,8 +558,8 @@ func (k *Kit) NextStereo() (left, right float32) {
 		}
 		if v.modeled != nil {
 			output := float64(v.modeled.Next()) * v.modeledAccent * v.level
-			l += output * v.panL
-			r += output * v.panR
+			l += float64(output * v.panL)
+			r += float64(output * v.panR)
 			continue
 		}
 		if v.custom != nil {
@@ -653,7 +653,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
 		body := math.Sin(2*math.Pi*s.phase[0]) * s.amp * s.velocity
 		click := nextNoise(&s.noise) * s.click * p.Click * s.noiseVelocity
-		output = fastmath.Tanh((body+click)*(1+float64(p.Drive*3))) / (1 + float64(p.Drive*.7))
+		output = fastmath.Tanh((float64(body)+float64(click))*(1+float64(p.Drive*3))) / (1 + float64(p.Drive*.7))
 		s.sweep *= s.sweepDecay
 		s.amp *= s.ampDecay
 		s.click *= k.clickDecay
@@ -704,11 +704,11 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	case RS:
 		s.phase[0] = wrap(s.phase[0] + 1700*p.Tune/k.rate)
 		s.phase[1] = wrap(s.phase[1] + 440*p.Tune/k.rate)
-		triangle := 4*math.Abs(s.phase[0]-.5) - 1
+		triangle := float64(4*math.Abs(s.phase[0]-.5)) - 1
 		_, high := s.high1.next(nextNoise(&s.noise))
 		body := (float64(triangle*math.Exp(-age/.004)) + float64(math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay))) * s.velocity
 		noise := high * math.Exp(-age/.001) * s.noiseVelocity
-		output = (body + noise) * .45
+		output = (float64(body) + float64(noise)) * .45
 	case LT, MT, HT:
 		base := 90.0
 		if lane == MT {
@@ -721,7 +721,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		body := math.Sin(2*math.Pi*s.phase[0]) * math.Exp(-age/p.Decay) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
 		noise := band * math.Exp(-age/.005) * s.noiseVelocity
-		output = body + float64(noise*.3)
+		output = float64(body) + float64(noise*.3)
 	case CB:
 		s.phase[0] = wrap(s.phase[0] + 540*p.Tune/k.rate)
 		s.phase[1] = wrap(s.phase[1] + 800*p.Tune/k.rate)
@@ -762,12 +762,12 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	// Retire only after every recipe component has decayed. A fixed four-
 	// second ceiling cuts a long kick or open hat while it is still audible;
 	// a snare's wire tail is independent of its shorter shell decay.
-	lifetime := 12 * p.Decay
+	lifetime := float64(12 * p.Decay)
 	switch lane {
 	case SD:
 		lifetime = 12 * max(p.Decay, p.Snappy, .06)
 	case CP:
-		lifetime += 3 * p.Spread
+		lifetime += float64(3 * p.Spread)
 	}
 	if lane == BD && s.amp < 1e-6 || age > lifetime {
 		s.active = false

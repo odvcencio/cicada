@@ -283,16 +283,15 @@ and offline `render` and `stems` support it.
 
 **The rule.** A score renders to the same bits on amd64 (any CPU and any
 `GOAMD64` level), arm64 and WebAssembly, from voice to exported file. Two
-things in Go can break it. Today the rule is guaranteed only for part of the
-mix chain; the rest matches in the tests but is not yet guaranteed.
+things in Go can break it. Fusion is ruled out everywhere on that path; the
+math library is not yet, so part of it matches in the tests without being
+guaranteed.
 
 - **Fused multiply-add.** Go may compute `x*y + z` with one rounding instead
   of two on arm64 and with `GOAMD64=v3`. Every product that feeds an addition
-  in `kernel/fx`, `kernel/fx/pro`, `kernel/mix`, `kernel/loudness` and
-  `kernel/dsp` is rounded by an explicit conversion first, for example
-  `a + float64(b*c)`, and CI checks that the compiler fuses none there. The
-  rest of `kernel/` and `render/` (voices, the graph, the export path in
-  `render/wav.go`) still has fusable products.
+  in `kernel/`, `render/` and the packages they import is rounded by an
+  explicit conversion first, for example `a + float64(b*c)`, and CI fails if
+  the compiler reports one it would fuse, on arm64 and with `GOAMD64=v3`.
 - **Math library functions.** `math.Exp`, `math.Log`, `math.Pow`, `math.Sin`
   and the others can differ in the last bit by target: `math.Exp` even uses an
   FMA instruction only on amd64 CPUs that have one. The master EQ design, the
@@ -303,9 +302,9 @@ mix chain; the rest matches in the tests but is not yet guaranteed.
   build on the track compressor and reverb), the track effects in `kernel/fx`,
   the amp and cabinet, the mix in `kernel/mix`, and the voices.
 
-The follow-up removes both gaps: no fusable product in `kernel/` and
-`render/`, no architecture-dependent `math` call between voice and exported
-file, and a digest per processor and voice on all three targets.
+The follow-up removes the rest: no architecture-dependent `math` call
+between voice and exported file, and a digest per processor and voice on all
+three targets.
 
 **How to check it.**
 
@@ -318,10 +317,10 @@ arm64 and with `GOAMD64=v3`. To list fusable expressions, build for arm64 with
 the compiler's FMA report:
 
 ```
-GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/detmath
+GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/...
 ```
 
 Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses; CI fails
-on any in those packages. `TestRenderPathAvoidsMathLibrary` in
+on any. `TestRenderPathAvoidsMathLibrary` in
 `kernel/dsp/detmath` fails when the master chain or the export code calls a
 math function that `detmath` replaces.

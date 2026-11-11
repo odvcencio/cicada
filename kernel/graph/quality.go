@@ -149,7 +149,7 @@ func (s *adsrState) next(held bool, attack, decay, sustain, release, rate float3
 		}
 		if s.remaining > 0 {
 			s.progress *= s.coefficient
-			s.level = s.target + (s.start-s.target)*(s.progress-envelopeFloor)/(1-envelopeFloor)
+			s.level = s.target + (s.start-s.target)*(float64(s.progress)-envelopeFloor)/(1-envelopeFloor)
 			s.remaining--
 			if s.remaining > 0 {
 				return float32(s.level)
@@ -194,15 +194,15 @@ func (s *svfState) next(input, cutoff, resonance, rate, baseRate float32) float3
 	r := float64(clamp(resonance, 0, 1))
 	if !s.ready || f != s.cutoff || r != s.resonance {
 		g := math.Tan(math.Pi * f / float64(rate))
-		k := 2 - 1.9*r // finite damping even at maximum resonance
-		s.a1 = 1 / (1 + g*(g+k))
+		k := 2 - float64(1.9*r) // finite damping even at maximum resonance
+		s.a1 = 1 / (1 + float64(g*(g+k)))
 		s.a2 = g * s.a1
 		s.a3 = g * s.a2
 		s.cutoff, s.resonance, s.ready = f, r, true
 	}
 	v3 := float64(input) - s.ic2
-	v1 := s.a1*s.ic1 + s.a2*v3
-	v2 := s.ic2 + s.a2*s.ic1 + s.a3*v3
+	v1 := float64(s.a1*s.ic1) + float64(s.a2*v3)
+	v2 := float64(float64(s.ic2)+float64(s.a2*s.ic1)) + float64(s.a3*v3)
 	s.ic1 = 2*v1 - s.ic1
 	s.ic2 = 2*v2 - s.ic2
 	if math.Abs(s.ic1) < 1e-20 {

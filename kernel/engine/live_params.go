@@ -105,7 +105,7 @@ func (e *Engine) stepLiveParams(v *voiceSlot) {
 		if !p.bound || p.cur == p.target {
 			continue
 		}
-		next := p.cur + (p.target-p.cur)*e.paramAlpha[liveParamFirst+kernel.ParamID(i)]
+		next := float32(p.cur) + float32((p.target-p.cur)*e.paramAlpha[liveParamFirst+kernel.ParamID(i)])
 		if math.Abs(float64(next-p.target)) <= 1e-6*math.Max(1, math.Abs(float64(p.target))) || next == p.cur {
 			next = p.target
 		} else {

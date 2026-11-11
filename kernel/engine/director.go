@@ -156,7 +156,7 @@ func (e *Engine) advanceDirector() {
 				d.stop = false
 			}
 		} else {
-			d.gain = d.start + (d.target-d.start)*(float32(d.elapsed)/float32(d.frames))
+			d.gain = float32(d.start) + float32((d.target-d.start)*(float32(d.elapsed)/float32(d.frames)))
 			d.elapsed++
 		}
 	}

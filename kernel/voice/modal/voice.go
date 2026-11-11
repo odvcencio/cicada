@@ -216,7 +216,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 		energy := 0.0
 		for m := 0; m < s.count; m++ {
 			mode := &s.modes[m]
-			energy += mode.x*mode.x + mode.y*mode.y
+			energy += float64(mode.x*mode.x) + float64(mode.y*mode.y)
 		}
 		if energy < quietest {
 			quietest, index = energy, i
@@ -241,7 +241,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	// This mildly curved response leaves headroom for overlapping strikes.
 	level := .9 * vel * math.Sqrt(vel)
 	hardness := vel * vel
-	contact := (r.soft + (r.hard-r.soft)*hardness) * (1 + .045*(float64(variation)-1.5))
+	contact := (float64(r.soft) + float64((r.hard-r.soft)*hardness)) * (1 + float64(.045*(float64(variation)-1.5)))
 	s.contact = max(4, int(math.Round(contact*v.rate)))
 	s.excitation = s.contact
 	s.force, s.noiseMix = 2/float64(s.contact), r.noise
@@ -267,18 +267,18 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 		mode.c, mode.s = mode.c*mode.radius, mode.s*mode.radius
 		brightness := 1.0
 		if m != 0 {
-			brightness = .25 + .75*hardness
+			brightness = .25 + float64(.75*hardness)
 		}
 		// Different virtual contact positions give four timbres. Frequencies
 		// and decay poles remain identical for every strike position.
-		position := 1 + .055*math.Sin(float64((m+1)*int(variation+1))*1.7)
+		position := 1 + float64(.055*math.Sin(float64((m+1)*int(variation+1))*1.7))
 		mode.gain = level * r.weight[m] / weightSum * brightness * position
 		s.count++
 	}
 	if v.profile == Shaker {
 		// A bounded train of grain collisions gives an aggregate shake,
 		// rather than a single envelope applied to broadband noise.
-		s.excitation = int((.045 + .035*vel) * v.rate)
+		s.excitation = int((.045 + float64(.035*vel)) * v.rate)
 		s.grainSpacing = max(s.contact+1, int(.0027*v.rate))
 		s.grainNext, s.grainAge, s.grainLength = 0, -1, s.contact
 		s.force *= 1.8
@@ -304,8 +304,8 @@ func (v *Voice) retune(s *strike, note uint8) {
 			continue
 		}
 		sin, cos := math.Sincos(2 * math.Pi * m.freq / v.rate)
-		m.dc = (m.radius*cos - m.c) / float64(s.glide)
-		m.ds = (m.radius*sin - m.s) / float64(s.glide)
+		m.dc = (float64(m.radius*cos) - float64(m.c)) / float64(s.glide)
+		m.ds = (float64(m.radius*sin) - float64(m.s)) / float64(s.glide)
 	}
 	s.note, s.keyUp = note, false
 }
@@ -393,10 +393,10 @@ func (v *Voice) drive(s *strike) float64 {
 		return 4 * x * (1 - x) * random(s) * s.force
 	}
 	pulse := .5 * (1 - s.pulseX)
-	x := s.pulseC*s.pulseX - s.pulseS*s.pulseY
-	s.pulseY = s.pulseS*s.pulseX + s.pulseC*s.pulseY
+	x := float64(s.pulseC*s.pulseX) - float64(s.pulseS*s.pulseY)
+	s.pulseY = float64(s.pulseS*s.pulseX) + float64(s.pulseC*s.pulseY)
 	s.pulseX = x
-	return pulse * s.force * (1 - s.noiseMix + s.noiseMix*random(s))
+	return pulse * s.force * (float64(1-s.noiseMix) + float64(s.noiseMix*random(s)))
 }
 
 func (v *Voice) Next() float32 {
@@ -420,8 +420,8 @@ func (v *Voice) Next() float32 {
 				m.c += m.dc
 				m.s += m.ds
 			}
-			x := m.c*m.x - m.s*m.y + excitation*m.gain
-			m.y = m.s*m.x + m.c*m.y
+			x := float64(float64(m.c*m.x)-float64(m.s*m.y)) + float64(excitation*m.gain)
+			m.y = float64(m.s*m.x) + float64(m.c*m.y)
 			m.x = x
 			// Truncate far below the float32 noise floor before a denormal
 			// tail can consume CPU indefinitely.
@@ -439,7 +439,7 @@ func (v *Voice) Next() float32 {
 		s.active = alive || s.age < s.excitation
 	}
 	if v.stealLeft > 0 {
-		output += v.stealTail * float64(v.stealLeft) / 64
+		output += float64(v.stealTail * float64(v.stealLeft) / 64)
 		v.stealLeft--
 		if v.stealLeft == 0 {
 			v.stealTail = 0
