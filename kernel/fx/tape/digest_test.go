@@ -9,7 +9,9 @@ import (
 
 // tapeDigest pins the tape delay output bits for an exact test programme,
 // through a smoothed control change. CI checks the same digest on arm64 in the
-// PCM24 parity job.
+// PCM24 parity job. It moved on 2026-11-10 (pull request #327) when the
+// smoothing and damping coefficients (Exp) moved from the math library to
+// kernel/dsp/detmath.
 const tapeDigest = "9a747da4d2db5939b193c90177c3158ab2f4a169939a0482b3e97fea7b230c9e"
 
 func TestTapeDigest(t *testing.T) {
