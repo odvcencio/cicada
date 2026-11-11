@@ -31,7 +31,9 @@ import (
 // CICADA_PARALLEL_IDENTITY_SWEEP=1 it checks every example score the
 // repository can render, in full, plain and at -14 LUFS for every job count;
 // the nightly CI job runs that sweep on amd64 and arm64
-// (make test-parallel-identity).
+// (make test-parallel-identity). CICADA_PARALLEL_IDENTITY_SHARD=k/n checks
+// only every n-th score from the k-th (1 to n), so a sweep can run as n short
+// commands on a shared machine.
 
 // parallelIdentityJobs are the job counts compared with --jobs 1; zero is the
 // automatic choice. CICADA_PARALLEL_IDENTITY_JOBS replaces them with its
@@ -85,6 +87,28 @@ func parallelIdentitySubset() []parallelIdentityScore {
 		// The direct renderer: modeled keyboards (FM bass, poly keys).
 		{name: "direct-keys", path: example("first-song/main.cicada"), bars: 2},
 	}
+}
+
+// identityShard keeps the scores of CICADA_PARALLEL_IDENTITY_SHARD=k/n.
+func identityShard(t *testing.T, scores []parallelIdentityScore) []parallelIdentityScore {
+	t.Helper()
+	shard := os.Getenv("CICADA_PARALLEL_IDENTITY_SHARD")
+	if shard == "" {
+		return scores
+	}
+	k, n, ok := strings.Cut(shard, "/")
+	index, err1 := strconv.Atoi(k)
+	count, err2 := strconv.Atoi(n)
+	if !ok || err1 != nil || err2 != nil || count < 1 || index < 1 || index > count {
+		t.Fatalf("CICADA_PARALLEL_IDENTITY_SHARD=%q: want k/n with 1 <= k <= n", shard)
+	}
+	var kept []parallelIdentityScore
+	for i, score := range scores {
+		if i%count == index-1 {
+			kept = append(kept, score)
+		}
+	}
+	return kept
 }
 
 func parallelIdentitySweep(t *testing.T) []parallelIdentityScore {
@@ -159,6 +183,7 @@ func TestParallelRenderIdentity(t *testing.T) {
 	if sweep {
 		scores = parallelIdentitySweep(t)
 	}
+	scores = identityShard(t, scores)
 	jobsList := identityJobs(t)
 	checked, skipped := 0, 0
 	for _, score := range scores {
