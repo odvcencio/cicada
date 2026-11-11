@@ -104,13 +104,14 @@ func TestApplyErrorsNameTheFailingIntent(t *testing.T) {
 }
 
 // TestApplyRefusesAnEffectNoChainHolds declares a comp and a limiter without
-// inserton and without a later intent that inserts them: the batch fails
-// validation and writes nothing. With the insert chains set in the same
-// envelope it applies.
+// inserton and without a later intent that inserts them: the addeffect is
+// refused by name after the last intent, and nothing is written. With the
+// insert chains set in the same envelope it applies.
 func TestApplyRefusesAnEffectNoChainHolds(t *testing.T) {
-	for _, intent := range []string{`{"kind":"addeffect","name":"glue","effectkind":"comp"}`, `{"kind":"addeffect","name":"ceiling","effectkind":"limiter"}`} {
+	for _, intent := range []string{`{"kind":"addeffect","name":"glue","effectkind":"comp"}`, `{"kind":"setparam","entity":"param:bass.level","value":"-3dB"},{"kind":"addeffect","name":"ceiling","effectkind":"limiter"}`} {
 		result, err, score := runApplyJSON(t, intent, "--write")
-		if err == nil || result.OK || result.Error == nil || result.Error.Code != "invalid_result" || !strings.Contains(result.Error.Message, "must be inserted") {
+		failure := result.Error
+		if err == nil || result.OK || failure == nil || failure.Code != "intent_refused" || failure.Reason != "effect_needs_insert" || failure.Field != "inserton" || failure.Kind != "addeffect" || failure.Index == nil || *failure.Index != strings.Count(intent, `"kind"`)-1 {
 			t.Fatalf("%s: %v %+v", intent, err, result.Error)
 		}
 		if data, _ := os.ReadFile(score); string(data) != applyJSONScore {

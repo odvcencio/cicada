@@ -17,7 +17,7 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AddEffect": {
 		Meaning: "declares a new effect and, with InsertOn, inserts it in one edit",
-		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. It is SetParam's fx.<name> path with a typed request. Where a kind may go follows the language: drive, deesser, ampcab and chorus are track inserts; eq a track or master insert; comp a track, bus music or master insert; transient, width, limiter and convolution master inserts; delay, tape and reverb send returns (one delay or tape, one reverb), which a track reaches with setparam param:<track>.send.<name>. Comp, transient, width, limiter and convolution work only in an insert chain: give inserton, or set the chain with a later setparam param:<owner>.insert in the same envelope; a batch that leaves one out of every chain fails validation. A track takes eight inserts and master sixteen; the new effect goes at the end of the chain. Settings are set as setparam param:<name>.<field> sets them. Refusals carry a reason: name_taken, invalid_name, unknown_effect_kind, effect_is_return, effect_single_instance, unknown_insert_target, effect_route, music_insert_taken or insert_chain_full.",
+		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. It is SetParam's fx.<name> path with a typed request. Where a kind may go follows the language: drive, deesser, ampcab and chorus are track inserts; eq a track or master insert; comp a track, bus music or master insert; transient, width, limiter and convolution master inserts; delay, tape and reverb send returns (one delay or tape, one reverb), which a track reaches with setparam param:<track>.send.<name>. Bus sfx takes no inserts. Comp, transient, width, limiter and convolution work only in an insert chain: give inserton, or set the chain with a later setparam param:<owner>.insert in the same envelope; if no intent of the envelope does, this intent is refused with effect_needs_insert. A track takes eight inserts and master sixteen; the new effect goes at the end of the chain, or in front of Before or behind After. Settings are set as setparam param:<name>.<field> sets them; only the compressor on bus music takes a sidechain, a track of the score, music or sfx. The edit writes only the entry file: an insert target declared in another file is refused with declared_in_other_file. An edition-1 score needs ConfirmUpgrade, since a mixer write upgrades it to edition 2. The catalog's reasons list names every refusal code.",
 		Examples: []string{
 			"{\"kind\":\"addeffect\",\"name\":\"echo\",\"effectkind\":\"delay\"}",
 			"{\"kind\":\"addeffect\",\"name\":\"fuzz\",\"effectkind\":\"drive\",\"inserton\":\"bass\"}",
@@ -34,6 +34,8 @@ var intentDocs = map[string]typeDoc{
 			"{\"kind\":\"addeffect\",\"name\":\"space\",\"effectkind\":\"convolution\",\"inserton\":\"master\",\"settings\":{\"asset\":\"vocal\",\"mix\":0.2}}",
 		},
 		Fields: map[string]string{
+			"After":          "an insert of that chain to put the new effect behind",
+			"Before":         "an insert of that chain to put the new effect in front of; default the end of the chain",
 			"ConfirmUpgrade": "edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2",
 			"EffectKind":     "the effect's kind",
 			"InsertOn":       "a track's name, music or master: where to insert the effect; these kinds need it unless a later intent sets the chain",
@@ -501,8 +503,8 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"RemoveEffect": {
-		Meaning: "deletes an effect: its declaration, the comment lines above it, and the routes that carry it (its place in track, music and master insert chains, and track sends to it)",
-		Notes:   "It is refused while automation, a scene setting, a modulation route, a MIDI mapping or a live macro still names the effect; the refusal lists them.",
+		Meaning: "deletes an effect: its declaration, the comment lines above it and a comment after it on its line, and the routes that carry it (its place in track, music and master insert chains, and track sends to it)",
+		Notes:   "An insert setting the removal empties is removed too. It is refused with effect_in_use while automation, a scene setting, a modulation route, a MIDI mapping, a live macro, a preset that targets it, or an edition-1 send_a or send_b level still names the effect; uses lists them. The edit changes only the entry file: an effect declared in another file is refused with declared_in_other_file, and one routed from another file with route_in_other_file; file names that file. Also unknown_effect and score_invalid.",
 		Examples: []string{
 			"{\"kind\":\"removeeffect\",\"name\":\"grit\"}",
 		},

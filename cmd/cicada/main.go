@@ -803,11 +803,16 @@ func renderStudioLoudnessFileReport(score *notation.Score, path string, opts ren
 type loudnessShortfallError struct {
 	reason, message string
 	limiterCeiling  *float64
+	remedySummary   string // limiterRemedySummaryFor the score, when limiterCeiling is set
 }
 
 func (e *loudnessShortfallError) Error() string {
 	if e.limiterCeiling != nil {
-		return e.message + "; " + limiterRemedySummary(*e.limiterCeiling)
+		summary := e.remedySummary
+		if summary == "" {
+			summary = limiterRemedySummary(*e.limiterCeiling)
+		}
+		return e.message + "; " + summary
 	}
 	return e.message
 }
@@ -1098,6 +1103,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				// limiter's ceiling is -12 to 0 dBTP.
 				ceiling := target.TruePeakMaxDBTP
 				shortfallErr.limiterCeiling = &ceiling
+				shortfallErr.remedySummary = limiterRemedySummaryFor(score, ceiling)
 			}
 		} else {
 			shortfallErr = &loudnessShortfallError{reason: "loudness_target_missed", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}

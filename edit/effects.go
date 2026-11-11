@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
+	"github.com/odvcencio/gotreesitter/taproot/walk"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
 )
@@ -16,12 +17,25 @@ import (
 // ReasonError is an intent refused for a reason a program can act on: Reason
 // is a stable snake_case code, Field the JSON field at fault (empty when the
 // whole intent is), and Uses lists what still refers to the entity when that
-// is the reason. Error returns Message.
+// is the reason. File names the other source file that holds what the edit
+// would have to change, and Range the bounds a value broke. Error returns
+// Message.
 type ReasonError struct {
 	Reason  string
 	Field   string
 	Message string
 	Uses    []string
+	File    string
+	Range   *ValueRange
+}
+
+// ValueRange is a parameter's accepted range and the value given outside it.
+type ValueRange struct {
+	Parameter string  `json:"parameter"`
+	Value     string  `json:"value"`
+	Min       float64 `json:"min"`
+	Max       float64 `json:"max"`
+	Unit      string  `json:"unit,omitempty"`
 }
 
 func (e *ReasonError) Error() string { return e.Message }
@@ -40,6 +54,9 @@ var (
 		"transient": {"master"}, "width": {"master"}, "limiter": {"master"}, "convolution": {"master"},
 	}
 	effectIsReturn = map[string]bool{"delay": true, "reverb": true, "tape": true}
+	// These kinds work only in an insert chain; validation refuses one that
+	// no chain holds.
+	effectNeedsInsert = map[string]bool{"comp": true, "transient": true, "width": true, "limiter": true, "convolution": true}
 )
 
 // Insert chain limits of the language.
@@ -122,6 +139,9 @@ func checkNewEffect(score *notation.Score, name, kind, target string) (route str
 			}
 		}
 	}
+	if target == "sfx" {
+		return "", nil, refuse("effect_route", "inserton", "bus sfx takes no inserts; a %s can be inserted on %s", kind, effectRouteNames(kind))
+	}
 	if route == "" {
 		return "", nil, refuse("unknown_insert_target", "inserton", "inserton %q is not a track, music or master", target)
 	}
@@ -187,14 +207,22 @@ func effectDeclaration(name, kind string, settings map[string]json.RawMessage, m
 	if len(body) == 0 {
 		return "fx " + name + " " + kind + " {}", nil
 	}
-	return "fx " + name + " " + kind + " { " + strings.Join(body, " ") + " }", nil
+	// The layout cicada fmt gives a block with settings; the caller turns
+	// "\n" into the file's newline.
+	return "fx " + name + " " + kind + " {\n  " + strings.Join(body, "\n  ") + "\n}", nil
 }
 
 // RemoveEffect deletes an effect: its declaration, the comment lines above
-// it, and the routes that carry it (its place in track, music and master
-// insert chains, and track sends to it). It is refused while automation, a
-// scene setting, a modulation route, a MIDI mapping or a live macro still
-// names the effect; the refusal lists them.
+// it and a comment after it on its line, and the routes that carry it (its
+// place in track, music and master insert chains, and track sends to it). An
+// insert setting the removal empties is removed too. It is refused with
+// effect_in_use while automation, a scene setting, a modulation route, a
+// MIDI mapping, a live macro, a preset that targets it, or an edition-1
+// send_a or send_b level still names the effect; uses lists them. The edit
+// changes only the entry file: an effect declared in another file is refused
+// with declared_in_other_file, and one routed from another file with
+// route_in_other_file; file names that file. Also unknown_effect and
+// score_invalid.
 //
 // Example: {"kind":"removeeffect","name":"grit"}
 type RemoveEffect struct {
@@ -226,8 +254,14 @@ func removeEffect(ctx *Context, intent Intent) error {
 	if effect == nil {
 		return refuse("unknown_effect", "name", "unknown effect %q", in.Name)
 	}
-	if uses := effectUses(score, in.Name); len(uses) > 0 {
+	if file := effect.Position.File; file != "" && file != ctx.Options.Path {
+		return &ReasonError{Reason: "declared_in_other_file", Field: "name", File: file, Message: fmt.Sprintf("effect %s is declared in %s, another file of the project; this edit changes only %s", in.Name, file, entryName(ctx.Options.Path))}
+	}
+	if uses := effectUses(score, effect); len(uses) > 0 {
 		return &ReasonError{Reason: "effect_in_use", Field: "name", Uses: uses, Message: fmt.Sprintf("effect %s is still used by %s; remove those first", in.Name, strings.Join(uses, ", "))}
+	}
+	if file, uses := effectRoutesElsewhere(score, in.Name, ctx.Options.Path); len(uses) > 0 {
+		return &ReasonError{Reason: "route_in_other_file", Field: "name", File: file, Uses: uses, Message: fmt.Sprintf("effect %s is routed from %s, another file of the project (%s); this edit changes only %s", in.Name, file, strings.Join(uses, ", "), entryName(ctx.Options.Path))}
 	}
 	updated, err := withoutEffect(ctx.Source, in.Name)
 	if err != nil {
@@ -238,10 +272,75 @@ func removeEffect(ctx *Context, intent Intent) error {
 	return nil
 }
 
-// effectUses names what refers to an effect beyond its routes.
-func effectUses(score *notation.Score, name string) []string {
+// entryName is the entry file's name for messages.
+func entryName(path string) string {
+	if path == "" {
+		return "the score"
+	}
+	return path
+}
+
+// effectRoutesElsewhere lists the insert chains and sends in other source
+// files than entry that route an effect, and the first such file. The
+// removal edits only the entry.
+func effectRoutesElsewhere(score *notation.Score, name, entry string) (string, []string) {
+	var file string
+	var uses []string
+	add := func(position notation.Position, what string) {
+		if position.File == "" || position.File == entry {
+			return
+		}
+		if file == "" {
+			file = position.File
+		}
+		uses = append(uses, fmt.Sprintf("%s (%s line %d)", what, position.File, position.Line))
+	}
+	for _, track := range score.Tracks {
+		for _, param := range track.Params {
+			if param.Name == "insert" && containsString(insertChain(param.Value), name) {
+				add(param.Position, "track "+track.Name+" insert chain")
+			}
+			if param.Name == "send" && param.Target == name {
+				add(param.Position, "track "+track.Name+" send")
+			}
+		}
+	}
+	for _, bus := range score.Buses {
+		for _, param := range bus.Params {
+			if param.Name == "insert" && containsString(insertChain(param.Value), name) {
+				add(param.Position, "bus "+bus.Name+" insert chain")
+			}
+		}
+	}
+	for _, param := range score.Master {
+		if param.Name == "insert" && containsString(insertChain(param.Value), name) {
+			add(param.Position, "master insert chain")
+		}
+	}
+	return file, uses
+}
+
+// effectUses names what refers to an effect beyond the insert chains and
+// named sends the removal takes with it: automation, scene settings,
+// modulation routes, MIDI mappings, live macros, presets that target it, and
+// an edition-1 return's send_a (delay or tape) or send_b (reverb) levels.
+func effectUses(score *notation.Score, effect *notation.Effect) []string {
+	name := effect.Name
 	prefix := name + "."
 	var uses []string
+	for _, preset := range score.Presets {
+		if preset.Target == name {
+			uses = append(uses, fmt.Sprintf("preset %s (line %d)", preset.Name, preset.Position.Line))
+		}
+	}
+	legacy := map[string]string{"delay": "send_a", "tape": "send_a", "reverb": "send_b"}[effect.Kind]
+	for _, track := range score.Tracks {
+		for _, param := range track.Params {
+			if legacy != "" && param.Name == legacy {
+				uses = append(uses, fmt.Sprintf("track %s %s (line %d)", track.Name, legacy, param.Position.Line))
+			}
+		}
+	}
 	for _, lane := range score.Automation {
 		if strings.HasPrefix(lane.Path, prefix) {
 			uses = append(uses, fmt.Sprintf("automation %s (line %d)", lane.Path, lane.Position.Line))
@@ -309,11 +408,12 @@ func withoutEffect(source []byte, name string) ([]byte, error) {
 						rest = append(rest, other)
 					}
 				}
-				literal := "none"
-				if len(rest) > 0 {
-					literal = strings.Join(rest, " -> ")
-				}
-				if source, _, _, _, err = editOneMixerSetting(source, walker, decl, kind, "insert", literal); err != nil {
+				// An emptied chain loses its setting: no insert setting and
+				// "insert = none" mean the same, and a block that was already
+				// expanded before the first insert gets back its bytes.
+				if len(rest) == 0 {
+					source = removeBlockParam(source, walker, decl, "insert")
+				} else if source, _, _, _, err = editOneMixerSetting(source, walker, decl, kind, "insert", strings.Join(rest, " -> ")); err != nil {
 					return nil, err
 				}
 				edited = true
@@ -338,8 +438,52 @@ func withoutEffect(source []byte, name string) ([]byte, error) {
 				return removeTopLevelDeclaration(source, root, decl), nil
 			}
 		}
-		return nil, refuse("effect_in_other_file", "name", "effect %s is declared in another file of the project; edit that file", name)
+		return nil, refuse("declared_in_other_file", "name", "effect %s is declared in another file of the project; this edit changes only the entry", name)
 	}
+}
+
+// removeBlockParam removes one setting from a declaration's block. A setting
+// alone on its line takes the line; one that shares it takes the spaces
+// around it, and a block left with nothing between its braces becomes "{}".
+func removeBlockParam(source []byte, walker *walk.Walker, decl *gts.Node, field string) []byte {
+	for i := 0; i < decl.NamedChildCount(); i++ {
+		child := decl.NamedChild(i)
+		param := child
+		if walker.Type(child) == "mix_setting" && child.NamedChildCount() > 0 {
+			param = child.NamedChild(0)
+		}
+		if walker.Type(param) != "param_decl" || walker.Text(walker.Field(param, "name")) != field {
+			continue
+		}
+		start, end := int(child.StartByte()), int(child.EndByte())
+		lineStart := bytes.LastIndexByte(source[:start], '\n') + 1
+		lineEnd := end
+		for lineEnd < len(source) && source[lineEnd] != '\n' {
+			lineEnd++
+		}
+		if len(bytes.TrimSpace(source[lineStart:start])) == 0 && len(bytes.TrimSpace(source[end:lineEnd])) == 0 {
+			if lineEnd < len(source) {
+				lineEnd++
+			}
+			return replaceMixerSpan(source, lineStart, lineEnd, nil)
+		}
+		before, after := start, end
+		for before > lineStart && (source[before-1] == ' ' || source[before-1] == '\t') {
+			before--
+		}
+		for after < lineEnd && (source[after] == ' ' || source[after] == '\t') {
+			after++
+		}
+		switch {
+		case before > 0 && source[before-1] == '{' && after < len(source) && source[after] == '}':
+			return replaceMixerSpan(source, before, after, nil)
+		case after < lineEnd && source[after] != '\r':
+			return replaceMixerSpan(source, start, after, nil)
+		default:
+			return replaceMixerSpan(source, before, end, nil)
+		}
+	}
+	return source
 }
 
 // removeTopLevelDeclaration removes a declaration with the comment lines
@@ -352,7 +496,9 @@ func removeTopLevelDeclaration(source []byte, root, decl *gts.Node) []byte {
 	for lineEnd < len(source) && source[lineEnd] != '\n' {
 		lineEnd++
 	}
-	if len(bytes.TrimSpace(source[lineStart:start])) != 0 || len(bytes.TrimSpace(source[end:lineEnd])) != 0 {
+	// A comment after the declaration on its line goes with it.
+	rest := bytes.TrimSpace(source[end:lineEnd])
+	if len(bytes.TrimSpace(source[lineStart:start])) != 0 || len(rest) != 0 && !bytes.HasPrefix(rest, []byte("//")) {
 		return replaceMixerSpan(source, start, end, nil)
 	}
 	start = attachedCommentStart(source, start, 0)
@@ -381,7 +527,7 @@ func effectSettingLiteral(kind, field string, raw json.RawMessage, master bool) 
 	}
 	descriptor, ok := effectDescriptor(kind, field, master)
 	if !ok {
-		return "", fmt.Errorf("unknown %s setting %q", kind, field)
+		return "", refuse("unknown_setting", "", "unknown %s setting %q; the settings are %s", kind, field, strings.Join(effectSettingNames(kind, master), ", "))
 	}
 	return CanonicalMixerLiteral(descriptor, raw)
 }
@@ -398,6 +544,53 @@ func effectDescriptor(kind, field string, master bool) (paramdefs.Descriptor, bo
 		return descriptor, true
 	}
 	return paramdefs.DeviceParam(kind, field, false)
+}
+
+// checkConvolutionAsset refuses a convolution without its impulse asset, or
+// with an asset the score does not declare.
+func checkConvolutionAsset(score *notation.Score, raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return refuse("convolution_needs_asset", "settings.asset", "a convolution needs its impulse: give settings asset, the name of an asset the score declares")
+	}
+	name, err := jsonStringOrNumber(raw)
+	if err != nil {
+		return refuse("invalid_value", "settings.asset", "convolution asset must be an asset's name")
+	}
+	var names []string
+	for _, asset := range score.Assets {
+		if asset.Name == name {
+			return nil
+		}
+		names = append(names, asset.Name)
+	}
+	known := "the score declares none"
+	if len(names) > 0 {
+		known = "the assets are " + strings.Join(names, ", ")
+	}
+	return refuse("unknown_asset", "settings.asset", "%q is not an asset of the score; %s", name, known)
+}
+
+// effectSettingNames lists the settings of a kind, for messages: the
+// registry and host-only rows, and ampcab's table.
+func effectSettingNames(kind string, master bool) []string {
+	if kind == "ampcab" {
+		return []string{"drive", "tone", "output", "cabinet", "bypass"}
+	}
+	var names []string
+	for _, rows := range [][]paramdefs.Descriptor{paramdefs.Registry, paramdefs.HostOnly} {
+		for _, d := range rows {
+			field, ok := strings.CutPrefix(d.ID, "fx."+kind+".")
+			if !ok && master {
+				field, ok = strings.CutPrefix(d.ID, "fx.master."+kind+".")
+			}
+			if ok && !strings.Contains(field, ".") && !containsString(names, field) {
+				if _, found := effectDescriptor(kind, field, master); found {
+					names = append(names, field)
+				}
+			}
+		}
+	}
+	return names
 }
 
 // convolutionLiteral writes a convolution setting: the impulse asset, the mix,
@@ -426,7 +619,130 @@ func convolutionLiteral(field string, raw json.RawMessage) (string, error) {
 		}
 		return strconv.Itoa(frames) + "frames", nil
 	}
-	return "", fmt.Errorf("unknown convolution setting %q", field)
+	return "", refuse("unknown_setting", "", "unknown convolution setting %q; the settings are asset, mix, partition", field)
+}
+
+// placeInChain returns the insert chain with name placed in it: at the end,
+// or in front of before or behind after, an insert already in the chain.
+func placeInChain(chain []string, name string, request mixerFXValue) ([]string, error) {
+	anchor, field, offset := request.Before, "before", 0
+	if request.After != "" {
+		anchor, field, offset = request.After, "after", 1
+	}
+	if anchor == "" {
+		return append(append([]string(nil), chain...), name), nil
+	}
+	if request.Before != "" && request.After != "" {
+		return nil, refuse("insert_position_conflict", "after", "give before or after, not both")
+	}
+	if request.InsertOn == "" {
+		return nil, refuse("insert_position_without_target", field, "%s places the effect in an insert chain: give inserton too", field)
+	}
+	for i, insert := range chain {
+		if insert == anchor {
+			placed := append(append(append([]string(nil), chain[:i+offset]...), name), chain[i+offset:]...)
+			return placed, nil
+		}
+	}
+	current := "none"
+	if len(chain) > 0 {
+		current = strings.Join(chain, " -> ")
+	}
+	return nil, refuse("unknown_insert_anchor", field, "%s is not in the insert chain of %s (%s)", anchor, request.InsertOn, current)
+}
+
+// checkEntryOwnsTarget refuses an insert target that another source file of
+// the project declares: the edit writes only the entry.
+func checkEntryOwnsTarget(score *notation.Score, root *gts.Node, walker *walk.Walker, route, target string) error {
+	if route == "" {
+		return nil
+	}
+	want, owner := "track_decl", target
+	switch route {
+	case "master":
+		want = "master_decl"
+	case "music":
+		want = "bus_decl"
+	}
+	for i := 0; i < root.NamedChildCount(); i++ {
+		node := root.NamedChild(i)
+		if walker.Type(node) == want && (want == "master_decl" || walker.Text(walker.Field(node, "name")) == owner) {
+			return nil
+		}
+	}
+	file := ""
+	switch route {
+	case "master":
+		for _, param := range score.Master {
+			if param.Position.File != "" {
+				file = param.Position.File
+				break
+			}
+		}
+		if file == "" && !score.HasMaster {
+			return nil
+		}
+	case "music":
+		for _, bus := range score.Buses {
+			if bus.Name == "music" {
+				file = bus.Position.File
+			}
+		}
+		if file == "" {
+			return nil
+		}
+	default:
+		for _, track := range score.Tracks {
+			if track.Name == target {
+				file = track.Position.File
+			}
+		}
+	}
+	where := "another file of the project"
+	if file != "" {
+		where = file + ", " + where
+	}
+	return &ReasonError{Reason: "declared_in_other_file", Field: "inserton", File: file, Message: fmt.Sprintf("%s is declared in %s; this edit changes only the entry, so insert it there", target, where)}
+}
+
+// effectInsertRoute names the chain an effect is inserted on: master, music
+// (the music bus), track, or "" when no chain holds it.
+func effectInsertRoute(score *notation.Score, name string) string {
+	if onMaster(score, name) {
+		return "master"
+	}
+	if containsString(insertChain(paramValue(BusParams(score, "music"), "insert")), name) {
+		return "music"
+	}
+	for _, track := range score.Tracks {
+		if containsString(insertChain(paramValue(track.Params, "insert")), name) {
+			return "track"
+		}
+	}
+	return ""
+}
+
+// checkSidechain refuses a compressor sidechain the language does not take:
+// only the comp on bus music listens to another signal, a track of the score,
+// music or sfx; a comp on a track or on master uses its own input.
+func checkSidechain(score *notation.Score, route, value, field string) error {
+	value = strings.Trim(value, `"`)
+	if route == "track" || route == "master" {
+		where := "on master"
+		if route == "track" {
+			where = "on a track"
+		}
+		return refuse("sidechain_unavailable", field, "a compressor inserted %s uses its own input and takes no sidechain; only the compressor on bus music takes one", where)
+	}
+	if value == "music" || value == "sfx" {
+		return nil
+	}
+	for _, track := range score.Tracks {
+		if track.Name == value {
+			return nil
+		}
+	}
+	return refuse("unknown_sidechain_track", field, "sidechain %q is not a track of the score, music or sfx", value)
 }
 
 // onMaster reports whether an effect is in the master insert chain.
