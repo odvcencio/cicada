@@ -345,8 +345,8 @@ const nativeBudget = () => ({ 0: 0, install: 100000 })[nativeMode()] ?? 15000;
 
 // installRefusal says why installing gdb is not allowed here, or returns '' if
 // it is. install runs apt-get through sudo, so it also requires GitHub's own
-// marker of a hosted, throwaway runner: a self-hosted machine (buildbox is a
-// production host) that sets RUNNER_TEMP and runs ci-studio-browser.sh must
+// marker of a hosted, throwaway runner: a self-hosted machine, which may be a
+// production host, that sets RUNNER_TEMP and runs ci-studio-browser.sh must
 // never install packages because a page stalled.
 function installRefusal(env = process.env) {
   if (String(env.CICADA_PAGE_STALL_NATIVE || '').toLowerCase() !== 'install') return 'CICADA_PAGE_STALL_NATIVE is not install';
