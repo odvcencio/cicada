@@ -113,6 +113,19 @@ func settled(p *Instrument) float32 {
 	return x
 }
 
+// recordedLevel is the level that two unity-gain layers, .2 recorded at
+// velocity 32 and .8 at 96, give a note: the soft take scaled by velocity/32
+// below its centre, the crossfade between the centres, the loud take above.
+func recordedLevel(vel uint8) float64 {
+	switch {
+	case vel < 32:
+		return .2 * float64(vel) / 32
+	case vel > 96:
+		return .8
+	}
+	return .2 + .6*float64(int(vel)-32)/64
+}
+
 func TestInstrumentVelocityCrossfadeAndSilence(t *testing.T) {
 	c := DefaultInstrumentConfig()
 	c.Voices = 1
@@ -125,7 +138,7 @@ func TestInstrumentVelocityCrossfadeAndSilence(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := settled(p)
-		want := float64(vel) / 127 * (.2 + .6*max(0, min(1, float64(int(vel)-32)/64)))
+		want := recordedLevel(vel)
 		if math.Abs(float64(got)-want) > 1e-6 {
 			t.Fatalf("velocity %d: %g != %g", vel, got, want)
 		}
@@ -137,6 +150,86 @@ func TestInstrumentVelocityCrossfadeAndSilence(t *testing.T) {
 	p.Reset()
 	if l, r := p.NextStereo(); l != 0 || r != 0 {
 		t.Fatal("inactive noise")
+	}
+}
+
+// A recorded soft layer is already soft. Velocity chooses and crossfades the
+// layers and must not scale them again: at a layer's centre the take plays at
+// its recorded level, the same in a release zone and on a drum kit lane.
+// Before this rule the soft take at velocity 32 played at 32/127 of its
+// recorded level (-12 dB), so a pack's recorded range was widened by up to
+// 20*log10(127/softest centre) dB.
+func TestInstrumentRecordedLayersPlayAtTheirRecordedLevel(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+	// A zero-gain choke command on another key does not shape any level.
+	command := mappedZone(0, 64, 1, 0, 1, false)
+	command.KeyLow, command.KeyHigh, command.ChokeGroup = 80, 80, 1
+	for name, mix := range map[string][2]float64{"track": {1, 1}, "kit lane": {.5, .25}} {
+		p := newMapped(t, []Zone{soft, loud, command}, c)
+		for _, vel := range []uint8{1, 16, 32, 64, 96, 120, 127} {
+			p.Reset()
+			if _, err := p.NoteOnMix(60, vel, mix[0], mix[1]); err != nil {
+				t.Fatal(err)
+			}
+			var l, r float32
+			for i := 0; i < 128; i++ {
+				l, r = p.NextStereo()
+			}
+			want := recordedLevel(vel)
+			if math.Abs(float64(l)-want*mix[0]) > 1e-6 || math.Abs(float64(r)-want*mix[1]) > 1e-6 {
+				t.Errorf("%s velocity %d: %g/%g, want %g/%g", name, vel, l, r, want*mix[0], want*mix[1])
+			}
+		}
+	}
+	// The release takes follow the same rule.
+	attack := mappedZone(0, 32, 0, 0, 1, false)
+	louder := mappedZone(0, 96, 0, 0, 1, false)
+	softRelease, loudRelease := mappedZone(.2, 32, 0, 0, 1, true), mappedZone(.8, 96, 0, 0, 1, true)
+	for _, vel := range []uint8{16, 32, 64, 127} {
+		p := newMapped(t, []Zone{attack, louder, softRelease, loudRelease}, c)
+		h, err := p.NoteOn(60, vel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settled(p)
+		p.NoteOff(h)
+		got := settled(p)
+		if want := recordedLevel(vel); math.Abs(float64(got)-want) > 1e-6 {
+			t.Errorf("release velocity %d: %g, want %g", vel, got, want)
+		}
+	}
+}
+
+// A key with one recorded layer has no recorded dynamics, and a pack that sets
+// its own zone gains has shaped its velocity response against the documented
+// velocity/127 multiplier (cicada-keys-pack sets each gain to 127/centre).
+// Both keep that multiplier exactly.
+func TestInstrumentShapedAndSingleLayerPacksKeepVelocityOver127(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	single := newMapped(t, []Zone{mappedZone(.5, 64, 0, 0, 1, false)}, c)
+	soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+	soft.Gain, loud.Gain = 127.0/32, 127.0/96
+	shaped := newMapped(t, []Zone{soft, loud}, c)
+	for vel := uint8(1); vel < 128; vel++ {
+		single.Reset()
+		if _, err := single.NoteOn(60, vel); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := settled(single), .5*float64(vel)/127; math.Abs(float64(got)-want) > 1e-6 {
+			t.Fatalf("single layer velocity %d: %g, want %g", vel, got, want)
+		}
+		shaped.Reset()
+		if _, err := shaped.NoteOn(60, vel); err != nil {
+			t.Fatal(err)
+		}
+		w := max(0, min(1, float64(int(vel)-32)/64))
+		want := (1-w)*.2*soft.Gain*float64(vel)/127 + w*.8*loud.Gain*float64(vel)/127
+		if got := settled(shaped); math.Abs(float64(got)-want) > 1e-6 {
+			t.Fatalf("shaped pack velocity %d: %g, want %g", vel, got, want)
+		}
 	}
 }
 

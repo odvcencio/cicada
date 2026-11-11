@@ -48,6 +48,19 @@ A field you leave out keeps the manifest value, so a score without these fields 
 
 `cicada render score.cicada -o after.wav` resolves packs inside the project folder, including confined symlink traversal. A symlink that leads outside the project is refused, so to share one pack between projects, copy or hard-link its folder into each project (`cp -al` makes hard links). The project folder is the one that holds `cicada.mod`, or the score's own folder when there is none, so a score in a subfolder such as `songs/theme.cicada` finds `packs/...` at the project root, as it finds its audio assets. `check`, `stems`, `audition`, `play` and Studio resolve packs the same way. `--sampler-baseline` renders the same events through the existing single-region DSP using the same key maps, one fixed recorded dynamic, the first take and the original 2 ms release. The baseline has a separate pool for each key map and is an offline listening reference, not a performance comparison. Stems retain stereo sampler output. The host refuses missing/corrupt packs instead of substituting a synth.
 
+## How velocity sets the level
+
+Velocity picks the recorded layers that play, and a pack's soft layers are already recorded soft, so the sampler does not scale them a second time. When every zone of a pack keeps unity `Gain`, as in the catalog's CC0 packs and the full acoustic kit, and two or more recorded layers cover a note:
+
+- at a layer's centre velocity (its `Layer`), the recording plays at its recorded level;
+- between two centres, the two recordings crossfade, so the level moves from one recording to the next;
+- above the loudest centre, the loudest recording plays at its recorded level, so velocity 127 sounds as it always has;
+- below the softest centre, velocity scales the softest recording by velocity/centre. With the grand's softest centre at 24, velocity 12 plays 6 dB under the pp recording and velocity 1 about 28 dB under it.
+
+Every other key and pack keeps a level proportional to velocity/127: a key with one recorded layer (the `nylon` guitar, the open hi-hat) has no other dynamics, and a pack that sets its own zone gains has shaped its velocity response against that multiplier. `cicada-keys-pack` sets each zone's gain to 127 over its centre for that reason, and `cicada record-pack` kits keep the level described in [Record your own drum kit](../manual/recording-instruments.md#record-your-own-drum-kit). A zone gain of 0 is a choke command and does not count.
+
+For the grand at A4, a 0 dB fader and no effects, this rule plays velocity 24 at -57 dBFS peak (it was -71), velocity 56 at -40 (was -47) and velocity 88 at -24 (was -27); velocity 120 and above are unchanged within 0.5 dB. From velocity 30 to 120 the level now spans 34 dB of peak level, where it spanned 47. The crossfade weights are linear in amplitude, so where two recordings partly cancel the level can dip just above a centre: at A4 it falls about 1.5 dB in RMS (3 dB in peak) from velocity 56 to 58 before it rises. Listen across a layer boundary when that matters.
+
 ## Memory limits
 
 A host keeps a pack's audio in memory as decoded float32 PCM, four bytes per sample and channel. For the catalog's six CC0 packs that is 461.8 MB, about six times their 75.8 MB PCM16 FLAC download. The limit depends on where the pack plays:

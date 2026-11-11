@@ -114,6 +114,10 @@ type Instrument struct {
 	random uint64
 	rr     [256]uint64
 	pedal  bool
+	// recorded is true when every sounding zone keeps unity gain: the pack's
+	// recordings carry its dynamics, so velocity does not scale them again
+	// between recorded layers (see velocityScale).
+	recorded bool
 }
 
 func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
@@ -129,8 +133,12 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 	if len(zones) == 0 || len(zones) > 4096 || config.Voices < 1 || config.Voices > MaxVoices || !validEnvelope(config.Amp) || !validEnvelope(config.Filter) || !finite(config.Gain) || config.Gain < 0 || config.Gain > 16 || !finite(config.TuneCents) || math.Abs(config.TuneCents) > 1200 || !finite(config.Cutoff) || config.Cutoff < 0 || config.Cutoff > float64(rate)/2 || !finite(config.FilterDepth) || config.FilterDepth < 0 || config.FilterDepth > float64(rate)/2 || !finite(h.DelayMS) || h.DelayMS < 0 || h.DelayMS > 100 || !finite(h.Velocity) || h.Velocity < 0 || h.Velocity > 32 || !finite(h.Cents) || h.Cents < 0 || h.Cents > 100 {
 		return nil, validationError("invalid sample instrument configuration")
 	}
-	p := &Instrument{rate: rate, config: config, zones: append([]Zone(nil), zones...), voices: make([]instrumentVoice, config.Voices), random: h.Seed}
+	p := &Instrument{rate: rate, config: config, zones: append([]Zone(nil), zones...), voices: make([]instrumentVoice, config.Voices), random: h.Seed, recorded: true}
 	for i, z := range p.zones {
+		// Zero-gain zones are choke commands and make no sound.
+		if z.Gain != 0 && z.Gain != 1 {
+			p.recorded = false
+		}
 		if err := z.Region.Validate(); err != nil {
 			return nil, err
 		}
@@ -185,14 +193,21 @@ func (p *Instrument) jitter() float64 {
 
 // selectZones selects the neighbouring velocity centres, then the recorded
 // take in each centre. Linear amplitude weights preserve correlated layers.
-func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint64) ([2]int, [2]float64, bool) {
+// The level of each selected take is weight * gain * scale[0] / scale[1];
+// velocityScale explains the scale.
+func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint64) ([2]int, [2]float64, [2]float64, bool) {
 	indices := [2]int{-1, -1}
 	weights := [2]float64{1, 0}
 	low, high := -1, -1
+	softest, loudest := uint8(0), uint8(0)
 	for i, z := range p.zones {
 		if z.Release != release || note < z.KeyLow || note > z.KeyHigh || velocity < z.VelocityLow || velocity > z.VelocityHigh || z.Position != uint8(cycle%uint64(z.Count)) {
 			continue
 		}
+		if softest == 0 || z.Layer < softest {
+			softest = z.Layer
+		}
+		loudest = max(loudest, z.Layer)
 		if z.Layer <= velocity && (low < 0 || z.Layer > p.zones[low].Layer) {
 			low = i
 		}
@@ -207,7 +222,7 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 		high = low
 	}
 	if low < 0 {
-		return indices, weights, false
+		return indices, weights, [2]float64{}, false
 	}
 	indices[0] = low
 	if low != high {
@@ -215,7 +230,32 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 		weights[1] = float64(int(velocity)-int(p.zones[low].Layer)) / float64(int(p.zones[high].Layer)-int(p.zones[low].Layer))
 		weights[0] = 1 - weights[1]
 	}
-	return indices, weights, true
+	return indices, weights, p.velocityScale(velocity, softest, loudest), true
+}
+
+// velocityScale is the level that velocity adds to the selected takes, as a
+// numerator and a denominator, so that the old rule keeps its exact arithmetic.
+//
+// When the pack's recordings carry its dynamics (every zone at unity gain) and
+// two or more recorded layers cover the note at this velocity, the layers set
+// the level: each take plays at its recorded level at its centre velocity, the
+// crossfade between two centres moves the level from one recording to the
+// next, and the loudest take plays at its recorded level above its centre.
+// Below the softest centre velocity scales the softest take in proportion to
+// velocity/centre, so the level is continuous at that centre.
+//
+// Otherwise the level is velocity/127: a key with one recorded layer has no
+// other dynamics, and a pack that sets zone gains has shaped its own velocity
+// response against this multiplier (cicada-keys-pack, for example, sets each
+// zone's gain to 127/centre).
+func (p *Instrument) velocityScale(velocity, softest, loudest uint8) [2]float64 {
+	if !p.recorded || softest == loudest {
+		return [2]float64{float64(velocity), 127}
+	}
+	if velocity < softest {
+		return [2]float64{float64(velocity), float64(softest)}
+	}
+	return [2]float64{1, 1}
 }
 
 // AttackVelocityRange reports the lowest and highest velocity at which an
@@ -275,10 +315,10 @@ func (p *Instrument) NoteOnMix(note, velocity uint8, gainL, gainR float64) (Hand
 	h := p.config.Humanize
 	vel := uint8(max(1, min(127, int(math.Round(float64(velocity)+float64(p.jitter()*h.Velocity))))))
 	// Humanization cannot escape a mapped velocity range.
-	zs, weights, ok := p.selectZones(note, vel, false, p.rr[group])
+	zs, weights, scale, ok := p.selectZones(note, vel, false, p.rr[group])
 	if !ok || p.zones[zs[0]].Group != uint8(group) {
 		vel = velocity
-		zs, weights, _ = p.selectZones(note, vel, false, p.rr[group])
+		zs, weights, scale, _ = p.selectZones(note, vel, false, p.rr[group])
 	}
 	cents := p.jitter() * h.Cents
 	delay := int((p.jitter() + 1) * .5 * h.DelayMS * float64(p.rate) / 1000)
@@ -334,7 +374,7 @@ func (p *Instrument) NoteOnMix(note, velocity uint8, gainL, gainR float64) (Hand
 		v.attack[i].configure(p.rate, z.Region)
 		v.attack[i].params = Params{Gain: 1, FineTuneCents: float64(p.config.TuneCents+z.TuneCents) + float64(cents)}
 		_ = v.attack[i].NoteOn(note, 127)
-		v.gain[i] = weights[i] * z.Gain * p.config.Gain * float64(vel) / 127
+		v.gain[i] = weights[i] * z.Gain * p.config.Gain * scale[0] / scale[1]
 	}
 	p.rr[group]++
 	return Handle{Slot: slot, ID: v.id}, nil
@@ -358,7 +398,7 @@ func (p *Instrument) releaseNote(v *instrumentVoice) {
 		return
 	}
 	// Match the attack's cycle, so release timbre belongs to the same take.
-	zs, weights, ok := p.selectZones(v.note, v.velocity, true, v.cycle)
+	zs, weights, scale, ok := p.selectZones(v.note, v.velocity, true, v.cycle)
 	if ok {
 		for i, index := range zs {
 			if index < 0 {
@@ -368,7 +408,7 @@ func (p *Instrument) releaseNote(v *instrumentVoice) {
 			v.release[i].configure(p.rate, z.Region)
 			v.release[i].params = Params{Gain: 1, FineTuneCents: p.config.TuneCents + z.TuneCents + v.tuneCents}
 			_ = v.release[i].NoteOn(v.note, 127)
-			v.releaseGain[i] = weights[i] * z.Gain * p.config.Gain * float64(v.velocity) / 127
+			v.releaseGain[i] = weights[i] * z.Gain * p.config.Gain * scale[0] / scale[1]
 		}
 		v.releaseStarted = true
 	}
