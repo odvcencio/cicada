@@ -59,12 +59,12 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	document.Call("addEventListener", "click", remember, true)
 	document.Call("addEventListener", "gosx:navigate", restore)
 	// Keep can commit before the refreshed history forms arrive. Block direct
-	// form submits as well as disabled buttons until those forms are replaced.
+	// form submits while the history lock holds (history_lock.go).
 	historyPending := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) > 0 {
 			event := args[0]
 			form := event.Get("target")
-			if workspacePresent(form) && form.Get("hasAttribute").Type() == js.TypeFunction && form.Call("hasAttribute", "data-history-refresh-pending").Bool() {
+			if workspacePresent(form) && form.Get("hasAttribute").Type() == js.TypeFunction && (workspaceAttr(form, "id") == "undo-form" || workspaceAttr(form, "id") == "redo-form") && history.Locked() {
 				event.Call("preventDefault")
 				event.Call("stopImmediatePropagation")
 			}
