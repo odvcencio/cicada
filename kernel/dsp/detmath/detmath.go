@@ -669,3 +669,39 @@ var exp2Table = [64][2]float64{ // 2^(j/64) as hi + lo
 	{0x1.f50765b6e454p+00, 0x1.9d3e12dd8a18bp-54},
 	{0x1.fa7c1819e90d8p+00, 0x1.74853f3a5931ep-55},
 }
+
+// SinPi returns sin(pi*x). The reduction x = q/2 + r with |r| <= 1/4 is exact
+// (it needs no constant of pi), so SinPi costs less than Sin and is the sine of
+// pi times x itself, not of the rounded product math.Pi*x. Use it for phases in
+// turns or half turns: sin(2*pi*phase) is SinPi(2*phase). It is NaN for NaN
+// and infinities, keeps the sign of zero, and is zero at integers (its sign
+// follows the quadrant). Measured error: see the tests.
+func SinPi(x float64) float64 {
+	x = float64(x) // see the package comment
+	if x == 0 {
+		return x
+	}
+	const (
+		piHi = 0x1.921fb54442d18p+01 // pi = piHi + piLo to 2^-108
+		piLo = 0x1.1a62633145c07p-53
+	)
+	q := math.Round(float64(2 * x)) // 2*x is exact
+	// Exact: q is 0, or q/2 is within 1/4 of x and at least 1/2, so x and q/2
+	// are within a factor of two of each other (Sterbenz).
+	r := x - float64(0.5*q)
+	th, tl := twoProd(r, piHi)
+	th, tl = fastTwoSum(th, tl+float64(r*piLo))
+	switch int(q - float64(4*math.Floor(float64(q/4)))) {
+	case 1:
+		h, l := cosKernel(th, tl)
+		return h + l
+	case 2:
+		h, l := sinKernel(th, tl)
+		return -(h + l)
+	case 3:
+		h, l := cosKernel(th, tl)
+		return -(h + l)
+	}
+	h, l := sinKernel(th, tl)
+	return h + l
+}
