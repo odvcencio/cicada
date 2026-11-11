@@ -3,6 +3,8 @@ package fx
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
 
@@ -73,8 +75,8 @@ func NewCompressor(sampleRate int) (*Compressor, error) {
 		sampleRate: float64(sampleRate),
 		rms:        make([]float64, sampleRate/100),
 		holdFrames: int(math.Round(float64(sampleRate) / 1000)),
-		sideAlpha:  1 - math.Exp(-2*math.Pi*80/float64(sampleRate)),
-		smooth:     1 - math.Exp(-1/(.005*float64(sampleRate))),
+		sideAlpha:  1 - detmath.Exp(-2*math.Pi*80/float64(sampleRate)),
+		smooth:     1 - detmath.Exp(-1/(.005*float64(sampleRate))),
 	}
 	if err := c.SetParams(DefaultCompParams()); err != nil {
 		return nil, err
@@ -93,9 +95,9 @@ func (c *Compressor) SetParams(p CompParams) error {
 		return err
 	}
 	c.targetParams = p
-	c.targetAttack = 1 - math.Exp(-1/(p.AttackMs*.001*c.sampleRate))
-	c.targetRelease = 1 - math.Exp(-1/(p.ReleaseMs*.001*c.sampleRate))
-	c.targetKneeFloor = math.Pow(10, (p.Threshold-float64(p.Knee/2))/20)
+	c.targetAttack = 1 - detmath.Exp(-1/(p.AttackMs*.001*c.sampleRate))
+	c.targetRelease = 1 - detmath.Exp(-1/(p.ReleaseMs*.001*c.sampleRate))
+	c.targetKneeFloor = detmath.Pow(10, (p.Threshold-float64(p.Knee/2))/20)
 	c.lastLevel = math.NaN()
 	c.targetMakeup = p.MakeupDB
 	if p.MakeupAuto {
