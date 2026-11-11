@@ -5,7 +5,10 @@
 # size with make engine-size-report. Generated 2026-11-11 from the engine at
 # 11,121,364 bytes; net/http, crypto/tls, crypto/x509 and mime/multipart are
 # reached only through GoSX's hub/client, which imports net/http for its
-# header type.
+# header type. The standard library's own package graph changes between Go
+# releases, so the list holds for one Go version, given on the next line; the
+# test skips under another (CI's macOS jobs use an older Go).
+go1.27.3  # go version
 bufio
 bytes
 cmp

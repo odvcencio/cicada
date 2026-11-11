@@ -65,11 +65,29 @@ func TestBrowserEngineStandardLibraryIsKnown(t *testing.T) {
 		t.Fatal(err)
 	}
 	known := map[string]bool{}
+	listed := ""
 	for _, line := range strings.Split(string(data), "\n") {
-		line, _, _ = strings.Cut(line, "#")
-		if line = strings.TrimSpace(line); line != "" {
+		line, comment, _ := strings.Cut(line, "#")
+		line = strings.TrimSpace(line)
+		if strings.TrimSpace(comment) == "go version" {
+			listed = line
+			continue
+		}
+		if line != "" {
 			known[line] = true
 		}
+	}
+	// The standard library's package graph differs between Go releases, so
+	// the list holds for the Go version it was generated with.
+	cmd := exec.Command("go", "env", "GOVERSION")
+	cmd.Dir = "../.."
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	version, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go env GOVERSION: %v", err)
+	}
+	if got := strings.TrimSpace(string(version)); got != listed {
+		t.Skipf("testdata/engine-std-packages.txt lists %s's packages; this is %s", listed, got)
 	}
 	seen := map[string]bool{}
 	for _, pkg := range engineGraph(t, enginebuild.Tags) {
