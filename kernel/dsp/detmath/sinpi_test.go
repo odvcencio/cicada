@@ -37,8 +37,10 @@ func TestSinPiAccuracy(t *testing.T) {
 		}
 	}
 	t.Logf("SinPi: max error %.4f ULP at %v", worst, at)
-	if worst > maxULP {
-		t.Fatalf("SinPi(%v): error %.4f ULP exceeds %.1f", at, worst, maxULP)
+	// The bound the doc comment claims (measured on the dense sweep).
+	const claimed = 0.75
+	if worst > claimed {
+		t.Fatalf("SinPi(%v): error %.4f ULP exceeds the claimed %.2f", at, worst, claimed)
 	}
 	for _, x := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 		if !math.IsNaN(SinPi(x)) {
@@ -68,5 +70,14 @@ func TestSinPiDigest(t *testing.T) {
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != sinPiDigest {
 		t.Fatalf("sinpi digest = %s, want %s", got, sinPiDigest)
+	}
+}
+
+// SinPi at the largest doubles, where 2*x overflows: even integers, +0.
+func TestSinPiLargest(t *testing.T) {
+	for _, x := range []float64{0x1p1023, -0x1p1023, math.MaxFloat64, -math.MaxFloat64, 0x1.8p1022} {
+		if got := SinPi(x); got != 0 || math.Signbit(got) {
+			t.Errorf("SinPi(%v) = %v, want +0", x, got)
+		}
 	}
 }

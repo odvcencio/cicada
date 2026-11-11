@@ -124,7 +124,7 @@ func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp) (takejournal.
 			return err
 		}
 		for i := range values {
-			values[i] = values[i]*.5 + right[i]*.5
+			values[i] = float32(values[i]*.5) + float32(right[i]*.5) // rounded products: the print is the same file on every target
 		}
 		return nil
 	}, func(_ context.Context, at int64, values []float32) error {

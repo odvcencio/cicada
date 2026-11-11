@@ -4,8 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -16,13 +16,17 @@ import (
 // The render path must not call a math library function whose last bits can
 // differ by target: Go's math.Exp, Log, Pow, Sin, Cos, Tan, Tanh and the rest
 // come from different code on amd64 (where math.Exp even takes an FMA path only
-// on CPUs that have one), arm64 and WebAssembly. This test parses every
-// non-test Go file under kernel/ and render/, plus the loudness search in
-// cmd/cicada/main.go and the automation curves in project/automation.go, and
-// fails on any use of a math function that is not in exactFunctions. Those
-// return the same bits on every target: IEEE 754 operations that are correctly
-// rounded (Sqrt, FMA), conversions to and from bits, and exact operations
-// (Abs, Floor, Ldexp, Mod and the like). This package replaces the others.
+// on CPUs that have one), arm64 and WebAssembly. This test asks the go command
+// for every package of this module that ./render, ./cmd/cicada or a browser
+// kernel in ./cmd/cicada-*-wasm depends on (go list -deps), so a package is
+// covered the day the render path imports it. It parses every non-test Go file
+// in those packages (whatever its build tags) and fails on any use of a math
+// or math/cmplx function that is not in exactFunctions or
+// exactComplexFunctions, and on a dot import of either.
+// The exact functions return the same bits on every target: IEEE 754
+// operations that are correctly rounded (Sqrt, FMA), conversions to and from
+// bits, and exact operations (Abs, Floor, Ldexp, Mod and the like). This
+// package replaces the others.
 //
 // mathAllowlist names files that may still use other math functions, with the
 // exact number of uses: a new use fails, and a removed one asks for the entry
@@ -30,8 +34,9 @@ import (
 // hypha://m31labs/cicada, decisions/2026-11-10-stewardship-and-direction) and
 // should stay so.
 //
-// notRenderPath names files that never produce audio: analysis and display
-// code, whose results are read by people and agents but never rendered.
+// notRenderPath names the files in those packages that never produce audio,
+// an exported file or a decision about either, each with the reason: display,
+// analysis and authoring code whose results are read by people and agents.
 
 var exactFunctions = map[string]bool{
 	"Abs": true, "Ceil": true, "Copysign": true, "Dim": true, "FMA": true,
@@ -56,13 +61,71 @@ var mathConstants = map[string]bool{
 var mathAllowlist = map[string]int{}
 
 var notRenderPath = map[string]string{
-	"kernel/analysis/correlation.go": "analysis for Studio meters and audition reports",
-	"kernel/analysis/fft.go":         "analysis for Studio meters and audition reports",
-	"kernel/analysis/spectrum.go":    "analysis for Studio meters and audition reports",
-	"render/fingerprint.go":          "an audio fingerprint for comparing renders; it reads audio, it does not make it",
+	"cmd/cicada/studio_audio.go":      "Studio's level meters: a display",
+	"cmd/cicada/view_automation.go":   "the automation view's curve drawing: a display",
+	"host/liveplay/player.go":         "live playback status (Studio's clip warning); never part of a render",
+	"host/modalfit/fit.go":            "offline modal fitting: its results are stored in the library and rendered from there",
+	"host/modalfit/instrument.go":     "offline modal fitting: its results are stored in the library and rendered from there",
+	"host/scoreaudition/analyze.go":   "audition measurements reported to people and agents; it reads audio, it does not make it",
+	"host/scoreaudition/fft.go":       "audition measurements reported to people and agents; it reads audio, it does not make it",
+	"host/scoreaudition/stereo.go":    "audition measurements reported to people and agents; it reads audio, it does not make it",
+	"host/transcription/analysis.go":  "transcription of recorded audio into notes: authoring, not rendering",
+	"host/transcription/inference.go": "transcription of recorded audio into notes: authoring, not rendering",
+	"kernel/analysis/correlation.go":  "analysis for Studio meters and audition reports",
+	"kernel/analysis/fft.go":          "analysis for Studio meters and audition reports",
+	"kernel/analysis/spectrum.go":     "analysis for Studio meters and audition reports",
+	"render/fingerprint.go":           "an audio fingerprint for comparing renders; it reads audio, it does not make it",
 }
 
-var guardedFiles = []string{"cmd/cicada/main.go", "project/automation.go"}
+// renderPathFiles returns every non-test Go file, relative to root, in the
+// packages of this module that ./render, ./cmd/cicada or a browser kernel
+// (./cmd/cicada-*-wasm, listed for js/wasm) depends on.
+func renderPathFiles(t *testing.T, root string) []string {
+	t.Helper()
+	dirs := map[string]bool{}
+	list := func(env []string, patterns ...string) {
+		args := append([]string{"list", "-deps", "-f", "{{if .Module}}{{if eq .Module.Path \"m31labs.dev/cicada\"}}{{.Dir}}{{end}}{{end}}"}, patterns...)
+		cmd := exec.Command("go", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), env...)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go %s: %v", strings.Join(args, " "), err)
+		}
+		for _, dir := range strings.Fields(string(out)) {
+			dirs[dir] = true
+		}
+	}
+	list(nil, "./render", "./cmd/cicada")
+	list([]string{"GOOS=js", "GOARCH=wasm"}, "./cmd/cicada-...-wasm")
+	var sorted []string
+	for dir := range dirs {
+		sorted = append(sorted, dir)
+	}
+	sort.Strings(sorted)
+	var files []string
+	for _, dir := range sorted {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			rel, err := filepath.Rel(root, filepath.Join(dir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			files = append(files, filepath.ToSlash(rel))
+		}
+	}
+	if len(files) < 100 {
+		t.Fatalf("go list found only %d files on the render path", len(files))
+	}
+	return files
+}
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -84,27 +147,45 @@ func inexactUses(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := ""
+	mathName, cmplxName := "", ""
+	var uses []string
 	for _, spec := range file.Imports {
-		if p, _ := strconv.Unquote(spec.Path.Value); p == "math" {
-			name = "math"
-			if spec.Name != nil {
-				name = spec.Name.Name
-			}
+		p, _ := strconv.Unquote(spec.Path.Value)
+		if p != "math" && p != "math/cmplx" {
+			continue
+		}
+		name := p[strings.LastIndex(p, "/")+1:]
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name == "." {
+			// The calls would be unqualified and invisible to this scan.
+			uses = append(uses, "dot import of "+p)
+			continue
+		}
+		if p == "math" {
+			mathName = name
+		} else {
+			cmplxName = name
 		}
 	}
-	if name == "" || name == "_" {
-		return nil
-	}
-	var uses []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		selector, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
-		if x, ok := selector.X.(*ast.Ident); ok && x.Name == name {
+		x, ok := selector.X.(*ast.Ident)
+		if !ok || x.Name == "_" {
+			return true
+		}
+		switch x.Name {
+		case mathName:
 			if !exactFunctions[selector.Sel.Name] && !mathConstants[selector.Sel.Name] {
 				uses = append(uses, selector.Sel.Name)
+			}
+		case cmplxName:
+			if !exactComplexFunctions[selector.Sel.Name] {
+				uses = append(uses, "cmplx."+selector.Sel.Name)
 			}
 		}
 		return true
@@ -112,30 +193,16 @@ func inexactUses(t *testing.T, path string) []string {
 	return uses
 }
 
+// exactComplexFunctions are the math/cmplx functions that do no rounding;
+// the others (Abs, Exp, Log, Pow, Sqrt, the trigonometric functions and the
+// rest) go through math's architecture-dependent functions.
+var exactComplexFunctions = map[string]bool{"Conj": true, "Inf": true, "NaN": true, "IsInf": true, "IsNaN": true}
+
 func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 	root := repoRoot(t)
 	found := map[string][]string{}
-	scan := func(rel string) {
+	for _, rel := range renderPathFiles(t, root) {
 		found[rel] = inexactUses(t, filepath.Join(root, filepath.FromSlash(rel)))
-	}
-	for _, dir := range []string{"kernel", "render"} {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return err
-			}
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			scan(filepath.ToSlash(rel))
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, rel := range guardedFiles {
-		scan(rel)
 	}
 	var files []string
 	for file := range found {
@@ -149,7 +216,7 @@ func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 		got, want := len(found[file]), mathAllowlist[file]
 		switch {
 		case got > want:
-			t.Errorf("%s uses math.%s, whose last bits differ by target (%d uses, allowed %d); use detmath or an exact formulation", file, strings.Join(found[file], ", math."), got, want)
+			t.Errorf("%s uses %s, whose last bits differ by target (%d uses, allowed %d); use detmath or an exact formulation", file, strings.Join(found[file], ", "), got, want)
 		case got < want:
 			t.Errorf("%s now makes %d inexact math uses; lower its mathAllowlist entry from %d", file, got, want)
 		}
