@@ -345,15 +345,18 @@ func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tic
 		if isDrum && drawWithPitch {
 			drawNote = drumPitch
 		}
-		played := seq.HumanizeVelocity(step.Velocity, pattern.Humanize, pattern.Seed, probabilityTrack, probabilitySlot, pass, index, ratchet, drawNote)
-		velocity := played
-		if velocity == 0 {
+		// Playback's order: humanize, then an accent plays at 127, then the
+		// velocity stays in 1 to 127.
+		velocity := seq.HumanizeVelocity(step.Velocity, pattern.Humanize, pattern.Seed, probabilityTrack, probabilitySlot, pass, index, ratchet, drawNote)
+		if velocity == 0 && !isDrum {
 			velocity = 100
 		}
-		if isDrum {
-			pitch, velocity = drumPitch, played
-		} else if step.Accent && velocity == 100 {
+		if step.Accent {
 			velocity = 127
+		}
+		velocity = min(velocity, 127)
+		if isDrum {
+			pitch = drumPitch
 		}
 		held.index, held.count = len(track.Notes), 1
 		if !isDrum && chord.Count > 0 {

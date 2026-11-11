@@ -15,7 +15,8 @@ import (
 )
 
 // parityVoices is baobab's lab/phase.cicada with a drum track added: a
-// chance pattern, a humanized pattern, and a drum pattern with both.
+// chance pattern, a humanized pattern with accents, and a drum pattern with
+// chance, humanize and accented hits.
 const parityVoices = `cicada 2
 tempo 120
 seed 9
@@ -28,10 +29,10 @@ track a click {}
 track b click {}
 track d drums {}
 pattern ch { c5?50 c5?50 c5?50 c5?50 }
-pattern hum { humanize = 20 c5 c5 c5 c5 }
+pattern hum { humanize = 20 c5 c5^ c5 c5^ }
 pattern beat drums {
   humanize = 12
-  bd: x..x?60 x..x
+  bd: X..x?60 x..X
   ch: x?50x.x x.x?30x
 }
 `
@@ -85,9 +86,13 @@ func TestMIDIExportPlaysWhatTheRendererPlays(t *testing.T) {
 				if track == 2 && scheduled {
 					note = drum.MIDINotes[note]
 				}
+				// Playback plays an accent at 127 after humanizing it.
 				velocity := event.Velocity
 				if velocity == 0 {
 					velocity = 100
+				}
+				if event.Accent {
+					velocity = 127
 				}
 				played = append(played, fmt.Sprintf("track %d tick %d note %d velocity %d", track, event.Tick, note, velocity))
 			}}
