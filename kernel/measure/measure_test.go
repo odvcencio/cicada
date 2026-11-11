@@ -1,6 +1,7 @@
 package measure
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -88,9 +89,63 @@ func TestEngineMeasurements(t *testing.T) {
 		}
 		t.Logf("%-28s %s", e.Name, strings.Join(parts, " "))
 	}
+	if base := os.Getenv("CICADA_ENGINE_MEASUREMENTS_BASELINE"); base != "" {
+		lines, err := compareReports(base, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range lines {
+			t.Log(line)
+		}
+	}
 	for _, f := range failures {
 		t.Error(f)
 	}
+}
+
+// compareReports reads an earlier report from path and lists, for every
+// measured metric except cpu_ns_per_block (which depends on the machine and its
+// load), the ones whose value differs from r, then a count of the identical
+// ones. Values are compared as the report holds them (rounded to 0.001 in
+// their unit), so a change below that does not show. It never fails on a
+// difference; the gate decides that.
+func compareReports(path string, r *report) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var base report
+	if err := json.Unmarshal(data, &base); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	old := map[string]*entry{}
+	for _, e := range base.Entries {
+		old[e.Name] = e
+	}
+	var lines []string
+	same, compared := 0, 0
+	for _, e := range r.Entries {
+		for _, name := range metricOrder {
+			m := e.Metrics[name]
+			if name == metricCPU || m == nil || m.Status != statusMeasured {
+				continue
+			}
+			compared++
+			var was *metric
+			if b := old[e.Name]; b != nil {
+				was = b.Metrics[name]
+			}
+			switch {
+			case was == nil || was.Status != statusMeasured || was.Value == nil:
+				lines = append(lines, fmt.Sprintf("baseline: %s %s is new (%s)", e.Name, name, formatValue(*m.Value)))
+			case *was.Value == *m.Value:
+				same++
+			default:
+				lines = append(lines, fmt.Sprintf("baseline: %s %s %s -> %s (%+.3g)", e.Name, name, formatValue(*was.Value), formatValue(*m.Value), *m.Value-*was.Value))
+			}
+		}
+	}
+	return append(lines, fmt.Sprintf("baseline: %d of %d measured metrics identical to %s (cpu_ns_per_block not compared)", same, compared, path)), nil
 }
 
 func formatValue(v float64) string {
