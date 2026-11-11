@@ -9,70 +9,91 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
-// SetPerformedNote edits an authored gate. Index equal to the note count appends.
-// Pitch is the stored MIDI pitch, before an authored pattern transpose.
+// SetPerformedNote edits, adds or removes one note of a performance pattern.
+// Index equal to the note count appends. Pitch is the stored MIDI pitch,
+// before an authored pattern transpose.
+//
+// Example: {"kind":"setperformednote","entity":"pattern:phrase","index":1,"tick":960,"end_tick":1920,"pitch":62,"velocity":100}
 type SetPerformedNote struct {
-	Entity   EntityID `json:"entity"`
-	Index    int      `json:"index"`
-	Tick     int64    `json:"tick"`
-	EndTick  int64    `json:"end_tick"`
-	Pitch    int      `json:"pitch"`
-	Velocity int      `json:"velocity"`
-	Remove   bool     `json:"remove,omitempty"`
+	Entity   EntityID `json:"entity" cicada:"required"`                // the performance pattern, as pattern:<name>
+	Index    int      `json:"index"`                                   // the note's index, from 0, in start order
+	Tick     int64    `json:"tick" unit:"ticks"`                       // the note's start in the loop, 960 per beat
+	EndTick  int64    `json:"end_tick" unit:"ticks" cicada:"required"` // the note's end
+	Pitch    int      `json:"pitch"`                                   // MIDI pitch 0–127
+	Velocity int      `json:"velocity" cicada:"required"`              // MIDI velocity 1–127
+	Remove   bool     `json:"remove,omitempty"`                        // remove the note instead
 }
 
 func (SetPerformedNote) Kind() string { return "setperformednote" }
 
+// ResizePerformance changes the loop length of a performance pattern. Notes
+// keep their ticks; a resize that would cut a note or gesture is refused.
+//
+// Example: {"kind":"resizeperformance","entity":"pattern:phrase","length_ticks":7680}
 type ResizePerformance struct {
-	Entity      EntityID `json:"entity"`
-	LengthTicks int64    `json:"length_ticks"`
+	Entity      EntityID `json:"entity" cicada:"required"`                    // the performance pattern, as pattern:<name>
+	LengthTicks int64    `json:"length_ticks" unit:"ticks" cicada:"required"` // the new loop length, 30 ticks or more
 }
 
 func (ResizePerformance) Kind() string { return "resizeperformance" }
 
 // SetPerformedExpression edits one note-owned controller sample. Index equal
 // to the sample count appends; edits preserve every other note and gesture.
+//
+// Example: {"kind":"setperformedexpression","entity":"pattern:phrase","note_index":0,"index":1,"tick":240,"pitch_cents":50,"pressure":0.6,"timbre":0.7,"vibrato_depth_cents":0,"vibrato_rate_hz":5}
 type SetPerformedExpression struct {
-	Entity            EntityID `json:"entity"`
-	NoteIndex         int      `json:"note_index"`
-	Index             int      `json:"index"`
-	Tick              int64    `json:"tick"`
-	PitchCents        float64  `json:"pitch_cents"`
-	Pressure          float64  `json:"pressure"`
-	Timbre            float64  `json:"timbre"`
-	VibratoDepthCents float64  `json:"vibrato_depth_cents"`
-	VibratoRateHz     float64  `json:"vibrato_rate_hz"`
-	Remove            bool     `json:"remove,omitempty"`
+	Entity            EntityID `json:"entity" cicada:"required"`            // the performance pattern, as pattern:<name>
+	NoteIndex         int      `json:"note_index"`                          // the note's index, from 0
+	Index             int      `json:"index"`                               // the sample's index within the note, from 0
+	Tick              int64    `json:"tick" unit:"ticks" cicada:"required"` // the sample's time from the note's start, within its held length
+	PitchCents        float64  `json:"pitch_cents" unit:"cents"`            // bend, −9600 to 9600
+	Pressure          float64  `json:"pressure"`                            // 0 to 1
+	Timbre            float64  `json:"timbre"`                              // 0 to 1
+	VibratoDepthCents float64  `json:"vibrato_depth_cents" unit:"cents"`    // 0 to 9600
+	VibratoRateHz     float64  `json:"vibrato_rate_hz" unit:"Hz"`           // 0 to 100
+	Remove            bool     `json:"remove,omitempty"`                    // remove the sample instead
 }
 
 func (SetPerformedExpression) Kind() string { return "setperformedexpression" }
 
+// SetPerformanceGroup adds, renames or removes one shared gesture lane of a
+// performance pattern. Index equal to the lane count appends.
+//
+// Example: {"kind":"setperformancegroup","entity":"pattern:phrase","index":1,"name":"swell"}
 type SetPerformanceGroup struct {
-	Entity EntityID `json:"entity"`
-	Index  int      `json:"index"`
-	Name   string   `json:"name"`
-	Remove bool     `json:"remove,omitempty"`
+	Entity EntityID `json:"entity" cicada:"required"` // the performance pattern, as pattern:<name>
+	Index  int      `json:"index"`                    // the lane's index, from 0
+	Name   string   `json:"name" cicada:"required"`   // the lane's name
+	Remove bool     `json:"remove,omitempty"`         // remove the lane instead
 }
 
 func (SetPerformanceGroup) Kind() string { return "setperformancegroup" }
 
+// BindPerformedGroup binds one note of a performance pattern to a shared
+// gesture lane, or unbinds it.
+//
+// Example: {"kind":"bindperformedgroup","entity":"pattern:phrase","note_index":1,"group":1}
 type BindPerformedGroup struct {
-	Entity    EntityID `json:"entity"`
-	NoteIndex int      `json:"note_index"`
-	Group     int      `json:"group"`
+	Entity    EntityID `json:"entity" cicada:"required"` // the performance pattern, as pattern:<name>
+	NoteIndex int      `json:"note_index"`               // the note's index, from 0
+	Group     int      `json:"group"`                    // the lane's index counted from 1; 0 unbinds the note
 }
 
 func (BindPerformedGroup) Kind() string { return "bindperformedgroup" }
 
+// SetSharedExpression edits, adds or removes one point of a shared gesture
+// lane. Index equal to the point count appends.
+//
+// Example: {"kind":"setsharedexpression","entity":"pattern:phrase","group_index":0,"index":1,"tick":960,"pitch_cents":100,"pressure":0.8,"timbre":0.9}
 type SetSharedExpression struct {
-	Entity     EntityID `json:"entity"`
-	GroupIndex int      `json:"group_index"`
-	Index      int      `json:"index"`
-	Tick       int64    `json:"tick"`
-	PitchCents float64  `json:"pitch_cents"`
-	Pressure   float64  `json:"pressure"`
-	Timbre     float64  `json:"timbre"`
-	Remove     bool     `json:"remove,omitempty"`
+	Entity     EntityID `json:"entity" cicada:"required"`            // the performance pattern, as pattern:<name>
+	GroupIndex int      `json:"group_index"`                         // the lane's index, from 0
+	Index      int      `json:"index"`                               // the point's index, from 0
+	Tick       int64    `json:"tick" unit:"ticks" cicada:"required"` // the point's time in the loop, before its end
+	PitchCents float64  `json:"pitch_cents" unit:"cents"`            // bend, −9600 to 9600
+	Pressure   float64  `json:"pressure"`                            // 0 to 1
+	Timbre     float64  `json:"timbre"`                              // 0 to 1
+	Remove     bool     `json:"remove,omitempty"`                    // remove the point instead
 }
 
 func (SetSharedExpression) Kind() string { return "setsharedexpression" }

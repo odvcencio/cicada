@@ -10,10 +10,12 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// EditNotes applies one batch of note operations to one pattern as one edit:
-// the pattern compiles once, every named note is resolved, the operation runs
-// in memory, and the source is written once. One request is one commit and one
-// Undo step.
+// EditNotes moves, resizes, changes the velocity of, deletes, inserts or
+// quantizes a batch of notes in one pattern as one edit. The pattern compiles
+// once, every named note is resolved, the operation runs in memory, and the
+// source is written once. One request is one commit and one Undo step. A note
+// refusal is an error with code CICADA-NOTES and one of the reasons in
+// NoteErrorCodes (docs/manual/editors.md describes them).
 //
 // Entity is pattern:<id>. Op is move, resize, velocity, delete, insert or
 // quantize. Notes names the notes to change as the client saw them; the edit
@@ -29,29 +31,36 @@ import (
 // percentage (0 means 100); step patterns and drum lanes quantize at 100.
 // Copy keeps the originals of a move. Insert lists the notes an insert adds.
 // Shared accepts only "pattern": phrase uses expand inside the edited pattern.
+//
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"insert","insert":[{"at":1920,"pitch":64,"length":480,"velocity":100}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"move","dt":240,"notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"resize","dl":240,"notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"velocity","velocity":110,"notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"delete","notes":[{"at":1000,"pitch":60,"length":480,"velocity":90}]}
+// Example: {"kind":"editnotes","entity":"pattern:phrase","op":"quantize","grid":240}
 type EditNotes struct {
-	Entity   EntityID  `json:"entity"`
-	Op       string    `json:"op"`
-	Notes    []NoteRef `json:"notes,omitempty"`
-	DT       int64     `json:"dt,omitempty"`
-	DP       int       `json:"dp,omitempty"`
-	DL       int64     `json:"dl,omitempty"`
-	DV       int       `json:"dv,omitempty"`
-	Velocity int       `json:"velocity,omitempty"`
-	Grid     int64     `json:"grid,omitempty"`
-	Strength int       `json:"strength,omitempty"`
-	Copy     bool      `json:"copy,omitempty"`
-	Insert   []NoteRef `json:"insert,omitempty"`
-	Shared   string    `json:"shared,omitempty"`
+	Entity   EntityID  `json:"entity" cicada:"required"`                              // the pattern, as pattern:<name>
+	Op       string    `json:"op" values:"notes-op" cicada:"required,selects"`        // the operation
+	Notes    []NoteRef `json:"notes,omitempty" when:"op=move|resize|velocity|delete"` // the notes to change, as last seen; at most 512
+	DT       int64     `json:"dt,omitempty" unit:"ticks"`                             // move: change of start
+	DP       int       `json:"dp,omitempty"`                                          // move: change of pitch in semitones, or of lane in drum patterns
+	DL       int64     `json:"dl,omitempty" unit:"ticks"`                             // resize: change of length
+	DV       int       `json:"dv,omitempty"`                                          // velocity: change, ±126, clamped to 1–127
+	Velocity int       `json:"velocity,omitempty"`                                    // velocity: the new value instead of dv, 1–127
+	Grid     int64     `json:"grid,omitempty" unit:"ticks" when:"op=quantize"`        // quantize: grid, 30–3840
+	Strength int       `json:"strength,omitempty" unit:"percent"`                     // quantize: how far starts move to the grid, 1–100; 0 means 100
+	Copy     bool      `json:"copy,omitempty"`                                        // move: keep the originals
+	Insert   []NoteRef `json:"insert,omitempty" when:"op=insert"`                     // insert: the notes to add; at most 512
+	Shared   string    `json:"shared,omitempty" values:"notes-shared"`                // pattern expands phrase uses inside the edited pattern
 }
 
 // NoteRef is one note as the editor saw it, or one note to insert.
 type NoteRef struct {
-	At       int64  `json:"at"`
-	Pitch    int    `json:"pitch"`
-	Lane     string `json:"lane,omitempty"`
-	Length   int64  `json:"length"`
-	Velocity int    `json:"velocity"`
+	At       int64  `json:"at" unit:"ticks"`                       // start, 960 per beat
+	Pitch    int    `json:"pitch"`                                 // stored MIDI pitch 0–127, before the pattern's transpose
+	Lane     string `json:"lane,omitempty"`                        // the drum lane, instead of pitch, in drum patterns
+	Length   int64  `json:"length" unit:"ticks" cicada:"required"` // length
+	Velocity int    `json:"velocity" cicada:"required"`            // velocity 1–127
 }
 
 func (EditNotes) Kind() string { return "editnotes" }
@@ -61,10 +70,19 @@ func (EditNotes) Kind() string { return "editnotes" }
 const MaxEditNotes = seq.MaxPerformanceNotes
 
 // EditNotesOps lists the operations EditNotes accepts.
-var EditNotesOps = []string{"move", "resize", "velocity", "delete", "insert", "quantize"}
+var EditNotesOps = valueList("notes-op", "move", "resize", "velocity", "delete", "insert", "quantize")
+
+// noteSharedPolicies are what EditNotes's shared accepts.
+var noteSharedPolicies = valueList("notes-shared", "pattern")
 
 func init() {
 	Register("editnotes", func() Intent { return &EditNotes{} })
+	// A note in notes is named by its start and its pitch, or its lane in a
+	// drum pattern; op velocity takes a new velocity or a change.
+	ruleKind("editnotes", fieldRules{required: []string{"notes.at"}, oneOf: []FieldGroup{
+		{Fields: []string{"notes.pitch", "notes.lane"}},
+		{Fields: []string{"velocity", "dv"}, When: &FieldCondition{Field: "op", Values: []string{"velocity"}}},
+	}})
 	Handle("editnotes", editNotes)
 }
 
@@ -124,7 +142,7 @@ func (in *EditNotes) Validate() error {
 	if len(in.Notes) > MaxEditNotes || len(in.Insert) > MaxEditNotes {
 		return fmt.Errorf("a note edit may name at most %d notes", MaxEditNotes)
 	}
-	if in.Shared != "" && in.Shared != "pattern" {
+	if in.Shared != "" && !containsString(noteSharedPolicies, in.Shared) {
 		return fmt.Errorf("note edits expand phrase uses inside the pattern; shared must be \"pattern\"")
 	}
 	const tickLimit = int64(1) << 40
@@ -211,7 +229,7 @@ func editNotes(ctx *Context, intent Intent) error {
 		}
 		return gridSourceEdit(editGridNotes)(ctx, intent)
 	}
-	return fmt.Errorf("unknown pattern %q", id)
+	return entityError(fmt.Errorf("unknown pattern %q", id))
 }
 
 // quantizeTick rounds tick to the nearest grid line, half up, as a recorded
@@ -579,7 +597,7 @@ func editGridNotes(ctx *Context, intent Intent) error {
 		}
 	}
 	if authored == nil || compiled == nil {
-		return fmt.Errorf("unknown pattern %q", id)
+		return entityError(fmt.Errorf("unknown pattern %q", id))
 	}
 	grid := gridNotes{in: in, source: local, path: ctx.Options.Path, authored: authored, compiled: compiled, step: compiled.StepTicksOrDefault()}
 	var spans []Span

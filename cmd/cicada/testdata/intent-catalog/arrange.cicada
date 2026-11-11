@@ -1,0 +1,17 @@
+cicada 2
+title "Intent catalog arrangement"
+tempo 120
+key a minor
+
+track bass acid { cutoff = 620Hz }
+
+pattern riff { a1 . c2 . e2 . a1 . }
+pattern pulse { a1 . . . e2 . . . a1 . . . e2 . . . }
+
+arrange {
+  tempo @1.1.1 120
+  tempo @3.1.1 110
+  marker chorus { at = @3.1.1 }
+  place intro bass pulse { at = @1.1.1 length = 2bars }
+  place verse bass pulse { at = @3.1.1 length = 2bars }
+}

@@ -7,13 +7,15 @@ import (
 )
 
 // Recipe describes version 1 of the pattern machine. Seed is kept as text at
-// the HTTP boundary so JavaScript never rounds a 64-bit integer.
+// the HTTP boundary so JavaScript never rounds a 64-bit integer. The cicada
+// tags mark the fields Validate refuses at their zero value, for the intent
+// catalog (cicada intents).
 type Recipe struct {
-	Version int    `json:"version"`
+	Version int    `json:"version" cicada:"required"`
 	Seed    uint32 `json:"seed"`
-	Bars    int    `json:"bars"`
+	Bars    int    `json:"bars" cicada:"required"`
 	Root    int    `json:"root"`
-	Scale   string `json:"scale"`
+	Scale   string `json:"scale" cicada:"required"`
 	Density int    `json:"density"`
 	Motion  int    `json:"motion"`
 }

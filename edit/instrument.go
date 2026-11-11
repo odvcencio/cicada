@@ -121,10 +121,12 @@ func builtinParameterLiteral(descriptor paramdefs.Descriptor, value string) (str
 }
 
 // AddPreset inserts an authored instrument and its track in one edit.
+//
+// Example: {"kind":"addpreset","preset":"warm-pad","instrument":"pad","track":"pad"}
 type AddPreset struct {
-	Preset     string `json:"preset"`
-	Instrument string `json:"instrument"`
-	Track      string `json:"track"`
+	Preset     string `json:"preset" cicada:"required"`     // a built-in patch, such as warm-pad
+	Instrument string `json:"instrument" cicada:"required"` // the name of the new instrument declaration
+	Track      string `json:"track" cicada:"required"`      // the name of the new track that plays it
 }
 
 func (AddPreset) Kind() string { return "addpreset" }

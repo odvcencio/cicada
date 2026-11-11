@@ -16,25 +16,37 @@ import (
 // (an `automate <path> { ... }` block). OldAt names the point being moved; it
 // is empty for a new point. Shape is linear, step, smooth, exponential or
 // curve and defaults to linear; Curve is the tension and only applies to curve.
+// A lane that does not exist yet is created.
+//
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"smooth"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"linear"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"step"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"exponential"}
+// Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"curve","curve":2}
 type SetAutomationPoint struct {
-	Entity EntityID `json:"entity"`
-	OldAt  string   `json:"oldat,omitempty"`
-	At     string   `json:"at"`
-	Value  string   `json:"value"`
-	Shape  string   `json:"shape,omitempty"`
-	Curve  float64  `json:"curve,omitempty"`
+	Entity EntityID `json:"entity" cicada:"required"`                                                // the parameter, as param:<owner>.<field>
+	OldAt  string   `json:"oldat,omitempty"`                                                         // the position of the point to move, such as "@3.1.1"
+	At     string   `json:"at" cicada:"required"`                                                    // the point's position, such as "@4.1.1" (bar.beat.step)
+	Value  string   `json:"value" cicada:"required"`                                                 // the value with its unit, such as "2kHz" or "-6dB"
+	Shape  string   `json:"shape,omitempty" values:"automation-shape" cicada:"selects" when:"curve"` // how the lane moves from this point to the next
+	Curve  float64  `json:"curve,omitempty"`                                                         // tension −8 to 8, for shape curve
 }
 
 func (SetAutomationPoint) Kind() string { return "setautomationpoint" }
 
+// automationShapes are the shapes SetAutomationPoint accepts.
+var automationShapes = valueList("automation-shape", "linear", "step", "smooth", "exponential", "curve")
+
 // RemoveAutomationPoint removes the point at At (or at OldAt when given) and
 // removes the lane when it was the lane's last point.
+//
+// Example: {"kind":"removeautomationpoint","entity":"param:bass.cutoff","at":"@3.1.1"}
 type RemoveAutomationPoint struct {
-	Entity EntityID `json:"entity"`
-	OldAt  string   `json:"oldat,omitempty"`
-	At     string   `json:"at"`
-	Shape  string   `json:"shape,omitempty"`
-	Curve  float64  `json:"curve,omitempty"`
+	Entity EntityID `json:"entity" cicada:"required"` // the parameter, as param:<owner>.<field>
+	OldAt  string   `json:"oldat,omitempty"`          // the point's position, when it differs from at
+	At     string   `json:"at" cicada:"required"`     // the point's position, such as "@3.1.1"
+	Shape  string   `json:"shape,omitempty"`          // ignored; kept so a removal can carry the point it removes
+	Curve  float64  `json:"curve,omitempty"`          // ignored, as shape
 }
 
 func (RemoveAutomationPoint) Kind() string { return "removeautomationpoint" }
@@ -67,10 +79,10 @@ func editAutomationPoint(ctx *Context, intent Intent) error {
 		}
 	}
 	if _, err := ParseEntityID(string(entity)); err != nil {
-		return err
+		return entityError(err)
 	}
 	if entity.Kind() != KindParam {
-		return fmt.Errorf("automation points need a param entity, got %q", entity)
+		return entityError(fmt.Errorf("automation points need a param entity, got %q", entity))
 	}
 	updated, err := automationPointSource(ctx, entity.Name(), point, remove)
 	if err != nil {
@@ -146,7 +158,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	if shape == "" {
 		shape = "linear"
 	}
-	if shape != "linear" && shape != "step" && shape != "smooth" && shape != "exponential" && shape != "curve" {
+	if !containsString(automationShapes, shape) {
 		return nil, fmt.Errorf("choose linear, step, smooth, exponential or curve")
 	}
 	if math.IsNaN(point.curve) || math.IsInf(point.curve, 0) || math.Abs(point.curve) > 8 || shape != "curve" && point.curve != 0 {
