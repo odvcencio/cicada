@@ -762,12 +762,16 @@ func atanKernel(x float64) (hi, lo float64) {
 // (it needs no constant of pi), so SinPi costs less than Sin and is the sine of
 // pi times x itself, not of the rounded product math.Pi*x. Use it for phases in
 // turns or half turns: sin(2*pi*phase) is SinPi(2*phase). It is NaN for NaN
-// and infinities, keeps the sign of zero, and is zero at integers (its sign
-// follows the quadrant). Measured error: see the tests.
+// and infinities, keeps the sign of zero, and is zero at integers (+0 at even
+// ones, -0 at odd ones, as the quadrant gives). Measured error: at most 0.75 ULP
+// (TestSinPiAccuracy, dense sweep).
 func SinPi(x float64) float64 {
 	x = float64(x) // see the package comment
 	if x == 0 {
 		return x
+	}
+	if a := math.Abs(x); a >= 0x1p1023 && a <= math.MaxFloat64 {
+		return 0 // an even integer, where 2*x would overflow: +0, as for every even integer
 	}
 	const (
 		piHi = 0x1.921fb54442d18p+01 // pi = piHi + piLo to 2^-108

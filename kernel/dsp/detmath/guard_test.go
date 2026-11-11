@@ -84,33 +84,56 @@ func inexactUses(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := ""
+	mathName, cmplxName := "", ""
+	var uses []string
 	for _, spec := range file.Imports {
-		if p, _ := strconv.Unquote(spec.Path.Value); p == "math" {
-			name = "math"
-			if spec.Name != nil {
-				name = spec.Name.Name
-			}
+		p, _ := strconv.Unquote(spec.Path.Value)
+		if p != "math" && p != "math/cmplx" {
+			continue
+		}
+		name := p[strings.LastIndex(p, "/")+1:]
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name == "." {
+			// The calls would be unqualified and invisible to this scan.
+			uses = append(uses, "dot import of "+p)
+			continue
+		}
+		if p == "math" {
+			mathName = name
+		} else {
+			cmplxName = name
 		}
 	}
-	if name == "" || name == "_" {
-		return nil
-	}
-	var uses []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		selector, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
-		if x, ok := selector.X.(*ast.Ident); ok && x.Name == name {
+		x, ok := selector.X.(*ast.Ident)
+		if !ok || x.Name == "_" {
+			return true
+		}
+		switch x.Name {
+		case mathName:
 			if !exactFunctions[selector.Sel.Name] && !mathConstants[selector.Sel.Name] {
 				uses = append(uses, selector.Sel.Name)
+			}
+		case cmplxName:
+			if !exactComplexFunctions[selector.Sel.Name] {
+				uses = append(uses, "cmplx."+selector.Sel.Name)
 			}
 		}
 		return true
 	})
 	return uses
 }
+
+// exactComplexFunctions are the math/cmplx functions that do no rounding;
+// the others (Abs, Exp, Log, Pow, Sqrt, the trigonometric functions and the
+// rest) go through math's architecture-dependent functions.
+var exactComplexFunctions = map[string]bool{"Conj": true, "Inf": true, "NaN": true, "IsInf": true, "IsNaN": true}
 
 func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 	root := repoRoot(t)
@@ -149,7 +172,7 @@ func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 		got, want := len(found[file]), mathAllowlist[file]
 		switch {
 		case got > want:
-			t.Errorf("%s uses math.%s, whose last bits differ by target (%d uses, allowed %d); use detmath or an exact formulation", file, strings.Join(found[file], ", math."), got, want)
+			t.Errorf("%s uses %s, whose last bits differ by target (%d uses, allowed %d); use detmath or an exact formulation", file, strings.Join(found[file], ", "), got, want)
 		case got < want:
 			t.Errorf("%s now makes %d inexact math uses; lower its mathAllowlist entry from %d", file, got, want)
 		}
