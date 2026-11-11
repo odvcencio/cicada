@@ -1494,34 +1494,50 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			if !ok {
 				continue // applyScene reports the invalid binding at the boundary
 			}
-			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], boundaryTick, sampleAt)
+			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], track.startTick, boundaryTick, sampleAt)
 			break
 		}
 	}
 }
 
-func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, sampleAt func(int64) int64) sceneTransition {
-	if boundaryTick < seq.TicksPerStep || boundaryTick%seq.TicksPerStep != 0 {
+// sceneTransitionFor decides whether the note that slides out of the playing
+// pattern at a scene boundary glides into the next pattern's first note, and
+// when it is released otherwise. It counts steps on each pattern's own grid
+// from the playing pattern's start, as the engine does (normalSlideRelease and
+// switchWouldSlide in kernel/engine/pattern.go): counting on the fixed
+// sixteenth grid named a note that never played for any other grid, so a slide
+// across a scene switch was dropped on this path and kept by the engine.
+func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, startTick, boundaryTick int64, sampleAt func(int64) int64) sceneTransition {
+	grid := source.GridTicks()
+	if boundaryTick < grid || (boundaryTick-startTick)%grid != 0 {
 		return sceneTransition{}
 	}
-	lastStep := boundaryTick/seq.TicksPerStep - 1
-	index := uint8(lastStep % int64(source.Len))
+	lastStep := (boundaryTick-startTick%grid)/grid - 1
+	local := lastStep - startTick/grid
+	if local < 0 {
+		return sceneTransition{}
+	}
+	index := uint8(local % int64(source.Len))
 	step, err := seq.UnpackStep(source.Steps[index])
-	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, sourceSlot, lastStep/int64(source.Len), index) {
+	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, sourceSlot, local/int64(source.Len), index) {
 		return sceneTransition{}
 	}
-	startTick := lastStep * seq.TicksPerStep
+	swing := (grid*int64(source.SwingPermille) + 500) / 1000
+	stepStart, stepEnd := lastStep*grid+startTick%grid, boundaryTick
 	if lastStep&1 != 0 {
-		startTick += seq.SwingDelayTicks(source.SwingPermille)
+		stepStart += swing
 	}
-	onset := seq.RatchetTick(startTick, boundaryTick, step.Ratchet, step.Ratchet-1)
-	gateTicks := (boundaryTick - onset) * int64(source.GatePercent) / 100
+	if (lastStep+1)&1 != 0 {
+		stepEnd += swing
+	}
+	onset := seq.RatchetTick(stepStart, stepEnd, step.Ratchet, step.Ratchet-1)
+	gateTicks := (stepEnd - onset) * int64(source.GatePercent) / 100
 	if gateTicks < 30 {
 		gateTicks = 30
 	}
 	offTick := onset + gateTicks
 	sourceNoteID := lastStep*8 + int64(step.Ratchet)
-	targetStep := boundaryTick / seq.TicksPerStep
+	targetStep := boundaryTick / target.GridTicks()
 	targetIndex := uint8(targetStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
 	carry := err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
