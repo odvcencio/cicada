@@ -28,7 +28,7 @@ func tanh32Inputs() []float32 {
 
 // Tanh32 must equal float32(Tanh(float64(x))) bit for bit. This test checks
 // one of every 4,096 float32 values in [-12, 12] (both signs); the property was checked for
-// all 2^32 float32 inputs once (2026-11-10, arm64, george-mbp: 0 differ), and the digest below pins
+// all 2^32 float32 inputs once (2026-11-10: 0 differ on arm64 and on amd64), and the digest below pins
 // the sampled results on every target.
 func TestTanh32MatchesTanh(t *testing.T) {
 	n := 0
