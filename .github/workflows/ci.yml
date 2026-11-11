@@ -61,6 +61,7 @@ jobs:
       m2: ${{ steps.classify.outputs.m2 }}
       m2_gates: ${{ steps.classify.outputs.m2_gates }}
       bench: ${{ steps.classify.outputs.bench }}
+      wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -379,10 +380,15 @@ jobs:
 
   # Nightly: every score under examples/, rendered four ways on amd64 and on
   # arm64, compared byte for byte (TestExampleWAVParity with
-  # CICADA_WAV_PARITY_ALL=1). Pull requests render only the parity subset above.
+  # CICADA_WAV_PARITY_ALL=1), and every pinned render including the songs
+  # (TestExampleWAVPins). Pull requests run it too when they change the
+  # deterministic math or the WAV parity test (the wav_sweep group of
+  # scripts/ci-changes.sh); other pull requests render only the parity subset
+  # above.
   wav-parity-sweep-amd64:
     name: WAV parity sweep, every example (amd64)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: changes
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -410,8 +416,8 @@ jobs:
 
   wav-parity-sweep-arm64:
     name: WAV parity sweep, every example (arm64 against amd64)
-    needs: wav-parity-sweep-amd64
-    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    needs: [changes, wav-parity-sweep-amd64]
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true')) }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:

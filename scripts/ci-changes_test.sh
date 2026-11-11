@@ -24,8 +24,10 @@ fail() {
 	failures=$((failures + 1))
 }
 
-all_groups="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench"
-# Every group but the self-hosted CPU gate, which only its own inputs turn on.
+all_groups="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep"
+# Every group but the WAV sweep, which only its own inputs turn on.
+all_but_sweep="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench"
+# Every group but the self-hosted CPU gate and the WAV sweep.
 all_but_gates="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 bench"
 
 # expect_groups "name" "expected groups (space separated, or none)" paths...
@@ -43,6 +45,7 @@ expect_groups() {
 	done
 	actual="${actual# }"
 	if [[ "$expected" == all ]]; then expected="$all_groups"; fi
+	if [[ "$expected" == all-but-sweep ]]; then expected="$all_but_sweep"; fi
 	if [[ "$expected" == all-but-gates ]]; then expected="$all_but_gates"; fi
 	if [[ "$expected" == none ]]; then expected=""; fi
 	if [[ "$actual" != "$expected" ]]; then
@@ -51,49 +54,58 @@ expect_groups() {
 }
 
 # --- paths that turn everything on (the conservative fallbacks) ---
-expect_groups "workflow file" all .github/workflows/ci.yml
-expect_groups "local composite action" all .github/actions/setup-wasm-tools/action.yml
+expect_groups "workflow file" all-but-sweep .github/workflows/ci.yml
+expect_groups "local composite action" all-but-sweep .github/actions/setup-wasm-tools/action.yml
 expect_groups "PR template (a .md under .github)" all-but-gates .github/pull_request_template.md
-expect_groups "Makefile" all Makefile
+expect_groups "Makefile" all-but-sweep Makefile
 expect_groups "scripts dir" all-but-gates scripts/check-commit-hygiene.sh
-expect_groups "the classifier itself" all scripts/ci-changes.sh
+expect_groups "the classifier itself" all-but-sweep scripts/ci-changes.sh
 expect_groups "the classifier test" all-but-gates scripts/ci-changes_test.sh
-expect_groups "go.mod" all go.mod
-expect_groups "go.sum" all go.sum
+expect_groups "go.mod" all-but-sweep go.mod
+expect_groups "go.sum" all-but-sweep go.sum
 expect_groups "unknown top-level file" all-but-gates some-new-file.txt
 expect_groups "unknown top-level directory" all-but-gates brand-new-dir/thing.go
 expect_groups "gitignore" all-but-gates .gitignore
 expect_groups "empty input" all
 expect_groups "blank lines only" all ""
-expect_groups "embedded std library text" all project/std/README.md
-expect_groups "asset readme" all assets/ir/README.md
+expect_groups "embedded std library text" all-but-sweep project/std/README.md
+expect_groups "asset readme" all-but-sweep assets/ir/README.md
 expect_groups "fixture readme" all-but-gates host/recording/testdata/README.md
 expect_groups "top-level testdata" all-but-gates testdata/edition1/examples/first-acid.cicada
-expect_groups "example score" all examples/first-acid.cicada
-expect_groups "root Go package" all notation/parse.go
-expect_groups "command" all cmd/cicada/studio.go
-expect_groups "audio kernel" all kernel/graph/graph.go
-expect_groups "audio voice" all kernel/voice/strings/strings.go
-expect_groups "host package" all host/web/processor.js
+expect_groups "example score" all-but-sweep examples/first-acid.cicada
+expect_groups "root Go package" all-but-sweep notation/parse.go
+expect_groups "command" all-but-sweep cmd/cicada/studio.go
+expect_groups "audio kernel" all-but-sweep kernel/graph/graph.go
+expect_groups "audio voice" all-but-sweep kernel/voice/strings/strings.go
+expect_groups "host package" all-but-sweep host/web/processor.js
 expect_groups "one unknown path among docs" all-but-gates docs/manual/README.md mystery.bin
-expect_groups "one CI path among docs" all docs/manual/README.md .github/workflows/ci.yml
-expect_groups "one kernel file among workstation files" all workstation/panels.go kernel/graph/graph.go
+expect_groups "one CI path among docs" all-but-sweep docs/manual/README.md .github/workflows/ci.yml
+expect_groups "one kernel file among workstation files" all-but-sweep workstation/panels.go kernel/graph/graph.go
 
 # --- the self-hosted M2 CPU gate: only its own inputs queue it ---
 expect_groups "edit package" all-but-gates edit/intents.go
 expect_groups "Studio vocal handlers" all-but-gates cmd/cicada/studio_vocals.go
 expect_groups "browser shard script" all-but-gates scripts/ci-studio-browser.sh
 expect_groups "browser test helper" "workstation studio_browser macos_desktop" workstation/browser/page-stall.cjs
-expect_groups "kernel WASM entry" all cmd/cicada-kernel-wasm/main.go
-expect_groups "worklet bundle" all host/web/processor.min.js
-expect_groups "CPU gate Node harness" all cmd/cicada/browser_cpu_node.js
-expect_groups "CPU gate test" all cmd/cicada/browser_test.go
-expect_groups "kernel image handler" all cmd/cicada/studio_audio.go
-expect_groups "soak timing" all internal/soaktiming/timing.go
-expect_groups "kernel image encoder" all host/kernelimage/encode.go
-expect_groups "WASM optimiser script" all scripts/wasm-opt.sh
-expect_groups "edit plus kernel" all edit/intents.go kernel/graph/graph.go
-expect_groups "docs plus CPU gate test" all docs/manual/README.md cmd/cicada/browser_test.go
+expect_groups "kernel WASM entry" all-but-sweep cmd/cicada-kernel-wasm/main.go
+expect_groups "worklet bundle" all-but-sweep host/web/processor.min.js
+expect_groups "CPU gate Node harness" all-but-sweep cmd/cicada/browser_cpu_node.js
+expect_groups "CPU gate test" all-but-sweep cmd/cicada/browser_test.go
+expect_groups "kernel image handler" all-but-sweep cmd/cicada/studio_audio.go
+expect_groups "soak timing" all-but-sweep internal/soaktiming/timing.go
+expect_groups "kernel image encoder" all-but-sweep host/kernelimage/encode.go
+expect_groups "WASM optimiser script" all-but-sweep scripts/wasm-opt.sh
+expect_groups "edit plus kernel" all-but-sweep edit/intents.go kernel/graph/graph.go
+expect_groups "docs plus CPU gate test" all-but-sweep docs/manual/README.md cmd/cicada/browser_test.go
+
+# --- the WAV sweep: only the deterministic math and the WAV parity test queue it ---
+expect_groups "deterministic math" all kernel/dsp/detmath/detmath.go
+expect_groups "the math source guard" all kernel/dsp/detmath/guard_test.go
+expect_groups "WAV parity test and pins" "$all_but_gates wav_sweep" cmd/cicada/example_wav_parity_test.go
+expect_groups "another kernel package" all-but-sweep kernel/dsp/halfband/halfband.go
+expect_groups "docs plus deterministic math" all docs/manual/README.md kernel/dsp/detmath/detmath.go
+[[ -e "$repo/cmd/cicada/example_wav_parity_test.go" ]] || fail "sweep_input names cmd/cicada/example_wav_parity_test.go, which does not exist"
+
 # A file gate_input names by path must exist, or a rename would drop it silently.
 for gate_file in cmd/cicada/browser_test.go cmd/cicada/browser_soak_helpers_test.go cmd/cicada/browser_test_helpers_test.go cmd/cicada/browser_cpu_node.js cmd/cicada/studio.go cmd/cicada/studio_audio.go scripts/wasm-opt.sh scripts/run-with-timeout.py examples/first-acid.cicada .github/actions/setup-wasm-tools/action.yml; do
 	[[ -e "$repo/$gate_file" ]] || fail "gate_input names $gate_file, which does not exist"
@@ -144,10 +156,11 @@ for group in $all_groups; do
 done
 if [[ "$("$classifier" --classify docs/a.md)" != none ]]; then fail "--classify docs/a.md"; fi
 if [[ "$("$classifier" --classify kernel/x.go)" != "all m2_gates" ]]; then fail "--classify kernel/x.go"; fi
+if [[ "$("$classifier" --classify kernel/dsp/detmath/x.go)" != "all m2_gates wav_sweep" ]]; then fail "--classify kernel/dsp/detmath/x.go"; fi
 if [[ "$("$classifier" --classify edit/x.go)" != all ]]; then fail "--classify edit/x.go"; fi
 if "$classifier" --bogus </dev/null >/dev/null 2>&1; then fail "unknown flag was accepted"; fi
 # A last line with no newline still counts.
-if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 10 ]]; then fail "unterminated last line"; fi
+if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 11 ]]; then fail "unterminated last line"; fi
 
 # classify_for GROUP PATH: does PATH turn GROUP on?
 turns_on() {
