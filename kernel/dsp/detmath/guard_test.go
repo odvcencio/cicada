@@ -104,8 +104,17 @@ func renderPathFiles(t *testing.T, root string) []string {
 		sorted = append(sorted, dir)
 	}
 	sort.Strings(sorted)
+	// go list reports real paths; the root may reach the checkout through a
+	// symbolic link (macOS's /var is /private/var), so compare real paths.
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var files []string
 	for _, dir := range sorted {
+		if dir, err = filepath.EvalSymlinks(dir); err != nil {
+			t.Fatal(err)
+		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatal(err)
@@ -115,9 +124,9 @@ func renderPathFiles(t *testing.T, root string) []string {
 			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 				continue
 			}
-			rel, err := filepath.Rel(root, filepath.Join(dir, name))
-			if err != nil {
-				t.Fatal(err)
+			rel, err := filepath.Rel(realRoot, filepath.Join(dir, name))
+			if err != nil || strings.HasPrefix(rel, "..") {
+				t.Fatalf("go list gave %s, outside the repository %s (%v)", dir, realRoot, err)
 			}
 			files = append(files, filepath.ToSlash(rel))
 		}
