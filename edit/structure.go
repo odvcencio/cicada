@@ -60,34 +60,6 @@ type DeleteTrack struct {
 
 func (DeleteTrack) Kind() string { return "deletetrack" }
 
-// SetTrackVoice changes what a track plays to another voice: a built-in
-// voice, or an instrument, kit, sampler or preset the score declares or
-// imports. The track keeps its name, mixer settings, scene bindings and
-// chain. Nothing changes silently. A track setting the new voice lacks is
-// refused with voice_params_unsupported, unless dropparams removes it (the
-// label names each). A pattern the new voice cannot play, a parameter path
-// (automation, scene setting, modulation route, MIDI or live mapping) it does
-// not take, or any other problem the change adds to cicada check is refused
-// with voice_change_invalid, and uses lists every one. A change that plays
-// but sounds different, such as drum lanes the new kit does not play, or an
-// input whose effect differs between the voices (a pressure row or gesture
-// acid ignores, brackets that are a tuplet on acid and a chord on piano:
-// notation.VoiceInputs), is refused with voice_changes_sound unless
-// acceptchanges accepts it; the result's warnings then name each. An input or
-// a voice the check does not model is refused with voice_input_unmodeled.
-//
-// Example: {"kind":"settrackvoice","track":"keys","voice":"glow"}
-// Example: {"kind":"settrackvoice","track":"keys","voice":"glow","dropparams":true}
-// Example: {"kind":"settrackvoice","track":"keys","voice":"glow","acceptchanges":true}
-type SetTrackVoice struct {
-	Track         string `json:"track" cicada:"required"` // the track's name
-	Voice         string `json:"voice" cicada:"required"` // the new voice
-	DropParams    bool   `json:"dropparams,omitempty"`    // remove the track settings the new voice does not have
-	AcceptChanges bool   `json:"acceptchanges,omitempty"` // accept the listed changes to the sound, such as silent drum lanes
-}
-
-func (SetTrackVoice) Kind() string { return "settrackvoice" }
-
 // AddScene adds an empty scene after the last scene. Bind patterns to it with
 // bindscene and play it with appendsongentry. In the song, a track a scene
 // does not bind keeps playing what the scene before it selected.
@@ -174,8 +146,6 @@ func init() {
 	ruleKind("addtrack", fieldRules{oneOf: []FieldGroup{{Fields: []string{"voice", "preset"}}}})
 	Register("deletetrack", func() Intent { return &DeleteTrack{} })
 	Handle("deletetrack", deleteTrack)
-	Register("settrackvoice", func() Intent { return &SetTrackVoice{} })
-	Handle("settrackvoice", setTrackVoice)
 	Register("addscene", func() Intent { return &AddScene{} })
 	Handle("addscene", addScene)
 	Register("duplicatescene", func() Intent { return &DuplicateScene{} })
@@ -442,102 +412,6 @@ func withoutDeclaration(source []byte, types []string, name string) ([]byte, err
 		}
 	}
 	return nil, fmt.Errorf("unknown declaration %q", name)
-}
-
-func setTrackVoice(ctx *Context, intent Intent) error {
-	in := intent.(*SetTrackVoice)
-	score, err := validScore(ctx, "changing a track's voice")
-	if err != nil {
-		return err
-	}
-	if !patternName.MatchString(in.Voice) && !qualifiedVoice(in.Voice) {
-		return refuse("voice_invalid", "voice", "voice %q is not a name", in.Voice)
-	}
-	st := newStaged(ctx)
-	_, path, err := findEntity(st, KindTrack, in.Track, unknownTrack(in.Track, "track"))
-	if err != nil {
-		return err
-	}
-	node, walker, err := declaration(st.source(path), []string{"track_decl"}, in.Track)
-	if err != nil {
-		return err
-	}
-	kind := walker.Field(node, "kind")
-	before := walker.Text(kind)
-	if before == in.Voice {
-		return refuse("voice_unchanged", "voice", "track %s already plays %s", in.Track, in.Voice)
-	}
-	updated := replaceMixerSpan(st.source(path), int(kind.StartByte()), int(kind.EndByte()), []byte(in.Voice))
-	st.set(path, updated)
-	node, walker, err = declaration(updated, []string{"track_decl"}, in.Track)
-	if err != nil {
-		return err
-	}
-	var settings []trackSetting
-	for i := 0; i < node.NamedChildCount(); i++ {
-		// Only settings can be dropped; a pattern chain plays music.
-		child := node.NamedChild(i)
-		if walker.Type(child) != "mix_setting" {
-			continue
-		}
-		name := walker.Text(walker.Field(child, "name"))
-		if name == "" && child.NamedChildCount() > 0 {
-			name = walker.Text(walker.Field(child.NamedChild(0), "name"))
-		}
-		if name == "" {
-			name, _, _ = strings.Cut(strings.TrimSpace(walker.Text(child)), " ")
-		}
-		line, _ := walker.Pos(child)
-		settings = append(settings, trackSetting{name: name, start: int(child.StartByte()), end: int(child.EndByte()), line: line})
-	}
-	change, err := checkVoiceChange(st, score, in.Track, before, in.Voice, path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), settings, true)
-	if err != nil {
-		return err
-	}
-	if change.voiceInvalid != "" {
-		return refuse("voice_invalid", "voice", "a track cannot play %q: %s", in.Voice, change.voiceInvalid)
-	}
-	if len(change.invalid) > 0 {
-		return &ReasonError{Reason: "voice_change_invalid", Field: "voice", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Voice, strings.Join(change.invalid, "; "))}
-	}
-	if len(change.unmodeled) > 0 {
-		return &ReasonError{Reason: "voice_input_unmodeled", Field: "voice", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Voice, strings.Join(change.unmodeled, "; "))}
-	}
-	var dropped []string
-	for _, s := range change.unsupported {
-		dropped = append(dropped, s.name)
-	}
-	if len(change.unsupported) > 0 && !in.DropParams {
-		uses := make([]string, 0, len(change.unsupported))
-		for _, s := range change.unsupported {
-			uses = append(uses, fmt.Sprintf("setting %s (line %d)", s.name, s.line))
-		}
-		return &ReasonError{Reason: "voice_params_unsupported", Field: "voice", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; give dropparams to remove them", in.Voice, strings.Join(dropped, ", "), in.Track)}
-	}
-	if len(change.changes) > 0 && !in.AcceptChanges {
-		return &ReasonError{Reason: "voice_changes_sound", Field: "voice", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Voice, strings.Join(change.changes, "; "))}
-	}
-	if len(change.unsupported) > 0 {
-		spans := make([][2]int, 0, len(change.unsupported))
-		for _, s := range change.unsupported {
-			start, end := innerRemoval(updated, s.start, s.end, int(node.StartByte()))
-			spans = append(spans, [2]int{start, end})
-		}
-		st.set(path, removeSpans(updated, spans))
-		if err := resultValid(st, "voice", fmt.Sprintf("changing track %s to %s", in.Track, in.Voice)); err != nil {
-			return err
-		}
-	}
-	for _, c := range change.changes {
-		ctx.warn("%s", c)
-	}
-	st.commit()
-	label := "Track " + in.Track + ": voice " + before + " changed to " + in.Voice
-	if len(dropped) > 0 {
-		label += "; dropped settings " + strings.Join(dropped, ", ")
-	}
-	ctx.SetLabel(label)
-	return nil
 }
 
 func addScene(ctx *Context, intent Intent) error {
