@@ -4,10 +4,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-async function checkAudioPerformance({browser, base, proof, ready, errors}) {
+async function checkAudioPerformance({browser, base, proof, ready, errors, watches, context}) {
+  const stall = require('./page-stall.cjs');
+  const watch = async context => { if (watches) watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG})); };
   const storage = process.env.CICADA_AUDIO_PERFORMANCE_STORAGE;
   if (storage) assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'), 'Save Studio identity only in a private /tmp file.');
-  const desktop = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce', ...(storage && fs.existsSync(storage) ? {storageState: storage} : {})});
+  // A caller that already holds the Studio's owner session passes its context; a second context would be a viewer.
+  const desktop = context || await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce', ...(storage && fs.existsSync(storage) ? {storageState: storage} : {})});
+  if (!context) await watch(desktop);
   let phone;
   try {
     const page = await desktop.newPage();
@@ -46,7 +50,8 @@ async function checkAudioPerformance({browser, base, proof, ready, errors}) {
     await page.locator('[data-audio-value=granted]').filter({hasText: '64 frames'}).waitFor();
     assert.equal(await page.getByRole('combobox', {name: 'Buffer size', exact: true}).isDisabled(), true);
     assert.match(await page.locator('[data-audio-runtime]').innerText(), /hardware loopback measurement/);
-    await page.waitForTimeout(1200);
+    // Status refreshes about every 500 ms; wait for two instead of timing a fixed window.
+    for (const deadline = Date.now() + 15000; requests.filter(value => value === '1').length < 2 && Date.now() < deadline;) await page.waitForTimeout(100);
     assert.ok(requests.filter(value => value === '1').length >= 2, 'Native status did not refresh.');
     assert.equal(requests.filter(value => value !== '1').length, 0, 'Status polling repeatedly enumerated devices.');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -57,6 +62,7 @@ async function checkAudioPerformance({browser, base, proof, ready, errors}) {
 
     // Keep the original authorized Studio identity for the narrow viewport.
     phone = await browser.newContext({viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true, reducedMotion: 'reduce', storageState: await desktop.storageState()});
+    await watch(phone);
     const mobile = await phone.newPage();
     mobile.on('pageerror', error => errors.push(error.message));
     await mobile.goto(base + '/?panel=audio', {waitUntil: 'domcontentloaded'});
