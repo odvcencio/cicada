@@ -482,6 +482,45 @@ test('Loop part after a draw sends the revision its region shows', async () => {
   await noNavigation();
 });
 
+test('a recovery copy of the text a Code save writes does not keep the Code editor from following Undo', async () => {
+  // Before the steps that leave Code drafts: the editor starts clean.
+  const {page, state, posts, settled} = await studio();
+  const editor = page.locator('#score textarea').first();
+  const before = await state('/api/state');
+  assert.equal(await page.locator('#score form', {has: page.locator('textarea')}).evaluate(form => form.hasAttribute('data-code-unsaved')), false, 'the Code editor did not start clean');
+  const phrase = '\n// saved phrase';
+  const text = (await editor.inputValue()) + phrase;
+  // A recovery copy of that text that the save will not name, such as a
+  // recovered draft's earlier copy, or one an editor kept just before.
+  await page.evaluate(async content => {
+    const form = document.querySelector('#score textarea').form;
+    const id = [...crypto.getRandomValues(new Uint8Array(16))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const response = await fetch('/__actions/source-checkpoint', {method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('input[name=csrf_token]').value},
+      body: JSON.stringify({file: form.querySelector('input[name=file]')?.value || '', fileRevision: form.querySelector('input[name=fileRevision]').value,
+        content, recoveryId: id, recoverySequence: '1', recoveryParentId: '', recoveryParentHash: ''})});
+    if (!response.ok) throw new Error('checkpoint returned ' + response.status);
+  }, text);
+  await editor.focus();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(phrase);
+  assert.equal(await editor.inputValue(), text);
+  await page.locator('#score form', {has: page.locator('textarea')}).getByRole('button', {name: 'Save file', exact: true}).click();
+  await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
+  const afterSave = await state('/api/state');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#score input[name=revision]').first().inputValue() === afterSave.revision, 'the page did not show the saved file');
+  assert.equal(await page.locator('#score form', {has: page.locator('textarea')}).evaluate(form => form.hasAttribute('data-code-unsaved')), false, 'the saved text came back as an unsaved draft');
+  // Undo the save: the Code editor follows it.
+  const start = posts.length;
+  await page.locator('#undo-form button[type=submit]').click();
+  await settled(start + 1);
+  const undone = await state('/api/state');
+  assert.equal(undone.source, before.source, 'Undo did not restore the score');
+  await until(async () => await editor.inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
+    'the Code editor did not follow the Undo');
+});
+
 test('the Code editor stays mounted while other regions are patched', async () => {
   const {page, posts, cell, settled, confirmed, region, noNavigation} = await studio();
   const editor = await page.locator('#score textarea').elementHandle();
@@ -1003,43 +1042,6 @@ test('a held Undo is dropped after a refused edit', async () => {
   await page.waitForTimeout(400);
   assert.equal(posts.length, start + 1, 'the held Undo was sent after a refused edit');
   assert.match(await status(), /Undo or Redo waiting behind it was not sent/, 'the dropped Undo was not reported');
-});
-
-test('a recovery copy of the text a Code save writes does not keep the Code editor from following Undo', async () => {
-  const {page, state, posts, settled} = await studio();
-  const editor = page.locator('#score textarea').first();
-  const before = await state('/api/state');
-  const phrase = '\n// saved phrase';
-  const text = (await editor.inputValue()) + phrase;
-  // A recovery copy of that text that the save will not name, such as a
-  // recovered draft's earlier copy, or one an editor kept just before.
-  await page.evaluate(async content => {
-    const form = document.querySelector('#score form');
-    const id = [...crypto.getRandomValues(new Uint8Array(16))].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    const response = await fetch('/__actions/source-checkpoint', {method: 'POST',
-      headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('input[name=csrf_token]').value},
-      body: JSON.stringify({file: form.querySelector('input[name=file]')?.value || '', fileRevision: form.querySelector('input[name=fileRevision]').value,
-        content, recoveryId: id, recoverySequence: '1', recoveryParentId: '', recoveryParentHash: ''})});
-    if (!response.ok) throw new Error('checkpoint returned ' + response.status);
-  }, text);
-  await editor.focus();
-  await page.keyboard.press('Control+End');
-  await page.keyboard.type(phrase);
-  assert.equal(await editor.inputValue(), text);
-  await page.locator('#score form').first().getByRole('button', {name: 'Save file', exact: true}).click();
-  await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
-  const afterSave = await state('/api/state');
-  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
-  await until(async () => await page.locator('#score input[name=revision]').first().inputValue() === afterSave.revision, 'the page did not show the saved file');
-  assert.equal(await page.locator('#score form').first().evaluate(form => form.hasAttribute('data-code-unsaved')), false, 'the saved text came back as an unsaved draft');
-  // Undo the save: the Code editor follows it.
-  const start = posts.length;
-  await page.locator('#undo-form button[type=submit]').click();
-  await settled(start + 1);
-  const undone = await state('/api/state');
-  assert.equal(undone.source, before.source, 'Undo did not restore the score');
-  await until(async () => await editor.inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
-    'the Code editor did not follow the Undo');
 });
 
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {
