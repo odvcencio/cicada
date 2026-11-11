@@ -229,6 +229,47 @@ func parameterPathCompletion(source []byte, at position) []map[string]any {
 			"detail": fmt.Sprintf("%s; %g..%g; default %s", descriptor.Unit, descriptor.Min, descriptor.Max, formatDescriptorDefault(descriptor)),
 		})
 	}
+	if scope == "track" {
+		items = append(items, sendNameCompletions(source, settingPrefix, hasNested, items)...)
+	}
+	return items
+}
+
+// sendNameCompletions offers send.<name> for each declared delay, tape or
+// reverb effect: a path names a send by the effect, as a track's send line
+// does, and the declared name wins over the return keywords.
+func sendNameCompletions(source []byte, settingPrefix string, hasNested bool, existing []map[string]any) []map[string]any {
+	seen := map[string]bool{}
+	for _, item := range existing {
+		seen[fmt.Sprint(item["label"])] = true
+	}
+	var items []map[string]any
+	declaration := regexp.MustCompile(`(?m)^\s*fx\s+([a-z_][a-z0-9_-]*)(?:\s+([a-z_][a-z0-9_-]*))?\s*\{`)
+	for _, match := range declaration.FindAllSubmatch(source, -1) {
+		name, kind := string(match[1]), string(match[1])
+		if len(match[2]) > 0 {
+			kind = string(match[2])
+		}
+		slot := map[string]string{"delay": "send.delay", "tape": "send.delay", "reverb": "send.reverb"}[kind]
+		if slot == "" {
+			continue
+		}
+		setting := "send." + name
+		if hasNested {
+			if !strings.HasPrefix(setting, settingPrefix) {
+				continue
+			}
+			setting = strings.TrimPrefix(setting, settingPrefix)
+		}
+		if seen[setting] {
+			continue
+		}
+		seen[setting] = true
+		items = append(items, map[string]any{
+			"label": setting, "insertText": setting,
+			"detail": fmt.Sprintf("send to %s, the %s return (%s); a linear gain 0..1 or a level from -60dB to 0dB", name, kind, slot),
+		})
+	}
 	return items
 }
 

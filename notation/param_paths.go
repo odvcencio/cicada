@@ -17,6 +17,7 @@ import (
 func validateSceneSettings(score *Score, add func(string, string, string, Position)) {
 	for _, scene := range score.Scenes {
 		seen := make(map[string]bool, len(scene.Settings))
+		controls := make(map[string]string, len(scene.Settings)) // resolved control -> first path
 		for _, setting := range scene.Settings {
 			if seen[setting.Path] {
 				add("CICADA-DUPLICATE", "scene sets path more than once: "+setting.Path, "error", setting.Position)
@@ -54,11 +55,19 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 				add("CICADA-UNSUPPORTED", "insert effect controls are fixed until the score is recompiled", "error", setting.Position)
 				continue
 			}
-			descriptor, _, _, code, message := resolveNotationPath(score, setting.Path)
+			descriptor, _, owner, code, message := resolveNotationPath(score, setting.Path)
 			if code != "" {
 				add(code, message, "error", setting.Position)
 				continue
 			}
+			// Two spellings of one control, such as a.send.hall and
+			// a.send.reverb, would set it twice.
+			control := owner + "\x00" + descriptor.ID
+			if first, ok := controls[control]; ok && first != setting.Path {
+				add("CICADA-DUPLICATE", "scene "+scene.Name+" sets one control twice: "+first+" and "+setting.Path+" are the same "+descriptor.Path+" of "+owner+sendNote(score, first, setting.Path), "error", setting.Position)
+				continue
+			}
+			controls[control] = setting.Path
 			if !descriptor.Live && !SceneTempoPath(descriptor.ID) {
 				add("CICADA-UNSUPPORTED", "scene setting "+setting.Path+" is not live", "error", setting.Position)
 				continue
@@ -142,8 +151,12 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := notationParameterVoiceKind(score, track.Kind)
-		if alias, ok := paramdefs.SendAlias(setting, scoreEffectKind(score)); ok && !registryTrackPath(setting, kind) {
-			setting = alias
+		// send.<name> of a declared delay, tape or reverb is its return's
+		// send; the declared name wins over the return keywords.
+		if target, ok, refusal := paramdefs.SendTarget(setting, scoreEffectKind(score)); refusal != "" {
+			return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + ": " + refusal
+		} else if ok {
+			setting = target
 		}
 		for _, descriptor := range paramdefs.Registry {
 			if descriptor.Scope != "track" || descriptor.Path != setting || !paramdefs.HasVoice(descriptor, kind) {
@@ -171,8 +184,7 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 				return paramdefs.InstrumentParamDescriptor(slot, param.Name, unit, value), "track", owner, "", ""
 			}
 		}
-		hint := sendPathHint(score, setting)
-		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + hint
+		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path
 	}
 	if effectOK {
 		setting := strings.Join(parts[1:], ".")
@@ -393,9 +405,17 @@ func ParameterVoiceKind(score *Score, kind string) string {
 	return notationParameterVoiceKind(score, kind)
 }
 
-// sendPathHint is paramdefs.SendPathHint over the score's effects.
-func sendPathHint(score *Score, setting string) string {
-	return paramdefs.SendPathHint(setting, scoreEffectKind(score))
+// sendNote explains, for a diagnostic about paths a and b, a send path whose
+// declared effect name is the other return's keyword.
+func sendNote(score *Score, a, b string) string {
+	for _, path := range []string{a, b} {
+		if _, setting, ok := strings.Cut(path, "."); ok {
+			if note := paramdefs.SendTargetNote(setting, scoreEffectKind(score)); note != "" {
+				return "; " + note
+			}
+		}
+	}
+	return ""
 }
 
 // scoreEffectKind reports the kind of a declared effect of the score.
@@ -410,13 +430,3 @@ func scoreEffectKind(score *Score) func(string) (string, bool) {
 	}
 }
 
-// registryTrackPath reports whether setting is a registered track path of the
-// voice kind, such as send.delay. A send alias never hides one.
-func registryTrackPath(setting, kind string) bool {
-	for _, descriptor := range paramdefs.Registry {
-		if descriptor.Scope == "track" && descriptor.Path == setting && paramdefs.HasVoice(descriptor, kind) {
-			return true
-		}
-	}
-	return false
-}

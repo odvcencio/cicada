@@ -29,7 +29,7 @@ func TestAutomationSendPathNamedByEffectGetsAHint(t *testing.T) {
 		t.Fatal("automating keys.send.grit, a drive, was accepted")
 	}
 	for _, d := range ds {
-		if strings.Contains(d.Message, "only the delay and reverb returns have track send paths") {
+		if strings.Contains(d.Message, "send.grit names effect grit, a drive, which is not a send return") {
 			return
 		}
 	}

@@ -5,45 +5,47 @@ import (
 	"strings"
 )
 
-// SendPathHint explains the send paths when a track path names a send by an
-// effect that is not a send return. A path names a send by its return slot,
-// send.delay for the delay or tape return and send.reverb for the reverb
-// return, or by the declared name of that return's effect (SendAlias), as a
-// track's send line does (send echo = 0.2). kind reports a declared effect's
-// kind. The hint is "" when setting is not send.<effect>.
-func SendPathHint(setting string, kind func(effect string) (string, bool)) string {
-	name, ok := strings.CutPrefix(setting, "send.")
-	if !ok {
-		return ""
-	}
-	if _, declared := kind(name); !declared {
-		return ""
-	}
-	return "; only the delay and reverb returns have track send paths (send.delay and send.reverb, or send.<name> for the declared delay, tape or reverb effect)"
-}
-
-// SendAlias maps send.<name>, where name is a declared delay, tape or reverb
-// effect, to the send path of its return: send.delay or send.reverb. A track
-// block writes a send by the effect's name (send hall = -6dB), so a scene or
-// automation path may too (a.send.hall). It reports false for any other
-// setting, so the return-slot spellings keep their meaning even when an effect
-// is named delay or reverb.
-func SendAlias(setting string, kind func(effect string) (string, bool)) (string, bool) {
-	name, ok := strings.CutPrefix(setting, "send.")
-	if !ok || strings.Contains(name, ".") {
-		return "", false
+// SendTarget resolves the setting of a track path that names a send. A
+// declared effect name wins over the return keywords, as in a track's send
+// line (send hall = -6dB): send.<name> of a declared delay or tape is
+// send.delay, of a declared reverb send.reverb, even when the name is delay
+// or reverb itself, so with fx reverb delay {} the path send.reverb is the
+// delay's send. A declared effect that is not a send return is refused with
+// refusal. Any other setting stays as written (ok false), and send.delay and
+// send.reverb then name the returns by kind. kind reports a declared effect's
+// kind.
+func SendTarget(setting string, kind func(effect string) (string, bool)) (path string, ok bool, refusal string) {
+	name, isSend := strings.CutPrefix(setting, "send.")
+	if !isSend || strings.Contains(name, ".") {
+		return "", false, ""
 	}
 	effectKind, declared := kind(name)
 	if !declared {
-		return "", false
+		return "", false, ""
 	}
 	switch effectKind {
 	case "delay", "tape":
-		return "send.delay", true
+		return "send.delay", true, ""
 	case "reverb":
-		return "send.reverb", true
+		return "send.reverb", true, ""
 	}
-	return "", false
+	return "", false, "send." + name + " names effect " + name + ", a " + effectKind + ", which is not a send return; only a delay, tape or reverb effect takes sends (send.delay and send.reverb, or send.<name> with that effect's name), and a declared effect name wins over the return keywords delay and reverb"
+}
+
+// SendTargetNote explains a send path whose declared effect name is the other
+// return's keyword, such as send.reverb when fx reverb delay {} declares a
+// delay named reverb, for a diagnostic about that path. It is "" for any
+// other setting.
+func SendTargetNote(setting string, kind func(effect string) (string, bool)) string {
+	name, isSend := strings.CutPrefix(setting, "send.")
+	if !isSend || name != "delay" && name != "reverb" {
+		return ""
+	}
+	effectKind, declared := kind(name)
+	if !declared || effectKind == name || name == "delay" && effectKind == "tape" {
+		return ""
+	}
+	return "send." + name + " is the send to effect " + name + ", a " + effectKind + ": a declared effect name wins over the return keyword " + name
 }
 
 // IsTrackSend reports whether d is a track's send to the delay or the reverb

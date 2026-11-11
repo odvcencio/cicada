@@ -105,19 +105,17 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := parameterVoiceKind(p, p.Tracks[trackIndex].Kind)
+		// send.<name> of a declared delay, tape or reverb is its return's
+		// send; the declared name wins over the return keywords.
+		if target, ok, refusal := paramdefs.SendTarget(setting, projectEffectKind(p)); refusal != "" {
+			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+": "+refusal)
+		} else if ok {
+			setting = target
+		}
 		for _, candidate := range paramdefs.Registry {
 			if candidate.Scope == "track" && candidate.Path == setting && paramdefs.HasVoice(candidate, kind) {
 				descriptor, found = candidate, true
 				break
-			}
-		}
-		if alias, ok := paramdefs.SendAlias(setting, projectEffectKind(p)); ok && !found {
-			// send.<name> of a declared delay, tape or reverb is its return's send.
-			for _, candidate := range paramdefs.Registry {
-				if candidate.Scope == "track" && candidate.Path == alias && paramdefs.HasVoice(candidate, kind) {
-					descriptor, found = candidate, true
-					break
-				}
 			}
 		}
 		if !found {
@@ -139,8 +137,7 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 		}
 		if !found {
-			hint := paramdefs.SendPathHint(setting, projectEffectKind(p))
-			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+hint)
+			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
 		}
 		if strings.HasPrefix(descriptor.ID, "amp.") {
 			if _, err := trackAmpParams(p, p.Tracks[trackIndex]); err != nil {

@@ -278,12 +278,26 @@ func LookupParamDescriptor(id string) (paramdefs.Descriptor, bool) {
 	return paramdefs.Lookup(id)
 }
 
+// ParamAddressByName finds the address of a parameter path. A path that names
+// a control by another spelling, such as a.send.hall for a.send.reverb when
+// hall is the score's reverb, finds that control's address under the name it
+// was asked for.
 func ParamAddressByName(p *Project, address string) (ParamAddress, error) {
-	if _, err := ResolveParameterPath(p, address); err != nil {
+	resolved, err := ResolveParameterPath(p, address)
+	if err != nil {
 		return ParamAddress{}, err
 	}
 	for _, candidate := range ParamAddresses(p) {
 		if candidate.Address == address {
+			return candidate, nil
+		}
+	}
+	for _, candidate := range ParamAddresses(p) {
+		if candidate.Param != resolved.Descriptor.ID || resolved.OwnerKind == "track" && candidate.Track != resolved.Owner {
+			continue
+		}
+		if other, err := ResolveParameterPath(p, candidate.Address); err == nil && other.Track == resolved.Track && other.ID == resolved.ID {
+			candidate.Address = address
 			return candidate, nil
 		}
 	}
