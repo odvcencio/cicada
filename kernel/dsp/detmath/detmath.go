@@ -35,21 +35,80 @@ const splitter = 0x1p27 + 1 // Veltkamp's constant for float64
 // split returns hi + lo = a exactly, each with at most 26 significant bits.
 func split(a float64) (hi, lo float64) {
 	if a > 0x1p995 || a < -0x1p995 {
-		hi, lo = split(a * 0x1p-28)
-		return hi * 0x1p28, lo * 0x1p28
+		return splitHuge(a)
 	}
 	t := float64(splitter * a)
 	hi = t - (t - a)
 	return hi, a - hi
 }
 
+// scale returns math.Ldexp(v, m) for the values the exponential kernels
+// produce: v with 0.98 <= |v| < 2.04 (or 0, an infinity or NaN with m == 0),
+// and the low part of a double-double whose high part is such a v, with
+// m >= 0. Then v*2^m is zero or normal, so multiplying by 2^m (built from its
+// bits) is exact and equals Ldexp, without Ldexp's general cases.
+func scale(v float64, m int) float64 {
+	if m == 0 {
+		return v
+	}
+	if m >= -1020 && m <= 1020 {
+		return v * math.Float64frombits(uint64(m+1023)<<52)
+	}
+	return math.Ldexp(v, m)
+}
+
+// splitHuge is split for |a| > 2^995, where splitter*a could overflow: it
+// splits a*2^-28 (twice for |a| > 2^1023) and scales back, which is exact.
+// It is a separate function so that split, which is not recursive, inlines.
+func splitHuge(a float64) (hi, lo float64) {
+	a *= 0x1p-28
+	scale := 0x1p28
+	if a > 0x1p995 || a < -0x1p995 {
+		a *= 0x1p-28
+		scale = 0x1p56
+	}
+	t := float64(splitter * a)
+	hi = t - (t - a)
+	return hi * scale, (a - hi) * scale
+}
+
 // twoProd returns p = fl(a*b) and e with p + e = a*b exactly, barring
 // overflow and underflow.
 func twoProd(a, b float64) (p, e float64) {
 	p = float64(a * b)
-	ah, al := split(a)
-	bh, bl := split(b)
+	// split(a) and split(b), written out: split does not inline, and twoProd
+	// runs in every reduction and kernel.
+	var ah, al, bh, bl float64
+	if a > 0x1p995 || a < -0x1p995 {
+		ah, al = splitHuge(a)
+	} else {
+		t := float64(splitter * a)
+		ah = t - (t - a)
+		al = a - ah
+	}
+	if b > 0x1p995 || b < -0x1p995 {
+		bh, bl = splitHuge(b)
+	} else {
+		t := float64(splitter * b)
+		bh = t - (t - b)
+		bl = b - bh
+	}
 	e = ((float64(ah*bh) - p) + float64(ah*bl) + float64(al*bh)) + float64(al*bl)
+	return p, e
+}
+
+// twoSquare returns twoProd(a, a), splitting a once.
+func twoSquare(a float64) (p, e float64) {
+	p = float64(a * a)
+	var ah, al float64
+	if a > 0x1p995 || a < -0x1p995 {
+		ah, al = splitHuge(a)
+	} else {
+		t := float64(splitter * a)
+		ah = t - (t - a)
+		al = a - ah
+	}
+	e = ((float64(ah*ah) - p) + float64(ah*al) + float64(al*ah)) + float64(al*al)
 	return p, e
 }
 
@@ -138,7 +197,7 @@ func expDD(xh, xl float64) (hi, lo float64, m int) {
 func Exp(x float64) float64 {
 	x = float64(x) // see the package comment
 	hi, lo, m := expDD(x, 0)
-	return math.Ldexp(hi+lo, m)
+	return scale(hi+lo, m)
 }
 
 // Exp2 returns 2^x, exact for integers. Measured error: at most 0.51 ULP.
@@ -157,7 +216,7 @@ func Exp2(x float64) float64 {
 	rh, rl := twoProd(f, ln2Hi)
 	rl += float64(f * ln2Lo)
 	hi, lo, m := expReduced(int(k), rh, rl)
-	return math.Ldexp(hi+lo, m)
+	return scale(hi+lo, m)
 }
 
 // Exp10 returns 10^x, exact where 10^x is a representable integer. Measured
@@ -177,7 +236,7 @@ func Exp10(x float64) float64 {
 	l += float64(x * ln10Lo)
 	h, l = fastTwoSum(h, l)
 	hi, lo, m := expDD(h, l)
-	return math.Ldexp(hi+lo, m)
+	return scale(hi+lo, m)
 }
 
 // logDD returns log(x) as a double-double for finite x > 0.
@@ -197,9 +256,16 @@ func logDD(x float64) (hi, lo float64) {
 	// to a double it limits the accuracy of Pow for large exponents.
 	z, zl := twoProd(sh, sh)
 	q := 1.0 / 25
-	for _, c := range [...]float64{1.0 / 23, 1.0 / 21, 1.0 / 19, 1.0 / 17, 1.0 / 15, 1.0 / 13, 1.0 / 11, 1.0 / 9, 1.0 / 7, 1.0 / 5} {
-		q = c + float64(z*q)
-	}
+	q = 1.0/23 + float64(z*q)
+	q = 1.0/21 + float64(z*q)
+	q = 1.0/19 + float64(z*q)
+	q = 1.0/17 + float64(z*q)
+	q = 1.0/15 + float64(z*q)
+	q = 1.0/13 + float64(z*q)
+	q = 1.0/11 + float64(z*q)
+	q = 1.0/9 + float64(z*q)
+	q = 1.0/7 + float64(z*q)
+	q = 1.0/5 + float64(z*q)
 	s2 := float64(2 * sh) // exact
 	// 2s^3 = 2sh*(z + zl) + 6 sh^2 sl, to 2^-100 of 2s^3.
 	ch, cl := twoProd(s2, z)
@@ -320,7 +386,7 @@ func Pow(x, y float64) float64 {
 	l += float64(y * ll)
 	h, l = fastTwoSum(h, l)
 	hi, lo, m := expDD(h, l)
-	r := math.Ldexp(hi+lo, m)
+	r := scale(hi+lo, m)
 	if x < 0 && odd {
 		return -r
 	}
@@ -342,14 +408,18 @@ func Tanh(x float64) float64 {
 		// Odd Taylor series; the next term is below 2^-70 of x.
 		z := float64(x * x)
 		q := 6404582.0 / 10854718875
-		for _, c := range [...]float64{-929569.0 / 638512875, 21844.0 / 6081075, -1382.0 / 155925, 62.0 / 2835, -17.0 / 315, 2.0 / 15, -1.0 / 3} {
-			q = c + float64(z*q)
-		}
+		q = -929569.0/638512875 + float64(z*q)
+		q = 21844.0/6081075 + float64(z*q)
+		q = -1382.0/155925 + float64(z*q)
+		q = 62.0/2835 + float64(z*q)
+		q = -17.0/315 + float64(z*q)
+		q = 2.0/15 + float64(z*q)
+		q = -1.0/3 + float64(z*q)
 		return x + float64(float64(x*z)*q)
 	}
 	// tanh(a) = 1 - 2/(e^(2a) + 1).
 	eh, el, m := expDD(2*a, 0) // 2a <= 44: no overflow or underflow
-	eh, el = math.Ldexp(eh, m), math.Ldexp(el, m)
+	eh, el = scale(eh, m), scale(el, m)
 	dh, dl := twoSum(eh, 1)
 	dl += el
 	qh, ql := divDD(2, 0, dh, dl)
@@ -396,9 +466,14 @@ func sinKernel(rh, rl float64) (hi, lo float64) {
 	z := float64(rh * rh)
 	// sin(r) = r + r^3 (-1/6 + z/120 - ...), through r^19 (next term below 2^-72).
 	p := -1.0 / 121645100408832000
-	for _, c := range [...]float64{1.0 / 355687428096000, -1.0 / 1307674368000, 1.0 / 6227020800, -1.0 / 39916800, 1.0 / 362880, -1.0 / 5040, 1.0 / 120, -1.0 / 6} {
-		p = c + float64(z*p)
-	}
+	p = 1.0/355687428096000 + float64(z*p)
+	p = -1.0/1307674368000 + float64(z*p)
+	p = 1.0/6227020800 + float64(z*p)
+	p = -1.0/39916800 + float64(z*p)
+	p = 1.0/362880 + float64(z*p)
+	p = -1.0/5040 + float64(z*p)
+	p = 1.0/120 + float64(z*p)
+	p = -1.0/6 + float64(z*p)
 	// sin(rh + rl) = sin(rh) + rl cos(rh), with cos(rh) = 1 - z/2 to 2^-53 of rl.
 	tail := float64(float64(rh*z)*p) + float64(rl*(1-float64(0.5*z)))
 	return fastTwoSum(rh, tail)
@@ -406,12 +481,17 @@ func sinKernel(rh, rl float64) (hi, lo float64) {
 
 // cosKernel returns cos(rh + rl) as a double-double for |rh| <= pi/4.
 func cosKernel(rh, rl float64) (hi, lo float64) {
-	z, zl := twoProd(rh, rh)
+	z, zl := twoSquare(rh)
 	// cos(r) = 1 - z/2 + z^2 (1/24 - z/720 + ...), through r^20.
 	q := 1.0 / 2432902008176640000
-	for _, c := range [...]float64{-1.0 / 6402373705728000, 1.0 / 20922789888000, -1.0 / 87178291200, 1.0 / 479001600, -1.0 / 3628800, 1.0 / 40320, -1.0 / 720, 1.0 / 24} {
-		q = c + float64(z*q)
-	}
+	q = -1.0/6402373705728000 + float64(z*q)
+	q = 1.0/20922789888000 + float64(z*q)
+	q = -1.0/87178291200 + float64(z*q)
+	q = 1.0/479001600 + float64(z*q)
+	q = -1.0/3628800 + float64(z*q)
+	q = 1.0/40320 + float64(z*q)
+	q = -1.0/720 + float64(z*q)
+	q = 1.0/24 + float64(z*q)
 	hz := float64(0.5 * z)
 	w := 1 - hz
 	// cos(rh + rl) = cos(rh) - rl sin(rh), with sin(rh) = rh to 2^-55 of rl.

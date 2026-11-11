@@ -64,6 +64,10 @@ type Limiter struct {
 	position                    int64
 	gain, releaseAlpha, ceiling float64
 	fault                       bool
+	// GainReductionDB's value for the gain whose bits are reductionBits.
+	reductionBits  uint64
+	reduction      float64
+	reductionValid bool
 }
 
 func NewLimiter(sampleRate int) (*Limiter, error) {
@@ -84,11 +88,18 @@ func (l *Limiter) Fault() bool        { return l.fault }
 
 // GainReductionDB reports the current linked gain reduction. Zero means the
 // limiter is passing unity gain.
+//
+// The engine reads it every frame, and the gain holds still whenever the
+// limiter is not reducing, so the value is kept for the last gain's exact bits:
+// the same input gives the same result without another logarithm.
 func (l *Limiter) GainReductionDB() float64 {
 	if l.gain <= 0 {
 		return math.Inf(1)
 	}
-	return -20 * detmath.Log10(l.gain)
+	if bits := math.Float64bits(l.gain); !l.reductionValid || bits != l.reductionBits {
+		l.reductionBits, l.reduction, l.reductionValid = bits, -20*detmath.Log10(l.gain), true
+	}
+	return l.reduction
 }
 
 func (l *Limiter) Reset() {
