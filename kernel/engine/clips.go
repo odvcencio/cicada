@@ -145,8 +145,8 @@ func (e *Engine) nextClipStereo(track int) (float32, float32) {
 			}
 			gain = max(0, gain)
 			l, r := v.voice.NextStereo()
-			left += float64(l) * gain
-			right += float64(r) * gain
+			left += float64(float64(l) * gain)
+			right += float64(float64(r) * gain)
 			v.sourceFrame += v.ratio
 			v.active = v.voice.Active() && v.sourceFrame < float64(c.EndFrame-c.StartFrame)
 			if !v.active {

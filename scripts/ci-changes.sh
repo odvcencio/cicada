@@ -18,17 +18,18 @@
 # Groups and the jobs they gate (see .github/workflows/ci.yml):
 #   root             native-go127, the four M0 parts
 #   studio_cli       Studio CLI tests (cmd/cicada shards)
-#   parity           PCM24 parity (amd64, arm64)
+#   parity           PCM24 and WAV parity (amd64, arm64)
 #   workstation      GoSX workstation and Tymbal boundary
 #   studio_browser   Studio build and the Studio browser shards
 #   macos_desktop    macOS desktop (arm64, amd64)
 #   macos_contracts  macOS platform contracts (arm64, amd64)
 #   m2               M2 AudioWorklet gates and the WASM parity jobs
+#   bench            agent loop speed (cmd/cicada-bench on the built cicada)
 # Always-on jobs (changes, commit hygiene, repo checks, the M0 aggregate) do
 # not appear here.
 set -euo pipefail
 
-groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2)
+groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 bench)
 
 # classify_path prints the groups a path turns on, or "all" or "none".
 #

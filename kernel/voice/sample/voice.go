@@ -193,7 +193,7 @@ func (v *Voice) SeekFrames(frames int64) {
 	if frames < 0 {
 		return
 	}
-	v.phase = float64(v.region.Start) + float64(frames)*v.ratio
+	v.phase = float64(v.region.Start) + float64(float64(frames)*v.ratio)
 	if v.region.Loop && v.phase >= float64(v.region.LoopEnd) {
 		v.phase = float64(v.region.LoopStart) + math.Mod(v.phase-float64(v.region.LoopStart), float64(v.region.LoopEnd-v.region.LoopStart))
 		v.looped = true
@@ -214,7 +214,7 @@ func (v *Voice) NoteOnAt(note, velocity uint8, outputFrame int64) error {
 	if err := v.NoteOn(note, velocity); err != nil {
 		return err
 	}
-	phase := float64(v.region.Start) + float64(outputFrame)*v.ratio
+	phase := float64(v.region.Start) + float64(float64(outputFrame)*v.ratio)
 	if phase >= float64(v.region.End) {
 		v.Reset()
 		return nil
@@ -336,7 +336,7 @@ func (v *Voice) NextStereo() (float32, float32) {
 			}
 			pressureTarget := 1 + float64(v.expression.Pressure)
 			if v.pressureGain != pressureTarget {
-				v.pressureGain += (pressureTarget - v.pressureGain) * v.pressureAlpha
+				v.pressureGain += float64((pressureTarget - v.pressureGain) * v.pressureAlpha)
 				if math.Abs(v.pressureGain-pressureTarget) < 1e-7 {
 					v.pressureGain = pressureTarget
 				}

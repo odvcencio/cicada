@@ -125,6 +125,9 @@ For each intent:
 
 - `meaning` is one line; `notes` adds what else the intent's documentation
   says.
+- `reasons` lists the codes the intent's refusals can carry, the `reason` of
+  an `apply --json` error (below). A test derives the list from the code, so
+  an agent can match on it.
 - Each field has its JSON `name`, its `type` (`string`, `integer`, `number`,
   `boolean`, `entity`, `object`, `array` with `items`, or `any`), whether it is
   `required`, and its `unit`, allowed `values` and `meaning` where the code
@@ -472,8 +475,15 @@ When the batch fails, `error.code` is one of:
 <!-- /apply-error-codes -->
 
 `index`, `kind` and, where the code knows it, `field` name the intent at
-fault. A refused `editnotes` batch also carries `diagnostic` `CICADA-NOTES`,
-its `reason` and the `note` (see [Editors](editors.md)). The text error names
+fault. When an intent states why it refused, `reason` carries a stable code
+from the intent's `reasons` list in `cicada intents --json`. Where they
+apply, `uses` lists what still refers to the entity, `file` names another
+source file of the project that holds what the edit would have to change
+(an edit writes only the score it is given), and `range` gives the
+`parameter`, the `value` given, `min`, `max` and `unit` of a value outside
+its range (reason `value_out_of_range`). A refused `editnotes` batch also carries
+`diagnostic` `CICADA-NOTES`, its `reason` and the `note` (see
+[Editors](editors.md)). The text error names
 the intent the same way: `intents[1].entity (togglestep): unknown pattern
 "rif"`.
 
@@ -574,6 +584,20 @@ one), `loudness` gives the target and tolerance, the measured
 (`gain_stage`), the master limiter's gain reduction and the DC correction. A
 measurement is `null` when there is none.
 
+The search runs up to six passes and synthesizes the song only once.
+`syntheses`, `replays` and `repeats` count how the `passes` got their audio,
+and add up to `passes`: a synthesis renders the song in full; a replay runs
+only the master stage again on the first pass's stored mix; a repeat is not
+rendered, because its gain differs from an earlier pass's by less than the
+renderer can show, so its audio and measurement are that pass's. `pass_log`
+has one entry per pass, in order: the `gain_db` it applied, its measured
+`integrated_lufs` and `true_peak_dbtp`, and `render`, which is `synthesized`,
+`replayed` or `repeated` (with `same_as`, the number of the pass it repeats).
+The audio and every other number are the same as when each pass synthesizes
+the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
+does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
+to check whether reuse caused a difference you see.
+
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 
 ```json
@@ -605,6 +629,23 @@ measurement is `null` when there is none.
     "applied_gain_db": 10.963850844317331,
     "target_met": true,
     "passes": 2,
+    "syntheses": 1,
+    "replays": 1,
+    "repeats": 0,
+    "pass_log": [
+      {
+        "gain_db": 0,
+        "integrated_lufs": -24.96385084431733,
+        "true_peak_dbtp": -16.938175787527175,
+        "render": "synthesized"
+      },
+      {
+        "gain_db": 10.963850844317331,
+        "integrated_lufs": -13.999999856123383,
+        "true_peak_dbtp": -5.974329358809015,
+        "render": "replayed"
+      }
+    ],
     "gain_stage": "post_chain"
   }
 }
@@ -643,8 +684,14 @@ is at `revision`: after any other change, render again. `intents`,
 when present, makes the same change through `cicada apply`; it is absent when
 no intent can. Today only `loudness_shortfall_at_true_peak_ceiling` has a
 remedy: a limiter at the export's true-peak ceiling as the last master
-insert. No intent adds a limiter yet, so edit the score text by hand or with a
-`replacetext` intent.
+insert. Its `intents` hold the `addeffect` intent that adds that limiter; put
+them in an envelope with the remedy's `revision` and run `cicada apply
+<score> <envelope> --write`. `score_text` describes the same change as text.
+In an edition-1 score the intent carries `confirmupgrade`, because a mixer
+write upgrades the score to edition 2, and `summary` says so; `score_text`
+keeps edition 1. When the master chain already holds 16 inserts, the most it
+takes, the remedy has neither `score_text` nor `intents`: `summary` says to
+remove a master insert first.
 
 This score has no master limiter, so its export to −9 LUFS stops at the
 true-peak ceiling:
@@ -693,11 +740,22 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
     "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
     "remedy": {
-      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent",
+      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text",
       "file": "loud.cicada",
       "revision": "9a1336e210d4e6fddfde19678baf455fd45a31dbb38177789e133de2ac384d5f",
       "replaces": "master { level = 6dB insert = tone }",
-      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }"
+      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }",
+      "intents": [
+        {
+          "effectkind": "limiter",
+          "inserton": "master",
+          "kind": "addeffect",
+          "name": "ceiling",
+          "settings": {
+            "ceiling": "-1dBTP"
+          }
+        }
+      ]
     }
   }
 }
