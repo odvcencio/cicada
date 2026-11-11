@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const stall=require('./page-stall.cjs');
 
 async function until(fn, message) {
   const end = Date.now() + 20000;
@@ -29,8 +30,10 @@ test('Session levels individual vocal phrases and auditions them solo without ch
 
   const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] });
-  t.after(() => browser.close(), {timeout: 15000});
+  const watches = [];
+  stall.teardown(t, browser, { watch: watches, exitWhenDone: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' });
+  watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
   const errors = [], checks = [];
@@ -228,6 +231,7 @@ test('Session levels individual vocal phrases and auditions them solo without ch
   checks.push('resetting one subphrase keeps the surrounding portions of the same take at their existing levels');
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce', storageState: await context.storageState() });
+  watches.push(await stall.watchContext(mobile, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));
   const phone = await mobile.newPage();
   phone.setDefaultTimeout(20000);
   phone.on('pageerror', error => errors.push(error.message));

@@ -32,7 +32,6 @@ type curveRecordingUI struct {
 	awaitingRefresh      bool
 	refreshUncertain     bool
 	jobs                 chan string
-	historyButtons       []historyButtonState
 }
 
 // A structured validation/conflict response is a rejection candidate. A
@@ -41,46 +40,17 @@ type automationActionRejected struct{ message string }
 
 func (e *automationActionRejected) Error() string { return e.message }
 
-type historyButtonState struct {
-	button   js.Value
-	disabled bool
-	form     js.Value
-	inert    bool
-}
-
 // A successful Keep changes the score before the shell's refreshed forms
-// arrive. Prevent Undo/Redo from submitting the prior revision in that gap.
+// arrive. The recording reason keeps Undo and Redo from submitting the prior
+// revision in that gap (history_lock.go owns the buttons' state).
 func (r *curveRecordingUI) lockHistory() {
-	r.historyButtons = nil
-	for _, selector := range []string{"#undo-form button", "#redo-form button"} {
-		button := js.Global().Get("document").Call("querySelector", selector)
-		if workspacePresent(button) {
-			form := button.Call("closest", "form")
-			state := historyButtonState{button: button, disabled: button.Get("disabled").Bool(), form: form}
-			if workspacePresent(form) {
-				state.inert = form.Call("hasAttribute", "inert").Bool()
-				form.Call("setAttribute", "inert", "")
-				form.Call("setAttribute", "data-history-refresh-pending", "")
-			}
-			r.historyButtons = append(r.historyButtons, state)
-			button.Set("disabled", true)
-		}
-	}
+	history.Set(historyRecording, true)
+	applyHistoryLock()
 }
 
 func (r *curveRecordingUI) unlockHistory() {
-	for _, state := range r.historyButtons {
-		if state.button.Get("isConnected").Bool() {
-			state.button.Set("disabled", state.disabled)
-		}
-		if workspacePresent(state.form) && state.form.Get("isConnected").Bool() {
-			state.form.Call("removeAttribute", "data-history-refresh-pending")
-			if !state.inert {
-				state.form.Call("removeAttribute", "inert")
-			}
-		}
-	}
-	r.historyButtons = nil
+	history.Set(historyRecording, false)
+	applyHistoryLock()
 }
 
 func bindAutomationRecording(u *curveEditor) func() {
@@ -252,6 +222,17 @@ func (r *curveRecordingUI) run() {
 				r.draw()
 			} else if command == "keep" {
 				r.awaitingRefresh = true
+				// Release the recording reason once the refreshed history forms carry a
+				// revision other than the one the Keep started from. (After an
+				// uncertain Keep it stays held, as the message says, until a reload.)
+				var remove func()
+				remove = workspaceUpdated.add(func() {
+					form := js.Global().Get("document").Call("querySelector", "#undo-form input[name=revision]")
+					if workspacePresent(form) && workspaceString(form, "value") != keepVersion.Revision {
+						r.unlockHistory()
+						remove()
+					}
+				})
 				r.draw()
 				workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 			}

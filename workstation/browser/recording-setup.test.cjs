@@ -2,15 +2,21 @@
  * through --audio null. This test never enables an actual microphone. */
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const stall=require('./page-stall.cjs');
+// --write-fixture PATH writes the disposable score this suite needs: edition 2, eight bars, no audio track.
+if(process.argv[2]==='--write-fixture'){const target=path.resolve(process.argv[3]);if(fs.existsSync(target))throw new Error('Use a new disposable path');fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,'cicada 2\n// cicada-experience-test: disposable fixture\ntitle "Recording setup"\ntempo 120\nseed 42\ntrack bass acid {}\npattern pulse notes steps=16 { 1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 . }\nscene main { bass=pulse }\nsong { main*8 }\n');process.exit(0)}
 test('Adding a vocal track enables recording controls; Audio retains the Session route',{timeout:60000},async t=>{
  const base=process.env.CICADA_SETUP_URL;assert.ok(base);assert.equal(new URL(base).hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
- const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});const watches=[];stall.teardown(t, browser, {watch: watches, exitWhenDone: true});
+ const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'}),page=await (async()=>{watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));return context.newPage()})(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'})};
+ let captureReplies=0;page.on('response',r=>{if(new URL(r.url()).pathname==='/api/capture')captureReplies++});
+ // Capture status is polled every 300 ms. A check that polling kept the right state waits for polls, not for a fixed time.
+ const afterPolls=async n=>{const target=captureReplies+n;const end=Date.now()+15000;while(captureReplies<target&&Date.now()<end)await new Promise(r=>setTimeout(r,50));assert.ok(captureReplies>=target,'capture status was not polled')};
  await page.goto(base+'/?panel=session',{waitUntil:'domcontentloaded'});await ready();const initial=await(await page.request.get(base+'/api/state')).json();assert.ok(initial.source.includes('cicada-experience-test: disposable fixture'));
- await page.waitForTimeout(600);assert.equal(await page.getByRole('button',{name:'Record take',exact:true}).isDisabled(),true);assert.ok((await page.locator('[data-capture-status]').innerText()).includes('Add a vocal track'));
- await page.getByRole('button',{name:'Add vocal track',exact:true}).click();await ready();await page.waitForTimeout(900);assert.equal(await page.getByRole('button',{name:'Record take',exact:true}).isDisabled(),false,'capture polling reapplied the old empty-track state');assert.equal(await page.getByLabel('Vocal track',{exact:true}).inputValue(),'danilo');
+ await afterPolls(2);assert.equal(await page.getByRole('button',{name:'Record take',exact:true}).isDisabled(),true);assert.ok((await page.locator('[data-capture-status]').innerText()).includes('Add a vocal track'));
+ await page.getByRole('button',{name:'Add vocal track',exact:true}).click();await ready();await afterPolls(3);assert.equal(await page.getByRole('button',{name:'Record take',exact:true}).isDisabled(),false,'capture polling reapplied the old empty-track state');assert.equal(await page.getByLabel('Vocal track',{exact:true}).inputValue(),'danilo');
  await page.getByRole('link',{name:'Choose microphone and output',exact:true}).click();await page.locator('#audio').waitFor();assert.equal(new URL(page.url()).searchParams.get('vocalTrack'),'danilo');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  const proof=process.env.CICADA_VOCAL_PROOF_DIR;if(proof){fs.mkdirSync(proof,{recursive:true});await page.locator('#audio').screenshot({path:path.join(proof,'audio-setup-390.png')})}
  await page.getByRole('button',{name:'Apply and return to recording',exact:true}).click();await page.locator('#vocals').waitFor();await ready();assert.equal(new URL(page.url()).searchParams.get('panel'),'session');assert.equal(new URL(page.url()).searchParams.get('vocalTrack'),'danilo');assert.equal(await page.getByRole('button',{name:'Record take',exact:true}).isDisabled(),false);assert.deepEqual(errors,[]);
