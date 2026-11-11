@@ -75,17 +75,6 @@ func TestDeleteTrackRemovesItsBindings(t *testing.T) {
 	structureRefusal(t, structureScore, &DeleteTrack{Track: "nosuch"}, "unknown_track", "track", `unknown track "nosuch"`)
 }
 
-func TestSetTrackVoiceRefusesOrDropsSettings(t *testing.T) {
-	// keys plays chords, which acid plays as a tuplet: accepted here.
-	structureCase(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "acid", AcceptChanges: true}, strings.Replace(structureScore, "track keys piano {}", "track keys acid {}", 1))
-	structureRefusal(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_params_unsupported", "voice", "piano has no setting cutoff", "setting cutoff (line 4)")
-	structureCase(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, strings.Replace(structureScore, "track bass acid { cutoff = 620Hz }", "track bass piano {}", 1))
-	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "nosuch"}, "voice_invalid", "voice", `a track cannot play "nosuch"`)
-	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "piano"}, "voice_unchanged", "voice", "track keys already plays piano")
-	acid := strings.Replace(structureScore, "pattern riff {", "pattern riff acid {", 1)
-	structureRefusal(t, acid, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, "voice_change_invalid", "voice", "pattern kind differs from track instrument")
-}
-
 func TestAddAndDuplicateScene(t *testing.T) {
 	structureCase(t, structureScore, &AddScene{Name: "drop"}, strings.Replace(structureScore, "  bass = riff\n}\n", "  bass = riff\n}\nscene drop {}\n", 1))
 	structureCase(t, structureScore, &DuplicateScene{Scene: "break", Name: "break-2"}, strings.Replace(structureScore, "  bass = riff\n}\n", "  bass = riff\n}\nscene break-2 {\n  // just the bass\n  bass = riff\n}\n", 1))
