@@ -344,3 +344,18 @@ Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses; CI fails
 on any. `TestRenderPathAvoidsMathLibrary` in
 `kernel/dsp/detmath` fails when the master chain or the export code calls a
 math function that `detmath` replaces.
+
+The exported file itself is compared too. `TestExampleWAVParity` in
+`cmd/cicada` runs `cicada render` on example scores four ways (plain,
+`--normalize`, -14 LUFS / -1 dBTP, -9 LUFS / -1.5 dBTP) and hashes each WAV:
+
+```
+CICADA_WAV_PARITY_OUT=$PWD/build/wav-hashes.txt go test ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v
+CICADA_WAV_PARITY_REFERENCE=$PWD/build/wav-hashes.txt go test ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v
+```
+
+The first command writes the hashes (CI runs it on amd64), the second compares
+another machine's renders with them (CI runs it on arm64). Pull requests
+render a subset; the nightly run sets `CICADA_WAV_PARITY_ALL=1` and renders
+every score under `examples/`. A render known to differ is listed, with the
+date and the cause, in `knownWAVDifferences`; the list can only shrink.
