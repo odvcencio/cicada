@@ -588,6 +588,20 @@ one), `loudness` gives the target and tolerance, the measured
 (`gain_stage`), the master limiter's gain reduction and the DC correction. A
 measurement is `null` when there is none.
 
+The search runs up to six passes and synthesizes the song only once.
+`syntheses`, `replays` and `repeats` count how the `passes` got their audio,
+and add up to `passes`: a synthesis renders the song in full; a replay runs
+only the master stage again on the first pass's stored mix; a repeat is not
+rendered, because its gain differs from an earlier pass's by less than the
+renderer can show, so its audio and measurement are that pass's. `pass_log`
+has one entry per pass, in order: the `gain_db` it applied, its measured
+`integrated_lufs` and `true_peak_dbtp`, and `render`, which is `synthesized`,
+`replayed` or `repeated` (with `same_as`, the number of the pass it repeats).
+The audio and every other number are the same as when each pass synthesizes
+the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
+does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
+to check whether reuse caused a difference you see.
+
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 
 ```json
@@ -619,6 +633,23 @@ measurement is `null` when there is none.
     "applied_gain_db": 10.963850844317331,
     "target_met": true,
     "passes": 2,
+    "syntheses": 1,
+    "replays": 1,
+    "repeats": 0,
+    "pass_log": [
+      {
+        "gain_db": 0,
+        "integrated_lufs": -24.96385084431733,
+        "true_peak_dbtp": -16.938175787527175,
+        "render": "synthesized"
+      },
+      {
+        "gain_db": 10.963850844317331,
+        "integrated_lufs": -13.999999856123383,
+        "true_peak_dbtp": -5.974329358809015,
+        "render": "replayed"
+      }
+    ],
     "gain_stage": "post_chain"
   }
 }
