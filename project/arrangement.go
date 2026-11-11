@@ -46,7 +46,7 @@ func lowerArrangement(p *Project, s *notation.Score) {
 	for _, v := range s.Arrange.Tempos {
 		at, _ := notation.MusicalTicks(v.At, true)
 		bpm, _ := strconv.ParseFloat(v.Value, 64)
-		p.Arrange.Tempos = append(p.Arrange.Tempos, TempoChange{Bar: int(at / 3840), BPMMilli: int(CanonicalTempo(bpm)*1000 + 0.5)})
+		p.Arrange.Tempos = append(p.Arrange.Tempos, TempoChange{Bar: int(at / 3840), BPMMilli: int(float64(CanonicalTempo(bpm)*1000) + 0.5)})
 	}
 }
 func arrangementSource(a *Arrangement) string {

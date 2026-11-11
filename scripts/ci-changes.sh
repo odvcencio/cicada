@@ -18,7 +18,7 @@
 # Groups and the jobs they gate (see .github/workflows/ci.yml):
 #   root             native-go127, the four M0 parts
 #   studio_cli       Studio CLI tests (cmd/cicada shards)
-#   parity           PCM24 parity (amd64, arm64)
+#   parity           PCM24 and WAV parity (amd64, arm64)
 #   workstation      GoSX workstation and Tymbal boundary
 #   studio_browser   Studio build and the Studio browser shards
 #   macos_desktop    macOS desktop (arm64, amd64)
