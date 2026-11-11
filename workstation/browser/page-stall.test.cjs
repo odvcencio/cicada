@@ -23,7 +23,9 @@ function run(mode, limitMS) {
     const started = Date.now();
     // node --test marks its children with NODE_TEST_CONTEXT; a child that
     // inherits it skips its files.
-    const env = { ...process.env, PAGE_STALL_MODE: mode };
+    // Native stacks from /proc and any debugger already present, never an
+    // install: these freezes are deliberate and run on every CI run.
+    const env = { ...process.env, PAGE_STALL_MODE: mode, CICADA_PAGE_STALL_NATIVE: '1' };
     delete env.NODE_TEST_CONTEXT;
     const child = spawn(process.execPath, ['--test', '--test-reporter=tap', suite], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
@@ -39,11 +41,14 @@ function run(mode, limitMS) {
   });
 }
 
-// The whole teardown must fit its 15 s hook limit with margin.
+// Besides reading native stacks, the teardown must fit 13 s of its 15 s hook
+// limit; the whole teardown must fit the limit with native stacks added.
 function assertBudget(output) {
-  const took = output.match(/teardown took (\d+) ms of its 15000 ms limit/);
+  const took = output.match(/teardown took (\d+) ms of its (\d+) ms limit \((\d+) ms of it reading native stacks\)/);
   assert.ok(took, `no teardown timing line:\n${output}`);
-  assert.ok(Number(took[1]) <= 13000, `teardown took ${took[1]} ms, over its 13000 ms budget:\n${output}`);
+  const [total, limit, native] = took.slice(1).map(Number);
+  assert.ok(total - native <= 13000, `teardown took ${total - native} ms besides native stacks, over its 13000 ms budget:\n${output}`);
+  assert.ok(total <= limit - 1000, `teardown took ${total} ms of its ${limit} ms limit:\n${output}`);
 }
 
 const failed = /not ok 1 - /;
@@ -86,6 +91,21 @@ test('a freeze while Go starts is reported as inside Go', { timeout: 60000 }, as
   assert.match(result.output, /OPEN 1:inline start entry \d+ ms ago and never returned/, result.output);
   assertBudget(result.output);
 });
+
+for (const [mode, crumb] of [['xhr', /XMLHttpRequest\.open GET \/never SYNCHRONOUS/], ['dialog', /window\.alert\(blocked on purpose\)/]]) {
+  test(`a page blocked in native code (${mode}) is reported from outside`, { timeout: 90000 }, async () => {
+    const result = await run(mode, 60000);
+    assert.equal(result.killed, false, result.output);
+    assert.match(result.output, failed);
+    assert.match(result.output, crumb, result.output);
+    if (mode === 'dialog') assert.match(result.output, /dialogs opened: alert "blocked on purpose"/, result.output);
+    assert.match(result.output, /renderer CPU over 1 s: pid \d+ \d+%/, result.output);
+    assert.match(result.output, /native: \d+ Chrome processes: \d+ browser/, result.output);
+    if (process.platform === 'linux') assert.match(result.output, /--- \d+ renderer ---\n(?:# )? {2}main thread: \S+ [SD] wchan=/, result.output);
+    assert.match(result.output, /--- last 30 lines of Chrome's log ---/, result.output);
+    assertBudget(result.output);
+  });
+}
 
 test('a closed page is neither stalled nor reported', { timeout: 60000 }, async () => {
   const result = await run('closed', 30000);
