@@ -20,7 +20,14 @@ type Envelope struct {
 	// each was at when the intents were computed (cicada apply --json reports
 	// them as file_revisions). The host refuses the batch when a listed file
 	// has changed since; nil checks none.
-	Revisions map[string]string
+	Revisions []FileRevision
+}
+
+// FileRevision is a source file's revision, by its path as cicada apply
+// --json writes paths.
+type FileRevision struct {
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
 }
 
 type envelopeWire struct {
@@ -29,7 +36,7 @@ type envelopeWire struct {
 	Author    string            `json:"author,omitempty"`
 	Session   string            `json:"session,omitempty"`
 	DryRun    bool              `json:"dryrun,omitempty"`
-	Revisions map[string]string `json:"revisions,omitempty"`
+	Revisions []FileRevision    `json:"revisions,omitempty"`
 	Intents   []json.RawMessage `json:"intents"`
 }
 

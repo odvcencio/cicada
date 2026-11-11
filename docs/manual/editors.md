@@ -131,9 +131,10 @@ refused rather than written half done when the result would not validate.
 The envelope can include `revision`, `author`, `session`, `dryrun` and
 `revisions`. A supplied revision must match the exact score bytes; omit it to
 use the current revision. `revision` covers only the score given to
-`cicada apply`; `revisions` maps other source files of the project to the
-revisions the intents were computed against (a dry run with `--json` reports
-every file's revision as `file_revisions`), and the batch is refused with
+`cicada apply`; `revisions` lists other source files of the project, each as
+`{"path": …, "revision": …}`, at the revisions the intents were computed
+against (a dry run with `--json` reports every file's revision in the same
+form as `file_revisions`), and the batch is refused with
 `revision_mismatch` when one of them has changed. Without `revisions`, a
 change to another file between the dry run and the apply goes unnoticed: the
 apply reads every file again and computes the edit from what it finds.

@@ -36,8 +36,8 @@ type applyResult struct {
 	labels          []string
 	warnings        [][]string
 	files           []string
-	sources         []string          // the project's source paths, which messages name as jsonPath does
-	fileRevisions   map[string]string // the revision of each source file the apply read, by jsonPath
+	sources         []string             // the project's source paths, which messages name as jsonPath does
+	fileRevisions   []edits.FileRevision // the revision of each source file the apply read, by jsonPath
 }
 
 // pathsAsJSON rewrites the project's source paths in text as jsonPath writes
@@ -176,22 +176,21 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	if err != nil {
 		return fail("read", err)
 	}
-	result.fileRevisions = map[string]string{}
 	for _, file := range opts.Sources {
 		result.sources = append(result.sources, file.Path)
 		if file.Library == "" {
-			result.fileRevisions[jsonPath(file.Path)] = edits.Revision(file.Source)
+			result.fileRevisions = append(result.fileRevisions, edits.FileRevision{Path: jsonPath(file.Path), Revision: edits.Revision(file.Source)})
 		}
 	}
 	// The envelope's revision covers the entry; revisions covers the other
 	// files the intents were computed against.
-	for name, want := range env.Revisions {
-		data, err := os.ReadFile(name)
+	for _, want := range env.Revisions {
+		data, err := os.ReadFile(want.Path)
 		if err != nil {
-			return fail("revision_mismatch", fmt.Errorf("%s: %w", name, err))
+			return fail("revision_mismatch", fmt.Errorf("%s: %w", want.Path, err))
 		}
-		if got := edits.Revision(data); got != want {
-			return fail("revision_mismatch", fmt.Errorf("%s changed; intents target revision %s, file is at %s", name, want, got))
+		if got := edits.Revision(data); got != want.Revision {
+			return fail("revision_mismatch", fmt.Errorf("%s changed; intents target revision %s, file is at %s", want.Path, want.Revision, got))
 		}
 	}
 	applied, err := edits.Apply(before, env, opts)
@@ -264,19 +263,19 @@ func fileChanged(before, after []byte) bool {
 const applySchema = "cicada.apply.v1"
 
 type applyDocument struct {
-	Schema         string            `json:"schema"`
-	Score          string            `json:"score,omitempty"`
-	OK             bool              `json:"ok"`
-	Written        bool              `json:"written"`
-	DryRun         bool              `json:"dry_run"`
-	Changed        bool              `json:"changed"`
-	RevisionBefore string            `json:"revision_before,omitempty"`
-	RevisionAfter  string            `json:"revision_after,omitempty"`
-	Intents        []applyIntentJSON `json:"intents"`
-	Files          []string          `json:"files,omitempty"`
-	FileRevisions  map[string]string `json:"file_revisions,omitempty"`
-	Diff           string            `json:"diff"`
-	Error          *applyErrorJSON   `json:"error,omitempty"`
+	Schema         string               `json:"schema"`
+	Score          string               `json:"score,omitempty"`
+	OK             bool                 `json:"ok"`
+	Written        bool                 `json:"written"`
+	DryRun         bool                 `json:"dry_run"`
+	Changed        bool                 `json:"changed"`
+	RevisionBefore string               `json:"revision_before,omitempty"`
+	RevisionAfter  string               `json:"revision_after,omitempty"`
+	Intents        []applyIntentJSON    `json:"intents"`
+	Files          []string             `json:"files,omitempty"`
+	FileRevisions  []edits.FileRevision `json:"file_revisions,omitempty"`
+	Diff           string               `json:"diff"`
+	Error          *applyErrorJSON      `json:"error,omitempty"`
 }
 
 // applyIntentJSON is one intent of the batch and what it did, in the words of

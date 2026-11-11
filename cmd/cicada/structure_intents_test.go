@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/render"
 )
 
@@ -311,10 +312,16 @@ func TestEnvelopeRevisionsCoverOtherFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	var dry struct {
-		FileRevisions map[string]string `json:"file_revisions"`
+		FileRevisions []edits.FileRevision `json:"file_revisions"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &dry); err != nil || dry.FileRevisions["parts/more.cicada"] == "" || dry.FileRevisions["main.cicada"] == "" {
-		t.Fatalf("file_revisions: %v %v", err, dry.FileRevisions)
+	paths := map[string]bool{}
+	if err := json.Unmarshal(stdout.Bytes(), &dry); err == nil {
+		for _, file := range dry.FileRevisions {
+			paths[file.Path] = file.Revision != ""
+		}
+	}
+	if !paths["parts/more.cicada"] || !paths["main.cicada"] {
+		t.Fatalf("file_revisions: %v", dry.FileRevisions)
 	}
 	revisions, _ := json.Marshal(dry.FileRevisions)
 	if err := os.WriteFile("parts/more.cicada", []byte("automate keys.level { @1.1.1 -9dB }\nscene extra { keys = pad }\n"), 0o644); err != nil {
