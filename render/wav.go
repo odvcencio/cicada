@@ -42,21 +42,23 @@ type Options struct {
 	Dither          *bool   // nil enables deterministic TPDF on integer formats
 	Normalize       bool    // peak normalize the post-limiter output to -1 dBFS
 	Block           int     // zero selects 4096 frames
-	MasterGainDB    float64 // export gain after authored DSP, before the safety limiter
-	// MasterInputGainDB is export gain at the master input: after the music
-	// and SFX buses sum and the authored master level, before the score's
-	// master insert chain. Loudness targeting uses it when the chain holds a
-	// limiter. Without a prepared master chain it equals MasterGainDB.
-	MasterInputGainDB float64
-	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
-	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
+	// MasterGainDB is the export gain, such as a loudness target's. It is
+	// makeup gain into the last limiter, not into the mix: it enters the
+	// master stage at the chain's project.ExportGainPoint, after every master
+	// insert ahead of the chain's last limiter, which therefore run exactly as
+	// in playback. Without a limiter it enters after the chain; without a
+	// chain, or when the last limiter is the first insert, it joins the master
+	// level at the master input. Both renderers place it the same way.
+	MasterGainDB float64
+	MasterBiasL  float32 // export DC correction after the master chain and all gain, before the limiter
+	MasterBiasR  float32 // export DC correction after the master chain and all gain, before the limiter
 	// MaxResidentPCM caps, in bytes, the decoded PCM of all sampler packs the
 	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
 	MaxResidentPCM int64
 	// MasterCache, when set, lets repeated renders of one score skip
 	// synthesis: a render replays the signal that entered the master stage when
-	// it differs from the stored capture only in MasterInputGainDB,
-	// MasterGainDB, MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A
+	// it differs from the stored capture only in MasterGainDB, MasterBiasL,
+	// MasterBiasR, Bits, Dither or Normalize. A
 	// difference in anything else (the score, From, Bars, TailSec, SampleRate,
 	// Block, AssetRoot, AssetDir or SamplerBaseline) makes the render capture a
 	// new signal in place of the stored one. The cache matches scores by
@@ -452,7 +454,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.Block < 1 || opts.Block > 4096 {
 		return report, fmt.Errorf("WAV block must be 1 to 4096 frames")
 	}
-	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
+	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
 		return report, fmt.Errorf("master gain or DC correction is out of range")
 	}
 	dither := opts.Dither == nil || *opts.Dither
@@ -510,7 +512,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	busState := busMixerState{masterProcessor: masterProcessor, outputGain: 1}
 	busState.masterLimiter, _ = masterProcessor.(interface{ LimiterGainReductionDB() float64 })
 	authoredGainDB, hasLevel := authoredMasterLevelDB(semantic)
-	masterGainDB, masterGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil)
+	masterGainDB, masterGain, chainGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil, project.MasterExportGainPoint(semantic))
+	if chainGain != 1 {
+		project.SetMasterExportGain(masterProcessor, chainGain)
+	}
 	for _, bus := range semantic.Buses {
 		switch bus.ID {
 		case "music":
@@ -943,26 +948,32 @@ func authoredMasterLevelDB(p *project.Project) (float64, bool) {
 }
 
 // directMasterGains returns the combined master gain in dB that a direct
-// render reports, and the gain factors its master stage applies ahead of the
-// master chain (with the authored level) and after it. Without a master chain
+// render reports, and the gain factors its master stage applies: before, ahead
+// of the master chain with the authored level; chain, inside the chain ahead of
+// its last limiter; after, behind the chain. The export gain goes to the
+// factor of its gain point (see Options.MasterGainDB). Without a master chain
 // every gain goes in ahead of the safety limiter as one factor.
-func directMasterGains(opts Options, authoredGainDB float64, hasLevel, hasChain bool) (gainDB float64, before, after float32) {
+func directMasterGains(opts Options, authoredGainDB float64, hasLevel, hasChain bool, point project.ExportGainPoint) (gainDB float64, before, chain, after float32) {
 	gainDB = opts.MasterGainDB
-	if !hasChain {
-		gainDB += opts.MasterInputGainDB
-	}
 	if hasLevel {
 		gainDB += authoredGainDB
 	}
-	before, after = 1, 1
-	if gainDB != 0 {
-		before = float32(detmath.Pow(10, gainDB/20))
-	}
-	if hasChain {
-		before = float32(detmath.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
+	before, chain, after = 1, 1, 1
+	switch {
+	case !hasChain:
+		if gainDB != 0 {
+			before = float32(detmath.Pow(10, gainDB/20))
+		}
+	case point == project.GainAtMasterInput:
+		before = float32(detmath.Pow(10, (authoredGainDB+opts.MasterGainDB)/20))
+	case point == project.GainBeforeLastLimiter:
+		before = float32(detmath.Pow(10, authoredGainDB/20))
+		chain = exportGainFactor(opts.MasterGainDB)
+	default: // project.GainAfterChain
+		before = float32(detmath.Pow(10, authoredGainDB/20))
 		after = float32(detmath.Pow(10, opts.MasterGainDB/20))
 	}
-	return gainDB, before, after
+	return gainDB, before, chain, after
 }
 
 // finishWAV drains the safety limiter and appends the timing chunk.

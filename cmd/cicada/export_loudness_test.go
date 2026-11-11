@@ -186,7 +186,7 @@ func loudestCompliantLUFS(t *testing.T, inspection scoreInspection, opts render.
 		if err != nil {
 			t.Fatal(err)
 		}
-		opts.MasterInputGainDB = gain
+		opts.MasterGainDB = gain
 		report, err := render.WAV(inspection.score, opts, file)
 		if closeErr := file.Close(); err == nil {
 			err = closeErr
@@ -733,7 +733,7 @@ func chainedExcerptReduction(t *testing.T, path string, scheduled bool) float64 
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1, MasterInputGainDB: -3}
+	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1, MasterGainDB: -3}
 	if got := render.UsesScheduledEngine(inspection.score, opts); got != scheduled {
 		t.Fatalf("UsesScheduledEngine = %v, want %v", got, scheduled)
 	}
@@ -828,7 +828,7 @@ func testCappedPassRendersPendingDCCorrection(t *testing.T, scheduled bool) {
 		if err != nil {
 			return report, err
 		}
-		gain := math.Pow(10, opts.MasterInputGainDB/20)
+		gain := math.Pow(10, opts.MasterGainDB/20)
 		// The renderer already added its correction; add only the source DC.
 		// The scheduled engine applies the correction before the gain, so a
 		// source whose DC grows faster than the gain (here with its square)
@@ -837,7 +837,7 @@ func testCappedPassRendersPendingDCCorrection(t *testing.T, scheduled bool) {
 		if scheduled {
 			offset = dc * gain * gain
 		}
-		gains = append(gains, opts.MasterInputGainDB)
+		gains = append(gains, opts.MasterGainDB)
 		addDC24(t, buf.Bytes(), offset, offset)
 		_, err = w.Write(buf.Bytes())
 		return report, err

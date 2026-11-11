@@ -154,10 +154,10 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 			replays := 0
 			for i, change := range []func(*Options){
 				func(o *Options) {},
-				func(o *Options) { o.MasterInputGainDB = 4.5 },
-				func(o *Options) { o.MasterInputGainDB = -7; o.MasterBiasL, o.MasterBiasR = .002, -.001 },
+				func(o *Options) { o.MasterGainDB = 4.5 },
+				func(o *Options) { o.MasterGainDB = -7; o.MasterBiasL, o.MasterBiasR = .002, -.001 },
 				func(o *Options) { o.MasterGainDB = 1.25; o.MasterBiasL = -.003; o.Bits = 16 },
-				func(o *Options) { o.MasterInputGainDB = 2; o.Normalize = true; o.Bits = 32; o.Dither = &off },
+				func(o *Options) { o.MasterGainDB = 2; o.Normalize = true; o.Bits = 32; o.Dither = &off },
 			} {
 				opts := test.base
 				change(&opts)

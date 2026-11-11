@@ -73,6 +73,73 @@ type masterChain struct {
 	// latency of the stages after it so it lines up with the chain output
 	// frame it affects.
 	limiters []limiterReading
+	// gainAt is the stage the export gain enters ahead of: the last limiter,
+	// or len(stages) when the chain has no limiter. It is -1 when the last
+	// limiter is the first stage, so the gain joins the master level ahead of
+	// the chain. gain is 1 in playback.
+	gainAt int
+	gain   float32
+}
+
+// ExportGainPoint is where an export's loudness gain enters the master stage.
+// Everything ahead of it runs exactly as in playback, so the export keeps the
+// mix's dynamics: the gain is makeup gain into the last limiter, not into the
+// mix.
+type ExportGainPoint uint8
+
+const (
+	// GainAtMasterInput: no master chain, or the chain's last limiter is its
+	// first stage, so nothing in the chain runs ahead of the gain. The gain
+	// joins the master level at the master input.
+	GainAtMasterInput ExportGainPoint = iota
+	// GainBeforeLastLimiter: the gain enters after the inserts ahead of the
+	// chain's last limiter; that limiter and the inserts after it follow.
+	GainBeforeLastLimiter
+	// GainAfterChain: the chain has no limiter, so the gain enters after it,
+	// ahead of the safety limiter.
+	GainAfterChain
+)
+
+// MasterExportGainPoint reports where an export gain enters p's master stage.
+func MasterExportGainPoint(p *Project) ExportGainPoint {
+	if p == nil || p.Master == nil || len(p.Master.Mixer.Inserts) == 0 {
+		return GainAtMasterInput
+	}
+	switch last := lastMasterLimiter(p); {
+	case last < 0:
+		return GainAfterChain
+	case last == 0:
+		return GainAtMasterInput
+	}
+	return GainBeforeLastLimiter
+}
+
+// lastMasterLimiter returns the index of the master chain's last limiter
+// insert, or -1 when it has none.
+func lastMasterLimiter(p *Project) int {
+	last := -1
+	for i, name := range p.Master.Mixer.Inserts {
+		for _, effect := range p.Effects {
+			if effect.ID == name && semanticEffectKind(effect) == "limiter" {
+				last = i
+			}
+		}
+	}
+	return last
+}
+
+// SetMasterExportGain sets the export gain factor a master chain from
+// PrepareMaster applies at its gain point, GainBeforeLastLimiter or
+// GainAfterChain. It reports false, and changes nothing, for a processor that
+// is not such a chain or whose gain point is the master input: there the
+// caller folds the gain into the master level.
+func SetMasterExportGain(processor engine.StereoProcessor, gain float32) bool {
+	c, ok := processor.(*masterChain)
+	if !ok || c.gainAt < 0 {
+		return false
+	}
+	c.gain = gain
+	return true
 }
 
 type limiterReading struct {
@@ -83,8 +150,13 @@ type limiterReading struct {
 	delayed    float64
 }
 
-func newMasterChain(stages []engine.StereoProcessor) *masterChain {
-	c := &masterChain{stages: stages}
+func newMasterChain(stages []engine.StereoProcessor, lastLimiter int) *masterChain {
+	c := &masterChain{stages: stages, gainAt: lastLimiter, gain: 1}
+	if lastLimiter < 0 {
+		c.gainAt = len(stages)
+	} else if lastLimiter == 0 {
+		c.gainAt = -1
+	}
 	for i, stage := range stages {
 		limiter, ok := stage.(interface{ LimiterGainReductionDB() float64 })
 		if !ok {
@@ -120,8 +192,16 @@ func (c *masterChain) LimiterGainReductionDB() float64 {
 }
 
 func (c *masterChain) Process(l, r float32) (float32, float32) {
-	for _, stage := range c.stages {
+	for i, stage := range c.stages {
+		if i == c.gainAt && c.gain != 1 {
+			l *= c.gain
+			r *= c.gain
+		}
 		l, r = stage.Process(l, r)
+	}
+	if c.gainAt == len(c.stages) && c.gain != 1 {
+		l *= c.gain
+		r *= c.gain
 	}
 	for i := range c.limiters {
 		lim := &c.limiters[i]
@@ -195,7 +275,7 @@ func PrepareMaster(p *Project, rate int) (engine.StereoProcessor, error) {
 		}
 		stages = append(stages, stage)
 	}
-	return newMasterChain(stages), nil
+	return newMasterChain(stages, lastMasterLimiter(p)), nil
 }
 
 func masterEffectParams(effect Effect) (pro.Params, error) {

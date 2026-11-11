@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"m31labs.dev/cicada/host/schedule"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/mix"
@@ -26,7 +27,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if opts.Block == 0 {
 		opts.Block = 4096
 	}
-	if opts.Block < 1 || opts.Block > 4096 || opts.TailSec < 0 || opts.TailSec > 10 || math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 {
+	if opts.Block < 1 || opts.Block > 4096 || opts.TailSec < 0 || opts.TailSec > 10 || math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 {
 		return report, fmt.Errorf("invalid scheduled render options")
 	}
 	p, ds := project.FromScore(score)
@@ -41,7 +42,12 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	cfg.MasterGainDB = scheduledMasterGainDB(cfg.MasterGainDB, opts)
+	authoredGainDB := cfg.MasterGainDB
+	if chainGain := scheduledChainGain(p, cfg.MasterProcessor, opts); chainGain != 1 {
+		project.SetMasterExportGain(cfg.MasterProcessor, chainGain)
+	} else if !scheduledGainInChain(p, cfg.MasterProcessor) {
+		cfg.MasterGainDB = scheduledMasterGainDB(authoredGainDB, opts)
+	}
 	cfg.MasterBiasL, cfg.MasterBiasR = opts.MasterBiasL, opts.MasterBiasR
 	player, err := engine.New(cfg)
 	if err != nil {
@@ -74,7 +80,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	}
 	fromFrame := tempoMap.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
 	endFrame := tempoMap.SampleAtTick(endTick)
-	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
+	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: scheduledMasterGainDB(authoredGainDB, opts), TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
@@ -256,7 +262,33 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 }
 
 // scheduledMasterGainDB is the master gain the scheduled engine applies ahead
-// of the master chain: the authored master level and both export gains.
+// of the master chain when the export gain enters at the master input: the
+// authored master level and the export gain.
 func scheduledMasterGainDB(authoredGainDB float64, opts Options) float64 {
-	return authoredGainDB + (opts.MasterGainDB + opts.MasterInputGainDB)
+	return authoredGainDB + opts.MasterGainDB
+}
+
+// scheduledGainInChain reports whether the export gain enters the scheduled
+// engine's master chain (ahead of its last limiter, or after a chain without
+// one) rather than its master gain.
+func scheduledGainInChain(p *project.Project, processor engine.StereoProcessor) bool {
+	return processor != nil && project.MasterExportGainPoint(p) != project.GainAtMasterInput
+}
+
+// scheduledChainGain is the export gain factor the master chain applies at its
+// gain point, or 1 when the gain enters at the master input.
+func scheduledChainGain(p *project.Project, processor engine.StereoProcessor, opts Options) float32 {
+	if !scheduledGainInChain(p, processor) {
+		return 1
+	}
+	return exportGainFactor(opts.MasterGainDB)
+}
+
+// exportGainFactor is the factor of an export gain applied inside the master
+// chain, on both renderers.
+func exportGainFactor(db float64) float32 {
+	if db == 0 {
+		return 1
+	}
+	return float32(detmath.Pow(10, db/20))
 }
