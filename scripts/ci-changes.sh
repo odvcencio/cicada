@@ -39,7 +39,8 @@ classify_path() {
 	.github/* | Makefile | scripts/* | go.mod | go.sum)
 		echo all ;;
 	# Text that a Go //go:embed or a test fixture may read: do not treat as docs.
-	project/std/* | assets/* | testdata/* | */testdata/*)
+	# internal/agentguide embeds the quick start that cicada agents prints.
+	project/std/* | assets/* | testdata/* | */testdata/* | internal/agentguide/*)
 		echo all ;;
 	# Every nested go.mod and go.sum turns everything on: desktop/go.mod, for
 	# one, changes the module graph that other jobs resolve.

@@ -101,7 +101,8 @@ build-core:
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
 # render to a loudness target and audition. It must finish within 2 minutes.
-# It also runs the examples of docs/manual/agents.md against the binary.
+# It starts by following the quick start that cicada agents prints, and runs the
+# examples of docs/manual/agents.md and docs/manual/agent-quickstart.md too.
 .PHONY: test-agent-surface
 test-agent-surface: build-core
 	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentDocumentationExamples)$$' -count=1 -v

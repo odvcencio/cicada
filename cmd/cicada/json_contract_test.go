@@ -146,6 +146,16 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 			status := exit(applyCommandWithHooks([]string{"--json"}, &stdout, nil))
 			return outcome{stdout.Bytes(), status}
 		},
+		"agents usage": func() outcome {
+			var stdout bytes.Buffer
+			status := agentsCommand([]string{"--json", "--bogus"}, &stdout, &bytes.Buffer{})
+			return outcome{stdout.Bytes(), status}
+		},
+		"intents index with a kind": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(intentsCommand([]string{"--json", "--index", "setstep"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
 	}
 	want := map[string]struct {
 		code   string
@@ -163,6 +173,8 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 		"audition of an invalid score":  {"invalid_score", 1},
 		"audition usage":                {"usage", 1},
 		"apply usage":                   {"usage", 1},
+		"agents usage":                  {"usage", 2},
+		"intents index with a kind":     {"usage", 1},
 	}
 	for name, command := range run {
 		got := command()
@@ -373,6 +385,7 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 	formats := map[string]func() any{
+		agentsSchema:      func() any { return &agentsDocument{} },
 		helpSchema:        func() any { return &helpDocument{} },
 		intentsSchema:     func() any { return &intentsDocument{} },
 		diagnosticsSchema: func() any { return &diagnosticsDocument{} },

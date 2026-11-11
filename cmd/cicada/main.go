@@ -154,6 +154,12 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "agents" {
+		if code := agentsCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
+			os.Exit(code)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		if err := checkCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
