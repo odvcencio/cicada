@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -319,6 +320,80 @@ func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
 		}
 		if summary := notes[len(notes)-1]; summary != "1 of 6 renders identical to the reference, 1 known differences" {
 			t.Errorf("all=%v: summary %q", all, summary)
+		}
+	}
+}
+
+// wavPins pins the WAV bytes of renders ("score mode", modes as in
+// wavParityModes) that a deterministic-math change moved on purpose, so the
+// next change to them is visible. Each value was rendered on amd64 and equals
+// the arm64 render (full sweep); the engine's samples also match WebAssembly
+// (PCM24 parity). Renders of the full-length songs are checked only with
+// CICADA_WAV_PARITY_ALL=1 (the nightly sweep): they take about a minute each.
+// After an intended change, print the new values with
+//
+//	CICADA_WAV_PINS_PRINT=1 go test ./cmd/cicada -run '^TestExampleWAVPins$' -count=1 -v
+//
+// and update them only with the reason in the pull request.
+var wavPins = map[string]string{}
+
+func TestExampleWAVPins(t *testing.T) {
+	if len(wavPins) == 0 {
+		t.Log("no pinned renders")
+		return
+	}
+	all := os.Getenv("CICADA_WAV_PARITY_ALL") == "1"
+	byScore := map[string][]string{}
+	for key := range wavPins {
+		score, mode, _ := strings.Cut(key, " ")
+		if strings.HasPrefix(score, "examples/songs/") && !all {
+			continue
+		}
+		byScore[score] = append(byScore[score], mode)
+	}
+	var scores []string
+	for score := range byScore {
+		scores = append(scores, score)
+	}
+	sort.Strings(scores)
+	root := repositoryRoot()
+	var mu sync.Mutex
+	got := map[string]wavHash{}
+	t.Run("render", func(t *testing.T) {
+		for _, score := range scores {
+			for _, mode := range wavParityModes {
+				if !slices.Contains(byScore[score], mode.name) {
+					continue
+				}
+				key := score + " " + mode.name
+				t.Run(strings.ReplaceAll(key, "/", "_"), func(t *testing.T) {
+					t.Parallel()
+					wav := filepath.Join(t.TempDir(), "out.wav")
+					_, status := runMain(t, root, append([]string{"render", score, "-o", wav}, mode.args...)...)
+					result := wavHash{sum: "none", status: status}
+					if data, err := os.ReadFile(wav); err == nil {
+						sum := sha256.Sum256(data)
+						result.sum = hex.EncodeToString(sum[:])
+					}
+					mu.Lock()
+					got[key] = result
+					mu.Unlock()
+				})
+			}
+		}
+	})
+	keys := make([]string, 0, len(got))
+	for key := range got {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if os.Getenv("CICADA_WAV_PINS_PRINT") == "1" {
+			t.Logf("\t%q: %q,", key, got[key].sum)
+			continue
+		}
+		if got[key].sum != wavPins[key] {
+			t.Errorf("%s: WAV sha256 %s (exit %d), pinned %s", key, got[key].sum, got[key].status, wavPins[key])
 		}
 	}
 }

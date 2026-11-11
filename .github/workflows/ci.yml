@@ -356,8 +356,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(go env GOARCH)" = arm64
-          CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
+          CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+          grep -q -- '^--- PASS: TestExampleWAVPins ' build/parity/wav-parity.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -390,8 +391,9 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = amd64
           mkdir -p build/wav-parity
-          CICADA_WAV_PARITY_ALL=1 CICADA_WAV_PARITY_OUT="$PWD/build/wav-parity/wav-hashes.txt" go test -timeout=55m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/wav-parity/report.txt
+          CICADA_WAV_PARITY_ALL=1 CICADA_WAV_PARITY_OUT="$PWD/build/wav-parity/wav-hashes.txt" go test -timeout=55m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/wav-parity/report.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/wav-parity/report.txt
+          grep -q -- '^--- PASS: TestExampleWAVPins ' build/wav-parity/report.txt
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: wav-parity-amd64
@@ -426,8 +428,9 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = arm64
           mkdir -p build/wav-parity
-          CICADA_WAV_PARITY_ALL=1 CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/wav-hashes.txt" go test -timeout=55m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/wav-parity/report.txt
+          CICADA_WAV_PARITY_ALL=1 CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/wav-hashes.txt" go test -timeout=55m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/wav-parity/report.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/wav-parity/report.txt
+          grep -q -- '^--- PASS: TestExampleWAVPins ' build/wav-parity/report.txt
       - name: Save the arm64 sweep report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
