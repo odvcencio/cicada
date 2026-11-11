@@ -137,6 +137,39 @@ func TestDeletingATrackThatReseedsRandomChoicesNeedsReseed(t *testing.T) {
 	}
 }
 
+// TestStudioIntentsReplyWithReseedWarnings: through Studio's /api/intents,
+// the same delete is refused with its reason and uses, and with reseed it
+// applies and the reply lists the warning cicada apply --json gives.
+func TestStudioIntentsReplyWithReseedWarnings(t *testing.T) {
+	chance := "cicada 2\ntempo 120\nseed 7\ntrack pad piano {}\ntrack hat drums {}\npattern chords { [a3 c4 e4] - - . }\npattern beat drums { ch: x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 }\nscene main { hat = beat }\nsong { main*2 }\n"
+	dir := writeProject(t, map[string]string{"song.cicada": chance})
+	h, err := studioHandler(filepath.Join(dir, "song.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := func(reseed string) string {
+		return `{"version":1,"revision":"` + edits.Revision([]byte(chance)) + `","intents":[{"kind":"deletetrack","track":"pad"` + reseed + `}]}`
+	}
+	var refused struct {
+		Reason string   `json:"reason"`
+		Uses   []string `json:"uses"`
+	}
+	recorder := studioCallRaw(t, h, "/api/intents", envelope(""))
+	if err := json.Unmarshal(recorder.Body.Bytes(), &refused); err != nil || recorder.Code != http.StatusUnprocessableEntity || refused.Reason != "reseeds_random_choices" || len(refused.Uses) != 1 || !strings.Contains(refused.Uses[0], "track hat, pattern beat") {
+		t.Fatalf("without reseed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var applied struct {
+		Warnings []string `json:"warnings"`
+	}
+	recorder = studioCallRaw(t, h, "/api/intents", envelope(`,"reseed":true`))
+	if err := json.Unmarshal(recorder.Body.Bytes(), &applied); err != nil || recorder.Code != http.StatusOK || len(applied.Warnings) != 1 || !strings.Contains(applied.Warnings[0], "random choices (chance and humanize) change: track hat") {
+		t.Fatalf("with reseed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "song.cicada")); strings.Contains(string(data), "track pad") {
+		t.Fatal("the delete was not written")
+	}
+}
+
 // TestRenameEditsEveryFileOfTheProject renames a track that another source
 // file of the project automates and binds; one apply changes both files.
 func TestRenameEditsEveryFileOfTheProject(t *testing.T) {

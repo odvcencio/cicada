@@ -525,7 +525,6 @@ type studioEdit struct {
 	Rate                  int                           `json:"rate,omitempty"`
 	Value                 json.RawMessage               `json:"value,omitempty"`
 	ConfirmUpgrade        bool                          `json:"confirmUpgrade,omitempty"`
-	Revisions             []edits.FileRevision          `json:"revisions,omitempty"` // the other files' revisions the request was made against
 	ClipSettings          *studioClipSettings           `json:"clipSettings,omitempty"`
 	Placement             *studioPlaceSettings          `json:"placement,omitempty"`
 	Tempo                 *edits.SetArrangementTempo    `json:"tempo,omitempty"`
