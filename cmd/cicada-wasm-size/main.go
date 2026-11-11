@@ -9,13 +9,18 @@ import (
 	"github.com/andybalholm/brotli"
 )
 
+// 328 KiB (335,872 bytes): raised from 322 KiB on 2026-11-10 under Decision 9 of the
+// stewardship decision (hypha://m31labs/cicada, decisions/2026-11-10-stewardship-and-direction):
+// the determinism contract outranks the core size budget. The 6,144 bytes are for one purpose
+// only, the deterministic math package (kernel/dsp/detmath) that replaces the math library
+// functions whose last bits differ by architecture in the track effects and the mix.
 // 322 KiB: raised from 320 KiB on 2026-10-27 by owner decision for the modal sustain pedal
 // and the modeled-kit brushes. With both, the kernel is 328,793 bytes raw when built with
 // Binaryen 133, the version CI pins. Built with the wasm-opt that TinyGo 0.41.1 bundles
 // (version 116, which scripts/wasm-opt.sh uses when WASMOPT is unset) it is 329,264.
 // Raised from 300 KiB to 320 KiB on 2026-10-04 by owner decision so the graph delay/comb,
 // experimental guitar and phase-modulation voices fit together (about 321.7 KB raw).
-const rawLimit = 322 * 1024
+const rawLimit = 328 * 1024
 const brotliLimit = 120 * 1024
 const processorLimit = 5 * 1024
 const keysModularRawLimit = 576 * 1024
