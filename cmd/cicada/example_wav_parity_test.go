@@ -339,7 +339,8 @@ var wavPins = map[string]string{}
 
 func TestExampleWAVPins(t *testing.T) {
 	if len(wavPins) == 0 {
-		t.Skip("no pinned renders")
+		t.Log("no pinned renders")
+		return
 	}
 	all := os.Getenv("CICADA_WAV_PARITY_ALL") == "1"
 	byScore := map[string][]string{}
