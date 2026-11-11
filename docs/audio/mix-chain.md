@@ -296,10 +296,15 @@ math library is not yet, so part of it matches in the tests without being
 guaranteed.
 
 - **Fused multiply-add.** Go may compute `x*y + z` with one rounding instead
-  of two on arm64 and with `GOAMD64=v3`. Every product that feeds an addition
-  in `kernel/`, `render/` and the packages they import is rounded by an
-  explicit conversion first, for example `a + float64(b*c)`, and CI fails if
-  the compiler reports one it would fuse, on arm64 and with `GOAMD64=v3`.
+  of two on arm64 and with `GOAMD64=v3`. What is guaranteed: the compiler
+  reports no product it would fuse in `kernel/`, `render/` and the packages
+  `render` imports, on arm64 and with `GOAMD64=v3` (CI builds them with
+  `-d=fmahash=vy` and fails on any report). A product is rounded with an
+  explicit `float32(...)` or `float64(...)`, for example `a + float64(b*c)`.
+  Not yet covered: `cmd/cicada` (live monitor mixing in
+  `studio_audio_devices.go`) and the `host/` packages that `render` does not
+  import; a later pull request in this series extends the check to every
+  package that produces audio a user hears, records or exports.
 - **Math library functions.** `math.Exp`, `math.Log`, `math.Pow`, `math.Sin`
   and the others can differ in the last bit by target: `math.Exp` even uses an
   FMA instruction only on amd64 CPUs that have one. The master EQ design, the
