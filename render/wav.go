@@ -69,6 +69,10 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// StemTracks, when not empty, limits Stems to these tracks' stem files
+	// and master.wav. It chooses files only: every track still plays, so the
+	// audio of each written file is the same as in a full stem set.
+	StemTracks []string
 }
 
 type Report struct {
@@ -584,7 +588,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var stems *stemOutput
 	if stemsDir != "" {
-		stems, err = newStemOutput(stemsDir, semantic, report)
+		stems, err = newStemOutput(stemsDir, semantic, report, opts, score.Seed)
 		if err != nil {
 			return report, err
 		}

@@ -260,12 +260,13 @@ Use --from 1 for the first bar. The legacy value --from 0 is accepted with a war
 ### stems
 cicada stems <score.cicada> -o <directory> [flags]
 
-render separate float32 WAV stems
+render separate WAV stems (float32 by default)
 
 Flags:
   -o <directory>             required output directory
   --rate <Hz>                sample rate (default 48000)
-  --bits 32                  float32 output only
+  --bits <16|24|32>          stem sample format: 32 is float32 (default), 16 and 24 are PCM with TPDF dither unless --dither=false; samples beyond full scale clip
+  --tracks <a,b>             write only these tracks' stems and master.wav (every track still plays, so the files equal a full set's); an unknown name fails with the valid names
   --from <bar>               one-based start bar (default 1)
   --bars <n>                 bars to render; 0 means through song end
   --tail <duration>          render tail (default 3s)
@@ -285,15 +286,18 @@ cicada audition <score.cicada> [flags]
 report what a score sounds like
 
 Flags:
-  -o <directory>             write spectrogram.png, chroma.png and rhythm.png
+  -o <directory>             write spectrogram.png, chroma.png, rhythm.png and energy.png, and bar-range pages of the spectrogram and chroma when the range is wider than --image-width
   --from <bar>               one-based start bar (default 1)
   --bars <n>                 bars to analyze; 0 means through song end
+  --tracks <a,b>             analyze only these tracks and the mix; an unknown name fails with the valid names
+  --peaks <n>                true-peak moments of the mix to list, 0 to 100 (default 10; 0 lists none)
+  --image-width <px>         widest picture in pixels (default 1600; 0 keeps one full-resolution strip)
   --json                     write the report as JSON (format cicada.audition/1)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
   --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
-Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted.
+Renders the mix and stems, then reports heard key, written and heard chords per bar, per-track level, brightness, attack, decay and rhythm, the mix's loudness per bar, beat and section (BS.1770), which track owns each of seven frequency bands per bar and where two collide, which tracks sound in each bar, repeated bars, silences, and the highest true peaks with the tracks that set them. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted.
 
 ### verify-wav
 cicada verify-wav <file.wav> [flags]

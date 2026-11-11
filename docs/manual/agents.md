@@ -662,6 +662,7 @@ command prints and, when the documentation gives a fix for that cause, a
 - `export_settings`: the `--export` profile is unknown or cannot be applied.
 - `output_exists`: the stems folder already exists.
 - `sampler_memory`: the sampler packs exceed the resident PCM cap.
+- `unknown_track`: `stems --tracks` names a track the score does not have; `valid_tracks` lists the score's tracks.
 - `render_failed`: another render or write error; the message says which.
 - `true_peak_and_dc_unmet`: no pass met the true-peak ceiling and the DC limit.
 - `loudness_unmeasurable`: the render has no measurable loudness.
@@ -802,6 +803,57 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
     "gain_stage": "master_input",
     "master_limiter_reduction_db": 3.3003585823440833
   }
+}
+```
+
+## audition --json
+
+`cicada audition --json` renders a score and reports what it sounds like:
+key, chords and levels, and the measures that decide a mix: loudness per bar,
+beat and section, which track owns each of seven frequency bands in each bar
+and where two collide, which tracks sound in each bar, repeated bars, silences
+in the mix, and the highest true peaks with the tracks that set them.
+[Audition](audition.md) describes every field and its method. `--tracks`
+analyzes chosen tracks only; a name the score does not have fails with the
+code `unknown_track` and `valid_tracks`, the score's track names.
+
+This example reads the page's score after the edit above. The rules the
+report applies are in `bands` and `activity`, so a client need not hard-code
+them:
+
+<!-- agent-example: audition song.cicada --bars 2 --json -->
+
+```json
+{
+  "schema": "cicada.audition.v1",
+  "format": "cicada.audition/1",
+  "bars": [
+    {
+      "bar": 1,
+      "sounding": ["bass", "drums"],
+      "bands": [
+        {"band": "sub", "quiet": true},
+        {"band": "low", "owner": "drums", "second": "bass", "collision": false}
+      ]
+    }
+  ],
+  "loudness": {"loudest_section": "main"},
+  "bands": {
+    "names": ["sub", "low", "bass", "low_mid", "mid", "presence", "air"],
+    "edges_hz": [20, 40, 80, 160, 400, 1600, 5000, 20000],
+    "collision_share_pct": 25,
+    "quiet_below_band_db": 30,
+    "quiet_below_span_db": 30,
+    "quiet_below_range_db": 40
+  },
+  "activity": {
+    "sounding_threshold_db": -30,
+    "tail_grace_s": 0.5,
+    "silence_below_dbfs": -60,
+    "silence_min_s": 0.25,
+    "silences": []
+  },
+  "peaks": [{"rank": 1, "tracks": [{"id": "drums"}]}]
 }
 ```
 

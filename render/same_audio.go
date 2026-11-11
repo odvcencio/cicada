@@ -53,7 +53,8 @@ func validMasterGainDB(db float64) bool {
 }
 
 // sameNonGainOptions compares every Options field except the export gains,
-// MasterCache and NoteTap. TestSameAudioComparesEveryOption fails when a field
+// MasterCache, NoteTap and StemTracks (which only chooses the files Stems
+// writes, so it never changes a render's audio). TestSameAudioComparesEveryOption fails when a field
 // is added to Options without a decision here.
 func sameNonGainOptions(a, b Options) bool {
 	sameDither := a.Dither == nil && b.Dither == nil || a.Dither != nil && b.Dither != nil && *a.Dither == *b.Dither

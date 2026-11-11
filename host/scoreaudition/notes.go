@@ -22,6 +22,7 @@ type loggedNote struct {
 	notes    [4]uint8
 	count    uint8
 	noteID   int64
+	velocity uint8 // as played, after humanize
 }
 
 // noteLog collects the render's note events (render.Options.NoteTap).
@@ -41,7 +42,7 @@ func (l *noteLog) tap(track int, ev seq.Event) {
 	key := [2]int64{int64(track), ev.NoteID}
 	switch ev.Kind {
 	case seq.NoteOn:
-		n := loggedNote{track: track, slot: ev.Slot, tick: ev.Tick, end: ev.Tick, noteID: ev.NoteID, notes: ev.Notes, count: ev.NoteCount}
+		n := loggedNote{track: track, slot: ev.Slot, tick: ev.Tick, end: ev.Tick, noteID: ev.NoteID, notes: ev.Notes, count: ev.NoteCount, velocity: ev.Velocity}
 		if n.count == 0 {
 			n.notes[0], n.count = ev.Note, 1
 		}

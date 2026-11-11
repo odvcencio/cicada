@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"m31labs.dev/cicada/host/schedule"
@@ -36,6 +37,13 @@ type Options struct {
 	// bytes. Zero selects the default cap. The compile that reads the track
 	// kinds and the render that makes the stems share one copy of each pack.
 	MaxResidentPCM int64
+	// Tracks, when not empty, limits the analysis to these tracks and the
+	// mix: only their stems are written and read. An unknown name is a
+	// *render.UnknownTrackError.
+	Tracks []string
+	// Peaks is how many true-peak moments to list: zero selects DefaultPeaks,
+	// a negative value lists none.
+	Peaks int
 }
 
 type Report struct {
@@ -53,6 +61,18 @@ type Report struct {
 	Sections     []SectionReport `json:"sections"`
 	Mismatches   int             `json:"harmony_mismatches"`
 	Images       []string        `json:"images,omitempty"`
+
+	// Fields below were added within cicada.audition/1.
+
+	// SelectedTracks lists the tracks chosen with Options.Tracks, in score
+	// order; absent when every track is analyzed.
+	SelectedTracks []string        `json:"selected_tracks,omitempty"`
+	Loudness       *LoudnessReport `json:"loudness,omitempty"`
+	Bands          *BandsReport    `json:"bands,omitempty"`
+	Activity       *ActivityReport `json:"activity,omitempty"`
+	Peaks          []PeakReport    `json:"peaks"`
+	// Pictures lists every image file written to -o, with its bar range.
+	Pictures []Picture `json:"pictures,omitempty"`
 }
 
 type Facts struct {
@@ -92,6 +112,13 @@ type BarReport struct {
 	AudibilityDB float64       `json:"audibility_db"`    // pitched stems vs whole mix, 125 Hz to 2 kHz
 	Masked       bool          `json:"masked"`           // audibility_db below -15
 	Match        string        `json:"match"`            // agree, disagree, no-written-pitch, silent
+
+	// ShortTermLUFS is the 3 s window that ends at the bar's end; null while
+	// under 3 s of the range precede it.
+	ShortTermLUFS  *float64    `json:"short_term_lufs"`
+	SamplePeakDBFS float64     `json:"sample_peak_dbfs"`
+	Sounding       []string    `json:"sounding"` // tracks that sound in the bar
+	Bands          []BandOwner `json:"bands"`
 }
 
 type TrackReport struct {
@@ -111,6 +138,25 @@ type TrackReport struct {
 	OnsetsPerBar      float64   `json:"onsets_per_bar"`
 	SwingPercent      float64   `json:"swing_percent"`
 	Rhythm            []float64 `json:"rhythm"`
+
+	// BarLevelDB is the stem's RMS in each bar re its loudest bar (-120 when
+	// silent); Sounding marks the bars where the track sounds.
+	BarLevelDB []float64 `json:"bar_level_db"`
+	Sounding   []bool    `json:"sounding"`
+	// NoteBars counts the bars where the track starts a note; the two counts
+	// after it are the bars whose notes (offset, pitches, velocity and, when
+	// released, length) equal the bar before and the bar four before.
+	// LongestSameRun is the longest stretch of identical consecutive bars, in
+	// bars (0 when no bar equals the one before).
+	NoteBars             int `json:"note_bars"`
+	SameAsPreviousBar    int `json:"same_as_previous_bar"`
+	SameAsFourBarsBefore int `json:"same_as_four_bars_before"`
+	LongestSameRun       int `json:"longest_same_run"`
+	// Band levels in dB re a full-scale RMS, in band order: over the range,
+	// per bar and per section.
+	BandsDB        []float64   `json:"bands_db"`
+	BarBandsDB     [][]float64 `json:"bar_bands_db"`
+	SectionBandsDB [][]float64 `json:"section_bands_db"`
 }
 
 type SectionReport struct {
@@ -124,6 +170,17 @@ type SectionReport struct {
 	CentroidHz   float64  `json:"centroid_hz"`
 	OnsetsPerBar float64  `json:"onsets_per_bar"`
 	Tracks       []string `json:"tracks"`
+
+	// Loudness of the mix over exactly the section's ticks, from a meter
+	// started at the section start. Null when the method cannot give a value
+	// (integrated: no block above the gate; short-term: under 3 s).
+	IntegratedLUFS   *float64      `json:"integrated_lufs"`
+	LoudnessRangeLU  float64       `json:"loudness_range_lu"`
+	TruePeakDBTP     float64       `json:"true_peak_dbtp"`
+	ShortTermMaxLUFS *float64      `json:"short_term_max_lufs"`
+	ShortTermMinLUFS *float64      `json:"short_term_min_lufs"`
+	VsLoudestLU      *float64      `json:"vs_loudest_lu"` // integrated re the loudest section
+	Bands            []SectionBand `json:"bands"`
 }
 
 // Analysis holds the report and the data behind the images.
@@ -138,6 +195,22 @@ type Analysis struct {
 	chroma      [][12]float64
 	rhythmRows  [][]float64
 	firstBarIdx int
+
+	// For energy.png: short-term loudness every curveHop samples (NaN before
+	// 3 s), bar and section starts in samples, and section loudness.
+	curve        []float64
+	curveHop     int
+	mixLen       int
+	barSamples   []int
+	sectionMarks []sectionMark
+}
+
+// sectionMark is a section's place in the analyzed range.
+type sectionMark struct {
+	name       string
+	from, to   int // samples
+	integrated float64
+	fromBar    int
 }
 
 const (
@@ -147,7 +220,9 @@ const (
 	maskedBelowDB = -15.0
 	bandLowHz     = 125
 	bandHighHz    = 2000
-	specRows      = 160
+	specRows      = 200
+	specLowHz     = 20.0
+	specHighHz    = 20000.0
 	chromaFFT     = 8192
 	onsetFFT      = 1024
 	onsetHop      = 256
@@ -189,6 +264,21 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		return nil, fmt.Errorf("score cannot compile to a Cicada project")
 	}
+	// Check a track selection before any pack loads.
+	selected := make([]bool, len(p.Tracks))
+	ids := make([]string, len(p.Tracks))
+	for ti, track := range p.Tracks {
+		ids[ti] = track.ID
+		selected[ti] = len(opts.Tracks) == 0
+	}
+	if len(opts.Tracks) > 0 {
+		if err := render.CheckTrackNames(opts.Tracks, ids); err != nil {
+			return nil, err
+		}
+		for ti, id := range ids {
+			selected[ti] = slices.Contains(opts.Tracks, id)
+		}
+	}
 	root := opts.AssetDir
 	if root == "" {
 		root = "."
@@ -226,7 +316,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, StemTracks: opts.Tracks}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}
@@ -263,6 +353,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	pitched := make([]bool, len(p.Tracks))
 	pitchedMix := stereo{L: make([]float32, mix.Len()), R: make([]float32, mix.Len())}
 	for ti, track := range p.Tracks {
+		if !selected[ti] {
+			continue // no stem: the track counts as silent and is left out
+		}
 		s, _, err := readFloatWAV(filepath.Join(stemDir, fmt.Sprintf("%02d-%s.wav", ti+1, track.ID)))
 		if err != nil {
 			return nil, err
@@ -311,20 +404,29 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		})
 		return chroma, band
 	}
-	trackBand := func(sig stereo) float64 {
+	// trackBand also sums the power of each frame in the mixing bands, so
+	// band ownership reuses these transforms.
+	binBand := binBands(chromaFFT, rate)
+	trackBand := func(sig stereo, bandFrames [][numBands]float64) float64 {
 		var total float64
 		magFrames(sig, chromaPlan, frames, func(i int) int {
 			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
 			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
-		}, func(_ int, mag []float64) {
+		}, func(i int, mag []float64) {
 			for k := range mag {
 				if inBand[k] {
 					total += mag[k] * mag[k]
 				}
 			}
+			for k, b := range binBand {
+				if b >= 0 {
+					bandFrames[i][b] += float64(mag[k] * mag[k])
+				}
+			}
 		})
 		return total
 	}
+	bandFrames := make([][][numBands]float64, len(p.Tracks))
 	var mixBand, pitchedBand []float64
 	a.chroma, pitchedBand = chromaOf(pitchedMix)
 	var mixChroma [][12]float64
@@ -406,9 +508,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	rowHi := make([]int, specRows)
 	rowFrac := make([]float64, specRows)
 	binHz := float64(rate) / specFFT
-	ratio := math.Pow(12000.0/40.0, 1.0/specRows)
+	ratio := math.Pow(specHighHz/specLowHz, 1.0/specRows)
 	for row := 0; row < specRows; row++ {
-		lo, hi := 40*math.Pow(ratio, float64(row)), 40*math.Pow(ratio, float64(row+1))
+		lo, hi := specLowHz*math.Pow(ratio, float64(row)), specLowHz*math.Pow(ratio, float64(row+1))
 		kl, kh := int(math.Ceil(lo/binHz)), int(math.Ceil(hi/binHz))
 		if kh > kl {
 			rowLo[row], rowHi[row] = kl, kh
@@ -509,7 +611,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tr.ActiveBars = activeBars
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
-		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
+		bandFrames[ti] = make([][numBands]float64, frames)
+		tr.BandVsMixDB = round(bandDB(trackBand(s, bandFrames[ti]), allM), 1)
 		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
 		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, baseSample, opts.From, bars, acts[ti])
@@ -545,7 +648,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	trackSet, patternSet := map[float64]map[string]bool{}, map[float64]map[string]bool{}
 	swingEnd := fromTick + int64(bars)*seq.TicksPerBar
 	for _, pl := range notes.slotsUsed(fromTick, swingEnd, sustain, swingEnd) {
-		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) {
+		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) || !selected[pl.track] {
 			continue
 		}
 		id := p.Tracks[pl.track].Slots[pl.slot]
@@ -604,12 +707,14 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	sampleAt := func(tick int64) int {
 		return min(max(int(clock.SampleAtTick(tick)-baseSample), 0), mix.Len())
 	}
+	var kept []sectionSpan
 	for _, sp := range spans {
 		lo, hi := max(sp.from, fromTick), min(sp.to, rangeEnd)
 		if hi <= lo {
 			continue
 		}
 		s0, s1 := sampleAt(lo), sampleAt(hi)
+		kept = append(kept, sectionSpan{lo, hi, s0, s1})
 		sec := SectionReport{Name: sp.name, FromBar: int(lo/seq.TicksPerBar) + 1, ToBar: int((hi-1)/seq.TicksPerBar) + 1,
 			TempoBPM: float64(clock.ClockAtTick(lo).BPMMilli) / 1000, FromTick: lo, ToTick: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
 		var num, den float64
@@ -624,6 +729,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		count := 0
 		for ti := range p.Tracks {
+			if !selected[ti] {
+				continue
+			}
 			for _, o := range work[ti].onsets {
 				if o >= s0 && o < s1 {
 					count++
@@ -647,6 +755,24 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		sec.OnsetsPerBar = round(float64(count)/(float64(hi-lo)/float64(seq.TicksPerBar)), 2)
 		r.Sections = append(r.Sections, sec)
+	}
+	err = a.measureMix(mixInput{
+		mix: mix, stems: stems, ids: ids, selected: selected, rate: rate, clock: clock, base: baseSample,
+		fromTick: fromTick, bars: bars, barSample: barSample, notes: &notes, acts: acts, played: played,
+		bandFrames: bandFrames, sections: kept, peaks: opts.Peaks,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(opts.Tracks) > 0 {
+		var chosen []TrackReport
+		for ti, tr := range r.Tracks {
+			if selected[ti] {
+				chosen = append(chosen, tr)
+				r.SelectedTracks = append(r.SelectedTracks, tr.ID)
+			}
+		}
+		r.Tracks = chosen
 	}
 	return a, nil
 }
