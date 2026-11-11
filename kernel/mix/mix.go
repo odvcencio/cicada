@@ -1,7 +1,11 @@
 // Package mix provides the M0 dry music bus and linked master limiter.
 package mix
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 const MusicGainDB = -3.0
 const MusicGain = .7079457843841379
@@ -14,8 +18,8 @@ func NewTrack(gainDB, pan float64, mute bool) Track {
 		return Track{}
 	}
 	angle := (pan + 1) * math.Pi / 4
-	gain := math.Pow(10, gainDB/20)
-	return Track{Left: float32(gain * math.Cos(angle)), Right: float32(gain * math.Sin(angle))}
+	gain := detmath.Pow(10, gainDB/20)
+	return Track{Left: float32(gain * detmath.Cos(angle)), Right: float32(gain * detmath.Sin(angle))}
 }
 
 type Dry struct{ Left, Right, SFXLeft, SFXRight float32 }
@@ -60,6 +64,10 @@ type Limiter struct {
 	position                    int64
 	gain, releaseAlpha, ceiling float64
 	fault                       bool
+	// GainReductionDB's value for the gain whose bits are reductionBits.
+	reductionBits  uint64
+	reduction      float64
+	reductionValid bool
 }
 
 func NewLimiter(sampleRate int) (*Limiter, error) {
@@ -67,7 +75,7 @@ func NewLimiter(sampleRate int) (*Limiter, error) {
 		return nil, Error("unsupported limiter sample rate")
 	}
 	lookahead := int(math.Round(float64(sampleRate) * .0015))
-	return &Limiter{lookahead: lookahead, gain: 1, releaseAlpha: 1 - math.Exp(-1/(.05*float64(sampleRate))), ceiling: math.Pow(10, CeilingDB/20)}, nil
+	return &Limiter{lookahead: lookahead, gain: 1, releaseAlpha: 1 - detmath.Exp(-1/(.05*float64(sampleRate))), ceiling: detmath.Pow(10, CeilingDB/20)}, nil
 }
 
 type Error string
@@ -80,11 +88,18 @@ func (l *Limiter) Fault() bool        { return l.fault }
 
 // GainReductionDB reports the current linked gain reduction. Zero means the
 // limiter is passing unity gain.
+//
+// The engine reads it every frame, and the gain holds still whenever the
+// limiter is not reducing, so the value is kept for the last gain's exact bits:
+// the same input gives the same result without another logarithm.
 func (l *Limiter) GainReductionDB() float64 {
 	if l.gain <= 0 {
 		return math.Inf(1)
 	}
-	return -20 * math.Log10(l.gain)
+	if bits := math.Float64bits(l.gain); !l.reductionValid || bits != l.reductionBits {
+		l.reductionBits, l.reduction, l.reductionValid = bits, -20*detmath.Log10(l.gain), true
+	}
+	return l.reduction
 }
 
 func (l *Limiter) Reset() {
