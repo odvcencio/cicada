@@ -585,3 +585,110 @@ func TestStealTailKeepsTheOldVoiceMix(t *testing.T) {
 		t.Fatalf("tail did not end: %g/%g", l, r)
 	}
 }
+
+// settledLevel plays one note at vel and returns its settled level, or the
+// settled level of its release takes when release is set.
+func settledLevel(t *testing.T, p *Instrument, vel uint8, release bool) float64 {
+	t.Helper()
+	p.Reset()
+	h, err := p.NoteOn(60, vel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	level := settled(p)
+	if release {
+		p.NoteOff(h)
+		level = settled(p)
+	}
+	return float64(level)
+}
+
+// A release with one recorded layer in a pack with recorded dynamics follows
+// the attack: min(1, velocity/centre), not velocity/127. The catalog bass has
+// four attack layers (24, 56, 88, 120) and one release layer at 64; with the
+// old law its release fell 14 dB against its attack at velocity 24.
+func TestInstrumentSingleReleaseLayerFollowsTheRecordedLaw(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	var zones []Zone
+	for _, layer := range []uint8{24, 56, 88, 120} {
+		zones = append(zones, mappedZone(0, layer, 0, 0, 1, false))
+	}
+	zones = append(zones, mappedZone(.3, 64, 0, 0, 1, true))
+	p := newMapped(t, zones, c)
+	for _, vel := range []uint8{1, 24, 32, 64, 100, 127} {
+		want := .3 * min(1, float64(vel)/64)
+		if got := settledLevel(t, p, vel, true); math.Abs(got-want) > 1e-6 {
+			t.Errorf("release at velocity %d: %g, want %g", vel, got, want)
+		}
+	}
+}
+
+// Layers count per note, not per velocity: a pack whose layers split the
+// velocity range blends the neighbouring centres across the split, so the
+// level is continuous and rises with velocity. Two layouts: ranges 1-63 and
+// 64-127 (centres 32 and 96), and overlapping ranges 1-80 and 60-127 (centres
+// 40 and 100). Below the softest centre the level is velocity/centre, which
+// steps more than 1.5 dB only between the lowest velocities (6 dB from 1 to 2),
+// as velocity/127 always has; the check starts at velocity 8.
+func TestInstrumentSplitVelocityRangesStayContinuous(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	for _, layout := range []struct {
+		name                  string
+		softLow, softHigh, sc uint8
+		loudLow, loudHigh, lc uint8
+	}{{"split at 64", 1, 63, 32, 64, 127, 96}, {"overlap 60-80", 1, 80, 40, 60, 127, 100}} {
+		soft, loud := mappedZone(.2, layout.sc, 0, 0, 1, false), mappedZone(.8, layout.lc, 0, 0, 1, false)
+		soft.VelocityLow, soft.VelocityHigh = layout.softLow, layout.softHigh
+		loud.VelocityLow, loud.VelocityHigh = layout.loudLow, layout.loudHigh
+		p := newMapped(t, []Zone{soft, loud}, c)
+		previous := 0.0
+		for vel := uint8(1); vel < 128; vel++ {
+			got := settledLevel(t, p, vel, false)
+			if got < previous-1e-9 {
+				t.Errorf("%s: level falls from %g to %g at velocity %d", layout.name, previous, got, vel)
+			}
+			if vel >= 8 && previous > 0 && 20*math.Log10(got/previous) > 1.5 {
+				t.Errorf("%s: level steps %.2f dB at velocity %d", layout.name, 20*math.Log10(got/previous), vel)
+			}
+			previous = got
+		}
+		for vel, want := range map[uint8]float64{layout.sc: .2, layout.lc: .8, 127: .8} {
+			if got := settledLevel(t, p, vel, false); math.Abs(got-want) > 1e-6 {
+				t.Errorf("%s: velocity %d plays %g, want the recorded %g", layout.name, vel, got, want)
+			}
+		}
+	}
+}
+
+// The recorded law applies when every sounding zone shares one gain, within
+// one part in a million, and that common gain still applies. Zones whose
+// gains differ mean the pack compensates for velocity/127, and keep it.
+func TestInstrumentRecordedLawNeedsOneCommonGain(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	layers := func(softGain, loudGain float64) *Instrument {
+		soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+		soft.Gain, loud.Gain = softGain, loudGain
+		return newMapped(t, []Zone{soft, loud}, c)
+	}
+	for _, check := range []struct {
+		name       string
+		soft, loud float64
+		vel        uint8
+		want       float64
+	}{
+		{"common gain 0.5", .5, .5, 32, .2 * .5},
+		{"common gain 0.5", .5, .5, 16, .2 * .5 * 16 / 32},
+		{"gains within 1e-6", 1, 1 + 1e-9, 32, .2},
+		{"gains differ", 1, .999, 16, .2 * 16 / 127},
+	} {
+		if got := settledLevel(t, layers(check.soft, check.loud), check.vel, false); math.Abs(got-check.want) > 1e-6 {
+			t.Errorf("%s, velocity %d: %g, want %g", check.name, check.vel, got, check.want)
+		}
+	}
+	if !RecordedDynamics([]Zone{{Gain: 0}, {Gain: .7}, {Gain: .7 * (1 + 5e-7)}}) || RecordedDynamics([]Zone{{Gain: 1}, {Gain: .999}}) {
+		t.Error("RecordedDynamics does not apply the common-gain rule")
+	}
+}

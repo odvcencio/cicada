@@ -50,16 +50,20 @@ A field you leave out keeps the manifest value, so a score without these fields 
 
 ## How velocity sets the level
 
-Velocity picks the recorded layers that play, and a pack's soft layers are already recorded soft, so the sampler does not scale them a second time. When every zone of a pack keeps unity `Gain`, as in the catalog's CC0 packs and the full acoustic kit, and two or more recorded layers cover a note:
+Velocity picks the recorded layers that play, and a pack's soft layers are already recorded soft, so the sampler does not scale them a second time. This recorded-dynamics law applies to a pack whose sounding zones all share one `Gain` (equal to within one part in a million), as in the catalog's CC0 packs and the full acoustic kit; that common gain still applies. For a note with two or more recorded layers:
 
 - at a layer's centre velocity (its `Layer`), the recording plays at its recorded level;
-- between two centres, the two recordings crossfade, so the level moves from one recording to the next;
+- between two centres, the two recordings crossfade, so the level moves from one recording to the next. Layers count per note: when a pack splits the velocity range between layers (1-63 and 64-127, say), the sampler still blends the neighbouring centres across the split, so the level stays continuous and rises with velocity;
 - above the loudest centre, the loudest recording plays at its recorded level, so velocity 127 sounds as it always has;
 - below the softest centre, velocity scales the softest recording by velocity/centre. With the grand's softest centre at 24, velocity 12 plays 6 dB under the pp recording and velocity 1 about 28 dB under it.
 
-Every other key and pack keeps a level proportional to velocity/127: a key with one recorded layer (the `nylon` guitar, the open hi-hat) has no other dynamics, and a pack that sets its own zone gains has shaped its velocity response against that multiplier. `cicada-keys-pack` sets each zone's gain to 127 over its centre for that reason, and `cicada record-pack` kits keep the level described in [Record your own drum kit](../manual/recording-instruments.md#record-your-own-drum-kit). A zone gain of 0 is a choke command and does not count.
+A release recording follows the same rule; a release with one layer plays at min(1, velocity/centre), so it keeps its balance with its attack. An attack with one recorded layer (the `nylon` guitar, the open hi-hat, the full kit's cross-stick) has no other dynamics and keeps a level proportional to velocity/127.
 
-For the grand at A4, a 0 dB fader and no effects, this rule plays velocity 24 at -57 dBFS peak (it was -71), velocity 56 at -40 (was -47) and velocity 88 at -24 (was -27); velocity 120 and above are unchanged within 0.5 dB. From velocity 30 to 120 the level now spans 34 dB of peak level, where it spanned 47. The crossfade weights are linear in amplitude, so where two recordings partly cancel the level can dip just above a centre: at A4 it falls about 1.5 dB in RMS (3 dB in peak) from velocity 56 to 58 before it rises. Listen across a layer boundary when that matters.
+That shifts the balance between one-layer and layered keys of the same pack, because only the layered keys get louder at low velocity. Measured at `x1`: in `full-kit-shells` the snare (`d2`) went from 12.6 dB under the cross-stick (`c#2`) to 5.4 dB over it, and in the catalog `kit` the closed hi-hat gains up to 14.5 dB on the open hi-hat. Rebalance with the kit lanes' levels if a groove relied on the old balance.
+
+A pack whose zones carry different gains keeps velocity/127 for every key: it has shaped its velocity response against that multiplier. `cicada-keys-pack` sets each zone's gain to 127 over its centre for that reason, and `cicada record-pack` kits keep the level described in [Record your own drum kit](../manual/recording-instruments.md#record-your-own-drum-kit). A zone gain of 0 is a choke command and does not count. `cicada check --json` names the law each declared pack uses, in `packs[].velocity_law`: `recorded` or `velocity/127`.
+
+For the grand at A4, a 0 dB fader and no effects, this rule plays velocity 24 at -57 dBFS peak (it was -71), velocity 56 at -40 (was -47) and velocity 88 at -24 (was -27); velocity 120 and above are unchanged within 0.5 dB. From velocity 30 to 120 the level now spans 34 dB of peak level, where it spanned 47. Just above a centre the level can dip where two takes are not time-aligned and partly cancel: at A4 it falls about 1.5 dB in RMS (3 dB in peak) from velocity 56 to 58 before it rises, because the grand's 56 and 88 takes are offset by about 1 ms. Listen across a layer boundary when that matters.
 
 ## Memory limits
 
