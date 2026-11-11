@@ -7,6 +7,13 @@ on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      soak:
+        # The soak holds the one self-hosted reference machine for about 35
+        # minutes, and every pull request's CPU gate queues behind it.
+        description: Also run the 30-minute M2 AudioWorklet soak on the self-hosted reference machine
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -52,6 +59,7 @@ jobs:
       macos_desktop: ${{ steps.classify.outputs.macos_desktop }}
       macos_contracts: ${{ steps.classify.outputs.macos_contracts }}
       m2: ${{ steps.classify.outputs.m2 }}
+      m2_gates: ${{ steps.classify.outputs.m2_gates }}
       bench: ${{ steps.classify.outputs.bench }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -1431,13 +1439,15 @@ jobs:
           if-no-files-found: warn
           path: build/test-wasm-memory.log
 
-  m2-pr:
-    name: M2 AudioWorklet gates
+  m2-browser:
+    name: M2 AudioWorklet browser tests
     needs: changes
-    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2 == 'true' }}
-    # This job runs on the self-hosted reference machine, so a pull request from
-    # a fork must not run it.
-    runs-on: [self-hosted, linux, x64]
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && needs.changes.outputs.m2 == 'true' }}
+    # The AudioWorklet's functional browser tests, the WASM size gate and the
+    # WAM2 host. None of them times anything against a budget, so they run on
+    # hosted runners, beside other work, and never wait for the reference
+    # machine. Only the CPU gate (m2-pr below) needs that machine.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       GOWORK: off
@@ -1476,14 +1486,10 @@ jobs:
           go version
           tinygo version
           node --version
-      # make test-wasm and test-chord-wasm moved to the m2-wasm-parity and
-      # m2-wasm-memory jobs on hosted runners. The reference machine has one
-      # runner, so jobs queued for it run one after another, and its CPU
-      # budget measurements must not share the machine with other work.
-      - name: M2 browser and budgets
-        # build-worklets first: test-chord-wasm used to pull it in, and the browser
-        # and size gates must measure a worklet built from the current processor.js.
-        run: make build-worklets test-browser test-demo-browser budget-size budget-browser
+      - name: M2 browser tests and size gate
+        # build-worklets first: the browser tests and the size gate must use a
+        # worklet built from the current processor.js.
+        run: make build-worklets test-browser test-demo-browser budget-size
       - name: WAM2 export and reference host
         env:
           CICADA_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/cicada-wam2-evidence
@@ -1495,6 +1501,74 @@ jobs:
           name: wam2-gui-evidence
           if-no-files-found: error
           path: ${{ runner.temp }}/cicada-wam2-evidence/*.png
+      - name: Save M2 browser reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m2-audioworklet-browser-reports
+          if-no-files-found: warn
+          path: |
+            build/test-browser.log
+            build/test-worklet-stall.log
+            build/budget-size-report.txt
+            build/m2-browser-chrome.log
+            build/demo-evidence/
+
+  m2-pr:
+    name: M2 AudioWorklet gates
+    needs: changes
+    # Only changes that can move the CPU gate's result queue it (m2_gates in
+    # scripts/ci-changes.sh); pushes to main always run it.
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2_gates == 'true' }}
+    # This job runs on the self-hosted reference machine, so a pull request from
+    # a fork must not run it. The machine has one runner: every queued run waits
+    # for the one before it, so this job holds only the CPU budget, which a
+    # hosted runner cannot measure (it measured 1.296 ms against 0.67 ms).
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+      CHROME_VERSION: 152.0.7977.64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: ./.github/actions/setup-wasm-tools
+      # The runner's system Node is too old for the demo browser test, which
+      # needs the global WebSocket that Node 22 provides.
+      - name: Supported Node for browser checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Cache pinned Chrome for Testing headless shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
+          browser_path="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+          if [[ ! -x "$browser_path" ]]; then
+            mkdir -p "$tool_root"
+            temp_dir="$(mktemp -d "$RUNNER_TEMP/chrome-for-testing.XXXXXX")"
+            trap 'rm -rf "$temp_dir"' EXIT
+            archive="$temp_dir/chrome-headless-shell.zip"
+            curl --fail --location --retry 3 --output "$archive" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+            unzip -q "$archive" -d "$temp_dir"
+            mv "$temp_dir/chrome-headless-shell-linux64" "$tool_root/"
+          fi
+          echo "CHROME_BIN=$browser_path" >> "$GITHUB_ENV"
+          PULSE_SERVER=unix:/nonexistent "$browser_path" --mute-audio --version
+          go version
+          tinygo version
+          node --version
+      - name: M2 CPU budget
+        # The browser tests, the size gate and WAM2 moved to m2-browser on hosted
+        # runners; the parity and memory tests are in m2-wasm-parity and
+        # m2-wasm-memory. build-worklets first, so the gate measures a worklet
+        # built from the current processor.js.
+        run: make build-worklets build-kernel-wasm budget-browser
       - name: Save M2 gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -1502,19 +1576,15 @@ jobs:
           name: m2-audioworklet-gate-reports
           if-no-files-found: warn
           path: |
-            build/test-wasm.log
-            build/test-chord-wasm.log
-            build/chord-wasm-report.txt
-            build/test-browser.log
-            build/budget-size-report.txt
             build/budget-browser.log
             build/browser-cpu-report.json
-            build/m2-browser-chrome.log
-            build/demo-evidence/
 
   m2-soak:
     name: M2 AudioWorklet nightly soak
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # A manual run asks for it with the soak input; otherwise every dispatch
+    # (for the macOS or other dispatch-only jobs) would hold the reference
+    # machine for about 35 minutes and queue every pull request's CPU gate.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.soak)
     # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
     # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
     runs-on: [self-hosted, linux, x64]
