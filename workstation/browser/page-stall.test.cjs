@@ -65,6 +65,76 @@ test('the server log tail hides the owner link', t => {
   assert.equal(text, 'Cicada Studio: http://127.0.0.1:8197/__local/<redacted>\nGET /__local/<redacted>?x=1 ok\n');
 });
 
+// Playwright accepts beforeunload when nobody listens for dialogs; the
+// helper's own dialog listener must do the same, or a watched page cancels
+// navigations an unwatched page completes. Studio registers such a handler
+// (assets/studio-startup.js) while a form control is edited.
+test('a watched page whose beforeunload handler asks to stay still navigates', { timeout: 60000 }, async () => {
+  const http = require('node:http');
+  const stall = require('./page-stall.cjs');
+  const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
+  const server = http.createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(request.url === '/next' ? '<p>next</p>' : '<input id=i><script>addEventListener("beforeunload", e => { e.preventDefault(); e.returnValue = ""; })</script>');
+  }).listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] });
+  try {
+    const context = await browser.newContext();
+    const watch = await stall.watchContext(context);
+    const page = await context.newPage();
+    await page.goto(origin + '/');
+    await page.locator('#i').click();
+    await page.keyboard.type('x'); // beforeunload asks only after a user gesture
+    const outcome = await page.goto(origin + '/next', { timeout: 5000 }).then(() => 'navigated', error => error.message.split('\n')[0]);
+    assert.equal(outcome, 'navigated');
+    assert.equal(page.url(), origin + '/next');
+    assert.match(await watch.report('check'), /dialogs opened: beforeunload/, 'the beforeunload dialog did not open, so this test proves nothing');
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('gdb is installed only on a GitHub-hosted runner', () => {
+  const { installRefusal } = require('./page-stall.cjs');
+  assert.match(installRefusal({ CICADA_PAGE_STALL_NATIVE: 'install' }), /RUNNER_ENVIRONMENT is not set/);
+  assert.match(installRefusal({ CICADA_PAGE_STALL_NATIVE: 'install', RUNNER_ENVIRONMENT: 'self-hosted' }), /RUNNER_ENVIRONMENT is "self-hosted"/);
+  assert.match(installRefusal({ CICADA_PAGE_STALL_NATIVE: '1', RUNNER_ENVIRONMENT: 'github-hosted' }), /not install/);
+  assert.equal(installRefusal({ CICADA_PAGE_STALL_NATIVE: 'install', RUNNER_ENVIRONMENT: 'github-hosted' }), '');
+});
+
+// A time limit on sudo alone leaves the root command running; runSudo puts
+// timeout(1) inside sudo. Needs passwordless sudo (CI's hosted runners have it).
+const sudoWorks = process.platform === 'linux' && (() => { try { execFileSync('sudo', ['-n', 'true'], { stdio: 'ignore', timeout: 3000 }); return true; } catch { return false; } })();
+test('a command run through sudo stops at its time limit', { skip: !sudoWorks && 'needs passwordless sudo on Linux', timeout: 30000 }, async () => {
+  const { runSudo } = require('./page-stall.cjs');
+  const marker = `sleep ${37 + Math.random()}`.slice(0, 15);
+  const started = Date.now();
+  await runSudo(['sh', '-c', marker], 3000);
+  assert.ok(Date.now() - started < 4000, `runSudo returned after ${Date.now() - started} ms`);
+  const running = () => execFileSync('ps', ['-A', '-o', 'args='], { encoding: 'utf8' }).split('\n').filter(line => line.trim() === marker);
+  for (let i = 0; i < 40 && running().length; i++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(running(), [], `the root "${marker}" outlived its time limit`);
+});
+
+test('a Chrome that fails to start shows its log, owner links redacted', { timeout: 30000 }, async t => {
+  const fs = require('node:fs'), os = require('node:os');
+  const stall = require('./page-stall.cjs');
+  const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'page-stall-fake-chrome-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const fake = path.join(dir, 'chrome');
+  fs.writeFileSync(fake, '#!/bin/sh\necho "[FATAL:fake_chrome.cc(1)] cannot start http://127.0.0.1:1/__local/OWNERTOKEN123" >&2\nexit 3\n', { mode: 0o755 });
+  const error = await chromium.launch(stall.withChromeLog({ headless: true, executablePath: fake, args: ['--no-sandbox'] }, chromium)).then(browser => browser.close().then(() => null), e => e);
+  assert.ok(error, 'the fake Chrome launched');
+  assert.match(error.message, /Chrome exited with code 3; the last 30 lines of its log:/, error.message);
+  assert.match(error.message, /FATAL:fake_chrome\.cc\(1\)\] cannot start http:\/\/127\.0\.0\.1:1\/__local\/<redacted>/, error.message);
+  assert.doesNotMatch(error.message, /OWNERTOKEN123/);
+});
+
 test('the old teardown keeps a failed suite alive on a frozen page', { timeout: 60000 }, async () => {
   const result = await run('old', 12000);
   assert.match(result.output, failed, result.output);

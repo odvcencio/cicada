@@ -37,7 +37,8 @@
 //     from outside (CICADA_PAGE_STALL_NATIVE): each thread's name, state, kernel
 //     wait channel and blocked system call, and with gdb or eu-stack (Linux) or
 //     sample (macOS) its stack. "install" (set in CI) installs gdb through sudo,
-//     only when a page stalled; that can add up to 100 s to the teardown;
+//     only when a page stalled and only on a GitHub-hosted runner
+//     (RUNNER_ENVIRONMENT=github-hosted); that can add up to 100 s to the teardown;
 //   - with withChromeLog(), Chrome's own log, so a stuck audio, GPU or storage
 //     service shows in the browser's words;
 //   - with { stack: true } (or CICADA_PAGE_STALL_STACK=1), the Debugger domain,
@@ -144,11 +145,13 @@ function pageProbe() {
       return label ? `${out} "${label}"` : out;
     } catch { return '?'; }
   };
+  const keep = (wrapper, original) => { try { Object.defineProperties(wrapper, { name: { value: original.name }, length: { value: original.length } }); } catch {} return wrapper; };
   const hook = (owner, name, label) => {
     try {
       const original = owner && owner[name];
       if (typeof original !== 'function') return;
-      owner[name] = function (...args) { try { crumb(label(this, args)); } catch {} return original.apply(this, args); };
+      // Keeps name and length; constructor and native toString() differ, and nothing in the repository reads them.
+      owner[name] = keep(function (...args) { try { crumb(label(this, args)); } catch {} return original.apply(this, args); }, original);
     } catch {}
   };
   const hookConstructor = (owner, name) => {
@@ -225,12 +228,13 @@ function listen(state) {
   page.on('crash', () => { state.crashed = Date.now(); });
   page.on('close', () => { state.closed = Date.now(); });
   // A modal dialog blocks the page's main thread until it is answered.
-  // Playwright dismisses dialogs only while nobody listens for them, so this
-  // listener dismisses one itself unless the suite also listens.
+  // Playwright answers dialogs only while nobody listens for them (it accepts
+  // beforeunload, so the navigation goes ahead, and dismisses the rest), so
+  // this listener does the same unless the suite also listens.
   page.on('dialog', dialog => {
     state.dialogs.push({ at: Date.now(), what: `${dialog.type()} "${redact(dialog.message().slice(0, 120))}"` });
     if (state.dialogs.length > 5) state.dialogs.shift();
-    if (page.listenerCount('dialog') === 1 && page.context().listenerCount('dialog') === 0) dialog.dismiss().catch(() => {});
+    if (page.listenerCount('dialog') === 1 && page.context().listenerCount('dialog') === 0) (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(() => {});
   });
   // DevTools delivers console messages while script runs, so a page stuck in a
   // loop that logs (wasm_exec.js warns "missed timeout event" on every turn of
@@ -339,6 +343,17 @@ async function rendererCPU(browser) {
 const nativeMode = () => String(process.env.CICADA_PAGE_STALL_NATIVE || '1').toLowerCase();
 const nativeBudget = () => ({ 0: 0, install: 100000 })[nativeMode()] ?? 15000;
 
+// installRefusal says why installing gdb is not allowed here, or returns '' if
+// it is. install runs apt-get through sudo, so it also requires GitHub's own
+// marker of a hosted, throwaway runner: a self-hosted machine (buildbox is a
+// production host) that sets RUNNER_TEMP and runs ci-studio-browser.sh must
+// never install packages because a page stalled.
+function installRefusal(env = process.env) {
+  if (String(env.CICADA_PAGE_STALL_NATIVE || '').toLowerCase() !== 'install') return 'CICADA_PAGE_STALL_NATIVE is not install';
+  if (env.RUNNER_ENVIRONMENT !== 'github-hosted') return `RUNNER_ENVIRONMENT is ${env.RUNNER_ENVIRONMENT ? `"${env.RUNNER_ENVIRONMENT}"` : 'not set'}, not "github-hosted"`;
+  return '';
+}
+
 // run is execFile with a time limit that never throws; it resolves to the output.
 function run(file, args, timeout) {
   return new Promise(resolve => {
@@ -347,8 +362,16 @@ function run(file, args, timeout) {
   });
 }
 const sh = (script, args, timeout) => run('sh', ['-c', script, 'sh', ...args.map(String)], timeout);
+// runSudo runs a command as root within timeout ms. A time limit on sudo does
+// not stop the command sudo started (a hung gdb would keep Chrome stopped, a
+// hung apt-get would keep the package lock), so timeout(1) runs inside sudo:
+// it sends TERM a little before the outer limit and KILL 2 s after that.
+function runSudo(args, timeout) {
+  const inner = Math.max(0.5, (timeout - 2500) / 1000).toFixed(1);
+  return run('sudo', ['-n', 'timeout', '-k', '2', inner, ...args.map(String)], timeout);
+}
 let sudoChecked = null;
-const canSudo = async () => sudoChecked ?? (sudoChecked = process.platform === 'linux' && (await sh('sudo -n true 2>/dev/null && echo yes', [], 3000)).trim() === 'yes');
+const canSudo = async () => sudoChecked ?? (sudoChecked = process.platform === 'linux' && (await runSudo(['sh', '-c', 'echo yes'], 3000)).trim() === 'yes');
 const hasTool = async tool => (await sh('command -v "$1"', [tool], 2000)).trim() !== '';
 
 // chromeProcesses lists the browser's processes with Chrome's own names for them.
@@ -366,7 +389,8 @@ async function chromeProcesses(browser) {
     // The browser does not answer: walk this process's tree.
     const tree = [process.pid];
     for (let i = 0; i < tree.length; i++) for (const p of table) if (p.ppid === tree[i]) tree.push(p.pid);
-    list = tree.slice(1).filter(pid => /chrom/i.test(byPid.get(pid).args)).map(pid => ({ pid, type: flag(byPid.get(pid).args, 'type') || 'browser' }));
+    // withChromeLog's script is a shell around Chrome: leave it out.
+    list = tree.slice(1).filter(pid => /chrom/i.test(byPid.get(pid).args) && !/^(\S*\/)?(ba|da)?sh\s/.test(byPid.get(pid).args)).map(pid => ({ pid, type: flag(byPid.get(pid).args, 'type') || 'browser' }));
   }
   return list.map(p => {
     const args = byPid.has(p.pid) ? byPid.get(p.pid).args : '';
@@ -385,7 +409,7 @@ const THREADS = 'for t in /proc/$1/task/*; do s=$(cat "$t/stat" 2>/dev/null); pr
 // its own line, the others grouped. "futex" in a main thread usually means it
 // waits for a reply from another thread or process.
 async function threadTable(pid, sudo, timeout) {
-  const read = async elevated => (await (elevated ? run('sudo', ['-n', 'sh', '-c', THREADS, 'sh', String(pid)], timeout) : sh(THREADS, [pid], timeout))).split('\n').filter(Boolean).map(line => {
+  const read = async elevated => (await (elevated ? runSudo(['sh', '-c', THREADS, 'sh', pid], timeout) : sh(THREADS, [pid], timeout))).split('\n').filter(Boolean).map(line => {
     const [tid, comm, stat, wchan, nr] = line.split('\t');
     const names = syscalls[process.arch] || {};
     return { tid: Number(tid), comm, state: String(stat || '').split(' ')[0], wchan: wchan && wchan !== '0' ? wchan : '-', syscall: nr === undefined || nr === '' ? '?' : nr === 'running' ? 'running' : names[nr] || `syscall ${nr}` };
@@ -399,7 +423,7 @@ async function threadTable(pid, sudo, timeout) {
   const out = [`  main thread: ${main ? line(main) : '(not found)'}`];
   out.push(`  other threads (${threads.length - 1}): ` + [...groups].sort((a, b) => b[1] - a[1]).slice(0, 14).map(([text, count]) => `${text}${count > 1 ? ` x${count}` : ''}`).join('; '));
   if (sudo) {
-    const kernel = (await run('sudo', ['-n', 'cat', `/proc/${pid}/task/${pid}/stack`], timeout)).trim().split('\n').slice(0, 8).map(l => l.replace(/^\[<[0-9a-f]+>\] /, ''));
+    const kernel = (await runSudo(['cat', `/proc/${pid}/task/${pid}/stack`], timeout)).trim().split('\n').slice(0, 8).map(l => l.replace(/^\[<[0-9a-f]+>\] /, ''));
     if (kernel[0]) out.push(`  main thread kernel stack: ${kernel.join(' < ')}`);
   }
   return out.join('\n');
@@ -412,7 +436,7 @@ async function debuggerStacks(pid, tool, sudo, timeout) {
   const command = tool === 'gdb'
     ? ['gdb', ['-p', String(pid), '-batch', '-nx', '-q', '-ex', 'set pagination off', '-ex', 'set print thread-events off', '-ex', 'thread apply all bt 25']]
     : ['eu-stack', ['-p', String(pid), '-n', '25']];
-  const text = sudo ? await run('sudo', ['-n', command[0], ...command[1]], timeout) : await run(command[0], command[1], timeout);
+  const text = sudo ? await runSudo([command[0], ...command[1]], timeout) : await run(command[0], command[1], timeout);
   const blocks = text.split(/\n(?=Thread |TID )/).filter(block => /^(Thread|TID) /.test(block));
   if (!blocks.length) return `  ${tool}: no stacks (${text.trim().split('\n').slice(-2).join(' / ').slice(0, 200) || 'no output'})`;
   const isMain = block => new RegExp(`(LWP ${pid}\\)|^TID ${pid}:)`).test(block.split('\n')[0]);
@@ -478,12 +502,14 @@ async function nativeStacks(browser, budgetMS) {
     lines.push(`--- ${p.pid} ${p.label} ---`, await threadTable(p.pid, sudo, Math.min(left(), 3000)));
   }
   let tool = (await hasTool('gdb')) ? 'gdb' : (await hasTool('eu-stack')) ? 'eu-stack' : '';
-  if (!tool && mode === 'install' && sudo) {
+  const refusal = mode === 'install' ? installRefusal() : 'off';
+  if (!tool && mode === 'install' && refusal) lines.push(`native: not installing gdb: ${refusal}`);
+  if (!tool && mode === 'install' && !refusal && sudo) {
     // Only here, on a stalled page: the CI image has no debugger.
-    const install = () => run('sudo', ['-n', 'env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', '-qq', '--no-install-recommends', 'gdb'], Math.min(left() - 20000, 60000));
+    const install = () => runSudo(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', '-qq', '--no-install-recommends', 'gdb'], Math.min(left() - 20000, 60000));
     const started = Date.now();
     await install();
-    if (!(await hasTool('gdb')) && left() > 40000) { await run('sudo', ['-n', 'apt-get', 'update', '-qq'], Math.min(left() - 30000, 45000)); await install(); }
+    if (!(await hasTool('gdb')) && left() > 40000) { await runSudo(['apt-get', 'update', '-qq'], Math.min(left() - 30000, 45000)); await install(); }
     tool = (await hasTool('gdb')) ? 'gdb' : '';
     lines.push(`native: ${tool ? 'installed gdb' : 'could not install gdb'} in ${Date.now() - started} ms`);
   }
@@ -494,12 +520,12 @@ async function nativeStacks(browser, budgetMS) {
   if (!traceable) return lines.concat(`native: ${tool} cannot attach (ptrace_scope is not 0 and sudo -n is unavailable)`).join('\n');
   // Chrome's frames are bare addresses: print the executable's build ID and
   // where its code is mapped, so an address can be resolved against symbols later.
-  const exe = (await run(sudo ? 'sudo' : 'readlink', sudo ? ['-n', 'readlink', `/proc/${processes[0].pid}/exe`] : [`/proc/${processes[0].pid}/exe`], 2000)).trim();
+  const exe = (await (sudo ? runSudo(['readlink', `/proc/${processes[0].pid}/exe`], 3000) : run('readlink', [`/proc/${processes[0].pid}/exe`], 2000))).trim();
   const id = exe ? elfBuildID(exe) : '';
   lines.push(`native: executable ${exe || '?'} build ID ${id || '?'}`);
   for (const p of interesting) {
     if (left() < 3000) { lines.push(`native: no time left for ${tool} on ${p.pid} ${p.label}`); continue; }
-    const maps = (await run(sudo ? 'sudo' : 'cat', sudo ? ['-n', 'cat', `/proc/${p.pid}/maps`] : [`/proc/${p.pid}/maps`], 2000)).split('\n').find(line => exe && line.includes(' r-xp ') && line.endsWith(exe)) || '';
+    const maps = (await (sudo ? runSudo(['cat', `/proc/${p.pid}/maps`], 3000) : run('cat', [`/proc/${p.pid}/maps`], 2000))).split('\n').find(line => exe && line.includes(' r-xp ') && line.endsWith(exe)) || '';
     lines.push(`--- ${p.pid} ${p.label} (${tool}; code mapped ${maps.split(' ')[0] || '?'} at file offset 0x${maps.split(' ')[2] || '?'}) ---`, await debuggerStacks(p.pid, tool, sudo, Math.min(left(), 15000)));
   }
   return lines.join('\n');
@@ -511,10 +537,14 @@ const shellQuote = text => `'${String(text).replace(/'/g, `'\\''`)}'`;
 
 // withChromeLog returns launch options whose Chrome writes its own log
 // (--enable-logging=stderr --v=0) to a file that report() tails, so a stuck
-// audio, GPU or storage service shows in the browser's words. A two-line
-// script stands in for the executable and execs Chrome with stderr appended
-// to the file; Playwright talks to Chrome over a pipe and reads nothing from
-// stderr. CICADA_PAGE_STALL_CHROME_LOG=0 turns it off.
+// audio, GPU or storage service shows in the browser's words. A short script
+// stands in for the executable and runs Chrome with stderr appended to the
+// file; Playwright talks to Chrome over a pipe. When Chrome exits with an
+// error (a launch that fails, a crash), the script writes the log's last 30
+// lines, owner links redacted, to its own stderr, so they appear under
+// Playwright's "Browser logs:" before the file is deleted. The script leads
+// the process group Playwright starts, with Chrome inside it.
+// CICADA_PAGE_STALL_CHROME_LOG=0 turns it off.
 function withChromeLog(options = {}, browserType = null) {
   if (process.platform === 'win32' || process.env.CICADA_PAGE_STALL_CHROME_LOG === '0') return options;
   let executable = options.executablePath;
@@ -522,7 +552,15 @@ function withChromeLog(options = {}, browserType = null) {
   if (!executable) return options;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'page-stall-chrome-'));
   const log = path.join(dir, 'chrome.log'), wrapper = path.join(dir, 'chrome');
-  fs.writeFileSync(wrapper, `#!/bin/sh\nexec ${shellQuote(executable)} "$@" 2>>${shellQuote(log)}\n`, { mode: 0o755 });
+  const redactLog = `sed -E ${shellQuote('s|/__local/[^[:space:]/"?#\']+|/__local/<redacted>|g')}`;
+  fs.writeFileSync(wrapper, [
+    '#!/bin/sh',
+    `${shellQuote(executable)} "$@" 2>>${shellQuote(log)}`,
+    'code=$?',
+    `if [ "$code" -ne 0 ]; then echo "page-stall: Chrome exited with code $code; the last 30 lines of its log:" >&2; tail -n 30 ${shellQuote(log)} | ${redactLog} >&2; fi`,
+    'exit "$code"',
+    '',
+  ].join('\n'), { mode: 0o755 });
   chromeLogs.add(log);
   process.once('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} });
   return { ...options, executablePath: wrapper, args: [...(options.args || []), '--enable-logging=stderr', '--v=0'] };
@@ -644,11 +682,14 @@ async function browserProcessID(browser) {
 // macOS, so one group kill reaches its renderer, GPU and utility processes. If
 // the process leads no group, its descendants are found through ps.
 function killBrowser(pid) {
-  const table = processTable();
+  const table = processTable(), byPid = new Map(table.map(p => [p.pid, p]));
+  const own = byPid.has(process.pid) ? byPid.get(process.pid).pgid : -1;
   const pids = pid ? [pid] : table.filter(p => p.ppid === process.pid && p.pgid === p.pid && /chrom/i.test(p.args)).map(p => p.pid);
   const killed = [];
   for (const target of pids) {
-    try { process.kill(-target, 'SIGKILL'); killed.push(`process group ${target}`); continue; } catch {}
+    // The group Playwright started: the browser's own, or withChromeLog's script's. Never this process's.
+    const group = byPid.has(target) ? byPid.get(target).pgid : target;
+    if (group > 1 && group !== own) { try { process.kill(-group, 'SIGKILL'); killed.push(`process group ${group}`); continue; } catch {} }
     const tree = [target];
     for (let i = 0; i < tree.length; i++) for (const p of table) if (p.ppid === tree[i]) tree.push(p.pid);
     for (const p of tree.reverse()) { try { process.kill(p, 'SIGKILL'); } catch {} }
@@ -735,4 +776,4 @@ function teardown(t, browser, { watch = null, before = null, exitWhenDone = fals
   }, { timeout: hookMS + nativeMS });
 }
 
-module.exports = { watchContext, watchPage, teardown, closeBrowser, killBrowser, withChromeLog, nativeStacks, within, tail, redact };
+module.exports = { watchContext, watchPage, teardown, closeBrowser, killBrowser, withChromeLog, nativeStacks, installRefusal, runSudo, within, tail, redact };

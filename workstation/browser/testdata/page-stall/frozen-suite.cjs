@@ -33,7 +33,8 @@ setTimeout(() => { if (${freeze === 'start'}) go.run(); if (${freeze === 'resume
 
 async function open(freeze) {
   const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] });
+  // Through withChromeLog, as the suites launch it: its script leads Chrome's process group.
+  const browser = await chromium.launch(stall.withChromeLog({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] }, chromium));
   const context = await browser.newContext();
   return { browser, context, show: async page => {
     await page.route('http://stall.test/', route => route.fulfill({ contentType: 'text/html', body: html(freeze) }));
