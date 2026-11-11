@@ -571,10 +571,14 @@ async function undoCode(page, state, posts, settled, before) {
   await until(async () => await page.locator('#score textarea').first().inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
     'the Code editor did not follow the Undo');
 }
-// Records the other window's recovery answers.
+// Records the other window's recovery answers: status, the text sent, and
+// the body, read at once (a navigation discards a body not yet read).
 function checkpointAnswers(target) {
   const answers = [];
-  const listener = response => { if (new URL(response.url()).pathname === '/__actions/source-checkpoint') answers.push(response); };
+  const listener = response => {
+    if (new URL(response.url()).pathname !== '/__actions/source-checkpoint') return;
+    answers.push({status: response.status(), content: response.request().postDataJSON().content, body: response.json().catch(() => null)});
+  };
   target.on('response', listener);
   return {answers, stop: () => target.off('response', listener)};
 }
@@ -637,10 +641,10 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
     });
     await other.unroute('**/__actions/source-checkpoint');
     for (const route of held.splice(0)) await route.continue().catch(() => {});
-    const landed = () => answers.find(response => response.status() === 200 && response.request().postDataJSON().content === text);
+    const landed = () => answers.find(answer => answer.status === 200 && answer.content === text);
     await until(() => landed(), 'the held checkpoint did not land');
-    const answer = await landed().json();
-    assert.equal(answer.data.kept, false, 'a copy of the text the file has was kept');
+    const answer = await landed().body;
+    assert.equal(answer?.data?.kept, false, 'a copy of the text the file has was kept');
     await until(() => other.evaluate(() => window.__recoveryStatus.includes('No unsaved Code edits. The score file has this text.')),
       'the other window did not say that the file has its text');
     assert.ok(!(await other.evaluate(() => window.__recoveryStatus.some(text => /Recovery copy kept/.test(text || '')))), 'the other window said a copy was kept');
@@ -681,10 +685,10 @@ test('a save does not stop another window that typed the same text from keeping 
   const phrase = '\n// the same phrase in two windows';
   const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
   const {answers, stop} = checkpointAnswers(other);
-  const answered = content => answers.find(response => response.request().postDataJSON().content === content);
+  const answered = content => answers.find(answer => answer.content === content);
   try {
     await other.locator('#score textarea').first().fill(text);
-    await until(() => answered(text)?.status() === 200, 'the other window kept no copy');
+    await until(() => answered(text)?.status === 200, 'the other window kept no copy');
     await typeAtEnd(page, phrase);
     await saveCode(page, state, text);
     assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
@@ -693,8 +697,8 @@ test('a save does not stop another window that typed the same text from keeping 
     await other.locator('#score textarea').first().fill(text + ' and more');
     await until(() => answered(text + ' and more'), 'the other window sent no checkpoint after typing on');
     const last = answered(text + ' and more');
-    assert.equal(last.status(), 200, 'the other window\'s later typing was refused');
-    assert.equal((await last.json()).data.kept, true, 'the other window\'s later typing was not kept');
+    assert.equal(last.status, 200, 'the other window\'s later typing was refused');
+    assert.equal((await last.body)?.data?.kept, true, 'the other window\'s later typing was not kept');
     await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
       'the other window did not say that its copy was kept');
   } finally {
