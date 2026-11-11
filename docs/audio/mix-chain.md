@@ -74,7 +74,8 @@ ends its error with the fix: add a limiter at the export's true-peak ceiling
 as the last master insert, such as `fx ceiling limiter { ceiling = -1dBTP }`
 with `master { insert = ceiling }`. `cicada render --json` reports it as the
 code `loudness_shortfall_at_true_peak_ceiling` with a `remedy` that holds the
-exact score text for that score and ceiling
+exact score text for that score and ceiling, and the `addeffect` intent that
+makes the same change with `cicada apply`
 ([agent formats](../manual/agents.md#render---json)).
 
 With a limiter in the chain, the renderer keeps two guard rails:

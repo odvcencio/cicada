@@ -125,6 +125,9 @@ For each intent:
 
 - `meaning` is one line; `notes` adds what else the intent's documentation
   says.
+- `reasons` lists the codes the intent's refusals can carry, the `reason` of
+  an `apply --json` error (below). A test derives the list from the code, so
+  an agent can match on it.
 - Each field has its JSON `name`, its `type` (`string`, `integer`, `number`,
   `boolean`, `entity`, `object`, `array` with `items`, or `any`), whether it is
   `required`, and its `unit`, allowed `values` and `meaning` where the code
@@ -472,8 +475,15 @@ When the batch fails, `error.code` is one of:
 <!-- /apply-error-codes -->
 
 `index`, `kind` and, where the code knows it, `field` name the intent at
-fault. A refused `editnotes` batch also carries `diagnostic` `CICADA-NOTES`,
-its `reason` and the `note` (see [Editors](editors.md)). The text error names
+fault. When an intent states why it refused, `reason` carries a stable code
+from the intent's `reasons` list in `cicada intents --json`. Where they
+apply, `uses` lists what still refers to the entity, `file` names another
+source file of the project that holds what the edit would have to change
+(an edit writes only the score it is given), and `range` gives the
+`parameter`, the `value` given, `min`, `max` and `unit` of a value outside
+its range (reason `value_out_of_range`). A refused `editnotes` batch also carries
+`diagnostic` `CICADA-NOTES`, its `reason` and the `note` (see
+[Editors](editors.md)). The text error names
 the intent the same way: `intents[1].entity (togglestep): unknown pattern
 "rif"`.
 
@@ -643,8 +653,14 @@ is at `revision`: after any other change, render again. `intents`,
 when present, makes the same change through `cicada apply`; it is absent when
 no intent can. Today only `loudness_shortfall_at_true_peak_ceiling` has a
 remedy: a limiter at the export's true-peak ceiling as the last master
-insert. No intent adds a limiter yet, so edit the score text by hand or with a
-`replacetext` intent.
+insert. Its `intents` hold the `addeffect` intent that adds that limiter; put
+them in an envelope with the remedy's `revision` and run `cicada apply
+<score> <envelope> --write`. `score_text` describes the same change as text.
+In an edition-1 score the intent carries `confirmupgrade`, because a mixer
+write upgrades the score to edition 2, and `summary` says so; `score_text`
+keeps edition 1. When the master chain already holds 16 inserts, the most it
+takes, the remedy has neither `score_text` nor `intents`: `summary` says to
+remove a master insert first.
 
 This score has no master limiter, so its export to −9 LUFS stops at the
 true-peak ceiling:
@@ -693,11 +709,22 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
     "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
     "remedy": {
-      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent",
+      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text",
       "file": "loud.cicada",
       "revision": "9a1336e210d4e6fddfde19678baf455fd45a31dbb38177789e133de2ac384d5f",
       "replaces": "master { level = 6dB insert = tone }",
-      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }"
+      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }",
+      "intents": [
+        {
+          "effectkind": "limiter",
+          "inserton": "master",
+          "kind": "addeffect",
+          "name": "ceiling",
+          "settings": {
+            "ceiling": "-1dBTP"
+          }
+        }
+      ]
     }
   }
 }
