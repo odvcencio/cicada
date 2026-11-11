@@ -69,7 +69,13 @@ func TestExampleWAVParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compareWAVHashes(t, got, want, knownWAVDifferences)
+	problems, notes := compareWAVHashes(got, want, knownWAVDifferences, os.Getenv("CICADA_WAV_PARITY_ALL") == "1")
+	for _, note := range notes {
+		t.Log(note)
+	}
+	for _, problem := range problems {
+		t.Error(problem)
+	}
 }
 
 // wavParitySubset is what every pull request renders. It holds every score
@@ -223,8 +229,12 @@ func readWAVHashes(path string) (map[string]wavHash, error) {
 	return hashes, scanner.Err()
 }
 
-func compareWAVHashes(t *testing.T, got, want map[string]wavHash, known map[string]knownWAVDifference) {
-	t.Helper()
+// compareWAVHashes compares this machine's renders with the reference. It
+// returns one problem per render that breaks the contract and one note per
+// render on the known-differences list, then a summary note. all is true when
+// every example was rendered, so a listed render that no longer exists is a
+// problem too.
+func compareWAVHashes(got, want map[string]wavHash, known map[string]knownWAVDifference, all bool) (problems, notes []string) {
 	keys := make([]string, 0, len(got))
 	for key := range got {
 		keys = append(keys, key)
@@ -234,26 +244,81 @@ func compareWAVHashes(t *testing.T, got, want map[string]wavHash, known map[stri
 	for _, key := range keys {
 		reference, ok := want[key]
 		if !ok {
-			t.Errorf("%s: the reference has no entry; both machines must render the same set", key)
+			problems = append(problems, fmt.Sprintf("%s: the reference has no entry; both machines must render the same set", key))
 			continue
 		}
 		entry, isKnown := known[key]
 		switch {
 		case got[key] == reference && isKnown:
-			t.Errorf("%s: now identical on both machines (%s); remove it from knownWAVDifferences (listed %s: %s)", key, reference, entry.listed, entry.cause)
+			problems = append(problems, fmt.Sprintf("%s: now identical on both machines (%s); remove it from knownWAVDifferences (listed %s: %s)", key, reference, entry.listed, entry.cause))
 		case got[key] == reference:
 			same++
 		case isKnown:
 			listed++
-			t.Logf("%s: known difference, listed %s (%s): reference %s, here %s", key, entry.listed, entry.cause, reference, got[key])
+			notes = append(notes, fmt.Sprintf("%s: known difference, listed %s (%s): reference %s, here %s", key, entry.listed, entry.cause, reference, got[key]))
 		default:
-			t.Errorf("%s: differs from the reference: reference %s, here %s. Find the first stage whose bits differ and round the product there (docs/audio/mix-chain.md)", key, reference, got[key])
+			problems = append(problems, fmt.Sprintf("%s: differs from the reference: reference %s, here %s. Find the first stage whose bits differ: an unrounded product or a math library call (docs/audio/mix-chain.md)", key, reference, got[key]))
 		}
 	}
-	for key := range known {
-		if _, ok := got[key]; !ok && os.Getenv("CICADA_WAV_PARITY_ALL") == "1" {
-			t.Errorf("%s: listed in knownWAVDifferences but not an example render; remove it", key)
+	if all {
+		var stale []string
+		for key := range known {
+			if _, ok := got[key]; !ok {
+				stale = append(stale, key)
+			}
+		}
+		sort.Strings(stale)
+		for _, key := range stale {
+			problems = append(problems, fmt.Sprintf("%s: listed in knownWAVDifferences but not an example render; remove it", key))
 		}
 	}
-	t.Logf("%d of %d renders identical to the reference, %d known differences", same, len(keys), listed)
+	notes = append(notes, fmt.Sprintf("%d of %d renders identical to the reference, %d known differences", same, len(keys), listed))
+	return problems, notes
+}
+
+// The rules of the known-differences list, without rendering anything.
+func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
+	a, b := wavHash{sum: "aa", status: 0}, wavHash{sum: "bb", status: 0}
+	failed := wavHash{sum: "none", status: 1}
+	known := map[string]knownWAVDifference{
+		"s.cicada listed-differs": {listed: "2026-11-10", cause: "test"},
+		"s.cicada listed-same":    {listed: "2026-11-10", cause: "test"},
+		"s.cicada listed-gone":    {listed: "2026-11-10", cause: "test"},
+	}
+	got := map[string]wavHash{
+		"s.cicada same":           a,
+		"s.cicada differs":        a,
+		"s.cicada status":         failed,
+		"s.cicada listed-differs": a,
+		"s.cicada listed-same":    a,
+		"s.cicada no-reference":   a,
+	}
+	want := map[string]wavHash{
+		"s.cicada same":           a,
+		"s.cicada differs":        b,
+		"s.cicada status":         {sum: "none", status: 2},
+		"s.cicada listed-differs": b,
+		"s.cicada listed-same":    a,
+	}
+	for _, all := range []bool{false, true} {
+		problems, notes := compareWAVHashes(got, want, known, all)
+		joined := strings.Join(problems, "\n")
+		for _, key := range []string{"s.cicada differs", "s.cicada status", "s.cicada listed-same", "s.cicada no-reference"} {
+			if !strings.Contains(joined, key+":") {
+				t.Errorf("all=%v: no problem reported for %q in:\n%s", all, key, joined)
+			}
+		}
+		if strings.Contains(joined, "s.cicada same:") || strings.Contains(joined, "s.cicada listed-differs:") {
+			t.Errorf("all=%v: a matching render or a listed difference was reported as a problem:\n%s", all, joined)
+		}
+		if gone := strings.Contains(joined, "s.cicada listed-gone:"); gone != all {
+			t.Errorf("all=%v: a listed render that was not rendered reported=%v, want %v", all, gone, all)
+		}
+		if len(problems) != 4+map[bool]int{false: 0, true: 1}[all] {
+			t.Errorf("all=%v: %d problems, want %d:\n%s", all, len(problems), 4+map[bool]int{false: 0, true: 1}[all], joined)
+		}
+		if summary := notes[len(notes)-1]; summary != "1 of 6 renders identical to the reference, 1 known differences" {
+			t.Errorf("all=%v: summary %q", all, summary)
+		}
+	}
 }
