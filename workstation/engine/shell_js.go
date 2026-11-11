@@ -125,7 +125,8 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			if selector != "" {
 				button = root.Call("querySelector", selector)
 			}
-			if workspacePresent(button) && !button.Get("disabled").Bool() {
+			// A locked Undo or Redo stays focusable (aria-disabled); the lock refuses the press.
+			if workspacePresent(button) && !button.Get("disabled").Bool() && !(history.Locked() && (id == "edit.undo" || id == "edit.redo")) {
 				button.Call("closest", "form").Call("requestSubmit", button)
 			}
 		}()

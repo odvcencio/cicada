@@ -71,8 +71,11 @@ func publishCapture(ctx context.Context) {
 }
 
 // actionForms returns the forms under root that selector matches and whose
-// action is path. It compares the path alone: GoSX's managed navigation can
-// rewrite the attribute to an absolute URL, and an action may carry a query.
+// action is path. It compares the path alone, not the host (a Studio page only
+// holds its own forms) and not the query or fragment: GoSX's managed navigation
+// can rewrite the attribute to an absolute URL. recording-levels.test.cjs covers
+// the transport buttons after navigation to the Mixer, scene-launch-keys the
+// launch button after navigation between views.
 func actionForms(root js.Value, selector, path string) []js.Value {
 	var forms []js.Value
 	list := root.Call("querySelectorAll", selector)

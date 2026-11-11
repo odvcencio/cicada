@@ -422,6 +422,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 		if _, _, patchErr := u.applyTree(domCall(wrapper, "querySelector", ".update-region__body"), "update-"+update.ID, update.HTML, job, nil); patchErr != nil {
 			continue
 		}
+		u.syncHistoryLock()
 		if shellHeld(wrapper) {
 			if files = domCall(wrapper, "querySelectorAll", "input[type=hidden]:is([name=fileRevision],[name=diskRevision])"); files.Length() == len(kept) {
 				for j, value := range kept {
@@ -432,6 +433,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			continue
 		}
 		confirm(wrapper, update.Digest)
+		u.syncHistoryLock()
 	}
 	if len(projection.Regions) < 2 {
 		u.advanceRegions(projection, job, confirm)
@@ -451,6 +453,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			}
 		}
 	}
+	u.syncHistoryLock()
 	workspaceRestoreScrolls(scrolls, x, y)
 	if projection.Title != "" {
 		document.Set("title", projection.Title)
@@ -484,29 +487,33 @@ func (u *workspaceUI) reloadIfNeeded() {
 	}
 }
 
-// syncHistoryLock keeps Undo and Redo unusable while the queue is blocked: a
-// page update or a refresh of saved state is on its way, the buttons still
-// belong to the song as it was before the last edit, and a press would be
-// ignored without a word. It disables them and remembers what they showed; the
-// fresh page, or the end of the block, puts that back. It leaves a button alone
-// while lockHistory holds it after a Keep.
+// syncHistoryLock puts the queue's reason into the history lock and shows the
+// lock on the buttons. Call it wherever the queue blocks or unblocks and after
+// every region patch: a patch replaces the buttons with the server's markup,
+// which carries no lock.
 func (u *workspaceUI) syncHistoryLock() {
-	blocked := u.blocked.Load()
+	history.Set(historyQueueBlocked, u.blocked.Load())
+	applyHistoryLock()
+}
+
+// applyHistoryLock shows the history lock on Undo and Redo. The buttons stay
+// enabled and focusable (a disabled button loses keyboard focus); aria-disabled
+// marks them, and the submit handler and the keyboard commands refuse a press
+// while history.Locked(). The server's own disabled (nothing to undo) is never
+// touched.
+func applyHistoryLock() {
+	locked, names := history.Locked(), history.Names()
 	for _, selector := range []string{"#undo-form button", "#redo-form button"} {
 		button := js.Global().Get("document").Call("querySelector", selector)
 		if !workspacePresent(button) {
 			continue
 		}
-		if form := button.Call("closest", "form"); workspacePresent(form) && domHas(form, "data-history-refresh-pending") {
-			continue
-		}
-		switch held := domHas(button, "data-history-block"); {
-		case blocked && !held:
-			domSet(button, "data-history-block", fmt.Sprint(button.Get("disabled").Bool()))
-			button.Set("disabled", true)
-		case !blocked && held:
-			button.Set("disabled", workspaceAttr(button, "data-history-block") == "true")
-			domDrop(button, "data-history-block")
+		if locked {
+			domSet(button, "aria-disabled", "true")
+			domSet(button, "data-history-lock", names)
+		} else {
+			domDrop(button, "aria-disabled")
+			domDrop(button, "data-history-lock")
 		}
 	}
 }

@@ -38,6 +38,34 @@ test('track amp automation uses the saved playback path and keeps a grid-aligned
  await page.locator('#transport-form button[value=stop]').click();await until(async()=>!(await read('transport')).playing,'playback stopped');await ready();
  await page.locator('#undo-form button').click();await until(async()=>(await read('state')).source===before,'one Undo restores previous curve');await ready();await page.locator('#redo-form button').click();await until(async()=>(await read('state')).source===kept,'Redo restores pass');
  await page.reload();await ready();assert.equal((await read('state')).source,kept);assert.equal(digest(),beforeHash);assert.deepEqual(history.map(h=>h[0]),['undo','redo'],'one Undo and one Redo were sent');assert.ok(history.every(h=>h[1]!==409),'Undo or Redo was refused as stale: '+JSON.stringify(history));
+ // Two reasons lock Undo and Redo: a blocked queue and a Keep in flight. Take them in the order block, Keep,
+ // refresh, rejected Keep: the buttons must come back (an earlier design restored one lock's saved "disabled").
+ {
+  const undoBtn=page.locator('#undo-form button'),redoBtn=page.locator('#redo-form button'),lockedNow=async()=>(await undoBtn.getAttribute('aria-disabled'))==='true';
+  await page.route('**/__actions/undo',route=>route.abort('failed'));
+  await ready();await undoBtn.click();
+  await page.locator('[data-workspace-retry]').waitFor({state:'visible'});
+  assert.equal(await lockedNow(),true,'a blocked queue did not lock Undo');
+  await page.unroute('**/__actions/undo');
+  let releaseKeep;const keepGate=new Promise(r=>{releaseKeep=r});let keeps=0;
+  await page.route('**/__actions/automation-record',async route=>{const body=route.request().postDataJSON();if(body.command==='keep'){keeps++;await keepGate;return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({ok:false,message:'Intentional Keep rejection'})})}return route.continue()});
+  await page.locator('#transport-form button[value=play]').click();await until(async()=>Number((await read('transport')).bar)>=2,'second pass playback');
+  await record.locator('[name=replace]').check();await until(async()=>!await record.locator('[data-automation-record-command=start]').isDisabled(),'recorder ready again');await record.locator('[data-automation-record-command=start]').click();
+  await until(async()=>(await read('automation/recording')).recording?.active,'second pass started');
+  await slider.fill('0.3');await until(async()=>(await read('automation/recording')).recording?.points.some(p=>Math.abs(p.value-.3)<.001),'movement reached recorder');
+  // Keep (held in flight), then refresh the blocked queue: the refresh patches the buttons and unblocks.
+  await record.locator('[data-automation-record-command=keep]').click();await until(async()=>keeps===1,'Keep reached the network');
+  assert.equal(await lockedNow(),true,'a Keep in flight did not lock Undo');
+  await page.locator('[data-workspace-retry]').click();
+  await until(async()=>!(await page.locator('[data-workspace-retry]').isVisible()),'refresh unblocked the queue');
+  assert.equal(await lockedNow(),true,'the refresh released the lock while the Keep was still in flight');
+  assert.match(await undoBtn.getAttribute('data-history-lock'),/recording/);
+  releaseKeep();
+  await until(async()=>!(await lockedNow()),'Undo stayed locked after the Keep was rejected and the queue was unblocked');
+  assert.equal(await undoBtn.getAttribute('data-history-lock'),null);
+  await page.unroute('**/__actions/automation-record');
+  await page.locator('#transport-form button[value=stop]').click();await until(async()=>!(await read('transport')).playing,'playback stopped again');
+ }
  const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,storageState:await context.storageState()}),phone=await (async()=>{watches.push(await stall.watchContext(phoneContext, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));return phoneContext.newPage()})();
  await phone.goto(new URL('/studio?tab=arrange&region=detail&dock=automation&curvePath=guitar.amp_drive',base).href);await phone.locator('#studio-shell[data-shell-actions=ready]').waitFor();assert.equal(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await phone.locator('#detail-panel-automation').screenshot({path:path.join(proof,'amp-automation-phone.png')});await phoneContext.close();assert.deepEqual(errors,[]);
  fs.writeFileSync(path.join(proof,'browser-report.json'),JSON.stringify({checks:['track-scoped amp entry, preserved Code draft and monitoring distinction','mid-song curve seed and user-movement preservation','Keep, Undo, Redo and reload','synthetic dry WAV unchanged'],drySHA256:beforeHash,errors},null,2)+'\n');
