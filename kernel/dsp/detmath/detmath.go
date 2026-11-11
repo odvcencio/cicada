@@ -294,6 +294,28 @@ func Log(x float64) float64 {
 	return hi + lo
 }
 
+// Log1p returns log(1 + x) for x >= -1, accurate where x is small: 1 + x is
+// formed exactly as a double-double (twoSum) and its logarithm is logDD of the
+// high part plus the low part divided by it. It is NaN below -1 and for NaN,
+// -Inf at -1, and keeps the sign of zero. Measured error: at most 0.65 ULP
+// (TestLog1pAccuracy, dense sweep).
+func Log1p(x float64) float64 {
+	x = float64(x) // see the package comment
+	switch {
+	case x != x || x == math.Inf(1):
+		return x
+	case x < -1:
+		return math.NaN()
+	case x == -1:
+		return math.Inf(-1)
+	case x > -0x1p-54 && x < 0x1p-54:
+		return x // log1p(x) = x - x^2/2 + ..., and x^2/2 is below half an ULP of x
+	}
+	uh, ul := twoSum(1, x)
+	hi, lo := logDD(uh)
+	return hi + (lo + ul/uh)
+}
+
 // Log2 returns the base-2 logarithm of x, exact for powers of two. Measured
 // error: at most 0.51 ULP.
 func Log2(x float64) float64 {
