@@ -124,7 +124,7 @@ func NewReverb(sampleRate int) (*Reverb, error) {
 		sampleRate: float64(sampleRate),
 		fadeStep:   1 / (.005 * float64(sampleRate)),
 		smooth:     1 - detmath.Exp(-1/(.005*float64(sampleRate))),
-		phaseStep:  2 * math.Pi * .3 / float64(sampleRate),
+		phaseStep:  2 * .3 / float64(sampleRate), // half turns per frame: a 0.3 Hz modulation
 	}
 	for channel := range r.input {
 		for stage, length := range reverbDiffuserLengths {
@@ -271,10 +271,12 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
-	modulation := float64(3 * detmath.Sin(r.phase))
+	// The phase is in half turns, so the modulation is sin(pi*phase): SinPi's
+	// exact reduction makes it cheaper than Sin of a phase in radians.
+	modulation := float64(3 * detmath.SinPi(r.phase))
 	r.phase += r.phaseStep
-	if r.phase >= 2*math.Pi {
-		r.phase -= 2 * math.Pi
+	if r.phase >= 2 {
+		r.phase -= 2
 	}
 	var taps [8]float64
 	var sum float64
@@ -351,8 +353,8 @@ func (r *Reverb) advanceSilent() {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
 	r.phase += r.phaseStep
-	if r.phase >= 2*math.Pi {
-		r.phase -= 2 * math.Pi
+	if r.phase >= 2 {
+		r.phase -= 2
 	}
 	if r.lengthFade < 1 {
 		r.lengthFade = math.Min(1, r.lengthFade+r.fadeStep)
