@@ -32,8 +32,9 @@ type mixInput struct {
 	notes      *noteLog
 	acts       []barActivity
 	played     []bool
-	bandFrames [][][numBands]float64 // per track, two frames per sixteenth (nil when silent)
-	sections   []sectionSpan         // aligned with Report.Sections
+	bandFrames [][][numBands]float64 // per track, bandPower frames (nil when silent)
+	layout     bandLayout
+	sections   []sectionSpan // aligned with Report.Sections
 	peaks      int
 	barBands   bool
 }
@@ -166,10 +167,24 @@ func (a *Analysis) measureMix(in mixInput) error {
 func (a *Analysis) measureBands(in mixInput, use []bool) {
 	r := &a.Report
 	bars, tracks := in.bars, len(in.ids)
-	// Two frames per sixteenth: frame j is centred on tick fromTick + j*120.
-	const perBar = 32
-	half := seq.TicksPerStep / 2
-	// energy[b][band][track], summed over the bar's sixteenth frames.
+	// Each frame belongs to its bar, and counts in the section that holds
+	// its centre. A bar or section is worth its length over the hop in frames.
+	frameBar := in.layout.bar
+	barFrames := in.layout.weight
+	frameSection := make([]int, len(frameBar))
+	secFrames := make([]float64, len(in.sections))
+	for si, sp := range in.sections {
+		secFrames[si] = float64(sp.s1-sp.s0) / bandHop
+	}
+	for f, centre := range in.layout.centre {
+		frameSection[f] = -1
+		for si, sp := range in.sections {
+			if centre >= sp.s0 && centre < sp.s1 {
+				frameSection[f] = si
+			}
+		}
+	}
+	// energy[b][band][track], summed over the bar's frames.
 	energy := make([][numBands][]float64, bars)
 	for b := range energy {
 		for k := range energy[b] {
@@ -177,27 +192,15 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 		}
 	}
 	whole := make([][numBands]float64, tracks)
-	secFrames := make([]int, len(in.sections))
 	secEnergy := make([][numBands][]float64, len(in.sections))
 	for si := range secEnergy {
 		for k := range secEnergy[si] {
 			secEnergy[si][k] = make([]float64, tracks)
 		}
 	}
-	frameSection := make([]int, bars*perBar)
-	for f := range frameSection {
-		frameSection[f] = -1
-		centre := in.fromTick + int64(f)*half
-		for si, sp := range in.sections {
-			if centre >= sp.lo && centre < sp.hi {
-				frameSection[f] = si
-				secFrames[si]++
-			}
-		}
-	}
 	for ti, fr := range in.bandFrames {
 		for f, bands := range fr {
-			b := f / perBar
+			b := frameBar[f]
 			for k, e := range bands {
 				energy[b][k][ti] += e
 				whole[ti][k] += e
@@ -208,7 +211,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 		}
 	}
 	// spanMean is the largest band's per-frame mean over some frames.
-	spanMean := func(e [numBands][]float64, frames int) float64 {
+	spanMean := func(e [numBands][]float64, frames float64) float64 {
 		var top float64
 		for k := range e {
 			var total float64
@@ -218,7 +221,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 				}
 			}
 			if frames > 0 {
-				top = math.Max(top, total/float64(frames))
+				top = math.Max(top, total/frames)
 			}
 		}
 		return top
@@ -232,7 +235,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 					total += e
 				}
 			}
-			loudest[k] = math.Max(loudest[k], total/perBar)
+			loudest[k] = math.Max(loudest[k], total/barFrames[b])
 		}
 	}
 	var top float64
@@ -252,9 +255,9 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	}
 	for b := range r.Bars {
 		r.Bars[b].Bands = make([]BandOwner, numBands)
-		span := spanMean(energy[b], perBar)
+		span := spanMean(energy[b], barFrames[b])
 		for k := 0; k < numBands; k++ {
-			o := owner(k, energy[b][k], in.ids, use, perBar, chromaFFT, loudest[k], span, top)
+			o := owner(k, energy[b][k], in.ids, use, barFrames[b], chromaFFT, loudest[k], span, top)
 			r.Bars[b].Bands[k] = o
 			if o.Collision {
 				report.Collisions[k].Bars = append(report.Collisions[k].Bars, r.Bars[b].Bar)
@@ -297,7 +300,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 			sec.Bands[k] = sb
 		}
 	}
-	totalFrames := bars * perBar
+	totalFrames := math.Max(1, float64(in.mix.Len())/bandHop)
 	for ti := range r.Tracks {
 		tr := &r.Tracks[ti]
 		tr.BandsDB = make([]float64, numBands)
@@ -311,7 +314,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 		for b := range tr.BarBandsDB {
 			tr.BarBandsDB[b] = make([]float64, numBands)
 			for k := 0; k < numBands; k++ {
-				tr.BarBandsDB[b][k] = round(bandLevelDB(energy[b][k][ti], perBar, chromaFFT), 1)
+				tr.BarBandsDB[b][k] = round(bandLevelDB(energy[b][k][ti], barFrames[b], chromaFFT), 1)
 			}
 		}
 		for si := range tr.SectionBandsDB {

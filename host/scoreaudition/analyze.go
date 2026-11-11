@@ -407,42 +407,28 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		})
 		return chroma, band
 	}
-	// trackBand also sums the power of each frame in the mixing bands, so
-	// band ownership reuses these transforms. Its frames sit in the middle of
-	// each sixteenth; gridBands adds the frames on each sixteenth's start, so
-	// the band frames come every half sixteenth and a hit on the grid weighs
-	// as much as a held note (bandFrames index 2i is on the grid, 2i+1 mid).
-	binBand := binBands(chromaFFT, rate)
-	addBands := func(dst *[numBands]float64, mag []float64) {
-		for k, b := range binBand {
-			if b >= 0 {
-				dst[b] += float64(mag[k] * mag[k])
-			}
-		}
-	}
-	trackBand := func(sig stereo, bandFrames [][numBands]float64) float64 {
+	trackBand := func(sig stereo) float64 {
 		var total float64
 		magFrames(sig, chromaPlan, frames, func(i int) int {
 			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
 			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
-		}, func(i int, mag []float64) {
+		}, func(_ int, mag []float64) {
 			for k := range mag {
 				if inBand[k] {
 					total += mag[k] * mag[k]
 				}
 			}
-			addBands(&bandFrames[2*i+1], mag)
 		})
 		return total
 	}
-	gridBands := func(sig stereo, bandFrames [][numBands]float64) {
-		magFrames(sig, chromaPlan, frames, func(i int) int {
-			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep)
-			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
-		}, func(i int, mag []float64) {
-			addBands(&bandFrames[2*i], mag)
-		})
+	// Band ownership has its own frames, evenly spaced in time within each
+	// bar (bandPower).
+	binBand := binBands(chromaFFT, rate)
+	barStarts := make([]int, bars+1)
+	for b := range barStarts {
+		barStarts[b] = min(barSample(b), mix.Len())
 	}
+	layout := newBandLayout(barStarts)
 	bandFrames := make([][][numBands]float64, len(p.Tracks))
 	var mixBand, pitchedBand []float64
 	a.chroma, pitchedBand = chromaOf(pitchedMix)
@@ -628,9 +614,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tr.ActiveBars = activeBars
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
-		bandFrames[ti] = make([][numBands]float64, 2*frames)
-		tr.BandVsMixDB = round(bandDB(trackBand(s, bandFrames[ti]), allM), 1)
-		gridBands(s, bandFrames[ti])
+		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
+		bandFrames[ti] = bandPower(s, chromaPlan, binBand, layout)
 		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
 		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, baseSample, opts.From, bars, acts[ti])
@@ -777,7 +762,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	err = a.measureMix(mixInput{
 		mix: mix, stems: stems, ids: ids, selected: selected, rate: rate, clock: clock, base: baseSample,
 		fromTick: fromTick, bars: bars, barSample: barSample, notes: &notes, acts: acts, played: played,
-		bandFrames: bandFrames, sections: kept, peaks: opts.Peaks, barBands: opts.BarBands,
+		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, barBands: opts.BarBands,
 	})
 	if err != nil {
 		return nil, err

@@ -83,6 +83,66 @@ type SectionBand struct {
 	CollisionBars int `json:"collision_bars"`
 }
 
+// bandHop spaces the band frames a quarter window apart: squared Hann
+// windows at that hop sum to a constant, so every instant of a bar weighs the
+// same whatever the tempo and wherever a hit falls.
+const bandHop = chromaFFT / 4
+
+// bandLayout places the band frames. Each bar is measured from its own
+// samples only: its frames see the stem with everything outside the bar set
+// to zero, so no frame carries sound from a neighbouring bar into it. Frame f
+// belongs to bar bar[f] and is centred on sample centre[f] of the range (kept
+// inside its bar, for the section a frame counts in); start[f] is the first
+// sample its window reads, relative to the bar start. weight[b] is the number
+// of frames bar b is worth, its length over the hop.
+type bandLayout struct {
+	bar, centre, start []int
+	barStart           []int
+	weight             []float64
+}
+
+func newBandLayout(barSamples []int) bandLayout {
+	var l bandLayout
+	for b := 0; b+1 < len(barSamples); b++ {
+		lo, hi := barSamples[b], barSamples[b+1]
+		l.barStart = append(l.barStart, lo)
+		l.weight = append(l.weight, math.Max(1, float64(hi-lo)/bandHop))
+		// Every frame whose window reaches a sample of the bar.
+		for j := -1; j*bandHop-chromaFFT/2 < hi-lo; j++ {
+			l.bar = append(l.bar, b)
+			l.centre = append(l.centre, lo+min(max(j*bandHop, 0), max(hi-lo-1, 0)))
+			l.start = append(l.start, j*bandHop-chromaFFT/2)
+		}
+	}
+	return l
+}
+
+// bandPower is the power of one stem in each band, frame by frame in the
+// layout's order.
+func bandPower(s stereo, plan *fftPlan, binBand []int8, layout bandLayout) [][numBands]float64 {
+	out := make([][numBands]float64, len(layout.bar))
+	for f := 0; f < len(out); {
+		b := layout.bar[f]
+		first := f
+		for f < len(out) && layout.bar[f] == b {
+			f++
+		}
+		lo := min(layout.barStart[b], s.Len())
+		hi := s.Len()
+		if b+1 < len(layout.barStart) {
+			hi = min(layout.barStart[b+1], s.Len())
+		}
+		magFrames(s.Slice(lo, hi), plan, f-first, func(i int) int { return layout.start[first+i] }, func(i int, mag []float64) {
+			for k, band := range binBand {
+				if band >= 0 {
+					out[first+i][band] += float64(mag[k] * mag[k])
+				}
+			}
+		})
+	}
+	return out
+}
+
 // binBands maps each bin of an n-point FFT to its band, or -1.
 func binBands(n, rate int) []int8 {
 	out := make([]int8, n/2+1)
@@ -101,18 +161,18 @@ func binBands(n, rate int) []int8 {
 // bandLevelDB turns a sum of frames' band power (|X|^2 summed over the bins of
 // a Hann-windowed n-point frame) into dB re a full-scale RMS: a frame's power
 // sum is 3n^2/16 times the mean square of the windowed signal.
-func bandLevelDB(sum float64, frames, n int) float64 {
-	if frames == 0 || sum <= 0 {
+func bandLevelDB(sum, frames float64, n int) float64 {
+	if frames <= 0 || sum <= 0 {
 		return -120
 	}
-	return math.Max(-120, 10*math.Log10(sum/float64(frames)/(3*float64(n)*float64(n)/16)))
+	return math.Max(-120, 10*math.Log10(sum/frames/(3*float64(n)*float64(n)/16)))
 }
 
 // owner reads one band's per-track energies, all summed over the same
 // frames. loudest is the band's largest per-frame mean in any bar, span the
 // largest per-frame mean of any band over these frames, and top the largest
 // per-frame mean of any band in any bar.
-func owner(band int, energy []float64, ids []string, use []bool, frames, n int, loudest, span, top float64) BandOwner {
+func owner(band int, energy []float64, ids []string, use []bool, frames float64, n int, loudest, span, top float64) BandOwner {
 	o := BandOwner{Band: bandNames[band]}
 	var total float64
 	for ti, e := range energy {
@@ -121,8 +181,8 @@ func owner(band int, energy []float64, ids []string, use []bool, frames, n int, 
 		}
 	}
 	o.LevelDB = round(bandLevelDB(total, frames, n), 1)
-	mean := total / float64(max(frames, 1))
-	if total <= 0 || loudest <= 0 || span <= 0 || top <= 0 || frames == 0 || 10*math.Log10(mean/loudest) < -quietBandDB ||
+	mean := total / math.Max(frames, 1)
+	if total <= 0 || loudest <= 0 || span <= 0 || top <= 0 || frames <= 0 || 10*math.Log10(mean/loudest) < -quietBandDB ||
 		10*math.Log10(mean/span) < -quietSpanDB || 10*math.Log10(mean/top) < -quietRangeDB {
 		o.Quiet = true
 		return o

@@ -152,11 +152,13 @@ Hz, hold the FFT bins whose centre frequency f is in `low <= f < high`:
 | `air` | 5,000-20,000 Hz |
 
 The energy comes from 8,192-point Hann-windowed FFTs (5.86 Hz per bin at
-48 kHz) of each stem, two per sixteenth note: the frame the report already
-makes for its band measure, in the middle of each sixteenth, and one more on
-each sixteenth's start. Frames therefore come every half sixteenth (101 ms at
-74 BPM) and overlap at any tempo, so a hit on the grid weighs as much as a held
-note. A bar sums the 32 frames centred in it. A share is
+48 kHz) of each stem, measured bar by bar: each bar's frames see only that
+bar's samples, so no sound from a neighbouring bar counts in it, and the frames
+are 2,048 samples (43 ms) apart, a quarter window, where the squared windows
+sum to a constant. Every instant of a bar therefore weighs the same, whatever
+the tempo and wherever a hit falls against the grid. (The per-sixteenth frames
+of the 125 Hz-2 kHz band measure would weight a hit by where it falls, so the
+band owners do not reuse them.) A share is
 the track's energy over the sum of the analyzed tracks' energies in that band;
 effect returns are not tracks and are left out. `*` marks a **collision**: two
 tracks each hold more than 25% of the band. A band is `quiet`, with no owner,
@@ -327,8 +329,8 @@ energy (ITU-R BS.1770-4, the render's loudness meter; short-term = 3 s window en
   loudest section: lift (-28.8 LUFS); quietest: drop (-44.2 LUFS, 15.4 LU under)
 
    bar  sub           low           bass          low-mid       mid           presence      air
-     6  quiet         quiet         quiet         drums 100     quiet         drums 100     drums 100
-     7  bass 72       drums 64*     drums 56*     drums 88      bass 82       bass 85       drums 91
+     6  quiet         quiet         quiet         quiet         quiet         drums 100     drums 100
+     7  bass 67       drums 64*     drums 55*     drums 88      bass 82       bass 84       drums 91
   low 40-80 Hz collisions: 2 of 8 bars (7-8); pairs: sub+drums 2
 
   track        notes =prev    =4  run  bars 1-8
@@ -342,7 +344,7 @@ section, and its short-term blocks fall from `▇` to `▃`: bar 5's window stil
 holds the last second of the groove, bar 6's is all hats. The activity rows
 confirm what emptied: the bass and the sub do not sound in bars 5 and 6 (`··`),
 and the drums drop to `▄▂`, 14 and 20 dB under their loudest bar, because only
-the hats play. Bar 6 has no owner below 160 Hz at all.
+the hats play. Bar 6 has no owner below 1.6 kHz at all.
 
 Then the low end. In bars 7 and 8 the kick holds 64% of 40-80 Hz and the sub
 most of the rest (`bars[6].bands[1]` reads `"owner": "drums", "share_pct":
@@ -350,7 +352,7 @@ most of the rest (`bars[6].bands[1]` reads `"owner": "drums", "share_pct":
 over 25%, so the bar collides: the sub and the kick share the band in which a
 mix usually gives the bottom to one of them. Duck the sub under the kick, move
 the sub an octave, or give the kick less body. The groove bars do not collide
-in `low`: the kick owns it (90%), because the acid bass puts most of its
+in `low`: the kick owns it (91%), because the acid bass puts most of its
 energy above 125 Hz. Both effects show in `energy.png` (the dip at bar 5) and
 in `spectrogram.png` (the empty floor in bars 5 and 6 and the bright 50-100 Hz
 band from bar 7).
@@ -439,12 +441,11 @@ The measures are heuristics from the rendered audio, not a transcription.
 
 The added measures have these limits:
 
-- Band frames are tied to the sixteenth-note grid, not spaced evenly in time.
-  A frame reaches 85 ms on each side of its centre, so the frame on a bar line
-  holds the end of the bar before, and the last frame of a bar the start of
-  the next; the quiet rules hide that in a drop-out. Frames centred on the grid
-  catch the attack and release clicks of notes that start and stop there, a
-  little energy across every band.
+- Each bar is cut out of the stem before its frames are taken. A note held
+  across a bar line is cut there, which spreads a little of its energy into
+  neighbouring bands in the frames next to the line; notes that start and stop
+  on the line put attack and release clicks there anyway. The quiet rules keep
+  either from making an owner when the band holds nothing else.
 - A bin belongs to one band, but the window spreads a tone over its
   neighbouring bins: about -6 dB one bin (5.86 Hz) away and about -30 dB two
   to three bins away. A tone within about 15 Hz of a band edge therefore also

@@ -347,3 +347,52 @@ func TestPicturesPageLongRanges(t *testing.T) {
 		t.Errorf("uncapped pictures %+v, %v", list, err)
 	}
 }
+
+// TestBandFramesWeighEveryInstant: short bursts of a sine read the same band
+// energy whether they start on a frame centre or between two, because the
+// band frames are spaced so that their squared windows sum to a constant. The
+// bursts repeat every 12 frames, so each lands at the same place against the
+// frames, as hits on a tempo grid do against grid-tied frames. Frames half a
+// window apart read these two placements 0.8 dB apart.
+func TestBandFramesWeighEveryInstant(t *testing.T) {
+	const rate, n = 48000, 48000 * 8
+	const period, length = 12 * bandHop, 3072
+	held := stereo{L: make([]float32, n), R: make([]float32, n)}
+	for i := range held.L {
+		held.L[i] = float32(0.25 * math.Sin(2*math.Pi*55*float64(i)/rate))
+		held.R[i] = held.L[i]
+	}
+	burst := func(offset int) stereo {
+		// The same energy as the held sine: a fraction of the time at a
+		// power raised by its inverse.
+		s := stereo{L: make([]float32, n), R: make([]float32, n)}
+		for i := range s.L {
+			if ((i-offset)%period+period)%period < length {
+				s.L[i] = float32(math.Sqrt(period/length)) * held.L[i]
+				s.R[i] = s.L[i]
+			}
+		}
+		return s
+	}
+	plan := newPlan(chromaFFT)
+	bins := binBands(chromaFFT, rate)
+	low := bandIndex(t, "low")
+	total := func(s stereo) float64 {
+		var sum float64
+		for _, f := range bandPower(s, plan, bins, newBandLayout([]int{0, n})) {
+			sum += f[low]
+		}
+		return sum
+	}
+	ref := total(held)
+	var got []float64
+	for _, offset := range []int{0, bandHop / 2, bandHop / 3} {
+		got = append(got, 10*math.Log10(total(burst(offset))/ref))
+	}
+	// A 64 ms burst spills a little out of 40-80 Hz: about -0.25 dB.
+	for i, d := range got {
+		if math.Abs(d) > 0.5 || math.Abs(d-got[0]) > 0.05 {
+			t.Errorf("bursts at placement %d read %.2f dB against the held sine (first placement %.2f dB)", i, d, got[0])
+		}
+	}
+}
