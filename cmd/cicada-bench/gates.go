@@ -22,8 +22,9 @@ func exactly(n int) *int { return &n }
 // --jobs 4 over --jobs 1. A ratio does not take the 2x margin of a time
 // gate, which would accept a render that lanes made slower. On a 20-CPU
 // host pinned to 4 CPUs and loaded (load 6 to 10), the first 8 bars ran
-// 1.47 times faster and the whole song 1.57 times; the gate sits below
-// that, so it fails when lanes stop paying, not when a runner is slow.
+// 1.63 times faster (pull request for plan.cicada.speed row F2,
+// 2026-11-10); the gate sits below that, so it fails when lanes stop
+// paying, not when a runner is slow.
 const speedupGate = 1.25
 
 // gates are twice what the CI runner class (GitHub ubuntu-24.04, 4 CPUs)
