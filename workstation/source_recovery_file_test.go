@@ -33,6 +33,8 @@ type recoveryDisk struct {
 	saves, revisionReads int
 	revisionDelay        time.Duration
 	revisionStatus       int
+	noRevisionRoute      bool                // a service from before the route
+	beforeRevisionRead   func(n int)         // runs before read n is answered
 	afterRevisionRead    func()              // runs once the answer is sent
 	rewriteSave          func(string) string // the service writes other text
 }
@@ -83,19 +85,30 @@ func newRecoveryHarness(t *testing.T, name, text string) *recoveryHarness {
 		case r.URL.Path == "/api/files/revision":
 			disk.mu.Lock()
 			disk.revisionReads++
-			delay, status, after := disk.revisionDelay, disk.revisionStatus, disk.afterRevisionRead
+			n, before := disk.revisionReads, disk.beforeRevisionRead
+			disk.mu.Unlock()
+			if before != nil {
+				before(n)
+			}
+			disk.mu.Lock()
+			delay, status, after, missing := disk.revisionDelay, disk.revisionStatus, disk.afterRevisionRead, disk.noRevisionRoute
 			disk.afterRevisionRead = nil
 			disk.mu.Unlock()
+			if missing {
+				http.NotFound(w, r)
+				return
+			}
 			time.Sleep(delay)
+			text, revision := disk.get()
 			if status != 0 || r.URL.Query().Get("file") != disk.name {
 				if status == 0 {
-					status = http.StatusNotFound
+					status = http.StatusUnprocessableEntity
 				}
 				w.WriteHeader(status)
 				_ = json.NewEncoder(w).Encode(map[string]any{"error": "unavailable"})
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"file": disk.name, "revision": revision})
+			_ = json.NewEncoder(w).Encode(map[string]any{"file": disk.name, "revision": revision, "textRevision": edits.Revision([]byte(strings.ReplaceAll(text, "\r\n", "\n")))})
 			if after != nil {
 				w.(http.Flusher).Flush()
 				after()
@@ -568,7 +581,7 @@ func TestASlowFailedOrMissingFileReadKeepsTheCopy(t *testing.T) {
 		t.Fatalf("failed read: %+v", reply)
 	}
 	h.disk.mu.Lock()
-	h.disk.revisionStatus = http.StatusNotFound
+	h.disk.revisionStatus = http.StatusUnprocessableEntity
 	h.disk.mu.Unlock()
 	if reply := h.checkpoint("3", 1, "Z\n"); !reply.wasKept() {
 		t.Fatalf("missing file: %+v", reply)
@@ -657,5 +670,197 @@ func TestACopyThatMatchedOnlyUnseenIsKept(t *testing.T) {
 	}
 	if v := h.view(); !v.unsaved || !strings.Contains(v.page, "// X") {
 		t.Fatal("the copy of X, which differs from the file W, is not offered")
+	}
+}
+
+// A checkpoint sent before Save and delayed lands after it: at or below the
+// Save's sequence it is refused, whatever its text. Typing after the save is
+// kept, and typing back to the saved text is answered kept:false.
+func TestADelayedCheckpointAfterASave(t *testing.T) {
+	h := newRecoveryHarness(t, "song.cicada", "Z\n")
+	_, base := h.disk.get()
+	one, two := "Z\n// one\n", "Z\n// one two\n"
+	h.checkpointAt("d", 1, base, one)
+	h.checkpointAt("d", 2, base, two)
+	if code := h.action("d", map[string]string{"content": two, "recoverySequence": "2"}); code != http.StatusSeeOther {
+		t.Fatalf("save: %d", code)
+	}
+	if reply := h.checkpointAt("d", 1, base, one); reply.status != http.StatusConflict {
+		t.Fatalf("a delayed checkpoint of older text was answered %+v", reply)
+	}
+	if reply := h.checkpointAt("d", 2, base, two); reply.status != http.StatusConflict {
+		t.Fatalf("a delayed checkpoint of the saved text was answered %+v", reply)
+	}
+	if v := h.view(); v.unsaved || strings.Contains(v.page, "// one\n") {
+		t.Fatal("a delayed checkpoint came back as an unsaved draft")
+	}
+	if reply := h.checkpointAt("d", 3, base, two+"// typed after\n"); !reply.wasKept() || h.copyState("d") != "ready" {
+		t.Fatalf("typing after the save was answered %+v", reply)
+	}
+	if reply := h.checkpointAt("d", 4, base, two); !reply.notKept() || reply.revision != edits.Revision([]byte(two)) || h.copyState("d") != "closed" {
+		t.Fatalf("typing back to the saved text was answered %+v", reply)
+	}
+}
+
+// A tab reloaded on a restored copy saves it as it is: the copy closes at the
+// restored sequence, so the tab that kept it can type on. A form without a
+// sequence closes its copy for good.
+func TestASaveAfterAReloadClosesAtTheRestoredSequence(t *testing.T) {
+	h := newRecoveryHarness(t, "song.cicada", "Z\n")
+	_, base := h.disk.get()
+	restored := "Z\n// restored\n"
+	h.checkpointAt("b", 7, base, restored)
+	if code := h.action("b", map[string]string{"content": restored, "recoverySequence": "7"}); code != http.StatusSeeOther {
+		t.Fatalf("save: %d", code)
+	}
+	if copy := h.storedCopy("b"); copy.State != "closed" || copy.Sequence != 7 {
+		t.Fatalf("the restored copy is %s at %d", copy.State, copy.Sequence)
+	}
+	if reply := h.checkpointAt("b", 8, base, restored+"// the original tab types on\n"); !reply.wasKept() {
+		t.Fatalf("the original tab's typing was answered %+v", reply)
+	}
+	if code := h.action("c", map[string]string{"content": "Z\n// x\n", "recoverySequence": ""}); code != http.StatusSeeOther {
+		t.Fatalf("save: %d", code)
+	}
+	if copy := h.storedCopy("c"); copy.Sequence != ^uint64(0) {
+		t.Fatalf("a form without a sequence closed its copy at %d", copy.Sequence)
+	}
+}
+
+// Every kind of line ending, against a copy as a browser reports it (LF).
+func TestRecoveryCopiesOfFilesWithEveryKindOfLineEnding(t *testing.T) {
+	for _, c := range []struct {
+		name, file, copy string
+		same             bool
+	}{
+		{"LF", "a\nb\n", "a\nb\n", true},
+		{"CRLF", "a\r\nb\r\n", "a\nb\n", true},
+		{"CRLF, no final newline", "a\r\nb", "a\nb", true},
+		{"LF and CRLF mixed", "a\r\nb\n", "a\nb\n", true},
+		{"a lone CR", "a\rb\n", "a\nb\n", false},
+		{"a byte order mark", "\ufeffa\n", "\ufeffa\n", true},
+		{"a missing final newline", "a\nb", "a\nb\n", false},
+	} {
+		h := newRecoveryHarness(t, "song.cicada", c.file)
+		_, base := h.disk.get()
+		h.checkpointAt("1", 1, base, c.copy+"x")
+		reply := h.checkpointAt("1", 2, base, c.copy)
+		if reply.notKept() != c.same || reply.wasKept() == c.same {
+			t.Fatalf("%s: the checkpoint was answered %+v", c.name, reply)
+		}
+		if v := h.view(); v.unsaved == c.same || (h.copyState("1") == "closed") != c.same {
+			t.Fatalf("%s: after a page load the copy is %s, shown unsaved %v", c.name, h.copyState("1"), v.unsaved)
+		}
+	}
+}
+
+// The kept:false answer names the revision the file has at the second read;
+// if that read fails, the copy is kept.
+func TestTheAnswerNamesTheRevisionTheFileHasNow(t *testing.T) {
+	h := newRecoveryHarness(t, "song.cicada", "Z\n")
+	_, base := h.disk.get()
+	text := "Z\n// X\n"
+	h.disk.set(text)
+	if reply := h.checkpointAt("a", 1, base, text); !reply.notKept() || reply.revision != edits.Revision([]byte(text)) {
+		t.Fatalf("equal: %+v", reply)
+	}
+	h.disk.mu.Lock()
+	h.disk.beforeRevisionRead = func(n int) {
+		if n == 4 { // the second read of the next checkpoint
+			h.disk.mu.Lock()
+			h.disk.revisionStatus = http.StatusInternalServerError
+			h.disk.mu.Unlock()
+		}
+	}
+	h.disk.mu.Unlock()
+	if reply := h.checkpointAt("b", 1, base, text); !reply.wasKept() || h.copyState("b") != "ready" {
+		t.Fatalf("a failed second read: %+v, copy %s", reply, h.copyState("b"))
+	}
+}
+
+// The kept:false answer was lost (a timeout, a navigation) and the browser
+// sends the same checkpoint again: it gets the same answer, or its copy back
+// if the file has moved on meanwhile.
+func TestALostNotKeptAnswerIsGivenAgain(t *testing.T) {
+	h := newRecoveryHarness(t, "song.cicada", "Z\n")
+	_, base := h.disk.get()
+	text := "Z\n// X\n"
+	h.disk.set(text)
+	first := h.checkpointAt("a", 3, base, text)
+	if !first.notKept() {
+		t.Fatalf("first: %+v", first)
+	}
+	if again := h.checkpointAt("a", 3, base, text); !again.notKept() || again.revision != first.revision {
+		t.Fatalf("the repeat was answered %+v", again)
+	}
+	h.disk.set("Z\n// the file moved on\n")
+	if again := h.checkpointAt("a", 3, base, text); !again.wasKept() || h.copyState("a") != "ready" {
+		t.Fatalf("the repeat after the file moved was answered %+v, copy %s", again, h.copyState("a"))
+	}
+	if v := h.view(); !v.unsaved || !strings.Contains(v.page, "// X") {
+		t.Fatal("the text the file no longer holds is not offered")
+	}
+}
+
+// Window B saved D, so window A's checkpoint of D closes A's copy. Before the
+// checkpoint reads the file again, A presses Discard and a third window saves
+// E. The Discard stands: D is not offered again.
+func TestADiscardDuringACheckpointIsNotUndone(t *testing.T) {
+	h := newRecoveryHarness(t, "song.cicada", "Z\n")
+	_, base := h.disk.get()
+	draft, third := "Z\n// draft D\n", "Z\n// third window E\n"
+	h.checkpointAt("d", 1, base, draft)
+	h.disk.set(draft) // window B saves D
+	start := h.disk.reads()
+	h.disk.mu.Lock()
+	h.disk.beforeRevisionRead = func(n int) {
+		if n != start+2 {
+			return
+		}
+		_, revision := h.disk.get()
+		values := map[string]string{"intent": "discard", "recoveryId": strings.Repeat("d", 32), "recoverySequence": "2", "fileRevision": revision, "revision": revision, "file": h.disk.name, "content": draft}
+		if code := noteJSONPost(h.t, h.client, h.url, "/__actions/source", h.csrf, values).StatusCode; code != http.StatusSeeOther {
+			h.t.Errorf("discard: %d", code)
+		}
+		h.disk.set(third)
+	}
+	h.disk.mu.Unlock()
+	reply := h.checkpointAt("d", 2, base, draft)
+	if reply.wasKept() {
+		t.Fatalf("the checkpoint said a copy was kept: %+v", reply)
+	}
+	if state := h.copyState("d"); state != "closed" {
+		t.Fatalf("the discarded copy is %s", state)
+	}
+	if v := h.view(); v.unsaved || strings.Contains(v.page, "// draft D") {
+		t.Fatal("the discarded draft is offered again")
+	}
+}
+
+// A Studio running against a service from before the revision route (both
+// are not always updated together) compares with the file's text instead.
+func TestAServiceWithoutTheRevisionRouteIsReadInFull(t *testing.T) {
+	for _, name := range []string{"song.cicada", ""} {
+		h := newRecoveryHarness(t, name, "Z\n")
+		h.disk.mu.Lock()
+		h.disk.noRevisionRoute = true
+		h.disk.mu.Unlock()
+		saved := "Z\n// saved\n"
+		h.checkpoint("e", 1, saved)
+		if code := h.action("f", map[string]string{"content": saved}); code != http.StatusSeeOther {
+			t.Fatalf("%q save: %d", name, code)
+		}
+		if state := h.copyState("e"); state != "closed" {
+			t.Fatalf("%q: a copy of the saved text is %s", name, state)
+		}
+		if reply := h.checkpoint("a", 1, saved); !reply.notKept() || reply.revision != edits.Revision([]byte(saved)) {
+			t.Fatalf("%q: a late checkpoint of the file's text was answered %+v", name, reply)
+		}
+		if reply := h.checkpoint("b", 1, saved+"// other\n"); !reply.wasKept() {
+			t.Fatalf("%q: a copy of other text was answered %+v", name, reply)
+		}
+		if v := h.view(); !v.unsaved || !strings.Contains(v.page, "// other") {
+			t.Fatalf("%q: the unsaved copy is not offered", name)
+		}
 	}
 }

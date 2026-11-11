@@ -28,6 +28,10 @@ type savedSource struct {
 	ParentID   string    `json:"parent_id,omitempty"`
 	ParentHash string    `json:"parent_hash,omitempty"`
 	Updated    time.Time `json:"updated"`
+	// Matched marks a copy closed because it held the file's text: the file's
+	// revision then. Such a record keeps the copy's text, and only such a
+	// record, not rewritten since, may reopen.
+	Matched string `json:"matched,omitempty"`
 }
 
 func sourceFingerprint(source string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(source))) }
@@ -42,13 +46,25 @@ func sameSourceText(copy, file string) bool {
 	return copy == file || strings.ReplaceAll(copy, "\r\n", "\n") == strings.ReplaceAll(file, "\r\n", "\n")
 }
 
-// sameSourceRevision is sameSourceText for a file known by its revision
-// (edits.Revision of its bytes): the copy's text matches if its LF or CRLF
-// form has that revision. A file that mixes LF and CRLF never matches, so
-// its copies are kept.
-func sameSourceRevision(copy, revision string) bool {
-	lf := strings.ReplaceAll(copy, "\r\n", "\n")
-	return revision != "" && (edits.Revision([]byte(lf)) == revision || edits.Revision([]byte(strings.ReplaceAll(lf, "\n", "\r\n"))) == revision)
+// fileRevision names a file's text without its bytes: revision is
+// edits.Revision of the bytes, and text that of the text with each CRLF read
+// as LF (a lone CR kept), which a service before text revisions does not
+// name.
+type fileRevision struct{ revision, text string }
+
+func revisionOf(file string) fileRevision {
+	return fileRevision{edits.Revision([]byte(file)), edits.Revision([]byte(strings.ReplaceAll(file, "\r\n", "\n")))}
+}
+
+// holds is sameSourceText for a file known by its revisions.
+func (f fileRevision) holds(copy string) bool {
+	lf := edits.Revision([]byte(strings.ReplaceAll(copy, "\r\n", "\n")))
+	if f.text != "" {
+		return lf == f.text
+	}
+	// Only the bytes' revision: the copy's LF or CRLF form must have it, so a
+	// file that mixes the two keeps its copies.
+	return f.revision != "" && (lf == f.revision || edits.Revision([]byte(strings.ReplaceAll(strings.ReplaceAll(copy, "\r\n", "\n"), "\n", "\r\n"))) == f.revision)
 }
 
 func validSourceFile(file string) bool {
@@ -193,7 +209,9 @@ func (s *noteStore) closeSource(owner, id, file string, sequence uint64, final b
 		if final {
 			closed.Sequence = ^uint64(0)
 		}
-		if err != nil || current.State == "ready" && current.Sequence <= sequence || current.State == "closed" && current.Sequence < closed.Sequence {
+		// A copy closed for matching the file at this very sequence is
+		// rewritten too, so that a reopen in flight cannot undo this close.
+		if err != nil || current.State == "ready" && current.Sequence <= sequence || current.State == "closed" && (current.Sequence < closed.Sequence || current.Sequence == closed.Sequence && current.Matched != "") {
 			if err := writeSource(root, owner, closed); err != nil {
 				return err
 			}
@@ -215,12 +233,12 @@ func (s *noteStore) closeSource(owner, id, file string, sequence uint64, final b
 }
 
 // closeSourceCopy closes a ready copy whose text the caller found equal to
-// the file, under the store lock, only if it is still the copy that was
-// listed: the same file, sequence and text. A copy edited since is left as
-// it is. The closed copy keeps its sequence, so a later edit in its window
-// is kept again (see saveSource).
-func (s *noteStore) closeSourceCopy(owner string, listed savedSource) (bool, error) {
-	if owner == "" || !validNoteID(listed.ID) {
+// the file (whose revision was matched), under the store lock, only if it
+// is still the copy that was listed: the same file, sequence and text. A
+// copy edited since is left as it is. The closed copy keeps its sequence, so
+// a later edit in its window is kept again (see saveSource).
+func (s *noteStore) closeSourceCopy(owner string, listed savedSource, matched string) (bool, error) {
+	if owner == "" || !validNoteID(listed.ID) || matched == "" {
 		return false, fmt.Errorf("invalid Code recovery receipt")
 	}
 	closed := false
@@ -236,26 +254,35 @@ func (s *noteStore) closeSourceCopy(owner string, listed savedSource) (bool, err
 			return nil
 		}
 		closed = true
-		return writeSource(root, owner, savedSource{Version: 1, ID: current.ID, File: current.File, Revision: current.Revision, Sequence: current.Sequence, State: "closed", Updated: time.Now().UTC()})
+		// The text stays with the record, for a repeat of the checkpoint
+		// that closed it; a Save or Discard rewrites the record without it.
+		return writeSource(root, owner, savedSource{Version: 1, ID: current.ID, File: current.File, Revision: current.Revision, Sequence: current.Sequence, State: "closed", Updated: time.Now().UTC(), Matched: matched, Source: current.Source})
 	})
 	return closed && err == nil, err
 }
 
-// reopenSourceCopy undoes closeSourceCopy when the file turned out to have
-// moved on: the copy is ready again unless its window has written since.
-func (s *noteStore) reopenSourceCopy(owner string, copy savedSource) error {
+// reopenSourceCopy undoes closeSourceCopy when the file turned out not to
+// hold the copy's text: the copy is ready again, unless something rewrote
+// the record since (a Save, a Discard, or its window writing again). kept
+// reports whether a ready copy of this id is there afterwards.
+func (s *noteStore) reopenSourceCopy(owner string, copy savedSource) (kept bool, err error) {
 	if owner == "" || !validNoteID(copy.ID) {
-		return fmt.Errorf("invalid Code recovery receipt")
+		return false, fmt.Errorf("invalid Code recovery receipt")
 	}
-	return s.locked(func(root *os.Root) error {
+	err = s.locked(func(root *os.Root) error {
 		current, err := loadSource(root, owner, copy.ID)
 		if err != nil {
 			return err
 		}
-		if current.State != "closed" || current.Sequence != copy.Sequence {
+		if current.State == "ready" {
+			kept = current.Sequence >= copy.Sequence
 			return nil
 		}
-		copy.Version, copy.State = 1, "ready"
+		if current.Sequence != copy.Sequence || current.Matched == "" || current.File != copy.File || current.Source != copy.Source {
+			return nil
+		}
+		copy.Version, copy.State, copy.Matched, kept = 1, "ready", "", true
 		return writeSource(root, owner, copy)
 	})
+	return kept, err
 }
