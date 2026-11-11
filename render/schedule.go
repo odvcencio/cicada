@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"m31labs.dev/cicada/host/schedule"
-	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
@@ -90,7 +90,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	maxFrames := (int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
+	maxFrames := (int64(^uint32(0)) - int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
 	spanFrames := endFrame - fromFrame
 	if spanFrames < 0 || report.TailFrames > maxFrames || spanFrames > maxFrames-report.TailFrames {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
@@ -122,15 +122,17 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	left, right := make([]float32, opts.Block), make([]float32, opts.Block)
 	buffer := make([]byte, opts.Block*encoder.frameBytes())
 	totalFrames := endFrame + report.TailFrames + latency
-	// The master cache stores TapFrame.MasterInput, which enters the master
-	// stage ahead of the master gain that carries the export gain, so a replay
-	// runs the master chain and the limiter again on the stored input.
+	// The master cache stores the signal at the export gain point: the master
+	// chain stores it when the gain enters inside the chain (MasterCache.atPoint),
+	// and otherwise the render stores TapFrame.MasterInput, which enters the
+	// master stage ahead of the master gain that then carries the export gain.
+	// A replay runs everything after the stored signal again.
 	var cache *MasterCache
 	replay := false
 	var inL, inR []float32
 	if opts.MasterCache != nil && stemsDir == "" && opts.NoteTap == nil {
 		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
-		use, replaying, err := opts.MasterCache.begin(key, totalFrames)
+		use, replaying, err := opts.MasterCache.begin(key, totalFrames, cfg.MasterProcessor)
 		if err != nil {
 			return report, err
 		}
@@ -138,6 +140,8 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			cache, replay = opts.MasterCache, replaying
 		}
 		if replay {
+			// With the signal at the gain point, the chain reads it and ignores
+			// this input, which stays silent.
 			inL, inR = make([]float32, opts.Block), make([]float32, opts.Block)
 		}
 	}
@@ -154,8 +158,10 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			if err := cache.beginBlock(frames, true); err != nil {
 				return report, err
 			}
-			for i := range frames {
-				inL[i], inR[i] = cache.block[2*i], cache.block[2*i+1]
+			if !cache.atPoint {
+				for i := range frames {
+					inL[i], inR[i] = cache.block[2*i], cache.block[2*i+1]
+				}
 			}
 			player.RenderMasterWithTaps(inL[:frames], inR[:frames], left[:frames], right[:frames], taps[:frames])
 		} else {
@@ -168,22 +174,26 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			if err != nil {
 				return report, fmt.Errorf("prepare streamed export: %w", err)
 			}
+			if cache != nil {
+				// Before the block renders: a chain that stores its gain-point
+				// signal appends to the block as it runs.
+				if err := cache.beginBlock(frames, false); err != nil {
+					return report, err
+				}
+			}
 			player.RenderWithTaps(left[:frames], right[:frames], taps[:frames])
 			if stats := player.StreamStats(); stats.MissingFrames > 0 {
 				return report, fmt.Errorf("streamed export missed %d source output frames", stats.MissingFrames)
 			}
-			if cache != nil {
-				if err := cache.beginBlock(frames, false); err != nil {
-					return report, err
-				}
-				// A capture whose file failed has turned itself off; the render
-				// goes on without it.
-				if !cache.disabled {
+			// A capture whose file failed has turned itself off; the render goes
+			// on without it.
+			if cache != nil && !cache.disabled {
+				if !cache.atPoint {
 					for i := range frames {
 						cache.block = append(cache.block, taps[i].MasterInput.Left, taps[i].MasterInput.Right)
 					}
-					cache.endBlock()
 				}
+				cache.endBlock()
 			}
 		}
 		for player.Poll(&message) {

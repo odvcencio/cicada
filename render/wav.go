@@ -738,7 +738,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
 	if cache := opts.MasterCache; cache != nil && stemsDir == "" && opts.NoteTap == nil {
 		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
-		use, replay, err := cache.begin(key, renderFrames+int64(insertLatency+masterLatency))
+		use, replay, err := cache.begin(key, renderFrames+int64(insertLatency+masterLatency), masterProcessor)
 		if err != nil {
 			return report, err
 		}
@@ -1871,7 +1871,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		if busState.masterMute {
 			left, right = 0, 0
 		}
-		if cache != nil {
+		// The cache stores the master input unless the master chain stores the
+		// signal at its gain point itself (MasterCache.atPoint).
+		if cache != nil && !cache.atPoint {
 			if busState.cacheReplay {
 				left, right = cache.block[2*frame], cache.block[2*frame+1]
 			} else {

@@ -8,29 +8,42 @@ import (
 	"math"
 	"os"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
 // MasterCache lets repeated renders of one score skip synthesis.
 //
-// A render that sets Options.MasterCache stores the signal that enters the
-// master stage as it renders: the summed music and SFX buses after their mutes
-// and the master mute, before the authored master level, the export gain, the
-// master chain, the DC correction and the safety limiter. A later render of the
-// same score and range replays that signal through the master stage instead of
-// synthesizing it again, and writes the same bytes and report as a full render.
-// Loudness targeting relies on this, because each of its passes changes only
-// the export gain and the DC correction, and so does peak normalization, whose
-// second render changes only the output gain.
+// A render that sets Options.MasterCache stores, as it renders, the signal at
+// the export gain point (project.ExportGainPoint), and a later render of the
+// same score and range replays that signal instead of synthesizing it again,
+// and writes the same bytes and report as a full render. Loudness targeting
+// relies on this, because each of its passes changes only the export gain and
+// the DC correction, and so does peak normalization, whose second render
+// changes only the output gain. Every gain that differs between the passes
+// enters at or after the stored signal, so the stages after it (the last master
+// limiter, the inserts after it and the safety limiter) run again on each
+// replay and see exactly the input a full render gives them.
 //
-// Both renderers use it, with or without a master chain. The direct renderer
-// replays the stored signal through its own master stage (renderBlock); the
-// scheduled engine replays it through the engine's master stage
-// (engine.Engine.RenderMasterWithTaps), the same code a full render runs. Every
-// gain that differs between the passes enters after the stored signal, so the
-// nonlinear stages after it (the master chain and the safety limiter) run again
-// on each replay and see exactly the input a full render gives them.
+// Where the signal is stored depends on the master chain:
+//   - When the export gain enters inside the chain, ahead of its last limiter
+//     or after a chain without one, the chain stores the signal at that point
+//     (project.GainPointTap). A replay runs only the gain and what follows it:
+//     the inserts ahead of the gain point run as in playback whatever the
+//     export gain, so their output is the same on every pass.
+//   - Otherwise the render stores the signal that enters the master stage: the
+//     summed music and SFX buses after their mutes and the master mute, before
+//     the authored master level, the export gain, the master chain, the DC
+//     correction and the safety limiter. That is the case without a master
+//     chain, when the last limiter is the chain's first insert, and when a
+//     limiter runs ahead of the last one, whose reading the report needs.
+//
+// Both renderers use it. The direct renderer replays the stored signal through
+// its own master stage (renderBlock); the scheduled engine replays it through
+// the engine's master stage (engine.Engine.RenderMasterWithTaps), the same code
+// a full render runs.
 //
 // The signal lives in a temporary file of 8 bytes per frame (see NewMasterCache
 // for when the file has a name), from the start of
@@ -66,6 +79,11 @@ type MasterCache struct {
 	replays  int
 	block    []float32 // interleaved stereo frames of the current block
 	scratch  []byte
+	// atPoint is set when the current render's master chain stores the signal
+	// at its gain point through point; otherwise the render stores the master
+	// input in block itself.
+	atPoint bool
+	point   project.GainPointTap
 }
 
 // cacheFile is the part of *os.File that a MasterCache uses. Tests wrap it to
@@ -90,6 +108,7 @@ type masterCacheKey struct {
 	assetRoot  string
 	assetDir   string
 	baseline   bool
+	atPoint    bool // the signal is the one at the chain's gain point
 }
 
 // ErrMasterCacheRead marks a render that failed because the stored signal could
@@ -160,29 +179,50 @@ func (c *MasterCache) Replays() int {
 
 // begin decides what a render does with the cache. Without use the render
 // ignores the cache. With use and replay the render plays the stored signal
-// back; with use alone it stores the signal as it synthesizes it.
-func (c *MasterCache) begin(key masterCacheKey, frames int64) (use, replay bool, err error) {
+// back; with use alone it stores the signal as it synthesizes it. master is
+// the render's master chain from project.PrepareMaster, or nil; when it takes
+// the cache's gain-point tap (project.SetMasterGainPointTap), the chain itself
+// stores or replays the signal at its gain point, and the render leaves the
+// master input alone (atPoint).
+func (c *MasterCache) begin(key masterCacheKey, frames int64, master engine.StereoProcessor) (use, replay bool, err error) {
 	if c == nil || c.file == nil || c.disabled {
 		return false, false, nil
 	}
 	c.position = 0
+	c.point = project.GainPointTap{Frames: c.point.Frames[:0]}
+	c.atPoint = master != nil && project.SetMasterGainPointTap(master, &c.point)
+	key.atPoint = c.atPoint
 	if c.ready && c.key == key && c.frames == frames {
 		if _, err := c.file.Seek(0, io.SeekStart); err != nil {
+			c.release(master)
 			return false, false, &masterCacheReadError{"rewind master cache", err}
 		}
+		c.point.Mode = project.GainPointReplay
 		c.replays++
 		return true, true, nil
 	}
 	c.key, c.frames, c.ready = key, frames, false
 	if err := c.file.Truncate(0); err != nil {
 		c.disabled = true
+		c.release(master)
 		return false, false, nil
 	}
 	if _, err := c.file.Seek(0, io.SeekStart); err != nil {
 		c.disabled = true
+		c.release(master)
 		return false, false, nil
 	}
+	c.point.Mode = project.GainPointCapture
 	return true, false, nil
+}
+
+// release detaches the gain-point tap from a render that does not use the
+// cache, so its master chain runs in full.
+func (c *MasterCache) release(master engine.StereoProcessor) {
+	if c.atPoint {
+		project.SetMasterGainPointTap(master, nil)
+	}
+	c.atPoint, c.point.Mode = false, project.GainPointOff
 }
 
 // beginBlock prepares the next block: a replay loads its frames from the file
@@ -190,6 +230,10 @@ func (c *MasterCache) begin(key masterCacheKey, frames int64) (use, replay bool,
 func (c *MasterCache) beginBlock(frames int, replay bool) error {
 	c.block = c.block[:0]
 	if !replay {
+		if c.atPoint {
+			c.point.Frames = c.block
+			c.point.Rewind()
+		}
 		return nil
 	}
 	if c.position+int64(frames) > c.frames {
@@ -210,6 +254,10 @@ func (c *MasterCache) beginBlock(frames int, replay bool) error {
 	for i := range c.block {
 		c.block[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*4:]))
 	}
+	if c.atPoint {
+		c.point.Frames = c.block
+		c.point.Rewind()
+	}
 	c.position += int64(frames)
 	return nil
 }
@@ -217,6 +265,11 @@ func (c *MasterCache) beginBlock(frames int, replay bool) error {
 // endBlock writes the block that renderBlock captured. A failed write turns
 // the cache off instead of failing the render.
 func (c *MasterCache) endBlock() {
+	if c.atPoint {
+		// The chain appended the block's gain-point frames; an append that
+		// grew the slice left c.block behind.
+		c.block = c.point.Frames
+	}
 	if cap(c.scratch) < len(c.block)*4 {
 		c.scratch = make([]byte, len(c.block)*4)
 	}
@@ -239,6 +292,8 @@ func (c *MasterCache) endBlock() {
 // emptied, the cache is still off.
 func (c *MasterCache) fail() {
 	c.disabled, c.ready = true, false
+	// A chain that still holds the tap stops storing; it runs in full.
+	c.point.Mode = project.GainPointOff
 	_ = c.file.Truncate(0)
 }
 

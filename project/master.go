@@ -82,6 +82,61 @@ type masterChain struct {
 	// exportLimiter is the index in limiters of the chain's last limiter, the
 	// one the export gain drives, or -1 when the chain has none.
 	exportLimiter int
+	// earlyLimiter is set when a limiter runs ahead of the gain point. Its
+	// reading counts in LimiterGainReductionDB, so a replay that skips the
+	// stages ahead of the gain point would lose it: such a chain takes no tap.
+	earlyLimiter bool
+	// tap, when set, stores or replays the signal at the gain point (see
+	// GainPointTap).
+	tap *GainPointTap
+}
+
+// GainPointTap carries the signal at a master chain's export gain point from
+// one render to the next. Everything ahead of the gain point runs as in
+// playback, whatever the export gain, so a render that changes only the export
+// gain can start from the stored signal: a capture appends each frame's left
+// and right samples to Frames as the chain runs, and a replay feeds the chain
+// from Frames, in order, and runs only the gain, the last limiter and the
+// stages after it. The stages ahead of the gain point do not run in a replay.
+//
+// render.MasterCache keeps one per render and gives it a block of frames at a
+// time; Rewind starts the next block.
+type GainPointTap struct {
+	Frames []float32 // interleaved left and right samples
+	Mode   GainPointTapMode
+	next   int // frames a replay has read from Frames
+	short  bool
+}
+
+// GainPointTapMode says what a GainPointTap does with the chain's signal.
+type GainPointTapMode uint8
+
+const (
+	GainPointOff     GainPointTapMode = iota // the chain runs as without a tap
+	GainPointCapture                         // append the gain-point signal to Frames
+	GainPointReplay                          // read the gain-point signal from Frames
+)
+
+// Rewind starts a new block: a capture appends to Frames from its start, and a
+// replay reads it from its start.
+func (t *GainPointTap) Rewind() {
+	t.next = 0
+	if t.Mode == GainPointCapture {
+		t.Frames = t.Frames[:0]
+	}
+}
+
+// SetMasterGainPointTap attaches tap to a master chain from PrepareMaster and
+// reports true when the chain's gain point is inside it (GainBeforeLastLimiter
+// or GainAfterChain) and no limiter runs ahead of that point. It reports false,
+// and attaches nothing, otherwise: the caller then stores the master input.
+func SetMasterGainPointTap(processor engine.StereoProcessor, tap *GainPointTap) bool {
+	c, ok := processor.(*masterChain)
+	if !ok || c.gainAt < 0 || c.earlyLimiter {
+		return false
+	}
+	c.tap = tap
+	return true
 }
 
 // ExportGainPoint is where an export's loudness gain enters the master stage.
@@ -120,15 +175,24 @@ func MasterExportGainPoint(p *Project) ExportGainPoint {
 // lastMasterLimiter returns the index of the master chain's last limiter
 // insert, or -1 when it has none.
 func lastMasterLimiter(p *Project) int {
-	last := -1
+	last, _ := masterLimiters(p)
+	return last
+}
+
+// masterLimiters returns the index of the master chain's last limiter insert,
+// or -1 when it has none, and how many of its inserts are limiters.
+func masterLimiters(p *Project) (last, count int) {
+	last = -1
 	for i, name := range p.Master.Mixer.Inserts {
 		for _, effect := range p.Effects {
 			if effect.ID == name && semanticEffectKind(effect) == "limiter" {
 				last = i
+				count++
+				break
 			}
 		}
 	}
-	return last
+	return last, count
 }
 
 // SetMasterExportGain sets the export gain factor a master chain from
@@ -153,8 +217,10 @@ type limiterReading struct {
 	delayed    float64
 }
 
-func newMasterChain(stages []engine.StereoProcessor, lastLimiter int) *masterChain {
-	c := &masterChain{stages: stages, gainAt: lastLimiter, gain: 1, exportLimiter: -1}
+// newMasterChain builds the chain from its stages. lastLimiter is the index of
+// its last limiter stage, or -1, and limiters the number of limiter stages.
+func newMasterChain(stages []engine.StereoProcessor, lastLimiter, limiters int) *masterChain {
+	c := &masterChain{stages: stages, gainAt: lastLimiter, gain: 1, exportLimiter: -1, earlyLimiter: limiters > 1}
 	if lastLimiter < 0 {
 		c.gainAt = len(stages)
 	} else if lastLimiter == 0 {
@@ -214,16 +280,21 @@ func (c *masterChain) ExportLimiterGainReductionDB() float64 {
 }
 
 func (c *masterChain) Process(l, r float32) (float32, float32) {
-	for i, stage := range c.stages {
-		if i == c.gainAt && c.gain != 1 {
-			l *= c.gain
-			r *= c.gain
-		}
-		l, r = stage.Process(l, r)
+	first := 0
+	if c.tap != nil && c.tap.Mode == GainPointReplay {
+		// The stored signal replaces the input and every stage ahead of the
+		// gain point, which ran in the capture exactly as they would here.
+		l, r = c.tap.read()
+		first = c.gainAt
 	}
-	if c.gainAt == len(c.stages) && c.gain != 1 {
-		l *= c.gain
-		r *= c.gain
+	for i := first; i < len(c.stages); i++ {
+		if i == c.gainAt {
+			l, r = c.gainPoint(l, r)
+		}
+		l, r = c.stages[i].Process(l, r)
+	}
+	if c.gainAt == len(c.stages) {
+		l, r = c.gainPoint(l, r)
 	}
 	for i := range c.limiters {
 		lim := &c.limiters[i]
@@ -238,6 +309,32 @@ func (c *masterChain) Process(l, r float32) (float32, float32) {
 	}
 	return l, r
 }
+
+// gainPoint stores the gain-point signal in a capture and applies the export
+// gain.
+func (c *masterChain) gainPoint(l, r float32) (float32, float32) {
+	if c.tap != nil && c.tap.Mode == GainPointCapture {
+		c.tap.Frames = append(c.tap.Frames, l, r)
+	}
+	if c.gain != 1 {
+		l *= c.gain
+		r *= c.gain
+	}
+	return l, r
+}
+
+// read returns the next stored frame. A replay that runs past the stored
+// frames reads silence and marks the chain faulted.
+func (t *GainPointTap) read() (float32, float32) {
+	if 2*t.next+1 >= len(t.Frames) {
+		t.short = true
+		return 0, 0
+	}
+	l, r := t.Frames[2*t.next], t.Frames[2*t.next+1]
+	t.next++
+	return l, r
+}
+
 func (c *masterChain) Reset() {
 	for _, stage := range c.stages {
 		stage.Reset()
@@ -248,6 +345,9 @@ func (c *masterChain) Reset() {
 	}
 }
 func (c *masterChain) Fault() bool {
+	if c.tap != nil && c.tap.short {
+		return true
+	}
 	for _, stage := range c.stages {
 		if stage.Fault() {
 			return true
@@ -297,7 +397,8 @@ func PrepareMaster(p *Project, rate int) (engine.StereoProcessor, error) {
 		}
 		stages = append(stages, stage)
 	}
-	return newMasterChain(stages, lastMasterLimiter(p)), nil
+	last, limiters := masterLimiters(p)
+	return newMasterChain(stages, last, limiters), nil
 }
 
 func masterEffectParams(effect Effect) (pro.Params, error) {
