@@ -57,8 +57,11 @@ func entityError(err error) error {
 func intentError(index int, kind string, err error) error {
 	located := &IntentError{Index: index, Kind: kind, Err: err}
 	var field *FieldError
+	var reason *ReasonError
 	if errors.As(err, &field) {
 		located.Field = field.Field
+	} else if errors.As(err, &reason) {
+		located.Field = reason.Field
 	}
 	return located
 }

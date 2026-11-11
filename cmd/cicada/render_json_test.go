@@ -102,55 +102,114 @@ func TestStemsJSONListsEveryStem(t *testing.T) {
 	}
 }
 
-// TestRenderJSONLoudnessShortfallRemedyWorks renders the score without a
-// master limiter to targets it misses at the true-peak ceiling, for two
-// ceilings. The error carries the structured remedy for that ceiling; adding
-// its score text exactly as it says makes the same render meet the target.
+// TestRenderJSONLoudnessShortfallRemedyWorks renders scores without a master
+// limiter to a target they miss at the true-peak ceiling: with a master
+// chain, without a master, in edition 1, and with a full master chain. Where
+// the error offers a remedy, applying its intents with cicada apply and,
+// separately, its score text each give a score that passes check and meets
+// the target. A full chain is offered neither, and the summary says what to
+// remove first.
 func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	base := string(fixture)
+	// Without the master's 6 dB the tracks carry it, so the input gain cap
+	// is not what stops the render.
+	noMaster := strings.NewReplacer("fx tone eq { type = highpass frequency = 25Hz q = 0.707 }\n", "", "master { level = 6dB insert = tone }\n", "", "drive = 0.25 filter = diode }", "drive = 0.25 filter = diode level = 6dB }", "ch_decay = 60ms }", "ch_decay = 60ms level = 6dB }").Replace(base)
+	editionOne := strings.Replace(strings.Replace(noMaster, "cicada 2\n", "", 1), "export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }\n", "", 1)
+	var full strings.Builder
+	chain := []string{"tone"}
+	for i := 1; i < 16; i++ {
+		fmt.Fprintf(&full, "fx flat%d eq {}\n", i)
+		chain = append(chain, fmt.Sprintf("flat%d", i))
+	}
+	fullChain := strings.Replace(base, "master { level = 6dB insert = tone }\n", full.String()+"master { level = 6dB insert = "+strings.Join(chain, " -> ")+" }\n", 1)
 	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
-	for _, ceiling := range []float64{-1, -2} {
-		t.Run(fmt.Sprint(ceiling), func(t *testing.T) {
-			dir := t.TempDir()
-			score := filepath.Join(dir, "loud.cicada")
-			if err := os.WriteFile(score, source, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			target := renderTargetOptions{LoudnessTarget: -9, TruePeakMaxDBTP: ceiling, Tolerance: 0.5, Loudness: true}
-			result, code, stderr := runRenderJSON(t, "render", score, filepath.Join(dir, "short.wav"), opts, &target)
-			failure := result.Error
-			if code != 1 || failure == nil || failure.Code != "loudness_shortfall_at_true_peak_ceiling" || failure.Remedy == nil || len(failure.Remedy.Intents) != 0 {
-				t.Fatalf("shortfall: code %d %+v", code, failure)
-			}
-			remedy := failure.Remedy
-			if !strings.Contains(remedy.ScoreText, fmt.Sprintf("ceiling = %gdBTP", ceiling)) || remedy.Summary != limiterRemedySummary(ceiling) || !strings.Contains(stderr, remedy.Summary) {
-				t.Fatalf("remedy: %+v\n%s", remedy, stderr)
-			}
-			if remedy.File != filepath.ToSlash(score) || remedy.Replaces != "master { level = 6dB insert = tone }" || remedy.Revision != edits.Revision(source) || strings.Count(string(source), remedy.Replaces) != 1 {
-				t.Fatalf("remedy target: %+v", remedy)
-			}
-			loudness := result.Loudness
-			if loudness == nil || loudness.TargetMet || loudness.IntegratedLUFS == nil || len(result.Outputs) != 1 {
-				t.Fatalf("loudness: %+v outputs %+v", loudness, result.Outputs)
-			}
-			fixed := strings.Replace(string(source), remedy.Replaces, remedy.ScoreText, 1)
-			if err := os.WriteFile(score, []byte(fixed), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			// An agent that compares revisions sees that the file has changed
-			// since the remedy was computed, so the remedy no longer holds.
-			if now, err := os.ReadFile(score); err != nil || edits.Revision(now) == remedy.Revision {
-				t.Fatalf("the remedy's revision does not tell a changed file: %v", err)
-			}
-			result, code, _ = runRenderJSON(t, "render", score, filepath.Join(dir, "fixed.wav"), opts, &target)
-			if code != 0 || !result.OK || result.Loudness == nil || !result.Loudness.TargetMet || *result.Loudness.TruePeakDBTP > ceiling {
-				t.Fatalf("after the remedy: code %d %+v %+v", code, result.Error, result.Loudness)
-			}
-			t.Logf("ceiling %g dBTP: %.2f LUFS after the remedy", ceiling, *result.Loudness.IntegratedLUFS)
-		})
+	for _, tc := range []struct {
+		name, source, replaces string
+		ceilings               []float64
+		offered, upgrade       bool
+	}{
+		{"master chain", base, "master { level = 6dB insert = tone }", []float64{-1, -2}, true, false},
+		{"no master", noMaster, "", []float64{-1}, true, false},
+		{"edition 1", editionOne, "", []float64{-1}, true, true},
+		{"full master chain", fullChain, "", []float64{-1}, false, false},
+	} {
+		for _, ceiling := range tc.ceilings {
+			t.Run(fmt.Sprintf("%s/%g", tc.name, ceiling), func(t *testing.T) {
+				source := []byte(tc.source)
+				dir := t.TempDir()
+				score := filepath.Join(dir, "loud.cicada")
+				if err := os.WriteFile(score, source, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if document, err := runCheckJSON(t, score); err != nil || !document.Valid {
+					t.Fatalf("the fixture does not pass check: %v", err)
+				}
+				target := renderTargetOptions{LoudnessTarget: -9, TruePeakMaxDBTP: ceiling, Tolerance: 0.5, Loudness: true}
+				result, code, stderr := runRenderJSON(t, "render", score, filepath.Join(dir, "short.wav"), opts, &target)
+				failure := result.Error
+				if code != 1 || failure == nil || failure.Code != "loudness_shortfall_at_true_peak_ceiling" || failure.Remedy == nil {
+					t.Fatalf("shortfall: code %d %+v", code, failure)
+				}
+				remedy := failure.Remedy
+				loudness := result.Loudness
+				if loudness == nil || loudness.TargetMet || loudness.IntegratedLUFS == nil || len(result.Outputs) != 1 {
+					t.Fatalf("loudness: %+v outputs %+v", loudness, result.Outputs)
+				}
+				if !strings.Contains(stderr, remedy.Summary) || remedy.File != filepath.ToSlash(score) || remedy.Revision != edits.Revision(source) || remedy.Replaces != tc.replaces {
+					t.Fatalf("remedy: %+v\n%s", remedy, stderr)
+				}
+				if !tc.offered {
+					if len(remedy.Intents) != 0 || remedy.ScoreText != "" || !strings.Contains(remedy.Summary, "remove a master insert first") {
+						t.Fatalf("a full chain was offered a change: %+v", remedy)
+					}
+					return
+				}
+				if len(remedy.Intents) != 1 || !strings.Contains(remedy.ScoreText, fmt.Sprintf("ceiling = %gdBTP", ceiling)) {
+					t.Fatalf("remedy: %+v", remedy)
+				}
+				var intent struct {
+					ConfirmUpgrade bool `json:"confirmupgrade"`
+				}
+				if err := json.Unmarshal(remedy.Intents[0], &intent); err != nil || intent.ConfirmUpgrade != tc.upgrade || tc.upgrade != strings.Contains(remedy.Summary, "upgrades it to edition 2") {
+					t.Fatalf("upgrade %v: %s; %s", tc.upgrade, remedy.Intents[0], remedy.Summary)
+				}
+				// The intents, applied with cicada apply at the remedy's revision.
+				viaIntents := filepath.Join(dir, "intents.cicada")
+				if err := os.WriteFile(viaIntents, source, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				envelope := filepath.Join(dir, "remedy.json")
+				if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+remedy.Revision+`","intents":[`+string(remedy.Intents[0])+`]}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := applyCommandWithHooks([]string{viaIntents, envelope, "--write"}, &bytes.Buffer{}, nil); err != nil {
+					t.Fatalf("the remedy's intents do not apply: %v", err)
+				}
+				// The score text, as the remedy says: in place of replaces, or added.
+				viaText := filepath.Join(dir, "text.cicada")
+				fixed := string(source) + remedy.ScoreText + "\n"
+				if remedy.Replaces != "" {
+					fixed = strings.Replace(string(source), remedy.Replaces, remedy.ScoreText, 1)
+				}
+				if err := os.WriteFile(viaText, []byte(fixed), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				for _, path := range []string{viaIntents, viaText} {
+					if document, err := runCheckJSON(t, path); err != nil || !document.Valid {
+						t.Fatalf("%s does not pass check: %v", filepath.Base(path), err)
+					}
+					after, code, _ := runRenderJSON(t, "render", path, path+".wav", opts, &target)
+					if code != 0 || !after.OK || after.Loudness == nil || !after.Loudness.TargetMet || *after.Loudness.TruePeakDBTP > ceiling {
+						t.Fatalf("%s misses the target: code %d %+v %+v", filepath.Base(path), code, after.Error, after.Loudness)
+					}
+					t.Logf("%s: %.2f LUFS after the remedy", filepath.Base(path), *after.Loudness.IntegratedLUFS)
+				}
+			})
+		}
 	}
 }
 
@@ -160,7 +219,7 @@ func TestLimiterRemedyWithoutAMasterDeclaration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plain.cicada")
 	source := []byte("cicada 2\ntempo 120\nfx ceiling limiter { ceiling = -1dBTP }\ntrack bass acid {}\npattern p { a1 . }\nscene main { bass = p }\nsong { main }\n")
 	remedy := limiterRemedy(path, scoreInspection{source: source}, -1.5)
-	if remedy.Replaces != "" || remedy.ScoreText != "fx ceiling-2 limiter { ceiling = -1.5dBTP }\nmaster { insert = ceiling-2 }" {
+	if remedy.Replaces != "" || remedy.ScoreText != "fx ceiling-2 limiter { ceiling = -1.5dBTP }\nmaster { insert = ceiling-2 }" || len(remedy.Intents) != 1 || !strings.Contains(string(remedy.Intents[0]), `"name":"ceiling-2"`) {
 		t.Fatalf("remedy: %+v", remedy)
 	}
 }
