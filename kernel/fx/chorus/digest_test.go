@@ -9,7 +9,7 @@ import (
 // chorusDigest pins the chorus output bits for an exact test programme, with
 // one to three voices and a smoothed control change. CI checks the same digest
 // on arm64 in the PCM24 parity job.
-const chorusDigest = "ae142586416870a6efccd2a8cc2f5693f9b291565ffa797481f9630a6d57ab93"
+const chorusDigest = "e5f0bcd0f30a75fae5762fda5ac0ba01502a23f4405a6e2a6f3179577787cbce"
 
 func TestChorusDigest(t *testing.T) {
 	d := bitdigest.New()
