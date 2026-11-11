@@ -9,8 +9,8 @@ import (
 
 // tapeHighpassDigest pins the tape echo's output and loop state with the
 // high-pass on, changed, turned off and turned on half way. CI checks the same
-// digest on arm64. Pinned 11 November 2026 from amd64 (chi-1, Go 1.25.1) and
-// arm64 (george-mbp, Go 1.26.5), which agree, after main's #327 moved the
+// digest on arm64. Pinned 11 November 2026 from amd64 Linux (Go 1.25.1) and
+// arm64 macOS (Go 1.26.5), which agree, after main's #327 moved the
 // tape's smoother and damp coefficients to detmath and the high-pass moved to
 // the line input (the first repeat is now filtered too).
 const tapeHighpassDigest = "3c476567c105062755dbcf5e2934d16c28a0a836aaa6f7e705fdde95a5ec88c4"
