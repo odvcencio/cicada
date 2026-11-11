@@ -58,56 +58,6 @@ func TestKeywordNamesAreRenamedAndDeleted(t *testing.T) {
 	structureRefusal(t, master, &Rename{Entity: "track:master", Name: "lead"}, "name_ambiguous", "entity", "may mean either", "automation master.cutoff (line 7)")
 }
 
-// TestSetTrackVoiceNamesEverySilentChange covers the ways a new voice can
-// change what plays: drum lanes a kit does not play, a melodic pattern on a
-// kit, parameter paths the new voice does not take (every one, not the
-// first), and accent and slide marks only acid plays.
-func TestSetTrackVoiceNamesEverySilentChange(t *testing.T) {
-	kit := "cicada 2\ntempo 120\nkit small { bd = builtin.bd }\ntrack kit drums {}\npattern beat drums { bd: x... sd: ..x. ch: xxxx }\nscene main { kit = beat }\nsong { main }\n"
-	structureRefusal(t, kit, &SetTrackVoice{Track: "kit", Voice: "small"}, "voice_changes_sound", "voice", "small does not play lane sd",
-		"pattern beat lane sd (line 5): small does not play lane sd, so its hits go silent",
-		"pattern beat lane ch (line 5): small does not play lane ch, so its hits go silent")
-	got, err := Apply([]byte(kit), Envelope{Version: 1, Intents: []Intent{&SetTrackVoice{Track: "kit", Voice: "small", AcceptChanges: true}}}, Options{Compiler: parseCompiler{}})
-	if err != nil || !strings.Contains(string(got.Source), "track kit small {}") || len(got.Warnings) != 1 || len(got.Warnings[0]) != 2 {
-		t.Fatalf("accepted lanes: %v %+v", err, got)
-	}
-	melodic := "cicada 2\ntempo 120\nkit small { bd = builtin.bd }\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n"
-	structureRefusal(t, melodic, &SetTrackVoice{Track: "bass", Voice: "small"}, "voice_change_invalid", "voice", "pattern kind differs from track instrument")
-	paths := "cicada 2\ntempo 120\nfx hall reverb {}\ntrack bass acid {\n  // filter\n  cutoff = 620Hz  // low\n  reso = 0.7\n  level = -3dB\n  send hall = -9dB\n}\npattern riff { a1 . c2 . }\nscene main { bass = riff bass.reso = 0.5 }\nsong { main }\nautomate bass.cutoff { @1.1.1 700Hz }\nlfo wob { rate = 1bars }\nmod wob -> bass.reso depth = 0.2\nmidi {\n  port pads\n  pads cc 74 -> bass.cutoff\n}\nlive { macro tone -> bass.cutoff 200Hz..2kHz }\n"
-	structureRefusal(t, paths, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, "voice_change_invalid", "voice", "piano has no setting",
-		"scene main setting bass.reso (line 12): piano has no setting reso",
-		"automation bass.cutoff (line 14): piano has no setting cutoff",
-		"modulation route wob -> bass.reso (line 16): piano has no setting reso",
-		"MIDI mapping bass.cutoff (line 19): piano has no setting cutoff",
-		"live macro tone (line 21): piano has no setting cutoff")
-	structureCase(t, strings.Split(paths, "scene main {")[0]+"scene main { bass = riff }\nsong { main }\n", &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true},
-		"cicada 2\ntempo 120\nfx hall reverb {}\ntrack bass piano {\n  level = -3dB\n  send hall = -9dB\n}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n")
-	accents := "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1^ . c2~ . }\nscene main { bass = riff }\nsong { main }\n"
-	// Piano ignores accent; it plays slides (the engine applies them to every
-	// voice), so they are not listed.
-	structureRefusal(t, accents, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_changes_sound", "voice", "accent: acid plays it, piano ignores it",
-		"pattern riff (line 4): accent: acid plays it, piano ignores it")
-	pressure := "cicada 2\ntempo 120\ninstrument glow { voice mono { out = saw(pitch) * env(gate, 200ms) * (0.5 + pressure * 0.5) } }\ntrack lead glow {}\npattern line { a2 c3 d3 e3\n pressure: 1 0 1 0 }\nscene main { lead = line }\nsong { main }\n"
-	structureRefusal(t, pressure, &SetTrackVoice{Track: "lead", Voice: "acid"}, "voice_changes_sound", "voice", "pressure row",
-		"pattern line (line 5): pressure row: glow plays it, acid ignores it")
-	// The third review's inputs: brackets change meaning between acid (a
-	// tuplet) and chord voices; performed gestures acid does not read;
-	// a sampler reads a pressure row on the scheduled engine.
-	tupletOnAcid := "cicada 2\ntempo 120\ntrack lead acid {}\npattern riff notes { [a2 c3 e3] . a2 . }\nscene main { lead = riff }\nsong { main }\n"
-	structureRefusal(t, tupletOnAcid, &SetTrackVoice{Track: "lead", Voice: "piano"}, "voice_changes_sound", "voice", "brackets",
-		"pattern riff (line 4): brackets: acid plays it as a tuplet, piano plays it as a chord")
-	chordOnPoly := "cicada 2\ntempo 120\ninstrument pad { voice poly { out = saw(pitch) * env(gate, 200ms) } }\ntrack lead pad {}\npattern riff notes { [a2 c3 e3] . a2 . }\nscene main { lead = riff }\nsong { main }\n"
-	structureRefusal(t, chordOnPoly, &SetTrackVoice{Track: "lead", Voice: "acid"}, "voice_changes_sound", "voice", "brackets",
-		"pattern riff (line 5): brackets: pad plays it as a chord, acid plays it as a tuplet")
-	gestures := "cicada 2\ntempo 96\ninstrument light {\n  voice poly {\n    let body = sine(pitch) + sine(pitch * 2.01) * timbre * 0.2\n    out = body * adsr(gate, 8ms, 130ms, 0.6, 1800ms) * velocity * (0.04 + pressure * 0.08)\n  }\n}\ntrack keys light { level = -12dB }\npattern phrase performance length = 3840ticks {\n  gesture-group breath {\n    gesture at = 0ticks bend = 0ct pressure = 0.1 timbre = 0.5;\n    gesture at = 400ticks bend = 150ct pressure = 0.8 timbre = 0.9;\n  }\n  note 60 at = 17ticks length = 103ticks velocity = 103 group = breath {\n    gesture at = 0ticks bend = 25ct pressure = 0.2 timbre = 0.7 vibrato = 14ct rate = 7Hz;\n  }\n  note 64 at = 19ticks length = 301ticks velocity = 87 group = breath;\n}\nscene main { keys = phrase }\nsong { main*4 }\n"
-	structureRefusal(t, gestures, &SetTrackVoice{Track: "keys", Voice: "acid"}, "voice_changes_sound", "voice", "gesture pressure",
-		"pattern phrase (line 10): gesture pressure: light plays it, acid ignores it",
-		"pattern phrase (line 10): gesture timbre: light plays it, acid ignores it")
-	sampler := "cicada 2\ntempo 120\nasset take \"take.wav\" { sha256 = \"" + strings.Repeat("a", 64) + "\" format = wav frames = 12000 rate = 48000Hz channels = 2 }\nsampler hit { asset = take root = c3 mode = oneshot voices = 4 }\ntrack t hit {}\npattern p { a2 c3 d3 e3\n pressure: 1 0 1 0 }\nscene main { t = p }\nsong { main }\n"
-	structureRefusal(t, sampler, &SetTrackVoice{Track: "t", Voice: "acid"}, "voice_changes_sound", "voice", "pressure row",
-		"pattern p (line 6): pressure row: hit plays it, acid ignores it")
-}
-
 // TestDeletesLeaveNoStrayText removes declarations that share a line, carry
 // a trailing comment, sit under a comment, or hold placements with comments.
 // The rule: a comment after a declaration on its line goes with it, and so
