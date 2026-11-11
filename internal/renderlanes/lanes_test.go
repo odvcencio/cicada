@@ -29,16 +29,20 @@ func TestJobsAndLanes(t *testing.T) {
 	}
 }
 
-// Every track renders exactly once per segment, with that segment's frames,
-// whatever the lane count and the cost of each track.
+// Every track renders every frame of every segment exactly once, in
+// consecutive runs, whatever the lane count and the cost of each track; the
+// caller sees a frame only after every lane has published it.
 func TestRunRendersEveryTrackOnce(t *testing.T) {
 	const tracks = 11
-	var calls [tracks]atomic.Int64
-	var lastStart, lastCount [tracks]atomic.Int64
-	p := New(4, tracks, func(track, start, count int) {
-		calls[track].Add(1)
-		lastStart[track].Store(int64(start))
-		lastCount[track].Store(int64(count))
+	// next[track] is the next frame the track must render; a lane writes only
+	// its own tracks' entries, and the caller reads them after Ready.
+	var next [tracks]atomic.Int64
+	var overlap atomic.Bool
+	p := New(4, tracks, func(track, from, count int) {
+		if next[track].Load() != int64(from) {
+			overlap.Store(true)
+		}
+		next[track].Store(int64(from + count))
 		// Make track 0 the heaviest by far, as an electric piano is.
 		spin := time.Duration(count) * 20 * time.Nanosecond
 		if track == 0 {
@@ -50,14 +54,29 @@ func TestRunRendersEveryTrackOnce(t *testing.T) {
 	defer p.Close()
 	for segment := range 50 {
 		start, count := segment%7, 64+segment*13
-		p.Run(start, count)
-		for track := range tracks {
-			if got := calls[track].Load(); got != int64(segment+1) {
-				t.Fatalf("segment %d: track %d rendered %d times", segment, track, got)
+		for track := range next {
+			next[track].Store(int64(start))
+		}
+		p.Begin(start, count)
+		for frame := start; frame < start+count; frame++ {
+			ready := p.Ready(frame)
+			if ready <= frame || ready > start+count {
+				t.Fatalf("segment %d: Ready(%d) = %d", segment, frame, ready)
 			}
-			if lastStart[track].Load() != int64(start) || lastCount[track].Load() != int64(count) {
-				t.Fatalf("segment %d: track %d got frames %d+%d", segment, track, lastStart[track].Load(), lastCount[track].Load())
+			for track := range next {
+				if next[track].Load() < int64(frame+1) {
+					t.Fatalf("segment %d: frame %d of track %d was not rendered before Ready returned", segment, frame, track)
+				}
 			}
+		}
+		p.End()
+		for track := range next {
+			if got := next[track].Load(); got != int64(start+count) {
+				t.Fatalf("segment %d: track %d rendered up to %d, want %d", segment, track, got, start+count)
+			}
+		}
+		if overlap.Load() {
+			t.Fatalf("segment %d: a track's runs were not consecutive", segment)
 		}
 	}
 	stats := p.Stats()
@@ -87,7 +106,7 @@ func TestLightSegmentsStaySerial(t *testing.T) {
 		p.Run(0, 64)
 	}
 	if calls.Load() != 80 {
-		t.Fatalf("calls = %d", calls.Load())
+		t.Fatalf("calls = %d, want one 64-frame run per track per segment", calls.Load())
 	}
 	// The first segment uses the default estimate; after it every track
 	// measures as nearly free, so later segments stay on the caller.
@@ -173,8 +192,8 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 }
 
-// BenchmarkHandoff measures waking the worker lanes for one segment of
-// trivial work and joining them: the overhead each parallel segment pays.
+// BenchmarkHandoff measures starting the worker lanes on a one-chunk segment
+// of trivial work and joining them: the overhead each parallel segment pays.
 // MinLaneWork is set well above it.
 func BenchmarkHandoff(b *testing.B) {
 	for _, lanes := range []int{2, 4} {
@@ -187,7 +206,7 @@ func BenchmarkHandoff(b *testing.B) {
 				for track := range p.cost {
 					p.cost[track], p.measured[track] = 1e6, true
 				}
-				p.Run(0, 4096)
+				p.Run(0, chunkFrames)
 			}
 			b.StopTimer()
 			if p.Stats().MaxUsed != min(lanes, runtime.GOMAXPROCS(0)) {
@@ -195,4 +214,35 @@ func BenchmarkHandoff(b *testing.B) {
 			}
 		})
 	}
+}
+
+// A panic in the caller's own lane is raised after the worker lanes stop,
+// and the Pool keeps working for later segments.
+func TestPanicInTheCallersLane(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs two processors to run a worker lane")
+	}
+	defer ForceEveryLane()()
+	var fail atomic.Bool
+	p := New(2, 2, func(track, from, count int) {
+		if fail.Load() && from == 0 {
+			panic("lane failed")
+		}
+	})
+	defer p.Close()
+	fail.Store(true)
+	func() {
+		defer func() {
+			if value := recover(); value != "lane failed" {
+				t.Fatalf("recovered %v", value)
+			}
+		}()
+		p.Run(0, 1024)
+		t.Fatal("Run returned after both lanes panicked")
+	}()
+	if busy.Load() != 0 || p.active {
+		t.Fatalf("after the panic: budget %d, active %v", busy.Load(), p.active)
+	}
+	fail.Store(false)
+	p.Run(0, 1024)
 }

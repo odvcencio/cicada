@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"math"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -33,9 +34,17 @@ type parallelState struct {
 	waitFloor time.Duration
 	// offline is set by EnableOfflineParallel: an export with no deadline.
 	// Its lanes come from a renderlanes.Pool, which balances tracks by
-	// measured cost and blocks until every lane is done; the workers array,
-	// the wait floor and the generation counter are unused.
+	// measured cost and publishes each track's frames in chunks, so the
+	// callback mixes a chunk while the lanes render the next; the workers
+	// array, the wait floor, the generation counter and faultFrame are unused.
 	offline *renderlanes.Pool
+	// readyUntil is the first frame of the segment the offline lanes may not
+	// have published yet.
+	readyUntil int
+	// faultAt is, per track, the block frame of the track's first raw fault
+	// in the segment, or math.MaxInt64; a lane stores it after faultCode, so
+	// a callback that loads a frame at or before its own reads the code too.
+	faultAt []atomic.Int64
 }
 
 type parallelWorker struct {
@@ -127,10 +136,11 @@ func (e *Engine) EnableParallel(workers int) error {
 // deadline: lanes counts the caller's own, and the engine never uses more
 // lanes than it has tracks. Each segment between control changes renders every
 // track's raw signal on some lane, with the tracks spread over the lanes by
-// their measured cost, and the caller then mixes the tracks frame by frame in
-// track order, as the serial render does, so the output is bit-identical to
-// the serial render whatever the lane count. A segment with too little work
-// runs on the caller alone. Below two lanes, or with graph LFOs, which share
+// their measured cost, and the caller mixes the tracks frame by frame in
+// track order, as the serial render does, as soon as every lane has published
+// the frame; so the output is bit-identical to the serial render whatever the
+// lane count, and the mix overlaps the synthesis. A segment with too little
+// work runs on the caller alone. Below two lanes, or with graph LFOs, which share
 // the serial frame clock, the render stays serial. Call it once, after New
 // and before the first Render; Close stops the lanes.
 //
@@ -153,7 +163,7 @@ func (e *Engine) EnableOfflineParallel(lanes int) error {
 	p := &parallelState{
 		engine: e, lanes: lanes,
 		left: make([]float32, e.tracks*e.maxBlock), right: make([]float32, e.tracks*e.maxBlock),
-		faultFrame: make([]int, e.tracks), faultCode: make([]uint16, e.tracks),
+		faultCode: make([]uint16, e.tracks), faultAt: make([]atomic.Int64, e.tracks),
 		stop: make(chan struct{}), priority: "offline",
 	}
 	p.offline = renderlanes.New(lanes, e.tracks, p.renderTrack)
@@ -172,20 +182,24 @@ func (e *Engine) OfflineParallelStats() renderlanes.Stats {
 	return e.parallel.offline.Stats()
 }
 
-// renderTrack renders count raw frames of one track from frame start of the
-// current block into its span of the prepared buffers, stopping at the first
-// fault. An offline lane calls it; the track belongs to that lane until the
-// segment ends.
-func (p *parallelState) renderTrack(track, start, count int) {
-	end := start + count
-	p.faultFrame[track], p.faultCode[track] = end, 0
-	base := track * count
-	for frame := start; frame < end; frame++ {
+// renderTrack renders count raw frames of one track, from block frame from,
+// into its span of the prepared buffers, and stops the track at its first
+// fault. An offline lane calls it with consecutive runs that cover the
+// segment; the track belongs to that lane until the segment ends.
+func (p *parallelState) renderTrack(track, from, count int) {
+	if from == p.start {
+		p.faultAt[track].Store(math.MaxInt64)
+	} else if p.faultAt[track].Load() != math.MaxInt64 {
+		return
+	}
+	base := track*p.count + from - p.start
+	for i := range count {
 		left, right, fault := p.engine.nextRawTrack(track)
-		p.left[base+frame-start], p.right[base+frame-start] = left, right
+		p.left[base+i], p.right[base+i] = left, right
 		if fault != 0 {
-			p.faultFrame[track], p.faultCode[track] = frame, fault
-			break
+			p.faultCode[track] = fault
+			p.faultAt[track].Store(int64(from + i))
+			return
 		}
 	}
 }
@@ -217,8 +231,14 @@ func (e *Engine) parallelRetired() bool {
 // ownership returned after completion publication or final worker exit.
 func (e *Engine) parallelQuiescent() bool {
 	p := e.parallel
-	if p == nil || p.offline != nil {
-		// Offline lanes are joined before every segment returns.
+	if p == nil {
+		return true
+	}
+	if p.offline != nil {
+		// An offline render has no deadline: wait for the lanes to finish the
+		// segment, which returns every track to the caller. This blocks, so an
+		// offline engine's Retire waits for its lanes too.
+		p.offline.End()
 		return true
 	}
 	for lane := 1; lane < p.lanes; lane++ {
@@ -315,10 +335,12 @@ func (e *Engine) parallelPrepareSegment(start, count int) (faultFrame int, fault
 		return -1, 0
 	}
 	if p.offline != nil {
-		// No deadline: the pool returns when every lane is done, and a panic
-		// in a lane is raised here, as the serial render would raise it.
-		p.offline.Run(start, count)
-		return p.publishSegment(start, count)
+		// The lanes publish the segment in chunks; renderedTrack waits for
+		// each chunk, and a raw fault surfaces at its frame, as it does in the
+		// serial render. A panic in a lane is raised on this goroutine.
+		p.start, p.count, p.readyUntil, p.prepared = start, count, start, true
+		p.offline.Begin(start, count)
+		return -1, 0
 	}
 	p.generation++
 	if p.generation == 0 {
@@ -366,13 +388,6 @@ func (e *Engine) parallelPrepareSegment(start, count int) (faultFrame int, fault
 	if p.retired.Load() {
 		return start, FaultParallelWorker
 	}
-	return p.publishSegment(start, count)
-}
-
-// publishSegment makes a rendered segment readable through renderedTrack and
-// returns its earliest raw fault.
-func (p *parallelState) publishSegment(start, count int) (faultFrame int, fault uint16) {
-	e := p.engine
 	p.start, p.count, p.prepared = start, count, true
 	faultFrame = start + count
 	for track := 0; track < e.tracks; track++ {
@@ -396,7 +411,14 @@ func (e *Engine) renderedTrack(track, frame int) (left, right float32, fault uin
 			if track < 0 || track >= e.tracks || frame < p.start || frame >= p.start+p.count {
 				return 0, 0, FaultRenderBlock
 			}
-			if p.faultCode[track] != 0 && frame >= p.faultFrame[track] {
+			if p.offline != nil {
+				if frame >= p.readyUntil {
+					p.readyUntil = p.offline.Ready(frame)
+				}
+				if int64(frame) >= p.faultAt[track].Load() {
+					return 0, 0, p.faultCode[track]
+				}
+			} else if p.faultCode[track] != 0 && frame >= p.faultFrame[track] {
 				return 0, 0, p.faultCode[track]
 			}
 			index := track*p.count + frame - p.start
@@ -408,6 +430,7 @@ func (e *Engine) renderedTrack(track, frame int) (left, right float32, fault uin
 
 func (e *Engine) parallelEndSegment() {
 	if e.parallel != nil {
+		e.parallel.offline.End()
 		e.parallel.prepared = false
 	}
 }
