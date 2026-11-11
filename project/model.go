@@ -419,7 +419,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
 		}
 		track.Mixer = mixer
-		resolveNamedMixer(&track.Mixer, source, effectKinds)
+		resolveNamedMixer(&track.Mixer, source, slotKinds(score, effectKinds))
 		if needsProject2 {
 			track.Mixer.wireV2 = true
 			for _, param := range source.Params {

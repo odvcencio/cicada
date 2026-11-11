@@ -605,13 +605,13 @@ cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 
 **Syntax (EBNF):** `fx <name> <kind> { settings }` declares an effect instance. The edition-1 shorthand `fx <kind> { settings }` keeps the kind as its name. Effect names share the namespace with tracks and buses.
 
-**Meaning:** A track insert accepts an ordered chain of up to eight distinct effect names: drive, EQ, compression, and de-essing. Each track owns independent processor state even when tracks reference the same declaration. Delay and reverb each support one return instance. A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor can run on a track, the music bus, or master. Track and master compressors detect their own input; external `sidechain` remains available on the music bus. The built-in master limiter always stays last.
+**Meaning:** A track insert accepts an ordered chain of up to eight distinct effect names: drive, EQ, compression, and de-essing. Each track owns independent processor state even when tracks reference the same declaration. One delay or tape return is supported; an edition-2 score can declare up to seven reverb returns, the first in return slot B and the others in slots C to H ([reverb returns](../audio/mix-chain.md#reverb-returns)). A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor can run on a track, the music bus, or master. Track and master compressors detect their own input; external `sidechain` remains available on the music bus. The built-in master limiter always stays last.
 
 **Types and units:** Effect parameters keep their registered types, ranges, and defaults. Send routing is described under [Track mixer settings](#track-mixer-settings).
 
 **Defaults:** Unspecified effect settings use the existing parameter registry defaults. A one-name declaration uses that same name as its effect ID and kind.
 
-**Errors:** More than one delay or reverb return, unsupported insert kinds, and track compressor external sidechains report `CICADA-UNSUPPORTED`. More than eight track stages reports `CICADA-LIMIT`; repeating an effect name in one chain reports `CICADA-DUPLICATE`. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
+**Errors:** More than one delay or tape return, unsupported insert kinds, and track compressor external sidechains report `CICADA-UNSUPPORTED`. A second reverb in edition 1 reports `CICADA-VERSION`. More than eight track stages, or an eighth reverb return, reports `CICADA-LIMIT`; repeating an effect name in one chain reports `CICADA-DUPLICATE`. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
 
 **Example:** Named effects route through the current delay, reverb, drive, and music compressor processors:
 

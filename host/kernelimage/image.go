@@ -168,6 +168,16 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.TapeA != nil {
 		return nil, imageError("portable images have no tape echo; use a delay")
 	}
+	if cfg.Routing != nil && (len(cfg.Routing.Returns) > 0 || len(cfg.Routing.TrackSends) > 0) {
+		names := ""
+		for i, r := range cfg.Routing.Returns {
+			if i > 0 {
+				names += ", "
+			}
+			names += r.Name
+		}
+		return nil, imageError("portable images hold one reverb return; this score routes more (" + names + "). Native playback and render support it")
+	}
 	if len(cfg.LiveParams) != 0 {
 		return nil, imageError("portable images cannot move an authored instrument parameter while it plays")
 	}

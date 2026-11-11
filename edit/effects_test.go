@@ -32,7 +32,6 @@ func applyEffectIntent(t *testing.T, source string, intent Intent) (string, erro
 // that names the real reason.
 func TestAddEffectRefusesWithReasons(t *testing.T) {
 	eight := strings.Replace(effectScore, "track keys piano {}", "fx a drive {}\nfx b drive {}\nfx c drive {}\nfx d drive {}\nfx e drive {}\nfx f drive {}\nfx g drive {}\nfx h drive {}\ntrack keys piano { insert = a -> b -> c -> d -> e -> f -> g -> h }", 1)
-	withReverb := effectScore + "fx room reverb {}\n"
 	withDelay := effectScore + "fx echo delay {}\n"
 	withGlue := strings.Replace(effectScore, "track keys piano {}", "fx glue comp {}\nbus music { insert = glue }\ntrack keys piano {}", 1)
 	for _, tc := range []struct {
@@ -44,7 +43,6 @@ func TestAddEffectRefusesWithReasons(t *testing.T) {
 		{"drive on music", effectScore, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "music"}, "effect_route", "inserton", "a drive can be inserted on a track, not on bus music"},
 		{"limiter on a track", effectScore, &AddEffect{Name: "ceiling", EffectKind: "limiter", InsertOn: "bass"}, "effect_route", "inserton", "a limiter can be inserted on master, not on track bass"},
 		{"delay as insert", effectScore, &AddEffect{Name: "echo", EffectKind: "delay", InsertOn: "bass"}, "effect_is_return", "inserton", "a delay is a send return, not an insert"},
-		{"second reverb", withReverb, &AddEffect{Name: "hall", EffectKind: "reverb"}, "effect_single_instance", "effectkind", "the score already has the reverb return room"},
 		{"tape beside a delay", withDelay, &AddEffect{Name: "warble", EffectKind: "tape"}, "effect_single_instance", "effectkind", "the score already has the delay return echo"},
 		{"unknown target", effectScore, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "nosuch"}, "unknown_insert_target", "inserton", `inserton "nosuch" is not a track, music or master`},
 		{"music taken", withGlue, &AddEffect{Name: "squash", EffectKind: "comp", InsertOn: "music"}, "music_insert_taken", "inserton", "bus music already has the insert glue"},
@@ -304,5 +302,17 @@ func TestRemoveEffectListsEveryUse(t *testing.T) {
 		if err != nil || got != want {
 			t.Fatalf("%q: %v\n%q\nwant\n%q", newline, err, got, want)
 		}
+	}
+}
+
+// A second reverb is a return of its own (slot C): addeffect declares it
+// beside the first, and a track can then send to it by name.
+func TestAddEffectDeclaresASecondReverb(t *testing.T) {
+	source, err := applyEffectIntent(t, effectScore+"fx room reverb {}\n", &AddEffect{Name: "hall", EffectKind: "reverb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(source, "fx room reverb") || !strings.Contains(source, "fx hall reverb") {
+		t.Fatalf("source lacks both reverbs:\n%s", source)
 	}
 }

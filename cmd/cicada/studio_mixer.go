@@ -320,12 +320,15 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 	view.Master.InsertAddr = view.Master.Fields["insert"].Address
 	view.Master.InsertOK, view.Master.InsertWhy = mixerInsertCapability("master", "master", view.Master.Inserts, score)
 
+	reverbMetered := false
 	for _, effect := range score.Effects {
 		meter := ""
 		if effect.Kind == "delay" {
 			meter = "a"
-		} else if effect.Kind == "reverb" {
-			meter = "b"
+		} else if effect.Kind == "reverb" && !reverbMetered {
+			// The engine meters return slot B, the first reverb. Later reverbs
+			// (slots C to H) have no meter yet.
+			meter, reverbMetered = "b", true
 		}
 		strip := mixerReturnView{ID: effect.Name, Name: effect.Name, Kind: effect.Kind, Meter: meter, SourceRange: ranges[effect.Name], Fields: []mixerField{}}
 		for _, address := range addresses {

@@ -90,6 +90,12 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 			effectOK = true
 			effectKind = semanticEffectKind(effect)
+			// A reverb's controls address the reverb return by kind, which is
+			// slot B, the first reverb. A later reverb (slots C to H) would move
+			// slot B instead of itself, so its controls stay fixed for now.
+			if effectKind == "reverb" && !firstReverb(p, effect.ID) {
+				return fail("CICADA-UNSUPPORTED", "the controls of reverb "+effect.ID+" cannot change while it plays: scenes, automation, routes and macros reach only the first reverb, "+firstReverbName(p))
+			}
 			break
 		}
 	}
@@ -311,4 +317,19 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		return fmt.Errorf("toggle value must be on or off")
 	}
 	return nil
+}
+
+// firstReverb reports whether name is the first reverb return the project
+// declares, the one in return slot B.
+func firstReverb(p *Project, name string) bool {
+	return firstReverbName(p) == name
+}
+
+func firstReverbName(p *Project) string {
+	for _, effect := range p.Effects {
+		if semanticEffectKind(effect) == "reverb" && !MasterHasInsert(p, effect.ID) {
+			return effect.ID
+		}
+	}
+	return ""
 }

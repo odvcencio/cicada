@@ -187,6 +187,20 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 					sendBR += float32(right * v.mix.Right * v.muteGain * v.sendB)
 				}
 			}
+			// Sends to slots C to H use the same expressions as slot B, so the
+			// same reverb fed the same sends gives the same bytes in any slot.
+			if returnsEnabled && e.routing != nil && v.muteGain > 0 && !v.sourceOff {
+				for _, send := range e.routing.sends[track] {
+					r := &e.routing.returns[send.ret]
+					if send.pre {
+						r.sendL += float32(left * send.gain * v.muteGain)
+						r.sendR += float32(right * send.gain * v.muteGain)
+					} else {
+						r.sendL += float32(left * v.mix.Left * v.muteGain * send.gain)
+						r.sendR += float32(right * v.mix.Right * v.muteGain * send.gain)
+					}
+				}
+			}
 			tap := mix.Track{Left: v.mix.Left * v.muteGain, Right: v.mix.Right * v.muteGain}
 			if positioned.enabled {
 				mono := float32((float32(left)+float32(right))*.5) * float32(positioned.gain*v.muteGain)
@@ -257,6 +271,22 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 		}
 		accumulateMeter(&e.returnBMeter, returnL, returnR)
 		dry.AddReturn(returnL, returnR)
+	}
+	// Slots C to H follow slot B, in slot order: the sum order is part of
+	// the output.
+	if returnsEnabled && e.routing != nil {
+		for i := range e.routing.returns {
+			r := &e.routing.returns[i]
+			returnL, returnR := r.reverb.Process(r.sendL, r.sendR)
+			r.sendL, r.sendR = 0, 0
+			if r.reverb.Fault() {
+				e.fault(FaultReverb)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return 0, false
+			}
+			dry.AddReturn(returnL, returnR)
+		}
 	}
 	if e.spatial.active {
 		buses.Music = e.spatial.rotation.Apply(buses.Music)

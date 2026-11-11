@@ -164,6 +164,7 @@ func (e *Engine) settleSceneEffects() {
 	if e.reverbB != nil {
 		e.reverbB.Reset()
 	}
+	e.resetExtraReturns()
 	if e.compMusic != nil {
 		e.compMusic.Reset()
 	}

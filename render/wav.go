@@ -69,6 +69,12 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// TrackStemsOnly lets Stems render a score whose extra reverb returns
+	// (slots C to H) have no stem file yet. The track, bus and master stems are
+	// complete, but the return stems then hold slots A and B only, so the
+	// folder would not verify. Audition sets it: it reads only track and master
+	// stems. Without it, Stems refuses such a score.
+	TrackStemsOnly bool
 }
 
 type Report struct {
@@ -362,6 +368,32 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 	return false
 }
 
+// extraReverbReturns reports whether the score routes more than one reverb
+// return. The direct mixer has one reverb return; the engine has slots C to H.
+func extraReverbReturns(score *notation.Score) bool {
+	reverbs := 0
+	for _, effect := range score.Effects {
+		if effect.Kind == "reverb" && !onMasterChain(score, effect.Name) {
+			reverbs++
+		}
+	}
+	return reverbs > 1
+}
+
+// onMasterChain reports whether the master chain inserts the named effect.
+func onMasterChain(score *notation.Score, name string) bool {
+	for _, param := range score.Master {
+		if param.Name == "insert" {
+			for _, field := range strings.Fields(param.Value) {
+				if field == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // hasTapeEcho reports whether the score declares a tape echo. The direct WAV
 // mixer has no tape return, so such a score renders through the engine.
 func hasTapeEcho(score *notation.Score) bool {
@@ -418,6 +450,8 @@ func scheduledEngineReason(score *notation.Score, opts Options) string {
 		return "a live instrument parameter"
 	case hasPackSampler(score) && !opts.SamplerBaseline:
 		return "sample packs"
+	case extraReverbReturns(score):
+		return "more than one reverb return"
 	}
 	return ""
 }

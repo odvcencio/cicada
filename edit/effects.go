@@ -111,10 +111,12 @@ func paramValue(params []notation.Param, name string) string {
 // request puts it, naming the real reason.
 func checkNewEffect(score *notation.Score, name, kind, target string) (route string, chain []string, err error) {
 	if effectIsReturn[kind] {
+		// A score has one delay or tape return (slot A). Reverbs take slot B
+		// and slots C to H; the score's own check refuses an eighth reverb or a
+		// second one in edition 1.
 		for _, effect := range score.Effects {
-			sameReturn := effect.Kind == kind || kind != "reverb" && (effect.Kind == "delay" || effect.Kind == "tape")
-			if sameReturn {
-				return "", nil, refuse("effect_single_instance", "effectkind", "the score already has the %s return %s; a score has one delay or tape return and one reverb return", effect.Kind, effect.Name)
+			if kind != "reverb" && (effect.Kind == "delay" || effect.Kind == "tape") {
+				return "", nil, refuse("effect_single_instance", "effectkind", "the score already has the %s return %s; a score has one delay or tape return", effect.Kind, effect.Name)
 			}
 		}
 		if target != "" {
