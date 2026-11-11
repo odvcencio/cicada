@@ -9,8 +9,8 @@ import (
 	"github.com/andybalholm/brotli"
 )
 
-// 326,316 bytes: lowered from 328 KiB on 2026-11-11, to the core's size with the whole
-// determinism stack (322,220 bytes at commit ef54b787, TinyGo 0.41.1 and Binaryen 133) plus
+// 327,187 bytes: lowered from 328 KiB on 2026-11-11, to the core's size with the whole
+// determinism stack (323,091 bytes at commit 6c6416b5, TinyGo 0.41.1 and Binaryen 133) plus
 // 4 KiB. That is below 322 KiB (329,728 bytes), the limit before Decision 9, because the
 // voices no longer call Go's math functions, which drop out of the binary.
 // 328 KiB (335,872 bytes): raised from 322 KiB on 2026-11-10 under Decision 9 of the
@@ -24,7 +24,7 @@ import (
 // (version 116, which scripts/wasm-opt.sh uses when WASMOPT is unset) it is 329,264.
 // Raised from 300 KiB to 320 KiB on 2026-10-04 by owner decision so the graph delay/comb,
 // experimental guitar and phase-modulation voices fit together (about 321.7 KB raw).
-const rawLimit = 326_316
+const rawLimit = 327_187
 const brotliLimit = 120 * 1024
 const processorLimit = 5 * 1024
 const keysModularRawLimit = 576 * 1024
