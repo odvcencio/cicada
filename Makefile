@@ -1,5 +1,5 @@
 .PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-engine-measurements test-chord-wasm test-worklet-negotiation
-.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm
+.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm test-tinygo-digests
 
 export GOWORK := off
 
@@ -328,6 +328,21 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 	go test -timeout=3m -tags modulate_wasm ./kernel/modulate -run '^TestModulateNativeWASMParity$$' -count=1 -v
+
+# The kernel WASM is compiled by TinyGo (LLVM), not by the Go compiler. This
+# runs the deterministic-math and processor digests compiled by TinyGo for
+# WebAssembly (under Node), so a TinyGo code-generation difference fails here as
+# it would on arm64 or with GOAMD64=v3. go test exits 0 when -run matches
+# nothing, so every digest must print a PASS line.
+TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness
+TINYGO_DIGEST_TESTS = TestIdentityDigest TestSinPiDigest TestAtanDigest TestTanh32Digest TestLog1pDigest TestNearDigest TestFilterCoefficientDigest \
+	TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest TestAmpcabDigest TestAmpcabOutputDigest TestChorusDigest \
+	TestConvolutionDigest TestTapeDigest TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest \
+	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget
+test-tinygo-digests:
+	mkdir -p build
+	bash -o pipefail -c 'GOWORK=off GOFLAGS=-buildvcs=false tinygo test -target=wasm -v -run Digest $(TINYGO_DIGEST_PACKAGES) | tee build/tinygo-digests.txt'
+	@missing=0; for name in $(TINYGO_DIGEST_TESTS); do grep -q -- "^--- PASS: $$name " build/tinygo-digests.txt || { echo "No PASS line for $$name under TinyGo" >&2; missing=1; }; done; exit $$missing
 
 test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs
