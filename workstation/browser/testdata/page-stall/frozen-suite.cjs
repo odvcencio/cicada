@@ -5,12 +5,15 @@
 //               used before page-stall.cjs (save storage state, then close)
 //   resume      the same freeze under stall.teardown()
 //   start       the page freezes while Go starts (wasm_exec.js run)
+//   xhr         the page blocks in native code on a synchronous request that is never answered
+//   dialog      the page blocks in native code on alert(), which the suite never answers
 //   closed      the test closes its page, waits, then fails
 //   hung-close  the test passes but browser.close() never finishes
 //   leak-pass   the test passes and leaves a server and a timer open
 //   leak-fail   the test fails and leaves a server and a timer open
 const test = require('node:test');
 const net = require('node:net');
+const http = require('node:http');
 const stall = require('../../page-stall.cjs');
 
 const mode = process.env.PAGE_STALL_MODE;
@@ -30,7 +33,8 @@ setTimeout(() => { if (${freeze === 'start'}) go.run(); if (${freeze === 'resume
 
 async function open(freeze) {
   const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] });
+  // Through withChromeLog, as the suites launch it: its script leads Chrome's process group.
+  const browser = await chromium.launch(stall.withChromeLog({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] }, chromium));
   const context = await browser.newContext();
   return { browser, context, show: async page => {
     await page.route('http://stall.test/', route => route.fulfill({ contentType: 'text/html', body: html(freeze) }));
@@ -56,6 +60,34 @@ if (mode === 'resume' || mode === 'start') {
     stall.teardown(t, browser, { watch, before: () => context.storageState(), exitWhenDone: true });
     const page = await context.newPage();
     await show(page);
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    await page.getByRole('button', { name: 'Go' }).click({ timeout: 1000 });
+  });
+}
+
+if (mode === 'xhr' || mode === 'dialog') {
+  test('a step on a page blocked in native code times out', { timeout: 90000 }, async t => {
+    const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
+    const browser = await chromium.launch(stall.withChromeLog({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] }, chromium));
+    const context = await browser.newContext();
+    const watch = await stall.watchContext(context);
+    stall.teardown(t, browser, { watch, exitWhenDone: true });
+    // One local server serves the page and never answers /never. The page and
+    // the request share an origin, so Chrome sends the request (it refuses a
+    // public-looking origin's requests to 127.0.0.1).
+    const block = mode === 'xhr'
+      ? "const x = new XMLHttpRequest(); x.open('GET', '/never', false); x.send();"
+      : 'alert("blocked on purpose");';
+    const server = http.createServer((request, response) => {
+      if (request.url === '/never') return;
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(`<!doctype html><button>Go</button><script>setTimeout(() => { ${block} }, 500)</script>`);
+    }).listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const page = await context.newPage();
+    if (mode === 'dialog') page.on('dialog', () => {}); // the suite listens and never answers
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await new Promise(resolve => setTimeout(resolve, 2500));
     await page.getByRole('button', { name: 'Go' }).click({ timeout: 1000 });
   });

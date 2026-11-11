@@ -852,6 +852,10 @@ run_shard() {
 			unzip -q "$browser_root/chrome.zip" -d "$browser_root"
 			mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
 		fi
+		# A page that stops responding gets native stacks in its report. On a
+		# GitHub-hosted runner gdb is installed only then, inside that failure
+		# (page-stall.cjs); a self-hosted machine never installs packages.
+		if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then export CICADA_PAGE_STALL_NATIVE=install; fi
 		base_node_options="${NODE_OPTIONS:-}"
 		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
