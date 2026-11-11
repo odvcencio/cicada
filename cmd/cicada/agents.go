@@ -34,12 +34,16 @@ type agentsPageJSON struct {
 	Bytes int    `json:"bytes"`
 }
 
-// agentsPages are the pages the binary carries: the quick start, which
-// cicada agents prints with no argument, and the core reference, which
-// cicada agents reference prints.
-var agentsPages = []struct{ name, text string }{
-	{"quickstart", agentguide.QuickStart},
-	{"reference", agentguide.Reference},
+// agentsReference is the core reference, which the binary builds from its own
+// catalogs and command table, so it cannot go stale.
+func agentsReference() string {
+	var commands []agentguide.Command
+	for _, entries := range [][]commandHelpEntry{commandHelpEntries, extraCommandHelpEntries} {
+		for _, entry := range entries {
+			commands = append(commands, agentguide.Command{Name: entry.name, Summary: entry.summary})
+		}
+	}
+	return agentguide.BuildReference(agentguide.ReferenceInputs{Commands: commands, ApplyCodes: applyErrorCodes, RenderCodes: renderErrorCodes})
 }
 
 // agentsCommand prints the quick start for agents, or the core reference,
@@ -65,14 +69,15 @@ func agentsCommand(args []string, stdout, stderr io.Writer) int {
 			return usage()
 		}
 	}
+	reference := agentsReference()
 	text := agentguide.QuickStart
 	if page == "reference" {
-		text = agentguide.Reference
+		text = reference
 	}
 	var err error
 	if asJSON {
 		document := agentsDocument{Schema: agentsSchema, Page: page, Guide: text, GuideBytes: len(text), Commands: agentguide.Lookups, Pages: []agentsPageJSON{}}
-		for _, p := range agentsPages {
+		for _, p := range []struct{ name, text string }{{"quickstart", agentguide.QuickStart}, {"reference", reference}} {
 			title, _, _ := strings.Cut(p.text, "\n")
 			document.Pages = append(document.Pages, agentsPageJSON{Name: p.name, Title: strings.TrimSpace(strings.TrimLeft(title, "#")), Bytes: len(p.text)})
 		}

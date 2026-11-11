@@ -115,7 +115,7 @@ expect_groups "desktop README stays docs" none desktop/README.md
 # --- documentation and files no job reads ---
 expect_groups "docs only" none docs/manual/README.md docs/spec/features.md
 expect_groups "root README" none README.md
-expect_groups "agent manual index" none llms.txt llms-full.txt AGENTS.md
+expect_groups "agent manual index" none llms.txt AGENTS.md
 expect_groups "license" none LICENSE
 expect_groups "nested readme" none kernel/voice/clav/README.md
 expect_groups "docs json evidence" none docs/sampler/evidence/browser.json

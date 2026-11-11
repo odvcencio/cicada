@@ -82,7 +82,7 @@ func TestAgentsCommandRefusesArguments(t *testing.T) {
 // text and as JSON, and the pages agents --json lists.
 func TestAgentsCommandPrintsTheReference(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := agentsCommand([]string{"reference"}, &stdout, &stderr); code != 0 || stdout.String() != agentguide.Reference || !strings.HasPrefix(agentguide.Reference, "# Cicada core reference for agents\n") {
+	if code := agentsCommand([]string{"reference"}, &stdout, &stderr); code != 0 || stdout.String() != agentsReference() || !strings.HasPrefix(agentsReference(), "# Cicada core reference for agents\n") || len(agentsReference()) > agentguide.ReferenceBudget {
 		t.Fatalf("agents reference: exit %d, stderr %q\n%.200s", code, stderr.String(), stdout.String())
 	}
 	stdout.Reset()
@@ -99,7 +99,7 @@ func TestAgentsCommandPrintsTheReference(t *testing.T) {
 			Bytes int    `json:"bytes"`
 		} `json:"pages"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil || document.Page != "reference" || document.Guide != agentguide.Reference || document.GuideBytes != len(agentguide.Reference) {
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil || document.Page != "reference" || document.Guide != agentsReference() || document.GuideBytes != len(agentsReference()) {
 		t.Fatalf("agents reference --json: %v %+v", err, document.Page)
 	}
 	if len(document.Pages) != 2 || document.Pages[0].Name != "quickstart" || document.Pages[0].Bytes != len(agentguide.QuickStart) || document.Pages[1].Name != "reference" || document.Pages[1].Title != "Cicada core reference for agents" {

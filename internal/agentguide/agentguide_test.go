@@ -77,3 +77,22 @@ func TestBuildHelpers(t *testing.T) {
 		t.Error("section of a missing heading succeeded")
 	}
 }
+
+// TestLLMsFullFitsItsBudget builds llms-full.txt from the manual and keeps it
+// within its budget. It is not committed: CICADA_LLMS_FULL_OUT names the file
+// to write it to (make agent-front-door and CI set it).
+func TestLLMsFullFitsItsBudget(t *testing.T) {
+	full, err := BuildFull("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("llms-full.txt: %d bytes of %d", len(full), LLMsFullBudget)
+	if len(full) > LLMsFullBudget {
+		t.Fatalf("llms-full.txt is %d bytes; its budget is %d", len(full), LLMsFullBudget)
+	}
+	if out := os.Getenv("CICADA_LLMS_FULL_OUT"); out != "" {
+		if err := os.WriteFile(out, full, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
