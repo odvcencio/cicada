@@ -226,6 +226,8 @@ var paramsKeys = [...]ParamSpec{
 	{198, "instrument.p6", "instrument.p6", "track", "p6", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 	{199, "instrument.p7", "instrument.p7", "track", "p7", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 	{200, "instrument.p8", "instrument.p8", "track", "p8", "", "linear", "source", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{201, "fx.delay.highpass", "delay.highpass", "global", "highpass", "Hz", "log", "source", 20, 2000, 0, 1, 5, true, true, true},
+	{202, "fx.tape.highpass", "tape.highpass", "global", "highpass", "Hz", "log", "source", 20, 2000, 0, 1, 5, true, true, true},
 }
 
 // Params lists every registry row in ParamID order.

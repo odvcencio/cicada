@@ -76,6 +76,21 @@ type DelayParams struct {
 	PingPong bool // Mono wet input into the left line, then alternating feedback.
 	Width    float64
 	Mix      float64
+	// HighpassHz is the cutoff of a one-pole high-pass inside the feedback
+	// loop, the counterpart of DampHz: 20 Hz to 2 kHz, or 0 for off. Each
+	// repeat passes it once more, so the repeats lose their lows.
+	HighpassHz float64
+}
+
+// Echo high-pass range. A cutoff of 0 turns the filter off.
+const (
+	MinEchoHighpassHz = 20
+	MaxEchoHighpassHz = 2_000
+)
+
+// ValidEchoHighpass reports whether hz is 0 (off) or a cutoff in range.
+func ValidEchoHighpass(hz float64) bool {
+	return hz == 0 || finite(hz) && hz >= MinEchoHighpassHz && hz <= MaxEchoHighpassHz
 }
 
 func DefaultDelayParams() DelayParams {
@@ -84,7 +99,7 @@ func DefaultDelayParams() DelayParams {
 
 func (p DelayParams) Validate() error {
 	if p.Division >= lastDelayDivision || !finite(p.TimeMs) || !finite(p.Feedback) || !finite(p.DampHz) || !finite(p.Width) || !finite(p.Mix) ||
-		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 || p.Width < 0 || p.Width > 1 || p.Mix < 0 || p.Mix > 1 {
+		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 || p.Width < 0 || p.Width > 1 || p.Mix < 0 || p.Mix > 1 || !ValidEchoHighpass(p.HighpassHz) {
 		return validationError("delay parameter is invalid or out of range")
 	}
 	if p.Division == FreeDelay {
@@ -130,6 +145,7 @@ type Delay struct {
 	mix, targetMix           float64
 	smooth                   float64
 	feedbackState            stereo
+	highpass                 EchoHighpass
 	fault                    bool
 	excited                  bool
 }
@@ -192,6 +208,7 @@ func (d *Delay) SetParams(p DelayParams) error {
 	d.targetFeedback = p.Feedback
 	d.targetDamp = 1 - math.Exp(-2*math.Pi*p.DampHz/d.sampleRate)
 	d.targetWidth, d.targetMix = p.Width, p.Mix
+	d.highpass.Set(p.HighpassHz, d.sampleRate)
 	d.targetPing = 0
 	if p.PingPong {
 		d.targetPing = 1
@@ -237,6 +254,7 @@ func (d *Delay) Reset() {
 	d.excited = false
 	d.oldFrames, d.fade = d.newFrames, 1
 	d.feedback, d.damp, d.ping, d.width, d.mix = d.targetFeedback, d.targetDamp, d.targetPing, d.targetWidth, d.targetMix
+	d.highpass.Reset()
 }
 
 func (d *Delay) read(frames float64) stereo {
@@ -273,6 +291,7 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	d.ping += float64((d.targetPing - d.ping) * d.smooth)
 	d.width += float64((d.targetWidth - d.width) * d.smooth)
 	d.mix += float64((d.targetMix - d.mix) * d.smooth)
+	d.highpass.Advance(d.smooth)
 	if left == 0 && right == 0 && !d.excited {
 		// Both read heads and the feedback filter contain exact zeros.
 		if d.fade < 1 {
@@ -307,9 +326,13 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	mono := float64((x.left + x.right) * .5)
 	inputL := x.left + float64((mono-x.left)*d.ping)
 	inputR := float64(x.right * (1 - d.ping))
+	loopL, loopR := d.feedbackState.left, d.feedbackState.right
+	if d.highpass.Active() {
+		loopL, loopR = d.highpass.Process(loopL, loopR)
+	}
 	d.buffer[d.position] = stereo{
-		inputL + fastmath.Tanh(d.feedbackState.left*d.feedback),
-		inputR + fastmath.Tanh(d.feedbackState.right*d.feedback),
+		inputL + fastmath.Tanh(loopL*d.feedback),
+		inputR + fastmath.Tanh(loopR*d.feedback),
 	}
 	d.position++
 	if d.position == len(d.buffer) {

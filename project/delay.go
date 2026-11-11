@@ -55,6 +55,12 @@ func DelayParamsFromValues(values map[string]Value) (fx.DelayParams, error) {
 				return params, fmt.Errorf("delay mix requires a unitless value")
 			}
 			params.Mix = *value.Number
+		case "highpass":
+			hz, err := echoHighpassValue("delay", value)
+			if err != nil {
+				return params, err
+			}
+			params.HighpassHz = hz
 		default:
 			return params, fmt.Errorf("unknown delay parameter %s", name)
 		}
@@ -63,4 +69,19 @@ func DelayParamsFromValues(values map[string]Value) (fx.DelayParams, error) {
 		return params, err
 	}
 	return params, nil
+}
+
+// echoHighpassValue reads the highpass of a delay or tape: a frequency in Hz,
+// or off, which is a cutoff of 0.
+func echoHighpassValue(kind string, value Value) (float64, error) {
+	if value.Unit == "enum" && value.Number == nil && value.Text == "off" {
+		return 0, nil
+	}
+	if value.Unit != "hz" || value.Number == nil {
+		return 0, fmt.Errorf("%s highpass requires a frequency from %dHz to %dHz, or off", kind, fx.MinEchoHighpassHz, fx.MaxEchoHighpassHz)
+	}
+	if !fx.ValidEchoHighpass(*value.Number) || *value.Number == 0 {
+		return 0, fmt.Errorf("%s highpass %gHz is outside %dHz to %dHz; write off to turn it off", kind, *value.Number, fx.MinEchoHighpassHz, fx.MaxEchoHighpassHz)
+	}
+	return *value.Number, nil
 }

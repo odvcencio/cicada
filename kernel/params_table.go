@@ -205,7 +205,9 @@ const (
 	ParamInstrumentP6        ParamID = 198
 	ParamInstrumentP7        ParamID = 199
 	ParamInstrumentP8        ParamID = 200
-	ParamCount                       = 201
+	ParamFxDelayHighpass     ParamID = 201
+	ParamFxTapeHighpass      ParamID = 202
+	ParamCount                       = 203
 )
 
 // IsInteger reports whether a live parameter takes whole numbers only.

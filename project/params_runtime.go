@@ -240,6 +240,9 @@ func mixerParamValue(mixer Mixer, descriptor paramdefs.Descriptor) any {
 }
 
 func defaultParamValue(descriptor paramdefs.Descriptor) any {
+	if descriptor.Off && (descriptor.Default < descriptor.Min || descriptor.Default > descriptor.Max) {
+		return nil // off by default, as an echo highpass that is not set
+	}
 	if (descriptor.Curve == "enum" || descriptor.Curve == "toggle") && int(descriptor.Default) >= 0 && int(descriptor.Default) < len(descriptor.Values) {
 		if descriptor.Curve == "enum" {
 			return descriptor.Values[int(descriptor.Default)]

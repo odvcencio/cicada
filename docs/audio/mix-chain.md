@@ -263,11 +263,13 @@ machine.
 | `flutter` | unitless | 0–1 | 0.2 |
 | `saturation` | unitless | 0–1 | 0.3 |
 | `damp` | Hz | 1000–16000 | 5000 |
+| `highpass` | Hz, or `off` | 20–2000 | off |
 
-All six controls take scene settings (`echo.feedback = 0.3`) and `automate`
+All seven controls take scene settings (`echo.feedback = 0.3`) and `automate`
 lanes (`echo.time`, `echo.wow`, `echo.flutter`, `echo.feedback`,
-`echo.saturation`, `echo.damp`). Each moves through a 5 ms smoother, except
-`time`, which glides as described below.
+`echo.saturation`, `echo.damp`, `echo.highpass`). Each moves through a 5 ms
+smoother, except `time`, which glides as described below. `highpass` is
+described in [Echo highpass](#echo-highpass).
 
 **What it models.**
 
@@ -293,6 +295,66 @@ wet-only and stereo-preserving. It cannot be a track insert or a master stage.
 Modulation routes to its controls are not supported yet. Portable browser kernel
 images refuse a score that declares `tape`, with a clear error; native playback
 and offline `render` and `stems` support it.
+
+## Echo highpass
+
+`highpass` puts a one-pole high-pass filter inside the feedback loop of the
+`delay` and `tape` returns, beside the `damp` low-pass. Every repeat passes it
+once more, so each repeat loses more of its lows than the one before and the
+echo thins out to its snap: the dub echo throw. It is off unless you set it.
+
+```cicada
+cicada 2
+tempo 74
+fx echo tape { time = 3/16 feedback = 0.75 damp = 4kHz highpass = 250Hz }
+track rim drums { send echo = 0.8 pre }
+pattern hit drums { rs: ..x. ..x. ..x. ..x. }
+scene main { rim = hit }
+song { main*8 }
+automate echo.highpass { @1.1.1 250Hz @5.1.1 1200Hz exponential @8.1.1 120Hz exponential }
+```
+
+The first repeat is the dry send, delayed; from the second on, each repeat has
+passed the filter once more. `examples/fx/dub-echo-highpass.cicada` plays the
+same move with an off-beat stab.
+
+| Control | Unit | Range | Default |
+| --- | --- | --- | --- |
+| `highpass` | Hz, or `off` | 20–2000 | off |
+
+It takes the same paths as `damp`: the effect block (`highpass = 300Hz`, or
+`highpass = off`), scene settings (`echo.highpass = 600Hz`, or `= off`) and
+`automate echo.highpass` lanes, which interpolate on a logarithmic curve. A
+cutoff glides through the echo's 5 ms smoother; turning the filter on or off
+fades its effect in or out over the same time. Like `damp`, it takes no `mod`
+route: routes reach track mixer and voice parameters, and a route to an echo
+control reports `CICADA-ROUTE`.
+
+What it does to each repeat, measured by
+`TestEchoHighpassRepeatsLoseTheirLows` in `kernel/measure` (250 ms, feedback
+0.8, `damp` at 16 kHz; dB lost from one repeat to the next):
+
+| `highpass` | 80 Hz burst | 2 kHz burst |
+| --- | --- | --- |
+| off | 1.9 | 2.0 |
+| 100 Hz | 6.1 | 2.1 |
+| 300 Hz | 13.8 | 2.3 |
+| 1000 Hz | 24.4 | 3.5 |
+
+Off, both fall only by the feedback. With a cutoff, the low burst also loses
+the one-pole response at 80 Hz on every pass, while the high burst keeps
+nearly all of its level.
+
+An echo without `highpass` never runs the filter: its output is the same bits
+as before the control existed. The filter rounds every product before it adds
+it and takes its coefficient from `kernel/dsp/detmath`, so it gives the same
+bits on amd64, arm64 and WebAssembly. With wow, flutter and saturation at 0, a
+`tape` with `highpass` still matches a `delay` with the same settings byte for
+byte at a whole-frame time.
+
+Portable browser and WAM images refuse a score that sets or moves `highpass`
+(`portable images have no echo highpass`), and `cicada check --profile browser`
+lists each use. Native playback, `render` and `stems` play it.
 
 ## Same bits on every machine
 

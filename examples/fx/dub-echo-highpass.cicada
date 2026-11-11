@@ -1,0 +1,28 @@
+cicada 2
+title "Dub echo that thins out"
+tempo 74
+key a minor
+seed 1974
+
+// The echo's highpass sits inside its feedback loop, like damp: every repeat
+// passes it once more, so each one loses more of its lows. At 250 Hz the
+// repeats thin out over a bar; the sweep to 1.2 kHz leaves only the snap of
+// each repeat, the classic dub throw, and the fall to 120 Hz lets the lows back.
+fx echo tape { time = 3/16 feedback = 0.75 wow = 0.3 flutter = 0.1 saturation = 0.3 damp = 4kHz highpass = 250Hz }
+
+track rim drums { send echo = 0.8 pre }
+track stab acid { cutoff = 1800Hz decay = 120ms send echo = 0.5 }
+
+pattern hit drums {
+  rs: ..x. ..x. ..x. ..x.
+}
+pattern offbeat { . . 5 . . . 5 . . . 5 . . . 5 . }
+
+scene main { rim = hit stab = offbeat }
+song { main*8 }
+
+automate echo.highpass {
+  @1.1.1 250Hz
+  @5.1.1 1200Hz exponential
+  @8.1.1 120Hz exponential
+}

@@ -281,6 +281,11 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 	default:
 		return fmt.Sprint(value)
 	}
+	if descriptor.Off && descriptor.Max > descriptor.Min && (number < descriptor.Min || number > descriptor.Max) {
+		// A control whose off is a number outside its range, such as an echo
+		// highpass of 0 Hz.
+		return "off"
+	}
 	formatted := strconv.FormatFloat(number, 'f', -1, bits)
 	unit := descriptor.Unit
 	if unit == "unit" || unit == "ratio" || unit == "semitone" || unit == "cent" {

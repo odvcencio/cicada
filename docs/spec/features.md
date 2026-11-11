@@ -92,6 +92,33 @@ song { main }
 
 **Edition history:** Named mixer forms are implemented in edition 2. Edition 2 requires named mixer spellings; `cicada fix` migrates the edition-1 aliases.
 
+## Echo highpass
+
+**Syntax (EBNF):** `highpass` is a setting of a `delay` or `tape` effect block, `highpass = frequency | "off"`, and the parameter path `<echo>.highpass` in scene settings and `automate` lanes.
+
+**Meaning:** A one-pole high-pass filter inside the echo's feedback loop, beside the `damp` low-pass. Every repeat passes it once more, so each repeat loses more of its lows than the one before. The first repeat is the delayed send, unfiltered. Turning the filter on or off fades its effect in or out over the echo's 5 ms smoother; a new cutoff glides through the same smoother. See [Echo highpass](../audio/mix-chain.md#echo-highpass) for the measured effect per repeat.
+
+**Types and units:** A frequency from 20 Hz to 2 kHz, or `off`. Automation interpolates on a logarithmic curve.
+
+**Defaults:** Off. An echo without `highpass` renders the same bits as before the setting existed.
+
+**Errors:** A frequency outside 20 Hz to 2 kHz, or a value without Hz, reports `CICADA-PARAM` in the effect block and `CICADA-UNIT` in a scene setting or an automation point. A modulation route to it reports `CICADA-ROUTE`, as for `damp`. Portable browser and WAM images refuse a score that sets or moves it.
+
+**Example:** A tape echo whose repeats thin out, then thin to their snap:
+
+```cicada
+cicada 2
+tempo 74
+fx echo tape { time = 3/16 feedback = 0.75 damp = 4kHz highpass = 250Hz }
+track rim drums { send echo = 0.8 pre }
+pattern hit drums { rs: ..x. ..x. ..x. ..x. }
+scene main { rim = hit }
+song { main*8 }
+automate echo.highpass { @1.1.1 250Hz @5.1.1 1200Hz exponential }
+```
+
+**Edition history:** Added in source editions 1 and 2 as registry rows `fx.delay.highpass` and `fx.tape.highpass`, appended after the existing rows so no parameter ID moves. Portable kernel images do not carry it.
+
 ## Audio assets, clips and samplers
 
 **Syntax (EBNF):**
