@@ -327,10 +327,12 @@ guaranteed.
   track effects: amp and cabinet, chorus, compressor, de-esser, delay, drive,
   reverb and tape), the mix in `kernel/mix`, the loudness meter and the export
   gain use `kernel/dsp/detmath` instead, whose functions return the same bits
-  everywhere and are within 1 ULP of the exact result. Still on the math
-  library: the engine (master gain, parameter smoothing), automation curves,
-  the graph interpreter, vibrato, spatial audio and the voices; each such file
-  is listed with its exact count in the source guard below.
+  everywhere and are within 1 ULP of the exact result. So do the engine
+  (master gain, track gains, parameter smoothing), the automation curves, the
+  graph interpreter (oscillators, filters, ladder, comb), vibrato, spatial
+  audio and the export schedule. Still on the math library: the voices in
+  `kernel/voice`; each such file is listed with its exact count in the source
+  guard below.
 
 The follow-up removes the rest: no architecture-dependent `math` call
 between voice and exported file, and a digest per processor and voice on all

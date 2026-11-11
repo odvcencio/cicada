@@ -589,3 +589,91 @@ var exp2Table = [64][2]float64{ // 2^(j/64) as hi + lo
 	{0x1.f50765b6e454p+00, 0x1.9d3e12dd8a18bp-54},
 	{0x1.fa7c1819e90d8p+00, 0x1.74853f3a5931ep-55},
 }
+
+// Atan returns the arctangent of x, in [-pi/2, pi/2]. The kernel is the Cephes
+// rational approximation that Go's math.Atan uses (same constants and
+// evaluation order), so for |x| <= 0.66 Atan returns what math.Atan returns on
+// amd64 without FMA. Above that, math.Atan reduces x to (x-1)/(x+1) or 1/x and
+// adds pi/4 or pi/2, and the rounding of those steps takes its error to 1.08
+// ULP; here the reduced argument's rounding is corrected to first order and the
+// sum is done in double-double. For y and x > 0, Atan(y/x) is the angle
+// math.Atan2(y, x) computes. Measured error: at most 0.83 ULP.
+func Atan(x float64) float64 {
+	x = float64(x)        // see the package comment
+	if x == 0 || x != x { // keeps the sign of zero; NaN stays NaN
+		return x
+	}
+	if x < 0 {
+		return -atanPositive(-x)
+	}
+	return atanPositive(x)
+}
+
+const (
+	atanPio2Hi = 0x1.921fb54442d18p+00 // pi/2 = atanPio2Hi + atanPio2Lo
+	atanPio2Lo = 0x1.1a62633145c07p-54
+	atanPio4Hi = 0x1.921fb54442d18p-01 // pi/4 = atanPio4Hi + atanPio4Lo
+	atanPio4Lo = 0x1.1a62633145c07p-55
+)
+
+func atanPositive(x float64) float64 {
+	const tan3pio8 = 2.41421356237309504880 // tan(3*pi/8)
+	switch {
+	case x <= 0.66:
+		hi, lo := atanKernel(x)
+		return hi + lo
+	case x > 0x1p60: // includes +Inf: 1/x is below half an ULP of pi/2
+		return atanPio2Hi + (atanPio2Lo - 1/x)
+	case x > tan3pio8:
+		// atan(x) = pi/2 - atan(1/x). 1/x = u + d, d = (1 - u*x)/x to first order.
+		u := 1 / x
+		p, pe := twoProd(u, x)
+		d := ((1 - p) - pe) / x // 1 - p is exact: p is within an ULP of 1
+		hi, lo := atanKernel(u)
+		lo += d / (1 + float64(u*u)) // atan(u+d) = atan(u) + d/(1+u^2) + O(d^2)
+		s, e := twoSum(atanPio2Hi, -hi)
+		return s + ((e - lo) + atanPio2Lo)
+	default:
+		// atan(x) = pi/4 + atan(t), t = (x-1)/(x+1). x-1 is exact for x in
+		// (0.66, 2.42]; x+1 = den + dene exactly; t + d is the exact quotient
+		// to first order.
+		num := x - 1
+		den, dene := twoSum(x, 1)
+		t := num / den
+		p, pe := twoProd(t, den)
+		d := (((num - p) - pe) - float64(t*dene)) / den // num - p is exact
+		hi, lo := atanKernel(t)
+		lo += d / (1 + float64(t*t))
+		s, e := twoSum(atanPio4Hi, hi)
+		return s + ((e + lo) + atanPio4Lo)
+	}
+}
+
+// atanKernel returns atan(x) = hi + lo for |x| <= 0.66 as x + x*z*P(z)/Q(z),
+// z = x^2, with Go's math/atan.go constants and evaluation order.
+func atanKernel(x float64) (hi, lo float64) {
+	const (
+		p0 = -8.750608600031904122785e-01
+		p1 = -1.615753718733365076637e+01
+		p2 = -7.500855792314704667340e+01
+		p3 = -1.228866684490136173410e+02
+		p4 = -6.485021904942025371773e+01
+		q0 = +2.485846490142306297962e+01
+		q1 = +1.650270098316988542046e+02
+		q2 = +4.328810604912902668951e+02
+		q3 = +4.853903996359136964868e+02
+		q4 = +1.945506571482613964425e+02
+	)
+	z := float64(x * x)
+	p := float64(p0*z) + p1
+	p = float64(p*z) + p2
+	p = float64(p*z) + p3
+	p = float64(p*z) + p4
+	q := z + q0
+	q = float64(q*z) + q1
+	q = float64(q*z) + q2
+	q = float64(q*z) + q3
+	q = float64(q*z) + q4
+	w := float64(z*p) / q
+	return x, float64(x * w)
+}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
@@ -52,7 +54,7 @@ func hasSceneParameters(p *project.Project) bool {
 }
 
 func sceneSmoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
-	return float32(1 - math.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
+	return float32(1 - detmath.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
 }
 
 func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRate int, delay *fx.Delay, reverb *fx.Reverb, compressor *fx.Compressor) (*sceneParameters, error) {

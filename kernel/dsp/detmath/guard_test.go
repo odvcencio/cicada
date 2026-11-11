@@ -53,16 +53,6 @@ var mathConstants = map[string]bool{
 }
 
 var mathAllowlist = map[string]int{
-	"kernel/engine/clips.go":                1,
-	"kernel/engine/engine.go":               3,
-	"kernel/engine/modulation.go":           1,
-	"kernel/expression/expression.go":       1,
-	"kernel/expression/vibrato_enabled.go":  1,
-	"kernel/graph/delay.go":                 6,
-	"kernel/graph/graph.go":                 11,
-	"kernel/graph/quality.go":               3,
-	"kernel/spatial/decoder.go":             1,
-	"kernel/spatial/spatial.go":             6,
 	"kernel/voice/acid/oscillator.go":       3,
 	"kernel/voice/acid/table_oscillator.go": 1,
 	"kernel/voice/acid/voice.go":            13,
@@ -83,9 +73,6 @@ var mathAllowlist = map[string]int{
 	"kernel/voice/sample/src.go":            1,
 	"kernel/voice/sample/voice.go":          2,
 	"kernel/voice/strings/strings.go":       8,
-	"project/automation.go":                 9,
-	"render/scene_parameters.go":            1,
-	"render/schedule.go":                    1,
 }
 
 var notRenderPath = map[string]string{
