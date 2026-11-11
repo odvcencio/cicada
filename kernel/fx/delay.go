@@ -78,8 +78,9 @@ type DelayParams struct {
 	Mix      float64
 	// HighpassHz is the cutoff of a one-pole high-pass inside the feedback
 	// loop, the counterpart of DampHz: 20 Hz to 2 kHz, or 0 for off. Each
-	// repeat passes it once more, so the repeats lose their lows.
-	HighpassHz float64
+	// repeat passes it once more, so the repeats lose their lows. It is left
+	// out of JSON when off, so a delay without it encodes as before.
+	HighpassHz float64 `json:",omitempty"`
 }
 
 // Echo high-pass range. A cutoff of 0 turns the filter off.

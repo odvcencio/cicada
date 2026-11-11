@@ -58,8 +58,8 @@ type Params struct {
 	Saturation float64 // 0 to 1
 	DampHz     float64 // 1000 to 16000
 	// HighpassHz is the cutoff of the in-loop high-pass, 20 Hz to 2 kHz, or 0
-	// for off; see fx.EchoHighpass.
-	HighpassHz float64
+	// for off; see fx.EchoHighpass. It is left out of JSON when off.
+	HighpassHz float64 `json:",omitempty"`
 }
 
 func DefaultParams() Params {
