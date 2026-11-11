@@ -9,6 +9,10 @@ type Stereo struct{ Left, Right float32 }
 type TapFrame struct {
 	Tracks                                  [MaxTracks]Stereo
 	ReturnA, ReturnB, Music, SFX, PreMaster Stereo
+	// MasterInput is the summed buses entering the master stage, after the bus
+	// and master mutes and before the master gain. A host can store it and
+	// replay it through RenderMasterWithTaps. Native builds only record it.
+	MasterInput Stereo
 	// MasterLimiterReductionDB is the gain reduction of any limiter inside the
 	// prepared master processor, zero when there is none.
 	MasterLimiterReductionDB float64

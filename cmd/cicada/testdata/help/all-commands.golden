@@ -29,6 +29,7 @@ Flags:
   --json          write the result as JSON (schema cicada.apply.v1): revisions, diff, each intent's label, or the error with the failing intent's index, kind and field
   --author <name>  commit author (default: envelope author or cli)
   --session <id>   commit session
+  --cpuprofile <file>  write a Go CPU profile of the command to file
   --help          show this help
 
 A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes. An error names the failing intent as intents[<index>].<field> (<kind>); run cicada intents for every kind and its fields.
@@ -76,6 +77,7 @@ Flags:
   --profile <name>           limits to check against: desktop (default) or browser
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)
   --json                     write the result as JSON (schema cicada.check.v1): each diagnostic with its position and any known fix
+  --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
 The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted.
@@ -250,6 +252,7 @@ Flags:
   --max-resident-pcm <size>    cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)
   --export <name>              use a named export profile
   --json                       write what was rendered as JSON (schema cicada.render.v1); on failure, an error with a reason code
+  --cpuprofile <file>          write a Go CPU profile of the command to file
   --help                       show this help
 
 Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB.
@@ -271,6 +274,7 @@ Flags:
   --block <frames>           offline block size (default 4096)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)
   --json                     list the stem files as JSON (schema cicada.render.v1)
+  --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
 Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
@@ -286,6 +290,7 @@ Flags:
   --bars <n>                 bars to analyze; 0 means through song end
   --json                     write the report as JSON (format cicada.audition/1)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
 Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted.

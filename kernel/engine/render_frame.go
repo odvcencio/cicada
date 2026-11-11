@@ -294,6 +294,19 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 	if e.masterMute {
 		left, right = 0, 0
 	}
+	if masterInputTapEnabled && e.taps != nil {
+		e.taps[frame].MasterInput = Stereo{left, right}
+	}
+	return e.renderMasterFrame(frame, left, right, outL, outR)
+}
+
+// renderMasterFrame runs the master stage on one frame of the summed buses:
+// the master gain, the master processor, the export DC correction and the
+// safety limiter. A full render and a replay of a stored master input
+// (RenderMasterWithTaps) both run it, so they compute the same bytes. It is too
+// large for the native compiler to inline, so both callers run the same
+// machine code.
+func (e *Engine) renderMasterFrame(frame int, left, right float32, outL, outR []float32) (float32, bool) {
 	if e.masterGain != 1 {
 		left *= e.masterGain
 		right *= e.masterGain

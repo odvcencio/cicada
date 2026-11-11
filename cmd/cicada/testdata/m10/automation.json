@@ -15,7 +15,7 @@
     "error": "choose linear, step, smooth, exponential or curve"
   },
   "empty value": {
-    "error": "value must be a finite number"
+    "error": "cutoff \"\" is not a number in Hz, such as 8000Hz"
   },
   "insert after last": {
     "error": "choose a sixteenth-note position within the song"
@@ -57,7 +57,7 @@
     "error": "choose a sixteenth-note position within the song"
   },
   "out of range": {
-    "error": "value is outside 20..8000"
+    "error": "cutoff 50000Hz is above the maximum 8000Hz (range 20Hz to 8000Hz)"
   },
   "remove": {
     "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n   // high\n}\n"
@@ -105,6 +105,6 @@
     "error": "unknown parameter path owner ghost"
   },
   "wrong unit": {
-    "error": "cutoff requires Hz"
+    "error": "cutoff requires Hz, not dB"
   }
 }

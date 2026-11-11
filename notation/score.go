@@ -337,6 +337,10 @@ func (d Diagnostic) Error() string {
 	return message
 }
 
+// Text is the message without a leading copy of the code, for callers that
+// print the code beside it.
+func (d Diagnostic) Text() string { return trimCode(d.Code, d.Message) }
+
 // trimCode removes a leading "CODE: " from a message whose diagnostic already
 // carries that code: errors built as fmt.Errorf("CICADA-PARAM: ...") would
 // otherwise print it twice.
