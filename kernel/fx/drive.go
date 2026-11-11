@@ -183,7 +183,9 @@ func shapeSample(shape DriveShape, input float64) float64 {
 	case Hard:
 		return math.Max(-1, math.Min(1, input))
 	case Fold:
-		return detmath.Sin(math.Pi / 2 * input)
+		// sin(pi/2 * input), with the exact reduction of SinPi: it runs four
+		// times per frame for every shape, so its cost matters.
+		return detmath.SinPi(0.5 * input)
 	case Diode:
 		if input > 0 {
 			return fastmath.Tanh(input)

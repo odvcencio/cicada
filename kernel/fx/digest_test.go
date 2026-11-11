@@ -154,7 +154,7 @@ func TestDriveDigest(t *testing.T) {
 	checkDigest(t, "drive", d, driveDigest)
 }
 
-const reverbDigest = "1378dc0d4ad138a494ce8a0297575a7f6bcefb11cc231404df5460bbc1e6932f"
+const reverbDigest = "5ef9d6acb97a40cef3c5a5758d85c825787bfcc02de82043aab562e70d78f575"
 
 func TestReverbDigest(t *testing.T) {
 	d := bitdigest.New()
