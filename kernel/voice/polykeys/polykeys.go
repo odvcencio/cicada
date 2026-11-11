@@ -127,6 +127,7 @@ type Instrument struct {
 	sustainPedal                    bool
 	driveT, gainT, glideAlpha       float32
 	gliding                         bool
+	frames                          uint32 // samples since New or Reset, for flushSubnormals
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -293,6 +294,7 @@ func (i *Instrument) Reset() {
 	i.chorusLP = [2]float32{}
 	i.dcInput, i.dcOutput = [2]float32{}, [2]float32{}
 	i.write, i.clock, i.pwmPhase, i.sustainPedal = 0, 0, 0, false
+	i.frames = 0
 	for c := range i.chorusPhases {
 		i.chorusPhases[c] = float32(c) / 3
 	}
@@ -468,8 +470,10 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	}
 	if i.chorus > 0 {
 		mono := float32(.5 * float32(left+right))
-		// The chorus filters and the DC blocker are flushed out of subnormal
-		// numbers (kernel/dsp/subnormal); their gain to the output is below 4.
+		// The chorus input filter feeds the delay line, so it is flushed out of
+		// subnormal numbers (kernel/dsp/subnormal) at every sample; the other
+		// filters are swept by flushSubnormals. Their gain to the output is
+		// below 4.
 		i.chorusLP[0] = subnormal.Flush(float32(i.chorusLP[0] + float32(i.chorusInput*float32(mono-i.chorusLP[0]))))
 		i.delay[i.write] = i.chorusLP[0]
 		var taps [3]float32
@@ -491,7 +495,7 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		// A shared low-pass state plus the BBD input filter limits the clock-like
 		// brightness of interpolation without suppressing the stereo movement.
 		avg := float32(.5 * float32(wetL+wetR))
-		i.chorusLP[1] = subnormal.Flush(float32(i.chorusLP[1] + float32(i.chorusOutput*float32(avg-i.chorusLP[1]))))
+		i.chorusLP[1] = float32(i.chorusLP[1] + float32(i.chorusOutput*float32(avg-i.chorusLP[1])))
 		correction := float32(i.chorusLP[1] - avg)
 		left = float32(float32(left*float32(1-float32(.45*i.chorus))) + float32(i.chorus*float32(wetL+correction)))
 		right = float32(float32(right*float32(1-float32(.45*i.chorus))) + float32(i.chorus*float32(wetR+correction)))
@@ -499,10 +503,32 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	left, right = float32(left*i.gain), float32(right*i.gain)
 	// AC coupling after drive, filtering and chorus removes pulse-width bias
 	// and offsets introduced by nonlinear or time-varying processing.
-	i.dcOutput[0] = subnormal.Flush(float32(float32(left-i.dcInput[0]) + float32(i.dcAlpha*i.dcOutput[0])))
-	i.dcOutput[1] = subnormal.Flush(float32(float32(right-i.dcInput[1]) + float32(i.dcAlpha*i.dcOutput[1])))
+	i.dcOutput[0] = float32(float32(left-i.dcInput[0]) + float32(i.dcAlpha*i.dcOutput[0]))
+	i.dcOutput[1] = float32(float32(right-i.dcInput[1]) + float32(i.dcAlpha*i.dcOutput[1]))
 	i.dcInput[0], i.dcInput[1] = left, right
-	return i.dcOutput[0], i.dcOutput[1]
+	left, right = i.dcOutput[0], i.dcOutput[1]
+	i.frames++
+	if i.frames%flushFrames == 0 {
+		i.flushSubnormals()
+	}
+	return left, right
+}
+
+// flushFrames is how often, in samples, flushSubnormals runs. A decaying
+// filter state can stay subnormal for at most this many samples. Flushing
+// the output filters at every sample cost 3% of a held chord and 11% of the
+// release on arm64, which has no subnormal penalty to win back.
+const flushFrames = 256
+
+// flushSubnormals replaces subnormal values in the output filters with zeros
+// (kernel/dsp/subnormal). It runs at sample positions counted from New or
+// Reset, so the result does not depend on the block size or the target.
+func (i *Instrument) flushSubnormals() {
+	i.chorusLP[1] = subnormal.Flush(i.chorusLP[1])
+	for c := range i.dcOutput {
+		i.dcInput[c] = subnormal.Flush(i.dcInput[c])
+		i.dcOutput[c] = subnormal.Flush(i.dcOutput[c])
+	}
 }
 
 // Slots in the keyboard control table.

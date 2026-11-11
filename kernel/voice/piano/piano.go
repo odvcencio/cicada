@@ -57,7 +57,7 @@ func (r *resonator) next(input, damping float32) float32 {
 	p := r.p + float32(input*r.gain)
 	q := float32(r.c*r.q) + float32(r.s*p)
 	p = float32(r.c*p) - float32(r.s*r.q)
-	r.q, r.p = subnormal.Flush(float32(q*damping)), subnormal.Flush(float32(p*damping))
+	r.q, r.p = float32(q*damping), float32(p*damping)
 	return r.q
 }
 
@@ -77,6 +77,7 @@ type Instrument struct {
 	tailL, tailR, tailDecay                     float32
 	tailFrames, stealFrames                     int
 	excited                                     bool
+	frames                                      uint32 // excited samples since New or Reset, for flushSubnormals
 }
 
 func New(sampleRate int) (*Instrument, error) {
@@ -360,13 +361,8 @@ func (p *Instrument) NextStereo() (float32, float32) {
 				m, s := &k.modes[j], &v.state[j]
 				q := float32(m.c*s.q) + float32(m.s*s.p)
 				a := float32(m.c*s.p) - float32(m.s*s.q)
-				// Strings, resonators, the tail and the output filters are flushed
-				// out of subnormal numbers (kernel/dsp/subnormal). The gain from
-				// any of them to the output is below 2^7: 88 sympathetic
-				// resonators of resonant gain under 9 (0.000045*48000*4 s) at
-				// 0.06, 12 board resonators under 6 at 0.16, and the bridge.
 				rho := float32(m.decay * v.damping)
-				s.q, s.p = subnormal.Flush(float32(q*rho)), subnormal.Flush(float32(a*rho))
+				s.q, s.p = float32(q*rho), float32(a*rho)
 			}
 		}
 		damping := float32(1)
@@ -383,13 +379,16 @@ func (p *Instrument) NextStereo() (float32, float32) {
 		right += float32(bridge * (1 + k.pan))
 		v.age++
 		if v.age > k.lifetime || !v.held && v.note < 89 && p.pedal < .001 && v.age > p.rate && abs(bridge) < 1e-7 {
+			// The next note in this slot starts from the state it keeps, which
+			// the sweep no longer visits: flush it once here.
+			flushStrings(v, k.count)
 			v.key = nil
 		}
 	}
 	if p.tailFrames > 0 {
 		left += p.tailL
 		right += p.tailR
-		p.tailL, p.tailR = subnormal.Flush(float32(p.tailL*p.tailDecay)), subnormal.Flush(float32(p.tailR*p.tailDecay))
+		p.tailL, p.tailR = float32(p.tailL*p.tailDecay), float32(p.tailR*p.tailDecay)
 		p.tailFrames--
 	}
 	bridge := float32((left + right) * .5)
@@ -418,12 +417,60 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	}
 	// Broadband plate radiation plus low modal mobility, with bounded bandwidth
 	// and a DC blocker. The shared plate keeps ringing across note releases.
-	p.lowL = subnormal.Flush(p.lowL + float32((left-p.lowL)*p.lowAlpha))
-	p.lowR = subnormal.Flush(p.lowR + float32((right-p.lowR)*p.lowAlpha))
-	left = subnormal.Flush(p.lowL - p.dcInL + float32(p.dcPole*p.dcOutL))
-	right = subnormal.Flush(p.lowR - p.dcInR + float32(p.dcPole*p.dcOutR))
+	p.lowL += float32((left - p.lowL) * p.lowAlpha)
+	p.lowR += float32((right - p.lowR) * p.lowAlpha)
+	left = p.lowL - p.dcInL + float32(p.dcPole*p.dcOutL)
+	right = p.lowR - p.dcInR + float32(p.dcPole*p.dcOutR)
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR = p.lowL, p.lowR, left, right
+	p.frames++
+	if p.frames%flushFrames == 0 {
+		p.flushSubnormals()
+	}
 	return left, right
+}
+
+// flushFrames is how often, in excited samples, the recursive state is swept
+// for subnormal numbers. A string or resonator that decays into them stays
+// there at most this long before it becomes zero, and stays zero while it gets
+// no new input, so the sweep keeps a long decay cheap. Flushing every sample
+// instead cost about 580 compares per sample with four keys held, 60% more on
+// amd64 for the common, still-ringing case, and every sweep is pure cost on
+// arm64, where subnormal arithmetic runs at full speed; 256 keeps the sweep
+// under 3 compares per sample. The sweep falls on the same samples on every
+// architecture and block size: it counts the instrument's own samples since
+// New or Reset.
+const flushFrames = 256
+
+// flushStrings flushes the first count string modes of a voice.
+func flushStrings(v *voice, count int) {
+	for j := range count {
+		s := &v.state[j]
+		s.q, s.p = subnormal.Flush(s.q), subnormal.Flush(s.p)
+	}
+}
+
+// flushSubnormals replaces every subnormal state value with a signed zero
+// (kernel/dsp/subnormal). The gain from any of them to the output is below
+// 2^7: 88 sympathetic resonators of resonant gain under 9 (0.000045*48000*4 s)
+// at 0.06, 12 board resonators under 6 at 0.16, and the bridge.
+func (p *Instrument) flushSubnormals() {
+	for i := range p.voices {
+		if v := &p.voices[i]; v.key != nil {
+			flushStrings(v, v.key.count)
+		}
+	}
+	for i := range p.sympathetic {
+		r := &p.sympathetic[i]
+		r.q, r.p = subnormal.Flush(r.q), subnormal.Flush(r.p)
+	}
+	for i := range p.board {
+		r := &p.board[i]
+		r.q, r.p = subnormal.Flush(r.q), subnormal.Flush(r.p)
+	}
+	p.tailL, p.tailR = subnormal.Flush(p.tailL), subnormal.Flush(p.tailR)
+	p.lowL, p.lowR = subnormal.Flush(p.lowL), subnormal.Flush(p.lowR)
+	p.dcInL, p.dcInR = subnormal.Flush(p.dcInL), subnormal.Flush(p.dcInR)
+	p.dcOutL, p.dcOutR = subnormal.Flush(p.dcOutL), subnormal.Flush(p.dcOutR)
 }
 
 func abs(x float32) float32 {
@@ -447,4 +494,5 @@ func (p *Instrument) Reset() {
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR, p.lowL, p.lowR = 0, 0, 0, 0, 0, 0
 	p.tailL, p.tailR, p.tailFrames = 0, 0, 0
 	p.excited = false
+	p.frames = 0
 }

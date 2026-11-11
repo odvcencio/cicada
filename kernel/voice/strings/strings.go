@@ -94,6 +94,7 @@ type Instrument struct {
 	// the 2-point polyBLEP saw is used instead.
 	tables [8][3]*acid.TableOscillator
 	rate   float64
+	frames uint32 // samples since New or Reset, for flushSubnormals
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -250,6 +251,7 @@ func (i *Instrument) Reset() {
 	clear(i.delay[:])
 	i.lastInput, i.hp, i.lp, i.bbd = 0, 0, 0, 0
 	i.write, i.clock, i.sustain = 0, 0, false
+	i.frames = 0
 	for c := range i.slow {
 		i.slow[c], i.fast[c] = float32(c)*.317, float32(c)*.271
 	}
@@ -330,11 +332,12 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	for c := range i.phases {
 		i.phases[c] += i.increments[c]
 	}
-	// The output and ensemble filters are flushed out of subnormal numbers
-	// (kernel/dsp/subnormal); their gain to the output is below 4.
-	i.hp = subnormal.Flush(float32(i.highpass * float32(float32(i.hp+mono)-i.lastInput)))
+	// The ensemble filter feeds the delay line, so it is flushed out of
+	// subnormal numbers (kernel/dsp/subnormal) at every sample; the output
+	// filters are swept by flushSubnormals. Their gain to the output is below 4.
+	i.hp = float32(i.highpass * float32(float32(i.hp+mono)-i.lastInput))
 	i.lastInput = mono
-	i.lp = subnormal.Flush(float32(i.lp + float32(i.lowpass*float32(i.hp-i.lp))))
+	i.lp = float32(i.lp + float32(i.lowpass*float32(i.hp-i.lp)))
 	mono = i.lp
 	left, right := mono, mono
 	if i.ensemble > 0 {
@@ -360,7 +363,23 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		left = float32(float32(mono*float32(1-float32(.6*i.ensemble))) + float32(i.ensemble*wetL))
 		right = float32(float32(mono*float32(1-float32(.6*i.ensemble))) + float32(i.ensemble*wetR))
 	}
+	i.frames++
+	if i.frames%flushFrames == 0 {
+		i.flushSubnormals()
+	}
 	return float32(left * i.gain), float32(right * i.gain)
+}
+
+// flushFrames is how often, in samples, flushSubnormals runs. A decaying
+// filter state can stay subnormal for at most this many samples.
+const flushFrames = 256
+
+// flushSubnormals replaces subnormal values in the output filters with zeros
+// (kernel/dsp/subnormal). It runs at sample positions counted from New or
+// Reset, so the result does not depend on the block size or the target.
+func (i *Instrument) flushSubnormals() {
+	i.hp = subnormal.Flush(i.hp)
+	i.lp = subnormal.Flush(i.lp)
 }
 
 // controlOutput is the keyboard control slot for the output level in dB.

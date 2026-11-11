@@ -107,6 +107,7 @@ type Instrument struct {
 	stealL, stealR, stealDecay, lastL, lastR  float32
 	voiceLimit                                int
 	live                                      liveControls
+	frames                                    uint32 // samples since New or Reset, for flushSubnormals
 }
 
 // liveControls holds the smoothed values that SetControl can change. Until a
@@ -286,6 +287,7 @@ func (i *Instrument) Reset() {
 	i.lfoP = 1
 	i.serial = 0
 	i.pedal = false
+	i.frames = 0
 }
 func (i *Instrument) Active() int {
 	n := 0
@@ -331,13 +333,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 				if !v.held && !i.pedal {
 					d = float32(d * k.release)
 				}
-				// Decayed modes, the click, the thump and the output filters are
-				// flushed out of subnormal numbers (kernel/dsp/subnormal). The
-				// gain from any of them to the output is below 2^17 (weight 1,
-				// field slope 5, derivative fs/(2*pi*27.5 Hz) < 4500 at 768 kHz,
-				// DC blocker 2, amplitude 0.68, tremolo and pan 4).
-				s.q = subnormal.Flush(float32(q1 * d))
-				s.p = subnormal.Flush(float32(p1 * d))
+				s.q = float32(q1 * d)
+				s.p = float32(p1 * d)
 				q += float32(s.q * c.weight)
 			}
 			f := i.field(q)
@@ -346,14 +343,14 @@ func (i *Instrument) NextStereo() (float32, float32) {
 			// Damper contact has its own low resonant thump and felt noise.
 			q1 := float32(i.thumpC*v.thump) + float32(i.thumpS*v.thumpP)
 			p1 := float32(i.thumpC*v.thumpP) - float32(i.thumpS*v.thump)
-			v.thump = subnormal.Flush(float32(q1 * i.thumpR))
-			v.thumpP = subnormal.Flush(float32(p1 * i.thumpR))
+			v.thump = float32(q1 * i.thumpR)
+			v.thumpP = float32(p1 * i.thumpR)
 			v.rng ^= v.rng << 13
 			v.rng ^= v.rng >> 17
 			v.rng ^= v.rng << 5
 			noise := float32(int32(v.rng)) / 2147483648
 			out += y + v.thump + float32(noise*v.click)
-			v.click = subnormal.Flush(float32(v.click * i.clickR))
+			v.click = float32(v.click * i.clickR)
 		}
 		sum += out / float32(i.params.Oversample)
 		v.age++
@@ -361,9 +358,9 @@ func (i *Instrument) NextStereo() (float32, float32) {
 			v.active = false
 		}
 	}
-	i.low = subnormal.Flush(i.low + float32(i.lowAlpha*float32(sum-i.low)))
+	i.low += float32(i.lowAlpha * float32(sum-i.low))
 	y := saturate(float32(i.low*i.drive)) / i.drive
-	dc := subnormal.Flush(float32(y-i.dcIn) + float32(i.dcPole*i.dcOut))
+	dc := float32(y-i.dcIn) + float32(i.dcPole*i.dcOut)
 	i.dcIn = y
 	i.dcOut = dc
 	q := float32(i.lfoC*i.lfoQ) + float32(i.lfoS*i.lfoP)
@@ -379,11 +376,44 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	y = float32(dc*i.amp) * trem
 	l := float32(y*float32(1-pan)) + i.stealL
 	r := float32(y*float32(1+pan)) + i.stealR
-	i.stealL = subnormal.Flush(float32(i.stealL * i.stealDecay))
-	i.stealR = subnormal.Flush(float32(i.stealR * i.stealDecay))
+	i.stealL = float32(i.stealL * i.stealDecay)
+	i.stealR = float32(i.stealR * i.stealDecay)
 	i.lastL = l
 	i.lastR = r
+	i.frames++
+	if i.frames%flushFrames == 0 {
+		i.flushSubnormals()
+	}
 	return l, r
+}
+
+// flushFrames is how often, in output samples, the recursive state is swept
+// for subnormal numbers. A decayed mode, the click or a filter stays in them at
+// most this long before it becomes zero, and stays zero while it gets no new
+// input. A flush on every store made the common case slower: about 21% on
+// arm64, where subnormal arithmetic runs at full speed and every flush is
+// pure cost. The sweep falls on the same samples on every architecture and
+// block size: it counts the instrument's own samples since New or Reset.
+const flushFrames = 256
+
+// flushSubnormals replaces every subnormal state value with a signed zero
+// (kernel/dsp/subnormal). The gain from any of them to the output is below
+// 2^17 (weight 1, field slope 5, derivative fs/(2*pi*27.5 Hz) < 4500 at
+// 768 kHz, DC blocker 2, amplitude 0.68, tremolo and pan 4).
+func (i *Instrument) flushSubnormals() {
+	for n := range i.voices {
+		v := &i.voices[n]
+		if !v.active {
+			continue
+		}
+		for m := range v.modes {
+			v.modes[m].q, v.modes[m].p = subnormal.Flush(v.modes[m].q), subnormal.Flush(v.modes[m].p)
+		}
+		v.thump, v.thumpP = subnormal.Flush(v.thump), subnormal.Flush(v.thumpP)
+		v.click = subnormal.Flush(v.click)
+	}
+	i.low, i.dcIn, i.dcOut = subnormal.Flush(i.low), subnormal.Flush(i.dcIn), subnormal.Flush(i.dcOut)
+	i.stealL, i.stealR = subnormal.Flush(i.stealL), subnormal.Flush(i.stealR)
 }
 
 // SetVoiceLimit configures bounded polyphony before playback. Reducing it

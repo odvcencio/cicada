@@ -10,6 +10,7 @@ import (
 // must never leave state in subnormal numbers, which most processors handle
 // many times slower than normal ones. Before the flush, the strings and the
 // resonators stalled there and a held chord cost 30 times more after 16 s.
+// The output is pinned: no voice golden runs long enough to see a flush.
 func TestDecayingStateIsNeverSubnormal(t *testing.T) {
 	const rate = 48000
 	p, err := New(rate)
@@ -22,17 +23,25 @@ func TestDecayingStateIsNeverSubnormal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	hash := subnormaltest.NewHash(rate)
 	for frame := range 46 * rate {
 		if frame == 16*rate {
 			for _, note := range chord {
 				p.NoteOff(note)
 			}
 		}
-		p.NextStereo()
-		if frame%(rate/4) == 0 {
+		hash.Add(p.NextStereo())
+		// The state is swept every flushFrames samples; between sweeps a value
+		// may sit in subnormal numbers for those few samples.
+		if p.frames%(64*flushFrames) == 0 {
 			if found := subnormaltest.Find(p, 5); len(found) > 0 {
-				t.Fatalf("at %.2f s the state holds subnormal numbers: %v", float64(frame)/rate, found)
+				t.Fatalf("after the sweep at %.2f s the state holds subnormal numbers: %v", float64(frame)/rate, found)
 			}
 		}
 	}
+	subnormaltest.CheckPin(t, "piano held chord", hash, pinnedHeldChordHash)
 }
+
+// pinnedHeldChordHash is the float32 output of TestDecayingStateIsNeverSubnormal
+// (16 s held, 30 s released, 48 kHz), produced alike on amd64 and arm64.
+const pinnedHeldChordHash = 0

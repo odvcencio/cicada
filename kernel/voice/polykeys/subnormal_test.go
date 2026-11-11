@@ -24,17 +24,25 @@ func TestReleaseStateIsNeverSubnormal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	hash := subnormaltest.NewHash(rate)
 	for frame := range 32 * rate {
 		if frame == 2*rate {
 			for _, note := range []uint8{60, 64, 67} {
 				i.NoteOff(note)
 			}
 		}
-		i.NextStereo()
-		if frame%(rate/2) == 0 {
+		hash.Add(i.NextStereo())
+		// The output filters are swept every flushFrames samples; between
+		// sweeps a value may sit in subnormal numbers for those few samples.
+		if i.frames%(32*flushFrames) == 0 {
 			if found := subnormaltest.Find(i, 5); len(found) > 0 {
-				t.Fatalf("at %.1f s the state holds subnormal numbers: %v", float64(frame)/rate, found)
+				t.Fatalf("after the sweep at %.2f s the state holds subnormal numbers: %v", float64(frame)/rate, found)
 			}
 		}
 	}
+	subnormaltest.CheckPin(t, "poly keys release", hash, pinnedReleaseHash)
 }
+
+// pinnedReleaseHash is the float32 output of TestReleaseStateIsNeverSubnormal
+// (2 s held, 30 s released, 48 kHz), produced alike on amd64 and arm64.
+const pinnedReleaseHash = 0

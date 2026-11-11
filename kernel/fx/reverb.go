@@ -39,9 +39,10 @@ func (a *allpass) process(input float64) float64 {
 	delayed := a.buffer[a.index]
 	// Round feedback products before addition, matching native amd64 and WASM.
 	output := delayed - float64(.7*input)
-	// The diffusers, delay lines and damping filters are flushed out of
-	// float64 subnormal numbers (kernel/dsp/subnormal), which a silent tail
-	// otherwise reaches in seconds and never leaves.
+	// The diffusers and delay lines are flushed out of float64 subnormal
+	// numbers (kernel/dsp/subnormal) where they are stored, and the damping
+	// filters by flushSubnormals; a silent tail otherwise reaches them in
+	// seconds and never leaves.
 	a.buffer[a.index] = subnormal.Flush64(input + float64(.7*output))
 	a.index++
 	if a.index == len(a.buffer) {
@@ -117,6 +118,7 @@ type Reverb struct {
 	phaseStep  float64
 	fault      bool
 	excited    bool
+	frames     uint32 // excited frames since Reset, for flushSubnormals
 }
 
 func NewReverb(sampleRate int) (*Reverb, error) {
@@ -211,6 +213,7 @@ func (r *Reverb) Reset() {
 	r.damp, r.highpass, r.mix = r.targetDamp, r.targetHP, r.targetMix
 	r.fault = false
 	r.excited = false
+	r.frames = 0
 }
 
 func (r *Reverb) preRead(channel int, frames float64, input float64) float64 {
@@ -306,8 +309,8 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		l := &r.lines[line]
 		// I - 2vvᵀ for v=(1,...,1)/sqrt(8) is orthogonal.
 		feedback := taps[line] - float64(.25*sum)
-		l.low = subnormal.Flush64(l.low + float64((feedback-l.low)*r.damp))
-		l.high = subnormal.Flush64(l.high + float64((l.low-l.high)*(1-r.highpass)))
+		l.low += float64((feedback - l.low) * r.damp)
+		l.high += float64((l.low - l.high) * (1 - r.highpass))
 		high := l.low - l.high
 		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
 		in := float64(input[line&1] * .25)
@@ -330,7 +333,26 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		r.fault = true
 		return 0, 0
 	}
+	r.frames++
+	if r.frames%reverbFlushFrames == 0 {
+		r.flushSubnormals()
+	}
 	return float32(outL), float32(outR)
+}
+
+// reverbFlushFrames is how often, in excited frames, flushSubnormals runs.
+const reverbFlushFrames = 256
+
+// flushSubnormals replaces subnormal values in the damping filters with zeros
+// (kernel/dsp/subnormal). The diffusers and delay lines are flushed where
+// they are stored instead, because a sweep over every buffer would cost as
+// much. The sweep runs at frame positions counted from the first excited
+// frame, so the result does not depend on the block size or the target.
+func (r *Reverb) flushSubnormals() {
+	for line := range r.lines {
+		l := &r.lines[line]
+		l.low, l.high = subnormal.Flush64(l.low), subnormal.Flush64(l.high)
+	}
 }
 
 // advanceSilent performs the exact timeline operations of Process without

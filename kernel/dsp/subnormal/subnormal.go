@@ -12,26 +12,46 @@
 // replaces a subnormal state value with a zero of the same sign, the same way
 // on every target.
 //
-// What a flush can change. Let v be a flushed value (|v| < 2^-126) and G the
-// largest gain from that state to an output sample through the processor's
-// linear and bounded nonlinear stages. The difference it makes is at most
-// |v|*G < G*2^-126 in any later value. Float32 addition absorbs a difference
-// smaller than half a unit in the last place of the other operand, so every
-// value of magnitude 2^-102*G or more comes out identical, and a difference
-// can survive only in values smaller than that. Each processor that uses Flush
-// states its G; for G <= 2^24, a changed output sample is below 2^-78:
+// What a flush can change, proven and measured separately.
+//
+// Proven, for one flush: let v be the flushed value (|v| < 2^-126) and G the
+// largest gain from that state to the processor's output through its linear
+// and bounded nonlinear stages. The difference is at most |v|*G < G*2^-126 in
+// any later value. Float32 addition absorbs a difference below half a unit in
+// the last place of the other operand, so a value of magnitude 2^-102*G or more
+// comes out identical, and a difference can survive only in smaller values.
+// After the processor, track and bus levels, the master input gain and the
+// master gain multiply it again (the two master gains allow +24 dB each, about
+// 2^4): call the whole factor G'. If G' <= 2^24, a changed output sample is
+// below 2^-78, and then:
 //
 //   - 16-bit and 24-bit PCM, as the WAV encoder writes them, are unchanged.
 //     The encoder rounds x*(2^23-1) + d in float64, d being the dither. A
-//     changed x is below 2^-78, so its scaled value is below 2^-55. When
-//     |d| >= 1/4 that is under half a unit in the last place of d (at least
-//     2^-55), so the sum is d either way; when |d| < 1/4, or there is no
-//     dither, both sums lie within 1/4 + 2^-55 of zero and round to zero.
+//     changed x below 2^-78 scales to below 2^-55. When |d| >= 1/4 that is
+//     under half a unit in the last place of d (at least 2^-55), so the sum is
+//     d either way; when |d| < 1/4, or there is no dither, both sums lie within
+//     1/4 + 2^-55 of zero and round to zero.
 //   - float32 output (32-bit WAV, stems, the live engine's float buffers) can
 //     differ only in samples smaller than 2^-78, about -470 dBFS.
 //
-// Flush adds a compare and a branch per state value; call it where the state
-// is stored, not on every intermediate value.
+// Not proven: a slowly decaying resonator is flushed many times, each time it
+// re-enters the subnormal range, and the differences can add up; and for the
+// electric piano (G < 2^17, stated where Flush is used, as every processor's
+// G is) the two master gains at +24 dB give G' up to 2^25. Measured
+// instead, on amd64: rendering the 146 example scores that need no sample packs
+// with and without the flush, 24-bit and loudness-targeted WAVs were
+// byte-identical and the largest float32
+// difference was 4.4e-36 (2^-117.5), 39 binary orders of magnitude inside the
+// 2^-78 that the 24-bit argument needs.
+//
+// Flush adds a compare and a branch per call, which on arm64 (no subnormal
+// penalty) is pure cost: a flush at every store made the electric piano 21%
+// slower there. So a processor flushes its recursive states in a sweep every
+// 256 of its own samples, counted from New or Reset, which is the same
+// position on every target and at every block size; a decaying state then
+// stays subnormal for at most 256 samples. A value written into a delay line
+// is flushed where it is stored instead, because sweeping the buffer would
+// cost as much.
 package subnormal
 
 import "math"
