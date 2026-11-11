@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	edits "m31labs.dev/cicada/edit"
 )
 
 // checkJSONDocument mirrors the fields of cicada.check.v1 the tests read.
@@ -18,6 +20,7 @@ type checkJSONDocument struct {
 	Warnings int    `json:"warnings"`
 	Scores   []struct {
 		File        string `json:"file"`
+		Revision    string `json:"revision"`
 		Valid       bool   `json:"valid"`
 		Diagnostics []struct {
 			Code     string         `json:"code"`
@@ -120,6 +123,56 @@ func TestCheckJSONOffersAnIntentFixThatApplies(t *testing.T) {
 	}
 	if document, err := runCheckJSON(t, path); err != nil || !document.Valid {
 		t.Fatalf("score is still invalid after the fix: %v %+v", err, document)
+	}
+}
+
+// TestCheckJSONReportsEachScoresRevision gives every score its revision, valid
+// or not, in the form cicada apply checks, and equal to the revision of a fix.
+func TestCheckJSONReportsEachScoresRevision(t *testing.T) {
+	dir := t.TempDir()
+	scores := map[string]string{
+		"valid.cicada":  "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main*2 }\n",
+		"syntax.cicada": "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . zz }\nscene main { bass = riff }\nsong { main*2 }\n",
+		"snap.cicada":   "cicada 2\ntempo 120\ntrack bass acid {}\npattern pulse { a1 . . . e2 . . . }\narrange {\n  place intro bass pulse { at = 100ticks length = 1bars }\n}\n",
+	}
+	for name, source := range scores {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		document, _ := runCheckJSON(t, path)
+		if len(document.Scores) != 1 || document.Scores[0].Revision != edits.Revision([]byte(source)) {
+			t.Fatalf("%s: scores %+v, want revision %s", name, document.Scores, edits.Revision([]byte(source)))
+		}
+		for _, diagnostic := range document.Scores[0].Diagnostics {
+			if diagnostic.Fix != nil && diagnostic.Fix.Revision != document.Scores[0].Revision {
+				t.Fatalf("%s: fix revision %s, score revision %s", name, diagnostic.Fix.Revision, document.Scores[0].Revision)
+			}
+		}
+	}
+	// The revision is what apply compares: an envelope that carries it
+	// applies, one that carries another is refused.
+	path := filepath.Join(dir, "valid.cicada")
+	document, err := runCheckJSON(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := filepath.Join(dir, "edit.json")
+	for _, tc := range []struct {
+		revision string
+		ok       bool
+	}{{strings.Repeat("0", 64), false}, {document.Scores[0].Revision, true}} {
+		if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+tc.revision+`","intents":[{"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"}]}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := applyCommandWithHooks([]string{path, envelope}, &bytes.Buffer{}, nil); (err == nil) != tc.ok {
+			t.Fatalf("apply at revision %s: %v", tc.revision, err)
+		}
+	}
+	// A score that cannot be read has no revision.
+	document, _ = runCheckJSON(t, filepath.Join(dir, "missing.cicada"))
+	if len(document.Scores) != 1 || document.Scores[0].Revision != "" {
+		t.Fatalf("missing score: %+v", document.Scores)
 	}
 }
 
