@@ -48,7 +48,18 @@ type IntentInfo struct {
 	OneOf    []FieldGroup      `json:"one_of,omitempty"`
 	Example  json.RawMessage   `json:"example"`
 	Examples []json.RawMessage `json:"examples"`
+	// Reasons are the reason codes the intent's refusals can carry (the
+	// reason of an apply --json error); an agent can match on them.
+	Reasons []string `json:"reasons,omitempty"`
 }
+
+// intentReasons holds the reason codes each kind's refusals can carry.
+// reasons.go fills it; TestIntentReasonsAreDeclared derives the codes from the
+// handlers and regenerates that file.
+var intentReasons = map[string][]string{}
+
+// declareReasons lists the reason codes a kind's refusals can carry.
+func declareReasons(kind string, reasons ...string) { intentReasons[kind] = reasons }
 
 // IntentField describes one JSON field of an intent or of a nested object.
 // Fields keep the order of the Go struct.
@@ -148,7 +159,7 @@ func describeIntent(kind string) IntentInfo {
 	}
 	doc := intentDocs[typ.Name()]
 	rules := kindRules[kind]
-	info := IntentInfo{Kind: kind, Meaning: doc.Meaning, Notes: doc.Notes, Fields: describeFields(typ, "", rules, 0), OneOf: rules.oneOf}
+	info := IntentInfo{Kind: kind, Meaning: doc.Meaning, Notes: doc.Notes, Fields: describeFields(typ, "", rules, 0), OneOf: rules.oneOf, Reasons: intentReasons[kind]}
 	info.Examples = []json.RawMessage{}
 	for _, example := range doc.Examples {
 		info.Examples = append(info.Examples, json.RawMessage(example))

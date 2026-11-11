@@ -198,23 +198,28 @@ func rejectsUnlistedFields(t *testing.T, info IntentInfo, raw json.RawMessage) {
 			t.Fatal(err)
 		}
 		var objects []map[string]any
-		var collect func(map[string]any)
-		collect = func(object map[string]any) {
+		// Only objects whose fields the catalog lists are checked; a map
+		// field (such as addeffect's settings) takes any key.
+		var collect func(map[string]any, []IntentField)
+		collect = func(object map[string]any, fields []IntentField) {
 			objects = append(objects, object)
-			for _, value := range object {
-				switch value := value.(type) {
+			for _, field := range fields {
+				if len(field.Fields) == 0 {
+					continue
+				}
+				switch value := object[field.Name].(type) {
 				case map[string]any:
-					collect(value)
+					collect(value, field.Fields)
 				case []any:
 					for _, element := range value {
 						if inner, ok := element.(map[string]any); ok {
-							collect(inner)
+							collect(inner, field.Fields)
 						}
 					}
 				}
 			}
 		}
-		collect(example)
+		collect(example, info.Fields)
 		for i := range objects {
 			objects[i]["unlisted_field"] = 1
 			data, _ := json.Marshal(example)
