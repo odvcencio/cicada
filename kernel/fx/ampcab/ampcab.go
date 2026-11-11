@@ -58,6 +58,13 @@ type Processor struct {
 	// normGain and norm cache 1/tanh(gain) for the drive's current gain: both
 	// channels use it every frame, and it changes only while the drive moves.
 	normGain, norm float64
+	// blend caches the three impulses mixed by weights, keyed on the weights'
+	// bits: both channels use it every frame, and it changes only while a
+	// cabinet change fades in. The values are the ones the mix computed per
+	// channel before, so the output bits are the same.
+	blend        [taps]float64
+	blendWeights [3]uint64
+	blendValid   bool
 }
 
 func New(rate int, params Params) (*Processor, error) {
@@ -166,6 +173,12 @@ func (p *Processor) Process(l, r float32) (float32, float32) {
 	if gain != p.normGain {
 		p.normGain, p.norm = gain, 1/detmath.Tanh(gain)
 	}
+	if w := [3]uint64{math.Float64bits(p.weights[0]), math.Float64bits(p.weights[1]), math.Float64bits(p.weights[2])}; !p.blendValid || w != p.blendWeights {
+		p.blendWeights, p.blendValid = w, true
+		for i := range p.blend {
+			p.blend[i] = float64(p.weights[0]*p.ir[0][i]) + float64(p.weights[1]*p.ir[1][i]) + float64(p.weights[2]*p.ir[2][i])
+		}
+	}
 	return float32(p.process(&p.left, float64(l), gain)), float32(p.process(&p.right, float64(r), gain))
 }
 func (p *Processor) process(c *channel, x, gain float64) float64 {
@@ -194,8 +207,7 @@ func (p *Processor) process(c *channel, x, gain float64) float64 {
 	c.history[c.pos] = y
 	var z float64
 	idx := c.pos
-	for i := range p.ir[0] {
-		h := float64(p.weights[0]*p.ir[0][i]) + float64(p.weights[1]*p.ir[1][i]) + float64(p.weights[2]*p.ir[2][i])
+	for _, h := range p.blend {
 		z += float64(h * c.history[idx])
 		idx--
 		if idx < 0 {
