@@ -79,7 +79,7 @@ func TestSetTrackVoiceRefusesOrDropsSettings(t *testing.T) {
 	structureCase(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "acid"}, strings.Replace(structureScore, "track keys piano {}", "track keys acid {}", 1))
 	structureRefusal(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_params_unsupported", "voice", "piano has no setting cutoff", "setting cutoff (line 4)")
 	structureCase(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, strings.Replace(structureScore, "track bass acid { cutoff = 620Hz }", "track bass piano {}", 1))
-	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "nosuch"}, "voice_change_invalid", "voice", "track keys cannot change to nosuch")
+	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "nosuch"}, "voice_invalid", "voice", `a track cannot play "nosuch"`)
 	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "piano"}, "voice_unchanged", "voice", "track keys already plays piano")
 	acid := strings.Replace(structureScore, "pattern riff {", "pattern riff acid {", 1)
 	structureRefusal(t, acid, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, "voice_change_invalid", "voice", "pattern kind differs from track instrument")
@@ -172,5 +172,5 @@ func TestDeleteRefusalsListEveryUse(t *testing.T) {
 	structureRefusal(t, referenceScore, &DeletePattern{Pattern: "riff", Cascade: true}, "pattern_in_use", "pattern", "pattern riff is still used by live stinger hit (line 30)",
 		"live stinger hit (line 30)")
 	lastTrack := "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n"
-	structureRefusal(t, lastTrack, &DeleteTrack{Track: "bass"}, "result_invalid", "track", "deleting track bass leaves the score invalid: score must have 1 to 64 tracks")
+	structureRefusal(t, lastTrack, &DeleteTrack{Track: "bass"}, "last_track", "track", "track bass is the only track")
 }

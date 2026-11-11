@@ -116,9 +116,10 @@ func probeApply(t *testing.T, score, intents string) string {
 }
 
 // TestEffectIntentsRefuseEditsToOtherFiles applies the review's multi-file
-// probes, and the structural intents' counterparts: the tracks and master
-// live in parts/tracks.cicada, and the edit writes only main.cicada, so each
-// is refused with the other file named.
+// probes: the tracks and master live in parts/tracks.cicada, and the edit
+// writes only main.cicada, so each is refused with the other file named.
+// (The structural intents edit every file of the project; see
+// TestRenameEditsEveryFileOfTheProject.)
 func TestEffectIntentsRefuseEditsToOtherFiles(t *testing.T) {
 	for _, tc := range []struct {
 		name, intents, reason, field string
@@ -126,9 +127,6 @@ func TestEffectIntentsRefuseEditsToOtherFiles(t *testing.T) {
 		{"insert on a track there", `{"kind":"addeffect","name":"fuzz","effectkind":"drive","inserton":"keys"}`, "declared_in_other_file", "inserton"},
 		{"insert on master there", `{"kind":"addeffect","name":"ceiling","effectkind":"limiter","inserton":"master","settings":{"ceiling":-1}}`, "declared_in_other_file", "inserton"},
 		{"remove an effect routed there", `{"kind":"removeeffect","name":"grit"}`, "route_in_other_file", "name"},
-		{"delete a track declared there", `{"kind":"deletetrack","track":"keys"}`, "declared_in_other_file", "track"},
-		{"change the voice of a track there", `{"kind":"settrackvoice","track":"keys","voice":"acid"}`, "declared_in_other_file", "track"},
-		{"rename a track declared there", `{"kind":"rename","entity":"track:keys","name":"organ"}`, "declared_in_other_file", "entity"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,5 +87,127 @@ func TestRenamesAndUnusedDeletesKeepTheRender(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(dir, "after.wav"))
 	if len(before) == 0 || !bytes.Equal(before, after) {
 		t.Fatalf("the render changed: %d bytes before, %d after", len(before), len(after))
+	}
+}
+
+// writeProject writes files into a new folder and returns it.
+func writeProject(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, data := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// applyIntents runs apply --write --json on score and decodes the result.
+func applyIntents(t *testing.T, score, intents string) applyJSONResult {
+	t.Helper()
+	var result applyJSONResult
+	if err := json.Unmarshal([]byte(probeApply(t, score, intents)), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+// TestDeletingATrackThatReseedsRandomChoicesNeedsReseed: the engine seeds
+// chance by a track's position, so deleting the unused track pad, which sits
+// before hat, changes hat's x?50 hits. The delete is refused without reseed;
+// with it, it applies and the result's warnings say what changes. Without
+// chance in the pattern nothing is reseeded and no flag is needed.
+func TestDeletingATrackThatReseedsRandomChoicesNeedsReseed(t *testing.T) {
+	chance := "cicada 2\ntempo 120\nseed 7\ntrack pad piano {}\ntrack hat drums {}\npattern chords { [a3 c4 e4] - - . }\npattern beat drums { ch: x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 x?50 }\nscene main { hat = beat }\nsong { main*2 }\n"
+	dir := writeProject(t, map[string]string{"song.cicada": chance})
+	result := applyIntents(t, filepath.Join(dir, "song.cicada"), `{"kind":"deletetrack","track":"pad"}`)
+	if result.Error == nil || result.Error.Reason != "reseeds_random_choices" || result.Error.Field != "reseed" || len(result.Error.Uses) != 1 || !strings.Contains(result.Error.Uses[0], "track hat, pattern beat: the track moves from position 2 to 1") {
+		t.Fatalf("without reseed: %+v", result.Error)
+	}
+	result = applyIntents(t, filepath.Join(dir, "song.cicada"), `{"kind":"deletetrack","track":"pad","reseed":true}`)
+	if !result.OK || len(result.Intents) != 1 || len(result.Intents[0].Warnings) != 1 || !strings.Contains(result.Intents[0].Warnings[0], "random choices (chance and humanize) change: track hat") {
+		t.Fatalf("with reseed: %+v %+v", result.Error, result.Intents)
+	}
+	plain := strings.ReplaceAll(chance, "x?50", "x")
+	dir = writeProject(t, map[string]string{"song.cicada": plain})
+	if result := applyIntents(t, filepath.Join(dir, "song.cicada"), `{"kind":"deletetrack","track":"pad"}`); !result.OK || len(result.Intents[0].Warnings) != 0 {
+		t.Fatalf("without chance: %+v %+v", result.Error, result.Intents)
+	}
+}
+
+// TestRenameEditsEveryFileOfTheProject renames a track that another source
+// file of the project automates and binds; one apply changes both files.
+func TestRenameEditsEveryFileOfTheProject(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"cicada.mod":        "project mf\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/more.cicada\"\n",
+		"main.cicada":       "tempo 120\ntrack bass acid {}\ntrack keys piano {}\npattern riff { a1 . c2 . }\npattern pad { [a3 c4 e4] - - . }\nscene main { bass = riff keys = pad }\nsong { main }\n",
+		"parts/more.cicada": "automate keys.level { @1.1.1 -6dB }\nscene extra { keys = pad }\n",
+	})
+	result := applyIntents(t, filepath.Join(dir, "main.cicada"), `{"kind":"rename","entity":"track:keys","name":"organ"}`)
+	if !result.OK || !result.Written || len(result.Intents) != 1 || !strings.Contains(result.Intents[0].Label, "in 2 files") {
+		t.Fatalf("rename: %+v %+v", result.Error, result.Intents)
+	}
+	main, _ := os.ReadFile(filepath.Join(dir, "main.cicada"))
+	more, _ := os.ReadFile(filepath.Join(dir, "parts", "more.cicada"))
+	if string(main) != "tempo 120\ntrack bass acid {}\ntrack organ piano {}\npattern riff { a1 . c2 . }\npattern pad { [a3 c4 e4] - - . }\nscene main { bass = riff organ = pad }\nsong { main }\n" || string(more) != "automate organ.level { @1.1.1 -6dB }\nscene extra { organ = pad }\n" {
+		t.Fatalf("files:\n%s\n%s", main, more)
+	}
+	if checked, err := runCheckJSON(t, filepath.Join(dir, "main.cicada")); err != nil || !checked.Valid {
+		t.Fatalf("check after the rename: %v", err)
+	}
+}
+
+// TestNewNamesThatAnImportUsesAreRefused: in a project that imports
+// demo/tone, a scene, a track or a renamed entity called tone is refused with
+// name_taken, not with an invalid result.
+func TestNewNamesThatAnImportUsesAreRefused(t *testing.T) {
+	files := map[string]string{}
+	err := filepath.WalkDir(filepath.Join("..", "..", "examples", "libraries"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		relative, _ := filepath.Rel(filepath.Join("..", "..", "examples", "libraries"), path)
+		files[filepath.ToSlash(relative)] = string(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := writeProject(t, files)
+	for _, intent := range []string{
+		`{"kind":"addscene","name":"tone"}`,
+		`{"kind":"duplicatescene","scene":"verse","name":"tone"}`,
+		`{"kind":"addtrack","name":"tone","voice":"piano"}`,
+		`{"kind":"rename","entity":"track:lead","name":"tone"}`,
+	} {
+		result := applyIntents(t, filepath.Join(dir, "main.cicada"), intent)
+		if result.Error == nil || result.Error.Code != "intent_refused" || result.Error.Reason != "name_taken" || result.Error.Field != "name" {
+			t.Fatalf("%s: %+v", intent, result.Error)
+		}
+	}
+}
+
+// TestVoiceChangeListsEveryProblemCheckFinds runs settrackvoice through the
+// CLI, where cicada check's diagnostics are compared before and after: every
+// parameter path of the track the new voice lacks is listed.
+func TestVoiceChangeListsEveryProblemCheckFinds(t *testing.T) {
+	dir := writeProject(t, map[string]string{"song.cicada": "cicada 2\ntempo 120\nfx hall reverb {}\ntrack bass acid {\n  cutoff = 620Hz\n  level = -3dB\n  send hall = -9dB\n}\npattern riff { a1 . c2 . }\nscene main { bass = riff bass.reso = 0.5 }\nsong { main }\nautomate bass.cutoff { @1.1.1 700Hz }\nlfo wob { rate = 1bars }\nmod wob -> bass.reso depth = 0.2\n"})
+	result := applyIntents(t, filepath.Join(dir, "song.cicada"), `{"kind":"settrackvoice","track":"bass","voice":"piano","dropparams":true}`)
+	failure := result.Error
+	if failure == nil || failure.Reason != "voice_change_invalid" || len(failure.Uses) < 3 {
+		t.Fatalf("%+v", failure)
+	}
+	for _, want := range []string{"scene main setting bass.reso", "automation bass.cutoff", "modulation route wob -> bass.reso"} {
+		if !strings.Contains(strings.Join(failure.Uses, "|"), want) {
+			t.Fatalf("uses lack %q: %q", want, failure.Uses)
+		}
 	}
 }

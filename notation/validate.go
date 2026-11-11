@@ -816,6 +816,33 @@ func validModalSustain(source string) bool {
 	return err == nil && unit == "unit" && finiteMixerNumber(value) && value >= 0 && value <= 1
 }
 
+// TrackParamKnown reports whether a track that plays kind takes a setting
+// called name, as validation decides: a mixer setting or one of the voice's.
+// A preset kind is read as the voice it targets.
+func TrackParamKnown(s *Score, kind, name string) bool {
+	instruments := make(map[string]Instrument, len(s.Instruments))
+	for _, i := range s.Instruments {
+		instruments[i.Name] = i
+	}
+	kits := make(map[string]Kit, len(s.Kits))
+	for _, k := range s.Kits {
+		kits[k.Name] = k
+	}
+	for _, p := range s.Presets {
+		if p.Name == kind && p.Target != "" {
+			kind = p.Target
+		}
+	}
+	return validTrackParam(kind, name, instruments, kits)
+}
+
+// BuiltinVoice reports whether a track kind is a voice the language has
+// built in, rather than a declared instrument, kit, sampler or preset.
+func BuiltinVoice(version int, kind string) bool {
+	_, isModal := modal.ParseTrackKind(kind)
+	return kind == "acid" || isModal || kind == "drums" || kind == "piano" || keyboard.ID(kind) != 0 || kind == "guitar" || version == 2 && kind == "audio"
+}
+
 func validTrackParam(kind, name string, instruments map[string]Instrument, kits map[string]Kit) bool {
 	if mixerParams[name] {
 		return true

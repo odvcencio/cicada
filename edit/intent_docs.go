@@ -93,7 +93,7 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AddScene": {
 		Meaning: "adds an empty scene after the last scene",
-		Notes:   "Bind patterns to it with bindscene and play it with appendsongentry. In the song, a track a scene does not bind keeps playing what the scene before it selected. The catalog's reasons list names every refusal code.",
+		Notes:   "Bind patterns to it with bindscene and play it with appendsongentry. In the song, a track a scene does not bind keeps playing what the scene before it selected.",
 		Examples: []string{
 			"{\"kind\":\"addscene\",\"name\":\"drop\"}",
 		},
@@ -103,15 +103,16 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AddTrack": {
 		Meaning: "adds a track after the last track",
-		Notes:   "Voice names what the track plays: a built-in voice (acid, drums, piano, a modal or keyboard voice) or an instrument, kit, sampler or preset the score declares or imports. Preset instead declares a patch from the instrument library as a new instrument, named instrument or after the track, as addpreset does. The new track plays nothing until a scene binds a pattern to it (bindscene) or a placement puts one on it. A voice the score cannot play is refused with voice_invalid, and uses lists the problems. The catalog's reasons list names every refusal code.",
+		Notes:   "Voice names what the track plays: a built-in voice (acid, drums, piano, a modal or keyboard voice) or an instrument, kit, sampler or preset the score declares or imports. Preset instead declares a patch from the instrument library as a new instrument, named instrument or after the track, as addpreset does; instrument is refused without preset. The new track plays nothing until a scene binds a pattern to it (bindscene) or a placement puts one on it. A voice the score cannot play is refused with voice_invalid, and uses lists the problems.",
 		Examples: []string{
 			"{\"kind\":\"addtrack\",\"name\":\"pad\",\"voice\":\"piano\"}",
 			"{\"kind\":\"addtrack\",\"name\":\"pad\",\"preset\":\"warm-pad\",\"instrument\":\"warm\"}",
 		},
 		Fields: map[string]string{
-			"Instrument": "the name of the instrument a preset declares; default the track's name",
+			"Instrument": "with preset, the name of the instrument it declares; default the track's name",
 			"Name":       "the new track's name",
 			"Preset":     "a patch from the instrument library, such as warm-pad",
+			"Reseed":     "accept that random choices of other tracks change (see deletetrack)",
 			"Voice":      "a built-in voice, or a declared or imported instrument, kit, sampler or preset",
 		},
 	},
@@ -207,24 +208,28 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"DeletePattern": {
-		Meaning: "removes a pattern and the comment lines above it",
-		Notes:   "Refused with reason pattern_in_use while a scene binds it, or a track chain, an arrangement placement, a live stinger or a MIDI launch mapping names it; uses lists them. With cascade, each scene binding of the pattern becomes off (the track stops in that scene; an omitted binding would keep the previous pattern playing) and its placements are removed; chains, stingers and MIDI mappings still refuse. Deleting the last pattern is refused with result_invalid. The catalog's reasons list names every refusal code.",
+		Meaning: "removes a pattern",
+		Notes:   "Refused with pattern_in_use while a scene binds it (a binding to a pattern named stop included), or a track chain, an arrangement placement, a live stinger or a MIDI launch mapping names it; uses lists them. With cascade, each scene binding of the pattern becomes off (the track stops in that scene; an omitted binding would keep the previous pattern playing) and its placements are removed; chains, stingers and MIDI mappings still refuse. The last pattern is refused with last_pattern. The engine seeds chance and humanize by a pattern's slot on its track, so a deletion that moves the slots of such patterns is refused with reseeds_random_choices unless reseed accepts it.",
 		Examples: []string{
 			"{\"kind\":\"deletepattern\",\"pattern\":\"fill\"}",
+			"{\"kind\":\"deletepattern\",\"pattern\":\"fill\",\"cascade\":true}",
 		},
 		Fields: map[string]string{
 			"Cascade": "set its scene bindings to off and remove its placements",
 			"Pattern": "the pattern's name",
+			"Reseed":  "accept that random choices change",
 		},
 	},
 	"DeleteScene": {
-		Meaning: "removes a scene and the comment lines above it",
-		Notes:   "Refused with reason scene_in_use while the song, a live state or a MIDI launch mapping names it; uses lists them. With cascade the scene's song entries are removed with it; live states and MIDI mappings still refuse, and so does a song that would be left empty (reason song_would_be_empty). The catalog's reasons list names every refusal code.",
+		Meaning: "removes a scene",
+		Notes:   "Refused with scene_in_use while the song, a live state or a MIDI launch mapping names it; uses lists them. With cascade the scene's song entries are removed with it; live states and MIDI mappings still refuse, and so does a song that would be left empty (song_would_be_empty). Random choices that move are refused with reseeds_random_choices unless reseed accepts them (see deletetrack).",
 		Examples: []string{
 			"{\"kind\":\"deletescene\",\"scene\":\"outro\"}",
+			"{\"kind\":\"deletescene\",\"scene\":\"outro\",\"cascade\":true}",
 		},
 		Fields: map[string]string{
 			"Cascade": "also remove the song entries that play the scene",
+			"Reseed":  "accept that random choices change",
 			"Scene":   "the scene's name",
 		},
 	},
@@ -239,13 +244,15 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"DeleteTrack": {
-		Meaning: "removes a track: its declaration, the comment lines above it, and its bindings in scenes",
-		Notes:   "Its patterns stay. Refused with reason track_in_use while anything else names the track: automation, a scene setting, a modulation route, an envelope source, a MIDI mapping, a live macro, stinger or layer, an arrangement placement or a compressor sidechain. The refusal lists them in uses. Deleting the last track is refused with result_invalid. A track another file of the project declares is refused with declared_in_other_file and that file: the edit changes only the entry. The catalog's reasons list names every refusal code.",
+		Meaning: "removes a track: its declaration and its bindings in scenes, in every file of the project",
+		Notes:   "Its patterns stay. Refused with track_in_use while anything else names the track: automation, a scene setting, a modulation route, an envelope source, a MIDI mapping, a live macro, stinger or layer, an arrangement placement or a compressor sidechain; uses lists them. The last track is refused with last_track. The engine seeds chance and humanize by a track's position, so deleting a track before a track that plays such a pattern changes its random choices: refused with reseeds_random_choices unless reseed accepts it, and then the result's warnings name each track.",
 		Examples: []string{
 			"{\"kind\":\"deletetrack\",\"track\":\"keys\"}",
+			"{\"kind\":\"deletetrack\",\"track\":\"keys\",\"reseed\":true}",
 		},
 		Fields: map[string]string{
-			"Track": "the track's name",
+			"Reseed": "accept that random choices of later tracks change",
+			"Track":  "the track's name",
 		},
 	},
 	"DuplicateClip": {
@@ -271,7 +278,6 @@ var intentDocs = map[string]typeDoc{
 	},
 	"DuplicateScene": {
 		Meaning: "copies a scene, with its bindings, settings and the comments inside it, under a new name right after the original",
-		Notes:   "The catalog's reasons list names every refusal code.",
 		Examples: []string{
 			"{\"kind\":\"duplicatescene\",\"scene\":\"main\",\"name\":\"main-2\"}",
 		},
@@ -337,11 +343,12 @@ var intentDocs = map[string]typeDoc{
 	},
 	"InsertLibraryItem": {
 		Meaning: "imports a library and binds a track to one of its items",
-		Notes:   "The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
+		Notes:   "On an existing track a new voice goes through settrackvoice's checks that do not need the library's declarations (drum lanes, accent and slide marks), with acceptchanges and refusals with the same reasons; the compile that ends the batch checks the rest. The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
 		Examples: []string{
 			"{\"kind\":\"insertlibraryitem\",\"track\":\"glass\",\"importpath\":\"std/synth\",\"reference\":\"synth.glassbass\",\"itemkind\":\"instrument\"}",
 		},
 		Fields: map[string]string{
+			"AcceptChanges":  "on an existing track, accept the listed changes to the sound, as settrackvoice does",
 			"EffectKind":     "the effect's kind, for an effect item",
 			"ImportPath":     "the library's import path, such as std/synth",
 			"ItemKind":       "what the item is, such as instrument, preset or effect",
@@ -541,8 +548,8 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"Rename": {
-		Meaning: "renames a track, a pattern or a scene and every reference to it: scene bindings and settings, the song, automation, modulation routes and envelope sources, MIDI mappings, live states, stingers, layers and macros, track chains, arrangement placements and compressor sidechains",
-		Notes:   "Comments and all other text stay as they are. An entity another file of the project declares is refused with declared_in_other_file and that file; a rename that would leave a reference in another file dangling is refused with rename_incomplete, and uses lists it. The catalog's reasons list names every refusal code.",
+		Meaning: "renames a track, a pattern or a scene and every reference to it, in every file of the project: scene bindings and settings, the song, automation, modulation routes and envelope sources, MIDI mappings, live states, stingers, layers and macros, track chains, arrangement placements and compressor sidechains",
+		Notes:   "Comments, strings and other text stay as they are. A track named master whose name also begins parameter paths is refused with name_ambiguous: master.<field> may mean the master bus. A rename that would leave the score invalid is refused with rename_incomplete, and uses lists every problem.",
 		Examples: []string{
 			"{\"kind\":\"rename\",\"entity\":\"track:bass\",\"name\":\"sub\"}",
 			"{\"kind\":\"rename\",\"entity\":\"pattern:riff\",\"name\":\"riff-a\"}",
@@ -932,15 +939,17 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetTrackVoice": {
 		Meaning: "changes what a track plays to another voice: a built-in voice, or an instrument, kit, sampler or preset the score declares or imports",
-		Notes:   "The track keeps its name, mixer settings and scene bindings. A setting of the old voice that the new one does not have is refused with reason voice_params_unsupported, listing the settings in uses; with dropparams those settings are removed and the label names them. A pattern of a kind the new voice cannot play, or another reference the new voice cannot take, is refused with reason voice_change_invalid, listing the problems in uses. The catalog's reasons list names every refusal code.",
+		Notes:   "The track keeps its name, mixer settings, scene bindings and chain. Nothing changes silently. A track setting the new voice lacks is refused with voice_params_unsupported, unless dropparams removes it (the label names each). A pattern the new voice cannot play, a parameter path (automation, scene setting, modulation route, MIDI or live mapping) it does not take, or any other problem the change adds to cicada check is refused with voice_change_invalid, and uses lists every one. A change that plays but sounds different, such as drum lanes the new kit does not play or accent and slide marks that only acid plays, is refused with voice_changes_sound unless acceptchanges accepts it; the result's warnings then name each.",
 		Examples: []string{
 			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"glow\"}",
 			"{\"kind\":\"settrackvoice\",\"track\":\"lead\",\"voice\":\"acid\",\"dropparams\":true}",
+			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"glow\",\"acceptchanges\":true}",
 		},
 		Fields: map[string]string{
-			"DropParams": "remove the settings the new voice does not have",
-			"Track":      "the track's name",
-			"Voice":      "the new voice",
+			"AcceptChanges": "accept the listed changes to the sound, such as silent drum lanes",
+			"DropParams":    "remove the track settings the new voice does not have",
+			"Track":         "the track's name",
+			"Voice":         "the new voice",
 		},
 	},
 	"ShapePerformancePitch": {

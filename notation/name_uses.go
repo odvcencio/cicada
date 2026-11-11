@@ -1,4 +1,4 @@
-package edit
+package notation
 
 import (
 	"fmt"
@@ -6,33 +6,36 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
-
-	"m31labs.dev/cicada/notation"
 )
 
-// nameUse is one place the source names a track, a pattern or a scene: its
-// declaration or a reference to it.
-type nameUse struct {
-	kind       string    // track, pattern or scene
-	name       string    // the name as written
-	role       string    // declaration, binding, or reference
-	start, end int       // the bytes of the name (inside the quotes of a string)
-	node       *gts.Node // the construct that holds the name
-	use        string    // how a refusal names the construct, with its line
+// NameUse is one place a source names a track, a pattern or a scene: its
+// declaration or a reference to it. Edit intents and the language server's
+// rename share this finder.
+type NameUse struct {
+	Kind       string    // track, pattern or scene
+	Name       string    // the name as written
+	Role       string    // declaration, binding, path (a parameter path's owner), or reference
+	Path       string    // the whole parameter path, for a path
+	Start, End int       // the bytes of the name (inside the quotes of a string)
+	Node       *gts.Node // the construct that holds the name, in the parsed source
+	Line       int       // the construct's line
+	Use        string    // how a refusal names the construct, with its line
 }
 
-// nameUses lists the places source names a track, a pattern or a scene:
+// NameUses lists the places source names a track, a pattern or a scene:
 // declarations; scene bindings; parameter paths (automation, scene settings,
 // modulation routes, MIDI mappings, live macros); track chains; arrangement
 // placements; the song; live states, stingers and layers; MIDI track and
 // launch mappings; envelope sources; and compressor sidechains. A qualified
-// name belongs to a library and is left out.
-func nameUses(source []byte) ([]nameUse, error) {
-	root, walker, err := notation.ParseTree(source)
+// name belongs to a library and is left out. A scene binding's off and keep
+// are controls and are left out; stop is listed as a pattern use, since a
+// pattern named stop takes the binding when the score declares one.
+func NameUses(source []byte) ([]NameUse, error) {
+	root, walker, err := ParseTree(source)
 	if err != nil {
 		return nil, err
 	}
-	var uses []nameUse
+	var uses []NameUse
 	line := func(node *gts.Node) int {
 		row, _ := walker.Pos(node)
 		return row
@@ -41,7 +44,7 @@ func nameUses(source []byte) ([]nameUse, error) {
 		if ident == nil || walker.Type(ident) != "identifier" {
 			return
 		}
-		uses = append(uses, nameUse{kind: kind, name: walker.Text(ident), role: role, start: int(ident.StartByte()), end: int(ident.EndByte()), node: node, use: fmt.Sprintf("%s (line %d)", use, line(node))})
+		uses = append(uses, NameUse{Kind: kind, Name: walker.Text(ident), Role: role, Start: int(ident.StartByte()), End: int(ident.EndByte()), Node: node, Line: line(node), Use: fmt.Sprintf("%s (line %d)", use, line(node))})
 	}
 	// A parameter path's owner is a track, an effect or a bus; the mixer
 	// shares one namespace, so a track's name owns only its own paths.
@@ -52,7 +55,7 @@ func nameUses(source []byte) ([]nameUse, error) {
 			return
 		}
 		start := int(path.StartByte())
-		uses = append(uses, nameUse{kind: "track", name: owner, role: "reference", start: start, end: start + len(owner), node: node, use: fmt.Sprintf("%s (line %d)", use, line(node))})
+		uses = append(uses, NameUse{Kind: "track", Name: owner, Role: "path", Path: text, Start: start, End: start + len(owner), Node: node, Line: line(node), Use: fmt.Sprintf("%s (line %d)", use, line(node))})
 	}
 	var visit func(node *gts.Node, scene string)
 	visit = func(node *gts.Node, scene string) {
@@ -88,12 +91,12 @@ func nameUses(source []byte) ([]nameUse, error) {
 				addPath(target, node, "scene "+scene+" setting "+walker.Text(target))
 				return
 			}
-			if notation.SceneAssignmentIsSetting(walker.Text(target), walker.Text(value)) {
+			if SceneAssignmentIsSetting(walker.Text(target), walker.Text(value)) {
 				return
 			}
 			binding := "scene " + scene + " binding " + walker.Text(target) + " = " + walker.Text(value)
 			add("track", "binding", target, node, binding)
-			if text := walker.Text(value); text != "off" && text != "keep" && text != "stop" {
+			if text := walker.Text(value); text != "off" && text != "keep" {
 				add("pattern", "binding", value, node, binding)
 			}
 			return
@@ -149,17 +152,18 @@ func nameUses(source []byte) ([]nameUse, error) {
 			}
 			return
 		case "fx_decl":
-			name := walker.Text(walker.Field(node, "name"))
+			// A compressor's sidechain names a track, quoted or not.
+			what := "effect " + walker.Text(walker.Field(node, "name")) + " sidechain"
 			for _, value := range paramValues(walker, node, "sidechain") {
 				if walker.Type(value) == "string" {
 					text := walker.Text(value)
 					if len(text) >= 2 {
 						start := int(value.StartByte()) + 1
-						uses = append(uses, nameUse{kind: "track", name: text[1 : len(text)-1], role: "reference", start: start, end: start + len(text) - 2, node: node, use: fmt.Sprintf("effect %s sidechain (line %d)", name, line(node))})
+						uses = append(uses, NameUse{Kind: "track", Name: text[1 : len(text)-1], Role: "reference", Start: start, End: start + len(text) - 2, Node: node, Line: line(node), Use: fmt.Sprintf("%s (line %d)", what, line(node))})
 					}
 					continue
 				}
-				add("track", "reference", value, node, "effect "+name+" sidechain")
+				add("track", "reference", value, node, what)
 			}
 			return
 		}
@@ -191,11 +195,11 @@ func paramValues(walker *walk.Walker, decl *gts.Node, name string) []*gts.Node {
 	return values
 }
 
-// usesOf filters uses to one kind and name.
-func usesOf(uses []nameUse, kind, name string) []nameUse {
-	var matched []nameUse
+// UsesOf filters uses to one kind and name.
+func UsesOf(uses []NameUse, kind, name string) []NameUse {
+	var matched []NameUse
 	for _, use := range uses {
-		if use.kind == kind && use.name == name {
+		if use.Kind == kind && use.Name == name {
 			matched = append(matched, use)
 		}
 	}

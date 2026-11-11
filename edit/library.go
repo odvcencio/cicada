@@ -9,6 +9,10 @@ import (
 )
 
 // InsertLibraryItem imports a library and binds a track to one of its items.
+// On an existing track a new voice goes through settrackvoice's checks that
+// do not need the library's declarations (drum lanes, accent and slide
+// marks), with acceptchanges and refusals with the same reasons; the compile
+// that ends the batch checks the rest.
 // The host resolves the library first. PresetInstance names an effect
 // instance when Reference is an effect preset. cicada apply does not pin
 // libraries: the project's cicada.sum must already pin the library, or the
@@ -22,6 +26,7 @@ type InsertLibraryItem struct {
 	ItemKind       string `json:"itemkind"`                     // what the item is, such as instrument, preset or effect
 	EffectKind     string `json:"effectkind,omitempty"`         // the effect's kind, for an effect item
 	PresetInstance string `json:"presetinstance,omitempty"`     // the effect instance's name, for an effect preset
+	AcceptChanges  bool   `json:"acceptchanges,omitempty"`      // on an existing track, accept the listed changes to the sound, as settrackvoice does
 }
 
 func (InsertLibraryItem) Kind() string { return "insertlibraryitem" }
@@ -78,9 +83,17 @@ func insertLibraryItem(ctx *Context, intent Intent) error {
 			if field == nil {
 				return fmt.Errorf("track binding is missing")
 			}
+			before := w.Text(field)
 			updated, err = ReplaceSpan(updated, ctx.Options.Path, Span{int(field.StartByte()), int(field.EndByte()), in.Reference, ctx.Options.Path})
 			if err != nil {
 				return err
+			}
+			// A new voice on an existing track goes through settrackvoice's
+			// checks: nothing changes silently.
+			if before != in.Reference {
+				if updated, err = checkLibraryVoice(ctx, updated, in, before); err != nil {
+					return err
+				}
 			}
 		}
 		break
@@ -168,4 +181,34 @@ func librarySetting(source []byte, targetFile, declKind, owner, field, literal s
 		return append(bytes.Clone(source), []byte("\nbus "+owner+" { "+field+" = "+literal+" }\n")...), nil
 	}
 	return nil, fmt.Errorf("selected track does not exist")
+}
+
+// checkLibraryVoice checks the voice change insertlibraryitem makes on an
+// existing track, as settrackvoice does, apart from what needs the library's
+// declarations: the compile that ends the batch checks that.
+func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, before string) ([]byte, error) {
+	score, _, err := ctx.ParseProject()
+	if err != nil || score == nil {
+		return updated, err
+	}
+	st := newStaged(ctx)
+	st.set(ctx.Options.Path, updated)
+	node, walker, err := declaration(updated, []string{"track_decl"}, in.Track)
+	if err != nil {
+		return nil, err
+	}
+	change, err := checkVoiceChange(st, score, in.Track, before, in.Reference, ctx.Options.Path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), nil, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(change.invalid) > 0 {
+		return nil, &ReasonError{Reason: "voice_change_invalid", Field: "reference", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Reference, strings.Join(change.invalid, "; "))}
+	}
+	if len(change.changes) > 0 && !in.AcceptChanges {
+		return nil, &ReasonError{Reason: "voice_changes_sound", Field: "reference", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Reference, strings.Join(change.changes, "; "))}
+	}
+	for _, c := range change.changes {
+		ctx.warn("%s", c)
+	}
+	return updated, nil
 }

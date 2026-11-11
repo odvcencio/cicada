@@ -459,8 +459,10 @@ step:
 `revision_before` and `revision_after` (the SHA-256 of the score's bytes),
 whether the score `changed` and was `written`, the unified `diff`, any other
 `files` the batch changes, and for each intent its `index` (from 0), `kind` and
-the `label` the edit history records. The batch is one revision, so the diff
-covers all of it. Without `--write` nothing is written.
+the `label` the edit history records, with `warnings` when the intent made a
+change its flag accepted (such as `reseed` or `acceptchanges`), one line for
+each. The batch is one revision, so the diff covers all of it. Without
+`--write` nothing is written.
 
 When the batch fails, `error.code` is one of:
 

@@ -148,6 +148,17 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		return edits.Options{}, err
 	}
 	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard, CaptureGuard: s.automationCaptureGuard}
+	// A voice change compares every diagnostic of cicada check before and
+	// after it.
+	opts.Diagnose = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
+		staged := make(map[string][]byte, len(files)+1)
+		for path, data := range files {
+			staged[path] = data
+		}
+		staged[absolute] = candidate
+		inspection, err := inspectScoreWith(s.path, staged)
+		return inspection.diagnostics, err
+	}
 	if manifestPath != "" {
 		var supplied bool
 		opts.Manifest, supplied = overrides[manifestPath]

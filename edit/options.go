@@ -101,6 +101,11 @@ type Options struct {
 	// Edition. files supplies the cumulative auxiliary overrides, including
 	// the manifest, and the host must overlay them on its project inputs.
 	ParseProject func(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error)
+	// Diagnose returns every diagnostic cicada check gives the project with
+	// the entry replaced by source and the staged files, errors and
+	// warnings. A voice change compares it before and after, to name every
+	// problem it causes. Nil leaves the parse and compile errors.
+	Diagnose func(source []byte, files map[string][]byte) ([]notation.Diagnostic, error)
 	// UpgradeEdition rewrites an edition-1 score (and its manifest, returned
 	// as a File) to edition 2. cmd/cicada implements it with migration and
 	// edition, which edit must not import (migration imports project).

@@ -33,6 +33,7 @@ type applyResult struct {
 	unchanged       bool
 	intents         []edits.Intent
 	labels          []string
+	warnings        [][]string
 	files           []string
 }
 
@@ -159,7 +160,7 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	}
 	result.diff = intentDiff(before, applied, filepath.Base(path))
 	result.revisionAfter = edits.Revision(applied.Source)
-	result.labels = applied.Labels
+	result.labels, result.warnings = applied.Labels, applied.Warnings
 	for _, file := range applied.Files {
 		if fileChanged(file.Before, file.After) {
 			result.files = append(result.files, file.Path)
@@ -234,9 +235,10 @@ type applyDocument struct {
 // applyIntentJSON is one intent of the batch and what it did, in the words of
 // the edit history.
 type applyIntentJSON struct {
-	Index int    `json:"index"`
-	Kind  string `json:"kind"`
-	Label string `json:"label,omitempty"`
+	Index    int      `json:"index"`
+	Kind     string   `json:"kind"`
+	Label    string   `json:"label,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // applyErrorJSON says why an apply failed. Code is one of applyErrorCodes.
@@ -269,6 +271,9 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		entry := applyIntentJSON{Index: i, Kind: intent.Kind()}
 		if i < len(result.labels) {
 			entry.Label = result.labels[i]
+		}
+		if i < len(result.warnings) {
+			entry.Warnings = result.warnings[i]
 		}
 		document.Intents = append(document.Intents, entry)
 	}

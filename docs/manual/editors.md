@@ -105,16 +105,25 @@ the chosen sound and scene context.
 
 Tracks, scenes and patterns have structural intents: `addtrack`,
 `deletetrack`, `settrackvoice`, `addscene`, `duplicatescene`, `deletescene`,
-`deletepattern` and `rename`. A delete is refused while something else still
-names the entity, and the refusal's `uses` lists each place with its line.
-With `cascade`, `deletescene` also removes the scene's song entries, and
+`deletepattern` and `rename`. Each edits every source file of the project
+that names the entity (libraries apart) in one revision-checked change, one
+Undo step. A delete is refused while something else still names the entity,
+and the refusal's `uses` lists each place with its file and line. With
+`cascade`, `deletescene` also removes the scene's song entries, and
 `deletepattern` sets the pattern's scene bindings to `off` and removes its
-placements, in the same edit. `settrackvoice` refuses a track setting the new
-voice does not have unless `dropparams` removes it; the edit's label names
-the settings it dropped. `rename` updates every reference to the track,
-pattern or scene, and is refused rather than written half done when the
-result would not validate. `cicada intents` lists each one's fields and
-refusal reasons.
+placements. A removal takes the declaration with a comment after it on its
+line and the comment lines directly above it; a comment set apart by a blank
+line stays. `settrackvoice` changes nothing silently: a track setting the new
+voice lacks is refused unless `dropparams` removes it, a parameter path or
+pattern the new voice cannot take is refused, and a change that plays but
+sounds different (drum lanes the new kit does not play, accent and slide
+marks only acid plays) is refused unless `acceptchanges` accepts it. The
+engine seeds chance and humanize by a track's position and a pattern's slot,
+so a delete that moves a track or slot playing such a pattern is refused
+unless `reseed` accepts it. What a flag accepts is listed in the intent's
+`warnings` in `cicada apply --json`. `rename` updates every reference, and is
+refused rather than written half done when the result would not validate.
+`cicada intents --json` lists each one's fields and `reasons`.
 
 The envelope can include `revision`, `author`, `session`, and `dryrun`. A supplied
 revision must match the exact score bytes; omit it to use the current revision.

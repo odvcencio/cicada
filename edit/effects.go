@@ -486,6 +486,19 @@ func removeBlockParam(source []byte, walker *walk.Walker, decl *gts.Node, field 
 	return source
 }
 
+// lineEndWithoutComment is where a declaration that ends at end stops on its
+// line: past a comment that follows it, which goes with it, else at end.
+func lineEndWithoutComment(source []byte, end, lineEnd int) int {
+	rest := bytes.TrimSpace(source[end:lineEnd])
+	if bytes.HasPrefix(rest, []byte("//")) {
+		for lineEnd > end && (source[lineEnd-1] == '\r') {
+			lineEnd--
+		}
+		return lineEnd
+	}
+	return end
+}
+
 // removeTopLevelDeclaration removes a declaration with the comment lines
 // attached above it. A declaration alone on its lines takes its lines with
 // it, and one blank line of the two around it, so no gap opens.
@@ -499,7 +512,20 @@ func removeTopLevelDeclaration(source []byte, root, decl *gts.Node) []byte {
 	// A comment after the declaration on its line goes with it.
 	rest := bytes.TrimSpace(source[end:lineEnd])
 	if len(bytes.TrimSpace(source[lineStart:start])) != 0 || len(rest) != 0 && !bytes.HasPrefix(rest, []byte("//")) {
-		return replaceMixerSpan(source, start, end, nil)
+		// It shares its line with another declaration: take the spaces after
+		// it, or before it when nothing but a comment follows.
+		after := end
+		for after < lineEnd && (source[after] == ' ' || source[after] == '\t') {
+			after++
+		}
+		if after < lineEnd && source[after] != '\r' && !bytes.HasPrefix(source[after:], []byte("//")) {
+			return replaceMixerSpan(source, start, after, nil)
+		}
+		before := start
+		for before > lineStart && (source[before-1] == ' ' || source[before-1] == '\t') {
+			before--
+		}
+		return replaceMixerSpan(source, before, lineEndWithoutComment(source, end, lineEnd), nil)
 	}
 	start = attachedCommentStart(source, start, 0)
 	end = lineEnd
