@@ -1297,11 +1297,11 @@ func (e *Engine) Render(outL, outR []float32) {
 func accumulateMeter(m *meterAccum, left, right float32) {
 	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
 	m.peak = max(m.peak, peak)
-	m.power += (float64(left)*float64(left) + float64(right)*float64(right)) * .5
+	m.power += float64((float64(float64(left)*float64(left)) + float64(float64(right)*float64(right))) * .5)
 	m.peakL = max(m.peakL, float32(math.Abs(float64(left))))
 	m.peakR = max(m.peakR, float32(math.Abs(float64(right))))
-	m.powerL += float64(left) * float64(left)
-	m.powerR += float64(right) * float64(right)
+	m.powerL += float64(float64(left) * float64(left))
+	m.powerR += float64(float64(right) * float64(right))
 }
 
 func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {

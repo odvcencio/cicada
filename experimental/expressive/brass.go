@@ -72,15 +72,15 @@ func (b *Brass) Next() float64 {
 }
 func (b *Brass) tick() float64 {
 	e := b.expression
-	b.hz += b.smooth * (e.PitchHz - b.hz)
-	b.pressure += b.smooth * (e.Pressure - b.pressure)
+	b.hz += float64(b.smooth * (e.PitchHz - b.hz))
+	b.pressure += float64(b.smooth * (e.Pressure - b.pressure))
 	target := 0.
 	if b.gate {
 		target = 1
 	}
 	rate := .006
 	if !b.gate {
-		rate = .018 + .035*(1-e.Damping)
+		rate = .018 + float64(.035*(1-e.Damping))
 	}
 	b.envelope += (target - b.envelope) / (rate * b.fs)
 	b.phase += 5 / b.fs
@@ -90,8 +90,8 @@ func (b *Brass) tick() float64 {
 	hz := b.hz * math.Exp2(e.Vibrato*math.Sin(2*math.Pi*b.phase)/1200)
 	// Restrict the blowing regime to the measured stable branch; expressive
 	// pressure still changes both the flow nonlinearity and radiation amplitude.
-	mouthTarget := .42 + .18*(.4*b.velocity+.6*b.pressure)
-	calibration := 1.0878 + .065*(mouthTarget-.42)
+	mouthTarget := .42 + float64(.18*(float64(.4*b.velocity)+float64(.6*b.pressure)))
+	calibration := 1.0878 + float64(.065*(mouthTarget-.42))
 	f := hz / calibration
 	f = hz / (calibration + 2.45*f/b.fs)
 	f = hz / (calibration + 2.45*f/b.fs)
@@ -99,7 +99,7 @@ func (b *Brass) tick() float64 {
 	if b.pressure < .001 {
 		mouth *= b.pressure / .001
 	}
-	incoming := -.96 * b.bore.read(b.fs/(2*f)-1)
+	incoming := float64(-.96 * b.bore.read(b.fs/(2*f)-1))
 	differential := mouth - (b.flow + 2*incoming)
 	// Exact damped pole positions for the linear lip mass/spring. Q=4;
 	// natural lip frequency is below the playing frequency (outward striking).
@@ -107,14 +107,14 @@ func (b *Brass) tick() float64 {
 	r := math.Exp(-w / 8)
 	a := 2 * r * math.Cos(w)
 	rr := r * r
-	lip := a*b.lip1 - rr*b.lip2 + (1-a+rr)*differential
+	lip := float64(float64(a*b.lip1)-float64(rr*b.lip2)) + float64((float64(1-float64(a))+float64(rr))*differential)
 	b.lip2 = b.lip1
 	b.lip1 = lip
-	opening := math.Max(0, .15+.5*lip)
+	opening := math.Max(0, .15+float64(.5*lip))
 	// Solve u = opening*sign(dp)*sqrt(abs(dp)) with dp=P-2*pMinus-u.
 	// The rationalized quadratic avoids cancellation at small pressure.
-	p := mouth - 2*incoming
-	den := math.Sqrt(opening*opening+4*math.Abs(p)) + opening
+	p := mouth - float64(2*incoming)
+	den := math.Sqrt(float64(opening*opening)+float64(4*math.Abs(p))) + opening
 	flow := 0.
 	if den > 1e-15 {
 		flow = math.Copysign(2*opening*math.Abs(p)/den, p)
@@ -131,13 +131,13 @@ func (b *Brass) tick() float64 {
 	b.bore.push(wave)
 	signal := flow + 2*incoming
 	// Bell radiation approximated by DC rejection and a moving spectral tilt.
-	hp := signal - b.dcInput + b.dcPole*b.dcOutput
+	hp := float64(signal-b.dcInput) + float64(b.dcPole*b.dcOutput)
 	b.dcInput = signal
 	b.dcOutput = hp
-	cutoff := 900 + 6500*e.Brightness
+	cutoff := 900 + float64(6500*e.Brightness)
 	alpha := 1 - math.Exp(-2*math.Pi*cutoff/b.fs)
-	b.lowpass += alpha * (hp - b.lowpass)
-	radiated := b.lowpass*(.75+.25*e.Position) + (.25*(1-e.Position))*(hp-b.lowpass)
-	drive := 1 + 3*e.Drive
+	b.lowpass += float64(alpha * (hp - b.lowpass))
+	radiated := float64(b.lowpass*(.75+float64(.25*e.Position))) + float64((.25*(1-e.Position))*(hp-b.lowpass))
+	drive := 1 + float64(3*e.Drive)
 	return .52 * b.velocity * b.pressure * math.Tanh(radiated*drive) / drive
 }

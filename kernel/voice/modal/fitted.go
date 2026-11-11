@@ -80,9 +80,9 @@ func (v *FittedVoice) NoteOn(note, velocity uint8, slide bool) {
 		mode.c, mode.s = mode.c*mode.radius, mode.s*mode.radius
 		brightness := 1.0
 		if i > 0 {
-			brightness = .25 + .75*vel*vel
+			brightness = .25 + float64(.75*vel*vel)
 		}
-		position := 1 + .055*math.Sin(float64((i+1)*int(variation+1))*1.7)
+		position := 1 + float64(.055*math.Sin(float64((i+1)*int(variation+1))*1.7))
 		mode.gain = .9 * vel * math.Sqrt(vel) * m.Weight / weightSum * brightness * position
 		s.count++
 	}

@@ -411,7 +411,7 @@ func (e *Engine) advanceModulation() {
 		if mapping.Exponential {
 			target = float32(float64(mapping.Min) * fastmath.Exp2(fastmath.Log2(float64(mapping.Max)/float64(mapping.Min))*float64(value)))
 		} else {
-			target = mapping.Min + (mapping.Max-mapping.Min)*value
+			target = mapping.Min + float32((mapping.Max-mapping.Min)*value)
 		}
 		if value == 0 {
 			target = mapping.Min
