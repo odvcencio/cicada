@@ -249,7 +249,7 @@ jobs:
       - name: Require the master-chain digests, and no fused multiply-adds in kernel or render, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|Tanh32FastPathExhaustive)$' -count=1
           GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/v3-fma.log"
           if [ -s "$RUNNER_TEMP/v3-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
       # The arm64 job compares its exported WAV files with these hashes.
@@ -338,7 +338,7 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange|Tanh32FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
@@ -350,7 +350,7 @@ jobs:
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange; do
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1

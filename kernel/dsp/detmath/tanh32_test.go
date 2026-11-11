@@ -5,6 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"math"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -45,6 +48,8 @@ func TestTanh32MatchesTanh(t *testing.T) {
 	t.Logf("%d inputs equal", n)
 }
 
+// tanh32Digest was pinned 2026-11-10 when Tanh32 was added (#328): the amd64
+// value, equal under WebAssembly (js/wasm) and on arm64.
 const tanh32Digest = "4205ccf28fa29606418446bbe2ed86f8af5794cc70da4ecd344ed8c18b9f4350"
 
 func TestTanh32Digest(t *testing.T) {
@@ -56,5 +61,34 @@ func TestTanh32Digest(t *testing.T) {
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != tanh32Digest {
 		t.Fatalf("tanh32 digest = %s, want %s", got, tanh32Digest)
+	}
+}
+
+// TestTanh32FastPathExhaustive checks every float32 that takes Tanh32's fast
+// path (2^-12 <= |x| < 9, both signs: 253,755,392 inputs); all others go to
+// Tanh itself. It runs on every target CI tests (a few seconds on four cores).
+func TestTanh32FastPathExhaustive(t *testing.T) {
+	lo, hi := math.Float32bits(0x1p-12), math.Float32bits(9)
+	workers := runtime.GOMAXPROCS(0)
+	var bad atomic.Int64
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for b := lo + uint32(w); b < hi; b += uint32(workers) {
+				for _, x := range [2]float32{math.Float32frombits(b), -math.Float32frombits(b)} {
+					if got, want := Tanh32(x), float32(Tanh(float64(x))); math.Float32bits(got) != math.Float32bits(want) {
+						if bad.Add(1) <= 3 {
+							t.Errorf("Tanh32(%v) = %v, want %v", x, got, want)
+						}
+					}
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	if n := bad.Load(); n > 0 {
+		t.Fatalf("%d of %d fast-path inputs differ", n, 2*int64(hi-lo))
 	}
 }

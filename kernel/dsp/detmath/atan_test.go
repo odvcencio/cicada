@@ -76,8 +76,10 @@ func TestAtanAccuracy(t *testing.T) {
 		}
 	}
 	t.Logf("Atan: max error %.4f ULP at %v", worst, at)
-	if worst > maxULP {
-		t.Fatalf("Atan(%v): error %.4f ULP exceeds %.1f", at, worst, maxULP)
+	// The bound the doc comment claims (measured on the dense sweep).
+	const claimed = 0.83
+	if worst > claimed {
+		t.Fatalf("Atan(%v): error %.4f ULP exceeds the claimed %.2f", at, worst, claimed)
 	}
 	for _, x := range []float64{0, math.Copysign(0, -1), math.Inf(1), math.Inf(-1)} {
 		if got, want := Atan(x), math.Atan(x); math.Float64bits(got) != math.Float64bits(want) {
@@ -90,7 +92,8 @@ func TestAtanAccuracy(t *testing.T) {
 }
 
 // atanDigest pins the bits of Atan over a fixed sweep; CI requires the same
-// digest on arm64 and with GOAMD64=v3.
+// digest on arm64 and with GOAMD64=v3. Pinned 2026-11-10 when Atan was added
+// (#328): the amd64 value, equal under WebAssembly (js/wasm) and on arm64.
 const atanDigest = "727c91878985f9966d6826c03a927545430abb6100d79ed28011342d11b50e9a"
 
 func TestAtanDigest(t *testing.T) {
