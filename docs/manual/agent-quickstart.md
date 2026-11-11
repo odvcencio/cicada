@@ -1,9 +1,8 @@
 # Cicada quick start for agents
 
-Cicada turns a text score into audio. You write a score, check it, render it to
-WAV, read a listening report, and edit the score with typed intents. A command
-that takes `--json` then prints one JSON document on standard output, on
-success and on failure: decide from it and the exit status (0 is success).
+Cicada turns a text score into audio. A command that takes `--json` prints one
+JSON document on standard output, on success and on failure: decide from it and
+the exit status (0 is success).
 
 ## The loop
 
@@ -14,11 +13,10 @@ success and on failure: decide from it and the exit status (0 is success).
    `scores[0].revision` is the revision your next edit must send.
 4. Render: `cicada render main.cicada -o mix.wav --loudness -14 --json`. Go on
    when `ok` and `loudness.target_met` are true.
-5. Listen: `cicada audition main.cicada --json`. Compare the report with what
-   you meant.
-6. Edit: put a batch of intents in `edit.json`, preview it with
-   `cicada apply main.cicada edit.json --json`, then write it with `--write`
-   added. Go on when `ok` and `written` are true; repeat from step 3.
+5. Listen: `cicada audition main.cicada --json`.
+6. Edit: put intents in `edit.json`, preview with
+   `cicada apply main.cicada edit.json --json`, then add `--write`. Go on when
+   `ok` and `written` are true; repeat from step 3.
 
 Step 1 prints:
 
@@ -32,7 +30,7 @@ demo/main.cicada
 
 ## The score
 
-Eight bars of drums, acid bass and piano chords:
+Eight bars of drums, acid bass and piano:
 
 <!-- agent-example-file: main.cicada -->
 
@@ -63,14 +61,14 @@ master { insert = ceiling }
 
 - Start every score with `cicada 2`. Outside a project, a score without it is
   edition 1, and some edits are refused.
-- `track <name> <voice> { settings }`. Voices include `drums`, `acid` (one
-  note at a time), `piano`, `fm_bass` and `poly_keys`. Values carry units.
+- `track <name> <voice> { settings }`. Voices include `drums`, `acid`, `piano`,
+  `fm_bass` and `poly_keys`. Values carry units.
 - A pattern is 1 to 64 steps and repeats; 16 steps fill one bar. `.` is a
   rest, `-` holds the note before it, `|` only groups steps.
 - `1` to `7` are degrees of the key's scale; `'` raises one an octave and `,`
   lowers it; they sound in the track's `octave` (default 2). `a1` and `c#3`
-  are absolute (C4 is MIDI 60). `[1 3 5]` is a chord, for `piano` or a
-  keyboard voice, not `acid`.
+  are absolute (C4 is MIDI 60). `[1 3 5]` is a chord, except on `acid`, which
+  plays it as three fast notes.
 - A drum pattern has one row per lane (`bd sd ch oh cp rs lt mt ht cb cy`), all
   the same length: `x` hit, `X` accent, `.` silence.
 - A scene gives each track a pattern (`stop` silences it). `song` plays scenes
@@ -103,8 +101,8 @@ master { insert = ceiling }
   {"id": "bass", "masked": true, "level_vs_loudest_db": -27.9}]}
 ```
 
-- Too quiet: `tracks[].masked` (buried in the mix), or a
-  `level_vs_loudest_db` far below 0: here the bass is 27.9 dB under the drums.
+- Too quiet: `tracks[].masked` (buried in the mix), or `level_vs_loudest_db`
+  far below 0: here the bass is 27.9 dB under the drums.
 - Too bright or dull: `tracks[].centroid_hz`; higher is brighter.
 - Silent: `tracks[].silent`, or a bar in `bars` whose `match` is `silent`.
 - Out of key: `heard_key[0].key` differs from `score.written_key`, or
@@ -115,8 +113,8 @@ master { insert = ceiling }
 
 ## The envelope
 
-`edit.json` is one batch, checked whole and written as one revision or not at
-all. This one raises the bass, lowers the drums and rewrites the bass line:
+A batch is checked whole and written as one revision, or not at all. This one
+answers the report:
 
 <!-- agent-example-file: edit.json -->
 
@@ -139,7 +137,7 @@ all. This one raises the bass, lowers the drums and rewrites the bass line:
 - `revision` is the SHA-256 of the score file in hex. Always send it: apply
   refuses with `revision_mismatch` if the file changed after you read it.
 - Without `--write`, apply writes nothing and returns the `diff`.
-- An intent's `entity` names what it changes: `param:<track>.<control>`,
+- `entity` names what an intent changes: `param:<track>.<control>`,
   `pattern:<name>`, `step:<pattern>/<index>` (from 0), or on drums
   `step:<pattern>/<lane>/<index>`.
 - When no intent fits, `replacedeclaration` replaces one declaration
@@ -154,35 +152,37 @@ with a stable `code` (branch on it) and a `message`.
 - `check`: `valid` is false. Each of `scores[].diagnostics` has `code`,
   `message`, `start.line`, `start.column`, often a `hint`, and sometimes a
   `fix` whose `intents` you apply with `fix.revision`.
-- `apply`: `error.code` is `intent_refused`, `invalid_result` (the result does
-  not check), `revision_mismatch`, `decode`, `read`, `write` or `usage`.
-  `error.index` (from 0), `error.kind` and, when known, `error.field` name the
-  intent at fault; `error.reason`, when present, is a stable code for why.
-  Nothing is written; fix that intent and resend the whole batch.
-- `render`: `error.code` names the cause; `error.remedy` may say what to change.
-  A missed loudness target still writes its best attempt.
+- `apply`: `error.code` is <!-- apply-error-codes -->`intent_refused`,
+  `invalid_result` (the result does not check), `revision_mismatch`, `decode`,
+  `read`, `write` or `usage`<!-- /apply-error-codes -->. `error.index` (from
+  0), `error.kind` and, when known, `error.field` name the intent at fault, and
+  `error.reason` a stable code for why. Nothing is written; resend the batch.
+- `render`: `error.code` names the cause. A missed target still writes its
+  best try, and `loudness.integrated_lufs` and `true_peak_dbtp` say what it
+  reached: with no `remedy`, aim there or lower.
 
 ## Three mistakes to avoid
 
-1. Rendering to a loudness target with no master limiter: `render` exits 1
-   with `loudness_shortfall_at_true_peak_ceiling`, even at -14 LUFS for the
-   song `cicada new` writes. Way out: apply `error.remedy.intents` (they add
-   the limiter) with `remedy.revision` and `--write`, then render again.
-2. Reusing a revision after a write: `apply` exits 1 with
-   `revision_mismatch`. Way out: send `revision_after` from the last apply,
-   or run `check --json` again.
+1. A loudness target with no master limiter: `render` can exit 1 with
+   `loudness_shortfall_at_true_peak_ceiling`, even at -14 LUFS. Way out: apply
+   `error.remedy.intents` (they add the limiter) with `remedy.revision` and
+   `--write`, then render again.
+2. Reusing a revision after a write: `revision_mismatch`. Way out: send
+   `revision_after` from the last apply, or run `check --json` again.
 3. Guessing a name or a control: `apply` exits 1 with `intent_refused` and a
    message such as `unknown pattern "lines"` (`field` is `entity`) or
    `track keys does not expose sound parameter "cutoff"`. Way out: names from
-   `symbols --json`; controls from `cicada params` (long: filter on `voices`,
-   read `path`).
+   `symbols --json`. For a control, take a `path` from `cicada params` whose
+   `voices` hold the track's engine (`fm_bass` is `fm`, `poly_keys` is
+   `analog`, others their own name) and confirm it with `cicada explain`,
+   which fails for a control the track lacks. `level` and `pan` fit any track.
 
 ## Look things up
 
 - `cicada intents --json --index`: every intent kind and its meaning.
-- `cicada intents --json <kind>`: a kind's fields, units, values, examples.
+- `cicada intents --json <kind>`: a kind's fields and examples.
 - `cicada symbols --json <score>`: the names a score defines.
-- `cicada explain <score> <track>.<control>`: a control's value in a score.
-- `cicada params`: controls with their voices, unit and range.
+- `cicada explain <score> <track>.<control>`: a control's value.
+- `cicada params`: controls, with engine, unit and range.
 - `cicada diagnostics --json <code>`: a code's meaning and fix.
 - `cicada help --json <command>`: a command's usage and flags.

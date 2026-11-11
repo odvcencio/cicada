@@ -52,7 +52,7 @@ list the edit intents apply accepts
 
 Flags:
   --json      write the catalog as JSON (schema cicada.intents.v1)
-  --index     with --json, list only each kind and its meaning
+  --index     with --json, list only each kind and its meaning (schema cicada.intents_index.v1)
   --help      show this help
 
 Lists every intent kind with its meaning. With a kind, prints its fields (JSON name, type, whether required, unit or allowed values) and an example that cicada apply accepts. The catalog is generated from the intent registry. See docs/manual/agents.md.

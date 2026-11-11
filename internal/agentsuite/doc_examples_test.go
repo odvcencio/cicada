@@ -146,7 +146,9 @@ func runAgentDocPage(t *testing.T, bin, page string, least int) {
 			continue
 		}
 		var shown, actual any
-		if err := json.Unmarshal([]byte(step.body), &shown); err != nil {
+		numbers := json.NewDecoder(strings.NewReader(step.body))
+		numbers.UseNumber()
+		if err := numbers.Decode(&shown); err != nil {
 			t.Fatalf("%s:%d: the shown output is not JSON: %v", page, step.line, err)
 		}
 		decode(t, strings.Join(step.command, " "), stdout, &actual)
@@ -160,7 +162,8 @@ func runAgentDocPage(t *testing.T, bin, page string, least int) {
 }
 
 // jsonShownIn reports where shown differs from actual, or "" when every value
-// shown is in actual. Numbers match within one part in 10^9.
+// shown is in actual. A number matches at the precision the page writes it
+// (-27.9 matches -27.94 but not -28), or within one part in 10^9.
 func jsonShownIn(shown, actual any, at string) string {
 	switch want := shown.(type) {
 	case map[string]any:
@@ -189,9 +192,9 @@ func jsonShownIn(shown, actual any, at string) string {
 			}
 		}
 		return ""
-	case float64:
+	case json.Number:
 		got, ok := actual.(float64)
-		if !ok || math.Abs(got-want) > 1e-9*math.Max(1, math.Abs(want)) {
+		if !ok || !numberShownIn(want, got) {
 			return fmt.Sprintf("%s: the page shows %v, the output has %v", at, want, actual)
 		}
 		return ""
@@ -201,6 +204,27 @@ func jsonShownIn(shown, actual any, at string) string {
 		}
 		return ""
 	}
+}
+
+// numberShownIn reports whether got, rounded to the decimals the page writes
+// in want, is want, or is within one part in 10^9 of it.
+func numberShownIn(want json.Number, got float64) bool {
+	value, err := want.Float64()
+	if err != nil {
+		return false
+	}
+	if math.Abs(got-value) <= 1e-9*math.Max(1, math.Abs(value)) {
+		return true
+	}
+	text := want.String()
+	if strings.ContainsAny(text, "eE") {
+		return false
+	}
+	decimals := 0
+	if _, fraction, found := strings.Cut(text, "."); found {
+		decimals = len(fraction)
+	}
+	return strconv.FormatFloat(got, 'f', decimals, 64) == strconv.FormatFloat(value, 'f', decimals, 64)
 }
 
 func mustJSON(v any) []byte {

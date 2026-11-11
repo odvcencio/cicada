@@ -89,25 +89,9 @@ one page an agent that has never seen Cicada reads first. The binary carries
 it, so it needs no repository checkout. `cicada agents --json` gives the same
 text as `guide`, its size in bytes as `guide_bytes`, and in `commands` the
 commands the quick start offers for looking up the rest, each with the
-`summary` of what it answers. Placeholders such as `<kind>` are in angle
-brackets.
-
-<!-- agent-example: agents --json -->
-
-```json
-{
-  "schema": "cicada.agents.v1",
-  "commands": [
-    {
-      "command": "cicada intents --json --index",
-      "summary": "every edit intent kind with its one-line meaning"
-    },
-    {
-      "command": "cicada intents --json <kind>"
-    }
-  ]
-}
-```
+`summary` of what it answers; placeholders such as `<kind>` are in angle
+brackets. The agent task suite reads this document and runs every command in
+it.
 
 ## help --json
 
@@ -196,6 +180,12 @@ listed value with one outside the list.
 ```json
 {
   "schema": "cicada.intents.v1",
+  "envelope_version": 1,
+  "envelope": [
+    {
+      "name": "version"
+    }
+  ],
   "intents": [
     {
       "kind": "setstep",
@@ -255,6 +245,12 @@ lane, and its `velocity` operation takes a new value or a change:
 ```json
 {
   "schema": "cicada.intents.v1",
+  "envelope_version": 1,
+  "envelope": [
+    {
+      "name": "version"
+    }
+  ],
   "intents": [
     {
       "kind": "editnotes",
@@ -348,13 +344,16 @@ lane, and its `velocity` operation takes a new value or a change:
 
 `cicada intents --json --index` lists only each `kind` and its one-line
 `meaning`, in less than a tenth of the bytes of the whole catalog, so an agent
-can choose a kind before it asks for that kind in full:
+can choose a kind before it asks for that kind in full. It is a format of its
+own, `cicada.intents_index.v1`, with `index` in place of `envelope` and
+`intents`. `--index` needs `--json`: `cicada intents` alone already lists each
+kind with its meaning.
 
 <!-- agent-example: intents --json --index -->
 
 ```json
 {
-  "schema": "cicada.intents.v1",
+  "schema": "cicada.intents_index.v1",
   "envelope_version": 1,
   "index": [
     {
@@ -399,10 +398,14 @@ refused intent). `CICADA-NOTES` also lists the `reasons` its refusals carry.
 
 `cicada check --json` runs the checks `cicada check` runs and reports, for each
 score, whether it is valid, its `revision` and its diagnostics. Without a score
-it checks the project, and `scores` lists every score. `revision` is the
-SHA-256 of the score's bytes in hex, the form `cicada apply` compares with an
-envelope's `revision`: put it in the next envelope for that score. It is absent
-only when the score cannot be read.
+it checks the project. When `cicada.mod` lists the project's `source` files,
+the project is one score: `scores` has one entry, the entry score, whose
+diagnostics cover every listed file (each names its `file`) and whose
+`revision` is that of the entry file alone. Otherwise each score in the project
+folder is checked on its own and `scores` lists every one. `revision` is the
+SHA-256 of the score file's bytes in hex, the form `cicada apply` compares with
+an envelope's `revision`: put it in the next envelope for that score. It is
+absent only when the score cannot be read.
 
 Each diagnostic has its `code`, `severity`, `message` and `file`. `start` is
 the position the checker reports: `line` and `column` count from 1, columns
@@ -559,6 +562,7 @@ the intent the same way: `intents[1].entity (togglestep): unknown pattern
   "score": "song.cicada",
   "ok": false,
   "written": false,
+  "dry_run": false,
   "changed": false,
   "revision_before": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
   "intents": [
@@ -777,6 +781,8 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ```json
 {
   "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "loud.cicada",
   "ok": false,
   "outputs": [
     {
@@ -847,7 +853,14 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ```json
 {
   "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "loud-limited.cicada",
   "ok": true,
+  "outputs": [
+    {
+      "path": "loud.wav"
+    }
+  ],
   "loudness": {
     "target_lufs": -9,
     "integrated_lufs": -9.28794649255763,

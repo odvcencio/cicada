@@ -97,7 +97,7 @@ func TestIntentsCommandIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	kinds := edits.Kinds()
-	if index.Schema != intentsSchema || index.EnvelopeVersion != edits.EnvelopeVersion || len(index.Index) != len(kinds) {
+	if index.Schema != intentsIndexSchema || index.EnvelopeVersion != edits.EnvelopeVersion || len(index.Index) != len(kinds) {
 		t.Fatalf("index: schema %q, %d kinds; the registry has %d", index.Schema, len(index.Index), len(kinds))
 	}
 	for i, entry := range index.Index {
@@ -115,7 +115,13 @@ func TestIntentsCommandIndex(t *testing.T) {
 		t.Fatalf("the index is %d bytes, more than a tenth of the catalog's %d", stdout.Len(), catalog.Len())
 	}
 	stdout.Reset()
-	if err := intentsCommand([]string{"--json", "--index", "setstep"}, &stdout); err == nil || !strings.Contains(stdout.String(), `"code": "usage"`) {
+	if err := intentsCommand([]string{"--json", "--index", "setstep"}, &stdout); err == nil || !strings.Contains(stdout.String(), `"code": "usage"`) || !strings.Contains(stdout.String(), intentsIndexSchema) {
 		t.Fatalf("--index with a kind: %v\n%s", err, stdout.String())
+	}
+	// Without --json the plain list already is the index: --index is refused,
+	// and the refusal names --json.
+	stdout.Reset()
+	if err := intentsCommand([]string{"--index"}, &stdout); err == nil || !strings.Contains(err.Error(), "--json") || !strings.HasPrefix(err.Error(), "usage: ") || stdout.Len() != 0 {
+		t.Fatalf("--index without --json: %v, stdout %q", err, stdout.String())
 	}
 }

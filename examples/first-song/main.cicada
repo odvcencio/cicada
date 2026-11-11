@@ -12,6 +12,14 @@ track chords poly_keys {
   octave = 3
 }
 
+fx ceiling limiter {
+  ceiling = -1dBTP
+}
+
+master {
+  insert = ceiling
+}
+
 pattern beat drums {
   bd: X... .... X... ....
   sd: .... X... .... X...

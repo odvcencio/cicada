@@ -87,12 +87,14 @@ func TestNewProjectIsFormattedAndChecksWithStarterTracksAndScenes(t *testing.T) 
 	// The three starter tracks must fit the browser profile's track and voice
 	// limits. The profile does not tell you that fm_bass and poly_keys also need
 	// the separate keyboard module, which the core-kernel browser demo lacks.
-	var profile bytes.Buffer
-	if err := checkCommand([]string{"--profile", "browser"}, &profile, &stderr); err != nil {
-		t.Fatalf("cicada check --profile browser: %v\n%s", err, stderr.String())
-	}
-	if !strings.Contains(profile.String(), "3 of 16 tracks") {
-		t.Fatalf("browser profile report: %s", profile.String())
+	// The master limiter, which lets a new project render to a loudness target,
+	// is the one thing the profile refuses: a browser image carries no master
+	// processor.
+	var profile, profileErr bytes.Buffer
+	err = checkCommand([]string{"--profile", "browser"}, &profile, &profileErr)
+	report := profile.String() + profileErr.String()
+	if err == nil || !strings.Contains(report, "3 of 16 tracks") || strings.Count(report, "error ") != 1 || !strings.Contains(report, "error CICADA-LIMIT: browser profile: prepared master processor") {
+		t.Fatalf("cicada check --profile browser: %v\nstdout:\n%s\nstderr:\n%s", err, profile.String(), profileErr.String())
 	}
 	ignore, err := os.ReadFile(filepath.Join(root, "fresh", ".gitignore"))
 	if err != nil {
