@@ -28,41 +28,64 @@ const (
 
 // nativeRequest is one request to Studio's own origin. It replaces an
 // http.Client call: Timeout bounds the whole exchange, body included, as
-// http.Client.Timeout did, and zero means no timeout.
+// http.Client.Timeout did, and zero means no timeout. Limit is the most body
+// bytes the caller reads, as io.LimitReader did: the transport stops reading
+// and aborts the request once the body passes Limit, so the response it
+// returns has at most Limit+1 bytes. Zero reads the whole body.
 type nativeRequest struct {
 	Method  string
 	Path    string // origin-relative, for example "/__actions/live"
 	Body    []byte
 	Headers map[string]string
 	Timeout time.Duration
+	Limit   int
 }
 
-// send makes the request through fetch and returns the whole response. A
-// failed exchange returns a *url.Error, `Post "<url>": <cause>`, the shape
-// http.Client gave, because some surfaces show it in their status text. A
-// cancelled or timed-out exchange has the context's error as its cause.
-func (r nativeRequest) send(ctx context.Context, fetch projectionFetch, origin string) (browser.FetchResponse, error) {
+// limitedFetch sends one request and reads at most limit+1 body bytes
+// (nativeFetch in the browser).
+type limitedFetch func(ctx context.Context, request browser.FetchRequest, limit int) (browser.FetchResponse, error)
+
+// send makes the request through fetch and returns the response.
+//
+// A failed exchange returns a *url.Error, `Post "<url>": <cause>`, the shape
+// http.Client gave, because some surfaces show it in their status text.
+//
+// Results, in order:
+//   - When ctx ends (the engine was disposed or the caller cancelled), send
+//     returns ctx's error, even for a response that completed at the same
+//     moment: a result is never delivered to a disposed engine.
+//   - A completed response is returned even if the Timeout fired as it
+//     arrived.
+//   - When the Timeout fires first, the cause is context.DeadlineExceeded.
+//   - Otherwise the transport's error is the cause.
+func (r nativeRequest) send(ctx context.Context, fetch limitedFetch, origin string) (browser.FetchResponse, error) {
 	method, target := r.target(origin)
-	fail := func(err error) error { return requestError(method, target, err) }
+	fail := func(err error) (browser.FetchResponse, error) {
+		return browser.FetchResponse{}, requestError(method, target, err)
+	}
 	if ctx == nil {
-		return browser.FetchResponse{}, fail(fmt.Errorf("request context is required"))
+		return fail(fmt.Errorf("request context is required"))
 	}
 	if err := ctx.Err(); err != nil {
-		return browser.FetchResponse{}, fail(err)
+		return fail(err)
 	}
+	exchange := ctx
 	if r.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.Timeout)
+		exchange, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	response, err := fetch(ctx, browser.FetchRequest{URL: target, Method: method, Headers: r.Headers, Body: r.Body})
-	if ctx.Err() != nil {
-		return browser.FetchResponse{}, fail(ctx.Err())
+	response, err := fetch(exchange, browser.FetchRequest{URL: target, Method: method, Headers: r.Headers, Body: r.Body}, r.Limit)
+	switch {
+	case ctx.Err() != nil:
+		return fail(ctx.Err())
+	case err == nil:
+		return response, nil
+	case exchange.Err() != nil:
+		return fail(exchange.Err())
+	default:
+		return fail(err)
 	}
-	if err != nil {
-		return browser.FetchResponse{}, fail(err)
-	}
-	return response, nil
 }
 
 func (r nativeRequest) target(origin string) (method, target string) {

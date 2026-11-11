@@ -1149,7 +1149,7 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 	// net/http transport streams it instead, and a stream released just after
 	// its last chunk races the browser's end of the request, which then
 	// reports the request aborted.
-	fetched, err := nativeFetch(ctx, fetch)
+	fetched, err := nativeFetch(ctx, fetch, 12<<20)
 	if err != nil || len(fetched.Body) > 12<<20 {
 		return projection, "", fmt.Errorf("The workspace request did not complete")
 	}

@@ -738,7 +738,7 @@ func (u *vocalLanesUI) loadWaveforms() {
 		vocalPeaksCache.Unlock()
 		var err error
 		if !found {
-			response, fetchErr := nativeRequest{Method: methodGet, Path: resource, Timeout: 30 * time.Second}.do(u.ctx)
+			response, fetchErr := nativeRequest{Method: methodGet, Path: resource, Timeout: 30 * time.Second, Limit: 1 << 20}.do(u.ctx)
 			err = fetchErr
 			if err == nil {
 				if response.Status != statusOK {

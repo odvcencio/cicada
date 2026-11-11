@@ -16,7 +16,7 @@ import (
 )
 
 func (u *liveUI) loadPortableMIDIPorts() {
-	response, err := nativeRequest{Method: methodGet, Path: "/api/midi/ports", Timeout: 5 * time.Second}.do(u.ctx)
+	response, err := nativeRequest{Method: methodGet, Path: "/api/midi/ports", Timeout: 5 * time.Second, Limit: 65537}.do(u.ctx)
 	if err != nil {
 		if !u.closed.Load() {
 			u.status.Set("Could not read local MIDI port settings.")

@@ -133,7 +133,7 @@ func (u *workspaceUI) checkpointSources() {
 				fields["intent"] = "clear"
 			}
 			data, _ := json.Marshal(fields)
-			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Headers: map[string]string{
+			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Limit: 4096, Headers: map[string]string{
 				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
 			}}.do(u.ctx)
 			if err == nil && response.Status != statusOK {

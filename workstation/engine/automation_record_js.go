@@ -151,7 +151,7 @@ func (r *curveRecordingUI) post(command string, number float64) error {
 		values["monitor"] = "on"
 	}
 	data, _ := json.Marshal(values)
-	response, err := nativeRequest{Method: methodPost, Path: "/__actions/automation-record", Body: data, Timeout: 30 * time.Second, Headers: map[string]string{
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/automation-record", Body: data, Timeout: 30 * time.Second, Limit: 64 << 10, Headers: map[string]string{
 		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": values["csrf_token"],
 	}}.do(r.ctx)
 	if err != nil {

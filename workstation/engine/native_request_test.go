@@ -17,8 +17,8 @@ const testOrigin = "http://127.0.0.1:8191"
 
 // blockingFetch waits for its context like nativeFetch: cancellation aborts
 // the request, which rejects the fetch promise.
-func blockingFetch(entered chan<- context.Context) projectionFetch {
-	return func(ctx context.Context, _ browser.FetchRequest) (browser.FetchResponse, error) {
+func blockingFetch(entered chan<- context.Context) limitedFetch {
+	return func(ctx context.Context, _ browser.FetchRequest, _ int) (browser.FetchResponse, error) {
 		entered <- ctx
 		<-ctx.Done()
 		return browser.FetchResponse{}, fmt.Errorf("browser: fetch transport: %w", ctx.Err())
@@ -34,14 +34,19 @@ func liveRequest(timeout time.Duration) nativeRequest {
 func TestNativeRequestSendsMethodHeadersBodyAndTimeout(t *testing.T) {
 	var seen browser.FetchRequest
 	var during context.Context
-	fetch := func(ctx context.Context, request browser.FetchRequest) (browser.FetchResponse, error) {
+	fetch := func(ctx context.Context, request browser.FetchRequest, limit int) (browser.FetchResponse, error) {
 		seen, during = request, ctx
+		if limit != 1<<20 {
+			t.Fatalf("limit = %d, want the caller's 1 MiB", limit)
+		}
 		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 2*time.Second {
 			t.Fatal("the request lost its timeout")
 		}
 		return browser.FetchResponse{Status: 200, Body: []byte(`{"ok":true,"data":{"lease":"a"}}`)}, nil
 	}
-	response, err := liveRequest(2*time.Second).send(t.Context(), fetch, testOrigin)
+	request := liveRequest(2 * time.Second)
+	request.Limit = 1 << 20
+	response, err := request.send(t.Context(), fetch, testOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +61,7 @@ func TestNativeRequestSendsMethodHeadersBodyAndTimeout(t *testing.T) {
 		t.Fatalf("receipt = %s, %v", data, err)
 	}
 	// No Timeout means no deadline, as http.Client{} without Timeout.
-	_, _ = nativeRequest{Path: "/api/midi/ports"}.send(t.Context(), func(ctx context.Context, request browser.FetchRequest) (browser.FetchResponse, error) {
+	_, _ = nativeRequest{Path: "/api/midi/ports"}.send(t.Context(), func(ctx context.Context, request browser.FetchRequest, _ int) (browser.FetchResponse, error) {
 		if _, ok := ctx.Deadline(); ok || request.Method != "GET" {
 			t.Fatalf("untimed GET changed: deadline %v, method %q", ok, request.Method)
 		}
@@ -84,7 +89,7 @@ func TestNativeRequestTimeoutKeepsClientErrorShape(t *testing.T) {
 
 func TestNativeRequestNetworkErrorIsWrapped(t *testing.T) {
 	offline := errors.New("browser: fetch transport: Failed to fetch")
-	_, err := nativeRequest{Method: methodGet, Path: "/api/note-recovery/take", Timeout: 2 * time.Second}.send(t.Context(), func(context.Context, browser.FetchRequest) (browser.FetchResponse, error) {
+	_, err := nativeRequest{Method: methodGet, Path: "/api/note-recovery/take", Timeout: 2 * time.Second}.send(t.Context(), func(context.Context, browser.FetchRequest, int) (browser.FetchResponse, error) {
 		return browser.FetchResponse{}, offline
 	}, testOrigin)
 	var failure *url.Error
@@ -115,11 +120,36 @@ func TestNativeRequestDisposeDuringRequestCancelsIt(t *testing.T) {
 	}
 	// A request after dispose is not sent.
 	sent := false
-	if _, err := liveRequest(time.Second).send(ctx, func(context.Context, browser.FetchRequest) (browser.FetchResponse, error) {
+	if _, err := liveRequest(time.Second).send(ctx, func(context.Context, browser.FetchRequest, int) (browser.FetchResponse, error) {
 		sent = true
 		return browser.FetchResponse{}, nil
 	}, testOrigin); !errors.Is(err, context.Canceled) || sent {
 		t.Fatalf("request after dispose = %v, sent %v", err, sent)
+	}
+}
+
+func TestNativeRequestPrefersACompletedResponseOverItsDeadline(t *testing.T) {
+	// The response completes as the deadline fires: it is delivered.
+	fetch := func(ctx context.Context, _ browser.FetchRequest, _ int) (browser.FetchResponse, error) {
+		<-ctx.Done()
+		return browser.FetchResponse{Status: 200, Body: []byte(`{"ok":true}`)}, nil
+	}
+	response, err := liveRequest(10*time.Millisecond).send(t.Context(), fetch, testOrigin)
+	if err != nil || response.Status != 200 {
+		t.Fatalf("completed response at the deadline = %+v, %v", response, err)
+	}
+}
+
+func TestNativeRequestNeverDeliversAfterDispose(t *testing.T) {
+	// The response completes as the engine is disposed: it is not delivered.
+	ctx, dispose := context.WithCancel(t.Context())
+	fetch := func(context.Context, browser.FetchRequest, int) (browser.FetchResponse, error) {
+		dispose()
+		return browser.FetchResponse{Status: 200, Body: []byte(`{"ok":true}`)}, nil
+	}
+	response, err := liveRequest(time.Second).send(ctx, fetch, testOrigin)
+	if !errors.Is(err, context.Canceled) || response.Status != 0 {
+		t.Fatalf("response after dispose = %+v, %v", response, err)
 	}
 }
 

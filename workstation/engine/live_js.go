@@ -253,7 +253,7 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if action == "midi-bind" {
 		timeout = 20 * time.Second // local score validation and atomic file update
 	}
-	response, err := nativeRequest{Method: methodPost, Path: "/__actions/" + action, Body: data, Timeout: timeout, Headers: map[string]string{
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/" + action, Body: data, Timeout: timeout, Limit: 1 << 20, Headers: map[string]string{
 		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
 	}}.do(ctx)
 	if err != nil {

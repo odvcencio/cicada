@@ -112,7 +112,7 @@ func (u *liveUI) checkpointNotes() {
 // A committed/discarded performance must not reappear as an unfinished take.
 func (u *liveUI) checkRestoredTake() error {
 	id := u.takeID
-	response, err := nativeRequest{Method: methodGet, Path: "/api/note-recovery/" + id, Timeout: 2 * time.Second}.do(u.ctx)
+	response, err := nativeRequest{Method: methodGet, Path: "/api/note-recovery/" + id, Timeout: 2 * time.Second, Limit: 16 << 20}.do(u.ctx)
 	if err != nil {
 		return err
 	}

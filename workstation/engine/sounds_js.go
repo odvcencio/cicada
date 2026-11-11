@@ -215,7 +215,7 @@ func (u *soundsUI) post(ctx context.Context, values map[string]string) (soundRes
 	if err != nil {
 		return result, err
 	}
-	response, err := nativeRequest{Method: methodPost, Path: "/__actions/sound-preview", Body: data, Timeout: 10 * time.Second, Headers: map[string]string{
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/sound-preview", Body: data, Timeout: 10 * time.Second, Limit: 16 << 10, Headers: map[string]string{
 		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
 	}}.do(ctx)
 	if err != nil {

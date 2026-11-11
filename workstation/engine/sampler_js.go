@@ -656,7 +656,7 @@ func (u *samplerUI) resample(form js.Value) {
 	go func() {
 		defer func() { u.posting = false }()
 		encoded, _ := json.Marshal(values)
-		response, err := nativeRequest{Method: methodPost, Path: "/__actions/sampler", Body: encoded, Timeout: 30 * time.Second, Headers: map[string]string{
+		response, err := nativeRequest{Method: methodPost, Path: "/__actions/sampler", Body: encoded, Timeout: 30 * time.Second, Limit: 1 << 20, Headers: map[string]string{
 			"Content-Type": "application/json", "Accept": "application/json", "X-Cicada-Reactive": "1", "X-CSRF-Token": values["csrf_token"],
 		}}.do(u.ctx)
 		if err != nil {

@@ -402,7 +402,7 @@ func mountCollaboration(host enginewasm.Context) (enginewasm.Handle, error) {
 	request := func(path string, payload any, done func([]byte, error)) {
 		go func() {
 			data, _ := json.Marshal(payload)
-			response, err := nativeRequest{Method: methodPost, Path: path, Body: data, Timeout: 20 * time.Second, Headers: map[string]string{
+			response, err := nativeRequest{Method: methodPost, Path: path, Body: data, Timeout: 20 * time.Second, Limit: 64 << 10, Headers: map[string]string{
 				"Content-Type": "application/json", "X-CSRF-Token": props.CSRF,
 			}}.do(ctx)
 			if err != nil {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"syscall/js"
 
 	"m31labs.dev/gosx/client/browser"
@@ -28,55 +29,64 @@ import (
 // and the engine stopped with "traceback did not unwind completely", which
 // left the workspace marked busy ("Saving…") for good.
 //
-// Here awaitPromise registers ordinary then and catch handlers. The browser
-// runs them as separate tasks, never inside the call that registers them, so a
-// poll cannot nest. Cancellation aborts the request through its
+// Here fetchCall.await registers ordinary then and catch handlers. The
+// browser runs them as separate tasks, never inside the call that registers
+// them, so a poll cannot nest. Cancellation aborts the request through its
 // AbortController, which rejects the pending promise.
-func nativeFetch(ctx context.Context, request browser.FetchRequest) (response browser.FetchResponse, err error) {
+//
+// The body is read up to limit+1 bytes. A body longer than limit stops the
+// read and aborts the request, so an oversized response costs at most limit
+// bytes plus one chunk; the caller sees the oversize as a body longer than
+// limit. A limit of zero or less reads the whole body.
+func nativeFetch(ctx context.Context, request browser.FetchRequest, limit int) (response browser.FetchResponse, err error) {
 	defer func() {
 		if value := recover(); value != nil {
 			err = fmt.Errorf("browser: fetch: %v", value)
 		}
 	}()
-	value, abort, err := startNativeFetch(ctx, request)
+	call, err := startNativeFetch(ctx, request)
 	if err != nil {
 		return response, err
 	}
 	// Cancellation must abort the request before this function returns, so
-	// the pending promise rejects and awaitPromise can release its handlers.
+	// a pending promise rejects and its handlers are released.
 	defer func() {
 		if ctx.Err() != nil {
-			abort()
+			call.abort()
 		}
 	}()
-	response.Status = value.Get("status").Int()
-	response.StatusText = value.Get("statusText").String()
-	body, err := awaitPromise(ctx, value.Call("arrayBuffer"))
+	response.Status = call.response.Get("status").Int()
+	response.StatusText = call.response.Get("statusText").String()
+	response.Body, err = call.readBody(limit)
 	if err != nil {
 		return response, fmt.Errorf("browser: reading response body: %w", err)
 	}
-	array := js.Global().Get("Uint8Array").New(body)
-	response.Body = make([]byte, array.Get("byteLength").Int())
-	js.CopyBytesToGo(response.Body, array)
 	return response, nil
 }
 
-// startNativeFetch sends the request and waits for the response headers. The
-// returned abort cancels the request; it is safe to call more than once.
-func startNativeFetch(ctx context.Context, request browser.FetchRequest) (js.Value, func(), error) {
+// fetchCall is one request in flight.
+type fetchCall struct {
+	ctx        context.Context
+	controller js.Value
+	response   js.Value // set once the headers arrive
+	aborted    bool
+}
+
+// startNativeFetch sends the request and waits for the response headers.
+func startNativeFetch(ctx context.Context, request browser.FetchRequest) (*fetchCall, error) {
 	if ctx == nil {
-		return js.Undefined(), nil, errors.New("browser: fetch context required")
+		return nil, errors.New("browser: fetch context required")
 	}
 	if err := ctx.Err(); err != nil {
-		return js.Undefined(), nil, err
+		return nil, err
 	}
 	fetch := js.Global().Get("fetch")
 	if fetch.Type() != js.TypeFunction {
-		return js.Undefined(), nil, browser.ErrFetchUnavailable
+		return nil, browser.ErrFetchUnavailable
 	}
 	controllerType := js.Global().Get("AbortController")
 	if controllerType.Type() != js.TypeFunction {
-		return js.Undefined(), nil, fmt.Errorf("browser: fetch cancellation: %w", browser.ErrFetchUnavailable)
+		return nil, fmt.Errorf("browser: fetch cancellation: %w", browser.ErrFetchUnavailable)
 	}
 	method := request.Method
 	if method == "" {
@@ -89,56 +99,180 @@ func startNativeFetch(ctx context.Context, request browser.FetchRequest) (js.Val
 	for name, value := range request.Headers {
 		headers[name] = value
 	}
-	controller := controllerType.New()
-	options := map[string]any{"method": method, "signal": controller.Get("signal")}
+	call := &fetchCall{ctx: ctx, controller: controllerType.New()}
+	options := map[string]any{"method": method, "signal": call.controller.Get("signal")}
 	if len(headers) > 0 {
 		options["headers"] = headers
 	}
 	if request.Body != nil {
 		options["body"] = jsutil.NewUint8ArrayFromBytes(request.Body)
 	}
-	abort := func() {
-		defer func() { _ = recover() }() // a custom transport can throw on abort
-		controller.Call("abort")
-	}
-	value, err := awaitPromise(ctx, fetch.Invoke(request.URL, options))
+	value, err := call.await(fetch.Invoke(request.URL, options))
 	if err != nil {
-		if ctx.Err() != nil {
-			abort()
-		}
-		return js.Undefined(), nil, fmt.Errorf("browser: fetch transport: %w", err)
+		return nil, fmt.Errorf("browser: fetch transport: %w", err)
 	}
-	return value, abort, nil
+	call.response = value
+	return call, nil
+}
+
+// abort cancels the request and reports whether the browser accepted the
+// abort. A custom fetch implementation can throw instead.
+func (c *fetchCall) abort() (accepted bool) {
+	if c.aborted {
+		return true
+	}
+	defer func() {
+		if recover() != nil {
+			accepted = false
+		}
+	}()
+	c.controller.Call("abort")
+	c.aborted = true
+	return true
+}
+
+// await waits for one promise of this request. If ctx ends first, it aborts
+// the request so the promise rejects, and releases the handlers when it
+// settles. If the abort throws, the promise may never settle, so the handlers
+// are released at once; a late settle then only logs "call to released
+// function" in the console.
+func (c *fetchCall) await(promise js.Value) (js.Value, error) {
+	type result struct {
+		value js.Value
+		err   error
+	}
+	settled := make(chan result, 1)
+	resolve := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		value := js.Undefined()
+		if len(args) > 0 {
+			value = args[0]
+		}
+		settled <- result{value: value}
+		return nil
+	})
+	reject := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		message := "the request failed"
+		if len(args) > 0 {
+			message = jsErrorMessage(args[0])
+		}
+		settled <- result{err: errors.New(message)}
+		return nil
+	})
+	release := func() {
+		resolve.Release()
+		reject.Release()
+	}
+	promise.Call("then", resolve).Call("catch", reject)
+	select {
+	case r := <-settled:
+		release()
+		return r.value, r.err
+	case <-c.ctx.Done():
+		if c.abort() {
+			go func() { <-settled; release() }()
+		} else {
+			release()
+		}
+		return js.Undefined(), c.ctx.Err()
+	}
+}
+
+func jsErrorMessage(value js.Value) string {
+	if value.Type() == js.TypeObject {
+		if message := value.Get("message"); message.Type() == js.TypeString {
+			return message.String()
+		}
+	}
+	return value.String()
+}
+
+// readBody reads at most limit+1 bytes of the body (all of it when limit is
+// zero or less). A body that can only fit, because it is not compressed and
+// its Content-Length is within the limit, is read in one step; any other body
+// is read chunk by chunk, and the request is aborted once the limit is passed.
+func (c *fetchCall) readBody(limit int) ([]byte, error) {
+	length := c.contentLength()
+	if limit <= 0 || length >= 0 && length <= limit {
+		buffer, err := c.await(c.response.Call("arrayBuffer"))
+		if err != nil {
+			return nil, err
+		}
+		array := js.Global().Get("Uint8Array").New(buffer)
+		body := make([]byte, array.Get("byteLength").Int())
+		js.CopyBytesToGo(body, array)
+		return body, nil
+	}
+	stream := c.response.Get("body")
+	if stream.IsNull() || stream.IsUndefined() {
+		return []byte{}, nil
+	}
+	reader := stream.Call("getReader")
+	body := make([]byte, 0, min(limit+1, max(length, 64<<10)))
+	for {
+		result, err := c.await(reader.Call("read"))
+		if err != nil {
+			return nil, err
+		}
+		if result.Get("done").Bool() {
+			return body, nil
+		}
+		chunk := result.Get("value")
+		take := min(chunk.Get("byteLength").Int(), limit+1-len(body))
+		start := len(body)
+		body = append(body, make([]byte, take)...)
+		js.CopyBytesToGo(body[start:], chunk)
+		if len(body) > limit {
+			c.abort()
+			return body, nil
+		}
+	}
+}
+
+// contentLength is the body's length when the response states it and is not
+// compressed (a compressed body decodes to more bytes than it states), or -1.
+func (c *fetchCall) contentLength() int {
+	headers := c.response.Get("headers")
+	if encoding := headers.Call("get", "content-encoding"); encoding.Type() == js.TypeString && encoding.String() != "" && encoding.String() != "identity" {
+		return -1
+	}
+	value := headers.Call("get", "content-length")
+	if value.Type() != js.TypeString {
+		return -1
+	}
+	n, err := strconv.Atoi(value.String())
+	if err != nil || n < 0 {
+		return -1
+	}
+	return n
 }
 
 // nativeFetchStream is nativeFetch for a response read as it arrives, such
 // as the MIDI input stream, which stays open while a controller plays. Each
-// read waits through awaitPromise, like nativeFetch. Closing the body, or
-// cancelling ctx during a read, aborts the request.
+// read waits like nativeFetch. Closing the body, or cancelling ctx (as an
+// engine's dispose does), aborts the request at once, even between events.
 func nativeFetchStream(ctx context.Context, request browser.FetchRequest) (status int, body io.ReadCloser, err error) {
 	defer func() {
 		if value := recover(); value != nil {
 			err = fmt.Errorf("browser: fetch: %v", value)
 		}
 	}()
-	value, abort, err := startNativeFetch(ctx, request)
+	call, err := startNativeFetch(ctx, request)
 	if err != nil {
 		return 0, nil, err
 	}
-	stream := value.Get("body")
+	stream := call.response.Get("body")
 	if stream.IsNull() || stream.IsUndefined() {
-		abort()
+		call.abort()
 		return 0, nil, errors.New("browser: fetch: the response has no readable body")
 	}
-	return value.Get("status").Int(), &nativeStreamBody{ctx: ctx, reader: stream.Call("getReader"), abort: abort}, nil
+	return call.response.Get("status").Int(), &nativeStreamBody{call: call, reader: stream.Call("getReader")}, nil
 }
 
 var errStreamClosed = errors.New("browser: response body is closed")
 
 type nativeStreamBody struct {
-	ctx     context.Context
+	call    *fetchCall
 	reader  js.Value
-	abort   func()
 	pending []byte
 	err     error
 }
@@ -147,7 +281,7 @@ func (b *nativeStreamBody) Read(p []byte) (n int, err error) {
 	defer func() {
 		if value := recover(); value != nil {
 			b.err = fmt.Errorf("browser: reading response body: %v", value)
-			b.abort()
+			b.call.abort()
 			n, err = 0, b.err
 		}
 	}()
@@ -155,20 +289,20 @@ func (b *nativeStreamBody) Read(p []byte) (n int, err error) {
 		return 0, b.err
 	}
 	if len(b.pending) == 0 {
-		if err := b.ctx.Err(); err != nil {
+		if err := b.call.ctx.Err(); err != nil {
 			b.err = err
-			b.abort()
+			b.call.abort()
 			return 0, err
 		}
-		result, err := awaitPromise(b.ctx, b.reader.Call("read"))
+		result, err := b.call.await(b.reader.Call("read"))
 		if err != nil {
-			if b.ctx.Err() != nil {
-				err = b.ctx.Err()
+			if b.call.ctx.Err() != nil {
+				err = b.call.ctx.Err()
 			} else {
 				err = fmt.Errorf("browser: reading response body: %w", err)
 			}
 			b.err = err
-			b.abort()
+			b.call.abort()
 			return 0, err
 		}
 		if result.Get("done").Bool() {
@@ -188,11 +322,12 @@ func (b *nativeStreamBody) Close() error {
 	if b.err == nil || b.err == io.EOF {
 		b.err = errStreamClosed
 	}
-	b.abort()
+	b.call.abort()
 	return nil
 }
 
-// do sends a request to this page's origin and reads the whole response.
+// do sends a request to this page's origin and reads its response, at most
+// r.Limit+1 bytes of the body.
 func (r nativeRequest) do(ctx context.Context) (browser.FetchResponse, error) {
 	return r.send(ctx, nativeFetch, js.Global().Get("location").Get("origin").String())
 }
