@@ -553,7 +553,7 @@ test('a recovery copy of the text a Code save writes does not keep the Code edit
 });
 
 test('a checkpoint of the saved text that lands after the save keeps no copy, and its window then follows the file', async () => {
-  const {page, state, posts, settled} = await studio();
+  const {page, state, posts, settled, cell} = await studio();
   const other = await otherClient();
   assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
   const before = await state('/api/state');
@@ -597,13 +597,22 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
   await undoCode(page, state, posts, settled, before);
   // The text is in neither the file nor a copy now, so the other window must
   // not keep showing it. Like any editor without changes, its Code region
-  // is marked stale by the Undo and is read when it shows again (background
-  // reads skip the Code lens); a held one would keep the text.
-  await until(async () => await other.locator('#update-code').getAttribute('data-region-stale') !== null, 'the other window did not see the Undo', 30_000);
-  await other.locator('.shell-pane-toggle[data-pane=code][data-pane-action=hide]').click();
-  await other.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
-  await until(async () => await other.locator('#score textarea').first().inputValue() === before.source.replace(/\r\n/g, '\n'),
-    'the other window did not follow the Undo', 30_000);
+  // takes the saved song from the other window's next edit (a held one would
+  // keep the text and its old file revision). That edit is then taken back.
+  const done = (selector, active) => other.waitForFunction(({selector, active}) => {
+    const el = document.querySelector(selector);
+    return el?.getAttribute('data-active') === active && !el.hasAttribute('data-workspace-pending');
+  }, {selector, active});
+  const initial = await other.locator(cell(60)).getAttribute('data-active');
+  await other.locator(cell(60)).click();
+  await done(cell(60), initial === 'true' ? 'false' : 'true');
+  const drawn = await state('/api/state');
+  assert.notEqual(drawn.source, before.source, 'the other window\'s draw was not saved');
+  await until(async () => await other.locator('#score textarea').first().inputValue() === drawn.source.replace(/\r\n/g, '\n'),
+    'the other window\'s Code editor did not follow the saved song');
+  await other.locator(cell(60)).click();
+  await done(cell(60), initial);
+  await until(async () => (await state('/api/state')).source === before.source, 'the other window\'s draw was not taken back');
 });
 
 test('a save does not stop another window that typed the same text from keeping its later typing', async () => {
