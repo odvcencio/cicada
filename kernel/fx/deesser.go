@@ -1,8 +1,10 @@
 package fx
 
 import (
-	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
 
 // DeesserParams controls a stereo-linked split-band de-esser. Only the high
@@ -38,11 +40,11 @@ func NewDeesser(rate int, p DeesserParams) (*Deesser, error) {
 	// A first-order complementary crossover sums exactly to the original
 	// signal. Attenuating its high band gives a smooth shelf, without the
 	// cancellation/ripple of subtracting an unmatched second-order highpass.
-	k := math.Tan(math.Pi * p.FrequencyHz / float64(rate))
+	k := detmath.Tan(math.Pi * p.FrequencyHz / float64(rate))
 	b := 1 / (1 + k)
 	d := &Deesser{params: p, b0: b, b1: -b, a1: (k - 1) / (k + 1),
-		attack: 1 - math.Exp(-1/(p.AttackMs*.001*float64(rate))), release: 1 - math.Exp(-1/(p.ReleaseMs*.001*float64(rate))),
-		detectorAttack: 1 - math.Exp(-1/(.0002*float64(rate))), detectorRelease: 1 - math.Exp(-1/(.010*float64(rate)))}
+		attack: 1 - detmath.Exp(-1/(p.AttackMs*.001*float64(rate))), release: 1 - detmath.Exp(-1/(p.ReleaseMs*.001*float64(rate))),
+		detectorAttack: 1 - detmath.Exp(-1/(.0002*float64(rate))), detectorRelease: 1 - detmath.Exp(-1/(.010*float64(rate)))}
 	return d, nil
 }
 func (d *Deesser) Reset() {

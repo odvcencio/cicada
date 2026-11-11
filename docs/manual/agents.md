@@ -30,7 +30,7 @@ The `--json` formats share these rules:
   | --- | --- | --- | --- |
   | `check`, `apply`, `intents`, `diagnostics`, `audition` | 0 | 1 | 1 |
   | `render`, `stems` | 0 | 1 | 2 |
-  | `help` | 0 | — | 2 |
+  | `help`, `agents` | 0 | — | 2 |
 
 Usage errors and unknown names have the codes `usage`, `unknown_kind`
 (`intents`), `unknown_code` (`diagnostics`) and `unknown_command` (`help`).
@@ -82,6 +82,17 @@ scene main { bass = riff drums = beat }
 song { main*4 }
 ```
 
+## agents --json
+
+`cicada agents` prints the [quick start for agents](agent-quickstart.md): the
+one page an agent that has never seen Cicada reads first. The binary carries
+it, so it needs no repository checkout. `cicada agents --json` gives the same
+text as `guide`, its size in bytes as `guide_bytes`, and in `commands` the
+commands the quick start offers for looking up the rest, each with the
+`summary` of what it answers; placeholders such as `<kind>` are in angle
+brackets. The agent task suite reads this document and runs every command in
+it.
+
 ## help --json
 
 `cicada help --json` lists every command, sorted by name, with its one-line
@@ -95,6 +106,10 @@ and is absent for a switch. `cicada help <command> --json` gives one command.
   "schema": "cicada.help.v1",
   "usage": "cicada <command> [arguments]",
   "commands": [
+    {
+      "name": "agents",
+      "summary": "print the quick start for AI agents"
+    },
     {
       "name": "apply",
       "summary": "apply typed edit intents to a score",
@@ -165,6 +180,12 @@ listed value with one outside the list.
 ```json
 {
   "schema": "cicada.intents.v1",
+  "envelope_version": 1,
+  "envelope": [
+    {
+      "name": "version"
+    }
+  ],
   "intents": [
     {
       "kind": "setstep",
@@ -224,6 +245,12 @@ lane, and its `velocity` operation takes a new value or a change:
 ```json
 {
   "schema": "cicada.intents.v1",
+  "envelope_version": 1,
+  "envelope": [
+    {
+      "name": "version"
+    }
+  ],
   "intents": [
     {
       "kind": "editnotes",
@@ -315,6 +342,28 @@ lane, and its `velocity` operation takes a new value or a change:
 }
 ```
 
+`cicada intents --json --index` lists only each `kind` and its one-line
+`meaning`, in less than a tenth of the bytes of the whole catalog, so an agent
+can choose a kind before it asks for that kind in full. It is a format of its
+own, `cicada.intents_index.v1`, with `index` in place of `envelope` and
+`intents`. `--index` needs `--json`: `cicada intents` alone already lists each
+kind with its meaning.
+
+<!-- agent-example: intents --json --index -->
+
+```json
+{
+  "schema": "cicada.intents_index.v1",
+  "envelope_version": 1,
+  "index": [
+    {
+      "kind": "addaudiotrack",
+      "meaning": "declares a new, empty audio track in an edition-2 score"
+    }
+  ]
+}
+```
+
 ## diagnostics --json
 
 `cicada diagnostics` lists every diagnostic code; `cicada diagnostics <code>`
@@ -348,8 +397,15 @@ refused intent). `CICADA-NOTES` also lists the `reasons` its refusals carry.
 ## check --json
 
 `cicada check --json` runs the checks `cicada check` runs and reports, for each
-score, whether it is valid and its diagnostics. Without a score it checks the
-project, and `scores` lists every score.
+score, whether it is valid, its `revision` and its diagnostics. Without a score
+it checks the project. When `cicada.mod` lists the project's `source` files,
+the project is one score: `scores` has one entry, the entry score, whose
+diagnostics cover every listed file (each names its `file`) and whose
+`revision` is that of the entry file alone. Otherwise each score in the project
+folder is checked on its own and `scores` lists every one. `revision` is the
+SHA-256 of the score file's bytes in hex, the form `cicada apply` compares with
+an envelope's `revision`: put it in the next envelope for that score. It is
+absent only when the score cannot be read.
 
 Each diagnostic has its `code`, `severity`, `message` and `file`. `start` is
 the position the checker reports: `line` and `column` count from 1, columns
@@ -381,6 +437,7 @@ one batch.
   "scores": [
     {
       "file": "song.cicada",
+      "revision": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
       "valid": true,
       "diagnostics": []
     }
@@ -418,6 +475,7 @@ step:
   "scores": [
     {
       "file": "snap.cicada",
+      "revision": "bb00827b7a0ef325edda51ba13ac8910483dd63feb59db92701fd5c7875c6852",
       "valid": false,
       "diagnostics": [
         {
@@ -508,6 +566,7 @@ the intent the same way: `intents[1].entity (togglestep): unknown pattern
   "score": "song.cicada",
   "ok": false,
   "written": false,
+  "dry_run": false,
   "changed": false,
   "revision_before": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
   "intents": [
@@ -726,6 +785,8 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ```json
 {
   "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "loud.cicada",
   "ok": false,
   "outputs": [
     {
@@ -796,7 +857,14 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ```json
 {
   "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "loud-limited.cicada",
   "ok": true,
+  "outputs": [
+    {
+      "path": "loud.wav"
+    }
+  ],
   "loudness": {
     "target_lufs": -9,
     "integrated_lufs": -9.28794649255763,
@@ -812,9 +880,13 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ## The agent task suite
 
 `make test-agent-surface` builds `build/cicada` and runs the agent task suite
-in `internal/agentsuite`. It copies `examples/first-acid.cicada` into an empty
-folder and drives the binary the way an agent does, reading only JSON:
-`help --json`, `intents --json`, `symbols --json`, `check --json`, an `apply`
-of two intents built from the catalog's examples, `render --json` to −14 LUFS
-and `audition --json`. It also runs the examples on this page. CI runs it on
-every pull request; it must finish in under two minutes.
+in `internal/agentsuite`. It starts as a new agent does: it reads the quick
+start from `cicada agents`, runs its loop with its score and its batch, and
+makes its three mistakes, each of which must be refused as the quick start
+says; every command, field and refusal it relies on must be named in the quick
+start. Then it copies `examples/first-acid.cicada` into an empty folder and
+drives the binary the way an agent does, reading only JSON: `help --json`,
+`intents --json`, `symbols --json`, `check --json`, an `apply` of two intents
+built from the catalog's examples, `render --json` to −14 LUFS and
+`audition --json`. It also runs the examples on this page and on the quick
+start. CI runs it on every pull request; it must finish in under two minutes.
