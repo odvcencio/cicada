@@ -11,28 +11,22 @@ import (
 	"m31labs.dev/cicada/internal/agentguide"
 )
 
-// frontDoorFiles builds the agent front door from the repository and this
-// binary's command table.
+// frontDoorFiles builds the committed files of the agent front door.
 func frontDoorFiles(t *testing.T) map[string][]byte {
 	t.Helper()
-	var commands []agentguide.Command
-	for _, entries := range [][]commandHelpEntry{commandHelpEntries, extraCommandHelpEntries} {
-		for _, entry := range entries {
-			commands = append(commands, agentguide.Command{Name: entry.name, Summary: entry.summary})
-		}
-	}
-	files, err := agentguide.Build(agentguide.Inputs{Root: repositoryRoot(), Commands: commands})
+	files, err := agentguide.Build(agentguide.Inputs{Root: repositoryRoot()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return files
 }
 
-// TestAgentFrontDoorIsCurrent rebuilds every generated file of the agent
-// front door (the core reference, llms.txt, llms-full.txt, the generated
-// region of AGENTS.md, the pages the binary embeds and the AGENTS.md of the
-// first-song example) and fails while one on disk differs.
-// CICADA_UPDATE_AGENT_FRONT_DOOR=1 writes them instead.
+// TestAgentFrontDoorIsCurrent rebuilds the committed files of the agent front
+// door (llms.txt, the generated region of AGENTS.md, the quick start the
+// binary embeds and the AGENTS.md of the first-song example), whose only
+// inputs are the quick start and stable text, and fails while one on disk
+// differs. CICADA_UPDATE_AGENT_FRONT_DOOR=1 (make agent-front-door) writes
+// them instead.
 func TestAgentFrontDoorIsCurrent(t *testing.T) {
 	files := frontDoorFiles(t)
 	paths := make([]string, 0, len(files))
@@ -62,31 +56,33 @@ func TestAgentFrontDoorIsCurrent(t *testing.T) {
 }
 
 // TestAgentGuideBudgets keeps each page an agent reads within its byte
-// budget (about four bytes a token).
+// budget (about four bytes a token): the committed files, and the core
+// reference as this binary builds it.
 func TestAgentGuideBudgets(t *testing.T) {
 	files := frontDoorFiles(t)
+	reference := agentsReference()
 	for _, budget := range []struct {
-		path  string
+		name  string
+		size  int
 		bytes int
 	}{
-		{"internal/agentguide/quickstart.md", agentguide.QuickStartBudget},
-		{"docs/manual/agent-reference.md", agentguide.ReferenceBudget},
-		{"llms.txt", agentguide.LLMsBudget},
-		{"llms-full.txt", agentguide.LLMsFullBudget},
-		{"AGENTS.md", agentguide.AgentsMDBudget},
+		{"internal/agentguide/quickstart.md", len(files["internal/agentguide/quickstart.md"]), agentguide.QuickStartBudget},
+		{"cicada agents reference", len(reference), agentguide.ReferenceBudget},
+		{"llms.txt", len(files["llms.txt"]), agentguide.LLMsBudget},
+		{"AGENTS.md", len(files["AGENTS.md"]), agentguide.AgentsMDBudget},
 	} {
-		size := len(files[budget.path])
-		t.Logf("%s: %d bytes of %d", budget.path, size, budget.bytes)
-		if size == 0 || size > budget.bytes {
-			t.Errorf("%s is %d bytes; its budget is %d", budget.path, size, budget.bytes)
+		t.Logf("%s: %d bytes of %d", budget.name, budget.size, budget.bytes)
+		if budget.size == 0 || budget.size > budget.bytes {
+			t.Errorf("%s is %d bytes; its budget is %d", budget.name, budget.size, budget.bytes)
 		}
 	}
-	// The embedded pages are the generated ones, and cicada new writes the
-	// AGENTS.md the example project holds.
-	if agentguide.Reference != string(files["docs/manual/agent-reference.md"]) || agentguide.QuickStart != string(files["internal/agentguide/quickstart.md"]) {
-		t.Errorf("the embedded pages differ from the generated ones; run %s", agentguide.FrontDoorCommand)
+	for _, part := range []string{"\n## Commands\n", "\n## Edit intents\n", "\n## Diagnostic codes\n", "\n## Effect routes\n", "`cicada agents`"} {
+		if !strings.Contains(reference, part) {
+			t.Errorf("the reference lacks %q", part)
+		}
 	}
-	if agentguide.ProjectAgents() != string(files["examples/first-song/AGENTS.md"]) {
-		t.Errorf("cicada new writes another AGENTS.md than examples/first-song holds")
+	if agentguide.QuickStart != string(files["internal/agentguide/quickstart.md"]) {
+		t.Errorf("the embedded quick start differs from the page; run %s", agentguide.FrontDoorCommand)
 	}
+	t.Logf("the AGENTS.md cicada new writes: %d bytes", len(agentguide.ProjectAgents()))
 }

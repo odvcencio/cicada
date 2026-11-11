@@ -103,10 +103,8 @@ together.
   of `help`, `intents`, `diagnostics`, `check`, `apply` and `render`.
 - [Quick start for agents](agent-quickstart.md) — the one page an AI agent
   reads first, which `cicada agents` prints: the loop, a song, the edit
-  envelope, refusals and the listening report.
-- [Core reference for agents](agent-reference.md) — the quick start, the
-  language, sound and formats in brief, and one line for every command, edit
-  intent, diagnostic code and effect route; `cicada agents reference` prints it.
+  envelope, refusals and the listening report. `cicada agents reference`
+  prints the core reference from the binary's own catalogs.
 
 The manual's `cicada` examples are checked by the real score validator in the
 Go test suite. The specification explains the [example checks and

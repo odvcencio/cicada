@@ -51,19 +51,22 @@ Edit the source, then regenerate; a test fails while a generated file is stale.
 
 | Generated | Command |
 | --- | --- |
-| this file's last section, `llms.txt`, `llms-full.txt`, `docs/manual/agent-reference.md`, `internal/agentguide/*.md`, `examples/first-song/AGENTS.md` | `CICADA_UPDATE_AGENT_FRONT_DOOR=1 go test ./cmd/cicada -run TestAgentFrontDoorIsCurrent` |
+| this file's last section, `llms.txt`, `internal/agentguide/quickstart.md`, `examples/first-song/AGENTS.md` (inputs: the quick start and stable text in `internal/agentguide`) | `make agent-front-door` |
 | `cmd/cicada/testdata/help/all-commands.golden` | `CICADA_UPDATE_HELP_GOLDEN=1 go test ./cmd/cicada -run TestAllCommandHelpTextGolden` |
 | `edit/intent_docs.go` | `CICADA_UPDATE_INTENT_DOCS=1 go test ./edit -run TestIntentDocsAreCurrent` |
 | `docs/manual/diagnostics.md` | `CICADA_UPDATE_DIAGNOSTICS_DOC=1 go test ./internal/diagnostics -run TestDiagnosticsReferenceIsCurrent` |
 | `notation/cicada.bin` | `make grammar` |
 
+`make agent-front-door` also builds `llms-full.txt` (the full text of the
+manual for agents), which is not committed; `repo-checks` uploads it as an
+artifact. `cicada agents reference` is built by the binary from its catalogs.
 The tests that read the documentation run in the `repo-checks` CI job, on
 every pull request, including one that changes only documentation.
 
 <!-- agent-front-door:begin -->
 ## Using Cicada to make music
 
-<!-- Generated from docs/manual/agent-quickstart.md; run CICADA_UPDATE_AGENT_FRONT_DOOR=1 go test ./cmd/cicada -run TestAgentFrontDoorIsCurrent -->
+<!-- Generated from docs/manual/agent-quickstart.md; run make agent-front-door -->
 
 An agent that makes music with an installed `cicada` binary starts with
 `cicada agents`, which prints the quick start
@@ -81,7 +84,6 @@ An agent that makes music with an installed `cicada` binary starts with
    `cicada apply main.cicada edit.json --json`, then add `--write`. Go on when
    `ok` and `written` are true; repeat from step 3.
 
-`cicada agents reference` prints the core reference
-([docs/manual/agent-reference.md](docs/manual/agent-reference.md)), and
-[llms.txt](llms.txt) lists the manual for agents.
+`cicada agents reference` prints the core reference, which the binary builds
+from its own catalogs, and [llms.txt](llms.txt) lists the manual for agents.
 <!-- agent-front-door:end -->

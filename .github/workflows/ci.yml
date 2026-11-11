@@ -200,9 +200,11 @@ jobs:
       - name: Tests that read every tracked file, the docs, or the README
         run: |
           set -euo pipefail
-          tests='TestAgentFrontDoorIsCurrent TestAgentGuideBudgets TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
+          tests='TestAgentFrontDoorIsCurrent TestAgentGuideBudgets TestLLMsFullFitsItsBudget TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
           regex="^($(echo "$tests" | tr ' ' '|'))\$"
-          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
+          # TestLLMsFullFitsItsBudget builds llms-full.txt, which is not committed,
+          # checks its budget on that output, and writes it for the artifact below.
+          CICADA_LLMS_FULL_OUT="$RUNNER_TEMP/llms-full.txt" go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics ./internal/agentguide -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in $tests; do
@@ -212,6 +214,13 @@ jobs:
             fi
           done
           exit "$missing"
+      - name: Save llms-full.txt (built, not committed)
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: llms-full
+          if-no-files-found: error
+          path: ${{ runner.temp }}/llms-full.txt
       # The agent task suite (make test-agent-surface) drives the built binary
       # through one task with JSON output only. The M0 kernel job runs it when
       # the root group is on (any Go change, cmd/cicada and edit included).

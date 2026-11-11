@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/internal/agentguide"
@@ -33,16 +36,63 @@ func parseScoreForPath(path string, source []byte) (*notation.Score, []notation.
 	return project.LoadScore(path, map[string][]byte{absolute: source})
 }
 
+// newSchema names the format of cicada new --json.
+const newSchema = "cicada.new.v1"
+
+const newUsage = "usage: cicada new [--json] <name>"
+
+// newDocument is cicada new --json: the project folder, its score, every file
+// written (sorted), and whether one of them is the project's AGENTS.md.
+type newDocument struct {
+	Schema          string     `json:"schema"`
+	Project         string     `json:"project,omitempty"`
+	Score           string     `json:"score,omitempty"`
+	Files           []string   `json:"files,omitempty"`
+	AgentsMDWritten bool       `json:"agents_md_written"`
+	Error           *jsonError `json:"error,omitempty"`
+}
+
 func newCommand(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: cicada new <name>")
+	asJSON := hasJSONFlag(args)
+	var names []string
+	for _, arg := range args {
+		if arg != "--json" && arg != "--json=true" {
+			names = append(names, arg)
+		}
 	}
-	name := args[0]
-	if err := newProject(name, os.WriteFile); err != nil {
+	fail := func(code string, err error) error {
+		if asJSON {
+			if writeErr := writeAgentJSON(os.Stdout, newDocument{Schema: newSchema, Error: &jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
+				return writeErr
+			}
+		}
 		return err
 	}
-	fmt.Println(filepath.Join(name, "main.cicada"))
-	return nil
+	if len(names) != 1 || strings.HasPrefix(names[0], "-") {
+		return fail("usage", fmt.Errorf("%s", newUsage))
+	}
+	name := names[0]
+	files, err := newProjectFiles(name, os.WriteFile)
+	if err != nil {
+		switch {
+		case !edition.ValidProjectName(name):
+			return fail("invalid_name", err)
+		case errors.Is(err, os.ErrExist):
+			return fail("destination_exists", err)
+		}
+		return fail("write", err)
+	}
+	if !asJSON {
+		fmt.Println(filepath.Join(name, "main.cicada"))
+		return nil
+	}
+	document := newDocument{Schema: newSchema, Project: jsonPath(name), Score: jsonPath(filepath.Join(name, "main.cicada"))}
+	for _, file := range files {
+		document.Files = append(document.Files, jsonPath(file))
+		document.AgentsMDWritten = document.AgentsMDWritten || filepath.Base(file) == "AGENTS.md"
+	}
+	sort.Strings(document.Files)
+	return writeAgentJSON(os.Stdout, document)
 }
 
 // starterBody is the score `cicada new` writes after its title line: drums, an
@@ -97,16 +147,22 @@ song {
 `
 
 func newProject(name string, writeFile func(string, []byte, os.FileMode) error) error {
+	_, err := newProjectFiles(name, writeFile)
+	return err
+}
+
+// newProjectFiles creates the project and returns the files it wrote.
+func newProjectFiles(name string, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
 	if !edition.ValidProjectName(name) {
-		return fmt.Errorf("project name must use letters, digits, hyphen, or underscore")
+		return nil, fmt.Errorf("project name must use letters, digits, hyphen, or underscore")
 	}
 	target, err := filetarget.Create(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	dir := target.Physical
 	if err := os.Mkdir(dir, 0755); err != nil {
-		return err
+		return nil, err
 	}
 	complete := false
 	defer func() {
@@ -122,27 +178,28 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 	main := []byte("title \"" + name + "\"\n" + starterBody)
 	document, err := notation.ParseDocument(main)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	main, err = notation.Format(document)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	gitignore := []byte(".cicada-studio-*\n*.revision\n.cicada/\ncicada.local\n")
-	if err := writeFile(filepath.Join(dir, "cicada.mod"), manifest, 0644); err != nil {
-		return err
+	files := []string{filepath.Join(name, "cicada.mod"), filepath.Join(name, "main.cicada"), filepath.Join(name, ".gitignore")}
+	for i, data := range [][]byte{manifest, main, gitignore} {
+		if err := writeFile(filepath.Join(dir, filepath.Base(files[i])), data, 0644); err != nil {
+			return nil, err
+		}
 	}
-	if err := writeFile(filepath.Join(dir, "main.cicada"), main, 0644); err != nil {
-		return err
-	}
-	if err := writeFile(filepath.Join(dir, ".gitignore"), gitignore, 0644); err != nil {
-		return err
-	}
-	// An agent that opens the project reads its AGENTS.md first: the quick
-	// start this binary carries.
-	if err := writeFile(filepath.Join(dir, "AGENTS.md"), []byte(agentguide.ProjectAgents()), 0644); err != nil {
-		return err
+	// An agent that opens the project reads its AGENTS.md first: a short
+	// pointer to the quick start of the installed binary. One already there
+	// is never replaced.
+	if _, err := os.Lstat(filepath.Join(dir, "AGENTS.md")); errors.Is(err, os.ErrNotExist) {
+		if err := writeFile(filepath.Join(dir, "AGENTS.md"), []byte(agentguide.ProjectAgents()), 0644); err != nil {
+			return nil, err
+		}
+		files = append(files, filepath.Join(name, "AGENTS.md"))
 	}
 	complete = true
-	return nil
+	return files, nil
 }
