@@ -3,12 +3,14 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const stall=require('./page-stall.cjs');
 
 test('dock resizing fits the window and preserves musical work',{timeout:120000},async t=>{
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH});
- t.after(() => browser.close(), {timeout: 15000});
- const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ const watches=[];stall.teardown(t, browser, {watch: watches, exitWhenDone: true});
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));
+ const page=await context.newPage();
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  const proof=process.env.CICADA_DOCK_PROOF_DIR;assert.ok(path.isAbsolute(proof));fs.mkdirSync(proof,{recursive:true});
  const startup=new URL(process.env.CICADA_STUDIO_URL);assert.equal(startup.hostname,'127.0.0.1');
