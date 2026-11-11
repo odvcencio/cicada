@@ -246,3 +246,51 @@ func TestPanicInTheCallersLane(t *testing.T) {
 	fail.Store(false)
 	p.Run(0, 1024)
 }
+
+// The lane count changes from segment to segment, with very short segments
+// between long ones, while a second Pool competes for the process budget.
+// Every track must still render each frame exactly once, in order: a worker
+// that read a stale lane count would render a segment twice.
+func TestLaneCountChangesBetweenSegments(t *testing.T) {
+	const tracks = 6
+	stress := func(seed int) {
+		var next [tracks]atomic.Int64
+		var broken atomic.Bool
+		p := New(tracks, tracks, func(track, from, count int) {
+			if !next[track].CompareAndSwap(int64(from), int64(from+count)) {
+				broken.Store(true)
+			}
+		})
+		defer p.Close()
+		for segment := range 400 {
+			// Alternate the estimated work so worth picks 1 lane, then all.
+			heavy := (segment+seed)%3 != 0
+			for track := range p.cost {
+				p.cost[track], p.measured[track] = 1, true
+				if heavy {
+					p.cost[track] = 1e6
+				}
+			}
+			start, count := segment%5, 1+(segment*37)%300
+			for track := range next {
+				next[track].Store(int64(start))
+			}
+			p.Begin(start, count)
+			p.Ready(start + count - 1)
+			p.End()
+			for track := range next {
+				if got := next[track].Load(); got != int64(start+count) || broken.Load() {
+					t.Errorf("seed %d segment %d: track %d rendered to %d of %d (runs out of order: %v)", seed, segment, track, got, start+count, broken.Load())
+					return
+				}
+			}
+		}
+	}
+	done := make(chan struct{})
+	go func() { stress(1); close(done) }()
+	stress(0)
+	<-done
+	if busy.Load() != 0 {
+		t.Fatalf("budget not returned: %d", busy.Load())
+	}
+}

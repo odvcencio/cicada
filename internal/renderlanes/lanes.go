@@ -163,12 +163,13 @@ type Pool struct {
 	inside               int64     // nanoseconds the caller spent in Ready
 	progress             []progress
 	failed               atomic.Bool
-	// generation counts segments; usedLanes is the current segment's lane
-	// count. Begin stores both after the segment's fields, so a worker that
-	// loads a new generation reads them too.
-	generation atomic.Int64
-	usedLanes  atomic.Int32
-	stopping   atomic.Bool
+	// segment is the current segment's number and lane count in one value,
+	// number<<8 | lanes, so a worker reads both at once: with two loads, a
+	// worker could take an old number with a newer lane count and render a
+	// segment twice. Begin stores it after the segment's fields, so a worker
+	// that loads it reads them too.
+	segment  atomic.Int64
+	stopping atomic.Bool
 
 	workers []worker
 	done    chan any // one value per finished worker lane: nil, or what it panicked with
@@ -291,8 +292,7 @@ func (p *Pool) Begin(start, count int) {
 		p.progress[lane].chunks.Store(0)
 	}
 	p.own, p.inside, p.waited, p.active = 0, 0, 0, true
-	p.usedLanes.Store(int32(used))
-	p.generation.Add(1)
+	p.segment.Store((p.segment.Load()>>8+1)<<8 | int64(used))
 	for lane := 1; lane < used; lane++ {
 		if w := &p.workers[lane-1]; w.parked.CompareAndSwap(true, false) {
 			w.wake <- struct{}{}
@@ -453,12 +453,12 @@ func (p *Pool) work(lane int) {
 	defer close(w.exited)
 	var seen int64
 	for {
-		generation, ok := p.nextSegment(w, seen)
+		segment, ok := p.nextSegment(w, seen)
 		if !ok {
 			return
 		}
-		seen = generation
-		if lane < int(p.usedLanes.Load()) {
+		seen = segment
+		if lane < int(segment&0xff) {
 			p.done <- p.renderLane(lane)
 		}
 	}
@@ -469,8 +469,8 @@ func (p *Pool) work(lane int) {
 func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 	deadline := time.Now().Add(spinWait)
 	for i := 1; ; i++ {
-		if generation := p.generation.Load(); generation != seen {
-			return generation, true
+		if segment := p.segment.Load(); segment != seen {
+			return segment, true
 		}
 		if p.stopping.Load() {
 			return 0, false
@@ -481,15 +481,15 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 		runtime.Gosched()
 	}
 	w.parked.Store(true)
-	if generation := p.generation.Load(); generation != seen {
+	if segment := p.segment.Load(); segment != seen {
 		if !w.parked.CompareAndSwap(true, false) {
 			<-w.wake // Begin saw the flag and sent a wake: take it.
 		}
-		return generation, true
+		return segment, true
 	}
 	select {
 	case <-w.wake:
-		return p.generation.Load(), true
+		return p.segment.Load(), true
 	case <-p.stop:
 		return 0, false
 	}
