@@ -143,11 +143,11 @@ func New(rate int, params Params) (*Instrument, error) {
 	i.decay = float32(math.Exp(-4.605170186 / (params.Decay * sr)))
 	i.release = float32(math.Exp(-4.605170186 / (params.Release * sr)))
 	i.sustain = float32(params.Sustain)
-	norm := 1 / (params.Saw + params.Pulse + .5*params.Sub)
+	norm := 1 / (float64(params.Saw+params.Pulse) + float64(.5*params.Sub))
 	i.waveSaw, i.wavePulse = float32(params.Saw*norm), float32(params.Pulse*norm)
 	i.sub, i.width, i.pwm = float32(.5*params.Sub*norm), float32(params.PulseWidth), float32(params.PWM)
 	i.pwmRate, i.sync = float32(params.PWMRate/sr), float32(params.Sync)
-	i.drive, i.gain, i.velocity = float32(1+4*params.Drive), float32(.4*math.Pow(10, params.LevelDB/20)), float32(params.Velocity)
+	i.drive, i.gain, i.velocity = float32(1+float64(4*params.Drive)), float32(.4*math.Pow(10, params.LevelDB/20)), float32(params.Velocity)
 	i.driveT, i.gainT = i.drive, i.gain
 	i.resonanceFeedback = float32(3.8 * params.Resonance)
 	ceiling := math.Min(18000, sr*.2)
@@ -163,18 +163,18 @@ func New(rate int, params Params) (*Instrument, error) {
 		cutoff := 20 * math.Pow(2, float64(t)*span/256)
 		g := math.Tan(math.Pi * cutoff / (2 * sr))
 		gl := g / .43497944204608224
-		k := math.Sqrt2 * (1 - .95*params.Resonance)
-		a1 := 1 / (1 + g*(g+k))
+		k := math.Sqrt2 * (1 - float64(.95*params.Resonance))
+		a1 := 1 / (1 + float64(g*(float64(g)+float64(k))))
 		i.table[t] = coefficients{float32(gl / (1 + gl)), float32(a1), float32(g * a1), float32(g * g * a1)}
 	}
 	seed := uint32(0x9e3779b9)
 	for v := range i.voices {
 		seed = seed*1664525 + 1013904223
 		signed := float64(seed>>8)/8388607.5 - 1
-		i.detuneRatios[v] = float32(math.Pow(2, (params.Detune+signed*params.Drift)/1200))
+		i.detuneRatios[v] = float32(math.Pow(2, (params.Detune+float64(signed*params.Drift))/1200))
 		i.driftAmounts[v] = float32(params.Drift * .00057762265)
-		i.driftRates[v] = float32((.071 + float64(v)*.013) / sr)
-		pan := float64(v)/7*.6 - .3
+		i.driftRates[v] = float32((.071 + float64(float64(v)*.013)) / sr)
+		pan := float64(float64(v)/7*.6) - .3
 		i.panL[v], i.panR[v] = float32(math.Sqrt((1-pan)*.5)), float32(math.Sqrt((1+pan)*.5))
 	}
 	for s := range i.sine {
@@ -186,7 +186,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	i.chorusInput, i.chorusOutput = float32(1-math.Exp(-2*math.Pi*8000/sr)), float32(1-math.Exp(-2*math.Pi*6500/sr))
 	for c := range i.chorusPhases {
 		i.chorusPhases[c] = float32(c) / 3
-		i.chorusRates[c] = float32((.31 + float64(c)*.137) / sr)
+		i.chorusRates[c] = float32((.31 + float64(float64(c)*.137)) / sr)
 	}
 	return i, nil
 }
@@ -548,7 +548,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("poly keys drive must be 0..1")
 		}
-		i.driveT = float32(1 + 4*float64(value))
+		i.driveT = float32(1 + float64(4*float64(value)))
 	case controlOutput:
 		if !keyboard.InRange(value, -60, 6) {
 			return Error("poly keys output must be -60..6 dB")

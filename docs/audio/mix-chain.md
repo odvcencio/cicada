@@ -298,16 +298,27 @@ and offline `render` and `stems` support it.
 
 **The rule.** A score renders to the same bits on amd64 (any CPU and any
 `GOAMD64` level), arm64 and WebAssembly, from voice to exported file. Two
-things in Go can break it. Today the rule is guaranteed only for part of the
-mix chain; the rest matches in the tests but is not yet guaranteed.
+things in Go can break it. Fusion is ruled out everywhere on that path; the
+math library is not yet, so part of it matches in the tests without being
+guaranteed.
 
 - **Fused multiply-add.** Go may compute `x*y + z` with one rounding instead
-  of two on arm64 and with `GOAMD64=v3`. Every product that feeds an addition
-  in `kernel/fx`, `kernel/fx/pro`, `kernel/mix`, `kernel/loudness` and
-  `kernel/dsp` is rounded by an explicit conversion first, for example
-  `a + float64(b*c)`, and CI checks that the compiler fuses none there. The
-  rest of `kernel/` and `render/` (voices, the graph, the export path in
-  `render/wav.go`) still has fusable products.
+  of two on arm64 and with `GOAMD64=v3`. What is guaranteed: the compiler
+  reports no product it would fuse in `kernel/`, `render/` and the packages
+  `render` imports, on arm64 and with `GOAMD64=v3` (CI builds them with
+  `-d=fmahash=vy` and fails on any report). A product is rounded with an
+  explicit `float32(...)` or `float64(...)`, for example `a + float64(b*c)`.
+  Go may also fuse across statements, so a conversion of a plain value is
+  needed where that value is itself a product: a variable set from a product
+  in an earlier statement (`s1 := state*inv` then `float64(g*u) + float64(s1)`),
+  a parameter of a function the compiler inlines into a caller that passes a
+  product, and `v` in `2*v`, which the compiler rewrites as `v + v`. Elsewhere
+  such a conversion prevents nothing and is left out; the compiler's report
+  decides which are needed.
+  Not yet covered: `cmd/cicada` (live monitor mixing in
+  `studio_audio_devices.go`) and the `host/` packages that `render` does not
+  import; a later pull request in this series extends the check to every
+  package that produces audio a user hears, records or exports.
 - **Math library functions.** `math.Exp`, `math.Log`, `math.Pow`, `math.Sin`
   and the others can differ in the last bit by target: `math.Exp` even uses an
   FMA instruction only on amd64 CPUs that have one. The master EQ design, the
@@ -318,9 +329,9 @@ mix chain; the rest matches in the tests but is not yet guaranteed.
   build on the track compressor and reverb), the track effects in `kernel/fx`,
   the amp and cabinet, the mix in `kernel/mix`, and the voices.
 
-The follow-up removes both gaps: no fusable product in `kernel/` and
-`render/`, no architecture-dependent `math` call between voice and exported
-file, and a digest per processor and voice on all three targets.
+The follow-up removes the rest: no architecture-dependent `math` call
+between voice and exported file, and a digest per processor and voice on all
+three targets.
 
 **How to check it.**
 
@@ -333,10 +344,25 @@ arm64 and with `GOAMD64=v3`. To list fusable expressions, build for arm64 with
 the compiler's FMA report:
 
 ```
-GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/detmath
+GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/...
 ```
 
 Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses; CI fails
-on any in those packages. `TestRenderPathAvoidsMathLibrary` in
+on any. `TestRenderPathAvoidsMathLibrary` in
 `kernel/dsp/detmath` fails when the master chain or the export code calls a
 math function that `detmath` replaces.
+
+The exported file itself is compared too. `TestExampleWAVParity` in
+`cmd/cicada` runs `cicada render` on example scores four ways (plain,
+`--normalize`, -14 LUFS / -1 dBTP, -9 LUFS / -1.5 dBTP) and hashes each WAV:
+
+```
+CICADA_WAV_PARITY_OUT=$PWD/build/wav-hashes.txt go test ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v
+CICADA_WAV_PARITY_REFERENCE=$PWD/build/wav-hashes.txt go test ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v
+```
+
+The first command writes the hashes (CI runs it on amd64), the second compares
+another machine's renders with them (CI runs it on arm64). Pull requests
+render a subset; the nightly run sets `CICADA_WAV_PARITY_ALL=1` and renders
+every score under `examples/`. A render known to differ is listed, with the
+date and the cause, in `knownWAVDifferences`; the list can only shrink.

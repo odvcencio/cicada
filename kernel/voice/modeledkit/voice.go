@@ -146,11 +146,11 @@ func (f *bandFilter) configure(low, high, rate float64) {
 }
 
 func (f *bandFilter) next(input float64) float64 {
-	f.low1 += f.lowA * (input - f.low1)
-	f.low2 += f.lowA * (f.low1 - f.low2)
-	f.high1 += f.highA * (f.low2 - f.high1)
+	f.low1 += float64(f.lowA * (float64(input) - float64(f.low1)))
+	f.low2 += float64(f.lowA * (f.low1 - f.low2))
+	f.high1 += float64(f.highA * (f.low2 - f.high1))
 	high := f.low2 - f.high1
-	f.high2 += f.highA * (high - f.high2)
+	f.high2 += float64(f.highA * (high - f.high2))
 	return high - f.high2
 }
 
@@ -264,27 +264,27 @@ func (v *Voice) Hit(velocity uint8) {
 	v.sequence++
 	s.noise = v.seed ^ uint32(v.profile+1)*0x9e3779b9 ^ (variation+1)*0x85ebca6b
 	jitter := [4]float64{-.75, .25, .75, -.25}[variation]
-	position := min(1, max(0, v.params.Position+.018*jitter+v.params.Humanize*jitter))
+	position := min(1, max(0, float64(v.params.Position+float64(.018*jitter))+float64(v.params.Humanize*jitter)))
 	vel := float64(min(velocity, 127)) / 127
-	strength := vel * math.Sqrt(vel) * (1 + .25*v.params.Humanize*jitter)
+	strength := vel * math.Sqrt(vel) * (1 + float64(.25*v.params.Humanize*jitter))
 	hardness := vel * vel
 	level := r.level * strength
-	tune := v.params.Tune * (1 + .015*v.params.Humanize*jitter)
-	s.contact = max(2, int(r.contact*(1.7-1.1*hardness)*(1+.055*jitter)*v.rate))
+	tune := v.params.Tune * (1 + float64(.015*v.params.Humanize*jitter))
+	s.contact = max(2, int(r.contact*(1.7-float64(1.1*hardness))*(1+float64(.055*jitter))*v.rate))
 	if v.profile == BrushSweep {
 		s.hold = int(sweepHold * v.params.Decay * v.rate)
 	}
 	s.remaining = int(max(r.t60, r.noiseT60)*v.params.Decay*3*v.rate) + s.contact + s.hold
-	s.noiseAmp = r.noise * strength * (.28 + .72*hardness)
+	s.noiseAmp = r.noise * strength * (.28 + float64(.72*hardness))
 	s.noisePole = math.Exp(-math.Log(1000) / (r.noiseT60 * v.params.Decay * v.rate))
-	low, high := r.low*(.72+.4*hardness), r.high*(.55+.45*hardness)
+	low, high := r.low*(.72+float64(.4*hardness)), r.high*(.55+float64(.45*hardness))
 	if v.profile == BrushSweep {
 		// Only the bristle band rings in a sweep, so tune and strike
 		// position move that band. The stroke starts at a varied phase.
-		band := tune * (.8 + .4*position)
+		band := tune * (.8 + float64(.4*position))
 		low, high = low*band, high*band
 		s.stroke.y, s.stroke.x = math.Sincos(2.1 * jitter)
-		s.stroke.s, s.stroke.c = math.Sincos(2 * math.Pi * strokeHz * (1 + .08*jitter) / v.rate)
+		s.stroke.s, s.stroke.c = math.Sincos(2 * math.Pi * strokeHz * (1 + float64(.08*jitter)) / v.rate)
 		s.swell = strokeDepth
 	}
 	s.filter.configure(low, high, v.rate)
@@ -322,7 +322,7 @@ func (v *Voice) Hit(velocity uint8) {
 	}
 	weightSum := 0.0
 	for i := 0; i < r.count; i++ {
-		if r.frequency*tune*ratios[i]*(1+r.bend*hardness) < .45*v.rate {
+		if r.frequency*tune*ratios[i]*(1+float64(r.bend*hardness)) < .45*v.rate {
 			weightSum += weights[i]
 		}
 	}
@@ -332,14 +332,14 @@ func (v *Voice) Hit(velocity uint8) {
 			// Shell and beater-head resonances above the membrane bank.
 			frequency *= 1.45
 		}
-		startFrequency := frequency * (1 + r.bend*hardness)
+		startFrequency := frequency * (1 + float64(r.bend*hardness))
 		if startFrequency >= .45*v.rate {
 			continue
 		}
 		m := &s.modes[s.count]
-		decay := r.t60 * v.params.Decay / (1 + .24*float64(i))
+		decay := r.t60 * v.params.Decay / (1 + float64(.24*float64(i)))
 		if metal {
-			decay = r.t60 * v.params.Decay / (1 + .065*float64(i))
+			decay = r.t60 * v.params.Decay / (1 + float64(.065*float64(i)))
 		}
 		radius := math.Exp(-math.Log(1000) / (decay * v.rate))
 		m.s, m.c = math.Sincos(2 * math.Pi * startFrequency / v.rate)
@@ -348,17 +348,17 @@ func (v *Voice) Hit(velocity uint8) {
 		m.targetS, m.targetC = m.targetS*radius, m.targetC*radius
 		brightness := 1.0
 		if i > 0 {
-			brightness = .18 + .82*hardness
+			brightness = .18 + float64(.82*hardness)
 		}
 		// An approximate radial mode shape makes edge strikes excite more
 		// upper membrane modes and moves nodal cancellations across modes.
 		shape := 1.0
 		if i > 0 {
-			shape = (.45 + .85*position) * (.7 + .3*math.Cos(float64(i+1)*position*math.Pi))
+			shape = (.45 + float64(.85*position)) * (.7 + float64(.3*math.Cos(float64(i+1)*position*math.Pi)))
 		} else {
-			shape = 1 - .35*position
+			shape = 1 - float64(.35*position)
 		}
-		contactVariation := 1 + .065*math.Sin(float64((i+1)*int(variation+1))*1.7)
+		contactVariation := 1 + float64(.065*math.Sin(float64((i+1)*int(variation+1))*1.7))
 		gain := level * weights[i] / weightSum * brightness * shape * contactVariation
 		if metal {
 			// Bell strikes concentrate low plate modes; bow/edge strikes
@@ -367,7 +367,7 @@ func (v *Voice) Hit(velocity uint8) {
 			// an explicitly approximate collision wash.
 			gain *= 1.8
 			if v.profile == RideBell {
-				gain *= 1.9 / (1 + .25*float64(i))
+				gain *= 1.9 / (1 + float64(.25*float64(i)))
 			}
 			phase := .35 * random(&s.noise)
 			m.y, m.x = math.Sincos(phase)
@@ -384,34 +384,42 @@ func (v *Voice) nextStrike(s *strike) float64 {
 		return 0
 	}
 	body, energy := 0.0, 0.0
-	for i := 0; i < s.count; i++ {
-		m := &s.modes[i]
-		if m.x == 0 && m.y == 0 {
+	// The bend test and the mode state are read once per mode into locals, so
+	// the loop does the same arithmetic as before with fewer loads and stores.
+	bend, bendAlpha := recipes[v.profile].bend != 0, s.bendAlpha
+	modes := s.modes[:s.count]
+	for i := range modes {
+		m := &modes[i]
+		mx, my := m.x, m.y
+		if mx == 0 && my == 0 {
 			continue
 		}
-		if recipes[v.profile].bend != 0 {
+		c, sn := m.c, m.s
+		if bend {
 			// Convex pole interpolation follows the relaxing membrane
 			// tension without trigonometry or unstable rotating coefficients.
-			m.c += s.bendAlpha * (m.targetC - m.c)
-			m.s += s.bendAlpha * (m.targetS - m.s)
+			c += float64(bendAlpha * (m.targetC - c))
+			sn += float64(bendAlpha * (m.targetS - sn))
+			m.c, m.s = c, sn
 		}
-		x := m.c*m.x - m.s*m.y
-		m.y = m.s*m.x + m.c*m.y
-		m.x = x
-		if math.Abs(m.x)+math.Abs(m.y) < 1e-9 {
+		x := float64(c*mx) - float64(sn*my)
+		y := float64(sn*mx) + float64(c*my)
+		size := math.Abs(x) + math.Abs(y)
+		if size < 1e-9 {
 			m.x, m.y = 0, 0
 			continue
 		}
-		body += m.y
-		energy += math.Abs(m.x) + math.Abs(m.y)
+		m.x, m.y = x, y
+		body += y
+		energy += size
 	}
-	s.wireFollower += s.followerA * (math.Abs(body) - s.wireFollower)
-	noiseLevel := s.noiseAmp + s.bodyCoupling*s.wireFollower
+	s.wireFollower += float64(s.followerA * (math.Abs(body) - s.wireFollower))
+	noiseLevel := s.noiseAmp + float64(s.bodyCoupling*s.wireFollower)
 	if s.swell != 0 {
-		x := s.stroke.c*s.stroke.x - s.stroke.s*s.stroke.y
-		s.stroke.y = s.stroke.s*s.stroke.x + s.stroke.c*s.stroke.y
+		x := float64(s.stroke.c*s.stroke.x) - float64(s.stroke.s*s.stroke.y)
+		s.stroke.y = float64(s.stroke.s*s.stroke.x) + float64(s.stroke.c*s.stroke.y)
 		s.stroke.x = x
-		noiseLevel *= 1 + s.swell*s.stroke.y
+		noiseLevel *= 1 + float64(s.swell*s.stroke.y)
 	}
 	noise := 0.0
 	if noiseLevel > 1e-9 {

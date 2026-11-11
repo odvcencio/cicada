@@ -101,7 +101,7 @@ func FingerprintStereo(left, right []float32, sampleRate int) (Fingerprint, erro
 	var window [maxFingerprintFFTSize]float64
 	var windowSum float64
 	for i := 0; i < windowSamples; i++ {
-		window[i] = .5 - .5*math.Cos(2*math.Pi*float64(i)/float64(windowSamples-1))
+		window[i] = .5 - float64(.5*math.Cos(2*math.Pi*float64(i)/float64(windowSamples-1)))
 		windowSum += window[i]
 	}
 	var bandBins [FingerprintBands][]int
@@ -143,7 +143,7 @@ func FingerprintStereo(left, right []float32, sampleRate int) (Fingerprint, erro
 		for band, bins := range bandBins {
 			var power float64
 			for _, bin := range bins {
-				power += cmplx.Abs(spectrum[0][bin])*cmplx.Abs(spectrum[0][bin]) + cmplx.Abs(spectrum[1][bin])*cmplx.Abs(spectrum[1][bin])
+				power += float64(cmplx.Abs(spectrum[0][bin])*cmplx.Abs(spectrum[0][bin])) + float64(cmplx.Abs(spectrum[1][bin])*cmplx.Abs(spectrum[1][bin]))
 			}
 			power /= float64(len(bins)) * 2 * math.Pow(windowSum/2, 2)
 			db := -120.0
@@ -175,9 +175,9 @@ func fft(data []complex128) {
 		for base := 0; base < n; base += span {
 			rotation := complex(1, 0)
 			for i := 0; i < span/2; i++ {
-				even, odd := data[base+i], data[base+i+span/2]*rotation
+				even, odd := data[base+i], mulComplex(data[base+i+span/2], rotation)
 				data[base+i], data[base+i+span/2] = even+odd, even-odd
-				rotation *= root
+				rotation = mulComplex(rotation, root)
 			}
 		}
 	}
@@ -256,4 +256,13 @@ func CompareFingerprint(golden, current Fingerprint) (FingerprintDifference, err
 		return difference, fmt.Errorf("fingerprint drift: mean %.3f dB, maximum %.3f dB", difference.MeanDB, difference.MaxDB)
 	}
 	return difference, nil
+}
+
+// mulComplex is a*b as Go computes it, (ac-bd) + (ad+bc)i, with every product
+// rounded by an explicit conversion. arm64 fuses the products of a plain
+// complex multiplication into multiply-adds; this form gives the same bits on
+// every target.
+func mulComplex(a, b complex128) complex128 {
+	ar, ai, br, bi := real(a), imag(a), real(b), imag(b)
+	return complex(float64(ar*br)-float64(ai*bi), float64(ar*bi)+float64(ai*br))
 }

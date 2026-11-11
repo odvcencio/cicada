@@ -321,7 +321,7 @@ type masterConvolution struct {
 func (c *masterConvolution) Process(l, r float32) (float32, float32) {
 	wl, wr := c.wet.Process(l, r)
 	dl, dr := c.dry.Process(l, r)
-	return dl*(1-c.amount) + wl*c.amount, dr*(1-c.amount) + wr*c.amount
+	return float32(dl*(1-c.amount)) + float32(wl*c.amount), float32(dr*(1-c.amount)) + float32(wr*c.amount)
 }
 func (c *masterConvolution) Reset()             { c.wet.Reset(); c.dry.Reset() }
 func (c *masterConvolution) Fault() bool        { return c.wet.Fault() }

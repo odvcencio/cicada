@@ -1766,20 +1766,20 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			if tracks[ti].sendA > 0 && !tracks[ti].muted {
 				if tracks[ti].sendAPre {
-					sendAL += l * tracks[ti].sendA * tracks[ti].sendPreGain
-					sendAR += r * tracks[ti].sendA * tracks[ti].sendPreGain
+					sendAL += float32(l * tracks[ti].sendA * tracks[ti].sendPreGain)
+					sendAR += float32(r * tracks[ti].sendA * tracks[ti].sendPreGain)
 				} else {
-					sendAL += l * tracks[ti].mixer.Left * tracks[ti].sendA
-					sendAR += r * tracks[ti].mixer.Right * tracks[ti].sendA
+					sendAL += float32(l * tracks[ti].mixer.Left * tracks[ti].sendA)
+					sendAR += float32(r * tracks[ti].mixer.Right * tracks[ti].sendA)
 				}
 			}
 			if tracks[ti].sendB > 0 && !tracks[ti].muted {
 				if tracks[ti].sendBPre {
-					sendBL += l * tracks[ti].sendB * tracks[ti].sendPreGain
-					sendBR += r * tracks[ti].sendB * tracks[ti].sendPreGain
+					sendBL += float32(l * tracks[ti].sendB * tracks[ti].sendPreGain)
+					sendBR += float32(r * tracks[ti].sendB * tracks[ti].sendPreGain)
 				} else {
-					sendBL += l * tracks[ti].mixer.Left * tracks[ti].sendB
-					sendBR += r * tracks[ti].mixer.Right * tracks[ti].sendB
+					sendBL += float32(l * tracks[ti].mixer.Left * tracks[ti].sendB)
+					sendBR += float32(r * tracks[ti].mixer.Right * tracks[ti].sendB)
 				}
 			}
 			if tracks[ti].busSFX {

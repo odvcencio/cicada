@@ -142,10 +142,10 @@ func New(rate int, params Params) (*Instrument, error) {
 	i.fastDepth = float32(sr * .00065)
 	for c := range i.slow {
 		i.slow[c], i.fast[c] = float32(c)*.317, float32(c)*.271
-		i.slowRate[c] = float32((.59 + float64(c)*.123) * params.EnsembleRate / sr)
-		i.fastRate[c] = float32((5.73 + float64(c)*.617) * params.EnsembleRate / sr)
-		i.baseDelay[c] = float32((.016 + float64(c)*.0013) * sr)
-		i.slowDepth[c] = float32((.003 + float64(c)*.0002) * sr)
+		i.slowRate[c] = float32((.59 + float64(float64(c)*.123)) * params.EnsembleRate / sr)
+		i.fastRate[c] = float32((5.73 + float64(float64(c)*.617)) * params.EnsembleRate / sr)
+		i.baseDelay[c] = float32((.016 + float64(float64(c)*.0013)) * sr)
+		i.slowDepth[c] = float32((.003 + float64(float64(c)*.0002)) * sr)
 	}
 	return i, nil
 }
@@ -319,7 +319,7 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		y := float32(i.octave8 * i.bandLimitedSaw(i.tables[n][0], phase, p.delta))
 		y = float32(y + float32(i.octave16*i.bandLimitedSaw(i.tables[n][1], phase16, float32(p.delta*.5))))
 		if p.delta < .24 {
-			y = float32(y + float32(i.octave4*i.bandLimitedSaw(i.tables[n][2], wrap(float32(phase*2)), float32(p.delta*2))))
+			y = float32(y + float32(i.octave4*i.bandLimitedSaw(i.tables[n][2], wrap(float32(float32(phase)*2)), float32(p.delta*2))))
 		}
 		y = float32(y * float32(v.amp*v.velocity))
 		if v.fade < 1 {

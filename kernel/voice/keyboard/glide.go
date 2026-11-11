@@ -5,7 +5,7 @@ package keyboard
 // float32 value or lands within 1e-6, so every glide ends on the exact target
 // and the caller can then stop running it.
 func Approach(cur *float32, target, alpha float32) bool {
-	next := *cur + alpha*(target-*cur)
+	next := *cur + float32(alpha*(target-*cur))
 	if next == *cur || next-target < 1e-6 && target-next < 1e-6 {
 		*cur = target
 		return true
