@@ -411,6 +411,16 @@ func (e *Engine) CurrentScene() (int, uint64) { return e.currentScene, e.sceneSe
 // Call it only from the goroutine that owns Render.
 func (e *Engine) Playing() bool { return e.transport.Playing() }
 
+// MasterGain is the factor the master stage applies for Config.MasterGainDB.
+// Hosts that need to know whether two configurations render the same audio
+// compare these factors.
+func MasterGain(db float64) float32 {
+	if db == 0 {
+		return 1
+	}
+	return float32(math.Pow(10, db/20))
+}
+
 func New(cfg Config) (*Engine, error) {
 	return NewFromConfig(&cfg)
 }
@@ -446,10 +456,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	masterGain := float32(1)
-	if cfg.MasterGainDB != 0 {
-		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
-	}
+	masterGain := MasterGain(cfg.MasterGainDB)
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1, flushLimit: -1}

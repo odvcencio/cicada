@@ -24,7 +24,7 @@ fail() {
 	failures=$((failures + 1))
 }
 
-all_groups="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2"
+all_groups="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 bench"
 
 # expect_groups "name" "expected groups (space separated, or none)" paths...
 expect_groups() {
@@ -121,7 +121,7 @@ if [[ "$("$classifier" --classify docs/a.md)" != none ]]; then fail "--classify 
 if [[ "$("$classifier" --classify kernel/x.go)" != all ]]; then fail "--classify kernel/x.go"; fi
 if "$classifier" --bogus </dev/null >/dev/null 2>&1; then fail "unknown flag was accepted"; fi
 # A last line with no newline still counts.
-if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 8 ]]; then fail "unterminated last line"; fi
+if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 9 ]]; then fail "unterminated last line"; fi
 
 # classify_for GROUP PATH: does PATH turn GROUP on?
 turns_on() {
@@ -160,6 +160,7 @@ if [[ "${1:-}" == "--graph" ]]; then
 	check_imports m2 "M2 gates" < <(go_deps linux "wasm_integration chord_wasm browser" \
 		./cmd/cicada-kernel-wasm ./cmd/cicada ./host/demobrowser ./cmd/cicada-demo ./host/wam2)
 	check_imports studio_browser "Studio browser (cmd/cicada and the kernel WASM)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-kernel-wasm)
+	check_imports bench "agent loop speed (cmd/cicada and cmd/cicada-bench)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-bench)
 	check_imports macos_desktop "macOS desktop build of cmd/cicada" < <(go_deps darwin "" ./cmd/cicada)
 	check_imports macos_contracts "macOS platform contracts" < <(go_deps darwin "" ./host/capture ./host/midi ./internal/audiobackend ./cmd/cicada)
 	check_imports workstation "workstation job (root-module tests)" < <(go_deps linux "" ./internal/buildaudit ./internal/studiohttp)

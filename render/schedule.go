@@ -41,7 +41,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	cfg.MasterGainDB += opts.MasterGainDB + opts.MasterInputGainDB
+	cfg.MasterGainDB = scheduledMasterGainDB(cfg.MasterGainDB, opts)
 	cfg.MasterBiasL, cfg.MasterBiasR = opts.MasterBiasL, opts.MasterBiasR
 	player, err := engine.New(cfg)
 	if err != nil {
@@ -116,24 +116,70 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	taps := make([]engine.TapFrame, opts.Block)
 	left, right := make([]float32, opts.Block), make([]float32, opts.Block)
 	buffer := make([]byte, opts.Block*encoder.frameBytes())
-	player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	totalFrames := endFrame + report.TailFrames + latency
+	// The master cache stores TapFrame.MasterInput, which enters the master
+	// stage ahead of the master gain that carries the export gain, so a replay
+	// runs the master chain and the limiter again on the stored input.
+	var cache *MasterCache
+	replay := false
+	var inL, inR []float32
+	if opts.MasterCache != nil && stemsDir == "" && opts.NoteTap == nil {
+		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
+		use, replaying, err := opts.MasterCache.begin(key, totalFrames)
+		if err != nil {
+			return report, err
+		}
+		if use {
+			cache, replay = opts.MasterCache, replaying
+		}
+		if replay {
+			inL, inR = make([]float32, opts.Block), make([]float32, opts.Block)
+		}
+	}
+	if !replay {
+		player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	}
 	var message cmd.Message
-	for position := int64(0); position < endFrame+report.TailFrames+latency; {
-		frames := int(min(int64(opts.Block), endFrame+report.TailFrames+latency-position))
+	for position := int64(0); position < totalFrames; {
+		frames := int(min(int64(opts.Block), totalFrames-position))
 		if position < endFrame {
 			frames = int(min(int64(frames), endFrame-position))
-		} else if position == endFrame {
-			player.Push(cmd.Command{Op: cmd.OpStop, Track: 0xff})
 		}
-		readyCtx, readyCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		frames, err = player.PrepareRender(readyCtx, frames)
-		readyCancel()
-		if err != nil {
-			return report, fmt.Errorf("prepare streamed export: %w", err)
-		}
-		player.RenderWithTaps(left[:frames], right[:frames], taps[:frames])
-		if stats := player.StreamStats(); stats.MissingFrames > 0 {
-			return report, fmt.Errorf("streamed export missed %d source output frames", stats.MissingFrames)
+		if replay {
+			if err := cache.beginBlock(frames, true); err != nil {
+				return report, err
+			}
+			for i := range frames {
+				inL[i], inR[i] = cache.block[2*i], cache.block[2*i+1]
+			}
+			player.RenderMasterWithTaps(inL[:frames], inR[:frames], left[:frames], right[:frames], taps[:frames])
+		} else {
+			if position == endFrame {
+				player.Push(cmd.Command{Op: cmd.OpStop, Track: 0xff})
+			}
+			readyCtx, readyCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			frames, err = player.PrepareRender(readyCtx, frames)
+			readyCancel()
+			if err != nil {
+				return report, fmt.Errorf("prepare streamed export: %w", err)
+			}
+			player.RenderWithTaps(left[:frames], right[:frames], taps[:frames])
+			if stats := player.StreamStats(); stats.MissingFrames > 0 {
+				return report, fmt.Errorf("streamed export missed %d source output frames", stats.MissingFrames)
+			}
+			if cache != nil {
+				if err := cache.beginBlock(frames, false); err != nil {
+					return report, err
+				}
+				// A capture whose file failed has turned itself off; the render
+				// goes on without it.
+				if !cache.disabled {
+					for i := range frames {
+						cache.block = append(cache.block, taps[i].MasterInput.Left, taps[i].MasterInput.Right)
+					}
+					cache.endBlock()
+				}
+			}
 		}
 		for player.Poll(&message) {
 			if message.Kind == cmd.Fault {
@@ -194,6 +240,11 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		}
 		position += int64(frames)
 	}
+	if cache != nil && !replay {
+		if err = cache.finishCapture(); err != nil {
+			return report, err
+		}
+	}
 	if err = writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges); err != nil {
 		return report, err
 	}
@@ -203,4 +254,10 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		}
 	}
 	return report, nil
+}
+
+// scheduledMasterGainDB is the master gain the scheduled engine applies ahead
+// of the master chain: the authored master level and both export gains.
+func scheduledMasterGainDB(authoredGainDB float64, opts Options) float64 {
+	return authoredGainDB + (opts.MasterGainDB + opts.MasterInputGainDB)
 }
