@@ -480,18 +480,27 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 		}
 		runtime.Gosched()
 	}
-	w.parked.Store(true)
-	if segment := p.segment.Load(); segment != seen {
-		if !w.parked.CompareAndSwap(true, false) {
-			<-w.wake // Begin saw the flag and sent a wake: take it.
+	for {
+		w.parked.Store(true)
+		if segment := p.segment.Load(); segment != seen {
+			if !w.parked.CompareAndSwap(true, false) {
+				<-w.wake // Begin saw the flag and sent a wake: take it.
+			}
+			return segment, true
 		}
-		return segment, true
-	}
-	select {
-	case <-w.wake:
-		return p.segment.Load(), true
-	case <-p.stop:
-		return 0, false
+		select {
+		case <-w.wake:
+			// A wake can be stale. Begin publishes a segment and then clears
+			// the flags of the lanes it uses; a lane that saw the segment
+			// first can render all of it and park again before Begin reaches
+			// its flag, and Begin then wakes it for the segment it has done.
+			// Only a new segment number counts; otherwise park again.
+			if segment := p.segment.Load(); segment != seen {
+				return segment, true
+			}
+		case <-p.stop:
+			return 0, false
+		}
 	}
 }
 

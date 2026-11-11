@@ -256,9 +256,9 @@ jobs:
           # Render lanes must stay bit-identical to the serial render; a data
           # race between lanes would be a determinism bug, so the lane tests
           # run under the race detector with every segment on every lane.
-          go test -race ./internal/renderlanes ./kernel/engine -run '^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments)' -count=3 -v | tee "$RUNNER_TEMP/lanes-race.log"
+          go test -race ./internal/renderlanes ./kernel/engine -run '^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)' -count=3 -v | tee "$RUNNER_TEMP/lanes-race.log"
           go test -race ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=1 -v | tee -a "$RUNNER_TEMP/lanes-race.log"
-          for name in TestOfflineParallelRenderIsBitIdentical TestOfflineParallelFaultMatchesSerial TestRunRendersEveryTrackOnce TestDirectLanesAreBitIdentical TestDirectLanesFaultMatchesSerial TestAudioClipLanesAreBitIdentical TestLaneCountChangesBetweenSegments; do
+          for name in TestOfflineParallelRenderIsBitIdentical TestOfflineParallelFaultMatchesSerial TestRunRendersEveryTrackOnce TestDirectLanesAreBitIdentical TestDirectLanesFaultMatchesSerial TestAudioClipLanesAreBitIdentical TestLaneCountChangesBetweenSegments TestForcedLanesRenderEachSegmentOnce; do
             grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/lanes-race.log" || { echo "No PASS line for $name" >&2; exit 1; }
           done
       - name: Save amd64 PCM and the tested kernel

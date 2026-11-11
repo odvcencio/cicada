@@ -86,14 +86,40 @@ func TestRunRendersEveryTrackOnce(t *testing.T) {
 	if runtime.GOMAXPROCS(0) >= 2 && stats.ParallelSegments == 0 {
 		t.Fatalf("no segment ran on more than one lane: %+v", stats)
 	}
-	// Once measured, the heavy track has a lane to itself.
-	if p.used > 1 {
-		for lane := 0; lane < p.used; lane++ {
-			tracksOnLane := p.order[p.bounds[lane]:p.bounds[lane+1]]
-			if slices.Contains(tracksOnLane, 0) && len(tracksOnLane) != 1 {
-				t.Fatalf("the heaviest track shares lane %d with %v", lane, tracksOnLane)
-			}
+}
+
+// With fixed costs, LPT gives the heaviest track a lane of its own and
+// counts the caller's mix as work already on lane 0.
+func TestAssignBalancesByCost(t *testing.T) {
+	p := New(4, 8, func(int, int, int) {})
+	defer p.Close()
+	for track, cost := range []float64{900, 100, 120, 80, 110, 90, 100, 95} {
+		p.cost[track], p.measured[track] = cost, true
+	}
+	p.mixCost, p.mixMeasured = 300, true
+	p.assign(4)
+	loads := make([]float64, 4)
+	for lane := 0; lane < 4; lane++ {
+		tracks := p.order[p.bounds[lane]:p.bounds[lane+1]]
+		if slices.Contains(tracks, 0) && len(tracks) != 1 {
+			t.Fatalf("the heaviest track shares lane %d with %v", lane, tracks)
 		}
+		if lane == 0 {
+			loads[lane] = p.mixCost
+		}
+		for _, track := range tracks {
+			loads[lane] += p.cost[track]
+		}
+	}
+	// The other seven tracks (695) and the mix (300) fill three lanes of
+	// about 330 each; no lane but the heaviest track's goes far above that.
+	for lane, load := range loads {
+		if load > 450 && load != 900 {
+			t.Fatalf("lane %d carries %g: %v (bounds %v order %v)", lane, load, loads, p.bounds, p.order)
+		}
+	}
+	if total := len(p.order[p.bounds[0]:p.bounds[4]]); total != 8 {
+		t.Fatalf("%d tracks assigned, want 8", total)
 	}
 }
 
@@ -292,5 +318,40 @@ func TestLaneCountChangesBetweenSegments(t *testing.T) {
 	<-done
 	if busy.Load() != 0 {
 		t.Fatalf("budget not returned: %d", busy.Load())
+	}
+}
+
+// Many short segments on every lane: a lane must render each segment once.
+// A stale wake, sent by Begin to a lane that had already rendered the new
+// segment and parked again, used to make that lane render it twice and let
+// End return before another lane finished.
+func TestForcedLanesRenderEachSegmentOnce(t *testing.T) {
+	defer ForceEveryLane()()
+	for _, c := range []struct{ tracks, lanes int }{{5, 4}, {12, 4}, {12, 8}, {3, 3}} {
+		var next [12]atomic.Int64
+		var broken atomic.Int64
+		p := New(c.lanes, c.tracks, func(track, from, count int) {
+			if !next[track].CompareAndSwap(int64(from), int64(from+count)) {
+				broken.Add(1)
+			}
+		})
+		for segment := range 3000 {
+			start, count := (segment*7)%40, 32+(segment*13)%97
+			for track := 0; track < c.tracks; track++ {
+				next[track].Store(int64(start))
+			}
+			p.Begin(start, count)
+			for frame := start; frame < start+count; frame++ {
+				p.Ready(frame)
+			}
+			p.End()
+			for track := 0; track < c.tracks; track++ {
+				if got := next[track].Load(); got != int64(start+count) || broken.Load() != 0 {
+					p.Close()
+					t.Fatalf("tracks %d lanes %d segment %d: track %d rendered to %d of %d, %d runs out of order", c.tracks, c.lanes, segment, track, got, start+count, broken.Load())
+				}
+			}
+		}
+		p.Close()
 	}
 }
