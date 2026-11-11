@@ -2,12 +2,15 @@
  * Only the capture status response is simulated. No microphone is opened. */
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const stall=require('./page-stall.cjs');
+// --write-fixture PATH writes the disposable score this suite needs: an edition-2 score with a vocal (audio) track.
+if(process.argv[2]==='--write-fixture'){const target=path.resolve(process.argv[3]);if(fs.existsSync(target))throw new Error('Use a new disposable path');fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,'cicada 2\n// cicada-pro-recording-test: disposable fixture\ntitle "Recording levels"\ntempo 120\nseed 42\ntrack vox audio {}\ntrack bass acid {}\npattern pulse notes steps=16 { 1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 . }\nscene main { bass=pulse }\nsong { main*8 }\n');process.exit(0)}
 async function until(fn,message){const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,50))}assert.fail(message)}
 test('Microphone levels and recording transport protection remain usable across panels',{timeout:90000},async t=>{
  const base=process.env.CICADA_LEVELS_URL;assert.ok(base);assert.equal(new URL(base).hostname,'127.0.0.1');
  const {chromium}=require(process.env.CICADA_PLAYWRIGHT_MODULE||'playwright');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});t.after(() => browser.close(), {timeout: 15000});
- const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],checks=[];
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});const watches=[];stall.teardown(t, browser, {watch: watches, exitWhenDone: true});
+ const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await (async()=>{watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));return context.newPage()})(),errors=[],checks=[];
  page.on('pageerror',e=>errors.push(e.message));
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'})};
  await page.goto(base+'/?panel=session',{waitUntil:'domcontentloaded'});await ready();
@@ -32,7 +35,7 @@ test('Microphone levels and recording transport protection remain usable across 
  await page.getByRole('button',{name:'Stop & save take',exact:true}).first().click();await ready();
  simulated={...simulated,activeCapture:'',capture:null,input:{...simulated.input,active:false}};
  await until(async()=>await page.getByRole('button',{name:'Play',exact:true}).first().isEnabled(),'transport did not unlock after capture ended');
- await page.getByRole('link',{name:'Session',exact:true}).click();await ready();await until(async()=>(await page.locator('[data-input-status]').innerText())==='Clipped input','stopping hid the overload');assert.equal(await page.getByLabel('Punch in',{exact:true}).isEnabled(),true);checks.push('finished capture restores controls while retaining its peak warning');
+ await page.getByRole('link',{name:'Session',exact:true}).click();await ready();await until(async()=>(await page.locator('[data-input-status]').innerText())==='Clipped input','stopping hid the overload');await until(async()=>await page.getByLabel('Punch in',{exact:true}).isEnabled(),'finished capture did not restore Punch in');checks.push('finished capture restores controls while retaining its peak warning');
  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile page overflow');
 
  simulated={...simulated,input:{enabled:true,active:true,channels:1,peakL:.125,peakR:.125,heldPeakL:.125,heldPeakR:.125,clipped:false,session:2}};
