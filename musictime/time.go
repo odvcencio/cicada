@@ -44,11 +44,10 @@ func MusicalTicks(meterMap seq.MeterMap, value string, position bool) (int64, er
 	switch {
 	case strings.HasSuffix(value, "ticks"):
 		number = strings.TrimSuffix(value, "ticks")
-	case strings.HasSuffix(value, "bars"):
-		number = strings.TrimSuffix(value, "bars")
-		multiplier = meterMap.BarTicks(0)
-	case strings.HasSuffix(value, "bar"):
-		number = strings.TrimSuffix(value, "bar")
+	case strings.HasSuffix(value, "bars"), strings.HasSuffix(value, "bar"):
+		if number = strings.TrimSuffix(value, "bars"); number == value {
+			number = strings.TrimSuffix(value, "bar")
+		}
 		multiplier = meterMap.BarTicks(0)
 	case strings.Contains(value, "/") && !position:
 		multiplier = seq.TicksPerWhole

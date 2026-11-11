@@ -56,6 +56,11 @@ func TestZeroMeterMapIsTheFixedBar(t *testing.T) {
 			t.Fatalf("bar %d: start %d, %d ticks, beat %d, %d beats", b, m.BarStart(b), m.BarTicks(b), m.BeatTicks(b), m.BeatsInBar(b))
 		}
 	}
+	for _, p := range [][3]int64{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}, {1, 5, 1}, {1, 1, 5}, {-3, 1, 1}} {
+		if _, ok := m.PositionTick(p[0], p[1], p[2]); ok {
+			t.Fatalf("the zero map accepted @%d.%d.%d", p[0], p[1], p[2])
+		}
+	}
 	explicit, err := NewMeterMap([]MeterChange{{Bar: 0, Meter: Meter{Beats: 4, Unit: 4}}})
 	if err != nil || explicit.segments != nil {
 		t.Fatalf("a single 4/4 change is not the zero map: %+v, %v", explicit, err)
