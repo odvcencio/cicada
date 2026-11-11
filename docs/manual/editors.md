@@ -104,32 +104,20 @@ explicit slot; Studio supplies its full project receipt and opens the copy with
 the chosen sound and scene context.
 
 Tracks, scenes and patterns have structural intents: `addtrack`,
-`deletetrack`, `settrackvoice`, `addscene`, `duplicatescene`, `deletescene`,
-`deletepattern` and `rename`. Each edits every source file of the project
-that names the entity (libraries apart) in one revision-checked change, one
-Undo step. A delete is refused while something else still names the entity,
-and the refusal's `uses` lists each place with its file and line. With
-`cascade`, `deletescene` also removes the scene's song entries, and
-`deletepattern` sets the pattern's scene bindings to `off` and removes its
-placements. A removal takes a comment that follows the declaration on its
-line. It also takes the comment lines directly above it (no blank line
-between), unless they open the file or the declaration is directly followed
-by another declaration of its kind: then they head a group and stay. A
-comment set apart by a blank line always stays. `settrackvoice` changes nothing silently: a track setting the new
-voice lacks is refused unless `dropparams` removes it, a parameter path or
-pattern the new voice cannot take is refused, and a change that plays but
-sounds different (drum lanes the new kit does not play, a row or mark the
-old voice played and the new one ignores, such as a pressure row on acid) is
-refused unless `acceptchanges` accepts it. The check knows every musical
-input a pattern can carry (the marks and brackets on steps, the velocity
-and expression rows, pattern settings, the velocity and gestures of
-performed notes, drum hits) and what each voice does with it. Brackets, for
-example, play as a tuplet on acid and as a chord on piano, so a change
-between the two is refused. A pattern or voice it does not model is refused with
-`voice_input_unmodeled` rather than let through. The
-engine seeds chance and humanize by a track's position and a pattern's slot,
-so a delete that moves a track or slot playing such a pattern is refused
-unless `reseed` accepts it. What a flag accepts is listed in the intent's
+`deletetrack`, `addscene`, `duplicatescene`, `deletescene`, `deletepattern`
+and `rename`. Each edits every source file of the project that names the
+entity (libraries apart) in one revision-checked change, one Undo step. A
+delete is refused while something else still names the entity, and the
+refusal's `uses` lists each place with its file and line. With `cascade`,
+`deletescene` also removes the scene's song entries, and `deletepattern` sets
+the pattern's scene bindings to `off` and removes its placements. A removal
+takes a comment that follows the declaration on its line. It also takes the
+comment lines directly above it (no blank line between), unless they open
+the file or the declaration is directly followed by another declaration of
+its kind: then they head a group and stay. A comment set apart by a blank
+line always stays. The engine seeds chance and humanize by a track's
+position and a pattern's slot, so a delete that moves a track or slot
+playing such a pattern is refused unless `reseed` accepts it. What a flag accepts is listed in the intent's
 `warnings` in `cicada apply --json`. `rename` updates every reference, and is
 refused rather than written half done when the result would not validate.
 `cicada intents --json` lists each one's fields and `reasons`.

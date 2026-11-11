@@ -462,9 +462,9 @@ whether the score `changed` and was `written`, the unified `diff`, any other
 file the apply read (put them in the envelope's `revisions` to have the apply
 refuse a file that changed since; see [Editors](editors.md)), and for each
 intent its `index` (from 0), `kind`, the `label` the edit history records and,
-when the intent made a change its flag accepted (such as `reseed` or
-`acceptchanges`), `warnings` with one line for each. The batch is one
-revision, so the diff covers all of it. Without `--write` nothing is written.
+when the intent made a change its flag accepted (such as `reseed`),
+`warnings` with one line for each. The batch is one revision, so the diff
+covers all of it. Without `--write` nothing is written.
 
 When the batch fails, `error.code` is one of:
 
