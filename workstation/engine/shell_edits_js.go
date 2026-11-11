@@ -35,6 +35,8 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	ctx, cancel := context.WithCancel(ctx)
 	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
 	u.seedEditorBaseline()
+	// A page that replaced the old one in place can keep the old lock.
+	u.syncHistoryLock()
 	// A page reload ends the old queue. A notice it left for the user shows
 	// here, and markers it left on regions this render shows fresh are gone.
 	storage := js.Global().Get("sessionStorage")
@@ -57,6 +59,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		if node := domCall(root, "querySelector", "[data-workspace-retry]"); workspacePresent(node) {
 			node.Set("hidden", !u.blocked.Load())
 		}
+		u.syncHistoryLock()
 	})
 	document := js.Global().Get("document")
 	u.listen(document, "submit", u.submit)
@@ -419,6 +422,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 		if _, _, patchErr := u.applyTree(domCall(wrapper, "querySelector", ".update-region__body"), "update-"+update.ID, update.HTML, job, nil); patchErr != nil {
 			continue
 		}
+		u.syncHistoryLock()
 		if shellHeld(wrapper) {
 			if files = domCall(wrapper, "querySelectorAll", "input[type=hidden]:is([name=fileRevision],[name=diskRevision])"); files.Length() == len(kept) {
 				for j, value := range kept {
@@ -429,6 +433,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			continue
 		}
 		confirm(wrapper, update.Digest)
+		u.syncHistoryLock()
 	}
 	if len(projection.Regions) < 2 {
 		u.advanceRegions(projection, job, confirm)
@@ -448,6 +453,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			}
 		}
 	}
+	u.syncHistoryLock()
 	workspaceRestoreScrolls(scrolls, x, y)
 	if projection.Title != "" {
 		document.Set("title", projection.Title)
@@ -481,6 +487,37 @@ func (u *workspaceUI) reloadIfNeeded() {
 	}
 }
 
+// syncHistoryLock puts the queue's reason into the history lock and shows the
+// lock on the buttons. Call it wherever the queue blocks or unblocks and after
+// every region patch: a patch replaces the buttons with the server's markup,
+// which carries no lock.
+func (u *workspaceUI) syncHistoryLock() {
+	history.Set(historyQueueBlocked, u.blocked.Load())
+	applyHistoryLock()
+}
+
+// applyHistoryLock shows the history lock on Undo and Redo. The buttons stay
+// enabled and focusable (a disabled button loses keyboard focus); aria-disabled
+// marks them, and the submit handler and the keyboard commands refuse a press
+// while history.Locked(). The server's own disabled (nothing to undo) is never
+// touched.
+func applyHistoryLock() {
+	locked, names := history.Locked(), history.Names()
+	for _, selector := range []string{"#undo-form button", "#redo-form button"} {
+		button := js.Global().Get("document").Call("querySelector", selector)
+		if !workspacePresent(button) {
+			continue
+		}
+		if locked {
+			domSet(button, "aria-disabled", "true")
+			domSet(button, "data-history-lock", names)
+		} else {
+			domDrop(button, "aria-disabled")
+			domDrop(button, "data-history-lock")
+		}
+	}
+}
+
 // reload renders the page again the way an edit did before update regions:
 // GoSX's same-URL revalidation reconciles the page and remounts the engines
 // whose props changed, without a document load. The queue stays blocked
@@ -488,6 +525,7 @@ func (u *workspaceUI) reloadIfNeeded() {
 func (u *workspaceUI) reload() {
 	u.blocked.Store(true)
 	u.reloading = true
+	u.syncHistoryLock()
 	u.status.Set("Updating Studio to show the saved song…")
 	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("navigation")) && gosx.Get("navigation").Get("revalidate").Type() == js.TypeFunction {
 		navigation := gosx.Get("navigation")

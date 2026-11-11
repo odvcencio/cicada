@@ -21,12 +21,25 @@ func (ReplaceText) Kind() string { return "replacetext" }
 //
 // Example: {"kind":"replacedeclaration","declaration":"pattern","name":"riff","text":"pattern riff { a1 . a1 . e2 . g2 . }"}
 type ReplaceDeclaration struct {
-	Declaration string `json:"declaration" cicada:"required"`                                                                                                                                                                                                                                                                     // the syntax node type, such as track_decl, scene_decl or title_decl, or pattern
+	Declaration string `json:"declaration" cicada:"required" values:"declaration"`                                                                                                                                                                                                                                                // the syntax node type, such as track_decl, scene_decl or title_decl, or pattern
 	Name        string `json:"name,omitempty" when:"declaration=instrument_decl|preset_decl|kit_decl|track_decl|phrase_decl|pattern|acid_pattern|note_pattern|drum_pattern|performance_pattern|scene_decl|fx_decl|bus_decl|export_decl|asset_decl|clip_decl|sampler_decl|lfo_decl|envelope_decl|sway_decl|contour_decl|mod_decl"` // the declaration's name; empty for title_decl, tempo_decl, key_decl and seed_decl
 	Text        string `json:"text" cicada:"required"`                                                                                                                                                                                                                                                                            // the declaration's new text
 }
 
 func (ReplaceDeclaration) Kind() string { return "replacedeclaration" }
+
+// declarationKinds are the values ReplaceDeclaration's declaration accepts:
+// "pattern" for any pattern type, then every top-level declaration of the
+// grammar (language/grammar/grammar.go, _declaration), in its order.
+// TestDeclarationKindsFollowTheGrammar keeps the two equal.
+var declarationKinds = valueList("declaration", "pattern",
+	"import_decl", "title_decl", "tempo_decl", "key_decl", "seed_decl",
+	"instrument_decl", "preset_decl", "kit_decl", "track_decl", "phrase_decl",
+	"acid_pattern", "note_pattern", "drum_pattern", "performance_pattern",
+	"automate_decl", "scene_decl", "song_decl", "fx_decl", "bus_decl",
+	"master_decl", "export_decl", "arrange_decl", "asset_decl", "clip_decl", "sampler_decl", "live_decl",
+	"lfo_decl", "envelope_decl", "sway_decl", "contour_decl", "mod_decl",
+	"midi_decl")
 
 func init() {
 	Register("replacetext", func() Intent { return &ReplaceText{} })
@@ -77,6 +90,9 @@ func declarationMatches(kind, requested string) bool {
 
 func replaceDeclaration(ctx *Context, intent Intent) error {
 	in := intent.(*ReplaceDeclaration)
+	if !containsString(declarationKinds, in.Declaration) {
+		return &FieldError{Field: "declaration", Err: fmt.Errorf("unknown declaration type %q; cicada intents replacedeclaration lists the types", in.Declaration)}
+	}
 	before, err := textDeclarations(ctx.Source)
 	if err != nil {
 		return err

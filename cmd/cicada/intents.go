@@ -8,10 +8,18 @@ import (
 	edits "m31labs.dev/cicada/edit"
 )
 
-const intentsUsage = "usage: cicada intents [--json] [kind]"
+const intentsUsage = "usage: cicada intents [--json] [--index | kind]"
 
 // intentsSchema names the format of cicada intents --json.
 const intentsSchema = "cicada.intents.v1"
+
+// intentsIndexSchema names the format of cicada intents --json --index, a
+// document of its own: it has none of the catalog's fields.
+const intentsIndexSchema = "cicada.intents_index.v1"
+
+// intentsIndexUsage is the refusal of --index without --json: the plain list
+// already gives each kind and its meaning.
+const intentsIndexUsage = "usage: cicada intents --json --index (--index needs --json; cicada intents alone lists every kind and its meaning)"
 
 type intentsDocument struct {
 	Schema          string              `json:"schema"`
@@ -20,32 +28,65 @@ type intentsDocument struct {
 	Intents         []edits.IntentInfo  `json:"intents"`
 }
 
+// intentsIndexDocument is cicada intents --json --index: each kind with its
+// one-line meaning and nothing else, so an agent can scan the kinds before
+// it asks for one in full.
+type intentsIndexDocument struct {
+	Schema          string             `json:"schema"`
+	EnvelopeVersion int                `json:"envelope_version"`
+	Index           []intentIndexEntry `json:"index"`
+}
+
+type intentIndexEntry struct {
+	Kind    string `json:"kind"`
+	Meaning string `json:"meaning"`
+}
+
 // intentsCommand prints the catalog of the edit intents cicada apply accepts,
 // or one kind of it. The catalog comes from the intent registry.
 func intentsCommand(args []string, stdout io.Writer) error {
 	asJSON := hasJSONFlag(args)
+	schema := intentsSchema
+	for _, arg := range args {
+		if arg == "--index" {
+			schema = intentsIndexSchema
+		}
+	}
 	fail := func(code string, err error) error {
 		if asJSON {
-			if writeErr := writeAgentJSON(stdout, jsonErrorDocument{Schema: intentsSchema, Error: jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
+			if writeErr := writeAgentJSON(stdout, jsonErrorDocument{Schema: schema, Error: jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
 				return writeErr
 			}
 		}
 		return err
 	}
 	var kinds []string
+	index := false
 	for _, arg := range args {
 		switch {
 		case arg == "--json":
+		case arg == "--index":
+			index = true
 		case strings.HasPrefix(arg, "-"):
 			return fail("usage", fmt.Errorf("%s", intentsUsage))
 		default:
 			kinds = append(kinds, arg)
 		}
 	}
-	if len(kinds) > 1 {
+	if len(kinds) > 1 || index && len(kinds) != 0 {
 		return fail("usage", fmt.Errorf("%s", intentsUsage))
 	}
+	if index && !asJSON {
+		return fail("usage", fmt.Errorf("%s", intentsIndexUsage))
+	}
 	catalog := edits.Catalog()
+	if index {
+		document := intentsIndexDocument{Schema: intentsIndexSchema, EnvelopeVersion: edits.EnvelopeVersion, Index: make([]intentIndexEntry, 0, len(catalog))}
+		for _, info := range catalog {
+			document.Index = append(document.Index, intentIndexEntry{Kind: info.Kind, Meaning: info.Meaning})
+		}
+		return writeAgentJSON(stdout, document)
+	}
 	if len(kinds) == 1 {
 		info, ok := edits.DescribeIntent(kinds[0])
 		if !ok {
