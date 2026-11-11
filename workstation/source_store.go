@@ -31,6 +31,18 @@ type savedSource struct {
 func sourceFingerprint(source string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(source))) }
 func sourcePath(owner, id string) string     { return "sources/" + noteOwnerPrefix(owner) + id + ".json" }
 
+// sameSourceText reports whether a recovery copy holds exactly the text of a
+// file. Only line breaks are normalized, because a browser cannot keep them:
+// a textarea reports CRLF and a lone CR as LF, and a form sends LF as CRLF.
+// Every other difference, a missing final newline included, is a change.
+func sameSourceText(copy, file string) bool {
+	if copy == file {
+		return true
+	}
+	lines := strings.NewReplacer("\r\n", "\n", "\r", "\n")
+	return lines.Replace(copy) == lines.Replace(file)
+}
+
 func validSourceFile(file string) bool {
 	return len(file) <= 1024 && (file == "" || filepath.IsLocal(file) && !strings.Contains(file, "\\") && filepath.ToSlash(filepath.Clean(file)) == file)
 }
@@ -74,8 +86,15 @@ func (s *noteStore) saveSource(owner string, saved savedSource) (savedSource, er
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		if err == nil {
-			if previous.State == "closed" || previous.File != saved.File || previous.Revision != saved.Revision || previous.Sequence > saved.Sequence {
+		if err == nil && previous.State == "closed" {
+			// Save, Discard and a clean editor close a copy for good. A copy
+			// closed because it held the file's text (closeSourceCopy) keeps
+			// its sequence: its window may type again, and that text is kept.
+			if previous.File != saved.File || previous.Sequence >= saved.Sequence {
+				return errSourceCheckpoint
+			}
+		} else if err == nil {
+			if previous.File != saved.File || previous.Revision != saved.Revision || previous.Sequence > saved.Sequence {
 				return errSourceCheckpoint
 			}
 			if previous.Sequence == saved.Sequence {
@@ -143,8 +162,10 @@ func (s *noteStore) getSource(owner, id string) (savedSource, error) {
 }
 
 // Tombstones also reject a delayed checkpoint that arrives after Save or
-// Discard. A fork retires its parent only if that parent has not been edited.
-func (s *noteStore) closeSource(owner, id, file, parentID, parentHash string) error {
+// Discard. sequence is the last edit the request knew of: a copy that has
+// newer edits keeps them. A fork retires its parent only if that parent has
+// not been edited.
+func (s *noteStore) closeSource(owner, id, file string, sequence uint64, parentID, parentHash string) error {
 	if owner == "" || !validNoteID(id) || !validSourceFile(file) {
 		return fmt.Errorf("invalid Code recovery receipt")
 	}
@@ -157,8 +178,10 @@ func (s *noteStore) closeSource(owner, id, file, parentID, parentHash string) er
 			return errSourceCheckpoint
 		}
 		closed := savedSource{Version: 1, ID: id, File: file, Sequence: ^uint64(0), State: "closed", Updated: time.Now().UTC()}
-		if err := writeSource(root, owner, closed); err != nil {
-			return err
+		if err != nil || current.State == "closed" || current.Sequence <= sequence {
+			if err := writeSource(root, owner, closed); err != nil {
+				return err
+			}
 		}
 		if validNoteID(parentID) && parentID != id {
 			parent, err := loadSource(root, owner, parentID)
@@ -175,4 +198,31 @@ func (s *noteStore) closeSource(owner, id, file, parentID, parentHash string) er
 		}
 		return nil
 	})
+}
+
+// closeSourceCopy closes a ready copy whose text the caller found equal to
+// the file, under the store lock, only if it is still the copy that was
+// listed: the same file, sequence and text. A copy edited since is left as
+// it is. The closed copy keeps its sequence, so a later edit in its window
+// is kept again (see saveSource).
+func (s *noteStore) closeSourceCopy(owner string, listed savedSource) (bool, error) {
+	if owner == "" || !validNoteID(listed.ID) {
+		return false, fmt.Errorf("invalid Code recovery receipt")
+	}
+	closed := false
+	err := s.locked(func(root *os.Root) error {
+		current, err := loadSource(root, owner, listed.ID)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if current.State != "ready" || current.File != listed.File || current.Sequence != listed.Sequence || current.Source != listed.Source {
+			return nil
+		}
+		closed = true
+		return writeSource(root, owner, savedSource{Version: 1, ID: current.ID, File: current.File, Revision: current.Revision, Sequence: current.Sequence, State: "closed", Updated: time.Now().UTC()})
+	})
+	return closed && err == nil, err
 }

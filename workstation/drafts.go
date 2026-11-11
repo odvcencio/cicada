@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -123,20 +122,40 @@ func (s *studioApp) storeFileDraft(source, revision, owner, kind, file string) (
 	return key, nil
 }
 
+// closeCopiesOfFile closes the owner's recovery copies of file that hold
+// exactly text, the file's text as just read or written, and returns the
+// copies that differ. A copy edited after it was listed is kept. Closing is
+// housekeeping: a copy that cannot be read or closed is left as it is, and
+// the caller's work goes on.
+func (s *studioApp) closeCopiesOfFile(owner, file, text string, copies []savedSource) []savedSource {
+	kept := make([]savedSource, 0, len(copies))
+	for _, copy := range copies {
+		if copy.File != file || !sameSourceText(copy.Source, text) {
+			kept = append(kept, copy)
+			continue
+		}
+		_, _ = s.notes.closeSourceCopy(owner, copy)
+	}
+	return kept
+}
+
 // Each project file has its own recovery slot. A check or rejected save in a
 // second file must not replace the draft awaiting correction in the first.
-func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, []savedSource, error) {
+// disk is the file's text in this render: a copy that holds it is not unsaved
+// work, so it is closed and never shown, and the newest copy that differs is.
+func (s *studioApp) sourceDraft(r *http.Request, file, disk string) (draft, []savedSource, error) {
 	owner := workspaceOwner(r)
 	if owner == "" {
 		return draft{}, nil, nil
 	}
 	if s.notes != nil {
 		copies, err := s.notes.sourceCopies(owner, file)
+		copies = s.closeCopiesOfFile(owner, file, disk, copies)
 		selected := r.URL.Query().Get("codeDraft")
 		s.draftMu.Lock()
 		var volatile draft
 		for _, candidate := range s.drafts {
-			if candidate.Owner == owner && candidate.File == file && candidate.Kind == "source" && candidate.RecoveryError != "" && (selected == "" || selected == candidate.ID) && time.Now().Before(candidate.Expires) && candidate.Updated.After(volatile.Updated) {
+			if candidate.Owner == owner && candidate.File == file && candidate.Kind == "source" && candidate.RecoveryError != "" && (selected == "" || selected == candidate.ID) && time.Now().Before(candidate.Expires) && candidate.Updated.After(volatile.Updated) && !sameSourceText(candidate.Source, disk) {
 				volatile = candidate
 			}
 		}
@@ -157,7 +176,7 @@ func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, []savedSou
 	s.draftMu.Lock()
 	defer s.draftMu.Unlock()
 	for _, d := range s.drafts {
-		if d.Owner == owner && d.Kind == "source" && d.File == file && time.Now().Before(d.Expires) {
+		if d.Owner == owner && d.Kind == "source" && d.File == file && time.Now().Before(d.Expires) && !sameSourceText(d.Source, disk) {
 			return d, nil, nil
 		}
 	}
@@ -168,25 +187,15 @@ func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, []savedSou
 // workflows use its presence to avoid replacing a score with unsaved work.
 func (s *studioApp) clearSourceDraft(r *http.Request, file string, fields map[string]string) error {
 	owner := workspaceOwner(r)
-	saved := sourceFingerprint(strings.ReplaceAll(fields["content"], "\r\n", "\n"))
 	if s.notes != nil {
 		id := fields["recoveryId"]
 		if id != "" {
-			if err := s.notes.closeSource(owner, id, file, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
-				return err
+			// The last edit the form knew of; without one, close the copy.
+			sequence, err := strconv.ParseUint(fields["recoverySequence"], 10, 64)
+			if err != nil || sequence == 0 {
+				sequence = ^uint64(0)
 			}
-		}
-		// Retire every other copy of what was just saved, too: a copy the
-		// save did not name (an earlier capture, or one from an editor not
-		// yet told of an earlier save) holds no unsaved work.
-		if _, ok := fields["content"]; ok {
-			copies, err := s.notes.sourceCopies(owner, file)
-			for _, copy := range copies {
-				if sourceFingerprint(strings.ReplaceAll(copy.Source, "\r\n", "\n")) == saved {
-					err = errors.Join(err, s.notes.closeSource(owner, copy.ID, file, "", ""))
-				}
-			}
-			if err != nil {
+			if err := s.notes.closeSource(owner, id, file, sequence, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
 				return err
 			}
 		}
@@ -204,12 +213,6 @@ func (s *studioApp) clearSourceDraft(r *http.Request, file string, fields map[st
 		if d.Owner == owner && d.Kind == "source" && (receipt == "" || d.Expires.After(expires)) {
 			receipt, expires = id, d.Expires
 		}
-	}
-	if _, ok := fields["content"]; ok && owner != "" {
-		if s.savedSources == nil {
-			s.savedSources = map[string]string{}
-		}
-		s.savedSources[owner+"\x00"+file] = saved
 	}
 	s.draftMu.Unlock()
 	store := session.Current(r)

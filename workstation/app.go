@@ -24,14 +24,10 @@ import (
 )
 
 type studioApp struct {
-	backend       *backend
-	collaboration *collaboration
-	draftMu       sync.Mutex
-	drafts        map[string]draft
-	// savedSources is the fingerprint of the text each owner last saved to
-	// each file, so a recovery checkpoint of that same text, arriving after
-	// the save, is not kept as unsaved work. Guarded by draftMu.
-	savedSources   map[string]string
+	backend        *backend
+	collaboration  *collaboration
+	draftMu        sync.Mutex
+	drafts         map[string]draft
 	notes          *noteStore
 	bootstrapMu    sync.Mutex
 	bootstrapToken string
@@ -301,18 +297,13 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 		}
 	}
 	if panel == "code" {
-		saved, copies, err := s.sourceDraft(ctx.Request, view.File)
+		// A copy that holds the file's text is not shown: as a draft it would
+		// mark the editor unsaved and pin its file revision, so the editor
+		// would stop following saves, Undo and Redo.
+		saved, copies, err := s.sourceDraft(ctx.Request, view.File, view.DiskSource)
 		view.SourceCopies = copies
 		if err != nil {
 			view.RecoveryError = "Code recovery could not be read. Its files are retained: " + err.Error()
-		}
-		// A recovery copy that holds exactly the saved file is not unsaved
-		// work: a checkpoint can land just after the save that made it equal
-		// (it was in flight, or started from an editor not yet told of the
-		// save). Showing it would mark the editor unsaved and pin its file
-		// revision, so the editor would stop following later saves and Undo.
-		if saved.Kind == "source" && strings.ReplaceAll(saved.Source, "\r\n", "\n") == strings.ReplaceAll(view.DiskSource, "\r\n", "\n") {
-			saved = draft{}
 		}
 		if saved.Kind == "source" {
 			if saved.RecoveryError != "" {

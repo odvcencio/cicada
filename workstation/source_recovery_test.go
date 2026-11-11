@@ -1,17 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"m31labs.dev/cicada/project"
 )
 
 func TestSourceCheckpointsSurviveServiceRestartAndPortChange(t *testing.T) {
@@ -113,71 +109,5 @@ func TestDiscardWithoutAReceiptKeepsOtherWindowCopies(t *testing.T) {
 	}
 	if !strings.Contains(getPage(t, client, app.URL+"/?panel=code"), "another window&#39;s idea") {
 		t.Fatal("an action without a recovery receipt discarded another window's copy")
-	}
-}
-
-// TestRecoveryCopyOfTheSavedFileIsNotUnsaved: after a Code save, a recovery
-// copy holding the saved text is not unsaved work, whether it was kept before
-// the save under another id or lands after it (it was in flight, or an editor
-// not yet told of the save sent it). The Code panel shows no draft, so the
-// editor keeps following saves and Undo. A copy of other text is kept.
-func TestRecoveryCopyOfTheSavedFileIsNotUnsaved(t *testing.T) {
-	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/workspace":
-			_ = json.NewEncoder(w).Encode(workspace{Revision: "recorded", Valid: true, Project: &project.Project{Title: "Recovery"}})
-		case "/api/source":
-			io.WriteString(w, `{"revision":"recorded","valid":true}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(audio.Close)
-	b, err := newBackend(audio.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler, err := newConfiguredApp(b, workspaceOptions{StateDir: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := httptest.NewServer(handler)
-	t.Cleanup(app.Close)
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	csrf := tokenFromPage(t, getPage(t, client, app.URL+"/?panel=code"))
-	checkpoint := func(id, content string) {
-		t.Helper()
-		values := map[string]string{"recoveryId": strings.Repeat(id, 32), "recoverySequence": "1", "fileRevision": "older", "file": "", "content": content}
-		if r := noteJSONPost(t, client, app.URL, "/__actions/source-checkpoint", csrf, values); r.StatusCode != 200 {
-			data, _ := io.ReadAll(r.Body)
-			t.Fatal("checkpoint failed", r.StatusCode, string(data))
-		}
-	}
-	unsaved := func() bool { return strings.Contains(getPage(t, client, app.URL+"/?panel=code"), "data-code-unsaved") }
-	saved := "// the phrase that is saved\n"
-	checkpoint("e", saved)
-	if !unsaved() {
-		t.Fatal("an unsaved copy was not restored")
-	}
-	// The save names another copy; the one with the same text goes too.
-	save := map[string]string{"recoveryId": strings.Repeat("f", 32), "recoverySequence": "1", "fileRevision": "recorded", "revision": "recorded", "content": saved}
-	if r := noteJSONPost(t, client, app.URL, "/__actions/source", csrf, save); r.StatusCode != http.StatusSeeOther {
-		data, _ := io.ReadAll(r.Body)
-		t.Fatal("save failed", r.StatusCode, string(data))
-	}
-	if unsaved() {
-		t.Fatal("a copy of the saved text survived the save")
-	}
-	// A checkpoint of the saved text that lands after the save is not kept.
-	checkpoint("a", saved)
-	if unsaved() {
-		t.Fatal("a late checkpoint of the saved text was kept as unsaved work")
-	}
-	// Other text is.
-	checkpoint("b", saved+"// typed after the save\n")
-	if !unsaved() {
-		t.Fatal("a real unsaved copy was not restored")
 	}
 }

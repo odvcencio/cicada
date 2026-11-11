@@ -482,14 +482,51 @@ test('Loop part after a draw sends the revision its region shows', async () => {
   await noNavigation();
 });
 
+// Code recovery around a save. These steps run before the ones that leave
+// Code drafts, so the Code editor starts clean.
+const codeForm = target => target.locator('#score form', {has: target.locator('textarea')});
+const codeUnsaved = target => codeForm(target).evaluate(form => form.hasAttribute('data-code-unsaved'));
+async function typeAtEnd(target, text) {
+  await target.locator('#score textarea').first().focus();
+  await target.keyboard.press('Control+End');
+  await target.keyboard.type(text);
+}
+// Saves the Code editor and waits until the page shows the saved file.
+async function saveCode(page, state, text) {
+  await codeForm(page).getByRole('button', {name: 'Save file', exact: true}).click();
+  await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
+  const saved = await state('/api/state');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#score input[name=revision]').first().inputValue() === saved.revision, 'the page did not show the saved file');
+  // Save file is a GoSX form, so it navigates; the steps after this one
+  // count only their own navigations.
+  await until(() => page.evaluate(() => window.__studioEdits.navigations > 0), 'no navigation', 5_000).catch(() => {});
+  await page.evaluate(() => { window.__studioEdits.navigations = 0; });
+}
+// Undoes the last save: the Code editor follows it.
+async function undoCode(page, state, posts, settled, before) {
+  const start = posts.length;
+  await page.locator('#undo-form button[type=submit]').click();
+  await settled(start + 1);
+  const undone = await state('/api/state');
+  assert.equal(undone.source, before.source, 'Undo did not restore the score');
+  await until(async () => await page.locator('#score textarea').first().inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
+    'the Code editor did not follow the Undo');
+}
+// Records the other window's recovery answers.
+function checkpointAnswers(target) {
+  const answers = [];
+  const listener = response => { if (new URL(response.url()).pathname === '/__actions/source-checkpoint') answers.push(response); };
+  target.on('response', listener);
+  return {answers, stop: () => target.off('response', listener)};
+}
+
 test('a recovery copy of the text a Code save writes does not keep the Code editor from following Undo', async () => {
-  // Before the steps that leave Code drafts: the editor starts clean.
   const {page, state, posts, settled} = await studio();
-  const editor = page.locator('#score textarea').first();
+  assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
   const before = await state('/api/state');
-  assert.equal(await page.locator('#score form', {has: page.locator('textarea')}).evaluate(form => form.hasAttribute('data-code-unsaved')), false, 'the Code editor did not start clean');
   const phrase = '\n// saved phrase';
-  const text = (await editor.inputValue()) + phrase;
+  const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
   // A recovery copy of that text that the save will not name, such as a
   // recovered draft's earlier copy, or one an editor kept just before.
   await page.evaluate(async content => {
@@ -501,24 +538,82 @@ test('a recovery copy of the text a Code save writes does not keep the Code edit
         content, recoveryId: id, recoverySequence: '1', recoveryParentId: '', recoveryParentHash: ''})});
     if (!response.ok) throw new Error('checkpoint returned ' + response.status);
   }, text);
-  await editor.focus();
-  await page.keyboard.press('Control+End');
-  await page.keyboard.type(phrase);
-  assert.equal(await editor.inputValue(), text);
-  await page.locator('#score form', {has: page.locator('textarea')}).getByRole('button', {name: 'Save file', exact: true}).click();
-  await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
-  const afterSave = await state('/api/state');
-  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
-  await until(async () => await page.locator('#score input[name=revision]').first().inputValue() === afterSave.revision, 'the page did not show the saved file');
-  assert.equal(await page.locator('#score form', {has: page.locator('textarea')}).evaluate(form => form.hasAttribute('data-code-unsaved')), false, 'the saved text came back as an unsaved draft');
-  // Undo the save: the Code editor follows it.
-  const start = posts.length;
-  await page.locator('#undo-form button[type=submit]').click();
-  await settled(start + 1);
-  const undone = await state('/api/state');
-  assert.equal(undone.source, before.source, 'Undo did not restore the score');
-  await until(async () => await editor.inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
-    'the Code editor did not follow the Undo');
+  await typeAtEnd(page, phrase);
+  assert.equal(await page.locator('#score textarea').first().inputValue(), text);
+  await saveCode(page, state, text);
+  assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
+  await undoCode(page, state, posts, settled, before);
+});
+
+test('a checkpoint of the saved text that lands after the save keeps no copy, and its window says so', async () => {
+  const {page, state, posts, settled} = await studio();
+  const other = await otherClient();
+  assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
+  const before = await state('/api/state');
+  const phrase = '\n// typed in two windows';
+  const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
+  // The other window's checkpoints are held until this window has saved the
+  // same text, so they land after the save, whatever the timing.
+  const held = [];
+  await other.route('**/__actions/source-checkpoint', route => { held.push(route); });
+  const {answers, stop} = checkpointAnswers(other);
+  try {
+    // One input event, so the held checkpoint carries the whole text.
+    await other.locator('#score textarea').first().fill(text);
+    await until(() => held.length > 0, 'the other window sent no checkpoint');
+    await typeAtEnd(page, phrase);
+    await saveCode(page, state, text);
+    await other.unroute('**/__actions/source-checkpoint');
+    for (const route of held.splice(0)) await route.continue().catch(() => {});
+    const landed = () => answers.find(response => response.status() === 200 && response.request().postDataJSON().content === text);
+    await until(() => landed(), 'the held checkpoint did not land');
+    const answer = await landed().json();
+    assert.equal(answer.data.kept, false, 'a copy of the text the file has was kept');
+    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'No unsaved Code edits. The score file has this text.',
+      'the other window did not say that the file has its text');
+  } finally {
+    stop();
+    await other.unroute('**/__actions/source-checkpoint');
+  }
+  assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
+  await undoCode(page, state, posts, settled, before);
+});
+
+test('a save does not stop another window that typed the same text from keeping its later typing', async () => {
+  const {page, state, posts, settled} = await studio();
+  const other = await otherClient();
+  assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
+  const before = await state('/api/state');
+  const phrase = '\n// the same phrase in two windows';
+  const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
+  const {answers, stop} = checkpointAnswers(other);
+  const answered = content => answers.find(response => response.request().postDataJSON().content === content);
+  try {
+    await other.locator('#score textarea').first().fill(text);
+    await until(() => answered(text)?.status() === 200, 'the other window kept no copy');
+    await typeAtEnd(page, phrase);
+    await saveCode(page, state, text);
+    assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
+    await undoCode(page, state, posts, settled, before);
+    // The other window types on: its next checkpoint is kept.
+    await other.locator('#score textarea').first().fill(text + ' and more');
+    await until(() => answered(text + ' and more'), 'the other window sent no checkpoint after typing on');
+    const last = answered(text + ' and more');
+    assert.equal(last.status(), 200, 'the other window\'s later typing was refused');
+    assert.equal((await last.json()).data.kept, true, 'the other window\'s later typing was not kept');
+    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
+      'the other window did not say that its copy was kept');
+  } finally {
+    stop();
+  }
+  // The copy survives a reload of that window; discarding it leaves none.
+  await other.reload();
+  await other.locator('#studio-shell[data-shell-edits="ready"]').waitFor({timeout: 30_000});
+  assert.equal(await other.locator('#score textarea').first().inputValue(), text + ' and more', 'the other window\'s draft was not restored');
+  assert.equal(await codeUnsaved(other), true, 'the restored draft was not marked unsaved');
+  await codeForm(other).getByRole('button', {name: 'Discard draft', exact: true}).click();
+  await until(async () => !(await codeUnsaved(other)), 'the draft was not discarded');
+  assert.equal((await state('/api/state')).source, before.source, 'the other window changed the score');
 });
 
 test('the Code editor stays mounted while other regions are patched', async () => {

@@ -147,13 +147,22 @@ func (u *workspaceUI) checkpointSources() {
 			request.Header.Set("Accept", "application/json")
 			request.Header.Set("X-CSRF-Token", u.props.CSRF)
 			response, err := http.DefaultClient.Do(request)
+			// Studio says whether it kept a copy: it keeps none of text the
+			// file already has. Older versions do not say, and keep one.
+			var reply struct {
+				Data struct {
+					Kept *bool `json:"kept"`
+				} `json:"data"`
+			}
 			if response != nil {
+				_ = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&reply)
 				_, _ = io.Copy(io.Discard, response.Body)
 				response.Body.Close()
 				if response.StatusCode != http.StatusOK {
 					err = fmt.Errorf("recovery returned %d", response.StatusCode)
 				}
 			}
+			kept := reply.Data.Kept == nil || *reply.Data.Kept
 			cancel()
 			if u.closed.Load() {
 				return
@@ -174,7 +183,7 @@ func (u *workspaceUI) checkpointSources() {
 				// and Back can otherwise select a checkpoint not yet on disk.
 				if location, err := url.Parse(js.Global().Get("location").Get("href").String()); err == nil {
 					query := location.Query()
-					if current.clean {
+					if current.clean || !kept {
 						query.Del("codeDraft")
 					} else {
 						query.Set("codeDraft", current.id)
@@ -188,6 +197,8 @@ func (u *workspaceUI) checkpointSources() {
 				}
 				if current.clean {
 					u.sourceStatus("No unsaved Code edits.")
+				} else if !kept {
+					u.sourceStatus("No unsaved Code edits. The score file has this text.")
 				} else {
 					u.sourceStatus("Recovery copy kept on this device. Use Save file to apply edits to the song.")
 				}
