@@ -11,6 +11,7 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func vocalRampTake(t *testing.T, s *studio) takejournal.Take {
@@ -70,7 +71,7 @@ func TestVocalEditingOffsetFadesAndImmutablePrints(t *testing.T) {
 	a := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .125)
 	b := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .375)
 	comp := vocalComp{Track: "vox", Tempo: 120000, Segments: []vocalSegment{{Take: a.ID, Start: 0, End: ticksPerBar, FadeMS: &fade}, {Take: b.ID, Start: ticksPerBar, End: 2 * ticksPerBar, FadeMS: &fade, CrossfadeMS: &cross}}}
-	asset, err := s.printVocalComp(comp, 48000)
+	asset, err := s.printVocalComp(comp, 48000, seq.MeterMap{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestVocalEditingOffsetFadesAndImmutablePrints(t *testing.T) {
 	// one-sided crossfade still reaches the incoming pass without a zero dip.
 	aPunch := fakeTimelineTake(t, s, 0, ticksPerBar, 96000, .125)
 	comp.Segments[0].Take = aPunch.ID
-	bounded, err := s.printVocalComp(comp, 48000)
+	bounded, err := s.printVocalComp(comp, 48000, seq.MeterMap{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,7 @@ func TestVocalEditingOffsetFadesAndImmutablePrints(t *testing.T) {
 		t.Fatal("bounded join lost continuity")
 	}
 	comp.Segments[1].CrossfadeMS = &zero
-	if _, err = s.printVocalComp(comp, 48000); err != nil {
+	if _, err = s.printVocalComp(comp, 48000, seq.MeterMap{}); err != nil {
 		t.Fatal(err)
 	}
 	old, _ := os.ReadFile(takeRoot(s.path) + "/" + asset.Path)

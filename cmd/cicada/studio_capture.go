@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // Manual correction is the residual after reported device timing, pinned to
@@ -125,7 +126,9 @@ func (t *studioTransport) startCapture(calibration capture.Calibration) error {
 	return nil
 }
 
-func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli int64, bars int) error {
+// prepareCaptureLocked takes the meter map of the stream that will play,
+// because a fresh stream is stored on t only after its count-in is prepared.
+func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, meterMap seq.MeterMap, bpmMilli int64, bars int) error {
 	if t.pendingCapture == nil {
 		return nil
 	}
@@ -138,7 +141,7 @@ func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli
 			return err
 		}
 	}
-	countIn, err := capture.NewCountIn(t.meterMap(), t.sampleRate, bpmMilli, bars)
+	countIn, err := capture.NewCountIn(meterMap, t.sampleRate, bpmMilli, bars)
 	if err != nil {
 		return err
 	}

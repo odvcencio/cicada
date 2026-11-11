@@ -311,7 +311,7 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 		segment.OffsetMS, segment.FadeMS, segment.CrossfadeMS = settings.OffsetMS, settings.FadeMS, settings.CrossfadeMS
 	}
 	next.Segments = replaceVocalSegment(next.Segments, segment)
-	asset, err := s.printVocalComp(next, t.Rate)
+	asset, err := s.printVocalComp(next, t.Rate, p.MeterMap())
 	if err != nil {
 		return nil, env, err
 	}
@@ -333,7 +333,9 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	return result, env, nil
 }
 
-func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
+// printVocalComp places the comp on the song's meter map: its segments and
+// tempo steps are song positions.
+func (s *studio) printVocalComp(c vocalComp, rate int, meterMap seq.MeterMap) (project.Asset, error) {
 	var result project.Asset
 	if err := s.openTakes(); err != nil {
 		return result, err
@@ -352,7 +354,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	if err := edits.ValidateVocalComp(c); err != nil {
 		return result, err
 	}
-	clock, err := project.NewTempoMap(seq.MeterMap{}, rate, c.Tempo, c.TempoChanges)
+	clock, err := project.NewTempoMap(meterMap, rate, c.Tempo, c.TempoChanges)
 	if err != nil {
 		return result, err
 	}
@@ -385,7 +387,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 			return result, err
 		}
 		if c.Elastic {
-			take, err = s.elasticVocalTake(take, c)
+			take, err = s.elasticVocalTake(take, c, meterMap)
 			if err != nil {
 				return result, err
 			}
@@ -725,8 +727,7 @@ func (s *studio) startAudioTake() error {
 	if p.Live != nil && p.Live.CountInBars != nil {
 		countInBars = *p.Live.CountInBars
 	}
-	// A take timeline records no meter yet: the zero (4/4) map.
-	countIn, err := capture.NewCountIn(seq.MeterMap{}, take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
+	countIn, err := capture.NewCountIn(p.MeterMap(), take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
 	if err != nil {
 		return err
 	}

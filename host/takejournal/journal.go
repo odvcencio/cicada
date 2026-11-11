@@ -106,9 +106,13 @@ func (v *Timeline) Clock(rate int) (*project.TempoMap, error) {
 	if v == nil || !v.Valid() {
 		return nil, errors.New("invalid recording timeline")
 	}
-	// A timeline records no meter yet, so its tempo steps sit on 4/4 bar lines.
-	return project.NewTempoMap(seq.MeterMap{}, rate, v.TempoMilli, v.TempoChanges)
+	return project.NewTempoMap(v.MeterMap(), rate, v.TempoMilli, v.TempoChanges)
 }
+
+// MeterMap is the meter map the timeline's tempo steps and positions sit on.
+// A timeline records no meter yet, so it is the zero (4/4) map; time-signatures
+// phase 2 records the song's map with the take.
+func (v *Timeline) MeterMap() seq.MeterMap { return seq.MeterMap{} }
 
 // Coverage maps the retained PCM back onto the recording's own musical clock.
 // Invalid or empty takes expose no usable interval.

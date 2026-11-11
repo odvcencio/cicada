@@ -54,7 +54,7 @@ func (s *studio) elasticTempoIntents(result *edits.Result) ([]edits.Intent, erro
 			return nil, fmt.Errorf("elastic vocal %s has no retained print", c.Track)
 		}
 		c.Tempo, c.TempoChanges = int64(p.TempoMilli), project.SongTempoChanges(p)
-		asset, err := s.printVocalComp(c, rate)
+		asset, err := s.printVocalComp(c, rate, p.MeterMap())
 		if err != nil {
 			return nil, err
 		}
@@ -65,8 +65,10 @@ func (s *studio) elasticTempoIntents(result *edits.Result) ([]edits.Intent, erro
 }
 
 // elasticVocalTake prepares a derived take for this print only. The journal,
-// source recording, original tempo and calibration remain authoritative.
-func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp) (takejournal.Take, error) {
+// source recording, original tempo and calibration remain authoritative. The
+// comp's tempo steps sit on the song's meter map; the take's own steps sit on
+// its timeline's.
+func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp, meterMap seq.MeterMap) (takejournal.Take, error) {
 	if t.Timeline == nil {
 		return t, fmt.Errorf("elastic audio needs a retained Session take")
 	}
@@ -77,8 +79,6 @@ func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp) (takejournal.
 	if err != nil {
 		return t, err
 	}
-	// A take and a comp record no meter yet, so their tempo steps sit on 4/4 bar lines.
-	var meterMap seq.MeterMap
 	target, err := project.NewTempoMap(meterMap, t.Rate, c.Tempo, c.TempoChanges)
 	if err != nil {
 		return t, err
@@ -100,9 +100,13 @@ func (s *studio) elasticVocalTake(t takejournal.Take, c vocalComp) (takejournal.
 		return t, fmt.Errorf("elastic vocal exceeds its retained audio or 64 MiB print budget")
 	}
 	ticks := []int64{begin, end}
-	for _, changes := range [][]project.TempoChange{t.Timeline.TempoChanges, c.TempoChanges} {
+	for i, changes := range [][]project.TempoChange{t.Timeline.TempoChanges, c.TempoChanges} {
+		bars := t.Timeline.MeterMap()
+		if i == 1 {
+			bars = meterMap
+		}
 		for _, change := range changes {
-			tick := meterMap.BarStart(int64(change.Bar))
+			tick := bars.BarStart(int64(change.Bar))
 			if tick > begin && tick < end {
 				ticks = append(ticks, tick)
 			}

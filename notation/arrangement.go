@@ -38,12 +38,36 @@ func MusicalTicks(meterMap seq.MeterMap, value string, position bool) (int64, er
 	return musictime.MusicalTicks(meterMap, value, position)
 }
 
-func parseArrangement(w *loweringWalker, n *gts.Node, meterMap seq.MeterMap) *Arrangement {
+// parseArrangement reads an arrange block. Its ticks wait for
+// resolveArrangementTicks, because the score's meter map is known only after
+// every declaration in every file has been read.
+func parseArrangement(w *loweringWalker, n *gts.Node) *Arrangement {
 	a := &Arrangement{Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		params := audioParams(w, c)
-		var at, length int64
+		switch w.Type(c) {
+		case "arrangement_tempo":
+			a.Tempos = append(a.Tempos, ArrangementTempo{At: w.Text(w.Field(c, "at")), Value: w.Text(w.Field(c, "value")), Position: w.position(c)})
+		case "place_decl":
+			a.Placements = append(a.Placements, Placement{Name: w.Text(w.Field(c, "name")), Track: w.Text(w.Field(c, "track")), Content: w.Text(w.Field(c, "content")), Params: params, Position: w.position(c)})
+		case "marker_decl":
+			a.Markers = append(a.Markers, Marker{Name: w.Text(w.Field(c, "name")), Params: params, Position: w.position(c)})
+		}
+	}
+	return a
+}
+
+// resolveArrangementTicks sets each placement's and marker's ticks from its
+// at and length fields on the whole score's meter map. A field that does not
+// parse leaves 0 for ValidateArrangement to report; the last of a repeated
+// field wins.
+func resolveArrangementTicks(s *Score) {
+	if s.Arrange == nil {
+		return
+	}
+	meterMap := s.MeterMap()
+	ticks := func(params []Param) (at, length int64) {
 		for _, p := range params {
 			if p.Name == "at" {
 				at, _ = MusicalTicks(meterMap, p.Value, true)
@@ -52,16 +76,16 @@ func parseArrangement(w *loweringWalker, n *gts.Node, meterMap seq.MeterMap) *Ar
 				length, _ = MusicalTicks(meterMap, p.Value, false)
 			}
 		}
-		switch w.Type(c) {
-		case "arrangement_tempo":
-			a.Tempos = append(a.Tempos, ArrangementTempo{At: w.Text(w.Field(c, "at")), Value: w.Text(w.Field(c, "value")), Position: w.position(c)})
-		case "place_decl":
-			a.Placements = append(a.Placements, Placement{Name: w.Text(w.Field(c, "name")), Track: w.Text(w.Field(c, "track")), Content: w.Text(w.Field(c, "content")), AtTick: at, LengthTicks: length, Params: params, Position: w.position(c)})
-		case "marker_decl":
-			a.Markers = append(a.Markers, Marker{Name: w.Text(w.Field(c, "name")), AtTick: at, Params: params, Position: w.position(c)})
-		}
+		return at, length
 	}
-	return a
+	for i := range s.Arrange.Placements {
+		p := &s.Arrange.Placements[i]
+		p.AtTick, p.LengthTicks = ticks(p.Params)
+	}
+	for i := range s.Arrange.Markers {
+		m := &s.Arrange.Markers[i]
+		m.AtTick, _ = ticks(m.Params)
+	}
 }
 
 func ValidateArrangement(s *Score) []Diagnostic {

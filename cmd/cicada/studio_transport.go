@@ -134,6 +134,10 @@ type transportSnapshot struct {
 	Listening           *studioListening             `json:"listening,omitempty"`
 	ListeningStatus     string                       `json:"listeningStatus"`
 	Streaming           *studioStreamHealth          `json:"streaming,omitempty"`
+
+	// Tick is the song tick of Bar and Step on the playing score's meter map,
+	// the map that encoded them. It stays on the server.
+	Tick int64 `json:"-"`
 }
 
 type studioStreamHealth struct {
@@ -295,6 +299,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		state.PendingSlotQuantize = t.stream.PendingPatternQuantizes()
 		position := t.stream.Position()
 		state.Bar, state.Step = position.Bar, position.Step
+		state.Tick = t.meterMap().BarStart(position.Bar-1) + (position.Step-1)*seq.TicksPerStep
 	}
 	for track, stopped := range t.stoppedTracks {
 		if stopped {
@@ -446,7 +451,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 			t.audio = audio
 		}
 		if t.audio != nil {
-			if err := t.prepareCaptureLocked(t.audio, t.stream.BPMMilli(), t.stream.CountInBars()); err != nil {
+			if err := t.prepareCaptureLocked(t.audio, t.stream.MeterMap(), t.stream.BPMMilli(), t.stream.CountInBars()); err != nil {
 				return err
 			}
 			if err := t.audio.Play(); err != nil {
@@ -558,7 +563,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		if initial.CountInBars != nil {
 			countInBars = *initial.CountInBars
 		}
-		if err := t.prepareCaptureLocked(audio, initial.BPMMilli, countInBars); err != nil {
+		if err := t.prepareCaptureLocked(audio, stream.MeterMap(), initial.BPMMilli, countInBars); err != nil {
 			return err
 		}
 		if err := audio.Play(); err != nil {

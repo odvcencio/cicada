@@ -198,7 +198,7 @@ func TestVocalTempoPhraseReadsOriginalPCMAndRejectsChangedMap(t *testing.T) {
 	}
 	zero := float64(0)
 	comp := vocalComp{Track: "vox", Tempo: take.Timeline.TempoMilli, TempoChanges: take.Timeline.TempoChanges, Segments: []vocalSegment{{Take: take.ID, Start: 2 * 3840, End: 4 * 3840, FadeMS: &zero}}}
-	asset, err := s.printVocalComp(comp, 48000)
+	asset, err := s.printVocalComp(comp, 48000, seq.MeterMap{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -291,7 +291,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			case "scene_decl":
 				s.Scenes = append(s.Scenes, parseScene(w, n))
 			case "arrange_decl":
-				s.Arrange = parseArrangement(w, n, s.MeterMap())
+				s.Arrange = parseArrangement(w, n)
 			case "song_decl":
 				s.SongPosition = w.position(n)
 				for j := 0; j < n.NamedChildCount(); j++ {
@@ -323,6 +323,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 	if syntaxFailed {
 		return nil, diagnostics
 	}
+	resolveArrangementTicks(s)
 	s.Assets, s.Clips, s.Samplers, _ = resolveAudio(s)
 	diagnostics = append(diagnostics, expandPhrases(s)...)
 	diagnostics = append(diagnostics, Validate(s)...)

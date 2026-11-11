@@ -52,6 +52,39 @@ func TestArrangementExactSourceAndMusicalTime(t *testing.T) {
 	}
 }
 
+// TestPhase2ArrangementTicksWaitForTheWholeScore pins that placement and marker
+// ticks come from the meter map of the whole score, resolved after every file
+// is read, and not from the map known when the arrange block is reached.
+// Time-signatures phase 2 adds the meter declaration: declare a meter in
+// later.cicada, after the arrange block, and this test must still pass. Today
+// every map is 4/4, so it also pins the 4/4 ticks.
+func TestPhase2ArrangementTicksWaitForTheWholeScore(t *testing.T) {
+	files := []SourceFile{
+		{Path: "main.cicada", Source: []byte(arrangeFixture)},
+		{Path: "later.cicada", Source: []byte("pattern later { c3 . . . }\n")},
+	}
+	s, ds := ParseFiles(files, 2)
+	if s == nil || parseHasErrors(ds) {
+		t.Fatal(ds)
+	}
+	meterMap := s.MeterMap()
+	tick := func(value string, position bool) int64 {
+		t.Helper()
+		v, err := MusicalTicks(meterMap, value, position)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	p, m := s.Arrange.Placements[0], s.Arrange.Markers[0]
+	if p.AtTick != tick("@2.3.4", true) || p.LengthTicks != tick("1/2", false) || m.AtTick != tick("@5.1.1", true) {
+		t.Fatalf("arrangement ticks are not on the score's meter map: %+v", s.Arrange)
+	}
+	if meterMap.BarTicks(0) == seq.TicksPerWhole && meterMap.BeatsInBar(0) == 4 && (p.AtTick != 6480 || p.LengthTicks != 1920 || m.AtTick != 15360) {
+		t.Fatalf("4/4 arrangement ticks changed: %+v", s.Arrange)
+	}
+}
+
 func TestSetPlacementFieldRefusals(t *testing.T) {
 	source := []byte(arrangeFixture)
 	for _, c := range []struct{ name, field, value, want string }{

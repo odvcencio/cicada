@@ -17,7 +17,6 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -161,7 +160,7 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	s.restoreAutomationRecording()
 	if recording := s.automationRecording; recording != nil && recording.Active && !recording.Saving {
 		state := s.transport.snapshot()
-		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(recording.Project.MeterMap(), state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
+		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
 			recording.Active = false
 			if recording.Monitor && s.captureID != "" {
 				recording.Invalid = true
@@ -191,10 +190,11 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	studioJSON(w, 200, map[string]any{"recording": projected})
 }
 
-// automationTick is the song tick of a transport snapshot's bar and step on the
-// song's meter map, capped at the song end.
-func automationTick(meterMap seq.MeterMap, state transportSnapshot, end int64) int64 {
-	return min(end, max(int64(0), meterMap.BarStart(state.Bar-1)+(state.Step-1)*seq.TicksPerStep))
+// automationTick is the song tick of a transport snapshot, capped at the song
+// end. The snapshot decodes its bar and step on the playing score's meter map,
+// which can differ from the file's while an edit is pending.
+func automationTick(state transportSnapshot, end int64) int64 {
+	return min(end, max(int64(0), state.Tick))
 }
 
 func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +272,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		end := studioArrangementEnd(p)
-		tick := automationTick(p.MeterMap(), state, end)
+		tick := automationTick(state, end)
 		for _, lane := range p.Automation {
 			if lane.Path == request.Path {
 				if !value.Replace {
@@ -349,7 +349,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			fail(409, fmt.Errorf("playback changed; keep or discard this automation pass"))
 			return
 		}
-		tick := automationTick(recording.Project.MeterMap(), state, recording.End)
+		tick := automationTick(state, recording.End)
 		if tick < recording.Points[len(recording.Points)-1].Tick {
 			recording.Active = false
 			if recording.Monitor && s.captureID != "" {

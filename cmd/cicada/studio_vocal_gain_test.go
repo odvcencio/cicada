@@ -14,6 +14,7 @@ import (
 
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -150,7 +151,7 @@ func TestVocalGainRejectsInvalidRequestsAndMetadata(t *testing.T) {
 			t.Fatalf("accepted invalid phrase gain %v", gain)
 		}
 		comp := vocalComp{Track: take.Track, Tempo: take.Timeline.TempoMilli, Segments: []vocalSegment{{Take: take.ID, Start: 0, End: 7680, GainDB: gain}}}
-		if _, err := s.printVocalComp(comp, 48000); err == nil {
+		if _, err := s.printVocalComp(comp, 48000, seq.MeterMap{}); err == nil {
 			t.Fatalf("printed invalid phrase gain %v", gain)
 		}
 		metadata := fmt.Sprintf("%s{\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"old\",\"startTick\":0,\"endTick\":7680,\"gainDB\":%g}]}\n", vocalCompPrefix, gain)
