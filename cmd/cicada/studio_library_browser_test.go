@@ -95,3 +95,29 @@ func TestBrowserStudioLibraryProcessorAllocations(t *testing.T) {
 		}
 	}
 }
+
+// TestBrowserStudioLibraryAsksBeforeChangingSound inserts a library voice on
+// a track whose pattern has accents the voice ignores. The page lists the
+// change and asks; a no leaves the score alone, a yes saves and says what
+// changes.
+func TestBrowserStudioLibraryAsksBeforeChangingSound(t *testing.T) {
+	t.Setenv("CICADA_LIBRARY", t.TempDir())
+	score := "cicada 2\ntempo 120\nkey c minor\ntrack lead acid {}\npattern riff { a1^ . c2~ d2 }\nscene main { lead=riff }\nsong { main }\n"
+	server := startBrowserStudio(t, []byte(score), nil)
+	chrome := startBrowserChrome(t, server)
+	chrome.setViewport(1440, 1000)
+	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.click("[data-panel-tab=library]")
+	chrome.waitFor("document.querySelectorAll('.library-row').length>0", 5*time.Second)
+	chrome.eval(`(()=>{document.querySelector('#library-kind').value='instrument';document.querySelector('#library-kind').dispatchEvent(new Event('change'));document.querySelector('#library-query').value='glassbass';document.querySelector('#library-query').dispatchEvent(new Event('input'));document.querySelector('#library-track').value='lead';return true})()`)
+	chrome.waitFor("document.querySelectorAll('.library-row').length===1", 5*time.Second)
+	chrome.eval(`window.__asked=[];window.confirm=q=>{window.__asked.push(q);return false};true`)
+	chrome.click(".library-row button:last-child")
+	chrome.waitFor("document.querySelector('#library-status').textContent.includes('Not inserted')", 10*time.Second)
+	chrome.eval(`(()=>{if(!window.__asked[0]||!window.__asked[0].includes('its accent marks have no effect'))throw new Error('no question: '+window.__asked[0]);if(document.querySelector('#source-editor').value.includes('synth.glassbass'))throw new Error('a no inserted');return true})()`)
+	chrome.eval(`window.confirm=()=>true;true`)
+	chrome.click(".library-row button:last-child")
+	chrome.waitFor("document.querySelector('#source-editor').value.includes('track lead synth.glassbass')", 10*time.Second)
+	chrome.waitFor("document.querySelector('#library-status').textContent.includes('changes what plays')", 5*time.Second)
+	t.Log("METRIC studio-library sound_change_question=pass")
+}

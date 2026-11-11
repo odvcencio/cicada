@@ -83,15 +83,21 @@ func TestSetTrackVoiceNamesEverySilentChange(t *testing.T) {
 	structureCase(t, strings.Split(paths, "scene main {")[0]+"scene main { bass = riff }\nsong { main }\n", &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true},
 		"cicada 2\ntempo 120\nfx hall reverb {}\ntrack bass piano {\n  level = -3dB\n  send hall = -9dB\n}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n")
 	accents := "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1^ . c2~ . }\nscene main { bass = riff }\nsong { main }\n"
-	structureRefusal(t, accents, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_changes_sound", "voice", "accent or slide marks",
-		"pattern riff (line 4) has accent or slide marks, which the acid voice plays and piano does not")
+	// Piano ignores accent; it plays slides (the engine applies them to every
+	// voice), so they are not listed.
+	structureRefusal(t, accents, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_changes_sound", "voice", "accent marks",
+		"pattern riff (line 4): its accent marks have no effect on piano")
+	pressure := "cicada 2\ntempo 120\ninstrument glow { voice mono { out = saw(pitch) * env(gate, 200ms) * (0.5 + pressure * 0.5) } }\ntrack lead glow {}\npattern line { a2 c3 d3 e3\n pressure: 1 0 1 0 }\nscene main { lead = line }\nsong { main }\n"
+	structureRefusal(t, pressure, &SetTrackVoice{Track: "lead", Voice: "acid"}, "voice_changes_sound", "voice", "pressure row",
+		"pattern line (line 5): its pressure row has no effect on acid")
 }
 
 // TestDeletesLeaveNoStrayText removes declarations that share a line, carry
 // a trailing comment, sit under a comment, or hold placements with comments.
 // The rule: a comment after a declaration on its line goes with it, and so
-// do the comment lines directly above it; a comment set apart by a blank
-// line stays.
+// do the comment lines directly above it, unless they open the file or the
+// declaration is directly followed by another of its kind (the comment heads
+// the group); a comment set apart by a blank line stays.
 func TestDeletesLeaveNoStrayText(t *testing.T) {
 	shared := "cicada 2\ntempo 120\ntrack a acid {} track b acid {}\ntrack c acid {} // the c track\n\n// patterns\npattern riff { a1 . c2 . } pattern fill { a1 a1 a1 a1 } // fills\n// end of patterns\n\nscene main { a = riff b = riff c = riff }\nsong { main }\n"
 	structureCase(t, shared, &DeleteTrack{Track: "a"}, strings.NewReplacer("track a acid {} track b acid {}", "track b acid {}", "{ a = riff b = riff", "{ b = riff").Replace(shared))
@@ -99,7 +105,14 @@ func TestDeletesLeaveNoStrayText(t *testing.T) {
 	structureCase(t, shared, &DeletePattern{Pattern: "fill"}, strings.Replace(shared, " pattern fill { a1 a1 a1 a1 } // fills", "", 1))
 	structureCase(t, shared, &DeletePattern{Pattern: "riff", Cascade: true}, strings.NewReplacer("pattern riff { a1 . c2 . } pattern fill", "pattern fill", "a = riff b = riff c = riff", "a = off b = off c = off").Replace(shared))
 	section := "cicada 2\ntempo 120\n\n// ---- tracks ----\ntrack bass acid {\n  cutoff = 620Hz\n}\ntrack keys piano {}  // keys\n\npattern riff { a1 . c2 . }\nscene main { keys = riff }\nsong { main }\n"
-	structureCase(t, section, &DeleteTrack{Track: "bass"}, strings.Replace(section, "// ---- tracks ----\ntrack bass acid {\n  cutoff = 620Hz\n}\n", "", 1))
+	// The heading above the first of two tracks stays with the track left.
+	structureCase(t, section, &DeleteTrack{Track: "bass"}, strings.Replace(section, "track bass acid {\n  cutoff = 620Hz\n}\n", "", 1))
+	// A comment that opens the file stays; one directly above a lone
+	// declaration goes with it.
+	leading := "// rhythm lives here\ntrack bass acid {}\n\n// the keys\ntrack keys piano {}\n\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n"
+	structureCase(t, leading, &DeleteTrack{Track: "keys"}, strings.Replace(leading, "// the keys\ntrack keys piano {}\n\n", "", 1))
+	leadingOnly := "// rhythm lives here\ntrack keys piano {}\n\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n"
+	structureCase(t, leadingOnly, &DeleteTrack{Track: "keys"}, strings.Replace(leadingOnly, "track keys piano {}\n", "", 1))
 	structureCase(t, section, &DeleteTrack{Track: "keys"}, strings.NewReplacer("track keys piano {}  // keys\n", "", "scene main { keys = riff }", "scene main {}").Replace(section))
 	arranged := "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\npattern alt { c2 . . . }\narrange {\n  // first bar\n  place p1 bass riff { at = @1.1.1 length = 1bars }\n  place p2 bass alt { at = @2.1.1 length = 1bars } // second\n  marker end { at = @3.1.1 }\n}\n"
 	structureCase(t, arranged, &DeletePattern{Pattern: "alt", Cascade: true}, strings.NewReplacer("pattern alt { c2 . . . }\n", "", "  place p2 bass alt { at = @2.1.1 length = 1bars } // second\n", "").Replace(arranged))

@@ -178,7 +178,8 @@
   "automation/out of range/\"\\n\"": {
     "Code": 422,
     "Body": {
-      "error": "cutoff 50000 is above the maximum 8000Hz (range 20Hz to 8000Hz)"
+      "error": "cutoff 50000 is above the maximum 8000Hz (range 20Hz to 8000Hz)",
+      "reason": "value_out_of_range"
     },
     "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
     "Labels": null
@@ -186,7 +187,8 @@
   "automation/out of range/\"\\r\\n\"": {
     "Code": 422,
     "Body": {
-      "error": "cutoff 50000 is above the maximum 8000Hz (range 20Hz to 8000Hz)"
+      "error": "cutoff 50000 is above the maximum 8000Hz (range 20Hz to 8000Hz)",
+      "reason": "value_out_of_range"
     },
     "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
     "Labels": null
@@ -266,7 +268,8 @@
   "automation/scene tempo range/\"\\n\"": {
     "Code": 422,
     "Body": {
-      "error": "tempo 301 is above the maximum 300 (range 20 to 300)"
+      "error": "tempo 301 is above the maximum 300 (range 20 to 300)",
+      "reason": "value_out_of_range"
     },
     "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
     "Labels": null
@@ -274,7 +277,8 @@
   "automation/scene tempo range/\"\\r\\n\"": {
     "Code": 422,
     "Body": {
-      "error": "tempo 301 is above the maximum 300 (range 20 to 300)"
+      "error": "tempo 301 is above the maximum 300 (range 20 to 300)",
+      "reason": "value_out_of_range"
     },
     "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
     "Labels": null
@@ -338,7 +342,8 @@
   "automation/unit mismatch/\"\\n\"": {
     "Code": 422,
     "Body": {
-      "error": "level requires dB, not Hz"
+      "error": "level requires dB, not Hz",
+      "reason": "invalid_value"
     },
     "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
     "Labels": null
@@ -346,7 +351,8 @@
   "automation/unit mismatch/\"\\r\\n\"": {
     "Code": 422,
     "Body": {
-      "error": "level requires dB, not Hz"
+      "error": "level requires dB, not Hz",
+      "reason": "invalid_value"
     },
     "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
     "Labels": null

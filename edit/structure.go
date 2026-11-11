@@ -14,10 +14,9 @@ import (
 // The structural intents edit every source file of the project that names
 // the entity, apart from libraries, in one revision-checked change with one
 // label (one Undo step in Studio); other files come back as staged files of
-// the result. A removal takes the declaration with a comment after it on its
-// line and the comment lines directly above it (no blank line between); a
-// comment separated by a blank line stays. The catalog's reasons list of each
-// intent names every refusal code.
+// the result. Which comments a removal takes is decided in one place,
+// attachedComments (edit/effects.go), and described in docs/manual/editors.md.
+// The catalog's reasons list of each intent names every refusal code.
 
 // AddTrack adds a track after the last track. Voice names what the track
 // plays: a built-in voice (acid, drums, piano, a modal or keyboard voice) or
@@ -70,8 +69,9 @@ func (DeleteTrack) Kind() string { return "deletetrack" }
 // (automation, scene setting, modulation route, MIDI or live mapping) it does
 // not take, or any other problem the change adds to cicada check is refused
 // with voice_change_invalid, and uses lists every one. A change that plays
-// but sounds different, such as drum lanes the new kit does not play or
-// accent and slide marks that only acid plays, is refused with
+// but sounds different, such as drum lanes the new kit does not play or a
+// row or mark the old voice played and the new one ignores (a pressure row on
+// acid, accent on piano: notation.VoiceReads), is refused with
 // voice_changes_sound unless acceptchanges accepts it; the result's warnings
 // then name each.
 //

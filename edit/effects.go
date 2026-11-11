@@ -499,6 +499,36 @@ func lineEndWithoutComment(source []byte, end, lineEnd int) int {
 	return end
 }
 
+// attachedComments is where a declaration's removal starts: its line, or the
+// comment lines directly above it (no blank line between) when they belong
+// to it. They stay when they open the file, or when the declaration is
+// directly followed (no blank line) by another declaration of its kind,
+// which the comments could equally head.
+func attachedComments(source []byte, root, decl *gts.Node, lineStart int) int {
+	start := attachedCommentStart(source, lineStart, 0)
+	if start == lineStart {
+		return lineStart
+	}
+	if len(bytes.TrimSpace(source[:start])) == 0 {
+		return lineStart
+	}
+	for i := 0; i+1 < root.NamedChildCount(); i++ {
+		if root.NamedChild(i).StartByte() != decl.StartByte() {
+			continue
+		}
+		next := root.NamedChild(i + 1)
+		lang, err := notation.Language()
+		if err == nil && next.Type(lang) == decl.Type(lang) {
+			gap := source[decl.EndByte():next.StartByte()]
+			if bytes.Count(gap, []byte("\n")) <= 1 {
+				return lineStart
+			}
+		}
+		break
+	}
+	return start
+}
+
 // removeTopLevelDeclaration removes a declaration with the comment lines
 // attached above it. A declaration alone on its lines takes its lines with
 // it, and one blank line of the two around it, so no gap opens.
@@ -527,7 +557,7 @@ func removeTopLevelDeclaration(source []byte, root, decl *gts.Node) []byte {
 		}
 		return replaceMixerSpan(source, before, lineEndWithoutComment(source, end, lineEnd), nil)
 	}
-	start = attachedCommentStart(source, start, 0)
+	start = attachedComments(source, root, decl, lineStart)
 	end = lineEnd
 	if end < len(source) {
 		end++
@@ -661,9 +691,6 @@ func placeInChain(chain []string, name string, request mixerFXValue) ([]string, 
 	if request.Before != "" && request.After != "" {
 		return nil, refuse("insert_position_conflict", "after", "give before or after, not both")
 	}
-	if request.InsertOn == "" {
-		return nil, refuse("insert_position_without_target", field, "%s places the effect in an insert chain: give inserton too", field)
-	}
 	for i, insert := range chain {
 		if insert == anchor {
 			placed := append(append(append([]string(nil), chain[:i+offset]...), name), chain[i+offset:]...)
@@ -675,6 +702,34 @@ func placeInChain(chain []string, name string, request mixerFXValue) ([]string, 
 		current = strings.Join(chain, " -> ")
 	}
 	return nil, refuse("unknown_insert_anchor", field, "%s is not in the insert chain of %s (%s)", anchor, request.InsertOn, current)
+}
+
+// anchorOwner finds the chain that holds the insert before or after names,
+// when inserton is left out: a track's, bus music's or master's.
+func anchorOwner(score *notation.Score, request mixerFXValue) (string, error) {
+	anchor, field := request.Before, "before"
+	if request.After != "" {
+		anchor, field = request.After, "after"
+	}
+	var owners []string
+	for _, track := range score.Tracks {
+		if containsString(insertChain(paramValue(track.Params, "insert")), anchor) {
+			owners = append(owners, track.Name)
+		}
+	}
+	if containsString(insertChain(paramValue(BusParams(score, "music"), "insert")), anchor) {
+		owners = append(owners, "music")
+	}
+	if containsString(insertChain(paramValue(score.Master, "insert")), anchor) {
+		owners = append(owners, "master")
+	}
+	switch len(owners) {
+	case 0:
+		return "", refuse("unknown_insert_anchor", field, "%s is not in any insert chain", anchor)
+	case 1:
+		return owners[0], nil
+	}
+	return "", refuse("insert_anchor_ambiguous", field, "%s is in the insert chains of %s; give inserton", anchor, strings.Join(owners, ", "))
 }
 
 // checkEntryOwnsTarget refuses an insert target that another source file of

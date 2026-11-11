@@ -10,9 +10,8 @@ import (
 
 // InsertLibraryItem imports a library and binds a track to one of its items.
 // On an existing track a new voice goes through settrackvoice's checks that
-// do not need the library's declarations (drum lanes, accent and slide
-// marks), with acceptchanges and refusals with the same reasons; the compile
-// that ends the batch checks the rest.
+// look at the voice: drum lanes and the rows and marks it ignores, with
+// acceptchanges, and refusals with the same reasons.
 // The host resolves the library first. PresetInstance names an effect
 // instance when Reference is an effect preset. cicada apply does not pin
 // libraries: the project's cicada.sum must already pin the library, or the
@@ -191,6 +190,14 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 	if err != nil || score == nil {
 		return updated, err
 	}
+	// The voice comes from the library this intent imports: read it from
+	// the project as the edit leaves it, through the host's loader, when the
+	// host can resolve the import yet.
+	working := *ctx
+	working.Source, working.plan = updated, nil
+	if candidate, _, err := working.ParseProject(); err == nil && candidate != nil {
+		score = candidate
+	}
 	st := newStaged(ctx)
 	st.set(ctx.Options.Path, updated)
 	node, walker, err := declaration(updated, []string{"track_decl"}, in.Track)
@@ -200,6 +207,27 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 	change, err := checkVoiceChange(st, score, in.Track, before, in.Reference, ctx.Options.Path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), nil, false)
 	if err != nil {
 		return nil, err
+	}
+	// The track's own settings the library voice does not take.
+	if notation.VoiceDeclared(score, in.Reference) {
+		var uses, names []string
+		for i := 0; i < node.NamedChildCount(); i++ {
+			child := node.NamedChild(i)
+			if walker.Type(child) != "mix_setting" || child.NamedChildCount() == 0 {
+				continue
+			}
+			param := child.NamedChild(0)
+			name := walker.Text(walker.Field(param, "name"))
+			if walker.Type(param) != "param_decl" || name == "" || notation.TrackParamKnown(score, in.Reference, name) {
+				continue
+			}
+			line, _ := walker.Pos(child)
+			uses = append(uses, fmt.Sprintf("setting %s (line %d)", name, line))
+			names = append(names, name)
+		}
+		if len(uses) > 0 {
+			return nil, &ReasonError{Reason: "voice_params_unsupported", Field: "reference", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; remove them, or change the voice with settrackvoice and dropparams", in.Reference, strings.Join(names, ", "), in.Track)}
+		}
 	}
 	if len(change.invalid) > 0 {
 		return nil, &ReasonError{Reason: "voice_change_invalid", Field: "reference", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Reference, strings.Join(change.invalid, "; "))}

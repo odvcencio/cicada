@@ -16,15 +16,21 @@ type Envelope struct {
 	Session  string
 	DryRun   bool
 	Intents  []Intent
+	// Revisions names, for other source files of the project, the revision
+	// each was at when the intents were computed (cicada apply --json reports
+	// them as file_revisions). The host refuses the batch when a listed file
+	// has changed since; nil checks none.
+	Revisions map[string]string
 }
 
 type envelopeWire struct {
-	Version  int               `json:"version"`
-	Revision string            `json:"revision,omitempty"`
-	Author   string            `json:"author,omitempty"`
-	Session  string            `json:"session,omitempty"`
-	DryRun   bool              `json:"dryrun,omitempty"`
-	Intents  []json.RawMessage `json:"intents"`
+	Version   int               `json:"version"`
+	Revision  string            `json:"revision,omitempty"`
+	Author    string            `json:"author,omitempty"`
+	Session   string            `json:"session,omitempty"`
+	DryRun    bool              `json:"dryrun,omitempty"`
+	Revisions map[string]string `json:"revisions,omitempty"`
+	Intents   []json.RawMessage `json:"intents"`
 }
 
 func (e Envelope) MarshalJSON() ([]byte, error) {
@@ -32,7 +38,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(envelopeWire{Version: e.Version, Revision: e.Revision, Author: e.Author, Session: e.Session, DryRun: e.DryRun, Intents: raw})
+	return json.Marshal(envelopeWire{Version: e.Version, Revision: e.Revision, Author: e.Author, Session: e.Session, DryRun: e.DryRun, Revisions: e.Revisions, Intents: raw})
 }
 
 func (e *Envelope) UnmarshalJSON(data []byte) error {
@@ -60,7 +66,7 @@ func (e *Envelope) UnmarshalJSON(data []byte) error {
 		}
 		intents = append(intents, intent)
 	}
-	*e = Envelope{Version: wire.Version, Revision: wire.Revision, Author: wire.Author, Session: wire.Session, DryRun: wire.DryRun, Intents: intents}
+	*e = Envelope{Version: wire.Version, Revision: wire.Revision, Author: wire.Author, Session: wire.Session, DryRun: wire.DryRun, Revisions: wire.Revisions, Intents: intents}
 	return nil
 }
 

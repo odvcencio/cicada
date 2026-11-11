@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,7 +36,32 @@ type applyResult struct {
 	labels          []string
 	warnings        [][]string
 	files           []string
+	sources         []string          // the project's source paths, which messages name as jsonPath does
+	fileRevisions   map[string]string // the revision of each source file the apply read, by jsonPath
 }
+
+// pathsAsJSON rewrites the project's source paths in text as jsonPath writes
+// them (relative inside the working folder), the longest first.
+func pathsAsJSON(text string, paths []string) string {
+	sorted := append([]string(nil), paths...)
+	sort.Slice(sorted, func(i, j int) bool { return len(sorted[i]) > len(sorted[j]) })
+	for _, path := range sorted {
+		if path != "" && filepath.IsAbs(path) {
+			text = strings.ReplaceAll(text, path, jsonPath(path))
+		}
+	}
+	return text
+}
+
+// relativeError is an apply error whose text names the project's files as
+// jsonPath does; it unwraps to the error it rewrites.
+type relativeError struct {
+	err   error
+	paths []string
+}
+
+func (e *relativeError) Error() string { return pathsAsJSON(e.err.Error(), e.paths) }
+func (e *relativeError) Unwrap() error { return e.err }
 
 // applyFailure is an apply error with the stage it happened in.
 type applyFailure struct {
@@ -150,15 +176,35 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	if err != nil {
 		return fail("read", err)
 	}
+	result.fileRevisions = map[string]string{}
+	for _, file := range opts.Sources {
+		result.sources = append(result.sources, file.Path)
+		if file.Library == "" {
+			result.fileRevisions[jsonPath(file.Path)] = edits.Revision(file.Source)
+		}
+	}
+	// The envelope's revision covers the entry; revisions covers the other
+	// files the intents were computed against.
+	for name, want := range env.Revisions {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return fail("revision_mismatch", fmt.Errorf("%s: %w", name, err))
+		}
+		if got := edits.Revision(data); got != want {
+			return fail("revision_mismatch", fmt.Errorf("%s changed; intents target revision %s, file is at %s", name, want, got))
+		}
+	}
 	applied, err := edits.Apply(before, env, opts)
 	if err != nil {
+		err = &relativeError{err: err, paths: result.sources}
 		var located *edits.IntentError
 		if errors.As(err, &located) {
 			return fail("intent_refused", err)
 		}
 		return fail("invalid_result", err)
 	}
-	result.diff = intentDiff(before, applied, filepath.Base(path))
+	root, _ := filepath.Abs(filepath.Dir(path))
+	result.diff = intentDiff(before, applied, filepath.Base(path), root)
 	result.revisionAfter = edits.Revision(applied.Source)
 	result.labels, result.warnings = applied.Labels, applied.Warnings
 	for _, file := range applied.Files {
@@ -228,6 +274,7 @@ type applyDocument struct {
 	RevisionAfter  string            `json:"revision_after,omitempty"`
 	Intents        []applyIntentJSON `json:"intents"`
 	Files          []string          `json:"files,omitempty"`
+	FileRevisions  map[string]string `json:"file_revisions,omitempty"`
 	Diff           string            `json:"diff"`
 	Error          *applyErrorJSON   `json:"error,omitempty"`
 }
@@ -266,7 +313,7 @@ type applyErrorJSON struct {
 var applyErrorCodes = []string{"usage", "read", "decode", "revision_mismatch", "intent_refused", "invalid_result", "write"}
 
 func writeApplyJSON(w io.Writer, result applyResult, err error) error {
-	document := applyDocument{Schema: applySchema, Score: jsonPath(result.path), OK: err == nil, Written: result.written, DryRun: result.dryRun, Changed: result.revisionAfter != "" && !result.unchanged, RevisionBefore: result.revisionBefore, RevisionAfter: result.revisionAfter, Intents: []applyIntentJSON{}, Files: result.files, Diff: result.diff}
+	document := applyDocument{Schema: applySchema, Score: jsonPath(result.path), OK: err == nil, Written: result.written, DryRun: result.dryRun, Changed: result.revisionAfter != "" && !result.unchanged, RevisionBefore: result.revisionBefore, RevisionAfter: result.revisionAfter, Intents: []applyIntentJSON{}, Files: result.files, FileRevisions: result.fileRevisions, Diff: result.diff}
 	for i, intent := range result.intents {
 		entry := applyIntentJSON{Index: i, Kind: intent.Kind()}
 		if i < len(result.labels) {
@@ -290,7 +337,7 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		if errors.As(err, &located) {
 			index := located.Index
 			failure.Index, failure.Kind, failure.Field = &index, located.Kind, located.Field
-			failure.Message = located.Err.Error()
+			failure.Message = pathsAsJSON(located.Err.Error(), result.sources)
 		}
 		var refusal *edits.NoteError
 		if errors.As(err, &refusal) {
@@ -298,7 +345,10 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		}
 		var reason *edits.ReasonError
 		if errors.As(err, &reason) {
-			failure.Reason, failure.Uses, failure.Range = reason.Reason, reason.Uses, reason.Range
+			failure.Reason, failure.Range = reason.Reason, reason.Range
+			for _, use := range reason.Uses {
+				failure.Uses = append(failure.Uses, pathsAsJSON(use, result.sources))
+			}
 			if reason.File != "" {
 				failure.File = jsonPath(reason.File)
 			}

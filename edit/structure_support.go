@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -297,10 +296,8 @@ func patternsOf(score *notation.Score, track string) []string {
 	var names []string
 	add := func(name string) {
 		if name != "" && !containsString(names, name) {
-			for _, pattern := range score.Patterns {
-				if pattern.Name == name {
-					names = append(names, name)
-				}
+			if _, ok := findPattern(score, name); ok {
+				names = append(names, name)
 			}
 		}
 	}
@@ -342,34 +339,6 @@ func patternsOf(score *notation.Score, track string) []string {
 	return names
 }
 
-// voiceLanes are the drum lanes a voice plays: every built-in lane for
-// drums, a kit's bound lanes, and nil for a voice that is not a drum voice.
-func voiceLanes(score *notation.Score, kind string) []string {
-	if kind == "drums" {
-		return drum.Names[:]
-	}
-	for _, kit := range score.Kits {
-		if kit.Name == kind {
-			lanes := make([]string, 0, len(kit.Bindings))
-			for _, binding := range kit.Bindings {
-				lanes = append(lanes, binding.Lane)
-			}
-			return lanes
-		}
-	}
-	return nil
-}
-
-// resolvedVoice reads a preset kind as the voice it targets.
-func resolvedVoice(score *notation.Score, kind string) string {
-	for _, preset := range score.Presets {
-		if preset.Name == kind && preset.Target != "" {
-			return preset.Target
-		}
-	}
-	return kind
-}
-
 // trackSetting is a setting of a track's declaration, in the declaring file.
 type trackSetting struct {
 	name       string
@@ -388,11 +357,11 @@ type voiceChange struct {
 // checkVoiceChange compares the project before and after the staged voice
 // change of track (declared in path, whose declaration starts at declStart
 // and names the voice up to kindEnd, with the track's settings) and lists
-// every problem: the
-// diagnostics the change adds (with the host's Diagnose hook, all of cicada
-// check's), every parameter path of the track the new voice does not take,
-// the drum lanes of its patterns the new voice does not play, and accent and
-// slide marks only acid plays. Without diagnose the diagnostics are left to
+// every problem: the diagnostics the change adds (with the host's Diagnose
+// hook, all of cicada check's), every parameter path of the track the new
+// voice does not take, the drum lanes of its patterns the new voice does not
+// play, and the rows and marks (notation.VoiceReads) the old voice played and
+// the new one ignores. Without diagnose the diagnostics are left to
 // the compile that ends the batch, for a voice from a library the batch is
 // importing, whose declarations the parse does not have yet.
 func checkVoiceChange(st *staged, score *notation.Score, track, oldKind, newKind, path string, declStart, kindEnd int, settings []trackSetting, diagnose bool) (voiceChange, error) {
@@ -429,9 +398,9 @@ func checkVoiceChange(st *staged, score *notation.Score, track, oldKind, newKind
 				continue
 			}
 			field, _, _ := strings.Cut(strings.TrimPrefix(use.Path, track+"."), ".")
-			// A library voice's settings are read from the library, which this
-			// score does not hold; the diagnostics below cover it.
-			if strings.Contains(newKind, ".") || notation.TrackParamKnown(score, newKind, field) {
+			// A voice the score does not hold yet (a library this batch
+			// imports) is left to the compile that ends the batch.
+			if !notation.VoiceDeclared(score, newKind) || notation.TrackParamKnown(score, newKind, field) {
 				continue
 			}
 			change.invalid = append(change.invalid, fmt.Sprintf("%s: %s has no setting %s", describe(ctx, file.path, use), newKind, field))
@@ -480,29 +449,63 @@ func checkVoiceChange(st *staged, score *notation.Score, track, oldKind, newKind
 			change.changes = append(change.changes, diagnosticText(ctx, d))
 		}
 	}
-	// Changes the language accepts but that change what plays.
-	lanes := voiceLanes(score, resolvedVoice(score, newKind))
-	oldVoice := resolvedVoice(score, oldKind)
-	newVoice := resolvedVoice(score, newKind)
+	// Changes the language accepts but that change what plays: drum lanes the
+	// new voice does not play, and rows and marks it ignores that the old
+	// voice played (notation.VoiceReads, checked against renders).
+	oldLanes, newLanes := notation.VoiceLanes(score, oldKind), notation.VoiceLanes(score, newKind)
+	oldReads, newReads := notation.VoiceReads(score, oldKind), notation.VoiceReads(score, newKind)
 	for _, name := range patternsOf(score, track) {
-		for _, pattern := range score.Patterns {
-			if pattern.Name != name {
+		pattern, ok := findPattern(score, name)
+		if !ok {
+			continue
+		}
+		if pattern.Kind == "drums" {
+			if newLanes == nil {
 				continue
 			}
-			if pattern.Kind == "drums" && lanes != nil {
-				for _, lane := range pattern.Lanes {
-					if containsString(lanes, lane.Name) || !laneHasHits(lane) {
-						continue
-					}
-					change.changes = append(change.changes, fmt.Sprintf("pattern %s lane %s (line %d): %s does not play lane %s, so its hits go silent", name, lane.Name, lane.Position.Line, newKind, lane.Name))
+			for _, lane := range pattern.Lanes {
+				if containsString(newLanes, lane.Name) || !laneHasHits(lane) || oldLanes != nil && !containsString(oldLanes, lane.Name) {
+					continue
 				}
+				change.changes = append(change.changes, fmt.Sprintf("pattern %s lane %s (line %d): %s does not play lane %s, so its hits go silent", name, lane.Name, lane.Position.Line, newKind, lane.Name))
 			}
-			if oldVoice == "acid" && newVoice != "acid" && pattern.Kind != "drums" && marksAccentOrSlide(pattern) {
-				change.changes = append(change.changes, fmt.Sprintf("pattern %s (line %d) has accent or slide marks, which the acid voice plays and %s does not", name, pattern.Position.Line, newKind))
+			continue
+		}
+		if newReads == nil {
+			continue
+		}
+		for _, input := range notation.PatternInputs(pattern) {
+			read, described := newReads[input]
+			switch {
+			case !described && !diagnose:
+				change.invalid = append(change.invalid, fmt.Sprintf("pattern %s (line %d): %s refuses the %s rows or marks", name, pattern.Position.Line, newKind, input))
+			case described && !read && (oldReads == nil || oldReads[input]):
+				change.changes = append(change.changes, fmt.Sprintf("pattern %s (line %d): %s no effect on %s", name, pattern.Position.Line, inputName(input), newKind))
 			}
 		}
 	}
 	return change, nil
+}
+
+// inputName names a row or mark for a message, with its verb.
+func inputName(input string) string {
+	switch input {
+	case notation.InputAccent, notation.InputSlide, notation.InputRatchet, notation.InputChance:
+		return "its " + input + " marks have"
+	}
+	return "its " + input + " row has"
+}
+
+// findPattern finds a pattern by the name a track binds, an import alias's
+// name included.
+func findPattern(score *notation.Score, name string) (notation.Pattern, bool) {
+	resolved := notation.ResolveVoice(score, name)
+	for _, pattern := range score.Patterns {
+		if pattern.Name == name || pattern.Name == resolved {
+			return pattern, true
+		}
+	}
+	return notation.Pattern{}, false
 }
 
 func containsSetting(settings []trackSetting, setting trackSetting) bool {
@@ -517,17 +520,6 @@ func containsSetting(settings []trackSetting, setting trackSetting) bool {
 func laneHasHits(lane notation.Lane) bool {
 	for _, hit := range lane.Hits {
 		if text := strings.TrimSpace(hit.Text); text != "" && text != "." && text != "|" {
-			return true
-		}
-	}
-	return false
-}
-
-// marksAccentOrSlide reports an accent (^) or a slide (~) on a step of a
-// melodic pattern.
-func marksAccentOrSlide(pattern notation.Pattern) bool {
-	for _, step := range pattern.Steps {
-		if strings.ContainsAny(step.Text, "^~") {
 			return true
 		}
 	}

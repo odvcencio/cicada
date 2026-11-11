@@ -68,7 +68,7 @@ func TestAddTrackWritesAfterTheLastTrack(t *testing.T) {
 
 func TestDeleteTrackRemovesItsBindings(t *testing.T) {
 	structureCase(t, structureScore, &DeleteTrack{Track: "keys"}, strings.NewReplacer("track keys piano {}\n", "", "bass = riff keys = pad", "bass = riff").Replace(structureScore))
-	want := strings.NewReplacer("// the bass line\ntrack bass acid { cutoff = 620Hz }\n", "", "scene main { bass = riff keys = pad }", "scene main { keys = pad }", "  // just the bass\n  bass = riff\n", "").Replace(structureScore)
+	want := strings.NewReplacer("track bass acid { cutoff = 620Hz }\n", "", "scene main { bass = riff keys = pad }", "scene main { keys = pad }", "  // just the bass\n  bass = riff\n", "").Replace(structureScore)
 	structureCase(t, structureScore, &DeleteTrack{Track: "bass"}, want)
 	used := structureScore + "automate bass.cutoff {\n  @1.1.1 700Hz\n}\n"
 	structureRefusal(t, used, &DeleteTrack{Track: "bass"}, "track_in_use", "track", "track bass is still used by automation bass.cutoff (line 16)", "automation bass.cutoff (line 16)")
@@ -103,7 +103,7 @@ func TestDeleteSceneRefusesWhilePlayed(t *testing.T) {
 func TestDeletePatternRefusesWhileUsed(t *testing.T) {
 	structureCase(t, structureScore, &DeletePattern{Pattern: "fill"}, strings.Replace(structureScore, "pattern fill { a1 a1 a1 a1 }\n", "", 1))
 	structureRefusal(t, structureScore, &DeletePattern{Pattern: "pad"}, "pattern_in_use", "pattern", "pattern pad is still used by scene main binding keys = pad (line 10)", "scene main binding keys = pad (line 10)")
-	structureCase(t, structureScore, &DeletePattern{Pattern: "pad", Cascade: true}, strings.NewReplacer("// pads\npattern pad { [a3 c4 e4] - - . }\n", "", "keys = pad", "keys = off").Replace(structureScore))
+	structureCase(t, structureScore, &DeletePattern{Pattern: "pad", Cascade: true}, strings.NewReplacer("pattern pad { [a3 c4 e4] - - . }\n", "", "keys = pad", "keys = off").Replace(structureScore))
 }
 
 const referenceScore = `cicada 2

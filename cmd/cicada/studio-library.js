@@ -72,16 +72,25 @@
       preview.stop();
       return post('/api/library/preview', {action:'stop'}).catch(() => {});
     }
+    // A change to what a track plays is never made or refused silently: the
+    // page lists it and asks; only a yes sends acceptChanges.
     async function write(endpoint, extra) {
       if (busy || studio.busy()) return false;
       if (studio.dirty()) { status('Save or discard source edits first.'); return false; }
       busy = true;
       try {
         stop();
-        const response = await post(endpoint, extra), result = await response.json();
+        let response = await post(endpoint, extra), result = await response.json();
+        if (!response.ok && result.reason === 'voice_changes_sound' && Array.isArray(result.uses)) {
+          const question = 'This changes what the track plays:\n- ' + result.uses.join('\n- ') + '\n\nInsert anyway?';
+          if (!root.confirm(question)) { status('Not inserted: ' + result.uses.join('; ')); return false; }
+          response = await post(endpoint, Object.assign({}, extra, {acceptChanges:true}));
+          result = await response.json();
+        }
         if (!response.ok) throw new Error(result.error || 'Library edit failed');
         root.dispatchEvent(new root.CustomEvent('cicada:sourcewritten', {detail:result}));
-        status('Saved. Undo is available in History.');
+        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+        status(warnings.length ? 'Saved; it changes what plays: ' + warnings.join('; ') + '. Undo is available in History.' : 'Saved. Undo is available in History.');
         return true;
       } catch (error) { status(error.message); return false; }
       finally { busy = false; }

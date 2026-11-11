@@ -211,3 +211,125 @@ func TestVoiceChangeListsEveryProblemCheckFinds(t *testing.T) {
 		}
 	}
 }
+
+// TestVoiceChangeReadsKitsThroughTheLoader: a drums track playing bd, sd and
+// ch changes to a kit that binds only bd. The kit is a library's, imported,
+// or in another source file of the project; each time the lanes the kit does
+// not play are named, for settrackvoice and for insertlibraryitem.
+func TestVoiceChangeReadsKitsThroughTheLoader(t *testing.T) {
+	manifest := "project kits\ncicada 2\nentry \"main.cicada\"\n"
+	song := "track beat drums {}\npattern groove drums { bd: x... sd: ..x. ch: xxxx }\nscene main { beat = groove }\nsong { main }\n"
+	library := map[string]string{
+		"lib/demo/kits/cicada.mod":  "library demo/kits\ncicada 2\nsource \"kits.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n",
+		"lib/demo/kits/kits.cicada": "kit small { bd = builtin.bd }\n",
+	}
+	for _, tc := range []struct {
+		name    string
+		files   map[string]string
+		intents string
+	}{
+		{"library kit", map[string]string{"cicada.mod": manifest, "main.cicada": "import \"demo/kits\"\n" + song}, `{"kind":"settrackvoice","track":"beat","voice":"kits.small"}`},
+		{"library kit inserted", map[string]string{"cicada.mod": manifest, "main.cicada": "import \"demo/kits\"\n" + song}, `{"kind":"insertlibraryitem","track":"beat","importpath":"demo/kits","reference":"kits.small","itemkind":"kit"}`},
+		{"kit in another file", map[string]string{"cicada.mod": manifest + "source \"main.cicada\"\nsource \"parts/kits.cicada\"\n", "main.cicada": song, "parts/kits.cicada": "kit small { bd = builtin.bd }\n"}, `{"kind":"settrackvoice","track":"beat","voice":"small"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string]string{}
+			for name, data := range tc.files {
+				files[name] = data
+			}
+			for name, data := range library {
+				files[name] = data
+			}
+			dir := writeProject(t, files)
+			t.Setenv("CICADA_LIBRARY", t.TempDir())
+			t.Chdir(dir)
+			if err := libCommand([]string{"update"}, &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			result := applyIntents(t, filepath.Join(dir, "main.cicada"), tc.intents)
+			failure := result.Error
+			if failure == nil || failure.Reason != "voice_changes_sound" || len(failure.Uses) != 2 || !strings.Contains(failure.Uses[0], "lane sd") || !strings.Contains(failure.Uses[1], "lane ch") {
+				t.Fatalf("%+v", failure)
+			}
+			if tc.name != "library kit inserted" {
+				return
+			}
+			// A track setting the library kit does not take is refused by
+			// name too, not left to the compile.
+			main := strings.Replace(files["main.cicada"], "track beat drums {}", "track beat drums { sd_level = -2dB }", 1)
+			if err := os.WriteFile(filepath.Join(dir, "main.cicada"), []byte(main), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			failure = applyIntents(t, filepath.Join(dir, "main.cicada"), tc.intents).Error
+			if failure == nil || failure.Reason != "voice_params_unsupported" || failure.Field != "reference" || len(failure.Uses) != 1 || failure.Uses[0] != "setting sd_level (line 2)" {
+				t.Fatalf("settings: %+v", failure)
+			}
+		})
+	}
+}
+
+// TestRefusalsNameOtherFilesAsJSONPaths: run from the project's folder, a
+// refusal's message, uses and file name another source file by its path
+// relative to that folder, and the diff names it the same way.
+func TestRefusalsNameOtherFilesAsJSONPaths(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"cicada.mod":        "project mf\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/more.cicada\"\n",
+		"main.cicada":       "tempo 120\ntrack bass acid {}\ntrack keys piano {}\npattern riff { a1 . c2 . }\npattern pad { [a3 c4 e4] - - . }\nscene main { bass = riff keys = pad }\nsong { main }\n",
+		"parts/more.cicada": "automate keys.level { @1.1.1 -6dB }\nscene extra { keys = pad }\n",
+	})
+	t.Chdir(dir)
+	failure := applyIntents(t, "main.cicada", `{"kind":"deletetrack","track":"keys"}`).Error
+	if failure == nil || failure.Reason != "track_in_use" || len(failure.Uses) != 1 || failure.Uses[0] != "automation keys.level (parts/more.cicada line 1)" || strings.Contains(failure.Message, dir) {
+		t.Fatalf("%+v", failure)
+	}
+	var stdout bytes.Buffer
+	envelope := filepath.Join(dir, "rename.json")
+	if err := os.WriteFile(envelope, []byte(`{"version":1,"intents":[{"kind":"rename","entity":"track:keys","name":"organ"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyCommandWithHooks([]string{"main.cicada", envelope}, &stdout, nil); err != nil || !strings.Contains(stdout.String(), "--- a/parts/more.cicada\n+++ b/parts/more.cicada\n") {
+		t.Fatalf("diff: %v\n%s", err, stdout.String())
+	}
+}
+
+// TestEnvelopeRevisionsCoverOtherFiles: a dry run reports the revision of
+// every source file it read; an envelope that carries them is refused when
+// one of those files changed in between, and applies when none did.
+func TestEnvelopeRevisionsCoverOtherFiles(t *testing.T) {
+	dir := writeProject(t, map[string]string{
+		"cicada.mod":        "project mf\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/more.cicada\"\n",
+		"main.cicada":       "tempo 120\ntrack bass acid {}\ntrack keys piano {}\npattern riff { a1 . c2 . }\npattern pad { [a3 c4 e4] - - . }\nscene main { bass = riff keys = pad }\nsong { main }\n",
+		"parts/more.cicada": "automate keys.level { @1.1.1 -6dB }\nscene extra { keys = pad }\n",
+	})
+	t.Chdir(dir)
+	rename := `{"kind":"rename","entity":"track:keys","name":"organ"}`
+	var stdout bytes.Buffer
+	if err := os.WriteFile("dry.json", []byte(`{"version":1,"intents":[`+rename+`]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyCommandWithHooks([]string{"main.cicada", "dry.json", "--json"}, &stdout, nil); err != nil {
+		t.Fatal(err)
+	}
+	var dry struct {
+		FileRevisions map[string]string `json:"file_revisions"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &dry); err != nil || dry.FileRevisions["parts/more.cicada"] == "" || dry.FileRevisions["main.cicada"] == "" {
+		t.Fatalf("file_revisions: %v %v", err, dry.FileRevisions)
+	}
+	revisions, _ := json.Marshal(dry.FileRevisions)
+	if err := os.WriteFile("parts/more.cicada", []byte("automate keys.level { @1.1.1 -9dB }\nscene extra { keys = pad }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("go.json", []byte(`{"version":1,"revisions":`+string(revisions)+`,"intents":[`+rename+`]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := applyCommandWithHooks([]string{"main.cicada", "go.json", "--write", "--json"}, &out, nil)
+	var result applyJSONResult
+	if json.Unmarshal(out.Bytes(), &result); err == nil || result.Error == nil || result.Error.Code != "revision_mismatch" || !strings.Contains(result.Error.Message, "parts/more.cicada changed") {
+		t.Fatalf("a changed file was not noticed: %v %+v", err, result.Error)
+	}
+	if data, _ := os.ReadFile("main.cicada"); strings.Contains(string(data), "organ") {
+		t.Fatal("a refused batch wrote the entry")
+	}
+}

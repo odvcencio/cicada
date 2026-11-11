@@ -242,6 +242,15 @@ func intentErrorResponse(err error) map[string]any {
 	if errors.As(err, &refusal) {
 		response["code"], response["reason"], response["note"] = "CICADA-NOTES", refusal.Code, refusal.Note()
 	}
+	// A refusal with a reason gives it and its uses, so the page can show
+	// what a change would do and offer the flag that accepts it.
+	var reason *edits.ReasonError
+	if errors.As(err, &reason) {
+		response["reason"] = reason.Reason
+		if len(reason.Uses) > 0 {
+			response["uses"] = reason.Uses
+		}
+	}
 	return response
 }
 
@@ -316,11 +325,19 @@ func sourceConflictMessage(env edits.Envelope, message string) string {
 }
 
 // intentDiff includes auxiliary changes so a dry run shows the whole batch.
-func intentDiff(before []byte, result *edits.Result, name string) string {
+// intentDiff writes the batch's unified diff: the entry under name, and each
+// other file by its path relative to the entry's folder (root), the folder
+// the project's relative paths are read from.
+func intentDiff(before []byte, result *edits.Result, name string, root ...string) string {
 	diff := studioUnifiedDiff(before, result.Source)
 	diff = strings.Replace(diff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
 	for _, file := range result.Files {
 		name := filepath.Base(file.Path)
+		if len(root) > 0 {
+			if relative, err := filepath.Rel(root[0], file.Path); err == nil && !strings.HasPrefix(relative, "..") {
+				name = filepath.ToSlash(relative)
+			}
+		}
 		fileDiff := studioUnifiedDiff(file.Before, file.After)
 		fileDiff = strings.Replace(fileDiff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
 		diff += fileDiff
@@ -434,7 +451,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		}
 	}
 	if env.DryRun {
-		response := map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true}
+		response := map[string]any{"diff": intentDiff(current, result, "score.cicada", filepath.Dir(s.path)), "revision": studioRevision(current), "valid": true, "dryRun": true}
 		if envelopeConverts(env) {
 			response["convertible"] = true
 		}
@@ -454,6 +471,19 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	if err != nil {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
+	}
+	// Changes a flag accepted go back to the page, which shows them.
+	var warnings []string
+	for _, list := range result.Warnings {
+		warnings = append(warnings, list...)
+	}
+	if len(warnings) > 0 {
+		response := map[string]any{}
+		for key, value := range result.Response {
+			response[key] = value
+		}
+		response["warnings"] = warnings
+		result.Response = response
 	}
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})

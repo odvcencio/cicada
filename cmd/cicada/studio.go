@@ -525,6 +525,7 @@ type studioEdit struct {
 	Rate                  int                           `json:"rate,omitempty"`
 	Value                 json.RawMessage               `json:"value,omitempty"`
 	ConfirmUpgrade        bool                          `json:"confirmUpgrade,omitempty"`
+	AcceptChanges         bool                          `json:"acceptChanges,omitempty"` // a library insert that changes what a track plays, accepted after the page showed it
 	ClipSettings          *studioClipSettings           `json:"clipSettings,omitempty"`
 	Placement             *studioPlaceSettings          `json:"placement,omitempty"`
 	Tempo                 *edits.SetArrangementTempo    `json:"tempo,omitempty"`
