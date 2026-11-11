@@ -5,6 +5,7 @@ package ep
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
@@ -330,8 +331,13 @@ func (i *Instrument) NextStereo() (float32, float32) {
 				if !v.held && !i.pedal {
 					d = float32(d * k.release)
 				}
-				s.q = float32(q1 * d)
-				s.p = float32(p1 * d)
+				// Decayed modes, the click, the thump and the output filters are
+				// flushed out of subnormal numbers (kernel/dsp/subnormal). The
+				// gain from any of them to the output is below 2^17 (weight 1,
+				// field slope 5, derivative fs/(2*pi*27.5 Hz) < 4500 at 768 kHz,
+				// DC blocker 2, amplitude 0.68, tremolo and pan 4).
+				s.q = subnormal.Flush(float32(q1 * d))
+				s.p = subnormal.Flush(float32(p1 * d))
 				q += float32(s.q * c.weight)
 			}
 			f := i.field(q)
@@ -340,14 +346,14 @@ func (i *Instrument) NextStereo() (float32, float32) {
 			// Damper contact has its own low resonant thump and felt noise.
 			q1 := float32(i.thumpC*v.thump) + float32(i.thumpS*v.thumpP)
 			p1 := float32(i.thumpC*v.thumpP) - float32(i.thumpS*v.thump)
-			v.thump = float32(q1 * i.thumpR)
-			v.thumpP = float32(p1 * i.thumpR)
+			v.thump = subnormal.Flush(float32(q1 * i.thumpR))
+			v.thumpP = subnormal.Flush(float32(p1 * i.thumpR))
 			v.rng ^= v.rng << 13
 			v.rng ^= v.rng >> 17
 			v.rng ^= v.rng << 5
 			noise := float32(int32(v.rng)) / 2147483648
 			out += y + v.thump + float32(noise*v.click)
-			v.click = float32(v.click * i.clickR)
+			v.click = subnormal.Flush(float32(v.click * i.clickR))
 		}
 		sum += out / float32(i.params.Oversample)
 		v.age++
@@ -355,9 +361,9 @@ func (i *Instrument) NextStereo() (float32, float32) {
 			v.active = false
 		}
 	}
-	i.low += float32(i.lowAlpha * float32(sum-i.low))
+	i.low = subnormal.Flush(i.low + float32(i.lowAlpha*float32(sum-i.low)))
 	y := saturate(float32(i.low*i.drive)) / i.drive
-	dc := float32(y-i.dcIn) + float32(i.dcPole*i.dcOut)
+	dc := subnormal.Flush(float32(y-i.dcIn) + float32(i.dcPole*i.dcOut))
 	i.dcIn = y
 	i.dcOut = dc
 	q := float32(i.lfoC*i.lfoQ) + float32(i.lfoS*i.lfoP)
@@ -373,8 +379,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	y = float32(dc*i.amp) * trem
 	l := float32(y*float32(1-pan)) + i.stealL
 	r := float32(y*float32(1+pan)) + i.stealR
-	i.stealL = float32(i.stealL * i.stealDecay)
-	i.stealR = float32(i.stealR * i.stealDecay)
+	i.stealL = subnormal.Flush(float32(i.stealL * i.stealDecay))
+	i.stealR = subnormal.Flush(float32(i.stealR * i.stealDecay))
 	i.lastL = l
 	i.lastR = r
 	return l, r

@@ -5,6 +5,7 @@ package strings
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
@@ -329,13 +330,15 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	for c := range i.phases {
 		i.phases[c] += i.increments[c]
 	}
-	i.hp = float32(i.highpass * float32(float32(i.hp+mono)-i.lastInput))
+	// The output and ensemble filters are flushed out of subnormal numbers
+	// (kernel/dsp/subnormal); their gain to the output is below 4.
+	i.hp = subnormal.Flush(float32(i.highpass * float32(float32(i.hp+mono)-i.lastInput)))
 	i.lastInput = mono
-	i.lp = float32(i.lp + float32(i.lowpass*float32(i.hp-i.lp)))
+	i.lp = subnormal.Flush(float32(i.lp + float32(i.lowpass*float32(i.hp-i.lp))))
 	mono = i.lp
 	left, right := mono, mono
 	if i.ensemble > 0 {
-		i.bbd = float32(i.bbd + float32(i.bbdAlpha*float32(mono-i.bbd)))
+		i.bbd = subnormal.Flush(float32(i.bbd + float32(i.bbdAlpha*float32(mono-i.bbd))))
 		i.delay[i.write] = i.bbd
 		var taps [3]float32
 		for c := range taps {

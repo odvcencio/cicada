@@ -2,7 +2,11 @@
 // One audio owner must serialize note, pedal and render calls.
 package piano
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
+)
 
 const (
 	MinNote      = 21
@@ -53,7 +57,7 @@ func (r *resonator) next(input, damping float32) float32 {
 	p := r.p + float32(input*r.gain)
 	q := float32(r.c*r.q) + float32(r.s*p)
 	p = float32(r.c*p) - float32(r.s*r.q)
-	r.q, r.p = float32(q*damping), float32(p*damping)
+	r.q, r.p = subnormal.Flush(float32(q*damping)), subnormal.Flush(float32(p*damping))
 	return r.q
 }
 
@@ -356,8 +360,13 @@ func (p *Instrument) NextStereo() (float32, float32) {
 				m, s := &k.modes[j], &v.state[j]
 				q := float32(m.c*s.q) + float32(m.s*s.p)
 				a := float32(m.c*s.p) - float32(m.s*s.q)
+				// Strings, resonators, the tail and the output filters are flushed
+				// out of subnormal numbers (kernel/dsp/subnormal). The gain from
+				// any of them to the output is below 2^7: 88 sympathetic
+				// resonators of resonant gain under 9 (0.000045*48000*4 s) at
+				// 0.06, 12 board resonators under 6 at 0.16, and the bridge.
 				rho := float32(m.decay * v.damping)
-				s.q, s.p = float32(q*rho), float32(a*rho)
+				s.q, s.p = subnormal.Flush(float32(q*rho)), subnormal.Flush(float32(a*rho))
 			}
 		}
 		damping := float32(1)
@@ -380,7 +389,7 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	if p.tailFrames > 0 {
 		left += p.tailL
 		right += p.tailR
-		p.tailL, p.tailR = float32(p.tailL*p.tailDecay), float32(p.tailR*p.tailDecay)
+		p.tailL, p.tailR = subnormal.Flush(float32(p.tailL*p.tailDecay)), subnormal.Flush(float32(p.tailR*p.tailDecay))
 		p.tailFrames--
 	}
 	bridge := float32((left + right) * .5)
@@ -409,10 +418,10 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	}
 	// Broadband plate radiation plus low modal mobility, with bounded bandwidth
 	// and a DC blocker. The shared plate keeps ringing across note releases.
-	p.lowL += float32((left - p.lowL) * p.lowAlpha)
-	p.lowR += float32((right - p.lowR) * p.lowAlpha)
-	left = p.lowL - p.dcInL + float32(p.dcPole*p.dcOutL)
-	right = p.lowR - p.dcInR + float32(p.dcPole*p.dcOutR)
+	p.lowL = subnormal.Flush(p.lowL + float32((left-p.lowL)*p.lowAlpha))
+	p.lowR = subnormal.Flush(p.lowR + float32((right-p.lowR)*p.lowAlpha))
+	left = subnormal.Flush(p.lowL - p.dcInL + float32(p.dcPole*p.dcOutL))
+	right = subnormal.Flush(p.lowR - p.dcInR + float32(p.dcPole*p.dcOutR))
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR = p.lowL, p.lowR, left, right
 	return left, right
 }

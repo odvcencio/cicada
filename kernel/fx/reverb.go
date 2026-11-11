@@ -1,6 +1,10 @@
 package fx
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
+)
 
 // ReverbParams describes the bounded eight-line feedback delay network.
 // Mix is normally one for a mixer return.
@@ -35,7 +39,10 @@ func (a *allpass) process(input float64) float64 {
 	delayed := a.buffer[a.index]
 	// Round feedback products before addition, matching native amd64 and WASM.
 	output := delayed - float64(.7*input)
-	a.buffer[a.index] = input + float64(.7*output)
+	// The diffusers, delay lines and damping filters are flushed out of
+	// float64 subnormal numbers (kernel/dsp/subnormal), which a silent tail
+	// otherwise reaches in seconds and never leaves.
+	a.buffer[a.index] = subnormal.Flush64(input + float64(.7*output))
 	a.index++
 	if a.index == len(a.buffer) {
 		a.index = 0
@@ -299,12 +306,12 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		l := &r.lines[line]
 		// I - 2vvᵀ for v=(1,...,1)/sqrt(8) is orthogonal.
 		feedback := taps[line] - float64(.25*sum)
-		l.low += float64((feedback - l.low) * r.damp)
-		l.high += float64((l.low - l.high) * (1 - r.highpass))
+		l.low = subnormal.Flush64(l.low + float64((feedback-l.low)*r.damp))
+		l.high = subnormal.Flush64(l.high + float64((l.low-l.high)*(1-r.highpass)))
 		high := l.low - l.high
 		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
 		in := float64(input[line&1] * .25)
-		l.buffer[l.index] = in + float64(high*r.gain[line])
+		l.buffer[l.index] = subnormal.Flush64(in + float64(high*r.gain[line]))
 		l.index++
 		if l.index == len(l.buffer) {
 			l.index = 0
