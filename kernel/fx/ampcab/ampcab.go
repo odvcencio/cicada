@@ -181,10 +181,12 @@ func (p *Processor) process(c *channel, x, gain float64) float64 {
 	a0, a1 := c.up2.Upsample(a)
 	b0, b1 := c.up2.Upsample(b)
 	norm := p.norm
-	a0 = detmath.Tanh(a0*gain) * norm
-	a1 = detmath.Tanh(a1*gain) * norm
-	b0 = detmath.Tanh(b0*gain) * norm
-	b1 = detmath.Tanh(b1*gain) * norm
+	// Per-sample saturation: the second tier (detmath package comment); the
+	// normaliser above is a coefficient and stays on the exact Tanh.
+	a0 = detmath.TanhNear(a0*gain) * norm
+	a1 = detmath.TanhNear(a1*gain) * norm
+	b0 = detmath.TanhNear(b0*gain) * norm
+	b1 = detmath.TanhNear(b1*gain) * norm
 	a0, a1, b0, b1, c.phase = c.phase, a0, a1, b0, b1
 	a = c.down2.Downsample(a0, a1)
 	b = c.down2.Downsample(b0, b1)

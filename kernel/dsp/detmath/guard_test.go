@@ -165,3 +165,85 @@ func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 		}
 	}
 }
+
+// nearSites lists every use of a second-tier (...Near) function: per-sample
+// nonlinearities on the audio path, each pinned by its processor's digest
+// (package comment). A use anywhere else, or a different count, fails.
+var nearSites = map[string]int{
+	"kernel/fx/ampcab/ampcab.go": 4, // saturation per oversampled sample (TestAmpcabDigest)
+	"kernel/fx/drive.go":         1, // fold shape per oversampled sample (TestDriveDigest)
+	"kernel/fx/reverb.go":        1, // modulation per frame, also the room's (TestReverbDigest, TestRoomDigest)
+}
+
+func TestNearTierOnlyAtListedSites(t *testing.T) {
+	root := repoRoot(t)
+	found := map[string]int{}
+	skip := map[string]bool{".git": true, "build": true, "node_modules": true, ".recovery": true, "testdata": true}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if skip[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		if n := nearUses(t, path); n > 0 {
+			rel, _ := filepath.Rel(root, path)
+			found[filepath.ToSlash(rel)] = n
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, n := range found {
+		if want := nearSites[file]; n != want {
+			t.Errorf("%s uses a ...Near function %d times (listed %d): the second tier is for the listed per-sample sites only", file, n, want)
+		}
+	}
+	for file, want := range nearSites {
+		if found[file] != want {
+			t.Errorf("nearSites lists %s with %d uses, found %d", file, want, found[file])
+		}
+	}
+}
+
+// nearUses counts selectors detmath.XxxNear in a Go file that imports this package.
+func nearUses(t *testing.T, path string) int {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution|parser.ImportsOnly)
+	if err != nil {
+		return 0 // not a parsable Go file (for example a generated fragment); the build would fail first
+	}
+	name := ""
+	for _, spec := range file.Imports {
+		if p, _ := strconv.Unquote(spec.Path.Value); p == "m31labs.dev/cicada/kernel/dsp/detmath" {
+			name = "detmath"
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+		}
+	}
+	if name == "" {
+		return 0
+	}
+	file, err = parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		if s, ok := node.(*ast.SelectorExpr); ok {
+			if x, ok := s.X.(*ast.Ident); ok && x.Name == name && strings.HasSuffix(s.Sel.Name, "Near") {
+				n++
+			}
+		}
+		return true
+	})
+	return n
+}

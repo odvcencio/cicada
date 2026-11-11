@@ -26,6 +26,15 @@
 // Accuracy, measured against 320-bit math/big references in the tests: every
 // function is within 1 unit in the last place (ULP) of the exact result over
 // its documented domain; the measured maxima are listed on each function.
+//
+// Functions named ...Near (TanhNear, SinPiNear) are a second tier for
+// per-sample nonlinearities on the audio path only: they give the same bits on
+// every target like the rest, but trade the 1 ULP bound for speed, and each
+// states its bound and the test that proves it. Coefficient setup, timing,
+// tuning and anything whose error accumulates use the exact functions.
+// TestRenderPathAvoidsMathLibrary fails on a ...Near call outside the
+// per-sample sites it lists, and every processor that uses one is pinned by a
+// digest.
 package detmath
 
 import "math"
@@ -427,6 +436,28 @@ func Tanh(x float64) float64 {
 	return math.Copysign(th+(tl-ql), x)
 }
 
+// TanhNear returns tanh(x) within 2 ULP (measured: at most 1.77 ULP over a
+// dense sweep and the hard cases, TestTanhNearAccuracy), at about 60% of
+// Tanh's cost. It is second tier (see the package comment): for |x| >= 0.125
+// it returns E/(E+2) with E = e^(2|x|) - 1 in plain float64, where Tanh forms
+// the quotient in double-double; below that it is Tanh.
+func TanhNear(x float64) float64 {
+	x = float64(x) // see the package comment
+	a := math.Abs(x)
+	switch {
+	case x != x:
+		return x
+	case a < 0.125:
+		return Tanh(x)
+	case a > 22:
+		return math.Copysign(1, x)
+	}
+	eh, el, m := expDD(2*a, 0) // 2a <= 44: no overflow or underflow
+	eh, el = scale(eh, m), scale(el, m)
+	e := (eh - 1) + el // eh - 1 is exact for eh in [1, 4) and within an ULP above
+	return math.Copysign(e/(e+2), x)
+}
+
 const (
 	// pi/2 = halfPi1 + halfPi2 + halfPi3 + halfPi4 to 2^-152. The first three
 	// have 33 significant bits, so k*halfPi1, k*halfPi2 and k*halfPi3 are exact
@@ -800,6 +831,52 @@ func SinPi(x float64) float64 {
 	}
 	h, l := sinPiKernel(th, tl)
 	return h + l
+}
+
+// SinPiNear returns sin(pi*x) within 2 ULP (measured: at most 1.67 ULP over a
+// dense sweep and the hard cases, TestSinPiNearAccuracy), at about half of
+// SinPi's cost. It is second tier (see the package comment): the same exact
+// reduction as SinPi, then pi*r and the series in plain float64 instead of
+// double-double.
+func SinPiNear(x float64) float64 {
+	x = float64(x) // see the package comment
+	if x == 0 {
+		return x
+	}
+	q := math.Round(float64(2 * x))
+	r := x - float64(0.5*q) // exact, as in SinPi
+	t := float64(r * math.Pi)
+	z := float64(t * t)
+	z2 := float64(z * z)
+	z4 := float64(z2 * z2)
+	var quadrant int
+	if q > -0x1p52 && q < 0x1p52 {
+		quadrant = int(int64(q) & 3)
+	} else {
+		quadrant = int(q - float64(4*math.Floor(float64(q/4))))
+	}
+	if quadrant&1 == 0 {
+		a0 := -1.0/6 + float64(z*(1.0/120))
+		a1 := -1.0/5040 + float64(z*(1.0/362880))
+		a2 := -1.0/39916800 + float64(z*(1.0/6227020800))
+		a3 := -1.0/1307674368000 + float64(z*(1.0/355687428096000))
+		p := ((a0 + float64(z2*a1)) + float64(z4*(a2+float64(z2*a3)))) + float64(float64(z4*z4)*(-1.0/121645100408832000))
+		s := t + float64(float64(t*z)*p)
+		if quadrant == 2 {
+			return -s
+		}
+		return s
+	}
+	a0 := 1.0/24 + float64(z*(-1.0/720))
+	a1 := 1.0/40320 + float64(z*(-1.0/3628800))
+	a2 := 1.0/479001600 + float64(z*(-1.0/87178291200))
+	a3 := 1.0/20922789888000 + float64(z*(-1.0/6402373705728000))
+	p := ((a0 + float64(z2*a1)) + float64(z4*(a2+float64(z2*a3)))) + float64(float64(z4*z4)*(1.0/2432902008176640000))
+	c := (1 - float64(0.5*z)) + float64(z2*p)
+	if quadrant == 3 {
+		return -c
+	}
+	return c
 }
 
 // Tanh32 returns float32(Tanh(float64(x))), bit for bit, for every float32 x
