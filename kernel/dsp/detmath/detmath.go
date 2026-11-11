@@ -940,44 +940,10 @@ func cosPiKernel(rh, rl float64) (hi, lo float64) {
 	return fastTwoSum(w, tail)
 }
 
-// TanPi returns tan(pi*x): the exact reduction of SinPi (x = q/2 + r, |r| <=
-// 1/4), its kernels on pi*r as a double-double, and the quotient sin/cos (or
-// -cos/sin for odd q) in double-double. It is NaN at odd multiples of 1/2, for
-// infinities and for NaN, and keeps the sign of zero. Measured error: at most
-// 0.90 ULP (TestTanPiAccuracy, dense sweep).
-func TanPi(x float64) float64 {
-	x = float64(x) // see the package comment
-	if x == 0 {
-		return x
-	}
-	const (
-		piHi = 0x1.921fb54442d18p+01 // pi = piHi + piLo to 2^-108
-		piLo = 0x1.1a62633145c07p-53
-	)
-	q := math.Round(float64(2 * x)) // 2*x is exact
-	r := x - float64(0.5*q)         // exact (see SinPi)
-	th, tl := twoProd(r, piHi)
-	th, tl = fastTwoSum(th, tl+float64(r*piLo))
-	sh, sl := sinPiKernel(th, tl)
-	ch, cl := cosPiKernel(th, tl)
-	odd := false
-	if q > -0x1p52 && q < 0x1p52 {
-		odd = int64(q)&1 != 0
-	} else {
-		odd = q-float64(2*math.Floor(float64(q/2))) != 0
-	}
-	if odd {
-		qh, ql := divDD(ch, cl, sh, sl)
-		return -(qh + ql)
-	}
-	qh, ql := divDD(sh, sl, ch, cl)
-	return qh + ql
-}
-
 // TanPi32 returns float32(Tan(math.Pi*float64(u))), bit for bit, for every
 // float32 u (checked over all 2^32 inputs), at a fraction of the cost: for
-// 2^-30 <= |u| <= 0.46 it evaluates tan(pi*|u|) in plain float64 with short
-// series (error near 2^-36) and rounds that to float32 only when every value
+// 2^-30 <= |u| <= 0.46 it evaluates tan(pi*|u|) in plain float64 with a Pade
+// approximant (error near 2^-42) and rounds that to float32 only when every value
 // within a relative 2^-32 of it rounds the same way; otherwise, and outside
 // that range, it computes the expression itself.
 func TanPi32(u float32) float32 {
@@ -988,30 +954,20 @@ func TanPi32(u float32) float32 {
 	if !(a >= 0x1p-30 && a <= 0.46) {
 		return float32(Tan(math.Pi * float64(u)))
 	}
-	// tan(pi*a) = s/c with the series on t = pi*a for a <= 1/4, and
-	// cot(pi*(1/2 - a)) = c/s on t = pi*(1/2 - a) above (1/2 - a is exact).
+	// tan(t) for t = pi*a when a <= 1/4, and cot(t) for t = pi*(1/2 - a) above
+	// (1/2 - a is exact), from the Pade [7/6] approximant
+	// tan(t) = t*N(z)/D(z), z = t^2, within a relative 2^-42 for |t| <= pi/4.
 	t := float64(math.Pi * a)
 	above := a > 0.25
 	if above {
 		t = float64(math.Pi * (0.5 - a))
 	}
 	z := float64(t * t)
-	ps := -1.0 / 39916800 // sin(t)/t - 1 = z*ps(z), through t^11
-	ps = 1.0/362880 + float64(z*ps)
-	ps = -1.0/5040 + float64(z*ps)
-	ps = 1.0/120 + float64(z*ps)
-	ps = -1.0/6 + float64(z*ps)
-	s := t + float64(float64(t*z)*ps)
-	pc := 1.0 / 479001600 // cos(t) - 1 = z*pc(z), through t^12
-	pc = -1.0/3628800 + float64(z*pc)
-	pc = 1.0/40320 + float64(z*pc)
-	pc = -1.0/720 + float64(z*pc)
-	pc = 1.0/24 + float64(z*pc)
-	pc = -0.5 + float64(z*pc)
-	c := 1 + float64(z*pc)
-	v := s / c
+	n := 135135 + float64(z*(-17325+float64(z*(378-z))))
+	d := 135135 + float64(z*(-62370+float64(z*(3150+float64(-28*z)))))
+	v := float64(t*n) / d
 	if above {
-		v = c / s
+		v = d / float64(t*n)
 	}
 	const margin = 0x1p-32
 	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {

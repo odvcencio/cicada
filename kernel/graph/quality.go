@@ -195,8 +195,8 @@ func (s *svfState) next(input, cutoff, resonance, rate, baseRate float32) float3
 	f := float64(clamp(cutoff, 20, baseRate*0.45))
 	r := float64(clamp(resonance, 0, 1))
 	if !s.ready || f != s.cutoff || r != s.resonance {
-		g := detmath.TanPi(f / float64(rate)) // tan(pi*f/rate), exact reduction
-		k := 2 - float64(1.9*r)               // finite damping even at maximum resonance
+		g := detmath.Tan(math.Pi * f / float64(rate))
+		k := 2 - float64(1.9*r) // finite damping even at maximum resonance
 		s.a1 = 1 / (1 + float64(g*(g+k)))
 		s.a2 = g * s.a1
 		s.a3 = g * s.a2
