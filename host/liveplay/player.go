@@ -1849,7 +1849,7 @@ const cpuLoadAlpha = 0.1
 // nothing; time.Now and time.Since use the monotonic clock.
 func (p *Player) noteRenderTime(elapsed time.Duration, frames int) {
 	load := elapsed.Seconds() / (float64(frames) / float64(p.rate))
-	p.cpuLoad += cpuLoadAlpha * (load - p.cpuLoad)
+	p.cpuLoad += float64(cpuLoadAlpha * (load - p.cpuLoad))
 	p.cpuLoadBits.Store(math.Float64bits(p.cpuLoad))
 }
 
@@ -1989,8 +1989,8 @@ func (p *Player) renderBlock(requestedFrames int) {
 		for i := 0; i < fadeFrames; i++ {
 			newGain := float32(p.fadeTotal-p.fadeRemaining+i+1) / float32(p.fadeTotal)
 			oldGain := 1 - newGain
-			p.left[i] = p.oldL[i]*oldGain + p.left[i]*newGain
-			p.right[i] = p.oldR[i]*oldGain + p.right[i]*newGain
+			p.left[i] = float32(p.oldL[i]*oldGain) + float32(p.left[i]*newGain)
+			p.right[i] = float32(p.oldR[i]*oldGain) + float32(p.right[i]*newGain)
 		}
 		p.fadeRemaining -= fadeFrames
 		if p.fadeRemaining == 0 {
