@@ -328,13 +328,29 @@ func Log(x float64) float64 {
 	return hi + lo
 }
 
-// Log1p returns log(1 + x) for x >= -1, accurate where x is small: 1 + x is
-// formed exactly as a double-double (twoSum) and its logarithm is logDD of the
-// high part plus the low part divided by it. It is NaN below -1 and for NaN,
-// -Inf at -1, and keeps the sign of zero. Measured error: at most 0.65 ULP
-// (TestLog1pAccuracy, dense sweep).
+// Log1p returns log(1 + x) for x >= -1, accurate where x is small. It is
+// NaN below -1 and for NaN, -Inf at -1, and keeps the sign of zero. It is
+// FreeBSD's s_log1p.c (as in Go's math.Log1p) in plain float64 with every
+// product rounded, at about a sixth of the cost of a double-double logarithm:
+// 1 + x = 2^k * (1 + f) with sqrt(2)/2 < 1 + f < sqrt(2), a correction c for
+// the rounding of 1 + x, and log(1 + f) from s = f/(2 + f) and a degree-14
+// polynomial in s. Measured error: at most 0.80 ULP (TestLog1pAccuracy, dense
+// sweep).
 func Log1p(x float64) float64 {
 	x = float64(x) // see the package comment
+	const (
+		sqrt2M1     = 4.142135623730950488017e-01  // sqrt(2) - 1
+		sqrt2HalfM1 = -2.928932188134524755992e-01 // sqrt(2)/2 - 1
+		ln2Hi       = 6.93147180369123816490e-01   // ln2Hi + ln2Lo = ln 2; k*ln2Hi is exact
+		ln2Lo       = 1.90821492927058770002e-10
+		lp1         = 6.666666666666735130e-01
+		lp2         = 3.999999999940941908e-01
+		lp3         = 2.857142874366239149e-01
+		lp4         = 2.222219843214978396e-01
+		lp5         = 1.818357216161805012e-01
+		lp6         = 1.531383769920937332e-01
+		lp7         = 1.479819860511658591e-01
+	)
 	switch {
 	case x != x || x == math.Inf(1):
 		return x
@@ -342,12 +358,77 @@ func Log1p(x float64) float64 {
 		return math.NaN()
 	case x == -1:
 		return math.Inf(-1)
-	case x > -0x1p-54 && x < 0x1p-54:
-		return x // log1p(x) = x - x^2/2 + ..., and x^2/2 is below half an ULP of x
 	}
-	uh, ul := twoSum(1, x)
-	hi, lo := logDD(uh)
-	return hi + (lo + ul/uh)
+	a := math.Abs(x)
+	var f, c float64
+	var iu uint64
+	k := 1
+	if a < sqrt2M1 {
+		if a < 0x1p-29 {
+			if a < 0x1p-54 {
+				return x // log1p(x) = x - x^2/2 + ..., and x^2/2 is below half an ULP of x
+			}
+			return x - float64(float64(x*x)*0.5)
+		}
+		if x > sqrt2HalfM1 {
+			k, f, iu = 0, x, 1 // 1 + x is already in range: f = x
+		}
+	}
+	if k != 0 {
+		u := x
+		if a < 0x1p53 {
+			u = 1 + x
+			iu = math.Float64bits(u)
+			k = int((iu >> 52) - 1023)
+			if k > 0 {
+				c = 1 - (u - x)
+			} else {
+				c = x - (u - 1)
+			}
+			c /= u // the rounding error of 1 + x, relative to it
+		} else {
+			iu = math.Float64bits(u)
+			k = int((iu >> 52) - 1023)
+		}
+		iu &= 0x000fffffffffffff
+		if iu < 0x0006a09e667f3bcd { // below the mantissa of sqrt(2)
+			u = math.Float64frombits(iu | 0x3ff0000000000000)
+		} else {
+			k++
+			u = math.Float64frombits(iu | 0x3fe0000000000000)
+			iu = (0x0010000000000000 - iu) >> 2
+		}
+		f = u - 1
+	}
+	hfsq := float64(float64(0.5*f) * f)
+	kf := float64(k)
+	if iu == 0 { // |f| < 2^-20
+		if f == 0 {
+			if k == 0 {
+				return 0
+			}
+			c += float64(kf * ln2Lo)
+			return float64(kf*ln2Hi) + c
+		}
+		r := float64(hfsq * (1 - float64(0.66666666666666666*f)))
+		if k == 0 {
+			return f - r
+		}
+		return float64(kf*ln2Hi) - ((r - (float64(kf*ln2Lo) + c)) - f)
+	}
+	s := f / (2 + f)
+	z := float64(s * s)
+	p := lp6 + float64(z*lp7)
+	p = lp5 + float64(z*p)
+	p = lp4 + float64(z*p)
+	p = lp3 + float64(z*p)
+	p = lp2 + float64(z*p)
+	p = lp1 + float64(z*p)
+	r := float64(z * p)
+	if k == 0 {
+		return f - (hfsq - float64(s*(hfsq+r)))
+	}
+	return float64(kf*ln2Hi) - ((hfsq - (float64(s*(hfsq+r)) + (float64(kf*ln2Lo) + c))) - f)
 }
 
 // Log2 returns the base-2 logarithm of x, exact for powers of two. Measured
@@ -933,22 +1014,35 @@ func SinPiNear(x float64) float64 {
 	return c
 }
 
+// expPlain returns e^y for |y| <= 20 in plain float64: y = k*ln2/64 + r with
+// |r| <= ln2/128, e^r from its series to r^4/24 (the next term is below
+// 2^-44), times 2^(k/64) from exp2Table. Its relative error is below 2^-44:
+// enough for the float32 fast paths, whose margins absorb it and whose tests
+// check every input. The result is rounded, so no caller fuses it.
+func expPlain(y float64) float64 {
+	k := math.Round(float64(y * sixtyFourOverLn2))
+	r := (y - float64(k*ln2Over64Hi)) - float64(k*ln2Over64Lo)
+	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24))))))))
+	ki := int(k)
+	return float64(float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52))
+}
+
 // Tanh32 returns float32(Tanh(float64(x))), bit for bit, for every float32 x
-// (checked over all 2^32 inputs), at about half the cost of Tanh. It evaluates
-// tanh(|x|) = 1 - 2/(e^(2|x|)+1) in plain float64, with an error near 2^-51,
-// and rounds that to float32 only when every value within 2^-47 of it rounds to
-// the same float32; then Tanh, within 1 ULP, rounds there too. Otherwise, and
-// for tiny, large, infinite and NaN inputs, it calls Tanh.
+// (TestTanh32FastPathExhaustive checks every input of the fast path; the
+// others call Tanh), at about a third of the cost of Tanh. It evaluates
+// tanh(|x|) = 1 - 2/(e^(2|x|)+1) in plain float64 with expPlain, an absolute
+// error below 2^-45, and rounds that to float32 only when every value within
+// 2^-42 of it rounds to the same float32; then Tanh, within 1 ULP, rounds
+// there too. Otherwise, and for tiny, large, infinite and NaN inputs, it calls
+// Tanh.
 func Tanh32(x float32) float32 {
 	v := float64(x)
 	a := math.Abs(v)
 	if !(a >= 0x1p-12 && a < 9) {
 		return float32(Tanh(v))
 	}
-	eh, el, m := expDD(2*a, 0) // 2a < 18
-	e := scale(eh+el, m)
-	t := 1 - 2/(e+1)
-	const margin = 0x1p-47
+	t := 1 - 2/(expPlain(2*a)+1) // 2a < 18
+	const margin = 0x1p-42
 	if r := float32(t - margin); r == float32(t+margin) {
 		if x < 0 {
 			return -r
@@ -1035,23 +1129,16 @@ func TanPi32(u float32) float32 {
 
 // OneMinusExpNeg2Pi32 returns float32(1 - Exp(-2*math.Pi*float64(u))), bit for
 // bit, for every float32 u (checked over all 2^32 inputs), at a fraction of
-// the cost: for 2^-20 <= u <= 0.5 it evaluates e^y, y = -2*pi*u, in plain
-// float64 from the same 2^(j/64) table as Exp and a short series (error near
-// 2^-50 of e^y), and rounds 1 - e^y to float32 only when every value within a
-// relative 2^-32 of it rounds the same way; otherwise, and outside that
-// range, it computes the expression itself.
+// the cost: for 2^-20 <= u <= 0.5 it evaluates e^y, y = -2*pi*u, with
+// expPlain (relative error below 2^-44), and rounds 1 - e^y to float32 only
+// when every value within a relative 2^-32 of it rounds the same way;
+// otherwise, and outside that range, it computes the expression itself.
 func OneMinusExpNeg2Pi32(u float32) float32 {
 	x := float64(u)
 	if !(x >= 0x1p-20 && x <= 0.5) {
 		return float32(1 - Exp(-2*math.Pi*float64(u)))
 	}
-	y := float64(-2 * math.Pi * x)
-	k := math.Round(float64(y * sixtyFourOverLn2))
-	r := (y - float64(k*ln2Over64Hi)) - float64(k*ln2Over64Lo)
-	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24)))))))) // e^r - 1 to r^5/120 < 2^-44
-	ki := int(k)
-	e := float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52)
-	v := 1 - float64(e) // e is a product: keep arm64 from fusing it into the subtraction
+	v := 1 - expPlain(float64(-2*math.Pi*x))
 	const margin = 0x1p-32
 	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {
 		return r

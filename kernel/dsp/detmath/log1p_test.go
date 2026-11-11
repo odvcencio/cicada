@@ -45,7 +45,8 @@ func log1pInputs(n int) []float64 {
 	for i := range neg {
 		neg[i] = -neg[i]
 	}
-	return points(n, logSweep(1e-300, 1e300, n), neg, sweep(-0.9, 10, n), edges)
+	// sweep(0, 1, n): e^(-2|x|), the arguments the guitar amp passes (logcosh).
+	return points(n, logSweep(1e-300, 1e300, n), neg, sweep(-0.9, 10, n), sweep(0, 1, n), edges)
 }
 
 func TestLog1pAccuracy(t *testing.T) {
@@ -59,7 +60,7 @@ func TestLog1pAccuracy(t *testing.T) {
 		}
 	}
 	t.Logf("Log1p: max error %.4f ULP at %v", worst, at)
-	const claimed = 0.65
+	const claimed = 0.80
 	if worst > claimed {
 		t.Fatalf("Log1p(%v): error %.4f ULP exceeds the claimed %.2f", at, worst, claimed)
 	}
@@ -71,9 +72,12 @@ func TestLog1pAccuracy(t *testing.T) {
 	}
 }
 
-// log1pDigest was pinned 2026-11-11 when Log1p was added (#329): the amd64
-// value, equal under WebAssembly (js/wasm) and on arm64.
-const log1pDigest = "495585b6107c70bb98543e9be2ba3fc1dfb59cad26ffb505c9ee2dc8b69fec8e"
+// log1pDigest was pinned 2026-11-11 when Log1p was added (#329), and moved
+// the same day when Log1p changed from a double-double logarithm to the
+// rounded fdlibm algorithm (six times faster, 0.80 ULP instead of 0.65) and
+// its inputs gained sweep(0, 1, n). The amd64 value; CI requires it on arm64,
+// with GOAMD64=v3 and under TinyGo WebAssembly.
+const log1pDigest = "9a5c2d79387eb2294d9da83ea5658665b4a5a9f3b0331597aede90ec0339c36e"
 
 func TestLog1pDigest(t *testing.T) {
 	h := sha256.New()
