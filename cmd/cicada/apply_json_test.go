@@ -102,3 +102,24 @@ func TestApplyErrorsNameTheFailingIntent(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyRefusesAnEffectNoChainHolds declares a comp and a limiter without
+// inserton and without a later intent that inserts them: the addeffect is
+// refused by name after the last intent, and nothing is written. With the
+// insert chains set in the same envelope it applies.
+func TestApplyRefusesAnEffectNoChainHolds(t *testing.T) {
+	for _, intent := range []string{`{"kind":"addeffect","name":"glue","effectkind":"comp"}`, `{"kind":"setparam","entity":"param:bass.level","value":"-3dB"},{"kind":"addeffect","name":"ceiling","effectkind":"limiter"}`} {
+		result, err, score := runApplyJSON(t, intent, "--write")
+		failure := result.Error
+		if err == nil || result.OK || failure == nil || failure.Code != "intent_refused" || failure.Reason != "effect_needs_insert" || failure.Field != "inserton" || failure.Kind != "addeffect" || failure.Index == nil || *failure.Index != strings.Count(intent, `"kind"`)-1 {
+			t.Fatalf("%s: %v %+v", intent, err, result.Error)
+		}
+		if data, _ := os.ReadFile(score); string(data) != applyJSONScore {
+			t.Fatal("a failed batch changed the score")
+		}
+	}
+	result, err, _ := runApplyJSON(t, `{"kind":"addeffect","name":"glue","effectkind":"comp"},{"kind":"setparam","entity":"param:bass.insert","value":"glue"},{"kind":"addeffect","name":"ceiling","effectkind":"limiter"},{"kind":"setparam","entity":"param:master.insert","value":"ceiling"}`, "--write")
+	if err != nil || !result.OK {
+		t.Fatalf("declare then route: %v %+v", err, result.Error)
+	}
+}

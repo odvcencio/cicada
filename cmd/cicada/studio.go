@@ -714,14 +714,14 @@ func compileStudioSourceDetailed(path string, source []byte, overrides map[strin
 				_, extra := project.FromScore(score)
 				diagnostics = append(diagnostics, extra...)
 			}
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
 		}
 	}
 	p, extra := project.FromScore(score)
 	diagnostics = append(diagnostics, extra...)
 	for _, d := range extra {
 		if d.Severity == "error" {
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
 		}
 	}
 	if p == nil {
