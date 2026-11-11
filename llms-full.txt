@@ -721,6 +721,43 @@ step:
 }
 ```
 
+## song --json
+
+`cicada song --json` lists every score of the project with its `revision`.
+`cicada song --json <score>` gives the score's `revision` and, as `--include`
+asks (a comma-separated list), its `source` text (the default), the names it
+defines as `symbols` (each `kind`, `name`, `line` and `column`), and its
+compiled meaning as semantic JSON in `structure`. A score that cannot be read
+is refused with `unreadable_score`, and one that does not compile, when
+`symbols` or `structure` is asked for, with `invalid_score`.
+
+<!-- agent-example: song --json --include symbols song.cicada -->
+
+```json
+{
+  "schema": "cicada.song.v1",
+  "file": "song.cicada",
+  "revision": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
+  "symbols": [
+    {
+      "kind": "track",
+      "name": "bass",
+      "line": 6,
+      "column": 7
+    }
+  ]
+}
+```
+
+`cicada lib list --json` lists the libraries a score can import, each with its
+`path` and `kind` (`std`, `project` or `user`), in `libraries`;
+`cicada lib show <path> --json` gives one in `library`: its `kind`, `root`,
+`sha256`, `manifest` text, `declarations` and `assets` (schema
+`cicada.library.v1`; an unknown library is refused with `unknown_library`).
+`cicada explain <construct> --json` and `cicada explain <construct>.<field>
+--json` add `"schema": "cicada.explain.v1"` to the construct and its fields,
+or to the one field.
+
 ## apply --json
 
 `cicada apply <score> <intents.json> --json` reports what the batch did:
@@ -1083,6 +1120,45 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 }
 ```
 
+## The MCP server
+
+`cicada mcp [--root <dir>]` serves the read-only tools to an agent host that
+speaks the Model Context Protocol (MCP). The host starts it as a subprocess and
+talks to it on standard input and output, one JSON-RPC message per line, for
+example with this entry in the host's server list:
+
+```text
+{"command": "cicada", "args": ["mcp", "--root", "my-song"]}
+```
+
+`--root` (default: the working folder) is the one folder the tools read, and
+paths in every document are relative to it. The server answers protocol
+revision 2026-07-28, which is stateless: each request carries `_meta` with
+`io.modelcontextprotocol/protocolVersion` and
+`io.modelcontextprotocol/clientCapabilities`, and `server/discover` lists the
+versions the server supports. An `initialize` request selects 2025-11-25 or
+2025-06-18 instead, for the rest of the stream. Another version is refused with
+error -32022, which lists the supported ones.
+
+| Tool | Arguments | Returns, as the command line prints it |
+| --- | --- | --- |
+| `song` | `score`, `include` | `cicada.song.v1` (`song --json`) |
+| `check` | `score`, `profile` | `cicada.check.v1` (`check --json`) |
+| `intents` | `kinds`, up to 8 | `cicada.intents_index.v1` without kinds (`intents --json --index`), `cicada.intents.v1` with them |
+| `explain` | `diagnostic` or `construct` | `cicada.diagnostics.v1` (`diagnostics --json`) or `cicada.explain.v1` (`explain --json`) |
+| `library` | `path` | `cicada.library.v1` (`lib list --json`, `lib show --json`) |
+
+Every argument is optional except where the table says "or". A tool returns
+its document in `structuredContent` and the same JSON as the one text block.
+`isError` is true when the command would exit with an error, and the
+document's `error.code` says why, as on the command line. A score path that is
+absolute, contains `..`, leaves the root through a symbolic link or does not
+end in `.cicada` is refused with `path_outside_root`; a field a tool does not
+take, with `usage`. An unknown tool, or arguments that are not an object, is a
+JSON-RPC error (-32602). The server writes no file, opens no connection, and
+exits when its input closes. Editing, rendering and listening (`apply`,
+`render`, `audition`) are not served yet: run those commands directly.
+
 ## The agent task suite
 
 `make test-agent-surface` builds `build/cicada` and runs the agent task suite
@@ -1094,8 +1170,9 @@ start. Then it copies `examples/first-acid.cicada` into an empty folder and
 drives the binary the way an agent does, reading only JSON: `help --json`,
 `intents --json`, `symbols --json`, `check --json`, an `apply` of two intents
 built from the catalog's examples, `render --json` to −14 LUFS and
-`audition --json`. It also runs the examples on this page and on the quick
-start. CI runs it on every pull request; it must finish in under two minutes.
+`audition --json`. It then drives `cicada mcp` through the protocol in both
+eras and requires every tool to return the command line's own documents. It
+also runs the examples on this page and on the quick start. CI runs it on every pull request; it must finish in under two minutes.
 
 # docs/manual/writing-music.md
 

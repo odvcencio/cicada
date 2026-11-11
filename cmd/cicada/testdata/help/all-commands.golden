@@ -18,6 +18,17 @@ Flags:
 
 The quick start teaches the loop (new, check, render, audition, apply), enough of the score language for a song with drums, bass and chords, the edit envelope, how to read a refusal and where to look things up. It is docs/manual/agent-quickstart.md, built into the binary, so it needs no repository checkout; cicada new writes it into each project as AGENTS.md. cicada agents reference prints the core reference (docs/manual/agent-reference.md): the quick start, the language and formats in brief, and one line for every command, edit intent, diagnostic code and effect route.
 
+### mcp
+cicada mcp [--root <dir>]
+
+serve the read-only tools to an MCP client over stdio
+
+Flags:
+  --root <dir>  the folder the tools read (default: the working folder)
+  --help        show this help
+
+Speaks the Model Context Protocol on standard input and output, one JSON-RPC message per line: revision 2026-07-28 (stateless, server/discover) and, after an initialize request, 2025-11-25 or 2025-06-18. The tools song, check, intents, explain and library return the documents of song --json, check --json, intents --json, diagnostics --json, explain --json and lib --json. Nothing is written and no connection is opened. See docs/manual/agents.md.
+
 ### bundle
 cicada bundle <score.cicada> <bundle.zip>
   cicada bundle --restore-history <extracted-score.cicada>
@@ -173,7 +184,7 @@ cicada explain <score.cicada> <path> [@bar[.beat[.step]]]
 explain a language item or parameter value
 
 Flags:
-  --json      print construct details as JSON
+  --json      print construct details as JSON (schema cicada.explain.v1)
   --help      show this help
 
 Score locations use bar numbers starting at 1.
@@ -231,6 +242,18 @@ Flags:
   --html    write HTML highlighting
   --spans   write JSON highlighting spans
   --help    show this help
+
+### song
+cicada song [--json] [--include source,symbols,structure] [score.cicada]
+
+read a score or list the project's scores
+
+Flags:
+  --json             write the result as JSON (schema cicada.song.v1)
+  --include <parts>  what to give of the score: source (default), symbols, structure
+  --help             show this help
+
+Without a score, lists every score of the project with its revision. With one, gives its revision (the form cicada apply checks) and its source text, the names it defines, or its compiled meaning as semantic JSON.
 
 ### symbols
 cicada symbols [--refs] [--json] <score.cicada>

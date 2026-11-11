@@ -489,6 +489,7 @@ use the names of `verify-wav --report` (`integrated_lufs`, `true_peak_dbtp`,
 
 - `cicada new`: create an edition-2 project
 - `cicada agents`: print the quick start for AI agents
+- `cicada mcp`: serve the read-only tools to an MCP client over stdio
 - `cicada bundle`: package a portable score with provenance
 - `cicada apply`: apply typed edit intents to a score
 - `cicada intents`: list the edit intents apply accepts
@@ -507,6 +508,7 @@ use the names of `verify-wav --report` (`integrated_lufs`, `true_peak_dbtp`,
 - `cicada convert`: convert source and semantic JSON
 - `cicada compare`: compare two projects
 - `cicada highlight`: print source with syntax highlighting
+- `cicada song`: read a score or list the project's scores
 - `cicada symbols`: list source definitions and references
 - `cicada render`: render a score to WAV
 - `cicada stems`: render separate float32 WAV stems
