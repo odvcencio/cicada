@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,8 +34,26 @@ import (
 // (make test-parallel-identity).
 
 // parallelIdentityJobs are the job counts compared with --jobs 1; zero is the
-// automatic choice.
+// automatic choice. CICADA_PARALLEL_IDENTITY_JOBS replaces them with its
+// space-separated counts, so repeated sweeps can try other lane counts.
 var parallelIdentityJobs = []int{2, 4, 8, 0}
+
+func identityJobs(t *testing.T) []int {
+	t.Helper()
+	list := os.Getenv("CICADA_PARALLEL_IDENTITY_JOBS")
+	if list == "" {
+		return parallelIdentityJobs
+	}
+	var jobs []int
+	for _, field := range strings.Fields(list) {
+		n, err := strconv.Atoi(field)
+		if err != nil || n < 0 {
+			t.Fatalf("CICADA_PARALLEL_IDENTITY_JOBS: %q is not a job count", field)
+		}
+		jobs = append(jobs, n)
+	}
+	return jobs
+}
 
 type parallelIdentityScore struct {
 	name string
@@ -140,6 +159,7 @@ func TestParallelRenderIdentity(t *testing.T) {
 	if sweep {
 		scores = parallelIdentitySweep(t)
 	}
+	jobsList := identityJobs(t)
 	checked, skipped := 0, 0
 	for _, score := range scores {
 		t.Run(score.name, func(t *testing.T) {
@@ -165,7 +185,7 @@ func TestParallelRenderIdentity(t *testing.T) {
 				t.Fatalf("--jobs 1 reported jobs %d lanes %d", serialReport.Jobs, serialReport.Lanes)
 			}
 			t.Logf("tracks %d, scheduled engine %t, serial sha256 %x", len(inspection.score.Tracks), render.UsesScheduledEngine(inspection.score, opts), sha256.Sum256(serial))
-			for _, jobs := range parallelIdentityJobs {
+			for _, jobs := range jobsList {
 				opts.Jobs = jobs
 				got, report, err := renderIdentityBytes(inspection.score, opts)
 				if err != nil {
@@ -185,11 +205,11 @@ func TestParallelRenderIdentity(t *testing.T) {
 				checkForcedLanes(t, inspection.score, opts, serial)
 				checkStemsIdentity(t, inspection.score, opts)
 			}
-			checkLoudnessJobsIdentity(t, inspection.score, opts, sweep)
+			checkLoudnessJobsIdentity(t, inspection.score, opts, sweep, jobsList)
 			checked++
 		})
 	}
-	t.Logf("METRIC PARALLEL-RENDER-IDENTITY scores=%d checked=%d skipped=%d jobs=%v", len(scores), checked, skipped, parallelIdentityJobs)
+	t.Logf("METRIC PARALLEL-RENDER-IDENTITY scores=%d checked=%d skipped=%d jobs=%v", len(scores), checked, skipped, jobsList)
 }
 
 // checkForcedLanes renders with every segment on every lane, however light.
@@ -263,7 +283,7 @@ func checkStemsIdentity(t *testing.T, score *notation.Score, opts render.Options
 // checkLoudnessJobsIdentity runs the loudness search to -14 LUFS at --jobs 1
 // and compares the written file and the report with other job counts: the
 // sweep checks every count, the per-run subset the automatic one.
-func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.Options, sweep bool) {
+func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.Options, sweep bool, all []int) {
 	t.Helper()
 	target := renderTargetOptions{LoudnessTarget: -14, TruePeakMaxDBTP: -1, Tolerance: 0.5, Loudness: true}
 	search := func(jobs int) ([]byte, loudnessFileReport, error) {
@@ -278,7 +298,7 @@ func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.
 	serial, serialReport, serialErr := search(1)
 	jobsList := []int{0}
 	if sweep {
-		jobsList = parallelIdentityJobs
+		jobsList = all
 	}
 	for _, jobs := range jobsList {
 		got, report, err := search(jobs)
