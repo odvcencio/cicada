@@ -376,9 +376,26 @@ func hasTapeEcho(score *notation.Score) bool {
 	return false
 }
 
-func hasResidentSampler(score *notation.Score) bool {
+// hasSamplerExpression reports whether a track plays a single-asset sampler
+// and a pattern carries expression rows. The engine plays a sampler's bend,
+// vibrato and pressure rows; the direct mixer's sampler voice has no note
+// expression and played such a score as if the rows were absent.
+func hasSamplerExpression(score *notation.Score) bool {
+	samplers := map[string]bool{}
 	for _, sampler := range score.Samplers {
 		if sampler.Asset != "" {
+			samplers[sampler.Name] = true
+		}
+	}
+	played := false
+	for _, track := range score.Tracks {
+		played = played || samplers[track.Kind]
+	}
+	if !played {
+		return false
+	}
+	for _, pattern := range score.Patterns {
+		if len(pattern.Expression) > 0 {
 			return true
 		}
 	}
@@ -421,6 +438,8 @@ func scheduledEngineReason(score *notation.Score, opts Options) string {
 		return "a live instrument parameter"
 	case hasPackSampler(score) && !opts.SamplerBaseline:
 		return "sample packs"
+	case hasSamplerExpression(score):
+		return "sampler expression rows"
 	}
 	return ""
 }
