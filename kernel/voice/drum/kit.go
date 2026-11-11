@@ -653,7 +653,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	case BD:
 		frequency := p.Tune * (1 + float64(p.Sweep*s.sweep))
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
-		body := detmath.Sin(2*math.Pi*s.phase[0]) * s.amp * s.velocity
+		body := detmath.SinPi(2*s.phase[0]) * s.amp * s.velocity
 		click := nextNoise(&s.noise) * s.click * p.Click * s.noiseVelocity
 		output = fastmath.Tanh((float64(body)+float64(click))*(1+float64(p.Drive*3))) / (1 + float64(p.Drive*.7))
 		s.sweep *= s.sweepDecay
@@ -663,7 +663,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		sweep := 1 + detmath.Exp(-age/.008)
 		s.phase[0] = wrap(s.phase[0] + 180*p.Tune*sweep/k.rate)
 		s.phase[1] = wrap(s.phase[1] + 330*p.Tune*sweep/k.rate)
-		body := (float64(detmath.Sin(2*math.Pi*s.phase[0])*detmath.Exp(-age/p.Decay)) + float64(.6*detmath.Sin(2*math.Pi*s.phase[1])*detmath.Exp(-age/.06))) * s.velocity
+		body := (float64(detmath.SinPi(2*s.phase[0])*detmath.Exp(-age/p.Decay)) + float64(.6*detmath.SinPi(2*s.phase[1])*detmath.Exp(-age/.06))) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
 		noise := band * detmath.Exp(-age/p.Snappy) * s.noiseVelocity
 		output = fastmath.Tanh(float64(body*(1-p.Mix)) + float64(noise*p.Mix*1.6))
@@ -672,7 +672,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		if p.Metal {
 			s.phase[0] = wrap(s.phase[0] + 6000*p.Tune/k.rate)
 			s.phase[1] = wrap(s.phase[1] + 8400*p.Tune/k.rate)
-			bank = detmath.Sin(float64(2*math.Pi*s.phase[0]) + float64(8*detmath.Sin(2*math.Pi*s.phase[1])))
+			bank = detmath.Sin(float64(2*math.Pi*s.phase[0]) + float64(8*detmath.SinPi(2*s.phase[1])))
 		} else {
 			for i, frequency := range [...]float64{205.3, 304.4, 369.6, 522.7, 540, 800} {
 				s.phase[i] = wrap(s.phase[i] + frequency*p.Tune/k.rate)
@@ -708,7 +708,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		s.phase[1] = wrap(s.phase[1] + 440*p.Tune/k.rate)
 		triangle := float64(4*math.Abs(s.phase[0]-.5)) - 1
 		_, high := s.high1.next(nextNoise(&s.noise))
-		body := (float64(triangle*detmath.Exp(-age/.004)) + float64(detmath.Sin(2*math.Pi*s.phase[1])*detmath.Exp(-age/p.Decay))) * s.velocity
+		body := (float64(triangle*detmath.Exp(-age/.004)) + float64(detmath.SinPi(2*s.phase[1])*detmath.Exp(-age/p.Decay))) * s.velocity
 		noise := high * detmath.Exp(-age/.001) * s.noiseVelocity
 		output = (float64(body) + float64(noise)) * .45
 	case LT, MT, HT:
@@ -720,7 +720,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		}
 		frequency := base * p.Tune * (1 + float64(p.Sweep*detmath.Exp(-age/.04)))
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
-		body := detmath.Sin(2*math.Pi*s.phase[0]) * detmath.Exp(-age/p.Decay) * s.velocity
+		body := detmath.SinPi(2*s.phase[0]) * detmath.Exp(-age/p.Decay) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
 		noise := band * detmath.Exp(-age/.005) * s.noiseVelocity
 		output = float64(body) + float64(noise*.3)
