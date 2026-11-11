@@ -58,8 +58,10 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 
 // The pinned hashes are the float32 output of TestReverbTailIsNeverSubnormal
 // (0.5 s of noise, then silence, 60 s, 48 kHz), produced alike on amd64 and
-// arm64.
+// arm64. Both changed with the merge of #327, which computes the reverb's
+// coefficients with kernel/dsp/detmath and its modulation with SinPi: they
+// were 0xbf36da93f46a780b and 0xc1d7f1cf2d987f6c on the reverb before it.
 const (
-	pinnedReverbTailHash      = 0xbf36da93f46a780b
-	pinnedReverbShortTailHash = 0xc1d7f1cf2d987f6c
+	pinnedReverbTailHash      = 0x73a3144619160bd7
+	pinnedReverbShortTailHash = 0xb6ac9e89d61b9eb3
 )

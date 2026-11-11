@@ -50,6 +50,10 @@ type Limiter struct {
 	attack, release       float64
 	gain                  float64
 	fault                 bool
+	// GainReductionDB's value for the gain whose bits are reductionBits.
+	reductionBits  uint64
+	reduction      float64
+	reductionValid bool
 }
 
 func NewLimiter(sampleRate int, p LimiterParams) (*Limiter, error) {
@@ -202,6 +206,15 @@ func (l *Limiter) Reset() {
 	l.gain, l.fault = 1, false
 }
 
-func (l *Limiter) LatencyFrames() int       { return l.delay }
-func (l *Limiter) Fault() bool              { return l.fault }
-func (l *Limiter) GainReductionDB() float64 { return -20 * detmath.Log10(l.gain) }
+func (l *Limiter) LatencyFrames() int { return l.delay }
+func (l *Limiter) Fault() bool        { return l.fault }
+
+// GainReductionDB reports the current gain reduction in dB. The chain reads it
+// every frame and the gain holds still while the limiter is not reducing, so
+// the value is kept for the last gain's exact bits (same input, same result).
+func (l *Limiter) GainReductionDB() float64 {
+	if bits := math.Float64bits(l.gain); !l.reductionValid || bits != l.reductionBits {
+		l.reductionBits, l.reduction, l.reductionValid = bits, -20*detmath.Log10(l.gain), true
+	}
+	return l.reduction
+}

@@ -3,6 +3,7 @@ package fx
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
@@ -124,8 +125,8 @@ func NewReverb(sampleRate int) (*Reverb, error) {
 	r := &Reverb{
 		sampleRate: float64(sampleRate),
 		fadeStep:   1 / (.005 * float64(sampleRate)),
-		smooth:     1 - math.Exp(-1/(.005*float64(sampleRate))),
-		phaseStep:  2 * math.Pi * .3 / float64(sampleRate),
+		smooth:     1 - detmath.Exp(-1/(.005*float64(sampleRate))),
+		phaseStep:  2 * .3 / float64(sampleRate), // half turns per frame: a 0.3 Hz modulation
 	}
 	for channel := range r.input {
 		for stage, length := range reverbDiffuserLengths {
@@ -172,7 +173,7 @@ func (r *Reverb) SetParams(p ReverbParams) error {
 			changedSize = true
 		}
 		r.newLength[line] = frames
-		r.targetGain[line] = math.Pow(10, -3*frames/(p.DecaySec*r.sampleRate))
+		r.targetGain[line] = detmath.Pow(10, -3*frames/(p.DecaySec*r.sampleRate))
 	}
 	if initial {
 		r.lengthFade = 1
@@ -184,8 +185,8 @@ func (r *Reverb) SetParams(p ReverbParams) error {
 		r.oldPre = float64(r.oldPre*(1-r.preFade)) + float64(r.newPre*r.preFade)
 		r.newPre, r.preFade = pre, 0
 	}
-	r.targetDamp = 1 - math.Exp(-2*math.Pi*p.DampHz/r.sampleRate)
-	r.targetHP = math.Exp(-2 * math.Pi * p.HighpassHz / r.sampleRate)
+	r.targetDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/r.sampleRate)
+	r.targetHP = detmath.Exp(-2 * math.Pi * p.HighpassHz / r.sampleRate)
 	r.targetMix = p.Mix
 	return nil
 }
@@ -284,10 +285,12 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
-	modulation := float64(3 * math.Sin(r.phase))
+	// The phase is in half turns, so the modulation is sin(pi*phase): SinPi's
+	// exact reduction makes it cheaper than Sin of a phase in radians.
+	modulation := float64(3 * detmath.SinPi(r.phase))
 	r.phase += r.phaseStep
-	if r.phase >= 2*math.Pi {
-		r.phase -= 2 * math.Pi
+	if r.phase >= 2 {
+		r.phase -= 2
 	}
 	var taps [8]float64
 	var sum float64
@@ -415,8 +418,8 @@ func (r *Reverb) advanceSilent() {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
 	r.phase += r.phaseStep
-	if r.phase >= 2*math.Pi {
-		r.phase -= 2 * math.Pi
+	if r.phase >= 2 {
+		r.phase -= 2
 	}
 	if r.lengthFade < 1 {
 		r.lengthFade = math.Min(1, r.lengthFade+r.fadeStep)
