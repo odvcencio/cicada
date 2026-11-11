@@ -46,12 +46,14 @@
 //
 // Flush adds a compare and a branch per call, which on arm64 (no subnormal
 // penalty) is pure cost: a flush at every store made the electric piano 21%
-// slower there. So a processor flushes its recursive states in a sweep every
-// 256 of its own samples, counted from New or Reset, which is the same
-// position on every target and at every block size; a decaying state then
-// stays subnormal for at most 256 samples. A value written into a delay line
-// is flushed where it is stored instead, because sweeping the buffer would
-// cost as much.
+// slower there and the reverb 11%. So a processor flushes its recursive
+// states in a sweep every 256 of its own samples, at positions that depend
+// only on its own sample count and input, the same on every target and at
+// every block size; a decaying state then stays subnormal for at most 256
+// samples. A delay line is swept over the slots written since the previous
+// sweep, which works when every slot is read later than 256 samples after it
+// is written. The reverb sweeps only during runs of silent input, since its
+// state cannot decay that far while there is input.
 package subnormal
 
 import "math"

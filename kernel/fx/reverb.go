@@ -36,22 +36,14 @@ type allpass struct {
 }
 
 func (a *allpass) process(input float64) float64 {
-	// The buffer and index are read once into locals so that the flush's
-	// branch does not make the compiler load them and check the bounds again.
-	buffer, index := a.buffer, a.index
-	delayed := buffer[index]
+	delayed := a.buffer[a.index]
 	// Round feedback products before addition, matching native amd64 and WASM.
 	output := delayed - float64(.7*input)
-	// The diffusers and delay lines are flushed out of float64 subnormal
-	// numbers (kernel/dsp/subnormal) where they are stored, and the damping
-	// filters by flushSubnormals; a silent tail otherwise reaches them in
-	// seconds and never leaves.
-	buffer[index] = subnormal.Flush64(input + float64(.7*output))
-	index++
-	if index == len(buffer) {
-		index = 0
+	a.buffer[a.index] = input + float64(.7*output)
+	a.index++
+	if a.index == len(a.buffer) {
+		a.index = 0
 	}
-	a.index = index
 	return output
 }
 
@@ -122,7 +114,7 @@ type Reverb struct {
 	phaseStep  float64
 	fault      bool
 	excited    bool
-	frames     uint32 // excited frames since Reset, for flushSubnormals
+	quiet      uint32 // consecutive excited frames of silent input, for flushSubnormals
 }
 
 func NewReverb(sampleRate int) (*Reverb, error) {
@@ -217,7 +209,7 @@ func (r *Reverb) Reset() {
 	r.damp, r.highpass, r.mix = r.targetDamp, r.targetHP, r.targetMix
 	r.fault = false
 	r.excited = false
-	r.frames = 0
+	r.quiet = 0
 }
 
 func (r *Reverb) preRead(channel int, frames float64, input float64) float64 {
@@ -257,9 +249,20 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	r.damp += float64((r.targetDamp - r.damp) * r.smooth)
 	r.highpass += float64((r.targetHP - r.highpass) * r.smooth)
 	r.mix += float64((r.targetMix - r.mix) * r.smooth)
-	if left == 0 && right == 0 && !r.excited {
-		r.advanceSilent()
-		return 0, 0
+	// A tail reaches float64 subnormal numbers only after seconds of silent
+	// input, so the network is swept for them only then: every
+	// reverbFlushFrames frames of a run of silent input (flushSubnormals).
+	// While there is input the per-frame path does no flushing at all.
+	sweep := false
+	if left == 0 && right == 0 {
+		if !r.excited {
+			r.advanceSilent()
+			return 0, 0
+		}
+		r.quiet++
+		sweep = r.quiet%reverbFlushFrames == 0
+	} else {
+		r.quiet = 0
 	}
 	r.excited = true
 	for channel := range input {
@@ -318,13 +321,11 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		high := l.low - l.high
 		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
 		in := float64(input[line&1] * .25)
-		buffer, index := l.buffer, l.index
-		buffer[index] = subnormal.Flush64(in + float64(high*r.gain[line]))
-		index++
-		if index == len(buffer) {
-			index = 0
+		l.buffer[l.index] = in + float64(high*r.gain[line])
+		l.index++
+		if l.index == len(l.buffer) {
+			l.index = 0
 		}
-		l.index = index
 		if line&1 == 0 {
 			wetL += taps[line]
 		} else {
@@ -339,25 +340,57 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		r.fault = true
 		return 0, 0
 	}
-	r.frames++
-	if r.frames%reverbFlushFrames == 0 {
+	if sweep {
 		r.flushSubnormals()
 	}
 	return float32(outL), float32(outR)
 }
 
-// reverbFlushFrames is how often, in excited frames, flushSubnormals runs.
+// reverbFlushFrames is how often, in frames of a run of silent input,
+// flushSubnormals runs. A value stays subnormal for at most this many frames.
 const reverbFlushFrames = 256
 
-// flushSubnormals replaces subnormal values in the damping filters with zeros
-// (kernel/dsp/subnormal). The diffusers and delay lines are flushed where
-// they are stored instead, because a sweep over every buffer would cost as
-// much. The sweep runs at frame positions counted from the first excited
-// frame, so the result does not depend on the block size or the target.
+// flushSubnormals replaces subnormal values with zeros of the same sign
+// (kernel/dsp/subnormal) in the damping filters and in every buffer slot
+// written since the previous sweep: the last reverbFlushFrames slots of each
+// diffuser and delay line, or the whole buffer when it is shorter. A delay
+// line's slot is read at least 560 frames after it is written, so it is
+// flushed before it is read. Flushing at every store instead cost 10% to 15%
+// of a fed reverb (it also stopped the diffuser step from inlining), with
+// nothing to gain while there is input: the state cannot decay to 2^-1022
+// while the input keeps it near the input's level. The decision depends only
+// on the input samples and their positions, so it is the same on every
+// target and at every block size.
 func (r *Reverb) flushSubnormals() {
+	for channel := range r.input {
+		for stage := range r.input[channel] {
+			a := &r.input[channel][stage]
+			flushRecent(a.buffer, a.index)
+		}
+	}
 	for line := range r.lines {
 		l := &r.lines[line]
 		l.low, l.high = subnormal.Flush64(l.low), subnormal.Flush64(l.high)
+		flushRecent(l.buffer, l.index)
+	}
+}
+
+// flushRecent flushes the reverbFlushFrames slots of a circular buffer that
+// were written last, the slots just before index (all of them when the buffer
+// is shorter).
+func flushRecent(buffer []float64, index int) {
+	n := min(len(buffer), reverbFlushFrames)
+	if index >= n {
+		flushAll(buffer[index-n : index])
+		return
+	}
+	flushAll(buffer[:index])
+	flushAll(buffer[len(buffer)-(n-index):])
+}
+
+func flushAll(values []float64) {
+	for i, v := range values {
+		values[i] = subnormal.Flush64(v)
 	}
 }
 

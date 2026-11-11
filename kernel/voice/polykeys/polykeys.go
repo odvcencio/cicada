@@ -470,12 +470,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	}
 	if i.chorus > 0 {
 		mono := float32(.5 * float32(left+right))
-		// The chorus input filter feeds the delay line, so it is flushed out of
-		// subnormal numbers (kernel/dsp/subnormal) at every sample; the other
-		// filters are swept by flushSubnormals. Their gain to the output is
-		// below 4.
-		lp := subnormal.Flush(float32(i.chorusLP[0] + float32(i.chorusInput*float32(mono-i.chorusLP[0]))))
-		i.chorusLP[0], i.delay[i.write] = lp, lp
+		i.chorusLP[0] = float32(i.chorusLP[0] + float32(i.chorusInput*float32(mono-i.chorusLP[0])))
+		i.delay[i.write] = i.chorusLP[0]
 		var taps [3]float32
 		for c := range taps {
 			i.chorusPhases[c] = wrap(float32(i.chorusPhases[c] + i.chorusRates[c]))
@@ -516,18 +512,28 @@ func (i *Instrument) NextStereo() (float32, float32) {
 
 // flushFrames is how often, in samples, flushSubnormals runs. A decaying
 // filter state can stay subnormal for at most this many samples. Flushing
-// the output filters at every sample instead cost 11% of the release on
-// arm64, which has no subnormal penalty to win back.
+// the filters at every sample instead cost 11% of the release on arm64,
+// which has no subnormal penalty to win back.
 const flushFrames = 256
 
-// flushSubnormals replaces subnormal values in the output filters with zeros
-// (kernel/dsp/subnormal). It runs at sample positions counted from New or
-// Reset, so the result does not depend on the block size or the target.
+// flushSubnormals replaces subnormal values with zeros (kernel/dsp/subnormal)
+// in the chorus and output filters, whose gain to the output is below 4, and
+// in the flushFrames chorus delay slots written since the previous sweep. A
+// slot is read at least 0.0096 s (423 samples at 44.1 kHz) after it is
+// written, so it is flushed before it is read. The sweep runs at sample
+// positions counted from New or Reset, so the result does not depend on the
+// block size or the target.
 func (i *Instrument) flushSubnormals() {
-	i.chorusLP[1] = subnormal.Flush(i.chorusLP[1])
+	for c := range i.chorusLP {
+		i.chorusLP[c] = subnormal.Flush(i.chorusLP[c])
+	}
 	for c := range i.dcOutput {
 		i.dcInput[c] = subnormal.Flush(i.dcInput[c])
 		i.dcOutput[c] = subnormal.Flush(i.dcOutput[c])
+	}
+	for k := 1; k <= flushFrames; k++ {
+		slot := (i.write - k) & 8191
+		i.delay[slot] = subnormal.Flush(i.delay[slot])
 	}
 }
 

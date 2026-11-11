@@ -42,10 +42,10 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 					x = float32(int32(seed)) / (1 << 31)
 				}
 				hash.Add(r.Process(x, x))
-				// The damping filters are swept every reverbFlushFrames
-				// frames; between sweeps a value may sit in subnormal
+				// The network is swept every reverbFlushFrames frames of
+				// silent input; between sweeps a value may sit in subnormal
 				// numbers for those few frames.
-				if r.frames%(64*reverbFlushFrames) == 0 {
+				if r.quiet != 0 && r.quiet%(64*reverbFlushFrames) == 0 {
 					if found := subnormaltest.Find(r, 5); len(found) > 0 {
 						t.Fatalf("after the sweep at %.2f s the reverb holds subnormal numbers: %v", float64(frame)/rate, found)
 					}
@@ -61,5 +61,5 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 // arm64.
 const (
 	pinnedReverbTailHash      = 0xbf36da93f46a780b
-	pinnedReverbShortTailHash = 0x68fa14f35e106a6c
+	pinnedReverbShortTailHash = 0xc1d7f1cf2d987f6c
 )

@@ -100,7 +100,9 @@ build-core:
 
 # Times an agent's loop with build/cicada on the reference scores and checks
 # the speed gates in cmd/cicada-bench/gates.go; BENCH_ARGS=--enforce fails on
-# a gate. The large song's render and audition cover its first 8 bars.
+# a gate. The large song's render and audition cover its first 8 bars. It also
+# renders a piano chord held through a reverb and the large song with every
+# track off (render:held, render:silent), reported without a gate.
 .PHONY: bench-agent-loop test-render-identity
 BENCH_ARGS ?=
 bench-agent-loop: build-core
