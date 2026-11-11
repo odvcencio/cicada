@@ -126,7 +126,6 @@ func (m MeterMap) QuantizeTick(tick int64, quantize cmd.Quantize, patternLength 
 	case 1:
 		return m.QuantizeBeat(tick), nil
 	case 2:
-		return m.QuantizeBars(tick, 1), nil
 	case 3:
 		if patternLength < 1 || patternLength > 64 {
 			return 0, validationError("pattern length must be 1 to 64")
@@ -136,8 +135,13 @@ func (m MeterMap) QuantizeTick(tick int64, quantize cmd.Quantize, patternLength 
 		if quantize < 5 || quantize > 20 {
 			return 0, validationError("quantize value is out of range")
 		}
-		return m.QuantizeBars(tick, int64(quantize-4)), nil
 	}
+	// One bar (2), or quantize-4 bars (5 to 20).
+	bars := int64(1)
+	if quantize > 4 {
+		bars = int64(quantize - 4)
+	}
+	return m.QuantizeBars(tick, bars), nil
 }
 
 func nextMultiple(value, quantum int64) int64 {

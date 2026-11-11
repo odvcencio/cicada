@@ -1381,10 +1381,8 @@ func (e *Engine) drainCommands() {
 	for e.commandRead != e.commandWrite {
 		c := e.commands[e.commandRead%uint16(len(e.commands))]
 		e.commandRead++
-		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
-			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
-		}
-		if e.transport.Playing() && c.Tick == 0 && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
+		// A layer mask, and a pattern edit while playing, wait for the next bar line.
+		if c.Tick == 0 && (c.Op == cmd.OpSetLayerMask || e.transport.Playing() && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta)) {
 			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
 		}
 		if e.pendingLen == len(e.pending) {
