@@ -42,8 +42,6 @@ func TestAddEffectRefusesWithReasons(t *testing.T) {
 		{"drive on master", effectScore, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "master"}, "effect_route", "inserton", "a drive can be inserted on a track, not on master"},
 		{"drive on music", effectScore, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "music"}, "effect_route", "inserton", "a drive can be inserted on a track, not on bus music"},
 		{"limiter on a track", effectScore, &AddEffect{Name: "ceiling", EffectKind: "limiter", InsertOn: "bass"}, "effect_route", "inserton", "a limiter can be inserted on master, not on track bass"},
-		{"limiter alone", effectScore, &AddEffect{Name: "ceiling", EffectKind: "limiter"}, "effect_needs_insert", "inserton", "a limiter must be inserted when it is added: give inserton master"},
-		{"comp alone", effectScore, &AddEffect{Name: "glue", EffectKind: "comp"}, "effect_needs_insert", "inserton", "give inserton a track name, bus music or master"},
 		{"delay as insert", effectScore, &AddEffect{Name: "echo", EffectKind: "delay", InsertOn: "bass"}, "effect_is_return", "inserton", "a delay is a send return, not an insert"},
 		{"second reverb", withReverb, &AddEffect{Name: "hall", EffectKind: "reverb"}, "effect_single_instance", "effectkind", "the score already has the reverb return room"},
 		{"tape beside a delay", withDelay, &AddEffect{Name: "warble", EffectKind: "tape"}, "effect_single_instance", "effectkind", "the score already has the delay return echo"},
@@ -168,5 +166,20 @@ func TestSetParamReachesMasterStageSettings(t *testing.T) {
 	}
 	if _, err := applyEffectIntent(t, source, &SetParam{Entity: "param:ceiling.ceiling", Value: json.RawMessage(`"3dBTP"`)}); err == nil {
 		t.Fatal("a ceiling above 0 dBTP was accepted")
+	}
+}
+
+// TestAddEffectLeavesTheRouteToALaterIntent declares a comp without inserton
+// and inserts it with a setparam in the same envelope, as Studio's vocal
+// chain does. cmd/cicada's TestApplyRefusesAnEffectNoChainHolds checks that
+// a comp no intent routes fails validation.
+func TestAddEffectLeavesTheRouteToALaterIntent(t *testing.T) {
+	env := Envelope{Version: 1, Intents: []Intent{
+		&AddEffect{Name: "glue", EffectKind: "comp"},
+		&SetParam{Entity: "param:keys.insert", Value: json.RawMessage(`"glue"`)},
+	}}
+	result, err := Apply([]byte(effectScore), env, Options{Compiler: parseCompiler{}})
+	if err != nil || !strings.Contains(string(result.Source), "insert = glue") || !strings.Contains(string(result.Source), "fx glue comp {}") {
+		t.Fatalf("declare then route: %v\n%s", err, result.Source)
 	}
 }

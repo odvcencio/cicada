@@ -39,8 +39,7 @@ var (
 		"deesser": {"track"}, "ampcab": {"track"}, "chorus": {"track"},
 		"transient": {"master"}, "width": {"master"}, "limiter": {"master"}, "convolution": {"master"},
 	}
-	effectNeedsInsert = map[string]bool{"comp": true, "transient": true, "width": true, "limiter": true, "convolution": true}
-	effectIsReturn    = map[string]bool{"delay": true, "reverb": true, "tape": true}
+	effectIsReturn = map[string]bool{"delay": true, "reverb": true, "tape": true}
 )
 
 // Insert chain limits of the language.
@@ -106,10 +105,11 @@ func checkNewEffect(score *notation.Score, name, kind, target string) (route str
 		}
 		return "", nil, nil
 	}
+	// Without inserton the effect is declared only. A comp or a master stage
+	// must still end up in an insert chain: a later setparam of the same
+	// envelope can put it there (Studio's vocal chain does), and validation
+	// refuses a batch that leaves it out.
 	if target == "" {
-		if effectNeedsInsert[kind] {
-			return "", nil, refuse("effect_needs_insert", "inserton", "a %s must be inserted when it is added: give inserton %s", kind, strings.ReplaceAll(effectRouteNames(kind), "a track", "a track name"))
-		}
 		return "", nil, nil
 	}
 	switch target {

@@ -17,7 +17,7 @@ var intentDocs = map[string]typeDoc{
 	},
 	"AddEffect": {
 		Meaning: "declares a new effect and, with InsertOn, inserts it in one edit",
-		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. It is SetParam's fx.<name> path with a typed request. Where a kind may go follows the language: drive, deesser, ampcab and chorus are track inserts; eq a track or master insert; comp a track, bus music or master insert; transient, width, limiter and convolution master inserts; delay, tape and reverb send returns (one delay or tape, one reverb), which a track reaches with setparam param:<track>.send.<name>. Comp, transient, width, limiter and convolution must be inserted when they are added. A track takes eight inserts and master sixteen; the new effect goes at the end of the chain. Settings are set as setparam param:<name>.<field> sets them. Refusals carry a reason: name_taken, invalid_name, unknown_effect_kind, effect_needs_insert, effect_is_return, effect_single_instance, unknown_insert_target, effect_route, music_insert_taken or insert_chain_full.",
+		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. It is SetParam's fx.<name> path with a typed request. Where a kind may go follows the language: drive, deesser, ampcab and chorus are track inserts; eq a track or master insert; comp a track, bus music or master insert; transient, width, limiter and convolution master inserts; delay, tape and reverb send returns (one delay or tape, one reverb), which a track reaches with setparam param:<track>.send.<name>. Comp, transient, width, limiter and convolution work only in an insert chain: give inserton, or set the chain with a later setparam param:<owner>.insert in the same envelope; a batch that leaves one out of every chain fails validation. A track takes eight inserts and master sixteen; the new effect goes at the end of the chain. Settings are set as setparam param:<name>.<field> sets them. Refusals carry a reason: name_taken, invalid_name, unknown_effect_kind, effect_is_return, effect_single_instance, unknown_insert_target, effect_route, music_insert_taken or insert_chain_full.",
 		Examples: []string{
 			"{\"kind\":\"addeffect\",\"name\":\"echo\",\"effectkind\":\"delay\"}",
 			"{\"kind\":\"addeffect\",\"name\":\"fuzz\",\"effectkind\":\"drive\",\"inserton\":\"bass\"}",
@@ -36,7 +36,7 @@ var intentDocs = map[string]typeDoc{
 		Fields: map[string]string{
 			"ConfirmUpgrade": "edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2",
 			"EffectKind":     "the effect's kind",
-			"InsertOn":       "a track's name, music or master: where to insert the effect",
+			"InsertOn":       "a track's name, music or master: where to insert the effect; these kinds need it unless a later intent sets the chain",
 			"Name":           "the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes",
 			"Settings":       "initial settings, field to value, such as {\"ceiling\":\"-2dBTP\"}; a convolution needs its asset",
 		},

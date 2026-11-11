@@ -1119,13 +1119,14 @@ func spacedMixerValue(value string) string {
 // master insert; transient, width, limiter and convolution master inserts;
 // delay, tape and reverb send returns (one delay or tape, one reverb), which
 // a track reaches with setparam param:<track>.send.<name>. Comp, transient,
-// width, limiter and convolution must be inserted when they are added. A
+// width, limiter and convolution work only in an insert chain: give inserton,
+// or set the chain with a later setparam param:<owner>.insert in the same
+// envelope; a batch that leaves one out of every chain fails validation. A
 // track takes eight inserts and master sixteen; the new effect goes at the end
 // of the chain. Settings are set as setparam param:<name>.<field> sets them.
 // Refusals carry a reason: name_taken, invalid_name, unknown_effect_kind,
-// effect_needs_insert, effect_is_return, effect_single_instance,
-// unknown_insert_target, effect_route, music_insert_taken or
-// insert_chain_full.
+// effect_is_return, effect_single_instance, unknown_insert_target,
+// effect_route, music_insert_taken or insert_chain_full.
 //
 // Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
 // Example: {"kind":"addeffect","name":"fuzz","effectkind":"drive","inserton":"bass"}
@@ -1143,7 +1144,7 @@ func spacedMixerValue(value string) string {
 type AddEffect struct {
 	Name           string                     `json:"name" cicada:"required"`                                                        // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
 	EffectKind     string                     `json:"effectkind" values:"effect-kind" cicada:"required,selects"`                     // the effect's kind
-	InsertOn       string                     `json:"inserton,omitempty" when:"effectkind=comp|transient|width|limiter|convolution"` // a track's name, music or master: where to insert the effect
+	InsertOn       string                     `json:"inserton,omitempty" when:"effectkind=comp|transient|width|limiter|convolution"` // a track's name, music or master: where to insert the effect; these kinds need it unless a later intent sets the chain
 	Settings       map[string]json.RawMessage `json:"settings,omitempty" when:"effectkind=convolution"`                              // initial settings, field to value, such as {"ceiling":"-2dBTP"}; a convolution needs its asset
 	ConfirmUpgrade bool                       `json:"confirmupgrade,omitempty"`                                                      // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2
 }
