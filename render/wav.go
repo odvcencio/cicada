@@ -376,10 +376,11 @@ func hasTapeEcho(score *notation.Score) bool {
 	return false
 }
 
-// hasSamplerExpression reports whether a track plays a single-asset sampler
-// and a pattern carries expression rows. The engine plays a sampler's bend,
-// vibrato and pressure rows; the direct mixer's sampler voice has no note
-// expression and played such a score as if the rows were absent.
+// hasSamplerExpression reports whether a single-asset sampler track plays a
+// pattern with expression rows, through a scene or its chain. The engine plays
+// a sampler's bend, vibrato and pressure rows; the direct mixer's sampler
+// voice has no note expression and played such rows as if they were absent.
+// Rows on other tracks keep the direct mixer, which plays them.
 func hasSamplerExpression(score *notation.Score) bool {
 	samplers := map[string]bool{}
 	for _, sampler := range score.Samplers {
@@ -387,16 +388,27 @@ func hasSamplerExpression(score *notation.Score) bool {
 			samplers[sampler.Name] = true
 		}
 	}
-	played := false
-	for _, track := range score.Tracks {
-		played = played || samplers[track.Kind]
-	}
-	if !played {
-		return false
-	}
+	rows := map[string]bool{}
 	for _, pattern := range score.Patterns {
-		if len(pattern.Expression) > 0 {
-			return true
+		rows[pattern.Name] = len(pattern.Expression) > 0
+	}
+	sampled := map[string]bool{}
+	for _, track := range score.Tracks {
+		if !samplers[track.Kind] {
+			continue
+		}
+		sampled[track.Name] = true
+		for _, entry := range track.Chain {
+			if rows[entry.Text] {
+				return true
+			}
+		}
+	}
+	for _, scene := range score.Scenes {
+		for _, binding := range scene.Bindings {
+			if sampled[binding.Track] && rows[binding.Pattern] {
+				return true
+			}
 		}
 	}
 	return false
