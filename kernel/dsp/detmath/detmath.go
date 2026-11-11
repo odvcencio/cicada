@@ -1029,20 +1029,35 @@ func expPlain(y float64) float64 {
 
 // Tanh32 returns float32(Tanh(float64(x))), bit for bit, for every float32 x
 // (TestTanh32FastPathExhaustive checks every input of the fast path; the
-// others call Tanh), at about a third of the cost of Tanh. It evaluates
-// tanh(|x|) = 1 - 2/(e^(2|x|)+1) in plain float64 with expPlain, an absolute
-// error below 2^-45, and rounds that to float32 only when every value within
-// 2^-42 of it rounds to the same float32; then Tanh, within 1 ULP, rounds
-// there too. Otherwise, and for tiny, large, infinite and NaN inputs, it calls
-// Tanh.
+// others call Tanh), at a fraction of the cost of Tanh. It evaluates tanh(|x|)
+// in plain float64: below 0.625 with Cody and Waite's rational form x +
+// x^3*P(x^2)/Q(x^2) (Cephes' coefficients, as in Go's math.Tanh; relative
+// error near 2^-52), above with 1 - 2/(e^(2|x|)+1) and expPlain (absolute
+// error below 2^-45). It rounds that to float32 only when every value within
+// a margin (relative 2^-45, absolute 2^-42) rounds to the same float32; then
+// Tanh, within 1 ULP, rounds there too. Otherwise, and for tiny, large,
+// infinite and NaN inputs, it calls Tanh.
 func Tanh32(x float32) float32 {
 	v := float64(x)
 	a := math.Abs(v)
 	if !(a >= 0x1p-12 && a < 9) {
 		return float32(Tanh(v))
 	}
-	t := 1 - 2/(expPlain(2*a)+1) // 2a < 18
-	const margin = 0x1p-42
+	var t, margin float64
+	if a < 0.625 {
+		const (
+			p0, p1, p2 = -9.64399179425052238628e-1, -9.92877231001918586564e1, -1.61468768441708447952e3
+			q0, q1, q2 = 1.12811678491632931402e2, 2.23548839060100448583e3, 4.84406305325125486048e3
+		)
+		s := float64(a * a)
+		num := float64(float64(float64(p0*s)+p1)*s) + p2
+		den := float64(float64(float64((s+q0)*s)+q1)*s) + q2
+		t = a + float64(float64(a*s)*num)/den
+		margin = float64(t * 0x1p-45)
+	} else {
+		t = 1 - 2/(expPlain(2*a)+1) // 2a < 18
+		margin = 0x1p-42
+	}
 	if r := float32(t - margin); r == float32(t+margin) {
 		if x < 0 {
 			return -r
