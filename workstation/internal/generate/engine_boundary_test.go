@@ -78,7 +78,7 @@ func TestBrowserEngineStandardLibraryIsKnown(t *testing.T) {
 		}
 	}
 	// The standard library's package graph differs between Go releases, so
-	// the list holds for the Go version it was generated with.
+	// the list holds for the Go version that produced it.
 	cmd := exec.Command("go", "env", "GOVERSION")
 	cmd.Dir = "../.."
 	cmd.Env = append(os.Environ(), "GOWORK=off")
