@@ -527,20 +527,27 @@ test('a recovery copy of the text a Code save writes does not keep the Code edit
   const before = await state('/api/state');
   const phrase = '\n// saved phrase';
   const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
-  // A recovery copy of that text that the save will not name, such as a
-  // recovered draft's earlier copy, or one an editor kept just before.
-  await page.evaluate(async content => {
-    const form = document.querySelector('#score textarea').form;
-    const id = [...crypto.getRandomValues(new Uint8Array(16))].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    const response = await fetch('/__actions/source-checkpoint', {method: 'POST',
-      headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('input[name=csrf_token]').value},
-      body: JSON.stringify({file: form.querySelector('input[name=file]')?.value || '', fileRevision: form.querySelector('input[name=fileRevision]').value,
-        content, recoveryId: id, recoverySequence: '1', recoveryParentId: '', recoveryParentHash: ''})});
-    if (!response.ok) throw new Error('checkpoint returned ' + response.status);
-  }, text);
-  await typeAtEnd(page, phrase);
-  assert.equal(await page.locator('#score textarea').first().inputValue(), text);
-  await saveCode(page, state, text);
+  // This window's own checkpoints fail until the save, so the page address
+  // names no copy of its own and Studio picks the newest one it keeps.
+  const id = require('node:crypto').randomBytes(16).toString('hex');
+  await page.route('**/__actions/source-checkpoint', route => route.request().postDataJSON().recoveryId === id ? route.fallback() : route.abort());
+  try {
+    // A recovery copy of that text that the save will not name, such as a
+    // recovered draft's earlier copy, or one an editor kept just before.
+    await page.evaluate(async ({content, id}) => {
+      const form = document.querySelector('#score textarea').form;
+      const response = await fetch('/__actions/source-checkpoint', {method: 'POST',
+        headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('input[name=csrf_token]').value},
+        body: JSON.stringify({file: form.querySelector('input[name=file]')?.value || '', fileRevision: form.querySelector('input[name=fileRevision]').value,
+          content, recoveryId: id, recoverySequence: '1', recoveryParentId: '', recoveryParentHash: ''})});
+      if (!response.ok) throw new Error('checkpoint returned ' + response.status);
+    }, {content: text, id});
+    await typeAtEnd(page, phrase);
+    assert.equal(await page.locator('#score textarea').first().inputValue(), text);
+    await saveCode(page, state, text);
+  } finally {
+    await page.unroute('**/__actions/source-checkpoint');
+  }
   assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
   await undoCode(page, state, posts, settled, before);
 });
