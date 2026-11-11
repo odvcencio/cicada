@@ -13,8 +13,10 @@
 // product rounded by an explicit float64 conversion before it is added, plus
 // math.Frexp, math.Ldexp, math.Round and bit operations. Extra precision comes
 // from double-double arithmetic (Dekker's two-product with Veltkamp
-// splitting). The functions are written for coefficient design and control
-// rate, not the sample loop; see the benchmarks for their cost.
+// splitting). They cost two to four times as much as the math library (see
+// the benchmarks); a few run once per sample (the room's and reverb's
+// modulation, the amp's saturation, the drive's fold), where that cost is
+// measured and accepted for the same bits everywhere.
 //
 // Every exported function starts with x = float64(x). The conversion rounds an
 // argument that a caller computed as a product, so that if the compiler ever
@@ -443,11 +445,61 @@ func Sincos(x float64) (sin, cos float64) {
 
 // Sin returns the sine of x for |x| < TrigLimit and NaN otherwise. Measured
 // error: at most 0.75 ULP, including arguments next to multiples of pi/2.
-func Sin(x float64) float64 { s, _ := Sincos(x); return s }
+//
+// It evaluates only the kernel its quadrant needs, so it returns exactly the
+// sine Sincos returns at about half the cost.
+func Sin(x float64) float64 {
+	x = float64(x)                          // see the package comment
+	if !(x > -TrigLimit && x < TrigLimit) { // NaN, infinite or out of range
+		return math.NaN()
+	}
+	if x > -0x1p-27 && x < 0x1p-27 {
+		return x
+	}
+	rh, rl, q := reduce(x)
+	switch q {
+	case 1:
+		h, l := cosKernel(rh, rl)
+		return h + l
+	case 2:
+		h, l := sinKernel(rh, rl)
+		return -(h + l)
+	case 3:
+		h, l := cosKernel(rh, rl)
+		return -(h + l)
+	}
+	h, l := sinKernel(rh, rl)
+	return h + l
+}
 
 // Cos returns the cosine of x for |x| < TrigLimit and NaN otherwise. Measured
 // error: at most 0.75 ULP, including arguments next to multiples of pi/2.
-func Cos(x float64) float64 { _, c := Sincos(x); return c }
+//
+// Like Sin, it evaluates only the kernel its quadrant needs and returns
+// exactly the cosine Sincos returns.
+func Cos(x float64) float64 {
+	x = float64(x)                          // see the package comment
+	if !(x > -TrigLimit && x < TrigLimit) { // NaN, infinite or out of range
+		return math.NaN()
+	}
+	if x > -0x1p-27 && x < 0x1p-27 {
+		return 1
+	}
+	rh, rl, q := reduce(x)
+	switch q {
+	case 1:
+		h, l := sinKernel(rh, rl)
+		return -(h + l)
+	case 2:
+		h, l := cosKernel(rh, rl)
+		return -(h + l)
+	case 3:
+		h, l := sinKernel(rh, rl)
+		return h + l
+	}
+	h, l := cosKernel(rh, rl)
+	return h + l
+}
 
 // Tan returns the tangent of x for |x| < TrigLimit and NaN otherwise.
 // Measured error: at most 0.85 ULP, including arguments next to multiples of
