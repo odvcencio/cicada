@@ -35,7 +35,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 			return append(ranges, automationDiagnostic("CICADA-REFERENCE", err, source.Position)...)
 		}
 		for _, point := range source.Points {
-			tick, err := notation.PositionTick(point.At)
+			tick, err := notation.PositionTick(p.MeterMap(), point.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, point.Position)...)
 			}
@@ -63,7 +63,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 			lane.Points = append(lane.Points, AutomationPoint{Tick: tick, Value: sceneValueFrom(value), Shape: shape, Curve: curve})
 		}
 		for _, recall := range source.Recalls {
-			tick, err := notation.PositionTick(recall.At)
+			tick, err := notation.PositionTick(p.MeterMap(), recall.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, recall.Position)...)
 			}

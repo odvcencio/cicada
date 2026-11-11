@@ -67,11 +67,11 @@ type vocalLanesProps struct {
 	Edits        control.VocalEdits    `json:"edits"`
 }
 
-func vocalPosition(tick int64) string {
+func vocalPosition(meterMap seq.MeterMap, tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return fmt.Sprintf("%dticks", tick)
 	}
-	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	bar, beat, step, _ := meterMap.Position(tick)
 	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 
@@ -121,7 +121,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", action), gosx.Attr("data-capture-control", action), gosx.Attr("disabled", disabled), gosx.Attr("class", map[bool]string{true: "primary", false: ""}[action == "record"])), gosx.Text(label))
 	}
 	active := state.Active != ""
-	fullSong := gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-capture-full-song", vocalPosition(end)), gosx.Attr("disabled", active)), gosx.Text("Full song"))
+	fullSong := gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-capture-full-song", vocalPosition(v.Project.MeterMap(), end)), gosx.Attr("disabled", active)), gosx.Text("Full song"))
 	defaultElastic := true
 	for _, comp := range state.Comps {
 		if comp.Track == chosen {
@@ -133,7 +133,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 	if ctx.Request.URL.Path == "/studio" {
 		returnTo = ctx.Request.URL.RequestURI()
 	}
-	controls := ui.Form(ui.FormProps{Action: "/__actions/take", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, hidden("timeline", "on"), hidden("elasticPresent", "on"), followControl, field("Vocal track", selectInput("track", chosen, tracks, "Vocal track")), field("Punch in", textInput("recordStart", "@1.1.1")), field("Punch out", textInput("recordEnd", vocalPosition(end))), field("Passes", selectInput("passes", "1", []string{"1", "2", "3", "4", "5", "6", "7", "8"}, "Passes")), button("record", "Record take", active || len(tracks) == 0), button("stop", "Finish take", !active), fullSong)
+	controls := ui.Form(ui.FormProps{Action: "/__actions/take", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, hidden("timeline", "on"), hidden("elasticPresent", "on"), followControl, field("Vocal track", selectInput("track", chosen, tracks, "Vocal track")), field("Punch in", textInput("recordStart", "@1.1.1")), field("Punch out", textInput("recordEnd", vocalPosition(v.Project.MeterMap(), end))), field("Passes", selectInput("passes", "1", []string{"1", "2", "3", "4", "5", "6", "7", "8"}, "Passes")), button("record", "Record take", active || len(tracks) == 0), button("stop", "Finish take", !active), fullSong)
 	add := s.form(v, csrf, "session", "clip", hidden("action", "audio-track"), field("New vocal track", textInput("newName", "danilo")), submit("", "", "Add vocal track"))
 	var audio audioState
 	audioError := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/audio/config", nil, &audio)
@@ -248,7 +248,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 			continue
 		}
 		for _, seg := range comp.Segments {
-			compRows = append(compRows, gosx.El("li", gosx.Attrs(gosx.Attr("data-comp-take", seg.Take)), gosx.El("strong", gosx.Text(takeNames[seg.Take])), gosx.Text(" · "+vocalPosition(seg.Start)+" → "+vocalPosition(seg.End)+" · "+control.VocalGainText(seg.GainDB))))
+			compRows = append(compRows, gosx.El("li", gosx.Attrs(gosx.Attr("data-comp-take", seg.Take)), gosx.El("strong", gosx.Text(takeNames[seg.Take])), gosx.Text(" · "+vocalPosition(v.Project.MeterMap(), seg.Start)+" → "+vocalPosition(v.Project.MeterMap(), seg.End)+" · "+control.VocalGainText(seg.GainDB))))
 		}
 	}
 	followSong := false
@@ -334,7 +334,7 @@ func (s *studioApp) vocalLanes(ctx *server.Context, v workspace, csrf, track str
 			continue
 		}
 		for _, seg := range comp.Segments {
-			label := names[seg.Take] + " · " + vocalPosition(seg.Start) + " → " + vocalPosition(seg.End) + " · " + control.VocalGainText(seg.GainDB)
+			label := names[seg.Take] + " · " + vocalPosition(v.Project.MeterMap(), seg.Start) + " → " + vocalPosition(v.Project.MeterMap(), seg.End) + " · " + control.VocalGainText(seg.GainDB)
 			regions = append(regions, gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "vocal-comp-region"), gosx.Attr("data-vocal-pick", seg.Take), gosx.Attr("data-vocal-start", seg.Start), gosx.Attr("data-vocal-end", seg.End), gosx.Attr("data-vocal-gain-db", seg.GainDB), gosx.Attr("style", "left:"+percent(seg.Start)+";width:"+percent(seg.End-seg.Start)), gosx.Attr("title", label), gosx.Attr("aria-label", "Choose "+label)), gosx.Text(names[seg.Take]+" · "+control.VocalGainText(seg.GainDB))))
 		}
 	}
@@ -357,7 +357,7 @@ func (s *studioApp) vocalLanes(ctx *server.Context, v workspace, csrf, track str
 		}
 		pickURL := "/?panel=session&vocalTrack=" + url.QueryEscape(track) + "&vocalTake=" + url.QueryEscape(lane.ID)
 		wave := gosx.El("svg", gosx.Attrs(gosx.Attr("class", "vocal-wave"), gosx.Attr("data-vocal-wave-svg", lane.ID), gosx.Attr("data-gosx-key", "vocal-wave-"+lane.ID), gosx.Attr("viewBox", "0 0 8192 96"), gosx.Attr("preserveAspectRatio", "none"), gosx.Attr("aria-hidden", "true"), gosx.Attr("style", "left:"+percent(lane.Start)+";width:"+percent(lane.End-lane.Start))), gosx.El("path", gosx.Attrs(gosx.Attr("data-vocal-wave-path", ""))))
-		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-row"), gosx.Attr("data-vocal-take", lane.ID), gosx.Attr("data-vocal-selected", lane.ID == props.Selected)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-label")), gosx.El("a", gosx.Attrs(gosx.Attr("href", pickURL), gosx.Attr("data-gosx-link", "false"), gosx.Attr("data-vocal-pick", lane.ID), gosx.Attr("title", "Recorded "+lane.Stamp)), gosx.Text(label)), gosx.El("small", gosx.Text(vocalPosition(lane.Start)+" → "+vocalPosition(lane.End)))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-track"), gosx.Attr("data-vocal-wave", lane.ID), gosx.Attr("tabindex", "0"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Select a phrase from "+lane.Label+" waveform")), gosx.Fragment(chosen...), wave, gosx.El("span", gosx.Attrs(gosx.Attr("class", "vocal-wave-status"), gosx.Attr("data-vocal-wave-status", "")), gosx.Text("Loading waveform…")), selection)))
+		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-row"), gosx.Attr("data-vocal-take", lane.ID), gosx.Attr("data-vocal-selected", lane.ID == props.Selected)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-label")), gosx.El("a", gosx.Attrs(gosx.Attr("href", pickURL), gosx.Attr("data-gosx-link", "false"), gosx.Attr("data-vocal-pick", lane.ID), gosx.Attr("title", "Recorded "+lane.Stamp)), gosx.Text(label)), gosx.El("small", gosx.Text(vocalPosition(v.Project.MeterMap(), lane.Start)+" → "+vocalPosition(v.Project.MeterMap(), lane.End)))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-track"), gosx.Attr("data-vocal-wave", lane.ID), gosx.Attr("tabindex", "0"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Select a phrase from "+lane.Label+" waveform")), gosx.Fragment(chosen...), wave, gosx.El("span", gosx.Attrs(gosx.Attr("class", "vocal-wave-status"), gosx.Attr("data-vocal-wave-status", "")), gosx.Text("Loading waveform…")), selection)))
 	}
 	form := func(children ...gosx.Node) gosx.Node {
 		return ui.Form(ui.FormProps{Action: "/__actions/take", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=session&vocalTrack=" + url.QueryEscape(track), Class: "action-form"}, children...)
@@ -367,7 +367,7 @@ func (s *studioApp) vocalLanes(ctx *server.Context, v workspace, csrf, track str
 	props.AuditionMode = "context"
 	var draft struct{ Revision, TakeID, Start, End, GainDB, AuditionMode, OffsetMS, FadeMS, CrossfadeMS, Elastic, ElasticPresent string }
 	session.Current(ctx.Request).Decode("vocal-audition", &draft)
-	if draft.Revision == v.Revision && draft.TakeID == props.Selected && draft.Start == vocalPosition(props.Start) && draft.End == vocalPosition(props.Stop) {
+	if draft.Revision == v.Revision && draft.TakeID == props.Selected && draft.Start == vocalPosition(v.Project.MeterMap(), props.Start) && draft.End == vocalPosition(v.Project.MeterMap(), props.Stop) {
 		if gain, err := strconv.ParseFloat(draft.GainDB, 64); err == nil && control.ValidVocalGain(gain) {
 			props.GainDB = gain
 		}
@@ -406,7 +406,7 @@ func (s *studioApp) vocalLanes(ctx *server.Context, v workspace, csrf, track str
 		follow = draft.Elastic == "on"
 	}
 	elastic := field("Follow song tempo (keep pitch)", gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "elastic"), gosx.Attr("value", "on"), gosx.Attr("checked", follow), gosx.Attr("disabled", active))))
-	selection := form(hidden("takeId", props.Selected), hidden("timeline", "on"), hidden("elasticPresent", "on"), elastic, gosx.El("p", gosx.Attrs(gosx.Attr("class", "vocal-selection-readout"), gosx.Attr("data-vocal-readout", ""), gosx.Attr("role", "status")), gosx.Text(names[props.Selected]+" · "+vocalPosition(props.Start)+" → "+vocalPosition(props.Stop))), level, phraseTiming(props.Edits, active), button("listen", "Hear selection", active), button("listen-loop", "Loop selection", active), button("comp", "Use selection", active), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-vocal-punch", ""), gosx.Attr("disabled", active)), gosx.Text("Set punch range")), gosx.El("details", gosx.Attrs(gosx.Attr("class", "vocal-exact")), gosx.El("summary", gosx.Text("Exact positions")), field("Range start", textInput("recordStart", vocalPosition(props.Start))), field("Range end", textInput("recordEnd", vocalPosition(props.Stop)))))
+	selection := form(hidden("takeId", props.Selected), hidden("timeline", "on"), hidden("elasticPresent", "on"), elastic, gosx.El("p", gosx.Attrs(gosx.Attr("class", "vocal-selection-readout"), gosx.Attr("data-vocal-readout", ""), gosx.Attr("role", "status")), gosx.Text(names[props.Selected]+" · "+vocalPosition(v.Project.MeterMap(), props.Start)+" → "+vocalPosition(v.Project.MeterMap(), props.Stop))), level, phraseTiming(props.Edits, active), button("listen", "Hear selection", active), button("listen-loop", "Loop selection", active), button("comp", "Use selection", active), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-vocal-punch", ""), gosx.Attr("disabled", active)), gosx.Text("Set punch range")), gosx.El("details", gosx.Attrs(gosx.Attr("class", "vocal-exact")), gosx.El("summary", gosx.Text("Exact positions")), field("Range start", textInput("recordStart", vocalPosition(v.Project.MeterMap(), props.Start))), field("Range end", textInput("recordEnd", vocalPosition(v.Project.MeterMap(), props.Stop)))))
 	whole := form(hidden("takeId", props.Selected), hidden("timeline", "on"), button("select", "Use whole take", active))
 	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-tools")), field("Zoom", selectInput("vocalZoom", "song", []string{"song", "16 bars", "8 bars", "4 bars", "1 bar"}, "Zoom")), field("Snap", selectInput("vocalSnap", "1/16", []string{"1/16", "beat", "bar", "free"}, "Snap")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Drag a phrase. Trim its edges, or drag ↔ to move it.")), field("Follow playback", gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "vocalFollow"), gosx.Attr("aria-label", "Follow playback")))))
 	content := gosx.Fragment(controls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "vocal-playback-status muted"), gosx.Attr("data-vocal-playback-status", ""), gosx.Attr("aria-live", "off")), gosx.Text("Hear a phrase once, or loop it until you stop. Space on a waveform hears or stops the selection.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-scroll"), gosx.Attr("data-vocal-scroll", "")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-lane-world"), gosx.Attr("data-vocal-world", "")), gosx.Fragment(rows...), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-playhead"), gosx.Attr("data-vocal-playhead", ""), gosx.Attr("hidden", true), gosx.Attr("aria-hidden", "true"))))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "vocal-selection-actions"), gosx.Attr("data-vocal-selection-actions", "")), selection, whole, ui.Form(ui.FormProps{Action: "/__actions/transport", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=session&vocalTrack=" + url.QueryEscape(track), Class: "action-form"}, gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "stop"), gosx.Attr("data-vocal-stop", ""), gosx.Attr("data-capture-control", "audition-stop"), gosx.Attr("disabled", active)), gosx.Text("Stop audition")))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Amber marks chosen phrases. Arrow keys on a selection edge trim it; Shift moves four steps. Escape cancels a drag. Waveforms are scaled for visibility.")))

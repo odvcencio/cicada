@@ -103,6 +103,7 @@ func (s *studioApp) transcriptionAudio(w http.ResponseWriter, r *http.Request) {
 	for _, event := range events {
 		duration = max(duration, event.Tick, event.EndTick)
 	}
+	// The transcriber writes a 4/4 score (time-signatures phase 6 adds a meter option).
 	bars := min(4, int((seq.MeterMap{}).BarsUntil(duration)))
 	audio, err := audition.Render([]byte(result.Source), 44100, bars, .2)
 	if err != nil {

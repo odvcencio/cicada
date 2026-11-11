@@ -82,7 +82,7 @@ func run() error {
 		return fmt.Errorf("play rejected")
 	}
 	clock, _ := seq.NewClock(rate, cfg.BPMMilli)
-	var meterMap seq.MeterMap // the example score is 4/4
+	meterMap := music.MeterMap()
 	var l, r [128]float32
 	var sample int64
 	for bar := range 8 {

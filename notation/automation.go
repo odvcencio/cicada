@@ -25,8 +25,8 @@ type AutomationPoint struct {
 	Position                Position
 }
 
-// PositionTick converts one-based bar.beat.sixteenth positions at 960 PPQ.
-func PositionTick(at string) (int64, error) {
+// PositionTick converts a one-based @bar.beat.step on the meter map to a tick.
+func PositionTick(meterMap seq.MeterMap, at string) (int64, error) {
 	parts := strings.Split(strings.TrimPrefix(at, "@"), ".")
 	if len(parts) != 3 {
 		return 0, fmt.Errorf("position must be @bar.beat.step")
@@ -39,15 +39,15 @@ func PositionTick(at string) (int64, error) {
 		}
 		n[i] = value
 	}
-	// Automation reads positions before a score's meter is known: 4/4.
-	tick, ok := seq.MeterMap{}.PositionTick(n[0], n[1], n[2])
+	tick, ok := meterMap.PositionTick(n[0], n[1], n[2])
 	if !ok {
 		return 0, fmt.Errorf("position needs bar >= 1, beat 1..4 and step 1..4")
 	}
 	return tick, nil
 }
 
-func TickPosition(tick int64) string {
-	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+// TickPosition spells a tick as @bar.beat.step on the meter map.
+func TickPosition(meterMap seq.MeterMap, tick int64) string {
+	bar, beat, step, _ := meterMap.Position(tick)
 	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }

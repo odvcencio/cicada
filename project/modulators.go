@@ -72,21 +72,21 @@ func lowerModulators(p *Project, score *notation.Score) []notation.Diagnostic {
 			if m.Wave == "" {
 				m.Wave = "sine"
 			}
-			m.setRate(get("rate"))
+			m.setRate(p.MeterMap(), get("rate"))
 			m.Phase, _ = strconv.ParseFloat(strings.TrimSuffix(get("phase"), "%"), 64)
 			if strings.HasSuffix(get("phase"), "%") {
 				m.Phase /= 100
 			}
 			m.Loop = loopOrWrap(get("loop"))
 		case notation.ModSway:
-			m.setRate(get("rate"))
+			m.setRate(p.MeterMap(), get("rate"))
 			m.Octaves = 1
 			if v := get("octaves"); v != "" {
 				m.Octaves, _ = strconv.Atoi(v)
 			}
 			m.Loop = loopOrWrap(get("loop"))
 		case notation.ModContour:
-			m.setRate(get("period"))
+			m.setRate(p.MeterMap(), get("period"))
 			m.Loop = loopOrWrap(get("loop"))
 			for _, pt := range source.Points {
 				at, _ := notation.ParseContourPosition(pt.At)
@@ -210,8 +210,8 @@ func durationMS(v string) float64 {
 	return n
 }
 
-func (m *Modulator) setRate(text string) {
-	if rate, msg := notation.ParseModRate(text); msg == "" {
+func (m *Modulator) setRate(meterMap seq.MeterMap, text string) {
+	if rate, msg := notation.ParseModRate(meterMap, text); msg == "" {
 		if rate.Free {
 			m.RateMicroHz = rate.MicroHertz
 		} else {
@@ -425,15 +425,15 @@ func modulatorSources(p *Project) ([]string, error) {
 		switch m.Kind {
 		case notation.ModLFO:
 			line("wave", m.Wave)
-			line("rate", rateSource(m))
+			line("rate", rateSource(p.MeterMap(), m))
 			if m.Phase != 0 {
 				line("phase", num(m.Phase))
 			}
 		case notation.ModSway:
-			line("rate", rateSource(m))
+			line("rate", rateSource(p.MeterMap(), m))
 			line("octaves", strconv.Itoa(m.Octaves))
 		case notation.ModContour:
-			line("period", rateSource(m))
+			line("period", rateSource(p.MeterMap(), m))
 		case notation.ModEnvelope:
 			line("attack", num(m.AttackMS)+"ms")
 			line("release", num(m.ReleaseMS)+"ms")
@@ -466,12 +466,12 @@ func modulatorSources(p *Project) ([]string, error) {
 	return out, nil
 }
 
-func rateSource(m Modulator) string {
+func rateSource(meterMap seq.MeterMap, m Modulator) string {
 	if m.RateMicroHz > 0 {
 		return strconv.FormatFloat(float64(m.RateMicroHz)/1e6, 'f', -1, 64) + "Hz"
 	}
-	// A rate in bars counts 4/4 bars: a score declares no meter yet.
-	if bars, whole := (seq.MeterMap{}).WholeBars(0, m.RateTicks); whole {
+	// A rate in bars counts bars of the base meter.
+	if bars, whole := meterMap.WholeBars(0, m.RateTicks); whole {
 		return strconv.FormatInt(bars, 10) + "bars"
 	}
 	a, b := m.RateTicks, seq.TicksPerWhole

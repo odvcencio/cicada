@@ -38,7 +38,7 @@ func mappedVocalTake(t *testing.T, s *studio, start, end int64, silent bool, sig
 	if err != nil {
 		t.Fatal(err)
 	}
-	timeline, err := recordingTimeline(p, &studioRecordingSettings{Start: listeningPosition(start), End: listeningPosition(end)})
+	timeline, err := recordingTimeline(p, &studioRecordingSettings{Start: listeningPosition(p.MeterMap(), start), End: listeningPosition(p.MeterMap(), end)})
 	if err != nil {
 		t.Fatal(err)
 	}

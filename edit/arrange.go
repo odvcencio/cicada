@@ -115,7 +115,7 @@ func editClipPlacement(ctx *Context, intent Intent) error {
 			return err
 		}
 		position := FormatPosition(ctx.MeterMap(), in.AtTick)
-		if updated, err = notation.SetPlacementField(source, placement.ID, "at", position); err != nil {
+		if updated, err = notation.SetPlacementField(ctx.MeterMap(), source, placement.ID, "at", position); err != nil {
 			return err
 		}
 		label = fmt.Sprintf("Clip %s moved to %s", placement.ID, position)
@@ -125,7 +125,7 @@ func editClipPlacement(ctx *Context, intent Intent) error {
 			return err
 		}
 		length := FormatLength(ctx.MeterMap(), placement.AtTick, in.LengthTicks)
-		if updated, err = notation.SetPlacementField(source, placement.ID, "length", length); err != nil {
+		if updated, err = notation.SetPlacementField(ctx.MeterMap(), source, placement.ID, "length", length); err != nil {
 			return err
 		}
 		label = fmt.Sprintf("Clip %s resized to %s", placement.ID, length)
@@ -274,7 +274,7 @@ func splitClip(ctx *Context, in *SplitClip, source []byte, file string) ([]byte,
 	if err != nil {
 		return nil, "", err
 	}
-	cut, err := splitSource(source, file, plan, placement, in.AtTick)
+	cut, err := splitSource(ctx.MeterMap(), source, file, plan, placement, in.AtTick)
 	if err != nil {
 		return nil, "", err
 	}
@@ -383,8 +383,7 @@ func renderCheckFor(ctx *Context) (RenderCheck, error) {
 	return batchCheck{check: ctx.Options.RenderCheck, files: ctx.fileOverrides()}, nil
 }
 
-func splitSource(source []byte, file string, plan *Plan, placement Placement, atTick int64) ([]byte, error) {
-	var meterMap seq.MeterMap // a plan carries no meter yet: 4/4
+func splitSource(meterMap seq.MeterMap, source []byte, file string, plan *Plan, placement Placement, atTick int64) ([]byte, error) {
 	decl, _, walker, err := placementDecl(source, placement.ID)
 	if err != nil {
 		return nil, err

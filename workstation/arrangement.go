@@ -158,8 +158,8 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 			gosx.El("th", gosx.Attrs(gosx.Attr("scope", "row")), gosx.Text(placement.ID)),
 			gosx.El("td", gosx.Text(placement.Track)),
 			gosx.El("td", gosx.El("a", gosx.Attrs(gosx.Attr("href", href)), gosx.Text(placement.Content))),
-			gosx.El("td", gosx.Text(placementPosition(placement.AtTick))),
-			gosx.El("td", gosx.Text(placementPosition(placement.AtTick+placement.LengthTicks))),
+			gosx.El("td", gosx.Text(placementPosition(v.Project.MeterMap(), placement.AtTick))),
+			gosx.El("td", gosx.Text(placementPosition(v.Project.MeterMap(), placement.AtTick+placement.LengthTicks))),
 			gosx.El("td", gosx.Text(length))))
 	}
 	var headers []gosx.Node
@@ -170,7 +170,7 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 	sort.SliceStable(markers, func(i, j int) bool { return markers[i].AtTick < markers[j].AtTick })
 	var labels []string
 	for _, marker := range markers {
-		labels = append(labels, marker.ID+" "+placementPosition(marker.AtTick))
+		labels = append(labels, marker.ID+" "+placementPosition(v.Project.MeterMap(), marker.AtTick))
 	}
 	var markerList gosx.Node
 	if len(labels) > 0 {
@@ -197,9 +197,9 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings)))
 }
 
-func placementPosition(tick int64) string {
+func placementPosition(meterMap seq.MeterMap, tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return fmt.Sprintf("%d ticks", tick)
 	}
-	return notation.TickPosition(tick)
+	return notation.TickPosition(meterMap, tick)
 }

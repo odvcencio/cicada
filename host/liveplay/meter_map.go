@@ -15,6 +15,10 @@ func scoreMeterMap(e *engine.Engine) *seq.MeterMap {
 // songMeterMap is the playing score's meter map. Any goroutine may call it.
 func (p *Player) songMeterMap() seq.MeterMap { return *p.meterMap.Load() }
 
+// MeterMap is the meter map of the score playing now, the one that places the
+// bar and beat of each transport frame. Any goroutine may call it.
+func (p *Player) MeterMap() seq.MeterMap { return p.songMeterMap() }
+
 // barNumber is the one-based bar that holds tick.
 func (p *Player) barNumber(tick int64) int64 {
 	bar, _ := p.songMeterMap().BarAt(tick)

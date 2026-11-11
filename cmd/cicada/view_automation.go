@@ -77,7 +77,7 @@ func automationViews(p *project.Project, end int64) []viewAutomationLane {
 		v.Curve = path.String()
 		var description strings.Builder
 		for _, point := range lane.Points {
-			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(point.Tick), *point.Value.Number, unit, point.Shape)
+			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(p.MeterMap(), point.Tick), *point.Value.Number, unit, point.Shape)
 			v.Points = append(v.Points, viewAutomationPoint{X: x(point.Tick), Y: y(*point.Value.Number), Label: label})
 			if description.Len() > 0 {
 				description.WriteString("; ")

@@ -41,7 +41,7 @@ func (s *studioApp) sessionListening(v workspace, csrf, selected string, end int
 			section = s.listeningForm(v, csrf, selected, hidden("action", "loopSection"), field("Section", selectInput("section", chosen, names, "Section")), submit("", "", "Loop section"))
 		}
 	}
-	exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(start, true))), field("Loop end", textInput("end", placementLiteral(finish, true))), submit("", "", "Loop range"))
+	exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(v.Project.MeterMap(), start, true))), field("Loop end", textInput("end", placementLiteral(v.Project.MeterMap(), finish, true))), submit("", "", "Loop range"))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "session-listening"), gosx.Attr("aria-label", "Session listening")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), section,
 			s.listeningForm(v, csrf, selected, submit("action", "fullSong", "Play full song")),

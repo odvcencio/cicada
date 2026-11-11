@@ -39,7 +39,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.
 				break
 			}
 		}
-		children = append(children, noteRecordingReview(take, pattern))
+		children = append(children, noteRecordingReview(v.Project.MeterMap(), take, pattern))
 	}
 	changed := d.Revision != v.Revision || d.SourceRevision == "" || d.SourceRevision != v.SourceRevision
 	if changed {
@@ -98,8 +98,8 @@ func destinationCount(n int) string {
 func performancePitch(note int) string {
 	return fmt.Sprintf("%s%d", [...]string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}[note%12], note/12-1)
 }
-func performancePosition(tick int64) string {
-	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+func performancePosition(meterMap seq.MeterMap, tick int64) string {
+	bar, beat, step, _ := meterMap.Position(tick)
 	position := fmt.Sprintf("%d.%d.%d", bar, beat, step)
 	if remainder := tick % seq.TicksPerStep; remainder != 0 {
 		position += fmt.Sprintf(" +%d ticks", remainder)
@@ -114,7 +114,7 @@ func performanceDuration(ticks int64) string {
 	return value + " beats"
 }
 
-func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.Node {
+func noteRecordingReview(meterMap seq.MeterMap, take control.Recording, pattern *project.Pattern) gosx.Node {
 	// Display a sorted copy; captured order and raw note timing stay intact.
 	notes := append([]control.Note(nil), take.Notes...)
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Tick < notes[j].Tick })
@@ -169,7 +169,7 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 		if n.Group != 0 {
 			shared = capturedGroupLabel(take, int(n.Group)-1)
 		}
-		for _, text := range []string{performancePitch(n.Note), performancePosition(n.Tick), duration, strconv.Itoa(n.Velocity), strconv.Itoa(len(n.Expressions)), shared, placement} {
+		for _, text := range []string{performancePitch(n.Note), performancePosition(meterMap, n.Tick), duration, strconv.Itoa(n.Velocity), strconv.Itoa(len(n.Expressions)), shared, placement} {
 			cells = append(cells, gosx.El("td", gosx.Text(text)))
 		}
 		rows = append(rows, gosx.El("tr", gosx.Attrs(gosx.Attr("class", class)), gosx.Fragment(cells...)))
@@ -204,8 +204,8 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 	}
 	return gosx.El("article", gosx.Attrs(gosx.Attr("class", "take-recording")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-destination")), gosx.El("h4", gosx.Text(take.Track+" → "+take.Pattern)), gosx.El("span", gosx.Text(noteCount(len(notes))+" · "+destination))),
-		notePerformanceTrace(notes, take.Track),
-		noteSharedReview(take),
+		notePerformanceTrace(meterMap, notes, take.Track),
+		noteSharedReview(meterMap, take),
 		inspection,
 	)
 }
@@ -218,7 +218,7 @@ func capturedGroupLabel(take control.Recording, index int) string {
 	return fmt.Sprintf("%s %d", prefix, index+1)
 }
 
-func noteSharedReview(take control.Recording) gosx.Node {
+func noteSharedReview(meterMap seq.MeterMap, take control.Recording) gosx.Node {
 	if len(take.Groups) == 0 {
 		return gosx.Fragment()
 	}
@@ -233,7 +233,7 @@ func noteSharedReview(take control.Recording) gosx.Node {
 		}
 		points += len(group.Points)
 		var cells []gosx.Node
-		for _, text := range []string{capturedGroupLabel(take, index), strconv.Itoa(int(group.Channel) + 1), strconv.Itoa(bound), strconv.Itoa(len(group.Points)), performancePosition(group.Points[len(group.Points)-1].Tick)} {
+		for _, text := range []string{capturedGroupLabel(take, index), strconv.Itoa(int(group.Channel) + 1), strconv.Itoa(bound), strconv.Itoa(len(group.Points)), performancePosition(meterMap, group.Points[len(group.Points)-1].Tick)} {
 			cells = append(cells, gosx.El("td", gosx.Text(text)))
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
@@ -256,7 +256,7 @@ func noteSharedReview(take control.Recording) gosx.Node {
 			gosx.El("table", gosx.El("caption", gosx.Text("Captured shared MIDI controls for "+take.Track)), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...)))))
 }
 
-func notePerformanceTrace(notes []control.Note, track string) gosx.Node {
+func notePerformanceTrace(meterMap seq.MeterMap, notes []control.Note, track string) gosx.Node {
 	start, end, low, high := notes[0].Tick, notes[0].EndTick, notes[0].Note, notes[0].Note
 	for _, n := range notes {
 		start = min(start, n.Tick)
@@ -264,7 +264,6 @@ func notePerformanceTrace(notes []control.Note, track string) gosx.Node {
 		low = min(low, n.Note)
 		high = max(high, n.Note)
 	}
-	var meterMap seq.MeterMap // a take carries no meter; the base meter is 4/4 in every song
 	originBar, _ := meterMap.BarAt(start)
 	origin := meterMap.BarStart(originBar)
 	bars := meterMap.BarsUntil(end) - originBar
@@ -282,7 +281,7 @@ func notePerformanceTrace(notes []control.Note, track string) gosx.Node {
 		if high > low {
 			y = 42 + 68*float64(high-n.Note)/float64(high-low)
 		}
-		marks = append(marks, gosx.El("rect", gosx.Attrs(gosx.Attr("x", number(x(n.Tick))), gosx.Attr("y", number(y)), gosx.Attr("width", number(max(3., x(n.EndTick)-x(n.Tick)))), gosx.Attr("height", "10"), gosx.Attr("rx", "3"), gosx.Attr("opacity", number(.35+.65*float64(n.Velocity)/127))), gosx.El("title", gosx.Text(performancePitch(n.Note)+" · "+performancePosition(n.Tick)+" · "+performanceDuration(n.EndTick-n.Tick)))))
+		marks = append(marks, gosx.El("rect", gosx.Attrs(gosx.Attr("x", number(x(n.Tick))), gosx.Attr("y", number(y)), gosx.Attr("width", number(max(3., x(n.EndTick)-x(n.Tick)))), gosx.Attr("height", "10"), gosx.Attr("rx", "3"), gosx.Attr("opacity", number(.35+.65*float64(n.Velocity)/127))), gosx.El("title", gosx.Text(performancePitch(n.Note)+" · "+performancePosition(meterMap, n.Tick)+" · "+performanceDuration(n.EndTick-n.Tick)))))
 	}
 	graph := gosx.El("svg", gosx.Attrs(gosx.Attr("viewBox", "0 0 960 142"), gosx.Attr("role", "img"), gosx.Attr("aria-label", track+" performance: "+noteCount(len(notes))+", "+performancePitch(low)+" to "+performancePitch(high))), gosx.Fragment(marks...))
 	return gosx.El("figure", gosx.Attrs(gosx.Attr("class", "take-trace")),

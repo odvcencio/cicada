@@ -118,8 +118,7 @@ type quantizeGrid struct {
 // Bar when they are coarser than its step and a whole number of steps. A grid
 // as long as the pattern is left out: it sends every note to the start, which
 // the server always refuses.
-func quantizeGrids(p project.Pattern) []quantizeGrid {
-	var meterMap seq.MeterMap // a pattern carries no meter; the base meter is 4/4 in every song
+func quantizeGrids(meterMap seq.MeterMap, p project.Pattern) []quantizeGrid {
 	if p.Performance != nil {
 		var grids []quantizeGrid
 		for _, grid := range []quantizeGrid{{"Bar", meterMap.BarTicks(0)}, {"Beat", meterMap.BeatTicks(0)}, {"1/8", 480}, {"1/8T", 320}, {"1/16", 240}, {"1/16T", 160}, {"1/32", 120}} {
@@ -146,7 +145,7 @@ func quantizeGrids(p project.Pattern) []quantizeGrid {
 // the pattern; Mod+U submits it (notes.quantize) while the Clip tab is on
 // screen, which a small engine mounted here reports as $notesVisible.
 func (s *studioApp) noteQuantize(ctx *server.Context, v workspace, csrf string, p project.Pattern, returnTo string) gosx.Node {
-	grids := quantizeGrids(p)
+	grids := quantizeGrids(v.Project.MeterMap(), p)
 	// GoSX reuses an engine whose props are unchanged across a navigation, and
 	// a reused engine can no longer write signals. The masked CSRF token is
 	// fresh for every render, as for the shell engine, so each render remounts.

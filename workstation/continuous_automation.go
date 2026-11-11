@@ -75,7 +75,7 @@ func continuousAutomation(p *project.Project) gosx.Node {
 		var labels []string
 		var points []gosx.Node
 		for _, point := range lane.Points {
-			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(point.Tick), *point.Value.Number, unit, point.Shape)
+			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(p.MeterMap(), point.Tick), *point.Value.Number, unit, point.Shape)
 			labels = append(labels, label)
 			points = append(points, gosx.El("path", gosx.Attrs(gosx.Attr("class", "continuous-point"), gosx.Attr("d", fmt.Sprintf("M %.3f %.3fh0.001", x(point.Tick), y(*point.Value.Number)))), gosx.El("title", gosx.Text(label))))
 		}

@@ -82,8 +82,8 @@ func vocalMillisecondsFrames(ms float64, rate int) int64 {
 	return int64(math.Round(ms * float64(rate) / 1000))
 }
 
-func notationTicks(value string) (int64, error) {
-	return notation.MusicalTicks(seq.MeterMap{}, value, true)
+func notationTicks(meterMap seq.MeterMap, value string) (int64, error) {
+	return notation.MusicalTicks(meterMap, value, true)
 }
 
 // The comp types live in the edit service, which writes their metadata comment.
@@ -176,13 +176,13 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	start, end := int64(0), studioArrangementEnd(p)
 	var err error
 	if settings != nil && settings.Start != "" {
-		start, err = notationTicks(settings.Start)
+		start, err = notationTicks(p.MeterMap(), settings.Start)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if settings != nil && settings.End != "" {
-		end, err = notationTicks(settings.End)
+		end, err = notationTicks(p.MeterMap(), settings.End)
 		if err != nil {
 			return nil, err
 		}
@@ -275,13 +275,13 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	lo, hi := takeCoverage(t)
 	if settings != nil {
 		if settings.Start != "" {
-			lo, err = notationTicks(settings.Start)
+			lo, err = notationTicks(p.MeterMap(), settings.Start)
 			if err != nil {
 				return nil, env, err
 			}
 		}
 		if settings.End != "" {
-			hi, err = notationTicks(settings.End)
+			hi, err = notationTicks(p.MeterMap(), settings.End)
 			if err != nil {
 				return nil, env, err
 			}
@@ -289,7 +289,7 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	}
 	from, to := takeCoverage(t)
 	if lo < from || hi > to || hi <= lo || hi > studioArrangementEnd(p) {
-		return nil, env, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(from), listeningPosition(to))
+		return nil, env, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(p.MeterMap(), from), listeningPosition(p.MeterMap(), to))
 	}
 	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli, TempoChanges: slices.Clone(t.Timeline.TempoChanges), Elastic: follow}
 	if follow {
@@ -725,7 +725,8 @@ func (s *studio) startAudioTake() error {
 	if p.Live != nil && p.Live.CountInBars != nil {
 		countInBars = *p.Live.CountInBars
 	}
-	countIn, err := capture.NewCountIn(take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
+	// A take timeline records no meter yet: the zero (4/4) map.
+	countIn, err := capture.NewCountIn(seq.MeterMap{}, take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
 	if err != nil {
 		return err
 	}
@@ -869,13 +870,13 @@ func (s *studio) listenVocalTake(candidate, original []byte, take takejournal.Ta
 	lo, hi := takeCoverage(take)
 	if settings != nil {
 		if settings.Start != "" {
-			lo, err = notationTicks(settings.Start)
+			lo, err = notationTicks(p.MeterMap(), settings.Start)
 			if err != nil {
 				return err
 			}
 		}
 		if settings.End != "" {
-			hi, err = notationTicks(settings.End)
+			hi, err = notationTicks(p.MeterMap(), settings.End)
 			if err != nil {
 				return err
 			}

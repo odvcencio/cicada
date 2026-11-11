@@ -291,7 +291,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			case "scene_decl":
 				s.Scenes = append(s.Scenes, parseScene(w, n))
 			case "arrange_decl":
-				s.Arrange = parseArrangement(w, n)
+				s.Arrange = parseArrangement(w, n, s.MeterMap())
 			case "song_decl":
 				s.SongPosition = w.position(n)
 				for j := 0; j < n.NamedChildCount(); j++ {

@@ -208,7 +208,7 @@ func convertCause(ctx *Context, placements []convertedPlacement) string {
 			continue
 		}
 		if unit := pattern.LengthTicks(); unit > 0 && p.length%unit != 0 {
-			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(unit), barNumber(ctx.MeterMap(), next.at))
+			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(ctx.MeterMap(), unit), barNumber(ctx.MeterMap(), next.at))
 		}
 		if restarted := patterns[next.content]; hasChance(restarted) && chance == "" {
 			chance = fmt.Sprintf("pattern %s has chance steps that restart at bar %d", restarted.ID, barNumber(ctx.MeterMap(), next.at))
@@ -220,9 +220,9 @@ func convertCause(ctx *Context, placements []convertedPlacement) string {
 	return "the converted score renders differently"
 }
 
-// describeBars spells a pattern length in 4/4 bars: a pattern carries no meter.
-func describeBars(ticks int64) string {
-	bars, whole := (seq.MeterMap{}).WholeBars(0, ticks)
+// describeBars spells a pattern length in bars of the meter map's first bar.
+func describeBars(meterMap seq.MeterMap, ticks int64) string {
+	bars, whole := meterMap.WholeBars(0, ticks)
 	switch {
 	case whole && bars == 1:
 		return "1 bar"

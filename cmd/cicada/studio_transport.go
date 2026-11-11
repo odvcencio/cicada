@@ -187,11 +187,18 @@ func studioQuantizeLabel(value cmd.Quantize) string {
 }
 
 // transportFrameTick is the song tick of a transport frame's one-based bar,
-// one-based beat and tick within the beat. A frame carries no meter; the
-// player's bars are 4/4 until a score can declare one.
-func transportFrameTick(bar, beat, tick int64) int64 {
-	var meterMap seq.MeterMap
+// one-based beat and tick within the beat, on the meter map that encoded it.
+func transportFrameTick(meterMap seq.MeterMap, bar, beat, tick int64) int64 {
 	return meterMap.BarStart(bar-1) + (beat-1)*meterMap.BeatTicks(bar-1) + tick
+}
+
+// meterMap is the playing score's meter map, which placed the bar and beat of
+// every transport frame. With no player there is no song yet: the zero map.
+func (t *studioTransport) meterMap() seq.MeterMap {
+	if t.stream != nil {
+		return t.stream.MeterMap()
+	}
+	return seq.MeterMap{}
 }
 
 func (t *studioTransport) snapshot() transportSnapshot {
@@ -224,7 +231,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		listening.Completed, listening.Cycles = t.stream.RangeFinished(), t.stream.RangeCycles()
 		state.Listening = &listening
 		state.Playing = t.playing && !listening.Completed
-		state.ListeningStatus = listening.label()
+		state.ListeningStatus = listening.label(t.meterMap())
 	}
 	if t.browserPlaying && t.browserSampleRate > 0 {
 		state.ActiveBackend = fmt.Sprintf("browser · AudioWorklet · %s", studioAudioRateLabel(t.browserSampleRate))
@@ -303,7 +310,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 				age = now - frame.WallNanos
 			}
 			state.FrameAgeNanos = &age
-			tick := transportFrameTick(int64(frame.Bar), int64(frame.Beat), int64(frame.Tick))
+			tick := transportFrameTick(t.meterMap(), int64(frame.Bar), int64(frame.Beat), int64(frame.Tick))
 			if next.Valid(tick, int64(frame.TempoMilli)) {
 				state.NextTempo = &next
 			}

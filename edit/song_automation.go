@@ -87,7 +87,7 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 			}
 		}
 		if existing != nil {
-			firstTick, err := notation.PositionTick(existing.Points[0].At)
+			firstTick, err := notation.PositionTick(score.MeterMap(), existing.Points[0].At)
 			if err != nil {
 				return err
 			}
@@ -100,7 +100,7 @@ func carrySongAutomation(ctx *Context, score *notation.Score, plan *Plan, songFi
 				return fmt.Errorf("carrying scene changes would exceed 1024 points for %s", path)
 			}
 			for _, recall := range existing.Recalls {
-				at, err := notation.PositionTick(recall.At)
+				at, err := notation.PositionTick(score.MeterMap(), recall.At)
 				if err != nil {
 					return err
 				}

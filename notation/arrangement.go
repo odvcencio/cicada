@@ -38,9 +38,8 @@ func MusicalTicks(meterMap seq.MeterMap, value string, position bool) (int64, er
 	return musictime.MusicalTicks(meterMap, value, position)
 }
 
-func parseArrangement(w *loweringWalker, n *gts.Node) *Arrangement {
+func parseArrangement(w *loweringWalker, n *gts.Node, meterMap seq.MeterMap) *Arrangement {
 	a := &Arrangement{Position: w.position(n)}
-	var meterMap seq.MeterMap // a score declares no meter yet: 4/4
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		params := audioParams(w, c)
@@ -190,11 +189,11 @@ func ValidateArrangement(s *Score) []Diagnostic {
 // SetPlacementField changes one authored time literal and retains every other
 // byte, including comments and whitespace. It checks syntax only; callers
 // validate the result against the whole project.
-func SetPlacementField(source []byte, name, field, value string) ([]byte, error) {
+func SetPlacementField(meterMap seq.MeterMap, source []byte, name, field, value string) ([]byte, error) {
 	if field != "at" && field != "length" {
 		return nil, fmt.Errorf("unknown placement field %q", field)
 	}
-	if _, err := MusicalTicks(seq.MeterMap{}, value, field == "at"); err != nil {
+	if _, err := MusicalTicks(meterMap, value, field == "at"); err != nil {
 		return nil, err
 	}
 	doc, err := ParseDocument(source)

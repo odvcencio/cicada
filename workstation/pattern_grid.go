@@ -9,14 +9,14 @@ import (
 	"m31labs.dev/gosx"
 )
 
-func patternGridTiming(pattern project.Pattern) gosx.Node {
+func patternGridTiming(meterMap seq.MeterMap, pattern project.Pattern) gosx.Node {
 	step := int64(pattern.StepTicks)
 	if step == 0 {
 		step = seq.TicksPerStep
 	}
 	length := pattern.DurationTicks()
 	duration := patternBeatLength(length)
-	if bars, whole := (seq.MeterMap{}).WholeBars(0, length); whole {
+	if bars, whole := meterMap.WholeBars(0, length); whole {
 		duration = fmt.Sprintf("%d bars", bars)
 		if bars == 1 {
 			duration = "1 bar"

@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 type simulatedCaptureStream struct {
@@ -34,7 +35,7 @@ func TestCaptureTransportUsesScoreTempoAndKeepsArmedDevice(t *testing.T) {
 	if err := tx.startCapture(capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}
-	countIn, err := capture.DefaultCountIn(48000, tx.stream.BPMMilli())
+	countIn, err := capture.DefaultCountIn(seq.MeterMap{}, 48000, tx.stream.BPMMilli())
 	if err != nil || r.Snapshot().CountInFrames != countIn.Frames || tx.stream.BPMMilli() != 137333 {
 		t.Fatalf("recording tempo mismatch: %d, %+v, %v", tx.stream.BPMMilli(), r.Snapshot(), err)
 	}
@@ -72,7 +73,7 @@ func TestCaptureTransportUsesDeclaredCountIn(t *testing.T) {
 			if err := tx.startCapture(capture.Calibration{}); err != nil {
 				t.Fatal(err)
 			}
-			want, err := capture.NewCountIn(48000, 137333, bars)
+			want, err := capture.NewCountIn(seq.MeterMap{}, 48000, 137333, bars)
 			if err != nil || r.Snapshot().CountInFrames != want.Frames {
 				t.Fatalf("count-in frames = %d, want %d (%v)", r.Snapshot().CountInFrames, want.Frames, err)
 			}
@@ -199,7 +200,7 @@ func TestCaptureStudioCallbackAllocations(t *testing.T) {
 			if err := a.ArmCapture(r); err != nil {
 				t.Fatal(err)
 			}
-			c, _ := capture.NewCountIn(48000, 120000, test.bars)
+			c, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, test.bars)
 			r.Begin(c, capture.Calibration{})
 			a.Play()
 			in, out := [][]float32{make([]float32, 256), make([]float32, 256)}, [][]float32{make([]float32, 256), make([]float32, 256)}
@@ -241,7 +242,7 @@ func TestCaptureCountInSplitsDevicePeriodAndRetainsRaw(t *testing.T) {
 		if err := a.ArmCapture(r); err != nil {
 			t.Fatal(err)
 		}
-		c, _ := capture.DefaultCountIn(48000, 137333)
+		c, _ := capture.DefaultCountIn(seq.MeterMap{}, 48000, 137333)
 		if err := r.Begin(c, capture.Calibration{}); err != nil {
 			t.Fatal(err)
 		}
@@ -273,7 +274,7 @@ func TestCaptureTapsRawBeforeMonitoring(t *testing.T) {
 	var raw []float32
 	r, _ := capture.NewRecorder(16, 8, 2, func(_ capture.RecordedBlock, in [][]float32) error { raw = append(raw, in[0]...); return nil })
 	a.ArmCapture(r)
-	c, _ := capture.NewCountIn(48000, 120000, 0)
+	c, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	r.Begin(c, capture.Calibration{})
 	a.Play()
 	in, out := [][]float32{{0.75, 0, 0, 0, 0, 0, 0, 0}, make([]float32, 8)}, [][]float32{make([]float32, 8), make([]float32, 8)}

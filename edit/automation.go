@@ -144,7 +144,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		return nil, fmt.Errorf("%s has no continuous numeric automation", path)
 	}
 	tick, err := notation.MusicalTicks(ctx.MeterMap(), point.at, true)
-	if err != nil || tick < 0 || tick > arrangementEnd(plan) || tick%240 != 0 {
+	if err != nil || tick < 0 || tick > arrangementEnd(ctx.MeterMap(), plan) || tick%240 != 0 {
 		return nil, fmt.Errorf("choose a sixteenth-note position within the song")
 	}
 	old := tick
@@ -239,7 +239,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 
 // arrangementEnd is the last tick of the arrangement: the end of the last
 // placement, or the summed song blocks for a score without an arrange block.
-func arrangementEnd(plan *Plan) int64 {
+func arrangementEnd(meterMap seq.MeterMap, plan *Plan) int64 {
 	var end int64
 	if len(plan.Placements) > 0 {
 		for _, place := range plan.Placements {
@@ -247,7 +247,6 @@ func arrangementEnd(plan *Plan) int64 {
 		}
 		return end
 	}
-	var meterMap seq.MeterMap // a plan carries no meter; song entries count 4/4 bars
 	for _, entry := range plan.Song {
 		end += meterMap.BarsTicks(end, int64(entry.Bars))
 	}

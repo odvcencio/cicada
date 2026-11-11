@@ -42,7 +42,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 				room = min(room, next.AtTick-marker.AtTick)
 			}
 		}
-		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-marker"), gosx.Attr("style", "left:"+position(marker.AtTick)+";max-width:calc("+position(room)+" - 3px)"), gosx.Attr("title", marker.ID+" "+placementPosition(marker.AtTick))), gosx.Text(marker.ID)))
+		ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-marker"), gosx.Attr("style", "left:"+position(marker.AtTick)+";max-width:calc("+position(room)+" - 3px)"), gosx.Attr("title", marker.ID+" "+placementPosition(p.MeterMap(), marker.AtTick))), gosx.Text(marker.ID)))
 	}
 	if rail == nil {
 		rail = func(string) gosx.Node { return gosx.Fragment() }
@@ -157,9 +157,9 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 		copyStart = (copyStart + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
 		update := s.placementForm(v, csrf, placement.ID, hidden("action", "update"), hidden("name", placement.ID),
 			field("Track", selectInput("track", placement.Track, tracks)), field("Pattern or clip", selectInput("content", placement.Content, contents)),
-			field("Start", textInput("at", placementLiteral(placement.AtTick, true))), field("Length", textInput("length", placementLiteral(placement.LengthTicks, false))), submit("", "", "Update placement"))
+			field("Start", textInput("at", placementLiteral(v.Project.MeterMap(), placement.AtTick, true))), field("Length", textInput("length", placementLiteral(v.Project.MeterMap(), placement.LengthTicks, false))), submit("", "", "Update placement"))
 		duplicate := s.placementForm(v, csrf, placement.ID, hidden("action", "duplicate"), hidden("name", placement.ID),
-			field("Copy name", textInput("newName", newName(placement.ID+"-copy"))), field("Copy start", textInput("at", placementLiteral(copyStart, true))),
+			field("Copy name", textInput("newName", newName(placement.ID+"-copy"))), field("Copy start", textInput("at", placementLiteral(v.Project.MeterMap(), copyStart, true))),
 			gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("data-placement-command", "duplicate"), gosx.Attr("data-placement-copy-name", newName(placement.ID+"-copy"))), gosx.Text("Duplicate placement")))
 		removeAttrs := gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "delete"), gosx.Attr("data-placement-command", "delete"))
 		if len(placements) == 1 {
@@ -170,7 +170,7 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 		if placement.ID == selected {
 			attrs = append(attrs, gosx.BoolAttr("open"))
 		}
-		editors = append(editors, gosx.El("details", attrs, gosx.El("summary", gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(fmt.Sprintf("%s · %s → %s", placement.Track, placementPosition(placement.AtTick), placementPosition(placement.AtTick+placement.LengthTicks))))),
+		editors = append(editors, gosx.El("details", attrs, gosx.El("summary", gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(fmt.Sprintf("%s · %s → %s", placement.Track, placementPosition(v.Project.MeterMap(), placement.AtTick), placementPosition(v.Project.MeterMap(), placement.AtTick+placement.LengthTicks))))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), update),
 			s.placementListening(v, csrf, placement.ID),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("a", gosx.Attrs(gosx.Attr("href", contentURL)), gosx.Text("Edit "+placement.Content)), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=sampler&placement="+url.QueryEscape(placement.ID))), gosx.Text("Sample into pads")), remove),
@@ -179,14 +179,14 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 	}
 	var markerForms []gosx.Node
 	for _, marker := range p.Arrange.Markers {
-		markerForms = append(markerForms, s.placementForm(v, csrf, selected, hidden("name", marker.ID), field(marker.ID, textInput("at", placementLiteral(marker.AtTick, true))), submit("action", "marker", "Move marker"), submit("action", "delete-marker", "Remove marker")))
+		markerForms = append(markerForms, s.placementForm(v, csrf, selected, hidden("name", marker.ID), field(marker.ID, textInput("at", placementLiteral(v.Project.MeterMap(), marker.AtTick, true))), submit("action", "marker", "Move marker"), submit("action", "delete-marker", "Remove marker")))
 	}
-	markerForms = append(markerForms, s.placementForm(v, csrf, selected, hidden("action", "append-marker"), field("Marker name", textInput("newName", newName("new-section"))), field("Marker start", textInput("at", placementLiteral(end, true))), submit("", "", "Add marker")))
+	markerForms = append(markerForms, s.placementForm(v, csrf, selected, hidden("action", "append-marker"), field("Marker name", textInput("newName", newName("new-section"))), field("Marker start", textInput("at", placementLiteral(v.Project.MeterMap(), end, true))), submit("", "", "Add marker")))
 	var add gosx.Node
 	if len(placements) > 0 {
 		first := placements[0]
 		start := (end + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
-		add = s.placementForm(v, csrf, selected, hidden("action", "append"), field("Placement name", textInput("newName", newName("new-placement"))), field("Track", selectInput("track", first.Track, tracks)), field("Pattern or clip", selectInput("content", first.Content, contents)), field("Start", textInput("at", placementLiteral(start, true))), field("Length", textInput("length", "4bars")), submit("", "", "Add placement"))
+		add = s.placementForm(v, csrf, selected, hidden("action", "append"), field("Placement name", textInput("newName", newName("new-placement"))), field("Track", selectInput("track", first.Track, tracks)), field("Pattern or clip", selectInput("content", first.Content, contents)), field("Start", textInput("at", placementLiteral(v.Project.MeterMap(), start, true))), field("Length", textInput("length", "4bars")), submit("", "", "Add placement"))
 	}
 	return gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-editors")), gosx.Fragment(editors...)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Start uses @bar.beat.step or exact ticks. Length accepts 4bars, 1/8, or 320ticks. Pattern placements on the same track must not overlap.")),
@@ -194,11 +194,11 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-management")), gosx.El("summary", gosx.Text("Edit markers")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), gosx.Fragment(markerForms...))))
 }
 
-func placementLiteral(tick int64, position bool) string {
+func placementLiteral(meterMap seq.MeterMap, tick int64, position bool) string {
 	if position {
-		return strings.ReplaceAll(placementPosition(tick), " ticks", "ticks")
+		return strings.ReplaceAll(placementPosition(meterMap, tick), " ticks", "ticks")
 	}
-	if bars, whole := (seq.MeterMap{}).WholeBars(0, tick); whole {
+	if bars, whole := meterMap.WholeBars(0, tick); whole {
 		return strconv.FormatInt(bars, 10) + "bars"
 	}
 	return strconv.FormatInt(tick, 10) + "ticks"

@@ -36,15 +36,15 @@ func (v studioListening) playbackRange() liveplay.PlaybackRange {
 	return liveplay.PlaybackRange{StartTick: v.StartTick, EndTick: v.EndTick, Loop: v.Loop}
 }
 
-func listeningPosition(tick int64) string {
+func listeningPosition(meterMap seq.MeterMap, tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return fmt.Sprintf("%dticks", tick)
 	}
-	bar, beat, step, _ := seq.MeterMap{}.Position(tick)
+	bar, beat, step, _ := meterMap.Position(tick)
 	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 
-func (v studioListening) label() string {
+func (v studioListening) label(meterMap seq.MeterMap) string {
 	action := "Audition"
 	if v.Loop {
 		action = "Loop"
@@ -56,7 +56,7 @@ func (v studioListening) label() string {
 	if v.Completed {
 		action = "Finished"
 	}
-	return fmt.Sprintf("%s: %s%s · %s → %s", action, v.Name, mode, listeningPosition(v.StartTick), listeningPosition(v.EndTick))
+	return fmt.Sprintf("%s: %s%s · %s → %s", action, v.Name, mode, listeningPosition(meterMap, v.StartTick), listeningPosition(meterMap, v.EndTick))
 }
 
 func studioArrangementEnd(p *project.Project) int64 {
@@ -236,9 +236,9 @@ func (s *studio) startListeningLocked(input studioTransportInput) (int, error) {
 		}
 	case "loop":
 		v.Kind, v.Name = "range", "Selection"
-		v.StartTick, err = notation.MusicalTicks(seq.MeterMap{}, input.Start, true)
+		v.StartTick, err = notation.MusicalTicks(p.MeterMap(), input.Start, true)
 		if err == nil {
-			v.EndTick, err = notation.MusicalTicks(seq.MeterMap{}, input.End, true)
+			v.EndTick, err = notation.MusicalTicks(p.MeterMap(), input.End, true)
 		}
 	}
 	if err != nil {

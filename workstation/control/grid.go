@@ -8,17 +8,15 @@ import "m31labs.dev/cicada/kernel/seq"
 // These lookups inline on the zero map, so the engine links no multi-segment
 // meter code.
 
+// GridMeterMap is the engine's meter map: the zero map until phase 5 sends the
+// song's. Phase 5 replaces this one function.
+func GridMeterMap() seq.MeterMap { return seq.MeterMap{} }
+
 // GridBarTicks is the length of one bar of the grid.
-func GridBarTicks() int64 {
-	var meterMap seq.MeterMap
-	return meterMap.BarTicks(0)
-}
+func GridBarTicks() int64 { return GridMeterMap().BarTicks(0) }
 
 // GridBeatTicks is the length of one beat of the grid.
-func GridBeatTicks() int64 {
-	var meterMap seq.MeterMap
-	return meterMap.BeatTicks(0)
-}
+func GridBeatTicks() int64 { return GridMeterMap().BeatTicks(0) }
 
 // GridPosition returns the one-based bar, beat and step (a sixteenth note
 // within the beat) of a tick of zero or more on the grid.

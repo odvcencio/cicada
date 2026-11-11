@@ -401,7 +401,7 @@ func (u *vocalLanesUI) renderSelection(draft bool) {
 			}
 		}
 	}
-	seconds := musictime.SecondsBetween(seq.MeterMap{}, lane.Tempo, lane.TempoChanges, u.region.Start, u.region.End)
+	seconds := musictime.SecondsBetween(control.GridMeterMap(), lane.Tempo, lane.TempoChanges, u.region.Start, u.region.End)
 	for _, selector := range []string{"input[name=gainDB]", "[data-vocal-gain-slider]"} {
 		if input := u.root.Call("querySelector", selector); workspacePresent(input) {
 			// Keep the user's decimal entry intact while typing. The slider and
@@ -435,8 +435,8 @@ func (u *vocalLanesUI) readPositions() {
 	if !workspacePresent(form) {
 		return
 	}
-	a, e1 := musictime.MusicalTicks(seq.MeterMap{}, workspaceFieldValue(form, "recordStart"), true)
-	b, e2 := musictime.MusicalTicks(seq.MeterMap{}, workspaceFieldValue(form, "recordEnd"), true)
+	a, e1 := musictime.MusicalTicks(control.GridMeterMap(), workspaceFieldValue(form, "recordStart"), true)
+	b, e2 := musictime.MusicalTicks(control.GridMeterMap(), workspaceFieldValue(form, "recordEnd"), true)
 	lane, ok := u.lane(u.selected)
 	if ok && e1 == nil && e2 == nil && a >= lane.Start && b <= min(lane.End, u.props.End) && a < b {
 		u.region = control.VocalRange{Start: a, End: b}

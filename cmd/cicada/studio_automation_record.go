@@ -161,7 +161,7 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	s.restoreAutomationRecording()
 	if recording := s.automationRecording; recording != nil && recording.Active && !recording.Saving {
 		state := s.transport.snapshot()
-		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
+		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(recording.Project.MeterMap(), state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
 			recording.Active = false
 			if recording.Monitor && s.captureID != "" {
 				recording.Invalid = true
@@ -191,9 +191,10 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	studioJSON(w, 200, map[string]any{"recording": projected})
 }
 
-func automationTick(state transportSnapshot, end int64) int64 {
-	// The transport reports no meter; its bars are 4/4 until a score can declare one.
-	return min(end, max(int64(0), seq.MeterMap{}.BarStart(state.Bar-1)+(state.Step-1)*seq.TicksPerStep))
+// automationTick is the song tick of a transport snapshot's bar and step on the
+// song's meter map, capped at the song end.
+func automationTick(meterMap seq.MeterMap, state transportSnapshot, end int64) int64 {
+	return min(end, max(int64(0), meterMap.BarStart(state.Bar-1)+(state.Step-1)*seq.TicksPerStep))
 }
 
 func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Request) {
@@ -271,7 +272,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		end := studioArrangementEnd(p)
-		tick := automationTick(state, end)
+		tick := automationTick(p.MeterMap(), state, end)
 		for _, lane := range p.Automation {
 			if lane.Path == request.Path {
 				if !value.Replace {
@@ -348,7 +349,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			fail(409, fmt.Errorf("playback changed; keep or discard this automation pass"))
 			return
 		}
-		tick := automationTick(state, recording.End)
+		tick := automationTick(recording.Project.MeterMap(), state, recording.End)
 		if tick < recording.Points[len(recording.Points)-1].Tick {
 			recording.Active = false
 			if recording.Monitor && s.captureID != "" {
@@ -439,12 +440,12 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		for _, lane := range recording.Project.Automation {
 			if lane.Path == recording.Path {
 				for _, point := range lane.Points {
-					intents = append(intents, &edits.RemoveAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(point.Tick)})
+					intents = append(intents, &edits.RemoveAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(recording.Project.MeterMap(), point.Tick)})
 				}
 			}
 		}
 		for _, point := range recording.Points {
-			intents = append(intents, &edits.SetAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(point.Tick), Value: strconv.FormatFloat(point.Value, 'g', -1, 64) + automationRecordUnit(recording.Unit), Shape: "linear"})
+			intents = append(intents, &edits.SetAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(recording.Project.MeterMap(), point.Tick), Value: strconv.FormatFloat(point.Value, 'g', -1, 64) + automationRecordUnit(recording.Unit), Shape: "linear"})
 		}
 		recording.Saving = true
 		request.Revision, request.SourceRevision, request.Label = recording.Revision, recording.SourceRevision, "Record automation · "+recording.Path

@@ -71,7 +71,7 @@ func editArrangementTempo(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	at = notation.TickPosition(tick)
+	at = notation.TickPosition(ctx.MeterMap(), tick)
 	oldTick := int64(-1)
 	if oldAt != "" {
 		oldTick, err = tempoBarTick(ctx.MeterMap(), oldAt)

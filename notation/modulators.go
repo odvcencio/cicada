@@ -113,7 +113,7 @@ type ModRate struct {
 
 // ParseModRate reads a note length (`1/4`, `1/8.`, `1/8T`, `8bars`) or a
 // free rate in hertz (`0.07Hz`, `1kHz`). Free rates keep exact micro-hertz.
-func ParseModRate(text string) (ModRate, string) {
+func ParseModRate(meterMap seq.MeterMap, text string) (ModRate, string) {
 	text = strings.TrimSpace(text)
 	lower := strings.ToLower(text)
 	switch {
@@ -127,8 +127,7 @@ func ParseModRate(text string) (ModRate, string) {
 		if !ok || r.Sign() <= 0 {
 			return ModRate{}, "expected a positive number of bars"
 		}
-		// A score declares no meter yet, so a bar is the 4/4 bar.
-		return syncedRate(r.Mul(r, big.NewRat(seq.MeterMap{}.BarTicks(0), 1)), text)
+		return syncedRate(r.Mul(r, big.NewRat(meterMap.BarTicks(0), 1)), text)
 	case strings.Contains(text, "/"):
 		body := text
 		num, den := int64(1), int64(1)
@@ -238,7 +237,7 @@ func ValidateModulators(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "duplicate setting "+p.Name+" in "+m.Kind+" "+m.Name, p.Position)
 			}
 			seen[p.Name] = true
-			ds = append(ds, validateModulatorSetting(m, p, tracks)...)
+			ds = append(ds, validateModulatorSetting(s.MeterMap(), m, p, tracks)...)
 		}
 		required := map[string]string{ModLFO: "rate", ModSway: "rate", ModContour: "period", ModEnvelope: "source"}[m.Kind]
 		if !seen[required] {
@@ -300,7 +299,7 @@ func validDepth(value string) bool {
 	return err == nil && f == f && f < 1e9 && f > -1e9
 }
 
-func validateModulatorSetting(m Modulator, p Param, tracks map[string]bool) []Diagnostic {
+func validateModulatorSetting(meterMap seq.MeterMap, m Modulator, p Param, tracks map[string]bool) []Diagnostic {
 	bad := func(code, message string) []Diagnostic {
 		return []Diagnostic{{Code: code, Message: message, Severity: "error", Position: p.ValuePosition}}
 	}
@@ -310,10 +309,10 @@ func validateModulatorSetting(m Modulator, p Param, tracks map[string]bool) []Di
 			return bad("CICADA-PARAM", "wave must be sine, triangle, square or sample-hold; actual "+p.Value)
 		}
 	case "rate", "period":
-		if _, msg := ParseModRate(p.Value); msg != "" {
+		if _, msg := ParseModRate(meterMap, p.Value); msg != "" {
 			return bad("CICADA-PARAM", p.Name+": "+msg)
 		}
-		r, _ := ParseModRate(p.Value)
+		r, _ := ParseModRate(meterMap, p.Value)
 		if r.Free && r.MicroHertz < MinFreeRateMicro {
 			return bad("CICADA-PARAM", p.Name+" is below 0.01 Hz")
 		}

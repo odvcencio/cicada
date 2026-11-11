@@ -138,7 +138,7 @@ func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli
 			return err
 		}
 	}
-	countIn, err := capture.NewCountIn(t.sampleRate, bpmMilli, bars)
+	countIn, err := capture.NewCountIn(t.meterMap(), t.sampleRate, bpmMilli, bars)
 	if err != nil {
 		return err
 	}

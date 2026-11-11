@@ -94,7 +94,7 @@ func explainMovingLayers(compiled *project.Project, lookup string, loc explainLo
 	}
 	// Song lanes override scene settings, including held values after their last
 	// point. Use the playback evaluator so log curves and incoming shapes agree.
-	tick, err := notation.PositionTick(fmt.Sprintf("@%d.%d.%d", loc.bar, loc.beat, loc.step))
+	tick, err := notation.PositionTick(compiled.MeterMap(), fmt.Sprintf("@%d.%d.%d", loc.bar, loc.beat, loc.step))
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func explainMovingLayers(compiled *project.Project, lookup string, loc explainLo
 		if lane.Path == lookup {
 			if target, ok := project.AutomationValue(compiled, lane, tick); ok {
 				computedText = explainValue(float32(target), descriptor)
-				fmt.Fprintf(output, "automation at %s: %s\n", notation.TickPosition(tick), computedText)
+				fmt.Fprintf(output, "automation at %s: %s\n", notation.TickPosition(compiled.MeterMap(), tick), computedText)
 			}
 		}
 	}

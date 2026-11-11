@@ -212,7 +212,7 @@ func (v *placementView) draw() {
 	defer v.remember()
 	update := nativePlayback.Get()
 	line := v.root.Call("querySelector", "[data-placement-playhead]")
-	head := update.State.Playhead()
+	head := update.State.Playhead(control.GridMeterMap())
 	ready := update.Ready && time.Since(update.At) < time.Second && head.ClockFresh(time.Since(update.At), time.Second)
 	line.Set("hidden", !ready)
 	if !ready {
