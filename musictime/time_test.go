@@ -79,3 +79,20 @@ func TestMusicalTicksFollowsTheMeterMap(t *testing.T) {
 		t.Error("accepted beat 4 of a 3/4 bar")
 	}
 }
+
+// Phase 3 decides what Nbars means across a meter change. Today a bar count is
+// N times the first bar's length. In a 3/4-then-4/4 map the two bars from bar 1
+// last 2880 + 3840 = 6720 ticks, and FormatLength spells that as 2bars (the map
+// says it is two whole bars), but 2bars parses back to 2 × 2880 = 5760.
+func TestPhase3BarCountsUseTheFirstBarLength(t *testing.T) {
+	m, err := seq.NewMeterMap([]seq.MeterChange{{Bar: 0, Meter: seq.Meter{Beats: 3, Unit: 4}}, {Bar: 1, Meter: seq.Meter{Beats: 4, Unit: 4}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bars, whole := m.WholeBars(0, 6720); bars != 2 || !whole {
+		t.Fatalf("6720 ticks from bar 1 span %d bars, whole %t; want 2 whole bars", bars, whole)
+	}
+	if got, err := MusicalTicks(m, "2bars", false); err != nil || got != 5760 {
+		t.Fatalf("2bars = %d, %v; today it is 2 × the first bar, 5760", got, err)
+	}
+}

@@ -28,6 +28,13 @@ type MeterChange struct {
 // tick 0, the map of every song that declares no meter, and its lookups are the
 // same constant-divisor arithmetic as a fixed 3,840-tick bar. Every lookup is
 // integer-only and allocation-free, so the audio callback may call it.
+//
+// Domain: ticks and bars may be negative. Before tick 0 every map extends its
+// first segment backwards with the zero map's arithmetic (integer division
+// truncates toward zero), so a map whose first segment is 4/4 answers exactly
+// as the zero map does there; BarsTicks and WholeBars measured from a negative
+// tick use the first segment's bar. Lengths (BarsTicks count, WholeBars ticks)
+// are zero or more.
 type MeterMap struct {
 	segments []meterSegment // nil for the zero value
 	lookups  *meterLookups  // set with segments by NewMeterMap
@@ -203,11 +210,10 @@ func (m MeterMap) BarsUntil(tick int64) int64 {
 }
 
 func (m MeterMap) barsUntil(tick int64) int64 {
-	bar, offset := m.barAt(tick)
-	if offset > 0 {
-		bar++
-	}
-	return bar
+	// The zero map's (tick + bar - 1) / bar within the segment; the next
+	// segment starts on this segment's bar grid.
+	s := m.segment(tick, false)
+	return s.bar + (tick-s.tick+s.barTicks-1)/s.barTicks
 }
 
 // BarsTicks returns the length of count bars that begin with the bar holding
@@ -220,6 +226,9 @@ func (m MeterMap) BarsTicks(from, count int64) int64 {
 }
 
 func (m MeterMap) barsTicks(from, count int64) int64 {
+	if from < 0 {
+		return count * m.segments[0].barTicks
+	}
 	bar, _ := m.barAt(from)
 	return m.barStart(bar+count) - m.barStart(bar)
 }
@@ -234,6 +243,11 @@ func (m MeterMap) WholeBars(from, ticks int64) (int64, bool) {
 }
 
 func (m MeterMap) wholeBars(from, ticks int64) (int64, bool) {
+	if from < 0 {
+		// Before tick 0, the zero map's arithmetic on the first segment's bar.
+		b := m.segments[0].barTicks
+		return ticks / b, ticks%b == 0
+	}
 	bar, _ := m.barAt(from)
 	end, offset := m.barAt(m.barStart(bar) + ticks)
 	return end - bar, offset == 0
@@ -249,6 +263,10 @@ func (m MeterMap) QuantizeBars(tick, bars int64) int64 {
 }
 
 func (m MeterMap) quantizeBars(tick, bars int64) int64 {
+	if tick < 0 {
+		// Before tick 0, the zero map's arithmetic on the first segment's bar.
+		return nextMultiple(tick, bars*m.segments[0].barTicks)
+	}
 	return m.barStart(nextMultiple(m.barsUntil(tick), bars))
 }
 

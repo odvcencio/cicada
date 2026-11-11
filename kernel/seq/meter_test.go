@@ -360,3 +360,70 @@ func BenchmarkMeterMapNextBarLine(b *testing.B) {
 		})
 	}
 }
+
+// A map that takes the multi-segment paths but is 4/4 throughout must answer
+// exactly as the zero map, including negative ticks and bars: the zero map's
+// arithmetic is the contract (see MeterMap's domain).
+func TestGeneralPathsAgreeWithTheZeroMap(t *testing.T) {
+	general, err := NewMeterMap([]MeterChange{{0, Meter{4, 4}}, {7, Meter{4, 4}}, {19, Meter{4, 4}}})
+	if err != nil || general.segments == nil {
+		t.Fatalf("expected a multi-segment map, got %+v, %v", general, err)
+	}
+	var zero MeterMap
+	ticks := []int64{-1, -239, -240, -959, -960, -3839, -3840, -3841, -7679, -7680, -7681, -20000}
+	for tick := int64(-40000); tick <= 120000; tick += 37 {
+		ticks = append(ticks, tick)
+	}
+	for _, tick := range ticks {
+		zb, zo := zero.BarAt(tick)
+		gb, gofs := general.BarAt(tick)
+		if zb != gb || zo != gofs || zero.IsBarLine(tick) != general.IsBarLine(tick) {
+			t.Fatalf("BarAt(%d): zero %d,%d general %d,%d", tick, zb, zo, gb, gofs)
+		}
+		if zero.NextBarLine(tick) != general.NextBarLine(tick) || zero.BarsUntil(tick) != general.BarsUntil(tick) || zero.QuantizeBeat(tick) != general.QuantizeBeat(tick) {
+			t.Fatalf("tick %d: next %d/%d, until %d/%d, beat %d/%d", tick, zero.NextBarLine(tick), general.NextBarLine(tick), zero.BarsUntil(tick), general.BarsUntil(tick), zero.QuantizeBeat(tick), general.QuantizeBeat(tick))
+		}
+		for _, bars := range []int64{1, 2, 3, 4, 16} {
+			if zero.QuantizeBars(tick, bars) != general.QuantizeBars(tick, bars) {
+				t.Fatalf("QuantizeBars(%d, %d): zero %d general %d", tick, bars, zero.QuantizeBars(tick, bars), general.QuantizeBars(tick, bars))
+			}
+		}
+		zp := [4]int64{}
+		gp := [4]int64{}
+		zp[0], zp[1], zp[2], zp[3] = zero.Position(tick)
+		gp[0], gp[1], gp[2], gp[3] = general.Position(tick)
+		if zp != gp {
+			t.Fatalf("Position(%d): zero %v general %v", tick, zp, gp)
+		}
+		for _, length := range []int64{0, 1, 3839, 3840, 3841, 7680, 50000} {
+			zn, zw := zero.WholeBars(tick, length)
+			gn, gw := general.WholeBars(tick, length)
+			if zn != gn || zw != gw {
+				t.Fatalf("WholeBars(%d, %d): zero %d,%t general %d,%t", tick, length, zn, zw, gn, gw)
+			}
+		}
+		for _, count := range []int64{0, 1, 2, 5} {
+			if zero.BarsTicks(tick, count) != general.BarsTicks(tick, count) {
+				t.Fatalf("BarsTicks(%d, %d) differ", tick, count)
+			}
+		}
+	}
+	for bar := int64(-30); bar < 40; bar++ {
+		if zero.BarStart(bar) != general.BarStart(bar) || zero.BarTicks(bar) != general.BarTicks(bar) || zero.BeatTicks(bar) != general.BeatTicks(bar) || zero.BeatsInBar(bar) != general.BeatsInBar(bar) {
+			t.Fatalf("bar %d: start %d/%d", bar, zero.BarStart(bar), general.BarStart(bar))
+		}
+		for beat := int64(-1); beat < 7; beat++ {
+			for step := int64(-1); step < 7; step++ {
+				zt, zok := zero.PositionTick(bar, beat, step)
+				gt, gok := general.PositionTick(bar, beat, step)
+				if zt != gt || zok != gok {
+					t.Fatalf("PositionTick(%d,%d,%d): zero %d,%t general %d,%t", bar, beat, step, zt, zok, gt, gok)
+				}
+			}
+		}
+	}
+	// The reviewer's cases for phase 1.
+	if general.QuantizeBars(-1, 1) != 3840 || general.BarsUntil(-3841) != 0 {
+		t.Fatalf("negative domain: QuantizeBars(-1,1) = %d, BarsUntil(-3841) = %d", general.QuantizeBars(-1, 1), general.BarsUntil(-3841))
+	}
+}
