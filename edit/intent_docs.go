@@ -343,15 +343,6 @@ var intentDocs = map[string]typeDoc{
 			"Velocity": "velocity: the new value instead of dv, 1–127",
 		},
 	},
-	"Hunk": {
-		Meaning: "is one change of a text patch: its old lines, which start at its line, become its new lines",
-		Fields: map[string]string{
-			"End":  "old reaches the end of the text: the hunk applies only where its old lines end the text",
-			"Line": "the line, counted from 1, where old starts in the text the patch was made from",
-			"New":  "the whole lines that replace them, with their line endings, starting and ending with the same unchanged lines as old; \"\" to delete",
-			"Old":  "the whole lines the hunk replaces, with their line endings, including unchanged lines around the change; \"\" only in an empty text",
-		},
-	},
 	"InsertLibraryItem": {
 		Meaning: "imports a library and binds a track to one of its items",
 		Notes:   "The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
@@ -414,18 +405,6 @@ var intentDocs = map[string]typeDoc{
 			"Length":   "length",
 			"Pitch":    "stored MIDI pitch 0–127, before the pattern's transpose",
 			"Velocity": "velocity 1–127",
-		},
-	},
-	"PatchText": {
-		Meaning: "changes whole lines of the score, or of another file of the project, by hunks that name the lines they replace",
-		Notes:   "Unlike replacetext, it keeps another writer's changes to other lines. Old and new are whole lines with their line endings (\"\\r\\n\" in a CRLF file), and begin and end with the same unchanged lines around the change; an insertion needs at least one, so old is empty only in an empty file. New ends with a newline unless old reaches the end of the file (hunk_newline); end marks a hunk whose old lines end the file. A hunk applies where all of old stands at its line, or else at the one place in the file where all of old stands (several places: hunk_ambiguous). If unchanged lines around the change were edited since, it still applies at its own line when up to three of them are missing on each side and at least one is intact on each side; it is never fitted elsewhere. Otherwise it is refused and nothing is written (hunk_mismatch; the refusal's hunk gives the line, what was expected and what was found). Two hunks may not change the same lines (hunk_overlap). A patch holds at most 1,024 hunks and 8 MiB of old and new together (hunk_limit). A library's source is refused (library_file).",
-		Examples: []string{
-			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":3,\"old\":\"tempo 120\\n\",\"new\":\"tempo 118\\n\"}]}",
-			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":5,\"old\":\"seed 7\\n\",\"new\":\"seed 7\\n// patched\\n\"}]}",
-		},
-		Fields: map[string]string{
-			"Hunks": "the changes, each naming the lines it replaces",
-			"Path":  "the file to patch: a project file, by its path relative to the score's folder or as the host names it; empty for the score",
 		},
 	},
 	"PlaceSamplerPrint": {
