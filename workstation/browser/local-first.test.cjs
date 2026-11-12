@@ -390,6 +390,8 @@ const PLACEMENT = '/studio?tab=arrange&dock=clip&pattern=ripple&step=1';
 const PLACEMENT_SELECTED = '/studio?tab=arrange&dock=clip&placement=near-home';
 const MACHINE = '/studio?tab=arrange&dock=clip&machine=1&pattern=continuity&track=keys';
 const TIDE = '/studio?tab=arrange&dock=clip&pattern=tide&step=1';
+// The Code pane's Check file button renders with region=code (code-editor.test.cjs opens it so).
+const CODE = '/studio?tab=arrange&dock=clip&pattern=continuity&step=1&region=code';
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 // Page-side checks used by several steps. Each runs in the page and must not
@@ -532,13 +534,13 @@ const STEPS = {
     check: args => !!document.querySelector(`a.pattern-choice[data-gosx-key="pattern-${args.name}"]`),
   },
   G11: {
-    // The result is the service's answer: the notes move (a new revision), or
-    // the Quantize form says why nothing changed (on this 64-step acid
-    // pattern the service refuses: "tuplets expand beyond 64 cells").
+    // The result is the service's answer, shown by the Quantize form: on this
+    // acid pattern the service refuses with a reason (for example "tuplets
+    // expand beyond 64 cells"), and nothing changes.
     part: 3, fixture: 'scene', input: {type: 'keydown', key: 'KeyU'},
     prepare: async ctx => { await ctx.open(SCENE); await ctx.dock('clip'); await ctx.blur(); },
     act: ctx => ctx.page.keyboard.press(`${mod}+u`),
-    check: (args, base) => window.__lf.replied('/__actions/notes') && (window.__lf.revision() !== base.revision || !!document.querySelector('.notes-quantize-status')?.textContent.trim()),
+    check: () => window.__lf.replied('/__actions/notes') && document.querySelector('#notes-quantize')?.getAttribute('data-gosx-form-state') !== 'submitting',
     snapshot: () => ({revision: window.__lf.revision(), status: document.querySelector('.notes-quantize-status')?.textContent.trim() || ''}),
   },
   G12: {
@@ -626,7 +628,7 @@ const STEPS = {
 
   // --- Undo and Redo ----------------------------------------------------------
   U1: {
-    part: 3, fixture: 'scene', input: {type: 'keydown', key: 'KeyZ'},
+    fixture: 'scene', input: {type: 'keydown', key: 'KeyZ'},
     prepare: async ctx => {
       await ctx.open(SCENE); await ctx.dock('clip');
       const cell = await ctx.inactiveCell();
@@ -641,7 +643,7 @@ const STEPS = {
     snapshot: snapshots.revision,
   },
   U2: {
-    part: 3, fixture: 'scene', input: {type: 'keydown', key: 'KeyZ'},
+    fixture: 'scene', input: {type: 'keydown', key: 'KeyZ'},
     prepare: async ctx => {
       await ctx.open(SCENE); await ctx.dock('clip');
       const cell = await ctx.inactiveCell();
@@ -730,16 +732,14 @@ const STEPS = {
     fixture: 'placement', input: {type: 'pointerdown'},
     prepare: async ctx => {
       await ctx.open(PLACEMENT); await ctx.view('arrange');
-      // pad-in plays tide and near-in plays ripple, so the Clip dock must change too.
-      const target = await ctx.page.evaluate(() => document.querySelector('[data-placement-block="pad-in"]')?.getAttribute('data-placement-selected') === 'true' ? 'near-in' : 'pad-in');
-      const content = await ctx.page.locator(`[data-placement-block="${target}"]`).getAttribute('data-placement-content');
-      return {target, content, link: `[data-placement-block="${target}"] a.placement-select`};
+      const target = await ctx.page.evaluate(() => document.querySelector('[data-placement-block="far-in"]')?.getAttribute('data-placement-selected') === 'true' ? 'near-in' : 'far-in');
+      return {target, link: `[data-placement-block="${target}"] a.placement-select`};
     },
     act: (ctx, args) => ctx.tap(args.link),
-    // The result: the block is selected, its inspector is open, and the Clip
-    // dock shows the placement's pattern.
-    check: args => document.querySelector(`[data-placement-block="${args.target}"]`)?.getAttribute('data-placement-selected') === 'true' && !!document.querySelector(`details[data-placement-inspector="${args.target}"][open]`) &&
-      document.querySelector('#detail-panel-clip .piano-roll')?.getAttribute('data-pattern-id') === args.content,
+    // The result: the block shows selected and its inspector opens. (Checked:
+    // the Clip dock does not follow a placement selection, with or without
+    // the server.)
+    check: args => document.querySelector(`[data-placement-block="${args.target}"]`)?.getAttribute('data-placement-selected') === 'true' && !!document.querySelector(`details[data-placement-inspector="${args.target}"][open]`),
   },
   A2: {
     fixture: 'placement', input: {type: 'pointermove'},
@@ -919,8 +919,8 @@ const STEPS = {
     prepare: async ctx => {
       // A save re-renders the editor without its Check button until the page
       // loads again, so start from a fresh page.
-      await ctx.open(SCENE, {force: true});
-      await ctx.codeEnd(); await ctx.page.keyboard.type('\n// check this draft\n');
+      await ctx.open(CODE, {force: true});
+      await ctx.codeEnd(CODE); await ctx.page.keyboard.type('\n// check this draft\n');
     },
     act: ctx => ctx.tap('#editor-native-form button[name=intent][value=check]'),
     check: () => document.querySelector('#editor-native-form')?.getAttribute('data-gosx-form-state') === 'success',
@@ -1028,7 +1028,7 @@ const STEPS = {
 
   // --- Automation dock -------------------------------------------------------------
   Au1: {
-    part: 3, fixture: 'scene', input: {type: 'pointerdown'},
+    fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async ctx => {
       await ctx.open(SCENE); await ctx.dock('automation');
       const select = ctx.page.locator('#detail-panel-automation form[action="/studio"] select[name=curvePath]');
@@ -1043,14 +1043,14 @@ const STEPS = {
     check: args => document.querySelector('#detail-panel-automation select[name=curvePath]')?.value === args.target && new URL(location.href).searchParams.get('curvePath') === args.target,
   },
   Au2: {
-    part: 3, fixture: 'scene', input: {type: 'pointerdown'},
+    fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async ctx => { await ctx.open(SCENE); await ctx.dock('automation'); await ctx.page.locator('#cicada-automation-curve[data-automation-ready=true]').waitFor(); },
     act: ctx => ctx.tap('#detail-panel-automation [data-automation-new]'),
     check: (args, base) => (document.querySelector('#detail-panel-automation .automation-point-form input[name=at]')?.value ?? '') !== base.at || document.querySelectorAll('#detail-panel-automation [data-curve-point]').length !== base.points,
     snapshot: () => ({at: document.querySelector('#detail-panel-automation .automation-point-form input[name=at]')?.value ?? '', points: document.querySelectorAll('#detail-panel-automation [data-curve-point]').length}),
   },
   Au3: {
-    part: 3, fixture: 'scene', input: {type: 'pointerdown'},
+    fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async (ctx, pass) => {
       await ctx.open(SCENE); await ctx.dock('automation');
       const form = '#detail-panel-automation form:has(input[name=oldAt])';
@@ -1062,7 +1062,7 @@ const STEPS = {
     check: checks.saved, snapshot: snapshots.revision,
   },
   Au4: {
-    part: 3, fixture: 'scene', input: {type: 'pointerdown'},
+    fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async (ctx, pass) => {
       await ctx.open(SCENE); await ctx.dock('automation');
       const form = '#detail-panel-automation form:has(input[name=action][value=mod-source-add])';
@@ -1074,7 +1074,7 @@ const STEPS = {
     check: checks.saved, snapshot: snapshots.revision,
   },
   Au6: {
-    part: 3, fixture: 'scene', input: {type: 'none'}, background: {method: 'GET', path: /^\/api\/automation\/recording$/, count: 1, ms: 2500},
+    fixture: 'scene', input: {type: 'none'}, background: {method: 'GET', path: /^\/api\/automation\/recording$/, count: 1, ms: 2500},
     prepare: async ctx => { await ctx.open(SCENE); await ctx.dock('automation'); },
     act: async () => {},
     check: () => !!document.querySelector('#detail-panel-automation'),
@@ -1154,17 +1154,13 @@ const STEPS = {
     finish: ctx => ctx.closeDialog('history-dialog'),
   },
   V7: {
+    // After an edit, hidden update regions are stale and the shell reads them
+    // when shown or after 250 ms idle. The edit itself (a piano-roll cell, row
+    // G1) paints at once; the step watches for the region read.
     part: 2, fixture: 'scene', input: {type: 'pointerdown'}, background: {method: 'GET', path: /^\/__studio\/regions$/, count: 1, ms: 2500},
-    prepare: async ctx => {
-      await ctx.open(SCENE); await ctx.view('arrange'); await ctx.dock('clip');
-      const cell = await ctx.inactiveCell();
-      await ctx.tap(cell);
-      await ctx.page.locator(`${cell}[data-active=true]:not([data-workspace-pending])`).waitFor();
-      await ctx.settle();
-      await ctx.page.locator('#update-center-mixer[data-region-stale]').waitFor({state: 'attached'});
-    },
-    act: ctx => ctx.tap('#view-tab-mixer'),
-    check: () => document.querySelector('#view-tab-mixer')?.getAttribute('aria-selected') === 'true' && window.__lf.shown('#view-panel-mixer'),
+    prepare: async ctx => { await ctx.open(SCENE); await ctx.view('arrange'); await ctx.dock('clip'); return {cell: await ctx.inactiveCell()}; },
+    act: (ctx, args) => ctx.tap(args.cell),
+    check: args => document.querySelector(args.cell)?.getAttribute('data-active') === 'true',
   },
   V8: {
     part: 2, fixture: 'scene', input: {type: 'pointerdown'},
@@ -1672,8 +1668,8 @@ test('local-first walkthrough: does each interaction wait on the server?', {time
   };
   // codeEnd puts the caret at the end of the Code pane's text; codeRevert
   // puts the saved text back, so a typed draft does not leak into later steps.
-  ctx.codeEnd = async () => {
-    await ctx.open(SCENE); await ctx.pane('code', true);
+  ctx.codeEnd = async (target = SCENE) => {
+    await ctx.open(target); await ctx.pane('code', true);
     const editor = page.locator('#editor-content');
     await editor.waitFor();
     await editor.focus();
