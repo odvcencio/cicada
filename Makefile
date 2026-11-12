@@ -40,6 +40,7 @@ ENGINE_METRICS_ARGS ?=
 
 test: test-build-tools
 	go test ./... -count=1
+	$(MAKE) test-apply-work
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -51,6 +52,7 @@ test: test-build-tools
 # runs in its own job (make test-render-paths). `make test` still runs everything.
 test-ci-core: test-build-tools
 	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -skip '^TestRenderPathsAgree$$' -count=1
+	$(MAKE) test-apply-work
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -117,11 +119,17 @@ bench-agent-loop: build-core
 # CICADA_APPLY_BENCH_LARGE_RUNS=5 (see TestApplyBenchmark). bench-apply-wasm
 # runs the same in js/wasm under Node, with GOMAXPROCS unset (Go's js/wasm
 # port cannot start threads).
-.PHONY: bench-apply bench-apply-wasm
+.PHONY: bench-apply bench-apply-wasm test-apply-work
 APPLY_BENCH_ENV ?=
 bench-apply:
 	mkdir -p build
 	env CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply.md $(APPLY_BENCH_ENV) go test -tags cicada_counters -count=1 -timeout=60m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
+# The work each hot edit may do, counted (build tag cicada_counters): with the
+# kept state, one Apply parses the score once and validates and builds the
+# engine once. make test and test-ci-core run it, so the counts cannot regress.
+test-apply-work:
+	go test -tags cicada_counters -count=1 -run '^TestApply(WorkPerState|BatchWork)$$' ./internal/benchscore/applybench
 
 bench-apply-wasm:
 	mkdir -p build
