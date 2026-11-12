@@ -517,8 +517,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
+	meterMap := semantic.MeterMap()
 	if len(schedule) > 0 {
-		report.Bars = int(schedule[len(schedule)-1].EndTick / seq.TicksPerBar)
+		bars, _ := meterMap.BarAt(schedule[len(schedule)-1].EndTick)
+		report.Bars = int(bars)
 	}
 	songBars := report.Bars
 	if opts.From < 0 || opts.From >= songBars {
@@ -563,7 +565,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	report.MasterGainDB = masterGainDB
 	report.TailFrames = int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
 	tempoChanges := project.SongTempoChanges(semantic)
-	tempoMap, err := project.NewTempoMap(opts.SampleRate, score.TempoMilli, tempoChanges)
+	tempoMap, err := project.NewTempoMap(meterMap, opts.SampleRate, score.TempoMilli, tempoChanges)
 	if err != nil {
 		return report, err
 	}
@@ -571,8 +573,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
 	}
-	fromFrame := tempoMap.SampleAtTick(int64(report.From) * seq.TicksPerBar)
-	renderFrames := tempoMap.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
+	fromFrame := tempoMap.SampleAtTick(meterMap.BarStart(int64(report.From)))
+	renderFrames := tempoMap.SampleAtTick(meterMap.BarStart(int64(renderBars))) + report.TailFrames
 	report.Frames = renderFrames - fromFrame
 	report.rangeSkip = fromFrame
 	dataBytes := report.Frames * int64(encoder.frameBytes())
@@ -775,7 +777,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	var position int64
 	bar := 0
 	for _, event := range schedule {
-		entry := notation.SongEntry{Scene: semantic.Scenes[event.Scene].ID, Bars: int((event.EndTick - event.Tick) / seq.TicksPerBar)}
+		entryBars, _ := meterMap.WholeBars(event.Tick, event.EndTick-event.Tick)
+		entry := notation.SongEntry{Scene: semantic.Scenes[event.Scene].ID, Bars: int(entryBars)}
 		if bar >= renderBars {
 			break
 		}
@@ -788,12 +791,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 				break
 			}
 			for ti := range tracks {
-				tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(bar)*seq.TicksPerBar, ti
+				tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, meterMap.BarStart(int64(bar)), ti
 			}
 			if err := applySceneBoundary(tracks, scene, stopIsAction, entryBar == 0); err != nil {
 				return report, err
 			}
-			clock = tempoMap.ClockAtTick(int64(bar) * seq.TicksPerBar)
+			clock = tempoMap.ClockAtTick(meterMap.BarStart(int64(bar)))
 			if entryBar == 0 {
 				// The tempo steps first, so a delay division set by the same
 				// scene fades once to its final length.
@@ -808,8 +811,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar+1 < renderBars {
 				nextScene = sceneAtBar(score, semantic, schedule, bar+1)
 			}
-			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, tempoMap.SampleAtTick, stopIsAction)
-			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
+			planSceneTransitions(tracks, nextScene, meterMap.BarStart(int64(bar+1)), tempoMap.SampleAtTick, stopIsAction)
+			end := clock.SampleAtTick(meterMap.BarStart(int64(bar + 1)))
 			for position < end {
 				if err := advanceRenderChains(tracks, clock.TickAtSample(position)); err != nil {
 					return report, err
@@ -917,7 +920,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	for ti := range tracks {
-		tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(renderBars)*seq.TicksPerBar, ti
+		tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, meterMap.BarStart(int64(renderBars)), ti
 		if tracks[ti].drums != nil {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				tracks[ti].drums.NoteOff(lane)
@@ -1505,7 +1508,7 @@ func findScene(score *notation.Score, name string) *notation.Scene {
 }
 
 func sceneAtBar(score *notation.Score, p *project.Project, schedule []engine.ScheduleEvent, bar int) *notation.Scene {
-	tick := int64(bar) * seq.TicksPerBar
+	tick := p.MeterMap().BarStart(int64(bar))
 	i := sort.Search(len(schedule), func(i int) bool { return tick < schedule[i].EndTick })
 	if i == len(schedule) {
 		return nil

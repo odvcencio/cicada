@@ -2,6 +2,7 @@ package smf
 
 import (
 	"fmt"
+	"math/bits"
 
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
@@ -30,6 +31,7 @@ func FromProject(p *project.Project, bars int) (File, error) {
 
 func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (File, error) {
 	var file File
+	meterMap := p.MeterMap()
 	cfg, err := project.CompileNoteSchedule(p)
 	if err != nil {
 		return file, err
@@ -43,7 +45,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		for _, event := range cfg.Schedule {
 			end = max(end, event.EndTick)
 		}
-		totalBars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
+		totalBars = int(meterMap.BarsUntil(end))
 	}
 	if bars == 0 {
 		bars = totalBars
@@ -51,7 +53,10 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	if bars < 1 || bars > totalBars || bars > 256 {
 		return file, fmt.Errorf("MIDI export requires 1 to 256 song bars")
 	}
-	endTick := int64(bars) * seq.TicksPerBar
+	endTick := meterMap.BarStart(int64(bars))
+	// The time signature of the first bar; a meter of N/D writes N, log2 D,
+	// 96/D MIDI clocks per click and 8: 04 02 18 08 for 4/4.
+	beats, unit := meterMap.BeatsInBar(0), seq.TicksPerWhole/meterMap.BeatTicks(0)
 	file.Format, file.PPQ = 1, uint16(seq.PPQ)
 	file.TempoMicros = uint32((60_000_000_000 + int64(p.TempoMilli)/2) / int64(p.TempoMilli))
 	keySharps, keyMinor := keySignature(p.Key)
@@ -60,7 +65,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		Name: p.Title, EndTick: endTick,
 		Meta: []MetaEvent{
 			{Type: 0x51, Data: []byte{byte(file.TempoMicros >> 16), byte(file.TempoMicros >> 8), byte(file.TempoMicros)}},
-			{Type: 0x58, Data: []byte{4, 2, 24, 8}},
+			{Type: 0x58, Data: []byte{byte(beats), byte(bits.TrailingZeros64(uint64(unit))), byte(96 / unit), 8}},
 			{Type: 0x59, Data: []byte{byte(keySharps), keyMinor}},
 		},
 	}
@@ -70,7 +75,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 			break
 		}
 		micros := uint32((60_000_000_000 + int64(change.BPMMilli)/2) / int64(change.BPMMilli))
-		file.Tracks[0].Meta = append(file.Tracks[0].Meta, MetaEvent{Tick: int64(change.Bar) * seq.TicksPerBar, Type: 0x51, Data: []byte{byte(micros >> 16), byte(micros >> 8), byte(micros)}})
+		file.Tracks[0].Meta = append(file.Tracks[0].Meta, MetaEvent{Tick: meterMap.BarStart(int64(change.Bar)), Type: 0x51, Data: []byte{byte(micros >> 16), byte(micros >> 8), byte(micros)}})
 	}
 	channels := make([]uint8, len(p.Tracks))
 	// Past fifteen melodic tracks, later tracks share channels in turn. Each
@@ -114,7 +119,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	for _, entry := range cfg.Song {
 		scene := cfg.Scenes[entry.Scene]
 		for repeat := 0; repeat < int(entry.Bars) && bar < bars; repeat++ {
-			boundary := int64(bar) * seq.TicksPerBar
+			boundary, barEnd := meterMap.BarStart(int64(bar)), meterMap.BarStart(int64(bar+1))
 			for ti := range p.Tracks {
 				if cfg.TrackKinds[ti] == engine.VoiceAudio {
 					continue
@@ -160,7 +165,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 					continue
 				}
 				if chained[ti] {
-					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.TrackKinds[ti] == engine.VoiceDrums, &held[ti])
+					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, barEnd, uint8(ti), channels[ti], cfg.TrackKinds[ti] == engine.VoiceDrums, &held[ti])
 					continue
 				}
 				slot := slots[ti]
@@ -176,12 +181,12 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 						return
 					}
 					if pattern.Performance != nil {
-						appendPerformedRange(&file.Tracks[ti+1], pattern, origins[ti], boundary, boundary+seq.TicksPerBar, endTick, uint8(ti), channels[ti])
+						appendPerformedRange(&file.Tracks[ti+1], pattern, origins[ti], boundary, barEnd, endTick, uint8(ti), channels[ti])
 						return
 					}
 					grid := pattern.GridTicks()
 					first := (boundary + grid - 1) / grid
-					for absoluteStep := first; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
+					for absoluteStep := first; absoluteStep*grid < barEnd; absoluteStep++ {
 						appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, lane, isDrum, channels[ti], &held[ti][0])
 					}
 				}
@@ -192,7 +197,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 							continue
 						}
 						grid := pattern.GridTicks()
-						for absoluteStep := (boundary + grid - 1) / grid; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
+						for absoluteStep := (boundary + grid - 1) / grid; absoluteStep*grid < barEnd; absoluteStep++ {
 							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, drum.MIDINotes[lane], true, channels[ti], &held[ti][lane])
 						}
 					}
@@ -261,7 +266,7 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	track.Slots[0] = &patternID
 	clone.Tracks = []project.Track{track}
 	clone.Scenes = []project.Scene{{ID: "midi-pattern", Bindings: map[string]string{track.ID: patternID}}}
-	bars := int((pattern.DurationTicks() + seq.TicksPerBar - 1) / seq.TicksPerBar)
+	bars := int(p.MeterMap().BarsUntil(pattern.DurationTicks()))
 	if bars > 256 {
 		return File{}, fmt.Errorf("MIDI export requires 1 to 256 pattern bars")
 	}
@@ -345,13 +350,13 @@ func closeAt(track *TrackChunk, held *heldNote, tick int64) {
 	held.valid = false
 }
 
-func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64, trackIndex, channel uint8, isDrum bool, held *[drum.LaneCount]heldNote) {
+func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary, barEnd int64, trackIndex, channel uint8, isDrum bool, held *[drum.LaneCount]heldNote) {
 	var period int64
 	for _, slot := range bank.Chain {
 		p := &bank.Slots[slot]
 		period += p.DurationTicks()
 	}
-	for cycle := boundary / period * period; cycle < boundary+seq.TicksPerBar; cycle += period {
+	for cycle := boundary / period * period; cycle < barEnd; cycle += period {
 		start := cycle
 		for _, slot := range bank.Chain {
 			p := &bank.Slots[slot]
@@ -360,13 +365,13 @@ func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64,
 				if start >= boundary {
 					closeAt(track, &held[0], start)
 				}
-				appendPerformedRange(track, p, start, boundary, boundary+seq.TicksPerBar, min(start+length, track.EndTick), trackIndex, channel)
+				appendPerformedRange(track, p, start, boundary, barEnd, min(start+length, track.EndTick), trackIndex, channel)
 				start += length
 				continue
 			}
 			for index := int64(0); index < int64(p.Len); index++ {
 				tick := start + index*p.GridTicks()
-				if tick < boundary || tick >= boundary+seq.TicksPerBar {
+				if tick < boundary || tick >= barEnd {
 					continue
 				}
 				if isDrum {

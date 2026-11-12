@@ -146,5 +146,9 @@ func (e *Engine) authoredFrames(from, to int64) int64 {
 // boundaries follow it after a manual launch changes the tempo.
 func (e *Engine) LiveClock() seq.Clock { return e.transport.Clock() }
 
+// MeterMap places the song's bar and beat lines. Hosts take bar lines from it
+// instead of keeping their own bar arithmetic.
+func (e *Engine) MeterMap() seq.MeterMap { return e.transport.MeterMap() }
+
 // TransportSample counts the frames the engine has rendered.
 func (e *Engine) TransportSample() int64 { return e.transport.Sample() }

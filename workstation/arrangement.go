@@ -91,7 +91,7 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 				if track.Kind == "audio" && p.Edition == 2 {
 					href = "/?panel=takes&clip=" + url.QueryEscape(inherited)
 				} else {
-					content = append(content, clipPreview(p, inherited, int64(entry.Bars)*seq.TicksPerBar))
+					content = append(content, clipPreview(p, inherited, p.MeterMap().BarsTicks(0, int64(entry.Bars))))
 					if inherited == openPattern {
 						attrs = append(attrs, gosx.BoolAttr("data-arrange-pattern-open"))
 					}
@@ -110,7 +110,7 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	}
 	appendBlock := s.form(v, csrf, "session", "song", hidden("action", "append"), field("Scene", selectInput("scene", "", sceneNames)), field("Bars", wholeInput("bars", 4, 1, 999)), submit("", "", "Add to arrangement"))
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
-	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), s.sessionListening(v, csrf, selected, int64(bar-1)*seq.TicksPerBar), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene header to play from that block; click a clip to edit its pattern. ↳ carries the previous pattern.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
+	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene header to play from that block; click a clip to edit its pattern. ↳ carries the previous pattern.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
 }
 
 // trackColors is the size of the Arrange track palette; tracks take its colors
@@ -132,6 +132,7 @@ func barRuler(first, bars int) gosx.Node {
 // for these projects reports an empty timeline and offers invalid song writes.
 func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf, selected string) gosx.Node {
 	p := v.Project
+	meterMap := p.MeterMap()
 	placements := slices.Clone(p.Arrange.Placements)
 	sort.SliceStable(placements, func(i, j int) bool { return placements[i].AtTick < placements[j].AtTick })
 	if selected == "" && len(placements) > 0 {
@@ -150,15 +151,15 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 			href = "/?panel=takes&clip=" + url.QueryEscape(placement.Content)
 		}
 		length := fmt.Sprintf("%d ticks", placement.LengthTicks)
-		if placement.LengthTicks%seq.TicksPerBar == 0 {
-			length = fmt.Sprintf("%d bars", placement.LengthTicks/seq.TicksPerBar)
+		if bars, whole := meterMap.WholeBars(placement.AtTick, placement.LengthTicks); whole {
+			length = fmt.Sprintf("%d bars", bars)
 		}
 		rows = append(rows, gosx.El("tr", gosx.Attrs(gosx.Attr("data-placement-id", placement.ID)),
 			gosx.El("th", gosx.Attrs(gosx.Attr("scope", "row")), gosx.Text(placement.ID)),
 			gosx.El("td", gosx.Text(placement.Track)),
 			gosx.El("td", gosx.El("a", gosx.Attrs(gosx.Attr("href", href)), gosx.Text(placement.Content))),
-			gosx.El("td", gosx.Text(placementPosition(placement.AtTick))),
-			gosx.El("td", gosx.Text(placementPosition(placement.AtTick+placement.LengthTicks))),
+			gosx.El("td", gosx.Text(placementPosition(v.Project.MeterMap(), placement.AtTick))),
+			gosx.El("td", gosx.Text(placementPosition(v.Project.MeterMap(), placement.AtTick+placement.LengthTicks))),
 			gosx.El("td", gosx.Text(length))))
 	}
 	var headers []gosx.Node
@@ -169,17 +170,17 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 	sort.SliceStable(markers, func(i, j int) bool { return markers[i].AtTick < markers[j].AtTick })
 	var labels []string
 	for _, marker := range markers {
-		labels = append(labels, marker.ID+" "+placementPosition(marker.AtTick))
+		labels = append(labels, marker.ID+" "+placementPosition(v.Project.MeterMap(), marker.AtTick))
 	}
 	var markerList gosx.Node
 	if len(labels) > 0 {
 		markerList = gosx.El("p", gosx.Attrs(gosx.Attr("aria-label", "Arrangement markers")), gosx.El("strong", gosx.Text("Markers: ")), gosx.Text(strings.Join(labels, " · ")))
 	}
 	seconds := float64(end) * 60000 / (float64(p.TempoMilli) * float64(seq.PPQ))
-	if clock, err := project.NewTempoMap(48000, int64(p.TempoMilli), project.SongTempoChanges(p)); err == nil {
+	if clock, err := project.NewTempoMap(meterMap, 48000, int64(p.TempoMilli), project.SongTempoChanges(p)); err == nil {
 		seconds = float64(clock.SampleAtTick(end)) / 48000
 	}
-	bars := (end + seq.TicksPerBar - 1) / seq.TicksPerBar
+	bars := meterMap.BarsUntil(end)
 	description := fmt.Sprintf("Placement lanes · %d bars · %d:%02d at %.1f BPM · %d placements", bars, int(seconds)/60, int(seconds)%60, float64(p.TempoMilli)/1000, len(placements))
 	if len(p.Arrange.Tempos) > 0 {
 		description += " · tempo changes"
@@ -196,9 +197,9 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings)))
 }
 
-func placementPosition(tick int64) string {
+func placementPosition(meterMap seq.MeterMap, tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return fmt.Sprintf("%d ticks", tick)
 	}
-	return notation.TickPosition(tick)
+	return notation.TickPosition(meterMap, tick)
 }

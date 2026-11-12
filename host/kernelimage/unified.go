@@ -91,5 +91,6 @@ func validateUnifiedFields(cfg *engine.Config) error {
 			return imageError("invalid schedule clip image")
 		}
 	}
-	return engine.ValidateTempoSchedule(cfg.Schedule)
+	// Images carry no meter table yet, so every image is 4/4.
+	return engine.ValidateTempoSchedule(cfg.Schedule, seq.MeterMap{})
 }

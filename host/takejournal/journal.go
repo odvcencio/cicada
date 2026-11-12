@@ -23,6 +23,7 @@ import (
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -105,8 +106,13 @@ func (v *Timeline) Clock(rate int) (*project.TempoMap, error) {
 	if v == nil || !v.Valid() {
 		return nil, errors.New("invalid recording timeline")
 	}
-	return project.NewTempoMap(rate, v.TempoMilli, v.TempoChanges)
+	return project.NewTempoMap(v.MeterMap(), rate, v.TempoMilli, v.TempoChanges)
 }
+
+// MeterMap is the meter map the timeline's tempo steps and positions sit on.
+// A timeline records no meter yet, so it is the zero (4/4) map; time-signatures
+// phase 2 records the song's map with the take.
+func (v *Timeline) MeterMap() seq.MeterMap { return seq.MeterMap{} }
 
 // Coverage maps the retained PCM back onto the recording's own musical clock.
 // Invalid or empty takes expose no usable interval.

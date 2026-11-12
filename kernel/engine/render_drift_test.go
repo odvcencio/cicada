@@ -44,7 +44,7 @@ func TestEngineRenderDriftControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	end := int(clock.SampleAtTick(int64(input.Bars) * seq.TicksPerBar))
+	end := int(clock.SampleAtTick(int64(input.Bars) * ticksPerBar))
 	n := end + int(math.Ceil(input.TailSec*float64(input.Config.SampleRate))) + input.Trim
 	var referenceL, referenceR []float32
 	for _, variant := range []string{"reference", "paramAlpha-immediate", "mix-immediate", "voice-budget-exact", "params-at-note-on", "reset-noise-state", "flush-output-denormals"} {

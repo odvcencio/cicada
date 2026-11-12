@@ -71,7 +71,7 @@ func TestSlideCarriesAcrossQuantizedPatternSwitch(t *testing.T) {
 			var seen bool
 			var message cmd.Message
 			for e.Poll(&message) {
-				if message.Kind == cmd.NoteOn && message.Tick == seq.TicksPerBar && message.A == 52 {
+				if message.Kind == cmd.NoteOn && message.Tick == ticksPerBar && message.A == 52 {
 					seen = true
 				}
 				if message.Kind == cmd.Fault {
