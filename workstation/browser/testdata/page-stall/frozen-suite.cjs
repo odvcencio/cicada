@@ -4,7 +4,10 @@
 //   old         a page freezes inside Go and a step fails; the teardown the suites
 //               used before page-stall.cjs (save storage state, then close)
 //   resume      the same freeze under stall.teardown()
-//   start       the page freezes while Go starts (wasm_exec.js run)
+//   reenter     the same, but the frozen entry first posts a message that calls
+//               it again; the message is queued before the helper's read, so
+//               the page re-enters Go as soon as its script is terminated
+//   start      the page freezes while Go starts (wasm_exec.js run)
 //   xhr         the page blocks in native code on a synchronous request that is never answered
 //   dialog      the page blocks in native code on alert(), which the suite never answers
 //   closed      the test closes its page, waits, then fails
@@ -24,11 +27,13 @@ const mode = process.env.PAGE_STALL_MODE;
 const html = freeze => `<!doctype html><button>Go</button><script>
 globalThis.Go = class {
   run() { if (${freeze === 'start'}) for (;;) {} return new Promise(() => {}); }
-  _resume() { if (globalThis.armed) for (;;) {} }
+  _resume() { if (globalThis.armed) { if (${freeze === 'reenter'}) reenter.port2.postMessage(0); for (;;) {} } }
 };
 const go = new Go();
+const reenter = new MessageChannel();
+reenter.port1.onmessage = () => go._resume();
 setInterval(() => go._resume(), 50);
-setTimeout(() => { if (${freeze === 'start'}) go.run(); if (${freeze === 'resume'}) globalThis.armed = true; }, 500);
+setTimeout(() => { if (${freeze === 'start'}) go.run(); if (${freeze === 'resume' || freeze === 'reenter'}) globalThis.armed = true; }, 500);
 </script>`;
 
 async function open(freeze) {
@@ -53,7 +58,7 @@ if (mode === 'old') {
   });
 }
 
-if (mode === 'resume' || mode === 'start') {
+if (mode === 'resume' || mode === 'reenter' || mode === 'start') {
   test('a step on a frozen page times out', { timeout: 60000 }, async t => {
     const { browser, context, show } = await open(mode);
     const watch = await stall.watchContext(context);

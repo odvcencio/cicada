@@ -298,21 +298,46 @@ async function watchContext(context, { serverLog, stack = envStack() } = {}) {
 }
 
 // goSnapshot reads the Go entry record from a page whose main thread is stuck.
-// Runtime.evaluate waits for the main thread, so it is queued first; then
+// Runtime.evaluate waits for the main thread, so it is queued first and given
+// 150 ms (an idle page answers at once and nothing is terminated). Then
 // Runtime.terminateExecution, which V8 serves through an interrupt, ends the
-// running script and lets the queued read run. This leaves the page's Go
-// programs unusable, so it runs only in a report on a stalled page.
+// running script. One termination is not enough: the page's own timers can run
+// before the queued read and call into the stuck code again (a Go program whose
+// scheduler never goes idle re-enters through its next timer; the self-test's
+// "reenter" stand-in forces this order), and the read then waits behind a
+// second freeze. So the loop ends the running script again, every 150 ms, until the
+// read answers or about 4 s pass. Entries opened after the first termination
+// are the page re-entering, not the stall, and are counted apart. This leaves
+// the page's Go programs unusable, so it runs only in a report on a stalled page.
 async function goSnapshot(session) {
   if (!session) return 'go: no DevTools session';
-  const read = session.send('Runtime.evaluate', { returnByValue: true, expression: '(() => { const g = globalThis.__cicadaGoResumes; return g ? { open: g.open, recent: g.recent.slice(-6), count: g.count, timers: g.timers, now: Date.now() } : null; })()' });
-  read.catch(() => {});
-  const terminated = await within(session.send('Runtime.terminateExecution'), 1500, 'timeout');
-  const value = await within(read, 2500, 'timeout');
-  if (value === 'timeout') return `go: the page did not answer within 2500 ms after Runtime.terminateExecution (${terminated === 'timeout' ? 'which also did not answer' : 'which answered'}): the main thread is blocked outside JavaScript, or a flood of console messages (counted above) is delaying DevTools`;
-  if (value.error || !value.result || !value.result.value) return `go: no entry record (${value.error ? value.error.message : 'probe missing'})`;
+  const expression = '(() => { const g = globalThis.__cicadaGoResumes; return g ? { open: g.open, recent: g.recent.slice(-6), count: g.count, timers: g.timers, now: Date.now() } : null; })()';
+  const deadline = Date.now() + 4000;
+  let firstTermination = 0, terminations = 0, answered = 0, value = null;
+  while (!value && Date.now() < deadline) {
+    const read = session.send('Runtime.evaluate', { returnByValue: true, expression });
+    read.catch(() => {});
+    for (;;) {
+      const result = await within(read, 150, 'pending');
+      if (result !== 'pending') {
+        // A termination that reached the read itself rejects it: ask again.
+        if (!result.error && result.exceptionDetails === undefined) value = result;
+        break;
+      }
+      if (Date.now() >= deadline) break;
+      if (!firstTermination) firstTermination = Date.now();
+      terminations++;
+      if ((await within(session.send('Runtime.terminateExecution'), 500, 'timeout')) !== 'timeout') answered++;
+    }
+  }
+  if (!value) return `go: the page did not answer within 4000 ms, after ${terminations} Runtime.terminateExecution (${answered} answered): the main thread is blocked outside JavaScript, or a flood of console messages (counted above) is delaying DevTools`;
+  if (!value.result || !value.result.value) return 'go: no entry record (probe missing)';
   const g = value.result.value, ago = at => `${g.now - at} ms ago`;
-  const lines = [`go: ${g.count} entries since load (${g.timers} for Go timers); open now: ${g.open.length ? '' : 'none (the main thread was not inside Go)'}`];
-  for (const entry of g.open) lines.push(`  OPEN ${entry.module} ${entry.kind} entry ${ago(entry.at)} and never returned`);
+  const stalled = g.open.filter(entry => !firstTermination || entry.at < firstTermination);
+  const reentered = g.open.length - stalled.length;
+  const lines = [`go: ${g.count} entries since load (${g.timers} for Go timers); open at the stall: ${stalled.length ? '' : 'none (the main thread was not inside Go)'}`];
+  for (const entry of stalled) lines.push(`  OPEN ${entry.module} ${entry.kind} entry ${ago(entry.at)} and never returned`);
+  if (reentered) lines.push(`  ${reentered} more entries opened after the first Runtime.terminateExecution: the page re-entered Go from its own timers (${terminations} terminations)`);
   lines.push('  last finished entries: ' + g.recent.map(entry => `${entry.module} ${entry.kind} ${entry.end - entry.at} ms (ended ${ago(entry.end)})`).join('; '));
   return lines.join('\n');
 }
