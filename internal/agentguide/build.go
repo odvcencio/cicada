@@ -29,10 +29,16 @@ const FrontDoorCommand = "make agent-front-door"
 
 // The budgets, in bytes (about four bytes a token).
 const (
-	ReferenceBudget = 48000  // the core reference: about 12,000 tokens
-	LLMsBudget      = 6000   // llms.txt
-	LLMsFullBudget  = 240000 // llms-full.txt: about 60,000 tokens
-	AgentsMDBudget  = 6000   // the repository's AGENTS.md, generated region included
+	ReferenceBudget = 48000 // the core reference: about 12,000 tokens
+	LLMsBudget      = 6000  // llms.txt
+	// LLMsFullBudget bounds llms-full.txt, about 80,000 tokens. It is the
+	// whole manual, built on demand and read by no agent by default, so its
+	// budget must not fail an ordinary pull request that adds a diagnostic
+	// code or a JSON field (raised from 240,000 on 12 November 2026, when the
+	// file was 229,988 bytes). The budgets that bound the minimum reading,
+	// QuickStartBudget and ReferenceBudget, do not move with it.
+	LLMsFullBudget = 320000
+	AgentsMDBudget = 6000 // the repository's AGENTS.md, generated region included
 )
 
 // Command is one line of the command table, which package main holds.
@@ -149,10 +155,13 @@ and ` + "`cicada.mod`" + ` makes the folder a project in edition 2 of the langua
   diagnostic code.
 - Check after every edit: ` + "`cicada check --json main.cicada`" + `, until ` + "`valid`" + ` is
   true.
-- Change the score one revision-checked batch at a time:
-  ` + "`cicada apply main.cicada edit.json --write --json`" + `, with the ` + "`revision`" + ` that
-  the last ` + "`check --json`" + ` or ` + "`apply`" + ` gave. A batch whose revision is stale is
-  refused and changes nothing.
+- Change the score one revision-checked batch at a time with
+  ` + "`cicada apply main.cicada edit.json --write --json`" + `. Set ` + "`revision`" + ` in
+  ` + "`edit.json`" + ` to ` + "`scores[0].revision`" + ` from the last
+  ` + "`cicada check --json main.cicada`" + `, to ` + "`revision`" + ` from
+  ` + "`cicada song --json main.cicada`" + `, or to ` + "`revision_after`" + ` from the last
+  ` + "`apply --write`" + `. A batch whose revision is stale is refused and changes
+  nothing. Without ` + "`--write`" + `, ` + "`apply`" + ` prints the diff and writes nothing.
 `
 }
 

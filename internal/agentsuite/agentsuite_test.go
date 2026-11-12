@@ -122,6 +122,8 @@ func TestAgentTaskSuite(t *testing.T) {
 	// 0. Start as a new agent does: read the quick start from the binary and
 	// follow it (quickstart_test.go).
 	followQuickStart(t, bin)
+	// The MCP server, through the protocol (mcp_test.go).
+	driveMCPServer(t, bin)
 	dir := t.TempDir()
 	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
 	if err != nil {

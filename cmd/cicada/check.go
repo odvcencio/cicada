@@ -147,6 +147,12 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 		}
 		return err
 	}
+	return runCheck(options, path, stdout, stderr)
+}
+
+// runCheck checks one score, or the project of the working folder when path
+// is empty, as cicada check does after reading its arguments.
+func runCheck(options checkOptions, path string, stdout, stderr io.Writer) error {
 	if path != "" {
 		return checkPathsWith([]string{path}, options, stdout, stderr)
 	}

@@ -164,6 +164,19 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if code := mcpCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr); code != 0 {
+			exitProcess(code)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "song" {
+		if err := songCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			exitProcess(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "agents" {
 		if code := agentsCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
 			exitProcess(code)
@@ -225,7 +238,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "usage: cicada explain <construct[.field]> [--json] | cicada explain <score.cicada> <path> [@bar[.beat[.step]]]")
 			exitProcess(2)
 		}
-		if err := explain(os.Args[2], len(os.Args) == 4); err != nil {
+		if err := explain(os.Stdout, os.Args[2], len(os.Args) == 4); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			exitProcess(1)
 		}
