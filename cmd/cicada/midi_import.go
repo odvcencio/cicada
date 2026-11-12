@@ -71,6 +71,9 @@ func writeImportedScore(path string, source []byte) error {
 		return err
 	}
 	path = target.Physical
+	if err := ensureOutputFolder(path); err != nil {
+		return err
+	}
 	temporary, err := os.CreateTemp(filepath.Dir(path), ".cicada-midi-import-*")
 	if err != nil {
 		return err

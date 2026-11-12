@@ -279,7 +279,7 @@ Flags:
   --bits <16|24|32>            WAV bit depth (default 24)
   --from <bar>                 one-based start bar (default 1)
   --bars <n>                   bars to render; 0 means through song end
-  --tail <duration>            render tail (default 3s)
+  --tail <duration>            render tail, 0s to 60s (default 3s)
   --dither=<bool>              deterministic TPDF dither for integer PCM (default true)
   --normalize=<bool>           peak normalize to -1 dBFS (default false)
   --block <frames>             offline block size (default 4096)
@@ -307,7 +307,7 @@ Flags:
   --bits 32                  float32 output only
   --from <bar>               one-based start bar (default 1)
   --bars <n>                 bars to render; 0 means through song end
-  --tail <duration>          render tail (default 3s)
+  --tail <duration>          render tail, 0s to 60s (default 3s)
   --dither=<bool>            deterministic TPDF dither option
   --normalize=<bool>         peak normalization option
   --block <frames>           offline block size (default 4096)
@@ -346,7 +346,7 @@ Flags:
   --bits <16|24|32>           expected bit depth (default 24)
   --from <bar>                one-based start bar (default 1)
   --bars <n>                  expected bars (required)
-  --tail <duration>           expected tail (default 3s)
+  --tail <duration>           expected tail, 0s to 60s (default 3s)
   --peak-max-db <dBFS>        peak ceiling (default -0.3)
   --dc-max-db <dBFS>          DC ceiling (default -60)
   --lufs <LUFS>               integrated-loudness target
@@ -414,6 +414,8 @@ Flags:
   --pattern <id>  export only one pattern
   --report        write JSON report to stderr
   --help          show this help
+
+The file holds the notes and velocities the renderer plays. Chance steps (?N) and humanize draw from the pattern seed, track, slot, pass and step, as playback does, so each pass of a pattern keeps its own chance decisions and velocity offsets. Both renderers make the same draws.
 
 ### verify-midi
 cicada verify-midi <file.mid> [flags]

@@ -146,8 +146,9 @@ the voices each track reserves.
   values to `verify-wav` that you used for `render`. Bar numbers start at 1;
   `--from 1` selects the first bar. The old `--from 0` input still selects bar
   1 and prints a deprecation warning.
-- MIDI chance output is deterministic: the exporter uses the first seeded
-  pass on each repetition. It does not encode a live probability generator.
+- MIDI chance and humanize output is deterministic: the exporter draws each
+  pass as playback does, so the file holds the notes and velocities you hear.
+  It does not encode a live probability generator.
 - If a typed JSON field is rejected, inspect the public schema and field
   catalog using `cicada fields` or the links in
   [Semantic JSON](../spec/semantic-model.md#semantic-json).

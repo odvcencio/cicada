@@ -236,7 +236,13 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		}
 		if source.Velocity != nil {
 			if len(source.Velocity) != count {
-				return nil, fmt.Errorf("CICADA-ROW: velocity row must match the expanded pattern length")
+				// Point at the velocity row, where the counts part: its first
+				// value past the note row's length, or its last value.
+				at := source.Velocity[len(source.Velocity)-1].Position
+				if len(source.Velocity) > count {
+					at = source.Velocity[count].Position
+				}
+				return nil, &patternCompileError{position: at, err: fmt.Errorf("CICADA-ROW: pattern %s: velocity row has %d values, the note row expands to %d cells; the velocity row must match the expanded pattern length", source.Name, len(source.Velocity), count)}
 			}
 			velocity := 0
 			for i, token := range source.Velocity {

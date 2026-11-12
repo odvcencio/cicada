@@ -708,6 +708,9 @@ const (
 )
 
 func renderFile(score *notation.Score, path string, opts render.Options, target *renderTargetOptions) error {
+	if err := ensureOutputFolder(path); err != nil {
+		return err
+	}
 	if target != nil && target.Loudness {
 		return renderLoudnessFile(score, path, opts, *target)
 	}
@@ -1385,6 +1388,11 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badCap.err)
 		exitProcess(2)
 	}
+	var badRange *flagRangeError
+	if errors.As(err, &badRange) {
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", badRange)
+		exitProcess(2)
+	}
 	var badJobs *jobsArgError
 	if errors.As(err, &badJobs) {
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badJobs)
@@ -1400,6 +1408,36 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 type residentPCMArgError struct{ err error }
 
 func (e *residentPCMArgError) Error() string { return e.err.Error() }
+
+// flagRangeError is a flag value outside the range the command takes, such
+// as --tail 61s. --json reports it with the code flag_out_of_range and the
+// flag, the value, the bound it crosses and the limit as fields.
+type flagRangeError struct {
+	flag  string // the flag, such as --tail
+	value string // the value as given
+	bound string // "maximum" or "minimum"
+	limit string // the bound's value, such as 60s
+	takes string // the range the flag takes, such as 0s to 60s
+}
+
+func (e *flagRangeError) Error() string {
+	verb := "exceeds"
+	if e.bound == "minimum" {
+		verb = "is below"
+	}
+	return fmt.Sprintf("%s %s %s the %s %s; %s takes %s", e.flag, e.value, verb, e.limit, e.bound, e.flag, e.takes)
+}
+
+// tailRangeError is the error of a --tail value outside 0 to
+// render.MaxTailSeconds.
+func tailRangeError(value string, duration time.Duration) *flagRangeError {
+	maximum := render.FormatTailSeconds(render.MaxTailSeconds)
+	failure := &flagRangeError{flag: "--tail", value: value, bound: "maximum", limit: maximum, takes: "0s to " + maximum}
+	if duration < 0 {
+		failure.bound, failure.limit = "minimum", "0s"
+	}
+	return failure
+}
 
 // parseRenderArgs reads the flags of render and stems. A usage error comes
 // back as an error instead of exiting, for --json.
@@ -1441,8 +1479,11 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 		return "", render.Options{}, nil, errUsage
 	}
 	duration, err := time.ParseDuration(*tail)
-	if err != nil || duration < 0 {
+	if err != nil {
 		return "", render.Options{}, nil, errUsage
+	}
+	if duration < 0 || duration.Seconds() > render.MaxTailSeconds {
+		return "", render.Options{}, nil, tailRangeError(*tail, duration)
 	}
 	var target *renderTargetOptions
 	badTarget := false
@@ -1513,8 +1554,18 @@ func verifyWAVCommand(args []string) {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
-	if err != nil || duration < 0 {
+	if err != nil {
 		usage()
+	}
+	if duration < 0 || duration.Seconds() > render.MaxTailSeconds {
+		// The same refusal render and stems give, so the two commands agree on
+		// the range; --report writes it as a structured error.
+		failure := tailRangeError(*tail, duration)
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", failure)
+		if *jsonReport {
+			writeAgentJSON(os.Stderr, map[string]any{"error": &renderErrorJSON{Code: "flag_out_of_range", Message: failure.Error(), Flag: failure.flag, Value: failure.value, Bound: failure.bound, Limit: failure.limit}})
+		}
+		exitProcess(2)
 	}
 	checkLUFS := false
 	checkTruePeak := false

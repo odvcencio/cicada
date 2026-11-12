@@ -389,7 +389,7 @@ song { main*4 }
 
 **Syntax (EBNF):** A `parameter_path` has the form `owner.setting` and is accepted as a scene target; see `parameter_path`, `scene_target`, and `scene_assignment` in the [EBNF appendix](appendix.ebnf). Its first part names the owner. The remaining part names a registered setting and may contain another dot, as in `bass.send.delay`.
 
-**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.pan` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends. Drum lane controls keep their flat suffixes, such as `bd_tune`.
+**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.pan` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends; `bass.send.<name>`, with the declared name of the delay, tape or reverb effect, addresses the same send, as the track block's `send <name> = …` line does. A declared effect name wins over the words `delay` and `reverb`, as it does in the track block: with `fx reverb delay {}`, `bass.send.reverb` is that delay's send. Two spellings of one send in one scene, or in two `automate` lanes, report `CICADA-DUPLICATE` at the second. A send value is a linear gain from 0 to 1 or a level from −60 dB to 0 dB. Drum lane controls keep their flat suffixes, such as `bd_tune`.
 
 **Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters, with one exception: the [scene tempo](#scene-tempo).
 
@@ -716,7 +716,7 @@ song { main }
 
 **Meaning:** `cicada render score.cicada --export <name> -o out.wav` applies the profile. Explicit CLI flags override profile fields. A missed loudness target fails through the existing loudness-targeting path.
 
-**Types and units:** Supported render rates are 44100Hz, 48000Hz, and 96000Hz; bits are 16, 24, or 32. Tail uses seconds or milliseconds and is limited to 0-10 seconds. Loudness accepts `LUFS` or `LU`; true peak uses `dBTP`. True peak requires loudness targeting. Loudness targeting cannot be combined with normalization.
+**Types and units:** Supported render rates are 44100Hz, 48000Hz, and 96000Hz; bits are 16, 24, or 32. Tail uses seconds or milliseconds and is limited to 0-60 seconds, the range of `cicada render --tail`. Loudness accepts `LUFS` or `LU`; true peak uses `dBTP`. True peak requires loudness targeting. Loudness targeting cannot be combined with normalization.
 
 **Defaults:** Unspecified fields keep the render CLI defaults. The existing CLI loudness and true-peak flags remain available.
 

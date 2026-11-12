@@ -45,6 +45,9 @@ func midiFile(p *project.Project, opts midiOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureOutputFolder(opts.output); err != nil {
+		return err
+	}
 	temporary, err := os.CreateTemp(filepath.Dir(opts.output), ".cicada-midi-*")
 	if err != nil {
 		return err

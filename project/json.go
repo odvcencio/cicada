@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/internal/paramdefs"
 )
 
 // MarshalJSON supplies the effect kind when a migrated in-memory /2 value
@@ -524,7 +524,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 			}
 			gain := *send.Level.Number
 			if send.Level.Unit == "db" {
-				gain = detmath.Pow(10, gain/20)
+				gain = paramdefs.SendGainFromDB(gain)
 			}
 			switch effectKinds[send.To] {
 			case "delay", "tape":

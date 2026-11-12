@@ -39,6 +39,10 @@ type Descriptor struct {
 	// registry row does.
 	Isolated     []float64 `json:"isolated,omitempty"`
 	IsolatedNote string    `json:"isolated_note,omitempty"`
+	// Note says what the other fields cannot, such as the other spellings a
+	// send's path and value take. It is for authors and agents; the kernel
+	// tables ignore it.
+	Note string `json:"note,omitempty"`
 }
 
 // Registry is loaded from the single checked-in data source in stable order;

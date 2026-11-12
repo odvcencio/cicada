@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -105,3 +106,27 @@ func removeInterruptFiles() {
 		_ = os.Remove(path)
 	}
 }
+
+// ensureOutputFolder creates the missing folders above an output file, as
+// stems, audition and Studio's export do for theirs, so every command that
+// writes to -o behaves the same. A folder that cannot be created is an
+// *outputNotWritableError that names it.
+func ensureOutputFolder(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return &outputNotWritableError{folder: dir, err: err}
+	}
+	return nil
+}
+
+// outputNotWritableError is an output folder that cannot be created.
+type outputNotWritableError struct {
+	folder string
+	err    error
+}
+
+func (e *outputNotWritableError) Error() string {
+	return fmt.Sprintf("output folder %s cannot be created: %v", e.folder, e.err)
+}
+
+func (e *outputNotWritableError) Unwrap() error { return e.err }

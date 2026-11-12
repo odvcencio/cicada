@@ -275,6 +275,7 @@ func projectHasSceneSettings(p *Project) bool {
 // It does not silently omit a source declaration that has no v1 representation.
 func FromScore(score *notation.Score) (result *Project, diagnostics []notation.Diagnostic) {
 	defer func() {
+		notation.OneCode(diagnostics)
 		if score != nil {
 			notation.LocateDiagnostics(diagnostics, score.Position)
 		}

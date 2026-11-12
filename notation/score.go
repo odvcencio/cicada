@@ -326,6 +326,7 @@ type LiveLayer struct {
 
 // Error includes both locations when a declaration conflicts with an earlier one.
 func (d Diagnostic) Error() string {
+	d = d.SingleCode()
 	location := fmt.Sprintf("%d:%d", d.Position.Line, d.Position.Column)
 	if d.Position.File != "" {
 		location = d.Position.File + ":" + location
@@ -339,7 +340,53 @@ func (d Diagnostic) Error() string {
 
 // Text is the message without a leading copy of the code, for callers that
 // print the code beside it.
-func (d Diagnostic) Text() string { return trimCode(d.Code, d.Message) }
+func (d Diagnostic) Text() string {
+	d = d.SingleCode()
+	return trimCode(d.Code, d.Message)
+}
+
+// OneCode gives each diagnostic one code. A compiler error built as
+// fmt.Errorf("CICADA-UNSUPPORTED: ...") and reported under a generic code
+// such as CICADA-PARAM would print both ("CICADA-PARAM: CICADA-UNSUPPORTED:
+// ..."); the code the message starts with names the cause, so it becomes the
+// diagnostic's code and leaves the message.
+func OneCode(ds []Diagnostic) {
+	for i := range ds {
+		ds[i] = ds[i].SingleCode()
+	}
+}
+
+// SingleCode is the diagnostic with the code its message starts with, if
+// any, as OneCode makes it.
+func (d Diagnostic) SingleCode() Diagnostic {
+	for {
+		code, rest, ok := leadingCode(d.Message)
+		if !ok {
+			return d
+		}
+		d.Code, d.Message = code, rest
+	}
+}
+
+// codePrefix starts every diagnostic code.
+const codePrefix = "CICADA-"
+
+// leadingCode splits "CICADA-NAME: text" into the code and the text.
+func leadingCode(message string) (string, string, bool) {
+	if !strings.HasPrefix(message, codePrefix) {
+		return "", "", false
+	}
+	end := strings.Index(message, ": ")
+	if end < len(codePrefix)+1 {
+		return "", "", false
+	}
+	for _, r := range message[len(codePrefix):end] {
+		if !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+			return "", "", false
+		}
+	}
+	return message[:end], message[end+2:], true
+}
 
 // trimCode removes a leading "CODE: " from a message whose diagnostic already
 // carries that code: errors built as fmt.Errorf("CICADA-PARAM: ...") would

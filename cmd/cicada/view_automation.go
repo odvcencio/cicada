@@ -30,10 +30,10 @@ func automationViews(p *project.Project, end int64) []viewAutomationLane {
 		if err != nil || len(lane.Points) == 0 {
 			continue
 		}
-		low, high := *lane.Points[0].Value.Number, *lane.Points[0].Value.Number
+		low, high := project.AutomationPointValue(lane.Points[0]), project.AutomationPointValue(lane.Points[0])
 		for _, point := range lane.Points {
-			low = math.Min(low, *point.Value.Number)
-			high = math.Max(high, *point.Value.Number)
+			low = math.Min(low, project.AutomationPointValue(point))
+			high = math.Max(high, project.AutomationPointValue(point))
 		}
 		control := func(value float64) float64 {
 			if resolved.Descriptor.Curve == "log" {
@@ -61,7 +61,7 @@ func automationViews(p *project.Project, end int64) []viewAutomationLane {
 		for i := 1; i < len(lane.Points); i++ {
 			from, to := lane.Points[i-1], lane.Points[i]
 			if to.Shape == "step" {
-				fmt.Fprintf(&path, " L %.3f %.3f L %.3f %.3f", x(to.Tick), y(*from.Value.Number), x(to.Tick), y(*to.Value.Number))
+				fmt.Fprintf(&path, " L %.3f %.3f L %.3f %.3f", x(to.Tick), y(project.AutomationPointValue(from)), x(to.Tick), y(project.AutomationPointValue(to)))
 				continue
 			}
 			for sample := 1; sample <= 64; sample++ {
@@ -72,13 +72,16 @@ func automationViews(p *project.Project, end int64) []viewAutomationLane {
 		}
 		last := lane.Points[len(lane.Points)-1]
 		if last.Tick < end {
-			fmt.Fprintf(&path, " L %.3f %.3f", x(end), y(*last.Value.Number))
+			fmt.Fprintf(&path, " L %.3f %.3f", x(end), y(project.AutomationPointValue(last)))
 		}
 		v.Curve = path.String()
 		var description strings.Builder
 		for _, point := range lane.Points {
-			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(p.MeterMap(), point.Tick), *point.Value.Number, unit, point.Shape)
-			v.Points = append(v.Points, viewAutomationPoint{X: x(point.Tick), Y: y(*point.Value.Number), Label: label})
+			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(p.MeterMap(), point.Tick), project.AutomationPointValue(point), unit, point.Shape)
+			if point.Value.Unit == "db" || point.Value.Unit == "enum" {
+				label = fmt.Sprintf("%s: %s, %s", notation.TickPosition(p.MeterMap(), point.Tick), project.AutomationPointText(point), point.Shape)
+			}
+			v.Points = append(v.Points, viewAutomationPoint{X: x(point.Tick), Y: y(project.AutomationPointValue(point)), Label: label})
 			if description.Len() > 0 {
 				description.WriteString("; ")
 			}

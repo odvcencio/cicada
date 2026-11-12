@@ -105,6 +105,13 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := parameterVoiceKind(p, p.Tracks[trackIndex].Kind)
+		// send.<name> of a declared delay, tape or reverb is its return's
+		// send; the declared name wins over the return keywords.
+		if target, ok, refusal := paramdefs.SendTarget(setting, projectEffectKind(p)); refusal != "" {
+			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+": "+refusal)
+		} else if ok {
+			setting = target
+		}
 		for _, candidate := range paramdefs.Registry {
 			if candidate.Scope == "track" && candidate.Path == setting && paramdefs.HasVoice(candidate, kind) {
 				descriptor, found = candidate, true
@@ -130,15 +137,7 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 		}
 		if !found {
-			hint := paramdefs.SendPathHint(setting, func(name string) (string, bool) {
-				for _, effect := range p.Effects {
-					if effect.ID == name {
-						return effect.Kind, true
-					}
-				}
-				return "", false
-			})
-			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+hint)
+			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
 		}
 		if strings.HasPrefix(descriptor.ID, "amp.") {
 			if _, err := trackAmpParams(p, p.Tracks[trackIndex]); err != nil {
@@ -221,6 +220,18 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 	return result, nil
 }
 
+// projectEffectKind reports the kind of a declared effect of the project.
+func projectEffectKind(p *Project) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		for _, effect := range p.Effects {
+			if effect.ID == name {
+				return semanticEffectKind(effect), true
+			}
+		}
+		return "", false
+	}
+}
+
 func parameterVoiceKind(p *Project, kind string) string {
 	switch kind {
 	case "guitar":
@@ -265,6 +276,16 @@ func parseParameterValue(descriptor paramdefs.Descriptor, source string) (Value,
 	if err != nil {
 		return Value{}, err
 	}
+	if paramdefs.IsTrackSend(descriptor) && value.Unit == "db" && value.Number != nil {
+		// A send takes dB as a track block's send line does, with the same
+		// conversion; the lane then holds, and interpolates, linear gain.
+		db := *value.Number
+		if math.IsNaN(db) || db < paramdefs.SendMinDB || db > paramdefs.SendMaxDB {
+			return Value{}, fmt.Errorf("send level %s is outside %ddB to %ddB", source, paramdefs.SendMinDB, paramdefs.SendMaxDB)
+		}
+		gain := paramdefs.SendGainFromDB(db)
+		return Value{Unit: "unit", Number: &gain}, nil
+	}
 	if value.Number == nil {
 		for _, candidate := range descriptor.Values {
 			if value.Text == candidate {
@@ -299,7 +320,7 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		want = "unit"
 	}
 	if value.Unit != want {
-		return fmt.Errorf("expected unit %s", descriptor.Unit)
+		return fmt.Errorf("expected %s; got %s", paramdefs.UnitExpectation(descriptor), paramdefs.ValueWithUnit(*value.Number, value.Unit))
 	}
 	if *value.Number < descriptor.Min || *value.Number > descriptor.Max {
 		return fmt.Errorf("value is outside %g..%g", descriptor.Min, descriptor.Max)

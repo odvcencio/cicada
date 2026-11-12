@@ -133,6 +133,32 @@ automation contribution and final target, alongside any scene setting.
 The target is a prepared control value; smoothing can make the instantaneous
 audio parameter lag it. Continuous lanes currently use `song` time.
 
+A send lane takes the unit of its points, and every point of one lane uses the
+same one. Written in dB, from `-60dB` to `0dB`, it ramps linearly in dB, as a
+`level` lane does: a fade from `-60dB` to `0dB` passes `-30dB` halfway. Write
+`off` for silence; a segment that starts or ends at `off` ramps linearly in
+gain, since silence has no level in dB. Written as linear gains from 0 to 1, a
+lane ramps linearly in gain, as it always has. A lane that mixes dB and linear
+points is refused with `CICADA-UNIT`, naming both points. The path may name
+the send by the return's effect, as the track block does: with
+`fx hall reverb {}` and `send hall = -12dB`, `bass.send.hall` and
+`bass.send.reverb` are the same control, and a declared effect name wins over
+the words `delay` and `reverb`.
+
+```cicada
+cicada 2
+fx hall reverb { decay = 4s }
+track bass fm_bass { send hall = -24dB }
+pattern line { 1 . 1 5 }
+scene main { bass = line }
+automate bass.send.hall {
+  @1.1.1 -24dB
+  @3.1.1 0dB smooth
+  @5.1.1 off
+}
+song { main*4 }
+```
+
 ## Finish and export
 
 Write an ending into the form: remove parts, hold a final harmony, or fade

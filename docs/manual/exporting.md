@@ -107,8 +107,11 @@ General MIDI drum notes. A scene that sets `tempo` adds a tempo event at its
 first bar. Swing and ratchets affect tick positions; a slide
 creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
 instead of the full song. Imported patterns accept the alias used in the score,
-such as `--pattern tone.melody`. Chance uses the first seeded pass on every
-repetition.
+such as `--pattern tone.melody`. The file holds the notes and velocities the
+renderer plays: chance steps (`?N`) and `humanize` draw from the pattern seed,
+track, slot, pass and step, as playback does, so each pass keeps its own chance
+decisions and velocity offsets. A test compares the exported notes with the
+events the renderer plays for scores that use both.
 
 Named `arrange` pattern placements also export through their shared start/release
 schedule. Each pattern restarts locally; note-offs are bounded by the

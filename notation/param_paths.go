@@ -17,6 +17,7 @@ import (
 func validateSceneSettings(score *Score, add func(string, string, string, Position)) {
 	for _, scene := range score.Scenes {
 		seen := make(map[string]bool, len(scene.Settings))
+		controls := make(map[string]string, len(scene.Settings)) // resolved control -> first path
 		for _, setting := range scene.Settings {
 			if seen[setting.Path] {
 				add("CICADA-DUPLICATE", "scene sets path more than once: "+setting.Path, "error", setting.Position)
@@ -54,11 +55,19 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 				add("CICADA-UNSUPPORTED", "insert effect controls are fixed until the score is recompiled", "error", setting.Position)
 				continue
 			}
-			descriptor, _, _, code, message := resolveNotationPath(score, setting.Path)
+			descriptor, _, owner, code, message := resolveNotationPath(score, setting.Path)
 			if code != "" {
 				add(code, message, "error", setting.Position)
 				continue
 			}
+			// Two spellings of one control, such as a.send.hall and
+			// a.send.reverb, would set it twice.
+			control := owner + "\x00" + descriptor.ID
+			if first, ok := controls[control]; ok && first != setting.Path {
+				add("CICADA-DUPLICATE", "scene "+scene.Name+" sets one control twice: "+first+" and "+setting.Path+" are the same "+descriptor.Path+" of "+owner+sendNote(score, first, setting.Path), "error", setting.Position)
+				continue
+			}
+			controls[control] = setting.Path
 			if !descriptor.Live && !SceneTempoPath(descriptor.ID) {
 				add("CICADA-UNSUPPORTED", "scene setting "+setting.Path+" is not live", "error", setting.Position)
 				continue
@@ -142,6 +151,13 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := notationParameterVoiceKind(score, track.Kind)
+		// send.<name> of a declared delay, tape or reverb is its return's
+		// send; the declared name wins over the return keywords.
+		if target, ok, refusal := paramdefs.SendTarget(setting, scoreEffectKind(score)); refusal != "" {
+			return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + ": " + refusal
+		} else if ok {
+			setting = target
+		}
 		for _, descriptor := range paramdefs.Registry {
 			if descriptor.Scope != "track" || descriptor.Path != setting || !paramdefs.HasVoice(descriptor, kind) {
 				continue
@@ -168,8 +184,7 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 				return paramdefs.InstrumentParamDescriptor(slot, param.Name, unit, value), "track", owner, "", ""
 			}
 		}
-		hint := sendPathHint(score, setting)
-		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + hint
+		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path
 	}
 	if effectOK {
 		setting := strings.Join(parts[1:], ".")
@@ -266,6 +281,13 @@ func validateSceneValue(descriptor paramdefs.Descriptor, path, source string) er
 	if err != nil {
 		return sceneValueMismatch(descriptor, source)
 	}
+	if paramdefs.IsTrackSend(descriptor) && unit == "db" {
+		// A send takes dB as a track block's send line does.
+		if math.IsNaN(value) || value < paramdefs.SendMinDB || value > paramdefs.SendMaxDB {
+			return fmt.Errorf("%s is outside the send level range %ddB to %ddB", source, paramdefs.SendMinDB, paramdefs.SendMaxDB)
+		}
+		return nil
+	}
 	want := strings.ToLower(descriptor.Unit)
 	if want == "bpm" || want == "ratio" || want == "" || want == "semitone" || want == "cent" {
 		want = "unit"
@@ -311,6 +333,9 @@ func sceneValueExpectation(descriptor paramdefs.Descriptor) string {
 		return "one of " + strings.Join(words, ", ")
 	}
 	example := sceneValueNumber(descriptor, descriptor.Default)
+	if paramdefs.IsTrackSend(descriptor) {
+		return paramdefs.UnitExpectation(descriptor)
+	}
 	var expected string
 	switch strings.ToLower(descriptor.Unit) {
 	case "hz":
@@ -380,14 +405,28 @@ func ParameterVoiceKind(score *Score, kind string) string {
 	return notationParameterVoiceKind(score, kind)
 }
 
-// sendPathHint is paramdefs.SendPathHint over the score's effects.
-func sendPathHint(score *Score, setting string) string {
-	return paramdefs.SendPathHint(setting, func(name string) (string, bool) {
+// sendNote explains, for a diagnostic about paths a and b, a send path whose
+// declared effect name is the other return's keyword.
+func sendNote(score *Score, a, b string) string {
+	for _, path := range []string{a, b} {
+		if _, setting, ok := strings.Cut(path, "."); ok {
+			if note := paramdefs.SendTargetNote(setting, scoreEffectKind(score)); note != "" {
+				return "; " + note
+			}
+		}
+	}
+	return ""
+}
+
+// scoreEffectKind reports the kind of a declared effect of the score.
+func scoreEffectKind(score *Score) func(string) (string, bool) {
+	return func(name string) (string, bool) {
 		for _, effect := range score.Effects {
 			if effect.Name == name {
 				return effect.Kind, true
 			}
 		}
 		return "", false
-	})
+	}
 }
+

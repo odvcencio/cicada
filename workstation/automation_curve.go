@@ -83,8 +83,9 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 				recallPositions = append(recallPositions, vocalPosition(v.Project.MeterMap(), tick))
 			}
 			for _, point := range lane.Points {
-				if point.Value.Number != nil {
-					props.Points = append(props.Points, automationCurvePoint{point.Tick, *point.Value.Number, point.Shape, point.Curve})
+				if point.Value.Number != nil || point.Value.Unit == "enum" {
+					// A dB send point shows as its linear gain, the control's unit.
+					props.Points = append(props.Points, automationCurvePoint{point.Tick, project.AutomationPointValue(point), point.Shape, point.Curve})
 				}
 			}
 		}

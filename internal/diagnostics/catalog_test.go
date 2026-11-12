@@ -34,6 +34,7 @@ var partialCodeLiterals = map[string]string{
 	"cmd/cicada/fix_libraries.go CICADA-LIB-":   "prefix test on a reported code",
 	"cmd/cicada/fix_libraries.go CICADA-ASSET-": "prefix test on a reported code",
 	"project/model.go CICADA-":                  "prefix test on an error's code",
+	"notation/score.go CICADA-":                 "prefix test on the code a message starts with",
 	"cmd/cicada/diagnostics.go CICADA-":         "completes the code a user types for cicada diagnostics",
 }
 

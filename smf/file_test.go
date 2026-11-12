@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -186,7 +187,7 @@ func TestPatternExportPreservesProbabilityIdentity(t *testing.T) {
 	}
 }
 
-func TestMIDIUsesFirstProbabilityPassAndRatchetTicks(t *testing.T) {
+func TestMIDIUsesPlaybackProbabilityPassAndRatchetTicks(t *testing.T) {
 	p := firstAcidProject(t)
 	var bass *project.Pattern
 	for i := range p.Patterns {
@@ -223,8 +224,28 @@ func TestMIDIUsesFirstProbabilityPassAndRatchetTicks(t *testing.T) {
 		first = first || note.Tick == 0
 		second = second || note.Tick == 3840
 	}
-	if first != second {
-		t.Fatal("probability changed between repeated bars despite iteration-zero MIDI rule")
+	// Each bar's decision is playback's draw for that pass of the pattern.
+	cfg, err := project.CompileEngine(p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot := -1
+	for i, name := range p.Tracks[0].Slots {
+		if name != nil && *name == "bass-a" {
+			slot = i
+			break
+		}
+	}
+	pattern := cfg.Patterns[0].Slots[slot]
+	barSteps := int64(3840) / pattern.GridTicks()
+	if barSteps%int64(pattern.Len) != 0 {
+		t.Fatalf("bass-a has %d steps, which do not divide a bar", pattern.Len)
+	}
+	want := func(step int64) bool {
+		return seq.ProbabilityHit(50, pattern.Seed, 0, uint8(slot), step/int64(pattern.Len), uint8(step%int64(pattern.Len)))
+	}
+	if first != want(0) || second != want(barSteps) {
+		t.Fatalf("chance in bars 1 and 2: MIDI %v %v, playback %v %v", first, second, want(0), want(barSteps))
 	}
 }
 

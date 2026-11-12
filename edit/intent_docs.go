@@ -669,7 +669,7 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetAutomationPoint": {
 		Meaning: "adds or edits one point of a parameter's automation lane (an `automate <path> { ... }` block)",
-		Notes:   "OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created.",
+		Notes:   "OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created. A send lane is param:<track>.send.delay or param:<track>.send.reverb, or param:<track>.send.<name> with the declared name of the delay, tape or reverb effect. Its points are all in dB (-60dB to 0dB, or off for silence), and then the lane ramps in dB, or all linear gains from 0 to 1, and then it ramps in gain.",
 		Examples: []string{
 			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"smooth\"}",
 			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"linear\"}",

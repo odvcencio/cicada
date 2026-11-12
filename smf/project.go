@@ -23,8 +23,11 @@ type probabilityIdentity struct {
 	slot  uint8
 }
 
-// FromProject compiles the first pass of an arrangement into type 1 MIDI. The
-// probability hash always uses iteration zero, as specified for interchange.
+// FromProject compiles an arrangement into type 1 MIDI. Chance (?N) and
+// humanize use the draws playback makes, from the pattern seed, track, slot,
+// pass and step, so the file holds the notes and velocities playback plays.
+// Both renderers make the same draws: a drum hit's humanize offset comes from
+// its lane number on both (#354).
 func FromProject(p *project.Project, bars int) (File, error) {
 	return fromProject(p, bars, nil)
 }
@@ -216,6 +219,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 
 // FromPattern exports a selected pattern with its first compatible track.
 // A short pattern loops to fill one bar; longer patterns retain their length.
+// It uses playback's draws, as FromProject does.
 func FromPattern(p *project.Project, patternID string) (File, error) {
 	if err := project.ValidateProject(p); err != nil {
 		return File{}, err
@@ -279,10 +283,16 @@ func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, tra
 	appendStepOffset(track, pattern, absoluteStep, 0, trackIndex, probabilityTrack, probabilitySlot, drumPitch, isDrum, channel, held)
 }
 
+// appendStepOffset writes one step's notes. A drum hit is written at its
+// General MIDI note (drumPitch) and draws its humanize offset from the note its
+// step carries, the lane number, as both renderers do.
 func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tickOffset int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
 	index := uint8(absoluteStep % int64(pattern.Len))
+	// absoluteStep counts from the pattern's start, as the sequencer's local
+	// step does, so the pass is the sequencer's loop iteration.
+	pass := absoluteStep / int64(pattern.Len)
 	step, err := seq.UnpackStep(pattern.Steps[index])
-	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, 0, index) {
+	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, pass, index) {
 		return
 	}
 	start := tickOffset + absoluteStep*pattern.GridTicks()
@@ -315,14 +325,20 @@ func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tic
 		}
 		gate := max(int64(30), (segmentEnd-onset)*int64(pattern.GatePercent)/100)
 		pitch := uint8(int(step.Note) + int(pattern.Transpose))
-		velocity := step.Velocity
-		if velocity == 0 {
+		// The same humanize draw as playback.
+		drawNote := step.Note
+		// Playback's order: humanize, then an accent plays at 127, then the
+		// velocity stays in 1 to 127.
+		velocity := seq.HumanizeVelocity(step.Velocity, pattern.Humanize, pattern.Seed, probabilityTrack, probabilitySlot, pass, index, ratchet, drawNote)
+		if velocity == 0 && !isDrum {
 			velocity = 100
 		}
-		if isDrum {
-			pitch, velocity = drumPitch, step.Velocity
-		} else if step.Accent && velocity == 100 {
+		if step.Accent {
 			velocity = 127
+		}
+		velocity = min(velocity, 127)
+		if isDrum {
+			pitch = drumPitch
 		}
 		held.index, held.count = len(track.Notes), 1
 		if !isDrum && chord.Count > 0 {

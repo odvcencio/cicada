@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -117,6 +118,9 @@ func VerifyAssets(score *notation.Score, projectDir string) []notation.Diagnosti
 			code := "CICADA-ASSET-MISSING"
 			if strings.Contains(err.Error(), "escapes") {
 				code = "CICADA-ASSET-PATH"
+				if a.Root == "" {
+					err = assetOutsideProject(projectDir, a.Path, err)
+				}
 			}
 			add(a, "", code, "readable regular file inside project", err.Error())
 			continue
@@ -284,4 +288,23 @@ func (p *Project) NeedsSampleEngine() bool {
 		}
 	}
 	return false
+}
+
+// assetOutsideProject explains a refused open whose path goes through a
+// symlink, as a scratch copy of a project with its folders linked in does.
+// Assets are read only inside the project, so the remedy is a copy or a hard
+// link. Any other error is returned unchanged.
+func assetOutsideProject(dir, rel string, err error) error {
+	parts := strings.Split(rel, "/")
+	for i := range parts {
+		link := strings.Join(parts[:i+1], "/")
+		info, statErr := os.Lstat(filepath.Join(dir, filepath.FromSlash(link)))
+		if statErr != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s goes through the symlink %s, which leads outside the project folder; assets are read only inside the project, so copy the file into the project or hard-link it (cp -al <folder> <copy> makes hard links on the same file system); see docs/sampler/packs.md", rel, link)
+		}
+	}
+	return err
 }
