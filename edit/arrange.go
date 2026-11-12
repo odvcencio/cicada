@@ -9,6 +9,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -113,8 +114,8 @@ func editClipPlacement(ctx *Context, intent Intent) error {
 		if placement, err = resolvePlacement(ctx, in.Entity); err != nil {
 			return err
 		}
-		position := FormatPosition(in.AtTick)
-		if updated, err = notation.SetPlacementField(source, placement.ID, "at", position); err != nil {
+		position := FormatPosition(ctx.MeterMap(), in.AtTick)
+		if updated, err = notation.SetPlacementField(ctx.MeterMap(), source, placement.ID, "at", position); err != nil {
 			return err
 		}
 		label = fmt.Sprintf("Clip %s moved to %s", placement.ID, position)
@@ -123,8 +124,8 @@ func editClipPlacement(ctx *Context, intent Intent) error {
 		if placement, err = resolvePlacement(ctx, in.Entity); err != nil {
 			return err
 		}
-		length := FormatLength(in.LengthTicks)
-		if updated, err = notation.SetPlacementField(source, placement.ID, "length", length); err != nil {
+		length := FormatLength(ctx.MeterMap(), placement.AtTick, in.LengthTicks)
+		if updated, err = notation.SetPlacementField(ctx.MeterMap(), source, placement.ID, "length", length); err != nil {
 			return err
 		}
 		label = fmt.Sprintf("Clip %s resized to %s", placement.ID, length)
@@ -264,7 +265,8 @@ func splitClip(ctx *Context, in *SplitClip, source []byte, file string) ([]byte,
 	if unit <= 0 || (in.AtTick-placement.AtTick)%unit != 0 {
 		return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("split point is not on a pattern-length boundary (%s is %d ticks)", pattern.ID, unit)}
 	}
-	bar := in.AtTick/3840 + 1
+	bar, _ := ctx.MeterMap().BarAt(in.AtTick)
+	bar++
 	// Whether a cut is audible depends on engine state that restarts at a
 	// placement boundary (slides, chance passes, and whatever else the engine adds), so no feature list can decide it. Always ask the
 	// render; the checks below only word the refusal.
@@ -272,7 +274,7 @@ func splitClip(ctx *Context, in *SplitClip, source []byte, file string) ([]byte,
 	if err != nil {
 		return nil, "", err
 	}
-	cut, err := splitSource(source, file, plan, placement, in.AtTick)
+	cut, err := splitSource(ctx.MeterMap(), source, file, plan, placement, in.AtTick)
 	if err != nil {
 		return nil, "", err
 	}
@@ -283,7 +285,7 @@ func splitClip(ctx *Context, in *SplitClip, source []byte, file string) ([]byte,
 	if !same {
 		return nil, "", &RefusalError{Intent: "SplitClip", Cause: splitCause(plan, placement, pattern, bar)}
 	}
-	return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(in.AtTick)), nil
+	return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(ctx.MeterMap(), in.AtTick)), nil
 }
 
 // splitCause names why a split rendered differently when the pattern shows a
@@ -381,13 +383,13 @@ func renderCheckFor(ctx *Context) (RenderCheck, error) {
 	return batchCheck{check: ctx.Options.RenderCheck, files: ctx.fileOverrides()}, nil
 }
 
-func splitSource(source []byte, file string, plan *Plan, placement Placement, atTick int64) ([]byte, error) {
+func splitSource(meterMap seq.MeterMap, source []byte, file string, plan *Plan, placement Placement, atTick int64) ([]byte, error) {
 	decl, _, walker, err := placementDecl(source, placement.ID)
 	if err != nil {
 		return nil, err
 	}
 	name := freePlacementName(plan, source, placement.ID)
-	copyText, err := placementCopy(source, decl, walker, name, FormatPosition(atTick), FormatLength(placement.AtTick+placement.LengthTicks-atTick))
+	copyText, err := placementCopy(source, decl, walker, name, FormatPosition(meterMap, atTick), FormatLength(meterMap, atTick, placement.AtTick+placement.LengthTicks-atTick))
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +400,7 @@ func splitSource(source []byte, file string, plan *Plan, placement Placement, at
 		param := decl.NamedChild(k)
 		if walker.Type(param) == "param_decl" && walker.Text(walker.Field(param, "name")) == "length" {
 			value := walker.Field(param, "value")
-			lengthSpan = &Span{int(value.StartByte()), int(value.EndByte()), FormatLength(atTick - placement.AtTick), file}
+			lengthSpan = &Span{int(value.StartByte()), int(value.EndByte()), FormatLength(meterMap, placement.AtTick, atTick-placement.AtTick), file}
 		}
 	}
 	if lengthSpan == nil {
@@ -426,7 +428,7 @@ func duplicateClip(ctx *Context, in *DuplicateClip, source []byte, file string) 
 		return nil, "", err
 	}
 	name := freePlacementName(plan, source, placement.ID)
-	text, err := placementCopy(source, decl, walker, name, FormatPosition(placement.AtTick+placement.LengthTicks), FormatLength(placement.LengthTicks))
+	text, err := placementCopy(source, decl, walker, name, FormatPosition(ctx.MeterMap(), placement.AtTick+placement.LengthTicks), FormatLength(ctx.MeterMap(), placement.AtTick+placement.LengthTicks, placement.LengthTicks))
 	if err != nil {
 		return nil, "", err
 	}

@@ -342,9 +342,9 @@ func TestAudioWASMABI(t *testing.T) {
 			t.Fatal(err)
 		}
 		patternWASM = append(patternWASM, decoded)
-		switched = switched || decoded.Kind == cmd.Switched && decoded.A == 2 && decoded.Tick == seq.TicksPerBar
-		sounded = sounded || decoded.Kind == cmd.NoteOn && decoded.A == 60 && decoded.Tick == seq.TicksPerBar
-		if decoded.Kind == cmd.NoteOn && decoded.Track == 1 && decoded.Tick == seq.TicksPerBar && decoded.A < 6 {
+		switched = switched || decoded.Kind == cmd.Switched && decoded.A == 2 && decoded.Tick == ticksPerBar
+		sounded = sounded || decoded.Kind == cmd.NoteOn && decoded.A == 60 && decoded.Tick == ticksPerBar
+		if decoded.Kind == cmd.NoteOn && decoded.Track == 1 && decoded.Tick == ticksPerBar && decoded.A < 6 {
 			drumHits[decoded.A] = true
 		}
 		if decoded.Kind == cmd.Fault {
@@ -535,8 +535,8 @@ func TestAudioWASMArrangement(t *testing.T) {
 	compareMusicalMessages(t, wasmMessages, nativeMessages)
 	var switched, sounded bool
 	for _, message := range wasmMessages {
-		switched = switched || message.Kind == cmd.Switched && message.A == 1 && message.Tick == seq.TicksPerBar
-		sounded = sounded || message.Kind == cmd.NoteOn && message.A == 52 && message.Tick == seq.TicksPerBar
+		switched = switched || message.Kind == cmd.Switched && message.A == 1 && message.Tick == ticksPerBar
+		sounded = sounded || message.Kind == cmd.NoteOn && message.A == 52 && message.Tick == ticksPerBar
 	}
 	if !switched || !sounded {
 		t.Fatalf("song boundary missing: switched=%v sounded=%v", switched, sounded)

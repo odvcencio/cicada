@@ -53,8 +53,8 @@ func driftDrumCommands(t *testing.T, cfg engine.Config, bars int, legacy bool) (
 			}
 		}
 		for repeat := 0; repeat < int(entry.Bars) && bar < bars; repeat++ {
-			start := clock.SampleAtTick(int64(bar) * seq.TicksPerBar)
-			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
+			start := clock.SampleAtTick(int64(bar) * ticksPerBar)
+			end := clock.SampleAtTick(int64(bar+1) * ticksPerBar)
 			for i, slot := range active[:cfg.Tracks] {
 				if slot < 0 || cfg.Track[i].Kind != engine.VoiceDrums {
 					continue
@@ -259,7 +259,7 @@ func driftSamples(t *testing.T, out io.Writer, score *notation.Score, cfg engine
 	}
 	clock, _ := seq.NewClock(48000, cfg.BPMMilli)
 	for bar := 0; bar <= bars; bar++ {
-		start, end := int(clock.SampleAtTick(int64(bar)*seq.TicksPerBar)), int(clock.SampleAtTick(int64(bar+1)*seq.TicksPerBar))
+		start, end := int(clock.SampleAtTick(int64(bar)*ticksPerBar)), int(clock.SampleAtTick(int64(bar+1)*ticksPerBar))
 		if bar == bars {
 			end = len(a.left)
 		}
@@ -385,7 +385,7 @@ func TestRenderDriftProbes(t *testing.T) {
 	clock, _ := seq.NewClock(48000, cfg.BPMMilli)
 	for _, key := range mismatches {
 		decision := hits[key]
-		fmt.Fprintf(&out, "CHANCE bar=%d step=%d tick=%d sample=%d track=%s lane=%d offline_hit=%v unified_hit=%v\n", key.tick/seq.TicksPerBar+1, key.tick/seq.TicksPerStep%16, key.tick, clock.SampleAtTick(key.tick), score.Tracks[key.track].Name, key.lane, decision[0], decision[1])
+		fmt.Fprintf(&out, "CHANCE bar=%d step=%d tick=%d sample=%d track=%s lane=%d offline_hit=%v unified_hit=%v\n", key.tick/ticksPerBar+1, key.tick/seq.TicksPerStep%16, key.tick, clock.SampleAtTick(key.tick), score.Tracks[key.track].Name, key.lane, decision[0], decision[1])
 	}
 	for _, name := range driftExamples {
 		s, c := driftScore(t, name)

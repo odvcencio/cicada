@@ -12,7 +12,6 @@ import (
 	"github.com/tetratelabs/wazero"
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestSyntheticWASMParity(t *testing.T) {
@@ -86,7 +85,7 @@ func TestSyntheticWASMParity(t *testing.T) {
 			push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 			if s.scenes {
 				push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff})
-				push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Tick: seq.TicksPerBar})
+				push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Tick: ticksPerBar})
 			}
 			out := uint32(call("gosx_audio_out_ptr"))
 			messages := uint32(call("gosx_audio_msg_ptr"))

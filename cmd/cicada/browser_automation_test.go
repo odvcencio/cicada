@@ -21,7 +21,13 @@ func TestBrowserContinuousAutomationLanes(t *testing.T) {
 		listener.Close()
 		return address
 	}
-	browserStudioAddress, browserDebugAddress = freeAddress(), freeAddress()
+	browserStudioAddress = freeAddress()
+	// browser-runner.sh starts one Chrome on the default DevTools port and
+	// sets CICADA_BROWSER_CHROME_EXTERNAL=1; only a test that starts its own
+	// Chrome can move it.
+	if os.Getenv("CICADA_BROWSER_CHROME_EXTERNAL") != "1" {
+		browserDebugAddress = freeAddress()
+	}
 	source, err := os.ReadFile("../../examples/continuous-automation.cicada")
 	if err != nil {
 		t.Fatal(err)
@@ -30,6 +36,7 @@ func TestBrowserContinuousAutomationLanes(t *testing.T) {
 	chrome := startBrowserChrome(t, server)
 	chrome.setViewport(1440, 1000)
 	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.waitForPanelTabs()
 	chrome.click("[data-panel-tab=song]")
 	chrome.waitFor(`document.querySelectorAll('#song .automation-curve').length === 2 && !document.querySelector('#song').hidden`, 10*time.Second)
 	for _, viewport := range []struct {

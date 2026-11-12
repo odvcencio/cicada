@@ -7,7 +7,6 @@ import "math/bits"
 const (
 	PPQ          int64 = 960
 	TicksPerStep int64 = PPQ / 4
-	TicksPerBar  int64 = PPQ * 4
 	minBPMMilli  int64 = 20_000
 	maxBPMMilli  int64 = 300_000
 	maxInt64     int64 = 1<<63 - 1

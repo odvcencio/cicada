@@ -46,7 +46,7 @@ func TestSceneSettingSwitchCarryAndSeekState(t *testing.T) {
 	if !full.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 		t.Fatal("song play rejected")
 	}
-	advanceTo(full, full.transport.Clock().SampleAtTick(seq.TicksPerBar))
+	advanceTo(full, full.transport.Clock().SampleAtTick(ticksPerBar))
 	if full.songIndex != 0 || full.voices[0].acidTarget.Cutoff != 800 {
 		t.Fatalf("scene one setting was applied before its switch: index=%d target=%g", full.songIndex, full.voices[0].acidTarget.Cutoff)
 	}
@@ -55,9 +55,9 @@ func TestSceneSettingSwitchCarryAndSeekState(t *testing.T) {
 	if full.songIndex != 1 || full.voices[0].acidTarget.Cutoff != 800 {
 		t.Fatalf("scene two did not carry the previous setting at the boundary: index=%d target=%g", full.songIndex, full.voices[0].acidTarget.Cutoff)
 	}
-	for full.transport.Sample() < full.transport.Clock().SampleAtTick(2*seq.TicksPerBar) {
+	for full.transport.Sample() < full.transport.Clock().SampleAtTick(2*ticksPerBar) {
 		var blockL, blockR [128]float32
-		count := int(min(int64(len(blockL)), full.transport.Clock().SampleAtTick(2*seq.TicksPerBar)-full.transport.Sample()))
+		count := int(min(int64(len(blockL)), full.transport.Clock().SampleAtTick(2*ticksPerBar)-full.transport.Sample()))
 		full.Render(blockL[:count], blockR[:count])
 	}
 	if full.voices[0].acidTarget.Cutoff != 800 {
@@ -70,7 +70,7 @@ func TestSceneSettingSwitchCarryAndSeekState(t *testing.T) {
 		if message.Kind == cmd.Fault {
 			t.Fatalf("scene setting fault %d", message.A)
 		}
-		sawSameSampleSwitch = sawSameSampleSwitch || message.Kind == cmd.Switched && message.A == 0 && message.Tick == 2*seq.TicksPerBar
+		sawSameSampleSwitch = sawSameSampleSwitch || message.Kind == cmd.Switched && message.A == 0 && message.Tick == 2*ticksPerBar
 	}
 	if full.songIndex != 2 || full.voices[0].acidTarget.Cutoff != 1200 || full.voices[0].acid.Params().Cutoff <= 800 || !sawSameSampleSwitch {
 		t.Fatalf("scene switch setting did not land on the binding sample: index=%d target=%g current=%g switched=%v", full.songIndex, full.voices[0].acidTarget.Cutoff, full.voices[0].acid.Params().Cutoff, sawSameSampleSwitch)
@@ -126,15 +126,15 @@ func TestSongSceneLaunchKeepOffAndLiveOverride(t *testing.T) {
 				t.Fatalf("arrangement fault %d at tick %d", message.A, message.Tick)
 			}
 			liveOverride = liveOverride || message.Kind == cmd.NoteOn && message.Track == 0 && message.A == 52 && message.Tick == seq.PPQ
-			songResume = songResume || message.Kind == cmd.NoteOn && message.Track == 0 && message.A == 45 && message.Tick == seq.TicksPerBar
-			offDrums = offDrums || message.Kind == cmd.Switched && message.Track == 1 && message.A == 0xffff && message.Tick == seq.TicksPerBar
-			drumAfterOff = drumAfterOff || message.Kind == cmd.NoteOn && message.Track == 1 && message.Tick >= seq.TicksPerBar
+			songResume = songResume || message.Kind == cmd.NoteOn && message.Track == 0 && message.A == 45 && message.Tick == ticksPerBar
+			offDrums = offDrums || message.Kind == cmd.Switched && message.Track == 1 && message.A == 0xffff && message.Tick == ticksPerBar
+			drumAfterOff = drumAfterOff || message.Kind == cmd.NoteOn && message.Track == 1 && message.Tick >= ticksPerBar
 		}
 	}
 	if !liveOverride || !songResume || !offDrums || drumAfterOff {
 		t.Fatalf("arrangement transitions: live=%v resume=%v off=%v drumAfterOff=%v", liveOverride, songResume, offDrums, drumAfterOff)
 	}
-	if e.transport.Playing() || e.transport.Tick() != 2*seq.TicksPerBar {
+	if e.transport.Playing() || e.transport.Tick() != 2*ticksPerBar {
 		t.Fatalf("song did not stop at two bars: playing=%v tick=%d", e.transport.Playing(), e.transport.Tick())
 	}
 }
@@ -222,7 +222,7 @@ func TestSeekThenPlayStartsContainingSongEntry(t *testing.T) {
 	}
 	var left, right [128]float32
 	e.Render(left[:], right[:])
-	if !e.songMode || e.songIndex != 1 || e.patterns[0].active != 1 || e.transport.Tick() < 2*seq.TicksPerBar {
+	if !e.songMode || e.songIndex != 1 || e.patterns[0].active != 1 || e.transport.Tick() < 2*ticksPerBar {
 		t.Fatalf("song did not start at second entry: mode=%v index=%d slot=%d tick=%d", e.songMode, e.songIndex, e.patterns[0].active, e.transport.Tick())
 	}
 }

@@ -7,7 +7,6 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
@@ -75,7 +74,7 @@ func TestConductorAttackReleaseAndThresholdChatter(t *testing.T) {
 			primeConductor(t, e)
 			level := uint16(0)
 			for i, value := range tt.values {
-				_, messages := conductorAt(t, e, int64(i+1)*seq.TicksPerBar, value)
+				_, messages := conductorAt(t, e, int64(i+1)*ticksPerBar, value)
 				for _, message := range messages {
 					if message.Kind == cmd.LayerChanged {
 						level = message.A
@@ -95,8 +94,8 @@ func TestLayerMaskAppliesOnBarBoundaryOnly(t *testing.T) {
 	if e.layerMask != 1 {
 		t.Fatalf("initial level-0 mask=%b, want 1", e.layerMask)
 	}
-	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1), Tick: seq.TicksPerBar / 2})
-	if err := e.transport.SeekTick(seq.TicksPerBar / 2); err != nil {
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1), Tick: ticksPerBar / 2})
+	if err := e.transport.SeekTick(ticksPerBar / 2); err != nil {
 		t.Fatal(err)
 	}
 	var left, right [1]float32
@@ -104,7 +103,7 @@ func TestLayerMaskAppliesOnBarBoundaryOnly(t *testing.T) {
 	if e.layerMask != 1 {
 		t.Fatalf("mid-bar macro change changed mask to %b", e.layerMask)
 	}
-	if mask, _ := conductorAt(t, e, seq.TicksPerBar, 1); mask != 2 {
+	if mask, _ := conductorAt(t, e, ticksPerBar, 1); mask != 2 {
 		t.Fatalf("bar boundary mask=%b, want 10", mask)
 	}
 }
@@ -119,7 +118,7 @@ func TestBarAndPhraseEndMessages(t *testing.T) {
 		}
 	}
 	for boundary := int64(1); boundary <= 4; boundary++ {
-		if err := e.transport.SeekTick(boundary * seq.TicksPerBar); err != nil {
+		if err := e.transport.SeekTick(boundary * ticksPerBar); err != nil {
 			t.Fatal(err)
 		}
 		var left, right [1]float32
@@ -138,13 +137,13 @@ func TestBarAndPhraseEndMessages(t *testing.T) {
 		t.Fatalf("got %d bar events, want 5: %+v initial=%+v", len(bars), bars, initial)
 	}
 	for i, message := range bars {
-		if message.B != uint32(i+1) || message.Tick != int64(i)*seq.TicksPerBar {
+		if message.B != uint32(i+1) || message.Tick != int64(i)*ticksPerBar {
 			t.Fatalf("bar event %d = %+v", i, message)
 		}
 	}
 	wantPhrases := []cmd.Message{
-		{Kind: cmd.PhraseEnd, B: 1, Tick: 2 * seq.TicksPerBar},
-		{Kind: cmd.PhraseEnd, B: 2, Tick: 4 * seq.TicksPerBar},
+		{Kind: cmd.PhraseEnd, B: 1, Tick: 2 * ticksPerBar},
+		{Kind: cmd.PhraseEnd, B: 2, Tick: 4 * ticksPerBar},
 	}
 	if !reflect.DeepEqual(phrases, wantPhrases) {
 		t.Fatalf("phrase events = %+v, want %+v", phrases, wantPhrases)
@@ -186,7 +185,7 @@ func TestConductorIsDeterministic(t *testing.T) {
 		t.Helper()
 		e := conductorTestEngine(t, 2, 0)
 		for i, value := range []float32{1, 0, 1, 0} {
-			pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(value), Tick: int64(i) * seq.TicksPerBar})
+			pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(value), Tick: int64(i) * ticksPerBar})
 		}
 		var events []cmd.Message
 		var left, right [256]float32
@@ -254,8 +253,8 @@ func TestMacroLayerMasksCombineAcrossMacros(t *testing.T) {
 	if e.layerMask != 0b0101 {
 		t.Fatalf("both macros at level 0: mask=%04b, want 0101 (0111 and 1101)", e.layerMask)
 	}
-	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1), Tick: seq.TicksPerBar})
-	if err := e.transport.SeekTick(seq.TicksPerBar); err != nil {
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1), Tick: ticksPerBar})
+	if err := e.transport.SeekTick(ticksPerBar); err != nil {
 		t.Fatal(err)
 	}
 	e.Render(left[:], right[:])
@@ -317,8 +316,8 @@ func TestTimedLayerMaskCannotBypassMacroGating(t *testing.T) {
 	if e.layerMask != 0b01 {
 		t.Fatalf("macro level 0 mask=%02b, want 01", e.layerMask)
 	}
-	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 0b11, Tick: seq.TicksPerBar / 2})
-	if err := e.transport.SeekTick(seq.TicksPerBar / 2); err != nil {
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 0b11, Tick: ticksPerBar / 2})
+	if err := e.transport.SeekTick(ticksPerBar / 2); err != nil {
 		t.Fatal(err)
 	}
 	var left, right [1]float32
@@ -327,8 +326,8 @@ func TestTimedLayerMaskCannotBypassMacroGating(t *testing.T) {
 		t.Fatalf("a timed layer mask enabled a macro-excluded track: mask=%02b, want 01", e.layerMask)
 	}
 	// The authored mask switches track 0 off; at level 1 the macro then allows only track 1.
-	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 0b10, Tick: seq.TicksPerBar/2 + 1})
-	if mask, _ := conductorAt(t, e, seq.TicksPerBar, 1); mask != 0b10 {
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 0b10, Tick: ticksPerBar/2 + 1})
+	if mask, _ := conductorAt(t, e, ticksPerBar, 1); mask != 0b10 {
 		t.Fatalf("authored 10 and macro level 1 (10): mask=%02b, want 10", mask)
 	}
 	if e.layerAuthored != 0b10 {
