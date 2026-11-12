@@ -370,7 +370,11 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 
 // extraReverbReturns reports whether the score routes more than one reverb
 // return. The direct mixer has one reverb return; the engine has slots C to H.
+// A reverb declared through a preset counts, as the compiler counts it.
 func extraReverbReturns(score *notation.Score) bool {
+	if resolved, _ := notation.ResolvePresets(score); resolved != nil {
+		score = resolved
+	}
 	reverbs := 0
 	for _, effect := range score.Effects {
 		if effect.Kind == "reverb" && !onMasterChain(score, effect.Name) {
