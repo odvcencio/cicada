@@ -45,7 +45,7 @@ type Sampler struct {
 }
 
 func audioDiagnostic(code, expected, actual string, p Position) Diagnostic {
-	return Diagnostic{Code: code, Severity: "error", Message: fmt.Sprintf("expected %s; actual %s", expected, actual), Position: p}
+	return Diagnostic{Code: code, Severity: "error", Message: fmt.Sprintf("expected %s; actual %s", expected, actual), Position: p, Expected: expected, Found: actual}
 }
 
 // AudioReferenceMessage includes a deterministic spelling suggestion.

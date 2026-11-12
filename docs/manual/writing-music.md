@@ -424,6 +424,15 @@ source frame 4800. The `vox` audio track binds that clip in `verse`; the `chops`
 track plays notes through `vocal-hit`. The sampler root `c3` is MIDI note 48,
 with eight voices and one-shot mode. Use `mode = loop` for a whole-asset loop.
 
+A sampler plays a note by reading its asset faster or slower than recorded, at
+0.125 to 8 times the asset's rate over the output rate. A 48 kHz asset therefore
+plays from 24 semitones below its root to 34 above at every output rate (44.1,
+48 and 96 kHz): `vocal-hit` plays MIDI 24 to 82, `c1` to `a#5`. `check` reports a
+note outside that range as `CICADA-SAMPLER-RANGE`, with the range as `expected`:
+an error when the note cannot play at 48 kHz, where `render` renders by default,
+and a warning when only 44.1 or 96 kHz fails. A clip plays its asset at the
+recorded pitch, so its asset must be recorded at 12 to 192 kHz.
+
 `check` hashes every asset and checks the WAV header against the declared rate,
 channels and frame count. Asset paths resolve from the directory containing the
 nearest `cicada.mod`, including scores in subdirectories. Exact `frames` literals

@@ -692,6 +692,16 @@ func compileStudioSourceSnapshot(path string, source []byte, overrides map[strin
 	return p, sources, err
 }
 
+// scoreDiagnosticError is a compile refusal that one of the score's
+// diagnostics explains. Its text is the diagnostic's line, column, code and
+// message; cicada apply also reports the code as data.
+type scoreDiagnosticError struct{ diagnostic notation.Diagnostic }
+
+func (e *scoreDiagnosticError) Error() string {
+	d := e.diagnostic
+	return fmt.Sprintf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
+}
+
 // compileStudioSourceDetailed also returns the complete parse and conversion
 // diagnostics of the captured sources so callers can render file rows without
 // re-reading or re-parsing.
@@ -719,14 +729,14 @@ func compileStudioSourceDetailed(path string, source []byte, overrides map[strin
 				_, extra := project.FromScore(score)
 				diagnostics = append(diagnostics, extra...)
 			}
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
+			return nil, sources, diagnostics, &scoreDiagnosticError{d}
 		}
 	}
 	p, extra := project.FromScore(score)
 	diagnostics = append(diagnostics, extra...)
 	for _, d := range extra {
 		if d.Severity == "error" {
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
+			return nil, sources, diagnostics, &scoreDiagnosticError{d}
 		}
 	}
 	if p == nil {
@@ -740,6 +750,17 @@ func compileStudioSourceDetailed(path string, source []byte, overrides map[strin
 	// decodes it, once, when it builds its plan.
 	if err := schedule.Validate(p, sources.Root, 48000, 128, schedule.Options{}); err != nil {
 		return nil, sources, diagnostics, err
+	}
+	// A note that a single-asset sampler cannot play at 48 kHz, or an asset a
+	// sampler or clip cannot read there, is refused here as cicada check
+	// refuses it, so that no edit can write it. The warnings for other output
+	// rates do not refuse.
+	playable := append(samplerRangeDiagnostics(p, score), assetRateDiagnostics(p, score)...)
+	diagnostics = append(diagnostics, playable...)
+	for _, d := range playable {
+		if d.Severity == "error" {
+			return nil, sources, diagnostics, &scoreDiagnosticError{d}
+		}
 	}
 	return p, sources, diagnostics, nil
 }
