@@ -674,6 +674,39 @@ func TestInstrumentRecordedHumanizeCrossesGroupsContinuously(t *testing.T) {
 	}
 }
 
+// The other half of the rule: a pack whose zone gains differ has shaped its
+// own velocity response, and a humanize move into another group's zone is
+// undone, so the written velocity plays. Same layout as above with the loud
+// zone at gain 2: no note plays the loud zone, and the notes whose move was
+// undone play exactly the written velocity's level.
+func TestInstrumentShapedHumanizeStaysInItsGroup(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	c.Humanize.Velocity = 12
+	soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 1, 0, 1, false)
+	soft.VelocityLow, soft.VelocityHigh = 1, 63
+	loud.VelocityLow, loud.VelocityHigh, loud.Gain = 64, 127, 2
+	p := newMapped(t, []Zone{soft, loud}, c)
+	level := func(v float64) float64 { return .2 * v / 127 }
+	undone := 0
+	for seed := uint64(1); seed <= 64; seed++ {
+		p.Reset()
+		if _, err := p.NoteOnSeeded(60, 62, seed); err != nil {
+			t.Fatal(err)
+		}
+		got := float64(settled(p))
+		if got > level(63)+1e-6 {
+			t.Fatalf("seed %d: level %g is above the soft zone at velocity 63 (%g): a move into the loud group was kept", seed, got, level(63))
+		}
+		if math.Abs(got-level(62)) < 1e-6 {
+			undone++
+		}
+	}
+	if undone == 0 {
+		t.Fatal("no note played the written velocity's level; the test needs moves into the loud group")
+	}
+}
+
 // Layers count per note, not per velocity: a pack whose layers split the
 // velocity range blends the neighbouring centres across the split, so the
 // level is continuous and rises with velocity. Two layouts: ranges 1-63 and

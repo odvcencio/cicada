@@ -450,7 +450,7 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	p.forceValid = false
 	if p.slots[slot].Performance == nil && p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 && e.switchSlideTarget(track, slot, e.transport.Tick(), restart) {
 		p.slideFrom = p.playingNote
-		p.slideAt = e.switchOnsetSample(track, slot, e.transport.Tick(), restart)
+		p.slideAt = e.switchOnsetSample(track, slot, e.transport.Tick())
 	} else if release, ok := e.normalSlideRelease(track, e.transport.Tick(), e.transport.Clock()); ok && p.playingNote == release.NoteID && release.Sample >= e.transport.Sample() {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
@@ -588,16 +588,13 @@ func patternEventBefore(a, b patternEvent, isDrum bool) bool {
 }
 
 // switchOnsetSample is where the switched-to pattern's first note starts. The
-// new pattern is scheduled from tick 0, or from tick itself on a restart (the
-// caller resets startTick after this), so its step at tick is counted that
-// way, as switchWouldSlide counts it, not from the outgoing pattern's start: a
-// chain's current pattern starts mid-song.
-func (e *Engine) switchOnsetSample(track, slot int, tick int64, restart bool) int64 {
+// scheduler swings a step by its absolute index, tick/grid from the song's
+// start, whether the pattern starts at tick 0 or restarts at tick (a chain
+// advance is a restart), so the swing is counted that way here too, not from
+// the outgoing pattern's start: a chain's current pattern starts mid-song.
+func (e *Engine) switchOnsetSample(track, slot int, tick int64) int64 {
 	pattern := &e.patterns[track].slots[slot]
 	step := tick / pattern.GridTicks()
-	if restart {
-		step = 0
-	}
 	if step&1 != 0 {
 		tick += (pattern.GridTicks()*int64(pattern.SwingPermille) + 500) / 1000
 	}
