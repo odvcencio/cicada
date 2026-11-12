@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // The entities of REF-L that the hot edits act on. They sit in the middle of
@@ -267,6 +269,7 @@ type largeWriter struct {
 	strings.Builder
 	rng      splitmix
 	comments int
+	meter    seq.MeterMap // REF-L declares no meter: 4/4 throughout
 }
 
 func (w *largeWriter) line(format string, args ...any) {
@@ -305,7 +308,11 @@ func (w *largeWriter) sentence(format string, args ...string) string {
 }
 
 func generateLarge() string {
-	w := &largeWriter{rng: splitmix(0x20261112)}
+	meter, err := seq.NewMeterMap([]seq.MeterChange{{Bar: 0, Meter: seq.Meter{Beats: 4, Unit: 4}}})
+	if err != nil {
+		panic(err)
+	}
+	w := &largeWriter{rng: splitmix(0x20261112), meter: meter}
 	s := &w.rng
 
 	// Tracks: the fourteen instrument tracks, then the built-in ones.
@@ -715,8 +722,12 @@ func (w *largeWriter) writePerformance(name string, t trackSpec, notes int) {
 		})
 		at += length + s.between(8, 140)
 	}
-	bars := (at + 3839) / 3840
-	w.line("pattern %s performance length=%dticks {", name, bars*3840)
+	// The loop ends on the bar line at or after the last release.
+	bar, offset := w.meter.BarAt(int64(at))
+	if offset > 0 {
+		bar++
+	}
+	w.line("pattern %s performance length=%dticks {", name, w.meter.BarStart(bar))
 	for _, n := range played {
 		w.line("  note %d at=%dticks length=%dticks velocity=%d { gesture at=0ticks bend=%dct pressure=%s timbre=%s }",
 			n.pitch, n.at, n.length, n.velocity, n.bend, hundredths(n.pressure), hundredths(n.timbre))

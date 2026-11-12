@@ -5,6 +5,7 @@ import (
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/benchscore"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -83,8 +84,10 @@ func HotEdits(reference benchscore.Reference, base *State) ([]HotEdit, error) {
 			return nil, fmt.Errorf("%s: no placement %s", reference.Name, reference.Placement)
 		}
 		// One beat later, as Studio's placement route sends it.
+		meter := songMeter(base)
+		bar, _ := meter.BarAt(placement.AtTick)
 		edits = append(edits, HotEdit{Name: MovePlace, Intent: &edit.UpdatePlacement{
-			Entity: edit.EntityID("placement:" + placement.ID), Settings: &edit.PlacementSettings{At: position(placement.AtTick + 960)},
+			Entity: edit.EntityID("placement:" + placement.ID), Settings: &edit.PlacementSettings{At: position(meter, placement.AtTick+meter.BeatTicks(bar))},
 		}})
 	}
 	edits = append(edits, HotEdit{Name: AddScene, Intent: &edit.AddScene{Name: "bench-scene"}})
@@ -136,9 +139,19 @@ func noteRefs(pattern *edit.Pattern, limit int) []edit.NoteRef {
 	return refs
 }
 
-// position spells a tick as bar.beat.step in 4/4 (a score declares no meter).
-func position(tick int64) string {
-	return fmt.Sprintf("@%d.%d.%d", tick/3840+1, tick%3840/960+1, tick%960/240+1)
+// songMeter returns the song's meter map: the compiled project's, or the
+// parsed score's when the build cannot compile it.
+func songMeter(base *State) seq.MeterMap {
+	if base.Project != nil {
+		return base.Project.MeterMap()
+	}
+	return base.Score.MeterMap()
+}
+
+// position spells a tick on a step as @bar.beat.step.
+func position(meter seq.MeterMap, tick int64) string {
+	bar, beat, step, _ := meter.Position(tick)
+	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 
 // HotEditsFromSource builds reference's hot edits from its parsed score
@@ -160,5 +173,5 @@ func HotEditsFromSource(reference benchscore.Reference) ([]HotEdit, error) {
 			plan.Placements = append(plan.Placements, edit.Placement{ID: p.Name, Track: p.Track, Content: p.Content, AtTick: p.AtTick, LengthTicks: p.LengthTicks})
 		}
 	}
-	return HotEdits(reference, &State{Plan: plan})
+	return HotEdits(reference, &State{Score: score, Plan: plan})
 }
