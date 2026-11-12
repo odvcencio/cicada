@@ -44,7 +44,7 @@ func (e *Engine) playsPlacement(id uint32) bool {
 // construction. The caller also validates event kinds and placement ownership.
 //
 //go:noinline
-func ValidateTempoSchedule(events []ScheduleEvent) error {
+func ValidateTempoSchedule(events []ScheduleEvent, meterMap seq.MeterMap) error {
 	last, end := int64(-1), int64(0)
 	var scene bool
 	for _, v := range events {
@@ -53,7 +53,7 @@ func ValidateTempoSchedule(events []ScheduleEvent) error {
 			scene = scene || v.Kind == ScheduleScene
 			continue
 		}
-		if v.Tick < 0 || v.Tick%seq.TicksPerBar != 0 || v.EndTick != v.Tick || v.Tick <= last || v.ID < 20000 || v.ID > 300000 || uint32(v.Track)|uint32(v.Scene)|uint32(v.Index) != 0 {
+		if v.Tick < 0 || !meterMap.IsBarLine(v.Tick) || v.EndTick != v.Tick || v.Tick <= last || v.ID < 20000 || v.ID > 300000 || uint32(v.Track)|uint32(v.Scene)|uint32(v.Index) != 0 {
 			return engineError("invalid schedule tempo")
 		}
 		last = v.Tick
@@ -180,7 +180,7 @@ func (e *Engine) validateSchedule() error {
 			end = v.EndTick
 		}
 	}
-	if err := ValidateTempoSchedule(e.schedule); err != nil {
+	if err := ValidateTempoSchedule(e.schedule, e.MeterMap()); err != nil {
 		return err
 	}
 	e.indexSchedule()
@@ -347,16 +347,17 @@ const (
 )
 
 // LowerSong preserves scene entry boundaries, including consecutive entries
-// naming the same scene. Patterns keep their existing global-grid phase.
-// Call it during compilation, never from Render.
-func LowerSong(song []SongEntry) []ScheduleEvent {
+// naming the same scene. Patterns keep their existing global-grid phase. Entry
+// lengths count bars of the meter map. Call it during compilation, never from Render.
+func LowerSong(song []SongEntry, meterMap seq.MeterMap) []ScheduleEvent {
 	if len(song) == 0 {
 		return nil
 	}
 	events := make([]ScheduleEvent, len(song))
-	var tick int64
+	var tick, bar int64
 	for i, entry := range song {
-		end := tick + int64(entry.Bars)*seq.TicksPerBar
+		bar += int64(entry.Bars)
+		end := meterMap.BarStart(bar)
 		events[i] = ScheduleEvent{Tick: tick, EndTick: end, Scene: entry.Scene}
 		tick = end
 	}

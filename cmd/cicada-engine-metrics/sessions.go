@@ -6,7 +6,6 @@ import (
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -170,7 +169,7 @@ func newNative(s scenario, cfg engine.Config) (*nativeSession, error) {
 
 func (n *nativeSession) Render(left, right []float32) {
 	if n.scenes && n.position >= (n.queuedBar-1)*n.barFrames {
-		if !n.engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(n.queuedBar % 2), Tick: n.queuedBar * seq.TicksPerBar}) {
+		if !n.engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(n.queuedBar % 2), Tick: n.engine.MeterMap().BarStart(n.queuedBar)}) {
 			n.fault = true
 		}
 		n.queuedBar++

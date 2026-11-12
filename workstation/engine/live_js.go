@@ -423,7 +423,7 @@ func (u *liveUI) poll() {
 				continue
 			}
 			u.syncMIDIClock(t.MIDIClockEpoch)
-			u.playhead, u.playing, u.sampled = t.Playhead(), t.Playing, time.Now()
+			u.playhead, u.playing, u.sampled = t.Playhead(control.GridMeterMap()), t.Playing, time.Now()
 			launch := "Scene: " + t.Scene
 			if t.PendingScene != "" {
 				launch += " · queued: " + t.PendingScene

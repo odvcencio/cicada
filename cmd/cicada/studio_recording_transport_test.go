@@ -15,7 +15,6 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 type recordingTransportFixture struct {
@@ -277,7 +276,7 @@ func TestVocalTransportStopAndPunchFinishSerialize(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Fatal("Stop after automatic finish changed the selected vocal")
 	}
-	if lo, hi := takeCoverage(mustTransportTake(t, f)); lo != 0 || hi != 2*seq.TicksPerBar {
+	if lo, hi := takeCoverage(mustTransportTake(t, f)); lo != 0 || hi != 2*ticksPerBar {
 		t.Fatalf("completed punch coverage = %d → %d", lo, hi)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"syscall/js"
 	"time"
+
+	"m31labs.dev/cicada/workstation/control"
 )
 
 func (u *vocalLanesUI) watchPlayback() {
@@ -14,7 +16,7 @@ func (u *vocalLanesUI) watchPlayback() {
 	defer ticker.Stop()
 	for {
 		update := nativePlayback.Get()
-		u.playback, u.playbackAt = update.State.Playhead(), update.At
+		u.playback, u.playbackAt = update.State.Playhead(control.GridMeterMap()), update.At
 		fresh := update.Ready && time.Since(update.At) < time.Second && u.playback.ClockFresh(time.Since(update.At), time.Second)
 		u.playbackClockStale = u.playback.Playing && !fresh
 		u.playback.Playing = u.playback.Playing && fresh

@@ -12,7 +12,6 @@ import (
 
 	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 var vocalAssetLine = regexp.MustCompile(`asset (\S+) "([^"]+)" \{ sha256 = "([0-9a-f]+)"`)
@@ -74,8 +73,8 @@ func TestVocalCompIntentWritesTheRecordedBytes(t *testing.T) {
 	punch := func(start, end string) *studioRecordingSettings {
 		return &studioRecordingSettings{Start: start, End: end}
 	}
-	take := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .1)
-	second := fakeTimelineTake(t, s, seq.TicksPerBar, 2*seq.TicksPerBar, 192000, .7)
+	take := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .1)
+	second := fakeTimelineTake(t, s, ticksPerBar, 2*ticksPerBar, 192000, .7)
 	fade := 5.0
 	for _, c := range []struct {
 		name     string
@@ -131,12 +130,12 @@ func TestVocalCompCommitLogsItsIntent(t *testing.T) {
 	if err := os.WriteFile(s.path, source, 0600); err != nil {
 		t.Fatal(err)
 	}
-	a := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .1)
+	a := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .1)
 	if err := s.commitTake(a.ID, a.Expected, nil); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := os.ReadFile(s.path)
-	b := fakeTimelineTake(t, s, seq.TicksPerBar, 2*seq.TicksPerBar, 192000, .7)
+	b := fakeTimelineTake(t, s, ticksPerBar, 2*ticksPerBar, 192000, .7)
 	candidate, err := s.vocalTakeSource(first, b, &studioRecordingSettings{Start: "@2.1.1", End: "@3.1.1"})
 	if err != nil {
 		t.Fatal(err)

@@ -300,15 +300,16 @@ func vocalPos(tick int64) string {
 	if tick%seq.TicksPerStep != 0 {
 		return strconv.FormatInt(tick, 10) + "ticks"
 	}
-	return fmt.Sprintf("@%d.%d.%d", tick/seq.TicksPerBar+1, tick%seq.TicksPerBar/seq.PPQ+1, tick%seq.PPQ/seq.TicksPerStep+1)
+	bar, beat, step := control.GridPosition(tick)
+	return fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 }
 func (u *vocalLanesUI) grid() int64 {
 	value := u.root.Call("querySelector", "select[name=vocalSnap]").Get("value").String()
 	switch value {
 	case "beat":
-		return seq.PPQ
+		return control.GridBeatTicks()
 	case "bar":
-		return seq.TicksPerBar
+		return control.GridBarTicks()
 	case "free":
 		return 1
 	default:
@@ -398,7 +399,7 @@ func (u *vocalLanesUI) renderSelection(draft bool) {
 			}
 		}
 	}
-	seconds := musictime.SecondsBetween(lane.Tempo, lane.TempoChanges, u.region.Start, u.region.End)
+	seconds := musictime.SecondsBetween(control.GridMeterMap(), lane.Tempo, lane.TempoChanges, u.region.Start, u.region.End)
 	for _, selector := range []string{"input[name=gainDB]", "[data-vocal-gain-slider]"} {
 		if input := u.root.Call("querySelector", selector); workspacePresent(input) {
 			// Keep the user's decimal entry intact while typing. The slider and
@@ -432,8 +433,8 @@ func (u *vocalLanesUI) readPositions() {
 	if !workspacePresent(form) {
 		return
 	}
-	a, e1 := musictime.MusicalTicks(workspaceFieldValue(form, "recordStart"), true)
-	b, e2 := musictime.MusicalTicks(workspaceFieldValue(form, "recordEnd"), true)
+	a, e1 := musictime.MusicalTicks(control.GridMeterMap(), workspaceFieldValue(form, "recordStart"), true)
+	b, e2 := musictime.MusicalTicks(control.GridMeterMap(), workspaceFieldValue(form, "recordEnd"), true)
 	lane, ok := u.lane(u.selected)
 	if ok && e1 == nil && e2 == nil && a >= lane.Start && b <= min(lane.End, u.props.End) && a < b {
 		u.region = control.VocalRange{Start: a, End: b}
@@ -679,7 +680,7 @@ func (u *vocalLanesUI) zoom(center bool) {
 	if value != "song" {
 		bars, _ := strconv.Atoi(strings.Fields(value)[0])
 		if bars > 0 {
-			width = max(viewport, label+max(1., viewport-label)*float64(u.props.End)/float64(int64(bars)*seq.TicksPerBar))
+			width = max(viewport, label+max(1., viewport-label)*float64(u.props.End)/float64(int64(bars)*control.GridBarTicks()))
 		}
 	}
 	width = min(2000000., width)
@@ -688,7 +689,7 @@ func (u *vocalLanesUI) zoom(center bool) {
 		return
 	}
 	u.world.Get("style").Set("width", fmt.Sprintf("%.2fpx", width))
-	u.world.Get("style").Call("setProperty", "--vocal-grid", fmt.Sprintf("%.6f%%", 100*float64(seq.TicksPerBar)/float64(u.props.End)))
+	u.world.Get("style").Call("setProperty", "--vocal-grid", fmt.Sprintf("%.6f%%", 100*float64(control.GridBarTicks())/float64(u.props.End)))
 	if center {
 		u.scroll.Set("scrollLeft", float64(u.region.Start)/float64(u.props.End)*(width-label))
 	}
@@ -696,7 +697,7 @@ func (u *vocalLanesUI) zoom(center bool) {
 	ruler.Call("replaceChildren")
 	for _, tick := range ticks {
 		span := js.Global().Get("document").Call("createElement", "span")
-		span.Set("textContent", strconv.FormatInt(tick/seq.TicksPerBar+1, 10))
+		span.Set("textContent", strconv.FormatInt(tick/control.GridBarTicks()+1, 10))
 		span.Get("style").Set("left", fmt.Sprintf("%.6f%%", 100*float64(tick)/float64(u.props.End)))
 		ruler.Call("appendChild", span)
 	}

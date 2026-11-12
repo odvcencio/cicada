@@ -173,7 +173,7 @@ func TestHandleMessagesTracksBarsFaultsAndLayers(t *testing.T) {
 	m, _ := newTestMusic(t)
 	var batch []byte
 	for _, msg := range []cmd.Message{
-		{Kind: cmd.Bar, Tick: 3 * TicksPerBar},
+		{Kind: cmd.Bar, B: 4, Tick: 3 * 3840},
 		{Kind: cmd.LayerChanged, B: 0b11},
 		{Kind: cmd.Fault, A: 21},
 	} {
