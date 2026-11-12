@@ -49,9 +49,11 @@ rather than assuming that examples on `main` are supported by the pinned version
   `go generate ./...` transpiles components, includes their stylesheet, and
   builds the content-addressed Go/WASM engine module. Generation is part of the
   GoSX build hook and CI checks that checked-in projections remain reproducible.
-  The shared UI module has a 16 MiB build limit. Keep host compiler and storage
-  dependencies out of it: sampler controls use `host/padsampler/protocol`, and
-  position controls use `musictime` for exact tick conversion.
+  The shared UI module has a working size limit (see "UI engine size"). Keep
+  host compiler and storage dependencies out of it: sampler controls use
+  `host/padsampler/protocol`, and position controls use `musictime` for exact
+  tick conversion. Send requests with `nativeRequest`
+  (`engine/native_request.go`), not `net/http`.
 - Use GoSX's programmatic `server.Page` API for this private, single-score
   workspace. Navigation changes the selected panel without a client router.
   The framework handles history, managed forms, runtime loading, and disposal.
@@ -207,8 +209,54 @@ available. Run `make test-collaboration` for the seeded convergence, offline
 PCM24, role, undo, and reconnect checks, and `make test-studio-collaboration`
 against a disposable Studio for browser interaction checks.
 
-Optional CMS, admin,
-payments, Scene3D, and simulation packages are not dependencies of this editor.
+Optional CMS, admin, payments, and simulation packages are not dependencies of
+this editor. GoSX's `engine/wasm` package still imports its Scene3D package
+(`gosx/scene`), so the UI engine links Scene3D's initialization without using
+it; `make engine-size-report` shows the cost.
+
+## UI engine size
+
+Every Studio surface shares one Go WebAssembly module, built by `go generate`
+from `engine/` with the build tags in `internal/enginebuild` (`Tags`; GoSX's
+`gosx_runtime_core` leaves out its canvas-board adapter and the image decoders
+it imports). The generator fails when the file is larger than the working
+limit in `internal/enginebuild` (`MaxBytes`). To see what fills it:
+
+```sh
+make engine-size-report   # or: cd workstation && go run ./internal/enginesize
+```
+
+The report builds the engine with the generator's exact command, then once
+more without `-s` (to keep function names) and with `-dumpdep` (the linker's
+reason for keeping each symbol). It prints, and writes to
+`workstation/build/engine-size.json`:
+
+- the shipped size, raw and compressed (gzip level 9, Brotli quality 11), and
+  the headroom under the limit;
+- the file's sections: `code` is compiled functions, `data` is everything the
+  program reads from memory;
+- the data section split into read-only data (type descriptors, strings,
+  tables), the pclntab (function names and tables for stack traces and the
+  garbage collector), the PC-to-function lookup table (`findfunctab`), and
+  initialized variables. A js/wasm function occupies 64 KiB of program
+  counters, so each function adds up to 320 bytes to the lookup table on top
+  of its code: removing functions saves more than their code;
+- bytes per Go package and per module. Code bytes are exact. Type and other
+  data come from the package archives' symbol sizes (`go tool nm`) for the
+  symbols the linker kept. The pclntab column counts each function's name
+  exactly and shares the rest by code size, and the lookup column shares the
+  lookup table by function count, so both are estimates;
+- for the largest packages, the linker's first path to them from the program's
+  roots, one line per package boundary. A path through `init` or `inittask`
+  means the package is kept by package initialization, not by a call Studio
+  makes;
+- two floors built the same way: an empty `main` (the Go runtime alone) and a
+  `main` that registers one no-op GoSX engine.
+
+`ENGINE_SIZE_ARGS='-overlay file.json'` (or `-modfile file.mod`, for a
+modified copy of a dependency) measures a change without editing the
+checkout; `-wasm file` also keeps the shipped engine file. A pull request that changes the engine shows the report's top lines
+before and after; a new import that adds more than 64 KiB needs its line.
 
 ## Checks
 
