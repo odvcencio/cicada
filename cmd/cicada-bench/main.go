@@ -18,6 +18,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -55,7 +57,7 @@ const silentBars = 16
 
 // defaultSteps is the set CI runs: the plan's first gates, then the decay
 // steps, which are reported only.
-const defaultSteps = "help,check:large,apply1:large,apply50:large,render:medium,render:large,loudness:medium,audition:large,render:held,render:silent"
+const defaultSteps = "help,check:large,apply1:large,apply50:large,render:medium,render:large,render-jobs1:large,render-jobs4:large,render-auto:medium,render-auto:large,loudness:medium,audition:large,render:held,render:silent"
 
 type options struct {
 	cicada    string
@@ -90,6 +92,27 @@ type Result struct {
 	Replays   int `json:"replays,omitempty"`
 	Repeats   int `json:"repeats,omitempty"`
 	ExitCode  int `json:"exit_code"`
+	// Jobs is the --jobs value of a render-jobsN step. SHA256 is the
+	// rendered WAV's hash, set for render steps when every run wrote the
+	// same bytes; UnstableHash is set when two runs did not.
+	Jobs         int    `json:"jobs,omitempty"`
+	Auto         bool   `json:"auto,omitempty"` // render-auto: --jobs auto
+	SHA256       string `json:"sha256,omitempty"`
+	UnstableHash bool   `json:"unstable_hash,omitempty"`
+}
+
+// renderJobs returns N for a render-jobsN step kind, and 0 for render-auto
+// (--jobs auto).
+func renderJobs(kind string) (int, bool) {
+	if kind == "render-auto" {
+		return 0, true
+	}
+	digits, ok := strings.CutPrefix(kind, "render-jobs")
+	if !ok {
+		return 0, false
+	}
+	jobs, err := strconv.Atoi(digits)
+	return jobs, err == nil && jobs >= 1 && jobs <= 64 && strconv.Itoa(jobs) == digits
 }
 
 // LoudnessRatio is a loudness render's time over a plain render's.
@@ -154,7 +177,7 @@ func parseOptions(args []string) (options, error) {
 	o := options{scores: map[string]string{}}
 	flags.StringVar(&o.cicada, "cicada", "build/cicada", "cicada binary to measure")
 	flags.IntVar(&o.runs, "runs", 5, "runs per step; the median is kept")
-	steps := flags.String("steps", defaultSteps, "comma-separated steps: help, check:<size>, apply1:<size>, apply50:<size>, render:<size>, loudness:<size>, audition:<size>; size is small, medium or large, or for render held (a piano chord held through a reverb) or silent (the large score with every track off)")
+	steps := flags.String("steps", defaultSteps, "comma-separated steps: help, check:<size>, apply1:<size>, apply50:<size>, render:<size>, render-jobs<N>:<size> (render with --jobs N), render-auto:<size> (--jobs auto), loudness:<size>, audition:<size>; size is small, medium or large, or for render held (a piano chord held through a reverb) or silent (the large score with every track off)")
 	for _, size := range []string{"small", "medium", "large"} {
 		o.scores[size] = defaultScores[size]
 		flags.Func(size, "score for the "+size+" steps (default "+defaultScores[size]+")", func(value string) error {
@@ -199,7 +222,8 @@ func validStep(step string) error {
 		return nil
 	}
 	kind, size, ok := strings.Cut(step, ":")
-	if !ok || !slices.Contains([]string{"check", "apply1", "apply50", "render", "loudness", "audition"}, kind) {
+	_, jobs := renderJobs(kind)
+	if !ok || !jobs && !slices.Contains([]string{"check", "apply1", "apply50", "render", "loudness", "audition"}, kind) {
 		return fmt.Errorf("unknown step %q", step)
 	}
 	if generatedScores[size] && kind == "render" {
@@ -292,7 +316,7 @@ func measure(o options, binary, work, step string) (Result, error) {
 			return result, err
 		}
 		result.Score = filepath.Base(o.scores[size])
-		if size == "large" && o.largeBars > 0 && (kind == "render" || kind == "audition" || kind == "loudness") {
+		if _, jobs := renderJobs(kind); size == "large" && o.largeBars > 0 && (kind == "render" || jobs || kind == "audition" || kind == "loudness") {
 			result.Bars = o.largeBars
 		}
 	}
@@ -317,6 +341,14 @@ func measure(o options, binary, work, step string) (Result, error) {
 		args = []string{"render", score, "-o", "out.wav", "--loudness", strconv.FormatFloat(o.loudness, 'g', -1, 64)}
 	case "audition":
 		args = []string{"audition", score, "--json"}
+	default:
+		if jobs, ok := renderJobs(kind); ok && jobs == 0 {
+			result.Auto = true
+			args = []string{"render", score, "-o", "out.wav", "--jobs", "auto"}
+		} else if ok {
+			result.Jobs = jobs
+			args = []string{"render", score, "-o", "out.wav", "--jobs", strconv.Itoa(jobs)}
+		}
 	}
 	if result.Bars > 0 {
 		args = append(args, "--bars", strconv.Itoa(result.Bars))
@@ -351,6 +383,19 @@ func measure(o options, binary, work, step string) (Result, error) {
 			result.PeakRSSMB = max(result.PeakRSSMB, float64(peakRSS(command.ProcessState))/(1<<20))
 		}
 		readOutput(&result, kind, stdout.String())
+		if kind == "render" || result.Jobs > 0 || result.Auto {
+			sum, err := fileSHA256(filepath.Join(dir, "out.wav"))
+			if err != nil {
+				return result, err
+			}
+			if run > 1 && sum != result.SHA256 {
+				result.UnstableHash = true
+			}
+			result.SHA256 = sum
+		}
+	}
+	if result.UnstableHash {
+		result.SHA256 = ""
 	}
 	sorted := slices.Clone(result.RunsMS)
 	slices.Sort(sorted)
@@ -360,6 +405,15 @@ func measure(o options, binary, work, step string) (Result, error) {
 		result.Realtime = result.AudioSeconds / (result.MedianMS / 1000)
 	}
 	return result, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func median(sorted []float64) float64 {
@@ -381,7 +435,7 @@ var (
 // readOutput takes the rendered length, and for a loudness render the pass and
 // synthesis counts, from the summary line that render prints.
 func readOutput(result *Result, kind, stdout string) {
-	if kind != "render" && kind != "loudness" {
+	if _, jobs := renderJobs(kind); kind != "render" && kind != "loudness" && !jobs {
 		return
 	}
 	if match := framesPattern.FindStringSubmatch(stdout); match != nil {
@@ -541,6 +595,12 @@ func formatResult(r Result) string {
 	}
 	if r.PeakRSSMB > 0 {
 		line += fmt.Sprintf("  peak RSS %.0f MiB", r.PeakRSSMB)
+	}
+	switch {
+	case r.UnstableHash:
+		line += "  output differs between runs"
+	case r.SHA256 != "" && (r.Jobs > 0 || r.Auto):
+		line += "  sha256 " + r.SHA256[:16]
 	}
 	return line
 }

@@ -42,6 +42,36 @@ type intentIndexEntry struct {
 	Meaning string `json:"meaning"`
 }
 
+// intentsIndex is the cicada.intents_index.v1 document: every kind with its
+// one-line meaning.
+func intentsIndex() intentsIndexDocument {
+	catalog := edits.Catalog()
+	document := intentsIndexDocument{Schema: intentsIndexSchema, EnvelopeVersion: edits.EnvelopeVersion, Index: make([]intentIndexEntry, 0, len(catalog))}
+	for _, info := range catalog {
+		document.Index = append(document.Index, intentIndexEntry{Kind: info.Kind, Meaning: info.Meaning})
+	}
+	return document
+}
+
+// intentsFor is the cicada.intents.v1 document of the named kinds, in the
+// order given, or of every kind when none is named. For a kind the catalog
+// lacks it returns the code unknown_kind and the error.
+func intentsFor(kinds []string) (intentsDocument, string, error) {
+	document := intentsDocument{Schema: intentsSchema, EnvelopeVersion: edits.EnvelopeVersion, Envelope: edits.EnvelopeFields(), Intents: edits.Catalog()}
+	if len(kinds) == 0 {
+		return document, "", nil
+	}
+	document.Intents = make([]edits.IntentInfo, 0, len(kinds))
+	for _, kind := range kinds {
+		info, ok := edits.DescribeIntent(kind)
+		if !ok {
+			return intentsDocument{}, "unknown_kind", fmt.Errorf("unknown intent kind %q; run cicada intents for the list", kind)
+		}
+		document.Intents = append(document.Intents, info)
+	}
+	return document, "", nil
+}
+
 // intentsCommand prints the catalog of the edit intents cicada apply accepts,
 // or one kind of it. The catalog comes from the intent registry.
 func intentsCommand(args []string, stdout io.Writer) error {
@@ -79,23 +109,16 @@ func intentsCommand(args []string, stdout io.Writer) error {
 	if index && !asJSON {
 		return fail("usage", fmt.Errorf("%s", intentsIndexUsage))
 	}
-	catalog := edits.Catalog()
 	if index {
-		document := intentsIndexDocument{Schema: intentsIndexSchema, EnvelopeVersion: edits.EnvelopeVersion, Index: make([]intentIndexEntry, 0, len(catalog))}
-		for _, info := range catalog {
-			document.Index = append(document.Index, intentIndexEntry{Kind: info.Kind, Meaning: info.Meaning})
-		}
-		return writeAgentJSON(stdout, document)
+		return writeAgentJSON(stdout, intentsIndex())
 	}
-	if len(kinds) == 1 {
-		info, ok := edits.DescribeIntent(kinds[0])
-		if !ok {
-			return fail("unknown_kind", fmt.Errorf("unknown intent kind %q; run cicada intents for the list", kinds[0]))
-		}
-		catalog = []edits.IntentInfo{info}
+	document, code, err := intentsFor(kinds)
+	if err != nil {
+		return fail(code, err)
 	}
+	catalog := document.Intents
 	if asJSON {
-		data, err := marshalAgentJSON(intentsDocument{Schema: intentsSchema, EnvelopeVersion: edits.EnvelopeVersion, Envelope: edits.EnvelopeFields(), Intents: catalog})
+		data, err := marshalAgentJSON(document)
 		if err != nil {
 			return err
 		}
@@ -113,7 +136,7 @@ func intentsCommand(args []string, stdout io.Writer) error {
 	for _, info := range catalog {
 		fmt.Fprintf(stdout, "  %-*s  %s\n", width, info.Kind, info.Meaning)
 	}
-	_, err := fmt.Fprintln(stdout, "\nApply them with: cicada apply <score.cicada> <intents.json> [--write], where intents.json is {\"version\":1,\"intents\":[...]}.")
+	_, err = fmt.Fprintln(stdout, "\nApply them with: cicada apply <score.cicada> <intents.json> [--write], where intents.json is {\"version\":1,\"intents\":[...]}.")
 	return err
 }
 

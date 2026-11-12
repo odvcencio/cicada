@@ -25,12 +25,14 @@ import (
 const renderSchema = "cicada.render.v1"
 
 type renderDocument struct {
-	Schema      string                  `json:"schema"`
-	Command     string                  `json:"command"`
-	Score       string                  `json:"score"`
-	OK          bool                    `json:"ok"`
-	FromBar     int                     `json:"from_bar,omitempty"`
-	Bars        int                     `json:"bars,omitempty"`
+	Schema  string `json:"schema"`
+	Command string `json:"command"`
+	Score   string `json:"score"`
+	OK      bool   `json:"ok"`
+	FromBar int    `json:"from_bar,omitempty"`
+	Bars    int    `json:"bars,omitempty"`
+	// The lane report: jobs, lanes, lanes_peak, segments and the rest.
+	*RenderLanesJSON
 	Outputs     []renderOutputJSON      `json:"outputs"`
 	Levels      *renderLevelsJSON       `json:"levels,omitempty"`
 	Loudness    *renderLoudnessJSON     `json:"loudness,omitempty"`
@@ -253,6 +255,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 		document.FromBar, document.Bars = report.From+1, report.Bars
 		document.Normalize = normalizeJSON(opts, report)
 		warnNormalizeSkipped(stderr, report)
+		document.RenderLanesJSON = lanesJSON(report.LaneReport)
 		entries, err := os.ReadDir(output)
 		if err != nil {
 			return finish(err)
@@ -283,6 +286,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 		written := err == nil || errors.As(err, &shortfall)
 		if written {
 			document.FromBar, document.Bars = report.From+1, report.Bars
+			document.RenderLanesJSON = lanesJSON(report.Lanes)
 			loudness.IntegratedLUFS = finiteValue(report.AchievedLUFS)
 			loudness.TruePeakDBTP = finiteValue(report.TruePeakDBTP)
 			loudness.SamplePeakDBFS = finiteValue(report.SamplePeakDBFS)
@@ -308,6 +312,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 	document.FromBar, document.Bars = report.From+1, report.Bars
 	document.Normalize = normalizeJSON(opts, report)
 	warnNormalizeSkipped(stderr, report)
+	document.RenderLanesJSON = lanesJSON(report.LaneReport)
 	document.Levels = &renderLevelsJSON{PreLimiterPeak: float64(report.Peak), PreLimiterOvers: report.PreLimiterOvers, OutputPeak: float64(report.OutputPeak), CeilingCount: report.CeilingSamples, ClippedCount: report.ClippedSamples}
 	described, err := describeWAV(output, "mix")
 	if err != nil {

@@ -16,7 +16,8 @@
 # read at test time.
 #
 # Groups and the jobs they gate (see .github/workflows/ci.yml):
-#   root             native-go127, the four M0 parts
+#   root             native-go127, the M0 parts (m0-core, m0-kernel, m0-wasm,
+#                    m0-render-paths)
 #   studio_cli       Studio CLI tests (cmd/cicada shards)
 #   parity           PCM24 and WAV parity (amd64, arm64)
 #   workstation      GoSX workstation and Tymbal boundary
@@ -29,18 +30,21 @@
 #   bench            agent loop speed (cmd/cicada-bench on the built cicada)
 #   wav_sweep        WAV parity sweep of every example and the song pins
 #                    (amd64, arm64); nightly, and on these pull requests
+#   lane_stress      render lanes under the race detector with the lanestress
+#                    hook (short version)
 #
-# m2_gates and wav_sweep are decided the other way round: each is on only when
-# a changed path is one of its inputs (gate_input and sweep_input below).
-# m2_gates runs on a single shared machine, where every queued run waits for
-# the one before it; wav_sweep renders every example four ways on two runners
-# (about half an hour each). An empty list, --all (push, schedule, manual runs)
-# and any change to their inputs still turn them on.
+# m2_gates, wav_sweep and lane_stress are decided the other way round: each is
+# on only when a changed path is one of its inputs (gate_input, sweep_input and
+# lane_input below). m2_gates runs on a single shared machine, where every
+# queued run waits for the one before it; wav_sweep renders every example four
+# ways on two runners (about half an hour each); lane_stress runs the render
+# lanes under the race detector. An empty list, --all (push, schedule, manual
+# runs) and any change to their inputs still turn them on.
 # Always-on jobs (changes, commit hygiene, repo checks, the M0 aggregate) do
 # not appear here.
 set -euo pipefail
 
-groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep)
+groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep lane_stress)
 
 # classify_path prints the groups a path turns on, or "all" or "none".
 #
@@ -124,12 +128,24 @@ gate_input() {
 	cmd/cicada-kernel-wasm/* | cmd/cicada-wasm-size/*) return 0 ;;
 	cmd/cicada/browser_test.go | cmd/cicada/browser_soak_helpers_test.go | cmd/cicada/browser_test_helpers_test.go | cmd/cicada/browser_cpu_node.js) return 0 ;;
 	cmd/cicada/studio.go | cmd/cicada/studio_audio.go | cmd/cicada/studio_files.go | cmd/cicada/isolate_test.go) return 0 ;;
-	internal/soaktiming/* | internal/isolatetest/* | internal/paramdefs/* | internal/filetarget/*) return 0 ;;
+	internal/soaktiming/* | internal/isolatetest/* | internal/paramdefs/* | internal/filetarget/* | internal/renderlanes/*) return 0 ;;
 	kernel/measure/*) return 1 ;; # test-only; nothing the gate builds imports it
 	kernel/* | host/web/* | host/schedule/* | host/kernelimage/* | host/sampleasset/* | host/irasset/*) return 0 ;;
 	host/keyboard/* | host/instrumentpack/* | host/audioencoding/*) return 0 ;;
 	project/* | notation/* | musictime/* | patternmachine/* | instrument/* | edition/* | audioasset/*) return 0 ;;
 	sdk/director/* | experimental/expressive/* | assets/* | examples/first-acid.cicada) return 0 ;;
+	esac
+	return 1
+}
+
+# lane_input reports whether a path can change how the render lanes behave:
+# the lane pool, the engine's parallel files, the render package, the identity
+# test that checks them, and how CI runs them.
+lane_input() {
+	case "$1" in
+	.github/workflows/ci.yml | Makefile | go.mod | go.sum | scripts/ci-changes.sh | scripts/ci-lane-stress-check.sh) return 0 ;;
+	*.md) return 1 ;;
+	internal/renderlanes/* | kernel/engine/parallel* | kernel/engine/render_frame.go | render/* | cmd/cicada/parallel_identity_test.go) return 0 ;;
 	esac
 	return 1
 }
@@ -162,10 +178,11 @@ if [[ "${1:-}" == "--all" ]]; then
 fi
 if [[ "${1:-}" == "--classify" ]]; then
 	result="$(classify_path "${2:?path}")"
-	# m2_gates and wav_sweep come from gate_input and sweep_input, not from the
-	# rules above.
+	# m2_gates, wav_sweep and lane_stress come from gate_input, sweep_input and
+	# lane_input, not from the rules above.
 	if gate_input "$2"; then result="$result m2_gates"; fi
 	if sweep_input "$2"; then result="$result wav_sweep"; fi
+	if lane_input "$2"; then result="$result lane_stress"; fi
 	echo "$result"
 	exit 0
 fi
@@ -179,11 +196,13 @@ seen_path=false
 everything=false
 gates=false
 sweep=false
+lanes=false
 while IFS= read -r path || [[ -n "$path" ]]; do
 	if [[ -z "$path" ]]; then continue; fi
 	seen_path=true
 	if gate_input "$path"; then gates=true; fi
 	if sweep_input "$path"; then sweep=true; fi
+	if lane_input "$path"; then lanes=true; fi
 	result="$(classify_path "$path")"
 	if [[ "$result" == all ]]; then
 		everything=true
@@ -199,13 +218,14 @@ if [[ "$seen_path" == false ]]; then
 	exit 0
 fi
 if [[ "$everything" == true ]]; then
-	# "all" turns on every group except m2_gates and wav_sweep, which
-	# gate_input and sweep_input decide.
+	# "all" turns on every group except m2_gates, wav_sweep and lane_stress,
+	# which gate_input, sweep_input and lane_input decide.
 	selected=()
 	for group in "${groups[@]}"; do
-		if [[ "$group" != m2_gates && "$group" != wav_sweep ]]; then selected+=("$group"); fi
+		if [[ "$group" != m2_gates && "$group" != wav_sweep && "$group" != lane_stress ]]; then selected+=("$group"); fi
 	done
 fi
 if [[ "$gates" == true ]]; then selected+=(m2_gates); fi
 if [[ "$sweep" == true ]]; then selected+=(wav_sweep); fi
+if [[ "$lanes" == true ]]; then selected+=(lane_stress); fi
 emit "${selected[@]}"

@@ -47,9 +47,10 @@ test: test-build-tools
 .PHONY: test-ci-core test-cmd-shard test-cmd-shard-check
 
 # CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
-# target covers every other package. `make test` still runs everything.
+# target covers every other package. It skips TestRenderPathsAgree, which CI
+# runs in its own job (make test-render-paths). `make test` still runs everything.
 test-ci-core: test-build-tools
-	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
+	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -skip '^TestRenderPathsAgree$$' -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -139,6 +140,17 @@ test-flush-identity:
 .PHONY: agent-front-door
 agent-front-door:
 	CICADA_UPDATE_AGENT_FRONT_DOOR=1 CICADA_LLMS_FULL_OUT=$(CURDIR)/llms-full.txt go test ./internal/agentguide -run '^(TestAgentFrontDoorIsCurrent|TestLLMsFullFitsItsBudget)$$' -count=1
+
+# The two render paths (the direct mixer and the scheduled engine) must play the
+# same notes and write the same float32 bytes at 44.1 kHz (TestRenderPathsAgree;
+# CI job "M0 render paths agree"). The audio target compares whole songs at
+# 48 kHz and only reports (nightly).
+.PHONY: test-render-paths test-render-paths-audio
+test-render-paths:
+	go test ./render -run '^TestRenderPathsAgree$$' -count=1 -v
+
+test-render-paths-audio:
+	CICADA_PATHS_AUDIO=full go test ./render -run '^TestRenderPathsAudio$$' -count=1 -timeout=60m -v
 
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
@@ -351,6 +363,39 @@ test-timing:
 
 test-golden:
 	go run ./cmd/cicada golden
+
+# Renders every example score with --jobs 1 and with 2, 4, 8 and the automatic
+# job count, plain and at -14 LUFS, and compares the bytes (render lanes).
+.PHONY: test-parallel-identity
+test-parallel-identity:
+	CICADA_PARALLEL_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=1 -timeout=110m -v
+
+# Runs the render lanes under the race detector with the lanestress hook. At
+# each hand-off point of the lane protocol the hook sleeps 1 ms (five times a
+# lane's spin window) at about 1 in 32 hand-offs and yields at about 1 in 4 of
+# the rest, chosen by a hash of the seed and the hand-off (site, segment,
+# lane, chunk), with no state shared between goroutines. Each test binary
+# prints its seed; CICADA_LANE_STRESS_SEED=<seed> gives every hand-off the same
+# delay again. It runs the forced-lane tests and the identity subset with every
+# segment on every lane, once per GOMAXPROCS value in LANE_STRESS_PROCS ("all"
+# is every CPU), so the job counts 4 and 8 exceed the processors.
+# LANE_STRESS_COUNT repeats the quick sets (renderlanes, render) and
+# LANE_STRESS_HEAVY_COUNT the slow ones (the engine tests, the identity subset).
+# The nightly CI job runs 10 and 10 at 2, 3 and all; pull requests that touch
+# the lanes run LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1.
+LANE_STRESS_PROCS ?= 2 3 all
+LANE_STRESS_COUNT ?= 10
+LANE_STRESS_HEAVY_COUNT ?= 10
+.PHONY: test-lane-stress
+test-lane-stress:
+	@set -e; for procs in $(LANE_STRESS_PROCS); do \
+		if [ "$$procs" = all ]; then run="env -u GOMAXPROCS"; else run="env GOMAXPROCS=$$procs"; fi; \
+		echo "== lane stress: GOMAXPROCS $$procs, -count=$(LANE_STRESS_COUNT), heavy -count=$(LANE_STRESS_HEAVY_COUNT)"; \
+		$$run go test -race -tags lanestress ./internal/renderlanes -run '^Test(RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)$$' -count=$(LANE_STRESS_COUNT) -timeout=30m -v; \
+		$$run go test -race -tags lanestress ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=$(LANE_STRESS_COUNT) -timeout=30m -v; \
+		$$run go test -race -tags lanestress ./kernel/engine -run '^TestOfflineParallel' -count=$(LANE_STRESS_HEAVY_COUNT) -timeout=60m -v; \
+		$$run CICADA_PARALLEL_IDENTITY_STRESS=1 go test -race -tags lanestress ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=$(LANE_STRESS_HEAVY_COUNT) -timeout=100m -v; \
+	done
 
 test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
