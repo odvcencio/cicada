@@ -9,9 +9,9 @@ const waltzHeader = "cicada 2\ntempo 132\nmeter 3/4\n"
 
 func TestMeterDeclarationSetsTheScoreMap(t *testing.T) {
 	for _, c := range []struct {
-		source        string
-		beats, unit   int64
-		groups        string
+		source         string
+		beats, unit    int64
+		groups         string
 		barTicks, beat int64
 	}{
 		{waltzHeader + "track bass acid {}\npattern oom { step = 1/4 c2 g2 g2 }\nscene a { bass = oom }\nsong { a*16 }\n", 3, 4, "", 2880, 960},

@@ -20,5 +20,6 @@ func init() {
 	declareReasons("rename", "invalid_name", "name_ambiguous", "name_taken", "name_unchanged", "rename_incomplete", "score_invalid", "unknown_entity", "unknown_pattern", "unknown_scene", "unknown_track")
 	declareReasons("setautomationpoint", "invalid_value", "value_out_of_range")
 	declareReasons("setparam", "convolution_needs_asset", "declared_in_other_file", "edition_upgrade_needed", "effect_is_return", "effect_route", "effect_single_instance", "insert_anchor_ambiguous", "insert_chain_full", "insert_position_conflict", "invalid_name", "invalid_value", "music_insert_taken", "name_taken", "settings_invalid", "sidechain_unavailable", "unknown_asset", "unknown_effect_kind", "unknown_insert_anchor", "unknown_insert_target", "unknown_setting", "unknown_sidechain_track", "value_out_of_range")
+	declareReasons("setprojectsettings", "invalid_meter")
 	declareReasons("setscenesetting", "invalid_value", "value_out_of_range")
 }

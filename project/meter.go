@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/notation"
 )
 
 // Meter is the song's time signature: Numerator beats of a 1/Denominator
@@ -71,4 +72,33 @@ func (p *Project) SongEndTick() int64 {
 		bars += int64(entry.Bars)
 	}
 	return p.MeterMap().BarStart(bars)
+}
+
+// meterWarnings notes each pattern that does not fill whole bars of the
+// declared meter: it still plays, crossing bar lines. A song without a meter
+// declaration gets none, so check reports nothing new for it.
+func meterWarnings(p *Project, score *notation.Score) []notation.Diagnostic {
+	if p == nil || score == nil || score.Meter == nil {
+		return nil
+	}
+	bar := p.MeterMap().BarTicks(0)
+	positions := map[string]notation.Position{}
+	for _, pattern := range score.Patterns {
+		positions[pattern.Name] = pattern.Position
+	}
+	var out []notation.Diagnostic
+	for _, pattern := range p.Patterns {
+		length := int64(pattern.Steps) * int64(pattern.StepTicks)
+		if pattern.StepTicks == 0 {
+			length = int64(pattern.Steps) * seq.TicksPerStep
+		}
+		if pattern.Performance != nil {
+			length = pattern.Performance.LengthTicks
+		}
+		if length%bar != 0 {
+			out = append(out, notation.Diagnostic{Code: "CICADA-METER", Severity: "warning", Position: positions[pattern.ID],
+				Message: fmt.Sprintf("pattern %s lasts %d ticks; a %s bar lasts %d, so it crosses bar lines", pattern.ID, length, fmt.Sprintf("%d/%d", score.Meter.Beats, score.Meter.Unit), bar)})
+		}
+	}
+	return out
 }

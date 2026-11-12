@@ -39,9 +39,10 @@ func (m Meter) BarTicks() int64 { return m.Beats * (seq.TicksPerWhole / m.Unit) 
 // invalid one, which Validate reports.
 func (s *Score) MeterMap() seq.MeterMap { return s.meterMap }
 
-// parseMeter reads a meter declaration's fraction and beat groups. It returns
-// a diagnostic message and code for the first problem.
-func parseMeter(fraction, groups string) (Meter, string, string) {
+// ParseMeter reads a meter's fraction and beat groups, as a meter declaration
+// writes them ("7/8", "2+2+3"). It returns a diagnostic code and message for
+// the first problem.
+func ParseMeter(fraction, groups string) (Meter, string, string) {
 	var m Meter
 	numerator, denominator, ok := strings.Cut(fraction, "/")
 	beats, err1 := strconv.ParseInt(numerator, 10, 64)

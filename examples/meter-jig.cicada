@@ -1,0 +1,8 @@
+cicada 2
+title "Jig"
+tempo 120
+meter 6/8
+track lead acid { level = -18dB cutoff = 1200Hz }
+pattern jig { step = 1/8 c3 eb3 g3 c4 g3 eb3 }
+scene a { lead = jig }
+song { a*8 }

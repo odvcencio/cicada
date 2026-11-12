@@ -230,7 +230,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.TempoMilli = parseMilli(value)
 				s.TempoPosition = w.position(n)
 			case "meter_decl":
-				m, code, message := parseMeter(w.Text(w.Field(n, "meter")), w.Text(w.Field(n, "groups")))
+				m, code, message := ParseMeter(w.Text(w.Field(n, "meter")), w.Text(w.Field(n, "groups")))
 				if code != "" {
 					diagnostics = append(diagnostics, Diagnostic{Code: code, Severity: "error", Message: message, Position: w.position(n)})
 				} else if s.Meter == nil {

@@ -11,14 +11,17 @@ import (
 )
 
 // SetProjectSettings sets the score's title, tempo, key root and scale
-// together.
+// together, and its meter when Meter is given. A meter change rewrites the
+// declaration only; it is refused when a position no longer fits its bar.
 //
 // Example: {"kind":"setprojectsettings","title":"Intent catalog","tempomilli":124000,"root":"a","scale":"minor"}
+// Example: {"kind":"setprojectsettings","title":"Waltz","tempomilli":132000,"root":"a","scale":"minor","meter":"3/4"}
 type SetProjectSettings struct {
 	Title      string `json:"title" cicada:"required"`                       // 1–256 characters
 	TempoMilli int    `json:"tempomilli" unit:"0.001 BPM" cicada:"required"` // tempo in thousandths of a BPM, 20000–300000
 	Root       string `json:"root" values:"root" cicada:"required"`          // key root
 	Scale      string `json:"scale" values:"scale" cicada:"required"`        // scale
+	Meter      string `json:"meter,omitempty"`                               // N/D with optional beat groups, such as 3/4 or 7/8 2+2+3; empty keeps the meter
 }
 
 func (SetProjectSettings) Kind() string { return "setprojectsettings" }
@@ -38,7 +41,11 @@ func init() {
 			return err
 		}
 		ctx.Source, ctx.plan = updated, nil
-		ctx.SetLabel("Project title, tempo, and key changed")
+		label := "Project title, tempo, and key changed"
+		if intent.(*SetProjectSettings).Meter != "" {
+			label = "Project title, tempo, key, and meter changed"
+		}
+		ctx.SetLabel(label)
 		return nil
 	})
 }
@@ -69,6 +76,14 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 	if rootIndex < 0 || !validScale {
 		return nil, fmt.Errorf("choose a supported key and scale")
 	}
+	var meter notation.Meter
+	if settings.Meter != "" {
+		fraction, groups, _ := strings.Cut(strings.TrimSpace(settings.Meter), " ")
+		var code, message string
+		if meter, code, message = notation.ParseMeter(fraction, strings.TrimSpace(groups)); code != "" {
+			return nil, &ReasonError{Reason: "invalid_meter", Field: "meter", Message: message}
+		}
+	}
 	score, ds := ctx.Parse()
 	if score == nil || hasErrors(ds) {
 		return nil, fmt.Errorf("score must validate before changing its settings")
@@ -85,6 +100,9 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 		"title_decl": "title " + strconv.Quote(settings.Title),
 		"tempo_decl": "tempo " + strconv.FormatFloat(float64(settings.TempoMilli)/1000, 'f', -1, 64),
 		"key_decl":   "key " + settings.Root + " " + settings.Scale,
+	}
+	if settings.Meter != "" {
+		missing["meter_decl"] = "meter " + meter.String()
 	}
 	var edits []Span
 	at := len(source)
@@ -115,6 +133,10 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 					}
 				}
 			}
+		case "meter_decl":
+			if score.Meter == nil || score.Meter.String() != meter.String() {
+				edits = append(edits, Span{int(node.StartByte()), int(node.EndByte()), "meter " + meter.String(), ctx.Options.Path})
+			}
 		case "key_decl":
 			if uint8(rootIndex) != semantic.KeyRoot {
 				value := walker.Field(node, "root")
@@ -131,7 +153,7 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 		newline = "\r\n"
 	}
 	var declarations []string
-	for _, kind := range []string{"title_decl", "tempo_decl", "key_decl"} {
+	for _, kind := range []string{"title_decl", "tempo_decl", "key_decl", "meter_decl"} {
 		if text, ok := missing[kind]; ok {
 			declarations = append(declarations, text)
 		}
