@@ -13,6 +13,8 @@ import (
 // so the digest is the same on amd64, arm64 and WebAssembly and runs on every
 // target. (Until 2026-11-10 it called the math library, whose
 // last bits differ on arm64 and WebAssembly, and was pinned on amd64 only.)
+// It moved on 2026-11-11 in #343, from 0ac013059d10…: TanhNear changes the
+// amp's float64 state, while its float32 output (ampcabOutputDigest) is unchanged.
 const ampcabDigest = "7b2999b557c5848120a298294676cea240f43400528b13af602051c8f637bdec"
 
 func TestAmpcabDigest(t *testing.T) {
