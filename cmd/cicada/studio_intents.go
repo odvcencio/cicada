@@ -250,9 +250,6 @@ func intentErrorResponse(err error) map[string]any {
 		if len(reason.Uses) > 0 {
 			response["uses"] = reason.Uses
 		}
-		if reason.Hunk != nil {
-			response["hunk"] = reason.Hunk
-		}
 	}
 	return response
 }

@@ -27,7 +27,6 @@ type ReasonError struct {
 	Uses    []string
 	File    string
 	Range   *ValueRange
-	Hunk    *HunkRefusal // the hunk a patchtext refusal is about
 }
 
 // ValueRange is a parameter's accepted range and the value given outside it.
