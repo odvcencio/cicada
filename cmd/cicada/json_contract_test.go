@@ -147,6 +147,51 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 			status := exit(applyCommandWithHooks([]string{"--json"}, &stdout, nil))
 			return outcome{stdout.Bytes(), status}
 		},
+		"params with no match": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(paramsCommand([]string{"--json", "nosuch"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"params usage": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(paramsCommand([]string{"--json", "--bogus"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"params with an unknown scope": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(paramsCommand([]string{"--json", "--scope", "nosuch"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"params with a voice that is an effect": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(paramsCommand([]string{"--json", "--voice", "delay"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"explain an unknown name": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(explainCommand([]string{"nosuch", "--json"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"explain an unknown track": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(explainCommand([]string{"track:nosuch", "song.cicada", "--json"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"explain a track of a missing score": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(explainCommand([]string{"track:bass", "missing.cicada", "--json"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"explain usage": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(explainCommand([]string{"--json"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"explain probe of a mixer control": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(explainCommand([]string{"mix.pan", "--probe", "--json"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
 		"agents usage": func() outcome {
 			var stdout bytes.Buffer
 			status := agentsCommand([]string{"--json", "--bogus"}, &stdout, &bytes.Buffer{})
@@ -162,20 +207,29 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 		code   string
 		status int
 	}{
-		"check usage":                   {"usage", 1},
-		"intents unknown kind":          {"unknown_kind", 1},
-		"intents usage":                 {"usage", 1},
-		"diagnostics unknown code":      {"unknown_code", 1},
-		"help unknown command":          {"unknown_command", 2},
-		"render without a score":        {"usage", 2},
-		"render without -o":             {"usage", 2},
-		"stems with a loudness target":  {"usage", 2},
-		"stems into an existing folder": {"output_exists", 1},
-		"audition of an invalid score":  {"invalid_score", 1},
-		"audition usage":                {"usage", 1},
-		"apply usage":                   {"usage", 1},
-		"agents usage":                  {"usage", 2},
-		"intents index with a kind":     {"usage", 1},
+		"check usage":                           {"usage", 1},
+		"intents unknown kind":                  {"unknown_kind", 1},
+		"intents usage":                         {"usage", 1},
+		"diagnostics unknown code":              {"unknown_code", 1},
+		"help unknown command":                  {"unknown_command", 2},
+		"render without a score":                {"usage", 2},
+		"render without -o":                     {"usage", 2},
+		"stems with a loudness target":          {"usage", 2},
+		"stems into an existing folder":         {"output_exists", 1},
+		"audition of an invalid score":          {"invalid_score", 1},
+		"audition usage":                        {"usage", 1},
+		"apply usage":                           {"usage", 1},
+		"params with no match":                  {"no_match", 1},
+		"params usage":                          {"usage", 1},
+		"params with an unknown scope":          {"usage", 1},
+		"params with a voice that is an effect": {"no_match", 1},
+		"explain an unknown name":               {"unknown_thing", 1},
+		"explain an unknown track":              {"unknown_track", 1},
+		"explain a track of a missing score":    {"unreadable_score", 1},
+		"explain usage":                         {"usage", 1},
+		"explain probe of a mixer control":      {"not_probeable", 1},
+		"agents usage":                          {"usage", 2},
+		"intents index with a kind":             {"usage", 1},
 	}
 	for name, command := range run {
 		got := command()
@@ -420,6 +474,14 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		checkSchema:        func() any { return &checkDocument{} },
 		applySchema:        func() any { return &applyDocument{} },
 		renderSchema:       func() any { return &renderDocument{} },
+		paramsSchema:       func() any { return &paramsDocument{} },
+		paramsIndexSchema:  func() any { return &paramsIndexDocument{} },
+	}
+	// cicada.explain.v1 has one shape for each kind of thing explained.
+	explainKinds := map[string]func() any{
+		"control": func() any { return &explainControlDocument{} },
+		"owner":   func() any { return &explainOwnerDocument{} },
+		"track":   func() any { return &explainTrackDocument{} },
 	}
 	fence := strings.Repeat("`", 3)
 	lines := strings.Split(string(data), "\n")
@@ -439,11 +501,15 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		body := []byte(strings.Join(lines[start+1:end], "\n"))
 		var header struct {
 			Schema string `json:"schema"`
+			Kind   string `json:"kind"`
 		}
 		if err := json.Unmarshal(body, &header); err != nil {
 			t.Fatalf("agents.md:%d: %v", i+1, err)
 		}
 		make, ok := formats[header.Schema]
+		if header.Schema == explainSchema {
+			make, ok = explainKinds[header.Kind]
+		}
 		if !ok {
 			t.Errorf("agents.md:%d: unknown schema %q", i+1, header.Schema)
 			continue

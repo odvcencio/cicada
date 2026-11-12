@@ -207,11 +207,14 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "params" {
-		if len(os.Args) != 2 {
-			fmt.Fprintln(os.Stderr, "usage: cicada params")
-			exitProcess(2)
+		if err := paramsCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			var coded *paramsError
+			if errors.As(err, &coded) && coded.code == "usage" {
+				exitProcess(2)
+			}
+			exitProcess(1)
 		}
-		fmt.Println(project.ParamsJSON())
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "view" {
@@ -222,24 +225,12 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "explain" {
-		args := os.Args[2:]
-		if (len(args) == 2 || len(args) == 3) && filepath.Ext(args[0]) == ".cicada" && (len(args) == 2 || len(args[2]) > 0 && args[2][0] == '@') {
-			location := ""
-			if len(args) == 3 {
-				location = args[2]
-			}
-			if err := explainParameter(args[0], args[1], location, os.Stdout); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				exitProcess(1)
-			}
-			return
-		}
-		if len(os.Args) < 3 || len(os.Args) > 4 || (len(os.Args) == 4 && os.Args[3] != "--json") {
-			fmt.Fprintln(os.Stderr, "usage: cicada explain <construct[.field]> [--json] | cicada explain <score.cicada> <path> [@bar[.beat[.step]]]")
-			exitProcess(2)
-		}
-		if err := explain(os.Stdout, os.Args[2], len(os.Args) == 4); err != nil {
+		if err := explainCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			var coded *explainError
+			if errors.As(err, &coded) && coded.code == "usage" {
+				exitProcess(2)
+			}
 			exitProcess(1)
 		}
 		return

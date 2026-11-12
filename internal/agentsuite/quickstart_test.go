@@ -544,7 +544,7 @@ func followQuickStart(t *testing.T, bin string) {
 	q.voiceClaims()
 
 	// Every command the quick start offers for looking things up answers.
-	filled := strings.NewReplacer("<kind>", "setparam", "<score>", "main.cicada", "<track>.<control>", "bass.cutoff", "<code>", "CICADA-REFERENCE", "<command>", "render")
+	filled := strings.NewReplacer("<kind>", "setparam", "<score>", "main.cicada", "<track>.<control>", "bass.cutoff", "<code>", "CICADA-REFERENCE", "<command>", "render", "<voice>", "acid")
 	for _, lookup := range agents.Commands {
 		q.uses(lookup.Command)
 		args := strings.Fields(filled.Replace(lookup.Command))

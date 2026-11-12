@@ -13,7 +13,6 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/agentguide"
 	"m31labs.dev/cicada/internal/mcpwire"
-	"m31labs.dev/cicada/project"
 )
 
 // TestMCPToolListBudget keeps the tool list small enough to sit in a model's
@@ -113,6 +112,9 @@ func TestMCPToolsReturnTheCommandDocuments(t *testing.T) {
 	check := func(args ...string) func(io.Writer) error {
 		return func(w io.Writer) error { return checkCommand(args, w, io.Discard) }
 	}
+	params := func(args ...string) func(io.Writer) error {
+		return func(w io.Writer) error { return paramsCommand(args, w) }
+	}
 	for _, tc := range []struct {
 		tool, arguments string
 		isError         bool
@@ -139,6 +141,12 @@ func TestMCPToolsReturnTheCommandDocuments(t *testing.T) {
 		{"library", `{}`, false, func(w io.Writer) error { return libCommand([]string{"list", "--json"}, w) }},
 		{"library", `{"path":"std/drums"}`, false, func(w io.Writer) error { return libCommand([]string{"show", "std/drums", "--json"}, w) }},
 		{"library", `{"path":"nosuch/lib"}`, true, func(w io.Writer) error { return libCommand([]string{"show", "nosuch/lib", "--json"}, w) }},
+		{"params", `{}`, false, params("--json", "--index")},
+		{"params", `{"voice":"fm_bass"}`, false, params("--json", "--voice", "fm_bass")},
+		{"params", `{"voice":"fm","scope":"patch","control":"fm_ep.op2"}`, false, params("--json", "--voice", "fm", "--scope", "patch", "fm_ep.op2")},
+		{"params", `{"scope":"effect"}`, false, params("--json", "--scope", "effect")},
+		{"params", `{"voice":"delay"}`, true, params("--json", "--voice", "delay")},
+		{"params", `{"scope":"nosuch"}`, true, params("--json", "--scope", "nosuch")},
 	} {
 		document, isError := mcpDocument(t, tc.tool, tc.arguments)
 		want := commandJSON(t, tc.tool+" "+tc.arguments, tc.command)
@@ -157,14 +165,12 @@ func TestMCPToolsReturnTheCommandDocuments(t *testing.T) {
 		t.Errorf("intents of two kinds differs from the two documents of intents --json:\n%s", mustMarshal(document))
 	}
 
-	// params holds the registry cicada params prints, unchanged.
-	document, isError = mcpDocument(t, "params", `{}`)
-	var registry any
-	if err := json.Unmarshal([]byte(project.ParamsJSON()), &registry); err != nil {
-		t.Fatal(err)
+	// params without arguments is the index; with a filter, the controls.
+	if document, isError := mcpDocument(t, "params", `{}`); isError || document["schema"] != paramsIndexSchema {
+		t.Errorf("params without arguments: %v %v", isError, document["schema"])
 	}
-	if isError || document["schema"] != paramRegistrySchema || !bytes.Equal(mustMarshal(document["params"]), mustMarshal(registry)) {
-		t.Errorf("params differs from cicada params: %v %v", isError, document["schema"])
+	if document, isError := mcpDocument(t, "params", `{"voice":"fm_bass"}`); isError || document["schema"] != paramsSchema {
+		t.Errorf("params with a voice: %v %v", isError, document["schema"])
 	}
 
 	// Each resource is the text its command prints.

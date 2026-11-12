@@ -61,7 +61,7 @@ var paramsBase = [...]ParamSpec{
 	{45, "acid.drive", "drive", "track", "drive", "", "linear", "source", 0, 1, 0.2, 0.01, 5, false, false, false},
 	{46, "acid.release", "release", "track", "release", "ms", "log", "source", 5, 500, 30, 0.1, 5, false, false, false},
 	{47, "acid.slide", "slide", "track", "slide", "ms", "log", "source", 20, 200, 60, 0.1, 5, false, false, false},
-	{48, "acid.gate", "gate", "track", "gate", "", "linear", "source", 10, 100, 55, 0.01, 5, false, false, false},
+	{48, "acid.gate", "gate", "track", "gate", "", "integer", "source", 10, 100, 55, 1, 5, false, false, false},
 	{49, "acid.filter", "filter", "track", "filter", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{50, "acid.savage", "savage", "track", "savage", "", "toggle", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{51, "acid.octave", "octave", "track", "octave", "", "enum", "source", 0, 6, 2, 0.01, 0, false, false, false},

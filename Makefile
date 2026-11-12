@@ -138,7 +138,7 @@ test-render-paths-audio:
 # examples of docs/manual/agents.md and docs/manual/agent-quickstart.md too.
 .PHONY: test-agent-surface
 test-agent-surface: build-core
-	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentDocumentationExamples)$$' -count=1 -v
+	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentBrighterBassTask|TestAgentDocumentationExamples)$$' -count=1 -v
 
 # The GoSX app has its own Go 1.26 module; the realtime TinyGo core stays 1.25.
 build-workstation:
