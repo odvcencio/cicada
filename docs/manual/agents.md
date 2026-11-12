@@ -640,6 +640,14 @@ ceiling and clipped (`ceiling_count`, `clipped_count`, as `verify-wav
 --report` names them), with peaks as linear full-scale values. `cicada stems ...
 --json` lists every stem file, with `role` `stem:<file name>`.
 
+With `--normalize`, `normalize` says what it did: `applied` and the `gain_db`
+it applied. A range whose output peak is below one 24-bit step (2^-23: rests
+only, a silent track's stem, or the end of a decayed tail) is not normalized.
+The render still succeeds and writes the file at unity gain, the same bytes as
+without `--normalize`; `normalize` then has `applied` `false`, `gain_db` `0`,
+`code` `normalize_skipped_silent_range` and a `reason` that names the bars, and
+the command prints the reason as a warning.
+
 With a loudness target (`--loudness`, or `--export` with a profile that sets
 one), `loudness` gives the target and tolerance, the measured
 `integrated_lufs`, `true_peak_dbtp` and `sample_peak_dbfs`, the

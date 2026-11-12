@@ -33,6 +33,7 @@ type renderDocument struct {
 	Outputs     []renderOutputJSON      `json:"outputs"`
 	Levels      *renderLevelsJSON       `json:"levels,omitempty"`
 	Loudness    *renderLoudnessJSON     `json:"loudness,omitempty"`
+	Normalize   *renderNormalizeJSON    `json:"normalize,omitempty"`
 	Diagnostics []checkDiagnosticReport `json:"diagnostics,omitempty"`
 	Error       *renderErrorJSON        `json:"error,omitempty"`
 }
@@ -87,6 +88,34 @@ type renderLoudnessJSON struct {
 	DCCorrectionLeftFS        float64        `json:"dc_correction_left_fs"`
 	DCCorrectionRightFS       float64        `json:"dc_correction_right_fs"`
 	Notes                     []string       `json:"notes,omitempty"`
+}
+
+// renderNormalizeJSON is the result of --normalize, present when it was
+// requested. Applied is false when the range is silent (its output peak is
+// below one 24-bit step): the file is then written at gain 1, Code is
+// normalizeSkippedSilentRange and Reason says which bars. GainDB is the gain
+// applied, 0 when skipped.
+type renderNormalizeJSON struct {
+	Applied bool    `json:"applied"`
+	GainDB  float64 `json:"gain_db"`
+	Code    string  `json:"code,omitempty"`
+	Reason  string  `json:"reason,omitempty"`
+}
+
+// normalizeSkippedSilentRange is the code of a skipped peak normalization;
+// docs/manual/agents.md documents it.
+const normalizeSkippedSilentRange = "normalize_skipped_silent_range"
+
+// normalizeJSON describes --normalize for a render's report, or nil when it
+// was not requested.
+func normalizeJSON(opts render.Options, report render.Report) *renderNormalizeJSON {
+	if !opts.Normalize {
+		return nil
+	}
+	if report.NormalizeSkipped != "" {
+		return &renderNormalizeJSON{Code: normalizeSkippedSilentRange, Reason: report.NormalizeSkipped}
+	}
+	return &renderNormalizeJSON{Applied: true, GainDB: 20 * math.Log10(float64(report.NormalizeGain))}
 }
 
 // renderErrorJSON says why a render failed. Code is one of renderErrorCodes;
@@ -221,6 +250,8 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			return finish(err)
 		}
 		document.FromBar, document.Bars = report.From+1, report.Bars
+		document.Normalize = normalizeJSON(opts, report)
+		warnNormalizeSkipped(stderr, report)
 		entries, err := os.ReadDir(output)
 		if err != nil {
 			return finish(err)
@@ -274,6 +305,8 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 		return finish(err)
 	}
 	document.FromBar, document.Bars = report.From+1, report.Bars
+	document.Normalize = normalizeJSON(opts, report)
+	warnNormalizeSkipped(stderr, report)
 	document.Levels = &renderLevelsJSON{PreLimiterPeak: float64(report.Peak), PreLimiterOvers: report.PreLimiterOvers, OutputPeak: float64(report.OutputPeak), CeilingCount: report.CeilingSamples, ClippedCount: report.ClippedSamples}
 	described, err := describeWAV(output, "mix")
 	if err != nil {
