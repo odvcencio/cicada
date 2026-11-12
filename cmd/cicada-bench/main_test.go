@@ -63,6 +63,27 @@ func TestGates(t *testing.T) {
 	}
 }
 
+// TestReportSizeGate: the default audition report on the large song is gated
+// at 65,536 bytes, and a failure says where per-bar data belong.
+func TestReportSizeGate(t *testing.T) {
+	if err := validStep("audition-size:large"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		bytes int
+		pass  bool
+	}{{63790, true}, {65536, true}, {65537, false}} {
+		outcomes, passed := checkGates([]Result{{Step: "audition-size:large", ReportBytes: c.bytes}})
+		if len(outcomes) != 1 || passed != c.pass {
+			t.Fatalf("%d bytes: outcomes %+v passed %v", c.bytes, outcomes, passed)
+		}
+		text := outcomes[0].String()
+		if mentions := strings.Contains(text, "65,536 bytes") && strings.Contains(text, "--detail"); mentions == c.pass {
+			t.Errorf("%d bytes: %q", c.bytes, text)
+		}
+	}
+}
+
 func TestParseOptions(t *testing.T) {
 	o, err := parseOptions([]string{"--steps", "help, render:small", "--runs", "3", "--medium", "x.cicada"})
 	if err != nil || len(o.steps) != 2 || o.runs != 3 || o.scores["medium"] != "x.cicada" || o.scores["large"] != defaultScores["large"] {

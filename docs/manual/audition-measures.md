@@ -298,4 +298,6 @@ load average 4 to 9):
 
 The JSON stays small by default: 63.8 KB for that song, against about
 49 KB before these measures, and 439 KB with `--detail`
-([JSON schema](audition.md#json-schema)).
+([JSON schema](audition.md#json-schema)). The `audition-size:large` step of
+`cicada-bench` fails when the default report on that song passes 65,536
+bytes.
