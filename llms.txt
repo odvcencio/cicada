@@ -25,6 +25,7 @@ the full text of the pages outside Optional.
 
 - [Exporting](docs/manual/exporting.md): WAV, stems and MIDI
 - [Audition](docs/manual/audition.md): the listening report: key, chords, levels, brightness, rhythm
+- [Audition measures](docs/manual/audition-measures.md): how audition measures loudness, band owners, activity and peaks; its limits and cost
 - [Opt-in mix chain](docs/audio/mix-chain.md): track inserts, sends, master effects and loudness targets
 - [Parameter ranges](docs/manual/parameter-ranges.md): the allowed range of every voice, drum and effect setting
 

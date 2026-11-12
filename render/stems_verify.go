@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
@@ -51,6 +52,12 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		(manifest.Version == 1 && (manifest.From < 0 || manifest.From > 255)) ||
 		(manifest.Version == 2 && (manifest.From < 1 || manifest.From > 256)) || len(manifest.Tracks) < 1 || len(manifest.Tracks) > engine.MaxTracks {
 		return report, fmt.Errorf("invalid stem manifest")
+	}
+	if len(manifest.Selected) > 0 {
+		return report, fmt.Errorf("stem set holds only the tracks chosen with --tracks (%s) and no return or bus stems; verify-stems needs a full set", strings.Join(manifest.Selected, ", "))
+	}
+	if manifest.Bits != 0 {
+		return report, fmt.Errorf("stem set is %d-bit PCM; verify-stems needs float32 stems (--bits 32)", manifest.Bits)
 	}
 	from := manifest.From
 	if manifest.Version == 2 {

@@ -100,7 +100,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	}
 	var stems *stemOutput
 	if stemsDir != "" {
-		stems, err = newStemOutput(stemsDir, p, report)
+		stems, err = newStemOutput(stemsDir, p, report, opts, score.Seed)
 		if err != nil {
 			return report, err
 		}

@@ -4,18 +4,26 @@
 the music without listening. A score can pass every loudness check and still
 sound wrong: a part is too quiet to hear, the horns drone over the rhythm, or
 the mix lands in a different key than you wrote. The audition report shows
-those problems as numbers and pictures.
+those problems as numbers and pictures. It also shows what decides a mix: how
+the loudness moves from section to section, where the band drops out, which
+track owns each frequency band in each bar, and which hits set the peaks.
 
 ```sh
 cicada audition song.cicada -o audition/
 cicada audition song.cicada --from 9 --bars 8 --json
+cicada audition song.cicada --tracks bass,kick,logdrum --json
 ```
 
 | Flag | Meaning |
 | --- | --- |
-| `-o <dir>` | Write `spectrogram.png`, `chroma.png` and `rhythm.png` to the directory. Without it, no images are written. |
+| `-o <dir>` | Write `spectrogram.png`, `chroma.png`, `rhythm.png` and `energy.png` to the directory, and pages of the spectrogram and chroma when the range is wider than `--image-width` ([Reading the images](#reading-the-images)). Without it, no images are written. |
 | `--from <bar>` | One-based first bar (default 1). |
 | `--bars <n>` | Bars to analyze; 0 means through the song end. |
+| `--tracks <a,b,c>` | Analyze only these tracks and the mix, reading only their stems into memory. An unknown name fails with `unknown_track` and `valid_tracks`; an empty or repeated name with `usage`. See [Choosing tracks](#choosing-tracks). |
+| `--peaks <n>` | How many true-peak moments of the mix to list, 0 to 100 (default 3; 0 lists none). |
+| `--detail` | Add the per-bar and per-beat detail to the JSON ([JSON schema](#json-schema)). Without it the JSON keeps summaries, small enough for an agent to read whole. The text report always shows every table. |
+| `--no-bands` | Skip band ownership, about an eighth of the audition's CPU time (see [Cost](audition-measures.md#cost)). The band fields are then absent. |
+| `--image-width <px>` | Widest picture in pixels (default 1600; at least 200). 0 keeps one full-resolution strip of each picture, as before. |
 | `--json` | Print the report as JSON instead of text. |
 | `--max-resident-pcm <size>` | Cap on the decoded audio of the score's sampler packs, such as `2GiB` (default 1 GiB). `CICADA_MAX_RESIDENT_PCM` sets it when the flag is omitted. A score over the cap is refused before any pack is read. |
 | `--jobs auto\|<n>` | Render lanes for the stems render: tracks synthesized at once. Without it the render is serial; `auto` picks the smaller of 4 and half the CPUs. Every value gives the same stems and the same report; see [render lanes](../cli.md#render-lanes). |
@@ -25,7 +33,8 @@ engine as `cicada render` and `cicada stems`, with no tail. The same score and
 options give the same report and the same image bytes. Levels and spectra
 combine the left and right channels by power, so opposite-polarity stereo is
 measured at its true level instead of cancelling. It needs no extra tools.
-Rendering takes about as long as `cicada render`.
+Rendering takes about as long as `cicada render`; the measures add a few
+seconds for a whole song (see [Cost](audition-measures.md#cost)).
 
 ## Reading the text report
 
@@ -115,20 +124,50 @@ section. The range chosen with `--from` and `--bars` clips the first and last
 section. A track is in a section when its stem sounds there or it played
 notes there, so audio clips, samplers and sustained tails are listed.
 
+**Energy, band owners, activity and peaks** follow; [Audition
+measures](audition-measures.md) gives their methods and limits. *Energy*: the
+mix's BS.1770-4 loudness over the range, per section, and per bar (the 3 s
+window ending at the bar line). *Band owners*: per bar, in seven bands from
+20 Hz to 20 kHz, the track with the largest share of the band's energy, its
+share and the band's level (`kick 64* -38`; `*`: two tracks each over 25%).
+*Activity*: where each track sounds (within 30 dB of its loudest bar), bars
+that repeat the bar before or four before, and the mix's silences. *Peaks*:
+the highest true peaks, each split into the signed parts of the track stems
+and effect returns entering the master chain.
+
 ## Reading the images
 
-All three images are the mix, left to right in time. A vertical line marks each
-bar; every fourth bar (bars 4, 8, ...) is brighter.
+The images run left to right in time. A vertical line marks each bar; every
+fourth bar (bars 4, 8, ...) is brighter.
 
-- `spectrogram.png`: frequency from 40 Hz (bottom) to 12 kHz (top) on a log
-  scale, color from dark (quiet) to yellow (loud) over a 70 dB range. Kick
-  drums show as bright low stripes, hats as noise at the top, held notes as
-  horizontal lines.
-- `chroma.png`: the pitched stems (not the full mix); the 12 pitch classes (C at the bottom, B at the top), one
-  column per sixteenth note. A chord shows as the same few rows lit together.
-  If your written notes are not lit, they are not audible.
+- `spectrogram.png`: the mix, frequency from 20 Hz (bottom) to 20 kHz (top) on
+  a log scale, color from dark (quiet) to yellow (loud) over a 70 dB range. The
+  bar number is printed at the top of each bar line (where there is room) and
+  the frequency at the left edge (30, 50, 100, 200, 500, 1k, 2k, 5k and 10k
+  Hz). Kick drums show as bright low stripes, hats as noise at the top, held
+  notes as horizontal lines. One column is 1,024 samples (21 ms at 48 kHz).
+  Below about 100 Hz the rows fall between the FFT's 11.7 Hz bins and are
+  interpolated, so the picture shows where low energy is but cannot tell 35 Hz
+  from 45 Hz; the band table is the measurement.
+- `chroma.png`: the pitched stems (not the full mix); the 12 pitch classes (C
+  at the bottom, B at the top), three pixels per sixteenth note. A chord shows
+  as the same few rows lit together. If your written notes are not lit, they
+  are not audible.
 - `rhythm.png`: one row per sounding track (in track order), 16 cells per row,
-  the same data as the step columns.
+  the same data as the step columns. It has no time axis, so the width cap
+  does not apply.
+- `energy.png`: the short-term loudness of the mix every 100 ms (white),
+  drawn where each 3 s window ends; a white line and the bar number at each
+  section start; each section's integrated loudness as an orange segment; grid
+  lines every 6 LU, labelled in LUFS at the right edge.
+
+No picture is wider than `--image-width` (1,600 pixels by default; an agent's
+image input is scaled to about 1,568 pixels). When the range does not fit,
+`spectrogram.png` and `chroma.png` show it averaged in time, and the range is
+also cut into pages of 32, 16, 8, 4, 2 or 1 whole bars at full resolution,
+named by their bars (`spectrogram-bars-001-008.png`). A short excerpt that
+fits writes the same four files as before. The JSON `pictures` list names
+every file with its bar range.
 
 ## Worked example
 
@@ -172,6 +211,18 @@ over the short ones, which sounds like a drone instead of a skank. In the skank
 above, `decay20` is about 50 to 60 ms for the guitar and organ, and the kit's
 `> 483` means its median sound is still sounding when the next one arrives.
 
+## Choosing tracks
+
+`--tracks bass,kick` renders the whole song (every track plays) but reads
+only the named stems. The fields that describe tracks then cover only those
+tracks: `tracks[]`, each section's `tracks`, the energy and band shares,
+`level_vs_loudest_db`, the swing groups, and the chords and keys. The mix
+measures (`mix_rms_dbfs`, `audibility_db`, loudness, silences, peak levels)
+are those of the whole mix; a peak's parts list the chosen tracks and the
+returns, and `pre_master_rest_pct` holds the others. `selected_tracks` lists
+the chosen tracks. `cicada stems --tracks` writes the chosen stems and
+`master.wav`, each the same as in a full set.
+
 ## JSON schema
 
 `--json` prints one object. Field names are stable within the `format` value
@@ -198,11 +249,47 @@ decimals. Levels below the floor read -120.
 | `harmony_mismatches` | number | Count of bars with `match` `disagree`. |
 | `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero, including `energy_share_pct`, and the silent track is left out of the other tracks' shares), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `active_bars` (bars where the track plays or sounds), `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
 | `sections[]` | array | `name`, `tempo_bpm` (tempo at the section start), `from_bar` (bar holding the first tick, one-based), `to_bar` (bar holding the last tick, inclusive), `from_tick`, `to_tick` (absolute ticks, end exclusive), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |
-| `images[]` | array | File names written to `-o`. Omitted without `-o`. |
+| `images[]` | array | `spectrogram.png`, `chroma.png` and `rhythm.png` when `-o` is given, as before; the other files are in `pictures`. Omitted without `-o`. |
+
+The fields below were added within `cicada.audition/1`; the fields above keep
+their values. Loudness values are LUFS or LU rounded to 0.1; dB levels are
+floored at -120; null means the method cannot give a value.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `tracks[].sounding_spans[]` | array | The runs of consecutive bars where the track sounds (the activity rule above), first first: `from_bar` and `to_bar`, one-based and inclusive. A gap between two runs is a drop-out of that track; the first `from_bar` is its entrance. Empty for a track that never sounds. |
+| `tracks[].note_bars`, `same_as_previous_bar`, `same_as_four_bars_before`, `longest_same_run` | number | Bars where the track starts a note; of those, bars whose played notes equal the bar before, and the bar four before; the longest stretch of identical consecutive bars (0 when no bar equals the one before). |
+| `sections[].integrated_lufs`, `loudness_range_lu`, `vs_loudest_lu` | number or null | The section's integrated loudness and loudness range (null under 3 s), from a meter started at the section start, and its integrated loudness minus the loudest section's. |
+| `sections[].band_owners` | array | The owner of each band over the section, in band order; null where the band is quiet. Absent with `--no-bands`. |
+| `selected_tracks` | array | Tracks chosen with `--tracks`, in score order. Absent without it. |
+| `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu` (null under 3 s), `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`; `loudest_section`, `quietest_section` and their `_index` (from 0 in `sections[]`: names can repeat); `section_spread_lu`; and `short_term_per_bar_lufs`, the 3 s window that ends at each bar line (null in the first 3 s). Absent at a rate the meter does not support. |
+| `bands` | object | Absent with `--no-bands`. `names`, `edges_hz`, the rules (`collision_share_pct` 25, `quiet_below_band_db` 30, `quiet_below_span_db` 30, `quiet_below_range_db` 40), and `collisions[]`: per band, `band` and `pairs` (`tracks`, two in score order, and `bar_count`), most frequent first. |
+| `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
+| `peaks[]` | array | Highest true peaks first (3 by default): `rank`, `at` (position of the mix's largest sample in the peak), `true_peak_dbtp`, `sample_peak_dbfs`, `channel`; `pre_master_sample`, the signed sum there of every track stem and both effect returns before the master chain (full scale 1); `pre_master_parts[]` (`id`, `kind` `track` or `return`, `sample`, `signed_share_pct`: `sample` over `pre_master_sample` in percent, negative when it lowers the peak), at least 2% each, at most five; and `pre_master_rest_pct`, so the parts and rest add up to 100. |
+| `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width` and `height` in pixels, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
+
+`--detail` adds the detail behind those summaries: `bars[].sample_peak_dbfs`,
+`sounding` and `bands`; `tracks[].bands_db`, `bar_level_db`, `sounding`,
+`bar_bands_db` and `section_bands_db`; `sections[].true_peak_dbtp`,
+`band_collision_bars` and `bands`; `bands.collisions[].bars`; and
+`loudness.short_term_per_beat_lufs`. [Audition measures](audition-measures.md#detail-fields)
+describes each.
+
+The default report on the 181-second, twelve-track reference song
+`examples/songs/anywhere-you-are.cicada` is 63.8 KB (63,790 bytes); `--detail` makes it
+439 KB. The fields that were there before these measures are about 49 KB of it.
+
+A position (`at`, `start`, `end`) has `text` (`bar.beat.sixteenth`, as an
+`@` placement position), `bar`, `beat` and `sixteenth` (one-based song
+positions on the song's meter; the sixteenth is counted within its beat), `tick` (absolute, 960 per quarter note) and `time_s` (seconds from
+the start of the analyzed range).
 
 ## Limits
 
 The measures are heuristics from the rendered audio, not a transcription.
+
+The added measures' limits are in [Audition measures](audition-measures.md#limits).
+
 Note starts come from spectral flux and miss soft notes under loud ones.
 `decay20` stops at the next detected attack, so a very dense part reports a
 short gap. Written chords use onsets only: a note held from an earlier bar does

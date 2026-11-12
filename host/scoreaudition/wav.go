@@ -3,6 +3,7 @@ package scoreaudition
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 )
@@ -59,4 +60,63 @@ func readFloatWAV(path string) (sig stereo, rate int, err error) {
 		}
 	}
 	return sig, rate, nil
+}
+
+// readFloatWAVFrames reads a float32 WAV's samples at a few frames without
+// loading the file: [frame][channel], zero past the end. A mono file gives
+// both channels the same sample.
+func readFloatWAVFrames(path string, frames []int) ([][2]float64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var head [12]byte
+	if _, err := io.ReadFull(f, head[:]); err != nil || string(head[:4]) != "RIFF" || string(head[8:12]) != "WAVE" {
+		return nil, fmt.Errorf("%s: not a WAV file", path)
+	}
+	var tag, channels, bits uint16
+	var dataAt, dataSize int64
+	for pos := int64(12); dataAt == 0; {
+		var chunk [8]byte
+		if _, err := f.ReadAt(chunk[:], pos); err != nil {
+			return nil, fmt.Errorf("%s: no data chunk", path)
+		}
+		id, size := string(chunk[:4]), int64(binary.LittleEndian.Uint32(chunk[4:8]))
+		switch id {
+		case "fmt ":
+			var body [16]byte
+			if size < 16 {
+				return nil, fmt.Errorf("%s: short fmt chunk", path)
+			}
+			if _, err := f.ReadAt(body[:], pos+8); err != nil {
+				return nil, err
+			}
+			tag, channels, bits = binary.LittleEndian.Uint16(body[0:2]), binary.LittleEndian.Uint16(body[2:4]), binary.LittleEndian.Uint16(body[14:16])
+		case "data":
+			dataAt, dataSize = pos+8, size
+		}
+		pos += 8 + size + size&1
+	}
+	if tag != 3 || bits != 32 || channels < 1 {
+		return nil, fmt.Errorf("%s: expected float32 WAV", path)
+	}
+	stride := int64(channels) * 4
+	out := make([][2]float64, len(frames))
+	buf := make([]byte, stride)
+	for i, frame := range frames {
+		at := int64(frame) * stride
+		if frame < 0 || at+stride > dataSize {
+			continue
+		}
+		if _, err := f.ReadAt(buf, dataAt+at); err != nil {
+			return nil, err
+		}
+		out[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[0:4])))
+		out[i][1] = out[i][0]
+		if channels > 1 {
+			out[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[4:8])))
+		}
+	}
+	return out, nil
 }

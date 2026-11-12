@@ -69,6 +69,14 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// StemTracks, when not empty, limits Stems to these tracks' stem files
+	// and master.wav. It chooses files only: every track still plays, so the
+	// audio of each written file is the same as in a full stem set.
+	StemTracks []string
+	// StemBuses, with StemTracks, still writes return-a, return-b, music and
+	// sfx, so a reader can attribute the pre-master mix to the chosen tracks
+	// and everything else. It chooses files only.
+	StemBuses bool
 	// Jobs is the most render lanes, goroutines that synthesize tracks at the
 	// same time, that the render may use. Zero, the default, and 1 render
 	// serially: a caller that does not ask for lanes gets none. AutoJobs
@@ -692,7 +700,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var stems *stemOutput
 	if stemsDir != "" {
-		stems, err = newStemOutput(stemsDir, semantic, report)
+		stems, err = newStemOutput(stemsDir, semantic, report, opts, score.Seed)
 		if err != nil {
 			return report, err
 		}

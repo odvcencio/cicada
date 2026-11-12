@@ -410,7 +410,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			exitProcess(1)
 		}
-		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz, %s\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate, laneSummary(report.LaneReport))
+		count := len(score.Tracks) + 5
+		if len(renderOptions.StemTracks) > 0 {
+			count = len(renderOptions.StemTracks) + 1
+		}
+		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz, %s\n", renderPath, count, report.Bars, report.From+1, report.Frames, report.SampleRate, laneSummary(report.LaneReport))
 		warnNormalizeSkipped(os.Stderr, report)
 	case "midi":
 		midiOpts.libraryAliases = score.LibraryAliases
@@ -478,7 +482,7 @@ func usage() {
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
 		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5 --max-resident-pcm 1GiB] | "+
-		"stems <file.cicada> -o <dir> [--rate 48000 --from 1 --bars 16 --tail 3s --max-resident-pcm 1GiB] | audition <file.cicada> [-o <dir> --from 1 --bars 16 --json --max-resident-pcm 1GiB] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
+		"stems <file.cicada> -o <dir> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --tracks a,b --max-resident-pcm 1GiB] | audition <file.cicada> [-o <dir> --from 1 --bars 16 --tracks a,b --peaks 3 --detail --no-bands --image-width 1600 --json --max-resident-pcm 1GiB] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
 		"director <file.cicada> -o <director.json> [--rate 48000] | midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
@@ -1385,6 +1389,11 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badCap.err)
 		exitProcess(2)
 	}
+	var badList *trackListArgError
+	if errors.As(err, &badList) {
+		fmt.Fprintf(os.Stderr, "cicada: --tracks: %v\n", badList.err)
+		exitProcess(2)
+	}
 	var badJobs *jobsArgError
 	if errors.As(err, &badJobs) {
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badJobs)
@@ -1398,6 +1407,11 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 
 // residentPCMArgError is a bad --max-resident-pcm value.
 type residentPCMArgError struct{ err error }
+
+// trackListArgError is a --tracks list with an empty or repeated name.
+type trackListArgError struct{ err error }
+
+func (e *trackListArgError) Error() string { return "--tracks: " + e.err.Error() }
 
 func (e *residentPCMArgError) Error() string { return e.err.Error() }
 
@@ -1428,9 +1442,15 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 	truePeak := flags.Float64("true-peak-max", -1, "maximum true peak in dBTP for loudness rendering")
 	loudnessTolerance := flags.Float64("loudness-tolerance", 0.5, "loudness target tolerance in LU")
 	exportName := flags.String("export", "", "named export settings block")
+	tracks := flags.String("tracks", "", "stems only: write only these tracks' stems and master.wav")
 	jobsText := flags.String("jobs", "", "render lanes: auto or a count; absent renders serially")
-	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits != 32 && *tracks != "") {
 		return "", render.Options{}, nil, errUsage
+	}
+	// An empty or repeated name is a malformed list, a usage error; an
+	// unknown name is found against the score when it renders.
+	if err := render.CheckTrackNames(splitTrackList(*tracks), splitTrackList(*tracks)); err != nil {
+		return "", render.Options{}, nil, &trackListArgError{err}
 	}
 	jobs, err := parseJobs(*jobsText)
 	if err != nil {
@@ -1484,7 +1504,7 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM, Jobs: jobs}, target, nil
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM, Jobs: jobs, StemTracks: splitTrackList(*tracks)}, target, nil
 }
 
 func verifyWAVCommand(args []string) {

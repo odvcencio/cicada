@@ -78,7 +78,195 @@ func (r *Report) WriteText(w io.Writer) {
 	for _, s := range r.Sections {
 		fmt.Fprintf(w, "  %-12s bars %d-%d  %g BPM  %6.1f dBFS  bright %5.0f Hz  %5.2f onsets/bar  %s\n", s.Name, s.FromBar, s.ToBar, s.TempoBPM, s.RMSdBFS, s.CentroidHz, s.OnsetsPerBar, strings.Join(s.Tracks, " "))
 	}
+	r.writeEnergy(w)
+	r.writeBands(w)
+	r.writeActivity(w)
+	r.writePeaks(w)
 	if len(r.Images) > 0 {
 		fmt.Fprintf(w, "\nimages: %s\n", strings.Join(r.Images, ", "))
+	}
+	if len(r.Pictures) > len(r.Images) {
+		var more []string
+		for _, p := range r.Pictures[len(r.Images):] {
+			more = append(more, p.File)
+		}
+		fmt.Fprintf(w, "more pictures: %s\n", strings.Join(more, ", "))
+	}
+}
+
+func lufsText(v *float64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f", *v)
+}
+
+// levelBlock draws a level re a top as a block: full within 3 dB, one step per
+// 3 dB below, and a dot more than 24 dB under or with no value.
+func levelBlock(v *float64, top float64) rune {
+	if v == nil {
+		return '·'
+	}
+	step := int(math.Floor((top - *v) / 3))
+	if step < 0 {
+		step = 0
+	}
+	if step >= 8 {
+		return '·'
+	}
+	return blocks[8-step]
+}
+
+func (r *Report) writeEnergy(w io.Writer) {
+	l := r.Loudness
+	if l == nil {
+		return
+	}
+	fmt.Fprintf(w, "\nenergy (ITU-R BS.1770-4, the render's loudness meter; short-term = 3 s window ending at the bar line):\n")
+	fmt.Fprintf(w, "  whole range: %s LUFS integrated, loudness range %s LU, true peak %.1f dBTP, max short-term %s LUFS\n", lufsText(l.IntegratedLUFS), lufsText(l.LoudnessRangeLU), l.TruePeakDBTP, lufsText(l.MaxShortTermLUFS))
+	top := -120.0
+	for _, v := range l.ShortTermPerBarLUFS {
+		if v != nil {
+			top = math.Max(top, *v)
+		}
+	}
+	fmt.Fprintf(w, "  %-14s %-7s %6s %6s %5s %7s  %s\n", "section", "bars", "LUFS", "vs top", "LRA", "TP dBTP", "short-term per bar (█ within 3 LU of the loudest bar, one step per 3 LU, · 24 LU under or n/a)")
+	for _, s := range r.Sections {
+		var cells []rune
+		for i, b := range r.Bars {
+			if b.Bar >= s.FromBar && b.Bar <= s.ToBar && i < len(l.ShortTermPerBarLUFS) {
+				cells = append(cells, levelBlock(l.ShortTermPerBarLUFS[i], top))
+			}
+		}
+		fmt.Fprintf(w, "  %-14s %-7s %6s %6s %5s %7s  %s\n", s.Name, fmt.Sprintf("%d-%d", s.FromBar, s.ToBar), lufsText(s.IntegratedLUFS), lufsText(s.VsLoudestLU), lufsText(s.LoudnessRangeLU), lufsText(s.TruePeakDBTP), string(cells))
+	}
+	if l.LoudestSectionIndex != nil && l.QuietestSectionIndex != nil {
+		// Names repeat when a song plays a section twice: the index and the
+		// bars say which one.
+		loud, quiet := r.Sections[*l.LoudestSectionIndex], r.Sections[*l.QuietestSectionIndex]
+		fmt.Fprintf(w, "  loudest section: %s, bars %d-%d (%s LUFS); quietest: %s, bars %d-%d (%s LUFS, %s LU under)\n", loud.Name, loud.FromBar, loud.ToBar, lufsText(loud.IntegratedLUFS),
+			quiet.Name, quiet.FromBar, quiet.ToBar, lufsText(quiet.IntegratedLUFS), lufsText(l.SectionSpreadLU))
+	}
+}
+
+func shortID(id string, n int) string {
+	if len([]rune(id)) > n {
+		return string([]rune(id)[:n])
+	}
+	return id
+}
+
+// barRanges writes bar numbers as ranges: 9-12, 14.
+func barRanges(bars []int) string {
+	var parts []string
+	for i := 0; i < len(bars); {
+		j := i
+		for j+1 < len(bars) && bars[j+1] == bars[j]+1 {
+			j++
+		}
+		if j > i {
+			parts = append(parts, fmt.Sprintf("%d-%d", bars[i], bars[j]))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d", bars[i]))
+		}
+		i = j + 1
+	}
+	return strings.Join(parts, ", ")
+}
+
+var bandLabels = [numBands]string{"sub 20-40", "low 40-80", "bass 80-160", "low-mid 160-400", "mid 400-1.6k", "presence 1.6-5k", "air 5-20k"}
+
+func (r *Report) writeBands(w io.Writer) {
+	if r.Bands == nil || len(r.Bars) == 0 || len(r.Bars[0].Bands) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nband owners per bar (owner, its share of the analysed tracks' energy in the band in percent, and the band's level in dB re full-scale RMS; Hz: %s; * collision: two tracks each over %g%%; quiet: %g dB under the band's loudest bar, %g dB under the bar's loudest band or %g dB under the loudest band of the range):\n", strings.Join(bandLabels[:], ", "), r.Bands.CollisionSharePct, r.Bands.QuietBelowBandDB, r.Bands.QuietBelowSpanDB, r.Bands.QuietBelowRangeDB)
+	fmt.Fprintf(w, "  %4s", "bar")
+	for _, name := range []string{"sub", "low", "bass", "low-mid", "mid", "presence", "air"} {
+		fmt.Fprintf(w, "  %-17s", name)
+	}
+	fmt.Fprintln(w)
+	for _, b := range r.Bars {
+		fmt.Fprintf(w, "  %4d", b.Bar)
+		for _, o := range b.Bands {
+			cell := "quiet"
+			if !o.Quiet {
+				mark := ""
+				if o.Collision {
+					mark = "*"
+				}
+				cell = fmt.Sprintf("%s %.0f%s %.0f", shortID(o.Owner, 8), o.SharePct, mark, o.LevelDB)
+			}
+			fmt.Fprintf(w, "  %-17s", cell)
+		}
+		fmt.Fprintln(w)
+	}
+	fmt.Fprintf(w, "  collisions per section (bars), bands sub low bass low-mid mid presence air:\n")
+	for _, s := range r.Sections {
+		var counts []string
+		for _, sb := range s.Bands {
+			counts = append(counts, fmt.Sprintf("%d", sb.CollisionBars))
+		}
+		fmt.Fprintf(w, "    %-14s %-7s %s\n", s.Name, fmt.Sprintf("%d-%d", s.FromBar, s.ToBar), strings.Join(counts, " "))
+	}
+	for k, c := range r.Bands.Collisions {
+		if c.Bars == nil || len(*c.Bars) == 0 {
+			continue
+		}
+		var pairs []string
+		for _, p := range c.Pairs {
+			pairs = append(pairs, fmt.Sprintf("%s+%s %d", p.Tracks[0], p.Tracks[1], p.BarCount))
+		}
+		fmt.Fprintf(w, "  %s Hz collisions: %d of %d bars (%s); pairs: %s\n", bandLabels[k], len(*c.Bars), len(r.Bars), barRanges(*c.Bars), strings.Join(pairs, ", "))
+	}
+}
+
+func (r *Report) writeActivity(w io.Writer) {
+	if r.Activity == nil {
+		return
+	}
+	a := r.Activity
+	fmt.Fprintf(w, "\nactivity per bar (█ within 3 dB of the track's loudest bar, one step per 3 dB, · not sounding: under %g dB or silent; a bar with no note start is measured after its first %g s) and repeats (bars whose played notes equal the bar before, =4: four bars before):\n", a.SoundingThresholdDB, a.TailGraceS)
+	fmt.Fprintf(w, "  %-12s %5s %5s %5s %4s  bars %d-%d\n", "track", "notes", "=prev", "=4", "run", r.Score.FromBar, r.Score.FromBar+r.Score.Bars-1)
+	for _, t := range r.Tracks {
+		var row strings.Builder
+		for b, v := range t.BarLevelDB {
+			if b > 0 && b%4 == 0 {
+				row.WriteByte(' ')
+			}
+			if b < len(t.Sounding) && t.Sounding[b] {
+				x := v
+				row.WriteRune(levelBlock(&x, 0))
+			} else {
+				row.WriteRune('·')
+			}
+		}
+		fmt.Fprintf(w, "  %-12s %5d %5d %5d %4d  %s\n", shortID(t.ID, 12), t.NoteBars, t.SameAsPreviousBar, t.SameAsFourBarsBefore, t.LongestSameRun, row.String())
+	}
+	if len(a.Silences) == 0 {
+		fmt.Fprintf(w, "  mix silences (under %g dBFS for at least %g s): none\n", a.SilenceBelowDBFS, a.SilenceMinS)
+		return
+	}
+	var parts []string
+	for _, s := range a.Silences {
+		parts = append(parts, fmt.Sprintf("%s to %s (%.2f s)", s.Start.Text, s.End.Text, s.LengthS))
+	}
+	fmt.Fprintf(w, "  mix silences (under %g dBFS for at least %g s): %s\n", a.SilenceBelowDBFS, a.SilenceMinS, strings.Join(parts, "; "))
+}
+
+func (r *Report) writePeaks(w io.Writer) {
+	if len(r.Peaks) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\npeaks (true peak of the mix, highest first; parts: each stem's signed sample at the peak as a percentage of the sum entering the master chain, which can reshape it; a negative part lowers the peak):\n")
+	for _, p := range r.Peaks {
+		var parts []string
+		for _, t := range p.PreMasterParts {
+			parts = append(parts, fmt.Sprintf("%s %+.0f%%", t.ID, t.SignedSharePct))
+		}
+		if p.PreMasterRestPct != 0 {
+			parts = append(parts, fmt.Sprintf("rest %+.0f%%", p.PreMasterRestPct))
+		}
+		fmt.Fprintf(w, "  %2d  %6.1f dBTP  at %-8s (%7.2f s)  %s\n", p.Rank, p.TruePeakDBTP, p.At.Text, p.At.TimeS, strings.Join(parts, ", "))
 	}
 }

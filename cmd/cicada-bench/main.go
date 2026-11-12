@@ -57,7 +57,7 @@ const silentBars = 16
 
 // defaultSteps is the set CI runs: the plan's first gates, then the decay
 // steps, which are reported only.
-const defaultSteps = "help,check:large,apply1:large,apply50:large,render:medium,render:large,render-jobs1:large,render-jobs4:large,render-auto:medium,render-auto:large,loudness:medium,audition:large,render:held,render:silent"
+const defaultSteps = "help,check:large,apply1:large,apply50:large,render:medium,render:large,render-jobs1:large,render-jobs4:large,render-auto:medium,render-auto:large,loudness:medium,audition:large,audition-size:large,render:held,render:silent"
 
 type options struct {
 	cicada    string
@@ -99,6 +99,8 @@ type Result struct {
 	Auto         bool   `json:"auto,omitempty"` // render-auto: --jobs auto
 	SHA256       string `json:"sha256,omitempty"`
 	UnstableHash bool   `json:"unstable_hash,omitempty"`
+	// ReportBytes is the size of the JSON an audition-size step printed.
+	ReportBytes int `json:"report_bytes,omitempty"`
 }
 
 // renderJobs returns N for a render-jobsN step kind, and 0 for render-auto
@@ -177,7 +179,7 @@ func parseOptions(args []string) (options, error) {
 	o := options{scores: map[string]string{}}
 	flags.StringVar(&o.cicada, "cicada", "build/cicada", "cicada binary to measure")
 	flags.IntVar(&o.runs, "runs", 5, "runs per step; the median is kept")
-	steps := flags.String("steps", defaultSteps, "comma-separated steps: help, check:<size>, apply1:<size>, apply50:<size>, render:<size>, render-jobs<N>:<size> (render with --jobs N), render-auto:<size> (--jobs auto), loudness:<size>, audition:<size>; size is small, medium or large, or for render held (a piano chord held through a reverb) or silent (the large score with every track off)")
+	steps := flags.String("steps", defaultSteps, "comma-separated steps: help, check:<size>, apply1:<size>, apply50:<size>, render:<size>, render-jobs<N>:<size> (render with --jobs N), render-auto:<size> (--jobs auto), loudness:<size>, audition:<size>, audition-size:<size> (the default report's bytes on the whole song, one run); size is small, medium or large, or for render held (a piano chord held through a reverb) or silent (the large score with every track off)")
 	for _, size := range []string{"small", "medium", "large"} {
 		o.scores[size] = defaultScores[size]
 		flags.Func(size, "score for the "+size+" steps (default "+defaultScores[size]+")", func(value string) error {
@@ -223,7 +225,7 @@ func validStep(step string) error {
 	}
 	kind, size, ok := strings.Cut(step, ":")
 	_, jobs := renderJobs(kind)
-	if !ok || !jobs && !slices.Contains([]string{"check", "apply1", "apply50", "render", "loudness", "audition"}, kind) {
+	if !ok || !jobs && !slices.Contains([]string{"check", "apply1", "apply50", "render", "loudness", "audition", "audition-size"}, kind) {
 		return fmt.Errorf("unknown step %q", step)
 	}
 	if generatedScores[size] && kind == "render" {
@@ -341,6 +343,11 @@ func measure(o options, binary, work, step string) (Result, error) {
 		args = []string{"render", score, "-o", "out.wav", "--loudness", strconv.FormatFloat(o.loudness, 'g', -1, 64)}
 	case "audition":
 		args = []string{"audition", score, "--json"}
+	case "audition-size":
+		// The whole song, whatever --large-bars says: the gate is on the
+		// report an agent reads for that song. Render lanes make it faster
+		// and give the same report.
+		args = []string{"audition", score, "--json", "--jobs", "auto"}
 	default:
 		if jobs, ok := renderJobs(kind); ok && jobs == 0 {
 			result.Auto = true
@@ -354,8 +361,13 @@ func measure(o options, binary, work, step string) (Result, error) {
 		args = append(args, "--bars", strconv.Itoa(result.Bars))
 	}
 	result.Args = args
-	// The first run warms the file cache and is not counted.
-	for run := range o.runs + 1 {
+	// The first run warms the file cache and is not counted. A size step
+	// measures bytes, not time: it runs once and counts that run.
+	runs := o.runs + 1
+	if kind == "audition-size" {
+		runs = 1
+	}
+	for run := range runs {
 		started := time.Now()
 		command := exec.Command(binary, args...)
 		command.Dir = dir
@@ -375,7 +387,9 @@ func measure(o options, binary, work, step string) (Result, error) {
 		if result.ExitCode != 0 && !(kind == "loudness" && strings.Contains(stdout.String(), "passes")) {
 			return result, fmt.Errorf("%s exited %d: %s", strings.Join(args, " "), result.ExitCode, lastLine(stderr.String()))
 		}
-		if run == 0 {
+		if kind == "audition-size" {
+			result.ReportBytes = stdout.Len()
+		} else if run == 0 {
 			continue
 		}
 		result.RunsMS = append(result.RunsMS, float64(elapsed.Microseconds())/1000)
@@ -595,6 +609,9 @@ func formatResult(r Result) string {
 	}
 	if r.PeakRSSMB > 0 {
 		line += fmt.Sprintf("  peak RSS %.0f MiB", r.PeakRSSMB)
+	}
+	if r.ReportBytes > 0 {
+		line += fmt.Sprintf("  report %d bytes", r.ReportBytes)
 	}
 	switch {
 	case r.UnstableHash:
