@@ -17,17 +17,6 @@ import (
 // changed this output. Notes keep playing after every stall, so a flush that
 // changes the sound changes the pin. With the build tag cicada_noflush the
 // case must reach the stall and give the same pin.
-//
-// The pin covers seconds 2 to 18 only (PinFromSecond); the whole-output hash
-// is logged (CICADA_DECAY_HASHES=1) but not pinned. The acid voice's float32
-// output differs between amd64 and arm64 on main, without any flush: it
-// computes its coefficients with the math library (math.Exp in SetParams and
-// NoteOn). The previous version of this case, one accented note held for
-// 18 s (at 73dff66c), hashed to 0x2bae0163d409ab79 on amd64 and
-// 0x65564691e809b4e1 on arm64, differing in its first second only. This
-// version's whole output hashed alike on both (0xaacf5a40b7a76b9d), but stays
-// unpinned until the determinism stack (#328, #329, #343) moves those calls
-// to kernel/dsp/detmath.
 func TestControlsAreNeverSubnormal(t *testing.T) {
 	const rate = 48000
 	v, err := New(rate)
@@ -67,14 +56,14 @@ func TestControlsAreNeverSubnormal(t *testing.T) {
 			x := v.Next()
 			return x, x
 		},
-		Stalls:        []string{".params.Resonance", ".savageBlend", ".params.EnvMod", ".params.Accent"},
-		Unflushed:     []string{".params.EnvMod", ".params.Accent"},
-		PinFromSecond: 2,
-		Pinned:        pinnedAcidControlsFromSecond2Hash,
+		Stalls:    []string{".params.Resonance", ".savageBlend", ".params.EnvMod", ".params.Accent"},
+		Unflushed: []string{".params.EnvMod", ".params.Accent"},
+		Pinned:    pinnedAcidControlsHash,
 	})
 }
 
-// pinnedAcidControlsFromSecond2Hash is the hash of seconds 2 to 18 of
-// TestControlsAreNeverSubnormal's output (Hash.From), produced alike on amd64
-// and arm64, with and without cicada_noflush.
-const pinnedAcidControlsFromSecond2Hash = 0x2f34655096e846ec
+// pinnedAcidControlsHash is the float32 output of TestControlsAreNeverSubnormal,
+// produced alike on amd64 and arm64, with and without cicada_noflush, once
+// the determinism stack (#328, #329, #343) moved the acid voice's
+// coefficients to kernel/dsp/detmath.
+const pinnedAcidControlsHash = 0xaacf5a40b7a76b9d

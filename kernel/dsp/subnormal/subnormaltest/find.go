@@ -95,20 +95,6 @@ func (h *Hash) Add(left, right float32) {
 // Sum is the hash of every frame added.
 func (h *Hash) Sum() uint64 { return h.all }
 
-// From returns a hash whose Sum is FNV-1a over the per-second hashes from
-// second on, and whose per-second hashes are those seconds'.
-func (h *Hash) From(second int) *Hash {
-	out := &Hash{all: fnvOffset, second: fnvOffset, rate: h.rate, frames: h.frames - second*h.rate}
-	for _, s := range h.Seconds[min(second, len(h.Seconds)):] {
-		out.Seconds = append(out.Seconds, s)
-		for range 8 {
-			out.all = (out.all ^ uint64(byte(s))) * fnvPrime
-			s >>= 8
-		}
-	}
-	return out
-}
-
 // Report formats the hash and the per-second hashes for a test log.
 func (h *Hash) Report() string {
 	text := fmt.Sprintf("sum %#016x, %d frames; per second:", h.all, h.frames)
@@ -158,11 +144,6 @@ type Case struct {
 	// Pinned is the output hash. It must hold with the build tag
 	// cicada_noflush too, unless PinnedWithoutFlush is set.
 	Pinned uint64
-	// PinFromSecond, when not zero, pins the hash of the per-second hashes
-	// from that second on (SumFrom) instead of the whole output: for a
-	// processor whose first seconds differ between architectures for a
-	// reason outside the case.
-	PinFromSecond int
 	// PinnedWithoutFlush, when not zero, is the output hash with the build
 	// tag cicada_noflush, for a case whose float32 output the flush changes
 	// (for example a negative subnormal sum that converts to -0 instead of
@@ -197,12 +178,6 @@ func Run(t *testing.T, c Case) {
 			pinned = c.PinnedWithoutFlush
 		}
 		CheckStalls(t, c.Name, c.State, c.Stalls)
-	}
-	if c.PinFromSecond > 0 {
-		if os.Getenv("CICADA_DECAY_HASHES") == "1" {
-			t.Logf("DECAY-HASH %s (whole output, not pinned) %s", c.Name, hash.Report())
-		}
-		hash = hash.From(c.PinFromSecond)
 	}
 	CheckPin(t, c.Name, hash, pinned)
 }

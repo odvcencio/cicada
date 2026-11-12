@@ -123,9 +123,13 @@ func burst(frame int, noise func() float32) (float32, float32) {
 // with the merge of #327, which computes the reverb's coefficients with
 // kernel/dsp/detmath and its modulation with SinPi: they were
 // 0xbf36da93f46a780b and 0xc1d7f1cf2d987f6c on the reverb before it.
+// The tail and hard-left hashes changed again with the merge of the
+// determinism stack (#328, #329, #343), which computes the modulation with
+// SinPiNear: they were 0x73a3144619160bd7 and 0xe4a9e262c2bc2e0f. The short
+// tail and mix-to-zero cases kept their bits.
 const (
-	pinnedReverbTailHash      = 0x73a3144619160bd7
+	pinnedReverbTailHash      = 0x87c4b246638b67fb
 	pinnedReverbShortTailHash = 0xb6ac9e89d61b9eb3
-	pinnedReverbHardLeftHash  = 0xe4a9e262c2bc2e0f
+	pinnedReverbHardLeftHash  = 0x261fd3b7ab4ef47e
 	pinnedReverbMixToZeroHash = 0xf8cda5e8b8e3d6f9
 )
