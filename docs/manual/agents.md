@@ -733,10 +733,10 @@ document says what the render chose and what happened:
 - `lanes`: the lanes the render set up, `jobs` capped at the song's tracks.
 - `lanes_peak`: the most lanes that rendered one segment at once. A segment is
   a run of frames between control changes; one with too little work runs on
-  fewer lanes, and the cicada process never runs more lanes at once than it
-  has processors, even with several renders at once (other processes are not
-  counted, so give each of several concurrent `cicada` processes a smaller
-  `--jobs`).
+  fewer lanes. The renders of one cicada process share `GOMAXPROCS` − 1 worker
+  lanes, and each render's own goroutine works as one more lane. Other
+  processes are not counted, so give each of several concurrent `cicada`
+  processes a smaller `--jobs`.
 - `segments` and `parallel_segments`: the segments offered to the lanes and
   those that ran on two or more.
 - `serial_reason`, present when no segment ran on two or more lanes:

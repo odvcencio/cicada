@@ -60,7 +60,7 @@ they got their audio, and one line per pass gives its gain, loudness and true
 peak:
 
 ```text
-song.wav: 40 bars from bar 1, 4574770 frames at 48000 Hz, achieved -15.05 LUFS, true peak -1.05 dBTP, applied gain +11.41 dB, DC correction L +0.0000000/R +0.0000000 FS, passes 2 (full syntheses 1, cached replays 1, repeats 0), largest limiter gain reduction 0.00 dB
+song.wav: 40 bars from bar 1, 4574770 frames at 48000 Hz, achieved -15.05 LUFS, true peak -1.05 dBTP, applied gain +11.41 dB, DC correction L +0.0000000/R +0.0000000 FS, passes 2 (full syntheses 1, cached replays 1, repeats 0), largest limiter gain reduction 0.00 dB, jobs 1, lanes 1 (serial: jobs)
 song.wav: pass 1: gain +0.00 dB, -26.45 LUFS, true peak -12.46 dBTP, synthesized
 song.wav: pass 2: gain +11.41 dB, -15.05 LUFS, true peak -1.05 dBTP, replayed
 ```
@@ -93,15 +93,21 @@ removed by the next render in that folder once they are a day old.
 `cicada render`, `cicada stems` and `cicada audition` take `--jobs auto` or
 `--jobs N`: several render lanes synthesize the song's tracks at the same
 time. Without `--jobs` the render is serial. `auto` picks the smaller of 4 and
-half the CPUs, at least 1; `N` is honoured up to the number of CPUs the process
-may use (`taskset` and container limits count). A render never sets up more
+half the CPUs the process may use, at least 1 (`taskset` and container CPU
+limits count). `N` is honoured up to the number of CPUs the process may run on
+(`taskset` counts; a container's CPU quota does not). A render never sets up more
 lanes than the song has tracks, so a one-track song always renders serially,
 and one heavy track (an electric piano holding eight voices, say) bounds how
 much faster more lanes can make a song. Every value writes the same bytes.
-The summary line and `--json` report the lanes the render set up and ran, and
-why it stayed serial if it did; see [render --json](manual/agents.md#render---json).
-One cicada process never runs more lanes at once than it has processors; when
-you run several `cicada` processes at once, give each a share with `--jobs`.
+Every render's summary line ends with its lanes, such as `jobs 1, lanes 1
+(serial: jobs)`; that line and `--json` report the lanes the render set up and
+ran, and why it stayed serial if it did; see
+[render --json](manual/agents.md#render---json). The renders of one cicada
+process share `GOMAXPROCS` − 1 worker lanes, and each render's own goroutine
+works as one more lane, so several renders in one process run at most
+`GOMAXPROCS` lanes plus one for each render after the first. Other processes
+are not counted: when you run several `cicada` processes at once, give each a
+share with `--jobs`.
 
 ```sh
 cicada render song.cicada -o song.wav --jobs auto
