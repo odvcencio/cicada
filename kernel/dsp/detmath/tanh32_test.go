@@ -66,8 +66,9 @@ func TestTanh32Digest(t *testing.T) {
 
 // TestTanh32FastPathExhaustive checks every float32 that takes Tanh32's fast
 // path (2^-12 <= |x| < 9, both signs: 253,755,392 inputs); all others go to
-// Tanh itself. It runs on every target CI tests (a few seconds on four cores).
+// Tanh itself. It runs when CICADA_DETMATH_EXHAUSTIVE=1 (skipUnlessExhaustive).
 func TestTanh32FastPathExhaustive(t *testing.T) {
+	skipUnlessExhaustive(t)
 	lo, hi := math.Float32bits(0x1p-12), math.Float32bits(9)
 	workers := runtime.GOMAXPROCS(0)
 	var bad atomic.Int64

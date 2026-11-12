@@ -70,6 +70,7 @@ jobs:
       bench: ${{ steps.classify.outputs.bench }}
       wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
       lane_stress: ${{ steps.classify.outputs.lane_stress }}
+      detmath_proofs: ${{ steps.classify.outputs.detmath_proofs }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -102,10 +103,10 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.root == 'true' }}
     runs-on: ubuntu-24.04
-    # One cold build of every package plus the whole test suite on one runner;
-    # the other jobs split the same work across runners. The cmd/cicada tests
-    # run in the three shards the Studio CLI jobs use: as one binary they took
-    # 996 s of a 1,200 s limit in this job's first run.
+    # One cold build of every package but cmd/cicada and their tests under Go
+    # 1.27.3. The cmd/cicada tests under Go 1.27.3 run in native-go127-cli: in
+    # this job they took 8m15s of 21m07s (12 November) and held it over the
+    # 20-minute rule.
     timeout-minutes: 45
     env:
       GOWORK: off
@@ -133,18 +134,45 @@ jobs:
           set -euo pipefail
           GOARCH=arm64 scripts/check-fma.sh
           GOARCH=amd64 GOAMD64=v3 scripts/check-fma.sh
-      - name: Shards cover every test once
-        run: make test-cmd-shard-check SHARDS=3
       - name: Native tests, every package but cmd/cicada
         run: make test-ci-core
+      - name: Vet (no TinyGo override)
+        run: go vet ./...
+
+  # The cmd/cicada tests under Go 1.27.3, in the three shards the Studio CLI
+  # jobs use, one after another (as one binary they took 996 s of a 1,200 s
+  # limit). Same toolchain, flags and Node as native-go127, on a runner of
+  # their own so the two halves run side by side.
+  native-go127-cli:
+    name: Native Go 1.27.3, cmd/cicada in three shards
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+      GOTOOLCHAIN: go1.27.3
+      GOFLAGS: -timeout=20m
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Tool versions
+        run: go version
+      - name: Shards cover every test once
+        run: make test-cmd-shard-check SHARDS=3
       - name: Native tests, cmd/cicada in three shards
         run: |
           set -euo pipefail
           for shard in 1 2 3; do
             make test-cmd-shard SHARD="$shard/3"
           done
-      - name: Vet (no TinyGo override)
-        run: go vet ./...
 
   commit-hygiene:
     name: Commit metadata hygiene
@@ -163,7 +191,7 @@ jobs:
         run: bash scripts/check-commit-hygiene.sh "$PR_BASE_SHA" "$PR_HEAD_SHA"
       # These tests need only bash, so they run on every pull request, even
       # one that changes only documentation.
-      - name: Test the change classifier, the Studio browser shard lists and the browser runner
+      - name: Test the change classifier, the Studio browser shard lists, the browser runner and the job budgets
         run: |
           set -euo pipefail
           bash scripts/ci-changes_test.sh
@@ -171,6 +199,7 @@ jobs:
           bash scripts/ci-setup-wasm-tools_test.sh
           bash scripts/ci-studio-browser.sh check
           bash cmd/cicada/browser-runner_test.sh
+          bash scripts/ci-job-budgets_test.sh
 
   # Runs on every pull request, including one that changes only documentation.
   # TestDocumentationHygiene reads every tracked file, and the other tests read
@@ -264,10 +293,12 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = amd64
           make test-parity
+      # The exhaustive fast-path proofs of the deterministic math
+      # (*FastPathExhaustive) run in the detmath-proofs jobs.
       - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|[A-Za-z0-9]*FastPathExhaustive)$' -count=1
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
           GOAMD64=v3 scripts/check-fma.sh
       # The arm64 job compares its exported WAV files with these hashes.
       - name: Hash the WAV files cicada render writes for the parity subset
@@ -374,7 +405,7 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange|[A-Za-z0-9]*FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           # The decay pins: long renders of voices and effects whose state or
           # smoothed controls decay toward zero, with the output hash that amd64
@@ -389,9 +420,9 @@ jobs:
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive \
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
             TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
-            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest TestTanPi32FastPathExhaustive TestOneMinusExpNeg2Pi32FastPathExhaustive \
+            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest \
             TestDecayingStateIsNeverSubnormal TestHeldChordStateIsNeverSubnormal TestReleaseStateIsNeverSubnormal TestReverbTailIsNeverSubnormal TestControlsAreNeverSubnormal \
             TestChorusIsNeverSubnormal TestTapeControlsAreNeverSubnormal TestAmpCabinetIsNeverSubnormal TestGainIsNeverSubnormal; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
@@ -502,6 +533,45 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: build/wav-parity/report.txt
+
+  # The exhaustive fast-path proofs of kernel/dsp/detmath
+  # (scripts/detmath-proofs.sh): every float32 input of each fast path against
+  # the float64 reference, with the Go version go.mod picks and with Go 1.27.3
+  # (the workstation's pinned toolchain, which links this package through
+  # project); amd64 at GOAMD64 v1 and v3, and arm64. They run when the
+  # classifier's detmath_proofs group is on (the package, go.mod, go.sum, this
+  # workflow, the Makefile, the proof runner or the multiply-add check changed;
+  # every push, nightly and manual run), and the required check judges them.
+  # The Go test jobs skip them (CICADA_DETMATH_EXHAUSTIVE is unset there).
+  detmath-proofs:
+    name: Deterministic math proofs (${{ matrix.arch }})
+    needs: changes
+    if: ${{ needs.changes.outputs.detmath_proofs == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Exhaustive fast-path proofs with go.mod's Go and with Go 1.27.3
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$ARCH"
+          scripts/detmath-proofs.sh local go1.27.3
 
   studio-cli:
     name: Studio CLI tests (shard ${{ matrix.shard }}/3)
@@ -826,7 +896,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation, detmath-proofs]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -847,6 +917,8 @@ jobs:
           RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
           RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
           WORKSTATION_RESULT: ${{ needs.workstation.result }}
+          RUN_PROOFS: ${{ needs.changes.outputs.detmath_proofs }}
+          PROOFS_RESULT: ${{ needs.detmath-proofs.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
@@ -855,6 +927,7 @@ jobs:
           #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
           #   workstation                success when workstation=true, skipped otherwise
           #                              (its go generate enforces the UI engine size limit)
+          #   detmath-proofs             success when detmath_proofs=true, skipped otherwise
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -891,7 +964,45 @@ jobs:
           else
             check workstation "$WORKSTATION_RESULT" skipped
           fi
+          if [[ "$RUN_PROOFS" == true ]]; then
+            check detmath-proofs "$PROOFS_RESULT" success
+          else
+            check detmath-proofs "$PROOFS_RESULT" skipped
+          fi
           exit "$status"
+
+  # Holds every job of this run to its time budget in scripts/ci-job-budgets.tsv:
+  # a warning above the budget, a failure above 20 minutes, the project's rule
+  # for pull-request jobs. It waits for every hosted job, so it is not part of
+  # the required check, which would then finish only when CI does: a slow job
+  # shows here, in red when it broke the rule, without holding up a merge. The
+  # self-hosted M2 AudioWorklet gates are judged when they have finished.
+  ci-budgets:
+    name: CI job time budgets
+    needs: [changes, native-go127, native-go127-cli, commit-hygiene, repo-checks, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, detmath-proofs, studio-cli, bench, lane-stress-pr, m0-core, m0-render-paths, m0-kernel, m0-wasm, m0, workstation, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Every job within its time budget
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jobs="$RUNNER_TEMP/jobs.json"
+          for attempt in 1 2 3; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" >"$jobs"; then break; fi
+            if [[ "$attempt" == 3 ]]; then echo "Could not list this run's jobs from the GitHub API after three tries." >&2; exit 1; fi
+            sleep 10
+          done
+          python3 scripts/ci-job-budgets.py check-run scripts/ci-job-budgets.tsv "$jobs"
 
   workstation:
     name: GoSX workstation and Tymbal boundary
