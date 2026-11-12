@@ -3,14 +3,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"syscall/js"
@@ -138,36 +135,28 @@ func (u *workspaceUI) checkpointSources() {
 				fields["intent"] = "clear"
 			}
 			data, _ := json.Marshal(fields)
-			origin := js.Global().Get("location").Get("origin").String()
-			ctx, cancel := context.WithTimeout(u.ctx, 5*time.Second)
-			request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+"/__actions/source-checkpoint", bytes.NewReader(data))
-			if err != nil {
-				cancel()
-				continue
+			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Limit: 4096, Headers: map[string]string{
+				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+			}}.do(u.ctx)
+			if err == nil && response.Status != statusOK {
+				err = fmt.Errorf("recovery returned %d", response.Status)
 			}
-			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set("Accept", "application/json")
-			request.Header.Set("X-CSRF-Token", u.props.CSRF)
-			response, err := http.DefaultClient.Do(request)
 			// Studio says whether it kept a copy: it keeps none of text the
 			// file already has, and names that file's revision. Older
-			// versions do not say, and keep one.
+			// versions do not say, and keep one. An answer that cannot be
+			// read is a failed attempt, like a failed request.
 			var reply struct {
 				Data struct {
 					Kept     *bool  `json:"kept"`
 					Revision string `json:"revision"`
 				} `json:"data"`
 			}
-			if response != nil {
-				_ = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&reply)
-				_, _ = io.Copy(io.Discard, response.Body)
-				response.Body.Close()
-				if response.StatusCode != http.StatusOK {
-					err = fmt.Errorf("recovery returned %d", response.StatusCode)
+			if err == nil {
+				if decodeErr := decodeLimited(response.Body, 4096, &reply); decodeErr != nil {
+					err = fmt.Errorf("recovery answer could not be read: %w", decodeErr)
 				}
 			}
 			kept := reply.Data.Kept == nil || *reply.Data.Kept
-			cancel()
 			if u.closed.Load() {
 				return
 			}
