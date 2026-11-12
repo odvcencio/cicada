@@ -266,17 +266,17 @@ func addModulator(ctx *Context, intent Intent) error {
 	}
 	switch in.SourceKind {
 	case "lfo":
-		if _, err := notation.ParseModRate(in.Rate); err != "" || !containsString(lfoWaves, in.Wave) {
+		if _, err := notation.ParseModRate(ctx.MeterMap(), in.Rate); err != "" || !containsString(lfoWaves, in.Wave) {
 			return fmt.Errorf("choose a waveform and rate")
 		}
 		text = fmt.Sprintf("lfo %s { wave = %s rate = %s }", in.Name, in.Wave, in.Rate)
 	case "sway":
-		if _, err := notation.ParseModRate(in.Rate); err != "" {
+		if _, err := notation.ParseModRate(ctx.MeterMap(), in.Rate); err != "" {
 			return fmt.Errorf("choose a rate")
 		}
 		text = fmt.Sprintf("sway %s { rate = %s }", in.Name, in.Rate)
 	case "contour":
-		if rate, err := notation.ParseModRate(in.Rate); err != "" || rate.Free {
+		if rate, err := notation.ParseModRate(ctx.MeterMap(), in.Rate); err != "" || rate.Free {
 			return fmt.Errorf("choose a period")
 		}
 		text = fmt.Sprintf("contour %s { period = %s @0 0 @1 0 }", in.Name, in.Rate)

@@ -35,10 +35,10 @@ func TestScheduledWAVRIFFFrameBoundary(t *testing.T) {
 	for _, bits := range []int{16, 24, 32} {
 		clock, _ := seq.NewClock(48000, 120000)
 		maxFrames := int64(^uint32(0)-60) / int64(bits/4)
-		lastBar := maxFrames / clock.SampleAtTick(seq.TicksPerBar)
+		lastBar := maxFrames / clock.SampleAtTick(ticksPerBar)
 		for _, extra := range []int64{0, 1} {
 			t.Run(fmt.Sprintf("bits%d/extra%d", bits, extra), func(t *testing.T) {
-				source := fmt.Sprintf("cicada 2\ntempo 120\ntrack bass acid {}\npattern hit { c3 }\narrange { place p bass hit { at = 0ticks length = %dticks } }\n", (lastBar+extra)*seq.TicksPerBar)
+				source := fmt.Sprintf("cicada 2\ntempo 120\ntrack bass acid {}\npattern hit { c3 }\narrange { place p bass hit { at = 0ticks length = %dticks } }\n", (lastBar+extra)*ticksPerBar)
 				score, ds := notation.Parse([]byte(source))
 				if score == nil {
 					t.Fatal(ds)

@@ -341,7 +341,7 @@ func TestAudioWASMDirectorM5(t *testing.T) {
 	peak := float64(0)
 	sounded := false
 	for bar := range 64 {
-		tick := int64(bar) * seq.TicksPerBar
+		tick := int64(bar) * ticksPerBar
 		value := []float32{.1, .9, .7, 0}[bar/8%4]
 		events := []gameEvent{{Kind: "macro", Name: "intensity", Value: value, Tick: fmt.Sprint(tick + 111)}}
 		if bar%16 == 4 {
@@ -356,7 +356,7 @@ func TestAudioWASMDirectorM5(t *testing.T) {
 		for _, c := range clients {
 			c.drive(t, events)
 		}
-		end := clock.SampleAtTick(tick + seq.TicksPerBar)
+		end := clock.SampleAtTick(tick + ticksPerBar)
 		for sample < end {
 			n := int(min(int64(128), end-sample))
 			var baseL, baseR []float32

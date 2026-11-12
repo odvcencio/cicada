@@ -74,7 +74,9 @@ const (
 	// MaxFrames is the block size the kernel renders per call. The worklet
 	// splits each 128-frame browser quantum into blocks of at most this size.
 	MaxFrames = 128
-	// TicksPerBeat and TicksPerBar are the kernel's transport resolution.
+	// TicksPerBeat and TicksPerBar are the kernel's transport resolution. The
+	// GoSX worklet keeps its own bar clock from TicksPerBar, so it assumes 4/4
+	// until the descriptor carries the meter map (time-signatures phase 6).
 	TicksPerBeat = 960
 	TicksPerBar  = 3840
 )
