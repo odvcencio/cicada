@@ -246,6 +246,67 @@ func compileHashes(t *testing.T, root string, scores []string) map[string]wavHas
 	return got
 }
 
+// scoresWithoutImage lists the examples whose portable kernel image does not
+// build, and why. compileHashes records them as "none" on both machines, so the
+// cross-architecture comparison cannot see them; TestScoresWithoutImage fails
+// when this list changes in either direction, so a new failure is a decision
+// and a fixed one leaves the list.
+var scoresWithoutImage = map[string]string{
+	"examples/keys/sampled/bell_keys.cicada":       sampledKeysNeedPacks,
+	"examples/keys/sampled/brass_stab.cicada":      sampledKeysNeedPacks,
+	"examples/keys/sampled/clav.cicada":            sampledKeysNeedPacks,
+	"examples/keys/sampled/clav_hollow.cicada":     sampledKeysNeedPacks,
+	"examples/keys/sampled/clav_muted.cicada":      sampledKeysNeedPacks,
+	"examples/keys/sampled/fm_bass.cicada":         sampledKeysNeedPacks,
+	"examples/keys/sampled/fm_ep.cicada":           sampledKeysNeedPacks,
+	"examples/keys/sampled/organ_full.cicada":      sampledKeysNeedPacks,
+	"examples/keys/sampled/organ_jazz.cicada":      sampledKeysNeedPacks,
+	"examples/keys/sampled/organ_soft.cicada":      sampledKeysNeedPacks,
+	"examples/keys/sampled/poly_keys.cicada":       sampledKeysNeedPacks,
+	"examples/keys/sampled/reed_ep.cicada":         sampledKeysNeedPacks,
+	"examples/keys/sampled/reed_tremolo.cicada":    sampledKeysNeedPacks,
+	"examples/keys/sampled/soft_pad.cicada":        sampledKeysNeedPacks,
+	"examples/keys/sampled/string_machine.cicada":  sampledKeysNeedPacks,
+	"examples/keys/sampled/sync_lead.cicada":       sampledKeysNeedPacks,
+	"examples/keys/sampled/tine_bark.cicada":       sampledKeysNeedPacks,
+	"examples/keys/sampled/tine_bell.cicada":       sampledKeysNeedPacks,
+	"examples/keys/sampled/tine_ep.cicada":         sampledKeysNeedPacks,
+	"examples/keys/sampled/tine_tremolo.cicada":    sampledKeysNeedPacks,
+	"examples/keys/sampled/tonewheel_organ.cicada": sampledKeysNeedPacks,
+	"examples/songs/anywhere-you-are.cicada":       "allocates 52 voices; portable images allow at most 32 (limits.PortableMaxVoices), so the song plays natively and exports as WAV or stems, not in the browser or as WAM",
+}
+
+// The sampled keys scores load packs that are generated outside the repository.
+const sampledKeysNeedPacks = "its sample pack is generated outside the repository (examples/keys/sampled/README.md); without packs/ beside the score, schedule.CompileResident cannot load it"
+
+// TestScoresWithoutImage keeps scoresWithoutImage exact: every example whose
+// image fails to build is listed, with the step that fails, and every listed
+// score fails.
+func TestScoresWithoutImage(t *testing.T) {
+	root := repositoryRoot()
+	got := compileHashes(t, root, exampleScores(t, root))
+	failing := map[string]bool{}
+	for key, hash := range got {
+		score, step, _ := strings.Cut(key, " ")
+		if step == "image" && hash.sum == "none" {
+			failing[score] = true
+		}
+		if step == "config" && hash.sum == "none" {
+			t.Errorf("%s: its engine configuration does not compile (status %d)", score, hash.status)
+		}
+	}
+	for score := range failing {
+		if _, ok := scoresWithoutImage[score]; !ok {
+			t.Errorf("%s: its portable image no longer builds (%s); fix it or list it in scoresWithoutImage with the reason", score, got[score+" image"])
+		}
+	}
+	for score := range scoresWithoutImage {
+		if !failing[score] {
+			t.Errorf("%s: listed in scoresWithoutImage but its image builds now (%s); remove it", score, got[score+" image"])
+		}
+	}
+}
+
 func writeWAVHashes(path string, hashes map[string]wavHash) error {
 	keys := make([]string, 0, len(hashes))
 	for key := range hashes {
@@ -299,7 +360,7 @@ func compareWAVHashes(got, want map[string]wavHash, known map[string]knownWAVDif
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	same, listed := 0, 0
+	same, listed, none := 0, 0, 0
 	for _, key := range keys {
 		reference, ok := want[key]
 		if !ok {
@@ -312,12 +373,27 @@ func compareWAVHashes(got, want map[string]wavHash, known map[string]knownWAVDif
 			problems = append(problems, fmt.Sprintf("%s: now identical on both machines (%s); remove it from knownWAVDifferences (listed %s: %s)", key, reference, entry.listed, entry.cause))
 		case got[key] == reference:
 			same++
+			if reference.sum == "none" {
+				none++ // both failed the same way; nothing was compared
+			}
 		case isKnown:
 			listed++
 			notes = append(notes, fmt.Sprintf("%s: known difference, listed %s (%s): reference %s, here %s", key, entry.listed, entry.cause, reference, got[key]))
 		default:
 			problems = append(problems, fmt.Sprintf("%s: differs from the reference: reference %s, here %s. Find the first stage whose bits differ: an unrounded product or a math library call (docs/audio/mix-chain.md)", key, reference, got[key]))
 		}
+	}
+	// An entry that only the reference has is a score or a step that this
+	// machine no longer produces.
+	var missing []string
+	for key := range want {
+		if _, ok := got[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	sort.Strings(missing)
+	for _, key := range missing {
+		problems = append(problems, fmt.Sprintf("%s: only the reference has an entry (%s); both machines must render the same set", key, want[key]))
 	}
 	if all {
 		var stale []string
@@ -331,7 +407,7 @@ func compareWAVHashes(got, want map[string]wavHash, known map[string]knownWAVDif
 			problems = append(problems, fmt.Sprintf("%s: listed in knownWAVDifferences but not an example render; remove it", key))
 		}
 	}
-	notes = append(notes, fmt.Sprintf("%d of %d renders identical to the reference, %d known differences", same, len(keys), listed))
+	notes = append(notes, fmt.Sprintf("%d of %d renders identical to the reference (%d of them failed on both, with nothing to compare), %d known differences", same, len(keys), none, listed))
 	return problems, notes
 }
 
@@ -351,6 +427,7 @@ func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
 		"s.cicada listed-differs": a,
 		"s.cicada listed-same":    a,
 		"s.cicada no-reference":   a,
+		"s.cicada both-failed":    failed,
 	}
 	want := map[string]wavHash{
 		"s.cicada same":           a,
@@ -358,25 +435,27 @@ func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
 		"s.cicada status":         {sum: "none", status: 2},
 		"s.cicada listed-differs": b,
 		"s.cicada listed-same":    a,
+		"s.cicada both-failed":    failed,
+		"s.cicada reference-only": a,
 	}
 	for _, all := range []bool{false, true} {
 		problems, notes := compareWAVHashes(got, want, known, all)
 		joined := strings.Join(problems, "\n")
-		for _, key := range []string{"s.cicada differs", "s.cicada status", "s.cicada listed-same", "s.cicada no-reference"} {
+		for _, key := range []string{"s.cicada differs", "s.cicada status", "s.cicada listed-same", "s.cicada no-reference", "s.cicada reference-only"} {
 			if !strings.Contains(joined, key+":") {
 				t.Errorf("all=%v: no problem reported for %q in:\n%s", all, key, joined)
 			}
 		}
-		if strings.Contains(joined, "s.cicada same:") || strings.Contains(joined, "s.cicada listed-differs:") {
+		if strings.Contains(joined, "s.cicada same:") || strings.Contains(joined, "s.cicada listed-differs:") || strings.Contains(joined, "s.cicada both-failed:") {
 			t.Errorf("all=%v: a matching render or a listed difference was reported as a problem:\n%s", all, joined)
 		}
 		if gone := strings.Contains(joined, "s.cicada listed-gone:"); gone != all {
 			t.Errorf("all=%v: a listed render that was not rendered reported=%v, want %v", all, gone, all)
 		}
-		if len(problems) != 4+map[bool]int{false: 0, true: 1}[all] {
-			t.Errorf("all=%v: %d problems, want %d:\n%s", all, len(problems), 4+map[bool]int{false: 0, true: 1}[all], joined)
+		if len(problems) != 5+map[bool]int{false: 0, true: 1}[all] {
+			t.Errorf("all=%v: %d problems, want %d:\n%s", all, len(problems), 5+map[bool]int{false: 0, true: 1}[all], joined)
 		}
-		if summary := notes[len(notes)-1]; summary != "1 of 6 renders identical to the reference, 1 known differences" {
+		if summary := notes[len(notes)-1]; summary != "2 of 7 renders identical to the reference (1 of them failed on both, with nothing to compare), 1 known differences" {
 			t.Errorf("all=%v: summary %q", all, summary)
 		}
 	}
