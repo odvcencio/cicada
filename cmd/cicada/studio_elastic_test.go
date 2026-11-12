@@ -55,7 +55,7 @@ func TestElasticVocalFollowsTempoAndUndoKeepsRawTake(t *testing.T) {
 			asset = a
 		}
 	}
-	clock, err := project.NewTempoMap(48000, int64(p.TempoMilli), project.SongTempoChanges(p))
+	clock, err := project.NewTempoMap(p.MeterMap(), 48000, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		t.Fatal(err)
 	}

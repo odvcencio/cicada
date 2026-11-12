@@ -43,7 +43,7 @@ song { one two }`
 			}
 			if target == "[e4 g4 b4]" {
 				for i, pitch := range []uint8{64, 67, 71} {
-					if note := notes[16+i]; note.Note != pitch || note.Tick != seq.TicksPerBar {
+					if note := notes[16+i]; note.Note != pitch || note.Tick != ticksPerBar {
 						t.Fatalf("next scene lost chord pitch or onset: %+v", note)
 					}
 				}

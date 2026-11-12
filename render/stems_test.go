@@ -117,8 +117,8 @@ func TestStemsBarRangeMatchesFullRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := clock.SampleAtTick(2 * seq.TicksPerBar)
-	end := clock.SampleAtTick(3 * seq.TicksPerBar)
+	start := clock.SampleAtTick(2 * ticksPerBar)
+	end := clock.SampleAtTick(3 * ticksPerBar)
 	root := t.TempDir()
 	fullDir, partDir := filepath.Join(root, "full"), filepath.Join(root, "part")
 	if _, err := Stems(score, Options{SampleRate: 48_000, Bits: 32}, fullDir); err != nil {
@@ -170,8 +170,8 @@ func TestStemsBarRangeWithDriveAlignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := clock.SampleAtTick(seq.TicksPerBar)
-	end := clock.SampleAtTick(3 * seq.TicksPerBar)
+	start := clock.SampleAtTick(ticksPerBar)
+	end := clock.SampleAtTick(3 * ticksPerBar)
 	root := t.TempDir()
 	fullDir, partDir := filepath.Join(root, "full"), filepath.Join(root, "part")
 	if _, err := Stems(score, Options{SampleRate: 48_000, Bits: 32, Bars: 3}, fullDir); err != nil {

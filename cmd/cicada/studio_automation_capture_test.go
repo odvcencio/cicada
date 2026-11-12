@@ -18,6 +18,7 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -38,7 +39,7 @@ func TestAutomationDuringCaptureKeepsDryTakeAndOwnRevision(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
-	count, _ := capture.NewCountIn(48000, 120000, 0)
+	count, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err := s.captureRecorder.Begin(count, capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +358,7 @@ func TestConcurrentAutomationAndTakeRetainOutsideEdit(t *testing.T) {
 	if r.Code != http.StatusOK {
 		t.Fatal(r.Body.String())
 	}
-	count, _ := capture.NewCountIn(48000, 120000, 0)
+	count, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err = s.captureRecorder.Begin(count, capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}

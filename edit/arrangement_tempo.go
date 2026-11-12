@@ -39,9 +39,10 @@ func init() {
 	Handle("removearrangementtempo", editArrangementTempo)
 }
 
-func tempoBarTick(at string) (int64, error) {
-	tick, err := notation.MusicalTicks(at, true)
-	if err != nil || tick < 0 || tick%seq.TicksPerBar != 0 || tick/seq.TicksPerBar > 1<<20 {
+func tempoBarTick(meterMap seq.MeterMap, at string) (int64, error) {
+	tick, err := notation.MusicalTicks(meterMap, at, true)
+	bar, offset := meterMap.BarAt(tick)
+	if err != nil || tick < 0 || offset != 0 || bar > 1<<20 {
 		return 0, fmt.Errorf("choose a tempo step at the start of a bar")
 	}
 	return tick, nil
@@ -66,14 +67,14 @@ func editArrangementTempo(ctx *Context, intent Intent) error {
 	case *RemoveArrangementTempo:
 		oldAt, at, remove = in.At, in.At, true
 	}
-	tick, err := tempoBarTick(at)
+	tick, err := tempoBarTick(ctx.MeterMap(), at)
 	if err != nil {
 		return err
 	}
-	at = notation.TickPosition(tick)
+	at = notation.TickPosition(ctx.MeterMap(), tick)
 	oldTick := int64(-1)
 	if oldAt != "" {
-		oldTick, err = tempoBarTick(oldAt)
+		oldTick, err = tempoBarTick(ctx.MeterMap(), oldAt)
 		if err != nil {
 			return err
 		}
@@ -102,7 +103,7 @@ func editArrangementTempo(ctx *Context, intent Intent) error {
 			if walker.Type(n) != "arrangement_tempo" {
 				continue
 			}
-			t, err := tempoBarTick(walker.Text(walker.Field(n, "at")))
+			t, err := tempoBarTick(ctx.MeterMap(), walker.Text(walker.Field(n, "at")))
 			if err != nil {
 				return err
 			}
@@ -111,7 +112,7 @@ func editArrangementTempo(ctx *Context, intent Intent) error {
 				continue
 			}
 			if !remove && t == tick {
-				return fmt.Errorf("bar %d already has a tempo step; edit that step instead", tick/seq.TicksPerBar+1)
+				return fmt.Errorf("bar %d already has a tempo step; edit that step instead", barNumber(ctx.MeterMap(), tick))
 			}
 			if t < oldTick {
 				before = max(before, t)
@@ -157,9 +158,9 @@ func editArrangementTempo(ctx *Context, intent Intent) error {
 		return err
 	}
 	ctx.Source, ctx.plan = stageProjectSource(ctx, file, source, updated), nil
-	label := fmt.Sprintf("Tempo · bar %d · %s BPM", tick/seq.TicksPerBar+1, value)
+	label := fmt.Sprintf("Tempo · bar %d · %s BPM", barNumber(ctx.MeterMap(), tick), value)
 	if remove {
-		label = fmt.Sprintf("Tempo · bar %d step removed", tick/seq.TicksPerBar+1)
+		label = fmt.Sprintf("Tempo · bar %d step removed", barNumber(ctx.MeterMap(), tick))
 	}
 	ctx.SetLabel(label)
 	return nil

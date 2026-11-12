@@ -40,7 +40,7 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 		case source.RateMicroHz > 0:
 			detail += " · " + strconv.FormatFloat(float64(source.RateMicroHz)/1e6, 'f', -1, 64) + " Hz"
 		case source.RateTicks > 0:
-			detail += " · " + modulationPeriod(source.RateTicks)
+			detail += " · " + modulationPeriod(v.Project.MeterMap(), source.RateTicks)
 		}
 		setting := func(name, label, value string, options []string) gosx.Node {
 			input := textInput("value", value)
@@ -56,7 +56,7 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 			if source.Kind == "contour" {
 				fieldName = "period"
 			}
-			settings = append(settings, setting(fieldName, "Rate or period", modulationRate(source), nil))
+			settings = append(settings, setting(fieldName, "Rate or period", modulationRate(v.Project.MeterMap(), source), nil))
 			settings = append(settings, setting("loop", "Loop", source.Loop, []string{"wrap", "continue"}))
 		}
 		switch source.Kind {
@@ -131,23 +131,22 @@ func (s *studioApp) modulationDock(v workspace, csrf string) gosx.Node {
 		gosx.El("ol", gosx.Fragment(rows...)), addRoute)
 }
 
-func modulationRate(source project.Modulator) string {
+func modulationRate(meterMap seq.MeterMap, source project.Modulator) string {
 	if source.RateMicroHz > 0 {
 		return strconv.FormatFloat(float64(source.RateMicroHz)/1e6, 'f', -1, 64) + "Hz"
 	}
-	if source.RateTicks%seq.TicksPerBar == 0 {
-		return fmt.Sprintf("%dbars", source.RateTicks/seq.TicksPerBar)
+	if bars, whole := meterMap.WholeBars(0, source.RateTicks); whole {
+		return fmt.Sprintf("%dbars", bars)
 	}
-	a, b := source.RateTicks, int64(seq.TicksPerBar)
+	a, b := source.RateTicks, seq.TicksPerWhole
 	for b != 0 {
 		a, b = b, a%b
 	}
-	return fmt.Sprintf("%d/%d", source.RateTicks/a, int64(seq.TicksPerBar)/a)
+	return fmt.Sprintf("%d/%d", source.RateTicks/a, seq.TicksPerWhole/a)
 }
 
-func modulationPeriod(ticks int64) string {
-	if ticks%seq.TicksPerBar == 0 {
-		bars := ticks / seq.TicksPerBar
+func modulationPeriod(meterMap seq.MeterMap, ticks int64) string {
+	if bars, whole := meterMap.WholeBars(0, ticks); whole {
 		if bars == 1 {
 			return "1 bar per cycle"
 		}

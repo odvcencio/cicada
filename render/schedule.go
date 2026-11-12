@@ -67,22 +67,23 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	for _, v := range events {
 		duration = max(duration, v.Tick, v.EndTick)
 	}
-	songBars := int((duration + seq.TicksPerBar - 1) / seq.TicksPerBar)
+	meterMap := p.MeterMap()
+	songBars := int(meterMap.BarsUntil(duration))
 	if opts.From < 0 || opts.From >= songBars || opts.Bars < 0 || opts.Bars > songBars-opts.From {
 		return report, fmt.Errorf("requested range must fit the arrangement")
 	}
-	endTick := int64(songBars) * seq.TicksPerBar
+	endTick := meterMap.BarStart(int64(songBars))
 	if opts.Bars > 0 {
-		endTick = int64(opts.From+opts.Bars) * seq.TicksPerBar
+		endTick = meterMap.BarStart(int64(opts.From + opts.Bars))
 	}
 	songChanges := project.SongTempoChanges(p)
-	tempoMap, err := project.NewTempoMap(opts.SampleRate, int64(p.TempoMilli), songChanges)
+	tempoMap, err := project.NewTempoMap(meterMap, opts.SampleRate, int64(p.TempoMilli), songChanges)
 	if err != nil {
 		return report, err
 	}
-	fromFrame := tempoMap.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
+	fromFrame := tempoMap.SampleAtTick(meterMap.BarStart(int64(opts.From)))
 	endFrame := tempoMap.SampleAtTick(endTick)
-	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
+	report = Report{SampleRate: opts.SampleRate, Bars: int(meterMap.BarsUntil(endTick)) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)

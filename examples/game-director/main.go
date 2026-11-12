@@ -82,10 +82,11 @@ func run() error {
 		return fmt.Errorf("play rejected")
 	}
 	clock, _ := seq.NewClock(rate, cfg.BPMMilli)
+	meterMap := music.MeterMap()
 	var l, r [128]float32
 	var sample int64
 	for bar := range 8 {
-		tick := int64(bar) * seq.TicksPerBar
+		tick := meterMap.BarStart(int64(bar))
 		if bar == 2 {
 			if err := game.SetMacro("intensity", .9, tick+111); err != nil {
 				return err
@@ -99,7 +100,7 @@ func run() error {
 				return err
 			}
 		}
-		end := clock.SampleAtTick(tick + seq.TicksPerBar)
+		end := clock.SampleAtTick(meterMap.BarStart(int64(bar + 1)))
 		for sample < end {
 			frames := int(min(int64(len(l)), end-sample))
 			music.Render(l[:frames], r[:frames])
