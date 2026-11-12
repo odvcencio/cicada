@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -16,9 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"m31labs.dev/cicada/host/kernelimage"
-	"m31labs.dev/cicada/host/schedule"
-	"m31labs.dev/cicada/project"
+	"m31labs.dev/cicada/internal/compilehash"
 )
 
 // TestExampleWAVParity checks the determinism contract at the level of the
@@ -202,46 +199,24 @@ func renderWAVHashes(t *testing.T, root string, scores []string) map[string]wavH
 	return got
 }
 
-// compileHashes returns, keyed "score config" and "score image", the SHA-256
-// of each score's compiled engine configuration (as JSON, the way
-// project.CompileEngine builds it at 48 kHz) and of its portable kernel image
-// (schedule.CompileResident, then kernelimage.Encode, the way `cicada check
-// --profile browser` builds it). Scores load with loadProject, as the cicada
-// command loads them. A step that fails records "none" with the step as its
-// status (1 load, 2 configuration, 3 image compile, 4 image encode), so a
-// score that fails differently on two machines differs too. Until #329 the
+// compileHashes returns, keyed "score config" and "score image", each score's
+// hashes from internal/compilehash: the SHA-256 of its compiled engine
+// configuration (JSON, project.CompileEngine at 48 kHz) and of its portable
+// kernel image (schedule.CompileResident, then kernelimage.Encode, as `cicada
+// check --profile browser` builds it). A step that fails records "none" with
+// the step as its status (1 load, 2 configuration, 3 image compile, 4 image
+// encode), so a score that fails differently on two machines differs too. The
+// same package runs under js/wasm in CI against these hashes. Until #329 the
 // send levels in dB came from math.Pow, and the configurations of
 // anywhere-you-are and tidal-glass, and tidal-glass's image, differed between
 // amd64 and arm64 in their last bits while every WAV matched.
 func compileHashes(t *testing.T, root string, scores []string) map[string]wavHash {
 	t.Helper()
 	got := map[string]wavHash{}
-	sum := func(data []byte) string {
-		s := sha256.Sum256(data)
-		return hex.EncodeToString(s[:])
-	}
 	for _, score := range scores {
-		config, image := wavHash{sum: "none"}, wavHash{sum: "none"}
-		path := filepath.Join(root, filepath.FromSlash(score))
-		if semantic, err := loadProject(path); err != nil {
-			config.status, image.status = 1, 1
-		} else {
-			if cfg, err := project.CompileEngine(semantic, 48_000, 512); err != nil {
-				config.status = 2
-			} else if data, err := json.Marshal(cfg); err != nil {
-				t.Fatalf("%s: %v", score, err)
-			} else {
-				config.sum = sum(data)
-			}
-			if portable, err := schedule.CompileResident(semantic, filepath.Dir(path), 48_000, 128); err != nil {
-				image.status = 3
-			} else if data, err := kernelimage.Encode(portable); err != nil {
-				image.status = 4
-			} else {
-				image.sum = sum(data)
-			}
-		}
-		got[score+" config"], got[score+" image"] = config, image
+		config, image := compilehash.Score(root, score)
+		got[score+" config"] = wavHash{sum: config.Sum, status: config.Status}
+		got[score+" image"] = wavHash{sum: image.Sum, status: image.Status}
 	}
 	return got
 }

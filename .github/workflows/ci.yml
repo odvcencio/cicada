@@ -275,6 +275,13 @@ jobs:
           set -euo pipefail
           CICADA_WAV_PARITY_OUT="$PWD/build/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+      # The third target: the hosted demo builds kernel images with Go's js/wasm.
+      - name: Build every example's kernel image under js/wasm and compare with amd64's
+        run: |
+          set -euo pipefail
+          PATH="$(go env GOROOT)/lib/wasm:$PATH" CICADA_COMPILE_HASHES_REFERENCE="$PWD/build/parity/wav-hashes.txt" GOOS=js GOARCH=wasm \
+            env -u GOMAXPROCS go test -timeout=10m ./internal/compilehash -run '^TestHashesMatchReference$' -count=1 -v | tee build/parity/jswasm-images.txt
+          grep -q -- '^--- PASS: TestHashesMatchReference ' build/parity/jswasm-images.txt
       - name: Race-check the render lanes
         run: |
           set -euo pipefail
