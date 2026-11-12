@@ -168,6 +168,11 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 				return paramdefs.InstrumentParamDescriptor(slot, param.Name, unit, value), "track", owner, "", ""
 			}
 		}
+		if name, ok := strings.CutPrefix(setting, "send."); ok {
+			if first := firstReverbReturn(score); first != "" && name != first && isReverbReturn(score, name) {
+				return paramdefs.Descriptor{}, "track", owner, "CICADA-UNSUPPORTED", paramdefs.LaterReverbSendMessage(path, name, first)
+			}
+		}
 		hint := sendPathHint(score, setting)
 		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + hint
 	}
@@ -378,6 +383,27 @@ func contains(values []string, value string) bool {
 // instrument for authored voices.
 func ParameterVoiceKind(score *Score, kind string) string {
 	return notationParameterVoiceKind(score, kind)
+}
+
+// firstReverbReturn names the reverb in return slot B, the first reverb the
+// score declares outside the master chain ("" without one).
+func firstReverbReturn(score *Score) string {
+	for _, effect := range score.Effects {
+		if effect.Kind == "reverb" && !effectOnMaster(score, effect.Name) {
+			return effect.Name
+		}
+	}
+	return ""
+}
+
+// isReverbReturn reports whether name is a reverb return of the score.
+func isReverbReturn(score *Score, name string) bool {
+	for _, effect := range score.Effects {
+		if effect.Name == name {
+			return effect.Kind == "reverb" && !effectOnMaster(score, name)
+		}
+	}
+	return false
 }
 
 // sendPathHint is paramdefs.SendPathHint over the score's effects.

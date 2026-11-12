@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -96,5 +97,23 @@ func TestExtraReverbControlsAreFixed(t *testing.T) {
 		if strings.HasPrefix(address.Address, "room.") {
 			t.Fatalf("live address %s for the second reverb", address.Address)
 		}
+	}
+}
+
+// A path to a later reverb's send is refused with what is addressable. The old
+// hint pointed at send.reverb, which is the send to the first reverb, so a
+// scene or automate lane that followed it moved the wrong send.
+func TestLaterReverbSendPathIsRefusedNotRedirected(t *testing.T) {
+	p, errs := reverbScoreDiagnostics(t, "cicada 2\ntempo 120\nfx hall reverb {}\nfx room reverb {}\n"+strings.Replace(reverbTail, "SENDS", "send room = -12dB", 1))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	_, err := ResolveParameterPath(p, "keys.send.room")
+	var pathErr *PathError
+	if !errors.As(err, &pathErr) || pathErr.Code != "CICADA-UNSUPPORTED" || !strings.Contains(err.Error(), "send.reverb is the send to hall") || strings.Contains(err.Error(), "the send to room is send.reverb") {
+		t.Fatalf("keys.send.room: %v", err)
+	}
+	if _, err := ResolveParameterPath(p, "keys.send.reverb"); err != nil {
+		t.Fatalf("keys.send.reverb, the send to hall: %v", err)
 	}
 }

@@ -136,6 +136,16 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 		}
 		if !found {
+			// send.<name> for a reverb after the first: say what is addressable
+			// rather than point at send.reverb, which is the first reverb's send.
+			if name, ok := strings.CutPrefix(setting, "send."); ok {
+				first := firstReverbName(p)
+				for _, effect := range p.Effects {
+					if effect.ID == name && semanticEffectKind(effect) == "reverb" && first != "" && name != first && !MasterHasInsert(p, name) {
+						return fail("CICADA-UNSUPPORTED", paramdefs.LaterReverbSendMessage(path, name, first))
+					}
+				}
+			}
 			hint := paramdefs.SendPathHint(setting, func(name string) (string, bool) {
 				for _, effect := range p.Effects {
 					if effect.ID == name {
@@ -324,6 +334,11 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 func firstReverb(p *Project, name string) bool {
 	return firstReverbName(p) == name
 }
+
+// FirstReverbName names the reverb in return slot B: the first reverb the
+// project declares outside the master chain, as the engine compiler takes it.
+// Every later reverb takes a slot from C to H. It is "" without a reverb.
+func FirstReverbName(p *Project) string { return firstReverbName(p) }
 
 func firstReverbName(p *Project) string {
 	for _, effect := range p.Effects {

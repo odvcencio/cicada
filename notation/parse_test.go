@@ -698,3 +698,15 @@ func TestSyntaxErrorInsideADeclarationNamesItsLine(t *testing.T) {
 		})
 	}
 }
+
+// A scene that sets a later reverb's send is refused at its path, not sent to
+// send.reverb (the first reverb's send).
+func TestSceneSendToLaterReverbIsRefused(t *testing.T) {
+	_, diagnostics := Parse([]byte("cicada 2\nfx hall reverb {}\nfx room reverb {}\ntrack bass acid { send room = 0.2 }\npattern p { c3 }\nscene main { bass = p bass.send.room = 0.4 }\nsong { main }\n"))
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-UNSUPPORTED" && strings.Contains(d.Message, "send.reverb is the send to hall") {
+			return
+		}
+	}
+	t.Fatalf("want CICADA-UNSUPPORTED naming hall as send.reverb, got %+v", diagnostics)
+}
