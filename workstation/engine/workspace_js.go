@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall/js"
 	"time"
@@ -78,6 +79,18 @@ type workspaceJob struct {
 	// read with its outcome (shell_edits_js.go).
 	hold *shellHold
 	then func(int)
+	// submitter is the button or link the user pressed; label names a job
+	// with no such control (a keyboard Undo). See workspaceJobLabel.
+	submitter js.Value
+	label     string
+}
+
+// workspaceTransport is a transport command sent beside the edit queue
+// (sendTransport).
+type workspaceTransport struct {
+	target string
+	values map[string]string
+	label  string
 }
 
 type workspaceUI struct {
@@ -118,6 +131,11 @@ type workspaceUI struct {
 	reloading bool // a page reload to show changed engines has started
 	// revealWanted: a region opened while a read ran; read it after.
 	revealWanted bool
+	// One transport command is in flight at a time; transportNext is the
+	// newest click made meanwhile (sendTransport).
+	transportMu   sync.Mutex
+	transportBusy bool
+	transportNext *workspaceTransport
 }
 
 type workspaceEditorBaseline struct {
@@ -368,7 +386,9 @@ func (u *workspaceUI) submit(event js.Value) {
 			return
 		}
 		domDrop(form, "data-workspace-updated")
-		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+		// #transport-form never waits for a region read, as before; only its
+		// Stop during a recording is not revision-free (workspaceTransportFree).
+		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
 			// A form in a stale region still carries an older revision. Read
 			// the region first; nothing is sent until it is current.
 			workspaceStop(event)
@@ -436,17 +456,21 @@ func (u *workspaceUI) submit(event js.Value) {
 		}
 		event.Call("preventDefault")
 		event.Call("stopImmediatePropagation")
-		u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + query.Encode(), form: form, controls: workspaceControls(form)})
+		u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + query.Encode(), form: form, controls: workspaceControls(form), submitter: submitter})
 		return
 	}
 	values["__cicada_reactive"] = "1"
 	values["__cicada_location"] = workspaceLocation()
 	if transport {
 		workspaceStop(event)
-		go u.sendTransport(parsed.RequestURI(), values, workspaceLabel(submitter, js.Undefined()))
+		label := workspaceNodeLabel(submitter)
+		if label == "" {
+			label = "The transport command"
+		}
+		u.sendTransport(workspaceTransport{target: parsed.RequestURI(), values: values, label: label})
 		return
 	}
-	job := workspaceJob{method: methodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form)}
+	job := workspaceJob{method: methodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form), submitter: submitter}
 	if workspacePresent(submitter) && (u.shell || submitter.Call("matches", ".roll-cell").Bool()) {
 		job.pendingCell = submitter
 	}
@@ -518,7 +542,7 @@ func (u *workspaceUI) click(event js.Value) {
 	}
 	event.Call("preventDefault")
 	event.Call("stopImmediatePropagation")
-	u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + parsed.RawQuery, fragment: parsed.Fragment, form: js.Undefined()})
+	u.queue(workspaceJob{method: methodGet, target: "/__workspace?" + parsed.RawQuery, fragment: parsed.Fragment, form: js.Undefined(), submitter: anchor})
 }
 
 func workspaceStop(event js.Value) {
@@ -680,7 +704,7 @@ func (u *workspaceUI) keyDown(event js.Value) {
 		}
 		if action != "" {
 			workspaceStop(event)
-			u.queue(workspaceJob{method: methodPost, target: "/__actions/" + action, values: u.editValues(), confirmed: u.revision.Get(), form: js.Undefined()})
+			u.queue(workspaceJob{method: methodPost, target: "/__actions/" + action, values: u.editValues(), confirmed: u.revision.Get(), form: js.Undefined(), label: map[string]string{"undo": "Undo", "redo": "Redo"}[action]})
 		}
 		return
 	}
@@ -907,14 +931,12 @@ func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped string) {
 		if job.then != nil {
 			job.then(holdDropped)
 		}
-		if dropped != "" {
-			dropped += ", "
+		if label := workspaceJobLabel(job); label != "" {
+			if dropped != "" {
+				dropped += ", "
+			}
+			dropped += label
 		}
-		button := job.pendingCell
-		if job.hold != nil {
-			button = job.hold.submitter
-		}
-		dropped += workspaceLabel(button, job.form)
 	}
 	for _, job := range keep {
 		u.jobs <- job
@@ -1146,19 +1168,51 @@ func workspaceNotSent(dropped string) string {
 	return " Not sent: " + dropped + "."
 }
 
-// workspaceLabel names the button that sent something, for a message: its
-// accessible name, else its text; without a button, its form's first one.
-func workspaceLabel(button, form js.Value) string {
-	if !workspacePresent(button) && workspacePresent(form) {
-		button = domCall(form, "querySelector", "button")
+// workspaceJobLabel names what the user did that queued job, for a message
+// about it: the button or link they pressed, else the cell they edited, else
+// the job's own label, else "an edit" for a write. A read Studio started by
+// itself (a refresh with no form) is named "": the user did not ask for it.
+func workspaceJobLabel(job workspaceJob) string {
+	nodes := []js.Value{job.submitter, job.pendingCell}
+	if job.hold != nil {
+		nodes = append([]js.Value{job.hold.submitter}, nodes...)
 	}
-	if !workspacePresent(button) {
+	for _, node := range nodes {
+		if label := workspaceNodeLabel(node); label != "" {
+			return label
+		}
+	}
+	if job.label != "" {
+		return job.label
+	}
+	if workspacePresent(job.form) {
+		if label := strings.TrimSpace(workspaceAttr(job.form, "aria-label")); label != "" {
+			return label
+		}
+		if job.method == methodGet {
+			return "a change of view"
+		}
+	}
+	if job.method == methodPost {
 		return "an edit"
 	}
-	if label := workspaceAttr(button, "aria-label"); label != "" {
+	return ""
+}
+
+// workspaceNodeLabel is a control's name as the user reads it: its
+// accessible name, else its text (an input's value); "" if it has none.
+func workspaceNodeLabel(node js.Value) string {
+	if !workspacePresent(node) {
+		return ""
+	}
+	if label := strings.TrimSpace(workspaceAttr(node, "aria-label")); label != "" {
 		return label
 	}
-	return workspaceString(button, "textContent")
+	text := workspaceString(node, "textContent")
+	if strings.EqualFold(workspaceString(node, "tagName"), "input") {
+		text = workspaceString(node, "value")
+	}
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // workspaceTransportFree reports a transport button (name action) the service
@@ -1166,23 +1220,62 @@ func workspaceLabel(button, form js.Value) string {
 // to start and stopping a track. It never waits behind a score write, and no queue clear
 // can drop it. Launch, slot, play-from and the listening commands name a scene,
 // block or pattern; the service checks their revision, so they wait like edits.
+// Stop during a recording saves the take, which writes the score, so it waits
+// like an edit too.
 func workspaceTransportFree(form, submitter js.Value) bool {
-	return workspacePresent(submitter) && strings.Contains(" play pause stop fullSong home trackStop ", " "+workspaceAttr(submitter, "value")+" ") && strings.HasSuffix(workspaceAttr(form, "action"), "/__actions/transport")
+	if !workspacePresent(submitter) || !strings.HasSuffix(workspaceAttr(form, "action"), "/__actions/transport") {
+		return false
+	}
+	action := workspaceAttr(submitter, "value")
+	if action == "stop" && workspacePresent(js.Global().Get("document").Call("querySelector", `[data-recording-transport-locked="true"]`)) {
+		return false
+	}
+	return strings.Contains(" play pause stop fullSong home trackStop ", " "+action+" ")
 }
 
-// sendTransport sends a transport command at once, beside the queue. It
-// changes no score; its view (the panel shows what is playing) is applied
-// only while nothing is queued and the score has not moved, and otherwise
-// comes with the next refresh.
-func (u *workspaceUI) sendTransport(target string, values map[string]string, label string) {
-	job := workspaceJob{method: methodPost, target: target, values: values, form: js.Undefined()}
+// sendTransport sends a transport command at once, beside the queue. One is
+// in flight at a time, in click order: a click made while one is in flight
+// waits for its reply and replaces any earlier click still waiting, so the
+// newest click wins (Play then Stop ends stopped).
+func (u *workspaceUI) sendTransport(command workspaceTransport) {
+	u.transportMu.Lock()
+	if u.transportBusy {
+		u.transportNext = &command
+		u.transportMu.Unlock()
+		return
+	}
+	u.transportBusy = true
+	u.transportMu.Unlock()
+	go func() {
+		for next := &command; next != nil; {
+			u.runTransport(*next)
+			u.transportMu.Lock()
+			next, u.transportNext = u.transportNext, nil
+			u.transportBusy = next != nil
+			u.transportMu.Unlock()
+		}
+	}()
+}
+
+// runTransport sends one transport command. It changes no score; its view
+// (the panel shows what is playing) is applied only while nothing is queued
+// and neither the score nor its sources have moved, and otherwise comes with
+// the next refresh. A successful reply usually has no message: it leaves the
+// status line as it is, so a notice the user still needs (what was not sent)
+// stays.
+func (u *workspaceUI) runTransport(command workspaceTransport) {
+	job := workspaceJob{method: methodPost, target: command.target, values: command.values, form: js.Undefined()}
 	projection, message, err := u.request(job)
 	if err != nil {
-		message = label + " did not run: " + err.Error()
-	} else if !u.busy.Load() && len(u.jobs) == 0 && !u.closed.Load() && projection.Revision == u.revision.Get() {
+		u.status.Set(command.label + " did not run: " + err.Error())
+		return
+	}
+	if !u.busy.Load() && len(u.jobs) == 0 && !u.closed.Load() && projection.Revision == u.revision.Get() && projection.SourceRevision == u.sourceRevision {
 		u.apply(projection, job)
 	}
-	u.status.Set(message)
+	if message != "" {
+		u.status.Set(message)
+	}
 }
 
 type workspaceRequestError struct {
