@@ -917,9 +917,11 @@ const STEPS = {
   C5: {
     part: 3, fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async ctx => {
-      // A save re-renders the editor without its Check button until the page
-      // loads again, so start from a fresh page.
+      // While a recovery copy of earlier typing is offered, the pane shows
+      // "Save combined draft" and "Discard draft" instead of "Check file":
+      // discard it first (setup), then type a draft to check.
       await ctx.open(CODE, {force: true});
+      await ctx.discardDrafts();
       await ctx.codeEnd(CODE); await ctx.page.keyboard.type('\n// check this draft\n');
     },
     // code-editor.test.cjs finds the button by its accessible name.
@@ -932,6 +934,21 @@ const STEPS = {
     },
     check: () => document.querySelector('#editor-native-form')?.getAttribute('data-gosx-form-state') === 'success',
     finish: ctx => ctx.codeRevert(),
+  },
+  C7: {
+    part: 3, fixture: 'scene', input: {type: 'pointerdown'},
+    prepare: async ctx => {
+      // Type, wait for the recovery copy (row C3), and load the page again so
+      // Studio offers the copy.
+      await ctx.codeEnd(SCENE);
+      const since = await ctx.page.evaluate(() => window.__lf.net.length);
+      await ctx.page.keyboard.type('\n// a recovery copy\n');
+      await until(() => ctx.page.evaluate(since => window.__lf.net.slice(since).some(entry => entry.path === '/__actions/source-checkpoint' && entry.end != null), since), 'no recovery copy was written', 10_000);
+      await ctx.open(CODE, {force: true});
+      await ctx.page.getByRole('button', {name: 'Discard draft', exact: true}).waitFor();
+    },
+    act: ctx => ctx.page.getByRole('button', {name: 'Discard draft', exact: true}).click(),
+    check: () => ![...document.querySelectorAll('#score button')].some(button => button.textContent.trim() === 'Discard draft' && button.getClientRects().length),
   },
   C8: {
     part: 3, fixture: 'scene', input: {type: 'keydown', key: 'y'},
@@ -1352,7 +1369,6 @@ const UNSCRIPTED = {
   A11: 'needs a recorded vocal take; the fixtures have none',
   A12: 'needs a recorded vocal take; the fixtures have none',
   C6: 'both fixtures are single-file scores; switching needs a project with several files',
-  C7: 'needs a recovery copy written by an earlier Studio process (code-recovery.test.cjs runs three)',
   L5: 'downloads a sample pack from a catalog URL over the network; CI has no catalog',
   L6: 'a native multipart upload that loads a new document; the probe does not follow a document load yet',
   L7: 'records from a microphone; CI runs Studio with --audio null',
@@ -1681,6 +1697,15 @@ test('local-first walkthrough: does each interaction wait on the server?', {time
     await editor.waitFor();
     await editor.focus();
     await page.keyboard.press(`${mod}+End`);
+  };
+  // discardDrafts discards every recovery copy the Code pane offers (setup).
+  ctx.discardDrafts = async () => {
+    const discard = page.getByRole('button', {name: 'Discard draft', exact: true});
+    for (let i = 0; i < 5 && await discard.isVisible(); i++) {
+      await discard.click();
+      await until(async () => !(await discard.isVisible()) || (await page.evaluate(() => document.querySelectorAll('[data-gosx-form-state=submitting]').length)) === 0, 'Discard draft did not finish');
+      await ctx.settle();
+    }
   };
   ctx.codeRevert = async () => {
     await page.locator('#editor-content').fill((await state('/api/state')).source);
