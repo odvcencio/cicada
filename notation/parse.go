@@ -125,7 +125,56 @@ func (w *loweringWalker) position(n *gts.Node) Position {
 	return p
 }
 
+// Parsed is one parse of a project's files: the score and diagnostics
+// ParseFiles returns, and what a compile of the same score would otherwise
+// compute again. Its slices and the score belong to the caller; the parse
+// keeps no reference to them.
+type Parsed struct {
+	Score       *Score
+	Diagnostics []Diagnostic
+	// Validated reports that the parse reached Validate; Validation is what
+	// Validate(Score) returned then, before the parse added file paths to its
+	// diagnostics. A compile of Score may use it in place of calling Validate
+	// again only while Score is unchanged.
+	Validated  bool
+	Validation []Diagnostic
+	// Outlines holds, for each file the parse read, in order, what
+	// DeclarationNames and ReadImports would read from it. It is nil when a
+	// file failed to parse.
+	Outlines []Outline
+}
+
+// Outline is what one file declares at its top level: the text of each
+// declaration's name, as DeclarationNames reads it, and the path of each
+// import, as ReadImports reads it.
+type Outline struct {
+	Path    string
+	Names   []string
+	Imports []string
+}
+
+// ParseFilesDetailed is ParseFiles, also returning what the parse saw
+// (Parsed). It parses each file once.
+func ParseFilesDetailed(files []SourceFile, edition int) Parsed {
+	if edition != 1 && edition != 2 {
+		score, diagnostics := ParseFiles(files, edition)
+		return Parsed{Score: score, Diagnostics: diagnostics}
+	}
+	return parseFilesDetailed(files, edition)
+}
+
+// ParseSourceDetailed is ParseSource, also returning what the parse saw.
+func ParseSourceDetailed(file SourceFile) Parsed {
+	return parseFilesDetailed([]SourceFile{file}, 0)
+}
+
 func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
+	parsed := parseFilesDetailed(files, edition)
+	return parsed.Score, parsed.Diagnostics
+}
+
+func parseFilesDetailed(files []SourceFile, edition int) (parsed Parsed) {
+	outlines := make([]Outline, 0, len(files))
 	requestedEdition := edition
 	if edition == 0 {
 		edition = 1
@@ -170,11 +219,20 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			w.declarations = DeclarationNames(files)
 		}
 		headerEdition := 0
+		outline := Outline{Path: file.Path}
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
 			kind := w.Type(n)
 			if applycount.Enabled && kind != "comment" && kind != "integer" {
 				applycount.ItemsLowered(1)
+			}
+			// The same reads as DeclarationNames and ReadImports.
+			if name := w.Field(n, "name"); name != nil {
+				outline.Names = append(outline.Names, w.Text(name))
+			}
+			if kind == "import_decl" {
+				value, _ := strconv.Unquote(w.Text(w.Field(n, "path")))
+				outline.Imports = append(outline.Imports, value)
 			}
 			switch kind {
 			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "midi_decl", "arrange_decl":
@@ -325,15 +383,20 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				Position: Position{File: file.Path, Line: 1, Column: 1},
 			})
 		}
+		outlines = append(outlines, outline)
 		tree.Release()
 	}
 	if syntaxFailed {
-		return nil, diagnostics
+		return Parsed{Diagnostics: diagnostics}
 	}
 	resolveArrangementTicks(s)
 	s.Assets, s.Clips, s.Samplers, _ = resolveAudio(s)
 	diagnostics = append(diagnostics, expandPhrases(s)...)
-	diagnostics = append(diagnostics, Validate(s)...)
+	validation := Validate(s)
+	diagnostics = append(diagnostics, validation...)
+	// diagnostics holds copies, so the loop below leaves validation as
+	// Validate returned it.
+	parsed = Parsed{Score: s, Validated: true, Validation: validation, Outlines: outlines}
 
 	if len(files) > 0 {
 		for i := range diagnostics {
@@ -347,7 +410,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			}
 		}
 	}
-	return s, diagnostics
+	parsed.Diagnostics = diagnostics
+	return parsed
 }
 
 func parseTrack(w *loweringWalker, n *gts.Node) Track {
