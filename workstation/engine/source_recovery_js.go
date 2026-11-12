@@ -138,6 +138,10 @@ func (u *workspaceUI) checkpointSources() {
 			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Limit: 4096, Headers: map[string]string{
 				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
 			}}.do(u.ctx)
+			// 409 is Studio refusing a checkpoint that a Save or Discard which
+			// knew this edit has already finished: an expected answer, not a
+			// fault, so it is not logged below.
+			refused := err == nil && response.Status == statusConflict
 			if err == nil && response.Status != statusOK {
 				err = fmt.Errorf("recovery returned %d", response.Status)
 			}
@@ -164,7 +168,9 @@ func (u *workspaceUI) checkpointSources() {
 				continue
 			}
 			if err != nil {
-				consoleWarn("Code recovery checkpoint", err)
+				if !refused {
+					consoleWarn("Code recovery checkpoint", err)
+				}
 				u.sourceStatus("Recovery could not save. Keep this window open; another attempt will follow.")
 				continue
 			}

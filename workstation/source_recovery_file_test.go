@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -562,6 +563,37 @@ func TestACopyIsReopenedWhenTheFileMovesBetweenTheReadAndTheClose(t *testing.T) 
 	}
 	if v := h.view(); !v.unsaved || !strings.Contains(v.page, "// X") {
 		t.Fatal("X is not offered")
+	}
+}
+
+// A render closes the copies equal to the file it shows, then reads the
+// file's revision again. If the file moved in between, the copies it closed
+// are reopened and offered on that same page, not one page later.
+func TestACopyReopenedByARenderIsOfferedOnThatPage(t *testing.T) {
+	h := newRecoveryHarness(t, "song.cicada", "Z\n")
+	_, base := h.disk.get()
+	x := "Z\n// X\n"
+	if reply := h.checkpointAt("c", 1, base, x); !reply.wasKept() {
+		t.Fatalf("the copy of X was answered %+v", reply)
+	}
+	h.disk.set(x) // another window saves X; no checkpoint or render since
+	var moved atomic.Bool
+	h.disk.mu.Lock()
+	h.disk.beforeRevisionRead = func(int) {
+		// The render's read, after it closed the copy of X.
+		if moved.CompareAndSwap(false, true) {
+			h.disk.set("Z\n// Y from another window\n")
+		}
+	}
+	h.disk.mu.Unlock()
+	if v := h.view(); !v.unsaved || !strings.Contains(v.page, "// X") {
+		t.Fatal("the copy the render reopened is not offered on that page")
+	}
+	if !moved.Load() {
+		t.Fatal("the render did not read the file's revision after closing the copy")
+	}
+	if state := h.copyState("c"); state != "ready" {
+		t.Fatalf("the copy of X is %s", state)
 	}
 }
 

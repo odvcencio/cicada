@@ -146,7 +146,11 @@ func (s *studioApp) closeCopiesOfFile(ctx context.Context, owner, file, text str
 		if now, ok := s.readFileRevision(ctx, file); !ok || !now.holds(text) {
 			for _, copy := range closed {
 				if reopened, err := s.notes.reopenSourceCopy(owner, copy); reopened && err == nil {
-					kept = append(kept, copy)
+					// Its window may have written since it was listed: offer
+					// the copy as it is now, not the listed text.
+					if current, err := s.notes.getSource(owner, copy.ID); err == nil && current.State == "ready" {
+						kept = append(kept, current)
+					}
 				}
 			}
 			sort.SliceStable(kept, func(i, j int) bool { return kept[i].Updated.After(kept[j].Updated) })
