@@ -12,7 +12,6 @@ import (
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
 
@@ -200,7 +199,7 @@ func TestPlanDiffEmitsSceneBindingChanges(t *testing.T) {
 // built from the new plan.
 func assertDeltaReproducesPattern(t *testing.T, before, after *livePlan, delta planDelta) {
 	t.Helper()
-	const editTick = 2 * seq.TicksPerBar
+	const editTick = 2 * ticksPerBar
 	patched, err := engine.New(before.cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +246,7 @@ func assertDeltaReproducesPattern(t *testing.T, before, after *livePlan, delta p
 				if message.Kind == cmd.Fault {
 					t.Fatalf("fault %d", message.A)
 				}
-				if message.Kind == cmd.NoteOn && message.Tick >= editTick+seq.TicksPerBar {
+				if message.Kind == cmd.NoteOn && message.Tick >= editTick+ticksPerBar {
 					counts[fmt.Sprintf("%d/%d/%d", message.Tick, message.Track, message.A)]++
 				}
 			}

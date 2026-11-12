@@ -10,7 +10,6 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func testScore(t *testing.T, name string, bpmMilli int64, scenes ...engine.Scene) Score {
@@ -1121,8 +1120,8 @@ func TestEditsLandOnTheLoopSeamBarLinesAcrossLoops(t *testing.T) {
 		t.Fatal(err)
 	}
 	const bar = 9 // the tenth bar line, three passes in
-	boundary := reference.FramesBetweenTicks(0, int64(bar+1)*seq.TicksPerBar)
-	before := reference.FramesBetweenTicks(0, int64(bar)*seq.TicksPerBar)
+	boundary := reference.FramesBetweenTicks(0, int64(bar+1)*ticksPerBar)
+	before := reference.FramesBetweenTicks(0, int64(bar)*ticksPerBar)
 	if _, err := io.CopyN(io.Discard, p, (before+1_000)*8); err != nil {
 		t.Fatal(err)
 	}
@@ -1199,7 +1198,7 @@ func TestImmediateSpeedupMidBarKeepsPlayingAndEditsLandOnTheNextBarLine(t *testi
 		t.Fatal(err)
 	}
 	// The next true bar line is the engine's second bar line under the live clock.
-	line := p.current.Engine.FramesBetweenTicks(0, 2*seq.TicksPerBar)
+	line := p.current.Engine.FramesBetweenTicks(0, 2*ticksPerBar)
 	if line <= played+1_000 {
 		t.Fatalf("test setup: bar line %d is not ahead of %d", line, played)
 	}

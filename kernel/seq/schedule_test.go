@@ -28,7 +28,7 @@ func testPattern(t *testing.T) Pattern {
 func TestBlockSizeInvariance(t *testing.T) {
 	c, _ := NewClock(48000, 138000)
 	p := testPattern(t)
-	end := c.SampleAtTick(64 * TicksPerBar)
+	end := c.SampleAtTick(64 * ticksPerBar)
 	var reference []Event
 	for _, block := range []int{32, 64, 128, 256, 480, 1024} {
 		var events []Event

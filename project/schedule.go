@@ -20,7 +20,7 @@ func CompileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 		for i, s := range p.Song {
 			song[i] = engine.SongEntry{Scene: scenes[s.Scene], Bars: s.Bars}
 		}
-		return engine.LowerSong(song), nil
+		return engine.LowerSong(song, p.MeterMap()), nil
 	}
 	tracks := map[string]int{}
 	for i, t := range p.Tracks {
@@ -31,8 +31,9 @@ func CompileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 		clips[c.Name] = uint16(i)
 	}
 	events := make([]engine.ScheduleEvent, 0, 2*len(p.Arrange.Placements))
+	meterMap := p.MeterMap()
 	for _, t := range p.Arrange.Tempos {
-		at := int64(t.Bar) * 3840
+		at := meterMap.BarStart(int64(t.Bar))
 		events = append(events, engine.ScheduleEvent{Tick: at, EndTick: at, Kind: engine.ScheduleTempo, ID: uint32(t.BPMMilli)})
 	}
 	for i, v := range p.Arrange.Placements {

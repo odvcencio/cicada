@@ -143,7 +143,7 @@ func BenchmarkScheduleSeek10000(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		const tick = 4799640
-		if !e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)}) || !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		if !e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / ticksPerBar), Arg1: uint32(tick % ticksPerBar)}) || !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 			b.Fatal("seek/play command rejected")
 		}
 		e.Render(l[:], r[:])
