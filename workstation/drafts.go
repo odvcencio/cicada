@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -122,20 +123,51 @@ func (s *studioApp) storeFileDraft(source, revision, owner, kind, file string) (
 	return key, nil
 }
 
+// closeCopiesOfFile closes the owner's recovery copies of file that hold
+// exactly text, the file's text as just read or written, and returns the
+// copies that differ. A copy edited after it was listed is kept. If the file
+// no longer holds text once they are closed, or its revision cannot be read,
+// they are reopened. Closing is housekeeping: a copy that cannot be read or
+// closed is left as it is, and the caller's work goes on.
+func (s *studioApp) closeCopiesOfFile(ctx context.Context, owner, file, text string, copies []savedSource) []savedSource {
+	kept := make([]savedSource, 0, len(copies))
+	var closed []savedSource
+	for _, copy := range copies {
+		if copy.File != file || !sameSourceText(copy.Source, text) {
+			kept = append(kept, copy)
+			continue
+		}
+		if ok, err := s.notes.closeSourceCopy(owner, copy); ok && err == nil {
+			closed = append(closed, copy)
+		}
+	}
+	if len(closed) > 0 {
+		if revision, ok := s.fileRevision(ctx, file); !ok || !sameSourceRevision(text, revision) {
+			for _, copy := range closed {
+				_ = s.notes.reopenSourceCopy(owner, copy)
+			}
+		}
+	}
+	return kept
+}
+
 // Each project file has its own recovery slot. A check or rejected save in a
 // second file must not replace the draft awaiting correction in the first.
-func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, []savedSource, error) {
+// disk is the file's text in this render: a copy that holds it is not unsaved
+// work, so it is closed and never shown, and the newest copy that differs is.
+func (s *studioApp) sourceDraft(r *http.Request, file, disk string) (draft, []savedSource, error) {
 	owner := workspaceOwner(r)
 	if owner == "" {
 		return draft{}, nil, nil
 	}
 	if s.notes != nil {
 		copies, err := s.notes.sourceCopies(owner, file)
+		copies = s.closeCopiesOfFile(r.Context(), owner, file, disk, copies)
 		selected := r.URL.Query().Get("codeDraft")
 		s.draftMu.Lock()
 		var volatile draft
 		for _, candidate := range s.drafts {
-			if candidate.Owner == owner && candidate.File == file && candidate.Kind == "source" && candidate.RecoveryError != "" && (selected == "" || selected == candidate.ID) && time.Now().Before(candidate.Expires) && candidate.Updated.After(volatile.Updated) {
+			if candidate.Owner == owner && candidate.File == file && candidate.Kind == "source" && candidate.RecoveryError != "" && (selected == "" || selected == candidate.ID) && time.Now().Before(candidate.Expires) && candidate.Updated.After(volatile.Updated) && !sameSourceText(candidate.Source, disk) {
 				volatile = candidate
 			}
 		}
@@ -156,7 +188,7 @@ func (s *studioApp) sourceDraft(r *http.Request, file string) (draft, []savedSou
 	s.draftMu.Lock()
 	defer s.draftMu.Unlock()
 	for _, d := range s.drafts {
-		if d.Owner == owner && d.Kind == "source" && d.File == file && time.Now().Before(d.Expires) {
+		if d.Owner == owner && d.Kind == "source" && d.File == file && time.Now().Before(d.Expires) && !sameSourceText(d.Source, disk) {
 			return d, nil, nil
 		}
 	}
@@ -170,7 +202,14 @@ func (s *studioApp) clearSourceDraft(r *http.Request, file string, fields map[st
 	if s.notes != nil {
 		id := fields["recoveryId"]
 		if id != "" {
-			if err := s.notes.closeSource(owner, id, file, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
+			// The last edit the form knew of: an edit typed after Save or
+			// Discard is kept. Without one, the copy is closed for good.
+			sequence, err := strconv.ParseUint(fields["recoverySequence"], 10, 64)
+			final := err != nil || sequence == 0
+			if final {
+				sequence = ^uint64(0)
+			}
+			if err := s.notes.closeSource(owner, id, file, sequence, final, fields["recoveryParentId"], fields["recoveryParentHash"]); err != nil {
 				return err
 			}
 		}

@@ -1,9 +1,11 @@
 package graph
 
 import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
 	"m31labs.dev/cicada/kernel/voice/acid"
-	"math"
 )
 
 // Only graphs opting into the new primitives use this path. Legacy graph
@@ -99,7 +101,7 @@ func (q *qualityState) oscillate(i int, op Op, hz, width, internalRate float32) 
 		// Acid keeps its historical bipolar pulse behavior in its own voice.
 		out = s.oscillator.Pulse(s.phase, frequency, w) - (2*w - 1)
 	case Sine:
-		out = math.Sin(2 * math.Pi * s.phase)
+		out = detmath.SinPi(2 * s.phase)
 	}
 	s.phase += frequency / float64(internalRate)
 	if s.phase >= 1 {
@@ -127,7 +129,7 @@ func (s *adsrState) segment(stage uint8, target float64, ms, rate float32) {
 	s.stage, s.start, s.target, s.progress = stage, s.level, target, 1
 	s.remaining = int(float64(clamp(ms, 0, 30_000))*float64(rate)/1000 + 0.5)
 	if s.remaining > 0 {
-		s.coefficient = math.Exp(-5 / float64(s.remaining))
+		s.coefficient = detmath.Exp(-5 / float64(s.remaining))
 	}
 }
 func (s *adsrState) next(held bool, attack, decay, sustain, release, rate float32) float32 {
@@ -193,7 +195,7 @@ func (s *svfState) next(input, cutoff, resonance, rate, baseRate float32) float3
 	f := float64(clamp(cutoff, 20, baseRate*0.45))
 	r := float64(clamp(resonance, 0, 1))
 	if !s.ready || f != s.cutoff || r != s.resonance {
-		g := math.Tan(math.Pi * f / float64(rate))
+		g := detmath.Tan(math.Pi * f / float64(rate))
 		k := 2 - float64(1.9*r) // finite damping even at maximum resonance
 		s.a1 = 1 / (1 + float64(g*(g+k)))
 		s.a2 = g * s.a1

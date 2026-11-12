@@ -2,7 +2,11 @@
 // One audio owner must serialize note, pedal and render calls.
 package piano
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 const (
 	MinNote      = 21
@@ -82,17 +86,17 @@ func New(sampleRate int) (*Instrument, error) {
 	p := &Instrument{rate: sampleRate}
 	fs := float64(sampleRate)
 	p.hammerStep = float32(1 / (fs * contactSteps))
-	p.pedalAlpha = float32(1 - math.Exp(-1/(.004*fs)))
-	p.damperAlpha = float32(1 - math.Exp(-1/(.006*fs)))
-	p.dcPole = float32(math.Exp(-2 * math.Pi * 12 / fs))
-	p.lowAlpha = float32(1 - math.Exp(-2*math.Pi*9000/fs))
+	p.pedalAlpha = float32(1 - detmath.Exp(-1/(.004*fs)))
+	p.damperAlpha = float32(1 - detmath.Exp(-1/(.006*fs)))
+	p.dcPole = float32(detmath.Exp(-2 * math.Pi * 12 / fs))
+	p.lowAlpha = float32(1 - detmath.Exp(-2*math.Pi*9000/fs))
 	p.stealFrames = sampleRate / 250
-	p.tailDecay = float32(math.Exp(-8 / float64(p.stealFrames)))
+	p.tailDecay = float32(detmath.Exp(-8 / float64(p.stealFrames)))
 	for i := range p.keys {
 		p.prepareKey(i)
 		f := noteFrequency(i + MinNote)
 		p.sympathetic[i] = newResonator(f, 1.8+2.2/(1+f/400), fs, .000045)
-		p.sympathetic[i].damped = float32(math.Exp(-1 / (.025 * fs)))
+		p.sympathetic[i].damped = float32(detmath.Exp(-1 / (.025 * fs)))
 	}
 	frequencies := [...]float64{73, 109, 164, 233, 349, 523, 784, 1174, 1760, 2640, 3960, 5940}
 	for i, f := range frequencies {
@@ -102,16 +106,16 @@ func New(sampleRate int) (*Instrument, error) {
 	return p, nil
 }
 
-func noteFrequency(note int) float64 { return 440 * math.Exp2(float64(note-69)/12) }
+func noteFrequency(note int) float64 { return 440 * detmath.Exp2(float64(note-69)/12) }
 
 // Stiffness returns the dimensionless bending-stiffness coefficient B. The
 // bass and treble curves are design parameters, not a fit to a sampled grand.
 func Stiffness(note uint8) float64 {
 	n := float64(note)
 	if n < 48 {
-		return .00012 + float64(.00018*math.Exp2((36-n)/12))
+		return .00012 + float64(.00018*detmath.Exp2((36-n)/12))
 	}
-	return .00012 + float64(.00016*math.Exp2((n-60)/12))
+	return .00012 + float64(.00016*detmath.Exp2((n-60)/12))
 }
 
 // PartialFrequency is the normalized stiff-string dispersion law. Partial 1
@@ -136,17 +140,17 @@ func (p *Instrument) prepareKey(index int) {
 	} else if note < 48 {
 		strings = 2
 	}
-	position := .115 + .025*math.Exp2(float64(48-note)/24)/(1+math.Exp2(float64(48-note)/24))
+	position := .115 + .025*detmath.Exp2(float64(48-note)/24)/(1+detmath.Exp2(float64(48-note)/24))
 	// String/hammer masses scale through the keyboard. These are deliberately
 	// smooth design curves, avoiding sample-key discontinuities.
-	mass := .0045 * math.Exp2(float64(60-note)/18)
+	mass := .0045 * detmath.Exp2(float64(60-note)/18)
 	hammerMass := .012 - .007*float64(index)/float64(keyCount-1)
 	k.inverseHammerMass = float32(1 / hammerMass)
-	k.stiffness = float32(3.5e11 * math.Exp2(float64(note-60)/24))
+	k.stiffness = float32(3.5e11 * detmath.Exp2(float64(note-60)/24))
 	k.velocity = float32(.7 + .6*float64(index)/float64(keyCount-1))
 	k.pan = float32(.18 * float64(note-64) / 44)
-	t60 := 8.0 * math.Exp2(float64(60-note)/28)
-	k.damper = float32(math.Exp(-6.907755 / (.14 * fs)))
+	t60 := 8.0 * detmath.Exp2(float64(60-note)/28)
+	k.damper = float32(detmath.Exp(-6.907755 / (.14 * fs)))
 	k.lifetime = int(min(28., t60*1.5) * fs)
 	k.compliance = float32(float32(p.hammerStep*p.hammerStep) * k.inverseHammerMass)
 	for partial := 1; partial <= MaxModes/strings; partial++ {
@@ -155,7 +159,7 @@ func (p *Instrument) prepareKey(index int) {
 			if strings > 1 {
 				detune = (float64(stringIndex) - float64(float64(strings-1)*.5)) * 1.4
 			}
-			hz := PartialFrequency(uint8(note), partial) * math.Exp2(detune/1200)
+			hz := PartialFrequency(uint8(note), partial) * detmath.Exp2(detune/1200)
 			if hz >= .42*fs {
 				continue
 			}
@@ -163,16 +167,16 @@ func (p *Instrument) prepareKey(index int) {
 			// Higher partials lose energy sooner; unison beating survives into
 			// the aftersound. The loss is applied to the exact modal rotation.
 			tau := t60 / 6.907755 / (1 + float64(.025*float64(partial*partial)) + hz/16000)
-			rho := math.Exp(-1 / (tau * fs))
+			rho := detmath.Exp(-1 / (tau * fs))
 			angle := omega / fs
-			strike := math.Sin(math.Pi * float64(partial) * position)
+			strike := detmath.Sin(math.Pi * float64(partial) * position)
 			sign := 1.
 			if partial%2 == 0 {
 				sign = -1
 			}
 			k.modes[k.count] = modeCoefficients{
-				c: float32(math.Cos(angle)), s: float32(math.Sin(angle)), decay: float32(rho),
-				subC: float32(math.Cos(angle / contactSteps)), subS: float32(math.Sin(angle / contactSteps)), subDecay: float32(math.Exp(-1 / (tau * fs * contactSteps))),
+				c: float32(detmath.Cos(angle)), s: float32(detmath.Sin(angle)), decay: float32(rho),
+				subC: float32(detmath.Cos(angle / contactSteps)), subS: float32(detmath.Sin(angle / contactSteps)), subDecay: float32(detmath.Exp(-1 / (tau * fs * contactSteps))),
 				strike: float32(strike), impulse: float32(2 * strike / (mass * omega * fs * contactSteps)),
 				// Finite plate radiation falls below its first broad modes. This
 				// suppresses subsonic/very low bridge force without removing the
@@ -188,7 +192,7 @@ func (p *Instrument) prepareKey(index int) {
 
 func newResonator(f, tau, rate, gain float64) resonator {
 	angle := 2 * math.Pi * f / rate
-	return resonator{c: float32(math.Cos(angle)), s: float32(math.Sin(angle)), decay: float32(math.Exp(-1 / (tau * rate))), gain: float32(gain * 48000 / rate)}
+	return resonator{c: float32(detmath.Cos(angle)), s: float32(detmath.Sin(angle)), decay: float32(detmath.Exp(-1 / (tau * rate))), gain: float32(gain * 48000 / rate)}
 }
 
 func (p *Instrument) NoteOn(note, velocity uint8) error {

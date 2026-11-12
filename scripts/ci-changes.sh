@@ -28,17 +28,20 @@
 #                    (hosted runners)
 #   m2_gates         M2 AudioWorklet CPU gate (the self-hosted reference machine)
 #   bench            agent loop speed (cmd/cicada-bench on the built cicada)
+#   wav_sweep        WAV parity sweep of every example and the song pins
+#                    (amd64, arm64); nightly, and on these pull requests
 #
-# m2_gates is the one group decided the other way round: it is on only when a
-# changed path is one the CPU gate's result can depend on (gate_input below),
-# because it runs on a single shared machine and every queued run waits for the
-# one before it. An empty list, --all (push, schedule, manual runs) and any
-# change to the gate inputs still turn it on.
+# m2_gates and wav_sweep are decided the other way round: each is on only when
+# a changed path is one of its inputs (gate_input and sweep_input below).
+# m2_gates runs on a single shared machine, where every queued run waits for
+# the one before it; wav_sweep renders every example four ways on two runners
+# (about half an hour each). An empty list, --all (push, schedule, manual runs)
+# and any change to their inputs still turn them on.
 # Always-on jobs (changes, commit hygiene, repo checks, the M0 aggregate) do
 # not appear here.
 set -euo pipefail
 
-groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench)
+groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep)
 
 # classify_path prints the groups a path turns on, or "all" or "none".
 #
@@ -132,6 +135,17 @@ gate_input() {
 	return 1
 }
 
+# sweep_input PATH succeeds when a change to PATH can move a render's last bits
+# on one target only, which the parity subset may not reach: the deterministic
+# math every voice and processor calls (and its source guard, in the same
+# directory), and the WAV parity test with its pins.
+sweep_input() {
+	case "$1" in
+	kernel/dsp/detmath/* | cmd/cicada/example_wav_parity_test.go) return 0 ;;
+	esac
+	return 1
+}
+
 emit() { # emit GROUP... : print every group, true when listed
 	local group value
 	for group in "${groups[@]}"; do
@@ -149,8 +163,11 @@ if [[ "${1:-}" == "--all" ]]; then
 fi
 if [[ "${1:-}" == "--classify" ]]; then
 	result="$(classify_path "${2:?path}")"
-	# m2_gates comes from gate_input, not from the rules above.
-	if gate_input "$2"; then echo "$result m2_gates"; else echo "$result"; fi
+	# m2_gates and wav_sweep come from gate_input and sweep_input, not from the
+	# rules above.
+	if gate_input "$2"; then result="$result m2_gates"; fi
+	if sweep_input "$2"; then result="$result wav_sweep"; fi
+	echo "$result"
 	exit 0
 fi
 if [[ $# -gt 0 ]]; then
@@ -162,10 +179,12 @@ selected=()
 seen_path=false
 everything=false
 gates=false
+sweep=false
 while IFS= read -r path || [[ -n "$path" ]]; do
 	if [[ -z "$path" ]]; then continue; fi
 	seen_path=true
 	if gate_input "$path"; then gates=true; fi
+	if sweep_input "$path"; then sweep=true; fi
 	result="$(classify_path "$path")"
 	if [[ "$result" == all ]]; then
 		everything=true
@@ -181,11 +200,13 @@ if [[ "$seen_path" == false ]]; then
 	exit 0
 fi
 if [[ "$everything" == true ]]; then
-	# "all" turns on every group except m2_gates, which gate_input decides.
+	# "all" turns on every group except m2_gates and wav_sweep, which
+	# gate_input and sweep_input decide.
 	selected=()
 	for group in "${groups[@]}"; do
-		if [[ "$group" != m2_gates ]]; then selected+=("$group"); fi
+		if [[ "$group" != m2_gates && "$group" != wav_sweep ]]; then selected+=("$group"); fi
 	done
 fi
 if [[ "$gates" == true ]]; then selected+=(m2_gates); fi
+if [[ "$sweep" == true ]]; then selected+=(wav_sweep); fi
 emit "${selected[@]}"

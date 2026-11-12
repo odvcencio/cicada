@@ -248,11 +248,23 @@
         "measured_when_set": -200
       }
     },
+    "voice/graph_comb_vibrato": {
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
     "voice/graph_filters": {
       "frequency_response_error_db": {
         "limit": 0.1,
         "measured_when_set": 0.018
       },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_ladder_sweep": {
       "noise_floor_dbfs": {
         "limit": -120,
         "measured_when_set": -200
@@ -293,6 +305,12 @@
         "limit": -26.1,
         "measured_when_set": -29.167
       },
+      "noise_floor_dbfs": {
+        "limit": -120,
+        "measured_when_set": -200
+      }
+    },
+    "voice/graph_svf_sweep": {
       "noise_floor_dbfs": {
         "limit": -120,
         "measured_when_set": -200

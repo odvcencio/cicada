@@ -750,7 +750,9 @@ step-grid commits continue to check for collisions before writing.
 
 The local Studio profile keeps private Code recovery copies while you type.
 Wait for **Recovery copy kept on this device** before closing or switching
-projects. This keeps a draft; **Save file** applies it to the song. Playback and
+projects. This keeps a draft; **Save file** applies it to the song. When the
+editor holds exactly the text of the file, there is nothing to keep, and the
+status says **No unsaved Code edits. The score file has this text.** Playback and
 exports continue to use saved music. A restart restores the most recent copy
 for each file, including unfinished syntax. **Other recovery copies** opens
 versions kept by another window. Saving or discarding the selected copy does
