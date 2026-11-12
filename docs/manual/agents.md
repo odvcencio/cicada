@@ -426,7 +426,10 @@ file. The checker reports a point, so `end` marks the end of the character at
 `start`, as the language server does. `related` points at the first declaration
 of a duplicate. `hint` is the advice `cicada check` prints. With
 `--profile browser`, `browser_profile` lists the voices each track reserves
-against the portable limits.
+against the portable limits. A score with sampler packs lists each pack that
+loaded in `packs`: its `sampler`, its `manifest` path and the `velocity_law` it
+plays by, `recorded` or `velocity/127` (see
+[how velocity sets the level](../sampler/packs.md#how-velocity-sets-the-level)).
 
 `fix`, where the checker knows one, is a repair: `intents` for `cicada apply`,
 or a `command` to run. A fix is offered only when it is proven on the score
