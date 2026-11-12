@@ -1329,11 +1329,14 @@ jobs:
             build/parallel-identity-race.log
 
   # The render lanes under the race detector with the lanestress hook, which
-  # yields or sleeps at random (seeded) at every hand-off point of the lane
-  # protocol (make test-lane-stress). The forced-lane tests and the identity
-  # subset run with every segment on every lane and more jobs than processors.
-  # Pull requests that touch the lanes (lane_stress in scripts/ci-changes.sh)
-  # run a short version: GOMAXPROCS 2, three repetitions.
+  # delays or yields at seeded hand-off points of the lane protocol
+  # (make test-lane-stress). The forced-lane tests and the identity subset run
+  # with every segment on every lane and more jobs than processors. Pull
+  # requests that touch the lanes (lane_stress in scripts/ci-changes.sh) run a
+  # short version at GOMAXPROCS 2: the quick sets (renderlanes, render), which
+  # hold the catches of the three lane bugs found so far, three times, and the
+  # engine tests and identity subset once. This job is not part of the
+  # required check; it becomes required when --jobs defaults to auto.
   lane-stress-pr:
     name: Render lanes under scheduling stress (short)
     needs: changes
@@ -1352,11 +1355,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build
-          make test-lane-stress LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 2>&1 | tee build/lane-stress.log
+          make test-lane-stress LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1 2>&1 | tee build/lane-stress.log
           scripts/ci-lane-stress-check.sh build/lane-stress.log
 
-  # The full stress run, nightly: -count=20 at GOMAXPROCS 2, 3 and every CPU,
-  # one runner each.
+  # The full stress run, nightly: -count=10 at GOMAXPROCS 2, 3 and every CPU,
+  # one runner each. At GOMAXPROCS 2 one repetition of all four sets took about
+  # 5.5 minutes on this runner class (pull request #334), so a setting takes
+  # about an hour.
   lane-stress:
     name: Render lanes under scheduling stress (GOMAXPROCS ${{ matrix.procs }})
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -1380,7 +1385,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build
-          make test-lane-stress LANE_STRESS_PROCS="$PROCS" LANE_STRESS_COUNT=20 2>&1 | tee build/lane-stress.log
+          make test-lane-stress LANE_STRESS_PROCS="$PROCS" LANE_STRESS_COUNT=10 LANE_STRESS_HEAVY_COUNT=10 2>&1 | tee build/lane-stress.log
           scripts/ci-lane-stress-check.sh build/lane-stress.log
       - name: Save the stress log
         if: always()
