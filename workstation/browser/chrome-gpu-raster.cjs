@@ -1,6 +1,6 @@
 'use strict';
-// chrome-gpu-raster.cjs: Studio's browser suites in CI run Chrome with GPU
-// compositing and GPU rasterization, on SwiftShader when the runner has no GPU.
+// chrome-gpu-raster.cjs: Chrome flags for GPU compositing and GPU
+// rasterization, on SwiftShader when the machine has no GPU.
 //
 // Why: without a GPU, headless Chrome 152 rasterizes tiles in software, and
 // those raster tasks run on several worker threads at once. A page can then
@@ -11,10 +11,12 @@
 // LayerTreeHost::WaitForCommitCompletion; nothing in JavaScript can be
 // interrupted. producer-workflow froze this way in CI after its first click on
 // the Session page. With GPU rasterization Chrome runs tile raster tasks one at
-// a time, and the page renders the way it does on a machine with a GPU.
+// a time.
 //
-// CI loads this file into every suite with NODE_OPTIONS=--require=...
-// (scripts/ci-studio-browser.sh). A suite that chooses its own graphics
+// A suite opts in by passing its launch options through withGpuRaster(). It is
+// not applied to every suite: SwiftShader rendering is slower, and in CI it
+// made shard 1 take 496 s instead of 268 s and broke three suites that depend
+// on frame timing (pull request #355). A suite that chooses its own graphics
 // backend (--use-gl, --use-angle or --disable-gpu) keeps its own flags.
 const flags = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-gpu-rasterization'];
 
@@ -24,10 +26,4 @@ function withGpuRaster(options = {}) {
   return {...options, args: [...args, ...flags]};
 }
 
-function install(browserType) {
-  const launch = browserType.launch.bind(browserType);
-  browserType.launch = (options, ...rest) => launch(withGpuRaster(options), ...rest);
-}
-
-module.exports = {flags, withGpuRaster, install};
-if (process.env.CICADA_PLAYWRIGHT_MODULE) install(require(process.env.CICADA_PLAYWRIGHT_MODULE).chromium);
+module.exports = {flags, withGpuRaster};

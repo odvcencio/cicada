@@ -1,8 +1,9 @@
 'use strict';
-// chrome-gpu-raster.cjs gives CI's Chrome GPU rasterization, so tile raster
-// tasks run one at a time and Chrome's software-raster freeze (described at
-// the top of chrome-gpu-raster.cjs) cannot happen. On a runner without a GPU
-// the same Chrome rasterizes in software unless these flags are set.
+// chrome-gpu-raster.cjs gives a suite's Chrome GPU rasterization, so tile
+// raster tasks run one at a time and Chrome's software-raster freeze
+// (described at the top of chrome-gpu-raster.cjs) cannot happen. On a runner
+// without a GPU the same Chrome rasterizes in software unless these flags are
+// set.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const gpu = require('./chrome-gpu-raster.cjs');
@@ -17,21 +18,10 @@ test('suites get GPU rasterization unless they choose their own graphics backend
   }
 });
 
-test('install() adds the flags to every launch of a browser type', async () => {
-  const launched = [];
-  const browserType = {launch: async (options, extra) => { launched.push([options, extra]); return 'browser'; }};
-  gpu.install(browserType);
-  assert.equal(await browserType.launch({args: ['--mute-audio']}, 'extra'), 'browser');
-  assert.deepEqual(launched, [[{args: ['--mute-audio', ...gpu.flags]}, 'extra']]);
-});
-
 test("CI's Chrome rasterizes on the GPU with these flags", {skip: !process.env.CICADA_CHROME_PATH && 'needs CICADA_CHROME_PATH', timeout: 60000}, async t => {
   const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
-  // install() shadows launch on the instance; the prototype's is Playwright's
-  // own, so each launch below gets exactly the flags it names.
-  const launch = Object.getPrototypeOf(chromium).launch;
   const status = async args => {
-    const browser = await launch.call(chromium, {headless: true, executablePath: process.env.CICADA_CHROME_PATH, args});
+    const browser = await chromium.launch({headless: true, executablePath: process.env.CICADA_CHROME_PATH, args});
     try {
       const {gpu: info} = await (await browser.newBrowserCDPSession()).send('SystemInfo.getInfo');
       return {compositing: info.featureStatus.gpu_compositing, rasterization: info.featureStatus.rasterization};

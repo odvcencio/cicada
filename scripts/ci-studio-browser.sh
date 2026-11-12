@@ -335,7 +335,7 @@ seg_owner_session() { # 1 s
 }
 
 seg_chrome_gpu_raster() { # about 2 s, no Studio
-	# Every suite's Chrome rasterizes on the GPU (see chrome-gpu-raster.cjs).
+	# producer-workflow's Chrome rasterizes on the GPU (chrome-gpu-raster.cjs).
 	run_suite chrome-gpu-raster env NODE_OPTIONS="$base_node_options" node --test workstation/browser/chrome-gpu-raster.test.cjs
 }
 
@@ -1023,10 +1023,7 @@ run_shard() {
 		# (page-stall.cjs); a self-hosted machine never installs packages.
 		if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then export CICADA_PAGE_STALL_NATIVE=install; fi
 		base_node_options="${NODE_OPTIONS:-}"
-		# Every suite's Chrome rasterizes on the GPU, on SwiftShader when the
-		# runner has none: in software, Chrome 152 can freeze a page for good
-		# (chrome-gpu-raster.cjs).
-		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs --require=$PWD/workstation/browser/chrome-gpu-raster.cjs"
+		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
 		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
 		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true' EXIT
