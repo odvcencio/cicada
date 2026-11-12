@@ -138,3 +138,30 @@ func TestSemanticEqualSeesASendToALaterReverb(t *testing.T) {
 		t.Fatal("a score differs from itself")
 	}
 }
+
+// A library reverb that only a scene addresses gets no return slot (the
+// compiler keeps a library effect only when a track or bus sends to it or
+// inserts it), so ReverbReturns, which picks the render path, does not count
+// it. Preset resolution alone would keep it.
+func TestLibraryReverbOnlyASceneAddressesGetsNoSlot(t *testing.T) {
+	source := []byte("cicada 2\nimport \"demo/space\"\nfx room reverb {}\ntrack keys acid { send room = -12dB }\npattern p acid steps=4 { c4 . . . }\nscene main { keys=p space.hall.decay = 2s }\nsong { main }\n")
+	files := []notation.SourceFile{
+		{Path: "main.cicada", Source: source, Bindings: map[string]string{"space": "demo.space"}},
+		{Path: "space.cicada", Library: "demo/space", Edition: 2, Source: []byte("fx hall reverb { decay = 4s }\n")},
+	}
+	score, ds := notation.ParseFiles(files, 2)
+	if score == nil {
+		t.Fatal(ds)
+	}
+	resolved, _ := notation.ResolvePresets(score)
+	kept := false
+	for _, effect := range resolved.Effects {
+		kept = kept || effect.Name == "demo.space.hall"
+	}
+	if !kept {
+		t.Fatal("preset resolution no longer keeps the scene-addressed library reverb; this test no longer covers the case")
+	}
+	if got := ReverbReturns(score); fmt.Sprint(got) != "[room]" {
+		t.Fatalf("reverb returns %v, want [room]", got)
+	}
+}

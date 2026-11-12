@@ -372,3 +372,29 @@ func routedEffects(score *notation.Score) []notation.Effect {
 	}
 	return effects
 }
+
+// ReverbReturns names the reverbs that get a return slot, in slot order (B,
+// then C to H), exactly as FromScore selects them: presets resolved, library
+// effects kept only when a track or bus sends to them or inserts them, and
+// master-chain effects left out. A library reverb that only a scene addresses
+// gets no slot, so it is not counted.
+func ReverbReturns(score *notation.Score) []string {
+	if score == nil {
+		return nil
+	}
+	resolved, _ := notation.ResolvePresets(score)
+	if resolved == nil {
+		resolved = score
+	}
+	var names []string
+	for _, effect := range routedEffects(resolved) {
+		kind := effect.Kind
+		if kind == "" {
+			kind = effect.Name
+		}
+		if kind == "reverb" && !masterInserts(resolved, effect.Name) {
+			names = append(names, effect.Name)
+		}
+	}
+	return names
+}
