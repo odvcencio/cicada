@@ -136,6 +136,8 @@ type Config struct {
 	Patterns   []PatternBank
 	Scenes     []Scene
 	Song       []SongEntry
+	// Meters place the bar and beat lines; empty is 4/4.
+	Meters []seq.MeterChange `json:",omitempty"`
 
 	Automation    []cmd.Command    `json:",omitempty"`
 	Modulators    []ModulatorSpec  `json:",omitempty"`
@@ -453,6 +455,13 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	transport, err := seq.NewTransport(cfg.SampleRate, bpmMilli)
 	if err != nil {
 		return nil, err
+	}
+	if len(cfg.Meters) != 0 {
+		meters, err := seq.NewMeterMap(cfg.Meters)
+		if err != nil {
+			return nil, err
+		}
+		transport.SetMeterMap(meters)
 	}
 	limiter, err := mix.NewLimiter(cfg.SampleRate)
 	if err != nil {

@@ -1,11 +1,67 @@
 package project
 
-import "m31labs.dev/cicada/kernel/seq"
+import (
+	"fmt"
 
-// MeterMap places the song's bar and beat lines. A score cannot declare a
-// meter yet, so every song is 4/4: the zero map. Bar counts, positions and
-// tempo steps go through it so a declared meter changes them in one place.
-func (p *Project) MeterMap() seq.MeterMap { return seq.MeterMap{} }
+	"m31labs.dev/cicada/kernel/seq"
+)
+
+// Meter is the song's time signature: Numerator beats of a 1/Denominator
+// note in each bar. Groups split the beats for accents; they never move a
+// position. A project without a meter is 4/4.
+type Meter struct {
+	Numerator   int   `cicada:"Beats in a bar" range:"1..32" json:"numerator"`
+	Denominator int   `cicada:"Note value of one beat: 2, 4, 8 or 16" json:"denominator"`
+	Groups      []int `cicada:"Beat groups that add up to the numerator, for accents" json:"groups,omitempty"`
+}
+
+// formatAtLeast2 reports whether p uses cicada.project/2 or a later format.
+func (p *Project) formatAtLeast2() bool { return p.Format == FormatID2 || p.Format == FormatID3 }
+
+// useFormat2 moves a cicada.project/1 project to /2 and leaves a later format
+// as it is.
+func (p *Project) useFormat2() {
+	if !p.formatAtLeast2() {
+		p.Format, p.Version = FormatID2, 2
+	}
+}
+
+// validMeter checks a meter the way the source parser does.
+func validMeter(m *Meter) error {
+	if m.Numerator < 1 || m.Numerator > 32 || m.Denominator != 2 && m.Denominator != 4 && m.Denominator != 8 && m.Denominator != 16 {
+		return fmt.Errorf("CICADA-METER: meter must be N/D with N from 1 to 32 and D of 2, 4, 8 or 16")
+	}
+	if ticks := int64(m.Numerator) * (seq.TicksPerWhole / int64(m.Denominator)); ticks > seq.MaxBarTicks {
+		return fmt.Errorf("CICADA-LIMIT: a bar of %d/%d is %d ticks; the limit is %d", m.Numerator, m.Denominator, ticks, seq.MaxBarTicks)
+	}
+	if len(m.Groups) == 0 {
+		return nil
+	}
+	sum := 0
+	for _, g := range m.Groups {
+		if g < 1 || g > 32 {
+			return fmt.Errorf("CICADA-METER: beat groups must be whole numbers from 1 to 32")
+		}
+		sum += g
+	}
+	if sum != m.Numerator {
+		return fmt.Errorf("CICADA-METER: beat groups add up to %d; %d/%d has %d beats", sum, m.Numerator, m.Denominator, m.Numerator)
+	}
+	return nil
+}
+
+// MeterMap places the song's bar and beat lines: one segment of the song's
+// meter, or the zero map (4/4) for a song without one. Bar counts, positions
+// and tempo steps go through it.
+func (p *Project) MeterMap() seq.MeterMap {
+	var m seq.MeterMap
+	if p.Meter != nil {
+		if built, err := seq.NewMeterMap([]seq.MeterChange{{Meter: seq.Meter{Beats: int64(p.Meter.Numerator), Unit: int64(p.Meter.Denominator)}}}); err == nil {
+			m = built
+		}
+	}
+	return m
+}
 
 // SongEndTick is where the song section ends: the bar line after its last
 // entry. Song entries count bars of the base meter.

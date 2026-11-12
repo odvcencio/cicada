@@ -16,6 +16,10 @@ import (
 const FormatID = "cicada.project/1"
 const FormatID2 = "cicada.project/2"
 
+// FormatID3 adds the song meter (time signatures phase 2). A project without
+// a meter keeps /1 or /2 and its bytes.
+const FormatID3 = "cicada.project/3"
+
 // Project is the semantic interchange model shared by source tooling and the
 // future workstation. Slice order follows source order; maps carry keyed data.
 type Project struct {
@@ -24,6 +28,7 @@ type Project struct {
 	Edition     int          `cicada:"Source language edition" default:"1" json:"edition,omitempty"`
 	Title       string       `cicada:"Project title" json:"title"`
 	TempoMilli  int          `cicada:"Tempo in thousandths of a beat per minute" unit:"milli-BPM" range:"20000..300000" json:"tempo_milli"`
+	Meter       *Meter       `cicada:"Song meter; omitted for 4/4" json:"meter,omitempty" introduced:"cicada.project/3"`
 	Key         Key          `cicada:"Tonal root and scale" json:"key"`
 	Seed        uint32       `cicada:"Project random seed" json:"seed"`
 	Assets      []Asset      `cicada:"Immutable audio asset table" json:"assets,omitempty" introduced:"cicada.project/2"`
@@ -309,6 +314,14 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		Instruments: []Instrument{}, Kits: []Kit{}, Tracks: []Track{}, Patterns: []Pattern{},
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
 	}
+	// The meter comes first: every position below is read on its map.
+	if m := score.Meter; m != nil {
+		p.Meter = &Meter{Numerator: int(m.Beats), Denominator: int(m.Unit)}
+		for _, g := range m.Groups {
+			p.Meter.Groups = append(p.Meter.Groups, int(g))
+		}
+		p.Format, p.Version = FormatID3, 3
+	}
 	lowerAudio(p, score)
 	lowerArrangement(p, score)
 	for _, source := range score.Instruments {
@@ -506,7 +519,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	if needsProject2 {
 		p.p2Syntax = true
-		p.Format, p.Version = FormatID2, 2
+		p.useFormat2()
 	}
 	for _, source := range score.Patterns {
 		track := representativeTrack(score, source)
@@ -550,7 +563,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		}
 		if len(scene.Settings) > 0 {
 			p.p2Syntax = true
-			p.Format, p.Version = FormatID2, 2
+			p.useFormat2()
 		}
 		p.Scenes = append(p.Scenes, scene)
 	}

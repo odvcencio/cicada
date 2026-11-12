@@ -95,6 +95,7 @@ type Report struct {
 	chainStart                       int64
 	chainEnd                         int64
 	tempoChanges                     []project.TempoChange
+	meter                            *notation.Meter // recorded in the cica chunk; nil is 4/4
 }
 
 // masterChainWindow returns the half-open range of render sample positions
@@ -536,6 +537,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	report.tempoChanges = project.ExcerptTempoChanges(semantic.TempoMilli, tempoChanges, report.From, report.Bars)
+	report.meter = score.Meter
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
 	}
@@ -544,7 +546,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	report.Frames = renderFrames - fromFrame
 	report.rangeSkip = fromFrame
 	dataBytes := report.Frames * int64(encoder.frameBytes())
-	if dataBytes > int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges))) {
+	if dataBytes > int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges), report.meter)) {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	var prepared []engine.StereoVoiceFactory
@@ -713,7 +715,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	if err := writeWAVHeaderTempo(writer, opts.SampleRate, opts.Bits, uint32(dataBytes), len(report.tempoChanges)); err != nil {
+	if err := writeWAVHeaderTempo(writer, opts.SampleRate, opts.Bits, uint32(dataBytes), metadataBytes(len(report.tempoChanges), report.meter)); err != nil {
 		return report, err
 	}
 	busState.outputGain = outputGain
@@ -976,7 +978,7 @@ func finishWAV(w io.Writer, score *notation.Score, limiter *mix.Limiter, stems *
 	if report.writtenFrames != report.Frames {
 		return fmt.Errorf("limiter wrote %d frames, expected %d", report.writtenFrames, report.Frames)
 	}
-	return writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges)
+	return writeMetadata(w, report.meter, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges)
 }
 
 func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
@@ -1977,10 +1979,11 @@ func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder 
 //
 // Version 1 is 24 bytes: the score tempo, the bars, and the tail. A song whose
 // scenes change tempo writes version 2, which adds one (bar, tempo) pair for
-// each step after those fields. A song with a single tempo still writes the
-// exact version 1 bytes.
-func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []project.TempoChange) error {
-	chunk := make([]byte, metadataBytes(len(changes)))
+// each step after those fields. A song with a meter writes version 3, which
+// puts the meter's beats and unit and two zero bytes before the pairs. A song
+// with a single tempo and no meter still writes the exact version 1 bytes.
+func writeMetadata(w io.Writer, meter *notation.Meter, tempoMilli, bars, tailFrames uint32, changes []project.TempoChange) error {
+	chunk := make([]byte, metadataBytes(len(changes), meter))
 	copy(chunk[:4], "cica")
 	binary.LittleEndian.PutUint32(chunk[4:8], uint32(len(chunk)-8))
 	binary.LittleEndian.PutUint32(chunk[8:12], 1)
@@ -1990,9 +1993,15 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []p
 	binary.LittleEndian.PutUint32(chunk[12:16], tempoMilli)
 	binary.LittleEndian.PutUint32(chunk[16:20], bars)
 	binary.LittleEndian.PutUint32(chunk[20:24], tailFrames)
+	steps := chunk[24:]
+	if meter != nil {
+		binary.LittleEndian.PutUint32(chunk[8:12], 3)
+		chunk[24], chunk[25] = byte(meter.Beats), byte(meter.Unit)
+		steps = chunk[28:]
+	}
 	for i, change := range changes {
-		binary.LittleEndian.PutUint32(chunk[24+8*i:], uint32(change.Bar))
-		binary.LittleEndian.PutUint32(chunk[28+8*i:], uint32(change.BPMMilli))
+		binary.LittleEndian.PutUint32(steps[8*i:], uint32(change.Bar))
+		binary.LittleEndian.PutUint32(steps[4+8*i:], uint32(change.BPMMilli))
 	}
 	n, err := w.Write(chunk)
 	if err != nil {
@@ -2005,7 +2014,12 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []p
 }
 
 // metadataBytes is the size of the whole cica chunk, header included.
-func metadataBytes(changes int) int { return 24 + 8*changes }
+func metadataBytes(changes int, meter *notation.Meter) int {
+	if meter != nil {
+		return 28 + 8*changes
+	}
+	return 24 + 8*changes
+}
 
 func expressionEventPriority(kind seq.EventKind) int {
 	if kind == seq.NoteOff {

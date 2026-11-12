@@ -29,6 +29,18 @@ func ToSource(p *Project) ([]byte, error) {
 	if p.TempoMilli != 130_000 {
 		sections = append(sections, "tempo "+decimal(float64(p.TempoMilli)/1000))
 	}
+	if m := p.Meter; m != nil {
+		line := "meter " + strconv.Itoa(m.Numerator) + "/" + strconv.Itoa(m.Denominator)
+		for i, g := range m.Groups {
+			if i == 0 {
+				line += " "
+			} else {
+				line += "+"
+			}
+			line += strconv.Itoa(g)
+		}
+		sections = append(sections, line)
+	}
 	if p.Key.Root != 9 || p.Key.Scale != "minor" {
 		sections = append(sections, "key "+pitchNames[p.Key.Root]+" "+p.Key.Scale)
 	}
@@ -986,7 +998,8 @@ func ptrProject(project Project) *Project { return &project }
 func normalizeProjectMeaning(source *Project) Project {
 	p := *source
 	p.Edition = 1 // Source edition is metadata; migrations may change it without changing meaning.
-	p.Format, p.Version, p.p2Syntax = FormatID2, 2, true
+	p.useFormat2()
+	p.p2Syntax = true
 	p.Effects = append([]Effect(nil), source.Effects...)
 	p.Buses = append([]Bus(nil), source.Buses...)
 	p.Tracks = append([]Track(nil), source.Tracks...)

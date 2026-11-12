@@ -75,7 +75,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 		return ranges
 	}
 	if len(p.Automation) > 0 {
-		p.Format, p.Version = FormatID2, 2
+		p.useFormat2()
 	}
 	return nil
 }
@@ -88,7 +88,7 @@ func validateAutomation(p *Project) error {
 	if len(p.Automation) == 0 {
 		return nil
 	}
-	if p.Format != FormatID2 {
+	if !p.formatAtLeast2() {
 		return fmt.Errorf("CICADA-VERSION: automation requires cicada.project/2")
 	}
 	if len(p.Automation) > 32 {

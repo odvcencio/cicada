@@ -65,6 +65,11 @@ type Score struct {
 	Live           *Live
 	MIDI           *MIDI
 	Exports        []Export
+
+	// Meter is the song's declared meter; nil without a meter declaration,
+	// which is 4/4. MeterMap returns the map built from it.
+	Meter    *Meter `json:",omitempty"`
+	meterMap seq.MeterMap
 }
 
 // MIDI describes portable logical ports and their score mappings. Device

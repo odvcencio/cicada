@@ -40,7 +40,7 @@ func Cicada() *grammargen.Grammar {
 		sym("automate_decl"), sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 		sym("lfo_decl"), sym("envelope_decl"), sym("sway_decl"), sym("contour_decl"), sym("mod_decl"),
-		sym("midi_decl"),
+		sym("midi_decl"), sym("meter_decl"),
 	))
 
 	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(choice(sym("automation_point"), sym("automation_recall"))), str("}")))
@@ -327,6 +327,11 @@ func Cicada() *grammargen.Grammar {
 	g.Define("midi_track", seq(field("port", sym("identifier")), str("ch"), field("channel", sym("integer")), str("->"), field("target", sym("identifier")), optional(str(";"))))
 	g.Define("midi_cc", seq(field("port", sym("identifier")), optional(seq(str("ch"), field("channel", sym("integer")))), str("cc"), field("number", sym("integer")), str("->"), field("target", sym("parameter_path")), optional(seq(field("min", sym("number")), str(".."), field("max", sym("number")))), optional(seq(str("takeover"), str("="), field("takeover", sym("identifier")))), optional(str(";"))))
 	g.Define("midi_note", seq(field("port", sym("identifier")), optional(seq(str("ch"), field("channel", sym("integer")))), str("note"), field("number", choice(sym("integer"), sym("letter_pitch"))), str("->"), field("action", choice(str("play"), str("stop"), seq(str("launch"), field("scene", sym("identifier"))), seq(str("stop-track"), field("track", sym("identifier"))), seq(str("launch-slot"), field("track", sym("identifier")), field("pattern", sym("_name"))))), optional(seq(str("mode"), str("="), field("mode", sym("identifier")))), optional(str(";"))))
+	// The song's meter (time signatures phase 2): `meter 3/4`, or `meter 7/8 2+2+3`
+	// with beat groups. Defined last, because rule order fixes symbol ids.
+	g.Define("meter_decl", seq(str("meter"), field("meter", sym("fraction")), optional(field("groups", sym("beat_groups")))))
+	g.Define("beat_groups", token(pat(`[0-9]+(\+[0-9]+)*`)))
+	g.Test("song meter", "cicada 2 meter 7/8 2+2+3 track meter acid {}", "")
 	g.Test("portable midi", "cicada 2 midi { port keys keys ch 1 -> lead keys cc 74 -> bass.cutoff 200Hz..4kHz keys note c1 -> launch verse }", "")
 	return g
 }
