@@ -46,7 +46,7 @@ func appendPlacementPattern(track *TrackChunk, pattern *seq.Pattern, origin, end
 	for step := int64(0); origin+step*pattern.GridTicks() < end; step++ {
 		// Placements play on the scheduled engine, which draws drum
 		// humanize with the lane index.
-		appendStepOffset(track, pattern, step, origin, ti, ti, slot, drumPitch, isDrum, false, channel, &held)
+		appendStepOffset(track, pattern, step, origin, ti, ti, slot, drumPitch, isDrum, channel, &held)
 	}
 	// Swing and ratchets can delay an onset beyond the unswung cell boundary.
 	// Remove those outside the region and bound every remaining note-off.

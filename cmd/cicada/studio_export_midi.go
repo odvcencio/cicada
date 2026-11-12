@@ -103,7 +103,7 @@ func (s *studio) prepareMIDIExport(w http.ResponseWriter, r *http.Request) {
 		c.active = false
 		c.mu.Unlock()
 	}()
-	file, err := smf.FromProjectWith(inspection.semantic, 0, midiDraws(inspection.score))
+	file, err := smf.FromProject(inspection.semantic, 0)
 	var data bytes.Buffer
 	if err == nil {
 		err = smf.Encode(file, &data)

@@ -578,10 +578,10 @@ func mixStudioMonitor(input, output [][]float32, monitor studioAudioMonitor) {
 			inLeft, inRight = monitor.amp.Process(inLeft, inRight)
 		}
 		if len(output) == 1 {
-			output[0][frame] = clampStudioAudioSample(output[0][frame] + (inLeft+inRight)*0.5*monitor.Gain)
+			output[0][frame] = clampStudioAudioSample(output[0][frame] + float32((inLeft+inRight)*0.5*monitor.Gain))
 		} else {
-			output[0][frame] = clampStudioAudioSample(output[0][frame] + inLeft*monitor.Gain)
-			output[1][frame] = clampStudioAudioSample(output[1][frame] + inRight*monitor.Gain)
+			output[0][frame] = clampStudioAudioSample(output[0][frame] + float32(inLeft*monitor.Gain))
+			output[1][frame] = clampStudioAudioSample(output[1][frame] + float32(inRight*monitor.Gain))
 		}
 	}
 }
@@ -607,8 +607,8 @@ func measureStudioAudioInput(input [][]float32) (peakL, peakR, rmsL, rmsR float3
 		if abs := float32(math.Abs(float64(right))); abs > peakR {
 			peakR = abs
 		}
-		sumL += float64(left) * float64(left)
-		sumR += float64(right) * float64(right)
+		sumL += float64(float64(left) * float64(left))
+		sumR += float64(float64(right) * float64(right))
 	}
 	rmsL = float32(math.Sqrt(sumL / float64(frames)))
 	rmsR = float32(math.Sqrt(sumR / float64(frames)))

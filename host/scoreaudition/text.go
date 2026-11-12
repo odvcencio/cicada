@@ -60,7 +60,12 @@ func (r *Report) WriteText(w io.Writer) {
 	fmt.Fprintf(w, "  %-10s %7s %7s %6s %8s %7s %7s %8s %7s  %s\n", "track", "rms", "vs top", "share", "band dB", "bright", "attack", "decay20", "on/bar", "step 1-16 (swing)")
 	for _, t := range r.Tracks {
 		if t.Silent {
-			fmt.Fprintf(w, "  %-10s silent\n", t.ID)
+			// A quiet track that still plays reads as silent too, so give its level.
+			if t.RMSdBFS > -120 {
+				fmt.Fprintf(w, "  %-10s %7.1f  silent: under %g dBFS RMS, too quiet to measure\n", t.ID, t.RMSdBFS, silentDB)
+			} else {
+				fmt.Fprintf(w, "  %-10s %7s  silent: no signal above -120 dBFS\n", t.ID, "-")
+			}
 			continue
 		}
 		bound := " "

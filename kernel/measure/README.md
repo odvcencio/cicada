@@ -29,6 +29,20 @@ entries[].metrics.<m>  status   "measured" or "not_applicable"
                        points   frequency response: expected, measured and error per frequency
 ```
 
+To compare with an earlier run, for example the base of a pull request, set
+`CICADA_ENGINE_MEASUREMENTS_BASELINE` to its report. The test then fails on
+each measured metric (`cpu_ns_per_block` aside) whose value changed, and logs
+the metrics the earlier report lacks and how many are identical. Values are
+compared as the report holds them, rounded to 0.001 in their unit. CI does not
+set it; the gated limits in `testdata/tolerances.json` are what CI enforces:
+
+```
+# with the base commit checked out
+CICADA_ENGINE_MEASUREMENTS=/tmp/base.json go test -count=1 ./kernel/measure -run '^TestEngineMeasurements$'
+# with your commit checked out
+CICADA_ENGINE_MEASUREMENTS_BASELINE=/tmp/base.json go test -count=1 -v ./kernel/measure -run '^TestEngineMeasurements$' | grep baseline:
+```
+
 Every entry carries all five metrics; a metric that does not apply says why.
 A value of -200 means zero or below -200 dB (JSON cannot hold minus infinity).
 For every gated metric, lower is better.

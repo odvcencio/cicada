@@ -4,15 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
+	"time"
+
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
-	"math"
-	"time"
 )
 
 func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDir string, outputGain float32) (Report, error) {
@@ -82,6 +84,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	fromFrame := tempoMap.SampleAtTick(meterMap.BarStart(int64(opts.From)))
 	endFrame := tempoMap.SampleAtTick(endTick)
 	report = Report{SampleRate: opts.SampleRate, Bars: int(meterMap.BarsUntil(endTick)) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
+	jobs := resolveJobs(opts.Jobs)
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
@@ -91,7 +94,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	maxFrames := (int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
+	maxFrames := (int64(^uint32(0)) - int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
 	spanFrames := endFrame - fromFrame
 	if spanFrames < 0 || report.TailFrames > maxFrames || spanFrames > maxFrames-report.TailFrames {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
@@ -118,7 +121,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	}
 	metricEnd := endFrame + report.TailFrames + insertLatency
 	report.chainStart, report.chainEnd = masterChainWindow(opts.From, fromFrame, endFrame+report.TailFrames, int(insertLatency), player.MasterProcessorLatencyFrames())
-	ceiling := math.Pow(10, mix.CeilingDB/20)
+	ceiling := detmath.Pow(10, mix.CeilingDB/20)
 	taps := make([]engine.TapFrame, opts.Block)
 	left, right := make([]float32, opts.Block), make([]float32, opts.Block)
 	buffer := make([]byte, opts.Block*encoder.frameBytes())
@@ -143,6 +146,12 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		}
 	}
 	if !replay {
+		// Lanes synthesize each segment's tracks; the engine still mixes them
+		// in track order on this goroutine, so every job count writes the same
+		// bytes. A replay synthesizes nothing and starts no lanes.
+		if err := player.EnableOfflineParallel(jobs); err != nil {
+			return report, err
+		}
 		player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 	}
 	var message cmd.Message
@@ -259,6 +268,16 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			return report, err
 		}
 	}
+	stats := player.OfflineLaneStats()
+	why := ""
+	switch {
+	case replay:
+		why = SerialReplay
+	case player.ParallelWorkers() == 1 && jobs > 1 && cfg.Tracks > 1:
+		// EnableOfflineParallel stays serial for a song with graph LFOs.
+		why = SerialGraphLFO
+	}
+	report.noteLanes(opts.Jobs, jobs, player.ParallelWorkers(), cfg.Tracks, laneCounts{segments: stats.Segments, parallel: stats.ParallelSegments, starved: stats.StarvedSegments, peak: stats.Peak}, why)
 	return report, nil
 }
 

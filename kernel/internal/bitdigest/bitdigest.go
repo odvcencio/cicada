@@ -89,5 +89,16 @@ func (d *Digest) Int(values ...int) {
 	}
 }
 
+// Uint32 adds each value as 8 little-endian bytes, zero-extended: the bytes
+// Int writes for the same value where int has 64 bits. Use it for uint32
+// state, which int(v) would turn negative where int has 32 bits
+// (WebAssembly built with TinyGo).
+func (d *Digest) Uint32(values ...uint32) {
+	for _, v := range values {
+		binary.LittleEndian.PutUint64(d.word[:], uint64(v))
+		d.h.Write(d.word[:])
+	}
+}
+
 // Hex returns the digest so far as lowercase hexadecimal.
 func (d *Digest) Hex() string { return hex.EncodeToString(d.h.Sum(nil)) }

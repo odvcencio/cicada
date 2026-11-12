@@ -69,6 +69,16 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// Jobs is the most render lanes, goroutines that synthesize tracks at the
+	// same time, that the render may use. Zero, the default, and 1 render
+	// serially: a caller that does not ask for lanes gets none. AutoJobs
+	// picks the smaller of 4 and half the usable CPUs; a count is honoured up
+	// to runtime.NumCPU. A render never sets up more lanes than the song has
+	// tracks. Every value writes the same bytes: lanes only synthesize each
+	// track's own signal between control changes, and the render mixes the
+	// tracks in track order as the serial render does. Report.LaneReport says
+	// what the render chose and why it stayed serial if it did.
+	Jobs int
 }
 
 type Report struct {
@@ -95,6 +105,8 @@ type Report struct {
 	chainStart                       int64
 	chainEnd                         int64
 	tempoChanges                     []project.TempoChange
+	// LaneReport says how the render used its lanes (Options.Jobs).
+	LaneReport
 }
 
 // masterChainWindow returns the half-open range of render sample positions
@@ -178,6 +190,9 @@ type busMixerState struct {
 	musicMute, musicSolo bool
 	sfxMute, sfxSolo     bool
 	masterMute           bool
+	// lanes, when set, synthesizes the tracks of each segment on several
+	// goroutines before renderBlock mixes them (Options.Jobs).
+	lanes *trackLanes
 }
 
 type sceneTransition struct {
@@ -322,6 +337,13 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 		if report.OutputPeak > 0 {
 			gain = float32(detmath.Pow(10, -1.0/20) / float64(report.OutputPeak))
 		}
+		final, err := renderWAV(score, opts, writer, stemsDir, gain)
+		if final.SerialReason == SerialReplay {
+			// The second render replayed the first one's mix: report how the
+			// synthesis used its lanes.
+			final.LaneReport = report.LaneReport
+		}
+		return final, err
 	}
 	return renderWAV(score, opts, writer, stemsDir, gain)
 }
@@ -353,13 +375,37 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 				if kind == "" {
 					kind = effect.Name
 				}
-				if kind == "eq" || kind == "comp" || kind == "deesser" || kind == "ampcab" {
+				// The direct mixer builds only a drive insert (compileTracksAll).
+				// Every other kind, chorus included, runs in the engine; the
+				// direct mixer used to play a single chorus as no insert.
+				if kind != "drive" {
 					return true
 				}
 			}
 		}
 	}
 	return false
+}
+
+// laneStepNotes gives every step of a drum lane pattern its lane number as the
+// note, as the engine's lane patterns carry it (packProjectStep in
+// project/runtime.go). The scheduler seeds each hit's humanize offset with the
+// step's note (seq.HumanizeVelocity), so with the General MIDI pitch that
+// project.CompilePattern writes for check, the direct mixer drew different
+// velocities from the engine, and `cicada render` differed from Studio. The
+// direct mixer plays a hit by its lane, never by this note.
+func laneStepNotes(p *seq.Pattern, lane uint8) error {
+	for i := 0; i < int(p.Len); i++ {
+		step, err := seq.UnpackStep(p.Steps[i])
+		if err != nil {
+			return err
+		}
+		step.Note = lane
+		if p.Steps[i], err = seq.PackStep(step); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // hasTapeEcho reports whether the score declares a tape echo. The direct WAV
@@ -373,10 +419,39 @@ func hasTapeEcho(score *notation.Score) bool {
 	return false
 }
 
-func hasResidentSampler(score *notation.Score) bool {
+// hasSamplerExpression reports whether a single-asset sampler track plays a
+// pattern with expression rows, through a scene or its chain. The engine plays
+// a sampler's bend, vibrato and pressure rows; the direct mixer's sampler
+// voice has no note expression and played such rows as if they were absent.
+// Rows on other tracks keep the direct mixer, which plays them.
+func hasSamplerExpression(score *notation.Score) bool {
+	samplers := map[string]bool{}
 	for _, sampler := range score.Samplers {
 		if sampler.Asset != "" {
-			return true
+			samplers[sampler.Name] = true
+		}
+	}
+	rows := map[string]bool{}
+	for _, pattern := range score.Patterns {
+		rows[pattern.Name] = len(pattern.Expression) > 0
+	}
+	sampled := map[string]bool{}
+	for _, track := range score.Tracks {
+		if !samplers[track.Kind] {
+			continue
+		}
+		sampled[track.Name] = true
+		for _, entry := range track.Chain {
+			if rows[entry.Text] {
+				return true
+			}
+		}
+	}
+	for _, scene := range score.Scenes {
+		for _, binding := range scene.Bindings {
+			if sampled[binding.Track] && rows[binding.Pattern] {
+				return true
+			}
 		}
 	}
 	return false
@@ -418,6 +493,8 @@ func scheduledEngineReason(score *notation.Score, opts Options) string {
 		return "a live instrument parameter"
 	case hasPackSampler(score) && !opts.SamplerBaseline:
 		return "sample packs"
+	case hasSamplerExpression(score):
+		return "sampler expression rows"
 	}
 	return ""
 }
@@ -577,6 +654,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			tracks[i].chain = append(tracks[i].chain, ref.Text)
 		}
 	}
+	jobs := resolveJobs(opts.Jobs)
+	report.noteLanes(opts.Jobs, jobs, 1, len(tracks), laneCounts{}, SerialReplay)
 	stopIsAction := true
 	for _, pattern := range score.Patterns {
 		if pattern.Name == "stop" {
@@ -732,6 +811,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			return renderMasterReplay(writer, score, opts, cache, report, &encoder, limiter, busState, masterGain, block)
 		}
 	}
+	// Only synthesis uses lanes; a replay above has none to synthesize.
+	lanes := newTrackLanes(tracks, jobs, opts.Block)
+	if lanes != nil {
+		defer lanes.close()
+		busState.lanes = lanes
+	}
 	eventCapacity := 0
 	for i := range tracks {
 		eventCapacity += 2*len(eventBuf) + 1 // active, pending releases, and transition
@@ -831,7 +916,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							return report, fmt.Errorf("too many pending gate events in render block")
 						}
 						for _, event := range eventBuf[:n] {
-							if event.Kind == seq.NoteOff {
+							// A note that glides into the next pattern keeps sounding
+							// until the target note starts, which a swung odd step
+							// delays past the slide's own overlap release; the engine
+							// skips that release the same way (processPatternEvents).
+							if event.Kind == seq.NoteOff && !(tracks[ti].slideFrom != 0 && event.NoteID == tracks[ti].slideFrom && event.Sample <= tracks[ti].slideAt) {
 								events = append(events, scheduled{track: ti, generation: tracks[ti].pendingGen, event: event})
 							}
 						}
@@ -930,6 +1019,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			return report, err
 		}
 	}
+	report.noteLanes(opts.Jobs, jobs, lanes.lanes(), len(tracks), lanes.counts(), "")
 	return report, nil
 }
 
@@ -1146,6 +1236,9 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 					for lane, name := range drum.Names {
 						if part.Lane == name {
 							p := part.Pattern
+							if err := laneStepNotes(&p, uint8(lane)); err != nil {
+								return nil, fmt.Errorf("pattern %s lane %s: %w", pattern.Name, name, err)
+							}
 							lanes[lane] = &p
 							break
 						}
@@ -1497,40 +1590,63 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			if !ok {
 				continue // applyScene reports the invalid binding at the boundary
 			}
-			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], boundaryTick, sampleAt)
+			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], track.startTick, boundaryTick, sampleAt)
 			break
 		}
 	}
 }
 
-func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, sampleAt func(int64) int64) sceneTransition {
-	if boundaryTick < seq.TicksPerStep || boundaryTick%seq.TicksPerStep != 0 {
+// sceneTransitionFor decides whether the note that slides out of the playing
+// pattern at a scene boundary glides into the next pattern's first note, and
+// when it is released otherwise. It counts steps on each pattern's own grid
+// from the playing pattern's start, as the engine does (normalSlideRelease and
+// switchWouldSlide in kernel/engine/pattern.go): counting on the fixed
+// sixteenth grid named a note that never played for any other grid, so a slide
+// across a scene switch was dropped on this path and kept by the engine.
+func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, startTick, boundaryTick int64, sampleAt func(int64) int64) sceneTransition {
+	grid := source.GridTicks()
+	if boundaryTick < grid || (boundaryTick-startTick)%grid != 0 {
 		return sceneTransition{}
 	}
-	lastStep := boundaryTick/seq.TicksPerStep - 1
-	index := uint8(lastStep % int64(source.Len))
+	lastStep := (boundaryTick-startTick%grid)/grid - 1
+	local := lastStep - startTick/grid
+	if local < 0 {
+		return sceneTransition{}
+	}
+	index := uint8(local % int64(source.Len))
 	step, err := seq.UnpackStep(source.Steps[index])
-	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, sourceSlot, lastStep/int64(source.Len), index) {
+	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, sourceSlot, local/int64(source.Len), index) {
 		return sceneTransition{}
 	}
-	startTick := lastStep * seq.TicksPerStep
+	swing := (grid*int64(source.SwingPermille) + 500) / 1000
+	stepStart, stepEnd := lastStep*grid+startTick%grid, boundaryTick
 	if lastStep&1 != 0 {
-		startTick += seq.SwingDelayTicks(source.SwingPermille)
+		stepStart += swing
 	}
-	onset := seq.RatchetTick(startTick, boundaryTick, step.Ratchet, step.Ratchet-1)
-	gateTicks := (boundaryTick - onset) * int64(source.GatePercent) / 100
+	if (lastStep+1)&1 != 0 {
+		stepEnd += swing
+	}
+	onset := seq.RatchetTick(stepStart, stepEnd, step.Ratchet, step.Ratchet-1)
+	gateTicks := (stepEnd - onset) * int64(source.GatePercent) / 100
 	if gateTicks < 30 {
 		gateTicks = 30
 	}
 	offTick := onset + gateTicks
 	sourceNoteID := lastStep*8 + int64(step.Ratchet)
-	targetStep := boundaryTick / seq.TicksPerStep
+	targetStep := boundaryTick / target.GridTicks()
 	targetIndex := uint8(targetStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
 	carry := err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
+	// The target note starts late by the target pattern's swing when the bar
+	// line falls on an odd step of its grid (1/2t, 1/3, 1/1), as in the
+	// engine's switchOnsetSample.
+	targetTick := boundaryTick
+	if targetStep&1 != 0 {
+		targetTick += (target.GridTicks()*int64(target.SwingPermille) + 500) / 1000
+	}
 	return sceneTransition{
 		valid: true, carry: carry, sourceNoteID: sourceNoteID,
-		boundarySample: sampleAt(boundaryTick), targetSample: sampleAt(boundaryTick),
+		boundarySample: sampleAt(boundaryTick), targetSample: sampleAt(targetTick),
 		release: seq.Event{Kind: seq.NoteOff, NoteID: sourceNoteID, Tick: offTick, Sample: sampleAt(offTick), Track: track},
 	}
 }
@@ -1636,6 +1752,11 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, masterBiasL, masterBiasR, masterGain float32, busState busMixerState, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
+	lanes := busState.lanes
+	if lanes != nil {
+		lanes.begin()
+		defer lanes.finish()
+	}
 	cache := busState.masterCache
 	if cache != nil {
 		if err := cache.beginBlock(frames, busState.cacheReplay); err != nil {
@@ -1727,6 +1848,22 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			eventIndex++
 		}
+		if lanes != nil && frame >= lanes.end {
+			// The tracks' own signals are fixed until the next event or
+			// automation point, so lanes may synthesize them up to there.
+			end := frames
+			if eventIndex < len(events) {
+				if next := events[eventIndex].event.Sample - start; next > int64(frame) && next < int64(end) {
+					end = int(next)
+				}
+			}
+			if len(tracks) > 0 {
+				if next, ok := tracks[0].automation.nextAutomation(); ok && next-start > int64(frame) && next-start < int64(end) {
+					end = int(next - start)
+				}
+			}
+			lanes.prepare(tracks, frame, end)
+		}
 		var dry mix.Dry
 		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for ti := range tracks {
@@ -1734,38 +1871,14 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				tracks[ti].parameters.advance(&tracks[ti])
 			}
 			var l, r float32
-			if tracks[ti].drums != nil {
-				l, r = tracks[ti].drums.NextStereo()
-				if tracks[ti].drums.Fault() {
-					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
-				}
-			} else if voice, ok := tracks[ti].voice.(*pianoVoice); ok {
-				l, r = voice.NextStereo()
-			} else if tracks[ti].prepared != nil {
-				l, r = tracks[ti].prepared.NextStereo()
-			} else if tracks[ti].legacyPoly != nil {
-				l, r = tracks[ti].legacyPoly.NextStereo()
-			} else if tracks[ti].poly != nil {
-				l = tracks[ti].poly.Next()
-				r = l
+			var err error
+			if lanes != nil && lanes.prepared {
+				l, r, err = lanes.sample(ti, frame)
 			} else {
-				if voice, ok := tracks[ti].voice.(*packVoice); ok {
-					l, r = voice.NextStereo()
-					if voice.fault != nil {
-						return fmt.Errorf("sampler %s: %w", tracks[ti].name, voice.fault)
-					}
-				} else {
-					mono := tracks[ti].voice.Next()
-					l, r = mono, mono
-				}
+				l, r, err = tracks[ti].nextRaw()
 			}
-			if tracks[ti].insert != nil {
-				l, r = tracks[ti].insert.Process(l, r)
-				if tracks[ti].insert.Fault() {
-					return fmt.Errorf("drive DSP fault on %s", tracks[ti].name)
-				}
-			} else if tracks[ti].align != nil {
-				l, r = tracks[ti].align.Process(l, r)
+			if err != nil {
+				return err
 			}
 			if tracks[ti].sendA > 0 && !tracks[ti].muted {
 				if tracks[ti].sendAPre {
@@ -1933,6 +2046,46 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		return stems.flush()
 	}
 	return nil
+}
+
+// nextRaw renders one frame of the track's own signal: its voice and its
+// drive insert or latency alignment, before the mixer. It touches only the
+// track's own state, so tracks may render on different goroutines.
+func (track *trackRuntime) nextRaw() (l, r float32, err error) {
+	if track.drums != nil {
+		l, r = track.drums.NextStereo()
+		if track.drums.Fault() {
+			return 0, 0, fmt.Errorf("drum DSP fault on %s", track.name)
+		}
+	} else if voice, ok := track.voice.(*pianoVoice); ok {
+		l, r = voice.NextStereo()
+	} else if track.prepared != nil {
+		l, r = track.prepared.NextStereo()
+	} else if track.legacyPoly != nil {
+		l, r = track.legacyPoly.NextStereo()
+	} else if track.poly != nil {
+		l = track.poly.Next()
+		r = l
+	} else {
+		if voice, ok := track.voice.(*packVoice); ok {
+			l, r = voice.NextStereo()
+			if voice.fault != nil {
+				return 0, 0, fmt.Errorf("sampler %s: %w", track.name, voice.fault)
+			}
+		} else {
+			mono := track.voice.Next()
+			l, r = mono, mono
+		}
+	}
+	if track.insert != nil {
+		l, r = track.insert.Process(l, r)
+		if track.insert.Fault() {
+			return 0, 0, fmt.Errorf("drive DSP fault on %s", track.name)
+		}
+	} else if track.align != nil {
+		l, r = track.align.Process(l, r)
+	}
+	return l, r, nil
 }
 
 func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, buffer []byte, report *Report) error {

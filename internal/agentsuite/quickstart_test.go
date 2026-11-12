@@ -417,6 +417,34 @@ func followQuickStart(t *testing.T, bin string) {
 		t.Fatalf("new demo: exit %d, printed %q", code, stdout)
 	}
 	q.dir = filepath.Join(q.root, "demo")
+	// cicada new writes a short AGENTS.md that points to cicada agents, and
+	// cicada agents reference prints the core reference.
+	if written, err := os.ReadFile(filepath.Join(q.dir, "AGENTS.md")); err != nil || string(written) != agentguide.ProjectAgents() || !strings.Contains(string(written), "`cicada agents`") {
+		t.Fatalf("the new project's AGENTS.md does not point to cicada agents: %v", err)
+	}
+	var created struct {
+		Schema          string   `json:"schema"`
+		Files           []string `json:"files"`
+		AgentsMDWritten bool     `json:"agents_md_written"`
+		Error           *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	stdout, code = cicada(t, bin, q.root, "new", "--json", "second")
+	decode(t, "new --json", stdout, &created)
+	if code != 0 || created.Schema != "cicada.new.v1" || !created.AgentsMDWritten || !strings.Contains(strings.Join(created.Files, " "), "second/AGENTS.md") {
+		t.Fatalf("new --json: exit %d %+v", code, created)
+	}
+	created.Error = nil
+	stdout, code = cicada(t, bin, q.root, "new", "--json", "second")
+	decode(t, "new --json again", stdout, &created)
+	if code != 1 || created.Error == nil || created.Error.Code != "destination_exists" {
+		t.Fatalf("new --json into an existing folder: exit %d %+v", code, created.Error)
+	}
+	stdout, code = q.run("agents", "reference")
+	if reference := string(stdout); code != 0 || !strings.HasPrefix(reference, "# Cicada core reference for agents\n") || !strings.Contains(reference, "\n## Edit intents\n") || len(reference) > agentguide.ReferenceBudget {
+		t.Fatalf("agents reference: exit %d, %d bytes", code, len(stdout))
+	}
 	revision := q.check()
 	q.browserProfile(true)
 

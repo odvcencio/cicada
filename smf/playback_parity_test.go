@@ -65,7 +65,7 @@ func TestMIDIExportPlaysWhatTheRendererPlays(t *testing.T) {
 			if scheduled != (name != "scenes") {
 				t.Fatalf("%s: scheduled engine %v", name, scheduled)
 			}
-			file, err := smf.FromProjectWith(p, 4, smf.Options{SceneRenderer: !scheduled})
+			file, err := smf.FromProject(p, 4)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -80,10 +80,10 @@ func TestMIDIExportPlaysWhatTheRendererPlays(t *testing.T) {
 				if event.Kind != seq.NoteOn {
 					return
 				}
-				// The scene renderer gives a drum hit its General MIDI note,
-				// the scheduled engine its lane index.
+				// Both renderers tap a drum hit with its lane number (#354);
+				// the MIDI file writes its General MIDI note.
 				note := event.Note
-				if track == 2 && scheduled {
+				if track == 2 {
 					note = drum.MIDINotes[note]
 				}
 				// Playback plays an accent at 127 after humanizing it.

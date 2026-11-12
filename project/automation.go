@@ -277,7 +277,7 @@ func automationValue(lane AutomationLane, tick int64, space automationSpace) (fl
 	case "smooth":
 		t = t * t * (3 - 2*t)
 	case "curve":
-		t = math.Pow(t, math.Exp2(b.Curve))
+		t = detmath.Pow(t, detmath.Exp2(b.Curve))
 	}
 	if decibel {
 		// A send lane written in dB ramps linearly in dB, as level does. A
@@ -292,7 +292,7 @@ func automationValue(lane AutomationLane, tick int64, space automationSpace) (fl
 	}
 	x, y := *a.Value.Number, *b.Value.Number
 	if logarithmic {
-		return math.Exp(float64(math.Log(x)) + float64((math.Log(y)-math.Log(x))*t)), true
+		return detmath.Exp(float64(detmath.Log(x)) + float64((detmath.Log(y)-detmath.Log(x))*t)), true
 	}
 	return x + float64((y-x)*t), true
 }
@@ -385,8 +385,8 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 		measure := func(v float64) float64 { return v }
 		step := (resolved.Descriptor.Max - resolved.Descriptor.Min) / automationResolution
 		if resolved.Descriptor.Curve == "log" && resolved.Descriptor.Min > 0 {
-			measure = math.Log
-			step = (math.Log(resolved.Descriptor.Max) - math.Log(resolved.Descriptor.Min)) / automationResolution
+			measure = detmath.Log
+			step = (detmath.Log(resolved.Descriptor.Max) - detmath.Log(resolved.Descriptor.Min)) / automationResolution
 		}
 		space := automationSpaceOf(resolved.Descriptor, lane)
 		if space == decibelSpace {
