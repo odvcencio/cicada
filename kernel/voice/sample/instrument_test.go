@@ -624,6 +624,22 @@ func TestInstrumentSingleReleaseLayerFollowsTheRecordedLaw(t *testing.T) {
 	}
 }
 
+// A release takes its note's attack law. An attack with one recorded layer
+// keeps velocity/127, so its release does too: with min(1, velocity/centre)
+// the release at a centre of 64 played up to 6 dB louder against its attack
+// than before the recorded law (docs/sampler/packs.md).
+func TestInstrumentReleaseFollowsAOneLayerAttack(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	p := newMapped(t, []Zone{mappedZone(0, 64, 0, 0, 1, false), mappedZone(.3, 64, 0, 0, 1, true)}, c)
+	for _, vel := range []uint8{1, 24, 32, 64, 100, 127} {
+		want := .3 * float64(vel) / 127
+		if got := settledLevel(t, p, vel, true); math.Abs(got-want) > 1e-6 {
+			t.Errorf("release at velocity %d: %g, want %g", vel, got, want)
+		}
+	}
+}
+
 // Layers count per note, not per velocity: a pack whose layers split the
 // velocity range blends the neighbouring centres across the split, so the
 // level is continuous and rises with velocity. Two layouts: ranges 1-63 and

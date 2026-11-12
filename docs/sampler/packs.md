@@ -57,7 +57,7 @@ Velocity picks the recorded layers that play, and a pack's soft layers are alrea
 - above the loudest centre, the loudest recording plays at its recorded level, so velocity 127 sounds as it always has;
 - below the softest centre, velocity scales the softest recording by velocity/centre. With the grand's softest centre at 24, velocity 12 plays 6 dB under the pp recording and velocity 1 about 28 dB under it.
 
-A release recording follows the same rule; a release with one layer plays at min(1, velocity/centre), so it keeps its balance with its attack. An attack with one recorded layer (the `nylon` guitar, the open hi-hat, the full kit's cross-stick) has no other dynamics and keeps a level proportional to velocity/127.
+An attack with one recorded layer (the `nylon` guitar, the open hi-hat, the full kit's cross-stick) has no other dynamics and keeps a level proportional to velocity/127. A release recording follows its note's attack. When the attack has two or more layers, the release follows the same rule as the attack, and a release with one layer plays at min(1, velocity/centre), so it keeps its balance with the attack. When the attack has one layer, the release keeps velocity/127, as the attack does.
 
 That shifts the balance between one-layer and layered keys of the same pack, because only the layered keys get louder at low velocity. Measured at `x1`: in `full-kit-shells` the snare (`d2`) went from 12.6 dB under the cross-stick (`c#2`) to 5.4 dB over it, and in the catalog `kit` the closed hi-hat gains up to 14.5 dB on the open hi-hat. Rebalance with the kit lanes' levels if a groove relied on the old balance.
 
