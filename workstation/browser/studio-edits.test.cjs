@@ -154,6 +154,8 @@ async function studio() {
   // Every foreground write goes through this route, so the steps can hold,
   // rewrite or inspect one. Recovery checkpoints pass straight through.
   const gates = [];
+  // answers hold a write's answer after the service applied it.
+  const answers = [];
   const rewrites = [];
   await page.route('**/__actions/**', async route => {
     const request = route.request();
@@ -172,6 +174,8 @@ async function studio() {
       const response = await route.fetch({postData: JSON.stringify(payload), maxRedirects: 0});
       record.status = response.status();
       record.result = await response.json();
+      const answer = answers.shift();
+      if (answer) await answer;
       await route.fulfill({response, body: JSON.stringify(record.result)});
     } finally {
       inFlight--;
@@ -188,6 +192,7 @@ async function studio() {
   const region = id => page.locator(`#update-${id}`);
   const revisionOf = id => region(id).getAttribute('data-region-revision');
   const hold = () => { let release; gates.push(new Promise(resolve => { release = resolve; })); return () => release(); };
+  const holdAnswer = () => { let release; answers.push(new Promise(resolve => { release = resolve; })); return () => release(); };
   // A cell is confirmed when it shows the wanted state, carries no pending
   // marker, and its region carries the revision the edit produced.
   const confirmed = async (selector, active, revision) => page.waitForFunction(({selector, active, revision}) => {
@@ -203,7 +208,7 @@ async function studio() {
     assert.equal(documents, 1, 'a document request ran during an edit');
     assert.deepEqual(errors, []);
   };
-  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, rewrites, confirmed, settled, status, noNavigation, original,
+  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, holdAnswer, rewrites, confirmed, settled, status, noNavigation, original,
     maxInFlight: () => maxInFlight, documentID: () => page.evaluate(() => window.__studioEdits.document)};
   return session;
 }
@@ -837,6 +842,57 @@ test('a form in a stale region is sent only after its region is read', async () 
   await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
   await mute().click();
   await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+});
+
+// Undo writes the file before its answer reaches the page, and the regions
+// it leaves behind are marked stale only once that answer is applied. A form
+// that GoSX sends itself (Mute) carries the revision its region shows, so a
+// click in between sent the revision from before the Undo and the service
+// refused it: "score changed on disk; reload before saving" (tempo-editor and
+// arrangement-sources in CI, 12 November 2026, each right after an Undo).
+test('a form clicked while an Undo is being answered is sent with the revision the Undo leaves', async () => {
+  const {page, posts, cell, settled, caughtUp, holdAnswer} = await studio();
+  let mixerPost = null;
+  const onRequest = request => { if (!mixerPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/mixer') mixerPost = request; };
+  page.on('request', onRequest);
+  const mute = () => page.locator('#view-panel-mixer button[data-toggle=mute]').first();
+  try {
+    let start = posts.length;
+    await page.locator(cell(35)).click();
+    await settled(start + 1);
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+    await caughtUp();
+    const pressed = await mute().getAttribute('aria-pressed');
+    const release = holdAnswer();
+    start = posts.length;
+    try {
+      await page.locator('#undo-form button[type=submit]').click();
+      await until(() => posts.length > start && posts[start].status !== 0, 'the Undo did not reach the service');
+      assert.equal(posts[start].action, 'undo');
+      assert.ok(posts[start].status < 400, `the Undo was refused: ${posts[start].status}`);
+      await mute().click();
+      await page.waitForTimeout(300);
+      if (mixerPost) {
+        release();
+        const early = await mixerPost.response();
+        assert.fail(`Mute was sent before the Undo was answered, with the revision from before the Undo; the service answered ${early ? early.status() : 'nothing'}`);
+      }
+    } finally {
+      release();
+    }
+    await settled(start + 1);
+    await until(() => mixerPost !== null, 'Mute was not sent once the Undo was applied');
+    const response = await mixerPost.response();
+    assert.ok(response && response.status() < 400, `Mute was refused: ${response && response.status()}`);
+    await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
+    // Put the track back as it was.
+    await mute().click();
+    await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+  } finally {
+    page.off('request', onRequest);
+    await page.keyboard.press('Alt+Shift+Digit1');
+  }
 });
 
 test('a stale region whose text changed still sends a form whose values did not, once', async () => {
