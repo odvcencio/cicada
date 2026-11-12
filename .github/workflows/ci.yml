@@ -155,13 +155,14 @@ jobs:
         run: bash scripts/check-commit-hygiene.sh "$PR_BASE_SHA" "$PR_HEAD_SHA"
       # These tests need only bash, so they run on every pull request, even
       # one that changes only documentation.
-      - name: Test the change classifier and the Studio browser shard lists
+      - name: Test the change classifier, the Studio browser shard lists and the browser runner
         run: |
           set -euo pipefail
           bash scripts/ci-changes_test.sh
           bash scripts/ci-studio-browser_test.sh
           bash scripts/ci-setup-wasm-tools_test.sh
           bash scripts/ci-studio-browser.sh check
+          bash cmd/cicada/browser-runner_test.sh
 
   # Runs on every pull request, including one that changes only documentation.
   # TestDocumentationHygiene reads every tracked file, and the other tests read
