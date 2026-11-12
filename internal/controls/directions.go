@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -91,6 +92,50 @@ func Measured() MeasuredTable {
 		table.Controls = map[string]ProbedControl{}
 	}
 	return table
+}
+
+// Encode writes the table as directions.json holds it: one line for each
+// phrase and each control, in key order, so regenerating the table changes
+// only the lines of the controls whose measurements moved.
+func (t MeasuredTable) Encode() ([]byte, error) {
+	var out bytes.Buffer
+	schema, err := json.Marshal(t.Schema)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(&out, "{\n\"schema\": %s,\n", schema)
+	writeLines := func(name string, keys []string, value func(string) any) error {
+		fmt.Fprintf(&out, "%q: {", name)
+		for i, key := range keys {
+			k, err := json.Marshal(key)
+			if err != nil {
+				return err
+			}
+			v, err := json.Marshal(value(key))
+			if err != nil {
+				return err
+			}
+			separator := ","
+			if i == len(keys)-1 {
+				separator = ""
+			}
+			fmt.Fprintf(&out, "\n%s: %s%s", k, v, separator)
+		}
+		if len(keys) > 0 {
+			out.WriteString("\n")
+		}
+		out.WriteString("}")
+		return nil
+	}
+	if err := writeLines("phrase", sortedKeys(t.Phrase), func(k string) any { return t.Phrase[k] }); err != nil {
+		return nil, err
+	}
+	out.WriteString(",\n")
+	if err := writeLines("controls", sortedKeys(t.Controls), func(k string) any { return t.Controls[k] }); err != nil {
+		return nil, err
+	}
+	out.WriteString("\n}\n")
+	return out.Bytes(), nil
 }
 
 // Directions turns one probe result into directions.

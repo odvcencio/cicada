@@ -27,7 +27,7 @@ import (
 var Phrases = map[string]string{
 	"notes": "two bars of c3 and g3, each held three sixteenths and followed by five sixteenths of rest",
 	"acid":  "two bars of degrees 1 (accented) and 5, each held three sixteenths and followed by five of rest",
-	"drums": "two bars hitting each of the eleven lanes once (bd sd ch oh cp rs lt mt ht cb cy)",
+	"drums": "two bars hitting only the control's own lane (bd_tune plays bd) on every beat, so the lane is measured alone",
 	"kit":   "two bars of a model.kick lane hit on beats one and three",
 }
 
@@ -116,7 +116,11 @@ func score(owner controls.Owner, c controls.Control, v float64) (string, string,
 		case "acid":
 			return head + "track t acid { " + setting + " }\npattern p { 1^ - - . . . . . 5 - - . . . . . }\nscene s { t = p }\nsong { s*2 }\n", "acid", nil
 		case "drums":
-			return head + "track t drums { " + setting + " }\n" + drumPhrase, "drums", nil
+			// Every drum control belongs to one lane (<lane>_<control>). The
+			// probe plays that lane alone: with all eleven lanes in the
+			// phrase, a quiet lane's level or tone hardly moves the track.
+			lane, _, _ := strings.Cut(c.Name, "_")
+			return head + "track t drums { " + setting + " }\npattern p drums { " + lane + ": x... x... x... x... }\nscene s { t = p }\nsong { s*2 }\n", "drums", nil
 		case "guitar":
 			return head + "track t guitar { experimental = on\n  " + setting + " }\n" + notes, "notes", nil
 		}
@@ -138,23 +142,6 @@ func score(owner controls.Owner, c controls.Control, v float64) (string, string,
 	}
 	return "", "", fmt.Errorf("the probe does not measure %s controls", owner.Kind)
 }
-
-const drumPhrase = `pattern p drums {
-  bd: x... .... .... ....
-  sd: ..x. .... .... ....
-  ch: .... x... .... ....
-  oh: .... .x.. .... ....
-  cp: .... ...x .... ....
-  rs: .... .... x... ....
-  lt: .... .... .x.. ....
-  mt: .... .... ..x. ....
-  ht: .... .... ...x ....
-  cb: .... .... .... x...
-  cy: .... .... .... ..x.
-}
-scene s { t = p }
-song { s*2 }
-`
 
 // Measurement is the listening report's view of the probe track.
 type Measurement struct {

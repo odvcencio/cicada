@@ -40,8 +40,9 @@ env:
 #     desktop and platform-contract jobs and the four M2 jobs (WASM parity,
 #     one-hour memory, AudioWorklet browser tests and gates);
 #   - the schedule and manual runs only: the WAV parity and render-cache
-#     sweeps, macOS desktop exhaustive, and the M2 soak, which a manual run
-#     gets only with its soak input.
+#     sweeps, macOS desktop exhaustive, the measured sound directions of every
+#     control, and the M2 soak, which a manual run gets only with its soak
+#     input.
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
