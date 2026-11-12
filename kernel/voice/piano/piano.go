@@ -453,7 +453,18 @@ func flushStrings(v *voice, count int) {
 // (kernel/dsp/subnormal). The gain from any of them to the output is below
 // 2^7: 88 sympathetic resonators of resonant gain under 9 (0.000045*48000*4 s)
 // at 0.06, 12 board resonators under 6 at 0.16, and the bridge.
+//
+// The pedal is a smoothed control value, not a signal: after a release it
+// decays toward zero and stalls at about 1.4e-43, where it would make all 88
+// sympathetic resonators and every released voice's damper multiply by a
+// subnormal number each sample (12 to 19 times the cost of the same tail
+// without a pedal, on amd64). It reaches the output only through
+// r.damped + (r.decay-r.damped)*lift and k.damper + (1-k.damper)*pedal, sums
+// of a value near 1 that absorb anything below 2^-25, and through the test
+// pedal < .001, which zero and a subnormal pass alike, so flushing it changes
+// no output bit.
 func (p *Instrument) flushSubnormals() {
+	p.pedal = subnormal.Flush(p.pedal)
 	for i := range p.voices {
 		if v := &p.voices[i]; v.key != nil {
 			flushStrings(v, v.key.count)
