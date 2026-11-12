@@ -11,22 +11,19 @@ import (
 	"os"
 
 	"m31labs.dev/cicada/audioasset"
+	"m31labs.dev/cicada/host/schedule/rules"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
 // MaxFrames bounds the resident PCM of one prepared asset (64 MiB stereo).
-const MaxFrames = 8 << 20
+const MaxFrames = rules.MaxFrames
 
 // A mono vocal print can use the same 64 MiB allowance for a longer song.
 // Stereo samples retain their original bound; aggregate admission stays bounded.
-func FrameLimit(asset project.Asset) int64 {
-	if asset.Source == "recorded" && asset.Channels == 1 {
-		return 16 << 20
-	}
-	return MaxFrames
-}
+// The rule is rules.FrameLimit, which the score check shares.
+func FrameLimit(asset project.Asset) int64 { return rules.FrameLimit(asset) }
 
 // LoadSampler connects a sampler declaration to a bounded sample pool.
 func LoadSampler(dir string, p *project.Project, name string) (*sample.Pool, error) {

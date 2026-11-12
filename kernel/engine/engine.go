@@ -1310,6 +1310,11 @@ func (e *Engine) Render(outL, outR []float32) {
 }
 
 func accumulateMeter(m *meterAccum, left, right float32) {
+	if left == 0 && right == 0 {
+		// A zero frame raises no peak (every peak is at least zero) and adds
+		// zero to every sum, so silence skips the arithmetic.
+		return
+	}
 	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
 	m.peak = max(m.peak, peak)
 	m.power += float64((float64(float64(left)*float64(left)) + float64(float64(right)*float64(right))) * .5)

@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
@@ -58,6 +59,7 @@ type Processor struct {
 	// normGain and norm cache 1/tanh(gain) for the drive's current gain: both
 	// channels use it every frame, and it changes only while the drive moves.
 	normGain, norm float64
+	frames         uint32 // Process calls since New or Reset, for flushSubnormals
 	// blend caches the three impulses mixed by weights, keyed on the weights'
 	// bits: both channels use it every frame, and it changes only while a
 	// cabinet change fades in. The values are the ones the mix computed per
@@ -152,6 +154,27 @@ func (p *Processor) Reset() {
 	if p.params.Bypass {
 		p.bypass = 1
 	}
+	p.frames = 0
+}
+
+// flushSubnormals replaces a subnormal value with a zero of the same sign
+// (kernel/dsp/subnormal) in the values that glide to exactly zero: the drive,
+// the bypass blend, the weight of every cabinet but the selected one (a
+// cabinet switch takes the old one to zero, and each weight multiplies every
+// impulse-response tap), and each channel's DC blocker and tone filter, which
+// decay toward zero in silence. Without it each stalls at a subnormal number
+// and slows every frame from then on. Once the DC blocker is zero the FIR
+// stages behind it hold exact zeros after their length. Each reaches the
+// output only through sums with normal values or the float32 conversion,
+// which absorb it.
+func (p *Processor) flushSubnormals() {
+	p.drive, p.bypass = subnormal.Flush64(p.drive), subnormal.Flush64(p.bypass)
+	for i := range p.weights {
+		p.weights[i] = subnormal.Flush64(p.weights[i])
+	}
+	for _, c := range [...]*channel{&p.left, &p.right} {
+		c.dc, c.tone = subnormal.Flush64(c.dc), subnormal.Flush64(c.tone)
+	}
 }
 func (p *Processor) Process(l, r float32) (float32, float32) {
 	p.drive += float64(p.smooth * (p.params.Drive - p.drive))
@@ -169,6 +192,10 @@ func (p *Processor) Process(l, r float32) (float32, float32) {
 		target = 1
 	}
 	p.bypass += float64(p.smooth * (target - p.bypass))
+	p.frames++
+	if p.frames%subnormal.SweepFrames == 0 {
+		p.flushSubnormals()
+	}
 	gain := 1 + float64(12*p.drive)
 	if gain != p.normGain {
 		p.normGain, p.norm = gain, 1/detmath.Tanh(gain)

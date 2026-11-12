@@ -35,7 +35,8 @@ type renderJSONResult struct {
 	Diagnostics []struct {
 		Code string `json:"code"`
 	} `json:"diagnostics"`
-	Error *renderErrorJSON `json:"error"`
+	Normalize *renderNormalizeJSON `json:"normalize"`
+	Error     *renderErrorJSON     `json:"error"`
 }
 
 func runRenderJSON(t *testing.T, command, score, output string, opts render.Options, target *renderTargetOptions) (renderJSONResult, int, string) {
@@ -249,5 +250,44 @@ func TestRenderJSONReportsInvalidScores(t *testing.T) {
 	result, code, _ := runRenderJSON(t, "render", score, filepath.Join(dir, "out.wav"), render.Options{SampleRate: 48000, Bits: 24}, nil)
 	if code != 1 || result.OK || result.Error == nil || result.Error.Code != "invalid_score" || len(result.Diagnostics) == 0 || len(result.Outputs) != 0 {
 		t.Fatalf("invalid score: code %d %+v", code, result)
+	}
+}
+
+// --normalize of a silent range is skipped, not refused: the render succeeds,
+// writes the file at unity gain, says so in normalize with its own code, and
+// warns on stderr. A range with sound reports the gain it applied.
+func TestRenderJSONReportsASkippedNormalization(t *testing.T) {
+	dir := t.TempDir()
+	score := filepath.Join(dir, "rests.cicada")
+	source := "cicada 2\ntempo 240\ntrack t tine_ep {}\npattern p notes {\n  step = 1/1\n  [c4 e4 g4] - . . . . . .\n}\nscene a { t = p }\nsong { a*8 }\n"
+	if err := os.WriteFile(score, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name    string
+		from    int // zero-based
+		applied bool
+	}{{"the chord", 0, true}, {"rests after the tail", 6, false}} {
+		t.Run(c.name, func(t *testing.T) {
+			output := filepath.Join(dir, c.name+".wav")
+			opts := render.Options{SampleRate: 48000, Bits: 24, From: c.from, TailSec: 0, Normalize: true}
+			result, code, stderr := runRenderJSON(t, "render", score, output, opts, nil)
+			if code != 0 || !result.OK || result.Error != nil || len(result.Outputs) != 1 || result.Normalize == nil {
+				t.Fatalf("render --json --normalize: code %d %+v", code, result)
+			}
+			n := result.Normalize
+			if c.applied {
+				if !n.Applied || n.GainDB <= 0 || n.Code != "" || stderr != "" {
+					t.Fatalf("normalize %+v, stderr %q", n, stderr)
+				}
+				return
+			}
+			if n.Applied || n.GainDB != 0 || n.Code != "normalize_skipped_silent_range" || !strings.Contains(n.Reason, "bars 7 to 8") {
+				t.Fatalf("normalize %+v", n)
+			}
+			if !strings.Contains(stderr, "warning: peak normalization skipped") {
+				t.Fatalf("stderr %q has no warning", stderr)
+			}
+		})
 	}
 }
