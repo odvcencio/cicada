@@ -169,6 +169,7 @@ type Pool struct {
 	active               bool
 	got                  int       // worker lanes reserved from the process budget
 	own                  int       // chunks of lane 0 rendered so far
+	number               int64     // the segment's number; the caller's copy, for StressPoint
 	readyUntil           int       // frames before this are published by every lane
 	began                time.Time // when Begin returned
 	begun                time.Time // when Begin was called
@@ -336,14 +337,15 @@ func (p *Pool) Begin(start, count int) {
 		p.progress[lane].chunks.Store(0)
 	}
 	p.own, p.inside, p.waited, p.active = 0, 0, 0, true
-	p.segment.Store((p.segment.Load()>>8+1)<<8 | int64(used))
-	StressPoint()
+	p.number = p.segment.Load()>>8 + 1
+	p.segment.Store(p.number<<8 | int64(used))
+	StressPoint(StressSegmentPublished, p.number, 0)
 	for lane := 1; lane < used; lane++ {
 		if w := &p.workers[lane-1]; w.parked.CompareAndSwap(true, false) {
-			StressPoint()
+			StressPoint(StressBeforeWake, p.number, int64(lane))
 			w.wake <- struct{}{}
 		}
-		StressPoint()
+		StressPoint(StressAfterWake, p.number, int64(lane))
 	}
 	p.readyUntil = start
 	if used == 1 {
@@ -375,7 +377,7 @@ func (p *Pool) Ready(frame int) int {
 			continue
 		}
 		reached := p.reached()
-		StressPoint()
+		StressPoint(StressReadyChecked, p.number, int64(need))
 		if reached >= need {
 			need = min(reached, p.own)
 			break
@@ -501,15 +503,15 @@ func (p *Pool) work(lane int) {
 	defer close(w.exited)
 	var seen int64
 	for {
-		segment, ok := p.nextSegment(w, seen)
+		segment, ok := p.nextSegment(w, lane, seen)
 		if !ok {
 			return
 		}
 		seen = segment
-		StressPoint()
+		StressPoint(StressSegmentSeen, segment>>8, int64(lane))
 		if lane < int(segment&0xff) {
-			failure := p.renderLane(lane)
-			StressPoint()
+			failure := p.renderLane(lane, segment>>8)
+			StressPoint(StressBeforeDone, segment>>8, int64(lane))
 			p.done <- failure
 		}
 	}
@@ -517,7 +519,8 @@ func (p *Pool) work(lane int) {
 
 // nextSegment waits for a segment newer than seen: it watches for spinWait,
 // then parks until Begin wakes it. It reports false when the Pool closes.
-func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
+// lane is w's lane, for StressPoint.
+func (p *Pool) nextSegment(w *worker, lane int, seen int64) (int64, bool) {
 	deadline := time.Now().Add(spinWait)
 	for i := 1; ; i++ {
 		if segment := p.segment.Load(); segment != seen {
@@ -533,9 +536,9 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 	}
 	for {
 		w.parked.Store(true)
-		StressPoint()
+		StressPoint(StressParked, seen>>8, int64(lane))
 		if segment := p.segment.Load(); segment != seen {
-			StressPoint()
+			StressPoint(StressBeforeUnpark, segment>>8, int64(lane))
 			if !w.parked.CompareAndSwap(true, false) {
 				<-w.wake // Begin saw the flag and sent a wake: take it.
 			}
@@ -543,7 +546,7 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 		}
 		select {
 		case <-w.wake:
-			StressPoint()
+			StressPoint(StressWoken, seen>>8, int64(lane))
 			// A wake can be stale. Begin publishes a segment and then clears
 			// the flags of the lanes it uses; a lane that saw the segment
 			// first can render all of it and park again before Begin reaches
@@ -559,21 +562,22 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 }
 
 // renderLane renders a worker lane's tracks for the segment, chunk by chunk,
-// publishing each chunk when all of its tracks have it.
-func (p *Pool) renderLane(lane int) (failure any) {
+// publishing each chunk when all of its tracks have it. number is the
+// segment's number, for StressPoint.
+func (p *Pool) renderLane(lane int, number int64) (failure any) {
 	defer func() {
 		if value := recover(); value != nil {
 			failure = &LanePanic{Lane: lane, Value: value, Stack: debug.Stack()}
 			// Publish the failure before the progress the caller waits for.
 			p.failed.Store(true)
-			StressPoint()
+			StressPoint(StressFailurePublish, number, int64(lane))
 			p.progress[lane].chunks.Store(int64(p.chunks))
 		}
 	}()
 	tracks := p.order[p.bounds[lane]:p.bounds[lane+1]]
 	for chunk := range p.chunks {
 		p.renderChunk(tracks, chunk)
-		StressPoint()
+		StressPoint(StressChunkPublish, number, int64(lane)<<32|int64(chunk))
 		p.progress[lane].chunks.Store(int64(chunk + 1))
 	}
 	return nil

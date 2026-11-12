@@ -6,8 +6,9 @@ package renderlanes
 // (the lanestress build tag).
 const StressEnabled = false
 
-// StressPoint does nothing without the lanestress build tag.
-func StressPoint() {}
+// StressPoint does nothing without the lanestress build tag; every call
+// inlines to nothing.
+func StressPoint(site int, a, b int64) {}
 
 // StressSeed is zero without the lanestress build tag.
 func StressSeed() uint64 { return 0 }

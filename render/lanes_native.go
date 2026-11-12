@@ -112,14 +112,14 @@ func (l *trackLanes) renderTrack(track, from, count int) {
 	} else if l.errAt[track].Load() != math.MaxInt64 {
 		return
 	}
-	renderlanes.StressPoint()
+	renderlanes.StressPoint(renderlanes.StressTrackStart, int64(track), int64(from))
 	t := &l.tracks[track]
 	base := track*l.count + from - l.start
 	for i := 0; i < count; i++ {
 		left, right, err := t.nextRaw()
 		if err != nil {
 			l.errs[track] = err
-			renderlanes.StressPoint()
+			renderlanes.StressPoint(renderlanes.StressFaultPublish, int64(track), int64(from+i))
 			l.errAt[track].Store(int64(from + i))
 			return
 		}

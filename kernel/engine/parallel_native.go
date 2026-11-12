@@ -207,14 +207,14 @@ func (p *parallelState) renderTrack(track, from, count int) {
 	} else if p.faultAt[track].Load() != math.MaxInt64 {
 		return
 	}
-	renderlanes.StressPoint()
+	renderlanes.StressPoint(renderlanes.StressTrackStart, int64(track), int64(from))
 	base := track*p.count + from - p.start
 	for i := range count {
 		left, right, fault := p.engine.nextRawTrack(track)
 		p.left[base+i], p.right[base+i] = left, right
 		if fault != 0 {
 			p.faultCode[track] = fault
-			renderlanes.StressPoint()
+			renderlanes.StressPoint(renderlanes.StressFaultPublish, int64(track), int64(from+i))
 			p.faultAt[track].Store(int64(from + i))
 			return
 		}
