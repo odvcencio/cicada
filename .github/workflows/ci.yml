@@ -1376,9 +1376,10 @@ jobs:
           scripts/ci-lane-stress-check.sh build/lane-stress.log
 
   # The full stress run, nightly: -count=10 at GOMAXPROCS 2, 3 and every CPU,
-  # one runner each. At GOMAXPROCS 2 one repetition of all four sets took about
-  # 5.5 minutes on this runner class (pull request #334), so a setting takes
-  # about an hour.
+  # one runner each. At GOMAXPROCS 2 one repetition of all four sets took 228 s
+  # on this runner class (pull request #334's short job: renderlanes 6 s,
+  # render 11 s, engine 82 s, identity subset 129 s), so a setting should take
+  # about 40 minutes.
   lane-stress:
     name: Render lanes under scheduling stress (GOMAXPROCS ${{ matrix.procs }})
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
