@@ -1,0 +1,48 @@
+# Cicada
+
+> Cicada is a music workstation in which a song is a readable text score. The
+> same score renders to the same audio on every machine and in the browser.
+
+An agent starts with `cicada agents`, which prints the quick start: write a
+score, `cicada check --json`, `cicada render --json`, `cicada audition --json`,
+then edit it with `cicada apply`. `cicada agents reference` prints the core
+reference from the binary, and `make agent-front-door` builds llms-full.txt,
+the full text of the pages outside Optional.
+
+## Start here
+
+- [Cicada quick start for agents](docs/manual/agent-quickstart.md): the page an agent reads first, which `cicada agents` prints
+- [Agents and JSON output](docs/manual/agents.md): every `--json` format, its fields and error codes
+
+## Language
+
+- [Writing music](docs/manual/writing-music.md): tracks, patterns, pitches, drum rows, scenes and songs
+- [Composing a complete song](docs/manual/composing-songs.md): form, chord voicing, grids and transitions
+- [Cicada source edition 2](docs/spec/edition-2.md): what edition 2 of the language adds and changes
+- [Language extensions](docs/spec/features.md): every feature of the language, with its rules
+
+## Sound and delivery
+
+- [Exporting](docs/manual/exporting.md): WAV, stems and MIDI
+- [Audition](docs/manual/audition.md): the listening report: key, chords, levels, brightness, rhythm
+- [Opt-in mix chain](docs/audio/mix-chain.md): track inserts, sends, master effects and loudness targets
+- [Parameter ranges](docs/manual/parameter-ranges.md): the allowed range of every voice, drum and effect setting
+
+## Reference
+
+- [Diagnostic codes](docs/manual/diagnostics.md): every diagnostic code with its meaning and fix
+- [Troubleshooting](docs/manual/troubleshooting.md): notation, editor, playback and export problems
+- [CLI reference](docs/cli.md): every command and flag of the cicada binary
+
+## Optional
+
+- [Cicada Studio on Mac](docs/manual/macos.md): the native app, files, audio devices and shortcuts
+- [Cicada Studio](docs/manual/studio.md): the editor: source, grids, scenes, arrangement and history
+- [Modeled percussion](docs/manual/modeled-percussion.md): struck bars, drums and plates
+- [Pad sampler](docs/manual/sampler.md): chop samples, play pads, record and resample
+- [Editors and notation tools](docs/manual/editors.md): the language server, editor extension, formatter and fixes
+- [Managing libraries](docs/manual/libraries.md): create, inspect, pin and vendor reusable declarations and audio
+- [Live playback and mixing](docs/manual/next-level.md): native audio, host macros, MIDI and mixer settings
+- [Modulation](docs/manual/modulation.md): modulation sources and their routes
+- [Hosting the engine](docs/manual/engine-host.md): the Go and TinyGo audio engine in another program
+- [Engine measurements](docs/manual/engine-metrics.md): CPU and render costs of synthetic sessions

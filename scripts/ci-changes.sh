@@ -83,7 +83,7 @@ classify_path() {
 		echo all ;;
 	# Documentation and files no build reads. Tests that read docs run in the
 	# "repo-checks" job, which the required M0 check includes.
-	docs/* | *.md | LICENSE | editors/* | deploy/*)
+	docs/* | *.md | LICENSE | llms.txt | editors/* | deploy/*)
 		echo none ;;
 	*)
 		echo all ;;

@@ -111,6 +111,14 @@ bench-agent-loop: build-core
 test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
 
+# Regenerates the committed agent front door (llms.txt, AGENTS.md's generated
+# region, the quick start the binary embeds, examples/first-song/AGENTS.md),
+# whose only inputs are the quick start and stable text, and builds
+# llms-full.txt from the manual, which is not committed.
+.PHONY: agent-front-door
+agent-front-door:
+	CICADA_UPDATE_AGENT_FRONT_DOOR=1 CICADA_LLMS_FULL_OUT=$(CURDIR)/llms-full.txt go test ./internal/agentguide -run '^(TestAgentFrontDoorIsCurrent|TestLLMsFullFitsItsBudget)$$' -count=1
+
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
 # render to a loudness target and audition. It must finish within 2 minutes.
