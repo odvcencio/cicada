@@ -77,3 +77,18 @@ song { main }
 		t.Fatalf("forward shared definition resolved outside the pattern: %s", encoded)
 	}
 }
+
+// TestRenameFollowsEveryTrackReference renames a track that MIDI, live
+// layers, an envelope source and a quoted compressor sidechain name, which
+// the symbols query does not tag; the shared finder supplies them.
+func TestRenameFollowsEveryTrackReference(t *testing.T) {
+	source := []byte("cicada 2\ntempo 120\nfx glue comp { sidechain = \"bass\" }\nbus music { insert = glue }\ntrack bass acid {}\ntrack keys piano {}\nenvelope follow { source = bass attack = 10ms release = 200ms }\nmod follow -> keys.level depth = 3dB\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\nmidi {\n  port pads\n  pads ch 1 -> bass\n  pads note c2 -> stop-track bass\n}\nlive {\n  macro intensity = 0.3\n  layers intensity { bass >= 0.25 }\n}\n")
+	uri := "file:///score.cicada"
+	at := bytes.Index(source, []byte("bass acid"))
+	encoded, _ := json.Marshal(rename(uri, source, utf16Position(source, at), "low"))
+	// The declaration, the scene binding, the sidechain, the envelope source,
+	// two MIDI mappings and the live layer.
+	if got := bytes.Count(encoded, []byte(`"newText":"low"`)); got != 7 {
+		t.Fatalf("track rename made %d edits, want 7: %s", got, encoded)
+	}
+}
