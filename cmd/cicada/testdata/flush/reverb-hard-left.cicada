@@ -1,5 +1,5 @@
 cicada 2
-title "Flush check: a reverb send from a hard-left track"
+title "Flush check: a reverb send from a hard-left track, then the reverb mix to zero"
 tempo 120
 key a minor
 seed 7
@@ -40,7 +40,12 @@ scene left-only {
   left = line
 }
 
+automate reverb.mix {
+  @9.1.1 1
+  @10.1.1 0
+}
+
 song {
   both*1
-  left-only*12
+  left-only*14
 }

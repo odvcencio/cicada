@@ -1,0 +1,38 @@
+cicada 2
+title "Flush check: keyboard tails, ten bars of rest, then the chord again"
+tempo 240
+key c major
+seed 1
+
+track ep tine_ep {}
+track pk poly_keys {}
+track sm string_machine {}
+
+pattern chord notes {
+  step = 1/1
+  gate = 100%
+  [c4 e4 g4 b4]
+}
+
+pattern hush notes {
+  step = 1/1
+  .
+}
+
+scene play {
+  ep = chord
+  pk = chord
+  sm = chord
+}
+
+scene rest {
+  ep = hush
+  pk = hush
+  sm = hush
+}
+
+song {
+  play*1
+  rest*10
+  play*1
+}

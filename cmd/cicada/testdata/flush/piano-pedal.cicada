@@ -27,7 +27,13 @@ scene release {
   grand.sustain = 0
 }
 
+scene again {
+  grand = chord
+  grand.sustain = 0
+}
+
 song {
   pedal*1
   release*3
+  again*1
 }
