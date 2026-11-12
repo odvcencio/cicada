@@ -86,9 +86,9 @@ expect_groups "one kernel file among workstation files" all-but-sweep workstatio
 # --- the self-hosted M2 CPU gate: only its own inputs queue it ---
 expect_groups "edit package" all-but-gates edit/intents.go
 expect_groups "Studio vocal handlers" all-but-gates cmd/cicada/studio_vocals.go
-expect_groups "Studio project root (feeds CompileResident)" all cmd/cicada/studio_files.go
-expect_groups "the gate test's TestMain" all cmd/cicada/isolate_test.go
-expect_groups "test isolation helper" all internal/isolatetest/isolate.go
+expect_groups "Studio project root (feeds CompileResident)" all-but-sweep cmd/cicada/studio_files.go
+expect_groups "the gate test's TestMain" all-but-sweep cmd/cicada/isolate_test.go
+expect_groups "test isolation helper" all-but-sweep internal/isolatetest/isolate.go
 expect_groups "Studio transport (left to the push to main)" all-but-gates cmd/cicada/studio_transport.go
 expect_groups "browser shard script" all-but-gates scripts/ci-studio-browser.sh
 expect_groups "browser test helper" "workstation studio_browser macos_desktop" workstation/browser/page-stall.cjs
