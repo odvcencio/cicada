@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -71,21 +72,21 @@ func lowerModulators(p *Project, score *notation.Score) []notation.Diagnostic {
 			if m.Wave == "" {
 				m.Wave = "sine"
 			}
-			m.setRate(get("rate"))
+			m.setRate(p.MeterMap(), get("rate"))
 			m.Phase, _ = strconv.ParseFloat(strings.TrimSuffix(get("phase"), "%"), 64)
 			if strings.HasSuffix(get("phase"), "%") {
 				m.Phase /= 100
 			}
 			m.Loop = loopOrWrap(get("loop"))
 		case notation.ModSway:
-			m.setRate(get("rate"))
+			m.setRate(p.MeterMap(), get("rate"))
 			m.Octaves = 1
 			if v := get("octaves"); v != "" {
 				m.Octaves, _ = strconv.Atoi(v)
 			}
 			m.Loop = loopOrWrap(get("loop"))
 		case notation.ModContour:
-			m.setRate(get("period"))
+			m.setRate(p.MeterMap(), get("period"))
 			m.Loop = loopOrWrap(get("loop"))
 			for _, pt := range source.Points {
 				at, _ := notation.ParseContourPosition(pt.At)
@@ -142,10 +143,7 @@ const FitTolerance = 0.10
 // pass of the song, and the rate that gives, in hertz. The song is the loop.
 // N rounds to the nearest whole cycle and is at least 1.
 func loopFit(p *Project, m Modulator) (cycles int64, authoredHz, fittedHz float64, ok bool) {
-	var ticks int64
-	for _, entry := range p.Song {
-		ticks += int64(entry.Bars) * 3840
-	}
+	ticks := p.SongEndTick()
 	if p.Arrange != nil {
 		ticks = 0
 		for _, placement := range p.Arrange.Placements {
@@ -155,7 +153,7 @@ func loopFit(p *Project, m Modulator) (cycles int64, authoredHz, fittedHz float6
 	if ticks == 0 || m.Loop != "continue" {
 		return 0, 0, 0, false
 	}
-	tempo, err := NewTempoMap(48000, int64(p.TempoMilli), SongTempoChanges(p))
+	tempo, err := NewTempoMap(p.MeterMap(), 48000, int64(p.TempoMilli), SongTempoChanges(p))
 	if err != nil {
 		return 0, 0, 0, false
 	}
@@ -212,8 +210,8 @@ func durationMS(v string) float64 {
 	return n
 }
 
-func (m *Modulator) setRate(text string) {
-	if rate, msg := notation.ParseModRate(text); msg == "" {
+func (m *Modulator) setRate(meterMap seq.MeterMap, text string) {
+	if rate, msg := notation.ParseModRate(meterMap, text); msg == "" {
 		if rate.Free {
 			m.RateMicroHz = rate.MicroHertz
 		} else {
@@ -427,15 +425,15 @@ func modulatorSources(p *Project) ([]string, error) {
 		switch m.Kind {
 		case notation.ModLFO:
 			line("wave", m.Wave)
-			line("rate", rateSource(m))
+			line("rate", rateSource(p.MeterMap(), m))
 			if m.Phase != 0 {
 				line("phase", num(m.Phase))
 			}
 		case notation.ModSway:
-			line("rate", rateSource(m))
+			line("rate", rateSource(p.MeterMap(), m))
 			line("octaves", strconv.Itoa(m.Octaves))
 		case notation.ModContour:
-			line("period", rateSource(m))
+			line("period", rateSource(p.MeterMap(), m))
 		case notation.ModEnvelope:
 			line("attack", num(m.AttackMS)+"ms")
 			line("release", num(m.ReleaseMS)+"ms")
@@ -468,16 +466,17 @@ func modulatorSources(p *Project) ([]string, error) {
 	return out, nil
 }
 
-func rateSource(m Modulator) string {
+func rateSource(meterMap seq.MeterMap, m Modulator) string {
 	if m.RateMicroHz > 0 {
 		return strconv.FormatFloat(float64(m.RateMicroHz)/1e6, 'f', -1, 64) + "Hz"
 	}
-	if m.RateTicks%3840 == 0 {
-		return strconv.FormatInt(m.RateTicks/3840, 10) + "bars"
+	// A rate in bars counts bars of the base meter.
+	if bars, whole := meterMap.WholeBars(0, m.RateTicks); whole {
+		return strconv.FormatInt(bars, 10) + "bars"
 	}
-	a, b := m.RateTicks, int64(3840)
+	a, b := m.RateTicks, seq.TicksPerWhole
 	for y := b; y != 0; a, y = y, a%y {
 	}
 	g := a
-	return fmt.Sprintf("%d/%d", m.RateTicks/g, 3840/g)
+	return fmt.Sprintf("%d/%d", m.RateTicks/g, seq.TicksPerWhole/g)
 }

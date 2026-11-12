@@ -94,7 +94,7 @@ func samplerPrintSource(ctx *Context, in PlaceSamplerPrint) ([]byte, error) {
 	if owner == file {
 		arrangement = source
 	}
-	updated, err := arrangementSource(arrangement, owner, arrangementOp{action: "append", newName: in.Name, settings: &PlacementSettings{At: in.At, Length: fmt.Sprintf("%dticks", length), Track: in.Track, Content: clipName}})
+	updated, err := arrangementSource(ctx.MeterMap(), arrangement, owner, arrangementOp{action: "append", newName: in.Name, settings: &PlacementSettings{At: in.At, Length: fmt.Sprintf("%dticks", length), Track: in.Track, Content: clipName}})
 	if err != nil {
 		return nil, err
 	}

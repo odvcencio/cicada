@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -35,7 +34,7 @@ func TestSceneTempoWritesOneMIDITempoEventPerChange(t *testing.T) {
 		}
 	}
 	// 120, 100, 84, 66 BPM at bars 1, 3, 4 and 5 (zero-based 0, 2, 3, 4).
-	want := []tempoPoint{{0, 500000}, {2 * seq.TicksPerBar, 600000}, {3 * seq.TicksPerBar, 714286}, {4 * seq.TicksPerBar, 909091}}
+	want := []tempoPoint{{0, 500000}, {2 * ticksPerBar, 600000}, {3 * ticksPerBar, 714286}, {4 * ticksPerBar, 909091}}
 	if len(got) != len(want) {
 		t.Fatalf("tempo events %+v, want %+v", got, want)
 	}

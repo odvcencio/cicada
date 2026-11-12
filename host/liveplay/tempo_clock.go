@@ -1,7 +1,6 @@
 package liveplay
 
 import (
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/musictime"
 )
 
@@ -12,7 +11,7 @@ func (p *Player) nextTempoStep() musictime.ObservedTempoStep {
 	if !p.current.Engine.Playing() || p.launches.Load() != nil || len(p.offers) != 0 {
 		return musictime.ObservedTempoStep{}
 	}
-	boundary := (p.bar + 1) * seq.TicksPerBar
+	boundary := p.current.meterMap.BarStart(p.bar + 1)
 	if r := p.playbackRange; r != nil && boundary >= r.EndTick {
 		return musictime.ObservedTempoStep{}
 	}

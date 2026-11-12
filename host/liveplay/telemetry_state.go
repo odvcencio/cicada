@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/musictime"
 )
 
@@ -128,11 +127,13 @@ func (p *Player) PublishTelemetry() {
 		return
 	}
 	if haveTransport {
-		tick := transport.tick
+		meterMap := p.songMeterMap()
+		bar, offset := meterMap.BarAt(transport.tick)
+		beatTicks := meterMap.BeatTicks(bar)
 		pub.PublishTransportClock(TransportFrame{
 			SampleFrame: transport.sample, SampleRate: uint32(p.rate), WallNanos: transport.wallNanos,
 			TempoMilli: uint32(transport.tempoMilli), Playing: transport.playing && !p.hostPaused.Load(),
-			Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1), Tick: int32(tick % seq.PPQ),
+			Bar: int32(bar + 1), Beat: int32(offset/beatTicks + 1), Tick: int32(offset % beatTicks),
 		}, transport.nextTempo)
 	}
 	if haveMeters {
