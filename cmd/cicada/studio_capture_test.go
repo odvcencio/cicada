@@ -81,6 +81,43 @@ func TestCaptureTransportUsesDeclaredCountIn(t *testing.T) {
 	}
 }
 
+// TestPhase2CaptureCountInUsesTheStreamMap pins that the capture count-in is
+// laid out on the meter map it is given, the map of the stream about to play.
+// A fresh stream is stored on the transport only after its count-in is
+// prepared, so t.meterMap() is still the zero (4/4) map at that point. No song
+// can declare a meter in phase 1, so a 3/4 map is passed directly; when
+// time-signatures phase 2 adds the declaration, a 3/4 song's count-in through
+// startCapture must match this.
+func TestPhase2CaptureCountInUsesTheStreamMap(t *testing.T) {
+	waltz, err := seq.NewMeterMap([]seq.MeterChange{{Bar: 0, Meter: seq.Meter{Beats: 3, Unit: 4}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "capture.cicada")
+	if err := os.WriteFile(path, []byte("cicada 2\ntempo 120\n"+studioScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := simulatedCaptureAudio(256, zeroAudioSource{})
+	r, _ := capture.NewRecorder(4, 256, 2, func(capture.RecordedBlock, [][]float32) error { return nil })
+	tx := &studioTransport{path: path, audio: a, sampleRate: 48000, audioOptions: studioAudioOptions{InputEnabled: true, MonitorMuted: true, MonitorMode: "stereo"}}
+	defer tx.close()
+	if err := tx.armCapture(r); err != nil {
+		t.Fatal(err)
+	}
+	tx.mu.Lock()
+	tx.pendingCapture = &capture.Calibration{}
+	err = tx.prepareCaptureLocked(a, waltz, 120000, 2)
+	tx.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := capture.NewCountIn(waltz, 48000, 120000, 2)
+	fourFour, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 2)
+	if got := r.Snapshot().CountInFrames; got != want.Frames || got == fourFour.Frames {
+		t.Fatalf("count-in frames = %d, want %d on 3/4 bars (4/4 would be %d)", got, want.Frames, fourFour.Frames)
+	}
+}
+
 func (s *simulatedCaptureStream) Start() error              { s.starts++; return s.fail }
 func (s *simulatedCaptureStream) Pause()                    { s.pauses++ }
 func (*simulatedCaptureStream) StopClosesDevice() bool      { return true }
