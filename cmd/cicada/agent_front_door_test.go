@@ -1,10 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -12,6 +8,7 @@ import (
 )
 
 // frontDoorFiles builds the committed files of the agent front door.
+// internal/agentguide.TestAgentFrontDoorIsCurrent keeps them current.
 func frontDoorFiles(t *testing.T) map[string][]byte {
 	t.Helper()
 	files, err := agentguide.Build(agentguide.Inputs{Root: repositoryRoot()})
@@ -19,40 +16,6 @@ func frontDoorFiles(t *testing.T) map[string][]byte {
 		t.Fatal(err)
 	}
 	return files
-}
-
-// TestAgentFrontDoorIsCurrent rebuilds the committed files of the agent front
-// door (llms.txt, the generated region of AGENTS.md, the quick start the
-// binary embeds and the AGENTS.md of the first-song example), whose only
-// inputs are the quick start and stable text, and fails while one on disk
-// differs. CICADA_UPDATE_AGENT_FRONT_DOOR=1 (make agent-front-door) writes
-// them instead.
-func TestAgentFrontDoorIsCurrent(t *testing.T) {
-	files := frontDoorFiles(t)
-	paths := make([]string, 0, len(files))
-	for path := range files {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	update := os.Getenv("CICADA_UPDATE_AGENT_FRONT_DOOR") == "1"
-	var stale []string
-	for _, path := range paths {
-		full := filepath.Join(repositoryRoot(), filepath.FromSlash(path))
-		current, err := os.ReadFile(full)
-		if err == nil && bytes.Equal(current, files[path]) {
-			continue
-		}
-		if update {
-			if err := os.WriteFile(full, files[path], 0o644); err != nil {
-				t.Fatal(err)
-			}
-			continue
-		}
-		stale = append(stale, path)
-	}
-	if len(stale) > 0 {
-		t.Fatalf("stale: %s; run %s", strings.Join(stale, ", "), agentguide.FrontDoorCommand)
-	}
 }
 
 // TestAgentGuideBudgets keeps each page an agent reads within its byte

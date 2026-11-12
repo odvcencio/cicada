@@ -41,9 +41,13 @@ type studioHistoryEntry struct {
 	RevisionBefore string    `json:"revisionBefore"`
 	RevisionAfter  string    `json:"revisionAfter"`
 	Diff           string    `json:"diff"`
-	files          []studioAuxiliaryFile
-	beforeSource   []byte
-	afterSource    []byte
+	// Outside is a change made outside Studio to a project of several source
+	// files: Studio saw only the score's bytes change, so undoing it here
+	// could restore half of it, and it is not offered.
+	Outside      bool `json:"outside,omitempty"`
+	files        []studioAuxiliaryFile
+	beforeSource []byte
+	afterSource  []byte
 }
 
 type studioTransportEvent struct {
@@ -57,6 +61,7 @@ type studioTransportEvent struct {
 
 type studioHistory struct {
 	mu                  sync.Mutex
+	multiFile           bool // the project has several source files; set before observe
 	edits               []studioHistoryEntry
 	events              []studioTransportEvent
 	undoStack           []uint64
@@ -147,7 +152,14 @@ func (h *studioHistory) observe(source []byte, _ int64, _ int64) bool {
 	if revision == h.lastRevision {
 		return false
 	}
-	h.recordSourceWriteLocked(h.lastSource, source, "External file change", studioHistoryWriteExternal, 0)
+	entry := h.recordSourceWriteLocked(h.lastSource, source, "External file change", studioHistoryWriteExternal, 0)
+	if h.multiFile {
+		for i := range h.edits {
+			if h.edits[i].ID == entry.ID {
+				h.edits[i].Outside = true
+			}
+		}
+	}
 	return true
 }
 
@@ -269,13 +281,30 @@ func (h *studioHistory) snapshot() []studioTransportEvent {
 	return result
 }
 
+// setMultiFile records whether the project has several source files, which
+// decides whether an outside change can be undone in Studio.
+func (h *studioHistory) setMultiFile(multiFile bool) {
+	h.mu.Lock()
+	h.multiFile = multiFile
+	h.mu.Unlock()
+}
+
+func (h *studioHistory) outsideLocked(id uint64) bool {
+	for _, entry := range h.edits {
+		if entry.ID == id {
+			return entry.Outside
+		}
+	}
+	return false
+}
+
 func (h *studioHistory) historySnapshot() studioHistorySnapshot {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	result := studioHistorySnapshot{
 		Edits:   make([]studioHistoryEntry, len(h.edits)),
 		Events:  make([]studioTransportEvent, len(h.events)),
-		CanUndo: len(h.undoStack) != 0, CanRedo: len(h.redoStack) != 0,
+		CanUndo: len(h.undoStack) != 0 && !h.outsideLocked(h.undoStack[len(h.undoStack)-1]), CanRedo: len(h.redoStack) != 0,
 		Revision: h.lastRevision,
 	}
 	for i := range h.edits {
@@ -401,6 +430,7 @@ func (s *studio) observeHistory() {
 	if err != nil || s.history == nil {
 		return
 	}
+	s.history.setMultiFile(studioProjectHasSeveralFiles(s.path))
 	s.history.observe(source, 0, 0)
 }
 
@@ -470,6 +500,7 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 		return
 	}
 	bar, step := s.historyPosition()
+	s.history.setMultiFile(studioProjectHasSeveralFiles(s.path))
 	s.history.observe(current, bar, step)
 	currentRevision := studioRevision(current)
 	if currentRevision != request.Revision {
@@ -488,6 +519,10 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 	}
 	if !found {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "there is no matching history edit"})
+		return
+	}
+	if target.Outside && operation != "redo" {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "this change was made outside Studio in a project of several files; Studio saw only the score change, so it cannot undo it without leaving the other files as they are"})
 		return
 	}
 	from, to := target.beforeSource, target.afterSource
@@ -759,4 +794,20 @@ func (h *studioHistory) attachFiles(id uint64, files []studioAuxiliaryFile) {
 			return
 		}
 	}
+}
+
+// studioProjectHasSeveralFiles reports whether the score's project has more
+// than one source file of its own (libraries apart).
+func studioProjectHasSeveralFiles(path string) bool {
+	sources, err := project.ReadSources(path, nil)
+	if err != nil {
+		return false
+	}
+	own := 0
+	for _, file := range sources.Files {
+		if file.Library == "" {
+			own++
+		}
+	}
+	return own > 1
 }

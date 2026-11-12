@@ -81,7 +81,7 @@ var llmsSections = []struct {
 		{"docs/manual/parameter-ranges.md", "Parameter ranges", "the allowed range of every voice, drum and effect setting"},
 	}},
 	{"Reference", []llmsPage{
-		{"docs/manual/diagnostics.md", "Diagnostic codes", "every `CICADA-*` code with its meaning and fix"},
+		{"docs/manual/diagnostics.md", "Diagnostic codes", "every diagnostic code with its meaning and fix"},
 		{"docs/manual/troubleshooting.md", "Troubleshooting", "notation, editor, playback and export problems"},
 		{"docs/cli.md", "CLI reference", "every command and flag of the cicada binary"},
 	}},
@@ -99,30 +99,31 @@ var llmsSections = []struct {
 	}},
 }
 
+// frontDoorInputs are the only repository files Build reads: the quick start,
+// AGENTS.md (whose hand-written part it keeps) and the manual index (only to
+// check that every page has a place in llms.txt).
+// TestFrontDoorReadsOnlyStableInputs builds the front door from a copy of
+// these files alone and requires the same bytes.
+var frontDoorInputs = []string{"docs/manual/agent-quickstart.md", "AGENTS.md", "docs/manual/README.md"}
+
 // Build returns the committed files of the agent front door, by path from the
-// repository root. Their inputs are the quick start, the hand-written part of
-// AGENTS.md and the stable text in this package.
+// repository root. Their inputs are frontDoorInputs and the stable text in
+// this package; no catalog of the binary reaches them.
 func Build(in Inputs) (map[string][]byte, error) {
-	read := func(page string) (string, error) {
-		data, err := os.ReadFile(filepath.Join(in.Root, filepath.FromSlash(page)))
-		return string(data), err
+	text := make(map[string]string, len(frontDoorInputs))
+	for _, input := range frontDoorInputs {
+		data, err := os.ReadFile(filepath.Join(in.Root, filepath.FromSlash(input)))
+		if err != nil {
+			return nil, err
+		}
+		text[input] = string(data)
 	}
-	quickstart, err := read("docs/manual/agent-quickstart.md")
-	if err != nil {
-		return nil, err
-	}
-	agents, err := read("AGENTS.md")
-	if err != nil {
-		return nil, err
-	}
-	agents, err = replaceRegion(agents, frontDoorRegion(quickstart))
+	quickstart := text["docs/manual/agent-quickstart.md"]
+	agents, err := replaceRegion(text["AGENTS.md"], frontDoorRegion(quickstart))
 	if err != nil {
 		return nil, fmt.Errorf("AGENTS.md: %w", err)
 	}
-	index, err := read("docs/manual/README.md")
-	if err != nil {
-		return nil, err
-	}
+	index := text["docs/manual/README.md"]
 	if err := everyIndexedPagePlaced(index); err != nil {
 		return nil, err
 	}

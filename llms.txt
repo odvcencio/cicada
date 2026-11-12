@@ -30,7 +30,7 @@ the full text of the pages outside Optional.
 
 ## Reference
 
-- [Diagnostic codes](docs/manual/diagnostics.md): every `CICADA-*` code with its meaning and fix
+- [Diagnostic codes](docs/manual/diagnostics.md): every diagnostic code with its meaning and fix
 - [Troubleshooting](docs/manual/troubleshooting.md): notation, editor, playback and export problems
 - [CLI reference](docs/cli.md): every command and flag of the cicada binary
 
