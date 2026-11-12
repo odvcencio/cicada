@@ -12,6 +12,7 @@ func resolveJobs(int) int                                       { return 1 }
 func plannedLanes(int, int) int                                 { return 1 }
 func newTrackLanes([]trackRuntime, int, int) *trackLanes        { return nil }
 func (l *trackLanes) lanes() int                                { return 1 }
+func (l *trackLanes) counts() laneCounts                        { return laneCounts{} }
 func (l *trackLanes) close()                                    {}
 func (l *trackLanes) begin()                                    {}
 func (l *trackLanes) finish()                                   {}

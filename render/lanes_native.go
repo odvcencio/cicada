@@ -30,7 +30,8 @@ type trackLanes struct {
 	start, end int // the segment, in frames of the current block
 	count      int
 	prepared   bool
-	readyUntil int // frames before this are published by every lane
+	readyUntil int   // frames before this are published by every lane
+	short      int64 // segments too short to hand to the lanes
 }
 
 func resolveJobs(requested int) int { return renderlanes.Jobs(requested) }
@@ -63,6 +64,15 @@ func (l *trackLanes) lanes() int {
 	return l.pool.Lanes()
 }
 
+// counts are the segment statistics for the render's lane report.
+func (l *trackLanes) counts() laneCounts {
+	if l == nil {
+		return laneCounts{}
+	}
+	stats := l.pool.Stats()
+	return laneCounts{segments: stats.Segments + l.short, parallel: stats.ParallelSegments, starved: stats.StarvedSegments, peak: stats.MaxUsed}
+}
+
 func (l *trackLanes) close() {
 	if l != nil {
 		l.pool.Close()
@@ -86,6 +96,7 @@ func (l *trackLanes) prepare(tracks []trackRuntime, start, end int) {
 	l.count = l.end - l.start
 	l.prepared = l.count >= minLaneSegment && len(tracks) == len(l.errs) && len(tracks)*l.count <= len(l.left)
 	if !l.prepared {
+		l.short++
 		return
 	}
 	l.tracks, l.readyUntil = tracks, start
@@ -101,12 +112,14 @@ func (l *trackLanes) renderTrack(track, from, count int) {
 	} else if l.errAt[track].Load() != math.MaxInt64 {
 		return
 	}
+	renderlanes.StressPoint()
 	t := &l.tracks[track]
 	base := track*l.count + from - l.start
 	for i := 0; i < count; i++ {
 		left, right, err := t.nextRaw()
 		if err != nil {
 			l.errs[track] = err
+			renderlanes.StressPoint()
 			l.errAt[track].Store(int64(from + i))
 			return
 		}

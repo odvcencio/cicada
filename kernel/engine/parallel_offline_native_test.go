@@ -223,8 +223,8 @@ func TestOfflineParallelPanicReachesRender(t *testing.T) {
 	}
 	defer renderlanes.ForceEveryLane()()
 	defer func() {
-		if value := recover(); value != "voice failed" {
-			t.Fatalf("recovered %v", value)
+		if lanePanic, ok := recover().(*renderlanes.LanePanic); !ok || lanePanic.Value != "voice failed" || len(lanePanic.Stack) == 0 {
+			t.Fatalf("recovered %#v", lanePanic)
 		}
 	}()
 	left, right := make([]float32, 128), make([]float32, 128)

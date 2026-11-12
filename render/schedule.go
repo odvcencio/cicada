@@ -75,13 +75,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	fromFrame := tempoMap.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
 	endFrame := tempoMap.SampleAtTick(endTick)
 	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
-	// Lanes synthesize each segment's tracks; the engine still mixes them in
-	// track order on this goroutine, so every job count writes the same bytes.
-	report.Jobs = resolveJobs(opts.Jobs)
-	if err := player.EnableOfflineParallel(report.Jobs); err != nil {
-		return report, err
-	}
-	report.Lanes = player.ParallelWorkers()
+	jobs := resolveJobs(opts.Jobs)
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
@@ -143,6 +137,12 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		}
 	}
 	if !replay {
+		// Lanes synthesize each segment's tracks; the engine still mixes them
+		// in track order on this goroutine, so every job count writes the same
+		// bytes. A replay synthesizes nothing and starts no lanes.
+		if err := player.EnableOfflineParallel(jobs); err != nil {
+			return report, err
+		}
 		player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 	}
 	var message cmd.Message
@@ -259,6 +259,16 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			return report, err
 		}
 	}
+	stats := player.OfflineLaneStats()
+	why := ""
+	switch {
+	case replay:
+		why = SerialReplay
+	case player.ParallelWorkers() == 1 && jobs > 1 && cfg.Tracks > 1:
+		// EnableOfflineParallel stays serial for a song with graph LFOs.
+		why = SerialGraphLFO
+	}
+	report.noteLanes(opts.Jobs, jobs, player.ParallelWorkers(), cfg.Tracks, laneCounts{segments: stats.Segments, parallel: stats.ParallelSegments, starved: stats.StarvedSegments, peak: stats.Peak}, why)
 	return report, nil
 }
 

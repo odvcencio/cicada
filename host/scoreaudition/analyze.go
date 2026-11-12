@@ -37,8 +37,9 @@ type Options struct {
 	// kinds and the render that makes the stems share one copy of each pack.
 	MaxResidentPCM int64
 	// Jobs is the most render lanes the stem render may use, as
-	// render.Options.Jobs: zero selects the usable processors and 1 renders
-	// serially. Every value gives the same stems and the same report.
+	// render.Options.Jobs: zero, the default, renders serially, and
+	// render.AutoJobs picks the automatic count. Every value gives the same
+	// stems and the same report.
 	Jobs int
 }
 

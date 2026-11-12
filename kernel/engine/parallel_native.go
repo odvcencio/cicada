@@ -13,6 +13,10 @@ import (
 
 const maxParallelLanes = 4
 
+// offlineLanes is true: native engines can render offline on lanes
+// (EnableOfflineParallel).
+const offlineLanes = true
+
 // parallelState owns one prepared stereo buffer per track. Only the callback
 // assigns jobs; workers touch disjoint track sources/inserts and buffer spans.
 // Control, transport, sends, buses, reduction and meters remain on the caller.
@@ -41,6 +45,9 @@ type parallelState struct {
 	// readyUntil is the first frame of the segment the offline lanes may not
 	// have published yet.
 	readyUntil int
+	// shortSegments counts offline segments too short to hand to the lanes;
+	// they render serially on the caller.
+	shortSegments int64
 	// faultAt is, per track, the block frame of the track's first raw fault
 	// in the segment, or math.MaxInt64; a lane stores it after faultCode, so
 	// a callback that loads a frame at or before its own reads the code too.
@@ -179,7 +186,15 @@ func (e *Engine) OfflineParallelStats() renderlanes.Stats {
 	if e.parallel == nil {
 		return renderlanes.Stats{}
 	}
-	return e.parallel.offline.Stats()
+	stats := e.parallel.offline.Stats()
+	stats.ShortSegments = e.parallel.shortSegments
+	return stats
+}
+
+// OfflineLaneStats summarizes an offline render's lanes; zero without them.
+func (e *Engine) OfflineLaneStats() OfflineLaneCounts {
+	stats := e.OfflineParallelStats()
+	return OfflineLaneCounts{Segments: stats.Segments + stats.ShortSegments, ParallelSegments: stats.ParallelSegments, StarvedSegments: stats.StarvedSegments, Peak: stats.MaxUsed}
 }
 
 // renderTrack renders count raw frames of one track, from block frame from,
@@ -192,12 +207,14 @@ func (p *parallelState) renderTrack(track, from, count int) {
 	} else if p.faultAt[track].Load() != math.MaxInt64 {
 		return
 	}
+	renderlanes.StressPoint()
 	base := track*p.count + from - p.start
 	for i := range count {
 		left, right, fault := p.engine.nextRawTrack(track)
 		p.left[base+i], p.right[base+i] = left, right
 		if fault != 0 {
 			p.faultCode[track] = fault
+			renderlanes.StressPoint()
 			p.faultAt[track].Store(int64(from + i))
 			return
 		}
@@ -332,12 +349,17 @@ func (e *Engine) parallelPrepareSegment(start, count int) (faultFrame int, fault
 	// Tiny event intervals do not amortize worker wakeups. Rendering remains
 	// sample-accurate through the serial nextRawTrack fallback.
 	if count < 32 {
+		if p.offline != nil {
+			p.shortSegments++
+		}
 		return -1, 0
 	}
 	if p.offline != nil {
 		// The lanes publish the segment in chunks; renderedTrack waits for
 		// each chunk, and a raw fault surfaces at its frame, as it does in the
 		// serial render. A panic in a lane is raised on this goroutine.
+		// End any segment still running before its fields change.
+		p.offline.End()
 		p.start, p.count, p.readyUntil, p.prepared = start, count, start, true
 		p.offline.Begin(start, count)
 		return -1, 0

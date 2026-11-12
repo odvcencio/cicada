@@ -5,13 +5,51 @@ package render
 import (
 	"bytes"
 	"math"
+	"runtime"
 	"testing"
 
 	"m31labs.dev/cicada/internal/renderlanes"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/notation"
 )
+
+// A caller that leaves Options.Jobs at zero, as Studio's render checks, the
+// LSP intents and the audition library do, gets the serial render: no lanes,
+// even with every segment forced onto them, and the bytes of Jobs 1.
+func TestZeroJobsRendersSerially(t *testing.T) {
+	defer renderlanes.ForceEveryLane()()
+	dir, clipScore := audioRenderFixture(t, true)
+	chorus, _ := driftScore(t, "cicada-chorus")
+	for _, c := range []struct {
+		name  string
+		score *notation.Score
+		opts  Options
+	}{
+		{"scheduled engine", clipScore, Options{AssetDir: dir, SampleRate: 48000, Bits: 32}},
+		{"direct renderer", chorus, Options{SampleRate: 48000, Bits: 24, Bars: 2}},
+	} {
+		if scheduled := UsesScheduledEngine(c.score, c.opts); scheduled != (c.name == "scheduled engine") {
+			t.Fatalf("%s: UsesScheduledEngine is %t", c.name, scheduled)
+		}
+		var zero, one bytes.Buffer
+		report, err := WAV(c.score, c.opts, &zero)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.Jobs != 1 || report.Lanes != 1 || report.ParallelSegments != 0 || report.SerialReason != SerialJobs {
+			t.Fatalf("%s: Jobs zero reported %+v, want the serial render", c.name, report.LaneReport)
+		}
+		c.opts.Jobs = 1
+		if _, err := WAV(c.score, c.opts, &one); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(zero.Bytes(), one.Bytes()) {
+			t.Fatalf("%s: Jobs zero and Jobs 1 wrote different bytes", c.name)
+		}
+	}
+}
 
 // laneTestVoice is a deterministic mono voice that turns NaN at frame nanAt
 // (never when nanAt is negative), so a drive insert after it faults there.
@@ -77,9 +115,17 @@ func renderLaneBlocks(t *testing.T, tracks []trackRuntime, jobs int) ([]byte, er
 		t.Fatal(err)
 	}
 	state := busMixerState{outputGain: 1}
-	if lanes := newTrackLanes(tracks, jobs, block); lanes != nil {
+	lanes := newTrackLanes(tracks, jobs, block)
+	if lanes != nil {
 		defer lanes.close()
 		state.lanes = lanes
+		defer func() {
+			// With every segment forced onto the lanes, a run that never used
+			// two of them would pass without testing them.
+			if counts := lanes.counts(); runtime.GOMAXPROCS(0) > 1 && counts.parallel == 0 {
+				t.Errorf("jobs %d: no segment ran on two or more lanes (%+v)", jobs, counts)
+			}
+		}()
 	}
 	var out bytes.Buffer
 	buffer := make([]byte, block*encoder.frameBytes())
@@ -162,6 +208,9 @@ func TestAudioClipLanesAreBitIdentical(t *testing.T) {
 		}
 		if want := min(jobs, 2); report.Lanes != want {
 			t.Fatalf("jobs %d set up %d lanes, want %d", jobs, report.Lanes, want)
+		}
+		if jobs > 1 && runtime.GOMAXPROCS(0) > 1 && report.ParallelSegments == 0 {
+			t.Fatalf("jobs %d: the forced lanes never ran: %+v", jobs, report.LaneReport)
 		}
 		return out.Bytes()
 	}

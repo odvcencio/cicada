@@ -70,12 +70,14 @@ type Options struct {
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
 	// Jobs is the most render lanes, goroutines that synthesize tracks at the
-	// same time, that the render may use: 1 renders serially, and zero
-	// selects the usable processors (runtime.GOMAXPROCS). A render never sets
-	// up more lanes than the song has tracks. Every value writes the same
-	// bytes: lanes only synthesize each track's own signal between control
-	// changes, and the render mixes the tracks in track order as the serial
-	// render does. Report.Jobs and Report.Lanes say what the render chose.
+	// same time, that the render may use. Zero, the default, and 1 render
+	// serially: a caller that does not ask for lanes gets none. AutoJobs
+	// picks the smaller of 4 and half the usable CPUs; a count is honoured up
+	// to runtime.NumCPU. A render never sets up more lanes than the song has
+	// tracks. Every value writes the same bytes: lanes only synthesize each
+	// track's own signal between control changes, and the render mixes the
+	// tracks in track order as the serial render does. Report.LaneReport says
+	// what the render chose and why it stayed serial if it did.
 	Jobs int
 }
 
@@ -103,13 +105,8 @@ type Report struct {
 	chainStart                       int64
 	chainEnd                         int64
 	tempoChanges                     []project.TempoChange
-	// Jobs is the job count the render resolved from Options.Jobs: the most
-	// lanes it was allowed. Lanes is the number of lanes it set up: Jobs
-	// capped at the song's tracks, or 1 when the render was serial (one
-	// track, Jobs 1, or a score with graph LFOs on the scheduled engine). A
-	// segment with little work runs on fewer lanes, and the process never
-	// runs more lanes at once than runtime.GOMAXPROCS.
-	Jobs, Lanes int
+	// LaneReport says how the render used its lanes (Options.Jobs).
+	LaneReport
 }
 
 // masterChainWindow returns the half-open range of render sample positions
@@ -340,6 +337,13 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 		if report.OutputPeak > 0 {
 			gain = float32(detmath.Pow(10, -1.0/20) / float64(report.OutputPeak))
 		}
+		final, err := renderWAV(score, opts, writer, stemsDir, gain)
+		if final.SerialReason == SerialReplay {
+			// The second render replayed the first one's mix: report how the
+			// synthesis used its lanes.
+			final.LaneReport = report.LaneReport
+		}
+		return final, err
 	}
 	return renderWAV(score, opts, writer, stemsDir, gain)
 }
@@ -594,7 +598,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	jobs := resolveJobs(opts.Jobs)
-	report.Jobs, report.Lanes = jobs, plannedLanes(jobs, len(tracks))
+	report.noteLanes(opts.Jobs, jobs, 1, len(tracks), laneCounts{}, SerialReplay)
 	stopIsAction := true
 	for _, pattern := range score.Patterns {
 		if pattern.Name == "stop" {
@@ -751,7 +755,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	// Only synthesis uses lanes; a replay above has none to synthesize.
-	if lanes := newTrackLanes(tracks, jobs, opts.Block); lanes != nil {
+	lanes := newTrackLanes(tracks, jobs, opts.Block)
+	if lanes != nil {
 		defer lanes.close()
 		busState.lanes = lanes
 	}
@@ -952,6 +957,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			return report, err
 		}
 	}
+	report.noteLanes(opts.Jobs, jobs, lanes.lanes(), len(tracks), lanes.counts(), "")
 	return report, nil
 }
 

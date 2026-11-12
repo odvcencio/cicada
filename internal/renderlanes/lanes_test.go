@@ -4,20 +4,29 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestJobsAndLanes(t *testing.T) {
-	if got := Jobs(3); got != 3 {
-		t.Fatalf("Jobs(3) = %d", got)
+	// Zero is serial: a caller that never asks for lanes gets none.
+	if got := Jobs(0); got != 1 {
+		t.Fatalf("Jobs(0) = %d, want the serial render", got)
 	}
-	if got := Jobs(1000); got != MaxLanes {
-		t.Fatalf("Jobs(1000) = %d, want %d", got, MaxLanes)
+	if got, want := Jobs(1), 1; got != want {
+		t.Fatalf("Jobs(1) = %d", got)
 	}
-	if got, want := Jobs(0), min(runtime.GOMAXPROCS(0), MaxLanes); got != want {
-		t.Fatalf("Jobs(0) = %d, want GOMAXPROCS %d", got, want)
+	if got, want := Jobs(3), min(3, runtime.NumCPU()); got != want {
+		t.Fatalf("Jobs(3) = %d, want %d", got, want)
+	}
+	if got, want := Jobs(1000), min(runtime.NumCPU(), MaxLanes); got != want {
+		t.Fatalf("Jobs(1000) = %d, want the CPU count %d", got, want)
+	}
+	cpus := min(runtime.NumCPU(), runtime.GOMAXPROCS(0))
+	if got, want := Jobs(AutoJobs), max(1, min(AutoCap, cpus/2)); got != want || got > AutoCap {
+		t.Fatalf("Jobs(AutoJobs) = %d, want %d (at most %d, half of %d CPUs)", got, want, AutoCap, cpus)
 	}
 	for _, c := range []struct{ jobs, tracks, want int }{{1, 12, 1}, {4, 12, 4}, {8, 3, 3}, {4, 1, 1}, {4, 0, 1}, {100, 100, MaxLanes}} {
 		if got := Lanes(c.jobs, c.tracks); got != c.want {
@@ -155,8 +164,9 @@ func TestPanicInALaneReachesTheCaller(t *testing.T) {
 	defer p.Close()
 	p.Run(0, 4096) // measure both tracks as heavy enough for two lanes
 	defer func() {
-		if value := recover(); value != "track 1 failed" {
-			t.Fatalf("recovered %v", value)
+		lanePanic, ok := recover().(*LanePanic)
+		if !ok || lanePanic.Value != "track 1 failed" || !strings.Contains(string(lanePanic.Stack), "TestPanicInALaneReachesTheCaller") {
+			t.Fatalf("recovered %#v", lanePanic)
 		}
 		if busy.Load() != 0 {
 			t.Fatalf("the failed segment kept %d lanes of the process budget", busy.Load())
@@ -259,8 +269,8 @@ func TestPanicInTheCallersLane(t *testing.T) {
 	fail.Store(true)
 	func() {
 		defer func() {
-			if value := recover(); value != "lane failed" {
-				t.Fatalf("recovered %v", value)
+			if lanePanic, ok := recover().(*LanePanic); !ok || lanePanic.Value != "lane failed" || len(lanePanic.Stack) == 0 {
+				t.Fatalf("recovered %#v", lanePanic)
 			}
 		}()
 		p.Run(0, 1024)

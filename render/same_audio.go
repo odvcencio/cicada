@@ -9,7 +9,8 @@ import (
 )
 
 // SameAudio reports whether rendering score with a and with b writes the same
-// WAV bytes and the same Report apart from Report.MasterGainDB. It answers
+// WAV bytes and the same Report apart from Report.MasterGainDB and the
+// scheduling counts of Report.LaneReport. It answers
 // without rendering: every option must be equal except the export gains
 // (MasterGainDB, MasterInputGainDB) and MasterCache, and the export gains must
 // turn into the same float32 gain factors on the renderer and the master chain

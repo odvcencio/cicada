@@ -26,8 +26,10 @@
 package renderlanes
 
 import (
+	"fmt"
 	"math"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -66,14 +68,25 @@ const costWeight = 0.25
 // the Pool moves tracks between lanes. Moving a track costs its cache.
 const rebalanceGain = 0.95
 
-// Jobs resolves a requested job count. Zero selects the usable processors:
-// runtime.GOMAXPROCS, which follows the CPU affinity mask and cgroup CPU
-// limits of the process. The result is 1 to MaxLanes.
+// AutoJobs asks Jobs for the automatic job count.
+const AutoJobs = -1
+
+// AutoCap is the most lanes the automatic job count chooses.
+const AutoCap = 4
+
+// Jobs resolves a requested job count. Zero (and any value below AutoJobs)
+// is the serial render, 1. AutoJobs is the smaller of AutoCap and half the
+// usable processors (runtime.NumCPU and runtime.GOMAXPROCS, which follow the
+// CPU affinity mask and cgroup limits), at least 1. A positive count is
+// honoured up to runtime.NumCPU and MaxLanes.
 func Jobs(requested int) int {
-	if requested > 0 {
-		return min(requested, MaxLanes)
+	switch {
+	case requested == AutoJobs:
+		return max(1, min(AutoCap, min(runtime.NumCPU(), runtime.GOMAXPROCS(0))/2))
+	case requested <= 0:
+		return 1
 	}
-	return max(1, min(runtime.GOMAXPROCS(0), MaxLanes))
+	return max(1, min(requested, runtime.NumCPU(), MaxLanes))
 }
 
 // Lanes is the number of lanes a render of tracks tracks sets up for jobs
@@ -180,6 +193,25 @@ type Pool struct {
 	trackNanos []int64
 }
 
+// LanePanic is what Ready, End and Run raise when a lane panicked: the lane
+// (0 is the caller's), the value it panicked with, and the lane's stack at
+// the panic, which the re-raise on the render goroutine would otherwise lose.
+type LanePanic struct {
+	Lane  int
+	Value any
+	Stack []byte
+}
+
+func (p *LanePanic) Error() string {
+	return fmt.Sprintf("render lane %d panicked: %v\n%s", p.Lane, p.Value, p.Stack)
+}
+
+// Unwrap returns the panic value when it is an error.
+func (p *LanePanic) Unwrap() error {
+	err, _ := p.Value.(error)
+	return err
+}
+
 // progress counts the chunks one lane has published in the current segment.
 type progress struct {
 	chunks atomic.Int64
@@ -200,10 +232,16 @@ type worker struct {
 type Stats struct {
 	Segments         int64 // segments run
 	ParallelSegments int64 // segments run on more than one lane
-	MaxUsed          int   // the most lanes that ran one segment
-	Frames           int64 // frames of all segments
-	SegmentNanos     int64 // wall time from Begin to the end of End
-	WaitNanos        int64 // time the caller waited in Ready for other lanes
+	// LightSegments had too little work to wake a lane; StarvedSegments were
+	// worth more lanes but found no processor free in the process budget.
+	LightSegments, StarvedSegments int64
+	// ShortSegments were too short to hand to the lanes at all (the engine
+	// and the direct renderer count them; the Pool never sees them).
+	ShortSegments int64
+	MaxUsed       int   // the most lanes that ran one segment
+	Frames        int64 // frames of all segments
+	SegmentNanos  int64 // wall time from Begin to the end of End
+	WaitNanos     int64 // time the caller waited in Ready for other lanes
 	// CriticalNanos sums, over segments, the busiest lane's work: its
 	// tracks' time, and on the caller's lane the mix too.
 	CriticalNanos int64
@@ -285,6 +323,12 @@ func (p *Pool) Begin(start, count int) {
 		p.got = acquire(want-1, p.workerLimit)
 	}
 	used := 1 + p.got
+	switch {
+	case want == 1:
+		p.stats.LightSegments++
+	case used == 1:
+		p.stats.StarvedSegments++
+	}
 	p.assign(used)
 	clear(p.took)
 	p.failed.Store(false)
@@ -293,10 +337,13 @@ func (p *Pool) Begin(start, count int) {
 	}
 	p.own, p.inside, p.waited, p.active = 0, 0, 0, true
 	p.segment.Store((p.segment.Load()>>8+1)<<8 | int64(used))
+	StressPoint()
 	for lane := 1; lane < used; lane++ {
 		if w := &p.workers[lane-1]; w.parked.CompareAndSwap(true, false) {
+			StressPoint()
 			w.wake <- struct{}{}
 		}
+		StressPoint()
 	}
 	p.readyUntil = start
 	if used == 1 {
@@ -328,6 +375,7 @@ func (p *Pool) Ready(frame int) int {
 			continue
 		}
 		reached := p.reached()
+		StressPoint()
 		if reached >= need {
 			need = min(reached, p.own)
 			break
@@ -458,8 +506,11 @@ func (p *Pool) work(lane int) {
 			return
 		}
 		seen = segment
+		StressPoint()
 		if lane < int(segment&0xff) {
-			p.done <- p.renderLane(lane)
+			failure := p.renderLane(lane)
+			StressPoint()
+			p.done <- failure
 		}
 	}
 }
@@ -482,7 +533,9 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 	}
 	for {
 		w.parked.Store(true)
+		StressPoint()
 		if segment := p.segment.Load(); segment != seen {
+			StressPoint()
 			if !w.parked.CompareAndSwap(true, false) {
 				<-w.wake // Begin saw the flag and sent a wake: take it.
 			}
@@ -490,6 +543,7 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 		}
 		select {
 		case <-w.wake:
+			StressPoint()
 			// A wake can be stale. Begin publishes a segment and then clears
 			// the flags of the lanes it uses; a lane that saw the segment
 			// first can render all of it and park again before Begin reaches
@@ -509,15 +563,17 @@ func (p *Pool) nextSegment(w *worker, seen int64) (int64, bool) {
 func (p *Pool) renderLane(lane int) (failure any) {
 	defer func() {
 		if value := recover(); value != nil {
-			failure = value
+			failure = &LanePanic{Lane: lane, Value: value, Stack: debug.Stack()}
 			// Publish the failure before the progress the caller waits for.
 			p.failed.Store(true)
+			StressPoint()
 			p.progress[lane].chunks.Store(int64(p.chunks))
 		}
 	}()
 	tracks := p.order[p.bounds[lane]:p.bounds[lane+1]]
 	for chunk := range p.chunks {
 		p.renderChunk(tracks, chunk)
+		StressPoint()
 		p.progress[lane].chunks.Store(int64(chunk + 1))
 	}
 	return nil
@@ -528,13 +584,14 @@ func (p *Pool) renderLane(lane int) (failure any) {
 func (p *Pool) renderOwnChunk() {
 	defer func() {
 		if value := recover(); value != nil {
+			failure := &LanePanic{Lane: 0, Value: value, Stack: debug.Stack()}
 			p.own = p.chunks
 			for lane := 1; lane < p.used; lane++ {
 				<-p.done
 			}
 			release(p.got)
 			p.got, p.active = 0, false
-			panic(value)
+			panic(failure)
 		}
 	}()
 	p.renderChunk(p.order[p.bounds[0]:p.bounds[1]], p.own)

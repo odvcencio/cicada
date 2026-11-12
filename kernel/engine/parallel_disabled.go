@@ -18,6 +18,9 @@ func (e *Engine) EnableParallel(workers int) error {
 	return nil
 }
 
+// offlineLanes is false: browser kernels never start offline render lanes.
+const offlineLanes = false
+
 // EnableOfflineParallel keeps the serial render in browser kernels.
 func (e *Engine) EnableOfflineParallel(lanes int) error {
 	if lanes < 1 {
@@ -25,6 +28,9 @@ func (e *Engine) EnableOfflineParallel(lanes int) error {
 	}
 	return nil
 }
+
+// OfflineLaneStats is zero: browser kernels have no lanes.
+func (e *Engine) OfflineLaneStats() OfflineLaneCounts                   { return OfflineLaneCounts{} }
 func (e *Engine) parallelAvailable() bool                               { return false }
 func (e *Engine) ParallelWorkers() int                                  { return 1 }
 func (e *Engine) ParallelPriority() string                              { return "serial" }
