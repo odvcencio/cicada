@@ -646,7 +646,11 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: Compare the direct mixer and the scheduled engine
-        run: make test-render-paths
+        run: |
+          set -euo pipefail
+          make test-render-paths | tee "$RUNNER_TEMP/render-paths.log"
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '^--- PASS: TestRenderPathsAgree ' "$RUNNER_TEMP/render-paths.log" || { echo "No PASS line for TestRenderPathsAgree; was it renamed or skipped?" >&2; exit 1; }
 
   m0-kernel:
     name: M0 kernel, golden, realtime, CLI and generator
