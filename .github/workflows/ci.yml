@@ -537,6 +537,41 @@ jobs:
             build/bench-agent-loop.json
             build/bench-agent-loop.txt
 
+  # What one edit costs (make bench-apply; spec studio-local-first revision 1,
+  # PC1): five hot edits on the reference scores REF-S, REF-P and REF-L through
+  # edit.Apply with the edit service's options, timed, with the work of each
+  # Apply counted (syntax parses, items lowered, validation passes, engine
+  # builds) and its state checked against a full compile of its result. It
+  # reports and gates nothing yet, and it is not part of the required check.
+  # REF-S and REF-P run 200 times after 10 warm-ups; REF-L, at about half a
+  # second an edit, 5 times after one.
+  edit-cost:
+    name: Edit cost per Apply (report)
+    needs: changes
+    if: ${{ needs.changes.outputs.bench == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Measure
+        run: make bench-apply APPLY_BENCH_ENV="CICADA_APPLY_BENCH_LARGE_RUNS=5 CICADA_APPLY_BENCH_LARGE_WARMUPS=1"
+      - name: Print the table
+        if: always()
+        run: cat build/bench-apply.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Save the table
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: edit-cost
+          if-no-files-found: warn
+          path: build/bench-apply.md
+
   # Every example score, rendered in full with and without the stored mix that
   # loudness passes and peak normalization replay (render.MasterCache), must
   # write the same bytes: plain, normalized, and at two loudness targets. The

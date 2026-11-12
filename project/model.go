@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"strconv"
 	"strings"
@@ -302,6 +303,13 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	root, err := rootPitchClass(score.KeyRoot)
 	if err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-KEY", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
+	}
+	if applycount.Enabled {
+		entities := len(score.Assets) + len(score.Clips) + len(score.Samplers) + len(score.Instruments) + len(score.Kits) + len(score.Effects) + len(score.Tracks) + len(score.Buses) + len(score.Exports) + len(score.Patterns) + len(score.Scenes) + len(score.Automation) + len(score.Modulators) + len(score.Routes)
+		if score.Arrange != nil {
+			entities += len(score.Arrange.Placements) + len(score.Arrange.Markers)
+		}
+		applycount.EntitiesCompiled(entities)
 	}
 	p := &Project{
 		Format: FormatID, Version: 1, Edition: score.Version, Title: score.Title, TempoMilli: int(score.TempoMilli),

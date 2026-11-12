@@ -75,6 +75,8 @@ expect_groups "embedded agent quick start" all-but-gates internal/agentguide/qui
 expect_groups "top-level testdata" all-but-gates testdata/edition1/examples/first-acid.cicada
 expect_groups "example score" all-but-sweep examples/first-acid.cicada
 expect_groups "root Go package" all-but-sweep notation/parse.go
+expect_groups "edit counters (notation and project import them)" all-but-sweep internal/applycount/on.go
+expect_groups "edit benchmark references" all-but-gates internal/benchscore/large.go
 expect_groups "command" all-but-sweep cmd/cicada/studio.go
 expect_groups "audio kernel" all-but-sweep kernel/graph/graph.go
 expect_groups "audio voice" all-but-sweep kernel/voice/strings/strings.go
@@ -236,6 +238,7 @@ if [[ "${1:-}" == "--graph" ]]; then
 		./cmd/cicada-kernel-wasm ./cmd/cicada ./host/demobrowser ./cmd/cicada-demo ./host/wam2)
 	check_imports studio_browser "Studio browser (cmd/cicada and the kernel WASM)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-kernel-wasm)
 	check_imports bench "agent loop speed (cmd/cicada and cmd/cicada-bench)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-bench)
+	check_imports bench "edit cost per Apply (internal/benchscore/applybench)" < <(go_deps linux cicada_counters ./internal/benchscore/applybench)
 	check_imports macos_desktop "macOS desktop build of cmd/cicada" < <(go_deps darwin "" ./cmd/cicada)
 	check_imports macos_contracts "macOS platform contracts" < <(go_deps darwin "" ./host/capture ./host/midi ./internal/audiobackend ./cmd/cicada)
 	check_imports workstation "workstation job (root-module tests)" < <(go_deps linux "" ./internal/buildaudit ./internal/studiohttp)

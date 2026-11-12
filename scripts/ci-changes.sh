@@ -27,7 +27,8 @@
 #   m2               M2 AudioWorklet browser tests and the WASM parity jobs
 #                    (hosted runners)
 #   m2_gates         M2 AudioWorklet CPU gate (the self-hosted reference machine)
-#   bench            agent loop speed (cmd/cicada-bench on the built cicada)
+#   bench            agent loop speed (cmd/cicada-bench on the built cicada) and
+#                    edit cost per Apply (internal/benchscore/applybench)
 #   wav_sweep        WAV parity sweep of every example and the song pins
 #                    (amd64, arm64); nightly, and on these pull requests
 #
@@ -108,6 +109,9 @@ classify_path() {
 # content hash in a response header. The graph test fails if the compile path
 # (project outside editplan.go, host/schedule, host/kernelimage) calls EditPlan.
 #
+# internal/applycount is in because notation and project import it for the
+# edit counters; in a normal build its hooks compile to nothing.
+#
 # The gate's setup path is in too: studio_files.go (studioProjectRoot feeds
 # CompileResident), and isolate_test.go with internal/isolatetest (the gate
 # test's TestMain). newStudio also builds takes, history and transport
@@ -125,7 +129,7 @@ gate_input() {
 	cmd/cicada-kernel-wasm/* | cmd/cicada-wasm-size/*) return 0 ;;
 	cmd/cicada/browser_test.go | cmd/cicada/browser_soak_helpers_test.go | cmd/cicada/browser_test_helpers_test.go | cmd/cicada/browser_cpu_node.js) return 0 ;;
 	cmd/cicada/studio.go | cmd/cicada/studio_audio.go | cmd/cicada/studio_files.go | cmd/cicada/isolate_test.go) return 0 ;;
-	internal/soaktiming/* | internal/isolatetest/* | internal/paramdefs/* | internal/filetarget/*) return 0 ;;
+	internal/soaktiming/* | internal/isolatetest/* | internal/paramdefs/* | internal/filetarget/* | internal/applycount/*) return 0 ;;
 	kernel/measure/*) return 1 ;; # test-only; nothing the gate builds imports it
 	kernel/* | host/web/* | host/schedule/* | host/kernelimage/* | host/sampleasset/* | host/irasset/*) return 0 ;;
 	host/keyboard/* | host/instrumentpack/* | host/audioencoding/*) return 0 ;;

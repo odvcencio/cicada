@@ -2,6 +2,7 @@ package notation
 
 import (
 	"fmt"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
@@ -106,6 +107,9 @@ const MaxHumanize = 32
 // Validate checks the meaning of a syntactically valid score. It leaves the
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) (ds []Diagnostic) {
+	if applycount.Enabled {
+		applycount.NotationValidation()
+	}
 	defer func() { LocateDiagnostics(ds, s.Position) }()
 	sourceEffects := s.Effects
 	s, ds = ResolvePresets(s)
