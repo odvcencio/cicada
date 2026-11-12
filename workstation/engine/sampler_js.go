@@ -3,13 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -659,22 +656,19 @@ func (u *samplerUI) resample(form js.Value) {
 	go func() {
 		defer func() { u.posting = false }()
 		encoded, _ := json.Marshal(values)
-		req, _ := http.NewRequestWithContext(u.ctx, http.MethodPost, js.Global().Get("location").Get("origin").String()+"/__actions/sampler", bytes.NewReader(encoded))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Cicada-Reactive", "1")
-		req.Header.Set("X-CSRF-Token", values["csrf_token"])
-		response, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		response, err := nativeRequest{Method: methodPost, Path: "/__actions/sampler", Body: encoded, Timeout: 30 * time.Second, Limit: 1 << 20, Headers: map[string]string{
+			"Content-Type": "application/json", "Accept": "application/json", "X-Cicada-Reactive": "1", "X-CSRF-Token": values["csrf_token"],
+		}}.do(u.ctx)
 		if err != nil {
-			u.status("Resampling failed; your performance is retained. " + err.Error())
+			consoleWarn("Sampler resample", err)
+			u.status(resampleFailureText(err))
 			return
 		}
-		defer response.Body.Close()
 		var result struct {
 			OK      bool   `json:"ok"`
 			Message string `json:"message"`
 		}
-		if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || !result.OK {
+		if err = decodeLimited(response.Body, 1<<20, &result); err != nil || !result.OK {
 			u.status("Resampling failed; your performance is retained. " + result.Message)
 			return
 		}

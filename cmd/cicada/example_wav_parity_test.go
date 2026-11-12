@@ -425,6 +425,17 @@ func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
 //
 // and update them only with the reason in the pull request.
 var wavPins = map[string]string{
+	// Changed by #329 (the voices on detmath): the modeled kit voice's strike
+	// coefficients. Checked on every pull request.
+	"examples/modeled-kit/reggae-one-drop-after-room.cicada normalize": "d1387c31c8ede816b48bd3a9c6e2b7335384d4f60bca3326db5375413ec9b142",
+	"examples/modeled-kit/reggae-one-drop-after.cicada normalize":      "aa06e6dd89ec8b71e660bd942387b1dfdfe1929aaa0f83227176639783c101ff",
+	"examples/modeled-kit/rock-after-room.cicada lufs-14":              "011de3edb780081434bd19a1cc53c116ee891c09c1db83bdf23ee6c08e36d843",
+	"examples/modeled-kit/rock-after-room.cicada lufs-9":               "011de3edb780081434bd19a1cc53c116ee891c09c1db83bdf23ee6c08e36d843",
+	"examples/modeled-kit/rock-after-room.cicada normalize":            "02f81a43ffd43160a32e727f08ef0166e19a67c26d4a663fbb3fa359875a37ba",
+	"examples/modeled-kit/rock-after.cicada normalize":                 "f8a105950958dc1bbec9c444250f77e11e75db383eec894a78b6dac5ea2e7354",
+	"examples/modeled-kit/soca-after-room.cicada lufs-14":              "62ae6108a0d14125d422a23ad205a44561d85a426ede05c81f3dbf68875ef444",
+	"examples/modeled-kit/soca-after-room.cicada normalize":            "6f3a41dbac95498e3cefae4b5869cdabff013abb88d277c31276235e5559efcf",
+	"examples/modeled-kit/soca-after.cicada lufs-9":                    "40a62d90e909ee984e1fdb310ff31204f96d98ee49f3a0654b97eb629db78d21",
 	// Changed by #327 (track effects and the mix on detmath, the reverb's
 	// modulation on SinPi); the songs use those effects. Checked nightly.
 	// anywhere-you-are changed again by #338: 22 note starts at section

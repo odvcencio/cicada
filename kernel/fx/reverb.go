@@ -310,9 +310,9 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
-	// The phase is in half turns, so the modulation is sin(pi*phase): SinPi's
-	// exact reduction makes it cheaper than Sin of a phase in radians.
-	modulation := float64(3 * detmath.SinPi(r.phase))
+	// The phase is in half turns, so the modulation is sin(pi*phase), once per
+	// frame on the audio path: the second tier (detmath package comment).
+	modulation := float64(3 * detmath.SinPiNear(r.phase))
 	r.phase += r.phaseStep
 	if r.phase >= 2 {
 		r.phase -= 2

@@ -48,7 +48,7 @@ func TestChorusDigest(t *testing.T) {
 			// The float32 output rounds away most last-bit differences; the
 			// float64 state does not.
 			d.Float64(x.current.Rate, x.current.Depth, x.current.Spread, x.current.Mix, x.filteredL, x.filteredR)
-			d.Int(int(x.slowPhase[0]), int(x.slowPhase[1]), int(x.slowPhase[2]))
+			d.Uint32(x.slowPhase[:]...)
 		}
 	}
 	if got := d.Hex(); got != chorusDigest {

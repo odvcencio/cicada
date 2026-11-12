@@ -6,7 +6,9 @@ package sample
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/dsp/subnormal"
+
 	"m31labs.dev/cicada/kernel/expression"
 )
 
@@ -108,7 +110,7 @@ func validateRate(rate int) error {
 func (v *Voice) configure(rate int, region Region) {
 	v.rate, v.fadeFrames, v.region, v.params = rate, rate/500, region, DefaultParams()
 	if sampleExpressionEnabled {
-		v.pressureAlpha = 1 - math.Exp(-1/(float64(rate)*.005))
+		v.pressureAlpha = 1 - detmath.Exp(-1/(float64(rate)*.005))
 		v.pressureGain = 1
 		v.expression.Reset()
 	}
@@ -141,7 +143,7 @@ func (v *Voice) playbackRatio(note uint8) (float64, error) {
 	}
 	ratio := float64(v.region.SampleRate) / float64(v.rate)
 	if note != v.region.RootKey || v.params.FineTuneCents != 0 {
-		ratio *= math.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
+		ratio *= detmath.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
 	}
 	if ratio < .125 || ratio > 8 {
 		return 0, validationError("sample playback ratio must be between 0.125 and 8")

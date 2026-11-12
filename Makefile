@@ -1,5 +1,5 @@
 .PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-engine-measurements test-chord-wasm test-worklet-negotiation
-.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm
+.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm test-tinygo-digests
 
 export GOWORK := off
 
@@ -132,6 +132,14 @@ test-flush-identity:
 	  CICADA_WAV_PARITY_REFERENCE="$$reference" go test -tags cicada_noflush -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1 -v | tee build/flush-identity/report.txt; \
 	  grep -q -- "^--- PASS: TestExampleWAVParity " build/flush-identity/report.txt'
 
+# Regenerates the committed agent front door (llms.txt, AGENTS.md's generated
+# region, the quick start the binary embeds, examples/first-song/AGENTS.md),
+# whose only inputs are the quick start and stable text, and builds
+# llms-full.txt from the manual, which is not committed.
+.PHONY: agent-front-door
+agent-front-door:
+	CICADA_UPDATE_AGENT_FRONT_DOOR=1 CICADA_LLMS_FULL_OUT=$(CURDIR)/llms-full.txt go test ./internal/agentguide -run '^(TestAgentFrontDoorIsCurrent|TestLLMsFullFitsItsBudget)$$' -count=1
+
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
 # render to a loudness target and audition. It must finish within 2 minutes.
@@ -162,6 +170,14 @@ build-workstation-release:
 
 test-workstation:
 	cd workstation && go generate ./... && go test -race ./... -count=1
+
+.PHONY: engine-size-report
+# What fills the UI engine WebAssembly, by section, runtime table, package and
+# module, with the linker's reason for each large package and two floor
+# programs. Writes workstation/build/engine-size.json; see workstation/README.md.
+ENGINE_SIZE_ARGS ?=
+engine-size-report:
+	cd workstation && go run ./internal/enginesize -o build/engine-size.json $(ENGINE_SIZE_ARGS)
 
 .PHONY: test-collaboration
 test-collaboration:
@@ -415,6 +431,21 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 	go test -timeout=3m -tags modulate_wasm ./kernel/modulate -run '^TestModulateNativeWASMParity$$' -count=1 -v
+
+# The kernel WASM is compiled by TinyGo (LLVM), not by the Go compiler. This
+# runs the deterministic-math and processor digests compiled by TinyGo for
+# WebAssembly (under Node), so a TinyGo code-generation difference fails here as
+# it would on arm64 or with GOAMD64=v3. go test exits 0 when -run matches
+# nothing, so every digest must print a PASS line.
+TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness
+TINYGO_DIGEST_TESTS = TestIdentityDigest TestSinPiDigest TestAtanDigest TestTanh32Digest TestLog1pDigest TestNearDigest TestFilterCoefficientDigest TestExp2F32Digest \
+	TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest TestAmpcabDigest TestAmpcabOutputDigest TestChorusDigest \
+	TestConvolutionDigest TestTapeDigest TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest \
+	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget
+test-tinygo-digests:
+	mkdir -p build
+	bash -o pipefail -c 'GOWORK=off GOFLAGS=-buildvcs=false tinygo test -target=wasm -v -run Digest $(TINYGO_DIGEST_PACKAGES) | tee build/tinygo-digests.txt'
+	@missing=0; for name in $(TINYGO_DIGEST_TESTS); do grep -q -- "^--- PASS: $$name " build/tinygo-digests.txt || { echo "No PASS line for $$name under TinyGo" >&2; missing=1; }; done; exit $$missing
 
 test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs

@@ -5,6 +5,8 @@ package drum
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/subnormal"
 	"m31labs.dev/cicada/kernel/graph"
@@ -112,7 +114,7 @@ func (p Params) Validate(lane Lane) error {
 			return validationError("rimshot parameter is out of range")
 		}
 	case LT, MT, HT:
-		if p.Tune < math.Exp2(-7.0/12) || p.Tune > math.Exp2(7.0/12) || p.Decay < .08 || p.Decay > 1 || p.Sweep < 0 || p.Sweep > 2 {
+		if p.Tune < detmath.Exp2(-7.0/12) || p.Tune > detmath.Exp2(7.0/12) || p.Decay < .08 || p.Decay > 1 || p.Sweep < 0 || p.Sweep > 2 {
 			return validationError("tom parameter is out of range")
 		}
 	case CB:
@@ -134,7 +136,7 @@ type filter struct {
 
 func (f *filter) configure(cutoff, q, rate float64) {
 	cutoff = min(cutoff, .45*rate)
-	g := math.Tan(math.Pi * cutoff / rate)
+	g := detmath.Tan(math.Pi * cutoff / rate)
 	f.k = 1 / q
 	f.a1 = 1 / (1 + float64(g*(g+f.k)))
 	f.a2 = g * f.a1
@@ -198,7 +200,7 @@ func New(sampleRate int, seed uint32) (*Kit, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
 		return nil, validationError("drum sample rate must be 44100, 48000, or 96000")
 	}
-	k := &Kit{rate: float64(sampleRate), seed: seed, clickDecay: math.Exp(-1 / (.002 * float64(sampleRate)))}
+	k := &Kit{rate: float64(sampleRate), seed: seed, clickDecay: detmath.Exp(-1 / (.002 * float64(sampleRate)))}
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		k.lanes[lane].recipe = lane
 		k.lanes[lane].enabled = true
@@ -221,12 +223,12 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 	v.params, v.targetParams, v.paramAlpha = params, params, 0
 	v.updateDecays(k.rate)
 	angle := (params.Pan + 1) * math.Pi / 4
-	v.panL, v.panR = math.Cos(angle), math.Sin(angle)
+	v.panL, v.panR = detmath.Cos(angle), detmath.Sin(angle)
 	v.targetPanL, v.targetPanR = v.panL, v.panR
 	if params.LevelDB == -1000 {
 		v.level = 0
 	} else {
-		v.level = math.Pow(10, params.LevelDB/20)
+		v.level = detmath.Pow(10, params.LevelDB/20)
 	}
 	v.targetLevel = v.level
 	return nil
@@ -238,8 +240,8 @@ func (v *laneVoice) updateDecays(rate float64) {
 	if v.recipe != BD {
 		return
 	}
-	sweep := math.Exp(-1 / (v.params.SweepTime * rate))
-	amp := math.Exp(-1 / (v.params.Decay * rate))
+	sweep := detmath.Exp(-1 / (v.params.SweepTime * rate))
+	amp := detmath.Exp(-1 / (v.params.Decay * rate))
 	v.current.sweepDecay, v.old.sweepDecay = sweep, sweep
 	v.current.ampDecay, v.old.ampDecay = amp, amp
 }
@@ -287,11 +289,11 @@ func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
 	v := &k.lanes[lane]
 	v.targetParams, v.paramAlpha = params, alpha
 	angle := (params.Pan + 1) * math.Pi / 4
-	v.targetPanL, v.targetPanR = math.Cos(angle), math.Sin(angle)
+	v.targetPanL, v.targetPanR = detmath.Cos(angle), detmath.Sin(angle)
 	if params.LevelDB == -1000 {
 		v.targetLevel = 0
 	} else {
-		v.targetLevel = math.Pow(10, params.LevelDB/20)
+		v.targetLevel = detmath.Pow(10, params.LevelDB/20)
 	}
 	return nil
 }
@@ -517,7 +519,7 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 		v.current.accentGain = 1
 	}
 	v.current.velocity = float64(velocity) / 127
-	v.current.noiseVelocity = math.Pow(v.current.velocity, 1.5)
+	v.current.noiseVelocity = detmath.Pow(v.current.velocity, 1.5)
 	v.current.band.configure(k.bandCutoff(recipe, v.params), k.bandQ(recipe), k.rate)
 	if recipe == CY {
 		v.current.high1.configure(9000*v.params.Tone, 2, k.rate)
@@ -568,7 +570,7 @@ func (k *Kit) NextStereo() (left, right float32) {
 			decay := v.params.Decay
 			v.params.Decay += float64((v.targetParams.Decay - v.params.Decay) * alpha)
 			if v.recipe == BD && v.params.Decay != decay {
-				coefficient := math.Exp(-1 / (v.params.Decay * k.rate))
+				coefficient := detmath.Exp(-1 / (v.params.Decay * k.rate))
 				v.current.ampDecay, v.old.ampDecay = coefficient, coefficient
 			}
 			v.level += float64((v.targetLevel - v.level) * alpha)
@@ -673,26 +675,26 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	case BD:
 		frequency := p.Tune * (1 + float64(p.Sweep*s.sweep))
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
-		body := math.Sin(2*math.Pi*s.phase[0]) * s.amp * s.velocity
+		body := detmath.SinPi(2*s.phase[0]) * s.amp * s.velocity
 		click := nextNoise(&s.noise) * s.click * p.Click * s.noiseVelocity
 		output = fastmath.Tanh((float64(body)+float64(click))*(1+float64(p.Drive*3))) / (1 + float64(p.Drive*.7))
 		s.sweep *= s.sweepDecay
 		s.amp *= s.ampDecay
 		s.click *= k.clickDecay
 	case SD:
-		sweep := 1 + math.Exp(-age/.008)
+		sweep := 1 + detmath.Exp(-age/.008)
 		s.phase[0] = wrap(s.phase[0] + 180*p.Tune*sweep/k.rate)
 		s.phase[1] = wrap(s.phase[1] + 330*p.Tune*sweep/k.rate)
-		body := (float64(math.Sin(2*math.Pi*s.phase[0])*math.Exp(-age/p.Decay)) + float64(.6*math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/.06))) * s.velocity
+		body := (float64(detmath.SinPi(2*s.phase[0])*detmath.Exp(-age/p.Decay)) + float64(.6*detmath.SinPi(2*s.phase[1])*detmath.Exp(-age/.06))) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
-		noise := band * math.Exp(-age/p.Snappy) * s.noiseVelocity
+		noise := band * detmath.Exp(-age/p.Snappy) * s.noiseVelocity
 		output = fastmath.Tanh(float64(body*(1-p.Mix)) + float64(noise*p.Mix*1.6))
 	case CH, OH:
 		bank := 0.0
 		if p.Metal {
 			s.phase[0] = wrap(s.phase[0] + 6000*p.Tune/k.rate)
 			s.phase[1] = wrap(s.phase[1] + 8400*p.Tune/k.rate)
-			bank = math.Sin(float64(2*math.Pi*s.phase[0]) + float64(8*math.Sin(2*math.Pi*s.phase[1])))
+			bank = detmath.Sin(float64(2*math.Pi*s.phase[0]) + float64(8*detmath.SinPi(2*s.phase[1])))
 		} else {
 			for i, frequency := range [...]float64{205.3, 304.4, 369.6, 522.7, 540, 800} {
 				s.phase[i] = wrap(s.phase[i] + frequency*p.Tune/k.rate)
@@ -706,7 +708,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		}
 		band, _ := s.band.next(bank)
 		_, high := s.high1.next(band)
-		output = high * math.Exp(-age/p.Decay) * s.velocity
+		output = high * detmath.Exp(-age/p.Decay) * s.velocity
 	case CP:
 		band, _ := s.band.next(nextNoise(&s.noise))
 		bursts := 0.0
@@ -715,12 +717,12 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 			// delta negative at the exact onset and omit a whole clap burst.
 			delta := age - float64(float64(i)*p.Spread)
 			if delta >= 0 {
-				bursts += math.Exp(-delta / .006)
+				bursts += detmath.Exp(-delta / .006)
 			}
 		}
 		tail := 0.0
 		if age >= 3*p.Spread {
-			tail = .3981071705534972 * math.Exp(-(age-float64(3*p.Spread))/p.Decay)
+			tail = .3981071705534972 * detmath.Exp(-(age-float64(3*p.Spread))/p.Decay)
 		}
 		output = band * (bursts + tail) * s.noiseVelocity * .4
 	case RS:
@@ -728,8 +730,8 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		s.phase[1] = wrap(s.phase[1] + 440*p.Tune/k.rate)
 		triangle := float64(4*math.Abs(s.phase[0]-.5)) - 1
 		_, high := s.high1.next(nextNoise(&s.noise))
-		body := (float64(triangle*math.Exp(-age/.004)) + float64(math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay))) * s.velocity
-		noise := high * math.Exp(-age/.001) * s.noiseVelocity
+		body := (float64(triangle*detmath.Exp(-age/.004)) + float64(detmath.SinPi(2*s.phase[1])*detmath.Exp(-age/p.Decay))) * s.velocity
+		noise := high * detmath.Exp(-age/.001) * s.noiseVelocity
 		output = (float64(body) + float64(noise)) * .45
 	case LT, MT, HT:
 		base := 90.0
@@ -738,11 +740,11 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		} else if lane == HT {
 			base = 190
 		}
-		frequency := base * p.Tune * (1 + float64(p.Sweep*math.Exp(-age/.04)))
+		frequency := base * p.Tune * (1 + float64(p.Sweep*detmath.Exp(-age/.04)))
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
-		body := math.Sin(2*math.Pi*s.phase[0]) * math.Exp(-age/p.Decay) * s.velocity
+		body := detmath.SinPi(2*s.phase[0]) * detmath.Exp(-age/p.Decay) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
-		noise := band * math.Exp(-age/.005) * s.noiseVelocity
+		noise := band * detmath.Exp(-age/.005) * s.noiseVelocity
 		output = float64(body) + float64(noise*.3)
 	case CB:
 		s.phase[0] = wrap(s.phase[0] + 540*p.Tune/k.rate)
@@ -755,8 +757,8 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 			bank += 1
 		}
 		band, _ := s.band.next(bank)
-		attack := 1 - math.Exp(-age/.002)
-		output = band * attack * math.Exp(-age/p.Decay) * s.velocity
+		attack := 1 - detmath.Exp(-age/.002)
+		output = band * attack * detmath.Exp(-age/p.Decay) * s.velocity
 	case CY:
 		bank := 0.0
 		for i, frequency := range [...]float64{205.3, 304.4, 369.6, 522.7, 540, 800} {
@@ -770,7 +772,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		bank /= 6
 		low, _ := s.band.next(bank)
 		high, _ := s.high1.next(bank)
-		output = (low + float64(high*(.5+math.Exp(-age/.06)))) * math.Exp(-age/p.Decay) * s.velocity
+		output = (low + float64(high*(.5+detmath.Exp(-age/.06)))) * detmath.Exp(-age/p.Decay) * s.velocity
 	}
 	if s.chokeRemaining > 0 {
 		output *= float64(s.chokeRemaining) / max(1, k.rate*.005)
