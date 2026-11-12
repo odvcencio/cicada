@@ -123,28 +123,16 @@ section. The range chosen with `--from` and `--bars` clips the first and last
 section. A track is in a section when its stem sounds there or it played
 notes there, so audio clips, samplers and sustained tails are listed.
 
-**Energy, band owners, activity and peaks.** Four more tables follow. Their
-methods, thresholds and limits are in [Audition measures](audition-measures.md).
-
-- *Energy*: the mix's loudness, from the meter the renderer uses for loudness
-  targets (ITU-R BS.1770-4): integrated loudness, loudness range and true peak
-  over the range and per section, the LU under the loudest section, and one
-  block per bar for the short-term loudness (the 3 s window that ends at the
-  bar line). The last line names the loudest and the quietest section with
-  their bars.
-- *Band owners*: for each bar and seven bands (20-40, 40-80, 80-160, 160-400,
-  400-1,600, 1,600-5,000 and 5,000-20,000 Hz), the track with the largest
-  share of the band's energy, its share in percent and the band's level in dB
-  re full-scale RMS (`kick 64* -38`). `*` marks a collision: two tracks each
-  hold over 25%. `quiet` has no owner. Collisions are then counted per section
-  and listed per band with the colliding pair.
-- *Activity and repeats*: per track, whether it sounds in each bar (within
-  30 dB of its own loudest bar), and how many bars play the same notes as the
-  bar before or four bars before, from the notes the renderer played. Then the
-  mix's silences: under -60 dBFS for at least 0.25 s.
-- *Peaks*: the highest true peaks of the mix. For each, the signal entering
-  the master chain is split into the track stems and effect returns: signed
-  percentages that add up to 100, where a negative part lowers the peak.
+**Energy, band owners, activity and peaks** follow; [Audition
+measures](audition-measures.md) gives their methods and limits. *Energy*: the
+mix's BS.1770-4 loudness over the range, per section, and per bar (the 3 s
+window ending at the bar line). *Band owners*: per bar, in seven bands from
+20 Hz to 20 kHz, the track with the largest share of the band's energy, its
+share and the band's level (`kick 64* -38`; `*`: two tracks each over 25%).
+*Activity*: where each track sounds (within 30 dB of its loudest bar), bars
+that repeat the bar before or four before, and the mix's silences. *Peaks*:
+the highest true peaks, each split into the signed parts of the track stems
+and effect returns entering the master chain.
 
 ## Reading the images
 
@@ -224,20 +212,15 @@ above, `decay20` is about 50 to 60 ms for the guitar and organ, and the kit's
 
 ## Choosing tracks
 
-`--tracks bass,kick` renders as usual (every track plays, so the mix is the
-song's mix) but writes only the named track stems, the two effect returns and
-the two bus stems, and reads only the named stems into memory. The fields that
-describe tracks then cover only those tracks: `tracks[]`, each section's
-`tracks`, the energy and band shares (`energy_share_pct`, band owners),
-`level_vs_loudest_db`, the swing groups, and the written and heard chords and
-keys, which come from the chosen pitched tracks. The mix measures (`mix_rms_dbfs`,
-`audibility_db` against the mix, loudness, silences, peak levels) are those of
-the whole mix. A peak's `pre_master_sample` is still the whole signal entering
-the master chain (read from the bus stems); its parts list the chosen tracks
-and the returns, and `pre_master_rest_pct` holds the other tracks.
-`selected_tracks` lists the chosen tracks; it is absent without the flag.
-`cicada stems --tracks` writes the chosen stems and `master.wav`, each the
-same as in a full set, and no return or bus stems.
+`--tracks bass,kick` renders the whole song (every track plays) but reads
+only the named stems. The fields that describe tracks then cover only those
+tracks: `tracks[]`, each section's `tracks`, the energy and band shares,
+`level_vs_loudest_db`, the swing groups, and the chords and keys. The mix
+measures (`mix_rms_dbfs`, `audibility_db`, loudness, silences, peak levels)
+are those of the whole mix; a peak's parts list the chosen tracks and the
+returns, and `pre_master_rest_pct` holds the others. `selected_tracks` lists
+the chosen tracks. `cicada stems --tracks` writes the chosen stems and
+`master.wav`, each the same as in a full set.
 
 ## JSON schema
 
@@ -281,7 +264,7 @@ floored at -120; null means the method cannot give a value.
 | `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu` (null under 3 s), `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`; `loudest_section`, `quietest_section` and their `_index` (from 0 in `sections[]`: names can repeat); `section_spread_lu`; and `short_term_per_bar_lufs`, the 3 s window that ends at each bar line (null in the first 3 s). Absent at a rate the meter does not support. |
 | `bands` | object | Absent with `--no-bands`. `names`, `edges_hz`, the rules (`collision_share_pct` 25, `quiet_below_band_db` 30, `quiet_below_span_db` 30, `quiet_below_range_db` 40), and `collisions[]`: per band, `band` and `pairs` (`tracks`, two in score order, and `bar_count`), most frequent first. |
 | `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
-| `peaks[]` | array | Highest true peaks first (3 by default, `--peaks`): `rank`, `at` (the position of the mix's largest sample in the peak), `true_peak_dbtp`, `sample_peak_dbfs`, `channel` (`left` or `right`); `pre_master_sample`, the signed sum there of every track stem and both effect returns, before the master chain (full scale is 1); `pre_master_parts[]` (`id`, `kind` `track` or `return`, `sample`, and `signed_share_pct`: `sample` over `pre_master_sample` in percent, negative when the part lowers the peak), parts of at least 2%, at most five; and `pre_master_rest_pct`, so the parts and the rest add up to 100. The master chain can reshape the peak after these parts ([Peaks](audition-measures.md#reading-the-tables)). |
+| `peaks[]` | array | Highest true peaks first (3 by default): `rank`, `at` (position of the mix's largest sample in the peak), `true_peak_dbtp`, `sample_peak_dbfs`, `channel`; `pre_master_sample`, the signed sum there of every track stem and both effect returns before the master chain (full scale 1); `pre_master_parts[]` (`id`, `kind` `track` or `return`, `sample`, `signed_share_pct`: `sample` over `pre_master_sample` in percent, negative when it lowers the peak), at least 2% each, at most five; and `pre_master_rest_pct`, so the parts and rest add up to 100. |
 | `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width` and `height` in pixels, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
 
 `--detail` adds the detail behind those summaries: `bars[].sample_peak_dbfs`,
