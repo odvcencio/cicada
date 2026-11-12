@@ -47,9 +47,10 @@ test: test-build-tools
 .PHONY: test-ci-core test-cmd-shard test-cmd-shard-check
 
 # CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
-# target covers every other package. `make test` still runs everything.
+# target covers every other package. It skips TestRenderPathsAgree, which CI
+# runs in its own job (make test-render-paths). `make test` still runs everything.
 test-ci-core: test-build-tools
-	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
+	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -skip '^TestRenderPathsAgree$$' -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -112,9 +113,9 @@ test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
 
 # The two render paths (the direct mixer and the scheduled engine) must play the
-# same notes. TestRenderPathsAgree is part of every Go test run of ./render; this
-# target runs it alone. The audio target compares the float32 bytes of every
-# comparable score over whole songs at 48 kHz and only reports (nightly).
+# same notes and write the same float32 bytes at 44.1 kHz (TestRenderPathsAgree;
+# CI job "M0 render paths agree"). The audio target compares whole songs at
+# 48 kHz and only reports (nightly).
 .PHONY: test-render-paths test-render-paths-audio
 test-render-paths:
 	go test ./render -run '^TestRenderPathsAgree$$' -count=1 -v

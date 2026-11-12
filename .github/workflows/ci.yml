@@ -562,12 +562,11 @@ jobs:
           if-no-files-found: warn
           path: build/render-identity.log
 
-  # The direct mixer and the scheduled engine must play the same notes
-  # (TestRenderPathsAgree, part of "Native tests, every package but cmd/cicada"
-  # on every pull request that changes Go code). Nightly, the same scores are
-  # rendered through both paths in full and their float32 output is compared
-  # byte for byte. The step reports and never fails: where the audio differs
-  # without an event difference, the log says by how much.
+  # The direct mixer and the scheduled engine must play the same notes and
+  # write the same bytes at 44.1 kHz (TestRenderPathsAgree, job m0-render-paths
+  # on every pull request in the root group). Nightly, the same scores are
+  # compared at 48 kHz. The step reports and never fails: the log names each
+  # score that differs and by how much.
   render-paths-audio:
     name: Render paths, audio comparison report
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -596,6 +595,7 @@ jobs:
 
   # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
   # aggregate. Every command that was in the single job is in exactly one part.
+  # A fourth part, m0-render-paths, was added later.
   m0-core:
     name: M0 grammar and Go tests
     needs: changes
@@ -625,6 +625,28 @@ jobs:
           name: m0-core-reports
           if-no-files-found: error
           path: build/grammar-doctor.txt
+
+  # Renders every example score the direct mixer can render, whole, and the
+  # targeted scores in render/paths_agree_test.go through the direct mixer and
+  # the scheduled engine, and fails when their note events or audio bytes
+  # differ outside the listed known differences. It runs only here:
+  # `make test-ci-core` skips it, so the two Go test jobs do not wait for it.
+  m0-render-paths:
+    name: M0 render paths agree
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare the direct mixer and the scheduled engine
+        run: make test-render-paths
 
   m0-kernel:
     name: M0 kernel, golden, realtime, CLI and generator
@@ -750,7 +772,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -768,12 +790,13 @@ jobs:
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
+          RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
-          #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -804,6 +827,7 @@ jobs:
           check m0-core "$CORE_RESULT" "$part_expected"
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
+          check m0-render-paths "$RENDER_PATHS_RESULT" "$part_expected"
           exit "$status"
 
   workstation:

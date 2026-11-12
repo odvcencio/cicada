@@ -81,9 +81,9 @@ expect_groups "one CI path among docs" all docs/manual/README.md .github/workflo
 expect_groups "one kernel file among workstation files" all workstation/panels.go kernel/graph/graph.go
 
 # --- the render-paths agreement test (render.TestRenderPathsAgree) runs in the
-# root group's Go tests, so every path that can change what either renderer
-# plays must turn root on ---
-for render_input in render/wav.go render/schedule.go kernel/engine/engine.go kernel/seq/schedule.go project/compile.go project/runtime.go notation/parse.go host/capture/block.go; do
+# root group's job m0-render-paths, so every path that can change what either
+# renderer plays, and the examples it renders, must turn root on ---
+for render_input in render/wav.go render/schedule.go kernel/engine/engine.go kernel/seq/schedule.go project/compile.go project/runtime.go notation/parse.go host/capture/block.go examples/acid-voice.cicada; do
 	turns_on_root="$(printf '%s\n' "$render_input" | "$classifier" | grep -x 'root=true' || true)"
 	[[ -n "$turns_on_root" ]] || fail "$render_input does not turn the root group on, so the render-paths test would not run"
 done
