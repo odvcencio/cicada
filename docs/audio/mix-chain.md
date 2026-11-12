@@ -181,7 +181,12 @@ The stereo chorus uses one to three voices. `rate` is 0.05–5 Hz (default
 0.6 Hz), `depth` is 0–8 ms (default 3 ms), and `spread` and `mix` are 0–1
 (defaults 1 and 0.5). `voices` is an integer from 1 to 3 (default 3). The
 four continuous controls use a 10 ms smoother. Settled `mix = 0` passes the
-dry signal exactly while maintaining the delay history.
+dry signal exactly while maintaining the delay history. `mix` crossfades the
+dry signal with the average of the delayed voices (16 to 19 ms behind it), so
+at `mix = 0.5` a part plays about 4 to 6 dB quieter in RMS: measured on the
+grand-piano pack, an A major chord lost 4.1 dB and a low F#1 and F#2 octave
+about 6 dB, its 92 Hz fundamental 12.6 dB, because the delays cancel part of
+it. Raise the track `level` to compensate.
 
 ```cicada
 cicada 2
