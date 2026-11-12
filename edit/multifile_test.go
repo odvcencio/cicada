@@ -120,6 +120,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"removeeffect":           &edits.RemoveEffect{Name: "grit"},
 		"addtrack":               &edits.AddTrack{Name: "lead", Voice: "piano"},
 		"deletetrack":            &edits.DeleteTrack{Track: "keys"},
+		"settrackvoice":          &edits.SetTrackVoice{Track: "keys", Voice: "piano"},
 		"addscene":               &edits.AddScene{Name: "main"},
 		"duplicatescene":         &edits.DuplicateScene{Scene: "main", Name: "main-2"},
 		"deletescene":            &edits.DeleteScene{Scene: "other", Cascade: true},
@@ -301,7 +302,7 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("automate lead.cutoff")) || !bytes.Contains(result.Files[0].After, []byte("place vocal-vox")) {
 							t.Fatalf("vocal conversion lost owning source or scene control: %v %v", result != nil, err)
 						}
-					case "deletetrack", "duplicatescene", "deletescene", "deletepattern", "rename":
+					case "deletetrack", "settrackvoice", "duplicatescene", "deletescene", "deletepattern", "rename":
 						// Structural intents edit the file that declares and uses
 						// the entity, staged beside the unchanged entry.
 						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {

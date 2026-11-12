@@ -103,8 +103,8 @@ type Options struct {
 	ParseProject func(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error)
 	// Diagnose returns every diagnostic cicada check gives the project with
 	// the entry replaced by source and the staged files, errors and
-	// warnings. The structural intents use it to name every problem a
-	// change causes. Nil leaves the parse and compile errors.
+	// warnings. A voice change compares it before and after, to name every
+	// problem it causes. Nil leaves the parse and compile errors.
 	Diagnose func(source []byte, files map[string][]byte) ([]notation.Diagnostic, error)
 	// UpgradeEdition rewrites an edition-1 score (and its manifest, returned
 	// as a File) to edition 2. cmd/cicada implements it with migration and

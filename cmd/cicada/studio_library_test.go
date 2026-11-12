@@ -488,3 +488,53 @@ func TestStudioLibraryInsertThenSavePresetFlow(t *testing.T) {
 		t.Fatalf("saved source has no preset: %s", saved)
 	}
 }
+
+// TestStudioLibraryInsertAsksBeforeChangingWhatPlays: inserting a library
+// voice on a track whose pattern carries accents the new voice ignores is
+// refused with the reason and the changes, so the page can show them; sent
+// again with acceptChanges it saves, and the response lists the changes.
+func TestStudioLibraryInsertAsksBeforeChangingWhatPlays(t *testing.T) {
+	t.Setenv("CICADA_LIBRARY", t.TempDir())
+	score := "cicada 2\ntempo 120\nkey c minor\ntrack lead acid {}\npattern riff { a1^ . c2~ d2 }\nscene main { lead=riff }\nsong { main }\n"
+	filename := filepath.Join(t.TempDir(), "song.cicada")
+	if err := os.WriteFile(filename, []byte(score), 0644); err != nil {
+		t.Fatal(err)
+	}
+	h, err := studioHandler(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := studioCall(t, h, "/api/library/insert", studioEdit{Revision: studioRevision([]byte(score)), Path: "std/synth", Item: "glassbass", Track: "lead"})
+	var refused struct {
+		Reason    string               `json:"reason"`
+		Uses      []string             `json:"uses"`
+		Revision  string               `json:"revision"`
+		Revisions []edits.FileRevision `json:"revisions"`
+	}
+	if r.Code != http.StatusUnprocessableEntity || json.Unmarshal(r.Body.Bytes(), &refused) != nil || refused.Reason != "voice_changes_sound" || len(refused.Uses) != 1 || !strings.Contains(refused.Uses[0], "accent: acid plays it, synth.glassbass ignores it") {
+		t.Fatalf("refusal: %d %s", r.Code, r.Body.String())
+	}
+	if data, _ := os.ReadFile(filename); string(data) != score {
+		t.Fatal("a refused insert changed the score")
+	}
+	if refused.Revision != studioRevision([]byte(score)) || len(refused.Revisions) == 0 {
+		t.Fatalf("the refusal does not say which revisions it answers: %+v", refused)
+	}
+	// A yes carries the refusal's revisions; one that moved is refused, and
+	// the page asks again.
+	stale := append([]edits.FileRevision(nil), refused.Revisions...)
+	stale[0].Revision = strings.Repeat("0", 64)
+	if r := studioCall(t, h, "/api/library/insert", studioEdit{Revision: refused.Revision, Revisions: stale, Path: "std/synth", Item: "glassbass", Track: "lead", AcceptChanges: true}); r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "revision_mismatch") {
+		t.Fatalf("a stale yes was accepted: %d %s", r.Code, r.Body.String())
+	}
+	r = studioCall(t, h, "/api/library/insert", studioEdit{Revision: refused.Revision, Revisions: refused.Revisions, Path: "std/synth", Item: "glassbass", Track: "lead", AcceptChanges: true})
+	var saved struct {
+		Warnings []string `json:"warnings"`
+	}
+	if r.Code != http.StatusOK || json.Unmarshal(r.Body.Bytes(), &saved) != nil || len(saved.Warnings) != 1 {
+		t.Fatalf("accepted insert: %d %s", r.Code, r.Body.String())
+	}
+	if data, _ := os.ReadFile(filename); !strings.Contains(string(data), "track lead synth.glassbass {}") {
+		t.Fatalf("not inserted:\n%s", data)
+	}
+}
