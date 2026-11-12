@@ -14,7 +14,7 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--tracks <a,b>] [--peaks <n>] [--bar-bands] [--no-bands] [--image-width <px>] [--json] [--max-resident-pcm <size>]"
+const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--tracks <a,b>] [--peaks <n>] [--detail] [--no-bands] [--image-width <px>] [--json] [--max-resident-pcm <size>]"
 
 // auditionErrorDocument is what audition --json prints when it fails.
 type auditionErrorDocument struct {
@@ -86,7 +86,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	tracks := flags.String("tracks", "", "analyze only these tracks (comma-separated) and the mix")
 	peaks := flags.Int("peaks", scoreaudition.DefaultPeaks, "true-peak moments to list; 0 lists none")
 	imageWidth := flags.Int("image-width", scoreaudition.DefaultImageWidth, "widest picture in pixels; 0 keeps one full strip")
-	barBands := flags.Bool("bar-bands", false, "add each track's band levels per bar to the JSON")
+	detail := flags.Bool("detail", false, "add the per-bar and per-beat matrices to the JSON")
 	noBands := flags.Bool("no-bands", false, "skip band ownership, about an eighth of the CPU time")
 	// Accept the score before or after the flags.
 	var path string
@@ -115,6 +115,9 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if *imageWidth < 0 || *imageWidth > 0 && *imageWidth < 200 {
 		return &codedError{"usage", fmt.Errorf("--image-width must be 0 (no cap) or at least 200")}
 	}
+	if err := render.CheckTrackNames(splitTrackList(*tracks), splitTrackList(*tracks)); err != nil {
+		return &codedError{"usage", fmt.Errorf("--tracks: %w", err)}
+	}
 	peakCount := *peaks
 	if peakCount == 0 {
 		peakCount = -1
@@ -134,11 +137,15 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if failed {
 		return &codedError{"invalid_score", fmt.Errorf("%s has errors", path)}
 	}
-	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Tracks: splitTrackList(*tracks), Peaks: peakCount, BarBands: *barBands, NoBands: *noBands})
+	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Tracks: splitTrackList(*tracks), Peaks: peakCount, NoBands: *noBands})
 	if err != nil {
 		var unknown *render.UnknownTrackError
 		if errors.As(err, &unknown) {
 			return &codedError{"unknown_track", err}
+		}
+		var list *render.TrackListError
+		if errors.As(err, &list) {
+			return &codedError{"usage", err}
 		}
 		return err
 	}
@@ -162,6 +169,9 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 		analysis.Report.Pictures = pictures
 	}
 	if *asJSON {
+		if !*detail {
+			analysis.Report.DropDetail()
+		}
 		data, err := json.MarshalIndent(analysis.Report, "", "  ")
 		if err != nil {
 			return err

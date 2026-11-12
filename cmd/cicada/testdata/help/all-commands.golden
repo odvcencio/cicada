@@ -302,8 +302,8 @@ Flags:
   --from <bar>               one-based start bar (default 1)
   --bars <n>                 bars to analyze; 0 means through song end
   --tracks <a,b>             analyze only these tracks and the mix; an unknown name fails with the valid names
-  --peaks <n>                true-peak moments of the mix to list, 0 to 100 (default 10; 0 lists none)
-  --bar-bands                add each track's level in each band per bar (tracks[].bar_bands_db; seven numbers per track per bar)
+  --peaks <n>                true-peak moments of the mix to list, 0 to 100 (default 3; 0 lists none)
+  --detail                   add the detail behind the JSON's summaries: per bar the band owners, sounding tracks, track levels and sample peak; per beat the short-term loudness; each track's band levels; collision bars per section and band
   --no-bands                 skip band ownership, which takes about an eighth of the CPU time
   --image-width <px>         widest picture in pixels (default 1600; 0 keeps one full-resolution strip)
   --json                     write the report as JSON (format cicada.audition/1)

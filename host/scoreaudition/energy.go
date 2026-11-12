@@ -16,21 +16,30 @@ import (
 // -120; a value that the method cannot give is null.
 type LoudnessReport struct {
 	// IntegratedLUFS is null when no 400 ms block is above the -70 LUFS gate.
-	IntegratedLUFS   *float64 `json:"integrated_lufs"`
-	LoudnessRangeLU  float64  `json:"loudness_range_lu"`
+	IntegratedLUFS *float64 `json:"integrated_lufs"`
+	// LoudnessRangeLU is null when the range is under 3 s: no short-term
+	// window fits.
+	LoudnessRangeLU  *float64 `json:"loudness_range_lu"`
 	TruePeakDBTP     float64  `json:"true_peak_dbtp"`
 	SamplePeakDBFS   float64  `json:"sample_peak_dbfs"`
 	MaxShortTermLUFS *float64 `json:"max_short_term_lufs"` // null under 3 s
 	MaxMomentaryLUFS *float64 `json:"max_momentary_lufs"`  // null under 400 ms
 	// LoudestSection and QuietestSection name the sections with the highest
-	// and lowest integrated loudness; SectionSpreadLU is their difference.
-	LoudestSection  string   `json:"loudest_section,omitempty"`
-	QuietestSection string   `json:"quietest_section,omitempty"`
-	SectionSpreadLU *float64 `json:"section_spread_lu"`
-	// ShortTermPerBeatLUFS has one value per beat of the song's meter (a
-	// quarter note in 4/4): the 3 s window that ends where the beat ends. Null
-	// while under 3 s of the range precede it.
-	ShortTermPerBeatLUFS []*float64 `json:"short_term_per_beat_lufs"`
+	// and lowest integrated loudness, and the indexes (0-based into sections[])
+	// identify them, since a song can play a section twice; SectionSpreadLU is
+	// their difference.
+	LoudestSection       string   `json:"loudest_section,omitempty"`
+	LoudestSectionIndex  *int     `json:"loudest_section_index,omitempty"`
+	QuietestSection      string   `json:"quietest_section,omitempty"`
+	QuietestSectionIndex *int     `json:"quietest_section_index,omitempty"`
+	SectionSpreadLU      *float64 `json:"section_spread_lu"`
+	// ShortTermPerBarLUFS has one value per analyzed bar: the 3 s window that
+	// ends at the bar line. Null while under 3 s of the range precede it.
+	ShortTermPerBarLUFS []*float64 `json:"short_term_per_bar_lufs"`
+	// Detail (DropDetail removes it): one value per beat of the song's meter
+	// (a quarter note in 4/4), the 3 s window that ends where the beat ends.
+	// Null while under 3 s of the range precede it.
+	ShortTermPerBeatLUFS []*float64 `json:"short_term_per_beat_lufs,omitempty"`
 }
 
 // Position is a moment in the analyzed range. Bar, Beat and Sixteenth are
@@ -47,28 +56,43 @@ type Position struct {
 	TimeS     float64 `json:"time_s"`
 }
 
-// PeakReport is one of the highest true-peak moments of the mix.
+// PeakReport is one of the highest true-peak moments of the mix, and how the
+// signal entering the master chain at that instant splits among the stems.
 type PeakReport struct {
-	Rank           int                `json:"rank"`
-	At             Position           `json:"at"`
-	TruePeakDBTP   float64            `json:"true_peak_dbtp"`
-	SamplePeakDBFS float64            `json:"sample_peak_dbfs"`
-	Tracks         []PeakContribution `json:"tracks"`
+	Rank           int      `json:"rank"`
+	At             Position `json:"at"`
+	TruePeakDBTP   float64  `json:"true_peak_dbtp"`
+	SamplePeakDBFS float64  `json:"sample_peak_dbfs"`
+	// Channel is the channel of the mix's largest sample in the peak.
+	Channel string `json:"channel"`
+	// PreMasterSample is the signed sum, at that sample and channel, of every
+	// track stem and both effect returns: the signal entering the master
+	// chain (full scale is 1). The master chain (bus compressor, sidechain,
+	// EQ, limiter) can reshape it before it becomes the mix's peak.
+	PreMasterSample float64 `json:"pre_master_sample"`
+	// PreMasterParts splits PreMasterSample: each part's own sample there as a
+	// signed percentage of it. Parts and PreMasterRestPct add up to 100; a
+	// negative part lowers the peak. Listed: parts of at least 2% in size, at
+	// most five, largest first.
+	PreMasterParts   []PeakPart `json:"pre_master_parts"`
+	PreMasterRestPct float64    `json:"pre_master_rest_pct"`
 }
 
-// PeakContribution is one track's part of a peak: its share of the summed
-// track-stem energy in the 5 ms around the peak, and its own sample peak
-// there. Effect returns are not tracks and are left out.
-type PeakContribution struct {
-	ID       string  `json:"id"`
-	SharePct float64 `json:"share_pct"`
-	PeakDBFS float64 `json:"peak_dbfs"`
+// PeakPart is one stem's part of a peak's pre-master sample.
+type PeakPart struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"` // track or return
+	// Sample is the stem's signed sample at the peak (full scale is 1).
+	Sample float64 `json:"sample"`
+	// SignedSharePct is Sample over the pre-master sample, in percent, with
+	// the sign that says whether the part raises or lowers the peak.
+	SignedSharePct float64 `json:"signed_share_pct"`
 }
 
 const (
 	shortTermS = 3
 	// DefaultPeaks is how many peaks the report lists when Options.Peaks is 0.
-	DefaultPeaks = 10
+	DefaultPeaks = 3
 	// peakSpacingS keeps two listed peaks apart, so one hit is one peak.
 	peakSpacingS = 0.05
 	// peakContextS is the half-width of the window that attributes a peak.
@@ -162,13 +186,14 @@ func measureMixLoudness(mix stereo, rate int, barEnds, beatEnds []int) (mixLoudn
 		perBeat[ki] = short(n)
 	}
 	res := m.Metrics()
-	r := &LoudnessReport{IntegratedLUFS: loudnessValue(res.IntegratedLUFS), LoudnessRangeLU: round(res.LoudnessRange, 1),
+	r := &LoudnessReport{IntegratedLUFS: loudnessValue(res.IntegratedLUFS),
 		TruePeakDBTP: dbFloor(res.TruePeakDBTP), SamplePeakDBFS: dbFloor(res.SamplePeakDBFS), ShortTermPerBeatLUFS: perBeat}
 	if res.IntegratedLUFS == math.Inf(-1) {
 		r.IntegratedLUFS = nil
 	}
 	if n >= shortTermS*rate {
 		r.MaxShortTermLUFS = loudnessValue(res.MaxShortTermLUFS)
+		r.LoudnessRangeLU = loudnessValue(res.LoudnessRange)
 	}
 	if n >= int(math.Round(float64(rate)*0.4)) {
 		r.MaxMomentaryLUFS = loudnessValue(res.MaxMomentaryLUFS)
@@ -180,9 +205,8 @@ func measureMixLoudness(mix stereo, rate int, barEnds, beatEnds []int) (mixLoudn
 // sectionLoudness is a fresh meter over one section's samples.
 type sectionLoudness struct {
 	integrated    *float64
-	rangeLU       float64
+	rangeLU       *float64 // null under 3 s
 	truePeak      float64
-	stMax, stMin  *float64
 	integratedRaw float64
 	measured      bool
 }
@@ -193,16 +217,8 @@ func measureSectionLoudness(m *loudness.Meter, sig stereo, rate int) (sectionLou
 		return out, nil
 	}
 	m.Reset()
-	hop := rate / 10
-	stMin := math.Inf(1)
-	for pos := 0; pos < sig.Len(); pos += hop {
-		end := min(sig.Len(), pos+hop)
-		if err := m.ProcessBlock(sig.L[pos:end], sig.R[pos:end]); err != nil {
-			return out, err
-		}
-		if end >= shortTermS*rate && end-pos == hop {
-			stMin = math.Min(stMin, m.Metrics().ShortTermLUFS)
-		}
+	if err := m.ProcessBlock(sig.L, sig.R); err != nil {
+		return out, err
 	}
 	res := m.Metrics()
 	out.measured = true
@@ -210,11 +226,9 @@ func measureSectionLoudness(m *loudness.Meter, sig stereo, rate int) (sectionLou
 	if res.IntegratedLUFS != math.Inf(-1) {
 		out.integrated = loudnessValue(res.IntegratedLUFS)
 	}
-	out.rangeLU = round(res.LoudnessRange, 1)
 	out.truePeak = dbFloor(res.TruePeakDBTP)
 	if sig.Len() >= shortTermS*rate {
-		out.stMax = loudnessValue(res.MaxShortTermLUFS)
-		out.stMin = loudnessValue(stMin)
+		out.rangeLU = loudnessValue(res.LoudnessRange)
 	}
 	return out, nil
 }
@@ -295,43 +309,75 @@ func findPeaks(m *loudness.Meter, mix stereo, rate, n int) ([]peakCandidate, err
 	return out, nil
 }
 
-// peakTracks attributes a peak to the analyzed tracks: each stem's energy in
-// the 5 ms around it, as a share of the stems' sum, listed from the largest,
-// for shares of at least 1%, at most five tracks.
-func peakTracks(at, rate int, ids []string, stems []stereo, use []bool) []PeakContribution {
-	context := int(peakContextS * float64(rate))
-	type part struct {
-		id     string
-		energy float64
-		peak   float64
+// stemSample is one stem's signed sample at a peak.
+type stemSample struct {
+	id, kind string
+	v        float64
+}
+
+// maxPeakParts is how many parts a peak lists, and minPeakPartPct the
+// smallest share listed; the rest is summed.
+const (
+	maxPeakParts   = 5
+	minPeakPartPct = 2
+)
+
+// attributePeak splits a pre-master sample among its parts: each part's own
+// sample as a signed percentage of total, so a part that pulls the other way
+// is negative. Parts under 2% in size, and parts past the fifth largest, go
+// into the rest; the listed parts and the rest add up to 100. A total under
+// 1e-6 cannot be split: no parts and a rest of 0.
+func attributePeak(total float64, values []stemSample) ([]PeakPart, float64) {
+	out := []PeakPart{}
+	if math.Abs(total) < 1e-6 {
+		return out, 0
 	}
-	var parts []part
-	var total float64
-	for ti, s := range stems {
-		if !use[ti] {
-			continue
-		}
-		lo, hi := min(max(0, at-context), s.Len()), min(s.Len(), at+context+1)
-		p := part{id: ids[ti]}
-		for i := lo; i < hi; i++ {
-			l, r := float64(s.L[i]), float64(s.R[i])
-			p.energy += l*l + r*r
-			p.peak = math.Max(p.peak, math.Max(math.Abs(l), math.Abs(r)))
-		}
-		total += p.energy
-		parts = append(parts, p)
-	}
-	out := []PeakContribution{}
-	if total <= 0 {
-		return out
-	}
-	sort.SliceStable(parts, func(i, j int) bool { return parts[i].energy > parts[j].energy })
-	for _, p := range parts {
-		share := 100 * p.energy / total
-		if share < 1 || len(out) == 5 {
+	sorted := append([]stemSample(nil), values...)
+	sort.SliceStable(sorted, func(i, j int) bool { return math.Abs(sorted[i].v) > math.Abs(sorted[j].v) })
+	listed := 0.0
+	for _, s := range sorted {
+		share := 100 * s.v / total
+		if math.Abs(share) < minPeakPartPct || len(out) == maxPeakParts {
 			break
 		}
-		out = append(out, PeakContribution{ID: p.id, SharePct: round(share, 1), PeakDBFS: dbFloor(db(p.peak))})
+		out = append(out, PeakPart{ID: s.id, Kind: s.kind, Sample: plusZero(round(s.v, 4)), SignedSharePct: plusZero(round(share, 1))})
+		listed += share
 	}
-	return out
+	return out, plusZero(round(100-listed, 1))
+}
+
+// plusZero turns a rounded -0 into 0, so JSON never prints -0.
+func plusZero(v float64) float64 {
+	if v == 0 {
+		return 0
+	}
+	return v
+}
+
+// peakChannel returns the channel (0 left, 1 right) of the larger mix sample
+// at a frame.
+func peakChannel(mix stereo, at int) int {
+	if at < mix.Len() && math.Abs(float64(mix.R[at])) > math.Abs(float64(mix.L[at])) {
+		return 1
+	}
+	return 0
+}
+
+// channelName names a channel index for the report.
+func channelName(ch int) string {
+	if ch == 1 {
+		return "right"
+	}
+	return "left"
+}
+
+// sampleAt is one channel of a stereo stem at a frame, 0 past its end.
+func sampleAt(s stereo, at, ch int) float64 {
+	if at < 0 || at >= s.Len() {
+		return 0
+	}
+	if ch == 1 {
+		return float64(s.R[at])
+	}
+	return float64(s.L[at])
 }

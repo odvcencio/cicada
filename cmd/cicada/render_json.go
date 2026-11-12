@@ -308,6 +308,10 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 	if errors.As(err, &unknown) {
 		return &renderErrorJSON{Code: "unknown_track", Message: err.Error(), ValidTracks: unknown.Valid}
 	}
+	var list *render.TrackListError
+	if errors.As(err, &list) {
+		return &renderErrorJSON{Code: "usage", Message: err.Error()}
+	}
 	if strings.Contains(err.Error(), "stem output directory already exists") {
 		return &renderErrorJSON{Code: "output_exists", Message: err.Error()}
 	}

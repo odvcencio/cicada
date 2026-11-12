@@ -2,6 +2,7 @@ package scoreaudition
 
 import (
 	"math"
+	"path/filepath"
 	"sort"
 
 	"m31labs.dev/cicada/kernel/loudness"
@@ -37,8 +38,11 @@ type mixInput struct {
 	layout     bandLayout
 	sections   []sectionSpan // aligned with Report.Sections
 	peaks      int
-	barBands   bool
 	noBands    bool
+	// stemDir holds the render's stem files; partial is true when only the
+	// chosen tracks' stems were written, with the returns and the buses.
+	stemDir string
+	partial bool
 }
 
 func (a *Analysis) measureMix(in mixInput) error {
@@ -78,16 +82,17 @@ func (a *Analysis) measureMix(in mixInput) error {
 	if r.Loudness != nil {
 		meter, _ = loudness.New(rate)
 	}
+	if r.Loudness != nil {
+		r.Loudness.ShortTermPerBarLUFS = ml.perBar
+	}
 	for b := range r.Bars {
-		if ml.perBar != nil {
-			r.Bars[b].ShortTermLUFS = ml.perBar[b]
-		}
 		lo, hi := a.barSamples[b], a.barSamples[b+1]
 		var peak float64
 		for i := lo; i < hi; i++ {
 			peak = math.Max(peak, math.Max(math.Abs(float64(in.mix.L[i])), math.Abs(float64(in.mix.R[i]))))
 		}
-		r.Bars[b].SamplePeakDBFS = dbFloor(db(peak))
+		v := dbFloor(db(peak))
+		r.Bars[b].SamplePeakDBFS = &v
 	}
 	loudest, quietest := -1, -1
 	for si, sp := range in.sections {
@@ -98,8 +103,8 @@ func (a *Analysis) measureMix(in mixInput) error {
 		sec := &r.Sections[si]
 		mark := sectionMark{name: sec.Name, from: sp.s0, to: sp.s1, integrated: math.NaN(), fromBar: sec.FromBar}
 		if sl.measured {
-			sec.IntegratedLUFS, sec.LoudnessRangeLU, sec.TruePeakDBTP = sl.integrated, sl.rangeLU, sl.truePeak
-			sec.ShortTermMaxLUFS, sec.ShortTermMinLUFS = sl.stMax, sl.stMin
+			tp := sl.truePeak
+			sec.IntegratedLUFS, sec.LoudnessRangeLU, sec.TruePeakDBTP = sl.integrated, sl.rangeLU, &tp
 		}
 		if sec.IntegratedLUFS != nil {
 			mark.integrated = sl.integratedRaw
@@ -114,6 +119,7 @@ func (a *Analysis) measureMix(in mixInput) error {
 	}
 	if loudest >= 0 && r.Loudness != nil {
 		r.Loudness.LoudestSection, r.Loudness.QuietestSection = r.Sections[loudest].Name, r.Sections[quietest].Name
+		r.Loudness.LoudestSectionIndex, r.Loudness.QuietestSectionIndex = &loudest, &quietest
 		r.Loudness.SectionSpreadLU = loudnessValue(*r.Sections[loudest].IntegratedLUFS - *r.Sections[quietest].IntegratedLUFS)
 		for si := range r.Sections {
 			if v := r.Sections[si].IntegratedLUFS; v != nil {
@@ -124,8 +130,10 @@ func (a *Analysis) measureMix(in mixInput) error {
 
 	// Activity.
 	grace := int(tailGraceS * float64(rate))
-	for b := range r.Bars {
-		r.Bars[b].Sounding = []string{}
+	barTracks := make([][]string, len(r.Bars))
+	for b := range barTracks {
+		barTracks[b] = []string{}
+		r.Bars[b].Sounding = &barTracks[b]
 	}
 	repeat := in.notes.barRepeats(len(in.ids), in.fromTick, bars)
 	for ti := range r.Tracks {
@@ -136,12 +144,13 @@ func (a *Analysis) measureMix(in mixInput) error {
 		}
 		full, test := barLevels(in.stems[ti], in.barSample, bars, grace, in.played[ti], starts)
 		tr.BarLevelDB, tr.Sounding = sounding(full, test)
+		tr.SoundingSpans = spansOf(tr.Sounding, r.Score.FromBar)
 		if !in.selected[ti] {
 			continue
 		}
 		for b, on := range tr.Sounding {
 			if on {
-				r.Bars[b].Sounding = append(r.Bars[b].Sounding, tr.ID)
+				barTracks[b] = append(barTracks[b], tr.ID)
 			}
 		}
 		rp := repeat[ti]
@@ -165,12 +174,77 @@ func (a *Analysis) measureMix(in mixInput) error {
 	if err != nil {
 		return err
 	}
+	frames := make([]int, len(cands))
 	for i, c := range cands {
+		frames[i] = c.sample
+	}
+	// The returns, and with a track choice the two buses, are read only at the
+	// peak frames: they are not held in memory.
+	read := func(name string) ([][2]float64, error) {
+		if len(frames) == 0 {
+			return nil, nil
+		}
+		return readFloatWAVFrames(filepath.Join(in.stemDir, name), frames)
+	}
+	returnA, err := read("return-a.wav")
+	if err != nil {
+		return err
+	}
+	returnB, err := read("return-b.wav")
+	if err != nil {
+		return err
+	}
+	var music, sfx [][2]float64
+	if in.partial {
+		if music, err = read("music.wav"); err != nil {
+			return err
+		}
+		if sfx, err = read("sfx.wav"); err != nil {
+			return err
+		}
+	}
+	for i, c := range cands {
+		ch := peakChannel(in.mix, c.sample)
+		var values []stemSample
+		var total float64
+		for ti, s := range in.stems {
+			if !in.selected[ti] {
+				continue
+			}
+			v := sampleAt(s, c.sample, ch)
+			values = append(values, stemSample{id: in.ids[ti], kind: "track", v: v})
+			total += v
+		}
+		values = append(values, stemSample{id: "return-a", kind: "return", v: returnA[i][ch]}, stemSample{id: "return-b", kind: "return", v: returnB[i][ch]})
+		total += returnA[i][ch] + returnB[i][ch]
+		if in.partial {
+			// The buses sum every track and return, chosen or not.
+			total = music[i][ch] + sfx[i][ch]
+		}
+		parts, rest := attributePeak(total, values)
 		r.Peaks = append(r.Peaks, PeakReport{Rank: i + 1, At: positionAt(in.clock, in.meter, in.base, c.sample, rate),
-			TruePeakDBTP: dbFloor(db(c.truePeak)), SamplePeakDBFS: dbFloor(db(c.sample1)),
-			Tracks: peakTracks(c.sample, rate, in.ids, in.stems, use)})
+			TruePeakDBTP: dbFloor(db(c.truePeak)), SamplePeakDBFS: dbFloor(db(c.sample1)), Channel: channelName(ch),
+			PreMasterSample: plusZero(round(total, 4)), PreMasterParts: parts, PreMasterRestPct: rest})
 	}
 	return nil
+}
+
+// spansOf turns per-bar flags into runs of consecutive bars, one-based from
+// firstBar.
+func spansOf(on []bool, firstBar int) []BarSpan {
+	out := []BarSpan{}
+	for b := 0; b < len(on); b++ {
+		if !on[b] {
+			continue
+		}
+		end := b
+		for end+1 < len(on) && on[end+1] {
+			end++
+		}
+		out = append(out, BarSpan{FromBar: firstBar + b, ToBar: firstBar + end})
+		b = end
+	}
+	return out
 }
 
 func (a *Analysis) measureBands(in mixInput, use []bool) {
@@ -255,7 +329,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 		QuietBelowBandDB: quietBandDB, QuietBelowSpanDB: quietSpanDB, QuietBelowRangeDB: quietRangeDB}
 	pairs := make([]map[[2]string]int, numBands)
 	for k := range bandNames {
-		report.Collisions = append(report.Collisions, BandCollisions{Band: bandNames[k], Bars: []int{}, Pairs: []PairCount{}})
+		report.Collisions = append(report.Collisions, BandCollisions{Band: bandNames[k], Bars: &[]int{}, Pairs: []PairCount{}})
 		pairs[k] = map[[2]string]int{}
 	}
 	index := map[string]int{}
@@ -269,7 +343,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 			o := owner(k, energy[b][k], in.ids, use, barFrames[b], chromaFFT, loudest[k], span, top)
 			r.Bars[b].Bands[k] = o
 			if o.Collision {
-				report.Collisions[k].Bars = append(report.Collisions[k].Bars, r.Bars[b].Bar)
+				*report.Collisions[k].Bars = append(*report.Collisions[k].Bars, r.Bars[b].Bar)
 				pair := [2]string{o.Owner, o.Second}
 				if index[pair[0]] > index[pair[1]] {
 					pair[0], pair[1] = pair[1], pair[0]
@@ -280,12 +354,12 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	}
 	for k := range pairs {
 		for pair, count := range pairs[k] {
-			report.Collisions[k].Pairs = append(report.Collisions[k].Pairs, PairCount{Tracks: pair, Bars: count})
+			report.Collisions[k].Pairs = append(report.Collisions[k].Pairs, PairCount{Tracks: pair, BarCount: count})
 		}
 		ps := report.Collisions[k].Pairs
 		sort.Slice(ps, func(i, j int) bool {
-			if ps[i].Bars != ps[j].Bars {
-				return ps[i].Bars > ps[j].Bars
+			if ps[i].BarCount != ps[j].BarCount {
+				return ps[i].BarCount > ps[j].BarCount
 			}
 			if ps[i].Tracks[0] != ps[j].Tracks[0] {
 				return index[ps[i].Tracks[0]] < index[ps[j].Tracks[0]]
@@ -298,6 +372,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	for si, sp := range in.sections {
 		sec := &r.Sections[si]
 		sec.Bands = make([]SectionBand, numBands)
+		sec.BandOwners, sec.BandCollisionBars = make([]*string, numBands), make([]int, numBands)
 		span := spanMean(secEnergy[si], secFrames[si])
 		for k := 0; k < numBands; k++ {
 			sb := SectionBand{BandOwner: owner(k, secEnergy[si][k], in.ids, use, secFrames[si], chromaFFT, loudest[k], span, top)}
@@ -308,15 +383,18 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 				}
 			}
 			sec.Bands[k] = sb
+			sec.BandCollisionBars[k] = sb.CollisionBars
+			if !sb.Quiet {
+				name := sb.Owner
+				sec.BandOwners[k] = &name
+			}
 		}
 	}
 	totalFrames := math.Max(1, float64(in.mix.Len())/bandHop)
 	for ti := range r.Tracks {
 		tr := &r.Tracks[ti]
 		tr.BandsDB = make([]float64, numBands)
-		if in.barBands {
-			tr.BarBandsDB = make([][]float64, bars)
-		}
+		tr.BarBandsDB = make([][]float64, bars)
 		tr.SectionBandsDB = make([][]float64, len(in.sections))
 		for k := 0; k < numBands; k++ {
 			tr.BandsDB[k] = round(bandLevelDB(whole[ti][k], totalFrames, chromaFFT), 1)

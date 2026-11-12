@@ -46,19 +46,19 @@ type BandsReport struct {
 	Collisions []BandCollisions `json:"collisions"`
 }
 
-// BandCollisions lists the bars where two tracks each hold more than 25% of
-// one band, and how often each pair of tracks is the colliding pair (the two
-// largest shares).
+// BandCollisions sums up one band's collisions over the range: how often each
+// pair of tracks is the colliding pair (the two largest shares, each over
+// 25%), and, as detail (DropDetail removes it), the bars where they collide.
 type BandCollisions struct {
 	Band  string      `json:"band"`
-	Bars  []int       `json:"bars"`
+	Bars  *[]int      `json:"bars,omitempty"`
 	Pairs []PairCount `json:"pairs"`
 }
 
-// PairCount is a pair of tracks and the bars in which they collide.
+// PairCount is a pair of tracks and the number of bars in which they collide.
 type PairCount struct {
-	Tracks [2]string `json:"tracks"`
-	Bars   int       `json:"bars"`
+	Tracks   [2]string `json:"tracks"`
+	BarCount int       `json:"bar_count"`
 }
 
 // BandOwner is the ownership of one band in a bar or a section: the summed

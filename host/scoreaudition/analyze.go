@@ -44,9 +44,6 @@ type Options struct {
 	// Peaks is how many true-peak moments to list: zero selects DefaultPeaks,
 	// a negative value lists none.
 	Peaks int
-	// BarBands adds each track's band levels per bar (tracks[].bar_bands_db),
-	// seven numbers per track per bar.
-	BarBands bool
 	// NoBands skips band ownership (bands, bars[].bands, sections[].bands and
 	// the tracks' band levels), which takes about an eighth of an audition's
 	// CPU time.
@@ -120,12 +117,13 @@ type BarReport struct {
 	Masked       bool          `json:"masked"`           // audibility_db below -15
 	Match        string        `json:"match"`            // agree, disagree, no-written-pitch, silent
 
-	// ShortTermLUFS is the 3 s window that ends at the bar's end; null while
-	// under 3 s of the range precede it.
-	ShortTermLUFS  *float64    `json:"short_term_lufs"`
-	SamplePeakDBFS float64     `json:"sample_peak_dbfs"`
-	Sounding       []string    `json:"sounding"`        // tracks that sound in the bar
-	Bands          []BandOwner `json:"bands,omitempty"` // absent with Options.NoBands
+	// Detail (DropDetail removes them): the mix's highest sample in the bar,
+	// the tracks that sound in it and the owner of each band (Bands is also
+	// absent with Options.NoBands). The bar's short-term loudness is in
+	// Loudness.ShortTermPerBarLUFS.
+	SamplePeakDBFS *float64    `json:"sample_peak_dbfs,omitempty"`
+	Sounding       *[]string   `json:"sounding,omitempty"`
+	Bands          []BandOwner `json:"bands,omitempty"`
 }
 
 type TrackReport struct {
@@ -146,10 +144,9 @@ type TrackReport struct {
 	SwingPercent      float64   `json:"swing_percent"`
 	Rhythm            []float64 `json:"rhythm"`
 
-	// BarLevelDB is the stem's RMS in each bar re its loudest bar (-120 when
-	// silent); Sounding marks the bars where the track sounds.
-	BarLevelDB []float64 `json:"bar_level_db"`
-	Sounding   []bool    `json:"sounding"`
+	// SoundingSpans lists the runs of consecutive bars where the track sounds,
+	// first bar first: its entrances, exits and drop-outs.
+	SoundingSpans []BarSpan `json:"sounding_spans"`
 	// NoteBars counts the bars where the track starts a note; the two counts
 	// after it are the bars whose notes (offset, pitches, velocity and, when
 	// released, length) equal the bar before and the bar four before.
@@ -159,11 +156,22 @@ type TrackReport struct {
 	SameAsPreviousBar    int `json:"same_as_previous_bar"`
 	SameAsFourBarsBefore int `json:"same_as_four_bars_before"`
 	LongestSameRun       int `json:"longest_same_run"`
-	// Band levels in dB re a full-scale RMS, in band order: over the range,
-	// per bar and per section.
+
+	// Detail (DropDetail removes them): the track's level in each band over
+	// the range (dB re a full-scale RMS, in band order), the stem's RMS in
+	// each bar re its loudest bar (-120 when silent), whether it sounds in
+	// each bar, and its band levels per bar and per section.
 	BandsDB        []float64   `json:"bands_db,omitempty"`
-	BarBandsDB     [][]float64 `json:"bar_bands_db,omitempty"` // only with Options.BarBands
+	BarLevelDB     []float64   `json:"bar_level_db,omitempty"`
+	Sounding       []bool      `json:"sounding,omitempty"`
+	BarBandsDB     [][]float64 `json:"bar_bands_db,omitempty"`
 	SectionBandsDB [][]float64 `json:"section_bands_db,omitempty"`
+}
+
+// BarSpan is a run of bars, one-based and inclusive.
+type BarSpan struct {
+	FromBar int `json:"from_bar"`
+	ToBar   int `json:"to_bar"`
 }
 
 type SectionReport struct {
@@ -180,14 +188,19 @@ type SectionReport struct {
 
 	// Loudness of the mix over exactly the section's ticks, from a meter
 	// started at the section start. Null when the method cannot give a value
-	// (integrated: no block above the gate; short-term: under 3 s).
-	IntegratedLUFS   *float64      `json:"integrated_lufs"`
-	LoudnessRangeLU  float64       `json:"loudness_range_lu"`
-	TruePeakDBTP     float64       `json:"true_peak_dbtp"`
-	ShortTermMaxLUFS *float64      `json:"short_term_max_lufs"`
-	ShortTermMinLUFS *float64      `json:"short_term_min_lufs"`
-	VsLoudestLU      *float64      `json:"vs_loudest_lu"`   // integrated re the loudest section
-	Bands            []SectionBand `json:"bands,omitempty"` // absent with Options.NoBands
+	// (integrated: no block above the gate; loudness range: under 3 s).
+	IntegratedLUFS  *float64 `json:"integrated_lufs"`
+	LoudnessRangeLU *float64 `json:"loudness_range_lu"`
+	VsLoudestLU     *float64 `json:"vs_loudest_lu"` // integrated re the loudest section
+	// BandOwners names the owner of each band over the section, in band order
+	// (null when the band is quiet). Absent with Options.NoBands.
+	BandOwners []*string `json:"band_owners,omitempty"`
+	// Detail (DropDetail removes them): the section's true peak; and, absent
+	// with Options.NoBands, per band the bars whose first tick is in the
+	// section and whose band collides, and the full ownership of each band.
+	TruePeakDBTP      *float64      `json:"true_peak_dbtp,omitempty"`
+	BandCollisionBars []int         `json:"band_collision_bars,omitempty"`
+	Bands             []SectionBand `json:"bands,omitempty"`
 }
 
 // Analysis holds the report and the data behind the images.
@@ -324,7 +337,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, StemTracks: opts.Tracks}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, StemTracks: opts.Tracks, StemBuses: len(opts.Tracks) > 0}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}
@@ -771,7 +784,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	err = a.measureMix(mixInput{
 		mix: mix, stems: stems, ids: ids, selected: selected, rate: rate, clock: clock, meter: meterMap, base: baseSample,
 		fromTick: fromTick, bars: bars, barSample: barSample, notes: &notes, acts: acts, played: played,
-		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, barBands: opts.BarBands, noBands: opts.NoBands,
+		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, noBands: opts.NoBands, stemDir: stemDir, partial: len(opts.Tracks) > 0,
 	})
 	if err != nil {
 		return nil, err

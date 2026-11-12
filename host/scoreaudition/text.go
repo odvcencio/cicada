@@ -123,34 +123,29 @@ func (r *Report) writeEnergy(w io.Writer) {
 		return
 	}
 	fmt.Fprintf(w, "\nenergy (ITU-R BS.1770-4, the render's loudness meter; short-term = 3 s window ending at the bar line):\n")
-	fmt.Fprintf(w, "  whole range: %s LUFS integrated, loudness range %.1f LU, true peak %.1f dBTP, max short-term %s LUFS\n", lufsText(l.IntegratedLUFS), l.LoudnessRangeLU, l.TruePeakDBTP, lufsText(l.MaxShortTermLUFS))
+	fmt.Fprintf(w, "  whole range: %s LUFS integrated, loudness range %s LU, true peak %.1f dBTP, max short-term %s LUFS\n", lufsText(l.IntegratedLUFS), lufsText(l.LoudnessRangeLU), l.TruePeakDBTP, lufsText(l.MaxShortTermLUFS))
 	top := -120.0
-	for _, b := range r.Bars {
-		if b.ShortTermLUFS != nil {
-			top = math.Max(top, *b.ShortTermLUFS)
+	for _, v := range l.ShortTermPerBarLUFS {
+		if v != nil {
+			top = math.Max(top, *v)
 		}
 	}
 	fmt.Fprintf(w, "  %-14s %-7s %6s %6s %5s %7s  %s\n", "section", "bars", "LUFS", "vs top", "LRA", "TP dBTP", "short-term per bar (█ within 3 LU of the loudest bar, one step per 3 LU, · 24 LU under or n/a)")
 	for _, s := range r.Sections {
 		var cells []rune
-		for _, b := range r.Bars {
-			if b.Bar >= s.FromBar && b.Bar <= s.ToBar {
-				cells = append(cells, levelBlock(b.ShortTermLUFS, top))
+		for i, b := range r.Bars {
+			if b.Bar >= s.FromBar && b.Bar <= s.ToBar && i < len(l.ShortTermPerBarLUFS) {
+				cells = append(cells, levelBlock(l.ShortTermPerBarLUFS[i], top))
 			}
 		}
-		fmt.Fprintf(w, "  %-14s %-7s %6s %6s %5.1f %7.1f  %s\n", s.Name, fmt.Sprintf("%d-%d", s.FromBar, s.ToBar), lufsText(s.IntegratedLUFS), lufsText(s.VsLoudestLU), s.LoudnessRangeLU, s.TruePeakDBTP, string(cells))
+		fmt.Fprintf(w, "  %-14s %-7s %6s %6s %5s %7s  %s\n", s.Name, fmt.Sprintf("%d-%d", s.FromBar, s.ToBar), lufsText(s.IntegratedLUFS), lufsText(s.VsLoudestLU), lufsText(s.LoudnessRangeLU), lufsText(s.TruePeakDBTP), string(cells))
 	}
-	if l.LoudestSection != "" {
-		var loud, quiet *float64
-		for _, s := range r.Sections {
-			if s.Name == l.LoudestSection && loud == nil {
-				loud = s.IntegratedLUFS
-			}
-			if s.Name == l.QuietestSection && quiet == nil {
-				quiet = s.IntegratedLUFS
-			}
-		}
-		fmt.Fprintf(w, "  loudest section: %s (%s LUFS); quietest: %s (%s LUFS, %s LU under)\n", l.LoudestSection, lufsText(loud), l.QuietestSection, lufsText(quiet), lufsText(l.SectionSpreadLU))
+	if l.LoudestSectionIndex != nil && l.QuietestSectionIndex != nil {
+		// Names repeat when a song plays a section twice: the index and the
+		// bars say which one.
+		loud, quiet := r.Sections[*l.LoudestSectionIndex], r.Sections[*l.QuietestSectionIndex]
+		fmt.Fprintf(w, "  loudest section: %s, bars %d-%d (%s LUFS); quietest: %s, bars %d-%d (%s LUFS, %s LU under)\n", loud.Name, loud.FromBar, loud.ToBar, lufsText(loud.IntegratedLUFS),
+			quiet.Name, quiet.FromBar, quiet.ToBar, lufsText(quiet.IntegratedLUFS), lufsText(l.SectionSpreadLU))
 	}
 }
 
@@ -185,10 +180,10 @@ func (r *Report) writeBands(w io.Writer) {
 	if r.Bands == nil || len(r.Bars) == 0 || len(r.Bars[0].Bands) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "\nband owners per bar (share of the analysed tracks' energy in each band, Hz: %s; * collision: two tracks each over %g%%; quiet: %g dB under the band's loudest bar, %g dB under the bar's loudest band or %g dB under the loudest band of the range):\n", strings.Join(bandLabels[:], ", "), r.Bands.CollisionSharePct, r.Bands.QuietBelowBandDB, r.Bands.QuietBelowSpanDB, r.Bands.QuietBelowRangeDB)
+	fmt.Fprintf(w, "\nband owners per bar (owner, its share of the analysed tracks' energy in the band in percent, and the band's level in dB re full-scale RMS; Hz: %s; * collision: two tracks each over %g%%; quiet: %g dB under the band's loudest bar, %g dB under the bar's loudest band or %g dB under the loudest band of the range):\n", strings.Join(bandLabels[:], ", "), r.Bands.CollisionSharePct, r.Bands.QuietBelowBandDB, r.Bands.QuietBelowSpanDB, r.Bands.QuietBelowRangeDB)
 	fmt.Fprintf(w, "  %4s", "bar")
 	for _, name := range []string{"sub", "low", "bass", "low-mid", "mid", "presence", "air"} {
-		fmt.Fprintf(w, "  %-12s", name)
+		fmt.Fprintf(w, "  %-17s", name)
 	}
 	fmt.Fprintln(w)
 	for _, b := range r.Bars {
@@ -196,12 +191,13 @@ func (r *Report) writeBands(w io.Writer) {
 		for _, o := range b.Bands {
 			cell := "quiet"
 			if !o.Quiet {
-				cell = fmt.Sprintf("%s %.0f", shortID(o.Owner, 8), o.SharePct)
+				mark := ""
 				if o.Collision {
-					cell += "*"
+					mark = "*"
 				}
+				cell = fmt.Sprintf("%s %.0f%s %.0f", shortID(o.Owner, 8), o.SharePct, mark, o.LevelDB)
 			}
-			fmt.Fprintf(w, "  %-12s", cell)
+			fmt.Fprintf(w, "  %-17s", cell)
 		}
 		fmt.Fprintln(w)
 	}
@@ -214,14 +210,14 @@ func (r *Report) writeBands(w io.Writer) {
 		fmt.Fprintf(w, "    %-14s %-7s %s\n", s.Name, fmt.Sprintf("%d-%d", s.FromBar, s.ToBar), strings.Join(counts, " "))
 	}
 	for k, c := range r.Bands.Collisions {
-		if len(c.Bars) == 0 {
+		if c.Bars == nil || len(*c.Bars) == 0 {
 			continue
 		}
 		var pairs []string
 		for _, p := range c.Pairs {
-			pairs = append(pairs, fmt.Sprintf("%s+%s %d", p.Tracks[0], p.Tracks[1], p.Bars))
+			pairs = append(pairs, fmt.Sprintf("%s+%s %d", p.Tracks[0], p.Tracks[1], p.BarCount))
 		}
-		fmt.Fprintf(w, "  %s Hz collisions: %d of %d bars (%s); pairs: %s\n", bandLabels[k], len(c.Bars), len(r.Bars), barRanges(c.Bars), strings.Join(pairs, ", "))
+		fmt.Fprintf(w, "  %s Hz collisions: %d of %d bars (%s); pairs: %s\n", bandLabels[k], len(*c.Bars), len(r.Bars), barRanges(*c.Bars), strings.Join(pairs, ", "))
 	}
 }
 
@@ -262,11 +258,14 @@ func (r *Report) writePeaks(w io.Writer) {
 	if len(r.Peaks) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "\npeaks (true peak of the mix, highest first; tracks: share of the stems' energy in the 5 ms around the peak):\n")
+	fmt.Fprintf(w, "\npeaks (true peak of the mix, highest first; parts: each stem's signed sample at the peak as a percentage of the sum entering the master chain, which can reshape it; a negative part lowers the peak):\n")
 	for _, p := range r.Peaks {
 		var parts []string
-		for _, t := range p.Tracks {
-			parts = append(parts, fmt.Sprintf("%s %.0f%%", t.ID, t.SharePct))
+		for _, t := range p.PreMasterParts {
+			parts = append(parts, fmt.Sprintf("%s %+.0f%%", t.ID, t.SignedSharePct))
+		}
+		if p.PreMasterRestPct != 0 {
+			parts = append(parts, fmt.Sprintf("rest %+.0f%%", p.PreMasterRestPct))
 		}
 		fmt.Fprintf(w, "  %2d  %6.1f dBTP  at %-8s (%7.2f s)  %s\n", p.Rank, p.TruePeakDBTP, p.At.Text, p.At.TimeS, strings.Join(parts, ", "))
 	}

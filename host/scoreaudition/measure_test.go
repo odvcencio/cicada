@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -185,11 +186,15 @@ func TestLowBandOwnersAlternate(t *testing.T) {
 		}
 	}
 	c := a.Report.Bands.Collisions[low]
-	if len(c.Bars) != 2 || c.Bars[0] != 4 || c.Bars[1] != 8 || len(c.Pairs) != 1 || c.Pairs[0].Tracks != [2]string{"one", "two"} || c.Pairs[0].Bars != 2 {
+	if c.Bars == nil || len(*c.Bars) != 2 || (*c.Bars)[0] != 4 || (*c.Bars)[1] != 8 || len(c.Pairs) != 1 || c.Pairs[0].Tracks != [2]string{"one", "two"} || c.Pairs[0].BarCount != 2 {
 		t.Errorf("low collisions %+v, want bars 4 and 8, pair one+two", c)
 	}
-	if got := a.Report.Sections[0].Bands[low].CollisionBars; got != 2 {
-		t.Errorf("section collision bars %d, want 2", got)
+	if got := a.Report.Sections[0].Bands[low].CollisionBars; got != 2 || a.Report.Sections[0].BandCollisionBars[low] != 2 {
+		t.Errorf("section collision bars %d (compact %v), want 2", got, a.Report.Sections[0].BandCollisionBars)
+	}
+	// One section: band_owners names the section's owners in band order.
+	if o := a.Report.Sections[0].BandOwners[low]; o == nil || *o != a.Report.Sections[0].Bands[low].Owner {
+		t.Errorf("section band owners %v", a.Report.Sections[0].BandOwners)
 	}
 	// A sine's band level is its RMS level: compare with the stem's RMS over
 	// the bars where it plays (both within 0.5 dB).
@@ -208,6 +213,13 @@ func TestLowBandOwnersAlternate(t *testing.T) {
 		if want := b%2 == 1; on != want {
 			t.Errorf("two sounding in bar %d: %t", b+1, on)
 		}
+	}
+	// The same activity as runs of bars.
+	if got := fmt.Sprint(one.SoundingSpans); got != "[{1 1} {3 5} {7 8}]" {
+		t.Errorf("one sounding spans %s, want 1, 3-5, 7-8", got)
+	}
+	if got := fmt.Sprint(two.SoundingSpans); got != "[{2 2} {4 4} {6 6} {8 8}]" {
+		t.Errorf("two sounding spans %s", got)
 	}
 	// Repeats come from the played notes: humanize changes velocities.
 	steady, human := track(t, a, "steady"), track(t, a, "human")
@@ -258,9 +270,9 @@ func TestSectionSixLUQuieter(t *testing.T) {
 	}
 	// Short-term windows end at the bar line: bar 1 (2 s) has none, bar 2
 	// reads the loud tone, bar 4 the soft one.
-	b := r.Bars
-	if b[0].ShortTermLUFS != nil || b[1].ShortTermLUFS == nil || b[3].ShortTermLUFS == nil || math.Abs(*b[1].ShortTermLUFS-*b[3].ShortTermLUFS-6.02) > 0.2 {
-		t.Errorf("bar short-term %v %v %v", b[0].ShortTermLUFS, b[1].ShortTermLUFS, b[3].ShortTermLUFS)
+	b := r.Loudness.ShortTermPerBarLUFS
+	if len(b) != 4 || b[0] != nil || b[1] == nil || b[3] == nil || math.Abs(*b[1]-*b[3]-6.02) > 0.2 {
+		t.Errorf("bar short-term %v", b)
 	}
 	if !strings.Contains(textOf(a), "loudest section: loud") {
 		t.Error("text report does not name the loudest section")
@@ -279,16 +291,33 @@ func TestSilenceAndPeak(t *testing.T) {
 	if s.Start.Bar != 2 || s.Start.TimeS > 2.03 || s.End.Bar != 3 || s.End.TimeS < 3.99 || s.LengthS < 1.95 {
 		t.Errorf("silence %+v, want bar 2", s)
 	}
-	if len(r.Bars[1].Sounding) != 0 || len(r.Bars[0].Sounding) != 2 {
-		t.Errorf("sounding bar 1 %v, bar 2 %v", r.Bars[0].Sounding, r.Bars[1].Sounding)
+	if len(*r.Bars[1].Sounding) != 0 || len(*r.Bars[0].Sounding) != 2 {
+		t.Errorf("sounding bar 1 %v, bar 2 %v", *r.Bars[0].Sounding, *r.Bars[1].Sounding)
 	}
 	if len(r.Peaks) != 3 {
 		t.Fatalf("%d peaks, want 3", len(r.Peaks))
 	}
 	p := r.Peaks[0]
 	// The hit starts at tick 1920 (bar 1 beat 3) and peaks within a few ms.
-	if p.At.Text != "1.3.1" || p.At.Tick < 1920 || p.At.Tick > 1920+60 || len(p.Tracks) == 0 || p.Tracks[0].ID != "hit" || p.Tracks[0].SharePct < 90 {
+	if p.At.Text != "1.3.1" || p.At.Tick < 1920 || p.At.Tick > 1920+60 || len(p.PreMasterParts) == 0 || p.PreMasterParts[0].ID != "hit" || p.PreMasterParts[0].SignedSharePct < 90 {
 		t.Errorf("peak %+v, want the hit at 1.3.1", p)
+	}
+	// The parts and the rest add up to the pre-master sample, to rounding.
+	sum := p.PreMasterRestPct
+	for _, part := range p.PreMasterParts {
+		sum += part.SignedSharePct
+	}
+	if math.Abs(sum-100) > 0.3 || math.Abs(p.PreMasterSample) < 0.1 {
+		t.Errorf("peak parts add to %.1f%% of %.4f", sum, p.PreMasterSample)
+	}
+	// The knock's attack and decay put energy in every band of bar 1; the sub
+	// band holds nothing else, so the knock owns it. Its level says how little
+	// it is: more than 25 dB under the knock's own mid band.
+	sub, mid := bandIndex(t, "sub"), bandIndex(t, "mid")
+	bar1 := r.Bars[0].Bands
+	t.Logf("bar 1 sub %+v; mid %+v", bar1[sub], bar1[mid])
+	if bar1[sub].Owner != "hit" || bar1[mid].LevelDB-bar1[sub].LevelDB < 25 {
+		t.Errorf("bar 1 sub %+v, mid %+v: want the knock's spill, over 25 dB under its mid band", bar1[sub], bar1[mid])
 	}
 	if p.TruePeakDBTP < p.SamplePeakDBFS || p.TruePeakDBTP-p.SamplePeakDBFS > 1 {
 		t.Errorf("true peak %.1f against sample peak %.1f", p.TruePeakDBTP, p.SamplePeakDBFS)
@@ -307,7 +336,7 @@ func TestTrackSelection(t *testing.T) {
 		t.Fatalf("tracks %v, selected %v", len(r.Tracks), r.SelectedTracks)
 	}
 	for _, b := range r.Bars {
-		for _, id := range b.Sounding {
+		for _, id := range *b.Sounding {
 			if id != "one" && id != "two" {
 				t.Errorf("bar %d lists %s", b.Bar, id)
 			}
@@ -318,6 +347,33 @@ func TestTrackSelection(t *testing.T) {
 	var unknown *render.UnknownTrackError
 	if !errors.As(err, &unknown) || unknown.Name != "bogus" || strings.Join(unknown.Valid, ",") != "one,two,steady,human" {
 		t.Fatalf("unknown track error %v", err)
+	}
+	for _, list := range [][]string{{"one", "one"}, {"one", ""}} {
+		_, err = Analyze(score, Options{TempDir: t.TempDir(), Tracks: list})
+		var usage *render.TrackListError
+		if !errors.As(err, &usage) {
+			t.Errorf("tracks %q: %v, want a track list error", list, err)
+		}
+	}
+	// With a track choice the peak's pre-master sample comes from the buses:
+	// the same as the sum of every stem in a full analysis. The chosen tracks
+	// and the returns are listed; the rest holds the other tracks.
+	full := analyzeWith(t, alternateLow, Options{})
+	for i, p := range r.Peaks {
+		q := full.Report.Peaks[i]
+		if p.At != q.At || math.Abs(p.PreMasterSample-q.PreMasterSample) > 2e-4 {
+			t.Errorf("peak %d: chosen %+v, full %+v", i+1, p, q)
+		}
+		sum := p.PreMasterRestPct
+		for _, part := range p.PreMasterParts {
+			sum += part.SignedSharePct
+			if part.ID != "one" && part.ID != "two" && part.Kind != "return" {
+				t.Errorf("peak %d lists %s", i+1, part.ID)
+			}
+		}
+		if math.Abs(sum-100) > 0.3 {
+			t.Errorf("peak %d parts add to %.1f%%", i+1, sum)
+		}
 	}
 }
 
@@ -433,7 +489,7 @@ func TestNoBands(t *testing.T) {
 	if err != nil || bytes.Contains(data, []byte(`"bands`)) {
 		t.Errorf("JSON still has band fields: %v", err)
 	}
-	if *with.Report.Loudness.IntegratedLUFS != *r.Loudness.IntegratedLUFS || with.Report.Bars[1].Sounding[0] != r.Bars[1].Sounding[0] {
+	if *with.Report.Loudness.IntegratedLUFS != *r.Loudness.IntegratedLUFS || (*with.Report.Bars[1].Sounding)[0] != (*r.Bars[1].Sounding)[0] {
 		t.Error("other measures changed")
 	}
 }
