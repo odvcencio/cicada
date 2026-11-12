@@ -68,9 +68,7 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 			end = max(end, place.AtTick+place.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * 3840
-		}
+		end = p.SongEndTick()
 	}
 	if end <= 0 {
 		return gosx.Fragment()
@@ -82,7 +80,7 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 			recallTicks := append([]int64(nil), lane.Recalls...)
 			sort.Slice(recallTicks, func(i, j int) bool { return recallTicks[i] < recallTicks[j] })
 			for _, tick := range recallTicks {
-				recallPositions = append(recallPositions, vocalPosition(tick))
+				recallPositions = append(recallPositions, vocalPosition(v.Project.MeterMap(), tick))
 			}
 			for _, point := range lane.Points {
 				if point.Value.Number != nil || point.Value.Unit == "enum" {
@@ -116,8 +114,8 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 	returnTo := "/?panel=session&curvePath=" + url.QueryEscape(selected)
 	chooser := gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "action-form automation-parameter-picker")), hidden("panel", "session"), field("Automation parameter", selectInput("curvePath", selected, paths, "Automation parameter")), submit("", "", "Show curve"))
 	pointForm := ui.Form(ui.FormProps{Action: "/__actions/automation", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form automation-point-form"},
-		hidden("source_revision", v.SourceRevision), hidden("path", selected), hidden("oldAt", map[bool]string{true: vocalPosition(at), false: ""}[len(props.Points) > 0]),
-		field("Point position", textInput("at", vocalPosition(at))), field("Point value", textInput("value", strconv.FormatFloat(value, 'f', -1, 64)+props.Unit)),
+		hidden("source_revision", v.SourceRevision), hidden("path", selected), hidden("oldAt", map[bool]string{true: vocalPosition(v.Project.MeterMap(), at), false: ""}[len(props.Points) > 0]),
+		field("Point position", textInput("at", vocalPosition(v.Project.MeterMap(), at))), field("Point value", textInput("value", strconv.FormatFloat(value, 'f', -1, 64)+props.Unit)),
 		field("Transition", selectInput("shape", shape, []string{"linear", "smooth", "step", "exponential", "curve"}, "Transition")),
 		field("Curve tension", gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", "curve"), gosx.Attr("aria-label", "Curve tension"), gosx.Attr("min", -8), gosx.Attr("max", 8), gosx.Attr("step", "0.25"), gosx.Attr("value", tension)))),
 		submit("action", "automation-point-set", "Save point"), submit("action", "automation-point-remove", "Remove selected point"))

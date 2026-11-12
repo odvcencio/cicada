@@ -486,6 +486,61 @@ func removeBlockParam(source []byte, walker *walk.Walker, decl *gts.Node, field 
 	return source
 }
 
+// lineEndWithoutComment is where a declaration that ends at end stops on its
+// line: past a comment that follows it, which goes with it, else at end.
+func lineEndWithoutComment(source []byte, end, lineEnd int) int {
+	rest := bytes.TrimSpace(source[end:lineEnd])
+	if bytes.HasPrefix(rest, []byte("//")) {
+		for lineEnd > end && (source[lineEnd-1] == '\r') {
+			lineEnd--
+		}
+		return lineEnd
+	}
+	return end
+}
+
+// attachedComments is where a declaration's removal starts: its line, or the
+// comment lines directly above it (no blank line between) when they belong
+// to it. They stay when they open the file, or when the declaration is
+// directly followed (no blank line) by another declaration of its kind,
+// which the comments could equally head.
+func attachedComments(source []byte, root, decl *gts.Node, lineStart int) int {
+	start := attachedCommentStart(source, lineStart, 0)
+	if start == lineStart {
+		return lineStart
+	}
+	if len(bytes.TrimSpace(source[:start])) == 0 {
+		return lineStart
+	}
+	for i := 0; i+1 < root.NamedChildCount(); i++ {
+		if root.NamedChild(i).StartByte() != decl.StartByte() {
+			continue
+		}
+		// The declaration's own trailing comment is a sibling node too: look
+		// past comments to the next declaration.
+		lang, err := notation.Language()
+		if err != nil {
+			break
+		}
+		j := i + 1
+		for j < root.NamedChildCount() && root.NamedChild(j).Type(lang) == "comment" {
+			j++
+		}
+		if j == root.NamedChildCount() {
+			break
+		}
+		next := root.NamedChild(j)
+		if next.Type(lang) == decl.Type(lang) {
+			gap := source[decl.EndByte():next.StartByte()]
+			if bytes.Count(gap, []byte("\n")) <= 1 {
+				return lineStart
+			}
+		}
+		break
+	}
+	return start
+}
+
 // removeTopLevelDeclaration removes a declaration with the comment lines
 // attached above it. A declaration alone on its lines takes its lines with
 // it, and one blank line of the two around it, so no gap opens.
@@ -499,9 +554,22 @@ func removeTopLevelDeclaration(source []byte, root, decl *gts.Node) []byte {
 	// A comment after the declaration on its line goes with it.
 	rest := bytes.TrimSpace(source[end:lineEnd])
 	if len(bytes.TrimSpace(source[lineStart:start])) != 0 || len(rest) != 0 && !bytes.HasPrefix(rest, []byte("//")) {
-		return replaceMixerSpan(source, start, end, nil)
+		// It shares its line with another declaration: take the spaces after
+		// it, or before it when nothing but a comment follows.
+		after := end
+		for after < lineEnd && (source[after] == ' ' || source[after] == '\t') {
+			after++
+		}
+		if after < lineEnd && source[after] != '\r' && !bytes.HasPrefix(source[after:], []byte("//")) {
+			return replaceMixerSpan(source, start, after, nil)
+		}
+		before := start
+		for before > lineStart && (source[before-1] == ' ' || source[before-1] == '\t') {
+			before--
+		}
+		return replaceMixerSpan(source, before, lineEndWithoutComment(source, end, lineEnd), nil)
 	}
-	start = attachedCommentStart(source, start, 0)
+	start = attachedComments(source, root, decl, lineStart)
 	end = lineEnd
 	if end < len(source) {
 		end++
@@ -514,6 +582,16 @@ func removeTopLevelDeclaration(source []byte, root, decl *gts.Node) []byte {
 		}
 		if next < len(source) && source[next] == '\n' {
 			end = next + 1
+		}
+	}
+	// At the end of the file, the blank lines the removal leaves before it go
+	// too, so the file ends with one newline.
+	if end == len(source) {
+		for start >= 2 && source[start-1] == '\n' && (source[start-2] == '\n' || source[start-2] == '\r' && start >= 3 && source[start-3] == '\n') {
+			start--
+			if source[start-1] == '\r' {
+				start--
+			}
 		}
 	}
 	return replaceMixerSpan(source, start, end, nil)
@@ -635,9 +713,6 @@ func placeInChain(chain []string, name string, request mixerFXValue) ([]string, 
 	if request.Before != "" && request.After != "" {
 		return nil, refuse("insert_position_conflict", "after", "give before or after, not both")
 	}
-	if request.InsertOn == "" {
-		return nil, refuse("insert_position_without_target", field, "%s places the effect in an insert chain: give inserton too", field)
-	}
 	for i, insert := range chain {
 		if insert == anchor {
 			placed := append(append(append([]string(nil), chain[:i+offset]...), name), chain[i+offset:]...)
@@ -649,6 +724,34 @@ func placeInChain(chain []string, name string, request mixerFXValue) ([]string, 
 		current = strings.Join(chain, " -> ")
 	}
 	return nil, refuse("unknown_insert_anchor", field, "%s is not in the insert chain of %s (%s)", anchor, request.InsertOn, current)
+}
+
+// anchorOwner finds the chain that holds the insert before or after names,
+// when inserton is left out: a track's, bus music's or master's.
+func anchorOwner(score *notation.Score, request mixerFXValue) (string, error) {
+	anchor, field := request.Before, "before"
+	if request.After != "" {
+		anchor, field = request.After, "after"
+	}
+	var owners []string
+	for _, track := range score.Tracks {
+		if containsString(insertChain(paramValue(track.Params, "insert")), anchor) {
+			owners = append(owners, track.Name)
+		}
+	}
+	if containsString(insertChain(paramValue(BusParams(score, "music"), "insert")), anchor) {
+		owners = append(owners, "music")
+	}
+	if containsString(insertChain(paramValue(score.Master, "insert")), anchor) {
+		owners = append(owners, "master")
+	}
+	switch len(owners) {
+	case 0:
+		return "", refuse("unknown_insert_anchor", field, "%s is not in any insert chain", anchor)
+	case 1:
+		return owners[0], nil
+	}
+	return "", refuse("insert_anchor_ambiguous", field, "%s is in the insert chains of %s; give inserton", anchor, strings.Join(owners, ", "))
 }
 
 // checkEntryOwnsTarget refuses an insert target that another source file of

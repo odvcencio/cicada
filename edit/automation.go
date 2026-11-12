@@ -150,13 +150,13 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	if !d.Live || !d.Automatable || d.Curve == "toggle" || d.Unit == "enum" {
 		return nil, fmt.Errorf("%s has no continuous numeric automation", path)
 	}
-	tick, err := notation.MusicalTicks(point.at, true)
-	if err != nil || tick < 0 || tick > arrangementEnd(plan) || tick%240 != 0 {
+	tick, err := notation.MusicalTicks(ctx.MeterMap(), point.at, true)
+	if err != nil || tick < 0 || tick > arrangementEnd(ctx.MeterMap(), plan) || tick%240 != 0 {
 		return nil, fmt.Errorf("choose a sixteenth-note position within the song")
 	}
 	old := tick
 	if point.oldAt != "" {
-		old, err = notation.MusicalTicks(point.oldAt, true)
+		old, err = notation.MusicalTicks(ctx.MeterMap(), point.oldAt, true)
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +188,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 			return nil, err
 		}
 	}
-	text := FormatPosition(tick) + " " + literal + " " + shape
+	text := FormatPosition(ctx.MeterMap(), tick) + " " + literal + " " + shape
 	if shape == "curve" {
 		text += " " + strconv.FormatFloat(point.curve, 'f', -1, 64)
 	}
@@ -221,7 +221,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 			continue
 		}
 		count++
-		at, e := notation.MusicalTicks(w.Text(w.Field(n, "at")), true)
+		at, e := notation.MusicalTicks(ctx.MeterMap(), w.Text(w.Field(n, "at")), true)
 		if e != nil {
 			return nil, e
 		}
@@ -254,7 +254,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 
 // arrangementEnd is the last tick of the arrangement: the end of the last
 // placement, or the summed song blocks for a score without an arrange block.
-func arrangementEnd(plan *Plan) int64 {
+func arrangementEnd(meterMap seq.MeterMap, plan *Plan) int64 {
 	var end int64
 	if len(plan.Placements) > 0 {
 		for _, place := range plan.Placements {
@@ -263,7 +263,7 @@ func arrangementEnd(plan *Plan) int64 {
 		return end
 	}
 	for _, entry := range plan.Song {
-		end += int64(entry.Bars) * seq.TicksPerBar
+		end += meterMap.BarsTicks(end, int64(entry.Bars))
 	}
 	return end
 }

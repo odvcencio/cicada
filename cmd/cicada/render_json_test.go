@@ -120,6 +120,9 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 	// is not what stops the render.
 	noMaster := strings.NewReplacer("fx tone eq { type = highpass frequency = 25Hz q = 0.707 }\n", "", "master { level = 6dB insert = tone }\n", "", "drive = 0.25 filter = diode }", "drive = 0.25 filter = diode level = 6dB }", "ch_decay = 60ms }", "ch_decay = 60ms level = 6dB }").Replace(base)
 	editionOne := strings.Replace(strings.Replace(noMaster, "cicada 2\n", "", 1), "export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }\n", "", 1)
+	// Without the levels the tracks carry, the material needs more gain than
+	// the export adds ahead of a limiter: the remedy says so.
+	quiet := strings.NewReplacer(" level = 6dB }", " }").Replace(editionOne)
 	var full strings.Builder
 	chain := []string{"tone"}
 	for i := 1; i < 16; i++ {
@@ -132,11 +135,13 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 		name, source, replaces string
 		ceilings               []float64
 		offered, upgrade       bool
+		capBinds               bool
 	}{
-		{"master chain", base, "master { level = 6dB insert = tone }", []float64{-1, -2}, true, false},
-		{"no master", noMaster, "", []float64{-1}, true, false},
-		{"edition 1", editionOne, "", []float64{-1}, true, true},
-		{"full master chain", fullChain, "", []float64{-1}, false, false},
+		{"master chain", base, "master { level = 6dB insert = tone }", []float64{-1, -2}, true, false, false},
+		{"no master", noMaster, "", []float64{-1}, true, false, false},
+		{"edition 1", editionOne, "", []float64{-1}, true, true, false},
+		{"quiet edition 1", quiet, "", []float64{-1}, true, true, true},
+		{"full master chain", fullChain, "", []float64{-1}, false, false, false},
 	} {
 		for _, ceiling := range tc.ceilings {
 			t.Run(fmt.Sprintf("%s/%g", tc.name, ceiling), func(t *testing.T) {
@@ -204,6 +209,17 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 						t.Fatalf("%s does not pass check: %v", filepath.Base(path), err)
 					}
 					after, code, _ := runRenderJSON(t, "render", path, path+".wav", opts, &target)
+					if tc.capBinds {
+						// The summary said the limiter alone would not do; the
+						// render after it stops at the input gain cap.
+						if !strings.Contains(remedy.Summary, "the limiter alone will not reach the target") || after.Error == nil || after.Error.Code != "loudness_shortfall_at_input_gain_cap" {
+							t.Fatalf("%s: summary %q, after %+v", filepath.Base(path), remedy.Summary, after.Error)
+						}
+						continue
+					}
+					if strings.Contains(remedy.Summary, "will not reach") {
+						t.Fatalf("the summary says the cap binds: %s", remedy.Summary)
+					}
 					if code != 0 || !after.OK || after.Loudness == nil || !after.Loudness.TargetMet || *after.Loudness.TruePeakDBTP > ceiling {
 						t.Fatalf("%s misses the target: code %d %+v %+v", filepath.Base(path), code, after.Error, after.Loudness)
 					}
@@ -219,7 +235,7 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 func TestLimiterRemedyWithoutAMasterDeclaration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plain.cicada")
 	source := []byte("cicada 2\ntempo 120\nfx ceiling limiter { ceiling = -1dBTP }\ntrack bass acid {}\npattern p { a1 . }\nscene main { bass = p }\nsong { main }\n")
-	remedy := limiterRemedy(path, scoreInspection{source: source}, -1.5)
+	remedy := limiterRemedy(path, scoreInspection{source: source}, -1.5, 0)
 	if remedy.Replaces != "" || remedy.ScoreText != "fx ceiling-2 limiter { ceiling = -1.5dBTP }\nmaster { insert = ceiling-2 }" || len(remedy.Intents) != 1 || !strings.Contains(string(remedy.Intents[0]), `"name":"ceiling-2"`) {
 		t.Fatalf("remedy: %+v", remedy)
 	}

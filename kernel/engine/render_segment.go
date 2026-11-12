@@ -1,7 +1,5 @@
 package engine
 
-import "m31labs.dev/cicada/kernel/seq"
-
 // parallelSegmentFrames ends before any source or insert control can change.
 // Mixer smoothing, returns, transport and ordered reduction stay per-sample.
 func (e *Engine) parallelSegmentFrames(remaining int) int {
@@ -43,7 +41,7 @@ func (e *Engine) parallelSegmentFrames(remaining int) int {
 	if e.songMode {
 		limitTick(e.songEndTick)
 	}
-	limitTick((e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar)
+	limitTick(e.MeterMap().NextBarLine(e.transport.Tick()))
 	if tempo, tick := e.transport.PendingTempo(); tempo != 0 {
 		limitTick(tick)
 	}

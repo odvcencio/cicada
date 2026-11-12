@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -35,15 +34,15 @@ func TestSongTempoChangesCarryAndSkipRepeats(t *testing.T) {
 	if SlowestTempoMilli(p) != 60_000 {
 		t.Fatalf("slowest tempo = %d", SlowestTempoMilli(p))
 	}
-	m, err := NewTempoMap(48_000, int64(p.TempoMilli), got)
+	m, err := NewTempoMap(p.MeterMap(), 48_000, int64(p.TempoMilli), got)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Bar 0 at 120 BPM is 96000 samples; bars 1 to 4 at 60 BPM are 192000 each.
-	if m.SampleAtTick(seq.TicksPerBar) != 96_000 || m.SampleAtTick(5*seq.TicksPerBar) != 96_000+4*192_000 {
-		t.Fatalf("map places bars at %d and %d", m.SampleAtTick(seq.TicksPerBar), m.SampleAtTick(5*seq.TicksPerBar))
+	if m.SampleAtTick(ticksPerBar) != 96_000 || m.SampleAtTick(5*ticksPerBar) != 96_000+4*192_000 {
+		t.Fatalf("map places bars at %d and %d", m.SampleAtTick(ticksPerBar), m.SampleAtTick(5*ticksPerBar))
 	}
-	if m.TickAtSample(m.SampleAtTick(3*seq.TicksPerBar+77)) != 3*seq.TicksPerBar+77 {
+	if m.TickAtSample(m.SampleAtTick(3*ticksPerBar+77)) != 3*ticksPerBar+77 {
 		t.Fatal("tick and sample do not round trip across steps")
 	}
 	// One bar at 120 BPM is 2 s, four bars at 60 BPM are 16 s, and one bar at

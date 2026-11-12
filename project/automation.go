@@ -57,7 +57,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 		send := paramdefs.IsTrackSend(resolved.Descriptor)
 		firstUnit := ""
 		for i, point := range source.Points {
-			tick, err := notation.PositionTick(point.At)
+			tick, err := notation.PositionTick(p.MeterMap(), point.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, point.Position)...)
 			}
@@ -100,7 +100,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 			lane.Points = append(lane.Points, AutomationPoint{Tick: tick, Value: sceneValueFrom(value), Shape: shape, Curve: curve})
 		}
 		for _, recall := range source.Recalls {
-			tick, err := notation.PositionTick(recall.At)
+			tick, err := notation.PositionTick(p.MeterMap(), recall.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, recall.Position)...)
 			}
@@ -140,9 +140,7 @@ func validateAutomation(p *Project) error {
 			end = max(end, placement.AtTick+placement.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * 3840
-		}
+		end = p.SongEndTick()
 	}
 	seen := map[string]bool{}
 	type slot struct {
@@ -443,7 +441,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 
 		// Reapply held values after every authored scene switch, including
 		// sparse step lanes and points that end before the song does.
-		var boundary int64
+		var boundary, bar int64
 		for i, entry := range p.Song {
 			if i > 0 && boundary >= lane.Points[0].Tick {
 				last = math.Float32bits(float32(math.NaN()))
@@ -451,7 +449,8 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 					return nil, err
 				}
 			}
-			boundary += int64(entry.Bars) * 3840
+			bar += int64(entry.Bars)
+			boundary = p.MeterMap().BarStart(bar)
 		}
 		for _, tick := range lane.Recalls {
 			last = math.Float32bits(float32(math.NaN()))

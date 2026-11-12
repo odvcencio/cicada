@@ -834,6 +834,13 @@ func validModalSustain(source string) bool {
 	return err == nil && unit == "unit" && finiteMixerNumber(value) && value >= 0 && value <= 1
 }
 
+// BuiltinVoice reports whether a track kind is a voice the language has
+// built in, rather than a declared instrument, kit, sampler or preset.
+func BuiltinVoice(version int, kind string) bool {
+	_, isModal := modal.ParseTrackKind(kind)
+	return kind == "acid" || isModal || kind == "drums" || kind == "piano" || keyboard.ID(kind) != 0 || kind == "guitar" || version == 2 && kind == "audio"
+}
+
 func validTrackParam(kind, name string, instruments map[string]Instrument, kits map[string]Kit) bool {
 	if mixerParams[name] {
 		return true

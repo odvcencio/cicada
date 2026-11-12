@@ -90,7 +90,7 @@ func driftEngineCommands(t *testing.T, cfg engine.Config, bars int, tail float64
 	if err != nil {
 		t.Fatal(err)
 	}
-	end := int(clock.SampleAtTick(int64(bars) * seq.TicksPerBar))
+	end := int(clock.SampleAtTick(int64(bars) * ticksPerBar))
 	n := end + int(math.Ceil(tail*float64(cfg.SampleRate))) + trim
 	player, err := engine.New(cfg)
 	if err != nil {

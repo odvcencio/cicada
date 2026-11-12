@@ -190,8 +190,11 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	studioJSON(w, 200, map[string]any{"recording": projected})
 }
 
+// automationTick is the song tick of a transport snapshot, capped at the song
+// end. The snapshot decodes its bar and step on the playing score's meter map,
+// which can differ from the file's while an edit is pending.
 func automationTick(state transportSnapshot, end int64) int64 {
-	return min(end, max(int64(0), (state.Bar-1)*3840+(state.Step-1)*240))
+	return min(end, max(int64(0), state.Tick))
 }
 
 func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Request) {
@@ -437,12 +440,12 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		for _, lane := range recording.Project.Automation {
 			if lane.Path == recording.Path {
 				for _, point := range lane.Points {
-					intents = append(intents, &edits.RemoveAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(point.Tick)})
+					intents = append(intents, &edits.RemoveAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(recording.Project.MeterMap(), point.Tick)})
 				}
 			}
 		}
 		for _, point := range recording.Points {
-			intents = append(intents, &edits.SetAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(point.Tick), Value: strconv.FormatFloat(point.Value, 'g', -1, 64) + automationRecordUnit(recording.Unit), Shape: "linear"})
+			intents = append(intents, &edits.SetAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(recording.Project.MeterMap(), point.Tick), Value: strconv.FormatFloat(point.Value, 'g', -1, 64) + automationRecordUnit(recording.Unit), Shape: "linear"})
 		}
 		recording.Saving = true
 		request.Revision, request.SourceRevision, request.Label = recording.Revision, recording.SourceRevision, "Record automation · "+recording.Path

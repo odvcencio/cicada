@@ -314,7 +314,7 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		view.Song = append(view.Song, viewSongEntry{Scene: entry.Scene, Bars: entry.Bars, Index: index, StartBar: bar, EndBar: end})
 		bar = end + 1
 	}
-	view.Automation = automationViews(p, int64(bar-1)*3840)
+	view.Automation = automationViews(p, p.MeterMap().BarStart(int64(bar-1)))
 	for sceneIndex, scene := range p.Scenes {
 		view.Scenes = append(view.Scenes, viewScene{ID: scene.ID, Index: sceneIndex})
 	}

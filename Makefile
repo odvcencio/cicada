@@ -237,6 +237,71 @@ test-studio-placements:
 test-studio-collaboration:
 	node --test workstation/browser/collaboration.test.cjs
 
+.PHONY: test-studio-dock-fit
+# Requires a fresh Studio on a continuity.test.cjs fixture and an absolute CICADA_DOCK_PROOF_DIR.
+test-studio-dock-fit:
+	node --test workstation/browser/dock-fit.test.cjs
+
+.PHONY: test-studio-meter-performance
+# Requires a fresh Studio and CICADA_METERS_URL; it checks for no repaint of unchanged meters and for a poll gap of at most 100 ms (page clock).
+test-studio-meter-performance:
+	node --test workstation/browser/meter-performance.test.cjs
+
+.PHONY: test-studio-recording-setup
+# Requires a fresh Studio on recording-setup.test.cjs --write-fixture, CICADA_SETUP_URL and CICADA_VOCAL_PROOF_DIR.
+test-studio-recording-setup:
+	node --test workstation/browser/recording-setup.test.cjs
+
+.PHONY: test-studio-recording-levels
+# Requires a fresh Studio on recording-levels.test.cjs --write-fixture, CICADA_LEVELS_URL and CICADA_LEVELS_PROOF_DIR.
+test-studio-recording-levels:
+	node --test workstation/browser/recording-levels.test.cjs
+
+.PHONY: test-studio-vocals
+# Requires a fresh Studio on the print-sources fixture (--primary-arrangement) and CICADA_VOCAL_PROOF_DIR.
+test-studio-vocals:
+	node --test workstation/browser/vocals.test.cjs
+
+.PHONY: test-studio-vocal-levels
+# Requires a fresh Studio on the print-sources fixture, CICADA_LEVELING_URL, CICADA_LEVELING_SCORE and CICADA_LEVELING_PROOF_DIR.
+test-studio-vocal-levels:
+	node --test workstation/browser/vocal-levels.test.cjs
+
+.PHONY: test-studio-shared-capture
+# Requires a fresh Studio on a continuity.test.cjs fixture and CICADA_SHARED_CAPTURE_PROOF_DIR;
+# run it once for MPE and once with CICADA_CAPTURE_KIND=channel, each on a fresh Studio.
+test-studio-shared-capture:
+	node --test workstation/browser/shared-capture.test.cjs
+
+.PHONY: test-studio-performance
+# Requires a fresh Studio on performance.test.cjs --write-fixture and CICADA_PERFORMANCE_PROOF_DIR.
+# Run once with CICADA_PERFORMANCE_PART=capacity (CICADA_CAPACITY_URL) and once with =buffer (CICADA_BUFFER_URL), each on a fresh Studio.
+test-studio-performance:
+	node --test workstation/browser/performance.test.cjs
+
+.PHONY: test-studio-scene-launch-keys
+# Requires a fresh Studio on a continuity.test.cjs fixture.
+test-studio-scene-launch-keys:
+	node --test workstation/browser/scene-launch-keys.test.cjs
+
+.PHONY: test-studio-live-write
+# Requires Studio with a synthetic microphone: build the harness (go test -c ./cmd/cicada), start
+# TestSyntheticStudioUIHarness on live-fixture.cjs --no-curve, and put cicada-workstation in front of it.
+# Set CICADA_LIVE_WRITE_SCORE and CICADA_LIVE_WRITE_PROOF_DIR. scripts/ci-studio-browser.sh live_write shows how.
+test-studio-live-write:
+	node --test workstation/browser/live-write.test.cjs
+
+.PHONY: test-studio-live-write-uncertain
+# As test-studio-live-write, on a fresh Studio per CICADA_LIVE_WRITE_FAILURE (reject, lost, timeout, late).
+test-studio-live-write-uncertain:
+	node --test workstation/browser/live-write-uncertain.test.cjs
+
+.PHONY: test-studio-amp-automation
+# Requires a fresh Studio on amp-automation.test.cjs --write-fixture DIR (score DIR/main.cicada).
+# Set CICADA_AMP_AUTOMATION_FIXTURE to that score and CICADA_AMP_AUTOMATION_PROOF_DIR.
+test-studio-amp-automation:
+	node --test workstation/browser/amp-automation.test.cjs
+
 test-kernel:
 	go test ./kernel/... -count=1
 
@@ -373,7 +438,7 @@ test-worklet-negotiation: build-worklets
 
 test-browser: build-kernel-wasm build-modular-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit|ContinuousAutomationLanes|InstrumentRecording|MasterChain)$$' 5m build/test-browser.log
 	bash cmd/cicada/browser-runner.sh browser,worklet_testhooks '^TestBrowserUnderrunDetector$$' 2m build/test-worklet-stall.log
 
 # E1 measurement suite: renders every voice family and effect, writes

@@ -18,7 +18,7 @@ func TestGridChainAutomationAndExpressionImageRoundTrip(t *testing.T) {
 		t.Fatal("project extensions share a voice capability bit")
 	}
 	cfg := firstAcidConfig(t)
-	cfg.Schedule = engine.LowerSong(cfg.Song)
+	cfg.Schedule = engine.LowerSong(cfg.Song, seq.MeterMap{})
 	cfg.Song = []engine.SongEntry{}
 	cfg.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.25)}}
 	for track := range cfg.Patterns {
