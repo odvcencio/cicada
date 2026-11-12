@@ -259,7 +259,31 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 		weights[1] = float64(int(velocity)-int(p.zones[low].Layer)) / float64(int(p.zones[high].Layer)-int(p.zones[low].Layer))
 		weights[0] = 1 - weights[1]
 	}
-	return indices, weights, p.velocityScale(velocity, softest, loudest, release), true
+	// A release follows its note's attack law: the recorded law when the
+	// attack has two or more layers, velocity/127 when it has one.
+	layered := softest != loudest
+	if release {
+		layered = p.attackLayered(note)
+	}
+	return indices, weights, p.velocityScale(velocity, softest, layered), true
+}
+
+// attackLayered reports whether the attack zones that play note sit at two
+// or more velocity centres. A pack with recorded dynamics counts the layers of
+// the note, whatever their velocity ranges.
+func (p *Instrument) attackLayered(note uint8) bool {
+	first, found := uint8(0), false
+	for _, z := range p.zones {
+		if z.Release || note < z.KeyLow || note > z.KeyHigh {
+			continue
+		}
+		if !found {
+			first, found = z.Layer, true
+		} else if z.Layer != first {
+			return true
+		}
+	}
+	return false
 }
 
 // velocityScale is the level that velocity adds to the selected takes, as a
@@ -271,16 +295,18 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 // level from one recording to the next, and the loudest take plays at its
 // recorded level above its centre. Below the softest centre velocity scales
 // the softest take in proportion to velocity/centre, so the level is
-// continuous at that centre. A release with one recorded layer follows the
-// same rule, min(1, velocity/centre), so it keeps its balance with an attack
-// that now plays at its recorded level.
+// continuous at that centre. A release takes its note's attack law: when the
+// attack has two or more layers, a release with one recorded layer plays at
+// min(1, velocity/centre), so it keeps its balance with an attack that plays
+// at its recorded level.
 //
 // Otherwise the level is velocity/127: an attack with one recorded layer has
-// no other dynamics, and a pack whose zone gains differ has shaped its own
-// velocity response against this multiplier (cicada-keys-pack, for example,
-// sets each zone's gain to 127/centre).
-func (p *Instrument) velocityScale(velocity, softest, loudest uint8, release bool) [2]float64 {
-	if !p.recorded || softest == loudest && !release {
+// no other dynamics (and its release follows it), and a pack whose zone gains
+// differ has shaped its own velocity response against this multiplier
+// (cicada-keys-pack, for example, sets each zone's gain to 127/centre).
+// layered reports whether the note's attack has two or more layers.
+func (p *Instrument) velocityScale(velocity, softest uint8, layered bool) [2]float64 {
+	if !p.recorded || !layered {
 		return [2]float64{float64(velocity), 127}
 	}
 	if velocity < softest {
