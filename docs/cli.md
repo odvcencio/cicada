@@ -90,24 +90,25 @@ removed by the next render in that folder once they are a day old.
 
 ## Render lanes
 
-`cicada render`, `cicada stems` and `cicada audition` take `--jobs N`: up to N
-render lanes synthesize the song's tracks at the same time. The default, 0,
-uses the processors the process may run on (`taskset` and container CPU limits
-count); `--jobs 1` renders serially, as releases before this option did. A
-render never sets up more lanes than the song has tracks, so a one-track song
-always renders serially, and one heavy track (an electric piano holding
-eight voices, say) bounds how much faster more lanes can make a song. Every
-value writes the same bytes. The summary line and `--json` report `jobs` and
-`lanes`; see [render --json](manual/agents.md#render---json). One cicada
-process never runs more lanes at once than it has processors; when you run
-several `cicada` processes at once, give each a share with `--jobs`.
+`cicada render`, `cicada stems` and `cicada audition` take `--jobs auto` or
+`--jobs N`: several render lanes synthesize the song's tracks at the same
+time. Without `--jobs` the render is serial. `auto` picks the smaller of 4 and
+half the CPUs, at least 1; `N` is honoured up to the number of CPUs the process
+may use (`taskset` and container limits count). A render never sets up more
+lanes than the song has tracks, so a one-track song always renders serially,
+and one heavy track (an electric piano holding eight voices, say) bounds how
+much faster more lanes can make a song. Every value writes the same bytes.
+The summary line and `--json` report the lanes the render set up and ran, and
+why it stayed serial if it did; see [render --json](manual/agents.md#render---json).
+One cicada process never runs more lanes at once than it has processors; when
+you run several `cicada` processes at once, give each a share with `--jobs`.
 
 ```sh
-cicada render song.cicada -o song.wav --jobs 4
+cicada render song.cicada -o song.wav --jobs auto
 ```
 
-Library callers set `render.Options.Jobs` the same way and read
-`render.Report.Jobs` and `render.Report.Lanes`.
+Library callers set `render.Options.Jobs` (zero is serial, `render.AutoJobs`
+is automatic) and read `render.Report.LaneReport`.
 
 ## Libraries
 

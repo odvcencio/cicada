@@ -397,7 +397,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			exitProcess(1)
 		}
-		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz, jobs %d, lanes %d\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Jobs, report.Lanes)
+		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz, %s\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate, laneSummary(report.LaneReport))
 	case "midi":
 		midiOpts.libraryAliases = score.LibraryAliases
 		if err := midiFile(semantic, midiOpts); err != nil {
@@ -701,7 +701,7 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d, jobs %d, lanes %d\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples, report.Jobs, report.Lanes)
+	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d, %s\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples, laneSummary(report.LaneReport))
 	return nil
 }
 
@@ -790,8 +790,8 @@ func renderPlainFileOnce(score *notation.Score, path string, opts render.Options
 func renderLoudnessFile(score *notation.Score, path string, opts render.Options, target renderTargetOptions) error {
 	report, err := renderLoudnessFileReport(score, path, opts, target, nil)
 	if report.Passes > 0 {
-		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d (full syntheses %d, cached replays %d, repeats %d), largest limiter gain reduction %.2f dB, jobs %d, lanes %d\n",
-			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.Syntheses, report.Replays, report.Repeats, report.LargestLimiterReductionDB, report.Jobs, report.Lanes)
+		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d (full syntheses %d, cached replays %d, repeats %d), largest limiter gain reduction %.2f dB, %s\n",
+			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.Syntheses, report.Replays, report.Repeats, report.LargestLimiterReductionDB, laneSummary(report.Lanes))
 		for i, pass := range report.PassLog {
 			fmt.Printf("%s: pass %d: %s\n", path, i+1, pass)
 		}
@@ -845,8 +845,8 @@ type loudnessFileReport struct {
 	From       int   `json:"-"`
 	Frames     int64 `json:"-"`
 	SampleRate int   `json:"-"`
-	Jobs       int   `json:"-"`
-	Lanes      int   `json:"-"`
+	// Lanes is how the search's first synthesis used its lanes.
+	Lanes render.LaneReport `json:"-"`
 }
 
 // How a pass of the loudness search got its audio.
@@ -1097,6 +1097,11 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				report.Replays++
 			} else {
 				report.Syntheses++
+				if report.Syntheses == 1 {
+					// Lanes run only when the song is synthesized: report
+					// how the first synthesis used them.
+					report.Lanes = passReport.LaneReport
+				}
 			}
 			measurement, err = render.VerifyWAV(candidatePath, render.VerifyOptions{
 				SampleRate: passReport.SampleRate,
@@ -1304,7 +1309,6 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	}
 	report.DCCorrection.LeftFS, report.DCCorrection.RightFS = float64(bestBiasL), float64(bestBiasR)
 	report.Bars, report.From, report.Frames, report.SampleRate = bestRender.Bars, bestRender.From, bestRender.Frames, bestRender.SampleRate
-	report.Jobs, report.Lanes = bestRender.Jobs, bestRender.Lanes
 	if shortfallErr != nil {
 		return report, shortfallErr
 	}
@@ -1392,9 +1396,13 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 	truePeak := flags.Float64("true-peak-max", -1, "maximum true peak in dBTP for loudness rendering")
 	loudnessTolerance := flags.Float64("loudness-tolerance", 0.5, "loudness target tolerance in LU")
 	exportName := flags.String("export", "", "named export settings block")
-	jobs := flags.Int("jobs", 0, "render lanes; 0 picks the usable CPUs, 1 renders serially")
-	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) || *jobs < 0 {
+	jobsText := flags.String("jobs", "", "render lanes: auto or a count; absent renders serially")
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
 		return "", render.Options{}, nil, errUsage
+	}
+	jobs, err := parseJobs(*jobsText)
+	if err != nil {
+		return "", render.Options{}, nil, err
 	}
 	fromBar, err := cliBarOffset(*from, flags, warning)
 	if err != nil {
@@ -1444,7 +1452,7 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM, Jobs: *jobs}, target, nil
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM, Jobs: jobs}, target, nil
 }
 
 func verifyWAVCommand(args []string) {

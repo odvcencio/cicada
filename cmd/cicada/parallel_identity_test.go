@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,10 +36,11 @@ import (
 // only every n-th score from the k-th (1 to n), so a sweep can run as n short
 // commands on a shared machine.
 
-// parallelIdentityJobs are the job counts compared with --jobs 1; zero is the
-// automatic choice. CICADA_PARALLEL_IDENTITY_JOBS replaces them with its
-// space-separated counts, so repeated sweeps can try other lane counts.
-var parallelIdentityJobs = []int{2, 4, 8, 0}
+// parallelIdentityJobs are the job counts compared with --jobs 1;
+// render.AutoJobs is --jobs auto. CICADA_PARALLEL_IDENTITY_JOBS replaces them
+// with its space-separated counts (or auto), so repeated sweeps can try other
+// lane counts.
+var parallelIdentityJobs = []int{2, 4, 8, render.AutoJobs}
 
 func identityJobs(t *testing.T) []int {
 	t.Helper()
@@ -48,8 +50,12 @@ func identityJobs(t *testing.T) []int {
 	}
 	var jobs []int
 	for _, field := range strings.Fields(list) {
+		if field == "auto" {
+			jobs = append(jobs, render.AutoJobs)
+			continue
+		}
 		n, err := strconv.Atoi(field)
-		if err != nil || n < 0 {
+		if err != nil || n < 1 {
 			t.Fatalf("CICADA_PARALLEL_IDENTITY_JOBS: %q is not a job count", field)
 		}
 		jobs = append(jobs, n)
@@ -164,10 +170,10 @@ func loadParallelIdentityScore(t *testing.T, score parallelIdentityScore) (score
 	return inspection, ""
 }
 
-// withoutLanes clears the fields that say how a render used its lanes, the
-// only fields of a report that may differ between job counts.
+// withoutLanes clears the lane report, the only part of a report that may
+// differ between job counts and between runs.
 func withoutLanes(report render.Report) render.Report {
-	report.Jobs, report.Lanes = 0, 0
+	report.LaneReport = render.LaneReport{}
 	return report
 }
 
@@ -180,12 +186,19 @@ func renderIdentityBytes(score *notation.Score, opts render.Options) ([]byte, re
 func TestParallelRenderIdentity(t *testing.T) {
 	scores := parallelIdentitySubset()
 	sweep := os.Getenv("CICADA_PARALLEL_IDENTITY_SWEEP") == "1"
+	// CICADA_PARALLEL_IDENTITY_STRESS=1 renders each score plain only, with
+	// every segment on every lane at every job count, for the lane stress
+	// job (build tag lanestress, GOMAXPROCS below the job counts).
+	stress := os.Getenv("CICADA_PARALLEL_IDENTITY_STRESS") == "1"
+	if stress && renderlanes.StressEnabled {
+		t.Logf("lane stress seed %d (CICADA_LANE_STRESS_SEED replays it)", renderlanes.StressSeed())
+	}
 	if sweep {
 		scores = parallelIdentitySweep(t)
 	}
 	scores = identityShard(t, scores)
 	jobsList := identityJobs(t)
-	checked, skipped := 0, 0
+	checked, skipped, ranOnLanes := 0, 0, 0
 	for _, score := range scores {
 		t.Run(score.name, func(t *testing.T) {
 			inspection, why := loadParallelIdentityScore(t, score)
@@ -198,6 +211,11 @@ func TestParallelRenderIdentity(t *testing.T) {
 			}
 			root := inspection.root(score.path)
 			opts := render.Options{SampleRate: 48000, Bits: 24, Bars: score.bars, TailSec: 3, AssetRoot: root, AssetDir: root, Jobs: 1}
+			if stress {
+				// The stress job repeats every render many times under the
+				// race detector; a short tail keeps it inside its time limit.
+				opts.TailSec = 0.5
+			}
 			serial, serialReport, err := renderIdentityBytes(inspection.score, opts)
 			if err != nil {
 				if !sweep {
@@ -206,8 +224,15 @@ func TestParallelRenderIdentity(t *testing.T) {
 				skipped++
 				t.Skipf("does not render: %v", err)
 			}
-			if serialReport.Jobs != 1 || serialReport.Lanes != 1 {
-				t.Fatalf("--jobs 1 reported jobs %d lanes %d", serialReport.Jobs, serialReport.Lanes)
+			if serialReport.Jobs != 1 || serialReport.Lanes != 1 || serialReport.SerialReason != render.SerialJobs || serialReport.ParallelSegments != 0 {
+				t.Fatalf("--jobs 1 reported %+v", serialReport.LaneReport)
+			}
+			if stress {
+				if checkStressLanes(t, inspection.score, opts, serial, jobsList) {
+					ranOnLanes++
+				}
+				checked++
+				return
 			}
 			t.Logf("tracks %d, scheduled engine %t, serial sha256 %x", len(inspection.score.Tracks), render.UsesScheduledEngine(inspection.score, opts), sha256.Sum256(serial))
 			for _, jobs := range jobsList {
@@ -230,11 +255,15 @@ func TestParallelRenderIdentity(t *testing.T) {
 				checkForcedLanes(t, inspection.score, opts, serial)
 				checkStemsIdentity(t, inspection.score, opts)
 			}
+			checkNormalizeJobsIdentity(t, inspection.score, opts, sweep, jobsList)
 			checkLoudnessJobsIdentity(t, inspection.score, opts, sweep, jobsList)
 			checked++
 		})
 	}
 	t.Logf("METRIC PARALLEL-RENDER-IDENTITY scores=%d checked=%d skipped=%d jobs=%v", len(scores), checked, skipped, jobsList)
+	if stress && checked > 0 && ranOnLanes == 0 && runtime.GOMAXPROCS(0) > 1 {
+		t.Fatalf("lane stress: none of %d scores ran a segment on two or more lanes", checked)
+	}
 }
 
 // checkForcedLanes renders with every segment on every lane, however light.
@@ -243,12 +272,78 @@ func checkForcedLanes(t *testing.T, score *notation.Score, opts render.Options, 
 	restore := renderlanes.ForceEveryLane()
 	defer restore()
 	opts.Jobs = 4
-	got, _, err := renderIdentityBytes(score, opts)
+	got, report, err := renderIdentityBytes(score, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(serial, got) {
 		t.Fatal("every segment on every lane: WAV bytes differ from --jobs 1")
+	}
+	requireLanesRan(t, report)
+}
+
+// requireLanesRan fails a forced-lane render that ran serially: a test must
+// not pass because the lanes never ran.
+func requireLanesRan(t *testing.T, report render.Report) {
+	t.Helper()
+	if report.Lanes > 1 && runtime.GOMAXPROCS(0) > 1 && report.ParallelSegments == 0 {
+		t.Fatalf("every segment was forced onto the lanes, but none ran on two: %+v", report.LaneReport)
+	}
+}
+
+// checkStressLanes renders with every segment on every lane at each job
+// count and compares the bytes with the serial render. It reports whether
+// any render ran a segment on two or more lanes.
+func checkStressLanes(t *testing.T, score *notation.Score, opts render.Options, serial []byte, jobsList []int) (ran bool) {
+	t.Helper()
+	restore := renderlanes.ForceEveryLane()
+	defer restore()
+	for _, jobs := range jobsList {
+		opts.Jobs = jobs
+		got, report, err := renderIdentityBytes(score, opts)
+		if err != nil {
+			t.Fatalf("jobs %d: %v", jobs, err)
+		}
+		if !bytes.Equal(serial, got) {
+			t.Fatalf("jobs %d, every segment on every lane, GOMAXPROCS %d, stress seed %d: WAV bytes differ from --jobs 1", jobs, runtime.GOMAXPROCS(0), renderlanes.StressSeed())
+		}
+		requireLanesRan(t, report)
+		ran = ran || report.ParallelSegments > 0
+	}
+	return ran
+}
+
+// checkNormalizeJobsIdentity renders with --normalize, whose second render
+// replays the first one's stored mix, at --jobs 1 and other job counts.
+func checkNormalizeJobsIdentity(t *testing.T, score *notation.Score, opts render.Options, sweep bool, all []int) {
+	t.Helper()
+	normalized := func(jobs int) ([]byte, render.Report) {
+		path := filepath.Join(t.TempDir(), "normalized.wav")
+		normalizeOpts := opts
+		normalizeOpts.Normalize, normalizeOpts.Jobs = true, jobs
+		report, err := renderPlainFile(score, path, normalizeOpts)
+		if err != nil {
+			t.Fatalf("normalize jobs %d: %v", jobs, err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data, report
+	}
+	serial, serialReport := normalized(1)
+	jobsList := all[:1]
+	if sweep {
+		jobsList = all
+	}
+	for _, jobs := range jobsList {
+		got, report := normalized(jobs)
+		if !bytes.Equal(serial, got) || !reflect.DeepEqual(withoutLanes(serialReport), withoutLanes(report)) {
+			t.Fatalf("normalize jobs %d: bytes or report differ from --jobs 1", jobs)
+		}
+		if report.SerialReason == render.SerialReplay {
+			t.Fatalf("normalize jobs %d reported the replay, not the synthesis: %+v", jobs, report.LaneReport)
+		}
 	}
 }
 
@@ -317,7 +412,10 @@ func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.
 		searchOpts.Jobs = jobs
 		report, err := renderLoudnessFileReport(score, path, searchOpts, target, nil)
 		data, _ := os.ReadFile(path)
-		report.Jobs, report.Lanes = 0, 0
+		if report.Lanes.SerialReason == render.SerialReplay {
+			t.Errorf("loudness jobs %d reported a replay pass's lanes: %+v", jobs, report.Lanes)
+		}
+		report.Lanes = render.LaneReport{}
 		return data, report, err
 	}
 	serial, serialReport, serialErr := search(1)
@@ -336,5 +434,17 @@ func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.
 		if !reflect.DeepEqual(serialReport, report) {
 			t.Fatalf("loudness jobs %d: report differs from --jobs 1:\n%+v\n%+v", jobs, report, serialReport)
 		}
+	}
+}
+
+// TestSerialReasonsAreDocumented keeps the serial_reason codes listed in
+// docs/manual/agents.md equal to render.SerialReasons.
+func TestSerialReasonsAreDocumented(t *testing.T) {
+	documented := documentedCodes(t, "render-serial-reasons")
+	codes := slices.Clone(render.SerialReasons)
+	slices.Sort(codes)
+	slices.Sort(documented)
+	if !slices.Equal(codes, documented) {
+		t.Fatalf("render.SerialReasons is %v; agents.md lists %v", codes, documented)
 	}
 }

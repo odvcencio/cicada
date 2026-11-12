@@ -96,7 +96,7 @@ func TestWriteIntentsSetsTrackLevels(t *testing.T) {
 }
 
 func TestRenderJobsStepsAndGates(t *testing.T) {
-	if _, err := parseOptions([]string{"--steps", "render-jobs1:large,render-jobs4:medium"}); err != nil {
+	if _, err := parseOptions([]string{"--steps", "render-jobs1:large,render-jobs4:medium,render-auto:medium"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, step := range []string{"render-jobs0:large", "render-jobs:large", "render-jobs04:large", "render-jobsx:large"} {

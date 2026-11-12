@@ -12,7 +12,7 @@ import (
 	"m31labs.dev/cicada/host/scoreaudition"
 )
 
-const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--json] [--max-resident-pcm <size>] [--jobs <n>]"
+const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--json] [--max-resident-pcm <size>] [--jobs auto|<n>]"
 
 // auditionErrorDocument is what audition --json prints when it fails.
 type auditionErrorDocument struct {
@@ -56,7 +56,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	from := flags.Int("from", 1, "one-based start bar")
 	bars := flags.Int("bars", 0, "bars to analyze; 0 means through song end")
 	asJSON := flags.Bool("json", false, "write the report as JSON")
-	jobs := flags.Int("jobs", 0, "render lanes; 0 picks the usable CPUs, 1 renders serially")
+	jobsText := flags.String("jobs", "", "render lanes: auto or a count; absent renders serially")
 	// Accept the score before or after the flags.
 	var path string
 	rest := args
@@ -78,8 +78,9 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if *bars < 0 {
 		return &codedError{"usage", fmt.Errorf("--bars must not be negative")}
 	}
-	if *jobs < 0 {
-		return &codedError{"usage", fmt.Errorf("--jobs must not be negative")}
+	jobs, err := parseJobs(*jobsText)
+	if err != nil {
+		return &codedError{"usage", err}
 	}
 	inspection, err := inspectScore(path)
 	if err != nil {
@@ -96,7 +97,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if failed {
 		return &codedError{"invalid_score", fmt.Errorf("%s has errors", path)}
 	}
-	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Jobs: *jobs})
+	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Jobs: jobs})
 	if err != nil {
 		return err
 	}
