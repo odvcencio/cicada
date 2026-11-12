@@ -417,7 +417,7 @@ func followQuickStart(t *testing.T, bin string) {
 		t.Fatalf("new demo: exit %d, printed %q", code, stdout)
 	}
 	q.dir = filepath.Join(q.root, "demo")
-	// cicada new writes the quick start into the project as AGENTS.md, and
+	// cicada new writes a short AGENTS.md that points to cicada agents, and
 	// cicada agents reference prints the core reference.
 	if written, err := os.ReadFile(filepath.Join(q.dir, "AGENTS.md")); err != nil || string(written) != agentguide.ProjectAgents() || !strings.Contains(string(written), "`cicada agents`") {
 		t.Fatalf("the new project's AGENTS.md does not point to cicada agents: %v", err)
