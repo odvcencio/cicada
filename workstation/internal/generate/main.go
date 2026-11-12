@@ -6,10 +6,10 @@ import (
 	"go/format"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"m31labs.dev/cicada/workstation/internal/enginebuild"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/ir"
 	islandprogram "m31labs.dev/gosx/island/program"
@@ -23,8 +23,7 @@ func main() {
 	if err := os.MkdirAll("build", 0755); err != nil {
 		log.Fatal(err)
 	}
-	command := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-ldflags=-s -w", "-o", "build/cicada-meters.wasm", "./engine")
-	command.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0", "GOWORK=off")
+	command := enginebuild.Command("build/cicada-meters.wasm", enginebuild.ReleaseLDFlags)
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
 		log.Fatal(err)
@@ -34,12 +33,13 @@ func main() {
 		log.Fatal(err)
 	}
 	// The UI shares a single module across its mounts. Importing a host package
-	// can retain compiler registries even when the UI never calls them.
-	const maxEngineBytes = 16 << 20
-	if len(wasm) > maxEngineBytes {
-		log.Fatalf("UI engine is %d bytes; exceeds %d-byte budget (check host/compiler imports)", len(wasm), maxEngineBytes)
+	// can retain compiler registries even when the UI never calls them. The
+	// limit and its history live in enginebuild.MaxBytes; `make
+	// engine-size-report` shows what fills the file.
+	if len(wasm) > enginebuild.MaxBytes {
+		log.Fatalf("UI engine is %d bytes; exceeds %d-byte budget (run make engine-size-report)", len(wasm), enginebuild.MaxBytes)
 	}
-	log.Printf("UI engine: %d bytes (budget %d)", len(wasm), maxEngineBytes)
+	log.Printf("UI engine: %d bytes (budget %d)", len(wasm), enginebuild.MaxBytes)
 	digest := sha256.Sum256(wasm)
 	name := fmt.Sprintf("cicada-meters.%x.wasm", digest[:8])
 	if err := os.MkdirAll("public/engines", 0755); err != nil {
