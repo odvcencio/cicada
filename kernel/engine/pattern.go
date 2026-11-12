@@ -484,6 +484,7 @@ func (e *Engine) scheduleAll() {
 }
 
 func (e *Engine) scheduleTrack(track int) {
+	e.rescheduled = true
 	p := &e.patterns[track]
 	p.eventCount, p.eventIndex = 0, 0
 	frames := e.renderFrames - e.renderFrame
