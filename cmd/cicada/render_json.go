@@ -96,6 +96,9 @@ type renderErrorJSON struct {
 	Code    string            `json:"code"`
 	Message string            `json:"message"`
 	Remedy  *renderRemedyJSON `json:"remedy,omitempty"`
+	// Limit is, for a loudness shortfall, the limit that stopped the search,
+	// as a value with its unit (see shortfallLimit).
+	Limit string `json:"limit,omitempty"`
 }
 
 // renderRemedyJSON is a fix for a failed render. ScoreText is the exact text
@@ -289,7 +292,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 func renderErrorFor(err error, path string, inspection scoreInspection) *renderErrorJSON {
 	var shortfall *loudnessShortfallError
 	if errors.As(err, &shortfall) {
-		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message}
+		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message, Limit: shortfall.limit}
 		if shortfall.limiterCeiling != nil {
 			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling, shortfall.neededGainDB)
 		}

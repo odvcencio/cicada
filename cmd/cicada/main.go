@@ -934,6 +934,9 @@ type loudnessShortfallError struct {
 	limiterCeiling  *float64
 	remedySummary   string  // limiterRemedySummaryFor the score, when limiterCeiling is set
 	neededGainDB    float64 // the input gain the target needs, when limiterCeiling is set
+	// limit is the limit that stopped the search, as a value with its unit,
+	// for the JSON error's limit field (see shortfallLimit).
+	limit string
 }
 
 func (e *loudnessShortfallError) Error() string {
@@ -1270,6 +1273,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			reason = "loudness_shortfall_at_input_gain_cap"
 		}
 		shortfallErr = &loudnessShortfallError{reason: reason, message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at %s (master limiter reduction %.2f dB, target %.2f LUFS)", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS, guard, bestChainReduction, target.LoudnessTarget)}
+		if reason == "loudness_shortfall_at_input_gain_cap" {
+			// All the gain reaches the last limiter, which still has room, so
+			// the level ahead of it is what is short. The chain already has a
+			// limiter, so adding one is not the fix.
+			shortfallErr.message += fmt.Sprintf("; raise the master level, or the level of the inserts ahead of the last limiter, by about %.1f dB, or lower the target to %.2f LUFS", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS)
+		}
 	} else if bestDelta > target.Tolerance {
 		shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
 		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
@@ -1288,6 +1297,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			shortfallErr.neededGainDB = target.LoudnessTarget - (bestMeasure.IntegratedLUFS - bestGain)
 			shortfallErr.remedySummary = limiterRemedySummaryFor(score, ceiling, shortfallErr.neededGainDB)
 		}
+	}
+	if shortfallErr != nil {
+		shortfallErr.limit = shortfallLimit(shortfallErr.reason, target)
 	}
 	destination := path
 	if shortfallErr != nil && shortfallPath != "" {
@@ -1333,6 +1345,26 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 // safe render also sits within 0.5 dB of the reduction maximum, the margin that
 // already makes the final report a limiter shortfall, so more bisection steps
 // would add little loudness and only repeat that shortfall.
+// shortfallLimit is the limit a shortfall code names, as a value with its
+// unit, for the JSON error's limit field: the 6 dB limiter maximum, the +12 dB
+// input gain cap, the +24 dB maximum export gain, the true-peak ceiling, or the
+// number of passes. It is empty for a code that names no limit.
+func shortfallLimit(reason string, target renderTargetOptions) string {
+	switch reason {
+	case "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum":
+		return strconv.FormatFloat(maxExportLimiterReductionDB, 'f', -1, 64) + "dB"
+	case "loudness_shortfall_at_input_gain_cap":
+		return "+" + strconv.FormatFloat(maxExportInputGainDB, 'f', -1, 64) + "dB"
+	case "loudness_shortfall_at_gain_maximum":
+		return "+" + strconv.FormatFloat(maxExportGainDB, 'f', -1, 64) + "dB"
+	case "true_peak_over_ceiling", "loudness_shortfall_at_true_peak_ceiling":
+		return formatDBTP(target.TruePeakMaxDBTP) + "dBTP"
+	case "loudness_target_missed_at_pass_limit":
+		return strconv.Itoa(loudnessPassLimit)
+	}
+	return ""
+}
+
 func limiterTargetOutOfReach(target renderTargetOptions, bestLUFS, bestChainReduction, lowestUnsafeLUFS float64) bool {
 	band := target.LoudnessTarget - target.Tolerance
 	return bestLUFS < band && lowestUnsafeLUFS < band && bestChainReduction >= maxExportLimiterReductionDB-0.5
@@ -1408,7 +1440,7 @@ func missedLoudnessTarget(m loudnessMiss) *loudnessShortfallError {
 		next = "; " + louder.describe()
 	}
 	if m.passes >= loudnessPassLimit {
-		return &loudnessShortfallError{reason: "loudness_target_missed_at_pass_limit", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU) at the %d-pass search limit: achieved %.2f LUFS at %+.2f dB%s; the search stops after %d passes, so a --loudness-tolerance of at least %.2f LU accepts this result", target, missed, m.target.Tolerance, loudnessPassLimit, m.bestLUFS, m.bestGain, next, loudnessPassLimit, math.Ceil(missed*100-1e-6)/100)}
+		return &loudnessShortfallError{reason: "loudness_target_missed_at_pass_limit", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU) at the %d-pass search limit: achieved %.2f LUFS at %+.2f dB%s; the search stops after %d passes, so a --loudness-tolerance of at least %.2f LU accepts this result", target, missed, m.target.Tolerance, loudnessPassLimit, m.bestLUFS, m.bestGain, next, loudnessPassLimit, math.Ceil(float64(missed*100)-1e-6)/100)}
 	}
 	return &loudnessShortfallError{reason: "loudness_target_missed", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS at %+.2f dB%s", target, missed, m.target.Tolerance, m.bestLUFS, m.bestGain, next)}
 }

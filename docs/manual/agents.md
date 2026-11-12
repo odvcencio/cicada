@@ -738,7 +738,7 @@ command prints and, when the documentation gives a fix for that cause, a
 - `true_peak_over_ceiling`: the best pass is still above the true-peak ceiling.
 - `limiter_reduction_over_maximum`: the master chain's last limiter would reduce more than 6 dB.
 - `loudness_shortfall_at_limiter_maximum`: the target needs more than the 6 dB maximum of the master chain's last limiter.
-- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB of gain into the master chain's last limiter.
+- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB of gain into the master chain's last limiter; the message says how far to raise the master level, or to what to lower the target.
 - `loudness_shortfall_at_true_peak_ceiling`: the gain stops at the true-peak ceiling: without a master limiter at the best pass, or, with one, a louder pass went over the ceiling while still too quiet.
 - `loudness_shortfall_at_gain_maximum`: without a master limiter, the gain reached the +24 dB maximum export gain and the mix is still too quiet.
 - `loudness_target_missed_at_pass_limit`: the search used all six passes before it came within the tolerance; the message names the nearest louder pass that broke a limit, if one did.
@@ -746,6 +746,10 @@ command prints and, when the documentation gives a fix for that cause, a
 <!-- /render-error-codes -->
 
 After a shortfall the best pass is still written and listed in `outputs`.
+A shortfall that names a limit gives it in `limit` as well, as a value with its
+unit: `6dB` for the last limiter's maximum reduction, `+12dB` for the gain cap
+into it, `+24dB` for the maximum export gain without a limiter, the export's
+ceiling in `dBTP` for the true-peak ceiling, and `6` for the passes.
 
 `remedy` has a `summary`, the `file` to change, the file's `revision` when the
 render read it (the form `cicada apply` uses), and the `score_text` to put in
@@ -813,6 +817,7 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
   "error": {
     "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
+    "limit": "-1dBTP",
     "remedy": {
       "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text",
       "file": "loud.cicada",

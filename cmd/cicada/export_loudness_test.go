@@ -123,9 +123,17 @@ func TestExportLoudnessInputGainCapReportsShortfall(t *testing.T) {
 	if !strings.Contains(err.Error(), "input gain cap") {
 		t.Fatalf("shortfall does not name the input gain cap: %v", err)
 	}
-	// The score already has a master limiter, so adding one is not the fix.
+	// The score already has a master limiter, so adding one is not the fix;
+	// the message says what is: more level ahead of the limiter, or a lower
+	// target. An agent reads the limit from its own field.
 	if shortfall.reason != "loudness_shortfall_at_input_gain_cap" || shortfall.limiterCeiling != nil {
 		t.Fatalf("limiter shortfall: %+v", shortfall)
+	}
+	if !strings.Contains(err.Error(), "raise the master level, or the level of the inserts ahead of the last limiter, by about") || !strings.Contains(err.Error(), "or lower the target to") {
+		t.Fatalf("shortfall gives no remedy: %v", err)
+	}
+	if failure := renderErrorFor(err, quiet, inspection); failure.Limit != "+12dB" {
+		t.Fatalf("JSON limit %q, want +12dB", failure.Limit)
 	}
 	t.Logf("METRIC EXPORT-INPUT-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
 }
@@ -885,16 +893,41 @@ func TestExportLoudnessCappedPassRendersPendingDCCorrectionScheduled(t *testing.
 	testCappedPassRendersPendingDCCorrection(t, true)
 }
 
+// float32WAVSamples returns the interleaved samples of a 32-bit float WAV.
+func float32WAVSamples(t *testing.T, data []byte) []float32 {
+	t.Helper()
+	for at := 12; at+8 <= len(data); {
+		size := int(binary.LittleEndian.Uint32(data[at+4:]))
+		if string(data[at:at+4]) == "data" && at+8+size <= len(data) {
+			samples := make([]float32, size/4)
+			for i := range samples {
+				samples[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[at+8+4*i:]))
+			}
+			return samples
+		}
+		at += 8 + size + size%2
+	}
+	t.Fatal("no data chunk")
+	return nil
+}
+
 // Without a limiter both renderers add the export gain after the master chain,
 // so both reports say post_chain. The scheduled engine used to add it ahead of
-// the chain, with its master gain.
+// the chain, with its master gain. The test checks where the gain goes, not
+// only the report: with a compressor in the chain, a render at +6 dB equals
+// the plain render times the gain, sample for sample, only when the gain comes
+// after the compressor; ahead of it, the compressor would take most of it back.
 func TestExportLoudnessGainStageIsTheSameOnBothRenderers(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	compressed := strings.Replace(string(source), "master { level = 6dB insert = tone }", "fx glue comp { threshold = -30dB ratio = 4 }\nmaster { level = -12dB insert = tone -> glue }", 1)
+	if compressed == string(source) {
+		t.Fatal("the fixture's master block changed")
+	}
 	for _, scheduled := range []bool{false, true} {
-		text := string(source)
+		text := compressed
 		if scheduled {
 			text = strings.Replace(text, "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup ", 1)
 		}
@@ -905,6 +938,25 @@ func TestExportLoudnessGainStageIsTheSameOnBothRenderers(t *testing.T) {
 		inspection, err := inspectScore(path)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if got := render.UsesScheduledEngine(inspection.score, render.Options{}); got != scheduled {
+			t.Fatalf("UsesScheduledEngine = %v, want %v", got, scheduled)
+		}
+		floats := func(gainDB float64) []float32 {
+			var out bytes.Buffer
+			if _, err := render.WAV(inspection.score, render.Options{SampleRate: 48000, Bits: 32, Bars: 2, TailSec: .5, MasterGainDB: gainDB}, &out); err != nil {
+				t.Fatal(err)
+			}
+			return float32WAVSamples(t, out.Bytes())
+		}
+		plain, gained := floats(0), floats(6)
+		factor, worst, peak := math.Pow(10, 6.0/20), 0.0, 0.0
+		for i := range plain {
+			worst = math.Max(worst, math.Abs(float64(gained[i])-float64(plain[i])*factor))
+			peak = math.Max(peak, math.Abs(float64(plain[i])))
+		}
+		if len(plain) != len(gained) || peak < .01 || worst > 1e-5 {
+			t.Fatalf("scheduled=%v: a +6 dB export gain is not a plain gain after the chain: %d and %d samples, plain peak %.4f, largest difference %.6f", scheduled, len(plain), len(gained), peak, worst)
 		}
 		opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
 		target := renderTargetOptions{ExportName: "loud", TruePeakMaxDBTP: -1}

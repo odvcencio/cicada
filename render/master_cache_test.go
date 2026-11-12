@@ -171,6 +171,9 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 		{"scheduled, inserts after the last limiter", scheduledCacheScore(t, cacheChain("tone", "ceiling", "stereo")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
 		{"scheduled, limiter ahead of the last one", scheduledCacheScore(t, cacheChain("lift", "guard", "tone", "ceiling")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
 		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }"), Options{SampleRate: 48000, TailSec: .2}},
+		{"scheduled, last limiter first", scheduledCacheScore(t, cacheChain("ceiling", "stereo")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"convolution ahead of the last limiter", convolutionCacheScore(t, false), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"scheduled, convolution ahead of the last limiter", convolutionCacheScore(t, true), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
 		{"scheduled, excerpt", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, From: 1, Bars: 1, TailSec: .3}},
 		{"scheduled, small blocks", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, Bars: 1, Block: 48, TailSec: .05}},
 		{"scheduled, odd blocks", scheduledCacheScore(t, "master { level = -2dB }"), Options{SampleRate: 44100, Bars: 1, Block: 1000, TailSec: .1}},
@@ -222,7 +225,11 @@ func TestMasterCacheStoresTheGainPointSignal(t *testing.T) {
 		{"last limiter first", cacheScoreWithMaster(t, cacheChain("ceiling", "stereo")), false},
 		{"no master chain", cacheScoreWithMaster(t, "master { level = 3dB }"), false},
 		{"scheduled, chain with limiter", scheduledCacheScore(t, masterCacheChain), true},
+		{"scheduled, chain without limiter", scheduledCacheScore(t, "fx tone eq { type = highpass frequency = 25Hz }\nmaster { insert = tone }"), true},
+		{"scheduled, last limiter first", scheduledCacheScore(t, cacheChain("ceiling", "stereo")), false},
 		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }"), false},
+		{"convolution ahead of the last limiter", convolutionCacheScore(t, false), true},
+		{"scheduled, convolution ahead of the last limiter", convolutionCacheScore(t, true), true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cache := newProductionMasterCache(t)

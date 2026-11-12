@@ -25,13 +25,27 @@ a loudness standard.
 `--loudness -14`, or an `export` block with `loudness`, renders to a loudness
 target. The gain it finds is makeup gain into the master chain's last limiter,
 not gain into the mix: every master insert ahead of that limiter, such as a glue
-compressor, an EQ or a drive, runs exactly as in playback, so the export has the
-dynamics you hear in Studio. Until November 2026 the gain went in ahead of the
-whole chain, so a master compressor worked up to 12 dB harder in the export
-than in playback. A song with a master compressor is therefore compressed less
-in its export than before; if you raised the compressor's threshold to make up
-for that, lower it back to what sounds right in playback. Renders without a
-target, and songs whose limiter is the only master insert, are unchanged. See
+compressor, an EQ or a transient shaper, runs exactly as in playback, so the
+export has the dynamics you hear in Studio. Until November 2026 the gain went in
+ahead of the whole chain, so a master compressor worked up to 12 dB harder in
+the export than in playback. What that changes for a song exported at a target:
+
+- It is compressed less, so its loudness range is larger: `anywhere-you-are` at
+  -14 LUFS went from 6.07 to 6.93 LU. If you raised the compressor's threshold
+  to make up for the old export, lower it back to what sounds right in
+  playback.
+- At an ambitious target it can stop further short than before. The compressor
+  no longer flattens the peaks, so the last limiter reaches its 6 dB maximum at
+  a lower gain: one song went from -15.00 to -15.31 LUFS at a -14 LUFS target.
+  The error names the limit that stopped it.
+- A song on the scheduled renderer (arrangements, audio clips, serial track
+  effects, sample packs) whose master chain has no limiter changed too: the
+  gain now goes in after the chain, not ahead of it. It is compressed less, and
+  since the gain stops at the true-peak ceiling, it can miss a target it used
+  to meet; a limiter as the last master insert is the fix.
+
+Renders without a target, songs without master inserts, and songs whose limiter
+is the first master insert are unchanged. See
 [export loudness targets](../audio/mix-chain.md#export-loudness-targets) for
 where the gain goes in each kind of chain and the limits the search keeps.
 
