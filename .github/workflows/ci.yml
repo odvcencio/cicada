@@ -69,6 +69,7 @@ jobs:
       m2_gates: ${{ steps.classify.outputs.m2_gates }}
       bench: ${{ steps.classify.outputs.bench }}
       wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
+      lane_stress: ${{ steps.classify.outputs.lane_stress }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -274,6 +275,17 @@ jobs:
           set -euo pipefail
           CICADA_WAV_PARITY_OUT="$PWD/build/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+      - name: Race-check the render lanes
+        run: |
+          set -euo pipefail
+          # Render lanes must stay bit-identical to the serial render; a data
+          # race between lanes would be a determinism bug, so the lane tests
+          # run under the race detector with every segment on every lane.
+          go test -race ./internal/renderlanes ./kernel/engine -run '^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)' -count=3 -v | tee "$RUNNER_TEMP/lanes-race.log"
+          go test -race ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=1 -v | tee -a "$RUNNER_TEMP/lanes-race.log"
+          for name in TestOfflineParallelRenderIsBitIdentical TestOfflineParallelFaultMatchesSerial TestRunRendersEveryTrackOnce TestDirectLanesAreBitIdentical TestDirectLanesFaultMatchesSerial TestAudioClipLanesAreBitIdentical TestLaneCountChangesBetweenSegments TestForcedLanesRenderEachSegmentOnce; do
+            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/lanes-race.log" || { echo "No PASS line for $name" >&2; exit 1; }
+          done
       - name: Save amd64 PCM and the tested kernel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -384,6 +396,12 @@ jobs:
           CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVPins ' build/parity/wav-parity.txt
+      - name: Require every render job count to write the serial render's bytes on arm64
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          go test ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parity/parallel-identity.txt
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parity/parallel-identity.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -393,6 +411,7 @@ jobs:
           path: |
             build/parity/report.txt
             build/parity/modulate.txt
+            build/parity/parallel-identity.txt
             build/parity/wav-parity.txt
 
   # Nightly: every score under examples/, rendered four ways on amd64 and on
@@ -1370,6 +1389,124 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: build/native-*.log
+
+  # Every example score, rendered in full with --jobs 1 and with 2, 4, 8 and
+  # the automatic job count, plain and at -14 LUFS, must write the same bytes
+  # (render lanes). Pull requests run a short subset on amd64 (cmd/cicada
+  # tests) and arm64 (parity-arm64); this is the whole sweep, nightly, on both
+  # architectures, followed by the subset under the race detector.
+  parallel-identity:
+    name: Render lanes identity sweep (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Sweep
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          mkdir -p build
+          make test-parallel-identity | tee build/parallel-identity.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity.log
+      - name: Subset under the race detector
+        run: |
+          set -euo pipefail
+          go test -race -timeout=40m ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parallel-identity-race.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity-race.log
+      - name: Save the sweep log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parallel-identity-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            build/parallel-identity.log
+            build/parallel-identity-race.log
+
+  # The render lanes under the race detector with the lanestress hook, which
+  # delays or yields at seeded hand-off points of the lane protocol
+  # (make test-lane-stress). The forced-lane tests and the identity subset run
+  # with every segment on every lane and more jobs than processors. Pull
+  # requests that touch the lanes (lane_stress in scripts/ci-changes.sh) run a
+  # short version at GOMAXPROCS 2: the quick sets (renderlanes, render), which
+  # hold the catches of the three lane bugs found so far, three times, and the
+  # engine tests and identity subset once. This job is not part of the
+  # required check; it becomes required when --jobs defaults to auto.
+  lane-stress-pr:
+    name: Render lanes under scheduling stress (short)
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.lane_stress == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+
+  # The full stress run, nightly: -count=10 at GOMAXPROCS 2, 3 and every CPU,
+  # one runner each. At GOMAXPROCS 2 one repetition of all four sets took 228 s
+  # on this runner class (pull request #334's short job: renderlanes 6 s,
+  # render 11 s, engine 82 s, identity subset 129 s), so a setting should take
+  # about 40 minutes.
+  lane-stress:
+    name: Render lanes under scheduling stress (GOMAXPROCS ${{ matrix.procs }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        procs: ['2', '3', 'all']
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        env:
+          PROCS: ${{ matrix.procs }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS="$PROCS" LANE_STRESS_COUNT=10 LANE_STRESS_HEAVY_COUNT=10 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+      - name: Save the stress log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: lane-stress-${{ matrix.procs }}
+          if-no-files-found: warn
+          path: build/lane-stress.log
 
   macos-desktop-full:
     name: macOS desktop exhaustive (${{ matrix.arch }})

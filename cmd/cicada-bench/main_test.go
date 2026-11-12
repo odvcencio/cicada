@@ -94,3 +94,39 @@ func TestWriteIntentsSetsTrackLevels(t *testing.T) {
 		t.Fatalf("intents: %s", text)
 	}
 }
+
+func TestRenderJobsStepsAndGates(t *testing.T) {
+	if _, err := parseOptions([]string{"--steps", "render-jobs1:large,render-jobs4:medium,render-auto:medium"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []string{"render-jobs0:large", "render-jobs:large", "render-jobs04:large", "render-jobsx:large"} {
+		if _, err := parseOptions([]string{"--steps", step}); err == nil {
+			t.Errorf("%s accepted", step)
+		}
+	}
+	serial := Result{Step: "render-jobs1:large", Bars: 8, MedianMS: 6000, SHA256: "aa", Jobs: 1}
+	parallel := Result{Step: "render-jobs4:large", Bars: 8, MedianMS: 3000, SHA256: "aa", Jobs: 4}
+	if got := speedup(parallel, []Result{serial, parallel}); got != 2 {
+		t.Fatalf("speedup %g", got)
+	}
+	if got := sameAudio(parallel, []Result{serial, parallel}); got != 1 {
+		t.Fatalf("same audio %g", got)
+	}
+	if _, passed := checkGates([]Result{serial, parallel}); !passed {
+		t.Fatal("matching hashes and a 2x speed-up failed a gate")
+	}
+	different := parallel
+	different.SHA256 = "bb"
+	unstable := parallel
+	unstable.SHA256, unstable.UnstableHash = "", true
+	slow := parallel
+	slow.MedianMS = 5500
+	for name, r := range map[string]Result{"different bytes": different, "bytes that change between runs": unstable, "no speed-up": slow} {
+		if _, passed := checkGates([]Result{serial, r}); passed {
+			t.Errorf("%s passed the gates", name)
+		}
+	}
+	if !math.IsNaN(speedup(parallel, []Result{parallel})) {
+		t.Fatal("a speed-up without its serial step is not NaN")
+	}
+}

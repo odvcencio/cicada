@@ -165,18 +165,46 @@ expect_groups "Studio front end plus desktop" "workstation studio_browser macos_
 expect_groups "measurement suite" "root" kernel/measure/model_test.go
 expect_groups "measurement suite and docs" "root" kernel/measure/README.md kernel/measure/model.go
 
+# --- the lane stress job: only the render lanes and what they run queue it ---
+# expect_lanes "name" true|false paths...
+expect_lanes() {
+	local name="$1" expected="$2"
+	shift 2
+	if ! printf '%s\n' "$@" | "$classifier" | grep -qx "lane_stress=$expected"; then
+		fail "$name: lane_stress is not $expected"
+	fi
+}
+expect_lanes "lane pool" true internal/renderlanes/lanes.go
+expect_lanes "engine lanes" true kernel/engine/parallel_native.go
+expect_lanes "engine frame control" true kernel/engine/render_frame.go
+expect_lanes "render package" true render/wav.go
+expect_lanes "identity test" true cmd/cicada/parallel_identity_test.go
+expect_lanes "workflow" true .github/workflows/ci.yml
+expect_lanes "the classifier itself" true scripts/ci-changes.sh
+expect_lanes "the stress log check" true scripts/ci-lane-stress-check.sh
+expect_lanes "another CI script" false scripts/check-commit-hygiene.sh
+expect_lanes "other kernel code" false kernel/graph/graph.go
+expect_lanes "other engine code" false kernel/engine/engine.go
+expect_lanes "a voice" false kernel/voice/ep/ep.go
+expect_lanes "Studio" false cmd/cicada/studio.go
+expect_lanes "docs" false docs/manual/agents.md
+expect_lanes "render docs" false render/README.md
+expect_lanes "empty input" true
+expect_lanes "docs plus the lane pool" true docs/manual/README.md internal/renderlanes/lanes.go
+
 # --- --all, --classify, and bad usage ---
 output="$("$classifier" --all)"
-for group in $all_groups; do
+for group in $all_groups lane_stress; do
 	grep -qx "$group=true" <<<"$output" || fail "--all: $group is not true"
 done
 if [[ "$("$classifier" --classify docs/a.md)" != none ]]; then fail "--classify docs/a.md"; fi
 if [[ "$("$classifier" --classify kernel/x.go)" != "all m2_gates" ]]; then fail "--classify kernel/x.go"; fi
+if [[ "$("$classifier" --classify kernel/engine/parallel_native.go)" != "all m2_gates lane_stress" ]]; then fail "--classify kernel/engine/parallel_native.go"; fi
 if [[ "$("$classifier" --classify kernel/dsp/detmath/x.go)" != "all m2_gates wav_sweep" ]]; then fail "--classify kernel/dsp/detmath/x.go"; fi
 if [[ "$("$classifier" --classify edit/x.go)" != all ]]; then fail "--classify edit/x.go"; fi
 if "$classifier" --bogus </dev/null >/dev/null 2>&1; then fail "unknown flag was accepted"; fi
 # A last line with no newline still counts.
-if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 11 ]]; then fail "unterminated last line"; fi
+if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 12 ]]; then fail "unterminated last line"; fi
 
 # classify_for GROUP PATH: does PATH turn GROUP on?
 turns_on() {
