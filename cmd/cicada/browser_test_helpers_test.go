@@ -728,6 +728,15 @@ func (b *browserChrome) eval(expression string) json.RawMessage {
 	return evaluated.Result.Value
 }
 
+// waitForPanelTabs waits until Studio's script has installed the workspace
+// panel tabs. Installing them shows the Session panel and marks it active, so
+// a tab click that lands earlier is lost and the next panel stays hidden
+// (TestBrowserStudioLibrary failed this way on main 762e87fa).
+func (b *browserChrome) waitForPanelTabs() {
+	b.t.Helper()
+	b.waitFor("document.documentElement.dataset.activePanel==='session'", 10*time.Second)
+}
+
 func (b *browserChrome) waitFor(expression string, timeout time.Duration) {
 	b.t.Helper()
 	deadline := time.Now().Add(timeout)
