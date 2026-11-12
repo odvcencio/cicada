@@ -230,6 +230,37 @@ song { main }
 
 **Edition history:** Expression rows and these settings are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and per-note vibrato depth.
 
+## Song meter
+
+**Status:** A song-wide meter is implemented in source, semantic JSON (`cicada.project/3`), native and WASM playback, WAV timing metadata, MIDI export and the edit intents. Meter changes inside `arrange` and Studio's ruler and grid follow in later phases.
+
+**Syntax (EBNF):**
+
+```ebnf
+meter_decl  ::= "meter" , fraction , [ beat_groups ] ;
+beat_groups ::= integer , { "+" , integer } ;   (* one token, no spaces: 2+2+3 *)
+```
+
+**Meaning:** A song has one meter, `N/D`: N beats of a 1/D note in each bar. A bar lasts `N * 3840 / D` ticks, so a 3/4 bar is 2,880 ticks and a 6/8 bar is 2,880 ticks of six 480-tick beats. Positions `@bar.beat.step` count bars and beats of the meter; `Nbars` is N bars of it; song entries (`a*16`) count its bars. Note values (`1/16`, `step = 1/8`) stay fractions of a whole note, and `tempo` still counts quarter notes. Beat groups split the beats for accents and never move a position. A pattern keeps its own length and crosses bar lines when it does not fill whole bars.
+
+**Types and units:** N is 1 to 32; D is 2, 4, 8 or 16; a bar may be at most 30,720 ticks. Beat runs 1 to N and step runs 1 to 16/D. Beat groups are 1 to 32 each and add up to N.
+
+**Defaults:** A score without a meter declaration is 4/4 and keeps its source, semantic JSON format (/1 or /2), kernel image bytes and rendered bytes. `meter` is additive in editions 1 and 2, appears at most once, and may sit in any file of a project; a library cannot declare it.
+
+**Errors:** An invalid meter or beat groups that do not add up report `CICADA-METER`; a bar over 30,720 ticks reports `CICADA-LIMIT`; a second declaration reports `CICADA-DUPLICATE`; a position outside its bar reports the bar and the meter, for example `@3.4.1 is outside bar 3, which is in 3/4 (beats 1 to 3, steps 1 to 4)`. A pattern that does not fill whole bars of a declared meter gets a `CICADA-METER` warning.
+
+**Example:**
+
+```cicada
+cicada 2
+tempo 132
+meter 3/4
+track bass acid {}
+pattern oom { step = 1/4 c2 g2 g2 }
+scene a { bass = oom }
+song { a*16 }
+```
+
 ## Automation blocks
 
 **Status:** Song continuous numeric lanes are implemented in source, semantic JSON, native/WASM playback and Studio.
