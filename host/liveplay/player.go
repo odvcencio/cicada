@@ -312,7 +312,6 @@ type Player struct {
 	read                    int
 	fault                   error
 	jumpFadeRemaining       int
-	position                atomic.Uint64
 	tempoMilli              atomic.Int64
 	phraseBars              atomic.Int64
 	countInBars             atomic.Int64
@@ -321,7 +320,7 @@ type Player struct {
 	sceneEngine             *engine.Engine
 	overrides               atomic.Pointer[liveOverrides]
 	trackNames              atomic.Pointer[trackNameSnapshot]
-	meterMap                atomic.Pointer[seq.MeterMap] // The playing score's; any goroutine may read it.
+	published               positionCell // The position and the playing score's map; any goroutine may read it.
 	overrideSequence        atomic.Uint64
 	trackIncarnation        uint64 // Render-owned identity generation.
 	overrideClears          chan overrideClear
@@ -416,8 +415,7 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
 	p.assignTrackIncarnations(initial.trackNames)
 	p.trackNames.Store(initial.trackNames)
-	p.meterMap.Store(initial.meterMap)
-	p.position.Store(1<<8 | 1)
+	p.published.store(1<<8|1, initial.meterMap)
 	p.tempoMilli.Store(clock.BPMMilli)
 	p.phraseBars.Store(int64(initial.PhraseBars))
 	countIn := 1
@@ -1662,11 +1660,10 @@ func (p *Player) nextQuantizedTick(quantize cmd.Quantize) (int64, error) {
 	if quantize == 0 {
 		return 0, nil
 	}
-	position := p.Position()
+	position, meterMap := p.PositionWithMap()
 	if position.Bar < 1 || position.Step < 1 {
 		return 0, fmt.Errorf("transport position is unavailable")
 	}
-	meterMap := p.songMeterMap()
 	tick := meterMap.BarStart(position.Bar-1) + (position.Step-1)*seq.TicksPerStep
 	return nextQuantizedAfter(meterMap, tick, quantize, phraseBars)
 }
@@ -1700,8 +1697,8 @@ func (p *Player) CountInBars() int { return int(p.countInBars.Load()) }
 
 // Position can be read safely by a UI thread while Read renders audio.
 func (p *Player) Position() Position {
-	packed := p.position.Load()
-	return Position{Bar: int64(packed >> 8), Step: int64(packed & 0xff)}
+	packed, _ := p.published.load()
+	return unpackPosition(packed)
 }
 
 func (p *Player) Read(out []byte) (int, error) {
@@ -1800,7 +1797,6 @@ func (p *Player) beginRequestedSong() {
 			p.streamEngine.Store(next.Engine)
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
-			p.meterMap.Store(next.meterMap)
 			p.resetMeters()
 			p.fadeTotal, p.fadeRemaining = p.rate/200, p.rate/200
 			p.emit(Event{Bar: int64(start), Name: next.Name, Kind: "edit", Revision: next.Revision})
@@ -1822,7 +1818,7 @@ func (p *Player) beginRequestedSong() {
 		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.Engine.TempoAtTick(startTick), AnchorSample: p.sample, AnchorTick: startTick}
 		p.tempoMilli.Store(p.clock.BPMMilli)
 		p.nextBarSample = p.clock.SampleAtTick(p.current.meterMap.BarStart(p.bar + 1))
-		p.position.Store(uint64(start)<<8 | 1)
+		p.published.store(uint64(start)<<8|1, p.current.meterMap)
 		p.emit(Event{Bar: int64(start), Name: request.Scene, Kind: "song"})
 	default:
 	}
@@ -1902,7 +1898,6 @@ func (p *Player) renderBlock(requestedFrames int) {
 			}
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
-			p.meterMap.Store(next.meterMap)
 			p.resetMeters()
 			swapped = true
 			p.clock = seq.Clock{
@@ -2331,7 +2326,7 @@ func (p *Player) requeuePendingLaunches() {
 				break
 			}
 			var err error
-			next.targetTick, err = nextQuantizedAfter(p.songMeterMap(), tick, next.quantize, phraseBars)
+			next.targetTick, err = nextQuantizedAfter(*p.current.meterMap, tick, next.quantize, phraseBars)
 			if err != nil {
 				p.launches.CompareAndSwap(old, nil)
 				break
@@ -2360,7 +2355,7 @@ func (p *Player) requeuePendingLaunches() {
 					changed = true
 					continue
 				}
-				target, err := nextQuantizedAfter(p.songMeterMap(), tick, request.quantize, phraseBars)
+				target, err := nextQuantizedAfter(*p.current.meterMap, tick, request.quantize, phraseBars)
 				if err != nil {
 					next.requests[index] = slotLaunch{}
 					changed = true

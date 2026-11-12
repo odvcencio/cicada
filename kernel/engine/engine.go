@@ -1394,7 +1394,7 @@ func (e *Engine) drainCommands() {
 		e.commandRead++
 		// A layer mask, and a pattern edit while playing, wait for the next bar line.
 		if c.Tick == 0 && (c.Op == cmd.OpSetLayerMask || e.transport.Playing() && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta)) {
-			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
+			c.Tick = e.transport.NextBarLine()
 		}
 		if e.pendingLen == len(e.pending) {
 			e.fault(FaultPendingFull)

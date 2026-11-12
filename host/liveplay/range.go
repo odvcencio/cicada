@@ -95,7 +95,6 @@ func (p *Player) seekListeningRange(tick int64) {
 		p.streamEngine.Store(next.Engine)
 		p.trackCount.Store(uint32(next.Engine.TrackCount()))
 		p.trackNames.Store(next.trackNames)
-		p.meterMap.Store(next.meterMap)
 		p.resetMeters()
 		if next.Range != nil {
 			p.setPlaybackRange(next.Range)
