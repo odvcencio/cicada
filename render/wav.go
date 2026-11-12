@@ -557,8 +557,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	} else {
 		report.Bars = opts.Bars
 	}
-	if report.Bars < 1 || report.Bars > 256 {
-		return report, fmt.Errorf("render supports 1 to 256 bars")
+	if report.Bars < 1 || report.Bars > maxDirectBars {
+		return report, fmt.Errorf("render supports 1 to %d bars", maxDirectBars)
 	}
 	renderBars := report.From + report.Bars
 	masterProcessor, err := project.PrepareMaster(semantic, opts.SampleRate)

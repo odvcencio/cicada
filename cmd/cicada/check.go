@@ -252,8 +252,9 @@ func checkPathsWith(paths []string, options checkOptions, stdout, stderr io.Writ
 		if hasDiagnosticErrors(inspection.diagnostics) {
 			continue
 		}
-		// Check loads the sampler packs, which inspectScore leaves to render.
-		packDiagnostics, _ := checkSamplerPacks(path, inspection, options.maxResidentPCM)
+		// Check loads the sampler packs, which inspectScore leaves to render,
+		// and checks what else render refuses.
+		packDiagnostics, _ := checkBeyondValidator(path, inspection, options.maxResidentPCM)
 		for _, diagnostic := range packDiagnostics {
 			printCheckDiagnostic(stderr, path, inspection.source, diagnostic)
 			if diagnostic.Severity == "error" {
@@ -310,6 +311,12 @@ func checkSuggestion(d notation.Diagnostic) string {
 		return "choose a degree in the score's scale or use an absolute letter pitch"
 	case d.Code == samplerZoneCode:
 		return "move the note into the pack's key range, write it in another octave, change the pattern's transpose, or use a pack that covers it (the sampler's root sets the octave of a pitch written without one)"
+	case d.Code == "CICADA-ASSET-FORMAT" && strings.Contains(d.Message, "the sample voice"):
+		return "resample the asset to a rate in the range given (expected), then declare its new rate, frames and sha256"
+	case d.Code == "CICADA-LIMIT" && strings.Contains(d.Message, "--from and --bars"):
+		return "render the song in ranges with --from and --bars, such as --from 1 --bars 256 and then --from 257"
+	case d.Code == samplerRangeCode:
+		return "write the note in an octave inside the range, set the sampler's root nearer the note, or play it from another asset recorded nearer that pitch"
 	case d.Code == samplerMemoryCode:
 		return "use smaller packs, or give a larger cap with --max-resident-pcm or CICADA_MAX_RESIDENT_PCM, such as 2GiB"
 	case d.Code == "CICADA-REFERENCE" && strings.Contains(d.Message, "unknown pattern"):

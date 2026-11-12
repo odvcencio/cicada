@@ -424,7 +424,9 @@ the position the checker reports: `line` and `column` count from 1, columns
 count Unicode characters, and `offset` is the byte offset from the start of the
 file. The checker reports a point, so `end` marks the end of the character at
 `start`, as the language server does. `related` points at the first declaration
-of a duplicate. `hint` is the advice `cicada check` prints. With
+of a duplicate. `expected` and `found`, when the checker knows them, are the
+value it wanted and the value it found, as short text such as `MIDI 24 to 82`
+and `MIDI 119`. `hint` is the advice `cicada check` prints. With
 `--profile browser`, `browser_profile` lists the voices each track reserves
 against the portable limits. A score with sampler packs lists each pack that
 loaded in `packs`: its `sampler`, its `manifest` path and the `velocity_law` it
@@ -597,7 +599,9 @@ source file of the project that holds what the edit would have to change
 `parameter`, the `value` given, `min`, `max` and `unit` of a value outside
 its range (reason `value_out_of_range`). A refused `editnotes` batch also carries
 `diagnostic` `CICADA-NOTES`, its `reason` and the `note` (see
-[Editors](editors.md)). The text error names
+[Editors](editors.md)). When a batch leaves the score with an error that
+`cicada check` reports with a code, `diagnostic` is that code, and `expected`
+and `found` are its values when it has them. The text error names
 the intent the same way: `intents[1].entity (togglestep): unknown pattern
 "rif"`.
 

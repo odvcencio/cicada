@@ -15,13 +15,26 @@ import (
 // export) sampler packs count against it too.
 const residentBudget = 64 << 20
 
+// ResidentBudgetError is a project whose sampler assets and resident clips do
+// not fit the 64 MiB resident PCM budget, or whose asset is longer than one
+// asset may be: Name ("asset vocal" or "sampler keys") needs Bytes of PCM on
+// top of Used, which the assets before it hold.
+type ResidentBudgetError struct {
+	Name        string
+	Bytes, Used int64
+}
+
+func (e *ResidentBudgetError) Error() string {
+	if e.Used == 0 {
+		return fmt.Sprintf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", e.Name, mib(e.Bytes))
+	}
+	return fmt.Sprintf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s on top of %s already resident", e.Name, mib(e.Bytes), mib(e.Used))
+}
+
 // residentBudgetError names what pushed the project past residentBudget and
 // how far: name needs bytes on top of used.
 func residentBudgetError(name string, bytes, used int64) error {
-	if used == 0 {
-		return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", name, mib(bytes))
-	}
-	return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s on top of %s already resident", name, mib(bytes), mib(used))
+	return &ResidentBudgetError{Name: name, Bytes: bytes, Used: used}
 }
 
 func mib(bytes int64) string { return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20)) }
