@@ -75,10 +75,11 @@ func (p *Project) SongEndTick() int64 {
 }
 
 // meterWarnings notes each pattern that does not fill whole bars of the
-// declared meter: it still plays, crossing bar lines. A song without a meter
+// declared meter (it still plays, crossing bar lines), and refuses swing that
+// a bar of the meter would split. A song without a meter
 // declaration gets none, so check reports nothing new for it.
 func meterWarnings(p *Project, score *notation.Score) []notation.Diagnostic {
-	if p == nil || score == nil || score.Meter == nil {
+	if p == nil || score == nil || score.SongMeter() == nil {
 		return nil
 	}
 	bar := p.MeterMap().BarTicks(0)
@@ -94,6 +95,24 @@ func meterWarnings(p *Project, score *notation.Score) []notation.Diagnostic {
 		}
 		if pattern.Performance != nil {
 			length = pattern.Performance.LengthTicks
+		}
+		// Swing delays the odd cells of the pattern's grid counted from the song's
+		// start (spec 2.3, rule 7). A bar that holds an odd number of cells would
+		// swing different cells in every other bar, so such swing is refused.
+		if pattern.Performance == nil && pattern.SwingPercent100 > 5000 {
+			grid := int64(pattern.StepTicks)
+			if grid == 0 {
+				grid = seq.TicksPerStep
+			}
+			if bar%(2*grid) != 0 {
+				meter := fmt.Sprintf("%d/%d", score.Meter.Beats, score.Meter.Unit)
+				held := fmt.Sprintf("does not hold a whole number of its %d-tick cells", grid)
+				if bar%grid == 0 {
+					held = fmt.Sprintf("holds %d of its %d-tick cells, an odd number", bar/grid, grid)
+				}
+				out = append(out, notation.Diagnostic{Code: "CICADA-METER", Severity: "error", Position: positions[pattern.ID],
+					Message: fmt.Sprintf("pattern %s swings, and a %s bar %s, so the swung cells would change from bar to bar; choose a step that fills a bar with an even number of cells, or remove swing", pattern.ID, meter, held)})
+			}
 		}
 		if length%bar != 0 {
 			out = append(out, notation.Diagnostic{Code: "CICADA-METER", Severity: "warning", Position: positions[pattern.ID],

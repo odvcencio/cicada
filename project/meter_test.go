@@ -161,3 +161,26 @@ func TestProjectMeterValidation(t *testing.T) {
 		t.Fatalf("a meter in /2: %v", err)
 	}
 }
+
+// An automation position outside its bar names the bar and the meter's
+// ranges, as an arrangement position does, not a 4/4 range (#358 review).
+func TestAutomationPositionErrorsNameTheMeter(t *testing.T) {
+	for _, c := range []struct{ meter, at, want string }{
+		{"3/4", "@2.4.1", "@2.4.1 is outside bar 2, which is in 3/4 (beats 1 to 3, steps 1 to 4)"},
+		{"7/8", "@2.7.3", "@2.7.3 is outside bar 2, which is in 7/8 (beats 1 to 7, steps 1 to 2)"},
+	} {
+		source := "cicada 2\nmeter " + c.meter + "\ntrack bass acid {}\npattern p { c2 }\nscene a { bass = p }\nsong { a*4 }\nautomate bass.cutoff {\n  @1.1.1 400Hz\n  " + c.at + " 800Hz\n}\n"
+		score, ds := notation.Parse([]byte(source))
+		if score == nil || hasErrors(ds) {
+			t.Fatal(ds)
+		}
+		_, ds = FromScore(score)
+		found := false
+		for _, d := range ds {
+			found = found || d.Severity == "error" && strings.Contains(d.Message, c.want)
+		}
+		if !found {
+			t.Errorf("%s %s: want %q, got %v", c.meter, c.at, c.want, ds)
+		}
+	}
+}

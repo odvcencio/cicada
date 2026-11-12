@@ -39,7 +39,7 @@ function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8'), context);
   const client = context.window.cicadaBrowserAudio;
   client.onError(error => stats.errors.push(error));
-  return { client, stats, setCountIn: value => { countIn = value; }, setImage: (version, bpm = 140000, required = 0) => { nextImage = image(version, bpm); new DataView(nextImage).setUint16(30, required, true); nextRevision = 'edited'; } };
+  return { client, stats, setCountIn: value => { countIn = value; }, setImage: (version, bpm = 140000, required = 0, flags = 0) => { nextImage = image(version, bpm); new DataView(nextImage).setUint16(30, required, true); new DataView(nextImage).setUint32(8, flags, true); nextRevision = 'edited'; } };
 }
 async function start(harness) {
   let outcome;
@@ -113,6 +113,20 @@ async function start(harness) {
   const ampPosts = oldTrackFX.stats.posted.filter(item => item.t === 'i').length;
   await assert.rejects(oldTrackFX.client.stageCurrentScore('edited'), /Amp automation requires an updated audio kernel/);
   assert.equal(oldTrackFX.stats.posted.filter(item => item.t === 'i').length, ampPosts, 'unnegotiated amp image reached old kernel');
+  // A song in a meter other than 4/4 sets header flag bit 7 (128); a kernel
+  // without capability bit 23 (8388608) never receives it.
+  const oldMeter = setup(13, { t: 'r', p: 2048, c: true });
+  assert.ok((await start(oldMeter)).result);
+  oldMeter.setImage(13, 140000, 0, 128);
+  const meterPosts = oldMeter.stats.posted.filter(item => item.t === 'i').length;
+  // Race a timer: without the refusal the stage would wait for a worklet reply
+  // that never comes, and the script would end without failing.
+  const meterRefusal = await Promise.race([
+    oldMeter.client.stageCurrentScore('edited').then(() => new Error('staged'), error => error),
+    new Promise(resolve => setTimeout(() => resolve(new Error('the stage never settled')), 1000)),
+  ]);
+  assert.match(String(meterRefusal && meterRefusal.message), /song meter other than 4\/4 requires an updated audio kernel/);
+  assert.equal(oldMeter.stats.posted.filter(item => item.t === 'i').length, meterPosts, 'a meter image reached a kernel without the meter capability');
   const spatial = setup(15, { t: 'r', p: 197119, r: 'initial', c: true });
   assert.ok((await start(spatial)).result);
   spatial.client.sendCommands([{ op: 26, track: 0, index: 1, arg0: 0x3f800000, pad: 0x3f000000 }]);

@@ -316,7 +316,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
 	}
 	// The meter comes first: every position below is read on its map.
-	if m := score.Meter; m != nil {
+	if m := score.SongMeter(); m != nil {
 		p.Meter = &Meter{Numerator: int(m.Beats), Denominator: int(m.Unit)}
 		for _, g := range m.Groups {
 			p.Meter.Groups = append(p.Meter.Groups, int(g))
@@ -376,7 +376,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	// Select /2 before lowering mixer fields. A later arrangement/automation
 	// upgrade must not discard levels or routing needed by its JSON wire form.
-	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0 || score.Meter != nil
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0 || score.SongMeter() != nil
 	p.Live = liveFromScore(score.Live)
 	p.MIDI = midiFromScore(score.MIDI)
 	for _, scene := range score.Scenes {
@@ -605,7 +605,14 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	diagnostics = append(diagnostics, sceneEntryWarnings(p, score)...)
-	diagnostics = append(diagnostics, meterWarnings(p, score)...)
+	meterDiagnostics := meterWarnings(p, score)
+	diagnostics = append(diagnostics, meterDiagnostics...)
+	for _, d := range meterDiagnostics {
+		if d.Severity == "error" {
+			// Music the meter would split (swing) is refused, not played.
+			return nil, diagnostics
+		}
+	}
 	if _, err := canonicalProjectBytes(p); err != nil {
 		code := projectDiagnosticCode(err)
 		if errors.Is(err, errCanonicalJSONLimit) {

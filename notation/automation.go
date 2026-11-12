@@ -35,13 +35,15 @@ func PositionTick(meterMap seq.MeterMap, at string) (int64, error) {
 	for i, part := range parts {
 		value, err := strconv.ParseInt(part, 10, 32)
 		if err != nil || value < 1 {
-			return 0, fmt.Errorf("position needs bar >= 1, beat 1..4 and step 1..4")
+			return 0, fmt.Errorf("position %s needs a bar, beat and step counted from 1", at)
 		}
 		n[i] = value
 	}
 	tick, ok := meterMap.PositionTick(n[0], n[1], n[2])
 	if !ok {
-		return 0, fmt.Errorf("position needs bar >= 1, beat 1..4 and step 1..4")
+		// The arrangement's message names the bar and its meter's ranges.
+		_, err := MusicalTicks(meterMap, "@"+strings.TrimPrefix(at, "@"), true)
+		return 0, err
 	}
 	return tick, nil
 }

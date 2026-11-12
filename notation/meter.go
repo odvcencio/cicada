@@ -90,3 +90,14 @@ func (s *Score) SetMeter(m *Meter) {
 	s.Meter = m
 	resolveMeter(s)
 }
+
+// SongMeter is the declared meter when it changes anything: nil without a
+// declaration, and nil for a plain `meter 4/4`, which is the same music as no
+// declaration and so keeps the same project, image and WAV bytes. A 4/4 with
+// written beat groups is kept, because the groups reach the MIDI export.
+func (s *Score) SongMeter() *Meter {
+	if m := s.Meter; m != nil && (m.Beats != 4 || m.Unit != 4 || len(m.Groups) != 0) {
+		return m
+	}
+	return nil
+}

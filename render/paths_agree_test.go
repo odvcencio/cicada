@@ -142,6 +142,22 @@ pattern idle { c3 . . . }
 // pathsCases are targeted scores. Each uses only what the direct mixer can
 // render, so both paths run.
 var pathsCases = []pathsCase{
+	// Songs in another meter (#358 review): scene switches and a scene tempo on
+	// the meter's bar lines, a 16-step pattern that crosses them, and swing.
+	{name: "meter 3/4: scene switch, scene tempo, swing", source: `meter 3/4
+pattern long { c3 d3 e3 f3 g3 a3 b3 c4 c3 d3 e3 f3 g3 a3 b3 1~ }
+pattern short { step = 1/8 5 . 3 . 1 . }
+pattern sw { swing = 60% c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 }
+scene x { bass = long lead = short mono = sw }
+scene y { bass = short lead = long tempo = 96 }
+song { x*3 y*2 x*1 y*1 }`},
+	{name: "meter 7/8 2+2+3: scene switch, scene tempo, swing", source: `meter 7/8 2+2+3
+pattern long { c3 d3 e3 f3 g3 a3 b3 c4 c3 d3 e3 f3 g3 a3 b3 1~ }
+pattern short { step = 1/8 5 . 3 . 1 . }
+pattern sw { swing = 60% c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 }
+scene x { bass = long lead = short mono = sw }
+scene y { bass = short lead = long tempo = 96 }
+song { x*3 y*2 x*1 y*1 }`},
 	{name: "slide across a scene switch", source: `pattern ax { . . . . . . . . . . . . . . . 1~ }
 pattern ay { 5 . . . . . . . . . . . . . . . }
 scene x { bass = ax }

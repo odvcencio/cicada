@@ -94,9 +94,22 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 		if option.value == "240" {
 			attrs = append(attrs, gosx.BoolAttr("selected"))
 		}
-		snapOptions = append(snapOptions, gosx.El("option", attrs, gosx.Text(option.label)))
+		label := option.label
+		// Studio's grid is still 4/4 (time-signatures phase 5): a bar or beat
+		// snap it cannot draw would act as a sixteenth, so it is offered off.
+		if (option.label == "Bar" && option.value != fourFourBar) || (option.label == "Beat" && option.value != fourFourBeat) {
+			attrs = append(attrs, gosx.BoolAttr("disabled"))
+			label += " (off until Studio draws " + meterName(p.Meter) + ")"
+		}
+		snapOptions = append(snapOptions, gosx.El("option", attrs, gosx.Text(label)))
 	}
-	return gosx.El("section", gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10))),
+	navigation := gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10)))
+	if p.Meter != nil {
+		// Shift+Arrow moves one 4/4 bar in the browser; the engine shows this
+		// reason instead of moving the placement by the wrong length.
+		navigation = append(navigation, gosx.Attr("data-placement-bar-moves-off", "Shift+Arrow moves by a 4/4 bar, so it is off in this "+meterName(p.Meter)+" song until Studio draws its meter. Move with the arrow keys or type a position."))
+	}
+	return gosx.El("section", navigation,
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-navigation"), gosx.Attr("aria-label", "Arrangement navigation")),
 			field("Timeline zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
 			field("Snap step", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementSnap"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Snap step"), gosx.Attr("title", "Move and trim increments preserve timing offsets. T = triplet. Pattern starts remain on sixteenths. Shift-drag bypasses snap within those limits.")), gosx.Fragment(snapOptions...))),

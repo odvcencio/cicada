@@ -16,6 +16,12 @@ import (
 //   - the hard ceiling of decision 9, rawCeiling and brotliCeiling: 335,872 bytes raw and
 //     122,880 Brotli. No pull request moves it; going over it needs the owner.
 //
+// 334,465 bytes raw and 121,806 Brotli: re-based on 2026-11-12 by #358, which lets a song
+// declare its meter (time signatures phase 2): the kernel image's meter table and the meter
+// map's general lookups, which phase 1 kept out of the core until a song builds a map. Old
+// limit 332,139 raw and 120,863 Brotli; measured size with main 00704961 merged 330,369 raw
+// and 117,710 Brotli (TinyGo 0.41.1, Binaryen 133); new limit the measured size plus 4,096.
+//
 // 332,139 bytes raw and 120,863 Brotli: re-based on 2026-11-12 by #323, which flushes
 // subnormal numbers in the decaying state and smoothed controls of the voices and effects
 // (kernel/dsp/subnormal). Old limit 328,525 raw and 119,562 Brotli; measured size with main
@@ -42,8 +48,8 @@ import (
 // (version 116, which scripts/wasm-opt.sh uses when WASMOPT is unset) it is 329,264.
 // Raised from 300 KiB to 320 KiB on 2026-10-04 by owner decision so the graph delay/comb,
 // experimental guitar and phase-modulation voices fit together (about 321.7 KB raw).
-const rawLimit = 332_139
-const brotliLimit = 120_863
+const rawLimit = 334_465
+const brotliLimit = 121_806
 
 // rawCeiling and brotliCeiling are decision 9's hard ceiling (see above).
 const rawCeiling = 335_872

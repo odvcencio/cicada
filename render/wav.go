@@ -641,7 +641,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	report.tempoChanges = project.ExcerptTempoChanges(semantic.TempoMilli, tempoChanges, report.From, report.Bars)
-	report.meter = score.Meter
+	report.meter = score.SongMeter()
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
 	}

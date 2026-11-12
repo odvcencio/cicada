@@ -141,10 +141,20 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-record-help")), gosx.El("summary", gosx.Text("How to record movements")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("For playback movement, play the song or start an audio take, then record a pass and move Perform. To hear amp movements on the input, select the destination track's amp parameter, link Perform and prepare before arming or recording. Then start the audio take and move Perform. Finish the take before keeping the curve; keeping the curve is one Undo step. Movements use the song's sixteenth-note grid. A new pass starts at the saved value at its grid position; the control shows that starting value and your movements, not a continuous playback meter."))))
 	content := gosx.Fragment(chooser, ampNote, recorder, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%s · %g to %g %s. Double-click the curve to add a point; drag a point to move it. Arrow keys adjust it; Escape cancels a drag.", selected, d.Min, d.Max, props.Unit))), graph, recalls,
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-automation-curve-status", ""), gosx.Attr("role", "status")), gosx.Text("Select a point, or add one with the controls below.")),
-		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-new", "")), gosx.Text("New point")), pointForm,
+		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-new", ""), gosx.Attr("disabled", p.Meter != nil)), gosx.Text("New point")), pointForm,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Transitions describe the segment arriving at each point. Save records one Undo step. Curves override scene settings after their first point.")))
 	encoded, _ := json.Marshal(props)
-	surface := meterEngine(ctx, engine.Config{Name: "CicadaAutomationCurve", Kind: engine.KindSurface, MountID: "cicada-automation-curve", Runtime: engine.RuntimeGoWASM, Props: encoded, Capabilities: []engine.Capability{engine.CapPointer, engine.CapKeyboard, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.Attr("data-automation-curve-props", string(encoded))), content))
+	var surface gosx.Node
+	if p.Meter != nil {
+		// The browser's curve editor places and reads points on a 4/4 grid
+		// until time-signatures phase 5, so in another meter it would store a
+		// point somewhere else than drawn. The form below is read on the
+		// song's meter and still saves points.
+		reason := "Drawing, dragging and recording points are off in this " + meterName(p.Meter) + " song: Studio's curve editor places points on a 4/4 grid until it draws the song's meter. Type a position and a value in the form below; positions are read in " + meterName(p.Meter) + "."
+		surface = gosx.El("div", gosx.Attrs(gosx.BoolAttr("data-automation-curve-off")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "notice"), gosx.Attr("role", "status")), gosx.Text(reason)), content)
+	} else {
+		surface = meterEngine(ctx, engine.Config{Name: "CicadaAutomationCurve", Kind: engine.KindSurface, MountID: "cicada-automation-curve", Runtime: engine.RuntimeGoWASM, Props: encoded, Capabilities: []engine.Capability{engine.CapPointer, engine.CapKeyboard, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, gosx.El("div", gosx.Attrs(gosx.Attr("data-automation-curve-props", string(encoded))), content))
+	}
 	return ui.Panel(ui.PanelProps{ID: "automation-editor", Title: "Automation curves", Description: "Draw vocal rides, filter sweeps and effect movement across the full song."}, surface,
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-overview")), gosx.El("summary", gosx.Text("All saved curves")), continuousAutomation(p)))
 }

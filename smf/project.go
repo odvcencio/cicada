@@ -58,8 +58,11 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	// 96/D MIDI clocks per click times the first beat group (one beat with no
 	// groups) and 8: 04 02 18 08 for 4/4, 07 03 18 08 for 7/8 2+2+3.
 	beats, unit := meterMap.BeatsInBar(0), seq.TicksPerWhole/meterMap.BeatTicks(0)
+	// MIDI has one click length, so only the first group reaches the file; a
+	// group whose clicks do not fit the byte (12/4 with one group of 12) clicks
+	// every beat instead.
 	click := 96 / unit
-	if p.Meter != nil && len(p.Meter.Groups) > 0 {
+	if p.Meter != nil && len(p.Meter.Groups) > 0 && click*int64(p.Meter.Groups[0]) <= 255 {
 		click *= int64(p.Meter.Groups[0])
 	}
 	file.Format, file.PPQ = 1, uint16(seq.PPQ)

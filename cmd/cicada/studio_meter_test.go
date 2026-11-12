@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/project"
 )
 
 const studioWaltz = `cicada 2
@@ -40,6 +41,20 @@ func TestStudioOpensASongInThreeFour(t *testing.T) {
 		if r := studioCall(t, h, route, nil); r.Code >= 500 {
 			t.Errorf("%s: %d %s", route, r.Code, r.Body.String())
 		}
+	}
+	// Pattern audition and sound preview compile a copy of the project: it
+	// keeps format /3, which a meter needs (#358 review).
+	score, ds, err := project.LoadScore(path, nil)
+	if err != nil || len(ds) != 0 {
+		t.Fatal(ds, err)
+	}
+	p, _ := project.FromScore(score)
+	listen, _, err := prepareStudioListening(p, studioListening{Kind: "pattern", Name: "riff", Loop: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := project.CompileEngine(listen, 48000, 128); err != nil {
+		t.Fatalf("pattern audition in 3/4: %v", err)
 	}
 	body := `{"version":1,"revision":"` + edits.Revision([]byte(studioWaltz)) + `","intents":[{"kind":"addmarker","name":"drop","settings":{"at":"@2.3.1"}}]}`
 	if r := studioCallRaw(t, h, "/api/intents", body); r.Code != http.StatusOK {
