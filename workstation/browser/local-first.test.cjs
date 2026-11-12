@@ -23,10 +23,14 @@
  *         events.
  *   held  The same step with every HTTP request held unanswered and every
  *         WebSocket frame stopped, from the input until the result paints or
- *         the hold limit passes (CICADA_LOCAL_FIRST_HOLD_MS, default 250 ms,
+ *         the hold limit passes (CICADA_LOCAL_FIRST_HOLD_MS, default 1,500 ms,
  *         and at least CICADA_LOCAL_FIRST_HOLD_FRAMES animation frames, default
  *         8, so a busy main thread still gets its frames). Then the network is
  *         released and the step must reach its result (the recovery check).
+ *         The limit is the classifier and is generous on purpose, so a slow
+ *         runner cannot turn a local row into R. Whether the held paint came
+ *         within the design's 250 ms is reported (held_paint_ms, and "slow" in
+ *         the table), not used for the kind.
  *
  * Kind, as measured:
  *   R  the result did not paint while the network was held: waited_on_server.
@@ -38,8 +42,6 @@
  * A background row (a poll, a stream, a debounced save) has a display that is
  * already on screen; its step watches for its own request for a bounded time
  * and is B when the request comes, L when it does not.
- * A step whose result comes after a deliberate local delay (the mixer saves
- * 400 ms after the last key) sets its own hold limit (holdMs).
 
  * Setup is not measured: a step's prepare runs with the network open and may
  * navigate. One failed step does not stop the others; it is retried once on a
@@ -89,7 +91,9 @@ const env = (name, fallback) => {
   assert.ok(Number.isFinite(value) && value > 0, `${name} must be a positive number`);
   return value;
 };
-const HOLD_MS = env('CICADA_LOCAL_FIRST_HOLD_MS', 250);
+const HOLD_MS = env('CICADA_LOCAL_FIRST_HOLD_MS', 1500);
+// Reported only: a held paint later than this is marked slow in the table.
+const REPORT_MS = 250;
 const HOLD_FRAMES = env('CICADA_LOCAL_FIRST_HOLD_FRAMES', 8);
 const OPEN_MS = env('CICADA_LOCAL_FIRST_OPEN_MS', 15_000);
 const ATTEMPTS = env('CICADA_LOCAL_FIRST_ATTEMPTS', 2);
@@ -382,8 +386,7 @@ function localFirstProbe() {
 // base. others lists request paths that belong to another row the step sets
 // off; settled (optional) is a condition the step waits for before it ends;
 // background (a poll or debounced save) counts the step's own request within
-// a bounded time; holdMs overrides the hold limit; finish (optional) undoes
-// setup with the network open.
+// a bounded time; finish (optional) undoes setup with the network open.
 
 const SCENE = '/studio?tab=arrange&dock=clip&pattern=continuity&step=1';
 const PLACEMENT = '/studio?tab=arrange&dock=clip&pattern=ripple&step=1';
@@ -825,8 +828,8 @@ const STEPS = {
   },
 
   M2: {
-    // The strip saves 400 ms after the last key, so the hold limit covers that wait.
-    part: 2, fixture: 'scene', input: {type: 'keydown', key: 'ArrowLeft'}, holdMs: 1000,
+    // The strip saves 400 ms after the last key; the hold limit covers that wait.
+    part: 2, fixture: 'scene', input: {type: 'keydown', key: 'ArrowLeft'},
     prepare: async ctx => {
       await ctx.open(SCENE); await ctx.view('mixer');
       await ctx.page.locator('#view-panel-mixer .strip[data-mixer-strip=track] .strip-pan input[type=range]').first().focus();
@@ -1334,8 +1337,8 @@ const STEPS = {
   },
   Z3: {
     // Autoscroll starts after the pointer rests near the edge (about 270 ms
-    // measured), so the hold limit covers that wait.
-    fixture: 'placement', input: {type: 'pointermove'}, holdMs: 1000,
+    // measured); the hold limit covers that wait.
+    fixture: 'placement', input: {type: 'pointermove'},
     prepare: async ctx => {
       await ctx.open(PLACEMENT_SELECTED); await ctx.view('arrange');
       await ctx.page.evaluate(() => { document.querySelector('#view-panel-arrange .placement-scroll').scrollLeft = 0; });
@@ -1495,7 +1498,7 @@ async function runStep(ctx, step, pass) {
   const args = {...(step.args || {}), ...((step.prepare ? await step.prepare(ctx, pass) : null) || {})};
   const {page, net} = ctx; // prepare opens the page on the first step
   await settle(page);
-  const spec = {id: step.id, input: step.input, args, limitMs: pass === 'held' ? (step.holdMs || HOLD_MS) : OPEN_MS, limitFrames: pass === 'held' ? HOLD_FRAMES : 0};
+  const spec = {id: step.id, input: step.input, args, limitMs: pass === 'held' ? HOLD_MS : OPEN_MS, limitFrames: pass === 'held' ? HOLD_FRAMES : 0};
   const mark = await page.evaluate(`(() => { window.__lf.arm(${JSON.stringify(spec)}, ${checkSource(step.check)}, ${step.snapshot ? checkSource(step.snapshot) : 'null'}); return window.__lf.mark; })()`);
   const documentsBefore = net.documents.length;
   const nodeStart = Date.now();
@@ -1809,6 +1812,7 @@ function summarize(steps, records, failures, fixture, browserVersion, recovery, 
       time_to_paint_ms: open ? open.ms : null,
       first_frame_ms: open ? open.firstFrameMs : null,
       held_paint_ms: held && held.painted ? held.ms : null,
+      held_within_250_ms: held && held.painted ? held.ms <= REPORT_MS : null,
       recovered: held ? held.recovered : null,
       recovery_note: held?.recoveryNote,
       elapsed_ms: [open?.elapsedMs, held?.elapsedMs],
@@ -1821,18 +1825,19 @@ function summarize(steps, records, failures, fixture, browserVersion, recovery, 
   return {
     generatedAt: new Date().toISOString(), fixture, browser: browserVersion,
     host: {platform: process.platform, arch: process.arch, cpus: os.cpus().length, load: os.loadavg()},
-    holdMs: HOLD_MS, holdFrames: HOLD_FRAMES,
+    holdMs: HOLD_MS, holdFrames: HOLD_FRAMES, reportMs: REPORT_MS,
     waited_on_server: rows.filter(row => row.painted_while_held === false).length,
     recovery, failures, pageErrors: errors, rows,
   };
 }
 
 function table(report) {
-  const lines = [`local-first walkthrough, fixture ${report.fixture} (report mode; hold ${report.holdMs} ms and ${report.holdFrames} frames)`,
-    'in-window: requests and frames the page started between input and paint (polls included); own: those the kind counts',
-    'row   kind  audit  in-window  own  painted-held  paint-ms  recovered'];
+  const lines = [`local-first walkthrough, fixture ${report.fixture} (report mode; a row painted while held if it painted within ${report.holdMs} ms and ${report.holdFrames} frames with every request held)`,
+    `in-window: requests and frames the page started between input and paint (polls included); own: those the kind counts; held-ms: the held paint, "slow" past ${report.reportMs} ms`,
+    'row   kind  audit  in-window  own  painted-held  held-ms   paint-ms  recovered'];
   for (const row of report.rows) {
-    lines.push(`${row.id.padEnd(5)} ${String(row.kind ?? '-').padEnd(5)} ${row.audit.padEnd(5)} ${String(row.requests_in_window ?? '-').padStart(10)} ${String(row.own_requests?.length ?? '-').padStart(4)}  ${String(row.painted_while_held ?? '-').padEnd(12)}  ${String(row.time_to_paint_ms ?? '-').padStart(8)}  ${row.recovered ?? '-'}`);
+    const held = row.held_paint_ms == null ? '-' : `${row.held_paint_ms}${row.held_within_250_ms ? '' : ' slow'}`;
+    lines.push(`${row.id.padEnd(5)} ${String(row.kind ?? '-').padEnd(5)} ${row.audit.padEnd(5)} ${String(row.requests_in_window ?? '-').padStart(10)} ${String(row.own_requests?.length ?? '-').padStart(4)}  ${String(row.painted_while_held ?? '-').padEnd(12)}  ${held.padEnd(8)}  ${String(row.time_to_paint_ms ?? '-').padStart(8)}  ${row.recovered ?? '-'}`);
   }
   lines.push(`waited_on_server ${report.waited_on_server} of ${report.rows.length} steps; ${report.recovery}`);
   return lines.join('\n');
