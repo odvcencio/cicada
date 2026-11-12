@@ -1,22 +1,24 @@
 ### new
-cicada new <name>
+cicada new [--json] <name>
 
 create an edition-2 project
 
 Flags:
-  (no command flags)
+  --json      write what was created as JSON (schema cicada.new.v1)
   --help      show this help
 
+Writes main.cicada (a working song), cicada.mod, .gitignore and a short AGENTS.md that points an agent to cicada agents; an AGENTS.md already there is never replaced. With --json, agents_md_written says whether it wrote one.
+
 ### agents
-cicada agents [--json]
+cicada agents [reference] [--json]
 
 print the quick start for AI agents
 
 Flags:
-  --json      write the quick start as JSON (schema cicada.agents.v1) with its size in bytes and the commands that look up the rest
+  --json      write the page as JSON (schema cicada.agents.v1) with its size in bytes, the commands that look up the rest and the pages the binary carries
   --help      show this help
 
-The quick start teaches the loop (new, check, render, audition, apply), enough of the score language for a song with drums, bass and chords, the edit envelope, how to read a refusal and where to look things up. It is docs/manual/agent-quickstart.md, built into the binary, so it needs no repository checkout.
+The quick start teaches the loop (new, check, render, audition, apply), enough of the score language for a song with drums, bass and chords, the edit envelope, how to read a refusal and where to look things up. It is docs/manual/agent-quickstart.md, built into the binary, so it needs no repository checkout. cicada agents reference prints the core reference, which the binary builds from its own catalogs: the quick start, the JSON conventions in brief, and one line for every command, edit intent, diagnostic code and effect route.
 
 ### bundle
 cicada bundle <score.cicada> <bundle.zip>

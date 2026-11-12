@@ -90,7 +90,9 @@ func (u *workspaceUI) sourceStatus(text string) {
 }
 
 // Recovery never uses the workspace mutation queue: it must not save the
-// score, replace the editor, or delay musical edits and transport commands.
+// score, replace the editor's text, or delay musical edits and transport
+// commands. Studio answers a checkpoint after reading only the file's
+// revision, which takes no service lock.
 func (u *workspaceUI) checkpointSources() {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -139,6 +141,22 @@ func (u *workspaceUI) checkpointSources() {
 			if err == nil && response.Status != statusOK {
 				err = fmt.Errorf("recovery returned %d", response.Status)
 			}
+			// Studio says whether it kept a copy: it keeps none of text the
+			// file already has, and names that file's revision. Older
+			// versions do not say, and keep one. An answer that cannot be
+			// read is a failed attempt, like a failed request.
+			var reply struct {
+				Data struct {
+					Kept     *bool  `json:"kept"`
+					Revision string `json:"revision"`
+				} `json:"data"`
+			}
+			if err == nil {
+				if decodeErr := decodeLimited(response.Body, 4096, &reply); decodeErr != nil {
+					err = fmt.Errorf("recovery answer could not be read: %w", decodeErr)
+				}
+			}
+			kept := reply.Data.Kept == nil || *reply.Data.Kept
 			if u.closed.Load() {
 				return
 			}
@@ -150,7 +168,8 @@ func (u *workspaceUI) checkpointSources() {
 				continue
 			}
 			current.dirty = false
-			if current.clean {
+			if current.clean || !kept {
+				// Closed: an edit after this starts a new copy.
 				delete(u.sources, file)
 			}
 			if workspacePresent(current.control) && current.control.Get("isConnected").Bool() {
@@ -158,7 +177,7 @@ func (u *workspaceUI) checkpointSources() {
 				// and Back can otherwise select a checkpoint not yet on disk.
 				if location, err := url.Parse(js.Global().Get("location").Get("href").String()); err == nil {
 					query := location.Query()
-					if current.clean {
+					if current.clean || !kept {
 						query.Del("codeDraft")
 					} else {
 						query.Set("codeDraft", current.id)
@@ -172,6 +191,18 @@ func (u *workspaceUI) checkpointSources() {
 				}
 				if current.clean {
 					u.sourceStatus("No unsaved Code edits.")
+				} else if !kept {
+					// The file has this text: the editor takes it, at the file's
+					// revision, as its own, so the Code panel is no longer held
+					// and follows the file like an editor without changes.
+					if form := current.control.Call("closest", "form"); reply.Data.Revision != "" && current.control.Get("value").String() == snapshot.content {
+						current.control.Set("defaultValue", snapshot.content)
+						if field := workspaceField(form, "fileRevision"); workspacePresent(field) {
+							field.Set("value", reply.Data.Revision)
+						}
+						form.Call("removeAttribute", "data-code-unsaved")
+					}
+					u.sourceStatus("No unsaved Code edits. The score file has this text.")
 				} else {
 					u.sourceStatus("Recovery copy kept on this device. Use Save file to apply edits to the song.")
 				}
