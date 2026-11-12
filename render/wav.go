@@ -73,6 +73,10 @@ type Options struct {
 	// and master.wav. It chooses files only: every track still plays, so the
 	// audio of each written file is the same as in a full stem set.
 	StemTracks []string
+	// StemBuses, with StemTracks, still writes return-a, return-b, music and
+	// sfx, so a reader can attribute the pre-master mix to the chosen tracks
+	// and everything else. It chooses files only.
+	StemBuses bool
 }
 
 type Report struct {

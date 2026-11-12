@@ -58,16 +58,22 @@ func (e *UnknownTrackError) Error() string {
 	return fmt.Sprintf("unknown track %q; the score's tracks are %s", e.Name, strings.Join(e.Valid, ", "))
 }
 
+// TrackListError is a track list with an empty entry or a name given twice: a
+// usage mistake, not a missing track.
+type TrackListError struct{ Message string }
+
+func (e *TrackListError) Error() string { return e.Message }
+
 // CheckTrackNames returns an *UnknownTrackError for the first name that is not
-// in valid, or an error for a name given twice or an empty list entry.
+// in valid, or a *TrackListError for a name given twice or an empty entry.
 func CheckTrackNames(names, valid []string) error {
 	seen := map[string]bool{}
 	for _, name := range names {
 		if name == "" {
-			return fmt.Errorf("empty track name in the track list")
+			return &TrackListError{"empty track name in the track list"}
 		}
 		if seen[name] {
-			return fmt.Errorf("track %q is listed twice", name)
+			return &TrackListError{fmt.Sprintf("track %q is listed twice", name)}
 		}
 		seen[name] = true
 		found := false
@@ -177,7 +183,7 @@ func newStemOutput(dir string, p *project.Project, report Report, opts Options, 
 		}
 	}
 	names = append(names, "return-a.wav", "return-b.wav", "music.wav", "sfx.wav", "master.wav")
-	partial := len(selected) > 0
+	partial := len(selected) > 0 && !opts.StemBuses
 	skip = append(skip, partial, partial, partial, partial, false)
 	stems.frame = make([]stemPair, len(names)-1)
 	dither := opts.Dither == nil || *opts.Dither
