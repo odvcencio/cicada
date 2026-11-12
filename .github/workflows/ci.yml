@@ -772,7 +772,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -791,12 +791,16 @@ jobs:
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
           RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
+          RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
+          WORKSTATION_RESULT: ${{ needs.workstation.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
           #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
+          #   workstation                success when workstation=true, skipped otherwise
+          #                              (its go generate enforces the UI engine size limit)
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -828,6 +832,11 @@ jobs:
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
           check m0-render-paths "$RENDER_PATHS_RESULT" "$part_expected"
+          if [[ "$RUN_WORKSTATION" == true ]]; then
+            check workstation "$WORKSTATION_RESULT" success
+          else
+            check workstation "$WORKSTATION_RESULT" skipped
+          fi
           exit "$status"
 
   workstation:
@@ -870,6 +879,11 @@ jobs:
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
           git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
+      # What fills the UI engine WebAssembly, logged on every run. It reports;
+      # the limit is enforced by go generate above.
+      - name: UI engine size report (does not fail the job)
+        continue-on-error: true
+        run: make engine-size-report
       - name: Windows workstation and desktop
         run: |
           set -euo pipefail
@@ -883,6 +897,7 @@ jobs:
           path: |
             workstation/dist/build.json
             build/workstation-gosx-size.json
+            workstation/build/engine-size.json
 
   # Builds what the Studio browser suites run against once, so each shard does
   # not rebuild it. The tar keeps file modes (build/cicada stays executable).
@@ -994,6 +1009,8 @@ jobs:
             build/studio-notes-report.txt
             build/studio-notes-server.log
             build/studio-notes-proof/
+            build/studio-engine-requests-report.txt
+            build/studio-engine-requests-server.log
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/
