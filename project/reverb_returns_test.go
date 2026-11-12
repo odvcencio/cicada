@@ -117,3 +117,24 @@ func TestLaterReverbSendPathIsRefusedNotRedirected(t *testing.T) {
 		t.Fatalf("keys.send.reverb, the send to hall: %v", err)
 	}
 }
+
+// Two scores that differ by a send to a later reverb are different mixes. The
+// legacy send B was rebuilt as a send to the last reverb, so the extra send to
+// room made the two compare equal.
+func TestSemanticEqualSeesASendToALaterReverb(t *testing.T) {
+	const head = "cicada 2\ntempo 120\nfx hall reverb {}\nfx room reverb {}\n"
+	a, errs := reverbScoreDiagnostics(t, head+strings.Replace(reverbTail, "SENDS", "send hall = 0.5", 1))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	b, errs := reverbScoreDiagnostics(t, head+strings.Replace(reverbTail, "SENDS", "send hall = 0.5 send room = 0.5", 1))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if SemanticEqual(a, b) {
+		t.Fatal("a score with an extra send to room compares equal to the score without it")
+	}
+	if !SemanticEqual(a, a) {
+		t.Fatal("a score differs from itself")
+	}
+}
