@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"m31labs.dev/cicada/kernel/seq"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -70,10 +71,10 @@ func TestNamedPlacementSessionShowsActualArrangement(t *testing.T) {
 }
 
 func TestPlacementPositionRetainsExactTicks(t *testing.T) {
-	if got := placementPosition(480); got != "@1.1.3" {
+	if got := placementPosition(seq.MeterMap{}, 480); got != "@1.1.3" {
 		t.Fatalf("sixteenth position: %s", got)
 	}
-	if got := placementPosition(320); got != "320 ticks" {
+	if got := placementPosition(seq.MeterMap{}, 320); got != "320 ticks" {
 		t.Fatalf("triplet position was rounded: %s", got)
 	}
 }

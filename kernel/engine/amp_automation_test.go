@@ -5,6 +5,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/fx/pro"
+	"m31labs.dev/cicada/kernel/seq"
 	"math"
 	"testing"
 )
@@ -17,7 +18,7 @@ func TestAmpAutomationTrackOwnershipSeekLoop(t *testing.T) {
 		cfg.Track[1] = cfg.Track[0]
 		cfg.Patterns = append(cfg.Patterns, cfg.Patterns[0])
 		if scheduled {
-			cfg.Schedule = LowerSong(cfg.Song)
+			cfg.Schedule = LowerSong(cfg.Song, seq.MeterMap{})
 			cfg.Song = nil
 		}
 		cfg.LoopSong = true

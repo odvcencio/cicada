@@ -4,7 +4,6 @@ import (
 	"slices"
 	"sort"
 
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
 )
@@ -14,7 +13,7 @@ func (s *studioApp) listeningForm(v workspace, csrf, selected string, children .
 }
 
 func (s *studioApp) sessionListening(v workspace, csrf, selected string, end int64) gosx.Node {
-	start, finish := int64(0), min(end, 4*seq.TicksPerBar)
+	start, finish := int64(0), min(end, v.Project.MeterMap().BarStart(4))
 	if v.Project.Arrange != nil {
 		for _, place := range v.Project.Arrange.Placements {
 			if place.ID == selected {
@@ -42,7 +41,7 @@ func (s *studioApp) sessionListening(v workspace, csrf, selected string, end int
 			section = s.listeningForm(v, csrf, selected, hidden("action", "loopSection"), field("Section", selectInput("section", chosen, names, "Section")), submit("", "", "Loop section"))
 		}
 	}
-	exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(start, true))), field("Loop end", textInput("end", placementLiteral(finish, true))), submit("", "", "Loop range"))
+	exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(v.Project.MeterMap(), start, true))), field("Loop end", textInput("end", placementLiteral(v.Project.MeterMap(), finish, true))), submit("", "", "Loop range"))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "session-listening"), gosx.Attr("aria-label", "Session listening")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), section,
 			s.listeningForm(v, csrf, selected, submit("action", "fullSong", "Play full song")),
