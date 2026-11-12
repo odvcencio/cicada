@@ -12,10 +12,12 @@ test('suites get GPU rasterization unless they choose their own graphics backend
   assert.deepEqual(gpu.withGpuRaster({headless: true, args: ['--no-sandbox']}), {headless: true, args: ['--no-sandbox', ...gpu.flags]});
   assert.deepEqual(gpu.withGpuRaster().args, gpu.flags);
   assert.deepEqual(gpu.withGpuRaster(gpu.withGpuRaster({args: []})).args, gpu.flags, 'applying it twice adds nothing');
-  for (const own of ['--use-gl=angle', '--use-angle=gl-egl', '--disable-gpu']) {
+  for (const own of ['--use-gl=angle', '--use-angle=gl-egl', '--disable-gpu', '--disable-gpu-compositing', '--disable-gpu-rasterization']) {
     const options = {args: ['--no-sandbox', own]};
     assert.equal(gpu.withGpuRaster(options), options, `${own} is kept as the suite set it`);
   }
+  // Flags that only share a prefix with a graphics flag do not count.
+  assert.deepEqual(gpu.withGpuRaster({args: ['--disable-gpu-sandbox']}).args, ['--disable-gpu-sandbox', ...gpu.flags]);
 });
 
 test("CI's Chrome rasterizes on the GPU with these flags", {skip: !process.env.CICADA_CHROME_PATH && 'needs CICADA_CHROME_PATH', timeout: 60000}, async t => {
@@ -23,8 +25,7 @@ test("CI's Chrome rasterizes on the GPU with these flags", {skip: !process.env.C
   const status = async args => {
     const browser = await chromium.launch({headless: true, executablePath: process.env.CICADA_CHROME_PATH, args});
     try {
-      const {gpu: info} = await (await browser.newBrowserCDPSession()).send('SystemInfo.getInfo');
-      return {compositing: info.featureStatus.gpu_compositing, rasterization: info.featureStatus.rasterization};
+      return await gpu.graphicsStatus(browser);
     } finally {
       await browser.close();
     }
