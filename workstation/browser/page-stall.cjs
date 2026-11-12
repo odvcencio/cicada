@@ -327,7 +327,7 @@ async function goSnapshot(session) {
       if (result !== 'pending') {
         // A termination that reached the read itself rejects it: ask again.
         // Any other error means the session cannot answer: report it.
-        if (result.error && !/terminat/i.test(String(result.error.message))) return `go: no entry record (${result.error.message})`;
+        if (result.error && !/terminat/i.test(String(result.error.message))) return `go: no entry record (${result.error.message})${terminations ? `, after ${terminations} Runtime.terminateExecution (${answered} answered)` : ''}`;
         if (!result.error && result.exceptionDetails === undefined) value = result;
         break;
       }

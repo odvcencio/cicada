@@ -237,7 +237,7 @@ test('a failing suite held open by a leaked handle exits with code 1', { timeout
 // then blamed "0 Runtime.terminateExecution" instead of the error.
 test('a dead DevTools session is reported with its error and is not polled in a loop', { timeout: 30000 }, async () => {
   const { goSnapshot } = require('./page-stall.cjs');
-  let sends = 0;
+  let sends = 0, ticks = 0;
   const dead = { send: () => { sends++; return Promise.reject(new Error('Session closed. Most likely the page has been closed.')); } };
   const timer = setInterval(() => { ticks++; }, 10);
   const started = Date.now();
@@ -262,4 +262,24 @@ test('a read that every termination rejects is retried without blocking the even
   assert.match(report, /^go: the page did not answer within 4000 ms/);
   assert.ok(reads <= ms / 20, `${reads} reads in ${ms} ms: the retry loop is not paused`);
   assert.ok(ticks >= ms / 10 / 3, `a 10 ms timer ticked ${ticks} times in ${ms} ms: the event loop was blocked`);
+});
+
+// A session that dies after the report has terminated the page's script must
+// still say how many terminations were sent: that count tells a stuck page
+// from a closed one.
+test('a session that dies after a termination keeps the termination count', { timeout: 30000 }, async () => {
+  const { goSnapshot } = require('./page-stall.cjs');
+  let reads = 0, endRead = null;
+  const session = { send: method => {
+    if (method === 'Runtime.terminateExecution') { if (endRead) endRead(new Error('Execution was terminated')); return Promise.resolve({}); }
+    reads++;
+    if (reads === 1) return new Promise((_, reject) => { endRead = reject; });
+    return Promise.reject(new Error('Session closed. Most likely the page has been closed.'));
+  } };
+  // The helper's own timers are unref'd; a real suite's open browser keeps
+  // the event loop alive, and this interval stands in for it.
+  const open = setInterval(() => {}, 1000);
+  const report = await goSnapshot(session);
+  clearInterval(open);
+  assert.equal(report, 'go: no entry record (Session closed. Most likely the page has been closed.), after 1 Runtime.terminateExecution (1 answered)');
 });
