@@ -77,6 +77,13 @@ func mixerSourceWithParser(source []byte, path string, raw json.RawMessage, pars
 		if !knownMixerEffectKind(kind) {
 			return nil, "", "", LineRange{}, refuse("unknown_effect_kind", "effectkind", "unknown effect kind %q; the kinds are %s", kind, strings.Join(mixerEffectKinds, ", "))
 		}
+		if request.InsertOn == "" && (request.Before != "" || request.After != "") {
+			owner, err := anchorOwner(score, request)
+			if err != nil {
+				return nil, "", "", LineRange{}, err
+			}
+			request.InsertOn = owner
+		}
 		route, chain, err := checkNewEffect(score, name, kind, request.InsertOn)
 		if err != nil {
 			return nil, "", "", LineRange{}, err
@@ -180,6 +187,27 @@ func mixerSourceWithParser(source []byte, path string, raw json.RawMessage, pars
 	}
 	if decl == nil {
 		return nil, "", "", LineRange{}, fmt.Errorf("unknown mixer owner %q", owner)
+	}
+	if field == "insert" && declKind != "fx_decl" {
+		// A compressor put in a chain must be one whose sidechain that chain
+		// takes, as addeffect checks.
+		value, _ := jsonStringOrNumber(raw)
+		route := "track"
+		switch declKind {
+		case "bus_decl":
+			route = owner
+		case "master_decl":
+			route = "master"
+		}
+		for _, name := range insertChain(value) {
+			if effect := FindNotationEffect(score, name); effect != nil && effect.Kind == "comp" {
+				if sidechain := paramValue(effect.Params, "sidechain"); sidechain != "" {
+					if err := checkSidechain(score, route, sidechain, "value"); err != nil {
+						return nil, "", "", LineRange{}, err
+					}
+				}
+			}
+		}
 	}
 	if declKind == "fx_decl" {
 		resolved, diagnostics := notation.ResolvePresets(score)
@@ -1251,7 +1279,8 @@ func spacedMixerValue(value string) string {
 // param:<owner>.insert in the same envelope; if no intent of the envelope
 // does, this intent is refused with effect_needs_insert. A track takes eight
 // inserts and master sixteen; the new effect goes at the end of the chain,
-// or in front of Before or behind After. Settings are set as setparam
+// or in front of Before or behind After, inserts already in the chain; with
+// Before or After and no InsertOn, the chain that holds that insert. Settings are set as setparam
 // param:<name>.<field> sets them; only the compressor on bus music takes a
 // sidechain, a track of the score, music or sfx. The edit writes only the
 // entry file: an insert target declared in another file is refused with
@@ -1261,6 +1290,8 @@ func spacedMixerValue(value string) string {
 //
 // Example: {"kind":"addeffect","name":"echo","effectkind":"delay"}
 // Example: {"kind":"addeffect","name":"fuzz","effectkind":"drive","inserton":"bass"}
+// Example: {"kind":"addeffect","name":"fuzz","effectkind":"drive","inserton":"bass","before":"grit"}
+// Example: {"kind":"addeffect","name":"fuzz","effectkind":"drive","after":"grit"}
 // Example: {"kind":"addeffect","name":"hall","effectkind":"reverb"}
 // Example: {"kind":"addeffect","name":"glue","effectkind":"comp","inserton":"music"}
 // Example: {"kind":"addeffect","name":"tilt","effectkind":"eq","inserton":"keys","settings":{"type":"high_shelf","frequency":"6kHz","gain":"2dB"}}
@@ -1276,7 +1307,7 @@ type AddEffect struct {
 	Name           string                     `json:"name" cicada:"required"`                                                        // the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes
 	EffectKind     string                     `json:"effectkind" values:"effect-kind" cicada:"required,selects"`                     // the effect's kind
 	InsertOn       string                     `json:"inserton,omitempty" when:"effectkind=comp|transient|width|limiter|convolution"` // a track's name, music or master: where to insert the effect; these kinds need it unless a later intent sets the chain
-	Before         string                     `json:"before,omitempty"`                                                              // an insert of that chain to put the new effect in front of; default the end of the chain
+	Before         string                     `json:"before,omitempty"`                                                              // an insert of that chain to put the new effect in front of; default the end of the chain; without inserton, the chain that holds it
 	After          string                     `json:"after,omitempty"`                                                               // an insert of that chain to put the new effect behind
 	Settings       map[string]json.RawMessage `json:"settings,omitempty" when:"effectkind=convolution"`                              // initial settings, field to value, such as {"ceiling":"-2dBTP"}; a convolution needs its asset
 	ConfirmUpgrade bool                       `json:"confirmupgrade,omitempty"`                                                      // edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2

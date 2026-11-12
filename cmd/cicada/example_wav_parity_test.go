@@ -338,10 +338,13 @@ func TestCompareWAVHashesKeepsTheKnownListHonest(t *testing.T) {
 var wavPins = map[string]string{
 	// Changed by #327 (track effects and the mix on detmath, the reverb's
 	// modulation on SinPi); the songs use those effects. Checked nightly.
-	"examples/songs/anywhere-you-are.cicada lufs-14":      "39330e1d4f603da02cf865216abb2eb80f06bfc496490eac5d4b7d2211b4ca45",
-	"examples/songs/anywhere-you-are.cicada lufs-9":       "39330e1d4f603da02cf865216abb2eb80f06bfc496490eac5d4b7d2211b4ca45",
-	"examples/songs/anywhere-you-are.cicada normalize":    "f13fb48eb7550731451e389a1aefe84febfc6d26a0d8615c2f81536510af11f0",
-	"examples/songs/anywhere-you-are.cicada plain":        "051334258267379cce101cb218d1d886766a7040e67de124dd1a018a87d33abf",
+	// anywhere-you-are changed again by #338: 22 note starts at section
+	// changes now sound (the engine dropped the first note of a scene-bound
+	// pass whose previous pass released at the switch).
+	"examples/songs/anywhere-you-are.cicada lufs-14":      "1f1aa87558deec7a80ab5082a4468ca4edfce7c06afb1f45042590a6bca0db35",
+	"examples/songs/anywhere-you-are.cicada lufs-9":       "1f1aa87558deec7a80ab5082a4468ca4edfce7c06afb1f45042590a6bca0db35",
+	"examples/songs/anywhere-you-are.cicada normalize":    "5c4ebeb4803f2d45f1a0db8a77644e250008c3a794e4c19db1cc6dc4422267d2",
+	"examples/songs/anywhere-you-are.cicada plain":        "f084bbbf40601d3e8206af4ecc46586e29599a273815b6cc60bcfa665da45610",
 	"examples/songs/lanterns-after-rain.cicada lufs-14":   "68123218cd22ed9e74092a7099b728a79909a82be408061b7eb9c96da89a4f07",
 	"examples/songs/lanterns-after-rain.cicada lufs-9":    "a4003b204b58473ae51df34cd91a0617cfa8ae4aba092d56aed084bc7f4d3a56",
 	"examples/songs/lanterns-after-rain.cicada normalize": "6d3fdb76d7c65450a67e6f61fe06bdc48b163c86df6913d9da455a0e27f3cd59",

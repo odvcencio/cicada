@@ -648,6 +648,7 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile, afterWrite ...func()) error {
 	for i, file := range files {
 		if err := studioWriteAuxiliaryFile(file); err != nil {
+			err = fmt.Errorf("%s: %w", jsonPath(file.Path), err)
 			for j := i - 1; j >= 0; j-- {
 				previous := files[j]
 				previous.Before, previous.After = previous.After, previous.Before

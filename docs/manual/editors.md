@@ -103,8 +103,44 @@ definitions, assignments and library pins remain intact. The copy has no
 explicit slot; Studio supplies its full project receipt and opens the copy with
 the chosen sound and scene context.
 
-The envelope can include `revision`, `author`, `session`, and `dryrun`. A supplied
-revision must match the exact score bytes; omit it to use the current revision.
+Tracks, scenes and patterns have structural intents: `addtrack`,
+`deletetrack`, `addscene`, `duplicatescene`, `deletescene`, `deletepattern`
+and `rename`. Each edits every source file of the project that names the
+entity (libraries apart) in one revision-checked change, one Undo step. A
+delete is refused while something else still names the entity, and the
+refusal's `uses` lists each place with its file and line. With `cascade`,
+`deletescene` also removes the scene's song entries, and `deletepattern` sets
+the pattern's scene bindings to `off` and removes its placements. A removal
+takes a comment that follows the declaration on its line. It also takes the
+comment lines directly above it (no blank line between), unless they open
+the file or the declaration is directly followed by another declaration of
+its kind: then they head a group and stay. A comment set apart by a blank
+line always stays. The engine seeds chance and humanize by a track's
+position and a pattern's slot, so a delete that moves a track or slot
+playing such a pattern is refused unless `reseed` accepts it. What a flag accepts is listed in the intent's
+`warnings` in `cicada apply --json`. `rename` updates every reference, and is
+refused rather than written half done when the result would not validate.
+`cicada intents --json` lists each one's fields and `reasons`.
+
+The envelope can include `revision`, `author`, `session`, `dryrun` and
+`revisions`. A supplied revision must match the exact score bytes; omit it to
+use the current revision. `revision` covers only the score given to
+`cicada apply`; `revisions` lists other source files of the project, each as
+`{"path": …, "revision": …}`, at the revisions the intents were computed
+against (a dry run with `--json` reports every file's revision in the same
+form as `file_revisions`), and the batch is refused with
+`revision_mismatch` when one of them has changed. Without `revisions`, a
+change to another file between the dry run and the apply goes unnoticed: the
+apply reads every file again and computes the edit from what it finds.
+
+A batch that changes several files writes the score first, then each other
+file, and checks each one against the bytes the apply read at its start; if a
+write fails, the files already written are put back and the error names the
+file. The writes are not atomic across a crash: a crash between two writes
+can leave some files changed and others not. `cicada check` then reports the
+references that no longer resolve (a renamed track still named in another
+file, for example), and `.cicada/edits.jsonl` has no record of the batch,
+because the record is appended after the last write.
 `dryrun: true` prevents writes even with `--write`. `--author` and `--session`
 override envelope attribution; the default author is `cli` when the envelope
 has none. Successful writes append one record to `.cicada/edits.jsonl`.
