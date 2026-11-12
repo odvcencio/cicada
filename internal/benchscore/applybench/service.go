@@ -1,6 +1,7 @@
 package applybench
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -8,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -32,23 +34,90 @@ func NewSession(dir string, source []byte) (*Session, error) {
 }
 
 // Compiler is the edit service's compiler (cmd/cicada/studio_intents.go,
-// studioCompiler): every candidate gets a full compile and an edit plan. It
-// keeps the state of its latest successful compile, which is the state an
-// Apply hands on, and counts its calls.
+// studioCompiler): an edit.StateCompiler whose states compile each set of
+// bytes once, as the service's do (project.State with the schedule rules,
+// schedule.StateRules). It keeps the state of its latest successful compile,
+// which is the state an Apply hands on, and counts its compiles: every plan a
+// state is asked for, as the service's studioCompile seam sees them.
 type Compiler struct {
 	path     string
 	Last     *State
 	Compiles int
 }
 
+// StateOptions are the options of the service's states.
+var StateOptions = project.StateOptions{Rules: schedule.StateRules}
+
 func (c *Compiler) Compile(source []byte, files map[string][]byte) (*edit.Plan, error) {
-	c.Compiles++
-	state, err := FullCompile(c.path, source, files)
+	return compilerState{project.NewState(c.path, source, files, StateOptions), c}.Plan()
+}
+
+// State is the state of source with files staged (edit.StateCompiler).
+func (c *Compiler) State(source []byte, files map[string][]byte) (edit.State, error) {
+	return compilerState{project.NewState(c.path, source, files, StateOptions), c}, nil
+}
+
+// KeptState returns the compiled state of source at path as the service
+// keeps it between edits (cmd/cicada keptState): built on the sources the
+// service reads, and compiled.
+func KeptState(path string, source []byte) (*project.State, error) {
+	sources, err := project.ReadSources(path, map[string][]byte{path: source})
 	if err != nil {
 		return nil, err
 	}
-	c.Last = state
-	return state.Plan, nil
+	state := project.NewStateFromSources(path, source, sources, StateOptions)
+	if state == nil {
+		return nil, fmt.Errorf("the sources do not hold the score")
+	}
+	if _, err := state.Plan(); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+// WithBase sets opts.Base to kept, read through compiler as the service reads
+// its kept state through each request's compiler.
+func WithBase(opts *edit.Options, compiler *Compiler, kept *project.State) {
+	if kept != nil {
+		opts.Base = compilerState{kept, compiler}
+	}
+}
+
+// compilerState is a project.State whose plans the Compiler counts and
+// records, as the service's studioState does.
+type compilerState struct {
+	*project.State
+	compiler *Compiler
+}
+
+func (s compilerState) Plan() (*edit.Plan, error) {
+	s.compiler.Compiles++
+	plan, err := s.State.Plan()
+	if err != nil {
+		return nil, err
+	}
+	state, err := StateOf(s.State)
+	if err != nil {
+		return nil, err
+	}
+	s.compiler.Last = state
+	return plan, nil
+}
+
+func (s compilerState) With(files map[string][]byte) (edit.State, error) {
+	next, err := s.State.With(files)
+	if err != nil {
+		return nil, err
+	}
+	return compilerState{next.(*project.State), s.compiler}, nil
+}
+
+func (s compilerState) Rollback() (edit.State, error) {
+	previous, err := s.State.Rollback()
+	if err != nil {
+		return nil, err
+	}
+	return compilerState{previous.(*project.State), s.compiler}, nil
 }
 
 // Hooks counts the host callbacks one Apply makes besides compiles.

@@ -208,3 +208,21 @@ func planData(plan *edit.Plan) edit.Plan {
 	}
 	return data
 }
+
+// StateOf returns what a compiled project.State holds, in the shape Compare
+// reads. The slices and pointers are the state's own, not copies.
+func StateOf(compiled *project.State) (*State, error) {
+	p, sources, diagnostics, err := compiled.Detailed(false)
+	if err != nil {
+		return nil, err
+	}
+	score, _, err := compiled.Score()
+	if err != nil {
+		return nil, err
+	}
+	plan, err := compiled.Plan()
+	if err != nil {
+		return nil, err
+	}
+	return &State{Source: compiled.Source(), Sources: sources.Files, Score: score, Diagnostics: diagnostics, Project: p, Plan: plan}, nil
+}

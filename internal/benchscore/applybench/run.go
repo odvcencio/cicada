@@ -2,12 +2,14 @@ package applybench
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"time"
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
 // Config says how many times each edit runs.
@@ -16,6 +18,11 @@ type Config struct {
 	// Verify compares the state of every run, warm-ups included, with a full
 	// compile of its result. It runs outside the timed region.
 	Verify bool
+	// NoBase applies each edit without a kept state (Options.Base nil), as a
+	// host that keeps none does: Apply then builds the base state itself. By
+	// default every run starts from the compiled state of the reference,
+	// built once before the runs, as the edit service keeps it between edits.
+	NoBase bool
 }
 
 // Default is the revision's method (section B.7): 200 runs after 10 warm-ups.
@@ -63,6 +70,13 @@ func Measure(session *Session, hot HotEdit, config Config) (Measurement, error) 
 	}
 	base := session.Source
 	revision := edit.Revision(base)
+	var kept *project.State
+	if !config.NoBase {
+		var err error
+		if kept, err = KeptState(session.Path, base); err != nil && !refusedReference(err) {
+			return m, err
+		}
+	}
 	var times []time.Duration
 	var refusals []time.Duration
 	for run := range config.Warmups + config.Runs {
@@ -71,6 +85,7 @@ func Measure(session *Session, hot HotEdit, config Config) (Measurement, error) 
 		if err != nil {
 			return m, err
 		}
+		WithBase(&opts, compiler, kept)
 		env := edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, Intents: []edit.Intent{hot.Intent}}
 		before := applycount.Snapshot()
 		start := time.Now()
@@ -106,6 +121,9 @@ func Measure(session *Session, hot HotEdit, config Config) (Measurement, error) 
 			if err := verify(session, result, compiler); err != nil {
 				return m, fmt.Errorf("%s run %d: the edit's state is not a full compile of its result: %w", hot.Name, run, err)
 			}
+			if err := verifyKept(session, kept); err != nil {
+				return m, fmt.Errorf("%s run %d: the kept state changed: %w", hot.Name, run, err)
+			}
 			m.Verified++
 		}
 	}
@@ -130,11 +148,41 @@ func verify(session *Session, result *edit.Result, compiler *Compiler) error {
 	if produced == nil || result.Plan != produced.Plan {
 		return fmt.Errorf("the result's plan is not the latest compile's")
 	}
+	if result.State == nil {
+		return fmt.Errorf("the result carries no state")
+	}
+	if plan, err := result.State.Plan(); err != nil || plan != result.Plan {
+		return fmt.Errorf("the result's state does not hold the result's plan")
+	}
 	fresh, err := FullCompile(session.Path, result.Source, overrides(result.Files))
 	if err != nil {
 		return fmt.Errorf("full compile of the result: %w", err)
 	}
 	return Compare(produced, fresh)
+}
+
+// verifyKept checks that the state every run started from still equals a full
+// compile of its bytes: no edit changed what it shares with its readers.
+func verifyKept(session *Session, kept *project.State) error {
+	if kept == nil {
+		return nil
+	}
+	produced, err := StateOf(kept)
+	if err != nil {
+		return err
+	}
+	fresh, err := FullCompile(session.Path, kept.Source(), nil)
+	if err != nil {
+		return fmt.Errorf("full compile of the kept bytes: %w", err)
+	}
+	return Compare(produced, fresh)
+}
+
+// refusedReference reports a reference this build cannot compile (REF-L
+// under js, beyond the portable track limit): its edits are timed to their
+// refusal, without a kept state.
+func refusedReference(err error) bool {
+	return err != nil && runtime.GOOS == "js"
 }
 
 func overrides(files []edit.File) map[string][]byte {
