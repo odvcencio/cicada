@@ -242,3 +242,20 @@ func TestExplainPresetAcidOctaveMatchesPlaybackDefault(t *testing.T) {
 		t.Fatalf("octave differs from playback: %s", output.String())
 	}
 }
+
+// explain names the return a built-in send path feeds: send.reverb is the
+// send to the first reverb, whichever later reverbs the score declares.
+func TestExplainSendPathNamesTheFirstReverb(t *testing.T) {
+	source := []byte("cicada 2\nfx hall reverb {}\nfx room reverb {}\ntrack keys acid { send hall = -9dB send room = -12dB }\npattern p { c3 . }\nscene main { keys = p }\nsong { main }\n")
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := explainParameter(path, "keys.send.reverb", "@1", &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "send to the first reverb, hall (return slot B)") {
+		t.Fatalf("explain does not name the first reverb:\n%s", output.String())
+	}
+}
