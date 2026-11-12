@@ -56,7 +56,7 @@ import (
 // the comparison without a failure.
 //
 // What it cannot see: the scores in pathsEngineOnly; bars after pathsMaxBars
-// (none today: every example is shorter, and the test logs how many scene
+// (none today: no example is longer, and the test logs how many scene
 // switches the cap leaves out); other sample rates; and every render option it
 // does not set (From, Normalize, dither, PCM bit depths, stems, MasterCache,
 // export gains). TestRenderPathsAudio compares whole songs at 48 kHz and only
@@ -271,11 +271,11 @@ scene y { lead = start }
 song { x*2 y*2 }`},
 }
 
-// pathsMaxBars bounds the gate's cost if a long example arrives. It is above
-// the longest example today, so the gate renders every song whole: about 85 s
-// of CPU for all of them, against 62 s for the first six bars, because most
-// examples are short. pathsRate is a common export rate; the nightly report
-// uses 48 kHz.
+// pathsMaxBars bounds the gate's cost if a long example arrives. No example is
+// longer today (the longest, game-director.cicada, has 64 bars), so the gate
+// renders every song whole: about 85 s of CPU for all of them, against 62 s for
+// the first six bars, because most examples are short. pathsRate is a common
+// export rate; the nightly report uses 48 kHz.
 const (
 	pathsMaxBars = 64
 	pathsRate    = 44100
