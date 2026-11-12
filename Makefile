@@ -482,6 +482,7 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentVibratoNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorus(NativeWASMParity|InstrumentModulatorNativeWASMParity|GraphLFONativeWASMParity)$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorusRejectedByCoreKernel$$' -count=1 -v
+	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestOscillatorBankReuseWASM$$' -count=1 -v
 	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestKeysChorusNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentModulatorNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestGraphLFONativeWASMParity$$' -count=1 -v
