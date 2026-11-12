@@ -1156,7 +1156,7 @@ func Exp2F32(x float32) float32 {
 		return float32(Exp2(v))
 	}
 	k := math.Round(float64(v * 64)) // v*64 is exact
-	f := v - k/64                    // exact
+	f := v - float64(k/64)           // exact; k/64 is a product the compiler could fuse
 	r := float64(f * math.Ln2)
 	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24))))))))
 	ki := int(k)
