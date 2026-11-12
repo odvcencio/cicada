@@ -220,7 +220,7 @@ func ToSource(p *Project) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			out.WriteString("\n  " + notation.TickPosition(point.Tick) + " " + value)
+			out.WriteString("\n  " + notation.TickPosition(p.MeterMap(), point.Tick) + " " + value)
 			if point.Shape != "linear" {
 				out.WriteString(" " + point.Shape)
 			}
@@ -229,7 +229,7 @@ func ToSource(p *Project) ([]byte, error) {
 			}
 		}
 		for _, tick := range lane.Recalls {
-			out.WriteString("\n  recall " + notation.TickPosition(tick))
+			out.WriteString("\n  recall " + notation.TickPosition(p.MeterMap(), tick))
 		}
 		out.WriteString("\n}")
 		sections = append(sections, out.String())

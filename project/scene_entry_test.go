@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -81,8 +82,18 @@ song { a*1 b*2 }
 		}
 	}
 	for tick, want := range map[int64]string{0: "@1.1.1", 4560: "@2.1.4", 4600: "@2.1.4 plus 40 ticks", 7680 + 2*960 + 3*240: "@3.3.4"} {
-		if got := songPosition(tick); got != want {
+		if got := songPosition(seq.MeterMap{}, tick); got != want {
 			t.Errorf("songPosition(%d) = %q, want %q", tick, got, want)
+		}
+	}
+	// The position is read on the song's meter map: a 3/4 bar is 2,880 ticks.
+	waltz, err := seq.NewMeterMap([]seq.MeterChange{{Bar: 0, Meter: seq.Meter{Beats: 3, Unit: 4}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for tick, want := range map[int64]string{2880: "@2.1.1", 4560: "@2.2.4", 4600: "@2.2.4 plus 40 ticks", 2*2880 + 2*960: "@3.3.1"} {
+		if got := songPosition(waltz, tick); got != want {
+			t.Errorf("3/4 songPosition(%d) = %q, want %q", tick, got, want)
 		}
 	}
 }

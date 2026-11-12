@@ -1,8 +1,12 @@
 package musictime
 
-import "fmt"
+import (
+	"fmt"
 
-// TempoChange steps the tempo at a zero-based bar in a 4/4 timeline.
+	"m31labs.dev/cicada/kernel/seq"
+)
+
+// TempoChange steps the tempo at the start of a zero-based bar of the meter map.
 type TempoChange struct {
 	Bar      int `json:"bar" cicada:"Zero-based bar of the tempo step" range:"0..1048576" introduced:"cicada.project/2"`
 	BPMMilli int `json:"bpm_milli" cicada:"Tempo in thousandths of a BPM" unit:"milli-BPM" range:"20000..300000" introduced:"cicada.project/2"`
@@ -22,9 +26,10 @@ func ValidateTempoChanges(changes []TempoChange) error {
 	return nil
 }
 
-// SecondsBetween measures a musical selection across its tempo steps. Audio
-// playback uses the integer clock; this fractional value is for duration labels.
-func SecondsBetween(tempoMilli int64, changes []TempoChange, start, end int64) float64 {
+// SecondsBetween measures a musical selection across its tempo steps, placed
+// on the meter map's bar lines. Audio playback uses the integer clock; this
+// fractional value is for duration labels.
+func SecondsBetween(meterMap seq.MeterMap, tempoMilli int64, changes []TempoChange, start, end int64) float64 {
 	if tempoMilli <= 0 || end <= start {
 		return 0
 	}
@@ -32,7 +37,7 @@ func SecondsBetween(tempoMilli int64, changes []TempoChange, start, end int64) f
 	current := tempoMilli
 	var seconds float64
 	for _, step := range changes {
-		at := int64(step.Bar) * 3840
+		at := meterMap.BarStart(int64(step.Bar))
 		if at >= end {
 			break
 		}

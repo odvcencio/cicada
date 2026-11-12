@@ -16,7 +16,6 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func newVocalLoopFixture(t *testing.T, passes int) *recordingTransportFixture {
@@ -136,7 +135,7 @@ func TestVocalLoopFinitePassesKeepExactPCMAndOneCountIn(t *testing.T) {
 			countIn = 96000
 		}
 		assertLoopTake(t, f.studio, take, countIn, countIn+96000, float32(i+1)/10)
-		if lo, hi := takeCoverage(take); lo != 0 || hi != seq.TicksPerBar {
+		if lo, hi := takeCoverage(take); lo != 0 || hi != ticksPerBar {
 			t.Fatalf("pass coverage%d -> %d", lo, hi)
 		}
 	}
@@ -212,7 +211,7 @@ func TestVocalLoopStopPartialAndRevisionConflict(t *testing.T) {
 			}
 			if !conflict {
 				comps, _ := vocalComps(current)
-				if comps[0].Segments[0].Take != loop.ids[1] || comps[0].Segments[0].End >= seq.TicksPerBar {
+				if comps[0].Segments[0].Take != loop.ids[1] || comps[0].Segments[0].End >= ticksPerBar {
 					t.Fatal("partial Stop did not choose partial last pass")
 				}
 			}
@@ -275,7 +274,7 @@ func TestVocalLoopBoundaryStopSerializesWithoutEmptyPass(t *testing.T) {
 
 func TestVocalLoopInterruptedInputRetainsAcceptedPCM(t *testing.T) {
 	s, source, _ := vocalGainFixture(t)
-	timeline := &takejournal.Timeline{EndTick: seq.TicksPerBar, TempoMilli: 120000}
+	timeline := &takejournal.Timeline{EndTick: ticksPerBar, TempoMilli: 120000}
 	id, err := s.takes.BeginTimeline("vox", "session", studioRevision(source), 48000, 1, timeline)
 	if err != nil {
 		t.Fatal(err)

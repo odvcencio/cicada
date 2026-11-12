@@ -18,7 +18,7 @@ func TestScheduleMatchesLegacySong(t *testing.T) {
 			t.Fatal(err)
 		}
 		scheduled := cfg
-		scheduled.Schedule, scheduled.Song = LowerSong(cfg.Song), nil
+		scheduled.Schedule, scheduled.Song = LowerSong(cfg.Song, seq.MeterMap{}), nil
 		timeline, err := New(scheduled)
 		if err != nil {
 			t.Fatal(err)
@@ -50,7 +50,7 @@ func TestScheduleMatchesLegacySong(t *testing.T) {
 func TestScheduleRenderSeekAllocationFree(t *testing.T) {
 	cfg := testConfig()
 	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot}}}}
-	cfg.Schedule = []ScheduleEvent{{Tick: 0, EndTick: seq.TicksPerBar, Scene: 0}}
+	cfg.Schedule = []ScheduleEvent{{Tick: 0, EndTick: ticksPerBar, Scene: 0}}
 	cfg.LoopSong = true
 	e, err := New(cfg)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestScheduleRenderSeekAllocationFree(t *testing.T) {
 	var left, right [128]float32
 	var message cmd.Message
 	allocs := testing.AllocsPerRun(100, func() {
-		e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg1: uint32(seq.TicksPerBar - 1)})
+		e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg1: uint32(ticksPerBar - 1)})
 		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 		e.Render(left[:], right[:])
 		for e.Poll(&message) {
@@ -82,7 +82,7 @@ func TestScheduleRejectsAmbiguousAndInvalidAuthority(t *testing.T) {
 	cfg := testConfig()
 	cfg.Scenes = []Scene{{}}
 	cfg.Song = []SongEntry{{Bars: 1}}
-	cfg.Schedule = LowerSong(cfg.Song)
+	cfg.Schedule = LowerSong(cfg.Song, seq.MeterMap{})
 	if _, err := New(cfg); err == nil {
 		t.Fatal("accepted two arrangement authorities")
 	}
