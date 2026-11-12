@@ -7,7 +7,10 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
+
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
 // Find walks v (a pointer to a processor, usually) through structs, arrays,
@@ -113,5 +116,72 @@ func CheckPin(t testing.TB, name string, h *Hash, pinned uint64) {
 	}
 	if pinned != 0 && h.Sum() != pinned {
 		t.Fatalf("%s output changed: %#016x, pinned %#016x (rerun with CICADA_DECAY_HASHES=1 for the per-second hashes)", name, h.Sum(), pinned)
+	}
+}
+
+// Case is a processor driven into a state where values glide to zero: a
+// control moved to a target of zero, or input that stops.
+type Case struct {
+	Name    string
+	Rate    int
+	Seconds int
+	// Next renders one frame (and applies any change due at that frame).
+	Next func(frame int) (float32, float32)
+	// State is what Find walks: the processor.
+	State any
+	// Swept reports whether the processor swept its values on the frame
+	// just rendered; Run checks for subnormal numbers only then.
+	Swept func() bool
+	// Stalls lists the paths, as Find reports them, that hold subnormal
+	// numbers at the end when nothing is flushed: the proof that the case
+	// reaches the stall the flush exists for.
+	Stalls []string
+	// Pinned is the output hash. It must hold with the build tag
+	// cicada_noflush too, unless PinnedWithoutFlush is set.
+	Pinned uint64
+	// PinnedWithoutFlush, when not zero, is the output hash with the build
+	// tag cicada_noflush, for a case whose float32 output the flush changes
+	// (for example a negative subnormal sum that converts to -0 instead of
+	// +0); the case's comment must say what differs.
+	PinnedWithoutFlush uint64
+}
+
+// Run renders c. With flushing, the state must hold no subnormal number after
+// any sweep that Swept reports. With the build tag cicada_noflush, every path
+// in Stalls must hold one at the end. In both builds the output must match
+// the pin.
+func Run(t *testing.T, c Case) {
+	t.Helper()
+	hash := NewHash(c.Rate)
+	for frame := range c.Seconds * c.Rate {
+		hash.Add(c.Next(frame))
+		if subnormal.Enabled && c.Swept() {
+			if found := Find(c.State, 5); len(found) > 0 {
+				t.Fatalf("%s: after the sweep at %.2f s the state holds subnormal numbers: %v", c.Name, float64(frame)/float64(c.Rate), found)
+			}
+		}
+	}
+	pinned := c.Pinned
+	if !subnormal.Enabled {
+		if c.PinnedWithoutFlush != 0 {
+			pinned = c.PinnedWithoutFlush
+		}
+		found := Find(c.State, 1<<20)
+		for _, path := range c.Stalls {
+			if !slices.Contains(found, path) {
+				t.Errorf("%s: without flushing, %s holds no subnormal number at the end, so the case never reaches the stall (subnormal: %d values)", c.Name, path, len(found))
+			}
+		}
+	}
+	CheckPin(t, c.Name, hash, pinned)
+}
+
+// Noise returns a deterministic noise source in [-1, 1).
+func Noise(seed uint32) func() float32 {
+	return func() float32 {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return float32(int32(seed)) / (1 << 31)
 	}
 }

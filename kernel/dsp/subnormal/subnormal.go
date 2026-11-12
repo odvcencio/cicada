@@ -88,6 +88,14 @@ package subnormal
 
 import "math"
 
+// SweepFrames is how often, in a processor's own samples, a processor sweeps
+// its smoothed control values (a mix, a gain, a blend weight) for subnormal
+// numbers. A control that glides to a target of zero stalls at a subnormal
+// number for at most this many samples, then stays exactly zero until its
+// target changes. Counting the processor's own samples keeps the sweep on the
+// same samples on every target and at every block size.
+const SweepFrames = 256
+
 // exponentMask selects a float32's exponent bits; they are all zero for zero
 // and for subnormal numbers.
 const exponentMask = 0x7f800000

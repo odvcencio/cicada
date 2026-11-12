@@ -5,6 +5,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
 // DeesserParams controls a stereo-linked split-band de-esser. Only the high
@@ -28,6 +29,7 @@ type Deesser struct {
 	attack, release, detectorAttack, detectorRelease float64
 	envelope, reduction                              float64
 	fault                                            bool
+	frames                                           uint32 // Process calls since New or Reset, for the sweep
 }
 
 func NewDeesser(rate int, p DeesserParams) (*Deesser, error) {
@@ -50,6 +52,7 @@ func NewDeesser(rate int, p DeesserParams) (*Deesser, error) {
 func (d *Deesser) Reset() {
 	d.z1, d.z2 = [2]float64{}, [2]float64{}
 	d.envelope, d.reduction, d.fault = 0, 0, false
+	d.frames = 0
 }
 func (d *Deesser) Fault() bool              { return d.fault }
 func (d *Deesser) LatencyFrames() int       { return 0 }
@@ -103,6 +106,14 @@ func (d *Deesser) Process(l, r float32) (float32, float32) {
 		coeff = d.attack
 	}
 	d.reduction += float64((target - d.reduction) * coeff)
+	// The detector envelope and the reduction both release toward zero and,
+	// in float64, stall at a subnormal number seconds into silence: every
+	// frame then runs slowly and Silent never holds. Each reaches the output
+	// only through 1 - Exp2(-reduction*k), which is exactly 0 for either.
+	d.frames++
+	if d.frames%subnormal.SweepFrames == 0 {
+		d.envelope, d.reduction = subnormal.Flush64(d.envelope), subnormal.Flush64(d.reduction)
+	}
 	// Keep crossover and detector tails above advancing, even when the
 	// crossover is exactly zero. Attenuation cannot affect this sample then.
 	if in[0] == 0 && in[1] == 0 && hi[0] == 0 && hi[1] == 0 {

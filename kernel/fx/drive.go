@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
 // Processor is the sample-level contract for a stereo insert or send effect.
@@ -81,6 +82,7 @@ type Drive struct {
 	toneState              [driveShapes]stereo
 	fault                  bool
 	zeroFrames             int
+	frames                 uint32 // Process calls since New or Reset, for flushSubnormals
 }
 
 func NewDrive(sampleRate int) (*Drive, error) {
@@ -152,6 +154,24 @@ func (d *Drive) Reset() {
 	d.position, d.fault = 0, false
 	d.zeroFrames = halfband.Taps
 	d.pre, d.post, d.tone, d.mix, d.weights = d.targetPre, d.targetPost, d.targetTone, d.targetMix, d.targetWeights
+	d.frames = 0
+}
+
+// flushSubnormals replaces a subnormal value with a zero of the same sign
+// (kernel/dsp/subnormal) in the values that glide to exactly zero: the mix,
+// the blend weight of every shape but the selected one (a shape switch takes
+// the old one to zero), and the tone filters, which decay toward zero in
+// silence. Without it each stalls at a subnormal number and slows every frame
+// from then on. Each reaches the output only through products that the sum
+// with normal values or the float32 conversion absorbs; the pre and post gains
+// and the tone coefficient never glide to zero.
+func (d *Drive) flushSubnormals() {
+	d.mix = subnormal.Flush64(d.mix)
+	for shape := range d.weights {
+		d.weights[shape] = subnormal.Flush64(d.weights[shape])
+		state := &d.toneState[shape]
+		state.left, state.right = subnormal.Flush64(state.left), subnormal.Flush64(state.right)
+	}
 }
 
 func (d *Drive) buildTables() {
@@ -212,6 +232,10 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		d.post[shape] += float64((d.targetPost[shape] - d.post[shape]) * d.smooth)
 		d.weights[shape] += float64((d.targetWeights[shape] - d.weights[shape]) * d.smooth)
 	}
+	d.frames++
+	if d.frames%subnormal.SweepFrames == 0 {
+		d.flushSubnormals()
+	}
 	if left == 0 && right == 0 && d.zeroFrames >= halfband.Taps {
 		// Each 43-tap filter retains at most 42 oversampled samples. The
 		// cascaded up/down pair is therefore empty after 43 base-rate zeros;
@@ -233,7 +257,9 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 			wet.left += float64(state.left * d.weights[shape])
 			wet.right += float64(state.right * d.weights[shape])
 		}
-		// Tone tails keep their exact per-sample decay; no threshold gates them.
+		// Tone tails keep their exact per-sample decay; no threshold gates
+		// them. Only a tail that has decayed into subnormal numbers, where
+		// it no longer reaches the float32 output, is flushed (flushSubnormals).
 		return float32(wet.left * d.mix), float32(wet.right * d.mix)
 	}
 	if left == 0 && right == 0 {
