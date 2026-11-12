@@ -2,7 +2,6 @@ package edit
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -10,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"m31labs.dev/cicada/notation"
 )
 
 // numbered returns n lines "line 1" to "line n", each ending in newline.
@@ -254,6 +251,23 @@ func TestPatchKeepsLinesApart(t *testing.T) {
 	}
 }
 
+// A hunk whose old lines stand at very many places costs at most eleven
+// confirmations: the search stops counting there.
+func TestPatchAmbiguityStopsCounting(t *testing.T) {
+	text := []byte(strings.Repeat("a\n", 50000))
+	var refusal *HunkError
+	start := time.Now()
+	_, err := ApplyHunks(append([]byte("moved\n"), text...), []Hunk{{Line: 1, Old: strings.Repeat("a\n", 1000), New: "b\n"}})
+	took := time.Since(start)
+	if !errors.As(err, &refusal) || refusal.Reason != "hunk_ambiguous" || refusal.Places != 11 || len(refusal.Matches) != 10 || !strings.Contains(err.Error(), "more than 10 places") {
+		t.Fatalf("many places: %v", err)
+	}
+	t.Logf("a 1,000-line hunk on 50,001 repeated lines: %s", took)
+	if took > 5*time.Second {
+		t.Fatalf("ambiguity took %s", took)
+	}
+}
+
 func TestPatchLimits(t *testing.T) {
 	text := []byte("a\n")
 	many := make([]Hunk, MaxHunks+1)
@@ -457,110 +471,6 @@ func TestPatchPlacesWhereMeantOrRefuses(t *testing.T) {
 	t.Logf("%d trials: %d where meant, %d refused, %d placed by the rules where the longest alignment does not put them", meant+refused+byRule, meant, refused, byRule)
 	if meant == 0 || refused == 0 {
 		t.Fatal("the trials did not exercise both outcomes")
-	}
-}
-
-const patchScore = "title \"Patch\"\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass=riff }\nsong { main }\n"
-
-func TestPatchTextIntent(t *testing.T) {
-	for _, newline := range []string{"\n", "\r\n"} {
-		source := []byte(strings.ReplaceAll(patchScore, "\n", newline))
-		tempo := strings.ReplaceAll(`"old":"tempo 120\n","new":"tempo 118\n"`, `\n`, map[string]string{"\n": `\n`, "\r\n": `\r\n`}[newline])
-		result, err := applyM4Intent(source, `{"kind":"patchtext","hunks":[{"line":2,`+tempo+`}]}`, Options{})
-		want := bytes.Replace(source, []byte("tempo 120"), []byte("tempo 118"), 1)
-		if err != nil || !bytes.Equal(result.Source, want) || len(result.Files) != 0 || result.Label != "Source saved" {
-			t.Fatalf("entry patch %q: %+v, %v", newline, result, err)
-		}
-		// The text moved: the patch still applies.
-		moved := append([]byte("// note"+newline), source...)
-		if result, err = applyM4Intent(moved, `{"kind":"patchtext","hunks":[{"line":2,`+tempo+`}]}`, Options{}); err != nil || !bytes.Contains(result.Source, []byte("tempo 118")) {
-			t.Fatalf("moved entry %q: %v", newline, err)
-		}
-		// The line changed: refused, naming the hunk's line.
-		changed := bytes.Replace(source, []byte("tempo 120"), []byte("tempo 100"), 1)
-		_, err = applyM4Intent(changed, `{"kind":"patchtext","hunks":[{"line":2,`+tempo+`}]}`, Options{})
-		var reason *ReasonError
-		var located *IntentError
-		if !errors.As(err, &reason) || reason.Reason != "hunk_mismatch" || reason.Field != "hunks" || !strings.Contains(err.Error(), "line 2") || !errors.As(err, &located) || located.Field != "hunks" {
-			t.Fatalf("changed line %q: %v", newline, err)
-		}
-		// The refusal names the hunk, its line, and what was expected and
-		// found there, as fields.
-		if h := reason.Hunk; h == nil || h.Index != 0 || h.Line != 2 || h.At != 2 || h.Expected != "tempo 120"+newline || h.Found != "tempo 100"+newline {
-			t.Fatalf("changed line %q: refusal fields %+v", newline, reason.Hunk)
-		}
-	}
-	// Each hunk names its line, its old lines and its new lines, even when
-	// empty, so a forgotten or null field is refused rather than read as "".
-	for _, missing := range []string{"line", "old", "new"} {
-		for _, null := range []bool{false, true} {
-			hunk := map[string]any{"line": 2, "old": "tempo 120\n", "new": "tempo 118\n"}
-			delete(hunk, missing)
-			if null {
-				hunk[missing] = nil
-			}
-			raw, _ := json.Marshal(map[string]any{"kind": "patchtext", "hunks": []any{hunk}})
-			_, err := applyM4Intent([]byte(patchScore), string(raw), Options{})
-			var located *IntentError
-			if !errors.As(err, &located) || located.Field != "hunks."+missing {
-				t.Fatalf("without %s (null %v): %v", missing, null, err)
-			}
-		}
-	}
-	for name, raw := range map[string]string{
-		"no hunks":      `{"kind":"patchtext","hunks":[]}`,
-		"unknown field": `{"kind":"patchtext","hunks":[{"line":2,"old":"tempo 120\n","new":"tempo 118\n","at":3}]}`,
-		"line 0":        `{"kind":"patchtext","hunks":[{"line":0,"old":"tempo 120\n","new":"tempo 118\n"}]}`,
-	} {
-		if _, err := applyM4Intent([]byte(patchScore), raw, Options{}); err == nil {
-			t.Fatalf("%s accepted", name)
-		}
-	}
-	// An insertion keeps an unchanged line beside it; a deletion has an
-	// empty new.
-	result, err := applyM4Intent([]byte(patchScore), `{"kind":"patchtext","hunks":[{"line":1,"old":"title \"Patch\"\n","new":"// first\ntitle \"Patch\"\n"},{"line":2,"old":"tempo 120\n","new":""}]}`, Options{})
-	if err != nil || string(result.Source) != "// first\n"+strings.Replace(patchScore, "tempo 120\n", "", 1) {
-		t.Fatalf("insert and delete: %+v, %v", result, err)
-	}
-}
-
-// patchProject is a score with a second source file, as a host supplies it.
-func patchProject(newline string) ([]byte, []byte, Options) {
-	// parseCompiler parses only the entry, so the entry stands alone.
-	main := []byte(strings.ReplaceAll("title \"Patch\"\ntempo 120\ntrack bass acid {}\npattern lead { a1 . }\nscene main { bass=lead }\nsong { main }\n", "\n", newline))
-	part := []byte(strings.ReplaceAll("// part\npattern riff { a1 . c2 . }\n", "\n", newline))
-	files := []notation.SourceFile{{Path: "/song/main.cicada", Source: main}, {Path: "/song/parts/riff.cicada", Source: part}, {Path: "/lib/std/kit.cicada", Source: []byte("// library\n"), Library: "std/kit"}}
-	return main, part, Options{Compiler: parseCompiler{}, Path: "/song/main.cicada", Sources: files}
-}
-
-func TestPatchTextPatchesAnotherFile(t *testing.T) {
-	for _, newline := range []string{"\n", "\r\n"} {
-		main, part, opts := patchProject(newline)
-		hunks := DiffText(part, bytes.Replace(part, []byte("a1 . c2 ."), []byte("a1 a1 c2 ."), 1))
-		want := bytes.Replace(part, []byte("a1 . c2 ."), []byte("a1 a1 c2 ."), 1)
-		for _, path := range []string{"/song/parts/riff.cicada", "parts/riff.cicada"} {
-			// Two intents patch the file in turn: one staged change, from the
-			// first Before to the last After.
-			first, second := hunks, DiffText(want, bytes.Replace(want, []byte("// part"), []byte("// riff"), 1))
-			result, err := Apply(main, Envelope{Version: 1, Intents: []Intent{&PatchText{Path: path, Hunks: first}, &PatchText{Path: path, Hunks: second}}}, opts)
-			final := bytes.Replace(want, []byte("// part"), []byte("// riff"), 1)
-			if err != nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "/song/parts/riff.cicada" || !bytes.Equal(result.Files[0].Before, part) || !bytes.Equal(result.Files[0].After, final) {
-				t.Fatalf("%s %q: %+v, %v", path, newline, result, err)
-			}
-		}
-		var reason *ReasonError
-		if _, err := Apply(main, Envelope{Version: 1, Intents: []Intent{&PatchText{Path: "parts/other.cicada", Hunks: hunks}}}, opts); !errors.As(err, &reason) || reason.Reason != "unknown_file" {
-			t.Fatalf("unknown file: %v", err)
-		}
-		if _, err := Apply(main, Envelope{Version: 1, Intents: []Intent{&PatchText{Path: "/lib/std/kit.cicada", Hunks: []Hunk{{Line: 1, Old: "// library\n", New: "// mine\n"}}}}}, opts); !errors.As(err, &reason) || reason.Reason != "library_file" {
-			t.Fatalf("library file: %v", err)
-		}
-		stale := bytes.Replace(part, []byte("a1 . c2 ."), []byte("e1 . c2 ."), 1)
-		opts.Sources[1].Source = stale
-		_, err := Apply(main, Envelope{Version: 1, Intents: []Intent{&PatchText{Path: "parts/riff.cicada", Hunks: hunks}}}, opts)
-		if !errors.As(err, &reason) || reason.Reason != "hunk_mismatch" || reason.File != "/song/parts/riff.cicada" || !strings.Contains(err.Error(), "line 1") {
-			t.Fatalf("changed line of another file: %v", err)
-		}
 	}
 }
 

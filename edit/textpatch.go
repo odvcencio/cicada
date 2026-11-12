@@ -28,7 +28,7 @@ import (
 // A hunk marked end applies only where its old lines end the text, and may
 // miss unchanged lines only above the change. An insertion needs an unchanged
 // neighbouring line in both old and new (hunk_needs_context). Studio's Undo,
-// Redo and Revert and the patchtext intent use it.
+// Redo and Revert use it.
 
 // Limits of one patch. Each hunk costs at most one pass over the text, so the
 // limits bound the work a client can ask for.
@@ -94,7 +94,8 @@ type HunkError struct {
 	At              int
 	Expected, Found string
 	// Matches are the lines, from 1, where a hunk_ambiguous hunk matches (at
-	// most ten), and Places how many places there are.
+	// most ten), and Places how many places there are; the search stops
+	// counting at eleven, so 11 means more than ten.
 	Matches []int
 	Places  int
 	Other   int // the hunk that a hunk_overlap hunk overlaps, from 0
@@ -104,19 +105,6 @@ type HunkError struct {
 }
 
 func (e *HunkError) Error() string { return e.Message }
-
-// HunkRefusal names the hunk of a patchtext refusal, so an agent can act on
-// the refusal without reading its message.
-type HunkRefusal struct {
-	Index    int    `json:"index"`              // the hunk, from 0
-	Line     int    `json:"line"`               // the line the hunk names
-	At       int    `json:"at,omitempty"`       // hunk_mismatch: the line where old first differs from the text
-	Expected string `json:"expected,omitempty"` // hunk_mismatch: that line of old
-	Found    string `json:"found,omitempty"`    // hunk_mismatch: the text's line there; absent past the end
-	Matches  []int  `json:"matches,omitempty"`  // hunk_ambiguous: lines where the hunk matches, at most ten
-	Places   int    `json:"places,omitempty"`   // hunk_ambiguous: how many places it matches
-	Other    *int   `json:"other,omitempty"`    // hunk_overlap: the hunk it overlaps, from 0
-}
 
 // DiffText returns the hunks that turn from into to, each with up to three
 // lines of context, in the order of their lines. Equal texts have none.
@@ -446,12 +434,14 @@ func (t *lineText) equalAt(at int, want [][]byte, hashes []uint64) bool {
 	return true
 }
 
-// find returns every line index where want starts: one pass with a rolling
-// hash, each hit confirmed byte for byte. An empty want is at every index.
-func (t *lineText) find(want [][]byte, hashes []uint64) []int {
+// find returns the line indexes where want starts, at most limit of them:
+// one pass with a rolling hash, each hit confirmed byte for byte. It stops at
+// limit, so a repetitive text costs at most limit confirmations. An empty want
+// is at every index.
+func (t *lineText) find(want [][]byte, hashes []uint64, limit int) []int {
 	var at []int
 	if len(want) == 0 {
-		for q := 0; q <= len(t.lines); q++ {
+		for q := 0; q <= len(t.lines) && len(at) < limit; q++ {
 			at = append(at, q)
 		}
 		return at
@@ -471,7 +461,9 @@ func (t *lineText) find(want [][]byte, hashes []uint64) []int {
 	}
 	for q := 0; ; q++ {
 		if rolling == target && t.equalAt(q, want, hashes) {
-			at = append(at, q)
+			if at = append(at, q); len(at) == limit {
+				return at
+			}
 		}
 		if q+m >= len(t.lines) {
 			return at
@@ -538,7 +530,7 @@ func (t *lineText) locate(hunk Hunk) (int, [][]byte, [][]byte, *HunkError) {
 		if t.equalAt(expected, old, oldHashes) {
 			return expected, old, neu, nil
 		}
-		switch places := t.find(old, oldHashes); len(places) {
+		switch places := t.find(old, oldHashes, maxReportedPlaces+1); len(places) {
 		case 0:
 			// Not elsewhere either: unchanged lines around the change may
 			// have changed since, so they may be missing, but only here.
@@ -552,7 +544,11 @@ func (t *lineText) locate(hunk Hunk) (int, [][]byte, [][]byte, *HunkError) {
 			for _, q := range places[:min(len(places), maxReportedPlaces)] {
 				lines = append(lines, q+1)
 			}
-			return 0, nil, nil, &HunkError{Reason: "hunk_ambiguous", Matches: lines, Places: len(places), Message: fmt.Sprintf("is not at its line, and its old lines stand at %d places (lines %s); add unchanged lines around the change so they stand at one", len(places), joinInts(lines))}
+			count := fmt.Sprint(len(places))
+			if len(places) > maxReportedPlaces {
+				count = fmt.Sprintf("more than %d", maxReportedPlaces)
+			}
+			return 0, nil, nil, &HunkError{Reason: "hunk_ambiguous", Matches: lines, Places: len(places), Message: fmt.Sprintf("is not at its line, and its old lines stand at %s places (lines %s); add unchanged lines around the change so they stand at one", count, joinInts(lines))}
 		}
 	}
 	err := &HunkError{Reason: "hunk_mismatch"}
