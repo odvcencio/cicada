@@ -492,7 +492,10 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 		return nil, err
 	}
 	// Portable kernels never see Routing: kernel images have no field for it,
-	// and kernelimage.Encode refuses a config that sets it.
+	// and kernelimage.Encode refuses a config that sets it. A TinyGo engine
+	// ignores Routing without an error, so image version 19, which will carry
+	// slots C to H, must first make portable kernels build the extra returns
+	// or refuse Routing here (host/kernelimage TestNoImageVersionCarriesRoutingYet).
 	if returnsEnabled {
 		if err := e.initRouting(cfg); err != nil {
 			return nil, err
