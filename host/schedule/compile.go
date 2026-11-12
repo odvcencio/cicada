@@ -73,6 +73,25 @@ func Validate(p *project.Project, root string, rate, block int, opts Options) er
 	return rules.Validate(p, rate, block, diskPacks{root: root, cap: packCap})
 }
 
+// ValidateEngine is Validate for a project that ValidateProject has accepted
+// and that has not changed since (rules.ValidateEngine): the rules of a
+// native schedule compile on the host's files, with the engine built by
+// build. A project.State passes it as its rules (StateRules).
+func ValidateEngine(p *project.Project, root string, rate, block int, opts Options, build project.EngineBuilder) error {
+	packCap, err := instrumentpack.NewResidentCap(opts.MaxResidentPCM)
+	if err != nil {
+		return err
+	}
+	return rules.ValidateEngine(p, rate, block, diskPacks{root: root, cap: packCap}, build)
+}
+
+// StateRules are the rules Studio's edit service and cicada apply apply to
+// every compiled state: the schedule rules at 48 kHz in blocks of 128 frames,
+// on the host's files, as Studio checks a score before it writes it.
+func StateRules(p *project.Project, sources *project.Sources, build project.EngineBuilder) error {
+	return ValidateEngine(p, sources.Root, 48000, 128, Options{}, build)
+}
+
 // diskPacks checks sampler packs from their manifests in the project folder,
 // counting each against one compile's cap, as a native compile opens them.
 type diskPacks struct {

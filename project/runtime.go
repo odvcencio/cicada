@@ -58,13 +58,32 @@ const (
 )
 
 func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory, purpose engineCompilePurpose) (engine.Config, error) {
+	return compileEngineWith(p, sampleRate, maxBlock, assets, prepared, purpose, engineInputs{})
+}
+
+// engineInputs is what a caller of compileEngineWith already has.
+type engineInputs struct {
+	// validated says that ValidateProject accepted p and p has not changed
+	// since, so the engine build does not validate it again.
+	validated bool
+	// instruments, when not nil, compiles each instrument once per declared
+	// value.
+	instruments *instrumentCache
+}
+
+func compileEngineWith(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory, purpose engineCompilePurpose, in engineInputs) (engine.Config, error) {
 	if applycount.Enabled {
 		applycount.EngineBuild()
 	}
 	var cfg engine.Config
-	if err := ValidateProject(p); err != nil {
-		return cfg, err
+	if !in.validated {
+		if err := validateProject(p, in.instruments); err != nil {
+			return cfg, err
+		}
 	}
+	// The project ValidateProject has now accepted; CompileSchedule need not
+	// validate it again unless p is replaced by a changed copy below.
+	validated := p
 	if purpose != compileNotes && p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
 	}
@@ -123,7 +142,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	instrumentGlides := make(map[string]*float64, len(p.Instruments))
 	for _, inst := range p.Instruments {
 		instrumentGlides[inst.ID] = inst.GlideMS
-		program, err := compileInstrument(inst)
+		program, err := in.instruments.compile(inst)
 		if err != nil {
 			return cfg, fmt.Errorf("instrument %s: %w", inst.ID, err)
 		}
@@ -514,7 +533,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	if p.Arrange != nil {
 		cfg.Song = nil
 		var scheduleErr error
-		cfg.Schedule, scheduleErr = CompileSchedule(p)
+		if p == validated {
+			cfg.Schedule, scheduleErr = compileSchedule(p)
+		} else {
+			cfg.Schedule, scheduleErr = CompileSchedule(p)
+		}
 		if scheduleErr != nil {
 			return cfg, scheduleErr
 		}

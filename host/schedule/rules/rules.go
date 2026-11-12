@@ -99,8 +99,19 @@ func Validate(p *project.Project, rate, block int, packs Packs) error {
 	if err := project.ValidateProject(p); err != nil {
 		return err
 	}
+	return ValidateEngine(p, rate, block, packs, func(rate, block int, assets []engine.AudioAsset) (engine.Config, error) {
+		return project.CompileEngineWithAssets(p, rate, block, assets)
+	})
+}
+
+// ValidateEngine is Validate for a project that ValidateProject has accepted
+// and that has not changed since, such as one a project.State compiled: it
+// applies the same rules in the same order without validating the project
+// first, and builds the engine configuration with build (assets is nil for a
+// project that does not need the sample engine).
+func ValidateEngine(p *project.Project, rate, block int, packs Packs, build project.EngineBuilder) error {
 	if !p.NeedsSampleEngine() {
-		_, err := project.CompileEngine(p, rate, block)
+		_, err := build(rate, block, nil)
 		return err
 	}
 	streamable := StreamableAssets(p)
@@ -119,7 +130,7 @@ func Validate(p *project.Project, rate, block int, packs Packs) error {
 		assets[i] = engine.AudioAsset{SampleRate: a.RateHz}
 		resident += bytes
 	}
-	if _, err := project.CompileEngineWithAssets(p, rate, block, assets); err != nil {
+	if _, err := build(rate, block, assets); err != nil {
 		return err
 	}
 	for _, sampler := range p.Samplers {

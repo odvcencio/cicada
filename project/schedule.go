@@ -11,6 +11,12 @@ func CompileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 	if err := ValidateProject(p); err != nil {
 		return nil, err
 	}
+	return compileSchedule(p)
+}
+
+// compileSchedule is CompileSchedule for a project ValidateProject has
+// accepted and that has not changed since.
+func compileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 	if p.Arrange == nil {
 		scenes := map[string]uint16{}
 		for i, s := range p.Scenes {

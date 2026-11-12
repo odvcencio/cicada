@@ -246,13 +246,20 @@ func sourceError(file string, line, col int, code, message string, cause error) 
 // Parse resolves all project declarations before validating references and
 // assets. A manifest without entry/source keeps the legacy parsing behavior.
 func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
-	var score *notation.Score
-	var diagnostics []notation.Diagnostic
+	parsed := s.parseDetailed()
+	return parsed.Score, parsed.Diagnostics
+}
+
+// parseDetailed is Parse, also returning what the parse saw
+// (notation.Parsed): Parse's diagnostics are parsed.Diagnostics.
+func (s *Sources) parseDetailed() notation.Parsed {
+	var parsed notation.Parsed
 	if s.ManifestPath == "" && len(s.Libraries) == 0 {
-		score, diagnostics = notation.ParseSource(s.Files[0])
+		parsed = notation.ParseSourceDetailed(s.Files[0])
 	} else {
-		score, diagnostics = notation.ParseFiles(s.Files, s.sourceEdition())
+		parsed = notation.ParseFilesDetailed(s.Files, s.sourceEdition())
 	}
+	score, diagnostics := parsed.Score, parsed.Diagnostics
 	diagnostics = append(diagnostics, s.verifyLibraries()...)
 	if s.VerifiesAssets() {
 		diagnostics = append(diagnostics, VerifyAssets(score, s.Root)...)
@@ -264,7 +271,10 @@ func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 			}
 		}
 	}
-	return score, diagnostics
+	// notation.Validate does not read an asset's Root, so parsed.Validation
+	// still equals Validate(score).
+	parsed.Diagnostics = diagnostics
+	return parsed
 }
 
 // LoadScore is shared by commands and editors. Compilation remains a separate

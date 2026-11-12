@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -275,6 +276,14 @@ func projectHasSceneSettings(p *Project) bool {
 // FromScore lowers a validated source score to the versioned semantic model.
 // It does not silently omit a source declaration that has no v1 representation.
 func FromScore(score *notation.Score) (result *Project, diagnostics []notation.Diagnostic) {
+	return fromScore(score, nil, nil)
+}
+
+// fromScore is FromScore. When parsed is the parse that produced score, its
+// Validate result stands in for calling notation.Validate again (the score
+// must be unchanged since); instruments, when not nil, compiles each
+// instrument ValidateProject checks once per declared value.
+func fromScore(score *notation.Score, parsed *notation.Parsed, instruments *instrumentCache) (result *Project, diagnostics []notation.Diagnostic) {
 	defer func() {
 		if score != nil {
 			notation.LocateDiagnostics(diagnostics, score.Position)
@@ -283,7 +292,11 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	if score == nil {
 		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
-	diagnostics = notation.Validate(score)
+	if parsed != nil && parsed.Validated && parsed.Score == score {
+		diagnostics = slices.Clone(parsed.Validation)
+	} else {
+		diagnostics = notation.Validate(score)
+	}
 	score, _ = notation.ResolvePresets(score)
 	// Resolve preset templates before selecting runtime instances. Imports
 	// expose definitions; only routed library effects consume mixer instances.
@@ -595,7 +608,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			return nil, append(diagnostics, notation.Diagnostic{Code: masterDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: position})
 		}
 	}
-	if err := ValidateProject(p); err != nil {
+	if err := validateProject(p, instruments); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	diagnostics = append(diagnostics, sceneEntryWarnings(p, score)...)

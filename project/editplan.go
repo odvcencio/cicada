@@ -15,6 +15,13 @@ import (
 // project sources, including templates omitted by compilation. When omitted,
 // source supplies the authored names in the current buffer.
 func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Plan {
+	return editPlan(p, source, files, nil)
+}
+
+// editPlan is EditPlan. outlines, from the parse that read files, supplies
+// each file's names and imports in place of parsing it again; a file without
+// its outline (same index, same path) is parsed as EditPlan parses it.
+func editPlan(p *Project, source []byte, files []notation.SourceFile, outlines []notation.Outline) *edit.Plan {
 	if applycount.Enabled {
 		applycount.PlanBuilt()
 	}
@@ -25,10 +32,19 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	if len(files) == 0 {
 		files = []notation.SourceFile{{Source: source}}
 	}
-	for _, file := range files {
+	for i, file := range files {
 		prefix := ""
 		if file.Library != "" {
 			prefix = strings.ReplaceAll(file.Library, "/", ".") + "."
+		}
+		if i < len(outlines) && outlines[i].Path == file.Path {
+			for _, name := range outlines[i].Names {
+				plan.Names[prefix+strings.Join(strings.Fields(name), "")] = true
+			}
+			for _, imported := range outlines[i].Imports {
+				plan.Names[prefix+path.Base(imported)] = true
+			}
+			continue
 		}
 		for name := range notation.DeclarationNames([]notation.SourceFile{file}) {
 			plan.Names[prefix+strings.Join(strings.Fields(name), "")] = true

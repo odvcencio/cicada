@@ -38,6 +38,12 @@ func validateGlideValue(value Value) error {
 // ValidateProject checks the semantic interchange records after source lowering
 // or JSON decoding. It does not yet load audio into the runtime engine.
 func ValidateProject(p *Project) error {
+	return validateProject(p, nil)
+}
+
+// validateProject is ValidateProject; cache, when not nil, compiles each
+// instrument once per declared value.
+func validateProject(p *Project, cache *instrumentCache) error {
 	if applycount.Enabled {
 		applycount.ProjectValidation()
 	}
@@ -244,7 +250,7 @@ func ValidateProject(p *Project) error {
 		if _, err := validateExpr(inst.Out, 0); err != nil {
 			return fmt.Errorf("instrument %s output: %w", inst.ID, err)
 		}
-		program, err := compileInstrument(inst)
+		program, err := cache.compile(inst)
 		if err != nil {
 			return fmt.Errorf("instrument %s: %w", inst.ID, err)
 		}
