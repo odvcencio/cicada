@@ -884,13 +884,16 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ## audition --json
 
 `cicada audition --json` renders a score and reports what it sounds like:
-key, chords and levels, and the measures that decide a mix: loudness per bar,
-beat and section, which track owns each of seven frequency bands in each bar
-and where two collide, which tracks sound in each bar, repeated bars, silences
-in the mix, and the highest true peaks with the tracks that set them.
-[Audition](audition.md) describes every field and its method. `--tracks`
-analyzes chosen tracks only; a name the score does not have fails with the
-code `unknown_track` and `valid_tracks`, the score's track names.
+key, chords and levels, and the measures that decide a mix: loudness per bar
+and section, which track owns each of seven frequency bands in each section
+and where two collide, where each track sounds, repeated bars, silences in the
+mix, and the highest true peaks split into the stems that make them.
+[Audition](audition.md) describes every field and its method. The default
+document keeps summaries, so it stays small enough to read whole; `--detail`
+adds the per-bar and per-beat matrices behind them. `--tracks` analyzes chosen
+tracks only; a name the score does not have fails with the code
+`unknown_track` and `valid_tracks`, the score's track names, and an empty or
+repeated name with `usage`.
 
 This example reads the page's score after the edit above. The rules the
 report applies are in `bands` and `activity`, so a client need not hard-code
@@ -909,17 +912,8 @@ them:
   "full_mix_key": [],
   "audibility_db": -20.7,
   "masked_bars": 2,
-  "bars": [
-    {
-      "bar": 1,
-      "sounding": ["bass", "drums"],
-      "bands": [
-        {"band": "sub", "quiet": true},
-        {"band": "low", "owner": "drums", "second": "bass", "collision": false}
-      ]
-    }
-  ],
-  "loudness": {"loudest_section": "main"},
+  "bars": [{"bar": 1}],
+  "loudness": {"loudest_section": "main", "loudest_section_index": 0},
   "bands": {
     "names": ["sub", "low", "bass", "low_mid", "mid", "presence", "air"],
     "edges_hz": [20, 40, 80, 160, 400, 1600, 5000, 20000],
@@ -935,10 +929,10 @@ them:
     "silence_min_s": 0.25,
     "silences": []
   },
-  "tracks": [],
-  "sections": [{"name": "main"}],
+  "tracks": [{"id": "bass", "sounding_spans": [{"from_bar": 1, "to_bar": 2}]}],
+  "sections": [{"name": "main", "band_owners": [null, "drums"]}],
   "harmony_mismatches": 2,
-  "peaks": [{"rank": 1, "tracks": [{"id": "drums"}]}]
+  "peaks": [{"rank": 1, "pre_master_parts": [{"id": "drums", "kind": "track"}]}]
 }
 ```
 

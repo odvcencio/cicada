@@ -19,9 +19,9 @@ cicada audition song.cicada --tracks bass,kick,logdrum --json
 | `-o <dir>` | Write `spectrogram.png`, `chroma.png`, `rhythm.png` and `energy.png` to the directory, and pages of the spectrogram and chroma when the range is wider than `--image-width` ([Reading the images](#reading-the-images)). Without it, no images are written. |
 | `--from <bar>` | One-based first bar (default 1). |
 | `--bars <n>` | Bars to analyze; 0 means through the song end. |
-| `--tracks <a,b,c>` | Analyze only these tracks and the mix. Only their stems are written and read, so the run needs less memory and disk. A name the score does not have is an error that lists the score's tracks (`unknown_track` with `valid_tracks` in JSON). See [Choosing tracks](#choosing-tracks). |
-| `--peaks <n>` | How many true-peak moments of the mix to list, 0 to 100 (default 10; 0 lists none). |
-| `--bar-bands` | Add each track's level in each band per bar to the JSON (`tracks[].bar_bands_db`). |
+| `--tracks <a,b,c>` | Analyze only these tracks and the mix. Only their stems are read into memory, so the run needs less memory. A name the score does not have is an error that lists the score's tracks (`unknown_track` with `valid_tracks` in JSON); an empty or repeated name is a `usage` error. See [Choosing tracks](#choosing-tracks). |
+| `--peaks <n>` | How many true-peak moments of the mix to list, 0 to 100 (default 3; 0 lists none). |
+| `--detail` | Add the per-bar and per-beat matrices to the JSON: band owners per bar, the tracks that sound in each bar, each track's level per bar and its band levels per bar and per section, the full band ownership per section, and short-term loudness per beat. Without it the JSON keeps their summaries, which keeps it small enough to read into an agent's context ([JSON schema](#json-schema)). The text report always shows the tables. |
 | `--no-bands` | Skip band ownership, about an eighth of the audition's CPU time (see [Cost](#cost)). The band fields are then absent. |
 | `--image-width <px>` | Widest picture in pixels (default 1600; at least 200). 0 keeps one full-resolution strip of each picture, as before. |
 | `--json` | Print the report as JSON instead of text. |
@@ -133,20 +133,26 @@ per section:
 | --- | --- |
 | `LUFS` | Integrated loudness over exactly the section's ticks, from a meter started at the section start. `n/a` when no 400 ms block passes the -70 LUFS gate. |
 | `vs top` | LU under the loudest section. |
-| `LRA` | Loudness range of the section (needs 3 s; short sections read 0). |
+| `LRA` | Loudness range of the section. `n/a` under 3 s, where no short-term window fits. Under about a minute it rests on few windows: a short section that fades out reads a wide range. |
 | `TP dBTP` | True peak of the section (4x oversampled at 48 kHz). |
 | short-term per bar | One block per bar: the short-term loudness (3 s window) that ends at the bar's end, against the loudest bar of the range. `█` is within 3 LU of it, each step down is 3 LU more, `·` is 24 LU under or has no value (the first 3 s of the range have none). |
 
-The last line names the loudest and the quietest section and the LU between
-them. A drop-out shows as a section many LU under the others and as low blocks
-in its bars; a build shows as blocks that rise bar by bar. The audition renders
+The last line names the loudest and the quietest section, with their bars
+(a song can play a section twice under one name), and the LU between them. A
+drop-out shows as a section many LU under the others and as low blocks in its
+bars; a build shows as blocks that rise bar by bar. A drop-out shorter than
+the 3 s window can still draw a high block, because the window holds the bars
+before it: read the mix silences, or with `--detail` the bar's sample peak, for those. The audition renders
 at the score's own levels, with no loudness target, so its LUFS are those of
 the unnormalized mix; the differences between sections and bars are what to
 read.
 
 **Band owners.** For every bar and seven fixed bands, the track that holds the
-largest share of the band's energy, with its share in percent. The bands, in
-Hz, hold the FFT bins whose centre frequency f is in `low <= f < high`:
+largest share of the band's energy, its share in percent, and the band's level
+in dB re a full-scale RMS (`kick 64* -38`). The bands, in Hz, hold the FFT
+bins whose centre frequency f is in `low <= f < high`; energy under 20 Hz or
+over 20 kHz is in no band, so a track's seven band levels can sum to a little
+less than its level (noise effects read up to 0.4 dB less):
 
 | Band | Edges |
 | --- | --- |
@@ -168,11 +174,18 @@ of the 125 Hz-2 kHz band measure would weight a hit by where it falls, so the
 band owners do not reuse them.) A share is
 the track's energy over the sum of the analyzed tracks' energies in that band;
 effect returns are not tracks and are left out. `*` marks a **collision**: two
-tracks each hold more than 25% of the band. A band is `quiet`, with no owner,
-when it is more than 30 dB under its own loudest bar, more than 30 dB under the
-loudest band of the same bar, or more than 40 dB under the loudest band of any
-bar; that keeps window leakage, attack clicks and the tail of a neighbouring
-bar from making an owner. Under the table, one row per section counts the
+tracks each hold more than 25% of the band, compared before the shares are
+rounded (so a runner-up shown as 25.0 can collide). A band is `quiet`, with no
+owner, when it is more than 30 dB under its own loudest bar, more than 30 dB
+under the loudest band of the same bar, or more than 40 dB under the loudest
+band of any bar. That keeps the window leakage of a loud band and the tail of a
+neighbouring bar from making an owner when they are far under the bar's
+content. It does not stop a hit from owning a band that holds nothing else:
+a hit's attack and decay spread real energy over every band, and when no
+other track plays there, the hit owns it. For example, a 440 Hz knock with
+an instant attack and a 40 ms decay owns the 20-40 Hz band of its bar at
+-71 dB, 26 dB under its own 400-1,600 Hz band. Read the level before acting
+on an owner. Under the table, one row per section counts the
 bars with a collision in each band (a bar belongs to the section that holds its
 first tick), and one line per band lists the colliding bars and how often each
 pair of tracks collides.
@@ -197,12 +210,19 @@ note start has the same offset in the bar, the same pitches, the same velocity
 A drop to short hits lists the gaps between them.
 
 **Peaks.** The highest true-peak moments of the mix, highest first, at least
-50 ms apart, with their `bar.beat.sixteenth` and time, and the tracks that set
-each one: each track's share of the summed stem energy in the 5 ms around the
-peak (shares under 1% are left out, at most five tracks). The report finds the
-blocks of 10 ms with the highest sample peaks, measures the true peak of the
-eight best per listed peak, and ranks those. When a limiter or a loudness
-target falls short, these are the hits to look at.
+50 ms apart, with their `bar.beat.sixteenth` and time, and what set each one.
+At the mix's largest sample in the peak, on that channel, the report sums every
+track stem and both effect returns: the signal entering the master chain. Each
+part is the stem's own sample there as a signed percentage of that sum, so the
+parts add up to 100%: `kick +72%, bass +31%, return-a -3%` means the bass
+added to the kick's peak and the reverb return took a little away. A held bass
+under a hit gets its real part of the peak, not more because it carries more
+energy. Parts of at least 1% are listed, at most five, largest first; `rest`
+is the remainder. The report finds the blocks of 10 ms with the highest sample
+peaks, measures the true peak of the eight best per listed peak, and ranks
+those. When a limiter or a loudness target falls short, these are the hits to
+look at. The master chain can reshape the signal after these parts are read
+(see [Limits](#limits)).
 
 ## Reading the images
 
@@ -333,12 +353,13 @@ energy (ITU-R BS.1770-4, the render's loudness meter; short-term = 3 s window en
   groove         1-4      -30.3   -1.5   0.1   -20.1  ·███
   drop           5-6      -44.2  -15.4   1.5   -23.8  ▇▃
   lift           7-8      -28.8    0.0   0.4   -19.1  ██
-  loudest section: lift (-28.8 LUFS); quietest: drop (-44.2 LUFS, 15.4 LU under)
+  loudest section: lift, bars 7-8 (-28.8 LUFS); quietest: drop, bars 5-6 (-44.2 LUFS, 15.4 LU under)
 
-   bar  sub           low           bass          low-mid       mid           presence      air
-     6  quiet         quiet         quiet         quiet         quiet         drums 100     drums 100
-     7  bass 67       drums 64*     drums 55*     drums 88      bass 82       bass 84       drums 91
+   bar  sub                low                bass               low-mid            mid                presence           air
+     6  quiet              quiet              quiet              quiet              quiet              drums 100 -68      drums 100 -52
+     7  bass 67 -57        drums 64* -30      drums 55* -36      drums 88 -41       bass 82 -52        bass 84 -59        drums 91 -51
   low 40-80 Hz collisions: 2 of 8 bars (7-8); pairs: sub+drums 2
+  bass 80-160 Hz collisions: 2 of 8 bars (7-8); pairs: sub+drums 2
 
   track        notes =prev    =4  run  bars 1-8
   bass             6     4     2    4  ████ ··██
@@ -354,8 +375,10 @@ and the drums drop to `▄▂`, 14 and 20 dB under their loudest bar, because on
 the hats play. Bar 6 has no owner below 1.6 kHz at all.
 
 Then the low end. In bars 7 and 8 the kick holds 64% of 40-80 Hz and the sub
-most of the rest (`bars[6].bands[1]` reads `"owner": "drums", "share_pct":
-63.8, "second": "sub", "second_share_pct": 29.5, "collision": true`). Both are
+most of the rest (with `--detail`, `bars[6].bands[1]` reads `"owner": "drums",
+"share_pct": 63.8, "second": "sub", "second_share_pct": 29.5, "collision":
+true`; the default JSON sums it up in `bands.collisions[1].pairs`: `sub` and
+`drums` in 2 bars). Both are
 over 25%, so the bar collides: the sub and the kick share the band in which a
 mix usually gives the bottom to one of them. Duck the sub under the kick, move
 the sub an octave, or give the kick less body. The groove bars do not collide
@@ -367,13 +390,16 @@ band from bar 7).
 ## Choosing tracks
 
 `--tracks bass,kick` renders as usual (every track plays, so the mix is the
-song's mix) but writes and reads only the named stems. The fields that
+song's mix) but writes only the named track stems, the two effect returns and
+the two bus stems, and reads only the named stems into memory. The fields that
 describe tracks then cover only those tracks: `tracks[]`, each section's
-`tracks`, every share (`energy_share_pct`, band shares, peak contributions),
+`tracks`, the energy and band shares (`energy_share_pct`, band owners),
 `level_vs_loudest_db`, the swing groups, and the written and heard chords and
 keys, which come from the chosen pitched tracks. The mix measures (`mix_rms_dbfs`,
 `audibility_db` against the mix, loudness, silences, peak levels) are those of
-the whole mix. `selected_tracks` lists the chosen tracks; it is absent without
+the whole mix. A peak's `pre_master_sample` is still the whole signal entering
+the master chain (read from the bus stems); its parts list the chosen tracks
+and the returns, and `pre_master_rest_pct` holds the other tracks. `selected_tracks` lists the chosen tracks; it is absent without
 the flag. `cicada stems --tracks` writes the same way: the chosen stems and
 `master.wav`, each the same as in a full set, and no return or bus stems.
 
@@ -411,31 +437,43 @@ floored at -120; null means the method cannot give a value.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `bars[].short_term_lufs` | number or null | Short-term loudness of the 3 s window that ends at the bar's end; null while under 3 s of the range precede it. |
-| `bars[].sample_peak_dbfs` | number | Highest sample of the mix in the bar. |
-| `bars[].sounding` | array | Tracks that sound in the bar (the activity rule above), in score order. |
-| `bars[].bands[]` | array | Absent with `--no-bands`. Seven entries in band order: `band`, `level_db` (the analyzed tracks summed, dB re a full-scale RMS, so a full-scale sine reads -3), `quiet`, `owner` and `share_pct`, `second` and `second_share_pct`, `collision`. `owner` and `second` are absent when the band is quiet. |
-| `tracks[].bar_level_db` | array | The stem's RMS in each bar, dB re its loudest bar (-120 when silent). |
-| `tracks[].sounding` | array | One boolean per bar: the track sounds there. |
+| `tracks[].sounding_spans[]` | array | The runs of consecutive bars where the track sounds (the activity rule above), first first: `from_bar` and `to_bar`, one-based and inclusive. A gap between two runs is a drop-out of that track; the first `from_bar` is its entrance. Empty for a track that never sounds. |
 | `tracks[].note_bars` | number | Bars where the track starts a note. |
 | `tracks[].same_as_previous_bar` | number | Bars whose played notes equal the bar before. |
 | `tracks[].same_as_four_bars_before` | number | Bars whose played notes equal the bar four before. |
 | `tracks[].longest_same_run` | number | Longest stretch of identical consecutive bars, in bars; 0 when no bar equals the one before. |
-| `tracks[].bands_db` | array | The track's level in each band over the range, dB re a full-scale RMS. |
-| `tracks[].bar_bands_db` | array | The same per bar: one array of seven per bar. Only with `--bar-bands`: it is the largest part of the document (seven numbers per track per bar). |
-| `tracks[].section_bands_db` | array | The same per section, in `sections[]` order. |
 | `sections[].integrated_lufs` | number or null | Integrated loudness over the section's ticks, from a meter started at the section start. |
-| `sections[].loudness_range_lu` | number | Loudness range of the section. |
-| `sections[].true_peak_dbtp` | number | True peak of the section. |
-| `sections[].short_term_max_lufs`, `sections[].short_term_min_lufs` | number or null | Highest and lowest short-term loudness of the 3 s windows inside the section, read every 100 ms; null under 3 s. |
+| `sections[].loudness_range_lu` | number or null | Loudness range of the section; null under 3 s. |
 | `sections[].vs_loudest_lu` | number or null | `integrated_lufs` minus the loudest section's. |
-| `sections[].bands[]` | array | As `bars[].bands[]` over the section's frames, plus `collision_bars`: bars whose first tick is in the section and whose band collides. |
+| `sections[].band_owners` | array | The owner of each band over the section, in band order; null where the band is quiet. Absent with `--no-bands`. |
 | `selected_tracks` | array | Tracks chosen with `--tracks`, in score order. Absent without it. |
-| `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu`, `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`, `loudest_section`, `quietest_section`, `section_spread_lu` (loudest minus quietest), and `short_term_per_beat_lufs`: one value per beat of the song's meter (a quarter note in 4/4), the 3 s window that ends where the beat ends. Absent at a sample rate the meter does not support. |
-| `bands` | object | Absent with `--no-bands`. `names`, `edges_hz` (eight edges for seven bands), `collision_share_pct` (25), `quiet_below_band_db` (30), `quiet_below_span_db` (30), `quiet_below_range_db` (40), and `collisions[]`: per band, `band`, `bars` (one-based bars with a collision) and `pairs` (`tracks`, the two colliding tracks in score order, and `bars`, how often), most frequent first. |
+| `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu` (null under 3 s), `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`, `loudest_section` and `loudest_section_index`, `quietest_section` and `quietest_section_index` (the indexes count from 0 in `sections[]` and identify the section when a name repeats), `section_spread_lu` (loudest minus quietest), and `short_term_per_bar_lufs`: one value per analyzed bar, the 3 s window that ends at the bar line, null while under 3 s of the range precede it. Absent at a sample rate the meter does not support. |
+| `bands` | object | Absent with `--no-bands`. `names`, `edges_hz` (eight edges for seven bands), `collision_share_pct` (25), `quiet_below_band_db` (30), `quiet_below_span_db` (30), `quiet_below_range_db` (40), and `collisions[]`: per band, `band` and `pairs` (`tracks`, the two colliding tracks in score order, and `bar_count`, the number of bars they collide in), most frequent first. |
 | `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
-| `peaks[]` | array | Highest true peaks first: `rank`, `at` (a position), `true_peak_dbtp`, `sample_peak_dbfs`, and `tracks[]` (`id`, `share_pct`: percent of the summed track-stem energy in the 5 ms around the peak; `peak_dbfs`: the track stem's own sample peak in those 5 ms, before the master chain). Empty with `--peaks 0`. |
+| `peaks[]` | array | Highest true peaks first (3 by default, `--peaks`). `rank`; `at` (a position: the mix's largest sample in the peak); `true_peak_dbtp`; `sample_peak_dbfs`; `channel` (`left` or `right`, the channel of that sample); `pre_master_sample`, the signed sum at that sample and channel of every track stem and both effect returns, measured before the master chain (full scale is 1; the bus compressor, a sidechain, master EQ and the limiter can reshape it afterwards); `pre_master_parts[]`, each with `id`, `kind` (`track` or `return`), `sample` (the stem's own signed sample there) and `signed_share_pct` (`sample` over `pre_master_sample` in percent: negative when the part lowers the peak); and `pre_master_rest_pct`, the percentage the listed parts leave, so the parts and the rest add up to 100. Parts of at least 2% are listed, at most five, largest first; with `--tracks` the rest holds the tracks not chosen. With a `pre_master_sample` under 0.000001 there are no parts. Empty with `--peaks 0`. |
 | `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width` and `height` in pixels, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
+
+`--detail` adds the detail behind those summaries:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `bars[].sample_peak_dbfs` | number | Highest sample of the mix in the bar. |
+| `bars[].sounding` | array | Tracks that sound in the bar, in score order. |
+| `bars[].bands[]` | array | Absent with `--no-bands`. Seven entries in band order: `band`, `level_db` (the analyzed tracks summed, dB re a full-scale RMS, so a full-scale sine reads -3), `quiet`, `owner` and `share_pct`, `second` and `second_share_pct`, `collision`. `owner` and `second` are absent when the band is quiet. |
+| `tracks[].bands_db` | array | The track's level in each band over the range, dB re a full-scale RMS, in band order. |
+| `tracks[].bar_level_db` | array | The stem's RMS in each bar, dB re its loudest bar (-120 when silent). |
+| `tracks[].sounding` | array | One boolean per bar: the track sounds there. |
+| `tracks[].bar_bands_db` | array | The track's band levels per bar: one array of seven per bar. |
+| `tracks[].section_bands_db` | array | The same per section, in `sections[]` order. |
+| `sections[].true_peak_dbtp` | number | True peak of the section. |
+| `sections[].band_collision_bars` | array | For each band, the bars whose first tick is in the section and whose band collides. |
+| `sections[].bands[]` | array | As `bars[].bands[]` over the section's frames, plus `collision_bars`. |
+| `bands.collisions[].bars` | array | The one-based bars where the band collides; absent for a band with none. |
+| `loudness.short_term_per_beat_lufs` | array | One value per beat of the song's meter (a quarter note in 4/4): the 3 s window that ends where the beat ends; null while under 3 s of the range precede it. |
+
+The default report on the 181-second, twelve-track reference song
+`examples/songs/anywhere-you-are.cicada` is 63.8 KB (63,790 bytes); `--detail` makes it
+439 KB. The fields that were there before these measures are about 49 KB of it.
 
 A position (`at`, `start`, `end`) has `text` (`bar.beat.sixteenth`, as an
 `@` placement position), `bar`, `beat` and `sixteenth` (one-based song
@@ -452,19 +490,26 @@ The added measures have these limits:
   across a bar line is cut there, which spreads a little of its energy into
   neighbouring bands in the frames next to the line; notes that start and stop
   on the line put attack and release clicks there anyway. The quiet rules keep
-  either from making an owner when the band holds nothing else.
+  that spread from making an owner when it is far under the bar's content, not
+  when a band holds nothing else (see Band owners); the band's level shows it.
 - A bin belongs to one band, but the window spreads a tone over its
   neighbouring bins: about -6 dB one bin (5.86 Hz) away and about -30 dB two
   to three bins away. A tone within about 15 Hz of a band edge therefore also
-  shows in the next band. Read a share near an edge, such as a 41 Hz E1
-  against the 40 Hz edge, with that in mind.
+  shows in the next band. A sine exactly on an edge splits by where the edge
+  falls between bins: at 40 Hz, 27% sub and 73% low; at 80 Hz, 39% low and 61%
+  bass; at 160 Hz, 64% bass and 36% low-mid; at 400 Hz, 67% low-mid and 33%
+  mid; at 1,600 Hz, 80% mid and 20% presence; at 5,000 Hz, 63% presence and
+  37% air. A sine at a band's geometric centre keeps over 99.9% in its band.
+  Read a share near an edge, such as a 41 Hz E1 against the 40 Hz edge, with
+  that in mind.
 - A collision says that two tracks hold energy in the same band in the same
   bar. It is not a masking model: it does not say whether either is heard.
 - Short-term loudness in the bar table is the window that ends at the bar
   line. At tempos where a bar is shorter than 3 s, it includes the bar
   before. Section loudness starts a fresh meter at the section start, so its
-  filters and windows do not see the section before. A loudness range over
-  less than about a minute rests on few windows.
+  filters and windows do not see the section before. A loudness range needs
+  3 s (it is null under that), and over less than about a minute it rests on
+  few windows.
 - The audition renders without a loudness target or tail, at the score's own
   levels. A listening render with `--loudness` adds input gain before the
   master chain, which changes how hard a master compressor works, so its
@@ -480,17 +525,17 @@ The added measures have these limits:
 - A pitched percussion voice such as a log drum adds energy at its third
   harmonic (a fifth above the octave), which can pull the heard chord a fifth
   above the written one when it outweighs the harmony parts.
-- Peak shares and a peak's per-track `peak_dbfs` come from the track stems,
-  which are taken before the master chain. When the master adds gain or
-  compression, a track's `peak_dbfs` reads below the mix's `sample_peak_dbfs`
-  (a kick stem at -10.3 dBFS under a mix peak at -1.9 dBFS, for example); the
-  shares still say which hit set the peak. Effect
-  returns are left out, so a peak set by a reverb or echo throw is credited to
-  the tracks that sound with it.
-- The activity matrix has one cell per bar: a part that rests for a beat or
-  two inside a bar still sounds in that bar. `bars[].sample_peak_dbfs`,
-  `loudness.short_term_per_beat_lufs` and `activity.silences` show shorter
-  drops.
+- A peak's parts are measured before the master chain: they split the signal
+  that enters it at the peak's sample. The master chain can reshape that
+  signal before it becomes the mix's peak: a music-bus compressor (more so
+  when a track's sidechain ducks the music at the very hits that set the
+  peaks), master EQ and the limiter. `pre_master_sample` and the mix's
+  `sample_peak_dbfs` show how much it changed. The parts are read at the
+  mix's largest sample; a true peak between samples can differ slightly.
+- The activity matrix, and `sounding_spans`, have one cell per bar: a part
+  that rests for a beat or two inside a bar still sounds in that bar.
+  `activity.silences`, and with `--detail` `bars[].sample_peak_dbfs` and
+  `loudness.short_term_per_beat_lufs`, show shorter drops.
 
 Note starts come from spectral flux and miss soft notes under loud ones.
 `decay20` stops at the next detected attack, so a very dense part reports a
@@ -532,6 +577,6 @@ load average 4 to 9):
 | With them | 70 to 75 s | 1.83 GB |
 | With them, `--no-bands` | 63 s | 1.85 GB |
 
-The JSON grows: about 300 KB for a three-minute song of twelve
-or twenty-four tracks, plus about 140 bytes per track per bar with
-`--bar-bands`.
+The JSON stays small by default: 63.8 KB for that song, against about
+49 KB before these measures, and 439 KB with `--detail`
+([JSON schema](#json-schema)).
