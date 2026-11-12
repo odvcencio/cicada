@@ -266,6 +266,11 @@ func TestAgentTaskSuite(t *testing.T) {
 		t.Fatalf("check --json after the edit: exit %d %+v", code, check)
 	}
 
+	// 5b. Change what a track plays, on a copy of the score: the first try is
+	// refused with the reason and what it would change, and the resend with
+	// the flags the refusal names is written as one step and checks clean.
+	changeVoice(t, bin, dir, examples["settrackvoice"])
+
 	// 6. Render to a loudness target and read what was delivered.
 	var rendered struct {
 		Schema  string `json:"schema"`
@@ -362,5 +367,90 @@ func TestAgentTaskSuite(t *testing.T) {
 	t.Logf("agent task suite: 9 commands in %s", elapsed.Round(time.Millisecond))
 	if elapsed > suiteBudget {
 		t.Fatalf("the suite took %s; its budget is %s", elapsed, suiteBudget)
+	}
+}
+
+// changeVoice moves the acid bass of a copy of the score to the score's own
+// glassbass instrument with settrackvoice, built from the catalog example.
+// The acid settings glassbass lacks are refused (voice_params_unsupported)
+// and the marks it plays differently, if any, too (voice_changes_sound); each
+// refusal names its flag. Sending the flags writes the change, and the score
+// checks clean.
+func changeVoice(t *testing.T, bin, dir string, example map[string]any) {
+	t.Helper()
+	if example == nil {
+		t.Fatal("intents --json lacks settrackvoice")
+	}
+	source, err := os.ReadFile(filepath.Join(dir, "song.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "voice.cicada"), source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	intent := map[string]any{}
+	for key, value := range example {
+		intent[key] = value
+	}
+	delete(intent, "dropparams")
+	delete(intent, "acceptchanges")
+	intent["track"], intent["voice"] = "bass", "glassbass"
+	type result struct {
+		OK      bool `json:"ok"`
+		Written bool `json:"written"`
+		Intents []struct {
+			Label    string   `json:"label"`
+			Warnings []string `json:"warnings"`
+		} `json:"intents"`
+		Error *struct {
+			Code   string   `json:"code"`
+			Reason string   `json:"reason"`
+			Field  string   `json:"field"`
+			Uses   []string `json:"uses"`
+		} `json:"error"`
+	}
+	apply := func() (result, int) {
+		envelope, err := json.Marshal(map[string]any{"version": 1, "intents": []any{intent}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "voice.json"), envelope, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var got result
+		stdout, code := cicada(t, bin, dir, "apply", "voice.cicada", "voice.json", "--write", "--json")
+		decode(t, "apply --json settrackvoice", stdout, &got)
+		return got, code
+	}
+	flags := map[string]string{"voice_params_unsupported": "dropparams", "voice_changes_sound": "acceptchanges"}
+	refusals := 0
+	for {
+		got, code := apply()
+		if code == 0 {
+			if !got.OK || !got.Written || len(got.Intents) != 1 || !strings.Contains(got.Intents[0].Label, "glassbass") {
+				t.Fatalf("settrackvoice: %+v", got)
+			}
+			break
+		}
+		flag := ""
+		if got.Error != nil {
+			flag = flags[got.Error.Reason]
+		}
+		if flag == "" || got.Error.Code != "intent_refused" || got.Error.Field != "voice" || len(got.Error.Uses) == 0 || intent[flag] == true {
+			t.Fatalf("settrackvoice refusal: exit %d %+v", code, got.Error)
+		}
+		intent[flag] = true
+		refusals++
+	}
+	if refusals == 0 {
+		t.Fatal("settrackvoice moved acid settings to glassbass without asking")
+	}
+	var check struct {
+		Valid bool `json:"valid"`
+	}
+	stdout, code := cicada(t, bin, dir, "check", "--json", "voice.cicada")
+	decode(t, "check --json after settrackvoice", stdout, &check)
+	if code != 0 || !check.Valid {
+		t.Fatalf("check --json after settrackvoice: exit %d", code)
 	}
 }

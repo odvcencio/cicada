@@ -1116,6 +1116,16 @@ validated source. Drive binds as an insert, delay and reverb bind as sends, and
 compression binds on the music bus. Unsupported combinations leave the score
 unchanged.
 
+Inserting an instrument or kit on an existing track changes what the track
+plays, with the same checks as the `settrackvoice` edit intent. When the new
+voice would play the track's patterns differently (notes an octave apart
+because a pitch written without an octave takes it from the voice, accents or
+rows the voice ignores, drum lanes it does not play), Studio lists each change
+and asks before it inserts; **Cancel** leaves the score unchanged. After a yes,
+the status line names what changed, and **Undo** restores the old voice in one
+step. A track setting the new voice does not have is refused: remove the
+setting first.
+
 **Preview** plays a fixed one-bar phrase at 120 BPM through the selected audio
 engine without changing the score. Only one preview plays at a time; starting
 transport or switching audio mode stops it. Stop playback and recording before

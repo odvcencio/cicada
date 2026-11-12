@@ -9,6 +9,9 @@ import (
 )
 
 // InsertLibraryItem imports a library and binds a track to one of its items.
+// On an existing track a new voice goes through settrackvoice's checks that
+// look at the voice: drum lanes and the rows and marks it ignores, with
+// acceptchanges, and refusals with the same reasons.
 // The host resolves the library first. PresetInstance names an effect
 // instance when Reference is an effect preset. cicada apply does not pin
 // libraries: the project's cicada.sum must already pin the library, or the
@@ -22,6 +25,7 @@ type InsertLibraryItem struct {
 	ItemKind       string `json:"itemkind"`                     // what the item is, such as instrument, preset or effect
 	EffectKind     string `json:"effectkind,omitempty"`         // the effect's kind, for an effect item
 	PresetInstance string `json:"presetinstance,omitempty"`     // the effect instance's name, for an effect preset
+	AcceptChanges  bool   `json:"acceptchanges,omitempty"`      // on an existing track, accept the listed changes to the sound, as settrackvoice does
 }
 
 func (InsertLibraryItem) Kind() string { return "insertlibraryitem" }
@@ -78,9 +82,17 @@ func insertLibraryItem(ctx *Context, intent Intent) error {
 			if field == nil {
 				return fmt.Errorf("track binding is missing")
 			}
+			before := w.Text(field)
 			updated, err = ReplaceSpan(updated, ctx.Options.Path, Span{int(field.StartByte()), int(field.EndByte()), in.Reference, ctx.Options.Path})
 			if err != nil {
 				return err
+			}
+			// A new voice on an existing track goes through settrackvoice's
+			// checks: nothing changes silently.
+			if before != in.Reference {
+				if updated, err = checkLibraryVoice(ctx, updated, in, before); err != nil {
+					return err
+				}
 			}
 		}
 		break
@@ -168,4 +180,67 @@ func librarySetting(source []byte, targetFile, declKind, owner, field, literal s
 		return append(bytes.Clone(source), []byte("\nbus "+owner+" { "+field+" = "+literal+" }\n")...), nil
 	}
 	return nil, fmt.Errorf("selected track does not exist")
+}
+
+// checkLibraryVoice checks the voice change insertlibraryitem makes on an
+// existing track, as settrackvoice does, apart from what needs the library's
+// declarations: the compile that ends the batch checks that.
+func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, before string) ([]byte, error) {
+	score, _, err := ctx.ParseProject()
+	if err != nil || score == nil {
+		return updated, err
+	}
+	// The voice comes from the library this intent imports: read it from
+	// the project as the edit leaves it, through the host's loader, when the
+	// host can resolve the import yet.
+	working := *ctx
+	working.Source, working.plan = updated, nil
+	if candidate, _, err := working.ParseProject(); err == nil && candidate != nil {
+		score = candidate
+	}
+	st := newStaged(ctx)
+	st.set(ctx.Options.Path, updated)
+	node, walker, err := declaration(updated, []string{"track_decl"}, in.Track)
+	if err != nil {
+		return nil, err
+	}
+	change, err := checkVoiceChange(st, score, in.Track, before, in.Reference, ctx.Options.Path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), nil, false)
+	if err != nil {
+		return nil, err
+	}
+	// The track's own settings the library voice does not take.
+	if notation.VoiceDeclared(score, in.Reference) {
+		var uses, names []string
+		for i := 0; i < node.NamedChildCount(); i++ {
+			child := node.NamedChild(i)
+			if walker.Type(child) != "mix_setting" || child.NamedChildCount() == 0 {
+				continue
+			}
+			param := child.NamedChild(0)
+			name := walker.Text(walker.Field(param, "name"))
+			if walker.Type(param) != "param_decl" || name == "" || notation.TrackParamKnown(score, in.Reference, name) {
+				continue
+			}
+			line, _ := walker.Pos(child)
+			uses = append(uses, fmt.Sprintf("setting %s (line %d)", name, line))
+			names = append(names, name)
+		}
+		if len(uses) > 0 {
+			return nil, &ReasonError{Reason: "voice_params_unsupported", Field: "reference", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; remove them first (cicada apply's settrackvoice removes them with dropparams)", in.Reference, strings.Join(names, ", "), in.Track)}
+		}
+	}
+	if len(change.invalid) > 0 {
+		return nil, &ReasonError{Reason: "voice_change_invalid", Field: "reference", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Reference, strings.Join(change.invalid, "; "))}
+	}
+	if len(change.unmodeled) > 0 {
+		return nil, &ReasonError{Reason: "voice_input_unmodeled", Field: "reference", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Reference, strings.Join(change.unmodeled, "; "))}
+	}
+	change.changes = append(change.changes, compiledSoundChanges(st, score, in.Track, in.Reference)...)
+	if len(change.changes) > 0 && !in.AcceptChanges {
+		return nil, &ReasonError{Reason: "voice_changes_sound", Field: "reference", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Reference, strings.Join(change.changes, "; "))}
+	}
+	for _, c := range change.changes {
+		ctx.warn("%s", c)
+	}
+	return updated, nil
 }

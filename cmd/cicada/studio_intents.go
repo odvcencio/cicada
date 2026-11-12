@@ -159,6 +159,22 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		inspection, err := inspectScoreWith(s.path, staged)
 		return inspection.diagnostics, err
 	}
+	// A voice change compares all of cicada check before and after it, the
+	// sampler packs' zones included: a new voice can move notes out of a
+	// pack's keys. It reads the packs' audio, which only a voice change pays.
+	opts.CheckAll = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
+		staged := make(map[string][]byte, len(files)+1)
+		for path, data := range files {
+			staged[path] = data
+		}
+		staged[absolute] = candidate
+		inspection, err := inspectScoreWith(s.path, staged)
+		if err != nil || hasDiagnosticErrors(inspection.diagnostics) {
+			return inspection.diagnostics, err
+		}
+		packs, _ := checkSamplerPacks(s.path, inspection, 0)
+		return append(inspection.diagnostics, packs...), nil
+	}
 	if manifestPath != "" {
 		var supplied bool
 		opts.Manifest, supplied = overrides[manifestPath]
@@ -243,7 +259,8 @@ func intentErrorResponse(err error) map[string]any {
 		response["code"], response["reason"], response["note"] = "CICADA-NOTES", refusal.Code, refusal.Note()
 	}
 	// A refusal with a reason gives its code and its uses, as cicada apply
-	// --json does.
+	// --json does, so the page can show what a change would do and offer the
+	// flag that accepts it.
 	var reason *edits.ReasonError
 	if errors.As(err, &reason) {
 		response["reason"] = reason.Reason
@@ -400,6 +417,9 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		}
 	}
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
+	if len(env.Revisions) == 0 {
+		env.Revisions = edit.Revisions
+	}
 	// Other files the intents were computed against, as cicada apply checks.
 	if err := checkFileRevisions(opts, env.Revisions); err != nil {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "code": "revision_mismatch", "revision": studioRevision(current), "revisions": fileRevisions(opts)})
@@ -423,7 +443,14 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if err != nil {
-		studioJSON(w, http.StatusUnprocessableEntity, intentErrorResponse(err))
+		// The revisions a resend must carry, so a yes to a refusal answers
+		// exactly the state the refusal described.
+		response := intentErrorResponse(err)
+		var reason *edits.ReasonError
+		if errors.As(err, &reason) && reason.Reason == "voice_changes_sound" {
+			response["revision"], response["revisions"] = studioRevision(current), fileRevisions(opts)
+		}
+		studioJSON(w, http.StatusUnprocessableEntity, response)
 		return
 	}
 	if !env.DryRun {
@@ -478,9 +505,9 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	// Changes a flag accepted (reseed, through /api/intents) are listed in
-	// the reply's warnings, as cicada apply --json lists them per intent; no
-	// page shows them yet.
+	// Changes a flag accepted (reseed and acceptchanges) are listed in the
+	// reply's warnings, as cicada apply --json lists them per intent; the
+	// Library panel shows them, and no other page does yet.
 	var warnings []string
 	for _, list := range result.Warnings {
 		warnings = append(warnings, list...)
