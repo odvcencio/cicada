@@ -8,7 +8,6 @@ import (
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func deltaCommands(t *testing.T, delta planDelta, tick int64) []cmd.Command {
@@ -83,12 +82,12 @@ func TestPlanDiffModelsStepsRetainedBeyondAShortenedLength(t *testing.T) {
 							t.Fatalf("fault %d at tick %d", message.A, message.Tick)
 						}
 						if notes != nil && message.Kind == cmd.NoteOn && message.Track == cur.tracks[pattern.track] {
-							notes[fmt.Sprintf("%d/%d", message.Tick%seq.TicksPerBar, message.A)]++
+							notes[fmt.Sprintf("%d/%d", message.Tick%ticksPerBar, message.A)]++
 						}
 					}
 				}
 			}
-			tick := int64(seq.TicksPerBar)
+			tick := int64(ticksPerBar)
 			for _, stage := range stages {
 				next, _ := editKindsPlan(t, strings.Replace(source, original, stage, 1))
 				delta := planDiff(cur, next)
@@ -100,7 +99,7 @@ func TestPlanDiffModelsStepsRetainedBeyondAShortenedLength(t *testing.T) {
 					t.Fatal("edit batch rejected")
 				}
 				run(patched, 2*barBlocks, nil)
-				tick += 2 * seq.TicksPerBar
+				tick += 2 * ticksPerBar
 				cur = next
 			}
 			fresh, err := engine.New(cur.cfg)

@@ -6,6 +6,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -164,7 +165,7 @@ func editArrangement(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	updated, err := arrangementSource(source, file, op)
+	updated, err := arrangementSource(ctx.MeterMap(), source, file, op)
 	if err != nil {
 		return err
 	}
@@ -182,7 +183,7 @@ type arrangementOp struct {
 // transaction compile the complete project before publication, including
 // imported patterns. Comments and other declarations keep their exact bytes.
 // It ports editedArrangementSource.
-func arrangementSource(source []byte, file string, op arrangementOp) ([]byte, error) {
+func arrangementSource(meterMap seq.MeterMap, source []byte, file string, op arrangementOp) ([]byte, error) {
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, err
@@ -238,7 +239,7 @@ func arrangementSource(source []byte, file string, op arrangementOp) ([]byte, er
 		return nil, fmt.Errorf("placement settings are required")
 	}
 	if settings.At != "" {
-		if _, err := notation.MusicalTicks(settings.At, true); err != nil {
+		if _, err := notation.MusicalTicks(meterMap, settings.At, true); err != nil {
 			return nil, fmt.Errorf("start: %w", err)
 		}
 	}
@@ -246,7 +247,7 @@ func arrangementSource(source []byte, file string, op arrangementOp) ([]byte, er
 		if marker {
 			return nil, fmt.Errorf("markers have a position, not a length")
 		}
-		if _, err := notation.MusicalTicks(settings.Length, false); err != nil {
+		if _, err := notation.MusicalTicks(meterMap, settings.Length, false); err != nil {
 			return nil, fmt.Errorf("length: %w", err)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"m31labs.dev/cicada/kernel/seq"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestNoteClockUsesAuthoredTempoBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			state.RoundTrip = 40 * time.Millisecond
-			head := state.Playhead()
+			head := state.Playhead(seq.MeterMap{})
 			if got := head.NoteTick(130*time.Millisecond, 100); got != tc.want {
 				t.Fatalf("note crossed tempo boundary at tick %d, want %d", got, tc.want)
 			}

@@ -70,11 +70,13 @@ func readWAVTiming(file io.ReaderAt, at, fileSize int64) (wavTiming, error) {
 // frames is the length a render of the recorded bars must have: the samples
 // from the first to the last bar across every tempo step, plus the tail.
 func (t wavTiming) frames(sampleRate, from int) (int64, error) {
-	tempo, err := project.NewTempoMap(sampleRate, int64(t.tempoMilli), t.changes)
+	// Timing chunk versions 1 and 2 record no meter, so their bars are 4/4.
+	var meterMap seq.MeterMap
+	tempo, err := project.NewTempoMap(meterMap, sampleRate, int64(t.tempoMilli), t.changes)
 	if err != nil {
 		return 0, fmt.Errorf("invalid WAV tempo metadata: %w", err)
 	}
-	return tempo.SampleAtTick(int64(from+int(t.bars))*seq.TicksPerBar) - tempo.SampleAtTick(int64(from)*seq.TicksPerBar) + int64(t.tailFrames), nil
+	return tempo.SampleAtTick(meterMap.BarStart(int64(from+int(t.bars)))) - tempo.SampleAtTick(meterMap.BarStart(int64(from))) + int64(t.tailFrames), nil
 }
 
 func sameTempoChanges(a, b []project.TempoChange) bool {

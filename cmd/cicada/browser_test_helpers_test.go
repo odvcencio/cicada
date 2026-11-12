@@ -933,7 +933,7 @@ func nativeConfigReference(t *testing.T, cfg engine.Config, bars int) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	end := clock.SampleAtTick(int64(bars) * seq.TicksPerBar)
+	end := clock.SampleAtTick(int64(bars) * ticksPerBar)
 	blocks := int((end + 127) / 128)
 	frames := blocks * 128
 	data := make([]byte, 8+frames*8)

@@ -102,9 +102,9 @@ func TestWAVBarRangeMatchesFullRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstBar := clock.SampleAtTick(seq.TicksPerBar)
-	start := clock.SampleAtTick(2 * seq.TicksPerBar)
-	end := clock.SampleAtTick(3 * seq.TicksPerBar)
+	firstBar := clock.SampleAtTick(ticksPerBar)
+	start := clock.SampleAtTick(2 * ticksPerBar)
+	end := clock.SampleAtTick(3 * ticksPerBar)
 	if end-start == firstBar {
 		t.Fatal("test tempo did not produce a distinct third-bar frame count")
 	}
@@ -171,8 +171,8 @@ func TestWAVBarRangePreservesEffectStateAndAlignment(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			start := clock.SampleAtTick(seq.TicksPerBar)
-			end := clock.SampleAtTick(3 * seq.TicksPerBar)
+			start := clock.SampleAtTick(ticksPerBar)
+			end := clock.SampleAtTick(3 * ticksPerBar)
 			var full, part bytes.Buffer
 			// Both renders stop at bar three, so post-song release and drive drain agree.
 			if _, err := WAV(score, Options{SampleRate: 48_000, Bits: 32, Bars: 3}, &full); err != nil {

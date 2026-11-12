@@ -37,7 +37,9 @@ func sceneEntryWarnings(p *Project, score *notation.Score) []notation.Diagnostic
 	active := make([]string, len(p.Tracks))
 	reported := map[[2]string]bool{}
 	var out []notation.Diagnostic
-	var tick int64
+	// Entries count bars of the song's meter map, as engine.LowerSong does.
+	meterMap := p.MeterMap()
+	var tick, bar int64
 	for _, entry := range p.Song {
 		scene := scenes[entry.Scene]
 		for ti, track := range p.Tracks {
@@ -59,9 +61,10 @@ func sceneEntryWarnings(p *Project, score *notation.Score) []notation.Diagnostic
 				continue
 			}
 			reported[key] = true
-			out = append(out, notation.Diagnostic{Code: "CICADA-SCENE-ENTRY", Severity: "warning", Position: positions[key], Message: entered.message(pattern.ID, track.ID, tick)})
+			out = append(out, notation.Diagnostic{Code: "CICADA-SCENE-ENTRY", Severity: "warning", Position: positions[key], Message: entered.message(meterMap, pattern.ID, track.ID, tick)})
 		}
-		tick += int64(entry.Bars) * seq.TicksPerBar
+		bar += int64(entry.Bars)
+		tick = meterMap.BarStart(bar)
 	}
 	return out
 }
@@ -119,26 +122,27 @@ func heldEntry(p *Pattern, tick int64) (sceneEntry, bool) {
 	return entry, true
 }
 
-func (e sceneEntry) message(pattern, track string, tick int64) string {
-	where := fmt.Sprintf("pattern %s on track %s enters at bar %d on step %d of %d", pattern, track, tick/seq.TicksPerBar+1, e.step, e.steps)
+func (e sceneEntry) message(meterMap seq.MeterMap, pattern, track string, tick int64) string {
+	bar, _ := meterMap.BarAt(tick)
+	where := fmt.Sprintf("pattern %s on track %s enters at bar %d on step %d of %d", pattern, track, bar+1, e.step, e.steps)
 	held := fmt.Sprintf("inside the note that step %d starts", e.onset)
 	if e.step == e.onset {
 		held = "after the start of its note"
 	}
 	until := "the pattern has no later note"
 	if e.next >= 0 {
-		until = "the track is silent until " + songPosition(e.next)
+		until = "the track is silent until " + songPosition(meterMap, e.next)
 	}
 	return fmt.Sprintf("%s, %s: scene patterns keep the song's phase, so that note began before the scene and %s; place the pattern with arrange to start it from its first step", where, held, until)
 }
 
-// songPosition writes a song tick as @bar.beat.sixteenth, the form arrange
-// placements use, and adds the remaining ticks (960 to a beat) when the tick
-// falls between sixteenths.
-func songPosition(tick int64) string {
-	const sixteenth = seq.TicksPerBar / 16
-	at := fmt.Sprintf("@%d.%d.%d", tick/seq.TicksPerBar+1, tick%seq.TicksPerBar/(4*sixteenth)+1, tick%(4*sixteenth)/sixteenth+1)
-	if rest := tick % sixteenth; rest != 0 {
+// songPosition writes a song tick as @bar.beat.sixteenth on the song's meter
+// map, the form arrange placements use, and adds the remaining ticks when the
+// tick falls between sixteenths.
+func songPosition(meterMap seq.MeterMap, tick int64) string {
+	bar, beat, step, rest := meterMap.Position(tick)
+	at := fmt.Sprintf("@%d.%d.%d", bar, beat, step)
+	if rest != 0 {
 		at += fmt.Sprintf(" plus %d ticks", rest)
 	}
 	return at
