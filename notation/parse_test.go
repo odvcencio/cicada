@@ -269,7 +269,6 @@ func TestP2EngineUnsupportedMixerFormsNameTheirConstruct(t *testing.T) {
 	}{
 		{"unknown effect kind", "fx echo echo {}\n", "", "effect kind echo"},
 		{"second delay", "fx room delay {}\nfx other delay {}\n", "", "delay"},
-		{"second reverb", "fx hall reverb {}\nfx room reverb {}\n", "", "reverb"},
 		{"custom bus", "bus ambience {}\n", "", "user-declared bus ambience"},
 		{"bus send", "fx room delay {}\nbus music { send room = 0.2 }\n", "", "music bus send"},
 		{"non-fixed music level", "bus music { level = -2dB }\n", "", "music bus level"},
@@ -297,6 +296,29 @@ func TestP2EngineUnsupportedMixerFormsNameTheirConstruct(t *testing.T) {
 			}
 			t.Fatalf("want CICADA-UNSUPPORTED naming %q, got %+v", tc.want, diagnostics)
 		})
+	}
+}
+
+// A second reverb is a return of its own in edition 2 (slots C to H). Edition
+// 1 addresses returns by kind (send_b), so there it reports CICADA-VERSION at
+// the second declaration instead of "not implemented" at line 1.
+func TestSecondReverbNeedsEditionTwo(t *testing.T) {
+	_, diagnostics := Parse([]byte("cicada 1\nfx hall reverb {}\nfx room reverb {}\ntrack bass acid { }\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"))
+	found := false
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-UNSUPPORTED" && strings.Contains(d.Message, "reverb") {
+			t.Fatalf("edition 1 still calls a second reverb unsupported: %+v", d)
+		}
+		found = found || d.Code == "CICADA-VERSION" && strings.Contains(d.Message, "second reverb") && d.Position.Line == 3
+	}
+	if !found {
+		t.Fatalf("want CICADA-VERSION at line 3, got %+v", diagnostics)
+	}
+	_, diagnostics = Parse([]byte("cicada 2\nfx hall reverb {}\nfx room reverb {}\ntrack bass acid { send room = 0.2 }\npattern p { c3 }\nscene main { bass = p }\nsong { main }\n"))
+	for _, d := range diagnostics {
+		if d.Severity == "error" {
+			t.Fatalf("edition 2 refused a second reverb: %+v", d)
+		}
 	}
 }
 

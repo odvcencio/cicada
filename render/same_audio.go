@@ -54,12 +54,14 @@ func validMasterGainDB(db float64) bool {
 
 // sameNonGainOptions compares every Options field except the export gains,
 // MasterCache and NoteTap. TestSameAudioComparesEveryOption fails when a field
-// is added to Options without a decision here.
+// is added to Options without a decision here. TrackStemsOnly never changes a
+// WAV's bytes, but it decides whether Stems refuses a score, so it is compared.
 func sameNonGainOptions(a, b Options) bool {
 	sameDither := a.Dither == nil && b.Dither == nil || a.Dither != nil && b.Dither != nil && *a.Dither == *b.Dither
 	return a.AssetRoot == b.AssetRoot && a.AssetDir == b.AssetDir && a.SamplerBaseline == b.SamplerBaseline &&
 		a.SampleRate == b.SampleRate && a.Bits == b.Bits && a.Bars == b.Bars && a.From == b.From &&
 		math.Float64bits(a.TailSec) == math.Float64bits(b.TailSec) && sameDither && a.Normalize == b.Normalize &&
 		a.Block == b.Block && math.Float32bits(a.MasterBiasL) == math.Float32bits(b.MasterBiasL) &&
-		math.Float32bits(a.MasterBiasR) == math.Float32bits(b.MasterBiasR) && a.MaxResidentPCM == b.MaxResidentPCM
+		math.Float32bits(a.MasterBiasR) == math.Float32bits(b.MasterBiasR) && a.MaxResidentPCM == b.MaxResidentPCM &&
+		a.TrackStemsOnly == b.TrackStemsOnly
 }
