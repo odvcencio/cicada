@@ -332,7 +332,7 @@ seg_owner_session() { # 1 s
 	run_suite owner-session env NODE_OPTIONS="$base_node_options" node --test workstation/browser/owner-session.test.cjs
 }
 
-seg_page_stall() { # about 35 s (32 s locally), no Studio
+seg_page_stall() { # about 41 s (35 s, plus about 6 s for the reenter case), no Studio
 	# A frozen page must make its suite report and exit (see page-stall.cjs).
 	run_suite page-stall env NODE_OPTIONS="$base_node_options" node --test workstation/browser/page-stall.test.cjs
 }

@@ -34,7 +34,14 @@ env:
 #
 # Which jobs a pull request runs comes from scripts/ci-changes.sh (see the
 # `changes` job). Pushes to main, the nightly schedule and manual runs set
-# every group to true, so they run every job.
+# every group to true, but some jobs also filter on the event:
+#   - pull requests only: commit metadata hygiene, repository and docs checks;
+#   - pull requests and pushes, not the schedule or manual runs: the macOS
+#     desktop and platform-contract jobs and the four M2 jobs (WASM parity,
+#     one-hour memory, AudioWorklet browser tests and gates);
+#   - the schedule and manual runs only: the WAV parity and render-cache
+#     sweeps, macOS desktop exhaustive, and the M2 soak, which a manual run
+#     gets only with its soak input.
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
@@ -1559,7 +1566,6 @@ jobs:
     timeout-minutes: 20
     env:
       GOWORK: off
-      CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -1574,26 +1580,8 @@ jobs:
         with:
           node-version: '22.23.2'
           package-manager-cache: false
-      - name: Cache pinned Chrome for Testing headless shell
-        shell: bash
-        run: |
-          set -euo pipefail
-          tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
-          browser_path="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
-          if [[ ! -x "$browser_path" ]]; then
-            mkdir -p "$tool_root"
-            temp_dir="$(mktemp -d "$RUNNER_TEMP/chrome-for-testing.XXXXXX")"
-            trap 'rm -rf "$temp_dir"' EXIT
-            archive="$temp_dir/chrome-headless-shell.zip"
-            curl --fail --location --retry 3 --output "$archive" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
-            unzip -q "$archive" -d "$temp_dir"
-            mv "$temp_dir/chrome-headless-shell-linux64" "$tool_root/"
-          fi
-          echo "CHROME_BIN=$browser_path" >> "$GITHUB_ENV"
-          PULSE_SERVER=unix:/nonexistent "$browser_path" --mute-audio --version
-          go version
-          tinygo version
-          node --version
+      # No Chrome: on Linux TestBrowserCPUReport times the kernel WASM in Node and
+      # starts Chrome only with CICADA_BROWSER=windows.
       - name: M2 CPU budget
         # The browser tests, the size gate and WAM2 moved to m2-browser on hosted
         # runners; the parity and memory tests are in m2-wasm-parity and
