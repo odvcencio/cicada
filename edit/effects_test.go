@@ -106,8 +106,10 @@ song { main*2 }
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The comment heads the effects that follow grit, so it stays.
 		want := strings.ReplaceAll(`cicada 2
 tempo 120
+// warm drive
 fx tilt eq {}
 fx room reverb {}
 track bass acid { cutoff = 620Hz insert = tilt }
@@ -236,7 +238,7 @@ func TestEffectRefusalsCarryReasonAndRange(t *testing.T) {
 		{"pan outside", effectScore, &SetParam{Entity: "param:bass.pan", Value: json.RawMessage(`2`)}, "value_out_of_range", "value", "pan 2 is outside -1 to 1"},
 		{"unknown anchor", withChain, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "keys", Before: "nosuch"}, "unknown_insert_anchor", "before", "nosuch is not in the insert chain of keys (tilt -> wide)"},
 		{"both anchors", withChain, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "keys", Before: "tilt", After: "wide"}, "insert_position_conflict", "after", "give before or after, not both"},
-		{"anchor without target", withChain, &AddEffect{Name: "grit", EffectKind: "drive", After: "tilt"}, "insert_position_without_target", "after", "give inserton too"},
+		{"anchor in no chain", withChain, &AddEffect{Name: "grit", EffectKind: "drive", After: "nosuch"}, "unknown_insert_anchor", "after", "nosuch is not in any insert chain"},
 		{"sfx", effectScore, &AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "sfx"}, "effect_route", "inserton", "bus sfx takes no inserts"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -250,6 +252,17 @@ func TestEffectRefusalsCarryReasonAndRange(t *testing.T) {
 				t.Fatalf("no range: %+v", reason)
 			}
 		})
+	}
+	// Putting a comp with a sidechain in a chain checks the sidechain too.
+	declared := Envelope{Version: 1, Intents: []Intent{
+		&AddEffect{Name: "glue", EffectKind: "comp", Settings: map[string]json.RawMessage{"sidechain": json.RawMessage(`"bass"`)}},
+		&SetParam{Entity: "param:bass.insert", Value: json.RawMessage(`"glue"`)},
+	}}
+	_, err := Apply([]byte(effectScore), declared, Options{Compiler: parseCompiler{}})
+	var chained *ReasonError
+	var at *IntentError
+	if !errors.As(err, &chained) || chained.Reason != "sidechain_unavailable" || !errors.As(err, &at) || at.Index != 1 || at.Field != "value" {
+		t.Fatalf("a track chain took a sidechained comp: %v", err)
 	}
 	got, err := applyEffectIntent(t, effectScore+"fx glue comp {}\nbus music { insert = glue }\n", &SetParam{Entity: "param:glue.sidechain", Value: json.RawMessage(`"bass"`)})
 	if err != nil || !strings.Contains(got, "sidechain = bass") {
@@ -273,6 +286,7 @@ func TestAddEffectPlacesInTheChain(t *testing.T) {
 		{&AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "keys", Before: "tilt"}, "grit -> tilt -> wide"},
 		{&AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "keys", After: "tilt"}, "tilt -> grit -> wide"},
 		{&AddEffect{Name: "grit", EffectKind: "drive", InsertOn: "keys", After: "wide"}, "tilt -> wide -> grit"},
+		{&AddEffect{Name: "grit", EffectKind: "drive", After: "tilt"}, "tilt -> grit -> wide"},
 	} {
 		got, err := applyEffectIntent(t, source, tc.intent)
 		if err != nil || !strings.Contains(got, "track keys piano { insert = "+tc.chain+" }") {

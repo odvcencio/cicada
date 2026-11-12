@@ -186,6 +186,7 @@ func rename(uri string, source []byte, at position, newName string) any {
 		}
 		visit(root)
 	}
+	edits, replacements = nameUseEdits(source, selected.Kind, selected.Name, newName, edits, replacements)
 	if len(edits) == 0 {
 		return nil
 	}
@@ -202,4 +203,32 @@ func rename(uri string, source []byte, at position, newName string) any {
 		return nil
 	}
 	return map[string]any{"changes": map[string]any{uri: edits}}
+}
+
+// nameUseEdits adds, for a track, a pattern or a scene, the references the
+// shared finder (notation.NameUses, which the edit intents use too) knows
+// and the symbols query does not tag: MIDI track and launch mappings, live
+// layers, envelope sources and compressor sidechains, quoted or not.
+func nameUseEdits(source []byte, kind, name, newName string, edits []map[string]any, replacements []replacement) ([]map[string]any, []replacement) {
+	family := map[string]string{"track": "track", "pattern": "pattern", "clip": "pattern", "scene": "scene"}[kind]
+	if family == "" {
+		return edits, replacements
+	}
+	uses, err := notation.NameUses(source)
+	if err != nil {
+		return edits, replacements
+	}
+	taken := make(map[int]bool, len(replacements))
+	for _, r := range replacements {
+		taken[r.start] = true
+	}
+	for _, use := range notation.UsesOf(uses, family, name) {
+		if taken[use.Start] {
+			continue
+		}
+		taken[use.Start] = true
+		edits = append(edits, map[string]any{"range": region{Start: utf16Position(source, use.Start), End: utf16Position(source, use.End)}, "newText": newName})
+		replacements = append(replacements, replacement{use.Start, use.End, newName})
+	}
+	return edits, replacements
 }
