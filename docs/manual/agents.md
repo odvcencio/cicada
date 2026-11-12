@@ -1246,5 +1246,5 @@ this bass brighter without clipping" on `examples/keys/fm_bass.cicada`: it
 reads the bass track's controls from `explain track:keys --json`, picks the one
 whose measured brightness rises most without raising the level, checks its
 range with `params --json --voice fm_bass`, sets it with `setparam`, and
-requires the track's `centroid_hz` in `audition --json` to rise by a quarter,
-with no clipped samples and the true peak under its ceiling at −14 LUFS. CI runs it on every pull request; it must finish in under two minutes.
+requires the track's `centroid_hz` in `audition --json` to rise by a quarter
+and the render to clip no sample, with its peak under −1 dBFS. CI runs it on every pull request; it must finish in under two minutes.
