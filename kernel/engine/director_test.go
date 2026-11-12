@@ -62,10 +62,10 @@ func TestDirectorQuantizedStingerAndCrossfade(t *testing.T) {
 			}
 			quantum := seq.PPQ
 			if q == 2 {
-				quantum = seq.TicksPerBar
+				quantum = ticksPerBar
 			}
 			if q == 21 {
-				quantum = 2 * seq.TicksPerBar
+				quantum = 2 * ticksPerBar
 			}
 			clock, _ := seq.NewClock(48000, 120000)
 			start := int(clock.SampleAtTick(quantum))
@@ -168,7 +168,7 @@ func TestDirectorRenderBlockInvariantAndAllocationFree(t *testing.T) {
 
 func TestDirectorStopCancelsScheduledEvents(t *testing.T) {
 	e := directorEngine(t, 128)
-	e.PushBatch([]cmd.Command{{Op: cmd.OpPlay, Track: 255}, {Op: cmd.OpTriggerStinger, Track: 2, Tick: seq.PPQ}, {Op: cmd.OpSetState, Track: 255, Arg0: 1, Tick: seq.TicksPerBar}, {Op: cmd.OpStop, Track: 255}})
+	e.PushBatch([]cmd.Command{{Op: cmd.OpPlay, Track: 255}, {Op: cmd.OpTriggerStinger, Track: 2, Tick: seq.PPQ}, {Op: cmd.OpSetState, Track: 255, Arg0: 1, Tick: ticksPerBar}, {Op: cmd.OpStop, Track: 255}})
 	renderDirector(t, e, 128)
 	for _, c := range e.pending[:e.pendingLen] {
 		if c.Op == cmd.OpSetState || c.Op == cmd.OpTriggerStinger {
@@ -198,7 +198,7 @@ func TestDirectorPhraseLengthPrecedesRequestsInTheSameBlock(t *testing.T) {
 	state := cmd.Command{Op: cmd.OpSetState, Track: 255, Index: 1, Arg0: 1 | phrase<<16}
 	stinger := cmd.Command{Op: cmd.OpTriggerStinger, Track: 2, Arg0: phrase, Arg1: 10}
 	clock, _ := seq.NewClock(48000, 120000)
-	const now = 3 * seq.TicksPerBar / 2 // the middle of a two-bar phrase
+	const now = 3 * ticksPerBar / 2 // the middle of a two-bar phrase
 	for _, tc := range []struct {
 		name    string
 		earlier uint32 // a phrase length set in an earlier block, or zero
@@ -209,11 +209,11 @@ func TestDirectorPhraseLengthPrecedesRequestsInTheSameBlock(t *testing.T) {
 		kind    cmd.Kind
 		landing int64
 	}{
-		{"state after length", 0, 2, state, false, 0, cmd.StateChanged, 2 * seq.TicksPerBar},
-		{"state before length", 0, 2, state, true, 0, cmd.StateChanged, 2 * seq.TicksPerBar},
-		{"stinger after length", 0, 2, stinger, false, 0, cmd.StingerStarted, 2 * seq.TicksPerBar},
-		{"both queued for one tick", 0, 2, state, false, now, cmd.StateChanged, 2 * seq.TicksPerBar},
-		{"new length replaces an earlier one", 2, 4, state, false, 0, cmd.StateChanged, 4 * seq.TicksPerBar},
+		{"state after length", 0, 2, state, false, 0, cmd.StateChanged, 2 * ticksPerBar},
+		{"state before length", 0, 2, state, true, 0, cmd.StateChanged, 2 * ticksPerBar},
+		{"stinger after length", 0, 2, stinger, false, 0, cmd.StingerStarted, 2 * ticksPerBar},
+		{"both queued for one tick", 0, 2, state, false, now, cmd.StateChanged, 2 * ticksPerBar},
+		{"new length replaces an earlier one", 2, 4, state, false, 0, cmd.StateChanged, 4 * ticksPerBar},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := directorEngine(t, 128)
@@ -261,7 +261,7 @@ func TestDirectorPhraseLengthForALaterTickDoesNotCount(t *testing.T) {
 		t.Fatal("push")
 	}
 	clock, _ := seq.NewClock(48000, 120000)
-	const now = 3 * seq.TicksPerBar / 2 // the middle of a two-bar phrase
+	const now = 3 * ticksPerBar / 2 // the middle of a two-bar phrase
 	renderDirector(t, e, int(clock.SampleAtTick(now)))
 	if !e.PushBatch([]cmd.Command{
 		{Op: cmd.OpSetPhraseBars, Track: 255, Arg0: 2, Tick: now + seq.PPQ},
@@ -302,7 +302,7 @@ func TestDirectorLiveSetupAndFirstStateShareABlock(t *testing.T) {
 	run := func(batches ...[]cmd.Command) result {
 		e := directorEngine(t, 128)
 		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
-		frames := int(clock.SampleAtTick(3 * seq.TicksPerBar / 2))
+		frames := int(clock.SampleAtTick(3 * ticksPerBar / 2))
 		messages := renderDirector(t, e, frames)
 		for _, batch := range batches {
 			if !e.PushBatch(batch) {
@@ -311,7 +311,7 @@ func TestDirectorLiveSetupAndFirstStateShareABlock(t *testing.T) {
 			messages = append(messages, renderDirector(t, e, 128)...)
 			frames += 128
 		}
-		messages = append(messages, renderDirector(t, e, int(clock.SampleAtTick(2*seq.TicksPerBar))+256-frames)...)
+		messages = append(messages, renderDirector(t, e, int(clock.SampleAtTick(2*ticksPerBar))+256-frames)...)
 		return result{messages, e.layerMask, e.currentScene, e.macroCurrent[0]}
 	}
 	want := run(all[:4], all[4:])
@@ -321,7 +321,7 @@ func TestDirectorLiveSetupAndFirstStateShareABlock(t *testing.T) {
 			landing = m.Tick
 		}
 	}
-	if landing != 2*seq.TicksPerBar || want.mask != 7 || want.scene != 1 || want.macro != .9 {
+	if landing != 2*ticksPerBar || want.mask != 7 || want.scene != 1 || want.macro != .9 {
 		t.Fatalf("separate blocks: landing %d, %+v", landing, want)
 	}
 	for _, order := range [][]int{{0, 1, 2, 3, 4}, {4, 0, 1, 2, 3}, {3, 4, 0, 1, 2}, {0, 1, 2, 4, 3}, {4, 3, 2, 1, 0}} {

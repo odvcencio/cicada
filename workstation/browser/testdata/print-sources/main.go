@@ -91,7 +91,7 @@ pattern melody { c4 . c4 . c4 . c4 . c4 . c4 . c4 . c4 . }
 		panic(append(diagnostics, more...))
 	}
 	changes := project.SongTempoChanges(p)
-	clock, err := project.NewTempoMap(48000, int64(p.TempoMilli), changes)
+	clock, err := project.NewTempoMap(p.MeterMap(), 48000, int64(p.TempoMilli), changes)
 	must(err)
 	store, err := takejournal.Open(score)
 	must(err)

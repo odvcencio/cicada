@@ -15,6 +15,7 @@ import (
 	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // activeVocalCapture leaves one vocal take open without audio hardware.
@@ -32,7 +33,7 @@ func activeVocalCapture(t *testing.T, s *studio) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count, _ := capture.NewCountIn(48000, 120000, 0)
+	count, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err = r.Begin(count, capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}

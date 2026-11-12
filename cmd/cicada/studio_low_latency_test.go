@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestStudioBufferChoiceDefaultsAndValidation(t *testing.T) {
@@ -148,7 +149,7 @@ func TestArmedInputMonitoringHasNoSoftwareQueueAndRetainsCountInRaw(t *testing.T
 			if output[0][ampcab.Latency] != .375 || output[1][ampcab.Latency] != -.25 || output[0][0] != 0 || output[1][0] != 0 || a.engineFrame != 0 || r.Snapshot().WrittenFrames != 0 {
 				t.Fatal("armed monitor advanced/recorded score or had unexpected bypass latency")
 			}
-			countIn, _ := capture.NewCountIn(48000, 120000, 1)
+			countIn, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 1)
 			if err := a.BeginCapture(countIn, capture.Calibration{}); err != nil {
 				t.Fatal(err)
 			}
