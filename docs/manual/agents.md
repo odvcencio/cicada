@@ -1041,7 +1041,9 @@ slashes. It must be a project's own folder: the server refuses to start when
 is a library folder, or when its `cicada.mod` or `lib` folder leaves it through
 a symbolic link. The user library outside the root is not read: the server
 points `CICADA_LIBRARY` at an empty temporary folder, which it removes when it
-stops. `--allow-user-library` lets the tools read the user library; `library`
+stops: when its input closes, on SIGINT, SIGTERM or SIGHUP, and when a reply
+cannot be written because the host closed the server's output (only SIGKILL
+leaves the folder behind). `--allow-user-library` lets the tools read the user library; `library`
 then gives a user library's `root` as an empty string, so no folder outside
 the root is named.
 
@@ -1058,10 +1060,14 @@ URI is error -32602 (-32002 after `initialize`).
 | `intents` | `kinds`, up to 8 | `cicada.intents_index.v1` without kinds (`intents --json --index`), `cicada.intents.v1` with them |
 | `explain` | `diagnostic` or `construct` | `cicada.diagnostics.v1` (`diagnostics --json`) or `cicada.explain.v1` (`explain --json`) |
 | `library` | `path` | `cicada.library.v1` (`lib list --json`, `lib show --json`) |
-| `params` | none | `cicada.param_registry.v1`: the array `cicada params` prints, unchanged, as `params` (about 73 KB) |
+| `params` | none | `cicada.param_registry.v1`: the whole registry, the array `cicada params` prints, unchanged, as `params` |
 
 Every argument is optional except where the table says "or". A tool returns
 its document in `structuredContent` and the same JSON as the one text block.
+Each tool's `outputSchema` names every field its documents can hold, with its
+JSON type, and describes the units the names do not give (a position's `line`
+counts from 1, `offset` counts bytes); the server builds it from the same Go
+types that print the documents.
 `isError` is true when the command would exit with an error, and the
 document's `error.code` says why, as on the command line. A score path that is
 absolute, contains `..`, leaves the root through a symbolic link or does not
