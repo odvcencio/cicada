@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
 // ReverbParams describes the bounded eight-line feedback delay network.
@@ -114,6 +115,8 @@ type Reverb struct {
 	phaseStep  float64
 	fault      bool
 	excited    bool
+	quiet      uint32    // consecutive excited frames of silent input on both channels, for flushSubnormals
+	quietIn    [2]uint32 // excited frames of silent input on each channel, for flushSubnormals
 }
 
 func NewReverb(sampleRate int) (*Reverb, error) {
@@ -208,6 +211,7 @@ func (r *Reverb) Reset() {
 	r.damp, r.highpass, r.mix = r.targetDamp, r.targetHP, r.targetMix
 	r.fault = false
 	r.excited = false
+	r.quiet, r.quietIn = 0, [2]uint32{}
 }
 
 func (r *Reverb) preRead(channel int, frames float64, input float64) float64 {
@@ -247,9 +251,43 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	r.damp += float64((r.targetDamp - r.damp) * r.smooth)
 	r.highpass += float64((r.targetHP - r.highpass) * r.smooth)
 	r.mix += float64((r.targetMix - r.mix) * r.smooth)
-	if left == 0 && right == 0 && !r.excited {
-		r.advanceSilent()
-		return 0, 0
+	// A tail reaches float64 subnormal numbers only after seconds of silent
+	// input, so it is swept for them only then (flushSubnormals). The delay
+	// lines mix both channels and are swept every reverbFlushFrames frames of
+	// a run of silence on both. Each channel's input diffusers see only that
+	// channel, and a hard-panned send feeds one channel an exact zero while
+	// the other plays, so they are swept every reverbFlushFrames of their own
+	// channel's silent frames, counted across interruptions: sparse input
+	// (one sample in 200) leaves subnormal values in a diffuser too. While both
+	// channels have input the per-frame path does no flushing at all.
+	var sweep uint8
+	if left == 0 || right == 0 {
+		if left == 0 && right == 0 {
+			if !r.excited {
+				r.advanceSilent()
+				return 0, 0
+			}
+			r.quiet++
+			if r.quiet%reverbFlushFrames == 0 {
+				sweep = sweepLines
+			}
+		} else {
+			r.quiet = 0
+		}
+		if left == 0 {
+			r.quietIn[0]++
+			if r.quietIn[0]%reverbFlushFrames == 0 {
+				sweep |= sweepLeftInput
+			}
+		}
+		if right == 0 {
+			r.quietIn[1]++
+			if r.quietIn[1]%reverbFlushFrames == 0 {
+				sweep |= sweepRightInput
+			}
+		}
+	} else {
+		r.quiet = 0
 	}
 	r.excited = true
 	for channel := range input {
@@ -267,6 +305,7 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	r.preIndex++
 	if r.preIndex == len(r.predelay[0]) {
 		r.preIndex = 0
+		r.mix = subnormal.Flush64(r.mix)
 	}
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
@@ -329,7 +368,78 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		r.fault = true
 		return 0, 0
 	}
+	if sweep != 0 {
+		r.flushSubnormals(sweep)
+	}
 	return float32(outL), float32(outR)
+}
+
+// reverbFlushFrames is how often, in frames of silent input, flushSubnormals
+// runs. A value stays subnormal for at most this many silent frames.
+const reverbFlushFrames = 256
+
+// The parts of the network flushSubnormals sweeps.
+const (
+	sweepLeftInput  = 1 << iota // the left channel's input diffusers
+	sweepRightInput             // the right channel's input diffusers
+	sweepLines                  // the delay lines and their damping filters
+)
+
+// flushSubnormals replaces subnormal values with zeros of the same sign
+// (kernel/dsp/subnormal) in the parts of the network that parts names: the
+// damping filters, and every buffer slot written since the previous sweep,
+// the last reverbFlushFrames slots of each diffuser or delay line (the whole
+// buffer when it is shorter). A delay line's slot is read at least 560 frames
+// after it is written, so it is flushed before it is read. Flushing at every
+// store instead cost 10% to 15% of a fed reverb (it also stopped the diffuser
+// step from inlining), with nothing to gain while there is input: the state
+// cannot decay to 2^-1022 while the input keeps it near the input's level. The
+// decision depends only on the input samples and their positions, so it is
+// the same on every target and at every block size.
+//
+// The mix is not swept here. It is a smoothed control value: when automation
+// takes it to zero it would stall at a subnormal number and slow every frame's
+// wet product, with input or without. Process and advanceSilent flush it at
+// each turn of the predelay buffer (every 0.2 s), a branch the per-frame path
+// already takes; once zero it stays zero until its target changes. It reaches
+// the output only through dry*(1-mix) + wet*mix, which absorbs it.
+func (r *Reverb) flushSubnormals(parts uint8) {
+	for channel := range r.input {
+		if parts&(sweepLeftInput<<channel) == 0 {
+			continue
+		}
+		for stage := range r.input[channel] {
+			a := &r.input[channel][stage]
+			flushRecent(a.buffer, a.index)
+		}
+	}
+	if parts&sweepLines == 0 {
+		return
+	}
+	for line := range r.lines {
+		l := &r.lines[line]
+		l.low, l.high = subnormal.Flush64(l.low), subnormal.Flush64(l.high)
+		flushRecent(l.buffer, l.index)
+	}
+}
+
+// flushRecent flushes the reverbFlushFrames slots of a circular buffer that
+// were written last, the slots just before index (all of them when the buffer
+// is shorter).
+func flushRecent(buffer []float64, index int) {
+	n := min(len(buffer), reverbFlushFrames)
+	if index >= n {
+		flushAll(buffer[index-n : index])
+		return
+	}
+	flushAll(buffer[:index])
+	flushAll(buffer[len(buffer)-(n-index):])
+}
+
+func flushAll(values []float64) {
+	for i, v := range values {
+		values[i] = subnormal.Flush64(v)
+	}
 }
 
 // advanceSilent performs the exact timeline operations of Process without
@@ -348,6 +458,7 @@ func (r *Reverb) advanceSilent() {
 	r.preIndex++
 	if r.preIndex == len(r.predelay[0]) {
 		r.preIndex = 0
+		r.mix = subnormal.Flush64(r.mix)
 	}
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
