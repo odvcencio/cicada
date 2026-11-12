@@ -484,6 +484,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
 	}
+	if m := p.Meter; m != nil {
+		cfg.Meters = []seq.MeterChange{{Meter: seq.Meter{Beats: int64(m.Numerator), Unit: int64(m.Denominator)}}}
+	}
 	var automationErr error
 	cfg.Automation, automationErr = CompileAutomation(p)
 	if automationErr != nil {

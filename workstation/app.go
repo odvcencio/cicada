@@ -283,6 +283,9 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 		if int(view.Project.Key.Root) < len(phraseKeys) {
 			props.Key = strings.ToUpper(phraseKeys[view.Project.Key.Root]) + " " + props.Key
 		}
+		if !props.HasMessage {
+			props.Message, props.HasMessage = meterNotice(view.Project.Meter)
+		}
 	}
 	ctx.SetMetadata(server.Metadata{Title: server.Title{Absolute: props.Title + " · Cicada Studio"}})
 	for name, state := range action.States(ctx.Request) {

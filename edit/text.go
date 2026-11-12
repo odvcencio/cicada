@@ -39,7 +39,7 @@ var declarationKinds = valueList("declaration", "pattern",
 	"automate_decl", "scene_decl", "song_decl", "fx_decl", "bus_decl",
 	"master_decl", "export_decl", "arrange_decl", "asset_decl", "clip_decl", "sampler_decl", "live_decl",
 	"lfo_decl", "envelope_decl", "sway_decl", "contour_decl", "mod_decl",
-	"midi_decl")
+	"midi_decl", "meter_decl")
 
 func init() {
 	Register("replacetext", func() Intent { return &ReplaceText{} })

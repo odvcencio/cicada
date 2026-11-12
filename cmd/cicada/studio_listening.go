@@ -127,6 +127,10 @@ func prepareStudioListening(p *project.Project, v studioListening) (*project.Pro
 		}
 		copy := *p
 		copy.Format, copy.Version, copy.Edition = project.FormatID2, 2, 2
+		if copy.Meter != nil {
+			// A meter needs /3, which keeps every /2 form.
+			copy.Format, copy.Version = project.FormatID3, 3
+		}
 		copy.Song, copy.Automation = []project.SongEntry{}, nil
 		copy.Scenes = []project.Scene{}
 		copy.Tracks = append([]project.Track(nil), p.Tracks...)

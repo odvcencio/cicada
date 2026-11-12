@@ -27,7 +27,7 @@
 
 ; ---------------------------------------------------------------------------
 ; Source header: edition is selected by the project manifest; the optional source
-; marker is highlighted when present. Title, tempo, key, and seed are declarations.
+; marker is highlighted when present. Title, tempo, key, seed and meter are declarations.
 
 "cicada" @keyword.directive
 (source_file (integer) @number.version)
@@ -37,7 +37,12 @@
   "tempo"
   "key"
   "seed"
+  "meter"
 ] @keyword
+
+; A meter is a fraction of beats and a note value, with optional beat groups.
+(meter_decl meter: (fraction) @number.fraction)
+(meter_decl groups: (beat_groups) @number)
 
 (title_decl (string) @markup.heading)
 

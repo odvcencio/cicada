@@ -80,6 +80,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	report = Report{SampleRate: opts.SampleRate, Bars: int(meterMap.BarsUntil(endTick)) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
 	jobs := resolveJobs(opts.Jobs)
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
+	report.meter = score.SongMeter()
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
 	}
@@ -88,14 +89,14 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	maxFrames := (int64(^uint32(0)) - int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
+	maxFrames := (int64(^uint32(0)) - int64(36+metadataBytes(len(report.tempoChanges), report.meter))) / int64(encoder.frameBytes())
 	spanFrames := endFrame - fromFrame
 	if spanFrames < 0 || report.TailFrames > maxFrames || spanFrames > maxFrames-report.TailFrames {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	report.Frames = spanFrames + report.TailFrames
 	dataBytes := report.Frames * int64(encoder.frameBytes())
-	if err = writeWAVHeaderTempo(w, opts.SampleRate, opts.Bits, uint32(dataBytes), len(report.tempoChanges)); err != nil {
+	if err = writeWAVHeaderTempo(w, opts.SampleRate, opts.Bits, uint32(dataBytes), metadataBytes(len(report.tempoChanges), report.meter)); err != nil {
 		return report, err
 	}
 	var stems *stemOutput
@@ -254,7 +255,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			return report, err
 		}
 	}
-	if err = writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges); err != nil {
+	if err = writeMetadata(w, report.meter, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges); err != nil {
 		return report, err
 	}
 	if stems != nil {

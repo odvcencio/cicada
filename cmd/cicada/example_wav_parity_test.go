@@ -103,6 +103,10 @@ var wavParitySubset = []string{
 	"examples/modeled-kit/reggae-one-drop-after-room.cicada",
 	"examples/modeled-kit/rock-after-room.cicada",
 	"examples/modeled-kit/soca-after-room.cicada",
+	// Songs in 3/4 and 6/8: time-signatures phase 2 requires them to render
+	// identically on every target.
+	"examples/meter-waltz.cicada",
+	"examples/meter-jig.cicada",
 }
 
 // wavFlushCases drive state and smoothed controls into the subnormal numbers

@@ -174,7 +174,7 @@ func lowerAudio(p *Project, s *notation.Score) {
 	}
 }
 func validateAudioProject(p *Project) error {
-	if p.HasAudio() && (p.Edition != 2 || p.Format != FormatID2) {
+	if p.HasAudio() && (p.Edition != 2 || !p.formatAtLeast2()) {
 		return fmt.Errorf("CICADA-VERSION: audio requires edition 2 and cicada.project/2")
 	}
 	s := &notation.Score{Version: p.Edition}

@@ -837,11 +837,14 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"SetProjectSettings": {
-		Meaning: "sets the score's title, tempo, key root and scale together",
+		Meaning: "sets the score's title, tempo, key root and scale together, and its meter when Meter is given",
+		Notes:   "A meter change rewrites the declaration only; it is refused when a position no longer fits its bar.",
 		Examples: []string{
 			"{\"kind\":\"setprojectsettings\",\"title\":\"Intent catalog\",\"tempomilli\":124000,\"root\":\"a\",\"scale\":\"minor\"}",
+			"{\"kind\":\"setprojectsettings\",\"title\":\"Waltz\",\"tempomilli\":132000,\"root\":\"a\",\"scale\":\"minor\",\"meter\":\"3/4\"}",
 		},
 		Fields: map[string]string{
+			"Meter":      "N/D with optional beat groups, such as 3/4 or 7/8 2+2+3; empty keeps the meter",
 			"Root":       "key root",
 			"Scale":      "scale",
 			"TempoMilli": "tempo in thousandths of a BPM, 20000–300000",

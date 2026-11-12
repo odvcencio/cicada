@@ -55,8 +55,16 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	}
 	endTick := meterMap.BarStart(int64(bars))
 	// The time signature of the first bar; a meter of N/D writes N, log2 D,
-	// 96/D MIDI clocks per click and 8: 04 02 18 08 for 4/4.
+	// 96/D MIDI clocks per click times the first beat group (one beat with no
+	// groups) and 8: 04 02 18 08 for 4/4, 07 03 18 08 for 7/8 2+2+3.
 	beats, unit := meterMap.BeatsInBar(0), seq.TicksPerWhole/meterMap.BeatTicks(0)
+	// MIDI has one click length, so only the first group reaches the file; a
+	// group whose clicks do not fit the byte (12/4 with one group of 12) clicks
+	// every beat instead.
+	click := 96 / unit
+	if p.Meter != nil && len(p.Meter.Groups) > 0 && click*int64(p.Meter.Groups[0]) <= 255 {
+		click *= int64(p.Meter.Groups[0])
+	}
 	file.Format, file.PPQ = 1, uint16(seq.PPQ)
 	file.TempoMicros = uint32((60_000_000_000 + int64(p.TempoMilli)/2) / int64(p.TempoMilli))
 	keySharps, keyMinor := keySignature(p.Key)
@@ -65,7 +73,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		Name: p.Title, EndTick: endTick,
 		Meta: []MetaEvent{
 			{Type: 0x51, Data: []byte{byte(file.TempoMicros >> 16), byte(file.TempoMicros >> 8), byte(file.TempoMicros)}},
-			{Type: 0x58, Data: []byte{byte(beats), byte(bits.TrailingZeros64(uint64(unit))), byte(96 / unit), 8}},
+			{Type: 0x58, Data: []byte{byte(beats), byte(bits.TrailingZeros64(uint64(unit))), byte(click), 8}},
 			{Type: 0x59, Data: []byte{byte(keySharps), keyMinor}},
 		},
 	}

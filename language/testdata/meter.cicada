@@ -1,0 +1,7 @@
+cicada 2
+tempo 126
+meter 7/8 2+2+3
+track bass acid {}
+pattern seven { step = 1/8 c2 g2 c3 g2 c3 eb3 g3 }
+scene a { bass = seven }
+song { a*4 }

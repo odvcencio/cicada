@@ -276,6 +276,11 @@ func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 	}
 	delta := placementCompatibleStep(block, field == "length", placementSnap(block))
 	if event.Get("shiftKey").Bool() {
+		// A song in another meter: the 4/4 bar would move it the wrong length.
+		if nav := block.Call("closest", "[data-placement-bar-moves-off]"); workspacePresent(nav) {
+			u.status(workspaceAttr(nav, "data-placement-bar-moves-off"))
+			return true
+		}
 		delta = studiocontrol.GridBarTicks()
 	}
 	if key == "ArrowLeft" {

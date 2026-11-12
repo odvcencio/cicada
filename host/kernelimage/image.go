@@ -330,6 +330,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if hasGraphLFO(&cfg) {
 		flags |= GraphLFOFlag
 	}
+	if len(cfg.Meters) > 0 {
+		flags |= MeterFlag
+	}
 	w.u32(flags)
 	w.u32(uint32(cfg.BPMMilli))
 	w.u32(cfg.Seed)
@@ -821,6 +824,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if len(cfg.Meters) > 0 {
+		if err := writeMeters(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
 	if len(w.data) > MaxImageBytes {
 		return nil, imageError("project image exceeds 2 MiB")
 	}
@@ -863,7 +871,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != SharedImageVersion && version != GestureImageVersion && version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^(1|modularFlags) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != SharedImageVersion && version != GestureImageVersion && version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^(1|modularFlags|MeterFlag) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return imageError("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -1497,6 +1505,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	}
 	if modularFlags != 0 && flags&ChorusFlag != 0 {
 		if err := readChorus(&r, cfg, sampleRate); err != nil {
+			return err
+		}
+	}
+	if flags&MeterFlag != 0 {
+		if err := readMeters(&r, cfg); err != nil {
 			return err
 		}
 	}

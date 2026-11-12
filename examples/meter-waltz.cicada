@@ -1,0 +1,8 @@
+cicada 2
+title "Waltz"
+tempo 132
+meter 3/4
+track bass acid { level = -18dB cutoff = 900Hz }
+pattern oom { step = 1/4 c2 g2 g2 }
+scene a { bass = oom }
+song { a*16 }

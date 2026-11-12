@@ -31,11 +31,12 @@ func MusicalTicks(meterMap seq.MeterMap, value string, position bool) (int64, er
 		}
 		// The bar must end by 2^53-1 ticks; a bar is at least one step long.
 		if n[0] > (1<<53-1)/seq.TicksPerStep || meterMap.BarStart(n[0]) > 1<<53-1 {
-			return 0, fmt.Errorf("position outside 4/4 grid: %q", value)
+			return 0, fmt.Errorf("position %s is past the last tick a song can reach", value)
 		}
 		tick, ok := meterMap.PositionTick(n[0], n[1], n[2])
 		if !ok {
-			return 0, fmt.Errorf("position outside 4/4 grid: %q", value)
+			beats, beat := meterMap.BeatsInBar(n[0]-1), meterMap.BeatTicks(n[0]-1)
+			return 0, fmt.Errorf("%s is outside bar %d, which is in %d/%d (beats 1 to %d, steps 1 to %d)", value, n[0], beats, seq.TicksPerWhole/beat, beats, beat/seq.TicksPerStep)
 		}
 		return tick, nil
 	}

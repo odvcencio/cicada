@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/kernel/seq"
@@ -61,12 +62,16 @@ type Report struct {
 }
 
 type Facts struct {
-	TempoBPM   float64      `json:"tempo_bpm"`
-	WrittenKey string       `json:"written_key"`
-	SongBars   int          `json:"song_bars"`
-	FromBar    int          `json:"from_bar"`
-	Bars       int          `json:"bars"`
-	Swing      []SwingGroup `json:"swing,omitempty"`
+	TempoBPM float64 `json:"tempo_bpm"`
+	// Meter is the song's meter as source writes it ("4/4" for a score that
+	// declares none); TicksPerBar is one bar of it at 960 ticks a quarter note.
+	Meter       string       `json:"meter"`
+	TicksPerBar int64        `json:"ticks_per_bar"`
+	WrittenKey  string       `json:"written_key"`
+	SongBars    int          `json:"song_bars"`
+	FromBar     int          `json:"from_bar"`
+	Bars        int          `json:"bars"`
+	Swing       []SwingGroup `json:"swing,omitempty"`
 	// TempoChanges lists the scene tempo steps that govern the analyzed bars.
 	// When the range starts after a change, the first entry is the tempo at
 	// the first analyzed bar. tempo_bpm stays the score tempo.
@@ -262,7 +267,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From}
 	r := &a.Report
 	r.Schema, r.Format, r.Title, r.SampleRate = Schema, FormatVersion, p.Title, rate
-	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
+	r.Score = Facts{TempoBPM: round(bpm, 3), Meter: meterText(p), TicksPerBar: p.MeterMap().BarTicks(0), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
 
 	// Read the stems and sum the pitched ones: the heard harmony comes from
 	// them, so drums and their pitched noise do not decide the chord.
@@ -840,4 +845,23 @@ func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap se
 		}
 	}
 	return prof, round(swing, 1)
+}
+
+// meterText writes the song's meter as source does: "3/4", "7/8 2+2+3", or
+// "4/4" for a song that declares none.
+func meterText(p *project.Project) string {
+	m := p.Meter
+	if m == nil {
+		return "4/4"
+	}
+	text := strconv.Itoa(m.Numerator) + "/" + strconv.Itoa(m.Denominator)
+	for i, g := range m.Groups {
+		if i == 0 {
+			text += " "
+		} else {
+			text += "+"
+		}
+		text += strconv.Itoa(g)
+	}
+	return text
 }
