@@ -190,19 +190,49 @@ expect_lanes "render docs" false render/README.md
 expect_lanes "empty input" true
 expect_lanes "docs plus the lane pool" true docs/manual/README.md internal/renderlanes/lanes.go
 
+# --- the exhaustive detmath proofs: the package, the toolchain and the CI that runs them ---
+# expect_proofs "name" true|false paths...
+expect_proofs() {
+	local name="$1" expected="$2"
+	shift 2
+	if ! printf '%s\n' "$@" | "$classifier" | grep -qx "detmath_proofs=$expected"; then
+		fail "$name: detmath_proofs is not $expected"
+	fi
+}
+expect_proofs "deterministic math" true kernel/dsp/detmath/detmath.go
+expect_proofs "a proof" true kernel/dsp/detmath/coef32_test.go
+expect_proofs "the Go version" true go.mod
+expect_proofs "the module sums" true go.sum
+expect_proofs "the workflow (toolchains and GOAMD64)" true .github/workflows/ci.yml
+expect_proofs "the Makefile" true Makefile
+expect_proofs "the proof runner" true scripts/detmath-proofs.sh
+expect_proofs "the multiply-add check" true scripts/check-fma.sh
+expect_proofs "empty input" true
+expect_proofs "docs plus deterministic math" true docs/manual/README.md kernel/dsp/detmath/detmath.go
+expect_proofs "a caller of the math" false kernel/fx/reverb.go
+expect_proofs "render" false render/wav.go
+expect_proofs "another CI script" false scripts/check-commit-hygiene.sh
+expect_proofs "a composite action" false .github/actions/setup-wasm-tools/action.yml
+expect_proofs "the workstation module" false workstation/go.mod
+expect_proofs "docs" false docs/manual/agents.md
+for proof_file in scripts/detmath-proofs.sh scripts/check-fma.sh; do
+	[[ -e "$repo/$proof_file" ]] || fail "proof_input names $proof_file, which does not exist"
+done
+
 # --- --all, --classify, and bad usage ---
 output="$("$classifier" --all)"
-for group in $all_groups lane_stress; do
+for group in $all_groups lane_stress detmath_proofs; do
 	grep -qx "$group=true" <<<"$output" || fail "--all: $group is not true"
 done
 if [[ "$("$classifier" --classify docs/a.md)" != none ]]; then fail "--classify docs/a.md"; fi
 if [[ "$("$classifier" --classify kernel/x.go)" != "all m2_gates" ]]; then fail "--classify kernel/x.go"; fi
 if [[ "$("$classifier" --classify kernel/engine/parallel_native.go)" != "all m2_gates lane_stress" ]]; then fail "--classify kernel/engine/parallel_native.go"; fi
-if [[ "$("$classifier" --classify kernel/dsp/detmath/x.go)" != "all m2_gates wav_sweep" ]]; then fail "--classify kernel/dsp/detmath/x.go"; fi
+if [[ "$("$classifier" --classify kernel/dsp/detmath/x.go)" != "all m2_gates wav_sweep detmath_proofs" ]]; then fail "--classify kernel/dsp/detmath/x.go"; fi
+if [[ "$("$classifier" --classify go.mod)" != "all m2_gates lane_stress detmath_proofs" ]]; then fail "--classify go.mod"; fi
 if [[ "$("$classifier" --classify edit/x.go)" != all ]]; then fail "--classify edit/x.go"; fi
 if "$classifier" --bogus </dev/null >/dev/null 2>&1; then fail "unknown flag was accepted"; fi
 # A last line with no newline still counts.
-if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 12 ]]; then fail "unterminated last line"; fi
+if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 13 ]]; then fail "unterminated last line"; fi
 
 # classify_for GROUP PATH: does PATH turn GROUP on?
 turns_on() {
