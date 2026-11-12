@@ -525,7 +525,8 @@ func pathsCompare(s pathsScore, bars, rate int) pathsResult {
 		return pathsResult{err: "engine: " + err.Error()}
 	}
 	drums := pathsDrumTracks(s.score, rate)
-	endTick := int64(bars) * seq.TicksPerBar
+	p, _ := project.FromScore(s.score) // not nil: the engine rendered the score
+	endTick := p.MeterMap().BarStart(int64(bars))
 	events, detail := pathsEventDiff(pathsNotes(directEvents, drums, endTick), pathsNotes(engineEvents, drums, endTick))
 	return pathsResult{events: events, detail: detail, audio: audio.signature(rate), peak: audio.peak}
 }
