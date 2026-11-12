@@ -65,7 +65,11 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	releaseCapture := capturePublisher.acquire()
 	lastActive := props.Active
-	captureWatch := signal.Watch(func() {
+	// paint draws the capture view from the current capture state: on each
+	// change, and after a workspace patch, which descends into this engine's
+	// markup (workspaceHTMLOpaque) and writes the server's placeholders back
+	// ("Checking microphone state…") while the state itself stays the same.
+	paint := func() {
 		update := nativeCapture.Get()
 		if !update.Ready || closed.Load() {
 			return
@@ -144,11 +148,20 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 			}
 			status.Set(text)
 		}
+	}
+	captureWatch := signal.Watch(paint)
+	releaseUpdated := workspaceUpdated.add(func() {
+		if closed.Load() || !root.Get("isConnected").Bool() {
+			return
+		}
+		paint()
+		root.Call("querySelector", "[data-capture-status]").Set("textContent", status.Get())
 	})
 	return enginewasm.HandleFunc(func() {
 		if closed.Swap(true) {
 			return
 		}
+		releaseUpdated()
 		releaseCapture()
 		captureWatch.Dispose()
 		watch.Dispose()

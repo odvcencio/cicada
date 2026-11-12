@@ -22,6 +22,8 @@
 #              trap HUP, so the cleanup runs while "jobs -rp" lists the go test
 #              pipeline next to Chrome; it must still stop Chrome, and the
 #              runner must exit 129.
+#   stubborn   Chrome ignores TERM. The cleanup must send KILL after its grace
+#              period, so the runner still exits and leaves no Chrome behind.
 #
 # Each case runs under timeout(1), and finish() kills each case's process
 # group and each stand-in Chrome and helper, so a runner that blocks cannot
@@ -59,9 +61,11 @@ exec "$real_setsid" "\$@"
 EOF
   # The stand-in Chrome records its PID, then becomes a long sleep. In the
   # crashed and helper cases it exits after 0.5 s instead; in the helper case
-  # it first starts a helper that stays in its process group.
+  # it first starts a helper that stays in its process group; in the stubborn
+  # case it ignores TERM (an ignored signal stays ignored across exec).
   local chrome_end='exec sleep 300' chrome_helper=''
   if [[ "$name" == crashed || "$name" == helper ]]; then chrome_end='exec sleep 0.5'; fi
+  if [[ "$name" == stubborn ]]; then chrome_end="trap '' TERM; exec sleep 300"; fi
   if [[ "$name" == helper ]]; then chrome_helper="sleep 300 & echo \$! >\"$dir/helper.pid\""; fi
   cat >"$dir/bin/chrome" <<EOF
 #!/bin/sh
@@ -149,6 +153,9 @@ EOF
   elif [[ -n "$helper" ]] && alive "$helper"; then
     echo "FAIL $name: the crashed Chrome's helper (PID $helper) outlived browser-runner.sh" >&2
     failed=1
+  elif [[ "$name" == stubborn ]] && ! grep -q -- "-KILL" "$dir/kill.log" 2>/dev/null; then
+    echo "FAIL $name: browser-runner.sh never sent KILL to a Chrome that ignores TERM" >&2
+    failed=1
   elif [[ "$status" != "$expected" ]]; then
     echo "FAIL $name: browser-runner.sh exited with $status, want $expected" >&2
     sed 's/^/  /' "$dir/runner.log" >&2
@@ -163,4 +170,5 @@ run_case early 0.5
 run_case crashed 0
 run_case helper 0
 run_case hup 0
+run_case stubborn 0
 exit "$failed"
