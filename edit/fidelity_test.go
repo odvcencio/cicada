@@ -204,3 +204,33 @@ func TestFidelityRule2_SetParamTouchesOnlyItsWindow(t *testing.T) {
 		t.Fatal("trailing text shifted by more than the insertion")
 	}
 }
+
+// Rule 2 for patchtext: a patch changes only the lines its hunks replace.
+// Comments, line endings and the offsets of text before the change stay where
+// they were, and text after it shifts by exactly the change in length.
+func TestFidelityRule2_PatchTextTouchesOnlyItsLines(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		fixture := []byte(strings.ReplaceAll("// header comment\ntitle \"Keep\"\ntempo 120 // the pace\ntrack bass acid {} // authored\npattern riff { a1 . c2 . }\nscene main { bass=riff }\nsong { main*2 }", "\n", newline))
+		edited := bytes.Replace(fixture, []byte("pattern riff { a1 . c2 . }"), []byte("pattern riff { a1 a1 c2 . }"), 1)
+		result, err := Apply(fixture, Envelope{Version: 1, Intents: []Intent{&PatchText{Hunks: DiffText(fixture, edited)}}}, Options{Compiler: parseCompiler{}})
+		if err != nil || !bytes.Equal(result.Source, edited) {
+			t.Fatalf("patch %q: %+v, %v", newline, result, err)
+		}
+		if window := changedWindow(fixture, result.Source); !bytes.Equal(window, []byte("a1")) {
+			t.Fatalf("changed window %q, want the one step", window)
+		}
+		for _, anchor := range []string{"// header comment", "// the pace", "// authored"} {
+			if before, after := bytes.Index(fixture, []byte(anchor)), bytes.Index(result.Source, []byte(anchor)); before < 0 || before != after {
+				t.Fatalf("%q moved from %d to %d", anchor, before, after)
+			}
+		}
+		if tail := "song { main*2 }"; bytes.Index(result.Source, []byte(tail))-bytes.Index(fixture, []byte(tail)) != len(result.Source)-len(fixture) {
+			t.Fatal("text after the patch shifted by more than the change")
+		}
+		// A hunk whose old and new lines are equal changes nothing.
+		same, err := Apply(fixture, Envelope{Version: 1, Intents: []Intent{&PatchText{Hunks: []Hunk{{Line: 3, Old: "tempo 120 // the pace" + newline, New: "tempo 120 // the pace" + newline}}}}}, Options{Compiler: parseCompiler{}})
+		if err != nil || !bytes.Equal(same.Source, fixture) || !same.Unchanged {
+			t.Fatalf("equal hunk %q: %+v, %v", newline, same, err)
+		}
+	}
+}

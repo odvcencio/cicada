@@ -343,6 +343,14 @@ var intentDocs = map[string]typeDoc{
 			"Velocity": "velocity: the new value instead of dv, 1–127",
 		},
 	},
+	"Hunk": {
+		Meaning: "is one change of a text patch: its old lines, which start at its line, become its new lines",
+		Fields: map[string]string{
+			"Line": "the line, counted from 1, where old starts in the text the patch was made from; for an empty old, the line that new goes before",
+			"New":  "the whole lines that replace them, with their line endings; \"\" to delete",
+			"Old":  "the whole lines the hunk replaces, with their line endings, context lines included; \"\" to insert",
+		},
+	},
 	"InsertLibraryItem": {
 		Meaning: "imports a library and binds a track to one of its items",
 		Notes:   "The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
@@ -405,6 +413,18 @@ var intentDocs = map[string]typeDoc{
 			"Length":   "length",
 			"Pitch":    "stored MIDI pitch 0–127, before the pattern's transpose",
 			"Velocity": "velocity 1–127",
+		},
+	},
+	"PatchText": {
+		Meaning: "changes whole lines of the score, or of another file of the project, by hunks that name the lines they replace",
+		Notes:   "Unlike replacetext, it keeps another writer's changes to other lines: each hunk's old lines are found nearest its line, so a patch made before lines above it were added or removed still applies. A hunk whose old lines changed is refused (hunk_mismatch), and nothing is written. Old and new are whole lines with their line endings (\"\\r\\n\" in a CRLF file). An empty old inserts new before line; an empty new deletes old. Unchanged lines around a change, in both old and new, help a hunk find its place, and are dropped when another writer changed them. A library's source is refused (library_file).",
+		Examples: []string{
+			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":3,\"old\":\"tempo 120\\n\",\"new\":\"tempo 118\\n\"}]}",
+			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":6,\"old\":\"\",\"new\":\"// patched\\n\"}]}",
+		},
+		Fields: map[string]string{
+			"Hunks": "the changes, each naming the lines it replaces",
+			"Path":  "the file to patch: a project file, by its path relative to the score's folder or as the host names it; empty for the score",
 		},
 	},
 	"PlaceSamplerPrint": {

@@ -1,7 +1,9 @@
 package edit
 
 import (
+	"errors"
 	"fmt"
+	"path/filepath"
 
 	"m31labs.dev/cicada/notation"
 )
@@ -14,6 +16,26 @@ type ReplaceText struct {
 }
 
 func (ReplaceText) Kind() string { return "replacetext" }
+
+// PatchText changes whole lines of the score, or of another file of the
+// project, by hunks that name the lines they replace. Unlike replacetext, it
+// keeps another writer's changes to other lines: each hunk's old lines are
+// found nearest its line, so a patch made before lines above it were added or
+// removed still applies. A hunk whose old lines changed is refused
+// (hunk_mismatch), and nothing is written. Old and new are whole lines with
+// their line endings ("\r\n" in a CRLF file). An empty old inserts new before
+// line; an empty new deletes old. Unchanged lines around a change, in both old
+// and new, help a hunk find its place, and are dropped when another writer
+// changed them. A library's source is refused (library_file).
+//
+// Example: {"kind":"patchtext","hunks":[{"line":3,"old":"tempo 120\n","new":"tempo 118\n"}]}
+// Example: {"kind":"patchtext","hunks":[{"line":6,"old":"","new":"// patched\n"}]}
+type PatchText struct {
+	Path  string `json:"path,omitempty"`          // the file to patch: a project file, by its path relative to the score's folder or as the host names it; empty for the score
+	Hunks []Hunk `json:"hunks" cicada:"required"` // the changes, each naming the lines it replaces
+}
+
+func (PatchText) Kind() string { return "patchtext" }
 
 // ReplaceDeclaration replaces one declaration's syntax span. Declaration is
 // a CST node type, or "pattern" for any pattern type. Name is empty for
@@ -50,6 +72,63 @@ func init() {
 		return nil
 	})
 	Handle("replacedeclaration", replaceDeclaration)
+	Register("patchtext", func() Intent { return &PatchText{} })
+	Handle("patchtext", patchText)
+}
+
+func patchText(ctx *Context, intent Intent) error {
+	in := intent.(*PatchText)
+	if len(in.Hunks) == 0 {
+		return &FieldError{Field: "hunks", Err: fmt.Errorf("patchtext needs at least one hunk")}
+	}
+	for i, hunk := range in.Hunks {
+		if hunk.missing != "" {
+			return &FieldError{Field: "hunks." + hunk.missing, Err: fmt.Errorf("hunk %d has no %s; give it, empty if need be", i+1, hunk.missing)}
+		}
+		if hunk.Line < 1 {
+			return &FieldError{Field: "hunks.line", Err: fmt.Errorf("hunk %d: lines count from 1, not %d", i+1, hunk.Line)}
+		}
+	}
+	path := in.Path
+	entry := path == "" || path == ctx.Options.Path
+	if !entry {
+		if _, found := ctx.FileSource(path); !found && !filepath.IsAbs(path) && ctx.Options.Path != "" {
+			path = filepath.Join(filepath.Dir(ctx.Options.Path), filepath.FromSlash(path))
+			entry = path == ctx.Options.Path
+		}
+	}
+	before := ctx.Source
+	if !entry {
+		for _, file := range ctx.Options.Sources {
+			if file.Path == path && file.Library != "" {
+				return refuse("library_file", "path", "%s is a source of library %s; patch a project file instead", in.Path, file.Library)
+			}
+		}
+		var found bool
+		if before, found = ctx.FileSource(path); !found {
+			return refuse("unknown_file", "path", "%s is not a file of this project", in.Path)
+		}
+	}
+	after, err := ApplyHunks(before, in.Hunks)
+	if err != nil {
+		var hunk *HunkError
+		if !errors.As(err, &hunk) {
+			return err
+		}
+		mismatch := &ReasonError{Reason: "hunk_mismatch", Field: "hunks", Message: err.Error() + "; nothing was changed"}
+		if !entry {
+			mismatch.File = path
+			mismatch.Message = fmt.Sprintf("%s, in %s; nothing was changed", err, in.Path)
+		}
+		return mismatch
+	}
+	if entry {
+		ctx.Source, ctx.plan = after, nil
+	} else {
+		ctx.AddFile(File{Path: path, Before: before, After: after})
+	}
+	ctx.SetLabel("Source saved")
+	return nil
 }
 
 type textDeclaration struct {
