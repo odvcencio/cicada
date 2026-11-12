@@ -321,6 +321,27 @@ test-golden:
 test-parallel-identity:
 	CICADA_PARALLEL_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=1 -timeout=110m -v
 
+# Runs the render lanes under the race detector with the lanestress hook: at
+# each hand-off point of the lane protocol it yields or sleeps 0 to 50 us at
+# random (seeded; each test binary prints its seed, and
+# CICADA_LANE_STRESS_SEED replays it). It runs the forced-lane tests and the
+# identity subset with every segment on every lane, once per GOMAXPROCS value
+# in LANE_STRESS_PROCS ("all" is every CPU), so the job counts 4 and 8 exceed
+# the processors. The nightly CI job runs -count=20 at 2, 3 and all; pull
+# requests that touch the lanes run LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3.
+LANE_STRESS_PROCS ?= 2 3 all
+LANE_STRESS_COUNT ?= 20
+LANE_STRESS_TESTS := ^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)
+.PHONY: test-lane-stress
+test-lane-stress:
+	@set -e; for procs in $(LANE_STRESS_PROCS); do \
+		if [ "$$procs" = all ]; then run="env -u GOMAXPROCS"; else run="env GOMAXPROCS=$$procs"; fi; \
+		echo "== lane stress: GOMAXPROCS $$procs, -count=$(LANE_STRESS_COUNT)"; \
+		$$run go test -race -tags lanestress ./internal/renderlanes ./kernel/engine -run '$(LANE_STRESS_TESTS)' -count=$(LANE_STRESS_COUNT) -timeout=60m -v; \
+		$$run go test -race -tags lanestress ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=$(LANE_STRESS_COUNT) -timeout=60m -v; \
+		$$run CICADA_PARALLEL_IDENTITY_STRESS=1 go test -race -tags lanestress ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=$(LANE_STRESS_COUNT) -timeout=100m -v; \
+	done
+
 test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
 

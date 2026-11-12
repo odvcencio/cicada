@@ -61,6 +61,7 @@ jobs:
       m2: ${{ steps.classify.outputs.m2 }}
       m2_gates: ${{ steps.classify.outputs.m2_gates }}
       bench: ${{ steps.classify.outputs.bench }}
+      lane_stress: ${{ steps.classify.outputs.lane_stress }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -1301,6 +1302,68 @@ jobs:
           path: |
             build/parallel-identity.log
             build/parallel-identity-race.log
+
+  # The render lanes under the race detector with the lanestress hook, which
+  # yields or sleeps at random (seeded) at every hand-off point of the lane
+  # protocol (make test-lane-stress). The forced-lane tests and the identity
+  # subset run with every segment on every lane and more jobs than processors.
+  # Pull requests that touch the lanes (lane_stress in scripts/ci-changes.sh)
+  # run a short version: GOMAXPROCS 2, three repetitions.
+  lane-stress-pr:
+    name: Render lanes under scheduling stress (short)
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.lane_stress == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+
+  # The full stress run, nightly: -count=20 at GOMAXPROCS 2, 3 and every CPU,
+  # one runner each.
+  lane-stress:
+    name: Render lanes under scheduling stress (GOMAXPROCS ${{ matrix.procs }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        procs: ['2', '3', 'all']
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        env:
+          PROCS: ${{ matrix.procs }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS="$PROCS" LANE_STRESS_COUNT=20 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+      - name: Save the stress log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: lane-stress-${{ matrix.procs }}
+          if-no-files-found: warn
+          path: build/lane-stress.log
 
   macos-desktop-full:
     name: macOS desktop exhaustive (${{ matrix.arch }})
