@@ -113,6 +113,19 @@ func settled(p *Instrument) float32 {
 	return x
 }
 
+// recordedLevel is the level that two unity-gain layers, .2 recorded at
+// velocity 32 and .8 at 96, give a note: the soft take scaled by velocity/32
+// below its centre, the crossfade between the centres, the loud take above.
+func recordedLevel(vel uint8) float64 {
+	switch {
+	case vel < 32:
+		return .2 * float64(vel) / 32
+	case vel > 96:
+		return .8
+	}
+	return .2 + .6*float64(int(vel)-32)/64
+}
+
 func TestInstrumentVelocityCrossfadeAndSilence(t *testing.T) {
 	c := DefaultInstrumentConfig()
 	c.Voices = 1
@@ -125,7 +138,7 @@ func TestInstrumentVelocityCrossfadeAndSilence(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := settled(p)
-		want := float64(vel) / 127 * (.2 + .6*max(0, min(1, float64(int(vel)-32)/64)))
+		want := recordedLevel(vel)
 		if math.Abs(float64(got)-want) > 1e-6 {
 			t.Fatalf("velocity %d: %g != %g", vel, got, want)
 		}
@@ -137,6 +150,86 @@ func TestInstrumentVelocityCrossfadeAndSilence(t *testing.T) {
 	p.Reset()
 	if l, r := p.NextStereo(); l != 0 || r != 0 {
 		t.Fatal("inactive noise")
+	}
+}
+
+// A recorded soft layer is already soft. Velocity chooses and crossfades the
+// layers and must not scale them again: at a layer's centre the take plays at
+// its recorded level, the same in a release zone and on a drum kit lane.
+// Before this rule the soft take at velocity 32 played at 32/127 of its
+// recorded level (-12 dB), so a pack's recorded range was widened by up to
+// 20*log10(127/softest centre) dB.
+func TestInstrumentRecordedLayersPlayAtTheirRecordedLevel(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+	// A zero-gain choke command on another key does not shape any level.
+	command := mappedZone(0, 64, 1, 0, 1, false)
+	command.KeyLow, command.KeyHigh, command.ChokeGroup = 80, 80, 1
+	for name, mix := range map[string][2]float64{"track": {1, 1}, "kit lane": {.5, .25}} {
+		p := newMapped(t, []Zone{soft, loud, command}, c)
+		for _, vel := range []uint8{1, 16, 32, 64, 96, 120, 127} {
+			p.Reset()
+			if _, err := p.NoteOnMix(60, vel, mix[0], mix[1]); err != nil {
+				t.Fatal(err)
+			}
+			var l, r float32
+			for i := 0; i < 128; i++ {
+				l, r = p.NextStereo()
+			}
+			want := recordedLevel(vel)
+			if math.Abs(float64(l)-want*mix[0]) > 1e-6 || math.Abs(float64(r)-want*mix[1]) > 1e-6 {
+				t.Errorf("%s velocity %d: %g/%g, want %g/%g", name, vel, l, r, want*mix[0], want*mix[1])
+			}
+		}
+	}
+	// The release takes follow the same rule.
+	attack := mappedZone(0, 32, 0, 0, 1, false)
+	louder := mappedZone(0, 96, 0, 0, 1, false)
+	softRelease, loudRelease := mappedZone(.2, 32, 0, 0, 1, true), mappedZone(.8, 96, 0, 0, 1, true)
+	for _, vel := range []uint8{16, 32, 64, 127} {
+		p := newMapped(t, []Zone{attack, louder, softRelease, loudRelease}, c)
+		h, err := p.NoteOn(60, vel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settled(p)
+		p.NoteOff(h)
+		got := settled(p)
+		if want := recordedLevel(vel); math.Abs(float64(got)-want) > 1e-6 {
+			t.Errorf("release velocity %d: %g, want %g", vel, got, want)
+		}
+	}
+}
+
+// A key with one recorded layer has no recorded dynamics, and a pack that sets
+// its own zone gains has shaped its velocity response against the documented
+// velocity/127 multiplier (cicada-keys-pack sets each gain to 127/centre).
+// Both keep that multiplier exactly.
+func TestInstrumentShapedAndSingleLayerPacksKeepVelocityOver127(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	single := newMapped(t, []Zone{mappedZone(.5, 64, 0, 0, 1, false)}, c)
+	soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+	soft.Gain, loud.Gain = 127.0/32, 127.0/96
+	shaped := newMapped(t, []Zone{soft, loud}, c)
+	for vel := uint8(1); vel < 128; vel++ {
+		single.Reset()
+		if _, err := single.NoteOn(60, vel); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := settled(single), .5*float64(vel)/127; math.Abs(float64(got)-want) > 1e-6 {
+			t.Fatalf("single layer velocity %d: %g, want %g", vel, got, want)
+		}
+		shaped.Reset()
+		if _, err := shaped.NoteOn(60, vel); err != nil {
+			t.Fatal(err)
+		}
+		w := max(0, min(1, float64(int(vel)-32)/64))
+		want := (1-w)*.2*soft.Gain*float64(vel)/127 + w*.8*loud.Gain*float64(vel)/127
+		if got := settled(shaped); math.Abs(float64(got)-want) > 1e-6 {
+			t.Fatalf("shaped pack velocity %d: %g, want %g", vel, got, want)
+		}
 	}
 }
 
@@ -490,5 +583,112 @@ func TestStealTailKeepsTheOldVoiceMix(t *testing.T) {
 	}
 	if l != 0 || r != 0 {
 		t.Fatalf("tail did not end: %g/%g", l, r)
+	}
+}
+
+// settledLevel plays one note at vel and returns its settled level, or the
+// settled level of its release takes when release is set.
+func settledLevel(t *testing.T, p *Instrument, vel uint8, release bool) float64 {
+	t.Helper()
+	p.Reset()
+	h, err := p.NoteOn(60, vel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	level := settled(p)
+	if release {
+		p.NoteOff(h)
+		level = settled(p)
+	}
+	return float64(level)
+}
+
+// A release with one recorded layer in a pack with recorded dynamics follows
+// the attack: min(1, velocity/centre), not velocity/127. The catalog bass has
+// four attack layers (24, 56, 88, 120) and one release layer at 64; with the
+// old law its release fell 14 dB against its attack at velocity 24.
+func TestInstrumentSingleReleaseLayerFollowsTheRecordedLaw(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	var zones []Zone
+	for _, layer := range []uint8{24, 56, 88, 120} {
+		zones = append(zones, mappedZone(0, layer, 0, 0, 1, false))
+	}
+	zones = append(zones, mappedZone(.3, 64, 0, 0, 1, true))
+	p := newMapped(t, zones, c)
+	for _, vel := range []uint8{1, 24, 32, 64, 100, 127} {
+		want := .3 * min(1, float64(vel)/64)
+		if got := settledLevel(t, p, vel, true); math.Abs(got-want) > 1e-6 {
+			t.Errorf("release at velocity %d: %g, want %g", vel, got, want)
+		}
+	}
+}
+
+// Layers count per note, not per velocity: a pack whose layers split the
+// velocity range blends the neighbouring centres across the split, so the
+// level is continuous and rises with velocity. Two layouts: ranges 1-63 and
+// 64-127 (centres 32 and 96), and overlapping ranges 1-80 and 60-127 (centres
+// 40 and 100). Below the softest centre the level is velocity/centre, which
+// steps more than 1.5 dB only between the lowest velocities (6 dB from 1 to 2),
+// as velocity/127 always has; the check starts at velocity 8.
+func TestInstrumentSplitVelocityRangesStayContinuous(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	for _, layout := range []struct {
+		name                  string
+		softLow, softHigh, sc uint8
+		loudLow, loudHigh, lc uint8
+	}{{"split at 64", 1, 63, 32, 64, 127, 96}, {"overlap 60-80", 1, 80, 40, 60, 127, 100}} {
+		soft, loud := mappedZone(.2, layout.sc, 0, 0, 1, false), mappedZone(.8, layout.lc, 0, 0, 1, false)
+		soft.VelocityLow, soft.VelocityHigh = layout.softLow, layout.softHigh
+		loud.VelocityLow, loud.VelocityHigh = layout.loudLow, layout.loudHigh
+		p := newMapped(t, []Zone{soft, loud}, c)
+		previous := 0.0
+		for vel := uint8(1); vel < 128; vel++ {
+			got := settledLevel(t, p, vel, false)
+			if got < previous-1e-9 {
+				t.Errorf("%s: level falls from %g to %g at velocity %d", layout.name, previous, got, vel)
+			}
+			if vel >= 8 && previous > 0 && 20*math.Log10(got/previous) > 1.5 {
+				t.Errorf("%s: level steps %.2f dB at velocity %d", layout.name, 20*math.Log10(got/previous), vel)
+			}
+			previous = got
+		}
+		for vel, want := range map[uint8]float64{layout.sc: .2, layout.lc: .8, 127: .8} {
+			if got := settledLevel(t, p, vel, false); math.Abs(got-want) > 1e-6 {
+				t.Errorf("%s: velocity %d plays %g, want the recorded %g", layout.name, vel, got, want)
+			}
+		}
+	}
+}
+
+// The recorded law applies when every sounding zone shares one gain, within
+// one part in a million, and that common gain still applies. Zones whose
+// gains differ mean the pack compensates for velocity/127, and keep it.
+func TestInstrumentRecordedLawNeedsOneCommonGain(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	layers := func(softGain, loudGain float64) *Instrument {
+		soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+		soft.Gain, loud.Gain = softGain, loudGain
+		return newMapped(t, []Zone{soft, loud}, c)
+	}
+	for _, check := range []struct {
+		name       string
+		soft, loud float64
+		vel        uint8
+		want       float64
+	}{
+		{"common gain 0.5", .5, .5, 32, .2 * .5},
+		{"common gain 0.5", .5, .5, 16, .2 * .5 * 16 / 32},
+		{"gains within 1e-6", 1, 1 + 1e-9, 32, .2},
+		{"gains differ", 1, .999, 16, .2 * 16 / 127},
+	} {
+		if got := settledLevel(t, layers(check.soft, check.loud), check.vel, false); math.Abs(got-check.want) > 1e-6 {
+			t.Errorf("%s, velocity %d: %g, want %g", check.name, check.vel, got, check.want)
+		}
+	}
+	if !RecordedDynamics([]Zone{{Gain: 0}, {Gain: .7}, {Gain: .7 * (1 + 5e-7)}}) || RecordedDynamics([]Zone{{Gain: 1}, {Gain: .999}}) {
+		t.Error("RecordedDynamics does not apply the common-gain rule")
 	}
 }

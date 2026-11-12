@@ -353,7 +353,10 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 				if kind == "" {
 					kind = effect.Name
 				}
-				if kind == "eq" || kind == "comp" || kind == "deesser" || kind == "ampcab" {
+				// The direct mixer builds only a drive insert (compileTracksAll).
+				// Every other kind, chorus included, runs in the engine; the
+				// direct mixer used to play a single chorus as no insert.
+				if kind != "drive" {
 					return true
 				}
 			}
@@ -373,10 +376,39 @@ func hasTapeEcho(score *notation.Score) bool {
 	return false
 }
 
-func hasResidentSampler(score *notation.Score) bool {
+// hasSamplerExpression reports whether a single-asset sampler track plays a
+// pattern with expression rows, through a scene or its chain. The engine plays
+// a sampler's bend, vibrato and pressure rows; the direct mixer's sampler
+// voice has no note expression and played such rows as if they were absent.
+// Rows on other tracks keep the direct mixer, which plays them.
+func hasSamplerExpression(score *notation.Score) bool {
+	samplers := map[string]bool{}
 	for _, sampler := range score.Samplers {
 		if sampler.Asset != "" {
-			return true
+			samplers[sampler.Name] = true
+		}
+	}
+	rows := map[string]bool{}
+	for _, pattern := range score.Patterns {
+		rows[pattern.Name] = len(pattern.Expression) > 0
+	}
+	sampled := map[string]bool{}
+	for _, track := range score.Tracks {
+		if !samplers[track.Kind] {
+			continue
+		}
+		sampled[track.Name] = true
+		for _, entry := range track.Chain {
+			if rows[entry.Text] {
+				return true
+			}
+		}
+	}
+	for _, scene := range score.Scenes {
+		for _, binding := range scene.Bindings {
+			if sampled[binding.Track] && rows[binding.Pattern] {
+				return true
+			}
 		}
 	}
 	return false
@@ -418,6 +450,8 @@ func scheduledEngineReason(score *notation.Score, opts Options) string {
 		return "a live instrument parameter"
 	case hasPackSampler(score) && !opts.SamplerBaseline:
 		return "sample packs"
+	case hasSamplerExpression(score):
+		return "sampler expression rows"
 	}
 	return ""
 }
