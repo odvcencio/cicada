@@ -39,6 +39,9 @@
 //     sample (macOS) its stack. "install" (set in CI) installs gdb through sudo,
 //     only when a page stalled and only on a GitHub-hosted runner
 //     (RUNNER_ENVIRONMENT=github-hosted); that can add up to 100 s to the teardown;
+//   - how Chrome rasterizes (SystemInfo.getInfo), and, when a stalled page looks
+//     like the Chrome renderer deadlock described in chrome-gpu-raster.cjs, one
+//     "page-stall hint: matches ..." line (commitDeadlockHint says what it checks);
 //   - with withChromeLog(), Chrome's own log, so a stuck audio, GPU or storage
 //     service shows in the browser's words;
 //   - with { stack: true } (or CICADA_PAGE_STALL_STACK=1), the Debugger domain,
@@ -309,7 +312,9 @@ async function watchContext(context, { serverLog, stack = envStack() } = {}) {
 // read answers or about 4 s pass. Entries opened after the first termination
 // are the page re-entering, not the stall, and are counted apart. This leaves
 // the page's Go programs unusable, so it runs only in a report on a stalled page.
-async function goSnapshot(session) {
+// It records in facts whether the read answered and how many terminations
+// were sent and answered.
+async function goSnapshot(session, facts = {}) {
   if (!session) return 'go: no DevTools session';
   const expression = '(() => { const g = globalThis.__cicadaGoResumes; return g ? { open: g.open, recent: g.recent.slice(-6), count: g.count, timers: g.timers, now: Date.now() } : null; })()';
   const deadline = Date.now() + 4000;
@@ -330,6 +335,7 @@ async function goSnapshot(session) {
       if ((await within(session.send('Runtime.terminateExecution'), 500, 'timeout')) !== 'timeout') answered++;
     }
   }
+  Object.assign(facts, { read: !!value, terminations, answered });
   if (!value) return `go: the page did not answer within 4000 ms, after ${terminations} Runtime.terminateExecution (${answered} answered): the main thread is blocked outside JavaScript, or a flood of console messages (counted above) is delaying DevTools`;
   if (!value.result || !value.result.value) return 'go: no entry record (probe missing)';
   const g = value.result.value, ago = at => `${g.now - at} ms ago`;
@@ -344,8 +350,10 @@ async function goSnapshot(session) {
 
 // rendererCPU samples Chrome's renderer processes twice, 1 s apart. A frozen
 // renderer near 100% is computing (a script loop or layout); near 0% it is
-// waiting on something outside itself.
-async function rendererCPU(browser) {
+// waiting on something outside itself. It also asks how Chrome rasterizes
+// (software or GPU), which the commit-deadlock check below needs. It records
+// both in facts.
+async function rendererCPU(browser, facts = {}) {
   if (!browser || typeof browser.newBrowserCDPSession !== 'function') return 'renderer CPU: no browser session';
   const session = await within(browser.newBrowserCDPSession(), 1000, null);
   if (!session || session.error) return 'renderer CPU: no browser session';
@@ -354,9 +362,64 @@ async function rendererCPU(browser) {
     const first = await sample();
     await new Promise(resolve => setTimeout(resolve, 1000).unref());
     const second = await sample();
-    if (!first || !second) return 'renderer CPU: SystemInfo.getProcessInfo did not answer';
-    return 'renderer CPU over 1 s: ' + ([...second].map(([pid, cpu]) => `pid ${pid} ${Math.round(100 * (cpu - (first.get(pid) || 0)))}%`).join(', ') || 'no renderer processes');
+    const info = await within(session.send('SystemInfo.getInfo'), 750, null);
+    const status = info && info.gpu && info.gpu.featureStatus;
+    if (status) facts.raster = String(status.rasterization);
+    const graphics = status ? `\ngraphics: rasterization ${status.rasterization}, compositing ${status.gpu_compositing}` : '\ngraphics: SystemInfo.getInfo did not answer';
+    if (!first || !second) return 'renderer CPU: SystemInfo.getProcessInfo did not answer' + graphics;
+    facts.cpu = [...second].map(([pid, cpu]) => [pid, Math.round(100 * (cpu - (first.get(pid) || 0)))]);
+    return 'renderer CPU over 1 s: ' + (facts.cpu.map(([pid, percent]) => `pid ${pid} ${percent}%`).join(', ') || 'no renderer processes') + graphics;
   } finally { within(session.detach(), 500, null); }
+}
+
+// commitDeadlockHint compares what a report found about a stalled page with
+// the Chrome renderer deadlock that froze producer-workflow in CI (described
+// in chrome-gpu-raster.cjs). There, Chrome rasterized in software; the
+// renderer used about 1% CPU; its main thread waited on a futex (gdb:
+// pthread_cond_wait, untimed) while its compositor thread sat idle in
+// epoll_wait; Runtime.terminateExecution was never answered, so no script was
+// running; and the page had made no call that can block in native code (a
+// synchronous request, a dialog) after its last heartbeat. A Chrome trace
+// showed the main thread in LayerTreeHost::WaitForCommitCompletion; this
+// report cannot see that frame (Chrome's own frames have no symbols), so the
+// line says "matches", not "is". It returns '' when anything differs or is
+// missing (no thread table outside Linux, or with CICADA_PAGE_STALL_NATIVE=0).
+//   facts.raster     Chrome's featureStatus.rasterization
+//   facts.cpu        [[renderer pid, percent over 1 s], ...]
+//   facts.renderers  Map renderer pid => { threads (from /proc), stack (gdb or eu-stack text of the main thread, if read) }
+//   facts.go         { terminations, answered, read } from goSnapshot
+//   facts.blocking   what the page did after its last heartbeat that can block in native code
+const HELPER = 'workstation/browser/chrome-gpu-raster.cjs';
+function commitDeadlockHint({ raster = '', cpu = null, renderers = new Map(), go = null, blocking = [] } = {}) {
+  if (!/software/.test(raster) || /^enabled/.test(raster)) return '';
+  if (!cpu || !cpu.length) return '';
+  const busiest = Math.max(...cpu.map(([, percent]) => percent));
+  if (busiest >= 5) return '';
+  if (!go || go.read || !go.terminations || go.answered) return '';
+  if (blocking.length) return '';
+  const idle = thread => thread && thread.state === 'S';
+  const waiting = [...renderers].find(([pid, { threads = [], stack = '' }]) => {
+    const main = threads.find(t => t.tid === pid), compositor = threads.find(t => t.comm === 'Compositor');
+    return idle(main) && (main.syscall === 'futex' || /futex/.test(main.wchan))
+      && idle(compositor) && /poll/.test(`${compositor.syscall} ${compositor.wchan}`)
+      && (!stack || /\bpthread_cond_wait\b/.test(stack));
+  });
+  if (!waiting) return '';
+  return `page-stall hint: matches the Chrome renderer commit deadlock seen in software raster (not the product); see ${HELPER} `
+    + `(rasterization ${raster}; renderer CPU at most ${busiest}%; renderer ${waiting[0]}'s main thread in a futex wait${waiting[1].stack ? ' (pthread_cond_wait)' : ''} and its compositor thread idle; `
+    + `${go.terminations} Runtime.terminateExecution, none answered; no dialog or blocking call after the last heartbeat)`;
+}
+
+// blockingAtStall lists what a page did after its last heartbeat, besides
+// user events and navigation, that can block its main thread in native code:
+// the breadcrumbs recorded then, and the dialogs opened then.
+const userEvent = /^(?:(?:pointerdown|click|keydown|submit|change|input)(?: \(script\))? on |document |beforeunload$|pagehide$)/;
+function blockingAtStall(state) {
+  const last = Math.max(state.interval, state.frame);
+  return [
+    ...state.crumbs.filter(c => c.at >= last && !userEvent.test(c.what)).map(c => c.what),
+    ...state.dialogs.filter(d => d.at >= last).map(d => `dialog ${d.what}`),
+  ];
 }
 
 // --- native stacks -----------------------------------------------------------
@@ -432,8 +495,9 @@ const THREADS = 'for t in /proc/$1/task/*; do s=$(cat "$t/stat" 2>/dev/null); pr
 
 // threadTable summarises a process's threads from /proc: the main thread on
 // its own line, the others grouped. "futex" in a main thread usually means it
-// waits for a reply from another thread or process.
-async function threadTable(pid, sudo, timeout) {
+// waits for a reply from another thread or process. record, if given,
+// receives the parsed threads.
+async function threadTable(pid, sudo, timeout, record = null) {
   const read = async elevated => (await (elevated ? runSudo(['sh', '-c', THREADS, 'sh', pid], timeout) : sh(THREADS, [pid], timeout))).split('\n').filter(Boolean).map(line => {
     const [tid, comm, stat, wchan, nr] = line.split('\t');
     const names = syscalls[process.arch] || {};
@@ -442,6 +506,7 @@ async function threadTable(pid, sudo, timeout) {
   let threads = await read(false);
   if (sudo && threads.length && threads.every(t => t.syscall === '?')) threads = await read(true);
   if (!threads.length) return '  (no /proc entries; the process has exited)';
+  if (record) record(threads);
   const line = t => `${t.comm} ${t.state} wchan=${t.wchan} ${t.syscall}`;
   const main = threads.find(t => t.tid === pid), groups = new Map();
   for (const t of threads) if (t !== main) groups.set(line(t), (groups.get(line(t)) || 0) + 1);
@@ -457,7 +522,8 @@ async function threadTable(pid, sudo, timeout) {
 // debuggerStacks prints every thread's backtrace (main thread in full, others
 // in short) with gdb or eu-stack. Chrome's binary is stripped, so its frames are
 // addresses; library frames (libc, audio, fontconfig, D-Bus) have names.
-async function debuggerStacks(pid, tool, sudo, timeout) {
+// record, if given, receives the main thread's backtrace.
+async function debuggerStacks(pid, tool, sudo, timeout, record = null) {
   const command = tool === 'gdb'
     ? ['gdb', ['-p', String(pid), '-batch', '-nx', '-q', '-ex', 'set pagination off', '-ex', 'set print thread-events off', '-ex', 'thread apply all bt 25']]
     : ['eu-stack', ['-p', String(pid), '-n', '25']];
@@ -465,6 +531,8 @@ async function debuggerStacks(pid, tool, sudo, timeout) {
   const blocks = text.split(/\n(?=Thread |TID )/).filter(block => /^(Thread|TID) /.test(block));
   if (!blocks.length) return `  ${tool}: no stacks (${text.trim().split('\n').slice(-2).join(' / ').slice(0, 200) || 'no output'})`;
   const isMain = block => new RegExp(`(LWP ${pid}\\)|^TID ${pid}:)`).test(block.split('\n')[0]);
+  const main = blocks.find(isMain);
+  if (record && main) record(main);
   return blocks.sort((a, b) => isMain(b) - isMain(a)).map(block => {
     const lines = block.split('\n').filter(l => l.trim() && !/^\[Inferior \d+ .*detached\]/.test(l));
     return lines.slice(0, isMain(block) ? 26 : 4).map(l => '  ' + l.slice(0, 160)).join('\n');
@@ -497,7 +565,15 @@ function elfBuildID(file) {
 }
 
 // nativeStacks describes every Chrome process from outside, within budgetMS.
-async function nativeStacks(browser, budgetMS) {
+// On Linux it records each renderer's threads and main-thread stack in
+// facts.renderers (see commitDeadlockHint).
+async function nativeStacks(browser, budgetMS, facts = {}) {
+  const renderers = facts.renderers || (facts.renderers = new Map());
+  // record(p, key) returns a callback that stores a renderer's threads or stack.
+  const record = (p, key) => p.type !== 'renderer' ? null : value => {
+    if (!renderers.has(p.pid)) renderers.set(p.pid, { threads: [], stack: '' });
+    renderers.get(p.pid)[key] = value;
+  };
   const deadline = Date.now() + budgetMS, left = () => deadline - Date.now();
   const mode = nativeMode();
   if (mode === '0' || budgetMS <= 0) return 'native: off (CICADA_PAGE_STALL_NATIVE=0)';
@@ -524,7 +600,7 @@ async function nativeStacks(browser, budgetMS) {
   const sudo = await canSudo();
   for (const p of processes) {
     if (left() < 1000) { lines.push(`native: no time left for ${p.pid} ${p.label}`); continue; }
-    lines.push(`--- ${p.pid} ${p.label} ---`, await threadTable(p.pid, sudo, Math.min(left(), 3000)));
+    lines.push(`--- ${p.pid} ${p.label} ---`, await threadTable(p.pid, sudo, Math.min(left(), 3000), record(p, 'threads')));
   }
   let tool = (await hasTool('gdb')) ? 'gdb' : (await hasTool('eu-stack')) ? 'eu-stack' : '';
   const refusal = mode === 'install' ? installRefusal() : 'off';
@@ -551,7 +627,7 @@ async function nativeStacks(browser, budgetMS) {
   for (const p of interesting) {
     if (left() < 3000) { lines.push(`native: no time left for ${tool} on ${p.pid} ${p.label}`); continue; }
     const maps = (await (sudo ? runSudo(['cat', `/proc/${p.pid}/maps`], 3000) : run('cat', [`/proc/${p.pid}/maps`], 2000))).split('\n').find(line => exe && line.includes(' r-xp ') && line.endsWith(exe)) || '';
-    lines.push(`--- ${p.pid} ${p.label} (${tool}; code mapped ${maps.split(' ')[0] || '?'} at file offset 0x${maps.split(' ')[2] || '?'}) ---`, await debuggerStacks(p.pid, tool, sudo, Math.min(left(), 15000)));
+    lines.push(`--- ${p.pid} ${p.label} (${tool}; code mapped ${maps.split(' ')[0] || '?'} at file offset 0x${maps.split(' ')[2] || '?'}) ---`, await debuggerStacks(p.pid, tool, sudo, Math.min(left(), 15000), record(p, 'stack')));
   }
   return lines.join('\n');
 }
@@ -663,13 +739,17 @@ function makeWatch(states, serverLog) {
       watch.nativeMS = 0;
       if (stuck.length) {
         const browser = stuck[0].page.context().browser();
-        lines.push(await step('renderer CPU', () => rendererCPU(browser), deadline));
+        const facts = { renderers: new Map() };
+        lines.push(await step('renderer CPU', () => rendererCPU(browser, facts), deadline));
         const nativeStarted = Date.now();
-        lines.push(await within(nativeStacks(browser, nativeMS), nativeMS + 1000, 'native: did not finish within its budget'));
+        lines.push(await within(nativeStacks(browser, nativeMS, facts), nativeMS + 1000, 'native: did not finish within its budget'));
         watch.nativeMS = Date.now() - nativeStarted;
         deadline += watch.nativeMS;
         for (const state of stuck) {
-          lines.push(`page ${redact(state.page.url())}:`, await step('stack', () => stack(state), deadline), await step('go', () => goSnapshot(state.session), deadline));
+          const go = {};
+          lines.push(`page ${redact(state.page.url())}:`, await step('stack', () => stack(state), deadline), await step('go', () => goSnapshot(state.session, go), deadline));
+          const hint = commitDeadlockHint({ ...facts, go, blocking: blockingAtStall(state) });
+          if (hint) lines.push(hint);
         }
       }
       for (const log of chromeLogs) lines.push(`--- last 30 lines of Chrome's log ---`, tail(log, 30));
@@ -801,4 +881,4 @@ function teardown(t, browser, { watch = null, before = null, exitWhenDone = fals
   }, { timeout: hookMS + nativeMS });
 }
 
-module.exports = { watchContext, watchPage, teardown, closeBrowser, killBrowser, withChromeLog, nativeStacks, installRefusal, runSudo, within, tail, redact };
+module.exports = { commitDeadlockHint, watchContext, watchPage, teardown, closeBrowser, killBrowser, withChromeLog, nativeStacks, installRefusal, runSudo, within, tail, redact };
