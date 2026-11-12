@@ -18,7 +18,6 @@ import (
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
@@ -185,7 +184,7 @@ func TestStreamedClipsMatchResidentSRCSeekOverlapAndLoop(t *testing.T) {
 			defer b.Close()
 			var al, ar, bl, br [4096]float32
 			for _, tick := range []uint32{0, 720, 7400, 960} {
-				commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(int64(tick) / seq.TicksPerBar), Arg1: uint32(int64(tick) % seq.TicksPerBar)}, {Op: cmd.OpPlay, Track: 0xff}}
+				commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(int64(tick) / ticksPerBar), Arg1: uint32(int64(tick) % ticksPerBar)}, {Op: cmd.OpPlay, Track: 0xff}}
 				a.PushBatch(commands[:])
 				b.PushBatch(commands[:])
 				for block := 0; block < 9; block++ {
@@ -211,9 +210,9 @@ func TestStreamedClipsMatchResidentSRCSeekOverlapAndLoop(t *testing.T) {
 func TestStreamedOfflineWAVAndStemsMatchResidentEngine(t *testing.T) {
 	root, p, _ := streamingFixture(t, 300000, 48000, 3)
 	for i := range p.Arrange.Placements {
-		p.Arrange.Placements[i].LengthTicks = 3 * seq.TicksPerBar
+		p.Arrange.Placements[i].LengthTicks = 3 * ticksPerBar
 	}
-	p.Arrange.Markers[0].AtTick = 3 * seq.TicksPerBar
+	p.Arrange.Markers[0].AtTick = 3 * ticksPerBar
 	// Formatting/reparsing exercises the actual exported score path.
 	source, err := project.ToSource(p)
 	if err != nil {
@@ -319,8 +318,8 @@ func TestStreamedExportReportsPageErrorsAndAbortsStems(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Assets[0].SHA256 = fmt.Sprintf("%x", sha256.Sum256(data))
-	p.Arrange.Placements[0].LengthTicks = seq.TicksPerBar
-	p.Arrange.Markers[0].AtTick = seq.TicksPerBar
+	p.Arrange.Placements[0].LengthTicks = ticksPerBar
+	p.Arrange.Markers[0].AtTick = ticksPerBar
 	source, err := project.ToSource(p)
 	if err != nil {
 		t.Fatal(err)

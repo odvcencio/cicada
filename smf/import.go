@@ -76,6 +76,7 @@ type sourcedNote struct {
 // a bar are split and retriggered; the report counts every timing edit.
 func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error) {
 	var report ImportReport
+	var meterMap seq.MeterMap // the import accepts 4/4 files and writes a 4/4 song
 	fail := func(message string) ([]byte, ImportReport, error) {
 		return nil, report, fmt.Errorf("MIDI import: %s", message)
 	}
@@ -97,7 +98,7 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 		if len(track.Events) != 0 {
 			return fail("controller and program messages cannot yet be imported without loss; keep the source MIDI or render audio")
 		}
-		if track.EndTick < 0 || track.EndTick > int64(file.PPQ)*4*256 {
+		if track.EndTick < 0 || track.EndTick > int64(file.PPQ)*meterMap.BarTicks(0)*256/seq.PPQ {
 			return fail("song exceeds 256 bars")
 		}
 		end = max(end, (track.EndTick*seq.PPQ+int64(file.PPQ)-1)/int64(file.PPQ))
@@ -145,7 +146,7 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 	if options.GridTicks != 0 {
 		grid = int64(options.GridTicks)
 	}
-	if grid < 60 || grid > 960 || seq.TicksPerBar%grid != 0 {
+	if grid < 60 || grid > 960 || meterMap.BarTicks(0)%grid != 0 {
 		return fail("import needs an exact 60..960 tick grid dividing a bar; select --quantize 1/16 or 1/8t")
 	}
 	report.GridTicks = uint16(grid)
@@ -158,7 +159,7 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 		}
 		end = max(end, notes[i].Tick+notes[i].Dur)
 	}
-	report.Bars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
+	report.Bars = int(meterMap.BarsUntil(end))
 	if report.Bars > 256 {
 		return fail("song exceeds 256 bars")
 	}
@@ -327,21 +328,23 @@ func writeImport(file File, lanes []importLane, names []string, bpm, grid int64,
 			}
 		}
 		pool := map[string]string{}
+		var meterMap seq.MeterMap // the import writes a 4/4 song
 		for bar := 0; bar < report.Bars; bar++ {
-			cells := make([]string, int(seq.TicksPerBar/grid))
+			barEnd := meterMap.BarStart(int64(bar + 1))
+			cells := make([]string, int(meterMap.BarTicks(int64(bar))/grid))
 			velocities := make([]string, len(cells))
 			for i := range cells {
 				cells[i] = "."
 				velocities[i] = "100"
 			}
 			rows := map[string][]string{}
-			start := int64(bar) * seq.TicksPerBar
+			start := meterMap.BarStart(int64(bar))
 			// Two hits of one drum in one step keep the louder. Choose those
 			// first, so the report counts edits only for hits that play.
 			winner := map[string]int{} // drum and cell -> event index
 			if lane.drums {
 				for i, e := range lane.events {
-					if e.tick >= start+seq.TicksPerBar || e.tick+e.dur <= start {
+					if e.tick >= barEnd || e.tick+e.dur <= start {
 						continue
 					}
 					key := e.drum + ":" + strconv.Itoa(int((max(start, e.tick)-start)/grid))
@@ -356,11 +359,11 @@ func writeImport(file File, lanes []importLane, names []string, bpm, grid int64,
 			}
 			for i, e := range lane.events {
 				eventEnd := e.tick + e.dur
-				if e.tick >= start+seq.TicksPerBar || eventEnd <= start {
+				if e.tick >= barEnd || eventEnd <= start {
 					continue
 				}
 				from := max(start, e.tick)
-				to := min(start+seq.TicksPerBar, eventEnd)
+				to := min(barEnd, eventEnd)
 				index := int((from - start) / grid)
 				if lane.drums && winner[e.drum+":"+strconv.Itoa(index)] != i {
 					continue

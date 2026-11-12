@@ -210,7 +210,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	for _, e := range events {
 		endTick = max(endTick, e.Tick, e.EndTick)
 	}
-	songBars := int((endTick + seq.TicksPerBar - 1) / seq.TicksPerBar)
+	meterMap := p.MeterMap()
+	songBars := int(meterMap.BarsUntil(endTick))
 	if opts.From < 0 || opts.From >= songBars {
 		return nil, fmt.Errorf("start bar must be within the song")
 	}
@@ -224,7 +225,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	// The written notes are the note events the renderer plays, tapped during
 	// the same render that produces the stems, so chains, scene phase,
 	// arrangements, ties, chance and transposition are exactly what sounded.
-	var notes noteLog
+	notes := noteLog{meterMap: meterMap}
 	tmp, err := os.MkdirTemp(opts.TempDir, "cicada-audition-*")
 	if err != nil {
 		return nil, err
@@ -243,13 +244,14 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	// The renderer's own tempo map: bars after a scene tempo change land on
 	// the samples the renderer wrote them to.
 	songChanges := project.SongTempoChanges(p)
-	clock, err := project.NewTempoMap(rate, int64(p.TempoMilli), songChanges)
+	clock, err := project.NewTempoMap(meterMap, rate, int64(p.TempoMilli), songChanges)
 	if err != nil {
 		return nil, err
 	}
-	baseSample := clock.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
+	fromTick := meterMap.BarStart(int64(opts.From))
+	baseSample := clock.SampleAtTick(fromTick)
 	barSample := func(b int) int { // sample of analyzed bar b, relative to render start
-		return int(clock.SampleAtTick(int64(opts.From+b)*seq.TicksPerBar) - baseSample)
+		return int(clock.SampleAtTick(meterMap.BarStart(int64(opts.From+b))) - baseSample)
 	}
 	bpm := float64(p.TempoMilli) / 1000
 	var tempoChanges []TempoChange
@@ -299,7 +301,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		chroma := make([][12]float64, frames)
 		band := make([]float64, frames)
 		magFrames(sig, chromaPlan, frames, func(i int) int {
-			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
+			tick := fromTick + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
 			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
 		}, func(i int, mag []float64) {
 			// Only spectral peaks count for chroma: broadband noise then
@@ -319,7 +321,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	trackBand := func(sig stereo) float64 {
 		var total float64
 		magFrames(sig, chromaPlan, frames, func(i int) int {
-			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
+			tick := fromTick + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
 			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
 		}, func(_ int, mag []float64) {
 			for k := range mag {
@@ -358,7 +360,6 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	r.AudibilityDB = round(bandDB(allP, allM), 1)
 
 	// Per-bar harmony.
-	fromTick := int64(opts.From) * seq.TicksPerBar
 	sets := notes.writtenSets(pitched, fromTick, bars)
 	for b := 0; b < bars; b++ {
 		var v [12]float64
@@ -517,7 +518,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
 		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
-		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, baseSample, opts.From, bars, acts[ti])
+		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, meterMap, baseSample, opts.From, bars, acts[ti])
 		r.Tracks = append(r.Tracks, tr)
 		a.rhythmRows = append(a.rhythmRows, tr.Rhythm)
 	}
@@ -548,7 +549,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	groups := map[float64]*SwingGroup{}
 	trackSet, patternSet := map[float64]map[string]bool{}, map[float64]map[string]bool{}
-	swingEnd := fromTick + int64(bars)*seq.TicksPerBar
+	swingEnd := fromTick + meterMap.BarsTicks(fromTick, int64(bars))
 	for _, pl := range notes.slotsUsed(fromTick, swingEnd, sustain, swingEnd) {
 		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) {
 			continue
@@ -588,8 +589,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	if p.Arrange == nil {
 		at := int64(0)
 		for _, e := range p.Song {
-			spans = append(spans, span{e.Scene, at, at + int64(e.Bars)*seq.TicksPerBar})
-			at += int64(e.Bars) * seq.TicksPerBar
+			spans = append(spans, span{e.Scene, at, at + meterMap.BarsTicks(at, int64(e.Bars))})
+			at += meterMap.BarsTicks(at, int64(e.Bars))
 		}
 	} else {
 		ms := append([]project.Marker(nil), p.Arrange.Markers...)
@@ -598,14 +599,14 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 			ms = append([]project.Marker{{ID: "start"}}, ms...)
 		}
 		for i, m := range ms {
-			to := int64(songBars) * seq.TicksPerBar
+			to := meterMap.BarStart(int64(songBars))
 			if i+1 < len(ms) {
 				to = ms[i+1].AtTick
 			}
 			spans = append(spans, span{m.ID, m.AtTick, to})
 		}
 	}
-	rangeEnd := fromTick + int64(bars)*seq.TicksPerBar
+	rangeEnd := fromTick + meterMap.BarsTicks(fromTick, int64(bars))
 	sampleAt := func(tick int64) int {
 		return min(max(int(clock.SampleAtTick(tick)-baseSample), 0), mix.Len())
 	}
@@ -615,7 +616,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 			continue
 		}
 		s0, s1 := sampleAt(lo), sampleAt(hi)
-		sec := SectionReport{Name: sp.name, FromBar: int(lo/seq.TicksPerBar) + 1, ToBar: int((hi-1)/seq.TicksPerBar) + 1,
+		fromBar, _ := meterMap.BarAt(lo)
+		toBar, _ := meterMap.BarAt(hi - 1)
+		sec := SectionReport{Name: sp.name, FromBar: int(fromBar) + 1, ToBar: int(toBar) + 1,
 			TempoBPM: float64(clock.ClockAtTick(lo).BPMMilli) / 1000, FromTick: lo, ToTick: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
 		var num, den float64
 		for i := 0; i < nSpec; i++ {
@@ -650,7 +653,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 				sec.Tracks = append(sec.Tracks, p.Tracks[ti].ID)
 			}
 		}
-		sec.OnsetsPerBar = round(float64(count)/(float64(hi-lo)/float64(seq.TicksPerBar)), 2)
+		sec.OnsetsPerBar = round(float64(count)/(float64(hi-lo)/float64(meterMap.BarTicks(0))), 2)
 		r.Sections = append(r.Sections, sec)
 	}
 	return a, nil
@@ -789,7 +792,7 @@ func noteShape(s stereo, peaks []int, rate int) (attackMs, decayMs float64, lowe
 // rhythmProfile returns the mean onset strength at each sixteenth of the bar,
 // scaled so the largest is 1, over the bars where the track plays a pattern.
 // Swung slots are looked up where the pattern's swing places them.
-func rhythmProfile(env []float64, rate int, clock *project.TempoMap, base int64, from, bars int, act barActivity) ([]float64, float64) {
+func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap seq.MeterMap, base int64, from, bars int, act barActivity) ([]float64, float64) {
 	prof, cnt := make([]float64, 16), make([]float64, 16)
 	swing := 50.0
 	swingSet := false
@@ -809,7 +812,7 @@ func rhythmProfile(env []float64, rate int, clock *project.TempoMap, base int64,
 					swing, swingSet = 50+float64(pat.SwingPermille)/20, true
 				}
 			}
-			sample := clock.SampleAtTick(int64(from+b)*seq.TicksPerBar+tick) - base
+			sample := clock.SampleAtTick(meterMap.BarStart(int64(from+b))+tick) - base
 			t := float64(sample) / float64(rate)
 			i0 := int(math.Ceil((t - 0.02) * float64(rate) / onsetHop))
 			i1 := int(math.Floor((t + 0.03) * float64(rate) / onsetHop))

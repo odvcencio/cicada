@@ -82,7 +82,7 @@ func TestArrangementTempoSourceJSONImageAndTransport(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m, err := NewTempoMap(rate, int64(p.TempoMilli), SongTempoChanges(p))
+		m, err := NewTempoMap(p.MeterMap(), rate, int64(p.TempoMilli), SongTempoChanges(p))
 		if err != nil {
 			t.Fatal(err)
 		}

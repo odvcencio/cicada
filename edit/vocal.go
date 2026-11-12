@@ -194,7 +194,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 		if owner != file {
 			newline = Newline(original)
 		}
-		arrangement, err = vocalArrangementSource(original, owner, plan, newline)
+		arrangement, err = vocalArrangementSource(ctx.MeterMap(), original, owner, plan, newline)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +229,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	if owner == file {
 		newline = "\n"
 	} // Preserve the entry-only writer's output.
-	updated, err := vocalPlacementSource(arrangement, owner, next, in.Previous != nil, newline, arrangementEnd(plan))
+	updated, err := vocalPlacementSource(ctx.MeterMap(), arrangement, owner, next, in.Previous != nil, newline, arrangementEnd(ctx.MeterMap(), plan))
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	return append(source, []byte(text)...), nil
 }
 
-func vocalPlacementSource(source []byte, file string, next VocalComp, previous bool, newline string, minimumEnd int64) ([]byte, error) {
+func vocalPlacementSource(meterMap seq.MeterMap, source []byte, file string, next VocalComp, previous bool, newline string, minimumEnd int64) ([]byte, error) {
 	root, w, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, err
@@ -279,9 +279,9 @@ func vocalPlacementSource(source []byte, file string, next VocalComp, previous b
 					}
 					name, value := w.Text(w.Field(param, "name")), w.Text(w.Field(param, "value"))
 					if name == "at" {
-						at, err = notation.MusicalTicks(value, true)
+						at, err = notation.MusicalTicks(meterMap, value, true)
 					} else if name == "length" {
-						length, err = notation.MusicalTicks(value, false)
+						length, err = notation.MusicalTicks(meterMap, value, false)
 					}
 					if err != nil {
 						return nil, err
@@ -365,7 +365,7 @@ func removeVocalPrintDeclarations(block []byte, file string, previous VocalComp,
 // continuous vocal can span blocks. Explicit scene bindings restart a part;
 // Keep carries its phase to the next block. A score that already has an
 // arrange block is unchanged.
-func vocalArrangementSource(source []byte, file string, plan *Plan, newline string) ([]byte, error) {
+func vocalArrangementSource(meterMap seq.MeterMap, source []byte, file string, plan *Plan, newline string) ([]byte, error) {
 	if plan.HasArrange {
 		return source, nil
 	}
@@ -422,7 +422,7 @@ func vocalArrangementSource(source []byte, file string, plan *Plan, newline stri
 		scene := scenes[entry.Scene]
 		for _, setting := range scene.Settings {
 			if setting.Path == "tempo" && setting.Number != nil {
-				fmt.Fprintf(&text, "  tempo %s %s\n", FormatPosition(at), strconv.FormatFloat(math.Round(*setting.Number*1000)/1000, 'f', -1, 64))
+				fmt.Fprintf(&text, "  tempo %s %s\n", FormatPosition(meterMap, at), strconv.FormatFloat(math.Round(*setting.Number*1000)/1000, 'f', -1, 64))
 			}
 		}
 		for _, track := range plan.Tracks {
@@ -438,7 +438,7 @@ func vocalArrangementSource(source []byte, file string, plan *Plan, newline stri
 				active[track.ID] = activePart{binding, at}
 			}
 		}
-		at += int64(entry.Bars) * seq.TicksPerBar
+		at += meterMap.BarsTicks(at, int64(entry.Bars))
 	}
 	for _, track := range plan.Tracks {
 		if part, ok := active[track.ID]; ok {

@@ -65,7 +65,7 @@ func TestSongRestartAtFullClipCapacity(t *testing.T) {
 			var first [128]TapFrame
 			var message cmd.Message
 			clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
-			end := clock.SampleAtTick(seq.TicksPerBar) + 1
+			end := clock.SampleAtTick(ticksPerBar) + 1
 			for play := 0; play < 3; play++ {
 				if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 					t.Fatal("play rejected")
@@ -101,7 +101,7 @@ func TestClipLoopGapAndSongRestartAllocationFree(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			cfg := clipScheduleConfig()
 			cfg.MaxVoices, cfg.BPMMilli = 1, 300000
-			duration := int64(seq.TicksPerBar)
+			duration := int64(ticksPerBar)
 			if scenario == "leading-gap" {
 				cfg.LoopSong, duration = true, 960
 				cfg.Schedule = []ScheduleEvent{{Tick: 240, EndTick: 960, Kind: ScheduleClip, ID: 1}, {Tick: 960, EndTick: 960, Kind: ScheduleClipEnd, ID: 1}}
@@ -191,7 +191,7 @@ func TestSceneClipSeekMatchesRetriggeredPlayback(t *testing.T) {
 			cfg.Clips = []ClipConfig{{EndFrame: int64(len(pcm)), FadeOutFrames: 48000}, {EndFrame: 48000}}
 			cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {}}
 			cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
-			seek := int64(2*seq.TicksPerBar + 137)
+			seek := int64(2*ticksPerBar + 137)
 			switch scenario {
 			case "expired":
 				cfg.Scenes[1].Track[0].Clip = 1
@@ -199,7 +199,7 @@ func TestSceneClipSeekMatchesRetriggeredPlayback(t *testing.T) {
 				cfg.Scenes[1].Track[0].Mode = SceneOff
 			case "previous-cycle":
 				cfg.LoopSong = true
-				seek += 3 * seq.TicksPerBar
+				seek += 3 * ticksPerBar
 			}
 			continuous, err := New(cfg)
 			if err != nil {
@@ -223,7 +223,7 @@ func TestSceneClipSeekMatchesRetriggeredPlayback(t *testing.T) {
 				}
 				frame += int64(n)
 			}
-			if !seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(seek / seq.TicksPerBar), Arg1: uint32(seek % seq.TicksPerBar)}) || !seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			if !seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(seek / ticksPerBar), Arg1: uint32(seek % ticksPerBar)}) || !seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 				t.Fatal("seek/play rejected")
 			}
 			var want, got [128]TapFrame
@@ -238,9 +238,9 @@ func TestSceneClipSeekMatchesRetriggeredPlayback(t *testing.T) {
 			if scenario == "off" || scenario == "expired" {
 				wantActive = 0
 			}
-			lastStart := seq.TicksPerBar
+			lastStart := ticksPerBar
 			if scenario == "previous-cycle" {
-				lastStart += 3 * seq.TicksPerBar
+				lastStart += 3 * ticksPerBar
 			}
 			for _, voice := range seeking.clipVoices {
 				if !voice.active {
@@ -315,7 +315,7 @@ func TestPlacementLoopAndSceneClipSeekAllocationFree(t *testing.T) {
 				t.Fatalf("seek allocation test restored %d clips, want 1", active)
 			}
 			clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
-			wantFrame := clock.SampleAtTick(5*seq.TicksPerBar+137) - clock.SampleAtTick(4*seq.TicksPerBar) + int64(len(left))
+			wantFrame := clock.SampleAtTick(5*ticksPerBar+137) - clock.SampleAtTick(4*ticksPerBar) + int64(len(left))
 			if e.clipVoices[0].sourceFrame != float64(wantFrame) {
 				t.Fatalf("seek restored superseded source position %g, want %d", e.clipVoices[0].sourceFrame, wantFrame)
 			}
