@@ -195,6 +195,7 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 | `pingpong` | word | - | - | `false`, `true` |
 | `width` | unitless | 0 | 1 |  |
 | `mix` | unitless | 0 | 1 |  |
+| `highpass` | Hz | 20Hz | 2000Hz | `off` |
 
 ## Reverb (`fx name reverb`)
 

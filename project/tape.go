@@ -51,6 +51,8 @@ func TapeParamsFromValues(values map[string]Value) (tape.Params, error) {
 				return params, fmt.Errorf("tape damp requires Hz")
 			}
 			params.DampHz = *value.Number
+		case "highpass":
+			params.HighpassHz, err = echoHighpassValue("tape", value)
 		default:
 			return params, fmt.Errorf("unknown tape parameter %s", name)
 		}

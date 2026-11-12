@@ -294,3 +294,21 @@ func TestShellReadsTheMixerOncePerRequest(t *testing.T) {
 		t.Errorf("one page render read /api/mixer %d times, want 1", reads)
 	}
 }
+
+// The echo highpass is off until set, and off is no number: the echo panel
+// shows "off" for it, not <nil>, and shows the cutoff once it is set.
+func TestEchoPanelShowsHighpassOffAndSet(t *testing.T) {
+	s := &studioApp{}
+	descriptor, ok := paramdefs.Lookup("fx.delay.highpass")
+	if !ok {
+		t.Fatal("no fx.delay.highpass row")
+	}
+	unset := gosx.RenderHTML(s.mixerField(workspace{Edition: 2}, "token", "highpass", mixerField{Path: "echo.highpass", Value: nil, Supported: true, Descriptor: descriptor}))
+	if strings.Contains(unset, "nil") || !strings.Contains(unset, `value="off"`) {
+		t.Fatalf("unset highpass: %s", unset)
+	}
+	set := gosx.RenderHTML(s.mixerField(workspace{Edition: 2}, "token", "highpass", mixerField{Path: "echo.highpass", Value: 300.0, Supported: true, Descriptor: descriptor}))
+	if !strings.Contains(set, `value="300"`) || !strings.Contains(set, "(Hz)") {
+		t.Fatalf("set highpass: %s", set)
+	}
+}

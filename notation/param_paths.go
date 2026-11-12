@@ -311,6 +311,10 @@ func sceneValueExpectation(descriptor paramdefs.Descriptor) string {
 		return "one of " + strings.Join(words, ", ")
 	}
 	example := sceneValueNumber(descriptor, descriptor.Default)
+	if descriptor.Off && (descriptor.Default < descriptor.Min || descriptor.Default > descriptor.Max) {
+		// The default is off, which is no number in the range.
+		example = sceneValueNumber(descriptor, descriptor.Min)
+	}
 	var expected string
 	switch strings.ToLower(descriptor.Unit) {
 	case "hz":

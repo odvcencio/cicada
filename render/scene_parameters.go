@@ -396,10 +396,16 @@ func (p *sceneParameters) setGlobal(id kernel.ParamID, value float32) error {
 				return err
 			}
 		}
-	case kernel.ParamFxDelayTime, kernel.ParamFxDelayFeedback, kernel.ParamFxDelayDamp, kernel.ParamFxDelayPingpong, kernel.ParamFxDelayWidth, kernel.ParamFxDelayMix:
+	case kernel.ParamFxDelayTime, kernel.ParamFxDelayFeedback, kernel.ParamFxDelayDamp, kernel.ParamFxDelayPingpong, kernel.ParamFxDelayWidth, kernel.ParamFxDelayMix, kernel.ParamFxDelayHighpass:
 		if p.delay != nil {
 			params := p.delay.Params()
 			switch id {
+			case kernel.ParamFxDelayHighpass:
+				// Minus infinity is off, a cutoff of 0.
+				params.HighpassHz = 0
+				if !math.IsInf(float64(value), -1) {
+					params.HighpassHz = float64(value)
+				}
 			case kernel.ParamFxDelayTime:
 				params.Division, params.TimeMs = fx.FreeDelay, float64(value)
 			case kernel.ParamFxDelayFeedback:

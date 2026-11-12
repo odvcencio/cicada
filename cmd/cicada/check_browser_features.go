@@ -16,11 +16,12 @@ const (
 	featureHumanize      = "humanize"
 	featureSamplerChords = "sampler chords"
 	featureKitLanes      = "sampler kit lanes"
+	featureEchoHighpass  = "echo highpass"
 )
 
 // portableFeatureRefusals lists every use of a feature that portable (browser
-// and WAM2) images refuse: the tape echo, pattern humanize, sampler kit lanes
-// and sampler chords. The image encoder stops at the first, so check reads the
+// and WAM2) images refuse: the tape echo, the echo highpass, pattern humanize,
+// sampler kit lanes and sampler chords. The image encoder stops at the first, so check reads the
 // project itself to report them all at once. kinds holds the features found.
 func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnostic, kinds map[string]bool) {
 	kinds = map[string]bool{}
@@ -29,6 +30,28 @@ func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnos
 		if effect.Kind == "tape" {
 			kinds[featureTape] = true
 			messages = append(messages, fmt.Sprintf("effect %s is a tape echo, which portable images do not have; use a delay", effect.ID))
+		}
+		if effect.Kind != "delay" {
+			continue
+		}
+		path := effect.ID + ".highpass"
+		if value, ok := effect.Params["highpass"]; ok && !(value.Unit == "enum" && value.Text == "off") {
+			kinds[featureEchoHighpass] = true
+			messages = append(messages, fmt.Sprintf("effect %s sets highpass, which portable images do not have", effect.ID))
+		}
+		for _, scene := range p.Scenes {
+			for _, setting := range scene.Settings {
+				if setting.Path == path {
+					kinds[featureEchoHighpass] = true
+					messages = append(messages, fmt.Sprintf("scene %s sets %s, which portable images do not have", scene.ID, path))
+				}
+			}
+		}
+		for _, lane := range p.Automation {
+			if lane.Path == path {
+				kinds[featureEchoHighpass] = true
+				messages = append(messages, fmt.Sprintf("an automate lane moves %s, which portable images do not have", path))
+			}
 		}
 	}
 	used := map[string][]string{} // pattern ID -> tracks that play it
@@ -104,6 +127,8 @@ func imageFeatureKind(message string) string {
 	switch {
 	case strings.Contains(message, "portable images have no tape echo"):
 		return featureTape
+	case strings.Contains(message, "portable images have no echo highpass"):
+		return featureEchoHighpass
 	case strings.Contains(message, "portable images have no pattern humanize"):
 		return featureHumanize
 	case strings.Contains(message, "portable images have no sampler kit lanes"):

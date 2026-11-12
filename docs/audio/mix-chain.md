@@ -263,11 +263,13 @@ machine.
 | `flutter` | unitless | 0–1 | 0.2 |
 | `saturation` | unitless | 0–1 | 0.3 |
 | `damp` | Hz | 1000–16000 | 5000 |
+| `highpass` | Hz, or `off` | 20–2000 | off |
 
-All six controls take scene settings (`echo.feedback = 0.3`) and `automate`
+All seven controls take scene settings (`echo.feedback = 0.3`) and `automate`
 lanes (`echo.time`, `echo.wow`, `echo.flutter`, `echo.feedback`,
-`echo.saturation`, `echo.damp`). Each moves through a 5 ms smoother, except
-`time`, which glides as described below.
+`echo.saturation`, `echo.damp`, `echo.highpass`). Each moves through a 5 ms
+smoother, except `time`, which glides as described below. `highpass` is
+described in [Echo highpass](#echo-highpass).
 
 **What it models.**
 
@@ -293,6 +295,70 @@ wet-only and stereo-preserving. It cannot be a track insert or a master stage.
 Modulation routes to its controls are not supported yet. Portable browser kernel
 images refuse a score that declares `tape`, with a clear error; native playback
 and offline `render` and `stems` support it.
+
+## Echo highpass
+
+`highpass` puts a one-pole high-pass filter where the signal enters the echo
+line of the `delay` and `tape` returns: the send and the feedback together.
+The first repeat has passed it once, and every later repeat once more, so the
+echo is thin from its first repeat and thins further to its snap: the dub echo
+throw. The `damp` low-pass sits in the feedback alone, so repeat n has passed
+the high-pass n times and `damp` n − 1 times. It is off unless you set it.
+
+```cicada
+cicada 2
+tempo 74
+fx echo tape { time = 3/16 feedback = 0.75 damp = 4kHz highpass = 250Hz }
+track rim drums { send echo = 0.8 pre }
+pattern hit drums { rs: ..x. ..x. ..x. ..x. }
+scene main { rim = hit }
+song { main*8 }
+automate echo.highpass { @1.1.1 250Hz @5.1.1 1200Hz exponential @8.1.1 120Hz exponential }
+```
+
+`examples/fx/dub-echo-highpass.cicada` plays the same move with an off-beat
+stab.
+
+| Control | Unit | Range | Default |
+| --- | --- | --- | --- |
+| `highpass` | Hz, or `off` | 20–2000 | off |
+
+It takes the same paths as `damp`: the effect block (`highpass = 300Hz`, or
+`highpass = off`), scene settings (`echo.highpass = 600Hz`, or `= off`) and
+`automate echo.highpass` lanes, which interpolate on a logarithmic curve. A
+cutoff glides through the echo's 5 ms smoother; turning the filter on or off
+fades its effect in or out over the same time. Like `damp`, it takes no `mod`
+route: routes reach track mixer and voice parameters, and a route to an echo
+control reports `CICADA-ROUTE`.
+
+What it does to each repeat, measured by
+`TestEchoHighpassRepeatsLoseTheirLows` in `kernel/measure` at 48 kHz (250 ms,
+feedback 0.8, `damp` at 16 kHz; the first repeat's level below the burst, then
+the dB each later repeat loses against the one before; 44.1 and 96 kHz agree
+within 0.3 dB):
+
+| `highpass` | 80 Hz: first repeat | 80 Hz: per repeat | 2 kHz: first repeat | 2 kHz: per repeat |
+| --- | --- | --- | --- | --- |
+| off | 0 | 1.9 | 0 | 2.0 |
+| 100 Hz | 4.2 | 6.1 | 0.1 | 2.1 |
+| 300 Hz | 11.9 | 13.8 | 0.3 | 2.3 |
+| 1000 Hz | 22.5 | 24.4 | 1.5 | 3.5 |
+
+Off, the first repeat is the send at full level and each later one falls by
+the feedback alone. With a cutoff, the low burst loses the one-pole response
+at 80 Hz on the way into the line and again on every pass, while the high
+burst keeps nearly all of its level.
+
+An echo without `highpass` never runs the filter: its output is the same bits
+as before the control existed. The filter rounds every product before it adds
+it and takes its coefficient from `kernel/dsp/detmath`, so it gives the same
+bits on amd64, arm64 and WebAssembly. With wow, flutter and saturation at 0, a
+`tape` with `highpass` still matches a `delay` with the same settings byte for
+byte at a whole-frame time.
+
+Portable browser and WAM images refuse a score that sets or moves `highpass`
+(`portable images have no echo highpass`), and `cicada check --profile browser`
+lists each use. Native playback, `render` and `stems` play it.
 
 ## Same bits on every machine
 

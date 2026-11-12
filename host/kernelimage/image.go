@@ -168,6 +168,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.TapeA != nil {
 		return nil, imageError("portable images have no tape echo; use a delay")
 	}
+	if usesEchoHighpass(&cfg) {
+		return nil, imageError("portable images have no echo highpass; remove highpass from the delay, or play and render the score natively")
+	}
 	if len(cfg.LiveParams) != 0 {
 		return nil, imageError("portable images cannot move an authored instrument parameter while it plays")
 	}
