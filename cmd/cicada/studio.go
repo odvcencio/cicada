@@ -73,8 +73,8 @@ type studio struct {
 	previewProposal     string
 	afterStage          func() // Test seam: nil in production; see commitMutationLocked.
 
-	// filePaths maps a project file's name to its path for fileRevision,
-	// which takes no lock; a name is checked once with filePath.
+	// filePaths maps a project file's name to its studioFileLocation for
+	// fileRevision, which takes no lock; a name is checked once.
 	filePaths sync.Map
 }
 

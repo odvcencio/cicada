@@ -732,6 +732,118 @@ test('a save does not stop another window that typed the same text from keeping 
   assert.equal((await state('/api/state')).source, before.source, 'the other window changed the score');
 });
 
+test('a checkpoint answer that cannot be read is a failed attempt, and the window sends the same checkpoint again', async () => {
+  const {state} = await studio();
+  const other = await otherClient();
+  const before = await state('/api/state');
+  const editor = other.locator('#score textarea').first();
+  const original = await editor.inputValue();
+  const text = original + '\n// an answer that cannot be read';
+  // The first checkpoint is answered 200 with a body that is not JSON; the
+  // next ones reach Studio.
+  const sent = [], warnings = [];
+  const handler = async route => {
+    const body = route.request().postDataJSON();
+    sent.push({id: body.recoveryId, sequence: body.recoverySequence, content: body.content});
+    if (sent.length === 1) return route.fulfill({status: 200, contentType: 'application/json', body: 'not json'});
+    return route.fallback();
+  };
+  const onConsole = message => { if (message.type() === 'warning') warnings.push(message.text()); };
+  await other.route('**/__actions/source-checkpoint', handler);
+  other.on('console', onConsole);
+  try {
+    await other.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
+    await editor.fill(text);
+    await until(() => sent.length >= 2, 'the window did not send the checkpoint again');
+    assert.equal(sent[0].content, text, 'the first checkpoint did not carry the text');
+    assert.deepEqual(sent[1], sent[0], 'the second attempt was not the same checkpoint');
+    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
+      'the second attempt was not kept');
+    assert.ok(await other.evaluate(() => window.__recoveryStatus.includes('Recovery could not save. Keep this window open; another attempt will follow.')),
+      'the window did not say that the first attempt failed');
+    assert.ok(warnings.some(text => text.startsWith('Cicada: Code recovery checkpoint: recovery answer could not be read')),
+      `the console does not name the cause: ${JSON.stringify(warnings)}`);
+  } finally {
+    other.off('console', onConsole);
+    await other.unroute('**/__actions/source-checkpoint', handler);
+  }
+  // Back to the file's text: the window closes its copy for good.
+  await editor.fill(original);
+  await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'No unsaved Code edits.',
+    'the window did not close its copy');
+  assert.equal((await state('/api/state')).source, before.source, 'the window changed the score');
+});
+
+// A checkpoint still out when this window saves lands after the Save closed
+// its copy, and Studio refuses it (409). That is the copy being finished,
+// not a failure: the window neither sends it again nor reports a failure.
+// The panel view saves without a navigation, so its checkpoint loop lives on.
+test('a checkpoint refused because this window saved is not sent again or reported as a failure', async () => {
+  const {base, state, page} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  const sent = [], answers = [], warnings = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const handler = async route => {
+    const body = route.request().postDataJSON();
+    sent.push(`${body.recoveryId}/${body.recoverySequence}`);
+    if (sent.length === 1) await gate;
+    const response = await route.fetch();
+    answers.push(response.status());
+    await route.fulfill({response});
+  };
+  panel.on('console', message => { if (message.type() === 'warning') warnings.push(message.text()); });
+  await panel.route('**/__actions/source-checkpoint', handler);
+  const before = await state('/api/state');
+  try {
+    await panel.goto(new URL('/?panel=code', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    await panel.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
+    const editor = panel.locator('#score textarea').first();
+    const text = (await editor.inputValue()) + '\n// saved while its checkpoint was out';
+    await editor.fill(text);
+    await until(() => sent.length > 0, 'the window sent no checkpoint');
+    await codeForm(panel).getByRole('button', {name: 'Save file', exact: true}).click();
+    await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
+    release();
+    await until(() => answers.length > 0, 'the held checkpoint was not answered');
+    assert.equal(answers[0], 409, 'Studio did not refuse the checkpoint of the saved copy');
+    // Longer than the window's one-second wait before it sends again.
+    await panel.evaluate(() => new Promise(resolve => setTimeout(resolve, 1500)));
+    assert.equal(sent.filter(key => key === sent[0]).length, 1, `the refused checkpoint was sent again: ${JSON.stringify(sent)}`);
+    assert.deepEqual(warnings.filter(text => text.includes('Code recovery')), [], 'the refusal was logged as a failure');
+    assert.ok(!(await panel.evaluate(() => window.__recoveryStatus.some(text => /Recovery could not save/.test(text || '')))), 'the window reported the refusal as a failure');
+    // Take the save back.
+    const saved = await state('/api/state');
+    await panel.locator('form[action="/__actions/undo"] button[type=submit]').first().click();
+    await until(async () => (await state('/api/state')).revision !== saved.revision, 'Undo did not run');
+    assert.equal((await state('/api/state')).source, before.source, 'Undo did not restore the score');
+  } finally {
+    release();
+    await panel.unroute('**/__actions/source-checkpoint', handler);
+    await panel.close();
+  }
+  // The suite's page has not seen that save and its Undo. A link to another
+  // step (a GoSX navigation) renders it again at the current revision.
+  const next = (await page.evaluate(() => new URL(location.href).searchParams.get('step'))) === '2' ? 3 : 2;
+  await page.locator('#detail-panel-clip .piano-roll .step-number').nth(next - 1).click();
+  await page.waitForFunction(step => new URL(location.href).searchParams.get('step') === step, String(next));
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#undo-form input[name=revision]').inputValue() === (await state('/api/state')).revision, 'the page did not catch up with the score');
+  // The steps after this one count only their own navigations.
+  await page.evaluate(() => { window.__studioEdits.navigations = 0; });
+});
+
 test('the Code editor stays mounted while other regions are patched', async () => {
   const {page, posts, cell, settled, confirmed, region, noNavigation} = await studio();
   const editor = await page.locator('#score textarea').elementHandle();
