@@ -915,7 +915,9 @@ const STEPS = {
     snapshot: snapshots.revision,
   },
   C5: {
-    part: 3, fixture: 'scene', input: {type: 'pointerdown'},
+    // Part 1: no earlier step there types in the Code pane, so no recovery
+    // copy hides the Check button.
+    fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async ctx => {
       // While a recovery copy of earlier typing is offered, the pane shows
       // "Save combined draft" and "Discard draft" instead of "Check file":
@@ -1701,11 +1703,14 @@ test('local-first walkthrough: does each interaction wait on the server?', {time
   // discardDrafts discards every recovery copy the Code pane offers (setup).
   ctx.discardDrafts = async () => {
     const discard = page.getByRole('button', {name: 'Discard draft', exact: true});
-    for (let i = 0; i < 5 && await discard.isVisible(); i++) {
+    for (let i = 0; i < 8 && await discard.isVisible(); i++) {
+      const since = await page.evaluate(() => window.__lf.net.length);
       await discard.click();
-      await until(async () => !(await discard.isVisible()) || (await page.evaluate(() => document.querySelectorAll('[data-gosx-form-state=submitting]').length)) === 0, 'Discard draft did not finish');
+      // Each discard is a form post and a page update: wait for both.
+      await until(() => page.evaluate(since => window.__lf.net.slice(since).some(entry => entry.method === 'POST' && entry.end != null), since), 'Discard draft sent nothing');
       await ctx.settle();
     }
+    if (await discard.isVisible()) throw new Error('recovery copies remain after eight discards');
   };
   ctx.codeRevert = async () => {
     await page.locator('#editor-content').fill((await state('/api/state')).source);
