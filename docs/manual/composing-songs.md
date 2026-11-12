@@ -72,7 +72,12 @@ silence its tracks rather than depending on what happened before it.
 
 Scene patterns follow the shared transport phase. A section entrance halfway
 through a four-bar phrase need not restart that phrase. Align section lengths
-with phrase lengths when you want their beginnings together.
+with phrase lengths when you want their beginnings together. A scene that
+binds a pattern at a step inside one of its held notes, such as a tie, does
+not start that note: the track is silent until the pattern's next note, and
+`cicada check` warns with `CICADA-SCENE-ENTRY`, naming the pattern, the bar
+and the step. To start a pattern from its first step at a section, place it
+with `arrange` (next paragraph); scenes have no restart option.
 
 Use edition-2 `arrange` when individual parts need their own starts and lengths.
 Named placements restart a pattern at their own origin, and markers label the

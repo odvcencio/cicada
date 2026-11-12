@@ -17,6 +17,7 @@ func TestBrowserMasterChain(t *testing.T) {
 	chrome := startBrowserChrome(t, server)
 	chrome.setViewport(1440, 1000)
 	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.waitForPanelTabs()
 	chrome.click(`[data-panel-tab="master"]`)
 	chrome.waitFor(`!document.getElementById('mixer-settings').hidden`, 5*time.Second)
 	chrome.click(`.master-mixer-link`)

@@ -91,6 +91,10 @@ done
 # --- the self-hosted M2 CPU gate: only its own inputs queue it ---
 expect_groups "edit package" all-but-gates edit/intents.go
 expect_groups "Studio vocal handlers" all-but-gates cmd/cicada/studio_vocals.go
+expect_groups "Studio project root (feeds CompileResident)" all cmd/cicada/studio_files.go
+expect_groups "the gate test's TestMain" all cmd/cicada/isolate_test.go
+expect_groups "test isolation helper" all internal/isolatetest/isolate.go
+expect_groups "Studio transport (left to the push to main)" all-but-gates cmd/cicada/studio_transport.go
 expect_groups "browser shard script" all-but-gates scripts/ci-studio-browser.sh
 expect_groups "browser test helper" "workstation studio_browser macos_desktop" workstation/browser/page-stall.cjs
 expect_groups "kernel WASM entry" all cmd/cicada-kernel-wasm/main.go
@@ -104,7 +108,7 @@ expect_groups "WASM optimiser script" all scripts/wasm-opt.sh
 expect_groups "edit plus kernel" all edit/intents.go kernel/graph/graph.go
 expect_groups "docs plus CPU gate test" all docs/manual/README.md cmd/cicada/browser_test.go
 # A file gate_input names by path must exist, or a rename would drop it silently.
-for gate_file in cmd/cicada/browser_test.go cmd/cicada/browser_soak_helpers_test.go cmd/cicada/browser_test_helpers_test.go cmd/cicada/browser_cpu_node.js cmd/cicada/studio.go cmd/cicada/studio_audio.go scripts/wasm-opt.sh scripts/run-with-timeout.py examples/first-acid.cicada .github/actions/setup-wasm-tools/action.yml; do
+for gate_file in cmd/cicada/browser_test.go cmd/cicada/browser_soak_helpers_test.go cmd/cicada/browser_test_helpers_test.go cmd/cicada/browser_cpu_node.js cmd/cicada/studio.go cmd/cicada/studio_audio.go cmd/cicada/studio_files.go cmd/cicada/isolate_test.go internal/isolatetest/isolate.go scripts/wasm-opt.sh scripts/run-with-timeout.py examples/first-acid.cicada .github/actions/setup-wasm-tools/action.yml; do
 	[[ -e "$repo/$gate_file" ]] || fail "gate_input names $gate_file, which does not exist"
 	turns_on_gates="$(printf '%s\n' "$gate_file" | "$classifier" | grep -x 'm2_gates=true' || true)"
 	[[ -n "$turns_on_gates" ]] || fail "$gate_file does not turn m2_gates on"
@@ -205,6 +209,11 @@ if [[ "${1:-}" == "--graph" ]]; then
 	if [[ "$importers" != m31labs.dev/cicada/project ]]; then fail "the kernel image path reaches edit through [$importers], not only project; add edit to gate_input"; fi
 	editplan="$(cd "$repo" && grep -l '"m31labs.dev/cicada/edit"' project/*.go | grep -v '_test\.go$' || true)"
 	if [[ "$editplan" != project/editplan.go ]]; then fail "project imports edit outside project/editplan.go ([$editplan]); add edit to gate_input"; fi
+	# The real risk is the compile path building an edit plan: reject any
+	# EditPlan call in project (other than its definition) and in the packages
+	# that turn a project into the kernel image.
+	callers="$(cd "$repo" && grep -n 'EditPlan(' project/*.go host/schedule/*.go host/kernelimage/*.go | grep -v '_test\.go:' | grep -v '^project/editplan\.go:[0-9]*:func EditPlan(' || true)"
+	if [[ -n "$callers" ]]; then fail "the kernel image path calls EditPlan ($callers); add edit to gate_input"; fi
 	check_imports studio_cli "cmd/cicada" < <(go_deps linux "" ./cmd/cicada)
 	check_imports parity "cmd/cicada-kernel-wasm" < <(go_deps linux "wasm_integration" ./cmd/cicada-kernel-wasm)
 	# The parity jobs also run TestExampleWAVParity in cmd/cicada.

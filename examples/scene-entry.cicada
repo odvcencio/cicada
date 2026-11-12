@@ -1,0 +1,59 @@
+cicada 2
+
+title "Scene entry"
+
+tempo 96
+
+key d minor
+
+// A held chord that enters with a scene, a bass whose notes hold to the next
+// note, and a scene tempo change. Each scene change starts the first note of
+// the pass it lands on: the chord at bar 3, both parts at bar 5.
+
+instrument pad {
+  voice poly {
+    out = saw(pitch) * adsr(gate, 40ms, 200ms, 0.7, 300ms) * velocity * 0.12
+  }
+}
+
+instrument pulse {
+  voice mono {
+    out = sine(pitch) * adsr(gate, 4ms, 120ms, 0.4, 80ms) * velocity * 0.3
+  }
+}
+
+track keys pad {}
+
+track bass pulse {}
+
+pattern hold {
+  step = 1/4
+  [d3 f3 a3] - - -
+}
+
+pattern low {
+  step = 1/4
+  gate = 100%
+  d2 d2 a1 d2
+}
+
+scene intro {
+  bass = low
+}
+
+scene enter {
+  keys = hold
+  bass = low
+}
+
+scene slower {
+  keys = hold
+  bass = low
+  tempo = 84
+}
+
+song {
+  intro*2
+  enter*2
+  slower*2
+}
