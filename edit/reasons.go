@@ -13,7 +13,7 @@ func init() {
 	declareReasons("deletetrack", "last_track", "reseeds_random_choices", "result_invalid", "score_invalid", "track_in_use", "unknown_track")
 	declareReasons("duplicatescene", "invalid_name", "name_taken", "result_invalid", "score_invalid", "unknown_scene")
 	declareReasons("editnotes", "gesture-cut", "invalid-note", "no-lanes", "note-changed", "outside-loop", "overlap", "pitch-range", "too-short")
-	declareReasons("patchtext", "hunk_mismatch", "library_file", "unknown_file")
+	declareReasons("patchtext", "hunk_ambiguous", "hunk_limit", "hunk_mismatch", "hunk_needs_context", "hunk_newline", "hunk_overlap", "library_file", "unknown_file")
 	declareReasons("placevocalcomp", "invalid_value", "value_out_of_range")
 	declareReasons("removeautomationpoint", "invalid_value", "value_out_of_range")
 	declareReasons("removeeffect", "declared_in_other_file", "effect_in_use", "route_in_other_file", "score_invalid", "unknown_effect")

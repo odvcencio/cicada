@@ -297,6 +297,8 @@ type applyErrorJSON struct {
 	Uses       []string          `json:"uses,omitempty"`
 	File       string            `json:"file,omitempty"`
 	Range      *edits.ValueRange `json:"range,omitempty"`
+	// Hunk names the hunk of a patchtext refusal.
+	Hunk *edits.HunkRefusal `json:"hunk,omitempty"`
 }
 
 // applyErrorCodes are the codes of apply --json errors; docs/manual/agents.md
@@ -336,7 +338,7 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		}
 		var reason *edits.ReasonError
 		if errors.As(err, &reason) {
-			failure.Reason, failure.Range = reason.Reason, reason.Range
+			failure.Reason, failure.Range, failure.Hunk = reason.Reason, reason.Range, reason.Hunk
 			for _, use := range reason.Uses {
 				failure.Uses = append(failure.Uses, pathsAsJSON(use, result.sources))
 			}

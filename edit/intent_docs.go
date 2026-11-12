@@ -346,9 +346,10 @@ var intentDocs = map[string]typeDoc{
 	"Hunk": {
 		Meaning: "is one change of a text patch: its old lines, which start at its line, become its new lines",
 		Fields: map[string]string{
-			"Line": "the line, counted from 1, where old starts in the text the patch was made from; for an empty old, the line that new goes before",
-			"New":  "the whole lines that replace them, with their line endings; \"\" to delete",
-			"Old":  "the whole lines the hunk replaces, with their line endings, context lines included; \"\" to insert",
+			"End":  "old reaches the end of the text: the hunk applies only where its old lines end the text",
+			"Line": "the line, counted from 1, where old starts in the text the patch was made from",
+			"New":  "the whole lines that replace them, with their line endings, starting and ending with the same unchanged lines as old; \"\" to delete",
+			"Old":  "the whole lines the hunk replaces, with their line endings, including unchanged lines around the change; \"\" only in an empty text",
 		},
 	},
 	"InsertLibraryItem": {
@@ -417,10 +418,10 @@ var intentDocs = map[string]typeDoc{
 	},
 	"PatchText": {
 		Meaning: "changes whole lines of the score, or of another file of the project, by hunks that name the lines they replace",
-		Notes:   "Unlike replacetext, it keeps another writer's changes to other lines: each hunk's old lines are found nearest its line, so a patch made before lines above it were added or removed still applies. A hunk whose old lines changed is refused (hunk_mismatch), and nothing is written. Old and new are whole lines with their line endings (\"\\r\\n\" in a CRLF file). An empty old inserts new before line; an empty new deletes old. Unchanged lines around a change, in both old and new, help a hunk find its place, and are dropped when another writer changed them. A library's source is refused (library_file).",
+		Notes:   "Unlike replacetext, it keeps another writer's changes to other lines. Old and new are whole lines with their line endings (\"\\r\\n\" in a CRLF file), and begin and end with the same unchanged lines around the change; an insertion needs at least one, so old is empty only in an empty file. New ends with a newline unless old reaches the end of the file (hunk_newline); end marks a hunk whose old lines end the file. A hunk applies where all of old stands at its line, or else at the one place in the file where all of old stands (several places: hunk_ambiguous). If unchanged lines around the change were edited since, it still applies at its own line when up to three of them are missing on each side and at least one is intact on each side; it is never fitted elsewhere. Otherwise it is refused and nothing is written (hunk_mismatch; the refusal's hunk gives the line, what was expected and what was found). Two hunks may not change the same lines (hunk_overlap). A patch holds at most 1,024 hunks and 8 MiB of old and new together (hunk_limit). A library's source is refused (library_file).",
 		Examples: []string{
 			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":3,\"old\":\"tempo 120\\n\",\"new\":\"tempo 118\\n\"}]}",
-			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":6,\"old\":\"\",\"new\":\"// patched\\n\"}]}",
+			"{\"kind\":\"patchtext\",\"hunks\":[{\"line\":5,\"old\":\"seed 7\\n\",\"new\":\"seed 7\\n// patched\\n\"}]}",
 		},
 		Fields: map[string]string{
 			"Hunks": "the changes, each naming the lines it replaces",

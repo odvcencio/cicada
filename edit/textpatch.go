@@ -5,30 +5,55 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 // Line diffs and patches of source text. A line keeps its line ending, so a
-// patch keeps LF, CRLF and a missing final newline exactly as they are. The
-// diff gives each change up to three lines of context; a patch finds each
-// hunk's lines in a text that may have changed since, nearest the hunk's own
-// line, and refuses a hunk whose changed lines are no longer there. Studio's
-// Undo, Redo and Revert, and the patchtext intent, use it.
+// patch keeps LF, CRLF and a missing final newline exactly as they are.
+//
+// A hunk names the line where its old lines start. On the text it was made
+// from, they are there, and the hunk applies there. On a text that another
+// writer has changed since, a hunk applies only where its place is certain,
+// and is refused otherwise; it is never placed by guess. In order:
+//  1. all its old lines at the line it names;
+//  2. all its old lines at the one place in the whole text where they stand;
+//     two or more such places are refused (hunk_ambiguous);
+//  3. its old lines without up to three of the unchanged lines at each end
+//     (fewest first), still at the line it names, keeping at least one
+//     unchanged line on each side that has one. The lines it changes are
+//     never dropped, and a smaller window is tried nowhere else: there it
+//     could land on a copy of its lines that means something else.
+//
+// A hunk marked end applies only where its old lines end the text, and may
+// miss unchanged lines only above the change. An insertion needs an unchanged
+// neighbouring line in both old and new (hunk_needs_context). Studio's Undo,
+// Redo and Revert and the patchtext intent use it.
+
+// Limits of one patch. Each hunk costs at most one pass over the text, so the
+// limits bound the work a client can ask for.
+const (
+	MaxHunks          = 1024    // hunks in one patch
+	MaxPatchBytes     = 8 << 20 // bytes of all hunks' old and new together
+	maxDroppedContext = 3       // unchanged lines a hunk may miss at each end, at its own line
+	maxReportedPlaces = 10      // places a hunk_ambiguous refusal lists
+)
 
 // Hunk is one change of a text patch: its old lines, which start at its line,
 // become its new lines.
 type Hunk struct {
-	Line int    `json:"line" cicada:"required"` // the line, counted from 1, where old starts in the text the patch was made from; for an empty old, the line that new goes before
-	Old  string `json:"old" cicada:"required"`  // the whole lines the hunk replaces, with their line endings, context lines included; "" to insert
-	New  string `json:"new" cicada:"required"`  // the whole lines that replace them, with their line endings; "" to delete
+	Line int    `json:"line" cicada:"required"` // the line, counted from 1, where old starts in the text the patch was made from
+	Old  string `json:"old" cicada:"required"`  // the whole lines the hunk replaces, with their line endings, including unchanged lines around the change; "" only in an empty text
+	New  string `json:"new" cicada:"required"`  // the whole lines that replace them, with their line endings, starting and ending with the same unchanged lines as old; "" to delete
+	End  bool   `json:"end,omitempty"`          // old reaches the end of the text: the hunk applies only where its old lines end the text
 
-	// missing names a field that the JSON left out. A hunk must name all
-	// three, so that a forgotten old is not read as an insertion.
+	// missing names a field that the JSON left out or set to null. A hunk
+	// must name all three, so that a forgotten old is not read as empty.
 	missing string
 }
 
 // UnmarshalJSON decodes a hunk, refusing unknown fields and recording a
-// missing one for the intent to refuse.
+// missing or null one for the intent to refuse.
 func (h *Hunk) UnmarshalJSON(data []byte) error {
 	type plain Hunk
 	var decoded plain
@@ -44,11 +69,11 @@ func (h *Hunk) UnmarshalJSON(data []byte) error {
 	*h = Hunk(decoded)
 	h.missing = ""
 	for _, name := range []string{"line", "old", "new"} {
-		found := false
-		for key := range fields {
-			found = found || strings.EqualFold(key, name)
+		present := false
+		for key, raw := range fields {
+			present = present || strings.EqualFold(key, name) && string(bytes.TrimSpace(raw)) != "null"
 		}
-		if !found {
+		if !present {
 			h.missing = name
 			break
 		}
@@ -56,15 +81,41 @@ func (h *Hunk) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// HunkError reports a hunk that does not apply: Hunk is its index (from 0) and
-// Line the line it names.
+// HunkError says why a hunk does not apply, in fields an agent can act on.
 type HunkError struct {
-	Hunk, Line int
-	Message    string
+	// Reason is hunk_mismatch, hunk_ambiguous, hunk_overlap,
+	// hunk_needs_context, hunk_newline or hunk_limit.
+	Reason string
+	Hunk   int // the hunk, from 0; -1 when the patch as a whole is over a limit
+	Line   int // the line the hunk names
+	// At is the line, from 1, where the hunk's old lines first differ from
+	// the text at Line; Expected is that old line and Found the text's line
+	// ("" past the end). Set for hunk_mismatch.
+	At              int
+	Expected, Found string
+	// Matches are the lines, from 1, where a hunk_ambiguous hunk matches (at
+	// most ten), and Places how many places there are.
+	Matches []int
+	Places  int
+	Other   int // the hunk that a hunk_overlap hunk overlaps, from 0
+	// Limit and Value are the limit a hunk_limit patch is over and its value.
+	Limit, Value int
+	Message      string
 }
 
-func (e *HunkError) Error() string {
-	return fmt.Sprintf("hunk %d (line %d) %s", e.Hunk+1, e.Line, e.Message)
+func (e *HunkError) Error() string { return e.Message }
+
+// HunkRefusal names the hunk of a patchtext refusal, so an agent can act on
+// the refusal without reading its message.
+type HunkRefusal struct {
+	Index    int    `json:"index"`              // the hunk, from 0
+	Line     int    `json:"line"`               // the line the hunk names
+	At       int    `json:"at,omitempty"`       // hunk_mismatch: the line where old first differs from the text
+	Expected string `json:"expected,omitempty"` // hunk_mismatch: that line of old
+	Found    string `json:"found,omitempty"`    // hunk_mismatch: the text's line there; absent past the end
+	Matches  []int  `json:"matches,omitempty"`  // hunk_ambiguous: lines where the hunk matches, at most ten
+	Places   int    `json:"places,omitempty"`   // hunk_ambiguous: how many places it matches
+	Other    *int   `json:"other,omitempty"`    // hunk_overlap: the hunk it overlaps, from 0
 }
 
 // DiffText returns the hunks that turn from into to, each with up to three
@@ -72,44 +123,71 @@ func (e *HunkError) Error() string {
 func DiffText(from, to []byte) []Hunk {
 	lines := diffHunks(diffOps(from, to))
 	hunks := make([]Hunk, 0, len(lines))
+	ends := len(diffLines(from))
 	for _, hunk := range lines {
-		hunks = append(hunks, Hunk{Line: hunk.oldStart + 1, Old: string(bytes.Join(hunk.oldLines, nil)), New: string(bytes.Join(hunk.newLines, nil))})
+		hunks = append(hunks, Hunk{Line: hunk.oldStart + 1, Old: string(bytes.Join(hunk.oldLines, nil)), New: string(bytes.Join(hunk.newLines, nil)), End: hunk.oldStart+len(hunk.oldLines) == ends})
 	}
 	return hunks
 }
 
 // ApplyHunks applies hunks to text, which may have changed since the hunks
-// were made: each hunk's old lines are found nearest the hunk's line, with
-// context lines dropped when another change moved them. ApplyHunks(from,
-// DiffText(from, to)) is to. A hunk whose old lines are not in text, match two
-// places equally near, or overlap another hunk's is refused with a
-// *HunkError. text is not changed.
+// were made, by the rules at the top of this file. ApplyHunks(from,
+// DiffText(from, to)) is to. A hunk that cannot be placed with certainty,
+// overlaps another hunk's lines, or would join two lines is refused with a
+// *HunkError, and nothing is applied. text is not changed.
 func ApplyHunks(text []byte, hunks []Hunk) ([]byte, error) {
 	if len(hunks) == 0 {
 		return bytes.Clone(text), nil
 	}
-	lines := diffLines(text)
-	count := len(lines)
-	if count > 0 && len(lines[count-1]) == 0 {
-		count-- // the empty piece after a final newline is not a line
+	if len(hunks) > MaxHunks {
+		return nil, &HunkError{Reason: "hunk_limit", Hunk: -1, Limit: MaxHunks, Value: len(hunks), Message: fmt.Sprintf("the patch holds %d hunks; a patch holds at most %d", len(hunks), MaxHunks)}
 	}
-	parsed := make([]lineHunk, len(hunks))
+	size := 0
+	for _, hunk := range hunks {
+		size += len(hunk.Old) + len(hunk.New)
+	}
+	if size > MaxPatchBytes {
+		return nil, &HunkError{Reason: "hunk_limit", Hunk: -1, Limit: MaxPatchBytes, Value: size, Message: fmt.Sprintf("the hunks' old and new hold %d bytes; a patch holds at most %d", size, MaxPatchBytes)}
+	}
+	t := newLineText(text)
+	type placement struct {
+		hunk, start int
+		from, to    [][]byte
+	}
+	placements := make([]placement, 0, len(hunks))
 	for i, hunk := range hunks {
-		if hunk.Line < 1 {
-			return nil, &HunkError{Hunk: i, Line: hunk.Line, Message: "names no line: lines count from 1"}
+		start, from, to, err := t.locate(hunk)
+		if err != nil {
+			err.Hunk, err.Line = i, hunk.Line
+			err.Message = fmt.Sprintf("hunk %d (line %d) %s", i+1, hunk.Line, err.Message)
+			return nil, err
 		}
-		parsed[i] = lineHunk{oldStart: hunk.Line - 1, oldLines: hunkLines(hunk.Old), newLines: hunkLines(hunk.New)}
-		if len(parsed[i].oldLines) == 0 && hunk.Line-1 > count {
-			return nil, &HunkError{Hunk: i, Line: hunk.Line, Message: fmt.Sprintf("inserts after the end of the text, which has %d lines", count)}
-		}
+		placements = append(placements, placement{hunk: i, start: start, from: from, to: to})
 	}
-	return patchLines(lines, parsed)
+	sort.SliceStable(placements, func(i, j int) bool { return placements[i].start < placements[j].start })
+	updated := make([][]byte, 0, len(t.lines))
+	cursor, last := 0, -1
+	for _, p := range placements {
+		line := hunks[p.hunk].Line
+		if p.start < cursor {
+			return nil, &HunkError{Reason: "hunk_overlap", Hunk: p.hunk, Line: line, Other: last, Message: fmt.Sprintf("hunk %d (line %d) changes lines that hunk %d also changes", p.hunk+1, line, last+1)}
+		}
+		end := p.start + len(p.from)
+		if n := len(p.to); n > 0 && !bytes.HasSuffix(p.to[n-1], []byte("\n")) && end < t.count {
+			return nil, &HunkError{Reason: "hunk_newline", Hunk: p.hunk, Line: line, Message: fmt.Sprintf("hunk %d (line %d) ends its new lines without a newline before line %d, which would join two lines; end new with a newline, or let old reach the end of the text", p.hunk+1, line, end+1)}
+		}
+		updated = append(updated, t.lines[cursor:p.start]...)
+		updated = append(updated, p.to...)
+		cursor, last = end, p.hunk
+	}
+	updated = append(updated, t.lines[cursor:]...)
+	return bytes.Join(updated, nil), nil
 }
 
 // RebaseText applies the change from → to to current, a text that may have
-// changed since from: it is current with the lines that changed between from
-// and to changed the same way. It returns to when current is from, and current
-// when from is to.
+// changed since from, with ApplyHunks: it is current with the lines that
+// changed between from and to changed the same way. It returns to when current
+// is from, and current when from is to.
 func RebaseText(current, from, to []byte) ([]byte, error) {
 	if bytes.Equal(current, from) {
 		return bytes.Clone(to), nil
@@ -117,7 +195,7 @@ func RebaseText(current, from, to []byte) ([]byte, error) {
 	if bytes.Equal(from, to) {
 		return bytes.Clone(current), nil
 	}
-	return patchLines(diffLines(current), diffHunks(diffOps(from, to)))
+	return ApplyHunks(current, DiffText(from, to))
 }
 
 // UnifiedDiff writes the change from → to as a unified diff of the file name.
@@ -326,105 +404,179 @@ func diffHunks(ops []diffOp) []lineHunk {
 	return hunks
 }
 
-// patchLines finds every hunk in lines, then replaces their lines, in line
-// order. Hunks that find the same insertion point keep their own order.
-func patchLines(lines [][]byte, hunks []lineHunk) ([]byte, error) {
-	type patch struct {
-		hunk, start int
-		from, to    [][]byte
-	}
-	patches := make([]patch, 0, len(hunks))
-	for i, hunk := range hunks {
-		start, fromLines, toLines, err := findFlexiblePatch(lines, hunk, hunk.oldStart)
-		if err != nil {
-			return nil, &HunkError{Hunk: i, Line: hunk.oldStart + 1, Message: err.Error()}
-		}
-		patches = append(patches, patch{hunk: i, start: start, from: fromLines, to: toLines})
-	}
-	sort.SliceStable(patches, func(i, j int) bool { return patches[i].start < patches[j].start })
-	updated := make([][]byte, 0, len(lines))
-	cursor, last := 0, -1
-	for _, change := range patches {
-		if change.start < cursor {
-			return nil, &HunkError{Hunk: change.hunk, Line: hunks[change.hunk].oldStart + 1, Message: fmt.Sprintf("overlaps hunk %d: both change the same lines", last+1)}
-		}
-		end := change.start + len(change.from)
-		if end > len(lines) {
-			return nil, &HunkError{Hunk: change.hunk, Line: hunks[change.hunk].oldStart + 1, Message: "is out of range"}
-		}
-		updated = append(updated, lines[cursor:change.start]...)
-		updated = append(updated, change.to...)
-		cursor, last = end, change.hunk
-	}
-	updated = append(updated, lines[cursor:]...)
-	return bytes.Join(updated, nil), nil
+// lineText is a text split into lines, with a hash of each line so a
+// window of lines is found in one pass.
+type lineText struct {
+	lines  [][]byte
+	hashes []uint64
+	count  int // lines, not counting the empty piece after a final newline
 }
 
-// findFlexiblePatch finds a hunk's old lines nearest expected. When they are
-// not there it drops context lines, fewest first, so a hunk still applies
-// after a change next to it; the lines it changes are never dropped.
-func findFlexiblePatch(lines [][]byte, hunk lineHunk, expected int) (int, [][]byte, [][]byte, error) {
-	commonPrefix := 0
-	for commonPrefix < len(hunk.oldLines) && commonPrefix < len(hunk.newLines) && bytes.Equal(hunk.oldLines[commonPrefix], hunk.newLines[commonPrefix]) {
-		commonPrefix++
+func newLineText(text []byte) *lineText {
+	lines := diffLines(text)
+	count := len(lines)
+	if count > 0 && len(lines[count-1]) == 0 {
+		count--
 	}
-	commonSuffix := 0
-	for commonSuffix < len(hunk.oldLines)-commonPrefix && commonSuffix < len(hunk.newLines)-commonPrefix && bytes.Equal(hunk.oldLines[len(hunk.oldLines)-1-commonSuffix], hunk.newLines[len(hunk.newLines)-1-commonSuffix]) {
-		commonSuffix++
-	}
-	ambiguous := false
-	for total := 0; total <= commonPrefix+commonSuffix; total++ {
-		for left := 0; left <= commonPrefix && left <= total; left++ {
-			right := total - left
-			if right > commonSuffix {
-				continue
-			}
-			end := len(hunk.oldLines) - right
-			start, matches := findPatchStart(lines, hunk.oldLines[left:end], expected+left)
-			if start >= 0 {
-				return start, hunk.oldLines[left:end], hunk.newLines[left : len(hunk.newLines)-right], nil
-			}
-			ambiguous = ambiguous || matches > 1
-		}
-	}
-	if ambiguous {
-		return -1, nil, nil, fmt.Errorf("matches more than one place equally near its line")
-	}
-	return -1, nil, nil, fmt.Errorf("does not match: its old lines are not in the text")
+	return &lineText{lines: lines, hashes: hashLines(lines), count: count}
 }
 
-// findPatchStart returns where wanted starts nearest expected, or -1 when it
-// is nowhere or at two places equally near, with the number of matches.
-func findPatchStart(lines, wanted [][]byte, expected int) (int, int) {
-	bestStart, bestDistance, matches, tied := -1, int(^uint(0)>>1), 0, false
-	limit := len(lines) - len(wanted)
-	if limit < 0 {
-		return -1, 0
+func hashLines(lines [][]byte) []uint64 {
+	hashes := make([]uint64, len(lines))
+	for i, line := range lines {
+		h := uint64(14695981039346656037) // FNV-1a
+		for _, b := range line {
+			h = (h ^ uint64(b)) * 1099511628211
+		}
+		hashes[i] = h
 	}
-	for start := 0; start <= limit; start++ {
-		matchesWanted := true
-		for offset := range wanted {
-			if !bytes.Equal(lines[start+offset], wanted[offset]) {
-				matchesWanted = false
-				break
+	return hashes
+}
+
+// equalAt reports whether want sits at line index at.
+func (t *lineText) equalAt(at int, want [][]byte, hashes []uint64) bool {
+	if at < 0 || at+len(want) > len(t.lines) {
+		return false
+	}
+	for k := range want {
+		if t.hashes[at+k] != hashes[k] || !bytes.Equal(t.lines[at+k], want[k]) {
+			return false
+		}
+	}
+	return true
+}
+
+// find returns every line index where want starts: one pass with a rolling
+// hash, each hit confirmed byte for byte. An empty want is at every index.
+func (t *lineText) find(want [][]byte, hashes []uint64) []int {
+	var at []int
+	if len(want) == 0 {
+		for q := 0; q <= len(t.lines); q++ {
+			at = append(at, q)
+		}
+		return at
+	}
+	m := len(want)
+	if m > len(t.lines) {
+		return nil
+	}
+	const base = 1099511628211
+	var target, rolling, high uint64 = 0, 0, 1
+	for k := 0; k < m; k++ {
+		target = target*base + hashes[k]
+		rolling = rolling*base + t.hashes[k]
+		if k > 0 {
+			high *= base
+		}
+	}
+	for q := 0; ; q++ {
+		if rolling == target && t.equalAt(q, want, hashes) {
+			at = append(at, q)
+		}
+		if q+m >= len(t.lines) {
+			return at
+		}
+		rolling = (rolling-t.hashes[q]*high)*base + t.hashes[q+m]
+	}
+}
+
+// locate finds where a hunk applies: the line index its kept old lines start
+// at, those lines, and the new lines that replace them.
+func (t *lineText) locate(hunk Hunk) (int, [][]byte, [][]byte, *HunkError) {
+	if hunk.Line < 1 {
+		return 0, nil, nil, &HunkError{Reason: "hunk_mismatch", Message: "names no line: lines count from 1"}
+	}
+	old, neu := hunkLines(hunk.Old), hunkLines(hunk.New)
+	expected := hunk.Line - 1
+	if len(old) == 0 {
+		if t.count == 0 && expected == 0 {
+			return 0, nil, neu, nil
+		}
+		return 0, nil, nil, &HunkError{Reason: "hunk_needs_context", Message: "inserts with no old lines; give at least one unchanged line next to the insertion in both old and new"}
+	}
+	oldHashes := hashLines(old)
+	prefix := 0
+	for prefix < len(old) && prefix < len(neu) && bytes.Equal(old[prefix], neu[prefix]) {
+		prefix++
+	}
+	suffix := 0
+	for suffix < len(old)-prefix && suffix < len(neu)-prefix && bytes.Equal(old[len(old)-1-suffix], neu[len(neu)-1-suffix]) {
+		suffix++
+	}
+	// trimmed tries the windows that drop unchanged lines, fewest first, at
+	// one place: at(left) is where the window that drops left lines from the
+	// start must begin.
+	trimmed := func(maxRight int, at func(left int) int) (int, [][]byte, [][]byte, bool) {
+		maxLeft := min(prefix, maxDroppedContext)
+		for dropped := 1; dropped <= maxLeft+maxRight; dropped++ {
+			for left := 0; left <= min(maxLeft, dropped); left++ {
+				right := dropped - left
+				// A window keeps at least one unchanged line on each side that
+				// has one, so it cannot shrink to the changed lines alone.
+				if right > maxRight || left == prefix && prefix > 0 || right == suffix && suffix > 0 || len(old)-left-right == 0 {
+					continue
+				}
+				window := old[left : len(old)-right]
+				if t.equalAt(at(left), window, oldHashes[left:len(old)-right]) {
+					return at(left), window, neu[left : len(neu)-right], true
+				}
 			}
 		}
-		if !matchesWanted {
-			continue
+		return 0, nil, nil, false
+	}
+	if hunk.End {
+		// The end pins the hunk, wherever lines above it moved; unchanged
+		// lines may be missing only above the change.
+		if at := t.count - len(old); t.equalAt(at, old, oldHashes) {
+			return at, old, neu, nil
 		}
-		matches++
-		distance := start - expected
-		if distance < 0 {
-			distance = -distance
+		if start, from, to, ok := trimmed(0, func(left int) int { return t.count - (len(old) - left) }); ok {
+			return start, from, to, nil
 		}
-		if distance < bestDistance {
-			bestStart, bestDistance, tied = start, distance, false
-		} else if distance == bestDistance {
-			tied = true
+		expected = max(t.count-len(old), 0)
+	} else {
+		if t.equalAt(expected, old, oldHashes) {
+			return expected, old, neu, nil
+		}
+		switch places := t.find(old, oldHashes); len(places) {
+		case 0:
+			// Not elsewhere either: unchanged lines around the change may
+			// have changed since, so they may be missing, but only here.
+			if start, from, to, ok := trimmed(min(suffix, maxDroppedContext), func(left int) int { return expected + left }); ok {
+				return start, from, to, nil
+			}
+		case 1:
+			return places[0], old, neu, nil
+		default:
+			lines := make([]int, 0, maxReportedPlaces)
+			for _, q := range places[:min(len(places), maxReportedPlaces)] {
+				lines = append(lines, q+1)
+			}
+			return 0, nil, nil, &HunkError{Reason: "hunk_ambiguous", Matches: lines, Places: len(places), Message: fmt.Sprintf("is not at its line, and its old lines stand at %d places (lines %s); add unchanged lines around the change so they stand at one", len(places), joinInts(lines))}
 		}
 	}
-	if matches == 0 || tied {
-		return -1, matches
+	err := &HunkError{Reason: "hunk_mismatch"}
+	for k := range old {
+		if expected+k >= t.count || !bytes.Equal(t.lines[expected+k], old[k]) {
+			err.At, err.Expected = expected+k+1, string(old[k])
+			if expected+k < t.count {
+				err.Found = string(t.lines[expected+k])
+			}
+			break
+		}
 	}
-	return bestStart, matches
+	where := "anywhere in the text"
+	if hunk.End {
+		where = "at the end of the text"
+	}
+	err.Message = fmt.Sprintf("does not match: line %d is %q, where the hunk expects %q, and its old lines do not stand together %s", err.At, strings.TrimRight(err.Found, "\r\n"), strings.TrimRight(err.Expected, "\r\n"), where)
+	return 0, nil, nil, err
+}
+
+func joinInts(values []int) string {
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = strconv.Itoa(v)
+	}
+	return strings.Join(parts, ", ")
 }
