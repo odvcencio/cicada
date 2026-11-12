@@ -330,3 +330,27 @@ func TestAddEffectDeclaresASecondReverb(t *testing.T) {
 		t.Fatalf("source lacks both reverbs:\n%s", source)
 	}
 }
+
+// addeffect refuses a return named like a built-in send path it is not:
+// a second reverb named reverb or delay, or a delay named reverb.
+func TestAddEffectRefusesReturnNamesThatAreSendPaths(t *testing.T) {
+	withHall := effectScore + "fx hall reverb {}\n"
+	for _, tc := range []struct {
+		name, source string
+		intent       *AddEffect
+	}{
+		{"second reverb named reverb", withHall, &AddEffect{Name: "reverb", EffectKind: "reverb"}},
+		{"second reverb named delay", withHall, &AddEffect{Name: "delay", EffectKind: "reverb"}},
+		{"delay named reverb", effectScore, &AddEffect{Name: "reverb", EffectKind: "delay"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			structureRefusal(t, tc.source, tc.intent, "invalid_name", "name", "cannot be named")
+		})
+	}
+	if _, err := applyEffectIntent(t, effectScore, &AddEffect{Name: "reverb", EffectKind: "reverb"}); err != nil {
+		t.Fatalf("a first reverb may be named reverb: %v", err)
+	}
+	// rename takes tracks, patterns and scenes, so it cannot give an effect
+	// a send path's name.
+	structureRefusal(t, withHall, &Rename{Entity: "effect:hall", Name: "reverb"}, "unknown_entity", "entity", "rename takes a track, a pattern or a scene")
+}

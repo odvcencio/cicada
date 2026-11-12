@@ -684,6 +684,17 @@ func Validate(s *Score) (ds []Diagnostic) {
 			add("CICADA-LIMIT", fmt.Sprintf("a score has at most %d reverb returns (slot B and slots C to H); %s is reverb number %d", maxReverbReturns, effect.Name, reverbs), "error", effect.Position)
 		}
 	}
+	// A return may not take the name of a built-in send path segment unless it
+	// is the return that path addresses (send.delay, send.reverb).
+	firstReverb := firstReverbReturn(s)
+	for _, effect := range s.Effects {
+		if (effect.Kind != "delay" && effect.Kind != "tape" && effect.Kind != "reverb") || effectOnMaster(s, effect.Name) {
+			continue
+		}
+		if message := paramdefs.ReturnNameCollision(effect.Name, effect.Kind, effect.Name == firstReverb); message != "" {
+			add("CICADA-DUPLICATE", message, "error", effect.Position)
+		}
+	}
 	for _, bus := range s.Buses {
 		checkID(bus.Name, bus.Position)
 		if previous, exists := namespace[bus.Name]; exists && previous != "built-in bus" {

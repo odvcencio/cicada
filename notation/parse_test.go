@@ -710,3 +710,40 @@ func TestSceneSendToLaterReverbIsRefused(t *testing.T) {
 	}
 	t.Fatalf("want CICADA-UNSUPPORTED naming hall as send.reverb, got %+v", diagnostics)
 }
+
+// A return may not take a built-in send path's name unless it is the return
+// that path addresses: keys.send.reverb is the send to the first reverb and
+// keys.send.delay the send to the delay or tape return. Other names, such as
+// echo, level or pan, are not send paths and stay free.
+func TestReturnNamesThatCollideWithSendPathsAreRefused(t *testing.T) {
+	tail := "track keys acid {}\npattern p { c3 }\nscene main { keys = p }\nsong { main }\n"
+	for _, c := range []struct {
+		name, effects string
+		line          int // 0: accepted
+	}{
+		{"later reverb named reverb", "fx hall reverb {}\nfx reverb reverb {}\n", 3},
+		{"later reverb named delay", "fx hall reverb {}\nfx delay reverb {}\n", 3},
+		{"first reverb named delay", "fx delay reverb {}\n", 2},
+		{"delay named reverb", "fx reverb delay {}\n", 2},
+		{"tape named reverb", "fx reverb tape {}\n", 2},
+		{"first reverb named reverb", "fx reverb reverb {}\nfx room reverb {}\n", 0},
+		{"delay named delay", "fx delay delay {}\n", 0},
+		{"later reverbs named echo, level and pan", "fx hall reverb {}\nfx echo reverb {}\nfx level reverb {}\nfx pan reverb {}\n", 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, ds := Parse([]byte("cicada 2\n" + c.effects + tail))
+			var found *Diagnostic
+			for i := range ds {
+				if ds[i].Code == "CICADA-DUPLICATE" && strings.Contains(ds[i].Message, "cannot be named") {
+					found = &ds[i]
+				}
+			}
+			switch {
+			case c.line == 0 && found != nil:
+				t.Fatalf("refused: %+v", *found)
+			case c.line != 0 && (found == nil || found.Position.Line != c.line):
+				t.Fatalf("want CICADA-DUPLICATE at line %d, got %+v", c.line, ds)
+			}
+		})
+	}
+}

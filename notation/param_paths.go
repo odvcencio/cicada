@@ -386,10 +386,11 @@ func ParameterVoiceKind(score *Score, kind string) string {
 }
 
 // firstReverbReturn names the reverb in return slot B, the first reverb the
-// score declares outside the master chain ("" without one).
+// score declares outside the master chain that gets an instance ("" without
+// one), as the compiler takes it (project.ReverbReturns).
 func firstReverbReturn(score *Score) string {
 	for _, effect := range score.Effects {
-		if effect.Kind == "reverb" && !effectOnMaster(score, effect.Name) {
+		if effect.Kind == "reverb" && !effectOnMaster(score, effect.Name) && effectGetsInstance(score, effect.Name) {
 			return effect.Name
 		}
 	}
@@ -400,7 +401,45 @@ func firstReverbReturn(score *Score) string {
 func isReverbReturn(score *Score, name string) bool {
 	for _, effect := range score.Effects {
 		if effect.Name == name {
-			return effect.Kind == "reverb" && !effectOnMaster(score, name)
+			return effect.Kind == "reverb" && !effectOnMaster(score, name) && effectGetsInstance(score, name)
+		}
+	}
+	return false
+}
+
+// effectGetsInstance mirrors the compiler's choice of runtime effects
+// (project's routedEffects): in edition 2 an effect from a library gets an
+// instance only when a track or bus sends to it or inserts it; a scene that
+// only addresses it does not.
+func effectGetsInstance(score *Score, name string) bool {
+	if score.Version == 1 || score.Origins[name].Library == "" {
+		return true
+	}
+	routed := func(params []Param) bool {
+		for _, param := range params {
+			switch param.Name {
+			case "insert":
+				for _, field := range strings.Fields(param.Value) {
+					if field == name {
+						return true
+					}
+				}
+			case "send":
+				if param.Target == name {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, track := range score.Tracks {
+		if routed(track.Params) {
+			return true
+		}
+	}
+	for _, bus := range score.Buses {
+		if routed(bus.Params) {
+			return true
 		}
 	}
 	return false

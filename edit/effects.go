@@ -119,6 +119,14 @@ func checkNewEffect(score *notation.Score, name, kind, target string) (route str
 				return "", nil, refuse("effect_single_instance", "effectkind", "the score already has the %s return %s; a score has one delay or tape return", effect.Kind, effect.Name)
 			}
 		}
+		// A new reverb is the first one only if the score has no reverb return.
+		first := kind == "reverb"
+		for _, effect := range score.Effects {
+			first = first && !(effect.Kind == "reverb" && !onMaster(score, effect.Name))
+		}
+		if message := paramdefs.ReturnNameCollision(name, kind, first); message != "" {
+			return "", nil, refuse("invalid_name", "name", "%s", message)
+		}
 		if target != "" {
 			return "", nil, refuse("effect_is_return", "inserton", "a %s is a send return, not an insert: add it without inserton, then send a track to it with setparam param:<track>.send.%s", kind, name)
 		}

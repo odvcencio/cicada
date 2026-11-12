@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
@@ -192,6 +193,18 @@ func ValidateProject(p *Project) error {
 	}
 	if kindCounts["reverb"] > engine.MaxReturns-1 {
 		return fmt.Errorf("CICADA-LIMIT: a score has at most %d reverb returns (slot B and slots C to H)", engine.MaxReturns-1)
+	}
+	// A return named like a built-in send path segment must be the return that
+	// path addresses; this sees preset-resolved kinds that notation does not.
+	first := firstReverbName(p)
+	for _, effect := range p.Effects {
+		kind := semanticEffectKind(effect)
+		if (kind != "delay" && kind != "tape" && kind != "reverb") || MasterHasInsert(p, effect.ID) {
+			continue
+		}
+		if message := paramdefs.ReturnNameCollision(effect.ID, kind, effect.ID == first); message != "" {
+			return fmt.Errorf("CICADA-DUPLICATE: %s", message)
+		}
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > engine.MaxTracks || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
 		return fmt.Errorf("project needs 1 to %d tracks, patterns, and a song", engine.MaxTracks)
