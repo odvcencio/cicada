@@ -85,6 +85,8 @@ func TestPositionIntentsUseTheSongMeter(t *testing.T) {
 		{`{"kind":"removeautomationpoint","entity":"param:bass.cutoff","at":"@3.1.1"}`, "@1.1.1 800Hz", "1200Hz"},
 		{`{"kind":"moveclip","entity":"placement:intro","attick":11520}`, "place intro bass riff { at = @5.1.1 length = 2bars }", ""},
 		{`{"kind":"splitclip","entity":"placement:intro","attick":8640}`, "at = @4.1.1", ""},
+		{`{"kind":"updateplacement","entity":"placement:intro","settings":{"at":"@4.2.1"}}`, "place intro bass riff { at = @4.2.1", ""},
+		{`{"kind":"duplicateclip","entity":"placement:intro"}`, "at = @5.1.1", ""},
 		{`{"kind":"resizeclip","entity":"placement:verse","lengthticks":2880}`, "place verse bass riff { at = @1.1.1 length = 1bar", "length = 2bars }\n  place intro"},
 	} {
 		got, err := applyMeterIntent(t, waltzArrangement, c.intent)
