@@ -30,10 +30,11 @@ entries[].metrics.<m>  status   "measured" or "not_applicable"
 ```
 
 To compare with an earlier run, for example the base of a pull request, set
-`CICADA_ENGINE_MEASUREMENTS_BASELINE` to its report. The test then logs each
-measured metric (`cpu_ns_per_block` aside) whose value changed, and how many
-are identical. Values are compared as the report holds them, rounded to 0.001
-in their unit:
+`CICADA_ENGINE_MEASUREMENTS_BASELINE` to its report. The test then fails on
+each measured metric (`cpu_ns_per_block` aside) whose value changed, and logs
+the metrics the earlier report lacks and how many are identical. Values are
+compared as the report holds them, rounded to 0.001 in their unit. CI does not
+set it; the gated limits in `testdata/tolerances.json` are what CI enforces:
 
 ```
 # with the base commit checked out

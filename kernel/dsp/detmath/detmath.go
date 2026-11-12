@@ -32,7 +32,7 @@
 // every target like the rest, but trade the 1 ULP bound for speed, and each
 // states its bound and the test that proves it. Coefficient setup, timing,
 // tuning and anything whose error accumulates use the exact functions.
-// TestRenderPathAvoidsMathLibrary fails on a ...Near call outside the
+// TestNearTierOnlyAtListedSites fails on a ...Near call outside the
 // per-sample sites it lists, and every processor that uses one is pinned by a
 // digest.
 package detmath

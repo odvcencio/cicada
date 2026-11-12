@@ -1,6 +1,7 @@
 package detmath
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -269,8 +270,12 @@ func TestNearTierOnlyAtListedSites(t *testing.T) {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		if n := nearUses(t, path); n > 0 {
-			rel, _ := filepath.Rel(root, path)
+		n, err := nearUses(path)
+		rel, _ := filepath.Rel(root, path)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.ToSlash(rel), err)
+		}
+		if n > 0 {
 			found[filepath.ToSlash(rel)] = n
 		}
 		return nil
@@ -290,13 +295,17 @@ func TestNearTierOnlyAtListedSites(t *testing.T) {
 	}
 }
 
-// nearUses counts selectors detmath.XxxNear in a Go file that imports this package.
-func nearUses(t *testing.T, path string) int {
-	t.Helper()
+// nearUses counts the uses of second-tier (...Near) functions in a Go file:
+// the selectors detmath.XxxNear (under any import name) in a file that imports
+// this package, and the unqualified XxxNear identifiers inside this package
+// itself. A dot import of this package would hide its calls from the count, so
+// it is an error.
+func nearUses(path string) (int, error) {
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution|parser.ImportsOnly)
 	if err != nil {
-		return 0 // not a parsable Go file (for example a generated fragment); the build would fail first
+		return 0, nil // not a parsable Go file (for example a generated fragment); the build would fail first
 	}
+	self := file.Name.Name == "detmath" && strings.HasSuffix(filepath.ToSlash(filepath.Dir(path)), "kernel/dsp/detmath")
 	name := ""
 	for _, spec := range file.Imports {
 		if p, _ := strconv.Unquote(spec.Path.Value); p == "m31labs.dev/cicada/kernel/dsp/detmath" {
@@ -306,21 +315,63 @@ func nearUses(t *testing.T, path string) int {
 			}
 		}
 	}
-	if name == "" {
-		return 0
+	if name == "." {
+		return 0, fmt.Errorf("dot-imports kernel/dsp/detmath, which hides its ...Near calls from TestNearTierOnlyAtListedSites; import it by name")
+	}
+	if name == "" && !self {
+		return 0, nil
 	}
 	file, err = parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
 	if err != nil {
-		t.Fatal(err)
+		return 0, err
 	}
 	n := 0
+	declared := map[*ast.Ident]bool{} // identifiers that are not uses
 	ast.Inspect(file, func(node ast.Node) bool {
-		if s, ok := node.(*ast.SelectorExpr); ok {
-			if x, ok := s.X.(*ast.Ident); ok && x.Name == name && strings.HasSuffix(s.Sel.Name, "Near") {
+		switch node := node.(type) {
+		case *ast.FuncDecl:
+			declared[node.Name] = true // the definition of TanhNear is not a use
+		case *ast.SelectorExpr:
+			if x, ok := node.X.(*ast.Ident); ok && name != "" && x.Name == name && strings.HasSuffix(node.Sel.Name, "Near") {
+				n++
+			}
+			declared[node.Sel] = true // a selector's name is a field or another package's
+		case *ast.Ident:
+			if self && !declared[node] && node.IsExported() && strings.HasSuffix(node.Name, "Near") {
 				n++
 			}
 		}
 		return true
 	})
-	return n
+	return n, nil
+}
+
+// TestNearUsesSeesEveryImportForm checks nearUses itself on small files: a
+// renamed import is counted, a dot import is an error, and a call inside this
+// package is counted while the function's own definition is not.
+func TestNearUsesSeesEveryImportForm(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, src string) string {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	renamed := write("fx/renamed.go", "package fx\n\nimport dm \"m31labs.dev/cicada/kernel/dsp/detmath\"\n\nfunc f(x float64) float64 { return dm.TanhNear(x) + dm.Tanh(x) + dm.SinPiNear(x) }\n")
+	dot := write("fx/dot.go", "package fx\n\nimport . \"m31labs.dev/cicada/kernel/dsp/detmath\"\n\nfunc g(x float64) float64 { return TanhNear(x) }\n")
+	inside := write("kernel/dsp/detmath/inside.go", "package detmath\n\nfunc SinPiNear(x float64) float64 { return x }\n\nfunc h(x float64) float64 { return SinPiNear(x) }\n")
+	for _, c := range []struct {
+		path    string
+		want    int
+		wantErr bool
+	}{{renamed, 2, false}, {dot, 0, true}, {inside, 1, false}} {
+		n, err := nearUses(c.path)
+		if n != c.want || (err != nil) != c.wantErr {
+			t.Errorf("nearUses(%s) = %d, %v; want %d, error %v", filepath.Base(c.path), n, err, c.want, c.wantErr)
+		}
+	}
 }
