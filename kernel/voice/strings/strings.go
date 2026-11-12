@@ -5,6 +5,8 @@ package strings
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
@@ -106,7 +108,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	sr := float64(rate)
 	for c := range i.increments {
 		top := 108 - ((108 - c) % 12)
-		freq := 440 * math.Pow(2, (float64(top)-69)/12)
+		freq := 440 * detmath.Pow(2, (float64(top)-69)/12)
 		i.increments[c] = uint64(math.Round(freq / sr * 4294967296))
 	}
 	for n := range i.pitches {
@@ -117,7 +119,7 @@ func New(rate int, params Params) (*Instrument, error) {
 		i.pitches[n] = pitch{uint8(class), shift, float32(float64(i.increments[class]) / (4294967296 * float64(uint64(1)<<shift)))}
 	}
 	for s := range i.sine {
-		i.sine[s] = float32(math.Sin(2 * math.Pi * float64(s) / 1024))
+		i.sine[s] = float32(detmath.Sin(2 * math.Pi * float64(s) / 1024))
 	}
 	i.rate = sr
 	if _, err := acid.NewTableOscillator(rate); err == nil {
@@ -128,15 +130,15 @@ func New(rate int, params Params) (*Instrument, error) {
 		}
 	}
 	i.attack = float32(1 / (params.Attack * sr))
-	i.release = float32(math.Exp(-4.605170186 / (params.Release * sr)))
+	i.release = float32(detmath.Exp(-4.605170186 / (params.Release * sr)))
 	i.velocity = float32(params.Velocity)
 	norm := 1 / (params.Octave16 + params.Octave8 + params.Octave4)
 	i.octave16, i.octave8, i.octave4 = float32(params.Octave16*norm), float32(params.Octave8*norm), float32(params.Octave4*norm)
-	i.lowpass = float32(1 - math.Exp(-2*math.Pi*params.Cutoff/sr))
-	i.highpass = float32(math.Exp(-2 * math.Pi * 65 / sr))
-	i.gain, i.ensemble = float32(.42*math.Pow(10, params.LevelDB/20)), float32(params.Ensemble)
+	i.lowpass = float32(1 - detmath.Exp(-2*math.Pi*params.Cutoff/sr))
+	i.highpass = float32(detmath.Exp(-2 * math.Pi * 65 / sr))
+	i.gain, i.ensemble = float32(.42*detmath.Pow(10, params.LevelDB/20)), float32(params.Ensemble)
 	i.gainT = i.gain
-	i.bbdAlpha = float32(1 - math.Exp(-2*math.Pi*6500/sr))
+	i.bbdAlpha = float32(1 - detmath.Exp(-2*math.Pi*6500/sr))
 	i.fastDepth = float32(sr * .00065)
 	for c := range i.slow {
 		i.slow[c], i.fast[c] = float32(c)*.317, float32(c)*.271
@@ -375,7 +377,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 	if !keyboard.InRange(value, -60, 6) {
 		return Error("string machine output must be -60..6 dB")
 	}
-	i.gainT = float32(.42 * math.Pow(10, float64(value)/20))
+	i.gainT = float32(.42 * detmath.Pow(10, float64(value)/20))
 	i.glideAlpha, i.gliding = glide, true
 	if glide == 1 {
 		i.gliding = !keyboard.Approach(&i.gain, i.gainT, 1)

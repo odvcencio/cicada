@@ -21,6 +21,7 @@ import (
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
@@ -424,7 +425,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int, meterMap seq.MeterMap) (p
 		if seg.FadeMS != nil {
 			fade = vocalMillisecondsFrames(*seg.FadeMS, rate)
 		}
-		regions = append(regions, printRegion{seg: seg, take: take, stream: stream, start: offset, end: offset + count, raw: raw, fade: min(fade, count/2), gain: float32(math.Pow(10, seg.GainDB/20)), fadeIn: true, fadeOut: true})
+		regions = append(regions, printRegion{seg: seg, take: take, stream: stream, start: offset, end: offset + count, raw: raw, fade: min(fade, count/2), gain: float32(detmath.Pow(10, seg.GainDB/20)), fadeIn: true, fadeOut: true})
 	}
 	type printJoin struct {
 		left, right int
@@ -467,7 +468,8 @@ func (s *studio) printVocalComp(c vocalComp, rate int, meterMap seq.MeterMap) (p
 						gain *= float32(min(1, float64(count-1-at-i)/float64(region.fade)))
 					}
 				}
-				v := (left[i]*0.5 + right[i]*0.5) * gain
+				// Rounded products: the comp print is the same file on every target.
+				v := (float32(left[i]*0.5) + float32(right[i]*0.5)) * gain
 				binary.LittleEndian.PutUint32(data[44+(region.start+at+i)*4:], math.Float32bits(v))
 			}
 			at += n
@@ -486,7 +488,9 @@ func (s *studio) printVocalComp(c vocalComp, rate int, meterMap seq.MeterMap) (p
 			}
 			for i := int64(0); i < n; i++ {
 				blend := float32(at+i-join.start) / float32(join.end-join.start-1)
-				v := (left[i]*.5+right[i]*.5)*a.gain*(1-blend) + (otherLeft[i]*.5+otherRight[i]*.5)*b.gain*blend
+				monoA := float32(left[i]*.5) + float32(right[i]*.5)
+				monoB := float32(otherLeft[i]*.5) + float32(otherRight[i]*.5)
+				v := float32(monoA*a.gain*(1-blend)) + float32(monoB*b.gain*blend)
 				binary.LittleEndian.PutUint32(data[44+(at+i)*4:], math.Float32bits(v))
 			}
 			at += n

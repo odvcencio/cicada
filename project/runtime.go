@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/fx/tape"
@@ -217,7 +218,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			}
 			gain := *send.Level.Number
 			if send.Level.Unit == "db" {
-				gain = math.Pow(10, gain/20)
+				gain = detmath.Pow(10, gain/20)
 			}
 			switch semanticEffectKind(effect) {
 			case "delay", "tape":

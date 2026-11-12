@@ -5,6 +5,8 @@ import (
 	"math"
 	"time"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/expression"
@@ -422,7 +424,7 @@ func MasterGain(db float64) float32 {
 	if db == 0 {
 		return 1
 	}
-	return float32(math.Pow(10, db/20))
+	return float32(detmath.Pow(10, db/20))
 }
 
 func New(cfg Config) (*Engine, error) {
@@ -630,7 +632,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if spec.Mute {
 			v.mix = mix.Track{}
 		}
-		e.spatial.tracks[i].gain = float32(math.Pow(10, gain/20))
+		e.spatial.tracks[i].gain = float32(detmath.Pow(10, gain/20))
 		e.spatial.tracks[i].target = e.spatial.tracks[i].gain
 		v.targetMix = v.mix
 		v.mixSmooth = e.paramAlpha[kernel.ParamMixGain]
@@ -1318,7 +1320,7 @@ func accumulateMeter(m *meterAccum, left, right float32) {
 }
 
 func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
-	return float32(1 - math.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
+	return float32(1 - detmath.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
 }
 
 func (e *Engine) emitMeters(masterBlockPeak float32) {
@@ -1401,7 +1403,7 @@ func (e *Engine) drainCommands() {
 		e.commandRead++
 		// A layer mask, and a pattern edit while playing, wait for the next bar line.
 		if c.Tick == 0 && (c.Op == cmd.OpSetLayerMask || e.transport.Playing() && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta)) {
-			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
+			c.Tick = e.transport.NextBarLine()
 		}
 		if e.pendingLen == len(e.pending) {
 			e.fault(FaultPendingFull)
