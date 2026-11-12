@@ -271,18 +271,21 @@ func (v *Voice) Reset() {
 }
 
 // flushControls replaces a subnormal smoothed control with a zero of the same
-// sign (kernel/dsp/subnormal). Resonance, envelope modulation and accent
-// glide to their live targets, the savage blend to 0 when the switch is off,
-// and zero is a legal target for each; there each stalls at a subnormal
-// number and slows every sample. A stalled savage blend also keeps the voice
-// off the resting diode path and runs the savage saturation every sample.
-// Each reaches the output only through sums with normal values, which absorb
-// it, so the filter paths with a subnormal value and with zero agree. The
-// resting diode shape is prepared again when the resonance is flushed, since
-// it holds 17 times the resonance.
+// sign (kernel/dsp/subnormal). Resonance glides to its live target and the
+// savage blend to 0 when the switch is off, and zero is a legal target for
+// each; there each stalls at a subnormal number and slows every sample. A
+// stalled savage blend also keeps the voice off the resting diode path and
+// runs the savage saturation every sample. Each reaches the output only
+// through sums with normal values, which absorb it, so the filter paths with
+// a subnormal value and with zero agree. The resting diode shape is prepared
+// again when the resonance is flushed, since it holds 17 times the resonance.
+//
+// Envelope modulation and accent stall the same way but are not flushed:
+// they feed the cutoff through fastmath.Exp2, which returns exactly 1 for 0
+// and 1.0000000755 for any tiny nonzero argument, so a flush would change the
+// cutoff and the output. That fix belongs in the consumer.
 func (v *Voice) flushControls() {
 	p := &v.params
-	p.EnvMod, p.Accent = subnormal.Flush64(p.EnvMod), subnormal.Flush64(p.Accent)
 	v.savageBlend = subnormal.Flush64(v.savageBlend)
 	if resonance := subnormal.Flush64(p.Resonance); resonance != p.Resonance {
 		p.Resonance = resonance

@@ -123,17 +123,24 @@ func (c *Compressor) Reset() {
 // flushControls replaces a subnormal value with a zero of the same sign
 // (kernel/dsp/subnormal) in the compressor's smoothed values that can glide
 // to exactly zero: the threshold and knee (0 dB and a hard knee are legal
-// targets), the makeup and the mix, the gain reduction, which releases toward
-// zero whenever the level is below the threshold, and the external
-// sidechain's 80 Hz follower, which decays toward zero in silence. Each
-// stalls at a subnormal number without it and slows every frame; a stalled
-// threshold or knee also keeps the per-frame parameter path and the level
-// recomputation running. Each reaches the output only through sums with
-// normal values, which absorb it.
+// targets), the mix, and the external sidechain's 80 Hz follower, which
+// decays toward zero in silence. Each stalls at a subnormal number without it
+// and slows every frame; a stalled threshold or knee also keeps the per-frame
+// parameter path and the level recomputation running. Each reaches the
+// output only through sums with normal values, which absorb it. (A threshold
+// at a subnormal number against one at 0 dB changes the gain only when the
+// detector level is exactly 1.0 and the knee is 0; see below.)
+//
+// The gain reduction and the makeup are not flushed, although they stall the
+// same way (the reduction after every release below the threshold, the
+// makeup when it glides to 0 dB). Both feed fastmath.Exp2, which returns
+// exactly 1 for an argument of 0 but 1.0000000755 for any tiny nonzero one,
+// so a flush would change the gain by 2^-23.7 and the 24-bit output of a
+// sidechain breakdown. That fix belongs in the consumer, with a stated output
+// change.
 func (c *Compressor) flushControls() {
 	c.params.Threshold, c.params.Knee = subnormal.Flush64(c.params.Threshold), subnormal.Flush64(c.params.Knee)
-	c.makeup, c.mix = subnormal.Flush64(c.makeup), subnormal.Flush64(c.mix)
-	c.reduction = subnormal.Flush64(c.reduction)
+	c.mix = subnormal.Flush64(c.mix)
 	c.sideLP.left, c.sideLP.right = subnormal.Flush64(c.sideLP.left), subnormal.Flush64(c.sideLP.right)
 }
 

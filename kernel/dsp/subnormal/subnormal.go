@@ -35,6 +35,12 @@
 //     compressor, the drive, the pro limiter) absorbs a difference only below
 //     2^-53 of its size, so the float32 magnitude bound does not carry through
 //     those stages.
+//   - A function that treats an exact zero specially. fastmath.Exp2 returns
+//     exactly 1 for 0 but 1.0000000755 for any tiny nonzero argument, so a
+//     flushed argument changes its result by 2^-23.7, not by the flushed
+//     value. Values that feed such a function are not flushed: the
+//     compressor's gain reduction and makeup, the de-esser's reduction, and
+//     the acid voice's envelope modulation and accent.
 //
 // After the processor the difference meets more gain: track and bus levels,
 // the master input gain and the master gain (+24 dB each), insert and
@@ -66,10 +72,13 @@
 //
 // The check: with the build tag cicada_noflush, Flush and Flush64 return
 // their argument (flush_off.go). `make test-flush-identity` renders the WAV
-// parity subset and three hostile scores (a sustain pedal pressed and
-// released, a reverb send from a hard-left track, a normalized range that
-// ends in a tail) with and without the tag, and fails unless every 24-bit
-// file is byte-identical. CI runs it in the amd64 parity job.
+// parity subset and one score per processor that flushes
+// (cmd/cicada/testdata/flush: each puts the processor in the signal path,
+// drives a value to the stall and plays on after it) with and without the
+// tag, and fails unless every 24-bit file is byte-identical. CI runs it in
+// the amd64 parity job. It caught nothing at first because no score played
+// on after a stall; with such scores it shows the change that a flush of the
+// values feeding fastmath.Exp2 would make.
 //
 // # Where the flushes run
 //

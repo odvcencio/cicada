@@ -46,6 +46,12 @@ func TestControlsAreNeverSubnormal(t *testing.T) {
 			Pinned: pinnedDelayControlsHash,
 		})
 	})
+	// The compressor keeps compressing program audio at mix 1 while its
+	// threshold, knee and makeup glide to 0 and its external sidechain goes
+	// silent, so its gain reduction releases to zero. The reduction and the
+	// makeup stall too but are not flushed (Unflushed): they feed
+	// fastmath.Exp2, which is exactly 1 only for an exact 0, so flushing them
+	// changed this output from about 8 s on. The pin holds in both builds.
 	t.Run("compressor", func(t *testing.T) {
 		c, err := NewCompressor(rate)
 		if err != nil {
@@ -57,30 +63,63 @@ func TestControlsAreNeverSubnormal(t *testing.T) {
 			t.Fatal(err)
 		}
 		c.Reset()
-		p.Threshold, p.Knee, p.MakeupDB, p.Mix = 0, 0, 0, 0
+		p.Threshold, p.Knee, p.MakeupDB = 0, 0, 0
 		noise := subnormaltest.Noise(11)
 		subnormaltest.Run(t, subnormaltest.Case{
-			Name: "compressor controls to zero", Rate: rate, Seconds: 10, State: c, Swept: swept(&c.frames),
+			Name: "compressor controls to zero", Rate: rate, Seconds: 12, State: c, Swept: swept(&c.frames),
 			Next: func(frame int) (float32, float32) {
 				if frame == rate {
 					if err := c.SetParams(p); err != nil {
 						t.Fatal(err)
 					}
 				}
-				// The external sidechain is loud for a second, then silent:
-				// the reduction releases to zero and the sidechain filter
-				// decays to zero while the program keeps playing.
-				x := float32(noise() * .1)
+				// The external sidechain is loud for a second, then silent,
+				// while the program keeps playing through the compressor.
+				x := float32(noise() * .05)
 				var side float32
 				if frame < rate {
-					side = float32(x * 8)
+					side = float32(x * 16)
 				}
 				return c.ProcessSidechain(x, x, side, side)
 			},
-			Stalls: []string{".params.Threshold", ".params.Knee", ".makeup", ".mix", ".reduction", ".sideLP.left", ".sideLP.right"},
-			Pinned: pinnedCompressorControlsHash,
+			Stalls:    []string{".params.Threshold", ".params.Knee", ".sideLP.left", ".sideLP.right", ".makeup", ".reduction"},
+			Unflushed: []string{".makeup", ".reduction"},
+			Pinned:    pinnedCompressorControlsHash,
 		})
 	})
+	t.Run("compressor mix", func(t *testing.T) {
+		c, err := NewCompressor(rate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := DefaultCompParams()
+		p.Threshold, p.MakeupAuto, p.MakeupDB = -30, false, 3
+		if err := c.SetParams(p); err != nil {
+			t.Fatal(err)
+		}
+		c.Reset()
+		p.Mix = 0
+		noise := subnormaltest.Noise(12)
+		subnormaltest.Run(t, subnormaltest.Case{
+			Name: "compressor mix to zero", Rate: rate, Seconds: 8, State: c, Swept: swept(&c.frames),
+			Next: func(frame int) (float32, float32) {
+				if frame == rate {
+					if err := c.SetParams(p); err != nil {
+						t.Fatal(err)
+					}
+				}
+				x := float32(noise() * .2)
+				return c.Process(x, x)
+			},
+			Stalls:    []string{".mix"},
+			Unflushed: []string{".reduction"},
+			Pinned:    pinnedCompressorMixHash,
+		})
+	})
+	// The de-esser hears sibilant noise, then nine seconds of silence, in
+	// which its detector envelope stalls, then quiet program again: the
+	// output after the stall is what a flush could change. The reduction
+	// stalls too but is not flushed (Unflushed): it feeds fastmath.Exp2.
 	t.Run("de-esser", func(t *testing.T) {
 		p := DefaultDeesserParams()
 		p.ReleaseMs = 10
@@ -90,20 +129,26 @@ func TestControlsAreNeverSubnormal(t *testing.T) {
 		}
 		noise := subnormaltest.Noise(13)
 		subnormaltest.Run(t, subnormaltest.Case{
-			Name: "de-esser release in silence", Rate: rate, Seconds: 10, State: d, Swept: swept(&d.frames),
+			Name: "de-esser release in silence", Rate: rate, Seconds: 12, State: d, Swept: swept(&d.frames),
 			Next: func(frame int) (float32, float32) {
 				var x float32
-				if frame < rate {
+				switch {
+				case frame < rate:
 					x = float32(noise() * .5)
+				case frame >= 10*rate:
+					x = float32(noise() * .002)
+				}
+				if frame == 10*rate && !subnormal.Enabled {
+					// The program resumes now; the envelope has stalled in
+					// the silence before it.
+					subnormaltest.CheckStalls(t, "de-esser envelope before the program resumes", d, []string{".envelope"})
 				}
 				return d.Process(x, x)
 			},
-			Stalls: []string{".envelope", ".reduction"},
-			Pinned: pinnedDeesserReleaseHash,
+			Stalls:    []string{".reduction"},
+			Unflushed: []string{".reduction"},
+			Pinned:    pinnedDeesserReleaseHash,
 		})
-		if subnormal.Enabled && !d.Silent() {
-			t.Fatal("the de-esser is not Silent after 9 s of silence")
-		}
 	})
 	t.Run("drive", func(t *testing.T) {
 		d, err := NewDrive(rate)
@@ -145,7 +190,8 @@ func TestControlsAreNeverSubnormal(t *testing.T) {
 // cicada_noflush.
 const (
 	pinnedDelayControlsHash      = 0x3fc77a22089716d8
-	pinnedCompressorControlsHash = 0xa117b6dcbb61aaa5
-	pinnedDeesserReleaseHash     = 0x4aff7e4b1fbc68e9
+	pinnedCompressorControlsHash = 0xf8b8e53197c5fd45
+	pinnedCompressorMixHash      = 0x314866db2a549811
+	pinnedDeesserReleaseHash     = 0xc51360ea22fe0271
 	pinnedDriveControlsHash      = 0x5d385de79e32fb89
 )

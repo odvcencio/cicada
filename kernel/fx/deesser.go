@@ -106,13 +106,16 @@ func (d *Deesser) Process(l, r float32) (float32, float32) {
 		coeff = d.attack
 	}
 	d.reduction += float64((target - d.reduction) * coeff)
-	// The detector envelope and the reduction both release toward zero and,
-	// in float64, stall at a subnormal number seconds into silence: every
-	// frame then runs slowly and Silent never holds. Each reaches the output
-	// only through 1 - Exp2(-reduction*k), which is exactly 0 for either.
+	// The detector envelope releases toward zero and, in float64, stalls at
+	// a subnormal number seconds into silence, which slows every frame. It
+	// reaches the output only through the target above, which is 0 for a
+	// subnormal envelope and for 0. The reduction stalls the same way but is
+	// not flushed: it feeds 1 - fastmath.Exp2(-reduction*k), which is exactly
+	// 0 for a reduction of 0 and -7.5e-8 for a subnormal one, so a flush
+	// would change the output. That fix belongs in the consumer.
 	d.frames++
 	if d.frames%subnormal.SweepFrames == 0 {
-		d.envelope, d.reduction = subnormal.Flush64(d.envelope), subnormal.Flush64(d.reduction)
+		d.envelope = subnormal.Flush64(d.envelope)
 	}
 	// Keep crossover and detector tails above advancing, even when the
 	// crossover is exactly zero. Attenuation cannot affect this sample then.

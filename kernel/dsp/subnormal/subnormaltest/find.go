@@ -7,7 +7,7 @@ import (
 	"math"
 	"os"
 	"reflect"
-	"slices"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/dsp/subnormal"
@@ -95,6 +95,20 @@ func (h *Hash) Add(left, right float32) {
 // Sum is the hash of every frame added.
 func (h *Hash) Sum() uint64 { return h.all }
 
+// From returns a hash whose Sum is FNV-1a over the per-second hashes from
+// second on, and whose per-second hashes are those seconds'.
+func (h *Hash) From(second int) *Hash {
+	out := &Hash{all: fnvOffset, second: fnvOffset, rate: h.rate, frames: h.frames - second*h.rate}
+	for _, s := range h.Seconds[min(second, len(h.Seconds)):] {
+		out.Seconds = append(out.Seconds, s)
+		for range 8 {
+			out.all = (out.all ^ uint64(byte(s))) * fnvPrime
+			s >>= 8
+		}
+	}
+	return out
+}
+
 // Report formats the hash and the per-second hashes for a test log.
 func (h *Hash) Report() string {
 	text := fmt.Sprintf("sum %#016x, %d frames; per second:", h.all, h.frames)
@@ -134,11 +148,21 @@ type Case struct {
 	Swept func() bool
 	// Stalls lists the paths, as Find reports them, that hold subnormal
 	// numbers at the end when nothing is flushed: the proof that the case
-	// reaches the stall the flush exists for.
+	// reaches the stall the flush exists for. A path also matches the
+	// elements and fields below it (".input[1]" matches ".input[1][0].buffer[7]").
 	Stalls []string
+	// Unflushed lists paths that may hold subnormal numbers in both builds:
+	// values the processor deliberately does not flush, because a flush
+	// would change its output (each test says why). Matched like Stalls.
+	Unflushed []string
 	// Pinned is the output hash. It must hold with the build tag
 	// cicada_noflush too, unless PinnedWithoutFlush is set.
 	Pinned uint64
+	// PinFromSecond, when not zero, pins the hash of the per-second hashes
+	// from that second on (SumFrom) instead of the whole output: for a
+	// processor whose first seconds differ between architectures for a
+	// reason outside the case.
+	PinFromSecond int
 	// PinnedWithoutFlush, when not zero, is the output hash with the build
 	// tag cicada_noflush, for a case whose float32 output the flush changes
 	// (for example a negative subnormal sum that converts to -0 instead of
@@ -156,8 +180,14 @@ func Run(t *testing.T, c Case) {
 	for frame := range c.Seconds * c.Rate {
 		hash.Add(c.Next(frame))
 		if subnormal.Enabled && c.Swept() {
-			if found := Find(c.State, 5); len(found) > 0 {
-				t.Fatalf("%s: after the sweep at %.2f s the state holds subnormal numbers: %v", c.Name, float64(frame)/float64(c.Rate), found)
+			var found []string
+			for _, path := range Find(c.State, 1<<16) {
+				if !matchAny(path, c.Unflushed) {
+					found = append(found, path)
+				}
+			}
+			if len(found) > 0 {
+				t.Fatalf("%s: after the sweep at %.2f s the state holds subnormal numbers: %v", c.Name, float64(frame)/float64(c.Rate), found[:min(len(found), 5)])
 			}
 		}
 	}
@@ -166,14 +196,45 @@ func Run(t *testing.T, c Case) {
 		if c.PinnedWithoutFlush != 0 {
 			pinned = c.PinnedWithoutFlush
 		}
-		found := Find(c.State, 1<<20)
-		for _, path := range c.Stalls {
-			if !slices.Contains(found, path) {
-				t.Errorf("%s: without flushing, %s holds no subnormal number at the end, so the case never reaches the stall (subnormal: %d values)", c.Name, path, len(found))
-			}
+		CheckStalls(t, c.Name, c.State, c.Stalls)
+	}
+	if c.PinFromSecond > 0 {
+		if os.Getenv("CICADA_DECAY_HASHES") == "1" {
+			t.Logf("DECAY-HASH %s (whole output, not pinned) %s", c.Name, hash.Report())
 		}
+		hash = hash.From(c.PinFromSecond)
 	}
 	CheckPin(t, c.Name, hash, pinned)
+}
+
+// CheckStalls fails the test unless every path in stalls (matched as in
+// Case.Stalls) holds a subnormal number in state. A test calls it in a build
+// with the tag cicada_noflush, to show that its case reaches the stall.
+func CheckStalls(t testing.TB, name string, state any, stalls []string) {
+	t.Helper()
+	found := Find(state, 1<<20)
+	for _, path := range stalls {
+		hit := false
+		for _, f := range found {
+			if matchAny(f, []string{path}) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			t.Errorf("%s: without flushing, %s holds no subnormal number at the end, so the case never reaches the stall (subnormal: %d values)", name, path, len(found))
+		}
+	}
+}
+
+// matchAny reports whether path is one of prefixes or lies below one.
+func matchAny(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if path == p || strings.HasPrefix(path, p+"[") || strings.HasPrefix(path, p+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // SkipWithoutFlush skips a test whose checks hold only when the processors

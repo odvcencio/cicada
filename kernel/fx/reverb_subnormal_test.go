@@ -37,11 +37,15 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 		// sameWithoutFlush is true when the flush changes no output bit, so
 		// the pin holds with cicada_noflush too.
 		sameWithoutFlush bool
-		pinned           uint64
+		// stalls lists what holds subnormal numbers at the end without the
+		// flush (subnormaltest.CheckStalls), the proof that the case reaches
+		// the stall.
+		stalls []string
+		pinned uint64
 	}{
 		{name: "reverb tail", params: DefaultReverbParams(), seconds: 60, input: burst, pinned: pinnedReverbTailHash},
 		{name: "reverb short tail", params: short, seconds: 60, input: burst, pinned: pinnedReverbShortTailHash},
-		{name: "reverb hard-left send", params: DefaultReverbParams(), seconds: 30, sameWithoutFlush: true, pinned: pinnedReverbHardLeftHash,
+		{name: "reverb hard-left send", params: DefaultReverbParams(), seconds: 30, sameWithoutFlush: true, stalls: []string{".input[1]"}, pinned: pinnedReverbHardLeftHash,
 			input: func(frame int, noise func() float32) (float32, float32) {
 				x := float32(noise() * .1)
 				if frame < rate/2 {
@@ -49,7 +53,7 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 				}
 				return x, 0
 			}},
-		{name: "reverb mix to zero", params: DefaultReverbParams(), seconds: 10, set: &dry, sameWithoutFlush: true, pinned: pinnedReverbMixToZeroHash,
+		{name: "reverb mix to zero", params: DefaultReverbParams(), seconds: 10, set: &dry, sameWithoutFlush: true, stalls: []string{".mix"}, pinned: pinnedReverbMixToZeroHash,
 			input: func(_ int, noise func() float32) (float32, float32) {
 				x := float32(noise() * .1)
 				return x, x
@@ -92,6 +96,9 @@ func TestReverbTailIsNeverSubnormal(t *testing.T) {
 						t.Fatalf("after the sweep at %.2f s the reverb holds subnormal numbers: %v", float64(frame)/rate, found)
 					}
 				}
+			}
+			if !subnormal.Enabled {
+				subnormaltest.CheckStalls(t, c.name, r, c.stalls)
 			}
 			if !subnormal.Enabled && !c.sameWithoutFlush {
 				t.Logf("built with cicada_noflush: the output differs from the pin by design; %s", hash.Report()[:40])
