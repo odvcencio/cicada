@@ -874,7 +874,7 @@ jobs:
     # are left out, because waiting for that one shared machine's queue would
     # hold up every merge; the budget step judges them when they have finished.
     needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation,
-      native-go127, native-go127-cli, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, studio-cli, bench, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
+      native-go127, native-go127-cli, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, studio-cli, bench, lane-stress-pr, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
