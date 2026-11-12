@@ -1,8 +1,9 @@
 package paramdefs
 
 import (
-	"math"
 	"strings"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // SendTarget resolves the setting of a track path that names a send. A
@@ -64,7 +65,9 @@ const (
 
 // SendGainFromDB converts a send level in dB to the linear gain the mixer
 // uses. A track block's send line, a scene setting and an automation point
-// share it, so -6dB is the same gain in all three.
+// share it, so -6dB is the same gain in all three. detmath.Pow gives the same
+// bits on every architecture; the mixers use the gain as a float32, which
+// equals math.Pow's for every level from -60dB to +6dB in 0.01dB steps.
 func SendGainFromDB(db float64) float64 {
-	return math.Pow(10, db/20)
+	return detmath.Pow(10, db/20)
 }

@@ -200,6 +200,10 @@ func TestEveryOutputCommandCreatesItsFolder(t *testing.T) {
 	if status != 1 || result.Error == nil || result.Error.Code != "output_not_writable" || !strings.Contains(result.Error.Message, "output folder "+filepath.Join(blocked, "out")+" cannot be created") {
 		t.Fatalf("status %d, error %+v", status, result.Error)
 	}
+	// An agent reads the folder from its own field, not from the message.
+	if want := jsonPath(filepath.Join(blocked, "out")); result.Error.Path != want {
+		t.Fatalf("error path %q, want %q", result.Error.Path, want)
+	}
 }
 
 // TestExportProfileTailUpTo60Seconds is the review's blocker: an export
@@ -224,10 +228,10 @@ func TestExportProfileTailUpTo60Seconds(t *testing.T) {
 	var refused []string
 	for _, d := range inspection.diagnostics {
 		if d.Severity == "error" {
-			refused = append(refused, d.Message)
+			refused = append(refused, d.Code+" "+d.Message)
 		}
 	}
-	if len(refused) != 1 || !strings.Contains(refused[0], "export tail must be 0 to 60s") {
+	if len(refused) != 1 || refused[0] != "CICADA-PARAM export over tail 61s is outside 0 to 60s" {
 		t.Fatalf("check: %v", refused)
 	}
 	if err := os.WriteFile(score, append(source, []byte("export long { tail = 45s }\n")...), 0o600); err != nil {

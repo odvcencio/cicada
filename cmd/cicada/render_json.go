@@ -16,6 +16,7 @@ import (
 	gts "github.com/odvcencio/gotreesitter"
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
 )
@@ -107,6 +108,9 @@ type renderErrorJSON struct {
 	Value string `json:"value,omitempty"`
 	Bound string `json:"bound,omitempty"`
 	Limit string `json:"limit,omitempty"`
+	// Path names the folder that cannot be created when Code is
+	// output_not_writable.
+	Path string `json:"path,omitempty"`
 }
 
 // renderRemedyJSON is a fix for a failed render. ScoreText is the exact text
@@ -261,7 +265,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 		return finish(nil)
 	}
 	if err := ensureOutputFolder(output); err != nil {
-		return finish(&renderFailure{reason: "output_not_writable", message: err.Error()})
+		return finish(err)
 	}
 	if target != nil && target.Loudness {
 		report, err := renderLoudnessFileReport(inspection.score, output, opts, *target, nil)
@@ -315,6 +319,10 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling, shortfall.neededGainDB)
 		}
 		return failure
+	}
+	var notWritable *outputNotWritableError
+	if errors.As(err, &notWritable) {
+		return &renderErrorJSON{Code: "output_not_writable", Message: err.Error(), Path: jsonPath(notWritable.folder)}
 	}
 	var failure *renderFailure
 	if errors.As(err, &failure) {
@@ -571,6 +579,6 @@ func tailEndPeak(file io.ReadSeeker, described renderOutputJSON, blockAlign int)
 	if peak == 0 {
 		return nil, nil
 	}
-	db := 20 * math.Log10(peak)
+	db := 20 * detmath.Log10(peak)
 	return &db, nil
 }

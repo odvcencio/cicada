@@ -225,6 +225,17 @@ func resolveNamedMixer(mixer *Mixer, source notation.Track, effectKinds map[stri
 	}
 }
 
+// exportTailRangeError refuses an export tail outside the renderer's range.
+// The score's export block and the JSON form share it, so check and the JSON
+// form give one message, which names the export and the value, under one code:
+// CICADA-PARAM, the catalogue's code for a setting out of range.
+func exportTailRangeError(id string, tail Value) error {
+	if tail.Number == nil || tail.Unit != "ms" {
+		return fmt.Errorf("export %s tail must be a time from 0 to %ds", id, MaxRenderTailSeconds)
+	}
+	return fmt.Errorf("export %s tail %ss is outside 0 to %ds", id, strconv.FormatFloat(*tail.Number/1000, 'f', -1, 64), MaxRenderTailSeconds)
+}
+
 func compileExport(source notation.Export) (Export, error) {
 	out := Export{ID: source.Name}
 	for _, param := range source.Params {
@@ -247,7 +258,7 @@ func compileExport(source notation.Export) (Export, error) {
 			out.Bits = &number
 		case "tail":
 			if value.Number == nil || value.Unit != "ms" || *value.Number < 0 || *value.Number > MaxRenderTailSeconds*1000 {
-				return Export{}, fmt.Errorf("export tail must be 0 to %ds", MaxRenderTailSeconds)
+				return Export{}, exportTailRangeError(source.Name, value)
 			}
 			out.Tail = &value
 		case "loudness":
