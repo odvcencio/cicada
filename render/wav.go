@@ -79,6 +79,12 @@ type Options struct {
 	// tracks in track order as the serial render does. Report.LaneReport says
 	// what the render chose and why it stayed serial if it did.
 	Jobs int
+	// TrackStemsOnly lets Stems render a score whose extra reverb returns
+	// (slots C to H) have no stem file yet. The track, bus and master stems are
+	// complete, but the return stems then hold slots A and B only, so the
+	// folder would not verify. Audition sets it: it reads only track and master
+	// stems. Without it, Stems refuses such a score.
+	TrackStemsOnly bool
 }
 
 type Report struct {
@@ -435,6 +441,15 @@ func laneStepNotes(p *seq.Pattern, lane uint8) error {
 	return nil
 }
 
+// extraReverbReturns reports whether the score routes more than one reverb
+// return. The direct mixer has one reverb return; the engine has slots C to H.
+// It counts the reverbs the compiler gives a slot (project.ReverbReturns):
+// a reverb declared through a preset counts; a library reverb that only a
+// scene addresses does not.
+func extraReverbReturns(score *notation.Score) bool {
+	return len(project.ReverbReturns(score)) > 1
+}
+
 // hasTapeEcho reports whether the score declares a tape echo. The direct WAV
 // mixer has no tape return, so such a score renders through the engine.
 func hasTapeEcho(score *notation.Score) bool {
@@ -522,6 +537,8 @@ func scheduledEngineReason(score *notation.Score, opts Options) string {
 		return "sample packs"
 	case hasSamplerExpression(score):
 		return "sampler expression rows"
+	case extraReverbReturns(score):
+		return "more than one reverb return"
 	}
 	return ""
 }

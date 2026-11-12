@@ -517,6 +517,8 @@ func DecodeJSON(data []byte) (*Project, error) {
 	for _, effect := range p.Effects {
 		effectKinds[effect.ID] = semanticEffectKind(effect)
 	}
+	// Only a send to the first reverb, return slot B, is the legacy send B.
+	firstReverb := firstReverbName(&p)
 	for i := range p.Tracks {
 		for _, send := range p.Tracks[i].Mixer.Sends {
 			if send.Level.Number == nil {
@@ -530,7 +532,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 			case "delay", "tape":
 				p.Tracks[i].Mixer.SendA = gain
 			case "reverb":
-				p.Tracks[i].Mixer.SendB = gain
+				if send.To == firstReverb {
+					p.Tracks[i].Mixer.SendB = gain
+				}
 			}
 		}
 	}

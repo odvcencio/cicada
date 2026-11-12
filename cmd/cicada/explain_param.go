@@ -62,6 +62,9 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		return err
 	}
 	fmt.Fprintf(output, "%s at bar %d, beat %d, step %d\n", path, loc.bar, loc.beat, loc.step)
+	if target := explainSendTarget(compiled, resolved.Descriptor.ID); target != "" {
+		fmt.Fprintln(output, target)
+	}
 	if strings.HasPrefix(resolved.Descriptor.ID, "guitar.") {
 		d := resolved.Descriptor
 		fmt.Fprintf(output, "type: %s; unit: %s; range: %g..%g; smoothing: %g ms\n", d.Type, d.Unit, d.Min, d.Max, d.SmoothingMS)
@@ -298,4 +301,27 @@ func diagnosticError(diagnostics []notation.Diagnostic) error {
 		}
 	}
 	return fmt.Errorf("score could not be parsed")
+}
+
+// explainSendTarget names the return a track's built-in send path feeds:
+// send.delay the delay or tape return (slot A), send.reverb the first reverb
+// (slot B). A later reverb's send has no parameter path.
+func explainSendTarget(p *project.Project, id string) string {
+	switch id {
+	case "mix.send_a":
+		for _, effect := range p.Effects {
+			kind := effect.Kind
+			if kind == "" {
+				kind = effect.ID
+			}
+			if (kind == "delay" || kind == "tape") && !project.MasterHasInsert(p, effect.ID) {
+				return "send to the delay or tape return, " + effect.ID + " (return slot A)"
+			}
+		}
+	case "mix.send_b":
+		if name := project.FirstReverbName(p); name != "" {
+			return "send to the first reverb, " + name + " (return slot B); a later reverb's send has no parameter path yet"
+		}
+	}
+	return ""
 }

@@ -474,6 +474,14 @@ track bass fm_bass {
 bus music { insert = fx.comp }
 ```
 
+A track line names a send by its effect (`send room = -12dB`). A scene,
+`automate` lane, route or macro names it by its return instead: `bass.send.delay`
+is the send to the delay or tape return, and `bass.send.reverb` is the send to
+the first reverb the score declares. A send to a later reverb has no such path
+yet and is refused there; `cicada explain` says which effect a send path feeds.
+For the same reason a delay may not be named `reverb`, and a reverb other than
+the first may not be named `reverb` or `delay`.
+
 For delay and reverb sends, use `mix = 1` on the effect and set the wet amount
 with the track's `send` level. The `std/fx` returns already use this setting.
 A lower effect `mix` adds a dry copy through the return while reducing the
