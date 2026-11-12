@@ -16,13 +16,19 @@ func ValidProjectName(name string) bool { return projectName.MatchString(name) }
 // ScoreEdition finds the closest manifest. A loose score defaults to edition
 // 1; an explicit source header is resolved by the notation parser.
 func ScoreEdition(scorePath string) (int, string, error) {
+	return ScoreEditionWith(os.ReadFile, scorePath)
+}
+
+// ScoreEditionWith is ScoreEdition with the manifests read through readFile,
+// which reports a missing file with an error for which os.IsNotExist holds.
+func ScoreEditionWith(readFile func(path string) ([]byte, error), scorePath string) (int, string, error) {
 	dir, err := filepath.Abs(filepath.Dir(scorePath))
 	if err != nil {
 		return 0, "", err
 	}
 	for {
 		path := filepath.Join(dir, "cicada.mod")
-		data, err := os.ReadFile(path)
+		data, err := readFile(path)
 		if err == nil {
 			edition, parseErr := ParseManifest(data)
 			if parseErr != nil {

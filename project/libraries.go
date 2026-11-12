@@ -179,7 +179,7 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 }
 
 func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Library, error) {
-	user, err := UserLibraryDir()
+	user, err := s.reader().UserLibraryDir()
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		}
 	}
 	for _, base := range []struct{ kind, dir string }{{"project", filepath.Join(s.Root, "lib")}, {"user", user}} {
-		root, err := os.OpenRoot(base.dir)
+		root, err := s.reader().OpenRoot(base.dir)
 		if os.IsNotExist(err) {
 			continue
 		}
@@ -489,7 +489,7 @@ func (s *Sources) readSum() (map[string]LibraryPin, error) {
 		}
 		return pins, err
 	}
-	data, err := os.ReadFile(filename)
+	data, err := s.reader().ReadFile(filename)
 	if os.IsNotExist(err) {
 		return map[string]LibraryPin{}, nil
 	}
