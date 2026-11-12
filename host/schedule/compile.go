@@ -6,25 +6,10 @@ import (
 	"fmt"
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/host/sampleasset"
+	"m31labs.dev/cicada/host/schedule/rules"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/project"
 )
-
-// residentBudget is the resident PCM that sampler assets and unstreamed clips
-// may hold together. On the resident path (the browser image and the WAM2
-// export) sampler packs count against it too.
-const residentBudget = 64 << 20
-
-// residentBudgetError names what pushed the project past residentBudget and
-// how far: name needs bytes on top of used.
-func residentBudgetError(name string, bytes, used int64) error {
-	if used == 0 {
-		return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", name, mib(bytes))
-	}
-	return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s on top of %s already resident", name, mib(bytes), mib(used))
-}
-
-func mib(bytes int64) string { return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20)) }
 
 // Options tune a native compile.
 type Options struct {
@@ -77,29 +62,45 @@ func CompileResident(p *project.Project, root string, rate, block int) (engine.C
 // audio. What it cannot see is damage inside a file: a pack whose audio is
 // corrupt, or one that cannot play at the output rate, passes here and is
 // refused when it is decoded.
+//
+// The rules are those of package rules, which reads the packs through a
+// rules.Packs; here that is the pack manifests in root, on disk.
 func Validate(p *project.Project, root string, rate, block int, opts Options) error {
 	packCap, err := instrumentpack.NewResidentCap(opts.MaxResidentPCM)
 	if err != nil {
 		return err
 	}
-	_, err = compile(p, root, rate, block, modeValidate, packCap)
-	return err
+	return rules.Validate(p, rate, block, diskPacks{root: root, cap: packCap})
 }
 
-// compileMode says which of the three compiles runs.
+// diskPacks checks sampler packs from their manifests in the project folder,
+// counting each against one compile's cap, as a native compile opens them.
+type diskPacks struct {
+	root string
+	cap  *instrumentpack.ResidentCap
+}
+
+func (d diskPacks) Check(path, pin string) error {
+	pack, err := d.cap.Open(d.root, path, pin)
+	if err != nil {
+		return err
+	}
+	return pack.CheckFiles()
+}
+
+// compileMode says which of the two compiles runs.
 type compileMode uint8
 
 const (
 	modeNative   compileMode = iota // native playback and export; packs under the cap
 	modeResident                    // browser image and WAM2; assets and packs share 64 MiB
-	modeValidate                    // modeNative's rules without reading audio
 )
 
-// compile builds the engine configuration. On the native path (modeNative and
-// modeValidate) each sampler pack counts against packCap, from its manifest,
-// before its audio is read; on the resident path packCap is nil and the packs
-// count against residentBudget together with the assets. modeValidate reads no
-// audio: the configuration it returns holds no PCM and must not be played.
+// compile builds the engine configuration. On the native path each sampler
+// pack counts against packCap, from its manifest, before its audio is read; on
+// the resident path packCap is nil and the packs count against
+// rules.ResidentBudget together with the assets. Validate applies the same
+// rules without reading audio (package rules).
 func compile(p *project.Project, root string, rate, block int, mode compileMode, packCap *instrumentpack.ResidentCap) (engine.Config, error) {
 	if err := project.ValidateProject(p); err != nil {
 		return engine.Config{}, err
@@ -113,33 +114,19 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 	forceResident := mode == modeResident
 	assets := make([]engine.AudioAsset, len(p.Assets))
 	var resident int64
-	clipAssets, samplerAssets := map[string]bool{}, map[string]bool{}
-	for _, clip := range p.Clips {
-		clipAssets[clip.Asset] = true
-	}
-	for _, sampler := range p.Samplers {
-		if sampler.Asset != "" {
-			samplerAssets[sampler.Asset] = true
-		}
-	}
+	streamable := rules.StreamableAssets(p)
 	var streamAssets []project.Asset
 	var streamIDs []uint32
 	for i, a := range p.Assets {
-		bytes := a.Frames * int64(a.Channels) * 4
-		if !forceResident && clipAssets[a.Name] && !samplerAssets[a.Name] && (bytes > 1<<20 || a.Frames > sampleasset.FrameLimit(a) || bytes > residentBudget-resident) {
+		stream, bytes, err := rules.PlaceAsset(a, !forceResident && streamable[a.Name], resident)
+		if err != nil {
+			return engine.Config{}, err
+		}
+		if stream {
 			id := uint32(i + 1)
 			assets[i] = engine.AudioAsset{SampleRate: a.RateHz, Frames: a.Frames, StreamID: id}
 			streamAssets = append(streamAssets, a)
 			streamIDs = append(streamIDs, id)
-			continue
-		}
-		if a.Frames > sampleasset.FrameLimit(a) || bytes <= 0 || bytes > residentBudget-resident {
-			return engine.Config{}, residentBudgetError("asset "+a.Name, bytes, resident)
-		}
-		if mode == modeValidate {
-			// The project parse already hashed the file; there is no PCM to hold.
-			assets[i] = engine.AudioAsset{SampleRate: a.RateHz}
-			resident += bytes
 			continue
 		}
 		region, err := sampleasset.LoadRegion(root, a, 0, a.Frames, 60, false)
@@ -150,7 +137,7 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 		resident += bytes
 	}
 	var streaming engine.StreamingFactory
-	if len(streamAssets) > 0 && mode != modeValidate {
+	if len(streamAssets) > 0 {
 		plan, err := sampleasset.PrepareStreamPlan(root, streamAssets, streamIDs)
 		if err != nil {
 			return engine.Config{}, err
@@ -205,19 +192,11 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 				return engine.Config{}, err
 			}
 			// Immutable regions count once even when several zones share an asset.
-			if bytes := prepared.ResidentPCMBytes(); resident+bytes > residentBudget {
-				return engine.Config{}, residentBudgetError("sampler "+sampler.Name, bytes, resident)
+			if bytes := prepared.ResidentPCMBytes(); resident+bytes > rules.ResidentBudget {
+				return engine.Config{}, rules.ResidentBudgetError("sampler "+sampler.Name, bytes, resident)
 			}
 			resident += prepared.ResidentPCMBytes()
 			use(sampler, prepared)
-		case modeValidate:
-			pack, err := packCap.Open(root, sampler.Pack, sampler.SHA256)
-			if err != nil {
-				return engine.Config{}, err
-			}
-			if err = pack.CheckFiles(); err != nil {
-				return engine.Config{}, err
-			}
 		default:
 			pack, err := packCap.Open(root, sampler.Pack, sampler.SHA256)
 			if err != nil {
@@ -246,7 +225,7 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 				continue
 			}
 			pack := packs[kit[lane].Sampler]
-			if pack == nil && mode != modeValidate {
+			if pack == nil {
 				return engine.Config{}, fmt.Errorf("track %s: kit lane %d needs sampler %s, which has no loaded pack", p.Tracks[ti].ID, lane, kit[lane].Sampler)
 			}
 			kit[lane].Pack = pack
