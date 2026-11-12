@@ -295,7 +295,7 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 	if errors.As(err, &shortfall) {
 		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message}
 		if shortfall.limiterCeiling != nil {
-			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling)
+			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling, shortfall.neededGainDB)
 		}
 		return failure
 	}
@@ -316,12 +316,12 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 // limiterRemedy builds the score text that adds a limiter at ceiling dBTP as
 // the last master insert: a new fx declaration, and the master declaration
 // with that limiter at the end of its insert chain.
-func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *renderRemedyJSON {
+func limiterRemedy(path string, inspection scoreInspection, ceiling, neededGainDB float64) *renderRemedyJSON {
 	score := inspection.score
 	if score == nil {
 		score, _ = notation.Parse(inspection.source)
 	}
-	remedy := &renderRemedyJSON{Summary: limiterRemedySummaryFor(score, ceiling), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
+	remedy := &renderRemedyJSON{Summary: limiterRemedySummaryFor(score, ceiling, neededGainDB), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
 	if score != nil && len(masterInsertChain(score)) >= maxRemedyMasterInserts {
 		// A 17th insert fails validation: the summary says what to remove
 		// first, and no score text or intent is offered.
@@ -375,13 +375,16 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 // already holds 16 inserts takes no limiter until one is removed; an
 // edition-1 score is upgraded to edition 2 by the addeffect intent, which
 // carries the confirmation.
-func limiterRemedySummaryFor(score *notation.Score, ceiling float64) string {
+func limiterRemedySummaryFor(score *notation.Score, ceiling, neededGainDB float64) string {
 	if score != nil && len(masterInsertChain(score)) >= maxRemedyMasterInserts {
 		return fmt.Sprintf("the master insert chain is full (%d inserts, the most it takes), so a limiter cannot be added as it is: remove a master insert first (setparam param:master.insert with a shorter chain, or removeeffect), then add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert (docs/audio/mix-chain.md, Export loudness targets)", maxRemedyMasterInserts, formatDBTP(ceiling))
 	}
 	summary := limiterRemedySummary(ceiling)
 	if score != nil && score.Version == 1 {
 		summary += "; this score uses edition 1, and applying the intent upgrades it to edition 2 (the intent sets confirmupgrade), while the score text keeps edition 1"
+	}
+	if neededGainDB > maxExportInputGainDB {
+		summary += fmt.Sprintf("; the limiter alone will not reach the target: the material needs about %+.1f dB of gain and the export adds at most %+.0f dB ahead of the limiter, so also raise the track or master levels by about %.1f dB, or choose a lower target", neededGainDB, maxExportInputGainDB, neededGainDB-maxExportInputGainDB)
 	}
 	return summary
 }
