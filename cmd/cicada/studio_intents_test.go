@@ -97,8 +97,8 @@ func TestStudioIntentsCanonicalConflictAndInvalidCandidate(t *testing.T) {
 			if duringValidation {
 				previous := studioCompile
 				t.Cleanup(func() { studioCompile = previous })
-				studioCompile = func(path string, source []byte, files map[string][]byte) (*project.Project, error) {
-					p, err := previous(path, source, files)
+				studioCompile = func(state *project.State) (*project.Project, error) {
+					p, err := previous(state)
 					if err == nil {
 						if err := os.WriteFile(path, external, 0600); err != nil {
 							t.Fatal(err)

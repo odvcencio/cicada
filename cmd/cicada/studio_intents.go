@@ -21,21 +21,28 @@ import (
 )
 
 // studioCompile is the compile step shared by the edit service and the commit
-// tail; tests wrap it to count compiles.
-var studioCompile = compileStudioSourceWithOverrides
+// tail: it compiles a state's bytes (once; the state remembers the result).
+// Tests wrap it to count compiles or to act during one.
+var studioCompile = func(state *project.State) (*project.Project, error) {
+	return state.Project()
+}
 
 // studioCompiler compiles a candidate for the edit service with the same
-// checks Studio applies before it writes a score. It keeps its latest
-// successful compile so the commit tail can reuse it instead of compiling the
-// same bytes again.
+// checks Studio applies before it writes a score. It is an edits.StateCompiler:
+// each set of bytes is compiled once, through a project.State. It keeps its
+// latest successful compile so the commit tail can reuse it instead of
+// compiling the same bytes again.
 type studioCompiler struct {
 	// validationFiles supplies host-prepared pins during candidate validation.
-	// They are still committed only when finish adds them to the result.
+	// They are still committed only when finish adds them to the result. A
+	// compiler with validation files keeps no states (State returns nil),
+	// because its compiles see files the project's parse does not.
 	validationFiles map[string][]byte
 	path            string
 	source          []byte
 	files           map[string][]byte
 	project         *project.Project
+	state           *project.State
 }
 
 func (c *studioCompiler) Compile(source []byte, files map[string][]byte) (*edits.Plan, error) {
@@ -46,38 +53,109 @@ func (c *studioCompiler) Compile(source []byte, files map[string][]byte) (*edits
 	for path, data := range files {
 		overrides[path] = data
 	}
-	// The host compiler adds the entry source to overrides. Keep only the
-	// auxiliary inputs when matching the compiled result to a commit.
-	compiledFiles := make(map[string][]byte, len(overrides))
-	for path, data := range overrides {
-		compiledFiles[path] = bytes.Clone(data)
+	return studioState{State: newStudioState(c.path, source, overrides), compiler: c}.Plan()
+}
+
+// State is the compiled state of source with files staged (edits.StateCompiler).
+func (c *studioCompiler) State(source []byte, files map[string][]byte) (edits.State, error) {
+	if len(c.validationFiles) > 0 {
+		return nil, nil
 	}
-	p, err := studioCompile(c.path, source, overrides)
-	if err != nil {
-		return nil, err
-	}
-	// The runtime project omits templates such as unused presets. Keep the
-	// authored names from every source, including libraries, for allocation.
-	sources, err := project.ReadSources(c.path, overrides)
-	if err != nil {
-		return nil, err
-	}
-	c.source, c.files, c.project = bytes.Clone(source), compiledFiles, p
-	return project.EditPlan(p, source, sources.Files...), nil
+	return studioState{State: newStudioState(c.path, source, files), compiler: c}, nil
 }
 
 // compiled returns the project from the latest compile when it was made from
 // exactly this source and these auxiliary files, and nil otherwise.
 func (c *studioCompiler) compiled(source []byte, files []edits.File) *project.Project {
+	p, _ := c.compiledState(source, files)
+	return p
+}
+
+// compiledState is compiled, with the state the project came from.
+func (c *studioCompiler) compiledState(source []byte, files []edits.File) (*project.Project, *project.State) {
 	if c.project == nil || !bytes.Equal(c.source, source) || len(c.files) != len(files) {
-		return nil
+		return nil, nil
 	}
 	for _, file := range files {
 		if data, ok := c.files[file.Path]; !ok || !bytes.Equal(data, file.After) {
-			return nil
+			return nil, nil
 		}
 	}
-	return c.project
+	return c.project, c.state
+}
+
+// studioState is a project.State whose plan is compiled through studioCompile,
+// so the seam sees every compile the edit service asks for; it records each
+// successful compile in its compiler for the commit tail.
+type studioState struct {
+	*project.State
+	compiler *studioCompiler
+}
+
+func (s studioState) Plan() (*edits.Plan, error) {
+	p, err := studioCompile(s.State)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.State.Plan()
+	if err != nil {
+		return nil, err
+	}
+	if c := s.compiler; c != nil {
+		c.source, c.files, c.project, c.state = s.Source(), s.Files(), p, s.State
+	}
+	return plan, nil
+}
+
+func (s studioState) With(files map[string][]byte) (edits.State, error) {
+	next, err := s.State.With(files)
+	if err != nil {
+		return nil, err
+	}
+	return studioState{State: next.(*project.State), compiler: s.compiler}, nil
+}
+
+func (s studioState) Rollback() (edits.State, error) {
+	previous, err := s.State.Rollback()
+	if err != nil {
+		return nil, err
+	}
+	return studioState{State: previous.(*project.State), compiler: s.compiler}, nil
+}
+
+// keptState returns the compiled state of source as the edit service has just
+// read the project (sources, read with source over the entry and nothing
+// else): the kept state when it holds exactly these bytes and its compile read
+// nothing besides them, else a new state on sources, which the studio keeps
+// from now on. The caller holds s.mu.
+func (s *studio) keptState(source []byte, sources *project.Sources) *project.State {
+	if kept := s.kept; kept != nil && len(kept.Files()) == 0 && bytes.Equal(kept.Source(), source) && kept.SameSources(sources) && kept.SelfContained() {
+		return kept
+	}
+	s.kept = project.NewStateFromSources(s.path, source, sources, studioStateOptions)
+	return s.kept
+}
+
+// keptEditOptions is editOptions for a route that holds s.mu and edits the
+// saved score: its Base is the kept compiled state of source (keptState), so
+// an edit does not parse or compile the unchanged score again.
+func (s *studio) keptEditOptions(source []byte) (edits.Options, error) {
+	opts, sources, err := s.editOptionsWithSources(source, nil)
+	if err != nil {
+		return opts, err
+	}
+	if kept := s.keptState(source, sources); kept != nil {
+		opts.Base = studioState{State: kept, compiler: opts.Compiler.(*studioCompiler)}
+	}
+	return opts, nil
+}
+
+// keep records the state of a score the studio has just written or found
+// unchanged, as the next edit's base. The caller holds s.mu.
+func (s *studio) keep(state *project.State) {
+	if state != nil {
+		s.kept = state.Kept()
+	}
 }
 
 // upgradeEdition is the Options.UpgradeEdition hook: the edition-1 to 2
@@ -125,9 +203,16 @@ func (s *studio) upgradeEdition(manifestPath string) func([]byte, map[string][]b
 // editOptions supplies the complete project inputs for every intent route.
 // source is the current entry buffer; files holds acceptance-time candidates.
 func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Options, error) {
+	opts, _, err := s.editOptionsWithSources(source, files)
+	return opts, err
+}
+
+// editOptionsWithSources is editOptions, also returning the project sources
+// it read.
+func (s *studio) editOptionsWithSources(source []byte, files map[string][]byte) (edits.Options, *project.Sources, error) {
 	editionNumber, manifestPath, err := scoreEdition(s.path)
 	if err != nil {
-		return edits.Options{}, err
+		return edits.Options{}, nil, err
 	}
 	// ScoreEdition's loose-file default is a fallback, not an inherited
 	// manifest edition. Let Parse resolve an explicit header in a loose file.
@@ -136,7 +221,7 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 	}
 	absolute, err := filepath.Abs(s.path)
 	if err != nil {
-		return edits.Options{}, err
+		return edits.Options{}, nil, err
 	}
 	overrides := make(map[string][]byte, len(files)+1)
 	for path, data := range files {
@@ -145,7 +230,7 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 	overrides[absolute] = source
 	sources, err := project.ReadSources(s.path, overrides)
 	if err != nil {
-		return edits.Options{}, err
+		return edits.Options{}, nil, err
 	}
 	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard, CaptureGuard: s.automationCaptureGuard}
 	// The structural intents name every problem cicada check finds in a
@@ -166,11 +251,11 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 			opts.Manifest, err = os.ReadFile(manifestPath)
 		}
 		if err != nil {
-			return edits.Options{}, err
+			return edits.Options{}, nil, err
 		}
 		manifest, err := edition.ParseProjectManifest(opts.Manifest)
 		if err != nil {
-			return edits.Options{}, err
+			return edits.Options{}, nil, err
 		}
 		opts.Edition = manifest.Edition
 	}
@@ -185,7 +270,7 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		files[absolute] = source
 		return project.LoadScore(s.path, files)
 	}
-	return opts, nil
+	return opts, sources, nil
 }
 
 // auxiliaryFiles turns edit-service files into Studio's commit files; new
@@ -386,7 +471,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusConflict, map[string]any{"error": sourceConflictMessage(env, err.Error())})
 		return
 	}
-	opts, err := s.editOptions(current, nil)
+	opts, err := s.keptEditOptions(current)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -494,7 +579,8 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		result.Response = response
 	}
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
-	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
+	compiled, state := compiler.compiledState(result.Source, result.Files)
+	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiled, state: state})
 	if outcome.Status == http.StatusConflict {
 		if message, ok := outcome.Response["error"].(string); ok {
 			outcome.Response["error"] = sourceConflictMessage(env, message)
@@ -553,7 +639,7 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	opts, err := s.editOptions(current, nil)
+	opts, err := s.keptEditOptions(current)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -698,7 +784,8 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response, RenderChecked: staged.rendered, RenderIdentity: verified, RenderRecheck: recheck}
 	// Revalidate at acceptance, including project dependencies that may have
 	// changed since staging. The tail commits this candidate once.
-	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope, compiled: opts.Compiler.(*studioCompiler).compiled(result.Source, result.Files)})
+	compiled, state := opts.Compiler.(*studioCompiler).compiledState(result.Source, result.Files)
+	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope, compiled: compiled, state: state})
 	if outcome.Status == http.StatusOK {
 		s.removeProposal(id)
 		if outcome.Written && s.previewProposal != "" {
@@ -773,7 +860,7 @@ func conversionRefusal(env edits.Envelope, err error) (string, bool) {
 // restageForAccept reruns a staged envelope against the current inputs. The
 // status is the HTTP status for a returned error.
 func (s *studio) restageForAccept(current []byte, proposal edits.Proposal) (*edits.Staged, int, error) {
-	opts, err := s.editOptions(current, nil)
+	opts, err := s.keptEditOptions(current)
 	if err != nil {
 		return nil, http.StatusUnprocessableEntity, err
 	}

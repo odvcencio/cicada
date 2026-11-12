@@ -59,6 +59,11 @@ type studio struct {
 	midiPortsMu         sync.Mutex
 	lastGoodSource      []byte
 	lastGoodProject     *project.Project
+	// kept is the compiled state of the score as the edit service last read
+	// or wrote it, kept between edits and workspace reads. A route uses it
+	// only while it holds exactly the project on disk (keptState); s.mu
+	// guards it.
+	kept *project.State
 	transport           *studioTransport
 	history             *studioHistory
 	exports             *studioExportController
@@ -694,7 +699,10 @@ func compileStudioSourceSnapshot(path string, source []byte, overrides map[strin
 
 // compileStudioSourceDetailed also returns the complete parse and conversion
 // diagnostics of the captured sources so callers can render file rows without
-// re-reading or re-parsing.
+// re-reading or re-parsing. It compiles through a project.State, which runs
+// each check once: the parse, FromScore (with ValidateProject), and the
+// schedule rules on the host's files. overrides gains the entry, as it always
+// has.
 func compileStudioSourceDetailed(path string, source []byte, overrides map[string][]byte, fileDiagnostics bool) (*project.Project, *project.Sources, []notation.Diagnostic, error) {
 	if !utf8.Valid(source) {
 		return nil, nil, nil, fmt.Errorf("score is not UTF-8")
@@ -707,41 +715,19 @@ func compileStudioSourceDetailed(path string, source []byte, overrides map[strin
 		return nil, nil, nil, err
 	}
 	overrides[absolute] = source
-	sources, err := project.ReadSources(path, overrides)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	score, diagnostics := sources.Parse()
-	for _, d := range diagnostics {
-		if d.Severity == "error" {
-			if fileDiagnostics && score != nil {
-				// Code still reports semantic diagnostics on the parsed portion.
-				_, extra := project.FromScore(score)
-				diagnostics = append(diagnostics, extra...)
-			}
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
-		}
-	}
-	p, extra := project.FromScore(score)
-	diagnostics = append(diagnostics, extra...)
-	for _, d := range extra {
-		if d.Severity == "error" {
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
-		}
-	}
-	if p == nil {
-		return nil, sources, diagnostics, fmt.Errorf("score did not compile")
-	}
-	if err := project.ValidateProject(p); err != nil {
-		return nil, sources, diagnostics, err
-	}
-	// Studio asks this on every request and every edit. It applies the compile's
-	// rules without reading the project's audio; the engine that plays the score
-	// decodes it, once, when it builds its plan.
-	if err := schedule.Validate(p, sources.Root, 48000, 128, schedule.Options{}); err != nil {
-		return nil, sources, diagnostics, err
-	}
-	return p, sources, diagnostics, nil
+	return newStudioState(path, source, overrides).Detailed(fileDiagnostics)
+}
+
+// studioStateOptions are the options of every state the edit service builds:
+// the host's files and the schedule rules Studio applies before it writes a
+// score (schedule.StateRules).
+var studioStateOptions = project.StateOptions{Rules: schedule.StateRules}
+
+// newStudioState returns the compiled state of source at path with files in
+// place of the saved bytes of other project files, compiled as Studio
+// compiles a score before it writes it.
+func newStudioState(path string, source []byte, files map[string][]byte) *project.State {
+	return project.NewState(path, source, files, studioStateOptions)
 }
 
 func studioJSON(w http.ResponseWriter, status int, value any) {

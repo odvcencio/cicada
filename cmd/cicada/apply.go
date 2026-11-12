@@ -172,7 +172,9 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 		env.Session = session
 	}
 	s := &studio{path: path, renderCheck: rendercheck.New(path)}
-	opts, err := s.editOptions(before, nil)
+	// One compiled state for the batch: built on the sources read here, and
+	// handed from intent to intent by edits.Apply.
+	opts, err := s.keptEditOptions(before)
 	if err != nil {
 		return fail("read", err)
 	}

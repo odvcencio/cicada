@@ -381,6 +381,9 @@ func (s *studio) libraryInsert(w http.ResponseWriter, r *http.Request) {
 			return edits.Envelope{}, err
 		}
 		opts.Compiler.(*studioCompiler).validationFiles = map[string][]byte{pins.Path: pins.After}
+		// The candidate compiles with the pending pins, which a kept state of
+		// the saved project lacks.
+		opts.Base = nil
 		intent := &edits.InsertLibraryItem{Track: edit.Track, ImportPath: item.Path, Reference: libraryReference(item), ItemKind: kind, EffectKind: libraryEffectKind(sources, item)}
 		if kind == "effect" && item.Kind == "preset" {
 			intent.PresetInstance = "library-" + studioRevision([]byte(intent.Reference))[:8]

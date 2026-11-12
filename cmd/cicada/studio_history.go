@@ -566,8 +566,11 @@ type commitHook struct {
 	// auxiliary write ("history file write failed"), which clients already see.
 	historyError bool
 	// compiled is the project already compiled from exactly the mutation's
-	// source and files; the tail then skips its own compile.
+	// source and files; the tail then skips its own compile. state, when set,
+	// is the compiled state it came from, which the studio keeps after the
+	// commit as the next edit's base.
 	compiled *project.Project
+	state    *project.State
 }
 
 type commitOutcome struct {
@@ -607,10 +610,11 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	for _, file := range mutation.Files {
 		overrides[file.Path] = file.After
 	}
-	p := hook.compiled
+	p, state := hook.compiled, hook.state
 	if p == nil {
 		var err error
-		if p, err = studioCompile(s.path, updated, overrides); err != nil {
+		state = newStudioState(s.path, updated, overrides)
+		if p, err = studioCompile(state); err != nil {
 			return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		}
 	}
@@ -644,6 +648,7 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 			}()
 		}
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
+		s.keep(state)
 		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
 		for key, value := range mutation.Response {
 			response[key] = value
@@ -719,6 +724,7 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		hook.checkpoint(takejournal.AuxiliarySwapped)
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
+	s.keep(state)
 	if s.transport != nil {
 		if fingerprint, ok := s.transport.activateLocked(); ok {
 			// The write has landed and pollMu is held, so poll cannot see this

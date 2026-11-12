@@ -234,9 +234,9 @@ func TestStudioCompilerHandsTheCompileToTheCommitTail(t *testing.T) {
 func TestIntentRouteCompilesTheCandidateOnce(t *testing.T) {
 	calls := 0
 	original := studioCompile
-	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
+	studioCompile = func(state *project.State) (*project.Project, error) {
 		calls++
-		return original(path, source, overrides)
+		return original(state)
 	}
 	defer func() { studioCompile = original }()
 	path := studioTestPath(t, studioMixerScore)

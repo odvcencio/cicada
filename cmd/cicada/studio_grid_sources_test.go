@@ -238,8 +238,8 @@ func TestGridNoopRefusesASourceSaveDuringValidation(t *testing.T) {
 	previous := studioCompile
 	t.Cleanup(func() { studioCompile = previous })
 	changed := false
-	studioCompile = func(pathname string, source []byte, files map[string][]byte) (*project.Project, error) {
-		p, err := previous(pathname, source, files)
+	studioCompile = func(state *project.State) (*project.Project, error) {
+		p, err := previous(state)
 		if err == nil && !changed {
 			changed = true
 			if err := os.WriteFile(path, outside, 0600); err != nil {

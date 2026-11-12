@@ -204,8 +204,8 @@ func TestStudioProposalAcceptRechecksRevisionDuringValidation(t *testing.T) {
 	external := []byte(studioMixerScore + "// changed during validation\n")
 	compile := studioCompile
 	t.Cleanup(func() { studioCompile = compile })
-	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
-		p, err := compile(path, source, overrides)
+	studioCompile = func(state *project.State) (*project.Project, error) {
+		p, err := compile(state)
 		if err == nil {
 			err = os.WriteFile(path, external, 0o600)
 		}

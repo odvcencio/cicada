@@ -217,8 +217,8 @@ func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T)
 	id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
 	previous := studioCompile
 	t.Cleanup(func() { studioCompile = previous })
-	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
-		compiled, err := previous(path, source, overrides)
+	studioCompile = func(state *project.State) (*project.Project, error) {
+		compiled, err := previous(state)
 		_ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600)
 		return compiled, err
 	}
@@ -335,8 +335,8 @@ func TestRenderIdentityCoversDependenciesIntroducedByTheBatch(t *testing.T) {
 	}
 	previous := studioCompile
 	t.Cleanup(func() { studioCompile = previous })
-	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
-		compiled, err := previous(path, source, overrides)
+	studioCompile = func(state *project.State) (*project.Project, error) {
+		compiled, err := previous(state)
 		_ = os.Remove(sample)
 		return compiled, err
 	}

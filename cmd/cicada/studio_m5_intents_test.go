@@ -119,17 +119,17 @@ func TestLibraryInsertValidatesPendingPinsBeforeCommit(t *testing.T) {
 	original := studioCompile
 	defer func() { studioCompile = original }()
 	candidateCompiles := 0
-	studioCompile = func(filename string, source []byte, overrides map[string][]byte) (*project.Project, error) {
-		if strings.Contains(string(source), `import "std/fx"`) {
+	studioCompile = func(state *project.State) (*project.Project, error) {
+		if strings.Contains(string(state.Source()), `import "std/fx"`) {
 			candidateCompiles++
 			if _, err := os.Stat(pinsPath); !os.IsNotExist(err) {
 				t.Fatalf("pins written before source validation: %v", err)
 			}
-			if len(overrides[pinsPath]) == 0 {
+			if len(state.Files()[pinsPath]) == 0 {
 				t.Fatal("candidate lacks pending pins")
 			}
 		}
-		return original(filename, source, overrides)
+		return original(state)
 	}
 	r := studioCall(t, h, "/api/library/insert", studioEdit{Revision: studioRevision([]byte(studioLibraryScore)), Path: "std/fx", Item: "delay", Track: "lead"})
 	if r.Code != 200 || candidateCompiles != 1 {
