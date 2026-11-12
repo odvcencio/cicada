@@ -68,6 +68,7 @@ jobs:
       m2: ${{ steps.classify.outputs.m2 }}
       m2_gates: ${{ steps.classify.outputs.m2_gates }}
       bench: ${{ steps.classify.outputs.bench }}
+      wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -129,9 +130,8 @@ jobs:
       - name: No fused multiply-adds with Go 1.27.3 (arm64 and GOAMD64=v3)
         run: |
           set -euo pipefail
-          GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/go127-fma.log"
-          GOARCH=amd64 GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee -a "$RUNNER_TEMP/go127-fma.log"
-          if [ -s "$RUNNER_TEMP/go127-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
+          GOARCH=arm64 scripts/check-fma.sh
+          GOARCH=amd64 GOAMD64=v3 scripts/check-fma.sh
       - name: Shards cover every test once
         run: make test-cmd-shard-check SHARDS=3
       - name: Native tests, every package but cmd/cicada
@@ -208,9 +208,11 @@ jobs:
       - name: Tests that read every tracked file, the docs, or the README
         run: |
           set -euo pipefail
-          tests='TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
+          tests='TestAgentFrontDoorIsCurrent TestAgentGuideBudgets TestLLMsFullFitsItsBudget TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
           regex="^($(echo "$tests" | tr ' ' '|'))\$"
-          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
+          # TestLLMsFullFitsItsBudget builds llms-full.txt, which is not committed,
+          # checks its budget on that output, and writes it for the artifact below.
+          CICADA_LLMS_FULL_OUT="$RUNNER_TEMP/llms-full.txt" go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics ./internal/agentguide -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in $tests; do
@@ -220,6 +222,13 @@ jobs:
             fi
           done
           exit "$missing"
+      - name: Save llms-full.txt (built, not committed)
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: llms-full
+          if-no-files-found: error
+          path: ${{ runner.temp }}/llms-full.txt
       # The agent task suite (make test-agent-surface) drives the built binary
       # through one task with JSON output only. The M0 kernel job runs it when
       # the root group is on (any Go change, cmd/cicada and edit included).
@@ -254,12 +263,11 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = amd64
           make test-parity
-      - name: Require the master-chain digests, and no fused multiply-adds in kernel or render, with GOAMD64=v3
+      - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
-          GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/v3-fma.log"
-          if [ -s "$RUNNER_TEMP/v3-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|[A-Za-z0-9]*FastPathExhaustive)$' -count=1
+          GOAMD64=v3 scripts/check-fma.sh
       # The arm64 job compares its exported WAV files with these hashes.
       - name: Hash the WAV files cicada render writes for the parity subset
         run: |
@@ -346,19 +354,20 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange|[A-Za-z0-9]*FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
           # lists every one it would fuse into a multiply-add on this machine, also
           # where it is inlined ("<autogenerated>:1:0; kernel/fx/...").
-          go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/arm64-fma.log"
-          if [ -s "$RUNNER_TEMP/arm64-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
+          scripts/check-fma.sh
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange; do
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive \
+            TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
+            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest TestTanPi32FastPathExhaustive TestOneMinusExpNeg2Pi32FastPathExhaustive; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1
@@ -388,10 +397,15 @@ jobs:
 
   # Nightly: every score under examples/, rendered four ways on amd64 and on
   # arm64, compared byte for byte (TestExampleWAVParity with
-  # CICADA_WAV_PARITY_ALL=1). Pull requests render only the parity subset above.
+  # CICADA_WAV_PARITY_ALL=1), and every pinned render including the songs
+  # (TestExampleWAVPins). Pull requests run it too when they change the
+  # deterministic math or the WAV parity test (the wav_sweep group of
+  # scripts/ci-changes.sh); other pull requests render only the parity subset
+  # above.
   wav-parity-sweep-amd64:
     name: WAV parity sweep, every example (amd64)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: changes
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -419,8 +433,8 @@ jobs:
 
   wav-parity-sweep-arm64:
     name: WAV parity sweep, every example (arm64 against amd64)
-    needs: wav-parity-sweep-amd64
-    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    needs: [changes, wav-parity-sweep-amd64]
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true')) }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -701,6 +715,8 @@ jobs:
           make test-kernel-wasm | tee build/kernel-wasm-report.txt
           make test-sampler-wasm | tee build/sampler-wasm-report.txt
           make test-keys-wasm | tee build/keys-wasm-report.txt
+      - name: Deterministic-math and processor digests compiled by TinyGo for WebAssembly
+        run: make test-tinygo-digests
       - name: Save gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -711,6 +727,7 @@ jobs:
             build/kernel-wasm-report.txt
             build/sampler-wasm-report.txt
             build/keys-wasm-report.txt
+            build/tinygo-digests.txt
             build/cicada-loudness.wasm
 
   # The required status check. See the comment above `concurrency:`. This job

@@ -5,13 +5,13 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
@@ -149,7 +149,7 @@ func encodeHit(id string, h Hit, license string) ([]byte, Asset, error) {
 func supportedRatio(note int, h Hit) bool {
 	// Both common browser/native output rates must admit the complete map.
 	for _, rate := range []float64{44100, 48000, 96000} {
-		ratio := float64(h.Rate) / rate * math.Exp2((float64(note-h.Root)+h.TuneCents/100)/12)
+		ratio := float64(h.Rate) / rate * detmath.Exp2((float64(note-h.Root)+h.TuneCents/100)/12)
 		if ratio < .125 || ratio > 8 {
 			return false
 		}

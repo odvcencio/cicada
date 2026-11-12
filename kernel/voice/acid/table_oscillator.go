@@ -1,6 +1,8 @@
 package acid
 
-import "math"
+import (
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // TableOscillator shares the acid voice's immutable harmonic-limited tables.
 // Construct it at the output sample rate, even when evaluating at 2x that rate.
@@ -21,7 +23,7 @@ func NewTableOscillator(sampleRate int) (*TableOscillator, error) {
 func (o *TableOscillator) selectFrequency(frequency float64) {
 	if o.selection.low == nil || frequency != o.frequency {
 		o.frequency = frequency
-		o.selection = o.bank.selectTables(math.Log2(frequency))
+		o.selection = o.bank.selectTables(detmath.Log2(frequency))
 	}
 }
 

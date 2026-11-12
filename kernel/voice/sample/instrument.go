@@ -1,6 +1,10 @@
 package sample
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // Envelope times are milliseconds; Sustain is linear amplitude. Zero times
 // are allowed, but the instrument always uses a 2 ms onset/steal ramp.
@@ -402,8 +406,8 @@ func (p *Instrument) NoteOnMix(note, velocity uint8, gainL, gainR float64) (Hand
 	*v = instrumentVoice{active: true, note: note, velocity: vel, tuneCents: cents, zones: zs, delay: delay, cycle: p.rr[group], tailL: tl, tailR: tr, tail: tail, mixL: gainL, mixR: gainR}
 	p.serial++
 	v.id = p.serial
-	v.cutoffLow = 1 - math.Exp(-2*math.Pi*p.config.Cutoff/float64(p.rate))
-	v.cutoffHigh = 1 - math.Exp(-2*math.Pi*min(float64(p.rate)*.45, p.config.Cutoff+p.config.FilterDepth)/float64(p.rate))
+	v.cutoffLow = 1 - detmath.Exp(-2*math.Pi*p.config.Cutoff/float64(p.rate))
+	v.cutoffHigh = 1 - detmath.Exp(-2*math.Pi*min(float64(p.rate)*.45, p.config.Cutoff+p.config.FilterDepth)/float64(p.rate))
 	for i, index := range zs {
 		if index < 0 {
 			continue

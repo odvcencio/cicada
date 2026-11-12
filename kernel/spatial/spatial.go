@@ -3,7 +3,11 @@
 // Z up. B-format channels use ACN order and SN3D normalization (W, Y, Z, X).
 package spatial
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 type Vec3 struct{ X, Y, Z float32 }
 
@@ -38,9 +42,9 @@ func (b *BFormat) Add(sample float32, coefficients BFormat) {
 type Rotation [3][3]float32
 
 func ListenerRotation(yaw, pitch, roll float32) Rotation {
-	cy, sy := math.Cos(float64(yaw)), math.Sin(float64(yaw))
-	cp, sp := math.Cos(float64(pitch)), math.Sin(float64(pitch))
-	cr, sr := math.Cos(float64(roll)), math.Sin(float64(roll))
+	cy, sy := detmath.Cos(float64(yaw)), detmath.Sin(float64(yaw))
+	cp, sp := detmath.Cos(float64(pitch)), detmath.Sin(float64(pitch))
+	cr, sr := detmath.Cos(float64(roll)), detmath.Sin(float64(roll))
 	// Transpose of Rz(yaw) * Ry(-pitch) * Rx(roll).
 	return Rotation{
 		{float32(cy * cp), float32(sy * cp), float32(sp)},

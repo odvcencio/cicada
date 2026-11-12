@@ -4,7 +4,10 @@ package keyboard
 
 import (
 	"fmt"
+	"math"
+
 	"m31labs.dev/cicada/instrument/keyboardpresets"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/voice/clav"
 	"m31labs.dev/cicada/kernel/voice/ep"
 	"m31labs.dev/cicada/kernel/voice/fm"
@@ -12,7 +15,6 @@ import (
 	"m31labs.dev/cicada/kernel/voice/organ"
 	"m31labs.dev/cicada/kernel/voice/polykeys"
 	"m31labs.dev/cicada/kernel/voice/strings"
-	"math"
 )
 
 var Names = keyboard.Names
@@ -181,7 +183,7 @@ func LevelTrimLinear(patch uint8) float32 {
 	if patch < 1 || int(patch) > len(LevelTrimDB) {
 		return 1
 	}
-	return float32(math.Pow(10, float64(LevelTrimDB[patch-1])/20))
+	return float32(detmath.Pow(10, float64(LevelTrimDB[patch-1])/20))
 }
 
 // calibrated scales the output of one voice by a fixed factor. Every other
