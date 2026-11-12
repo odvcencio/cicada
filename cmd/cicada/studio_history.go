@@ -531,7 +531,7 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 	}
 	updated, err := studioApplySourceDiff(current, from, to)
 	if err != nil {
-		// Say which hunk could not be placed and why, as patchtext does.
+		// Say which hunk could not be placed and why.
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "history edit no longer matches the score on disk: " + err.Error() + "; nothing was changed"})
 		return
 	}
