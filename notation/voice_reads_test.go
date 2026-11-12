@@ -6,6 +6,10 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
 
 // TestPatternSyntaxIsClassified reads the grammar and walks every rule a
@@ -124,4 +128,60 @@ func hasErrors(ds []Diagnostic) bool {
 		}
 	}
 	return false
+}
+
+// DrumLaneNames copies the engine's lane names so that notation need not
+// import the drum DSP; the two lists must stay equal.
+func TestDrumLaneNamesMatchTheEngine(t *testing.T) {
+	if DrumLaneNames != drum.Names {
+		t.Fatalf("notation.DrumLaneNames %v, kernel/voice/drum.Names %v", DrumLaneNames, drum.Names)
+	}
+}
+
+// Every voice a track can play has a row in VoiceInputs, so the voice-change
+// check never meets a voice it cannot compare: every built-in voice (audio
+// apart: it plays clips, not patterns) and every kind of declared voice. A
+// built-in voice added without a row fails here.
+func TestEveryVoiceHasAnInputsRow(t *testing.T) {
+	score, ds := Parse([]byte(`cicada 2
+tempo 120
+instrument mono { voice mono { out = saw(pitch) * env(gate, 200ms) } }
+instrument poly { voice poly { out = saw(pitch) * env(gate, 200ms) * velocity } }
+kit built { bd = builtin.bd sd = builtin.sd }
+kit modeled { bd = model.kick }
+kit graph { bd = mono sd = mono }
+track t acid {}
+pattern p { a2 . }
+scene main { t = p }
+song { main }
+`))
+	if hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	kinds := []string{"acid", "drums", "piano", "guitar", "mono", "poly", "built", "modeled", "graph"}
+	for _, name := range keyboard.Names {
+		kinds = append(kinds, name)
+	}
+	for _, name := range modal.Names {
+		kinds = append(kinds, "model_"+name)
+	}
+	for _, kind := range kinds {
+		if !BuiltinVoice(2, kind) && !VoiceDeclared(score, kind) {
+			t.Errorf("%s is not a voice", kind)
+		}
+		row := VoiceInputs(score, kind)
+		if row == nil {
+			t.Errorf("%s has no inputs row", kind)
+			continue
+		}
+		inputs := MelodicInputs
+		if VoiceLanes(score, kind) != nil {
+			inputs = DrumInputs
+		}
+		for _, input := range inputs {
+			if _, ok := row[input]; !ok {
+				t.Errorf("%s: no entry for %s", kind, input)
+			}
+		}
+	}
 }

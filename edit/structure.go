@@ -67,18 +67,25 @@ func (DeleteTrack) Kind() string { return "deletetrack" }
 // refused with voice_params_unsupported, unless dropparams removes it (the
 // label names each). A pattern the new voice cannot play, a parameter path
 // (automation, scene setting, modulation route, MIDI or live mapping) it does
-// not take, or any other problem the change adds to cicada check is refused
-// with voice_change_invalid, and uses lists every one. A change that plays
-// but sounds different, such as drum lanes the new kit does not play, or an
-// input whose effect differs between the voices (a pressure row or gesture
-// acid ignores, brackets that are a tuplet on acid and a chord on piano:
-// notation.VoiceInputs), is refused with voice_changes_sound unless
-// acceptchanges accepts it; the result's warnings then name each. An input or
-// a voice the check does not model is refused with voice_input_unmodeled.
+// not take, or any other error the change adds to cicada check, sampler pack
+// zones included, is refused with voice_change_invalid, and uses lists every
+// one. A change that plays but sounds different is refused with
+// voice_changes_sound unless acceptchanges accepts it; the result's warnings
+// then name each. That covers drum lanes the new kit does not play, an input
+// whose effect differs between the voices (a pressure row or gesture acid
+// ignores, brackets that are a tuplet on acid and a chord on piano, hit
+// velocity on a kit lane whose instrument does not read velocity:
+// notation.VoiceInputs and VoiceLaneInputs), every note whose compiled pitch,
+// velocity or articulation differs (a pitch written without an octave takes
+// it from the voice, so notes can move by octaves; writing the octave keeps
+// them), and what changes for other tracks: the polyphony an instrument
+// shares between its tracks, and a compressor keyed to the track. An input
+// or a voice the check does not model, the old voice or the new, is refused
+// with voice_input_unmodeled.
 //
-// Example: {"kind":"settrackvoice","track":"keys","voice":"glow"}
-// Example: {"kind":"settrackvoice","track":"keys","voice":"glow","dropparams":true}
-// Example: {"kind":"settrackvoice","track":"keys","voice":"glow","acceptchanges":true}
+// Example: {"kind":"settrackvoice","track":"keys","voice":"tine_ep"}
+// Example: {"kind":"settrackvoice","track":"keys","voice":"tine_ep","dropparams":true}
+// Example: {"kind":"settrackvoice","track":"keys","voice":"tine_ep","acceptchanges":true}
 type SetTrackVoice struct {
 	Track         string `json:"track" cicada:"required"` // the track's name
 	Voice         string `json:"voice" cicada:"required"` // the new voice
@@ -514,9 +521,6 @@ func setTrackVoice(ctx *Context, intent Intent) error {
 		}
 		return &ReasonError{Reason: "voice_params_unsupported", Field: "voice", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; give dropparams to remove them", in.Voice, strings.Join(dropped, ", "), in.Track)}
 	}
-	if len(change.changes) > 0 && !in.AcceptChanges {
-		return &ReasonError{Reason: "voice_changes_sound", Field: "voice", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Voice, strings.Join(change.changes, "; "))}
-	}
 	if len(change.unsupported) > 0 {
 		spans := make([][2]int, 0, len(change.unsupported))
 		for _, s := range change.unsupported {
@@ -527,6 +531,12 @@ func setTrackVoice(ctx *Context, intent Intent) error {
 		if err := resultValid(st, "voice", fmt.Sprintf("changing track %s to %s", in.Track, in.Voice)); err != nil {
 			return err
 		}
+	}
+	// The backstop compares the compiled music of the result as it will be
+	// written, settings dropped.
+	change.changes = append(change.changes, compiledSoundChanges(st, score, in.Track, in.Voice)...)
+	if len(change.changes) > 0 && !in.AcceptChanges {
+		return &ReasonError{Reason: "voice_changes_sound", Field: "voice", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Voice, strings.Join(change.changes, "; "))}
 	}
 	for _, c := range change.changes {
 		ctx.warn("%s", c)

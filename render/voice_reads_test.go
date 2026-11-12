@@ -43,6 +43,12 @@ func TestVoiceInputsMatchTheEngine(t *testing.T) {
 		{"poly expressive graph", "instrument g { voice poly { " + expressive + " } }\n", "g"},
 		{"drums", "", "drums"},
 		{"kit", "kit k { bd = builtin.bd sd = builtin.sd }\n", "k"},
+		{"modeled kit", "kit k { bd = model.kick sd = model.snare }\n", "k"},
+		// A lane bound to an instrument plays a hit as a note: velocity and
+		// humanize reach it only through a velocity node, and gate through
+		// gate. One kit reads neither, one reads both.
+		{"graph kit", "instrument thump { voice mono { out = sine(pitch) * env(gate, 120ms) } }\nkit k { bd = thump sd = thump }\n", "k"},
+		{"graph kit reading velocity", "instrument thump { voice mono { out = sine(pitch) * env(gate, 120ms) * velocity } }\nkit k { bd = thump sd = thump }\n", "k"},
 	}
 	base := "a2 c3 d3 e3 a2 c3 d3 e3"
 	melodic := map[string]string{
@@ -77,6 +83,8 @@ func TestVoiceInputsMatchTheEngine(t *testing.T) {
 		notation.InputChance:      "bd: x?30 . . . x?30 . . . sd: . . x . . . x .",
 		notation.InputSwing:       "swing = 62% bd: x . x . x . x . sd: . . x . . . x .",
 		notation.InputHumanize:    "humanize = 9 " + beat,
+		notation.InputGate:        "gate = 25% " + beat,
+		notation.InputTranspose:   "transpose = 0 " + beat,
 	}
 	opts := Options{AssetDir: dir, SampleRate: 44100, Bits: 16, Bars: 1, TailSec: 0.05, Block: 512}
 	render := func(text string) ([]byte, error) {

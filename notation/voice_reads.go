@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/modal"
 )
@@ -42,8 +41,14 @@ const (
 var (
 	MelodicInputs   = []string{InputAccent, InputSlide, InputRatchet, InputChance, InputBrackets, InputVelocityRow, InputPressureRow, InputTimbreRow, InputBendRow, InputVibratoRow, InputSwing, InputGate, InputTranspose, InputHumanize}
 	PerformedInputs = []string{InputPerformedVelocity, InputGestureBend, InputGesturePressure, InputGestureTimbre, InputGestureVibrato}
-	DrumInputs      = []string{InputHitAccent, InputHitVelocity, InputRatchet, InputChance, InputSwing, InputHumanize}
+	DrumInputs      = []string{InputHitAccent, InputHitVelocity, InputRatchet, InputChance, InputSwing, InputGate, InputTranspose, InputHumanize}
 )
+
+// DrumLaneNames are the built-in drum lanes, in the engine's order. They copy
+// kernel/voice/drum.Names, which notation does not import (it would pull the
+// drum DSP into every build that parses scores, the phrase WebAssembly module
+// among them); a test keeps the two lists equal.
+var DrumLaneNames = [...]string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
 
 // What a voice does with an input.
 const (
@@ -52,6 +57,10 @@ const (
 	EffectRefuses = "refuses"
 	EffectTuplet  = "plays as a tuplet"
 	EffectChord   = "plays as a chord"
+	// EffectSomeLanes is a kit's whole-voice row for an input that some of
+	// its lanes play and others ignore; the voice-change check compares drum
+	// patterns lane by lane (VoiceLaneInputs).
+	EffectSomeLanes = "plays on some lanes"
 )
 
 // PatternSyntax classifies every rule, keyword, punctuation and field the
@@ -232,8 +241,24 @@ func VoiceInputs(s *Score, kind string) map[string]string {
 		return base
 	}
 	kind = ResolveVoice(s, kind)
-	if VoiceLanes(s, kind) != nil {
-		return map[string]string{InputHitAccent: p, InputHitVelocity: p, InputRatchet: p, InputChance: p, InputSwing: p, InputHumanize: p}
+	if lanes := VoiceLanes(s, kind); lanes != nil {
+		// A drum voice's row is its lanes' rows where they agree.
+		var row map[string]string
+		for _, lane := range lanes {
+			laneRow := VoiceLaneInputs(s, kind, lane)
+			if row == nil {
+				row = laneRow
+				continue
+			}
+			for input, effect := range row {
+				if other, ok := laneRow[input]; !ok {
+					delete(row, input)
+				} else if other != effect {
+					row[input] = EffectSomeLanes
+				}
+			}
+		}
+		return row
 	}
 	common := func() map[string]string {
 		return map[string]string{InputSlide: p, InputRatchet: p, InputChance: p, InputSwing: p, InputGate: p, InputTranspose: p}
@@ -306,13 +331,72 @@ func ResolveVoice(s *Score, kind string) string {
 	return kind
 }
 
+// VoiceLaneInputs describes what a drum voice does with each input of a drum
+// pattern on one lane, as VoiceInputs does for a whole voice: a built-in lane
+// of drums or a kit (builtin.*), and a kit's modeled lane (model.*), play
+// every hit input; a lane bound to an instrument plays hit velocity and
+// humanize only when the instrument reads velocity, since it plays the hit as
+// a note (kernel/voice/drum/kit.go). Every one of these ignores the pattern's
+// gate, as render/voice_reads_test.go shows; a pack sampler's lane is
+// described except for gate, which no test renders. transpose (only 0 is
+// allowed on a drum pattern) changes nothing. Nil means the voice does not
+// play the lane.
+func VoiceLaneInputs(s *Score, kind, lane string) map[string]string {
+	kind = ResolveVoice(s, kind)
+	target := ""
+	switch {
+	case kind == "drums":
+		for _, name := range DrumLaneNames {
+			if name == lane {
+				target = "builtin." + lane
+			}
+		}
+	default:
+		for _, kit := range s.Kits {
+			if kit.Name != kind {
+				continue
+			}
+			for _, binding := range kit.Bindings {
+				if binding.Lane == lane {
+					target = binding.Target
+				}
+			}
+		}
+	}
+	if target == "" {
+		return nil
+	}
+	p, i := EffectPlays, EffectIgnores
+	row := map[string]string{InputHitAccent: p, InputHitVelocity: p, InputRatchet: p, InputChance: p, InputSwing: p, InputHumanize: p, InputTranspose: i}
+	if strings.HasPrefix(target, "builtin.") || strings.HasPrefix(target, "model.") {
+		row[InputGate] = i
+		return row
+	}
+	resolved := ResolveVoice(s, target)
+	for _, instrument := range s.Instruments {
+		if instrument.Name != target && instrument.Name != resolved {
+			continue
+		}
+		names := instrumentNames(instrument)
+		reads := func(read bool) string {
+			if read {
+				return p
+			}
+			return i
+		}
+		row[InputHitVelocity], row[InputHumanize], row[InputGate] = reads(names["velocity"]), reads(names["velocity"]), i
+		return row
+	}
+	return row
+}
+
 // VoiceLanes are the drum lanes a voice plays: every built-in lane for drums,
 // a kit's bound lanes (a library's kit included), and nil for a voice that is
 // not a drum voice or that the score does not declare.
 func VoiceLanes(s *Score, kind string) []string {
 	kind = ResolveVoice(s, kind)
 	if kind == "drums" {
-		return append([]string(nil), drum.Names[:]...)
+		return append([]string(nil), DrumLaneNames[:]...)
 	}
 	for _, kit := range s.Kits {
 		if kit.Name == kind {

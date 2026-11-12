@@ -148,8 +148,8 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		return edits.Options{}, err
 	}
 	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard, CaptureGuard: s.automationCaptureGuard}
-	// A voice change compares every diagnostic of cicada check before and
-	// after it.
+	// The structural intents name every problem cicada check finds in a
+	// change.
 	opts.Diagnose = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
 		staged := make(map[string][]byte, len(files)+1)
 		for path, data := range files {
@@ -158,6 +158,22 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		staged[absolute] = candidate
 		inspection, err := inspectScoreWith(s.path, staged)
 		return inspection.diagnostics, err
+	}
+	// A voice change compares all of cicada check before and after it, the
+	// sampler packs' zones included: a new voice can move notes out of a
+	// pack's keys. It reads the packs' audio, which only a voice change pays.
+	opts.CheckAll = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
+		staged := make(map[string][]byte, len(files)+1)
+		for path, data := range files {
+			staged[path] = data
+		}
+		staged[absolute] = candidate
+		inspection, err := inspectScoreWith(s.path, staged)
+		if err != nil || hasDiagnosticErrors(inspection.diagnostics) {
+			return inspection.diagnostics, err
+		}
+		packs, _ := checkSamplerPacks(s.path, inspection, 0)
+		return append(inspection.diagnostics, packs...), nil
 	}
 	if manifestPath != "" {
 		var supplied bool
@@ -242,8 +258,9 @@ func intentErrorResponse(err error) map[string]any {
 	if errors.As(err, &refusal) {
 		response["code"], response["reason"], response["note"] = "CICADA-NOTES", refusal.Code, refusal.Note()
 	}
-	// A refusal with a reason gives it and its uses, so the page can show
-	// what a change would do and offer the flag that accepts it.
+	// A refusal with a reason gives its code and its uses, as cicada apply
+	// --json does, so the page can show what a change would do and offer the
+	// flag that accepts it.
 	var reason *edits.ReasonError
 	if errors.As(err, &reason) {
 		response["reason"] = reason.Reason
@@ -488,7 +505,9 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	// Changes a flag accepted go back to the page, which shows them.
+	// Changes a flag accepted (reseed and acceptchanges) are listed in the
+	// reply's warnings, as cicada apply --json lists them per intent; the
+	// Library panel shows them, and no other page does yet.
 	var warnings []string
 	for _, list := range result.Warnings {
 		warnings = append(warnings, list...)

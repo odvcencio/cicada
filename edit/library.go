@@ -226,7 +226,7 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 			names = append(names, name)
 		}
 		if len(uses) > 0 {
-			return nil, &ReasonError{Reason: "voice_params_unsupported", Field: "reference", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; remove them, or change the voice with settrackvoice and dropparams", in.Reference, strings.Join(names, ", "), in.Track)}
+			return nil, &ReasonError{Reason: "voice_params_unsupported", Field: "reference", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; remove them first (cicada apply's settrackvoice removes them with dropparams)", in.Reference, strings.Join(names, ", "), in.Track)}
 		}
 	}
 	if len(change.invalid) > 0 {
@@ -235,6 +235,7 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 	if len(change.unmodeled) > 0 {
 		return nil, &ReasonError{Reason: "voice_input_unmodeled", Field: "reference", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Reference, strings.Join(change.unmodeled, "; "))}
 	}
+	change.changes = append(change.changes, compiledSoundChanges(st, score, in.Track, in.Reference)...)
 	if len(change.changes) > 0 && !in.AcceptChanges {
 		return nil, &ReasonError{Reason: "voice_changes_sound", Field: "reference", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Reference, strings.Join(change.changes, "; "))}
 	}
