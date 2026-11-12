@@ -3,6 +3,8 @@ package sample
 import (
 	"math"
 	"sync"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 const phases = 1024
@@ -46,15 +48,15 @@ func generateBanks() {
 			row := bank.coeff[p*bank.taps : (p+1)*bank.taps]
 			var sum float64
 			for tap := range row {
-				x := float64(tap-bank.taps/2+1) - float64(p)/phases
+				x := float64(tap-bank.taps/2+1) - float64(float64(p)/phases)
 				u := 2 * x / float64(bank.taps)
 				if u*u >= 1 {
 					continue
 				}
-				window := besselI0(beta*math.Sqrt(1-u*u)) / normalizer
+				window := besselI0(beta*math.Sqrt(1-float64(u*u))) / normalizer
 				value := 2 * cutoff
 				if x != 0 {
-					value = math.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
+					value = detmath.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
 				}
 				row[tap] = float32(value * window)
 				sum += float64(row[tap])
@@ -70,7 +72,7 @@ func besselI0(x float64) float64 {
 	sum, term := 1.0, 1.0
 	for k := 1; k <= 32; k++ {
 		term *= (x * x / 4) / float64(k*k)
-		sum += term
+		sum += float64(term)
 	}
 	return sum
 }
@@ -91,7 +93,7 @@ func (v *Voice) interpolate() (float64, float64) {
 	base := int(v.phase)
 	position := (v.phase - float64(base)) * phases
 	index := int(position)
-	fraction := position - float64(index)
+	fraction := float64(position) - float64(index)
 	row := bank.coeff[index*bank.taps : (index+1)*bank.taps]
 	next := bank.coeff[(index+1)*bank.taps : (index+2)*bank.taps]
 	first := base - bank.taps/2 + 1
@@ -155,7 +157,7 @@ func (v *Voice) interpolate() (float64, float64) {
 			for i, a := range row {
 				c := float64(a) + float64((float64(next[i])-float64(a))*fraction)
 				blend := float64(offset+i) / float64(v.region.Crossfade)
-				l := float32(float64(tl[i])*(1-blend) + float64(hl[i])*blend)
+				l := float32(float64(float64(tl[i])*(1-blend)) + float64(float64(hl[i])*blend))
 				left += float64(float64(l) * c)
 			}
 			return left, left
@@ -165,8 +167,8 @@ func (v *Voice) interpolate() (float64, float64) {
 		for i, a := range row {
 			c := float64(a) + float64((float64(next[i])-float64(a))*fraction)
 			blend := float64(offset+i) / float64(v.region.Crossfade)
-			l := float32(float64(tl[i])*(1-blend) + float64(hl[i])*blend)
-			r := float32(float64(tr[i])*(1-blend) + float64(hr[i])*blend)
+			l := float32(float64(float64(tl[i])*(1-blend)) + float64(float64(hl[i])*blend))
+			r := float32(float64(float64(tr[i])*(1-blend)) + float64(float64(hr[i])*blend))
 			left += float64(float64(l) * c)
 			right += float64(float64(r) * c)
 		}
@@ -207,12 +209,12 @@ func (v *Voice) frame(index int) (float32, float32) {
 	if r.Crossfade > 0 && index >= r.LoopEnd-r.Crossfade && index < r.LoopEnd {
 		head := r.LoopStart + index - (r.LoopEnd - r.Crossfade)
 		blend := float64(index-(r.LoopEnd-r.Crossfade)) / float64(r.Crossfade)
-		left = float32(float64(left)*(1-blend) + float64(r.Left[head])*blend)
+		left = float32(float64(float64(left)*(1-blend)) + float64(float64(r.Left[head])*blend))
 		h := r.Left[head]
 		if len(r.Right) != 0 {
 			h = r.Right[head]
 		}
-		right = float32(float64(right)*(1-blend) + float64(h)*blend)
+		right = float32(float64(float64(right)*(1-blend)) + float64(float64(h)*blend))
 	}
 	return left, right
 }

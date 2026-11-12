@@ -8,8 +8,10 @@ import (
 
 // chorusDigest pins the chorus output bits for an exact test programme, with
 // one to three voices and a smoothed control change. CI checks the same digest
-// on arm64 in the PCM24 parity job.
-const chorusDigest = "ae142586416870a6efccd2a8cc2f5693f9b291565ffa797481f9630a6d57ab93"
+// on arm64 in the PCM24 parity job. It moved on 2026-11-10 (pull request
+// #327) when the smoothing and low-pass coefficients (Exp) moved from the math
+// library to kernel/dsp/detmath.
+const chorusDigest = "e5f0bcd0f30a75fae5762fda5ac0ba01502a23f4405a6e2a6f3179577787cbce"
 
 func TestChorusDigest(t *testing.T) {
 	d := bitdigest.New()
@@ -38,7 +40,7 @@ func TestChorusDigest(t *testing.T) {
 			// The float32 output rounds away most last-bit differences; the
 			// float64 state does not.
 			d.Float64(x.current.Rate, x.current.Depth, x.current.Spread, x.current.Mix, x.filteredL, x.filteredR)
-			d.Int(int(x.slowPhase[0]), int(x.slowPhase[1]), int(x.slowPhase[2]))
+			d.Uint32(x.slowPhase[:]...)
 		}
 	}
 	if got := d.Hex(); got != chorusDigest {

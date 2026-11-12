@@ -1,6 +1,10 @@
 package expressive
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // Bow is an experimental, monophonic two-rail bowed-string waveguide.
 // The velocity-dependent friction junction follows the waveguide bowed-string
@@ -37,7 +41,7 @@ func (d *bowDelay) read(n float64) float64 {
 	if j == len(d.data) {
 		j = 0
 	}
-	return d.data[i]*(1-f) + d.data[j]*f
+	return float64(d.data[i]*(1-f)) + float64(d.data[j]*f)
 }
 func (d *bowDelay) push(x float64) {
 	d.data[d.index] = x
@@ -50,7 +54,7 @@ func (d *bowDelay) push(x float64) {
 type bowResonator struct{ a, r2, gain, y1, y2 float64 }
 
 func (r *bowResonator) tick(x float64) float64 {
-	y := r.gain*x + r.a*r.y1 - r.r2*r.y2
+	y := float64(float64(r.gain*x)+float64(r.a*r.y1)) - float64(r.r2*r.y2)
 	r.y2 = r.y1
 	r.y1 = y
 	return y
@@ -79,9 +83,9 @@ func NewBow(sampleRate int) *Bow {
 	b.control = b.target
 	// Analytic broad body modes, deliberately not fitted to a recorded violin.
 	for i, f := range []float64{280, 530, 2350} {
-		r := math.Exp(-math.Pi * []float64{95, 150, 900}[i] / b.rate)
+		r := detmath.Exp(-math.Pi * []float64{95, 150, 900}[i] / b.rate)
 		w := 2 * math.Pi * f / b.rate
-		b.body[i] = bowResonator{a: 2 * r * math.Cos(w), r2: r * r, gain: (1 - r) * math.Sin(w)}
+		b.body[i] = bowResonator{a: 2 * r * detmath.Cos(w), r2: r * r, gain: (1 - r) * detmath.Sin(w)}
 	}
 	// Blackman-windowed sinc decimator: nonlinear junction runs at 2x.
 	sum := 0.0
@@ -89,11 +93,11 @@ func NewBow(sampleRate int) *Bow {
 		x := float64(i - 15)
 		v := 0.45
 		if x != 0 {
-			v = math.Sin(0.45*math.Pi*x) / (math.Pi * x)
+			v = detmath.Sin(0.45*math.Pi*x) / (math.Pi * x)
 		}
-		v *= 0.42 - 0.5*math.Cos(2*math.Pi*float64(i)/30) + 0.08*math.Cos(4*math.Pi*float64(i)/30)
+		v *= float64(0.42-float64(0.5*detmath.Cos(2*math.Pi*float64(i)/30))) + float64(0.08*detmath.Cos(4*math.Pi*float64(i)/30))
 		b.fir[i] = v
-		sum += v
+		sum += float64(v)
 	}
 	for i := range b.fir {
 		b.fir[i] /= sum
@@ -123,51 +127,53 @@ func (b *Bow) SetExpression(e Expression) {
 
 func (b *Bow) Next() float64 {
 	for sub := 0; sub < 2; sub++ {
-		smooth := 1 - math.Exp(-1/(0.008*b.rate))
-		b.pitch += smooth * (b.target.PitchHz - b.pitch)
-		b.control.Pressure += smooth * (b.target.Pressure - b.control.Pressure)
-		b.control.Position += smooth * (b.target.Position - b.control.Position)
-		b.control.Brightness += smooth * (b.target.Brightness - b.control.Brightness)
-		b.control.Vibrato += smooth * (b.target.Vibrato - b.control.Vibrato)
-		b.control.Damping += smooth * (b.target.Damping - b.control.Damping)
+		smooth := 1 - detmath.Exp(-1/(0.008*b.rate))
+		b.pitch += float64(smooth * (b.target.PitchHz - b.pitch))
+		b.control.Pressure += float64(smooth * (b.target.Pressure - b.control.Pressure))
+		b.control.Position += float64(smooth * (b.target.Position - b.control.Position))
+		b.control.Brightness += float64(smooth * (b.target.Brightness - b.control.Brightness))
+		b.control.Vibrato += float64(smooth * (b.target.Vibrato - b.control.Vibrato))
+		b.control.Damping += float64(smooth * (b.target.Damping - b.control.Damping))
 		goal := 0.0
 		tau := 0.035
 		if b.gate {
 			goal = b.velocity
 			tau = 0.018
 		}
-		b.envelope += (goal - b.envelope) * (1 - math.Exp(-1/(tau*b.rate)))
+		b.envelope += float64((goal - b.envelope) * (1 - detmath.Exp(-1/(tau*b.rate))))
 		b.phase += 5 / b.rate
 		if b.phase >= 1 {
 			b.phase--
 		}
-		freq := b.pitch * math.Exp2(b.control.Vibrato*math.Sin(2*math.Pi*b.phase)/1200)
-		cutoff := 2200 + 8500*b.control.Brightness
-		pole := math.Exp(-2 * math.Pi * cutoff / b.rate)
+		freq := b.pitch * detmath.Exp2(b.control.Vibrato*detmath.Sin(2*math.Pi*b.phase)/1200)
+		cutoff := 2200 + float64(8500*b.control.Brightness)
+		pole := detmath.Exp(-2 * math.Pi * cutoff / b.rate)
 		omega := 2 * math.Pi * freq / b.rate
 		// Compensate reflection-filter phase delay at the requested fundamental.
-		phaseDelay := math.Atan2(pole*math.Sin(omega), 1-pole*math.Cos(omega)) / omega
+		// atan(y/x) for x = 1 - pole*cos(omega) > 0 (pole <= e^(-2*pi*2200/rate) < 1),
+		// the angle math.Atan2(y, x) gives.
+		phaseDelay := detmath.Atan(float64(pole*detmath.Sin(omega))/(1-float64(pole*detmath.Cos(omega)))) / omega
 		length := b.rate/freq - phaseDelay
-		position := 0.07 + 0.32*b.control.Position
+		position := 0.07 + float64(0.32*b.control.Position)
 		bridge := b.bridge.read(length * position)
-		b.loss = (1-pole)*bridge + pole*b.loss
-		refBridge := -(0.997 - 0.018*b.control.Damping) * b.loss
+		b.loss = float64((1-pole)*bridge) + float64(pole*b.loss)
+		refBridge := -(0.997 - float64(0.018*b.control.Damping)) * b.loss
 		refNut := -0.999 * b.neck.read(length*(1-position))
-		bowVelocity := b.envelope * (0.08 + 0.18*b.control.Pressure)
-		relative := bowVelocity - refBridge - refNut
+		bowVelocity := b.envelope * (0.08 + float64(0.18*b.control.Pressure))
+		relative := float64(float64(bowVelocity)-float64(refBridge)) - float64(refNut)
 		friction := 0.0
 		if b.envelope > 0.00001 && b.control.Pressure > 0.0001 {
-			u := 0.75 + math.Abs(relative)*(6-4.5*b.control.Pressure)
+			u := 0.75 + float64(math.Abs(relative)*(6-float64(4.5*b.control.Pressure)))
 			friction = math.Min(0.98, 1/(u*u*u*u))
 			friction *= math.Min(1, b.envelope/0.008) * math.Min(1, b.control.Pressure/0.02)
 		}
 		force := relative * friction
 		// Last-resort bounds are outside normal operating amplitude.
-		b.bridge.push(bowBound(refNut+force, -4, 4))
-		b.neck.push(bowBound(refBridge+force, -4, 4))
-		x := 0.65*bridge + 0.32*b.body[0].tick(bridge) + 0.22*b.body[1].tick(bridge) + 0.12*b.body[2].tick(bridge)
+		b.bridge.push(bowBound(float64(refNut)+float64(force), -4, 4))
+		b.neck.push(bowBound(float64(refBridge)+float64(force), -4, 4))
+		x := float64(float64(float64(0.65*bridge)+float64(0.32*b.body[0].tick(bridge)))+float64(0.22*b.body[1].tick(bridge))) + float64(0.12*b.body[2].tick(bridge))
 		// Remove DC generated by bow direction, preserving low string fundamentals.
-		y := x - b.dcIn + math.Exp(-2*math.Pi*15/b.rate)*b.dcOut
+		y := float64(x-b.dcIn) + float64(detmath.Exp(-2*math.Pi*15/b.rate)*b.dcOut)
 		b.dcIn = x
 		b.dcOut = y
 		b.history[b.index] = y
@@ -180,7 +186,7 @@ func (b *Bow) Next() float64 {
 		if j < 0 {
 			j = len(b.history) - 1
 		}
-		y += h * b.history[j]
+		y += float64(h * b.history[j])
 	}
 	return 2.2 * y
 }

@@ -25,146 +25,175 @@ import (
 )
 
 func main() {
+	args, err := startCPUProfileFlag(os.Args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cicada:", err)
+		exitProcess(2)
+	}
+	os.Args = args
+	defer stopCPUProfile()
+	if len(os.Args) > 1 && os.Args[1] == "render" {
+		armInterruptCleanup()
+	}
 	if handled, exitCode := handleCLIHelp(os.Args[1:], os.Stdout, os.Stderr); handled {
 		if exitCode != 0 {
-			os.Exit(exitCode)
+			exitProcess(exitCode)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "transcribe" {
 		if err := transcribeCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "wam2" {
 		if err := wam2Command(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "director" {
 		if err := directorCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "game-score" {
 		if err := gameScoreCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fit-model" {
 		if err := fitModelCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "record-pack" {
 		if err := recordPackCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "record-kit" {
 		if err := recordKitCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "lib" {
 		if err := libCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "studio" {
 		if err := studioCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "lsp" {
 		if len(os.Args) != 2 {
 			fmt.Fprintln(os.Stderr, "usage: cicada lsp")
-			os.Exit(2)
+			exitProcess(2)
 		}
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "save-as" {
 		if err := saveAsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "bundle" {
 		if err := bundleCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "new" {
 		if err := newCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fix" {
 		if err := fixCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "apply" {
 		if err := applyCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "diagnostics" {
 		if err := diagnosticsCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "intents" {
 		if err := intentsCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if code := mcpCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr); code != 0 {
+			exitProcess(code)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "song" {
+		if err := songCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			exitProcess(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "agents" {
+		if code := agentsCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
+			exitProcess(code)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		if err := checkCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "play" {
 		if err := playCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -172,7 +201,7 @@ func main() {
 		data, err := project.FieldsJSON()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		fmt.Println(string(data))
 		return
@@ -181,16 +210,16 @@ func main() {
 		if err := paramsCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			if err.Error() == paramsUsage {
-				os.Exit(2)
+				exitProcess(2)
 			}
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "view" {
 		if err := viewCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -199,16 +228,16 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			var coded *explainError
 			if errors.As(err, &coded) && coded.code == "usage" {
-				os.Exit(2)
+				exitProcess(2)
 			}
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "gen" {
 		if err := generatorCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -235,7 +264,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "audition" {
 		if err := auditionCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -246,33 +275,33 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "verify-midi" {
 		if err := verifyMIDICommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "compare-midi" {
 		if err := compareMIDICommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "import-midi" {
 		if err := importMIDICommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "golden" {
 		if err := goldenCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "render" || os.Args[1] == "stems") && hasJSONFlag(os.Args[2:]) {
-		os.Exit(renderJSONMain(os.Args[1], os.Args[2:], os.Stdout, os.Stderr))
+		exitProcess(renderJSONMain(os.Args[1], os.Args[2:], os.Stdout, os.Stderr))
 	}
 	if len(os.Args) < 3 || (os.Args[1] != "render" && os.Args[1] != "stems" && os.Args[1] != "midi" && len(os.Args) > 5) {
 		usage()
@@ -310,7 +339,7 @@ func main() {
 	inspection, err := inspectScore(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
 	// Audio assets and sampler packs resolve from the project folder, where
@@ -319,7 +348,7 @@ func main() {
 	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
 		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 	var programs map[string]*instrument.Program
@@ -337,7 +366,7 @@ func main() {
 		}
 	}
 	if hasErrors {
-		os.Exit(1)
+		exitProcess(1)
 	}
 	switch command {
 	case "validate":
@@ -347,13 +376,13 @@ func main() {
 	case "events":
 		if err := emitEvents(score, os.Args[3], os.Args[4]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	case "graph":
 		program := programs[os.Args[3]]
 		if program == nil {
 			fmt.Fprintln(os.Stderr, "unknown instrument", os.Args[3])
-			os.Exit(1)
+			exitProcess(1)
 		}
 		writeJSON(program)
 	case "render":
@@ -361,7 +390,7 @@ func main() {
 		renderOptions.AssetDir = inspection.root(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	case "stems":
 		renderOptions.AssetRoot = inspection.root(path)
@@ -369,14 +398,14 @@ func main() {
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
-		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate)
+		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz, %s\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate, laneSummary(report.LaneReport))
 	case "midi":
 		midiOpts.libraryAliases = score.LibraryAliases
 		if err := midiFile(semantic, midiOpts); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 }
@@ -395,7 +424,7 @@ func verifyStemsCommand(args []string) {
 	report, err := render.VerifyStems(nil, args[0], render.VerifyStemsOptions{ResidualMaxDB: *residual})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	fmt.Printf("%s: %d float32 stems, %d frames, pre-comp residual %.2f dBFS\n", args[0], report.Files, report.Frames, report.ResidualPeakDB)
 }
@@ -430,7 +459,7 @@ func usage() {
 		if entry, ok := findCommandHelp(os.Args[1]); ok {
 			fmt.Fprintln(os.Stderr, "usage: "+entry.usage)
 			fmt.Fprintln(os.Stderr, "run cicada help "+entry.name+" for its flags")
-			os.Exit(2)
+			exitProcess(2)
 		}
 	}
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
@@ -443,7 +472,7 @@ func usage() {
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
 		"convert <in> -o <out> | compare --semantic <a> <b> | view <in.cicada|in.json> -o <out.html> | fields | params | explain <construct[.field]> [--json] | explain <score.cicada> <path> [@bar[.beat[.step]]] | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
-	os.Exit(2)
+	exitProcess(2)
 }
 
 func formatCommand(args []string) {
@@ -451,7 +480,7 @@ func formatCommand(args []string) {
 		check := len(args) == 1 && args[0] == "--check"
 		if err := formatProjectCommand(check, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		return
 	}
@@ -470,7 +499,7 @@ func formatCommand(args []string) {
 	source, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	var formatted []byte
 	if filepath.Ext(path) == ".json" {
@@ -490,7 +519,7 @@ func formatCommand(args []string) {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	switch mode {
 	case "--check":
@@ -498,19 +527,19 @@ func formatCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "--- "+path)
 			fmt.Fprintln(os.Stderr, "+++ "+path+" (formatted)")
 			fmt.Fprint(os.Stderr, simpleDiff(source, formatted))
-			os.Exit(1)
+			exitProcess(1)
 		}
 	case "-w":
 		if !bytes.Equal(source, formatted) {
 			if err := writeAtomic(path, formatted); err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 		}
 	default:
 		if _, err := os.Stdout.Write(formatted); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 }
@@ -675,18 +704,66 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
+	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d, %s\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples, laneSummary(report.LaneReport))
 	return nil
 }
 
+// newNormalizeMasterCache creates the temporary file that lets the second
+// render of peak normalization replay the first one's mix; tests replace it.
+var newNormalizeMasterCache = render.NewMasterCache
+
 // renderPlainFile renders a score without a loudness target into path,
 // through a temporary file that replaces path only when the render succeeds.
+//
+// Peak normalization renders the song twice: once to measure the output peak
+// and once more with the gain that puts that peak at -1 dBFS. The second
+// render differs from the first only in that output gain, which enters after
+// the mix, so it replays the first render's stored mix (render.MasterCache)
+// and writes the same bytes. The cache only saves time: when its file cannot
+// be created the render runs in full, and when the render fails while the
+// cache exists (the cache took the disk space the output needed, or could not
+// be read back) the cache is removed and the render runs once more without it.
+// Any other failure is returned as it is. CICADA_RENDER_NO_REUSE=1 renders
+// both times in full.
 func renderPlainFile(score *notation.Score, path string, opts render.Options) (render.Report, error) {
+	removeStaleRenderFiles(filepath.Dir(path))
+	if !opts.Normalize || opts.MasterCache != nil || !renderReuseAllowed() {
+		return renderPlainFileAttempt(score, path, opts)
+	}
+	cache, err := newNormalizeMasterCache(filepath.Dir(path))
+	if err != nil {
+		return renderPlainFileAttempt(score, path, opts)
+	}
+	cached := opts
+	cached.MasterCache = cache
+	report, err := renderPlainFileAttempt(score, path, cached)
+	// Close empties the file before it removes it, so the space comes back
+	// even when the removal fails; there is nothing more to do with its error.
+	cache.Close()
+	if err == nil || !masterCacheFault(err) {
+		return report, err
+	}
+	return renderPlainFileAttempt(score, path, opts)
+}
+
+// renderPlainFileAttempt renders into path once; tests replace it to count
+// the attempts.
+var renderPlainFileAttempt = renderPlainFileOnce
+
+// masterCacheFault reports whether a render failed because of its stored mix:
+// the mix could not be read back, or the disk ran out of the space that the
+// cache file takes.
+func masterCacheFault(err error) bool {
+	return errors.Is(err, render.ErrMasterCacheRead) || isNoSpace(err)
+}
+
+func renderPlainFileOnce(score *notation.Score, path string, opts render.Options) (render.Report, error) {
 	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
 	if err != nil {
 		return render.Report{}, err
 	}
 	defer os.Remove(file.Name())
+	defer removeOnInterrupt(file.Name())()
 	if info, err := os.Stat(path); err == nil {
 		if err := file.Chmod(info.Mode().Perm()); err != nil {
 			file.Close()
@@ -716,8 +793,11 @@ func renderPlainFile(score *notation.Score, path string, opts render.Options) (r
 func renderLoudnessFile(score *notation.Score, path string, opts render.Options, target renderTargetOptions) error {
 	report, err := renderLoudnessFileReport(score, path, opts, target, nil)
 	if report.Passes > 0 {
-		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
-			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
+		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d (full syntheses %d, cached replays %d, repeats %d), largest limiter gain reduction %.2f dB, %s\n",
+			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.Syntheses, report.Replays, report.Repeats, report.LargestLimiterReductionDB, laneSummary(report.Lanes))
+		for i, pass := range report.PassLog {
+			fmt.Printf("%s: pass %d: %s\n", path, i+1, pass)
+		}
 		for _, note := range report.Notes {
 			fmt.Printf("%s: note: %s\n", path, note)
 		}
@@ -733,13 +813,23 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 }
 
 type loudnessFileReport struct {
-	TargetLUFS                float64 `json:"target_lufs"`
-	AchievedLUFS              float64 `json:"achieved_lufs"`
-	TruePeakDBTP              float64 `json:"true_peak_dbtp"`
-	SamplePeakDBFS            float64 `json:"sample_peak_dbfs"`
-	AppliedGainDB             float64 `json:"applied_gain_db"`
-	Passes                    int     `json:"passes"`
-	LargestLimiterReductionDB float64 `json:"largest_limiter_reduction_db"`
+	TargetLUFS     float64 `json:"target_lufs"`
+	AchievedLUFS   float64 `json:"achieved_lufs"`
+	TruePeakDBTP   float64 `json:"true_peak_dbtp"`
+	SamplePeakDBFS float64 `json:"sample_peak_dbfs"`
+	AppliedGainDB  float64 `json:"applied_gain_db"`
+	Passes         int     `json:"passes"`
+	// Syntheses counts the passes that rendered the song in full, Replays the
+	// passes that replayed the first pass's stored mix instead (see
+	// render.MasterCache), and Repeats the passes that were not rendered
+	// because they would have written the audio of an earlier pass (see
+	// render.SameAudio); together they are Passes. PassLog has one entry per
+	// pass, in order.
+	Syntheses                 int            `json:"syntheses"`
+	Replays                   int            `json:"replays"`
+	Repeats                   int            `json:"repeats"`
+	PassLog                   []loudnessPass `json:"pass_log,omitempty"`
+	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
 	// MasterLimiterReductionDB is the largest gain reduction of a limiter in
 	// the score's master chain. GainStage is "master_input" when the export gain
 	// runs ahead of the master chain (a chain with a limiter on either renderer,
@@ -758,6 +848,53 @@ type loudnessFileReport struct {
 	From       int   `json:"-"`
 	Frames     int64 `json:"-"`
 	SampleRate int   `json:"-"`
+	// Lanes is how the search's first synthesis used its lanes.
+	Lanes render.LaneReport `json:"-"`
+}
+
+// How a pass of the loudness search got its audio.
+const (
+	passSynthesized = "synthesized" // rendered the song in full
+	passReplayed    = "replayed"    // replayed the first pass's stored mix (render.MasterCache)
+	passRepeated    = "repeated"    // not rendered: it would have written the audio of an earlier pass
+)
+
+// loudnessPass is what one pass of the loudness search applied and measured.
+// A measurement is nil when it is not a finite number, for example the
+// loudness of a silent render.
+type loudnessPass struct {
+	GainDB         float64  `json:"gain_db"`
+	IntegratedLUFS *float64 `json:"integrated_lufs"`
+	TruePeakDBTP   *float64 `json:"true_peak_dbtp"`
+	// Render is passSynthesized, passReplayed or passRepeated. SameAs is, for
+	// a repeated pass, the number of the pass whose audio and measurement it
+	// shares.
+	Render string `json:"render"`
+	SameAs int    `json:"same_as,omitempty"`
+}
+
+func newLoudnessPass(gain float64, measurement render.VerifyReport, how string, sameAs int) loudnessPass {
+	finite := func(value float64) *float64 {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil
+		}
+		return &value
+	}
+	return loudnessPass{GainDB: gain, IntegratedLUFS: finite(measurement.IntegratedLUFS), TruePeakDBTP: finite(measurement.TruePeakDBTP), Render: how, SameAs: sameAs}
+}
+
+func (p loudnessPass) String() string {
+	number := func(value *float64, unit string) string {
+		if value == nil {
+			return "unmeasurable"
+		}
+		return fmt.Sprintf("%.2f %s", *value, unit)
+	}
+	how := p.Render
+	if p.Render == passRepeated {
+		how = fmt.Sprintf("not rendered: same audio as pass %d", p.SameAs)
+	}
+	return fmt.Sprintf("gain %+.2f dB, %s, true peak %s, %s", p.GainDB, number(p.IntegratedLUFS, "LUFS"), number(p.TruePeakDBTP, "dBTP"), how)
 }
 
 func renderLoudnessFileReport(score *notation.Score, path string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
@@ -793,11 +930,17 @@ func renderStudioLoudnessFileReport(score *notation.Score, path string, opts ren
 type loudnessShortfallError struct {
 	reason, message string
 	limiterCeiling  *float64
+	remedySummary   string  // limiterRemedySummaryFor the score, when limiterCeiling is set
+	neededGainDB    float64 // the input gain the target needs, when limiterCeiling is set
 }
 
 func (e *loudnessShortfallError) Error() string {
 	if e.limiterCeiling != nil {
-		return e.message + "; " + limiterRemedySummary(*e.limiterCeiling)
+		summary := e.remedySummary
+		if summary == "" {
+			summary = limiterRemedySummary(*e.limiterCeiling)
+		}
+		return e.message + "; " + summary
 	}
 	return e.message
 }
@@ -805,9 +948,9 @@ func (e *loudnessShortfallError) Error() string {
 // limiterRemedySummary is the fix docs/audio/mix-chain.md gives for a target
 // that a score without a master limiter misses at the true-peak ceiling: the
 // static gain keeps the crest factor, and a limiter as the last master insert
-// lets the gain go in ahead of it. No edit intent adds a limiter yet.
+// lets the gain go in ahead of it; addeffect adds one.
 func limiterRemedySummary(ceiling float64) string {
-	return fmt.Sprintf("add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent", formatDBTP(ceiling))
+	return fmt.Sprintf("add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text", formatDBTP(ceiling))
 }
 
 // formatDBTP writes a dBTP number as score text writes it.
@@ -821,11 +964,13 @@ func (e *renderFailure) Error() string { return e.message }
 func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfallPath string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
 	report := loudnessFileReport{TargetLUFS: target.LoudnessTarget}
 	dir := filepath.Dir(path)
+	removeStaleRenderFiles(dir)
 	candidate, err := os.CreateTemp(dir, ".cicada-loudness-candidate-*")
 	if err != nil {
 		return report, err
 	}
 	candidatePath := candidate.Name()
+	defer removeOnInterrupt(candidatePath)()
 	if err := candidate.Close(); err != nil {
 		os.Remove(candidatePath)
 		return report, err
@@ -836,11 +981,16 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		return report, err
 	}
 	bestPath := best.Name()
+	defer removeOnInterrupt(bestPath)()
 	if err := best.Close(); err != nil {
 		os.Remove(bestPath)
 		return report, err
 	}
 	defer os.Remove(bestPath)
+	// CICADA_RENDER_NO_REUSE=1 renders every pass in full: no stored mix and
+	// no repeated passes. The result is the same; it is there to work around,
+	// and to bisect, a difference that the reuse would cause.
+	reuse := renderReuseAllowed()
 
 	var bestRender render.Report
 	var bestMeasure render.VerifyReport
@@ -862,11 +1012,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
 		}
 	}
-	// Every pass differs only in export gain and DC correction. When a master
-	// chain follows the direct renderer's mix, later passes replay the first
-	// pass's mix instead of synthesizing it again; the scheduled engine renders
-	// in full each time. The cache only saves time. If its file cannot be
-	// created, every pass renders in full.
+	// Every pass differs only in export gain and DC correction, and both enter
+	// after the mix that the master stage receives. Passes after the first
+	// therefore replay the first pass's stored mix through the master stage
+	// instead of synthesizing it again, on both renderers, with or without a
+	// master chain (see render.MasterCache). The cache only saves time. If its
+	// file cannot be created, every pass renders in full.
 	//
 	// A finished capture keeps its file, next to the output, for the rest of the
 	// search, and the file takes disk space that the export's own files need. A
@@ -875,7 +1026,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	// and so does a pass that cannot read the cache back. Every later pass then
 	// renders in full, as it does when the cache cannot be created.
 	var masterCache *render.MasterCache
-	if hasMasterChain && !render.UsesScheduledEngine(score, opts) {
+	if reuse {
 		if cache, cacheErr := newLoudnessMasterCache(dir); cacheErr == nil {
 			masterCache = cache
 			defer masterCache.Close()
@@ -894,6 +1045,14 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			err = copyLoudnessFile(candidatePath, bestPath)
 		}
 		return err
+	}
+	// last is the most recent pass that was rendered. Its audio is in the
+	// candidate file until the next rendered pass replaces it.
+	var last struct {
+		options     render.Options
+		report      render.Report
+		measurement render.VerifyReport
+		pass        int
 	}
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
@@ -914,27 +1073,55 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
 		passOptions.MasterCache = masterCache
 		passOptions.Normalize = false
-		passReport, err := renderLoudnessPass(score, passOptions, candidatePath)
-		if err != nil && masterCache != nil {
-			dropMasterCache()
-			passOptions.MasterCache = nil
+		var passReport render.Report
+		var measurement render.VerifyReport
+		how, sameAs := passSynthesized, 0
+		if reuse && last.pass > 0 && render.SameAudio(score, last.options, passOptions) {
+			// The gain moved by less than the renderer's gain factors can show,
+			// so this pass would write the bytes that the last rendered pass
+			// wrote, which the candidate file still holds, and measure the
+			// same. The search goes on from that measurement unchanged.
+			passReport, measurement, how, sameAs = last.report, last.measurement, passRepeated, last.pass
+			report.Repeats++
+		} else {
+			replaysBefore := masterCache.Replays()
 			passReport, err = renderLoudnessPass(score, passOptions, candidatePath)
+			if err == nil && masterCache.Replays() > replaysBefore {
+				how = passReplayed
+			}
+			if err != nil && masterCache != nil {
+				dropMasterCache()
+				passOptions.MasterCache = nil
+				passReport, err = renderLoudnessPass(score, passOptions, candidatePath)
+			}
+			if err != nil {
+				return report, err
+			}
+			if how == passReplayed {
+				report.Replays++
+			} else {
+				report.Syntheses++
+				if report.Syntheses == 1 {
+					// Lanes run only when the song is synthesized: report
+					// how the first synthesis used them.
+					report.Lanes = passReport.LaneReport
+				}
+			}
+			measurement, err = render.VerifyWAV(candidatePath, render.VerifyOptions{
+				SampleRate: passReport.SampleRate,
+				Bits:       opts.Bits,
+				Bars:       passReport.Bars,
+				From:       passReport.From,
+				TailSec:    opts.TailSec,
+				PeakMaxDB:  100,
+				DCMaxDB:    100,
+			})
+			if err != nil {
+				return report, err
+			}
+			last.options, last.report, last.measurement, last.pass = passOptions, passReport, measurement, pass
 		}
-		if err != nil {
-			return report, err
-		}
-		measurement, err := render.VerifyWAV(candidatePath, render.VerifyOptions{
-			SampleRate: passReport.SampleRate,
-			Bits:       opts.Bits,
-			Bars:       passReport.Bars,
-			From:       passReport.From,
-			TailSec:    opts.TailSec,
-			PeakMaxDB:  100,
-			DCMaxDB:    100,
-		})
-		if err != nil {
-			return report, err
-		}
+		report.PassLog = append(report.PassLog, newLoudnessPass(gain, measurement, how, sameAs))
 		peakSafe := measurement.TruePeakDBTP <= target.TruePeakMaxDBTP
 		dcSafe := measurement.DCDB <= -60
 		chainReduction := passReport.MaxMasterChainLimiterReductionDB
@@ -1088,6 +1275,10 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				// limiter's ceiling is -12 to 0 dBTP.
 				ceiling := target.TruePeakMaxDBTP
 				shortfallErr.limiterCeiling = &ceiling
+				// The gain the target needs from the material's level at unity;
+				// past the input gain cap a limiter alone cannot supply it.
+				shortfallErr.neededGainDB = target.LoudnessTarget - (bestMeasure.IntegratedLUFS - bestGain)
+				shortfallErr.remedySummary = limiterRemedySummaryFor(score, ceiling, shortfallErr.neededGainDB)
 			}
 		} else {
 			shortfallErr = &loudnessShortfallError{reason: "loudness_target_missed", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}
@@ -1172,7 +1363,12 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	var badCap *residentPCMArgError
 	if errors.As(err, &badCap) {
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badCap.err)
-		os.Exit(2)
+		exitProcess(2)
+	}
+	var badJobs *jobsArgError
+	if errors.As(err, &badJobs) {
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", badJobs)
+		exitProcess(2)
 	}
 	if err != nil {
 		usage()
@@ -1212,8 +1408,13 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 	truePeak := flags.Float64("true-peak-max", -1, "maximum true peak in dBTP for loudness rendering")
 	loudnessTolerance := flags.Float64("loudness-tolerance", 0.5, "loudness target tolerance in LU")
 	exportName := flags.String("export", "", "named export settings block")
+	jobsText := flags.String("jobs", "", "render lanes: auto or a count; absent renders serially")
 	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
 		return "", render.Options{}, nil, errUsage
+	}
+	jobs, err := parseJobs(*jobsText)
+	if err != nil {
+		return "", render.Options{}, nil, err
 	}
 	fromBar, err := cliBarOffset(*from, flags, warning)
 	if err != nil {
@@ -1263,7 +1464,7 @@ func parseRenderArgs(args []string, wantBits int, warning io.Writer) (string, re
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM}, target, nil
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline, MaxResidentPCM: residentPCM, Jobs: jobs}, target, nil
 }
 
 func verifyWAVCommand(args []string) {
@@ -1313,12 +1514,12 @@ func verifyWAVCommand(args []string) {
 	if *jsonReport {
 		if reportErr := writeVerifyJSON(report); reportErr != nil {
 			fmt.Fprintln(os.Stderr, reportErr)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	fmt.Printf("%s: %d frames, peak %s dBFS, DC %s dBFS; true peak %s dBTP, RMS %s dBFS, integrated %s LUFS, loudness range %.2f LU, maximum momentary %s LUFS, maximum short-term %s LUFS, clipped samples %d, ceiling samples %d\n",
 		path, report.Frames, formatDB(report.PeakDB), formatDB(report.DCDB), formatDB(report.TruePeakDBTP), formatDB(report.RMSDBFS),
@@ -1385,7 +1586,7 @@ func writeJSON(v any) {
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 }
 
@@ -1423,7 +1624,7 @@ func emitEvents(score *notation.Score, trackName, patternName string) error {
 	if err != nil {
 		return err
 	}
-	end := clock.SampleAtTick(seq.TicksPerBar)
+	end := clock.SampleAtTick(score.MeterMap().BarTicks(0)) // one bar of the base meter
 	var records []eventRecord
 	var buf [128]seq.Event
 	for _, cp := range compiled {

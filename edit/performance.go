@@ -50,8 +50,10 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 	if points > seq.MaxPerformanceExpressions {
 		return fmt.Errorf("a performance may contain at most %d gesture points", seq.MaxPerformanceExpressions)
 	}
-	origin = origin / seq.TicksPerBar * seq.TicksPerBar
-	length := ((end - origin + seq.TicksPerBar - 1) / seq.TicksPerBar) * seq.TicksPerBar
+	meterMap := ctx.MeterMap()
+	originBar, _ := meterMap.BarAt(origin)
+	origin = meterMap.BarStart(originBar)
+	length := meterMap.BarsTicks(origin, meterMap.BarsUntil(end)-originBar)
 	if length > 1<<40 {
 		return fmt.Errorf("performance span exceeds its tick range")
 	}

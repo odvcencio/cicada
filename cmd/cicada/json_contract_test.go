@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -181,6 +182,16 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 			status := exit(explainCommand([]string{"mix.pan", "--probe", "--json"}, &stdout))
 			return outcome{stdout.Bytes(), status}
 		},
+		"agents usage": func() outcome {
+			var stdout bytes.Buffer
+			status := agentsCommand([]string{"--json", "--bogus"}, &stdout, &bytes.Buffer{})
+			return outcome{stdout.Bytes(), status}
+		},
+		"intents index with a kind": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(intentsCommand([]string{"--json", "--index", "setstep"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
 	}
 	want := map[string]struct {
 		code   string
@@ -205,6 +216,8 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 		"explain a track of a missing score": {"unreadable_score", 1},
 		"explain usage":                      {"usage", 1},
 		"explain probe of a mixer control":   {"not_probeable", 1},
+		"agents usage":                       {"usage", 2},
+		"intents index with a kind":          {"usage", 1},
 	}
 	for name, command := range run {
 		got := command()
@@ -371,6 +384,31 @@ func documentedCodes(t *testing.T, name string) []string {
 	return codes
 }
 
+// TestQuickStartListsTheApplyErrorCodes keeps the apply error codes the
+// agent quick start names, between its apply-error-codes markers, equal to the
+// codes apply sets.
+func TestQuickStartListsTheApplyErrorCodes(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(), "docs", "manual", "agent-quickstart.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, list, found := strings.Cut(string(data), "<!-- apply-error-codes -->")
+	list, _, closed := strings.Cut(list, "<!-- /apply-error-codes -->")
+	if !found || !closed {
+		t.Fatal("agent-quickstart.md lacks the apply-error-codes list")
+	}
+	var named []string
+	for _, match := range regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(list, -1) {
+		named = append(named, match[1])
+	}
+	want := append([]string(nil), applyErrorCodes...)
+	sort.Strings(named)
+	sort.Strings(want)
+	if strings.Join(named, " ") != strings.Join(want, " ") {
+		t.Fatalf("the quick start names the apply codes %v; apply sets %v", named, want)
+	}
+}
+
 // TestErrorCodesAreDocumented keeps the render and apply error codes equal
 // to the lists in docs/manual/agents.md, and every code the source sets in
 // those lists.
@@ -415,12 +453,15 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 	formats := map[string]func() any{
-		helpSchema:        func() any { return &helpDocument{} },
-		intentsSchema:     func() any { return &intentsDocument{} },
-		diagnosticsSchema: func() any { return &diagnosticsDocument{} },
-		checkSchema:       func() any { return &checkDocument{} },
-		applySchema:       func() any { return &applyDocument{} },
-		renderSchema:      func() any { return &renderDocument{} },
+		agentsSchema:       func() any { return &agentsDocument{} },
+		songSchema:         func() any { return &songDocument{} },
+		intentsIndexSchema: func() any { return &intentsIndexDocument{} },
+		helpSchema:         func() any { return &helpDocument{} },
+		intentsSchema:      func() any { return &intentsDocument{} },
+		diagnosticsSchema:  func() any { return &diagnosticsDocument{} },
+		checkSchema:        func() any { return &checkDocument{} },
+		applySchema:        func() any { return &applyDocument{} },
+		renderSchema:       func() any { return &renderDocument{} },
 	}
 	fence := strings.Repeat("`", 3)
 	lines := strings.Split(string(data), "\n")
@@ -449,8 +490,20 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 			t.Errorf("agents.md:%d: unknown schema %q", i+1, header.Schema)
 			continue
 		}
-		if err := json.Unmarshal(body, make()); err != nil {
-			t.Errorf("agents.md:%d: the %s example does not decode: %v", i+1, header.Schema, err)
+		document := make()
+		strict := json.NewDecoder(bytes.NewReader(body))
+		strict.DisallowUnknownFields()
+		if err := strict.Decode(document); err != nil {
+			t.Errorf("agents.md:%d: the %s example does not decode as that format: %v", i+1, header.Schema, err)
+		}
+		var shown map[string]json.RawMessage
+		if err := json.Unmarshal(body, &shown); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range requiredJSONKeys(document) {
+			if _, ok := shown[key]; !ok {
+				t.Errorf("agents.md:%d: the %s example leaves out %q, which every %s document has", i+1, header.Schema, key, header.Schema)
+			}
 		}
 		decoded++
 		i = end
@@ -458,4 +511,24 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 	if decoded < 10 {
 		t.Fatalf("decoded only %d examples", decoded)
 	}
+}
+
+// requiredJSONKeys lists the top-level keys every document of v's type
+// carries: the JSON names of its fields without omitempty. An example may
+// shorten what is inside them, but not leave one out, so a document that
+// lost a key under an unchanged schema cannot match its example.
+func requiredJSONKeys(v any) []string {
+	typ := reflect.TypeOf(v)
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	var keys []string
+	for i := 0; i < typ.NumField(); i++ {
+		name, options, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		if name == "" || name == "-" || strings.Contains(","+options+",", ",omitempty,") {
+			continue
+		}
+		keys = append(keys, name)
+	}
+	return keys
 }

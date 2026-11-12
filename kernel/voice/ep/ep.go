@@ -5,6 +5,8 @@ package ep
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
@@ -133,24 +135,24 @@ func New(rate int, p Params) (*Instrument, error) {
 	if p.PickupPosition < 0 || p.PickupPosition > 1 || p.PickupDistance < .2 || p.PickupDistance > 2 || p.HammerFelt < 0 || p.HammerFelt > 1 || p.Decay < .3 || p.Decay > 20 || p.Release < .02 || p.Release > 2 || p.Drive < 0 || p.Drive > 1 || p.Tremolo < 0 || p.Tremolo > 1 || p.TremoloRate < .1 || p.TremoloRate > 12 || p.Pan < 0 || p.Pan > 1 || p.Gain < 0 || p.Gain > 2 {
 		return nil, Error("electric piano parameter outside range")
 	}
-	i := &Instrument{params: p, rate: rate, gap: float32(p.PickupDistance), offset: float32((p.PickupPosition - .5) * .75), drive: float32(1 + 5*p.Drive), amp: float32(p.Gain * .34), lfoP: 1}
+	i := &Instrument{params: p, rate: rate, gap: float32(p.PickupDistance), offset: float32((p.PickupPosition - .5) * .75), drive: float32(1 + float64(5*p.Drive)), amp: float32(p.Gain * .34), lfoP: 1}
 	i.live = liveControls{trem: float32(p.Tremolo), pan: float32(p.Pan), rate: float32(p.TremoloRate)}
 	i.live.tremT, i.live.panT, i.live.rateT, i.live.driveT, i.live.ampT = i.live.trem, i.live.pan, i.live.rate, i.drive, i.amp
 	fs := float64(rate * p.Oversample)
-	i.lowAlpha = float32(1 - math.Exp(-2*math.Pi*min(8500., float64(rate)*.2)/float64(rate)))
-	i.dcPole = float32(math.Exp(-2 * math.Pi * 18 / float64(rate)))
+	i.lowAlpha = float32(1 - detmath.Exp(-2*math.Pi*min(8500., float64(rate)*.2)/float64(rate)))
+	i.dcPole = float32(detmath.Exp(-2 * math.Pi * 18 / float64(rate)))
 	a := 2 * math.Pi * 54 / fs
-	i.thumpC = float32(math.Cos(a))
-	i.thumpS = float32(math.Sin(a))
-	i.thumpR = float32(math.Exp(-1 / (.022 * fs)))
-	i.clickR = float32(math.Exp(-1 / (.0015 * fs)))
+	i.thumpC = float32(detmath.Cos(a))
+	i.thumpS = float32(detmath.Sin(a))
+	i.thumpR = float32(detmath.Exp(-1 / (.022 * fs)))
+	i.clickR = float32(detmath.Exp(-1 / (.0015 * fs)))
 	a = 2 * math.Pi * p.TremoloRate / float64(rate)
-	i.lfoC = float32(math.Cos(a))
-	i.lfoS = float32(math.Sin(a))
-	i.stealDecay = float32(math.Exp(-1 / (.003 * float64(rate))))
+	i.lfoC = float32(detmath.Cos(a))
+	i.lfoS = float32(detmath.Sin(a))
+	i.stealDecay = float32(detmath.Exp(-1 / (.003 * float64(rate))))
 	for n := MinNote; n <= MaxNote; n++ {
 		k := &i.keys[n-MinNote]
-		f := 440 * math.Exp2(float64(n-69)/12)
+		f := 440 * detmath.Exp2(float64(n-69)/12)
 		ratios := [modeCount]float64{1, 1.0015, 6.267, 17.55, 34.39, 56.84}
 		weights := [modeCount]float64{.88, .12, .04, .004, .0005, .0001}
 		if p.Model == Reed {
@@ -163,26 +165,26 @@ func New(rate int, p Params) (*Instrument, error) {
 				continue
 			}
 			a = 2 * math.Pi * hz / fs
-			t60 := p.Decay * math.Exp2(float64(60-n)/35) / (1 + .34*float64(m*m))
+			t60 := p.Decay * detmath.Exp2(float64(60-n)/35) / (1 + float64(.34*float64(m*m)))
 			if p.Model == Tine && m == 1 {
 				t60 *= .82
 			}
 			if p.Model == Tine && m >= 2 {
 				h := float64(m - 2)
-				t60 = min(t60, 0.6*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+				t60 = min(t60, 0.6*detmath.Exp2(float64(60-n)/50)/(1+float64(.7*h*h)))
 			}
 			if p.Model == Reed && m >= 1 {
 				h := float64(m - 1)
-				t60 = min(t60, .5*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+				t60 = min(t60, .5*detmath.Exp2(float64(60-n)/50)/(1+float64(.7*h*h)))
 			}
-			k.modes[m] = rotation{c: float32(math.Cos(a)), s: float32(math.Sin(a)), r: float32(math.Exp(-6.907755 / (t60 * fs))), weight: float32(weights[m])}
+			k.modes[m] = rotation{c: float32(detmath.Cos(a)), s: float32(detmath.Sin(a)), r: float32(detmath.Exp(-6.907755 / (t60 * fs))), weight: float32(weights[m])}
 		}
 		if p.Model == Tine {
-			k.velocityLoss = float32(6.907755 * .7 / (p.Decay * math.Exp2(float64(60-n)/35) * fs))
+			k.velocityLoss = float32(6.907755 * .7 / (p.Decay * detmath.Exp2(float64(60-n)/35) * fs))
 		}
-		k.release = float32(math.Exp(-6.907755 / (p.Release * fs)))
+		k.release = float32(detmath.Exp(-6.907755 / (p.Release * fs)))
 		k.derivative = float32(fs / (2 * math.Pi * f))
-		k.lifetime = int(min(40., p.Decay*math.Exp2(float64(60-n)/35)*1.4) * float64(rate))
+		k.lifetime = int(min(40., p.Decay*detmath.Exp2(float64(60-n)/35)*1.4) * float64(rate))
 	}
 	i.voiceLimit = MaxVoices
 	return i, nil
@@ -368,7 +370,7 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	norm := float32(1.5) - float32(.5*float32(float32(q*q)+float32(p*p)))
 	i.lfoQ = float32(q * norm)
 	i.lfoP = float32(p * norm)
-	trem := float32(1) - float32(i.live.trem*float32(.5+.5*q))
+	trem := float32(1) - float32(i.live.trem*float32(.5+float32(.5*q)))
 	pan := float32(i.live.pan * i.live.trem * q)
 	y = float32(dc*i.amp) * trem
 	l := float32(y*float32(1-pan)) + i.stealL
@@ -404,8 +406,8 @@ const (
 
 func (i *Instrument) setLFORate(hz float32) {
 	a := 2 * math.Pi * float64(hz) / float64(i.rate)
-	i.lfoC = float32(math.Cos(a))
-	i.lfoS = float32(math.Sin(a))
+	i.lfoC = float32(detmath.Cos(a))
+	i.lfoS = float32(detmath.Sin(a))
 }
 
 func (i *Instrument) glide() {
@@ -433,7 +435,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("electric piano drive must be 0..1")
 		}
-		l.driveT = float32(1 + 5*float64(value))
+		l.driveT = float32(1 + float64(5*float64(value)))
 	case controlTremolo:
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("electric piano tremolo must be 0..1")

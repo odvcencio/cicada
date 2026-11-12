@@ -21,6 +21,7 @@ import (
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/fx/ampcab"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
@@ -82,7 +83,9 @@ func vocalMillisecondsFrames(ms float64, rate int) int64 {
 	return int64(math.Round(ms * float64(rate) / 1000))
 }
 
-func notationTicks(value string) (int64, error) { return notation.MusicalTicks(value, true) }
+func notationTicks(meterMap seq.MeterMap, value string) (int64, error) {
+	return notation.MusicalTicks(meterMap, value, true)
+}
 
 // The comp types live in the edit service, which writes their metadata comment.
 type (
@@ -174,13 +177,13 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	start, end := int64(0), studioArrangementEnd(p)
 	var err error
 	if settings != nil && settings.Start != "" {
-		start, err = notationTicks(settings.Start)
+		start, err = notationTicks(p.MeterMap(), settings.Start)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if settings != nil && settings.End != "" {
-		end, err = notationTicks(settings.End)
+		end, err = notationTicks(p.MeterMap(), settings.End)
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +191,7 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	if start < 0 || end <= start || end > studioArrangementEnd(p) {
 		return nil, fmt.Errorf("choose a recording range within the full song")
 	}
-	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}, nil
+	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-p.MeterMap().BarTicks(0)), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}, nil
 }
 
 // vocalTakeSource is the candidate source for selecting a take; see
@@ -273,13 +276,13 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	lo, hi := takeCoverage(t)
 	if settings != nil {
 		if settings.Start != "" {
-			lo, err = notationTicks(settings.Start)
+			lo, err = notationTicks(p.MeterMap(), settings.Start)
 			if err != nil {
 				return nil, env, err
 			}
 		}
 		if settings.End != "" {
-			hi, err = notationTicks(settings.End)
+			hi, err = notationTicks(p.MeterMap(), settings.End)
 			if err != nil {
 				return nil, env, err
 			}
@@ -287,7 +290,7 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	}
 	from, to := takeCoverage(t)
 	if lo < from || hi > to || hi <= lo || hi > studioArrangementEnd(p) {
-		return nil, env, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(from), listeningPosition(to))
+		return nil, env, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(p.MeterMap(), from), listeningPosition(p.MeterMap(), to))
 	}
 	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli, TempoChanges: slices.Clone(t.Timeline.TempoChanges), Elastic: follow}
 	if follow {
@@ -309,7 +312,7 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 		segment.OffsetMS, segment.FadeMS, segment.CrossfadeMS = settings.OffsetMS, settings.FadeMS, settings.CrossfadeMS
 	}
 	next.Segments = replaceVocalSegment(next.Segments, segment)
-	asset, err := s.printVocalComp(next, t.Rate)
+	asset, err := s.printVocalComp(next, t.Rate, p.MeterMap())
 	if err != nil {
 		return nil, env, err
 	}
@@ -331,7 +334,9 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	return result, env, nil
 }
 
-func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
+// printVocalComp places the comp on the song's meter map: its segments and
+// tempo steps are song positions.
+func (s *studio) printVocalComp(c vocalComp, rate int, meterMap seq.MeterMap) (project.Asset, error) {
 	var result project.Asset
 	if err := s.openTakes(); err != nil {
 		return result, err
@@ -350,7 +355,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 	if err := edits.ValidateVocalComp(c); err != nil {
 		return result, err
 	}
-	clock, err := project.NewTempoMap(rate, c.Tempo, c.TempoChanges)
+	clock, err := project.NewTempoMap(meterMap, rate, c.Tempo, c.TempoChanges)
 	if err != nil {
 		return result, err
 	}
@@ -383,7 +388,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 			return result, err
 		}
 		if c.Elastic {
-			take, err = s.elasticVocalTake(take, c)
+			take, err = s.elasticVocalTake(take, c, meterMap)
 			if err != nil {
 				return result, err
 			}
@@ -413,7 +418,7 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 		if seg.FadeMS != nil {
 			fade = vocalMillisecondsFrames(*seg.FadeMS, rate)
 		}
-		regions = append(regions, printRegion{seg: seg, take: take, stream: stream, start: offset, end: offset + count, raw: raw, fade: min(fade, count/2), gain: float32(math.Pow(10, seg.GainDB/20)), fadeIn: true, fadeOut: true})
+		regions = append(regions, printRegion{seg: seg, take: take, stream: stream, start: offset, end: offset + count, raw: raw, fade: min(fade, count/2), gain: float32(detmath.Pow(10, seg.GainDB/20)), fadeIn: true, fadeOut: true})
 	}
 	type printJoin struct {
 		left, right int
@@ -456,7 +461,8 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 						gain *= float32(min(1, float64(count-1-at-i)/float64(region.fade)))
 					}
 				}
-				v := (left[i]*0.5 + right[i]*0.5) * gain
+				// Rounded products: the comp print is the same file on every target.
+				v := (float32(left[i]*0.5) + float32(right[i]*0.5)) * gain
 				binary.LittleEndian.PutUint32(data[44+(region.start+at+i)*4:], math.Float32bits(v))
 			}
 			at += n
@@ -475,7 +481,9 @@ func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {
 			}
 			for i := int64(0); i < n; i++ {
 				blend := float32(at+i-join.start) / float32(join.end-join.start-1)
-				v := (left[i]*.5+right[i]*.5)*a.gain*(1-blend) + (otherLeft[i]*.5+otherRight[i]*.5)*b.gain*blend
+				monoA := float32(left[i]*.5) + float32(right[i]*.5)
+				monoB := float32(otherLeft[i]*.5) + float32(otherRight[i]*.5)
+				v := float32(monoA*a.gain*(1-blend)) + float32(monoB*b.gain*blend)
 				binary.LittleEndian.PutUint32(data[44+(at+i)*4:], math.Float32bits(v))
 			}
 			at += n
@@ -723,7 +731,7 @@ func (s *studio) startAudioTake() error {
 	if p.Live != nil && p.Live.CountInBars != nil {
 		countInBars = *p.Live.CountInBars
 	}
-	countIn, err := capture.NewCountIn(take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
+	countIn, err := capture.NewCountIn(p.MeterMap(), take.Rate, clock.ClockAtTick(take.Timeline.PlaybackStartTick).BPMMilli, countInBars)
 	if err != nil {
 		return err
 	}
@@ -867,13 +875,13 @@ func (s *studio) listenVocalTake(candidate, original []byte, take takejournal.Ta
 	lo, hi := takeCoverage(take)
 	if settings != nil {
 		if settings.Start != "" {
-			lo, err = notationTicks(settings.Start)
+			lo, err = notationTicks(p.MeterMap(), settings.Start)
 			if err != nil {
 				return err
 			}
 		}
 		if settings.End != "" {
-			hi, err = notationTicks(settings.End)
+			hi, err = notationTicks(p.MeterMap(), settings.End)
 			if err != nil {
 				return err
 			}

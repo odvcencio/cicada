@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/bits"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
@@ -353,7 +355,7 @@ func (e *Engine) gainLinear(track uint8, gainDB float32) float32 {
 	if modulationEnabled && e.mod.tableLaw&(uint64(1)<<track) != 0 {
 		return mix.DBToLinear(gainDB)
 	}
-	return float32(math.Pow(10, float64(gainDB)/20))
+	return float32(detmath.Pow(10, float64(gainDB)/20))
 }
 
 func (e *Engine) trackMix(track uint8, gainDB, pan float32) mix.Track {
@@ -411,7 +413,7 @@ func (e *Engine) advanceModulation() {
 		if mapping.Exponential {
 			target = float32(float64(mapping.Min) * fastmath.Exp2(fastmath.Log2(float64(mapping.Max)/float64(mapping.Min))*float64(value)))
 		} else {
-			target = mapping.Min + (mapping.Max-mapping.Min)*value
+			target = mapping.Min + float32((mapping.Max-mapping.Min)*value)
 		}
 		if value == 0 {
 			target = mapping.Min

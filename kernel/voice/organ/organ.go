@@ -5,6 +5,8 @@ package organ
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
@@ -184,28 +186,28 @@ func New(rate int, params Params) (*Instrument, error) {
 	}
 	p := &Instrument{rate: rate, params: params, voiceLimit: MaxVoices}
 	fs := float64(rate)
-	alpha := func(seconds float64) float32 { return float32(1 - math.Exp(-1/(seconds*fs))) }
+	alpha := func(seconds float64) float32 { return float32(1 - detmath.Exp(-1/(seconds*fs))) }
 	p.attackAlpha, p.releaseAlpha = alpha(.0013), alpha(.0035)
 	p.drawbarAlpha = alpha(.004)
-	p.clickDecay, p.clickAlpha = float32(math.Exp(-1/(.0015*fs))), alpha(1/(2*math.Pi*1600))
-	p.stealDecay = float32(math.Exp(-1 / (.0015 * fs)))
+	p.clickDecay, p.clickAlpha = float32(detmath.Exp(-1/(.0015*fs))), alpha(1/(2*math.Pi*1600))
+	p.stealDecay = float32(detmath.Exp(-1 / (.0015 * fs)))
 	percussionTime := .5
 	if params.PercussionFast {
 		percussionTime = .105
 	}
-	p.percussionDecay = float32(math.Exp(-1 / (percussionTime * fs)))
+	p.percussionDecay = float32(detmath.Exp(-1 / (percussionTime * fs)))
 	p.percussionGain = .24
 	if params.PercussionSoft {
 		p.percussionGain = .09
 	}
-	p.scannerA = float32((math.Tan(math.Pi*2400/fs) - 1) / (math.Tan(math.Pi*2400/fs) + 1))
-	p.scannerStep = uint32(6.9/fs*4294967296 + .5)
+	p.scannerA = float32((detmath.Tan(math.Pi*2400/fs) - 1) / (detmath.Tan(math.Pi*2400/fs) + 1))
+	p.scannerStep = uint32(float64(6.9/fs*4294967296) + .5)
 	if params.Scanner != ScannerOff {
 		depth := (int(params.Scanner) - 1) % 3
 		p.scannerDepth = [...]float32{5, 10, 17}[depth]
 		p.scannerChorus = params.Scanner >= C1
 	}
-	p.crossoverAlpha = float32(1 - math.Exp(-2*math.Pi*800/fs))
+	p.crossoverAlpha = float32(1 - detmath.Exp(-2*math.Pi*800/fs))
 	p.inverseRate = float32(1 / fs)
 	p.hornSlow, p.hornFast, p.drumSlow, p.drumFast = .77, 6.7, .66, 6.0
 	p.hornRise, p.hornFall, p.drumRise, p.drumFall = alpha(.9), alpha(1.3), alpha(3.3), alpha(4.2)
@@ -216,18 +218,19 @@ func New(rate int, params Params) (*Instrument, error) {
 	p.hornDelay, p.hornSwing, p.drumDelay, p.drumSwing = float32(.0025*fs), float32(.00035*fs), float32(.0034*fs), float32(.0007*fs)
 	p.driveAmount = 1 + float32(7*params.Drive)
 	p.driveCompensation = 1 / p.driveAmount
-	p.dcPole = float32(math.Exp(-2 * math.Pi * 8 / fs))
+	p.dcPole = float32(detmath.Exp(-2 * math.Pi * 8 / fs))
 	for i := range p.sine {
-		p.sine[i] = float32(math.Sin(2 * math.Pi * float64(i) / tableSize))
+		p.sine[i] = float32(detmath.Sin(2 * math.Pi * float64(i) / tableSize))
 	}
 	// The final endpoint is exact: interpolation never crosses a tiny libm
 	// sine residue at 2*pi. Float32 products separate all render roundings.
 	p.sine[tableSize] = 0
 	for i := range p.wheelStep {
-		hz := 440 * math.Exp2(float64(i+wheelMin-69)/12)
-		p.wheelStep[i] = uint32(hz/fs*4294967296 + .5)
+		hz := 440 * detmath.Exp2(float64(i+wheelMin-69)/12)
+		p.wheelStep[i] = uint32(float64(hz/fs*4294967296) + .5)
 		p.wheelPhase[i] = uint32(i+1) * 2654435761
-		p.wheelGain[i] = float32(1 / math.Sqrt(1+math.Pow(hz/10500, 2)))
+		x := hz / 10500 // x*x equals the former Pow(x, 2) on all 91 wheels
+		p.wheelGain[i] = float32(1 / math.Sqrt(1+float64(x*x)))
 	}
 	for i := range p.keys {
 		k := &p.keys[i]
@@ -390,7 +393,7 @@ func (p *Instrument) NoteOff(note uint8) {
 		v := &p.voices[i]
 		if v.active && v.note == note && v.held {
 			v.held = false
-			v.click += .004 * p.params.KeyClick
+			v.click += float32(.004 * p.params.KeyClick)
 		}
 	}
 }
@@ -461,8 +464,8 @@ func (p *Instrument) nextVoice(v *voice) float32 {
 	v.noise ^= v.noise >> 17
 	v.noise ^= v.noise << 5
 	n := float32(int32(v.noise)) / 2147483648
-	v.clickLow += float32(p.clickAlpha * float32(n-v.clickLow))
-	tone += float32(v.click * float32(n-v.clickLow))
+	v.clickLow += float32(p.clickAlpha * float32(float32(n)-float32(v.clickLow)))
+	tone += float32(v.click * float32(float32(n)-float32(v.clickLow)))
 	v.click = float32(v.click * p.clickDecay)
 	v.last = tone
 	if v.contactAge < p.rate {

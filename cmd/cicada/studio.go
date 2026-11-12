@@ -72,6 +72,10 @@ type studio struct {
 	proposals           map[string]stagedProposal
 	previewProposal     string
 	afterStage          func() // Test seam: nil in production; see commitMutationLocked.
+
+	// filePaths maps a project file's name to its path for fileRevision,
+	// which takes no lock; a name is checked once with filePath.
+	filePaths sync.Map
 }
 
 // applyStudioResidentPCM takes --max-resident-pcm out of Studio's arguments and
@@ -292,6 +296,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/midi/ports", s.midiPorts)
 	mux.HandleFunc("POST /api/midi/ports", s.setMIDIPort)
 	mux.HandleFunc("GET /api/files", s.projectFiles)
+	mux.HandleFunc("GET /api/files/revision", s.fileRevision)
 	mux.HandleFunc("GET /api/revision", s.projectRevision)
 	mux.HandleFunc("POST /api/files", s.editFile)
 	mux.HandleFunc("GET /api/meters", s.meters)
@@ -714,14 +719,14 @@ func compileStudioSourceDetailed(path string, source []byte, overrides map[strin
 				_, extra := project.FromScore(score)
 				diagnostics = append(diagnostics, extra...)
 			}
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
 		}
 	}
 	p, extra := project.FromScore(score)
 	diagnostics = append(diagnostics, extra...)
 	for _, d := range extra {
 		if d.Severity == "error" {
-			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+			return nil, sources, diagnostics, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Text())
 		}
 	}
 	if p == nil {

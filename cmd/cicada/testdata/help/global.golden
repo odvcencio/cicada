@@ -3,9 +3,10 @@ Usage: cicada <command> [arguments]
 Create a project, edit and validate scores, play them in Studio, or render files.
 
 Commands:
-  new, bundle, save-as, lib, apply, intents, fix, check, diagnostics, fmt, play, studio, lsp
+  agents, mcp, new, bundle, save-as, lib, apply, intents, fix, check, diagnostics, fmt, play, studio, lsp
   render, stems, audition, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi
-  gen, explain, view, highlight, symbols, convert, compare, validate, ast
+  gen, explain, view, highlight, song, symbols, convert, compare, validate, ast
   events, graph, fields, params, golden, record-pack, record-kit, fit-model, transcribe, wam2, director, game-score
 
 Run "cicada help <command>" for usage and flags, or "cicada help --json" for every command as JSON.
+An AI agent starts with "cicada agents": the quick start for driving Cicada from a program.

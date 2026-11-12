@@ -7,6 +7,13 @@ on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      soak:
+        # The soak holds the one self-hosted reference machine for about 35
+        # minutes, and every pull request's CPU gate queues behind it.
+        description: Also run the 30-minute M2 AudioWorklet soak on the self-hosted reference machine
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,7 +34,14 @@ env:
 #
 # Which jobs a pull request runs comes from scripts/ci-changes.sh (see the
 # `changes` job). Pushes to main, the nightly schedule and manual runs set
-# every group to true, so they run every job.
+# every group to true, but some jobs also filter on the event:
+#   - pull requests only: commit metadata hygiene, repository and docs checks;
+#   - pull requests and pushes, not the schedule or manual runs: the macOS
+#     desktop and platform-contract jobs and the four M2 jobs (WASM parity,
+#     one-hour memory, AudioWorklet browser tests and gates);
+#   - the schedule and manual runs only: the WAV parity and render-cache
+#     sweeps, macOS desktop exhaustive, and the M2 soak, which a manual run
+#     gets only with its soak input.
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
@@ -52,6 +66,10 @@ jobs:
       macos_desktop: ${{ steps.classify.outputs.macos_desktop }}
       macos_contracts: ${{ steps.classify.outputs.macos_contracts }}
       m2: ${{ steps.classify.outputs.m2 }}
+      m2_gates: ${{ steps.classify.outputs.m2_gates }}
+      bench: ${{ steps.classify.outputs.bench }}
+      wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
+      lane_stress: ${{ steps.classify.outputs.lane_stress }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -108,6 +126,13 @@ jobs:
           package-manager-cache: false
       - name: Tool versions
         run: go version
+      # A newer compiler can inline differently and fuse a product the go.mod
+      # toolchain does not; cross-compiling for arm64 prints its report.
+      - name: No fused multiply-adds with Go 1.27.3 (arm64 and GOAMD64=v3)
+        run: |
+          set -euo pipefail
+          GOARCH=arm64 scripts/check-fma.sh
+          GOARCH=amd64 GOAMD64=v3 scripts/check-fma.sh
       - name: Shards cover every test once
         run: make test-cmd-shard-check SHARDS=3
       - name: Native tests, every package but cmd/cicada
@@ -138,13 +163,14 @@ jobs:
         run: bash scripts/check-commit-hygiene.sh "$PR_BASE_SHA" "$PR_HEAD_SHA"
       # These tests need only bash, so they run on every pull request, even
       # one that changes only documentation.
-      - name: Test the change classifier and the Studio browser shard lists
+      - name: Test the change classifier, the Studio browser shard lists and the browser runner
         run: |
           set -euo pipefail
           bash scripts/ci-changes_test.sh
           bash scripts/ci-studio-browser_test.sh
           bash scripts/ci-setup-wasm-tools_test.sh
           bash scripts/ci-studio-browser.sh check
+          bash cmd/cicada/browser-runner_test.sh
 
   # Runs on every pull request, including one that changes only documentation.
   # TestDocumentationHygiene reads every tracked file, and the other tests read
@@ -183,9 +209,11 @@ jobs:
       - name: Tests that read every tracked file, the docs, or the README
         run: |
           set -euo pipefail
-          tests='TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
+          tests='TestAgentFrontDoorIsCurrent TestAgentGuideBudgets TestLLMsFullFitsItsBudget TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
           regex="^($(echo "$tests" | tr ' ' '|'))\$"
-          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
+          # TestLLMsFullFitsItsBudget builds llms-full.txt, which is not committed,
+          # checks its budget on that output, and writes it for the artifact below.
+          CICADA_LLMS_FULL_OUT="$RUNNER_TEMP/llms-full.txt" go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics ./internal/agentguide -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in $tests; do
@@ -195,6 +223,13 @@ jobs:
             fi
           done
           exit "$missing"
+      - name: Save llms-full.txt (built, not committed)
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: llms-full
+          if-no-files-found: error
+          path: ${{ runner.temp }}/llms-full.txt
       # The agent task suite (make test-agent-surface) drives the built binary
       # through one task with JSON output only. The M0 kernel job runs it when
       # the root group is on (any Go change, cmd/cicada and edit included).
@@ -252,12 +287,28 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = amd64
           make test-parity
-      - name: Require the master-chain digests and no fused multiply-adds with GOAMD64=v3
+      - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
-          GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/... 2>&1 | { grep -E 'fmahash triggered.*kernel/(fx|mix|loudness|dsp)/' || true; } | tee "$RUNNER_TEMP/v3-fma.log"
-          if [ -s "$RUNNER_TEMP/v3-fma.log" ]; then echo "fusable multiply-adds in the master chain (listed above)" >&2; exit 1; fi
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|[A-Za-z0-9]*FastPathExhaustive)$' -count=1
+          GOAMD64=v3 scripts/check-fma.sh
+      # The arm64 job compares its exported WAV files with these hashes.
+      - name: Hash the WAV files cicada render writes for the parity subset
+        run: |
+          set -euo pipefail
+          CICADA_WAV_PARITY_OUT="$PWD/build/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
+          grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+      - name: Race-check the render lanes
+        run: |
+          set -euo pipefail
+          # Render lanes must stay bit-identical to the serial render; a data
+          # race between lanes would be a determinism bug, so the lane tests
+          # run under the race detector with every segment on every lane.
+          go test -race ./internal/renderlanes ./kernel/engine -run '^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)' -count=3 -v | tee "$RUNNER_TEMP/lanes-race.log"
+          go test -race ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=1 -v | tee -a "$RUNNER_TEMP/lanes-race.log"
+          for name in TestOfflineParallelRenderIsBitIdentical TestOfflineParallelFaultMatchesSerial TestRunRendersEveryTrackOnce TestDirectLanesAreBitIdentical TestDirectLanesFaultMatchesSerial TestAudioClipLanesAreBitIdentical TestLaneCountChangesBetweenSegments TestForcedLanesRenderEachSegmentOnce; do
+            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/lanes-race.log" || { echo "No PASS line for $name" >&2; exit 1; }
+          done
       - name: Save amd64 PCM and the tested kernel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -270,6 +321,7 @@ jobs:
             build/cicada-keys-modular.wasm
             build/parity/*.pcm24
             build/parity/report.txt
+            build/parity/wav-hashes.txt
 
   parity-arm64:
     name: PCM24 parity (amd64, arm64, WASM)
@@ -337,25 +389,42 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange|[A-Za-z0-9]*FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
           # lists every one it would fuse into a multiply-add on this machine, also
           # where it is inlined ("<autogenerated>:1:0; kernel/fx/...").
-          go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/... 2>&1 | { grep -E 'fmahash triggered.*kernel/(fx|mix|loudness|dsp)/' || true; } | tee "$RUNNER_TEMP/arm64-fma.log"
-          if [ -s "$RUNNER_TEMP/arm64-fma.log" ]; then echo "fusable multiply-adds in the master chain (listed above)" >&2; exit 1; fi
+          scripts/check-fma.sh
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange; do
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive \
+            TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
+            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest TestTanPi32FastPathExhaustive TestOneMinusExpNeg2Pi32FastPathExhaustive; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1
             fi
           done
           exit "$missing"
+      # The PCM24 test above compares the engine's samples; this one compares the
+      # files `cicada render` writes (master chain, loudness search, normalize,
+      # dither, WAV encoder) with the amd64 job's hashes.
+      - name: Require the parity subset's WAV files to match amd64 byte for byte
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/parity/wav-parity.txt
+          grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+          grep -q -- '^--- PASS: TestExampleWAVPins ' build/parity/wav-parity.txt
+      - name: Require every render job count to write the serial render's bytes on arm64
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          go test ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parity/parallel-identity.txt
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parity/parallel-identity.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -365,6 +434,83 @@ jobs:
           path: |
             build/parity/report.txt
             build/parity/modulate.txt
+            build/parity/parallel-identity.txt
+            build/parity/wav-parity.txt
+
+  # Nightly: every score under examples/, rendered four ways on amd64 and on
+  # arm64, compared byte for byte (TestExampleWAVParity with
+  # CICADA_WAV_PARITY_ALL=1), and every pinned render including the songs
+  # (TestExampleWAVPins). Pull requests run it too when they change the
+  # deterministic math or the WAV parity test (the wav_sweep group of
+  # scripts/ci-changes.sh); other pull requests render only the parity subset
+  # above.
+  wav-parity-sweep-amd64:
+    name: WAV parity sweep, every example (amd64)
+    needs: changes
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Render every example four ways and hash the WAV files
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = amd64
+          mkdir -p build/wav-parity
+          CICADA_WAV_PARITY_ALL=1 CICADA_WAV_PARITY_OUT="$PWD/build/wav-parity/wav-hashes.txt" go test -timeout=55m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/wav-parity/report.txt
+          grep -q -- '^--- PASS: TestExampleWAVParity ' build/wav-parity/report.txt
+          grep -q -- '^--- PASS: TestExampleWAVPins ' build/wav-parity/report.txt
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: wav-parity-amd64
+          if-no-files-found: error
+          retention-days: 7
+          path: build/wav-parity/wav-hashes.txt
+
+  wav-parity-sweep-arm64:
+    name: WAV parity sweep, every example (arm64 against amd64)
+    needs: [changes, wav-parity-sweep-amd64]
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true')) }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      GOWORK: off
+    steps:
+      - name: Require the amd64 sweep to pass
+        env:
+          AMD64_SWEEP_RESULT: ${{ needs.wav-parity-sweep-amd64.result }}
+        run: test "$AMD64_SWEEP_RESULT" = success
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: wav-parity-amd64
+          path: build/amd64-reference
+      - name: Render every example four ways and compare with amd64
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          mkdir -p build/wav-parity
+          CICADA_WAV_PARITY_ALL=1 CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/wav-hashes.txt" go test -timeout=55m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/wav-parity/report.txt
+          grep -q -- '^--- PASS: TestExampleWAVParity ' build/wav-parity/report.txt
+          grep -q -- '^--- PASS: TestExampleWAVPins ' build/wav-parity/report.txt
+      - name: Save the arm64 sweep report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: wav-parity-arm64-report
+          if-no-files-found: warn
+          retention-days: 7
+          path: build/wav-parity/report.txt
 
   studio-cli:
     name: Studio CLI tests (shard ${{ matrix.shard }}/3)
@@ -392,8 +538,120 @@ jobs:
       - name: cmd/cicada tests
         run: make test-cmd-shard SHARD=${{ matrix.shard }}/3
 
+  # Speed gates for an agent's loop (plan.cicada.speed, row F7): process start,
+  # check, apply, render, a loudness render and audition on the reference
+  # scores, as the median of 5 runs after one warm-up run. Pull requests and
+  # pushes report; the nightly run enforces the gates
+  # (cmd/cicada-bench/gates.go). It is not a required check. The large song's
+  # render and audition cover its first 8 bars, so the job stays under five
+  # minutes on the slower runners (16 bars took 6m07s with the warm-up).
+  bench:
+    name: Agent loop speed
+    needs: changes
+    if: ${{ needs.changes.outputs.bench == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build cicada
+        run: make build-core
+      - name: Measure
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          enforce=()
+          if [[ "$EVENT_NAME" == schedule ]]; then enforce=(--enforce); fi
+          make bench-agent-loop BENCH_ARGS="${enforce[*]}" | tee build/bench-agent-loop.txt
+      - name: Save the measurements
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: bench-agent-loop
+          if-no-files-found: warn
+          path: |
+            build/bench-agent-loop.json
+            build/bench-agent-loop.txt
+
+  # Every example score, rendered in full with and without the stored mix that
+  # loudness passes and peak normalization replay (render.MasterCache), must
+  # write the same bytes: plain, normalized, and at two loudness targets. The
+  # pull request tests run one short score per master path; this is the whole
+  # sweep, nightly, on both architectures.
+  render-identity:
+    name: Render cache identity sweep (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Sweep
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-render-identity | tee build/render-identity.log
+      - name: Save the sweep log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: render-identity-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: build/render-identity.log
+
+  # The direct mixer and the scheduled engine must play the same notes and
+  # write the same bytes at 44.1 kHz (TestRenderPathsAgree, job m0-render-paths
+  # on every pull request in the root group). Nightly, the same scores are
+  # compared at 48 kHz. The step reports and never fails: the log names each
+  # score that differs and by how much.
+  render-paths-audio:
+    name: Render paths, audio comparison report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-render-paths-audio | tee build/render-paths-audio.log
+      - name: Save the report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: render-paths-audio
+          if-no-files-found: warn
+          path: build/render-paths-audio.log
+
   # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
   # aggregate. Every command that was in the single job is in exactly one part.
+  # A fourth part, m0-render-paths, was added later.
   m0-core:
     name: M0 grammar and Go tests
     needs: changes
@@ -423,6 +681,32 @@ jobs:
           name: m0-core-reports
           if-no-files-found: error
           path: build/grammar-doctor.txt
+
+  # Renders every example score the direct mixer can render, whole, and the
+  # targeted scores in render/paths_agree_test.go through the direct mixer and
+  # the scheduled engine, and fails when their note events or audio bytes
+  # differ outside the listed known differences. It runs only here:
+  # `make test-ci-core` skips it, so the two Go test jobs do not wait for it.
+  m0-render-paths:
+    name: M0 render paths agree
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare the direct mixer and the scheduled engine
+        run: |
+          set -euo pipefail
+          make test-render-paths | tee "$RUNNER_TEMP/render-paths.log"
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '^--- PASS: TestRenderPathsAgree ' "$RUNNER_TEMP/render-paths.log" || { echo "No PASS line for TestRenderPathsAgree; was it renamed or skipped?" >&2; exit 1; }
 
   m0-kernel:
     name: M0 kernel, golden, realtime, CLI and generator
@@ -532,6 +816,8 @@ jobs:
           make test-kernel-wasm | tee build/kernel-wasm-report.txt
           make test-sampler-wasm | tee build/sampler-wasm-report.txt
           make test-keys-wasm | tee build/keys-wasm-report.txt
+      - name: Deterministic-math and processor digests compiled by TinyGo for WebAssembly
+        run: make test-tinygo-digests
       - name: Save gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -542,6 +828,7 @@ jobs:
             build/kernel-wasm-report.txt
             build/sampler-wasm-report.txt
             build/keys-wasm-report.txt
+            build/tinygo-digests.txt
             build/cicada-loudness.wasm
 
   # The required status check. See the comment above `concurrency:`. This job
@@ -549,7 +836,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -567,12 +854,17 @@ jobs:
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
+          RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
+          RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
+          WORKSTATION_RESULT: ${{ needs.workstation.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
-          #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
+          #   workstation                success when workstation=true, skipped otherwise
+          #                              (its go generate enforces the UI engine size limit)
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -603,6 +895,12 @@ jobs:
           check m0-core "$CORE_RESULT" "$part_expected"
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
+          check m0-render-paths "$RENDER_PATHS_RESULT" "$part_expected"
+          if [[ "$RUN_WORKSTATION" == true ]]; then
+            check workstation "$WORKSTATION_RESULT" success
+          else
+            check workstation "$WORKSTATION_RESULT" skipped
+          fi
           exit "$status"
 
   workstation:
@@ -645,6 +943,11 @@ jobs:
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
           git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
+      # What fills the UI engine WebAssembly, logged on every run. It reports;
+      # the limit is enforced by go generate above.
+      - name: UI engine size report (does not fail the job)
+        continue-on-error: true
+        run: make engine-size-report
       - name: Windows workstation and desktop
         run: |
           set -euo pipefail
@@ -658,6 +961,7 @@ jobs:
           path: |
             workstation/dist/build.json
             build/workstation-gosx-size.json
+            workstation/build/engine-size.json
 
   # Builds what the Studio browser suites run against once, so each shard does
   # not rebuild it. The tar keeps file modes (build/cicada stays executable).
@@ -769,6 +1073,8 @@ jobs:
             build/studio-notes-report.txt
             build/studio-notes-server.log
             build/studio-notes-proof/
+            build/studio-engine-requests-report.txt
+            build/studio-engine-requests-server.log
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/
@@ -844,6 +1150,36 @@ jobs:
             build/studio-library-recording-report.txt
             build/studio-library-recording-server.log
             build/studio-library-recording-proof/
+            build/studio-dock-fit-report.txt
+            build/studio-dock-fit-server.log
+            build/studio-dock-fit-proof/
+            build/studio-meter-performance-report.txt
+            build/studio-meter-performance-server.log
+            build/studio-meter-performance-proof/
+            build/studio-recording-setup-report.txt
+            build/studio-recording-setup-server.log
+            build/studio-recording-setup-proof/
+            build/studio-recording-levels-report.txt
+            build/studio-recording-levels-server.log
+            build/studio-recording-levels-proof/
+            build/studio-vocals-report.txt
+            build/studio-vocals-server.log
+            build/studio-vocals-proof/
+            build/studio-vocal-levels-report.txt
+            build/studio-vocal-levels-server.log
+            build/studio-vocal-levels-proof/
+            build/studio-performance-*-report.txt
+            build/studio-performance-*-server.log
+            build/studio-performance-proof/
+            build/studio-amp-automation-report.txt
+            build/studio-amp-automation-server.log
+            build/studio-amp-automation-proof/
+            build/studio-scene-launch-keys-report.txt
+            build/studio-scene-launch-keys-server.log
+            build/studio-live-write-*
+            build/studio-shared-capture-*-report.txt
+            build/studio-shared-capture-*-server.log
+            build/studio-shared-capture-proof/
             build/studio-pattern-song-*-report.txt
             build/studio-pattern-song-*-server.log
             build/studio-pattern-song-*-proof/
@@ -1042,6 +1378,124 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: build/native-*.log
+
+  # Every example score, rendered in full with --jobs 1 and with 2, 4, 8 and
+  # the automatic job count, plain and at -14 LUFS, must write the same bytes
+  # (render lanes). Pull requests run a short subset on amd64 (cmd/cicada
+  # tests) and arm64 (parity-arm64); this is the whole sweep, nightly, on both
+  # architectures, followed by the subset under the race detector.
+  parallel-identity:
+    name: Render lanes identity sweep (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Sweep
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          mkdir -p build
+          make test-parallel-identity | tee build/parallel-identity.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity.log
+      - name: Subset under the race detector
+        run: |
+          set -euo pipefail
+          go test -race -timeout=40m ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parallel-identity-race.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity-race.log
+      - name: Save the sweep log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parallel-identity-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            build/parallel-identity.log
+            build/parallel-identity-race.log
+
+  # The render lanes under the race detector with the lanestress hook, which
+  # delays or yields at seeded hand-off points of the lane protocol
+  # (make test-lane-stress). The forced-lane tests and the identity subset run
+  # with every segment on every lane and more jobs than processors. Pull
+  # requests that touch the lanes (lane_stress in scripts/ci-changes.sh) run a
+  # short version at GOMAXPROCS 2: the quick sets (renderlanes, render), which
+  # hold the catches of the three lane bugs found so far, three times, and the
+  # engine tests and identity subset once. This job is not part of the
+  # required check; it becomes required when --jobs defaults to auto.
+  lane-stress-pr:
+    name: Render lanes under scheduling stress (short)
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.lane_stress == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+
+  # The full stress run, nightly: -count=10 at GOMAXPROCS 2, 3 and every CPU,
+  # one runner each. At GOMAXPROCS 2 one repetition of all four sets took 228 s
+  # on this runner class (pull request #334's short job: renderlanes 6 s,
+  # render 11 s, engine 82 s, identity subset 129 s), so a setting should take
+  # about 40 minutes.
+  lane-stress:
+    name: Render lanes under scheduling stress (GOMAXPROCS ${{ matrix.procs }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        procs: ['2', '3', 'all']
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        env:
+          PROCS: ${{ matrix.procs }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS="$PROCS" LANE_STRESS_COUNT=10 LANE_STRESS_HEAVY_COUNT=10 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+      - name: Save the stress log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: lane-stress-${{ matrix.procs }}
+          if-no-files-found: warn
+          path: build/lane-stress.log
 
   macos-desktop-full:
     name: macOS desktop exhaustive (${{ matrix.arch }})
@@ -1278,13 +1732,15 @@ jobs:
           if-no-files-found: warn
           path: build/test-wasm-memory.log
 
-  m2-pr:
-    name: M2 AudioWorklet gates
+  m2-browser:
+    name: M2 AudioWorklet browser tests
     needs: changes
-    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2 == 'true' }}
-    # This job runs on the self-hosted reference machine, so a pull request from
-    # a fork must not run it.
-    runs-on: [self-hosted, linux, x64]
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && needs.changes.outputs.m2 == 'true' }}
+    # The AudioWorklet's functional browser tests, the WASM size gate and the
+    # WAM2 host. None of them times anything against a budget, so they run on
+    # hosted runners, beside other work, and never wait for the reference
+    # machine. Only the CPU gate (m2-pr below) needs that machine.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       GOWORK: off
@@ -1323,14 +1779,10 @@ jobs:
           go version
           tinygo version
           node --version
-      # make test-wasm and test-chord-wasm moved to the m2-wasm-parity and
-      # m2-wasm-memory jobs on hosted runners. The reference machine has one
-      # runner, so jobs queued for it run one after another, and its CPU
-      # budget measurements must not share the machine with other work.
-      - name: M2 browser and budgets
-        # build-worklets first: test-chord-wasm used to pull it in, and the browser
-        # and size gates must measure a worklet built from the current processor.js.
-        run: make build-worklets test-browser test-demo-browser budget-size budget-browser
+      - name: M2 browser tests and size gate
+        # build-worklets first: the browser tests and the size gate must use a
+        # worklet built from the current processor.js.
+        run: make build-worklets test-browser test-demo-browser budget-size
       - name: WAM2 export and reference host
         env:
           CICADA_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/cicada-wam2-evidence
@@ -1342,6 +1794,55 @@ jobs:
           name: wam2-gui-evidence
           if-no-files-found: error
           path: ${{ runner.temp }}/cicada-wam2-evidence/*.png
+      - name: Save M2 browser reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m2-audioworklet-browser-reports
+          if-no-files-found: warn
+          path: |
+            build/test-browser.log
+            build/test-worklet-stall.log
+            build/budget-size-report.txt
+            build/m2-browser-chrome.log
+            build/demo-evidence/
+
+  m2-pr:
+    name: M2 AudioWorklet gates
+    needs: changes
+    # Only changes that can move the CPU gate's result queue it (m2_gates in
+    # scripts/ci-changes.sh); pushes to main always run it.
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2_gates == 'true' }}
+    # This job runs on the self-hosted reference machine, so a pull request from
+    # a fork must not run it. The machine has one runner: every queued run waits
+    # for the one before it, so this job holds only the CPU budget, which a
+    # hosted runner cannot measure (it measured 1.296 ms against 0.67 ms).
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: ./.github/actions/setup-wasm-tools
+      # The runner's system Node is too old for the demo browser test, which
+      # needs the global WebSocket that Node 22 provides.
+      - name: Supported Node for browser checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      # No Chrome: on Linux TestBrowserCPUReport times the kernel WASM in Node and
+      # starts Chrome only with CICADA_BROWSER=windows.
+      - name: M2 CPU budget
+        # The browser tests, the size gate and WAM2 moved to m2-browser on hosted
+        # runners; the parity and memory tests are in m2-wasm-parity and
+        # m2-wasm-memory. build-worklets first, so the gate measures a worklet
+        # built from the current processor.js.
+        run: make build-worklets build-kernel-wasm budget-browser
       - name: Save M2 gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -1349,19 +1850,15 @@ jobs:
           name: m2-audioworklet-gate-reports
           if-no-files-found: warn
           path: |
-            build/test-wasm.log
-            build/test-chord-wasm.log
-            build/chord-wasm-report.txt
-            build/test-browser.log
-            build/budget-size-report.txt
             build/budget-browser.log
             build/browser-cpu-report.json
-            build/m2-browser-chrome.log
-            build/demo-evidence/
 
   m2-soak:
     name: M2 AudioWorklet nightly soak
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # A manual run asks for it with the soak input; otherwise every dispatch
+    # (for the macOS or other dispatch-only jobs) would hold the reference
+    # machine for about 35 minutes and queue every pull request's CPU gate.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.soak)
     # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
     # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
     runs-on: [self-hosted, linux, x64]

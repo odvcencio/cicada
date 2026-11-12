@@ -12,9 +12,6 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-// explainSchema names the explain --json documents of the control catalog.
-const explainSchema = "cicada.explain.v1"
-
 // explainControlDocument explains one control, such as fm_bass.op3_level.
 type explainControlDocument struct {
 	Schema  string           `json:"schema"`
@@ -217,7 +214,7 @@ func explainRun(args []string, asJSON bool, stdout io.Writer) error {
 			return err
 		}
 	}
-	err := explain(name, asJSON)
+	err := explain(stdout, name, asJSON)
 	if err == nil {
 		return nil
 	}

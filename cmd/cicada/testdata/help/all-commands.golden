@@ -1,11 +1,36 @@
 ### new
-cicada new <name>
+cicada new [--json] <name>
 
 create an edition-2 project
 
 Flags:
-  (no command flags)
+  --json      write what was created as JSON (schema cicada.new.v1)
   --help      show this help
+
+Writes main.cicada (a working song), cicada.mod, .gitignore and a short AGENTS.md that points an agent to cicada agents; an AGENTS.md already there is never replaced. With --json, agents_md_written says whether it wrote one.
+
+### agents
+cicada agents [reference] [--json]
+
+print the quick start for AI agents
+
+Flags:
+  --json      write the page as JSON (schema cicada.agents.v1) with its size in bytes, the commands that look up the rest and the pages the binary carries
+  --help      show this help
+
+The quick start teaches the loop (new, check, render, audition, apply), enough of the score language for a song with drums, bass and chords, the edit envelope, how to read a refusal and where to look things up. It is docs/manual/agent-quickstart.md, built into the binary, so it needs no repository checkout. cicada agents reference prints the core reference, which the binary builds from its own catalogs: the quick start, the JSON conventions in brief, and one line for every command, edit intent, diagnostic code and effect route.
+
+### mcp
+cicada mcp [--root <dir>] [--allow-user-library]
+
+serve the read-only tools to an MCP client over stdio
+
+Flags:
+  --root <dir>          the project folder the tools read (default: the working folder)
+  --allow-user-library  also read the user library outside the root (default: off)
+  --help                show this help
+
+Speaks the Model Context Protocol on standard input and output, one JSON-RPC message per line: revision 2026-07-28 (stateless, server/discover) and, after an initialize request, 2025-11-25 or 2025-06-18. The tools song, check, intents, explain, library and params return the documents of song --json, check --json, intents --json, diagnostics --json, explain --json, lib --json and params; the resources cicada://guide/quickstart and cicada://guide/reference are what cicada agents and cicada agents reference print. A result over 256 KiB is refused with too_large. The root must be a project's own folder, not a folder inside one or a library. Nothing is written but an empty temporary folder that stands in for the user library, and no connection is opened. See docs/manual/agents.md.
 
 ### bundle
 cicada bundle <score.cicada> <bundle.zip>
@@ -29,17 +54,19 @@ Flags:
   --json          write the result as JSON (schema cicada.apply.v1): revisions, diff, each intent's label, or the error with the failing intent's index, kind and field
   --author <name>  commit author (default: envelope author or cli)
   --session <id>   commit session
+  --cpuprofile <file>  write a Go CPU profile of the command to file
   --help          show this help
 
 A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes. An error names the failing intent as intents[<index>].<field> (<kind>); run cicada intents for every kind and its fields.
 
 ### intents
-cicada intents [--json] [kind]
+cicada intents [--json] [--index | kind]
 
 list the edit intents apply accepts
 
 Flags:
   --json      write the catalog as JSON (schema cicada.intents.v1)
+  --index     with --json, list only each kind and its meaning (schema cicada.intents_index.v1)
   --help      show this help
 
 Lists every intent kind with its meaning. With a kind, prints its fields (JSON name, type, whether required, unit or allowed values) and an example that cicada apply accepts. The catalog is generated from the intent registry. See docs/manual/agents.md.
@@ -76,6 +103,7 @@ Flags:
   --profile <name>           limits to check against: desktop (default) or browser
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM, as for render, such as 2GiB (default 1GiB)
   --json                     write the result as JSON (schema cicada.check.v1): each diagnostic with its position and any known fix
+  --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
 The browser profile also builds the images cicada wam2 exports and applies the portable limits: 16 tracks, 32 allocated voices, a 2 MiB image and no master processor. It lists the voices each track reserves and fails when a limit is exceeded. For a score with sampler packs, check reads each pack's manifest, loads the packs one at a time, and reports a pack that does not load at 44.1, 48 or 96 kHz, a note outside every zone of its pack, and packs whose declared size render would refuse. Pack paths resolve from the folder of cicada.mod, as audio assets do. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted.
@@ -135,15 +163,13 @@ Flags:
   --help      show this help
 
 ### params
-cicada params [<filter>] [--json]
+cicada params
 
-list every sound control with its range, default, meaning and direction
+print the parameter catalog as JSON
 
 Flags:
-  --json      write the control catalog as JSON (schema cicada.params.v1)
+  (no command flags)
   --help      show this help
-
-With --json, lists every control of every voice, keyboard patch, library patch, effect and mixer strip: its type, unit, range, default, where a score sets it, whether it can change while playing, what it does, and which way it moves level, brightness, attack and decay (stated, measured or unknown). A filter keeps the controls whose ID starts with it, such as fm_bass or fm_bass.op3, and the owners they belong to. Without arguments, prints the live-parameter registry as a JSON array, as before. See docs/manual/agents.md.
 
 ### view
 cicada view <score.cicada|project.json> -o <view.html>
@@ -155,19 +181,16 @@ Flags:
   --help      show this help
 
 ### explain
-cicada explain <control|voice|patch|effect> [--json] [--probe]
-cicada explain track:<name> <score.cicada> [--json]
 cicada explain <construct[.field]> [--json]
 cicada explain <score.cicada> <path> [@bar[.beat[.step]]]
 
-explain a control, voice, effect, track, language item or parameter value
+explain a language item or parameter value
 
 Flags:
-  --json      write the explanation as JSON (schema cicada.explain.v1 for controls, owners and tracks)
-  --probe     render the probe phrase at low, default and high values and report what changed (schema cicada.probe.v1)
+  --json      print construct details as JSON (schema cicada.explain.v1)
   --help      show this help
 
-A control is owner.name, such as fm_bass.op3_level; an owner is a voice, keyboard patch, library patch, effect kind or mixer strip, such as fm_bass or delay. track:<name> lists the controls that track's voice and mixer strip accept, their current values and which the track overrides. Score locations use bar numbers starting at 1.
+Score locations use bar numbers starting at 1.
 
 ### gen
 cicada gen [flags]
@@ -223,6 +246,18 @@ Flags:
   --spans   write JSON highlighting spans
   --help    show this help
 
+### song
+cicada song [--json] [--include source,symbols,structure] [score.cicada]
+
+read a score or list the project's scores
+
+Flags:
+  --json             write the result as JSON (schema cicada.song.v1)
+  --include <parts>  what to give of the score: source (default), symbols, structure
+  --help             show this help
+
+Without a score, lists every score of the project with its revision. With one, gives its revision (the form cicada apply checks) and its source text, the names it defines, or its compiled meaning as semantic JSON.
+
 ### symbols
 cicada symbols [--refs] [--json] <score.cicada>
 
@@ -254,10 +289,12 @@ Flags:
   --sampler-baseline           compare one recorded layer/take and 2 ms release
   --max-resident-pcm <size>    cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)
   --export <name>              use a named export profile
+  --jobs auto|<n>              render lanes: tracks synthesized at once; absent or 1 renders serially, auto picks the smaller of 4 and half the CPUs, <n> is honoured up to the number of CPUs
   --json                       write what was rendered as JSON (schema cicada.render.v1); on failure, an error with a reason code
+  --cpuprofile <file>          write a Go CPU profile of the command to file
   --help                       show this help
 
-Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB.
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall. Sampler packs stay in memory as decoded float32 PCM, and --max-resident-pcm caps their total; a project whose packs decode to more is refused before it renders, with the cap and the size measured in the message. CICADA_MAX_RESIDENT_PCM sets the cap when the option is omitted. Sizes are whole numbers with KiB, MiB, GiB, TiB, KB, MB, GB or TB, such as 512MiB. Every --jobs value writes the same bytes; the summary line and --json report the lanes the render set up and ran, and why it stayed serial if it did.
 
 ### stems
 cicada stems <score.cicada> -o <directory> [flags]
@@ -275,7 +312,9 @@ Flags:
   --normalize=<bool>         peak normalization option
   --block <frames>           offline block size (default 4096)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 512MiB (default 1GiB)
+  --jobs auto|<n>            render lanes; absent or 1 renders serially, auto picks the smaller of 4 and half the CPUs, <n> is honoured up to the number of CPUs
   --json                     list the stem files as JSON (schema cicada.render.v1)
+  --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
 Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
@@ -291,6 +330,8 @@ Flags:
   --bars <n>                 bars to analyze; 0 means through song end
   --json                     write the report as JSON (format cicada.audition/1)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --jobs auto|<n>            render lanes; absent or 1 renders serially, auto picks the smaller of 4 and half the CPUs, <n> is honoured up to the number of CPUs
+  --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 
 Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md. CICADA_MAX_RESIDENT_PCM sets the sampler-pack cap when the option is omitted.

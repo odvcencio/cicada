@@ -5,6 +5,8 @@ import (
 	"math"
 	"time"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/expression"
@@ -332,6 +334,8 @@ type Engine struct {
 	patternEdit                  seq.Pattern // reused by serialized callback edits; avoids a TinyGo heap temporary
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
+	// rescheduled is set when a track's events are rebuilt; see prepareRenderFrame.
+	rescheduled                  bool
 	sceneDefaults                *sceneParameterState
 	sceneTick                    int64
 	savedParameters              ParameterState
@@ -411,6 +415,16 @@ func (e *Engine) CurrentScene() (int, uint64) { return e.currentScene, e.sceneSe
 // Call it only from the goroutine that owns Render.
 func (e *Engine) Playing() bool { return e.transport.Playing() }
 
+// MasterGain is the factor the master stage applies for Config.MasterGainDB.
+// Hosts that need to know whether two configurations render the same audio
+// compare these factors.
+func MasterGain(db float64) float32 {
+	if db == 0 {
+		return 1
+	}
+	return float32(detmath.Pow(10, db/20))
+}
+
 func New(cfg Config) (*Engine, error) {
 	return NewFromConfig(&cfg)
 }
@@ -446,10 +460,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	masterGain := float32(1)
-	if cfg.MasterGainDB != 0 {
-		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
-	}
+	masterGain := MasterGain(cfg.MasterGainDB)
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1, flushLimit: -1}
@@ -612,7 +623,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if spec.Mute {
 			v.mix = mix.Track{}
 		}
-		e.spatial.tracks[i].gain = float32(math.Pow(10, gain/20))
+		e.spatial.tracks[i].gain = float32(detmath.Pow(10, gain/20))
 		e.spatial.tracks[i].target = e.spatial.tracks[i].gain
 		v.targetMix = v.mix
 		v.mixSmooth = e.paramAlpha[kernel.ParamMixGain]
@@ -1045,7 +1056,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	}
 	e.schedule = append([]ScheduleEvent(nil), cfg.Schedule...)
 	if len(cfg.Song) != 0 {
-		e.schedule = LowerSong(cfg.Song)
+		e.schedule = LowerSong(cfg.Song, e.MeterMap())
 	}
 	if err := e.prepareClips(cfg); err != nil {
 		return err
@@ -1184,7 +1195,9 @@ func (e *Engine) Reset() {
 	if e.compMusic != nil {
 		e.compMusic.Reset()
 	}
+	meterMap := e.transport.MeterMap()
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
+	e.transport.SetMeterMap(meterMap)
 	if modulationEnabled && e.graphLFO != nil {
 		e.graphLFO.absolute, e.graphLFO.cycle, e.graphLFO.loopStart = 0, -1, 0
 		e.graphLFO.clock.Sample, e.graphLFO.clock.Playing = 0, false
@@ -1290,15 +1303,15 @@ func (e *Engine) Render(outL, outR []float32) {
 func accumulateMeter(m *meterAccum, left, right float32) {
 	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
 	m.peak = max(m.peak, peak)
-	m.power += (float64(left)*float64(left) + float64(right)*float64(right)) * .5
+	m.power += float64((float64(float64(left)*float64(left)) + float64(float64(right)*float64(right))) * .5)
 	m.peakL = max(m.peakL, float32(math.Abs(float64(left))))
 	m.peakR = max(m.peakR, float32(math.Abs(float64(right))))
-	m.powerL += float64(left) * float64(left)
-	m.powerR += float64(right) * float64(right)
+	m.powerL += float64(float64(left) * float64(left))
+	m.powerR += float64(float64(right) * float64(right))
 }
 
 func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
-	return float32(1 - math.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
+	return float32(1 - detmath.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
 }
 
 func (e *Engine) emitMeters(masterBlockPeak float32) {
@@ -1379,11 +1392,9 @@ func (e *Engine) drainCommands() {
 	for e.commandRead != e.commandWrite {
 		c := e.commands[e.commandRead%uint16(len(e.commands))]
 		e.commandRead++
-		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
-			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
-		}
-		if e.transport.Playing() && c.Tick == 0 && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
-			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
+		// A layer mask, and a pattern edit while playing, wait for the next bar line.
+		if c.Tick == 0 && (c.Op == cmd.OpSetLayerMask || e.transport.Playing() && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta)) {
+			c.Tick = e.transport.NextBarLine()
 		}
 		if e.pendingLen == len(e.pending) {
 			e.fault(FaultPendingFull)
@@ -1517,7 +1528,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
-		e.seekTick = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
+		e.seekTick = int64(c.Arg0)*cmd.SeekUnit + int64(c.Arg1)
 		if e.seekTransport(e.seekTick) != nil {
 			e.fault(FaultSeek)
 			return

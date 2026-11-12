@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
@@ -274,6 +275,19 @@ func tickFrames(from, to float64) float64 {
 		return 0
 	}
 	return float64(audioEngine.FramesBetweenTicks(int64(from), int64(to)))
+}
+
+// nextBar returns the first bar line after tick from the song's meter map, so
+// the AudioWorklet keeps no bar arithmetic of its own. A double carries the
+// tick, as in tickFrames.
+//
+//go:wasmexport gosx_audio_next_bar
+func nextBar(tick float64) float64 {
+	var meterMap seq.MeterMap
+	if audioEngine != nil {
+		meterMap = audioEngine.MeterMap()
+	}
+	return float64(meterMap.NextBarLine(int64(tick)))
 }
 
 func main() {}

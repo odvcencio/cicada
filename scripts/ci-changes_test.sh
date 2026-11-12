@@ -24,7 +24,11 @@ fail() {
 	failures=$((failures + 1))
 }
 
-all_groups="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2"
+all_groups="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep"
+# Every group but the WAV sweep, which only its own inputs turn on.
+all_but_sweep="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench"
+# Every group but the self-hosted CPU gate and the WAV sweep.
+all_but_gates="root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 bench"
 
 # expect_groups "name" "expected groups (space separated, or none)" paths...
 expect_groups() {
@@ -41,6 +45,8 @@ expect_groups() {
 	done
 	actual="${actual# }"
 	if [[ "$expected" == all ]]; then expected="$all_groups"; fi
+	if [[ "$expected" == all-but-sweep ]]; then expected="$all_but_sweep"; fi
+	if [[ "$expected" == all-but-gates ]]; then expected="$all_but_gates"; fi
 	if [[ "$expected" == none ]]; then expected=""; fi
 	if [[ "$actual" != "$expected" ]]; then
 		fail "$name: got [$actual] want [$expected]"
@@ -48,47 +54,92 @@ expect_groups() {
 }
 
 # --- paths that turn everything on (the conservative fallbacks) ---
-expect_groups "workflow file" all .github/workflows/ci.yml
-expect_groups "local composite action" all .github/actions/setup-wasm-tools/action.yml
-expect_groups "PR template (a .md under .github)" all .github/pull_request_template.md
-expect_groups "Makefile" all Makefile
-expect_groups "scripts dir" all scripts/check-commit-hygiene.sh
-expect_groups "the classifier itself" all scripts/ci-changes.sh
-expect_groups "the classifier test" all scripts/ci-changes_test.sh
-expect_groups "go.mod" all go.mod
-expect_groups "go.sum" all go.sum
-expect_groups "unknown top-level file" all some-new-file.txt
-expect_groups "unknown top-level directory" all brand-new-dir/thing.go
-expect_groups "gitignore" all .gitignore
+expect_groups "workflow file" all-but-sweep .github/workflows/ci.yml
+expect_groups "local composite action" all-but-sweep .github/actions/setup-wasm-tools/action.yml
+expect_groups "PR template (a .md under .github)" all-but-gates .github/pull_request_template.md
+expect_groups "Makefile" all-but-sweep Makefile
+expect_groups "scripts dir" all-but-gates scripts/check-commit-hygiene.sh
+expect_groups "the classifier itself" all-but-sweep scripts/ci-changes.sh
+expect_groups "the classifier test" all-but-gates scripts/ci-changes_test.sh
+expect_groups "go.mod" all-but-sweep go.mod
+expect_groups "go.sum" all-but-sweep go.sum
+expect_groups "unknown top-level file" all-but-gates some-new-file.txt
+expect_groups "unknown top-level directory" all-but-gates brand-new-dir/thing.go
+expect_groups "gitignore" all-but-gates .gitignore
 expect_groups "empty input" all
 expect_groups "blank lines only" all ""
-expect_groups "embedded std library text" all project/std/README.md
-expect_groups "asset readme" all assets/ir/README.md
-expect_groups "fixture readme" all host/recording/testdata/README.md
-expect_groups "top-level testdata" all testdata/edition1/examples/first-acid.cicada
-expect_groups "example score" all examples/first-acid.cicada
-expect_groups "root Go package" all notation/parse.go
-expect_groups "command" all cmd/cicada/studio.go
-expect_groups "audio kernel" all kernel/graph/graph.go
-expect_groups "audio voice" all kernel/voice/strings/strings.go
-expect_groups "host package" all host/web/processor.js
-expect_groups "one unknown path among docs" all docs/manual/README.md mystery.bin
-expect_groups "one CI path among docs" all docs/manual/README.md .github/workflows/ci.yml
-expect_groups "one kernel file among workstation files" all workstation/panels.go kernel/graph/graph.go
+expect_groups "embedded std library text" all-but-sweep project/std/README.md
+expect_groups "asset readme" all-but-sweep assets/ir/README.md
+expect_groups "fixture readme" all-but-gates host/recording/testdata/README.md
+expect_groups "embedded agent quick start" all-but-gates internal/agentguide/quickstart.md
+expect_groups "top-level testdata" all-but-gates testdata/edition1/examples/first-acid.cicada
+expect_groups "example score" all-but-sweep examples/first-acid.cicada
+expect_groups "root Go package" all-but-sweep notation/parse.go
+expect_groups "command" all-but-sweep cmd/cicada/studio.go
+expect_groups "audio kernel" all-but-sweep kernel/graph/graph.go
+expect_groups "audio voice" all-but-sweep kernel/voice/strings/strings.go
+expect_groups "host package" all-but-sweep host/web/processor.js
+expect_groups "one unknown path among docs" all-but-gates docs/manual/README.md mystery.bin
+expect_groups "one CI path among docs" all-but-sweep docs/manual/README.md .github/workflows/ci.yml
+expect_groups "one kernel file among workstation files" all-but-sweep workstation/panels.go kernel/graph/graph.go
+
+# --- the render-paths agreement test (render.TestRenderPathsAgree) runs in the
+# root group's job m0-render-paths, so every path that can change what either
+# renderer plays, and the examples it renders, must turn root on ---
+for render_input in render/wav.go render/schedule.go kernel/engine/engine.go kernel/seq/schedule.go project/compile.go project/runtime.go notation/parse.go host/capture/block.go examples/acid-voice.cicada; do
+	turns_on_root="$(printf '%s\n' "$render_input" | "$classifier" | grep -x 'root=true' || true)"
+	[[ -n "$turns_on_root" ]] || fail "$render_input does not turn the root group on, so the render-paths test would not run"
+done
+
+# --- the self-hosted M2 CPU gate: only its own inputs queue it ---
+expect_groups "edit package" all-but-gates edit/intents.go
+expect_groups "Studio vocal handlers" all-but-gates cmd/cicada/studio_vocals.go
+expect_groups "Studio project root (feeds CompileResident)" all-but-sweep cmd/cicada/studio_files.go
+expect_groups "the gate test's TestMain" all-but-sweep cmd/cicada/isolate_test.go
+expect_groups "test isolation helper" all-but-sweep internal/isolatetest/isolate.go
+expect_groups "Studio transport (left to the push to main)" all-but-gates cmd/cicada/studio_transport.go
+expect_groups "browser shard script" all-but-gates scripts/ci-studio-browser.sh
+expect_groups "browser test helper" "workstation studio_browser macos_desktop" workstation/browser/page-stall.cjs
+expect_groups "kernel WASM entry" all-but-sweep cmd/cicada-kernel-wasm/main.go
+expect_groups "worklet bundle" all-but-sweep host/web/processor.min.js
+expect_groups "CPU gate Node harness" all-but-sweep cmd/cicada/browser_cpu_node.js
+expect_groups "CPU gate test" all-but-sweep cmd/cicada/browser_test.go
+expect_groups "kernel image handler" all-but-sweep cmd/cicada/studio_audio.go
+expect_groups "soak timing" all-but-sweep internal/soaktiming/timing.go
+expect_groups "kernel image encoder" all-but-sweep host/kernelimage/encode.go
+expect_groups "WASM optimiser script" all-but-sweep scripts/wasm-opt.sh
+expect_groups "edit plus kernel" all-but-sweep edit/intents.go kernel/graph/graph.go
+expect_groups "docs plus CPU gate test" all-but-sweep docs/manual/README.md cmd/cicada/browser_test.go
+
+# --- the WAV sweep: only the deterministic math and the WAV parity test queue it ---
+expect_groups "deterministic math" all kernel/dsp/detmath/detmath.go
+expect_groups "the math source guard" all kernel/dsp/detmath/guard_test.go
+expect_groups "WAV parity test and pins" "$all_but_gates wav_sweep" cmd/cicada/example_wav_parity_test.go
+expect_groups "another kernel package" all-but-sweep kernel/dsp/halfband/halfband.go
+expect_groups "docs plus deterministic math" all docs/manual/README.md kernel/dsp/detmath/detmath.go
+[[ -e "$repo/cmd/cicada/example_wav_parity_test.go" ]] || fail "sweep_input names cmd/cicada/example_wav_parity_test.go, which does not exist"
+
+# A file gate_input names by path must exist, or a rename would drop it silently.
+for gate_file in cmd/cicada/browser_test.go cmd/cicada/browser_soak_helpers_test.go cmd/cicada/browser_test_helpers_test.go cmd/cicada/browser_cpu_node.js cmd/cicada/studio.go cmd/cicada/studio_audio.go cmd/cicada/studio_files.go cmd/cicada/isolate_test.go internal/isolatetest/isolate.go scripts/wasm-opt.sh scripts/run-with-timeout.py examples/first-acid.cicada .github/actions/setup-wasm-tools/action.yml; do
+	[[ -e "$repo/$gate_file" ]] || fail "gate_input names $gate_file, which does not exist"
+	turns_on_gates="$(printf '%s\n' "$gate_file" | "$classifier" | grep -x 'm2_gates=true' || true)"
+	[[ -n "$turns_on_gates" ]] || fail "$gate_file does not turn m2_gates on"
+done
 
 # --- source and module files are never docs ---
-expect_groups "Go file under docs" all docs/manual/example.go
-expect_groups "Go file under editors" all editors/vscode/tool.go
-expect_groups "Go file under deploy" all deploy/demo/main.go
-expect_groups "desktop go.mod" all desktop/go.mod
-expect_groups "desktop go.sum" all desktop/go.sum
-expect_groups "measurement testdata" all kernel/measure/testdata/tolerances.json
+expect_groups "Go file under docs" all-but-gates docs/manual/example.go
+expect_groups "Go file under editors" all-but-gates editors/vscode/tool.go
+expect_groups "Go file under deploy" all-but-gates deploy/demo/main.go
+expect_groups "desktop go.mod" all-but-gates desktop/go.mod
+expect_groups "desktop go.sum" all-but-gates desktop/go.sum
+expect_groups "measurement testdata" all-but-gates kernel/measure/testdata/tolerances.json
 expect_groups "measurement README stays docs" none kernel/measure/README.md
 expect_groups "desktop README stays docs" none desktop/README.md
 
 # --- documentation and files no job reads ---
 expect_groups "docs only" none docs/manual/README.md docs/spec/features.md
 expect_groups "root README" none README.md
+expect_groups "agent manual index" none llms.txt AGENTS.md
 expect_groups "license" none LICENSE
 expect_groups "nested readme" none kernel/voice/clav/README.md
 expect_groups "docs json evidence" none docs/sampler/evidence/browser.json
@@ -100,9 +151,9 @@ expect_groups "workstation readme" none workstation/README.md
 expect_groups "Studio front end" "workstation studio_browser macos_desktop" workstation/panels.go
 expect_groups "Studio browser suite" "workstation studio_browser macos_desktop" workstation/browser/shell.test.cjs
 expect_groups "Studio ui output" "workstation studio_browser macos_desktop" workstation/ui/app.gsx
-expect_groups "workstation go.mod is read by buildaudit" all workstation/go.mod
-expect_groups "workstation go.sum" all workstation/go.sum
-expect_groups "gosx size tool module file" all tools/gosx-size/go.mod
+expect_groups "workstation go.mod is read by buildaudit" all-but-gates workstation/go.mod
+expect_groups "workstation go.sum" all-but-gates workstation/go.sum
+expect_groups "gosx size tool module file" all-but-gates tools/gosx-size/go.mod
 expect_groups "gosx size tool" "root workstation studio_browser macos_desktop" tools/gosx-size/main.go
 expect_groups "desktop shell" "workstation macos_desktop macos_contracts" desktop/main.go
 expect_groups "docs plus Studio front end" "workstation studio_browser macos_desktop" docs/manual/README.md workstation/panels.go
@@ -112,16 +163,46 @@ expect_groups "Studio front end plus desktop" "workstation studio_browser macos_
 expect_groups "measurement suite" "root" kernel/measure/model_test.go
 expect_groups "measurement suite and docs" "root" kernel/measure/README.md kernel/measure/model.go
 
+# --- the lane stress job: only the render lanes and what they run queue it ---
+# expect_lanes "name" true|false paths...
+expect_lanes() {
+	local name="$1" expected="$2"
+	shift 2
+	if ! printf '%s\n' "$@" | "$classifier" | grep -qx "lane_stress=$expected"; then
+		fail "$name: lane_stress is not $expected"
+	fi
+}
+expect_lanes "lane pool" true internal/renderlanes/lanes.go
+expect_lanes "engine lanes" true kernel/engine/parallel_native.go
+expect_lanes "engine frame control" true kernel/engine/render_frame.go
+expect_lanes "render package" true render/wav.go
+expect_lanes "identity test" true cmd/cicada/parallel_identity_test.go
+expect_lanes "workflow" true .github/workflows/ci.yml
+expect_lanes "the classifier itself" true scripts/ci-changes.sh
+expect_lanes "the stress log check" true scripts/ci-lane-stress-check.sh
+expect_lanes "another CI script" false scripts/check-commit-hygiene.sh
+expect_lanes "other kernel code" false kernel/graph/graph.go
+expect_lanes "other engine code" false kernel/engine/engine.go
+expect_lanes "a voice" false kernel/voice/ep/ep.go
+expect_lanes "Studio" false cmd/cicada/studio.go
+expect_lanes "docs" false docs/manual/agents.md
+expect_lanes "render docs" false render/README.md
+expect_lanes "empty input" true
+expect_lanes "docs plus the lane pool" true docs/manual/README.md internal/renderlanes/lanes.go
+
 # --- --all, --classify, and bad usage ---
 output="$("$classifier" --all)"
-for group in $all_groups; do
+for group in $all_groups lane_stress; do
 	grep -qx "$group=true" <<<"$output" || fail "--all: $group is not true"
 done
 if [[ "$("$classifier" --classify docs/a.md)" != none ]]; then fail "--classify docs/a.md"; fi
-if [[ "$("$classifier" --classify kernel/x.go)" != all ]]; then fail "--classify kernel/x.go"; fi
+if [[ "$("$classifier" --classify kernel/x.go)" != "all m2_gates" ]]; then fail "--classify kernel/x.go"; fi
+if [[ "$("$classifier" --classify kernel/engine/parallel_native.go)" != "all m2_gates lane_stress" ]]; then fail "--classify kernel/engine/parallel_native.go"; fi
+if [[ "$("$classifier" --classify kernel/dsp/detmath/x.go)" != "all m2_gates wav_sweep" ]]; then fail "--classify kernel/dsp/detmath/x.go"; fi
+if [[ "$("$classifier" --classify edit/x.go)" != all ]]; then fail "--classify edit/x.go"; fi
 if "$classifier" --bogus </dev/null >/dev/null 2>&1; then fail "unknown flag was accepted"; fi
 # A last line with no newline still counts.
-if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 8 ]]; then fail "unterminated last line"; fi
+if [[ "$(printf 'README.md' | "$classifier" | grep -c '=false')" != 12 ]]; then fail "unterminated last line"; fi
 
 # classify_for GROUP PATH: does PATH turn GROUP on?
 turns_on() {
@@ -154,12 +235,35 @@ go_deps() { # go_deps GOOS TAGS PACKAGE...  (run in the root module)
 		sed 's/ \[.*//; s/_test$//; s/\.test$//' | sort -u)
 }
 
+go_build_deps() { # go_build_deps GOOS GOARCH TAGS PACKAGE...: packages a build (not its tests) imports
+	local goos="$1" goarch="$2" tags="$3"
+	shift 3
+	(cd "$repo" && GOWORK=off GOOS="$goos" GOARCH="$goarch" go list -tags "$tags" -deps -f '{{.ImportPath}}' "$@" | sort -u)
+}
+
 if [[ "${1:-}" == "--graph" ]]; then
+	# The M2 CPU gate times the kernel WASM (TinyGo, cicada_reactor) on the
+	# kernel image Studio compiles; every package of both must queue it, except
+	# edit, which project imports only for project/editplan.go (checked below).
+	check_imports m2_gates "M2 CPU gate (kernel WASM)" < <( (go_build_deps linux amd64 cicada_reactor ./cmd/cicada-kernel-wasm; go_build_deps wasip1 wasm cicada_reactor ./cmd/cicada-kernel-wasm) | sort -u)
+	check_imports m2_gates "M2 CPU gate (kernel image path)" < <(go_build_deps linux amd64 "" ./project ./host/schedule ./host/kernelimage | grep -vx 'm31labs.dev/cicada/edit')
+	importers="$(cd "$repo" && GOWORK=off go list -f '{{.ImportPath}} {{join .Imports " "}}' $(go_build_deps linux amd64 "" ./project ./host/schedule ./host/kernelimage | grep '^m31labs.dev/cicada/') | awk '/ m31labs.dev\/cicada\/edit( |$)/ {print $1}')"
+	if [[ "$importers" != m31labs.dev/cicada/project ]]; then fail "the kernel image path reaches edit through [$importers], not only project; add edit to gate_input"; fi
+	editplan="$(cd "$repo" && grep -l '"m31labs.dev/cicada/edit"' project/*.go | grep -v '_test\.go$' || true)"
+	if [[ "$editplan" != project/editplan.go ]]; then fail "project imports edit outside project/editplan.go ([$editplan]); add edit to gate_input"; fi
+	# The real risk is the compile path building an edit plan: reject any
+	# EditPlan call in project (other than its definition) and in the packages
+	# that turn a project into the kernel image.
+	callers="$(cd "$repo" && grep -n 'EditPlan(' project/*.go host/schedule/*.go host/kernelimage/*.go | grep -v '_test\.go:' | grep -v '^project/editplan\.go:[0-9]*:func EditPlan(' || true)"
+	if [[ -n "$callers" ]]; then fail "the kernel image path calls EditPlan ($callers); add edit to gate_input"; fi
 	check_imports studio_cli "cmd/cicada" < <(go_deps linux "" ./cmd/cicada)
 	check_imports parity "cmd/cicada-kernel-wasm" < <(go_deps linux "wasm_integration" ./cmd/cicada-kernel-wasm)
+	# The parity jobs also run TestExampleWAVParity in cmd/cicada.
+	check_imports parity "cmd/cicada (WAV parity)" < <(go_deps linux "" ./cmd/cicada)
 	check_imports m2 "M2 gates" < <(go_deps linux "wasm_integration chord_wasm browser" \
 		./cmd/cicada-kernel-wasm ./cmd/cicada ./host/demobrowser ./cmd/cicada-demo ./host/wam2)
 	check_imports studio_browser "Studio browser (cmd/cicada and the kernel WASM)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-kernel-wasm)
+	check_imports bench "agent loop speed (cmd/cicada and cmd/cicada-bench)" < <(go_deps linux "" ./cmd/cicada ./cmd/cicada-bench)
 	check_imports macos_desktop "macOS desktop build of cmd/cicada" < <(go_deps darwin "" ./cmd/cicada)
 	check_imports macos_contracts "macOS platform contracts" < <(go_deps darwin "" ./host/capture ./host/midi ./internal/audiobackend ./cmd/cicada)
 	check_imports workstation "workstation job (root-module tests)" < <(go_deps linux "" ./internal/buildaudit ./internal/studiohttp)

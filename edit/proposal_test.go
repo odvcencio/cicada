@@ -26,7 +26,7 @@ func TestStageReturnsValidatedSourceDiffAndResolvedPreview(t *testing.T) {
 				t.Fatalf("bad staged result: %+v", staged.Result)
 			}
 			want := []edits.PreviewOp{{Kind: "setparam", Track: 0, Param: "level", Value: -3}, {Kind: "setparam", Track: 0, Param: "pan", Value: .25}}
-			if !reflect.DeepEqual(staged.Ops, want) || !strings.Contains(staged.Diff, "-track bass acid { level = -6dB }") || !strings.Contains(staged.Diff, "+track bass acid { level = -3dB") {
+			if !reflect.DeepEqual(staged.Ops, want) || !strings.Contains(staged.Diff, "-track bass acid { level = -6dB }") || !strings.Contains(staged.Diff, strings.ReplaceAll("+track bass acid {\n+  level = -3dB\n+  pan = 0.25\n+}\n", "\n", newline)) {
 				t.Fatalf("ops=%+v, diff=%q", staged.Ops, staged.Diff)
 			}
 		})

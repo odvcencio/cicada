@@ -1,9 +1,18 @@
 // Package acid implements Cicada's built-in monophonic acid voice. It is
 // separate from the user-authored graph executor and has its own DSP state.
+//
+// Rounding: every product that feeds an addition is rounded with float64(...)
+// so that arm64 cannot fuse it into a multiply-add (docs/audio/mix-chain.md).
+// Some conversions wrap a plain variable, as s2 in float64(G*y1) + float64(s2):
+// s2 is itself a product from an earlier statement (f.state[1]*inv), and Go may
+// fuse across statements. Such a conversion is kept only where the compiler's
+// fusion report shows that it is needed.
 package acid
 
 import (
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
@@ -114,13 +123,13 @@ func (v *Voice) SetParams(p Params) error {
 	}
 	v.params = p
 	v.targetParams, v.paramAlpha = p, 0
-	v.capDecay = math.Exp(-1 / ((.08 + .17*p.Resonance) * v.sampleRate))
-	v.releaseDecay = math.Exp(-4.6 / (p.Release * v.sampleRate))
-	v.holdDecay = math.Exp(-1 / (3 * v.sampleRate))
-	v.pitchAlpha = 1 - math.Exp(-1/(p.Slide*v.sampleRate))
-	v.accentAlpha = 1 - math.Exp(-1/(.0015*v.sampleRate))
-	v.switchAlpha = 1 - math.Exp(-1/(.02*v.sampleRate))
-	v.drivePre = math.Pow(10, p.Drive*36/20)
+	v.capDecay = detmath.Exp(-1 / ((.08 + float64(.17*p.Resonance)) * v.sampleRate))
+	v.releaseDecay = detmath.Exp(-4.6 / (p.Release * v.sampleRate))
+	v.holdDecay = detmath.Exp(-1 / (3 * v.sampleRate))
+	v.pitchAlpha = 1 - detmath.Exp(-1/(p.Slide*v.sampleRate))
+	v.accentAlpha = 1 - detmath.Exp(-1/(.0015*v.sampleRate))
+	v.switchAlpha = 1 - detmath.Exp(-1/(.02*v.sampleRate))
+	v.drivePre = detmath.Pow(10, p.Drive*36/20)
 	v.detuneRatio = fastmath.Exp2(p.Detune / 1200)
 	v.pitchCached = false
 	table := p.Drive * 32
@@ -130,8 +139,8 @@ func (v *Voice) SetParams(p Params) error {
 		table = 32
 	}
 	frac := table - float64(index)
-	v.drivePost = v.driveTable[index]*(1-frac) + v.driveTable[index+1]*frac
-	v.level = math.Pow(10, p.LevelDB/20)
+	v.drivePost = float64(v.driveTable[index]*(1-frac)) + float64(v.driveTable[index+1]*frac)
+	v.level = detmath.Pow(10, p.LevelDB/20)
 	v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
 	v.prepareRestingDiode()
 	return nil
@@ -157,11 +166,11 @@ func (v *Voice) smoothLiveParams() {
 	p, target := &v.params, &v.targetParams
 	oldCutoff, oldResonance := p.Cutoff, p.Resonance
 	alpha := v.paramAlpha
-	p.Cutoff += (target.Cutoff - p.Cutoff) * alpha
-	p.Resonance += (target.Resonance - p.Resonance) * alpha
-	p.EnvMod += (target.EnvMod - p.EnvMod) * alpha
-	p.Decay += (target.Decay - p.Decay) * alpha
-	p.Accent += (target.Accent - p.Accent) * alpha
+	p.Cutoff += float64((target.Cutoff - p.Cutoff) * alpha)
+	p.Resonance += float64((target.Resonance - p.Resonance) * alpha)
+	p.EnvMod += float64((target.EnvMod - p.EnvMod) * alpha)
+	p.Decay += float64((target.Decay - p.Decay) * alpha)
+	p.Accent += float64((target.Accent - p.Accent) * alpha)
 	if p.Cutoff != oldCutoff || p.Resonance != oldResonance {
 		v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
 		v.prepareRestingDiode()
@@ -172,17 +181,17 @@ func (v *Voice) prepareRestingDiode() {
 	g := calibratedFilterG(v.restingFilterG, Diode)
 	G := g / (1 + g)
 	k := 17 * v.params.Resonance
-	invDen3 := 1 / (1 - G*G/2)
+	invDen3 := 1 / (1 - float64(G*G/2))
 	a3 := (G / 2) * invDen3
-	invDen2 := 1 / (1 - G*a3/2)
+	invDen2 := 1 / (1 - float64(G*a3/2))
 	a2 := (G / 2) * invDen2
 	c := G * a3 * a2
 	v.restingDiode = restingDiodeShape{
 		G: G, k: k, inv: 1 / (1 + g), a3: a3, a2: a2,
 		invDen3: invDen3, invDen2: invDen2,
-		invFirstDen:   1 / (1 - G*a2/2 + G*k*c/2),
-		invRefinedDen: 1 / (1 - G*a2/2),
-		gain:          1 + .35*v.params.Resonance,
+		invFirstDen:   1 / (float64(1-float64(G*a2/2)) + float64(G*k*c/2)),
+		invRefinedDen: 1 / (1 - float64(G*a2/2)),
+		gain:          1 + float64(.35*v.params.Resonance),
 	}
 }
 
@@ -190,12 +199,12 @@ func (v *Voice) buildDriveTable() {
 	const inputAmplitude = 0.251188643150958
 	inputRMS := inputAmplitude / math.Sqrt2
 	for i := range v.driveTable {
-		pre := math.Pow(10, float64(i)*36/(32*20))
+		pre := detmath.Pow(10, float64(i)*36/(32*20))
 		var outputPower float64
 		for sample := 0; sample < 1024; sample++ {
-			x := inputAmplitude * math.Sin(2*math.Pi*float64(sample)/1024)
+			x := inputAmplitude * detmath.Sin(2*math.Pi*float64(sample)/1024)
 			y := fastmath.Tanh(pre * x)
-			outputPower += y * y
+			outputPower += float64(y * y)
 		}
 		v.driveTable[i] = inputRMS / math.Sqrt(outputPower/1024)
 	}
@@ -206,7 +215,7 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 	if note > 127 {
 		note = 127
 	}
-	target := math.Log2(440) + (float64(note)-69+v.params.Tune+v.params.Fine/100)/12
+	target := detmath.Log2(440) + (float64(note)-69+v.params.Tune+v.params.Fine/100)/12
 	if slide && v.gate {
 		v.targetLog = target
 		return
@@ -215,9 +224,9 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 	v.phaseA, v.phaseB, v.phaseSub = 0, .37, 0
 	v.gate, v.attacking, v.accented = true, true, accent
 	v.meg, v.vca = 1, 0
-	v.megDecay = math.Exp(-4.6 / (v.params.Decay * v.sampleRate))
+	v.megDecay = detmath.Exp(-4.6 / (v.params.Decay * v.sampleRate))
 	if accent {
-		v.megDecay = math.Exp(-4.6 / (.2 * v.sampleRate))
+		v.megDecay = detmath.Exp(-4.6 / (.2 * v.sampleRate))
 		v.sweepStrength = 1 + v.cap
 		v.cap = min(.6, v.cap+.3)
 		v.accentTarget = 1 + v.params.Accent
@@ -281,13 +290,13 @@ func (v *Voice) Next() float32 {
 	if v.meg < envelopeFloor {
 		v.meg = 0
 	}
-	v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
-	v.accentGain += (v.accentTarget - v.accentGain) * v.accentAlpha
+	v.pitchLog += float64((v.targetLog - v.pitchLog) * v.pitchAlpha)
+	v.accentGain += float64((v.accentTarget - v.accentGain) * v.accentAlpha)
 	filterTarget := 0.0
 	if v.params.Filter == Ladder {
 		filterTarget = 1
 	}
-	v.filterBlend += (filterTarget - v.filterBlend) * v.switchAlpha
+	v.filterBlend += float64((filterTarget - v.filterBlend) * v.switchAlpha)
 	if v.filterBlend < 1e-6 {
 		v.filterBlend = 0
 	} else if v.filterBlend > 1-1e-6 {
@@ -297,7 +306,7 @@ func (v *Voice) Next() float32 {
 	if v.params.Savage {
 		savageTarget = 1
 	}
-	v.savageBlend += (savageTarget - v.savageBlend) * v.switchAlpha
+	v.savageBlend += float64((savageTarget - v.savageBlend) * v.switchAlpha)
 	if v.gate {
 		if v.attacking {
 			v.vca += 1 / (.003 * v.sampleRate)
@@ -339,19 +348,19 @@ func (v *Voice) Next() float32 {
 			shiftedPhase++
 		}
 		square := v.oscA.saw(shiftedPhase) - saw + 2*v.params.PulseWidth - 1
-		osc = saw*(1-v.params.Wave) + square*v.params.Wave
+		osc = float64(saw*(1-v.params.Wave)) + float64(square*v.params.Wave)
 	}
 	v.phaseA = fraction(v.phaseA + delta)
 	if v.params.Detune > 0 {
 		secondDelta := min(delta*v.detuneRatio, .49)
 		second := v.oscB.pulse(v.phaseB, v.params.PulseWidth)
-		osc += .5 * second
+		osc += float64(.5 * second)
 		v.phaseB = fraction(v.phaseB + secondDelta)
 	}
 	if v.params.Sub > 0 {
 		subDelta := delta * .5
-		osc += v.params.Sub * .5 * v.oscSub.pulse(v.phaseSub, .5)
-		v.phaseSub = fraction(v.phaseSub + subDelta)
+		osc += float64(v.params.Sub * .5 * v.oscSub.pulse(v.phaseSub, .5))
+		v.phaseSub = fraction(float64(v.phaseSub) + float64(subDelta))
 	}
 	// The drive saturation runs at the 2x rate, after the upsampler, so its
 	// harmonics above the base Nyquist are filtered before they fold back.
@@ -372,8 +381,8 @@ func (v *Voice) Next() float32 {
 	y := v.down.Downsample(first, second)
 	y *= v.vca * v.accentGain * v.level
 	if v.savageBlend > 0 {
-		aggressive := fastmath.Tanh(2*y) * .5
-		y = y*(1-v.savageBlend) + aggressive*v.savageBlend
+		aggressive := fastmath.Tanh(float64(2*float64(y))) * .5
+		y = float64(y*(1-v.savageBlend)) + float64(aggressive*v.savageBlend)
 	}
 	if math.IsNaN(y) || math.IsInf(y, 0) {
 		v.fault = true
@@ -389,28 +398,28 @@ func (v *Voice) Next() float32 {
 }
 
 func (v *Voice) cutoffHz() float64 {
-	cv := v.params.EnvMod*5*v.meg + v.sweepStrength*v.meg*2.5*v.params.Accent
+	cv := float64(v.params.EnvMod*5*v.meg) + float64(v.sweepStrength*v.meg*2.5*v.params.Accent)
 	return max(20, min(v.params.Cutoff*fastmath.Exp2(cv), .45*v.sampleRate))
 }
 
 func (v *Voice) filter(input, baseG float64) float64 {
-	kDiode := 17 * v.params.Resonance * (1 + .25*v.savageBlend)
-	kLadder := 4 * v.params.Resonance * (1 + .25*v.savageBlend)
+	kDiode := 17 * v.params.Resonance * (1 + float64(.25*v.savageBlend))
+	kLadder := 4 * v.params.Resonance * (1 + float64(.25*v.savageBlend))
 	if v.filterBlend == 0 {
 		g := calibratedFilterG(baseG, Diode)
-		return v.diode.processDiode(input, g/(1+g), g, kDiode, v.savageBlend) * (1 + .35*v.params.Resonance*(1-v.savageBlend))
+		return v.diode.processDiode(input, g/(1+g), g, kDiode, v.savageBlend) * (1 + float64(.35*v.params.Resonance*(1-v.savageBlend)))
 	}
 	if v.filterBlend == 1 {
 		g := calibratedFilterG(baseG, Ladder)
-		return v.ladder.processLadder(input, g/(1+g), g, kLadder, v.savageBlend) * (1 + .5*kLadder*(1-v.savageBlend))
+		return v.ladder.processLadder(input, g/(1+g), g, kLadder, v.savageBlend) * (1 + float64(.5*kLadder*(1-v.savageBlend)))
 	}
 	gDiode := calibratedFilterG(baseG, Diode)
 	gLadder := calibratedFilterG(baseG, Ladder)
 	diode := v.diode.processDiode(input, gDiode/(1+gDiode), gDiode, kDiode, v.savageBlend)
 	ladder := v.ladder.processLadder(input, gLadder/(1+gLadder), gLadder, kLadder, v.savageBlend)
-	diode *= 1 + .35*v.params.Resonance*(1-v.savageBlend)
-	ladder *= 1 + .5*kLadder*(1-v.savageBlend)
-	return diode*(1-v.filterBlend) + ladder*v.filterBlend
+	diode *= 1 + float64(.35*v.params.Resonance*(1-v.savageBlend))
+	ladder *= 1 + float64(.5*kLadder*(1-v.savageBlend))
+	return float64(diode*(1-v.filterBlend)) + float64(ladder*v.filterBlend)
 }
 
 // filterPair shares the per-sample coefficients between the two oversampled
@@ -420,16 +429,16 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 	if v.filterBlend == 0 {
 		g := calibratedFilterG(baseG, Diode)
 		G := g / (1 + g)
-		k := 17 * v.params.Resonance * (1 + .25*savage)
-		gain := 1 + .35*v.params.Resonance*(1-savage)
-		invDen3 := 1 / (1 - G*G/2)
+		k := 17 * v.params.Resonance * (1 + float64(.25*savage))
+		gain := 1 + float64(.35*v.params.Resonance*(1-savage))
+		invDen3 := 1 / (1 - float64(G*G/2))
 		a3 := (G / 2) * invDen3
-		invDen2 := 1 / (1 - G*a3/2)
+		invDen2 := 1 / (1 - float64(G*a3/2))
 		a2 := (G / 2) * invDen2
 		c := G * a3 * a2
 		inv := 1 / (1 + g)
-		invFirstDen := 1 / (1 - G*a2/2 + G*k*c/2)
-		invRefinedDen := 1 / (1 - G*a2/2)
+		invFirstDen := 1 / (float64(1-float64(G*a2/2)) + float64(G*k*c/2))
+		invRefinedDen := 1 / (1 - float64(G*a2/2))
 		if savage == 0 {
 			first = v.diode.processDiodeShapedNormal(first, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
 			second = v.diode.processDiodeShapedNormal(second, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
@@ -442,30 +451,30 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 	if v.filterBlend == 1 {
 		g := calibratedFilterG(baseG, Ladder)
 		G := g / (1 + g)
-		k := 4 * v.params.Resonance * (1 + .25*savage)
-		gain := 1 + .5*k*(1-savage)
+		k := 4 * v.params.Resonance * (1 + float64(.25*savage))
+		gain := 1 + float64(.5*k*(1-savage))
 		first = v.ladder.processLadder(first, G, g, k, savage) * gain
 		second = v.ladder.processLadder(second, G, g, k, savage) * gain
 		return first, second
 	}
 	gDiode := calibratedFilterG(baseG, Diode)
 	GDiode := gDiode / (1 + gDiode)
-	kDiode := 17 * v.params.Resonance * (1 + .25*savage)
-	diodeGain := 1 + .35*v.params.Resonance*(1-savage)
+	kDiode := 17 * v.params.Resonance * (1 + float64(.25*savage))
+	diodeGain := 1 + float64(.35*v.params.Resonance*(1-savage))
 	gLadder := calibratedFilterG(baseG, Ladder)
 	GLadder := gLadder / (1 + gLadder)
-	kLadder := 4 * v.params.Resonance * (1 + .25*savage)
-	ladderGain := 1 + .5*kLadder*(1-savage)
+	kLadder := 4 * v.params.Resonance * (1 + float64(.25*savage))
+	ladderGain := 1 + float64(.5*kLadder*(1-savage))
 	d1 := v.diode.processDiode(first, GDiode, gDiode, kDiode, savage)
 	l1 := v.ladder.processLadder(first, GLadder, gLadder, kLadder, savage)
 	d1 *= diodeGain
 	l1 *= ladderGain
-	first = d1*(1-v.filterBlend) + l1*v.filterBlend
+	first = float64(d1*(1-v.filterBlend)) + float64(l1*v.filterBlend)
 	d2 := v.diode.processDiode(second, GDiode, gDiode, kDiode, savage)
 	l2 := v.ladder.processLadder(second, GLadder, gLadder, kLadder, savage)
 	d2 *= diodeGain
 	l2 *= ladderGain
-	second = d2*(1-v.filterBlend) + l2*v.filterBlend
+	second = float64(d2*(1-v.filterBlend)) + float64(l2*v.filterBlend)
 	return first, second
 }
 

@@ -27,7 +27,7 @@ func rest() Step { return Step{Ratchet: 1, Probability: 100} }
 func collectGateEvents(t *testing.T, p Pattern, block int, bars int) []Event {
 	t.Helper()
 	clock, _ := NewClock(48_000, 120_000)
-	end := clock.SampleAtTick(int64(bars) * TicksPerBar)
+	end := clock.SampleAtTick(int64(bars) * ticksPerBar)
 	var events []Event
 	var buffer [128]Event
 	for start := int64(0); start < end; start += int64(block) {

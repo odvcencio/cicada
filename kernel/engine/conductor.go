@@ -4,7 +4,6 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/cmd"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 // setAuthoredLayerMask records a mask chosen by a command or a scene. The mask in
@@ -48,11 +47,11 @@ func (e *Engine) processBarBoundary() {
 		return
 	}
 	tick := e.transport.Tick()
-	if tick%seq.TicksPerBar != 0 || tick == e.lastBarTick {
+	completedBars, offset := e.transport.Bar()
+	if offset != 0 || tick == e.lastBarTick {
 		return
 	}
 	e.lastBarTick = tick
-	completedBars := tick / seq.TicksPerBar
 	bar := uint32(completedBars + 1)
 	if e.liveEvents {
 		e.emit(cmd.Message{Kind: cmd.Bar, B: bar, Tick: tick})

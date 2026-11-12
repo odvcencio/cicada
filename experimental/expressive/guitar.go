@@ -1,8 +1,10 @@
 package expressive
 
 import (
-	"m31labs.dev/cicada/kernel/dsp/halfband"
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
 
 // Guitar is a plucked traveling-wave loop with pick-position excitation,
@@ -15,6 +17,11 @@ type Guitar struct {
 	released                        bool
 	rng                             uint32
 	amp                             Amp
+	// smooth is the control smoothing coefficient, 1 - e^(-1/(0.008*sr)),
+	// fixed by the rate. gainArg and gain cache the loop gain e^gainArg, which
+	// changes only while the pitch or damping moves. Both give the bits the
+	// per-sample computation gave.
+	smooth, gainArg, gain float64
 }
 
 func NewGuitar(sampleRate int) *Guitar {
@@ -22,6 +29,8 @@ func NewGuitar(sampleRate int) *Guitar {
 		sampleRate = 48000
 	}
 	g := &Guitar{sr: float64(sampleRate), hz: 110, target: 110, rng: 1}
+	g.smooth = 1 - detmath.Exp(-1/(.008*g.sr))
+	g.gainArg = math.NaN() // no gain computed yet
 	g.loop.init(sampleRate/20 + 8)
 	g.amp = NewAmp(sampleRate)
 	g.e = Expression{PitchHz: 110, Position: .22, Brightness: .7}
@@ -55,7 +64,7 @@ func (g *Guitar) NoteOn(hz, velocity float64) {
 		g.rng ^= g.rng >> 17
 		g.rng ^= g.rng << 5
 		noise := float64(int32(g.rng)) / 2147483648
-		g.loop.push(g.velocity * (.65*(2*v-1) + .06*noise))
+		g.loop.push(g.velocity * (float64(.65*(2*v-1)) + float64(.06*noise)))
 	}
 }
 func (g *Guitar) NoteOff() { g.released = true }
@@ -92,33 +101,39 @@ func (g *Guitar) SetExpressionImmediate(e Expression) {
 	g.hz = g.target
 }
 func (g *Guitar) Next() float64 {
-	alpha := 1 - math.Exp(-1/(.008*g.sr))
-	g.control.Position += alpha * (g.e.Position - g.control.Position)
-	g.control.Brightness += alpha * (g.e.Brightness - g.control.Brightness)
-	g.control.Vibrato += alpha * (g.e.Vibrato - g.control.Vibrato)
-	g.control.Damping += alpha * (g.e.Damping - g.control.Damping)
-	g.control.Drive += alpha * (g.e.Drive - g.control.Drive)
-	g.hz += (g.target - g.hz) * (1 - math.Exp(-1/(.008*g.sr)))
+	alpha := g.smooth
+	g.control.Position += float64(alpha * (g.e.Position - g.control.Position))
+	g.control.Brightness += float64(alpha * (g.e.Brightness - g.control.Brightness))
+	g.control.Vibrato += float64(alpha * (g.e.Vibrato - g.control.Vibrato))
+	g.control.Damping += float64(alpha * (g.e.Damping - g.control.Damping))
+	g.control.Drive += float64(alpha * (g.e.Drive - g.control.Drive))
+	g.hz += float64((g.target - g.hz) * alpha)
 	g.phase += 5 / g.sr
 	if g.phase >= 1 {
 		g.phase -= 1
 	}
-	f := g.hz * math.Exp2(g.control.Vibrato*math.Sin(2*math.Pi*g.phase)/1200)
+	f := g.hz
+	if g.control.Vibrato != 0 { // with no vibrato the factor is 2^(±0) = 1 exactly
+		f = g.hz * detmath.Exp2(g.control.Vibrato*detmath.Sin(2*math.Pi*g.phase)/1200)
+	}
 	period := g.sr / f
 	x := g.loop.read(period - 1)
-	t60 := 4.5 / (1 + 35*g.control.Damping)
+	t60 := 4.5 / (1 + float64(35*g.control.Damping))
 	if g.released {
 		t60 = .12
 	}
-	gain := math.Exp(-6.907755 / (f * t60))
+	if arg := -6.907755 / (f * t60); arg != g.gainArg {
+		g.gainArg, g.gain = arg, detmath.Exp(arg)
+	}
+	gain := g.gain
 	a := gain * (1 - g.control.Brightness) / 4
 	b := gain * (1 + g.control.Brightness) / 2
-	feedback := a*x + b*g.loss1 + a*g.loss2
+	feedback := float64(float64(a*x)+float64(b*g.loss1)) + float64(a*g.loss2)
 	g.loss2 = g.loss1
 	g.loss1 = x
 	g.loop.push(feedback)
-	pickup := x - .72*g.loop.read(period*clamp(g.control.Position, .05, .45))
-	hp := pickup - g.dcIn + .995*g.dcOut
+	pickup := x - float64(.72*g.loop.read(period*clamp(g.control.Position, .05, .45)))
+	hp := float64(pickup-g.dcIn) + float64(.995*g.dcOut)
 	g.dcIn = pickup
 	g.dcOut = hp
 	return g.amp.Next(hp*.7, g.control.Drive)
@@ -131,6 +146,9 @@ type Amp struct {
 	up1, up2, down1, down2  halfband.FIR
 	previous                [2]float64
 	low, dcIn, dcOut, alpha float64
+	// previousLogcosh[stage] is logcosh(previous[stage]), kept so each sample
+	// computes logcosh once; the values are the ones a second call gave.
+	previousLogcosh [2]float64
 }
 
 // NewAmp uses the same supported-rate policy as the experimental voices: rates
@@ -139,7 +157,9 @@ func NewAmp(sr int) Amp {
 	if sr < 8000 || sr > 192000 {
 		sr = 48000
 	}
-	return Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - math.Exp(-2*math.Pi*5500/float64(sr))}
+	a := Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - detmath.Exp(-2*math.Pi*5500/float64(sr))}
+	a.previousLogcosh = [2]float64{logcosh(0), logcosh(0)}
+	return a
 }
 func (a *Amp) Reset() {
 	a.up1.Reset()
@@ -147,18 +167,23 @@ func (a *Amp) Reset() {
 	a.down1.Reset()
 	a.down2.Reset()
 	a.previous = [2]float64{}
+	a.previousLogcosh = [2]float64{logcosh(0), logcosh(0)}
 	a.low = 0
 	a.dcIn = 0
 	a.dcOut = 0
 }
-func logcosh(x float64) float64 { v := math.Abs(x); return v + math.Log1p(math.Exp(-2*v)) - math.Ln2 }
+func logcosh(x float64) float64 {
+	v := math.Abs(x)
+	return v + detmath.Log1p(detmath.Exp(-2*v)) - math.Ln2
+}
 func (a *Amp) clip(x float64, stage int) float64 {
-	p := a.previous[stage]
-	a.previous[stage] = x
+	p, lp := a.previous[stage], a.previousLogcosh[stage]
+	lx := logcosh(x)
+	a.previous[stage], a.previousLogcosh[stage] = x, lx
 	if math.Abs(x-p) < 1e-6 {
-		return math.Tanh((x + p) * .5)
+		return detmath.Tanh((x + p) * .5)
 	}
-	return (logcosh(x) - logcosh(p)) / (x - p)
+	return (lx - lp) / (x - p)
 }
 func (a *Amp) Next(x, drive float64) float64 {
 	drive = clamp(drive, 0, 1)
@@ -167,14 +192,14 @@ func (a *Amp) Next(x, drive float64) float64 {
 	var out [2]float64
 	for i, h := range hi {
 		p, q := a.up2.Upsample(h)
-		p = a.clip(a.clip(p*(1+18*drive), 0)*(1+3*drive), 1)
-		q = a.clip(a.clip(q*(1+18*drive), 0)*(1+3*drive), 1)
+		p = a.clip(a.clip(p*(1+float64(18*drive)), 0)*(1+float64(3*drive)), 1)
+		q = a.clip(a.clip(q*(1+float64(18*drive)), 0)*(1+float64(3*drive)), 1)
 		out[i] = a.down2.Downsample(p, q)
 	}
 	y := a.down1.Downsample(out[0], out[1])
-	hp := y - a.dcIn + .995*a.dcOut
+	hp := float64(y-a.dcIn) + float64(.995*a.dcOut)
 	a.dcIn = y
 	a.dcOut = hp
-	a.low += a.alpha * (hp - a.low)
+	a.low += float64(a.alpha * (hp - a.low))
 	return .7 * a.low
 }

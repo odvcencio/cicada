@@ -1,9 +1,11 @@
 package engine
 
 import (
-	"m31labs.dev/cicada/kernel/voice/sample"
 	"math"
 	"math/bits"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
 // AudioAsset is immutable decoded planar PCM, prepared by a host worker.
@@ -60,7 +62,7 @@ func (e *Engine) prepareClips(cfg *Config) error {
 		if err != nil {
 			return err
 		}
-		if err = voice.SetParams(sample.Params{Gain: math.Pow(10, c.GainDB/20)}); err != nil {
+		if err = voice.SetParams(sample.Params{Gain: detmath.Pow(10, c.GainDB/20)}); err != nil {
 			return err
 		}
 		e.clipTemplates[i] = *voice
@@ -145,8 +147,8 @@ func (e *Engine) nextClipStereo(track int) (float32, float32) {
 			}
 			gain = max(0, gain)
 			l, r := v.voice.NextStereo()
-			left += float64(l) * gain
-			right += float64(r) * gain
+			left += float64(float64(l) * gain)
+			right += float64(float64(r) * gain)
 			v.sourceFrame += v.ratio
 			v.active = v.voice.Active() && v.sourceFrame < float64(c.EndFrame-c.StartFrame)
 			if !v.active {

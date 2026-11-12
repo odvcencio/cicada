@@ -337,7 +337,7 @@ func TestStepPatchInTheLastStepOfALoopSoundsAfterTheRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	loop := PlaybackRange{StartTick: 0, EndTick: seq.TicksPerBar, Loop: true}
+	loop := PlaybackRange{StartTick: 0, EndTick: ticksPerBar, Loop: true}
 	if err := p.PlayRange(loop); err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +708,7 @@ func TestSeeksPublishedAfterAcceptedBatchesNeverReorderThem(t *testing.T) {
 			transpose(semitones)(b, target)
 		}
 	}
-	oneBar := int64(seq.TicksPerBar)
+	oneBar := int64(ticksPerBar)
 	sequences := map[string]func(t *testing.T, p *Player, arena *PatchArena, target PreviewTarget){
 		"backward seek then forward seek": func(t *testing.T, p *Player, arena *PatchArena, target PreviewTarget) {
 			publish(t, p, arena, 1, target, both(60, 24)) // waits for its step boundary
@@ -778,7 +778,7 @@ func publish(t *testing.T, p *Player, arena *PatchArena, revision uint64, target
 // it for their own boundaries on the new timeline.
 func TestSeekLandsEarlierEditsAndNotLaterOnes(t *testing.T) {
 	note, _ := seq.PackStep(seq.Step{Note: 52, Gate: true, Ratchet: 1, Probability: 100, Velocity: 120})
-	loop := PlaybackRange{StartTick: 0, EndTick: seq.TicksPerBar, Loop: true}
+	loop := PlaybackRange{StartTick: 0, EndTick: ticksPerBar, Loop: true}
 	setup := func(t *testing.T) (*Player, PreviewTarget) {
 		p, err := New(editScore(t), 48_000)
 		if err != nil {

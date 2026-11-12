@@ -50,7 +50,8 @@ type Score struct {
 	HasSFX          bool
 	Range           *PlaybackRange // optional listening range prepared with a score edit
 	trackNames      *trackNameSnapshot
-	publication     uint64 // Assigned by Offer, ordered with patch publications.
+	meterMap        *seq.MeterMap // The engine's bar lines, copied before the score is published.
+	publication     uint64        // Assigned by Offer, ordered with patch publications.
 }
 
 type trackNameSnapshot struct {
@@ -311,7 +312,6 @@ type Player struct {
 	read                    int
 	fault                   error
 	jumpFadeRemaining       int
-	position                atomic.Uint64
 	tempoMilli              atomic.Int64
 	phraseBars              atomic.Int64
 	countInBars             atomic.Int64
@@ -320,6 +320,7 @@ type Player struct {
 	sceneEngine             *engine.Engine
 	overrides               atomic.Pointer[liveOverrides]
 	trackNames              atomic.Pointer[trackNameSnapshot]
+	published               positionCell // The position and the playing score's map; any goroutine may read it.
 	overrideSequence        atomic.Uint64
 	trackIncarnation        uint64 // Render-owned identity generation.
 	overrideClears          chan overrideClear
@@ -396,9 +397,10 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 		return nil, err
 	}
 	initial.trackNames = makeTrackNames(initial)
+	initial.meterMap = scoreMeterMap(initial.Engine)
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
-		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
+		nextBarSample: clock.SampleAtTick(initial.meterMap.BarStart(1)),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
 		overrideClears:    make(chan overrideClear, 64),
@@ -413,7 +415,7 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
 	p.assignTrackIncarnations(initial.trackNames)
 	p.trackNames.Store(initial.trackNames)
-	p.position.Store(1<<8 | 1)
+	p.published.store(1<<8|1, initial.meterMap)
 	p.tempoMilli.Store(clock.BPMMilli)
 	p.phraseBars.Store(int64(initial.PhraseBars))
 	countIn := 1
@@ -515,7 +517,8 @@ func primeStreamScore(score Score, tick int64) error {
 	if score.Engine.StreamStats().ArenaBytes == 0 {
 		return nil
 	}
-	commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)}, {Op: cmd.OpPlay, Track: 0xff}}
+	arg0, arg1 := cmd.SeekArgs(tick)
+	commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: arg0, Arg1: arg1}, {Op: cmd.OpPlay, Track: 0xff}}
 	if !score.Engine.PushBatch(commands[:]) {
 		return fmt.Errorf("streamed score rejected preparation")
 	}
@@ -566,7 +569,8 @@ func (p *Player) Offer(score Score) error {
 	// Every engine the player installs arrives through here (or New), so this
 	// is the one place that turns on per-channel meters.
 	score.Engine.SetStereoMeters(true)
-	primeTick := p.Position().Bar * seq.TicksPerBar
+	score.meterMap = scoreMeterMap(score.Engine)
+	primeTick := score.meterMap.BarStart(p.Position().Bar)
 	if score.Range != nil {
 		primeTick = score.Range.StartTick
 	}
@@ -1649,36 +1653,31 @@ func (p *Player) PendingPatternQuantizes() map[string]uint32 {
 }
 
 func (p *Player) nextQuantizedTick(quantize cmd.Quantize) (int64, error) {
-	quantum, ok := quantizeQuantum(quantize, p.phraseBars.Load())
-	if !ok {
+	phraseBars := p.phraseBars.Load()
+	if !launchQuantize(quantize, phraseBars) {
 		return 0, fmt.Errorf("quantize must be now, beat, bar, 2 bars, 4 bars, or a declared phrase")
 	}
 	if quantize == 0 {
 		return 0, nil
 	}
-	position := p.Position()
+	position, meterMap := p.PositionWithMap()
 	if position.Bar < 1 || position.Step < 1 {
 		return 0, fmt.Errorf("transport position is unavailable")
 	}
-	tick := (position.Bar-1)*seq.TicksPerBar + (position.Step-1)*seq.TicksPerStep
-	return nextQuantizedAfter(tick, quantize, quantum)
+	tick := meterMap.BarStart(position.Bar-1) + (position.Step-1)*seq.TicksPerStep
+	return nextQuantizedAfter(meterMap, tick, quantize, phraseBars)
 }
 
-func nextQuantizedAfter(tick int64, quantize cmd.Quantize, quantum int64) (int64, error) {
+// nextQuantizedAfter is the first requested beat, bar or phrase line after
+// tick on the song's meter map.
+func nextQuantizedAfter(meterMap seq.MeterMap, tick int64, quantize cmd.Quantize, phraseBars int64) (int64, error) {
 	if quantize == 0 {
 		return 0, nil
 	}
 	if quantize == cmd.QuantizePhrase {
-		return (tick/quantum + 1) * quantum, nil
+		return meterMap.QuantizeBars(tick+1, phraseBars), nil
 	}
-	target, err := seq.QuantizeTick(tick, quantize, 16)
-	if err != nil {
-		return 0, err
-	}
-	if target <= tick {
-		target += quantum
-	}
-	return target, nil
+	return meterMap.QuantizeTick(tick+1, quantize, 16)
 }
 
 // CurrentScene returns the scene observed by the audio reader without blocking it.
@@ -1698,8 +1697,8 @@ func (p *Player) CountInBars() int { return int(p.countInBars.Load()) }
 
 // Position can be read safely by a UI thread while Read renders audio.
 func (p *Player) Position() Position {
-	packed := p.position.Load()
-	return Position{Bar: int64(packed >> 8), Step: int64(packed & 0xff)}
+	packed, _ := p.published.load()
+	return unpackPosition(packed)
 }
 
 func (p *Player) Read(out []byte) (int, error) {
@@ -1788,7 +1787,7 @@ func (p *Player) beginRequestedSong() {
 			}
 			p.previous = p.current.Engine
 			p.discardSupersededPatches(next.publication)
-			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
+			p.rebuildCommitted(next, next.meterMap.BarStart(int64(start-1)))
 			p.applyOverrides(next.Engine, next, true)
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
@@ -1805,19 +1804,21 @@ func (p *Player) beginRequestedSong() {
 		} else {
 			p.jumpFadeRemaining = p.rate / 200
 		}
-		commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: start - 1}, {Op: cmd.OpPlay, Track: 0xff}}
+		startTick := p.current.meterMap.BarStart(int64(start) - 1)
+		arg0, arg1 := cmd.SeekArgs(startTick)
+		commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: arg0, Arg1: arg1}, {Op: cmd.OpPlay, Track: 0xff}}
 		if !p.current.Engine.PushBatch(commands[:]) {
 			p.fault = fmt.Errorf("live engine rejected song start at bar %d", start)
 			return
 		}
-		p.rebuildCommitted(p.current, int64(start-1)*seq.TicksPerBar)
+		p.rebuildCommitted(p.current, startTick)
 		p.transportQueued = true
 		p.initialParameters = false
 		p.bar = int64(start) - 1
-		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.Engine.TempoAtTick(p.bar * seq.TicksPerBar), AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
+		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.Engine.TempoAtTick(startTick), AnchorSample: p.sample, AnchorTick: startTick}
 		p.tempoMilli.Store(p.clock.BPMMilli)
-		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
-		p.position.Store(uint64(start)<<8 | 1)
+		p.nextBarSample = p.clock.SampleAtTick(p.current.meterMap.BarStart(p.bar + 1))
+		p.published.store(uint64(start)<<8|1, p.current.meterMap)
 		p.emit(Event{Bar: int64(start), Name: request.Scene, Kind: "song"})
 	default:
 	}
@@ -1838,7 +1839,7 @@ func (p *Player) followLiveTempo() {
 		AnchorSample: live.AnchorSample + p.sample - p.current.Engine.TransportSample(), AnchorTick: live.AnchorTick,
 	}
 	p.tempoMilli.Store(live.BPMMilli)
-	p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
+	p.nextBarSample = p.clock.SampleAtTick(p.current.meterMap.BarStart(p.bar + 1))
 }
 
 // cpuLoadAlpha weights the newest block in the CPU load average.
@@ -1849,7 +1850,7 @@ const cpuLoadAlpha = 0.1
 // nothing; time.Now and time.Since use the monotonic clock.
 func (p *Player) noteRenderTime(elapsed time.Duration, frames int) {
 	load := elapsed.Seconds() / (float64(frames) / float64(p.rate))
-	p.cpuLoad += cpuLoadAlpha * (load - p.cpuLoad)
+	p.cpuLoad += float64(cpuLoadAlpha * (load - p.cpuLoad))
 	p.cpuLoadBits.Store(math.Float64bits(p.cpuLoad))
 }
 
@@ -1869,7 +1870,9 @@ func (p *Player) renderBlock(requestedFrames int) {
 		swapped := false
 		select {
 		case next := <-p.offers:
-			if p.bar > int64(^uint32(0)) || !next.Engine.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(p.bar)}) || !next.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			barTick := next.meterMap.BarStart(p.bar)
+			arg0, arg1 := cmd.SeekArgs(barTick)
+			if p.bar > int64(^uint32(0)) || !next.Engine.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: arg0, Arg1: arg1}) || !next.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 				p.retireEngine(next.Engine)
 				p.fault = fmt.Errorf("live engine rejected bar %d", p.bar)
 				return
@@ -1879,7 +1882,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 			}
 			p.previous = p.current.Engine
 			p.discardSupersededPatches(next.publication)
-			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
+			p.rebuildCommitted(next, barTick)
 			p.transportQueued = true
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
@@ -1898,8 +1901,8 @@ func (p *Player) renderBlock(requestedFrames int) {
 			p.resetMeters()
 			swapped = true
 			p.clock = seq.Clock{
-				SampleRate: int64(p.rate), BPMMilli: next.Engine.TempoAtTick(p.bar * seq.TicksPerBar),
-				AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar,
+				SampleRate: int64(p.rate), BPMMilli: next.Engine.TempoAtTick(barTick),
+				AnchorSample: p.sample, AnchorTick: barTick,
 			}
 			p.tempoMilli.Store(p.clock.BPMMilli)
 			if r := next.Range; r != nil && (p.clock.TickAtSample(p.sample) < r.StartTick || p.clock.TickAtSample(p.sample) >= r.EndTick) {
@@ -1916,13 +1919,14 @@ func (p *Player) renderBlock(requestedFrames int) {
 		}
 		// A scene that sets a tempo steps it on this bar. Re-anchor the way the
 		// kernel transport does, at the sample where the bar begins.
-		if tempo := p.current.Engine.TempoAtTick(p.bar * seq.TicksPerBar); tempo != p.clock.BPMMilli {
-			if clock, err := p.clock.Reanchor(p.bar*seq.TicksPerBar, tempo); err == nil {
+		barTick := p.current.meterMap.BarStart(p.bar)
+		if tempo := p.current.Engine.TempoAtTick(barTick); tempo != p.clock.BPMMilli {
+			if clock, err := p.clock.Reanchor(barTick, tempo); err == nil {
 				p.clock = clock
 				p.tempoMilli.Store(tempo)
 			}
 		}
-		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
+		p.nextBarSample = p.clock.SampleAtTick(p.current.meterMap.BarStart(p.bar + 1))
 	}
 	frames := int(min(int64(min(blockFrames, requestedFrames)), p.nextBarSample-p.sample))
 	if r := p.playbackRange; r != nil {
@@ -1933,7 +1937,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 		return
 	}
 	tick := p.clock.TickAtSample(p.sample)
-	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
+	p.storePosition(tick)
 	if p.initialParameters {
 		p.rebuildCommitted(p.current, tick)
 		p.initialParameters = false
@@ -1967,7 +1971,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 		request := p.launches.Load()
 		manual := request != nil && request.submitted.Load() && p.clock.SampleAtTick(request.targetTick) < p.sample+int64(frames)
 		if !firstScene && !manual {
-			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: p.current.SceneIDs[index], Kind: "song-scene"})
+			p.emit(Event{Bar: p.barNumber(tick), Name: p.current.SceneIDs[index], Kind: "song-scene"})
 		}
 	}
 	p.transportQueued = false
@@ -1989,8 +1993,8 @@ func (p *Player) renderBlock(requestedFrames int) {
 		for i := 0; i < fadeFrames; i++ {
 			newGain := float32(p.fadeTotal-p.fadeRemaining+i+1) / float32(p.fadeTotal)
 			oldGain := 1 - newGain
-			p.left[i] = p.oldL[i]*oldGain + p.left[i]*newGain
-			p.right[i] = p.oldR[i]*oldGain + p.right[i]*newGain
+			p.left[i] = float32(p.oldL[i]*oldGain) + float32(p.left[i]*newGain)
+			p.right[i] = float32(p.oldR[i]*oldGain) + float32(p.right[i]*newGain)
 		}
 		p.fadeRemaining -= fadeFrames
 		if p.fadeRemaining == 0 {
@@ -2290,7 +2294,7 @@ func (p *Player) queueSceneLaunch(frames int) {
 	}
 	if index < 0 || index > int(^uint16(0)) {
 		if p.launches.CompareAndSwap(request, nil) {
-			p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene-error"})
+			p.emit(Event{Bar: p.barNumber(request.targetTick), Name: request.name, Kind: "scene-error"})
 		}
 		return
 	}
@@ -2301,7 +2305,7 @@ func (p *Player) queueSceneLaunch(frames int) {
 	}
 	if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(index), Tick: request.targetTick}) {
 		p.launches.CompareAndSwap(request, nil)
-		p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene-error"})
+		p.emit(Event{Bar: p.barNumber(request.targetTick), Name: request.name, Kind: "scene-error"})
 	}
 }
 
@@ -2316,13 +2320,13 @@ func (p *Player) requeuePendingLaunches() {
 		// when a replacement score lands, not every block, and allocates once per pending launch.
 		next := sceneLaunch{id: old.id, name: old.name, targetTick: old.targetTick, quantize: old.quantize}
 		if next.targetTick <= tick {
-			quantum, ok := quantizeQuantum(next.quantize, p.phraseBars.Load())
-			if !ok {
+			phraseBars := p.phraseBars.Load()
+			if !launchQuantize(next.quantize, phraseBars) {
 				p.launches.CompareAndSwap(old, nil)
 				break
 			}
 			var err error
-			next.targetTick, err = nextQuantizedAfter(tick, next.quantize, quantum)
+			next.targetTick, err = nextQuantizedAfter(*p.current.meterMap, tick, next.quantize, phraseBars)
 			if err != nil {
 				p.launches.CompareAndSwap(old, nil)
 				break
@@ -2345,13 +2349,13 @@ func (p *Player) requeuePendingLaunches() {
 			}
 			request.submitted = false
 			if request.TargetTick <= tick {
-				quantum, ok := quantizeQuantum(request.quantize, p.phraseBars.Load())
-				if !ok {
+				phraseBars := p.phraseBars.Load()
+				if !launchQuantize(request.quantize, phraseBars) {
 					next.requests[index] = slotLaunch{}
 					changed = true
 					continue
 				}
-				target, err := nextQuantizedAfter(tick, request.quantize, quantum)
+				target, err := nextQuantizedAfter(*p.current.meterMap, tick, request.quantize, phraseBars)
 				if err != nil {
 					next.requests[index] = slotLaunch{}
 					changed = true
@@ -2368,24 +2372,16 @@ func (p *Player) requeuePendingLaunches() {
 	}
 }
 
-func quantizeQuantum(quantize cmd.Quantize, phraseBars int64) (int64, bool) {
+// launchQuantize reports whether a launch may use quantize: now, a beat, one,
+// two or four bars, or a declared phrase of 1 to 64 bars.
+func launchQuantize(quantize cmd.Quantize, phraseBars int64) bool {
 	switch quantize {
-	case 0:
-		return 0, true
-	case 1:
-		return seq.PPQ, true
-	case 2, 5:
-		return seq.TicksPerBar, true
-	case 6:
-		return 2 * seq.TicksPerBar, true
-	case 8:
-		return 4 * seq.TicksPerBar, true
+	case 0, 1, 2, 5, 6, 8:
+		return true
 	case cmd.QuantizePhrase:
-		if phraseBars >= 1 && phraseBars <= 64 {
-			return phraseBars * seq.TicksPerBar, true
-		}
+		return phraseBars >= 1 && phraseBars <= 64
 	}
-	return 0, false
+	return false
 }
 
 func (p *Player) queueSlotLaunches(frames int) {
@@ -2446,14 +2442,14 @@ func (p *Player) queueSlotLaunches(frames int) {
 			continue
 		}
 		for _, request := range failed {
-			p.emit(Event{Bar: request.TargetTick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot-error"})
+			p.emit(Event{Bar: p.barNumber(request.TargetTick), Name: request.request.Pattern, Track: request.request.Track, Kind: "slot-error"})
 		}
 		for _, queued := range scheduled {
 			// A submitted request is marked before pushing so a concurrent reader
 			// cannot duplicate it. The Engine owns the command queue on this path.
 			request := queued.request
 			if !p.current.Engine.Push(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(queued.track), Index: uint16(queued.slot), Tick: request.TargetTick}) {
-				p.emit(Event{Bar: request.TargetTick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot-error"})
+				p.emit(Event{Bar: p.barNumber(request.TargetTick), Name: request.request.Pattern, Track: request.request.Track, Kind: "slot-error"})
 				p.removeSlotRequest(request.id)
 			}
 		}
@@ -2492,7 +2488,7 @@ func (p *Player) completeSceneLaunch(endSample int64) {
 		if request.quantize == 0 {
 			tick = p.clock.TickAtSample(p.sample)
 		}
-		p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene"})
+		p.emit(Event{Bar: p.barNumber(tick), Name: request.name, Kind: "scene"})
 	}
 }
 
@@ -2523,7 +2519,7 @@ func (p *Player) completeSlotLaunches(endSample int64) {
 			if request.quantize == 0 {
 				tick = p.clock.TickAtSample(p.sample)
 			}
-			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot"})
+			p.emit(Event{Bar: p.barNumber(tick), Name: request.request.Pattern, Track: request.request.Track, Kind: "slot"})
 		}
 		return
 	}

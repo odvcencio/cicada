@@ -1,5 +1,5 @@
 .PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-engine-measurements test-chord-wasm test-worklet-negotiation
-.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm
+.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm test-tinygo-digests
 
 export GOWORK := off
 
@@ -47,9 +47,10 @@ test: test-build-tools
 .PHONY: test-ci-core test-cmd-shard test-cmd-shard-check
 
 # CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
-# target covers every other package. `make test` still runs everything.
+# target covers every other package. It skips TestRenderPathsAgree, which CI
+# runs in its own job (make test-render-paths). `make test` still runs everything.
 test-ci-core: test-build-tools
-	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
+	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -skip '^TestRenderPathsAgree$$' -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -98,10 +99,43 @@ build-core:
 	mkdir -p build
 	GOFLAGS=-buildvcs=false go build -o build/cicada ./cmd/cicada
 
+# Times an agent's loop with build/cicada on the reference scores and checks
+# the speed gates in cmd/cicada-bench/gates.go; BENCH_ARGS=--enforce fails on
+# a gate. The large song's render and audition cover its first 8 bars.
+.PHONY: bench-agent-loop test-render-identity
+BENCH_ARGS ?=
+bench-agent-loop: build-core
+	go run ./cmd/cicada-bench --cicada build/cicada --large-bars 8 --json build/bench-agent-loop.json $(BENCH_ARGS)
+
+# Renders every example score with and without the stored mix (render.MasterCache)
+# and compares the bytes: plain, normalized, and at -14 and -9 LUFS.
+test-render-identity:
+	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
+
+# Regenerates the committed agent front door (llms.txt, AGENTS.md's generated
+# region, the quick start the binary embeds, examples/first-song/AGENTS.md),
+# whose only inputs are the quick start and stable text, and builds
+# llms-full.txt from the manual, which is not committed.
+.PHONY: agent-front-door
+agent-front-door:
+	CICADA_UPDATE_AGENT_FRONT_DOOR=1 CICADA_LLMS_FULL_OUT=$(CURDIR)/llms-full.txt go test ./internal/agentguide -run '^(TestAgentFrontDoorIsCurrent|TestLLMsFullFitsItsBudget)$$' -count=1
+
+# The two render paths (the direct mixer and the scheduled engine) must play the
+# same notes and write the same float32 bytes at 44.1 kHz (TestRenderPathsAgree;
+# CI job "M0 render paths agree"). The audio target compares whole songs at
+# 48 kHz and only reports (nightly).
+.PHONY: test-render-paths test-render-paths-audio
+test-render-paths:
+	go test ./render -run '^TestRenderPathsAgree$$' -count=1 -v
+
+test-render-paths-audio:
+	CICADA_PATHS_AUDIO=full go test ./render -run '^TestRenderPathsAudio$$' -count=1 -timeout=60m -v
+
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
 # render to a loudness target and audition. It must finish within 2 minutes.
-# It also runs the examples of docs/manual/agents.md against the binary.
+# It starts by following the quick start that cicada agents prints, and runs the
+# examples of docs/manual/agents.md and docs/manual/agent-quickstart.md too.
 .PHONY: test-agent-surface
 test-agent-surface: build-core
 	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentBrighterBassTask|TestAgentDocumentationExamples)$$' -count=1 -v
@@ -127,6 +161,14 @@ build-workstation-release:
 
 test-workstation:
 	cd workstation && go generate ./... && go test -race ./... -count=1
+
+.PHONY: engine-size-report
+# What fills the UI engine WebAssembly, by section, runtime table, package and
+# module, with the linker's reason for each large package and two floor
+# programs. Writes workstation/build/engine-size.json; see workstation/README.md.
+ENGINE_SIZE_ARGS ?=
+engine-size-report:
+	cd workstation && go run ./internal/enginesize -o build/engine-size.json $(ENGINE_SIZE_ARGS)
 
 .PHONY: test-collaboration
 test-collaboration:
@@ -223,6 +265,71 @@ test-studio-placements:
 test-studio-collaboration:
 	node --test workstation/browser/collaboration.test.cjs
 
+.PHONY: test-studio-dock-fit
+# Requires a fresh Studio on a continuity.test.cjs fixture and an absolute CICADA_DOCK_PROOF_DIR.
+test-studio-dock-fit:
+	node --test workstation/browser/dock-fit.test.cjs
+
+.PHONY: test-studio-meter-performance
+# Requires a fresh Studio and CICADA_METERS_URL; it checks for no repaint of unchanged meters and for a poll gap of at most 100 ms (page clock).
+test-studio-meter-performance:
+	node --test workstation/browser/meter-performance.test.cjs
+
+.PHONY: test-studio-recording-setup
+# Requires a fresh Studio on recording-setup.test.cjs --write-fixture, CICADA_SETUP_URL and CICADA_VOCAL_PROOF_DIR.
+test-studio-recording-setup:
+	node --test workstation/browser/recording-setup.test.cjs
+
+.PHONY: test-studio-recording-levels
+# Requires a fresh Studio on recording-levels.test.cjs --write-fixture, CICADA_LEVELS_URL and CICADA_LEVELS_PROOF_DIR.
+test-studio-recording-levels:
+	node --test workstation/browser/recording-levels.test.cjs
+
+.PHONY: test-studio-vocals
+# Requires a fresh Studio on the print-sources fixture (--primary-arrangement) and CICADA_VOCAL_PROOF_DIR.
+test-studio-vocals:
+	node --test workstation/browser/vocals.test.cjs
+
+.PHONY: test-studio-vocal-levels
+# Requires a fresh Studio on the print-sources fixture, CICADA_LEVELING_URL, CICADA_LEVELING_SCORE and CICADA_LEVELING_PROOF_DIR.
+test-studio-vocal-levels:
+	node --test workstation/browser/vocal-levels.test.cjs
+
+.PHONY: test-studio-shared-capture
+# Requires a fresh Studio on a continuity.test.cjs fixture and CICADA_SHARED_CAPTURE_PROOF_DIR;
+# run it once for MPE and once with CICADA_CAPTURE_KIND=channel, each on a fresh Studio.
+test-studio-shared-capture:
+	node --test workstation/browser/shared-capture.test.cjs
+
+.PHONY: test-studio-performance
+# Requires a fresh Studio on performance.test.cjs --write-fixture and CICADA_PERFORMANCE_PROOF_DIR.
+# Run once with CICADA_PERFORMANCE_PART=capacity (CICADA_CAPACITY_URL) and once with =buffer (CICADA_BUFFER_URL), each on a fresh Studio.
+test-studio-performance:
+	node --test workstation/browser/performance.test.cjs
+
+.PHONY: test-studio-scene-launch-keys
+# Requires a fresh Studio on a continuity.test.cjs fixture.
+test-studio-scene-launch-keys:
+	node --test workstation/browser/scene-launch-keys.test.cjs
+
+.PHONY: test-studio-live-write
+# Requires Studio with a synthetic microphone: build the harness (go test -c ./cmd/cicada), start
+# TestSyntheticStudioUIHarness on live-fixture.cjs --no-curve, and put cicada-workstation in front of it.
+# Set CICADA_LIVE_WRITE_SCORE and CICADA_LIVE_WRITE_PROOF_DIR. scripts/ci-studio-browser.sh live_write shows how.
+test-studio-live-write:
+	node --test workstation/browser/live-write.test.cjs
+
+.PHONY: test-studio-live-write-uncertain
+# As test-studio-live-write, on a fresh Studio per CICADA_LIVE_WRITE_FAILURE (reject, lost, timeout, late).
+test-studio-live-write-uncertain:
+	node --test workstation/browser/live-write-uncertain.test.cjs
+
+.PHONY: test-studio-amp-automation
+# Requires a fresh Studio on amp-automation.test.cjs --write-fixture DIR (score DIR/main.cicada).
+# Set CICADA_AMP_AUTOMATION_FIXTURE to that score and CICADA_AMP_AUTOMATION_PROOF_DIR.
+test-studio-amp-automation:
+	node --test workstation/browser/amp-automation.test.cjs
+
 test-kernel:
 	go test ./kernel/... -count=1
 
@@ -235,6 +342,39 @@ test-timing:
 
 test-golden:
 	go run ./cmd/cicada golden
+
+# Renders every example score with --jobs 1 and with 2, 4, 8 and the automatic
+# job count, plain and at -14 LUFS, and compares the bytes (render lanes).
+.PHONY: test-parallel-identity
+test-parallel-identity:
+	CICADA_PARALLEL_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=1 -timeout=110m -v
+
+# Runs the render lanes under the race detector with the lanestress hook. At
+# each hand-off point of the lane protocol the hook sleeps 1 ms (five times a
+# lane's spin window) at about 1 in 32 hand-offs and yields at about 1 in 4 of
+# the rest, chosen by a hash of the seed and the hand-off (site, segment,
+# lane, chunk), with no state shared between goroutines. Each test binary
+# prints its seed; CICADA_LANE_STRESS_SEED=<seed> gives every hand-off the same
+# delay again. It runs the forced-lane tests and the identity subset with every
+# segment on every lane, once per GOMAXPROCS value in LANE_STRESS_PROCS ("all"
+# is every CPU), so the job counts 4 and 8 exceed the processors.
+# LANE_STRESS_COUNT repeats the quick sets (renderlanes, render) and
+# LANE_STRESS_HEAVY_COUNT the slow ones (the engine tests, the identity subset).
+# The nightly CI job runs 10 and 10 at 2, 3 and all; pull requests that touch
+# the lanes run LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1.
+LANE_STRESS_PROCS ?= 2 3 all
+LANE_STRESS_COUNT ?= 10
+LANE_STRESS_HEAVY_COUNT ?= 10
+.PHONY: test-lane-stress
+test-lane-stress:
+	@set -e; for procs in $(LANE_STRESS_PROCS); do \
+		if [ "$$procs" = all ]; then run="env -u GOMAXPROCS"; else run="env GOMAXPROCS=$$procs"; fi; \
+		echo "== lane stress: GOMAXPROCS $$procs, -count=$(LANE_STRESS_COUNT), heavy -count=$(LANE_STRESS_HEAVY_COUNT)"; \
+		$$run go test -race -tags lanestress ./internal/renderlanes -run '^Test(RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)$$' -count=$(LANE_STRESS_COUNT) -timeout=30m -v; \
+		$$run go test -race -tags lanestress ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=$(LANE_STRESS_COUNT) -timeout=30m -v; \
+		$$run go test -race -tags lanestress ./kernel/engine -run '^TestOfflineParallel' -count=$(LANE_STRESS_HEAVY_COUNT) -timeout=60m -v; \
+		$$run CICADA_PARALLEL_IDENTITY_STRESS=1 go test -race -tags lanestress ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=$(LANE_STRESS_HEAVY_COUNT) -timeout=100m -v; \
+	done
 
 test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
@@ -316,6 +456,21 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 	go test -timeout=3m -tags modulate_wasm ./kernel/modulate -run '^TestModulateNativeWASMParity$$' -count=1 -v
 
+# The kernel WASM is compiled by TinyGo (LLVM), not by the Go compiler. This
+# runs the deterministic-math and processor digests compiled by TinyGo for
+# WebAssembly (under Node), so a TinyGo code-generation difference fails here as
+# it would on arm64 or with GOAMD64=v3. go test exits 0 when -run matches
+# nothing, so every digest must print a PASS line.
+TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness
+TINYGO_DIGEST_TESTS = TestIdentityDigest TestSinPiDigest TestAtanDigest TestTanh32Digest TestLog1pDigest TestNearDigest TestFilterCoefficientDigest TestExp2F32Digest \
+	TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest TestAmpcabDigest TestAmpcabOutputDigest TestChorusDigest \
+	TestConvolutionDigest TestTapeDigest TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest \
+	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget
+test-tinygo-digests:
+	mkdir -p build
+	bash -o pipefail -c 'GOWORK=off GOFLAGS=-buildvcs=false tinygo test -target=wasm -v -run Digest $(TINYGO_DIGEST_PACKAGES) | tee build/tinygo-digests.txt'
+	@missing=0; for name in $(TINYGO_DIGEST_TESTS); do grep -q -- "^--- PASS: $$name " build/tinygo-digests.txt || { echo "No PASS line for $$name under TinyGo" >&2; missing=1; }; done; exit $$missing
+
 test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs
 	bash -o pipefail -c 'CICADA_CHORD_WASM_PATH="$(CURDIR)/build/cicada-kernel.wasm" go test -timeout=2m -tags chord_wasm ./cmd/cicada-kernel-wasm -run "^TestChordWASM" -count=1 -v | tee build/chord-wasm-report.txt build/test-chord-wasm.log'
@@ -359,7 +514,7 @@ test-worklet-negotiation: build-worklets
 
 test-browser: build-kernel-wasm build-modular-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations|TripletTakePreviewAndCommit|ScoreRecordQuantizationPreviewAndCommit|ContinuousAutomationLanes|InstrumentRecording|MasterChain)$$' 5m build/test-browser.log
 	bash cmd/cicada/browser-runner.sh browser,worklet_testhooks '^TestBrowserUnderrunDetector$$' 2m build/test-worklet-stall.log
 
 # E1 measurement suite: renders every voice family and effect, writes

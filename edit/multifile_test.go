@@ -117,6 +117,14 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"addaudiotrack":          &edits.AddAudioTrack{Name: "vox"},
 		"setparam":               &edits.SetParam{Entity: "param:lead.level", Value: json.RawMessage(`-3`)},
 		"addeffect":              &edits.AddEffect{Name: "grit", EffectKind: "drive"},
+		"removeeffect":           &edits.RemoveEffect{Name: "grit"},
+		"addtrack":               &edits.AddTrack{Name: "lead", Voice: "piano"},
+		"deletetrack":            &edits.DeleteTrack{Track: "keys"},
+		"addscene":               &edits.AddScene{Name: "main"},
+		"duplicatescene":         &edits.DuplicateScene{Scene: "main", Name: "main-2"},
+		"deletescene":            &edits.DeleteScene{Scene: "other", Cascade: true},
+		"deletepattern":          &edits.DeletePattern{Pattern: "melody", Cascade: true},
+		"rename":                 &edits.Rename{Entity: "track:lead", Name: "solo"},
 		"addpreset":              &edits.AddPreset{Preset: "warm-pad", Instrument: "voice", Track: "new-keys"},
 		"insertlibraryitem":      &edits.InsertLibraryItem{Track: "lead", ImportPath: "part.cicada", Reference: "voice", ItemKind: "instrument"},
 		"savepreset":             &edits.SavePreset{Track: "lead", Name: "bright", Declaration: "\npreset bright { instrument=acid cutoff=900Hz }\n"},
@@ -292,6 +300,12 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 					case "placevocalcomp":
 						if err != nil || result == nil || !bytes.HasPrefix(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Contains(result.Files[0].After, []byte("automate lead.cutoff")) || !bytes.Contains(result.Files[0].After, []byte("place vocal-vox")) {
 							t.Fatalf("vocal conversion lost owning source or scene control: %v %v", result != nil, err)
+						}
+					case "deletetrack", "duplicatescene", "deletescene", "deletepattern", "rename":
+						// Structural intents edit the file that declares and uses
+						// the entity, staged beside the unchanged entry.
+						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || bytes.Equal(result.Files[0].After, other) {
+							t.Fatalf("structural edit did not change only its owning source: kind=%s candidate=%v error=%v", kind, result != nil, err)
 						}
 					case "replacetext":
 						if err != nil || result == nil || !bytes.Equal(result.Source, want) || len(result.Files) != 0 {

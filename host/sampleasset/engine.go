@@ -2,8 +2,8 @@ package sampleasset
 
 import (
 	"fmt"
-	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"m31labs.dev/cicada/project"
@@ -76,7 +76,7 @@ func Prepare(dir string, p *project.Project) ([]engine.StereoVoiceFactory, error
 					return nil, fmt.Errorf("clip %s: %w", clip.Name, err)
 				}
 				region.Start, region.End = int(clip.StartFrame), int(clip.EndFrame)
-				factory.slots[slot] = &clipRegion{region: region, gain: math.Pow(10, clip.GainDB/20), fadeIn: clip.FadeInFrames, fadeOut: clip.FadeOutFrames}
+				factory.slots[slot] = &clipRegion{region: region, gain: detmath.Pow(10, clip.GainDB/20), fadeIn: clip.FadeInFrames, fadeOut: clip.FadeOutFrames}
 			}
 			prepared[ti] = factory
 		} else if sampler, ok := samplers[track.Kind]; ok {
@@ -266,17 +266,17 @@ func (v *clipVoice) NextStereo() (float32, float32) {
 			gain = min(gain, frame/float64(clip.fadeIn))
 		}
 		if clip.fadeOut > 0 {
-			gain = min(gain, (float64(clip.region.End-clip.region.Start)-frame)/float64(clip.fadeOut))
+			gain = min(gain, (float64(clip.region.End-clip.region.Start)-float64(frame))/float64(clip.fadeOut))
 		}
 		gain = max(0, gain)
-		left += float64(l) * gain
-		right += float64(r) * gain
+		left += float64(float64(l) * gain)
+		right += float64(float64(r) * gain)
 		v.position[slot]++
 	}
 	if v.tailRemaining > 0 {
 		gain := float64(v.tailRemaining) / float64(v.tailFrames)
-		left += float64(v.tailL) * gain
-		right += float64(v.tailR) * gain
+		left += float64(float64(v.tailL) * gain)
+		right += float64(float64(v.tailR) * gain)
 		v.tailRemaining--
 	}
 	v.lastL, v.lastR = float32(left), float32(right)

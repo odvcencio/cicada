@@ -4,7 +4,10 @@ package keyboard
 
 import (
 	"fmt"
+	"math"
+
 	"m31labs.dev/cicada/instrument/keyboardpresets"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/voice/clav"
 	"m31labs.dev/cicada/kernel/voice/ep"
 	"m31labs.dev/cicada/kernel/voice/fm"
@@ -12,7 +15,6 @@ import (
 	"m31labs.dev/cicada/kernel/voice/organ"
 	"m31labs.dev/cicada/kernel/voice/polykeys"
 	"m31labs.dev/cicada/kernel/voice/strings"
-	"math"
 )
 
 var Names = keyboard.Names
@@ -70,7 +72,7 @@ func Validate(s *keyboard.Spec) error {
 	case s.Patch >= 14 && s.Patch <= 16:
 		var level float32
 		for op := 0; op < 6; op++ {
-			level += s.Controls[5+op*12] * s.Controls[14+op*12]
+			level += float32(s.Controls[5+op*12] * s.Controls[14+op*12])
 		}
 		if level == 0 {
 			return fmt.Errorf("FM keys need an audible carrier")
@@ -181,7 +183,7 @@ func LevelTrimLinear(patch uint8) float32 {
 	if patch < 1 || int(patch) > len(LevelTrimDB) {
 		return 1
 	}
-	return float32(math.Pow(10, float64(LevelTrimDB[patch-1])/20))
+	return float32(detmath.Pow(10, float64(LevelTrimDB[patch-1])/20))
 }
 
 // calibrated scales the output of one voice by a fixed factor. Every other

@@ -1,6 +1,10 @@
 package modal
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 type Profile uint8
 
@@ -157,7 +161,7 @@ func NewVoice(profile Profile, sampleRate int) (*Voice, error) {
 		return nil, Error("modal sample rate must be 44100, 48000, or 96000")
 	}
 	v := &Voice{profile: profile, rate: float64(sampleRate)}
-	v.damper = math.Exp(-math.Log(1000) / (.07 * v.rate))
+	v.damper = detmath.Exp(-detmath.Log(1000) / (.07 * v.rate))
 	v.Reset()
 	return v, nil
 }
@@ -187,9 +191,9 @@ func (v *Voice) pitch(note uint8) float64 {
 	if v.profile == Shaker {
 		// A shaker's vessel colour changes slowly with the authored pitch;
 		// its grain modes are not an equal-tempered musical fundamental.
-		return 330 * math.Exp2((float64(note)-60)/48)
+		return 330 * detmath.Exp2((float64(note)-60)/48)
 	}
-	return 440 * math.Exp2((float64(note)-69)/12)
+	return 440 * detmath.Exp2((float64(note)-69)/12)
 }
 
 // NoteOn starts a finite strike. Velocity zero is a key-up, and cannot excite
@@ -216,7 +220,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 		energy := 0.0
 		for m := 0; m < s.count; m++ {
 			mode := &s.modes[m]
-			energy += mode.x*mode.x + mode.y*mode.y
+			energy += float64(mode.x*mode.x) + float64(mode.y*mode.y)
 		}
 		if energy < quietest {
 			quietest, index = energy, i
@@ -241,13 +245,13 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	// This mildly curved response leaves headroom for overlapping strikes.
 	level := .9 * vel * math.Sqrt(vel)
 	hardness := vel * vel
-	contact := (r.soft + (r.hard-r.soft)*hardness) * (1 + .045*(float64(variation)-1.5))
+	contact := (r.soft + float64((r.hard-r.soft)*hardness)) * (1 + float64(.045*(float64(variation)-1.5)))
 	s.contact = max(4, int(math.Round(contact*v.rate)))
 	s.excitation = s.contact
 	s.force, s.noiseMix = 2/float64(s.contact), r.noise
 	angle := 2 * math.Pi / float64(s.contact)
-	s.pulseS, s.pulseC = math.Sincos(angle)
-	s.pulseY, s.pulseX = math.Sincos(angle / 2)
+	s.pulseS, s.pulseC = detmath.Sincos(angle)
+	s.pulseY, s.pulseX = detmath.Sincos(angle / 2)
 	frequency := v.pitch(note)
 	weightSum := 0.0
 	for m := 0; m < r.count; m++ {
@@ -262,23 +266,23 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 		}
 		mode := &s.modes[s.count]
 		mode.freq, mode.active = freq, true
-		mode.radius = math.Exp(-math.Log(1000) / (r.t60[m] * v.rate))
-		mode.s, mode.c = math.Sincos(2 * math.Pi * freq / v.rate)
+		mode.radius = detmath.Exp(-detmath.Log(1000) / (r.t60[m] * v.rate))
+		mode.s, mode.c = detmath.Sincos(2 * math.Pi * freq / v.rate)
 		mode.c, mode.s = mode.c*mode.radius, mode.s*mode.radius
 		brightness := 1.0
 		if m != 0 {
-			brightness = .25 + .75*hardness
+			brightness = .25 + float64(.75*hardness)
 		}
 		// Different virtual contact positions give four timbres. Frequencies
 		// and decay poles remain identical for every strike position.
-		position := 1 + .055*math.Sin(float64((m+1)*int(variation+1))*1.7)
+		position := 1 + float64(.055*detmath.Sin(float64((m+1)*int(variation+1))*1.7))
 		mode.gain = level * r.weight[m] / weightSum * brightness * position
 		s.count++
 	}
 	if v.profile == Shaker {
 		// A bounded train of grain collisions gives an aggregate shake,
 		// rather than a single envelope applied to broadband noise.
-		s.excitation = int((.045 + .035*vel) * v.rate)
+		s.excitation = int((.045 + float64(.035*vel)) * v.rate)
 		s.grainSpacing = max(s.contact+1, int(.0027*v.rate))
 		s.grainNext, s.grainAge, s.grainLength = 0, -1, s.contact
 		s.force *= 1.8
@@ -303,9 +307,9 @@ func (v *Voice) retune(s *strike, note uint8) {
 			m.active, m.x, m.y = false, 0, 0
 			continue
 		}
-		sin, cos := math.Sincos(2 * math.Pi * m.freq / v.rate)
-		m.dc = (m.radius*cos - m.c) / float64(s.glide)
-		m.ds = (m.radius*sin - m.s) / float64(s.glide)
+		sin, cos := detmath.Sincos(2 * math.Pi * m.freq / v.rate)
+		m.dc = (float64(m.radius*cos) - m.c) / float64(s.glide)
+		m.ds = (float64(m.radius*sin) - m.s) / float64(s.glide)
 	}
 	s.note, s.keyUp = note, false
 }
@@ -393,10 +397,10 @@ func (v *Voice) drive(s *strike) float64 {
 		return 4 * x * (1 - x) * random(s) * s.force
 	}
 	pulse := .5 * (1 - s.pulseX)
-	x := s.pulseC*s.pulseX - s.pulseS*s.pulseY
-	s.pulseY = s.pulseS*s.pulseX + s.pulseC*s.pulseY
+	x := float64(s.pulseC*s.pulseX) - float64(s.pulseS*s.pulseY)
+	s.pulseY = float64(s.pulseS*s.pulseX) + float64(s.pulseC*s.pulseY)
 	s.pulseX = x
-	return pulse * s.force * (1 - s.noiseMix + s.noiseMix*random(s))
+	return pulse * s.force * (float64(1-s.noiseMix) + float64(s.noiseMix*random(s)))
 }
 
 func (v *Voice) Next() float32 {
@@ -420,8 +424,8 @@ func (v *Voice) Next() float32 {
 				m.c += m.dc
 				m.s += m.ds
 			}
-			x := m.c*m.x - m.s*m.y + excitation*m.gain
-			m.y = m.s*m.x + m.c*m.y
+			x := float64(float64(m.c*m.x)-float64(m.s*m.y)) + float64(excitation*m.gain)
+			m.y = float64(m.s*m.x) + float64(m.c*m.y)
 			m.x = x
 			// Truncate far below the float32 noise floor before a denormal
 			// tail can consume CPU indefinitely.
@@ -439,7 +443,7 @@ func (v *Voice) Next() float32 {
 		s.active = alive || s.age < s.excitation
 	}
 	if v.stealLeft > 0 {
-		output += v.stealTail * float64(v.stealLeft) / 64
+		output += float64(v.stealTail * float64(v.stealLeft) / 64)
 		v.stealLeft--
 		if v.stealLeft == 0 {
 			v.stealTail = 0

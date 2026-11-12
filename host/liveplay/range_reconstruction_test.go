@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func rangeGainCheck(t *testing.T, p *Player, want float64) {
@@ -23,7 +22,7 @@ func TestListeningLoopRestartReconstructsCommittedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 2 * seq.TicksPerBar, Loop: true}); err != nil {
+	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 2 * ticksPerBar, Loop: true}); err != nil {
 		t.Fatal(err)
 	}
 	lastBlockPeak(t, p, 2*previewBarBlocks+8) // Past the loop restart.
@@ -39,14 +38,14 @@ func TestListeningRangeSeekReconstructsCommittedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if err := p.PlayRange(PlaybackRange{StartTick: seq.TicksPerBar, EndTick: 2 * seq.TicksPerBar}); err != nil {
+	if err := p.PlayRange(PlaybackRange{StartTick: ticksPerBar, EndTick: 2 * ticksPerBar}); err != nil {
 		t.Fatal(err)
 	}
 	lastBlockPeak(t, p, 8)
 	if value, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || value != -9 {
 		t.Fatalf("range inside the second scene committed %g/%v, want -9", value, ok)
 	}
-	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: seq.TicksPerBar}); err != nil {
+	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: ticksPerBar}); err != nil {
 		t.Fatal(err)
 	}
 	lastBlockPeak(t, p, 8)
@@ -62,13 +61,13 @@ func TestListeningRangeReplacementEmitsRevisionAndReconstructs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: seq.TicksPerBar / 2, Loop: true}); err != nil {
+	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: ticksPerBar / 2, Loop: true}); err != nil {
 		t.Fatal(err)
 	}
 	lastBlockPeak(t, p, 4)
 	next := previewRenderScore(t, -3)
 	next.Revision = "p7"
-	next.Range = &PlaybackRange{StartTick: seq.TicksPerBar, EndTick: seq.TicksPerBar + seq.TicksPerBar/2, Loop: true}
+	next.Range = &PlaybackRange{StartTick: ticksPerBar, EndTick: ticksPerBar + ticksPerBar/2, Loop: true}
 	if err := p.Offer(next); err != nil {
 		t.Fatal(err)
 	}

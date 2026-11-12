@@ -161,7 +161,10 @@ func (m *Music) HandleMessages(records []byte) error {
 		m.client.Handle(msg)
 		switch msg.Kind {
 		case cmd.Bar:
-			m.bar = uint32(msg.Tick / TicksPerBar)
+			// B is the one-based bar the kernel's meter map placed this line at.
+			if msg.B > 0 {
+				m.bar = msg.B - 1
+			}
 		case cmd.Fault:
 			m.faults = append(m.faults, msg.A)
 		case cmd.LayerChanged:

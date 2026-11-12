@@ -72,7 +72,7 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			length = p.slots[p.active].Len
 			patternTicks = p.slots[p.active].DurationTicks()
 		}
-		at, err := seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), length)
+		at, err := e.MeterMap().QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), length)
 		if c.Arg0 == 3 {
 			startTick := p.startTick
 			if e.transport.Tick() <= startTick {
@@ -484,6 +484,7 @@ func (e *Engine) scheduleAll() {
 }
 
 func (e *Engine) scheduleTrack(track int) {
+	e.rescheduled = true
 	p := &e.patterns[track]
 	p.eventCount, p.eventIndex = 0, 0
 	frames := e.renderFrames - e.renderFrame

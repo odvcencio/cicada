@@ -21,7 +21,7 @@ type playbackRangeRequest struct{ value *PlaybackRange }
 var clearPlaybackRangeRequest playbackRangeRequest
 
 func (r PlaybackRange) Validate() error {
-	if r.StartTick < 0 || r.EndTick <= r.StartTick || r.EndTick > (int64(^uint32(0))+1)*seq.TicksPerBar {
+	if r.StartTick < 0 || r.EndTick <= r.StartTick || r.EndTick > (int64(^uint32(0))+1)*cmd.SeekUnit {
 		return fmt.Errorf("listening range must have a nonnegative start and a later end within transport bounds")
 	}
 	return nil
@@ -99,11 +99,12 @@ func (p *Player) seekListeningRange(tick int64) {
 		if next.Range != nil {
 			p.setPlaybackRange(next.Range)
 		}
-		p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: next.Name, Kind: "edit", Revision: next.Revision})
+		p.emit(Event{Bar: p.barNumber(tick), Name: next.Name, Kind: "edit", Revision: next.Revision})
 	default:
 	}
 	p.heldNotes, p.heldOrder = [128]noteInput{}, [128]uint64{}
-	commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)}, {Op: cmd.OpPlay, Track: 0xff}}
+	arg0, arg1 := cmd.SeekArgs(tick)
+	commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: arg0, Arg1: arg1}, {Op: cmd.OpPlay, Track: 0xff}}
 	if !p.current.Engine.PushBatch(commands[:]) {
 		p.fault = fmt.Errorf("live engine rejected listening start at tick %d", tick)
 		return
@@ -114,11 +115,11 @@ func (p *Player) seekListeningRange(tick int64) {
 	p.rebuildCommitted(p.current, tick)
 	p.transportQueued = true
 	p.initialParameters = false
-	p.bar = tick / seq.TicksPerBar
+	p.bar, _ = p.current.meterMap.BarAt(tick)
 	p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: p.current.Engine.TempoAtTick(tick), AnchorSample: p.sample, AnchorTick: tick}
 	p.tempoMilli.Store(p.clock.BPMMilli)
-	p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
-	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
+	p.nextBarSample = p.clock.SampleAtTick(p.current.meterMap.BarStart(p.bar + 1))
+	p.storePosition(tick)
 	p.jumpFadeRemaining = p.rate / 200
 }
 
@@ -137,7 +138,7 @@ func (p *Player) finishPlaybackRange() bool {
 	}
 	p.rangeFinished.Store(true)
 	p.hostPaused.Store(true)
-	p.position.Store(uint64((r.EndTick/seq.TicksPerBar+1)<<8 | (r.EndTick%seq.TicksPerBar)/seq.TicksPerStep + 1))
+	p.storePosition(r.EndTick)
 	p.telemetry.storeTransport(p.sample, r.EndTick, p.clock.BPMMilli, false, musictime.ObservedTempoStep{})
 	clear(p.pcm[:])
 	p.buffered, p.read = len(p.pcm), 0

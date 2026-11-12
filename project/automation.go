@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/notation"
@@ -35,7 +37,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 			return append(ranges, automationDiagnostic("CICADA-REFERENCE", err, source.Position)...)
 		}
 		for _, point := range source.Points {
-			tick, err := notation.PositionTick(point.At)
+			tick, err := notation.PositionTick(p.MeterMap(), point.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, point.Position)...)
 			}
@@ -63,7 +65,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 			lane.Points = append(lane.Points, AutomationPoint{Tick: tick, Value: sceneValueFrom(value), Shape: shape, Curve: curve})
 		}
 		for _, recall := range source.Recalls {
-			tick, err := notation.PositionTick(recall.At)
+			tick, err := notation.PositionTick(p.MeterMap(), recall.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, recall.Position)...)
 			}
@@ -103,9 +105,7 @@ func validateAutomation(p *Project) error {
 			end = max(end, placement.AtTick+placement.LengthTicks)
 		}
 	} else {
-		for _, entry := range p.Song {
-			end += int64(entry.Bars) * 3840
-		}
+		end = p.SongEndTick()
 	}
 	seen := map[string]bool{}
 	for _, lane := range p.Automation {
@@ -191,13 +191,13 @@ func automationValue(lane AutomationLane, tick int64, logarithmic bool) (float64
 	case "smooth":
 		t = t * t * (3 - 2*t)
 	case "curve":
-		t = math.Pow(t, math.Exp2(b.Curve))
+		t = detmath.Pow(t, detmath.Exp2(b.Curve))
 	}
 	x, y := *a.Value.Number, *b.Value.Number
 	if logarithmic {
-		return math.Exp(math.Log(x) + (math.Log(y)-math.Log(x))*t), true
+		return detmath.Exp(float64(detmath.Log(x)) + float64((detmath.Log(y)-detmath.Log(x))*t)), true
 	}
-	return x + (y-x)*t, true
+	return x + float64((y-x)*t), true
 }
 
 const (
@@ -232,8 +232,8 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 		measure := func(v float64) float64 { return v }
 		step := (resolved.Descriptor.Max - resolved.Descriptor.Min) / automationResolution
 		if resolved.Descriptor.Curve == "log" && resolved.Descriptor.Min > 0 {
-			measure = math.Log
-			step = (math.Log(resolved.Descriptor.Max) - math.Log(resolved.Descriptor.Min)) / automationResolution
+			measure = detmath.Log
+			step = (detmath.Log(resolved.Descriptor.Max) - detmath.Log(resolved.Descriptor.Min)) / automationResolution
 		}
 		var lastMeasure float64
 		var lastTick int64
@@ -281,7 +281,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 
 		// Reapply held values after every authored scene switch, including
 		// sparse step lanes and points that end before the song does.
-		var boundary int64
+		var boundary, bar int64
 		for i, entry := range p.Song {
 			if i > 0 && boundary >= lane.Points[0].Tick {
 				last = math.Float32bits(float32(math.NaN()))
@@ -289,7 +289,8 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 					return nil, err
 				}
 			}
-			boundary += int64(entry.Bars) * 3840
+			bar += int64(entry.Bars)
+			boundary = p.MeterMap().BarStart(bar)
 		}
 		for _, tick := range lane.Recalls {
 			last = math.Float32bits(float32(math.NaN()))

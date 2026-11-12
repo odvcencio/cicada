@@ -4,6 +4,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // HostOnly lists device parameters that have no live kernel address, so they
@@ -175,7 +177,7 @@ func roundBound(value float64, upper bool) float64 {
 		return nearest
 	}
 	// Step one unit in the sixth digit toward the inside.
-	unit := math.Pow(10, math.Floor(math.Log10(math.Abs(value)))-5)
+	unit := detmath.Pow(10, math.Floor(detmath.Log10(math.Abs(value)))-5)
 	if upper {
 		return nearest - unit
 	}

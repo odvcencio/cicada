@@ -8,8 +8,11 @@ import (
 
 // mixDigest pins the bits of track gains and pans over a grid of settings, of
 // a three-track mix, and of the safety limiter on a loud exact test programme.
-// CI checks the same digest on arm64 in the PCM24 parity job.
-const mixDigest = "0e14e34b013ceffbc99682eee714b57f3d2f8b626fd54f059abd62b3627af0fe"
+// CI checks the same digest on arm64 in the PCM24 parity job. It moved on
+// 2026-11-10 (pull request #327) when the track gain (Pow), pan (Cos, Sin) and
+// the limiter's release, ceiling and reduction meter (Exp, Pow, Log10) moved
+// from the math library to kernel/dsp/detmath.
+const mixDigest = "e359c13f008537f2e88c4cbaa961138bc0b9a092cadeb8e82d40d1a747c26cdf"
 
 func TestMixDigest(t *testing.T) {
 	d := bitdigest.New()

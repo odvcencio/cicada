@@ -4,7 +4,7 @@ The new `kernel/fx/pro` package prepares a stereo chain in this order: four-band
 
 Native hosts assign a prepared chain to `engine.Config.MasterProcessor` before `engine.New`. The engine runs it after master gain and before the existing master safety limiter. `MasterProcessorLatencyFrames` reports its additional delay. Project image encoding rejects a prepared processor, because it contains host-owned state that cannot be silently omitted.
 
-Browser hosts can load the optional `cicada-mix.wasm` companion module separately from the core. `host/promix/processor.mjs` prepares it before the AudioWorklet starts and copies stereo blocks of up to 128 frames without making new typed-array views during processing. Preparation, compilation, fetches and controls belong outside the callback. The companion adds download bytes and memory; its size is reported separately and does not change the default core's size gate of 322 KiB raw and 120 KiB Brotli. The core retains these size gates; saved track effects use a separately negotiated project-image capability.
+Browser hosts can load the optional `cicada-mix.wasm` companion module separately from the core. `host/promix/processor.mjs` prepares it before the AudioWorklet starts and copies stereo blocks of up to 128 frames without making new typed-array views during processing. Preparation, compilation, fetches and controls belong outside the callback. The companion adds download bytes and memory; its size is reported separately and does not change the default core's size gate of 328,525 bytes raw and 119,562 bytes Brotli. The core retains these size gates; saved track effects use a separately negotiated project-image capability.
 
 Build and exercise the actual TinyGo module:
 
@@ -74,7 +74,8 @@ ends its error with the fix: add a limiter at the export's true-peak ceiling
 as the last master insert, such as `fx ceiling limiter { ceiling = -1dBTP }`
 with `master { insert = ceiling }`. `cicada render --json` reports it as the
 code `loudness_shortfall_at_true_peak_ceiling` with a `remedy` that holds the
-exact score text for that score and ceiling
+exact score text for that score and ceiling, and the `addeffect` intent that
+makes the same change with `cicada apply`
 ([agent formats](../manual/agents.md#render---json)).
 
 With a limiter in the chain, the renderer keeps two guard rails:
@@ -92,11 +93,17 @@ passes. The render summary reports the applied gain, the gain stage (`master_inp
 chain limiter's largest gain reduction, and the largest gain reduction of any
 limiter. Review these numbers and run `cicada verify-wav` on the result.
 
-When a master chain follows the direct renderer, only the first pass
-synthesizes the mix. It stores the signal that enters the chain in a temporary
-file next to the output, and later passes play that signal back through the
-chain with the new gain. The result matches rendering every pass in full. The
-scheduled renderer renders each pass in full.
+Only the first pass synthesizes the mix, on both renderers and with or without
+a master chain. It stores the signal that enters the master stage (the summed
+buses, before the master `level` and the export gain) in a temporary file next
+to the output, and later passes play that signal back through the master
+gain, the chain and the safety limiter with the new gain. A pass whose gain
+differs from an earlier pass's by less than the renderer's gain can show is not
+rendered at all: it reuses that pass's audio and measurement. The result
+matches rendering every pass in full, byte for byte. The render summary counts
+the full syntheses, the cached replays and the repeated passes, and lists each
+pass's gain, loudness and true peak. `CICADA_RENDER_NO_REUSE=1` turns the reuse
+off, so every pass synthesizes the song (see the [CLI reference](../cli.md)).
 
 The file takes about 23 MB per minute at 48 kHz, counted from the start of the
 song to the end of the exported range plus its tail, so an export of the last
@@ -174,7 +181,12 @@ The stereo chorus uses one to three voices. `rate` is 0.05–5 Hz (default
 0.6 Hz), `depth` is 0–8 ms (default 3 ms), and `spread` and `mix` are 0–1
 (defaults 1 and 0.5). `voices` is an integer from 1 to 3 (default 3). The
 four continuous controls use a 10 ms smoother. Settled `mix = 0` passes the
-dry signal exactly while maintaining the delay history.
+dry signal exactly while maintaining the delay history. `mix` crossfades the
+dry signal with the average of the delayed voices (16 to 19 ms behind it), so
+at `mix = 0.5` a part plays about 4 to 6 dB quieter in RMS: measured on the
+grand-piano pack, an A major chord lost 4.1 dB and a low F#1 and F#2 octave
+about 6 dB, its 92 Hz fundamental 12.6 dB, because the delays cancel part of
+it. Raise the track `level` to compensate.
 
 ```cicada
 cicada 2
@@ -221,8 +233,8 @@ core rejects the track-processing requirement. Missing optional modules return
 an error instead of silently playing without the effects.
 
 Build the optional processing variant with `make build-vocals-wasm`. Its raw and
-Brotli bytes are reported separately; the default core retains the 322 KiB raw
-and 120 KiB Brotli gates. WAM2 export automatically packages the required variant
+Brotli bytes are reported separately; the default core retains the 328,525-byte
+raw and 119,562-byte Brotli gates. WAM2 export automatically packages the required variant
 from beside the configured core file. `make build-wam2` prepares both the core
 and vocal modules; modeled keys require `make build-keys-wasm`.
 
@@ -291,29 +303,46 @@ and offline `render` and `stems` support it.
 
 **The rule.** A score renders to the same bits on amd64 (any CPU and any
 `GOAMD64` level), arm64 and WebAssembly, from voice to exported file. Two
-things in Go can break it. Today the rule is guaranteed only for part of the
-mix chain; the rest matches in the tests but is not yet guaranteed.
+things in Go can break it, and both are ruled out everywhere on that path.
 
 - **Fused multiply-add.** Go may compute `x*y + z` with one rounding instead
-  of two on arm64 and with `GOAMD64=v3`. Every product that feeds an addition
-  in `kernel/fx`, `kernel/fx/pro`, `kernel/mix`, `kernel/loudness` and
-  `kernel/dsp` is rounded by an explicit conversion first, for example
-  `a + float64(b*c)`, and CI checks that the compiler fuses none there. The
-  rest of `kernel/` and `render/` (voices, the graph, the export path in
-  `render/wav.go`) still has fusable products.
+  of two on arm64 and with `GOAMD64=v3`. What is guaranteed: the compiler
+  reports no product it would fuse in `kernel/`, `render/`, `cmd/cicada` and
+  every package of this module they import, on arm64 and with `GOAMD64=v3`
+  (`scripts/check-fma.sh` builds them with `-d=fmahash=vy`; CI runs it for
+  both targets and fails on any report). The script names its exemptions:
+  offline modal fitting, audition measurements, transcription and the editor
+  theme's note colours, none of which produces audio. A product is rounded
+  with an explicit `float32(...)` or `float64(...)`, for example
+  `a + float64(b*c)`.
+  Go may also fuse across statements, so a conversion of a plain value is
+  needed where that value is itself a product: a variable set from a product
+  in an earlier statement (`s1 := state*inv` then `float64(g*u) + float64(s1)`),
+  a parameter of a function the compiler inlines into a caller that passes a
+  product, and `v` in `2*v`, which the compiler rewrites as `v + v`. Elsewhere
+  such a conversion prevents nothing and is left out; the compiler's report
+  decides which are needed. This covers the live monitor mix in Studio, the
+  vocal comp and elastic prints, and the pad sampler, as well as rendering.
 - **Math library functions.** `math.Exp`, `math.Log`, `math.Pow`, `math.Sin`
   and the others can differ in the last bit by target: `math.Exp` even uses an
-  FMA instruction only on amd64 CPUs that have one. The master EQ design, the
-  pro limiter, transient shaper and normalizer, the convolution FFT, the
-  loudness meter and the export gain use `kernel/dsp/detmath` instead, whose
-  functions return the same bits everywhere and are within 1 ULP of the exact
-  result. Still on the math library: the master compressor and room (they
-  build on the track compressor and reverb), the track effects in `kernel/fx`,
-  the amp and cabinet, the mix in `kernel/mix`, and the voices.
+  FMA instruction only on amd64 CPUs that have one. Every processor in
+  `kernel/fx` and its subpackages (the master EQ, compressor, limiter,
+  transient shaper, width, room and normalizer, the convolution FFT, and the
+  track effects: amp and cabinet, chorus, compressor, de-esser, delay, drive,
+  reverb and tape), the mix in `kernel/mix`, the loudness meter and the export
+  gain use `kernel/dsp/detmath` instead, whose functions return the same bits
+  everywhere and are within 1 ULP of the exact result. So do the engine
+  (master gain, track gains, parameter smoothing), the automation curves, the
+  graph interpreter (oscillators, filters, ladder, comb), vibrato, spatial
+  audio, the export schedule, every voice in `kernel/voice`, and the host and
+  project code that prepares what they play: sample and impulse assets, send
+  and clip gains in dB, recorded kits, the pad sampler, the expressive voices
+  and time stretching. No file on the path from voice to exported file calls
+  an architecture-dependent `math` function; the source guard below enforces
+  it.
 
-The follow-up removes both gaps: no fusable product in `kernel/` and
-`render/`, no architecture-dependent `math` call between voice and exported
-file, and a digest per processor and voice on all three targets.
+Still to come: a digest per voice on all three targets (the processors have
+theirs).
 
 **How to check it.**
 
@@ -326,10 +355,33 @@ arm64 and with `GOAMD64=v3`. To list fusable expressions, build for arm64 with
 the compiler's FMA report:
 
 ```
-GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/dsp/detmath
+GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/...
 ```
 
-Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses; CI fails
-on any in those packages. `TestRenderPathAvoidsMathLibrary` in
-`kernel/dsp/detmath` fails when the master chain or the export code calls a
-math function that `detmath` replaces.
+Each `fmahash triggered FILE:LINE` line is a product that arm64 fuses;
+`GOARCH=arm64 scripts/check-fma.sh` runs the same build over the whole render
+path and fails on any line outside its exemptions.
+`TestRenderPathAvoidsMathLibrary` in `kernel/dsp/detmath` asks `go list -deps`
+for every package of this module
+that `./render`, `./cmd/cicada` or a browser kernel (`./cmd/cicada-*-wasm`)
+imports, reads every Go file in them, and fails on any `math` or `math/cmplx`
+function outside a short list of exact ones (`Sqrt`, `Abs`, `Floor`, `Ldexp`,
+bit conversions and the like) and on a dot import of either. Files that never
+produce audio (Studio's meters, audition and analysis code, transcription,
+modal fitting, `render/fingerprint.go`) are exempt, each with its reason in
+`notRenderPath`.
+
+The exported file itself is compared too. `TestExampleWAVParity` in
+`cmd/cicada` runs `cicada render` on example scores four ways (plain,
+`--normalize`, -14 LUFS / -1 dBTP, -9 LUFS / -1.5 dBTP) and hashes each WAV:
+
+```
+CICADA_WAV_PARITY_OUT=$PWD/build/wav-hashes.txt go test ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v
+CICADA_WAV_PARITY_REFERENCE=$PWD/build/wav-hashes.txt go test ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v
+```
+
+The first command writes the hashes (CI runs it on amd64), the second compares
+another machine's renders with them (CI runs it on arm64). Pull requests
+render a subset; the nightly run sets `CICADA_WAV_PARITY_ALL=1` and renders
+every score under `examples/`. A render known to differ is listed, with the
+date and the cause, in `knownWAVDifferences`; the list can only shrink.

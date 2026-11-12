@@ -34,6 +34,88 @@ its pack. See [instrument packs](sampler/packs.md#memory-limits).
 cicada render song.cicada -o song.wav --max-resident-pcm 2GiB
 ```
 
+## CPU profiles
+
+`cicada render`, `cicada stems`, `cicada apply`, `cicada check` and `cicada
+audition` take `--cpuprofile FILE`. The command writes a standard Go CPU
+profile of its whole run to FILE, also when it fails (a loudness shortfall
+included), and its other output does not change. Read the profile with `go tool
+pprof`:
+
+```sh
+cicada render song.cicada -o song.wav --loudness -14 --cpuprofile render.prof
+go tool pprof -top render.prof
+```
+
+## Loudness targets and repeated renders
+
+`cicada render --loudness` searches for the export gain in up to six passes.
+The first pass synthesizes the song; every later pass replays that pass's mix
+from a temporary file next to the output (8 bytes per frame, about 71 MB for a
+three-minute song at 48 kHz) and runs only the master stage, the measurement
+and the WAV writing again. A pass whose gain would not change the audio is not
+rendered at all. The output and the reported numbers are byte for byte those of
+a search that synthesizes every pass. The summary line counts the passes by how
+they got their audio, and one line per pass gives its gain, loudness and true
+peak:
+
+```text
+song.wav: 40 bars from bar 1, 4574770 frames at 48000 Hz, achieved -15.05 LUFS, true peak -1.05 dBTP, applied gain +11.41 dB, DC correction L +0.0000000/R +0.0000000 FS, passes 2 (full syntheses 1, cached replays 1, repeats 0), largest limiter gain reduction 0.00 dB, jobs 1, lanes 1 (serial: jobs)
+song.wav: pass 1: gain +0.00 dB, -26.45 LUFS, true peak -12.46 dBTP, synthesized
+song.wav: pass 2: gain +11.41 dB, -15.05 LUFS, true peak -1.05 dBTP, replayed
+```
+
+`render --json` reports the same counts and passes (see
+[Agents and JSON output](manual/agents.md#render---json)). `--normalize` renders
+twice in the same way: its second render replays the first one's mix. When the
+temporary file cannot be written, for example on a full disk, every render runs
+in full.
+
+Set `CICADA_RENDER_NO_REUSE=1` to turn all reuse off: every loudness pass and
+both normalization renders synthesize the song in full, and the counts show
+only syntheses. The output must be the same byte for byte; the variable is
+there to work around a difference you find, and to show whether reuse caused
+it.
+
+```sh
+CICADA_RENDER_NO_REUSE=1 cicada render song.cicada -o song.wav --loudness -14
+```
+
+On Linux and macOS the stored mix has no name in the folder, so its space
+returns however the render ends. On Windows it keeps its name until the render
+ends. If a render is interrupted (Ctrl-C), it removes its temporary files
+before it exits; files that a killed render leaves behind (names that start
+with `.cicada-render-`, `.cicada-loudness-` or `.cicada-master-cache-`) are
+removed by the next render in that folder once they are a day old.
+
+## Render lanes
+
+`cicada render`, `cicada stems` and `cicada audition` take `--jobs auto` or
+`--jobs N`: several render lanes synthesize the song's tracks at the same
+time. Without `--jobs` the render is serial. `auto` picks the smaller of 4 and
+half the CPUs the process may use, at least 1 (`taskset` and container CPU
+limits count). `N` is honoured up to the number of CPUs the process may run on
+(`taskset` counts; a container's CPU quota does not). A render never sets up more
+lanes than the song has tracks, so a one-track song always renders serially,
+and one heavy track (an electric piano holding eight voices, say) bounds how
+much faster more lanes can make a song. Every value writes the same bytes.
+Every render's summary line ends with its lanes, such as `jobs 1, lanes 1
+(serial: jobs)`; that line and `--json` report the lanes the render set up and
+ran, and why it stayed serial if it did; see
+[render --json](manual/agents.md#render---json). The renders of one cicada
+process share `GOMAXPROCS` − 1 worker lanes, and each render's own goroutine
+works as one more lane, so several renders in one process run at most
+`GOMAXPROCS` lanes plus one for each render after the first. Other processes
+are not counted: when you run several `cicada` processes at once, give each a
+share with `--jobs`.
+
+```sh
+cicada render song.cicada -o song.wav --jobs auto
+```
+
+Library callers set `render.Options.Jobs` (zero is serial, `render.AutoJobs`
+is automatic) and read `render.Report.LaneReport`.
+
 ## Libraries
 
 Run library commands from the project folder, except `new`, which needs no

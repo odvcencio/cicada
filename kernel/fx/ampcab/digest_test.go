@@ -1,7 +1,6 @@
 package ampcab
 
 import (
-	"runtime"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/internal/bitdigest"
@@ -9,19 +8,16 @@ import (
 
 // ampcabDigest pins the amp and cabinet output bits and its float64 state for
 // an exact test programme, through each cabinet and a smoothed control change.
-// Its multiply-adds are rounded, but it still calls math.Tanh on every
-// oversampled sample (ampcab.go, the four Tanh calls in process) and math.Exp,
-// math.Cos and math.Pow for its coefficients and gains. Their last bits differ
-// on arm64 and WebAssembly, which moves the float64 state there; the float32
-// output has matched on all three targets (see TestAmpcabOutputDigest). So this
-// digest is pinned on amd64 only, until the follow-up to pull request #316
-// moves the amp to kernel/dsp/detmath under Decision 9 and removes the skip.
-const ampcabDigest = "fca9fae912642a187470b277bff4f37cdee144531f5992429159d2a9a2c2b471"
+// Its multiply-adds are rounded, and its Tanh, Exp, Cos and Pow come from
+// kernel/dsp/detmath (the per-sample saturation on the second tier, TanhNear),
+// so the digest is the same on amd64, arm64 and WebAssembly and runs on every
+// target. (Until 2026-11-10 it called the math library, whose
+// last bits differ on arm64 and WebAssembly, and was pinned on amd64 only.)
+// It moved on 2026-11-11 in #343, from 0ac013059d10…: TanhNear changes the
+// amp's float64 state, while its float32 output (ampcabOutputDigest) is unchanged.
+const ampcabDigest = "7b2999b557c5848120a298294676cea240f43400528b13af602051c8f637bdec"
 
 func TestAmpcabDigest(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("amp/cab calls math.Tanh, Exp, Cos and Pow, whose last bits move its float64 state on " + runtime.GOARCH + "; see ampcabDigest")
-	}
 	d := bitdigest.New()
 	settings := []Params{
 		DefaultParams(),
@@ -51,9 +47,9 @@ func TestAmpcabDigest(t *testing.T) {
 	}
 }
 
-// ampcabOutputDigest pins only the float32 output of the same programme. It
-// runs on every target: the output matches on amd64, arm64 and WebAssembly
-// even though the float64 state does not (see ampcabDigest).
+// ampcabOutputDigest pins only the float32 output of the same programme, on
+// every target. It predates ampcabDigest running everywhere and is kept as the
+// pin a change to the amp's sound must move.
 const ampcabOutputDigest = "96dde02aa1b2c820208df1c10ca9bf8c01d80d7b80dfeee64a887371b70c2d38"
 
 func TestAmpcabOutputDigest(t *testing.T) {

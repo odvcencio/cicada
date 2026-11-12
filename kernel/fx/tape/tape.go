@@ -10,6 +10,8 @@ package tape
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/modulate"
@@ -137,7 +139,7 @@ func New(sampleRate int, bpmMilli int64) (*Tape, error) {
 	t := &Tape{
 		sampleRate: r, bpmMilli: float64(bpmMilli),
 		buffer:        make([]stereo, BufferSeconds*sampleRate+8),
-		smooth:        1 - math.Exp(-1/(.005*r)),
+		smooth:        1 - detmath.Exp(-1/(.005*r)),
 		wowFrames:     WowDepthMs * r / 1000,
 		flutterFrames: FlutterDepthMs * r / 1000,
 	}
@@ -195,7 +197,7 @@ func (t *Tape) SetParams(p Params) error {
 	t.params = p
 	t.setTarget(frames)
 	t.tFeedback = p.Feedback
-	t.tDamp = 1 - math.Exp(-2*math.Pi*p.DampHz/t.sampleRate)
+	t.tDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/t.sampleRate)
 	t.tWow, t.tFlutter, t.tSat = p.Wow, p.Flutter, p.Saturation
 	return nil
 }

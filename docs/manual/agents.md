@@ -31,7 +31,7 @@ The `--json` formats share these rules:
   | `check`, `apply`, `intents`, `diagnostics`, `audition` | 0 | 1 | 1 |
   | `render`, `stems` | 0 | 1 | 2 |
   | `params`, `explain` | 0 | 1 | 2 for a usage error, 1 for an unknown name |
-  | `help` | 0 | — | 2 |
+  | `help`, `agents` | 0 | — | 2 |
 
 Usage errors and unknown names have the codes `usage`, `unknown_kind`
 (`intents`), `unknown_code` (`diagnostics`), `unknown_command` (`help`),
@@ -84,6 +84,29 @@ scene main { bass = riff drums = beat }
 song { main*4 }
 ```
 
+## agents --json
+
+`cicada agents` prints the [quick start for agents](agent-quickstart.md): the
+one page an agent that has never seen Cicada reads first. The binary carries
+it, so it needs no repository checkout. `cicada agents reference` prints the
+core reference, which the binary builds from its own catalogs, so it is always
+current: the quick start, the JSON conventions in brief, and one line for every
+command, edit intent, diagnostic code and effect route.
+
+`cicada new <name>` also writes a short `AGENTS.md` into the project, which
+points an agent to `cicada agents`; it never replaces one already there.
+`cicada new --json <name>` reports the `project`, its `score`, the `files` it
+wrote and `agents_md_written` (schema `cicada.new.v1`; failures have the codes
+`usage`, `invalid_name`, `destination_exists` and `write`).
+
+`cicada agents --json` gives the page asked for as `guide`, its name as `page`
+(`quickstart` or `reference`) and its size in bytes as `guide_bytes`; in
+`commands`, the commands the quick start offers for looking up the rest, each
+with the `summary` of what it answers (placeholders such as `<kind>` are in
+angle brackets); and in `pages`, each page the binary carries with its `name`,
+`title` and `bytes`. The agent task suite reads this document and runs every
+command in it.
+
 ## help --json
 
 `cicada help --json` lists every command, sorted by name, with its one-line
@@ -97,6 +120,10 @@ and is absent for a switch. `cicada help <command> --json` gives one command.
   "schema": "cicada.help.v1",
   "usage": "cicada <command> [arguments]",
   "commands": [
+    {
+      "name": "agents",
+      "summary": "print the quick start for AI agents"
+    },
     {
       "name": "apply",
       "summary": "apply typed edit intents to a score",
@@ -127,6 +154,9 @@ For each intent:
 
 - `meaning` is one line; `notes` adds what else the intent's documentation
   says.
+- `reasons` lists the codes the intent's refusals can carry, the `reason` of
+  an `apply --json` error (below). A test derives the list from the code, so
+  an agent can match on it.
 - Each field has its JSON `name`, its `type` (`string`, `integer`, `number`,
   `boolean`, `entity`, `object`, `array` with `items`, or `any`), whether it is
   `required`, and its `unit`, allowed `values` and `meaning` where the code
@@ -164,6 +194,12 @@ listed value with one outside the list.
 ```json
 {
   "schema": "cicada.intents.v1",
+  "envelope_version": 1,
+  "envelope": [
+    {
+      "name": "version"
+    }
+  ],
   "intents": [
     {
       "kind": "setstep",
@@ -223,6 +259,12 @@ lane, and its `velocity` operation takes a new value or a change:
 ```json
 {
   "schema": "cicada.intents.v1",
+  "envelope_version": 1,
+  "envelope": [
+    {
+      "name": "version"
+    }
+  ],
   "intents": [
     {
       "kind": "editnotes",
@@ -314,6 +356,28 @@ lane, and its `velocity` operation takes a new value or a change:
 }
 ```
 
+`cicada intents --json --index` lists only each `kind` and its one-line
+`meaning`, in less than a tenth of the bytes of the whole catalog, so an agent
+can choose a kind before it asks for that kind in full. It is a format of its
+own, `cicada.intents_index.v1`, with `index` in place of `envelope` and
+`intents`. `--index` needs `--json`: `cicada intents` alone already lists each
+kind with its meaning.
+
+<!-- agent-example: intents --json --index -->
+
+```json
+{
+  "schema": "cicada.intents_index.v1",
+  "envelope_version": 1,
+  "index": [
+    {
+      "kind": "addaudiotrack",
+      "meaning": "declares a new, empty audio track in an edition-2 score"
+    }
+  ]
+}
+```
+
 ## diagnostics --json
 
 `cicada diagnostics` lists every diagnostic code; `cicada diagnostics <code>`
@@ -347,8 +411,15 @@ refused intent). `CICADA-NOTES` also lists the `reasons` its refusals carry.
 ## check --json
 
 `cicada check --json` runs the checks `cicada check` runs and reports, for each
-score, whether it is valid and its diagnostics. Without a score it checks the
-project, and `scores` lists every score.
+score, whether it is valid, its `revision` and its diagnostics. Without a score
+it checks the project. When `cicada.mod` lists the project's `source` files,
+the project is one score: `scores` has one entry, the entry score, whose
+diagnostics cover every listed file (each names its `file`) and whose
+`revision` is that of the entry file alone. Otherwise each score in the project
+folder is checked on its own and `scores` lists every one. `revision` is the
+SHA-256 of the score file's bytes in hex, the form `cicada apply` compares with
+an envelope's `revision`: put it in the next envelope for that score. It is
+absent only when the score cannot be read.
 
 Each diagnostic has its `code`, `severity`, `message` and `file`. `start` is
 the position the checker reports: `line` and `column` count from 1, columns
@@ -357,7 +428,10 @@ file. The checker reports a point, so `end` marks the end of the character at
 `start`, as the language server does. `related` points at the first declaration
 of a duplicate. `hint` is the advice `cicada check` prints. With
 `--profile browser`, `browser_profile` lists the voices each track reserves
-against the portable limits.
+against the portable limits. A score with sampler packs lists each pack that
+loaded in `packs`: its `sampler`, its `manifest` path and the `velocity_law` it
+plays by, `recorded` or `velocity/127` (see
+[how velocity sets the level](../sampler/packs.md#how-velocity-sets-the-level)).
 
 `fix`, where the checker knows one, is a repair: `intents` for `cicada apply`,
 or a `command` to run. A fix is offered only when it is proven on the score
@@ -380,6 +454,7 @@ one batch.
   "scores": [
     {
       "file": "song.cicada",
+      "revision": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
       "valid": true,
       "diagnostics": []
     }
@@ -417,6 +492,7 @@ step:
   "scores": [
     {
       "file": "snap.cicada",
+      "revision": "bb00827b7a0ef325edda51ba13ac8910483dd63feb59db92701fd5c7875c6852",
       "valid": false,
       "diagnostics": [
         {
@@ -452,13 +528,54 @@ step:
 }
 ```
 
+## song --json
+
+`cicada song --json` lists every score of the project with its `revision`.
+`cicada song --json <score>` gives the score's `revision` and, as `--include`
+asks (a comma-separated list), its `source` text (the default), the names it
+defines as `symbols` (each `kind`, `name`, `line` and `column`), and its
+compiled meaning as semantic JSON in `structure`. A score that cannot be read
+is refused with `unreadable_score`, and one that does not compile, when
+`symbols` or `structure` is asked for, with `invalid_score`.
+
+<!-- agent-example: song --json --include symbols song.cicada -->
+
+```json
+{
+  "schema": "cicada.song.v1",
+  "file": "song.cicada",
+  "revision": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
+  "symbols": [
+    {
+      "kind": "track",
+      "name": "bass",
+      "line": 6,
+      "column": 7
+    }
+  ]
+}
+```
+
+`cicada lib list --json` lists the libraries a score can import, each with its
+`path` and `kind` (`std`, `project` or `user`), in `libraries`;
+`cicada lib show <path> --json` gives one in `library`: its `kind`, `root`,
+`sha256`, `manifest` text, `declarations` and `assets` (schema
+`cicada.library.v1`; an unknown library is refused with `unknown_library`).
+`cicada explain <construct> --json` and `cicada explain <construct>.<field>
+--json` add `"schema": "cicada.explain.v1"` to the construct and its fields,
+or to the one field.
+
 ## apply --json
 
 `cicada apply <score> <intents.json> --json` reports what the batch did:
 `revision_before` and `revision_after` (the SHA-256 of the score's bytes),
 whether the score `changed` and was `written`, the unified `diff`, any other
-`files` the batch changes, and for each intent its `index` (from 0), `kind` and
-the `label` the edit history records. The batch is one revision, so the diff
+`files` the batch changes, `file_revisions` with the revision of every source
+file the apply read (put them in the envelope's `revisions` to have the apply
+refuse a file that changed since; see [Editors](editors.md)), and for each
+intent its `index` (from 0), `kind`, the `label` the edit history records and,
+when the intent made a change its flag accepted (such as `reseed`),
+`warnings` with one line for each. The batch is one revision, so the diff
 covers all of it. Without `--write` nothing is written.
 
 When the batch fails, `error.code` is one of:
@@ -474,8 +591,15 @@ When the batch fails, `error.code` is one of:
 <!-- /apply-error-codes -->
 
 `index`, `kind` and, where the code knows it, `field` name the intent at
-fault. A refused `editnotes` batch also carries `diagnostic` `CICADA-NOTES`,
-its `reason` and the `note` (see [Editors](editors.md)). The text error names
+fault. When an intent states why it refused, `reason` carries a stable code
+from the intent's `reasons` list in `cicada intents --json`. Where they
+apply, `uses` lists what still refers to the entity, `file` names another
+source file of the project that holds what the edit would have to change
+(an edit writes only the score it is given), and `range` gives the
+`parameter`, the `value` given, `min`, `max` and `unit` of a value outside
+its range (reason `value_out_of_range`). A refused `editnotes` batch also carries
+`diagnostic` `CICADA-NOTES`, its `reason` and the `note` (see
+[Editors](editors.md)). The text error names
 the intent the same way: `intents[1].entity (togglestep): unknown pattern
 "rif"`.
 
@@ -496,6 +620,7 @@ the intent the same way: `intents[1].entity (togglestep): unknown pattern
   "score": "song.cicada",
   "ok": false,
   "written": false,
+  "dry_run": false,
   "changed": false,
   "revision_before": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
   "intents": [
@@ -576,6 +701,20 @@ one), `loudness` gives the target and tolerance, the measured
 (`gain_stage`), the master limiter's gain reduction and the DC correction. A
 measurement is `null` when there is none.
 
+The search runs up to six passes and synthesizes the song only once.
+`syntheses`, `replays` and `repeats` count how the `passes` got their audio,
+and add up to `passes`: a synthesis renders the song in full; a replay runs
+only the master stage again on the first pass's stored mix; a repeat is not
+rendered, because its gain differs from an earlier pass's by less than the
+renderer can show, so its audio and measurement are that pass's. `pass_log`
+has one entry per pass, in order: the `gain_db` it applied, its measured
+`integrated_lufs` and `true_peak_dbtp`, and `render`, which is `synthesized`,
+`replayed` or `repeated` (with `same_as`, the number of the pass it repeats).
+The audio and every other number are the same as when each pass synthesizes
+the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
+does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
+to check whether reuse caused a difference you see.
+
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 
 ```json
@@ -607,10 +746,113 @@ measurement is `null` when there is none.
     "applied_gain_db": 10.963850844317331,
     "target_met": true,
     "passes": 2,
+    "syntheses": 1,
+    "replays": 1,
+    "repeats": 0,
+    "pass_log": [
+      {
+        "gain_db": 0,
+        "integrated_lufs": -24.96385084431733,
+        "true_peak_dbtp": -16.938175787527175,
+        "render": "synthesized"
+      },
+      {
+        "gain_db": 10.963850844317331,
+        "integrated_lufs": -13.999999856123383,
+        "true_peak_dbtp": -5.974329358809015,
+        "render": "replayed"
+      }
+    ],
     "gain_stage": "post_chain"
   }
 }
 ```
+
+`--jobs` lets a render synthesize tracks on several lanes at once. Without it
+the render is serial, as it is for every library caller that leaves
+`render.Options.Jobs` at zero; `--jobs auto` picks the smaller of 4 and half
+the CPUs (at least 1), and `--jobs N` is honoured up to the number of CPUs.
+Every value writes the same bytes: lanes only synthesize each track's own
+signal between notes and other control changes, and the tracks are always
+mixed in track order, so an agent can choose `--jobs` for speed alone. The
+document says what the render chose and what happened:
+
+- `jobs`: the most lanes allowed, after the CPU cap; `jobs_auto` is true when
+  `--jobs auto` chose it.
+- `lanes_requested`: the lanes asked for, before the CPU and track caps (the
+  `--jobs` count, the automatic choice, or 1 for serial).
+- `lanes`: the lanes the render set up, `jobs` capped at the song's tracks.
+- `lanes_peak`: the most lanes that rendered one segment at once. A segment is
+  a run of frames between control changes; one with too little work runs on
+  fewer lanes. The renders of one cicada process share `GOMAXPROCS` − 1 worker
+  lanes, and each render's own goroutine works as one more lane. Other
+  processes are not counted, so give each of several concurrent `cicada`
+  processes a smaller `--jobs`.
+- `segments` and `parallel_segments`: the segments offered to the lanes and
+  those that ran on two or more.
+- `serial_reason`, present when no segment ran on two or more lanes:
+
+<!-- render-serial-reasons -->
+- `jobs`: the job count is 1: no `--jobs`, `--jobs 1`, or `--jobs auto` on a machine with three CPUs or fewer.
+- `one_track`: the song has one track; lanes split tracks.
+- `graph_lfo`: a graph LFO shares the scheduled renderer's serial frame clock.
+- `replay`: the render replayed a stored mix and synthesized nothing.
+- `no_processor`: lanes were set up but no processor was free for them.
+- `light`: every segment had too little work to pay for waking a lane.
+<!-- /render-serial-reasons -->
+
+With a loudness target or `--normalize`, the counts describe the render that
+synthesized the song, not the passes that replayed it.
+
+<!-- agent-example: render song.cicada -o song-serial.wav --bars 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "song.cicada",
+  "ok": true,
+  "jobs": 1,
+  "lanes_requested": 1,
+  "lanes": 1,
+  "lanes_peak": 1,
+  "parallel_segments": 0,
+  "serial_reason": "jobs",
+  "outputs": [
+    {
+      "path": "song-serial.wav",
+      "role": "mix"
+    }
+  ]
+}
+```
+
+<!-- agent-example: render song.cicada -o song-two-lanes.wav --bars 2 --jobs 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "song.cicada",
+  "ok": true,
+  "from_bar": 1,
+  "bars": 2,
+  "jobs": 2,
+  "lanes_requested": 2,
+  "lanes": 2,
+  "outputs": [
+    {
+      "path": "song-two-lanes.wav",
+      "role": "mix",
+      "frames": 336000
+    }
+  ]
+}
+```
+
+A lane count above 1 is a request, not a promise: this two-track song is
+light, so a given machine may run it with `lanes_peak` 1 and `serial_reason`
+`light`.
 
 A render that fails carries `error`, with a stable `code`, the `message` the
 command prints and, when the documentation gives a fix for that cause, a
@@ -645,8 +887,14 @@ is at `revision`: after any other change, render again. `intents`,
 when present, makes the same change through `cicada apply`; it is absent when
 no intent can. Today only `loudness_shortfall_at_true_peak_ceiling` has a
 remedy: a limiter at the export's true-peak ceiling as the last master
-insert. No intent adds a limiter yet, so edit the score text by hand or with a
-`replacetext` intent.
+insert. Its `intents` hold the `addeffect` intent that adds that limiter; put
+them in an envelope with the remedy's `revision` and run `cicada apply
+<score> <envelope> --write`. `score_text` describes the same change as text.
+In an edition-1 score the intent carries `confirmupgrade`, because a mixer
+write upgrades the score to edition 2, and `summary` says so; `score_text`
+keeps edition 1. When the master chain already holds 16 inserts, the most it
+takes, the remedy has neither `score_text` nor `intents`: `summary` says to
+remove a master insert first.
 
 This score has no master limiter, so its export to −9 LUFS stops at the
 true-peak ceiling:
@@ -677,6 +925,8 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ```json
 {
   "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "loud.cicada",
   "ok": false,
   "outputs": [
     {
@@ -695,11 +945,22 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
     "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
     "remedy": {
-      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets); no edit intent adds a limiter yet, so edit the score text by hand or with a replacetext intent",
+      "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text",
       "file": "loud.cicada",
       "revision": "9a1336e210d4e6fddfde19678baf455fd45a31dbb38177789e133de2ac384d5f",
       "replaces": "master { level = 6dB insert = tone }",
-      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }"
+      "score_text": "fx ceiling limiter { ceiling = -1dBTP }\nmaster { level = 6dB insert = tone -> ceiling }",
+      "intents": [
+        {
+          "effectkind": "limiter",
+          "inserton": "master",
+          "kind": "addeffect",
+          "name": "ceiling",
+          "settings": {
+            "ceiling": "-1dBTP"
+          }
+        }
+      ]
     }
   }
 }
@@ -736,7 +997,14 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ```json
 {
   "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "loud-limited.cicada",
   "ok": true,
+  "outputs": [
+    {
+      "path": "loud.wav"
+    }
+  ],
   "loudness": {
     "target_lufs": -9,
     "integrated_lufs": -9.28794649255763,
@@ -749,12 +1017,84 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 }
 ```
 
+## The MCP server
+
+`cicada mcp [--root <dir>] [--allow-user-library]` serves the read-only tools
+and the guide to an agent host that speaks the Model Context Protocol (MCP).
+The host starts it as a subprocess and talks to it on standard input and
+output, one JSON-RPC message per line, for example with this entry in the
+host's server list:
+
+```text
+{"command": "cicada", "args": ["mcp", "--root", "my-song"]}
+```
+
+The server answers protocol revision 2026-07-28, which is stateless: each
+request carries `_meta` with `io.modelcontextprotocol/protocolVersion` and
+`io.modelcontextprotocol/clientCapabilities`, and `server/discover` lists the
+versions the server supports. An `initialize` request selects 2025-11-25 or
+2025-06-18 instead, for the rest of the stream. Another version is refused with
+error -32022, which lists the supported ones.
+
+**The root.** `--root` (default: the working folder) is the one folder the
+tools read, and every path in their documents is relative to it, with forward
+slashes. It must be a project's own folder: the server refuses to start when
+`--root` is a folder inside a project whose `cicada.mod` lies above it, when it
+is a library folder, or when its `cicada.mod` or `lib` folder leaves it through
+a symbolic link. The user library outside the root is not read: the server
+points `CICADA_LIBRARY` at an empty temporary folder, which it removes when it
+stops. `--allow-user-library` lets the tools read the user library; `library`
+then gives a user library's `root` as an empty string, so no folder outside
+the root is named.
+
+**Start here.** Two resources hold the guide, so an agent that has only the
+server can begin: `cicada://guide/quickstart` (what `cicada agents` prints)
+and `cicada://guide/reference` (what `cicada agents reference` prints), both
+`text/markdown`. `resources/list` gives each one's size in bytes. An unknown
+URI is error -32602 (-32002 after `initialize`).
+
+| Tool | Arguments | Returns, as the command line prints it |
+| --- | --- | --- |
+| `song` | `score`, `include` | `cicada.song.v1` (`song --json`) |
+| `check` | `score`, `profile` | `cicada.check.v1` (`check --json`) |
+| `intents` | `kinds`, up to 8 | `cicada.intents_index.v1` without kinds (`intents --json --index`), `cicada.intents.v1` with them |
+| `explain` | `diagnostic` or `construct` | `cicada.diagnostics.v1` (`diagnostics --json`) or `cicada.explain.v1` (`explain --json`) |
+| `library` | `path` | `cicada.library.v1` (`lib list --json`, `lib show --json`) |
+| `params` | none | `cicada.param_registry.v1`: the array `cicada params` prints, unchanged, as `params` (about 73 KB) |
+
+Every argument is optional except where the table says "or". A tool returns
+its document in `structuredContent` and the same JSON as the one text block.
+`isError` is true when the command would exit with an error, and the
+document's `error.code` says why, as on the command line. A score path that is
+absolute, contains `..`, leaves the root through a symbolic link or does not
+end in `.cicada` is refused with `path_outside_root`; a field a tool does not
+take, or a value that starts with `-`, with `usage`. A result over 256 KiB
+(262,144 bytes of JSON) is refused with `too_large`, in the tool's own format,
+and the message says how to narrow the request. An unknown tool, or arguments
+that are not an object, is a JSON-RPC error (-32602).
+
+Malformed input does not stop the server. A line that is not JSON gets -32700;
+JSON that is not a request object, an `id` that is not a string or a number,
+or a missing or non-string `method` gets -32600, with the request's `id` when
+it can be read; a line over 4 MiB is skipped and gets -32600. A tool that
+fails unexpectedly gets -32603 for that request alone, and its stack goes to
+standard error. The server writes nothing but its empty stand-in for the user
+library, opens no connection, and exits when its input closes. Editing,
+rendering and listening (`apply`, `render`, `audition`) are not served yet:
+run those commands directly.
+
 ## The agent task suite
 
 `make test-agent-surface` builds `build/cicada` and runs the agent task suite
-in `internal/agentsuite`. It copies `examples/first-acid.cicada` into an empty
-folder and drives the binary the way an agent does, reading only JSON:
-`help --json`, `intents --json`, `symbols --json`, `check --json`, an `apply`
-of two intents built from the catalog's examples, `render --json` to −14 LUFS
-and `audition --json`. It also runs the examples on this page. CI runs it on
-every pull request; it must finish in under two minutes.
+in `internal/agentsuite`. It starts as a new agent does: it reads the quick
+start from `cicada agents`, runs its loop with its score and its batch, and
+makes its three mistakes, each of which must be refused as the quick start
+says; every command, field and refusal it relies on must be named in the quick
+start. Then it copies `examples/first-acid.cicada` into an empty folder and
+drives the binary the way an agent does, reading only JSON: `help --json`,
+`intents --json`, `symbols --json`, `check --json`, an `apply` of two intents
+built from the catalog's examples, `render --json` to −14 LUFS and
+`audition --json`. It then drives `cicada mcp` through the protocol in both
+eras and requires every tool to return, by value, the document its command
+prints, and each guide resource to be the text `cicada agents` prints. It
+also runs the examples on this page and on the quick start. CI runs it on every pull request; it must finish in under two minutes.

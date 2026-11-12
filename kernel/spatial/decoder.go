@@ -1,6 +1,10 @@
 package spatial
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // Decoder uses six virtual speakers at the cardinal directions with max-rE
 // weighting. Its generic analytic ear model combines fractional interaural
@@ -40,9 +44,9 @@ func (d *Decoder) Init(sampleRate int) {
 				lateral = -lateral
 			}
 			delay := .000325 * (1 - lateral) * float64(sampleRate)
-			e.delay, e.fraction = int(delay), float32(delay-float64(int(delay)))
-			cutoff := 9000 + 6500*lateral
-			e.gain = float32(.85 + .15*lateral)
+			e.delay, e.fraction = int(delay), float32(float64(delay)-float64(int(delay)))
+			cutoff := 9000 + float64(6500*lateral)
+			e.gain = float32(.85 + float64(.15*lateral))
 			e.echo = -.12
 			reflection := .00012
 			switch i {
@@ -55,7 +59,7 @@ func (d *Decoder) Init(sampleRate int) {
 				e.echo, reflection = .2, .00018
 			}
 			e.reflection = max(1, int(reflection*float64(sampleRate)))
-			e.alpha = float32(1 - math.Exp(-2*math.Pi*cutoff/float64(sampleRate)))
+			e.alpha = float32(1 - detmath.Exp(-2*math.Pi*cutoff/float64(sampleRate)))
 		}
 	}
 	d.Reset()

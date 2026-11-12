@@ -13,8 +13,10 @@
 // product rounded by an explicit float64 conversion before it is added, plus
 // math.Frexp, math.Ldexp, math.Round and bit operations. Extra precision comes
 // from double-double arithmetic (Dekker's two-product with Veltkamp
-// splitting). The functions are written for coefficient design and control
-// rate, not the sample loop; see the benchmarks for their cost.
+// splitting). They cost two to four times as much as the math library (see
+// the benchmarks); a few run once per sample (the room's and reverb's
+// modulation, the amp's saturation, the drive's fold), where that cost is
+// measured and accepted for the same bits everywhere.
 //
 // Every exported function starts with x = float64(x). The conversion rounds an
 // argument that a caller computed as a product, so that if the compiler ever
@@ -24,6 +26,15 @@
 // Accuracy, measured against 320-bit math/big references in the tests: every
 // function is within 1 unit in the last place (ULP) of the exact result over
 // its documented domain; the measured maxima are listed on each function.
+//
+// Functions named ...Near (TanhNear, SinPiNear) are a second tier for
+// per-sample nonlinearities on the audio path only: they give the same bits on
+// every target like the rest, but trade the 1 ULP bound for speed, and each
+// states its bound and the test that proves it. Coefficient setup, timing,
+// tuning and anything whose error accumulates use the exact functions.
+// TestNearTierOnlyAtListedSites fails on a ...Near call outside the
+// per-sample sites it lists, and every processor that uses one is pinned by a
+// digest.
 package detmath
 
 import "math"
@@ -33,21 +44,105 @@ const splitter = 0x1p27 + 1 // Veltkamp's constant for float64
 // split returns hi + lo = a exactly, each with at most 26 significant bits.
 func split(a float64) (hi, lo float64) {
 	if a > 0x1p995 || a < -0x1p995 {
-		hi, lo = split(a * 0x1p-28)
-		return hi * 0x1p28, lo * 0x1p28
+		return splitHuge(a)
 	}
 	t := float64(splitter * a)
 	hi = t - (t - a)
 	return hi, a - hi
 }
 
+// scale returns math.Ldexp(v, m) for the values the exponential kernels
+// produce: v with 0.98 <= |v| < 2.04 (or 0, an infinity or NaN with m == 0),
+// and the low part of a double-double whose high part is such a v, with
+// m >= 0. Then v*2^m is zero or normal, so multiplying by 2^m (built from its
+// bits) is exact and equals Ldexp, without Ldexp's general cases.
+func scale(v float64, m int) float64 {
+	if m == 0 {
+		return v
+	}
+	if m >= -1020 && m <= 1020 {
+		return v * math.Float64frombits(uint64(m+1023)<<52)
+	}
+	return math.Ldexp(v, m)
+}
+
+// splitHuge is split for |a| > 2^995, where splitter*a could overflow: it
+// splits a*2^-28 (twice for |a| > 2^1023) and scales back, which is exact.
+// It is a separate function so that split, which is not recursive, inlines.
+func splitHuge(a float64) (hi, lo float64) {
+	a *= 0x1p-28
+	scale := 0x1p28
+	if a > 0x1p995 || a < -0x1p995 {
+		a *= 0x1p-28
+		scale = 0x1p56
+	}
+	t := float64(splitter * a)
+	hi = t - (t - a)
+	return hi * scale, (a - hi) * scale
+}
+
 // twoProd returns p = fl(a*b) and e with p + e = a*b exactly, barring
 // overflow and underflow.
 func twoProd(a, b float64) (p, e float64) {
 	p = float64(a * b)
-	ah, al := split(a)
-	bh, bl := split(b)
+	// split(a) and split(b), written out: split does not inline, and twoProd
+	// runs in every reduction and kernel.
+	var ah, al, bh, bl float64
+	if a > 0x1p995 || a < -0x1p995 {
+		ah, al = splitHuge(a)
+	} else {
+		t := float64(splitter * a)
+		ah = t - (t - a)
+		al = a - ah
+	}
+	if b > 0x1p995 || b < -0x1p995 {
+		bh, bl = splitHuge(b)
+	} else {
+		t := float64(splitter * b)
+		bh = t - (t - b)
+		bl = b - bh
+	}
 	e = ((float64(ah*bh) - p) + float64(ah*bl) + float64(al*bh)) + float64(al*bl)
+	return p, e
+}
+
+// twoProdSplit is twoProd(a, b) for a constant b whose halves bh + bl, as
+// split gives them, are constants too: the same bits without splitting b on
+// every call. TestConstantSplits checks each pair.
+func twoProdSplit(a, b, bh, bl float64) (p, e float64) {
+	p = float64(a * b)
+	var ah, al float64
+	if a > 0x1p995 || a < -0x1p995 {
+		ah, al = splitHuge(a)
+	} else {
+		t := float64(splitter * a)
+		ah = t - (t - a)
+		al = a - ah
+	}
+	e = ((float64(ah*bh) - p) + float64(ah*bl) + float64(al*bh)) + float64(al*bl)
+	return p, e
+}
+
+// The halves split gives for the constants twoProdSplit multiplies by.
+const (
+	ln2HiH, ln2HiL     = 0x1.62e43p-01, -0x1.05c611p-29
+	ln10HiH, ln10HiL   = 0x1.26bb1b8p+01, 0x1.daaa8bp-26
+	halfPi4H, halfPi4L = 0x1.b839a28p-104, -0x1.6fdb1f8p-131
+	piHiH, piHiL       = 0x1.921fb58p+01, -0x1.dde974p-26
+)
+
+// twoSquare returns twoProd(a, a), splitting a once.
+func twoSquare(a float64) (p, e float64) {
+	p = float64(a * a)
+	var ah, al float64
+	if a > 0x1p995 || a < -0x1p995 {
+		ah, al = splitHuge(a)
+	} else {
+		t := float64(splitter * a)
+		ah = t - (t - a)
+		al = a - ah
+	}
+	e = ((float64(ah*ah) - p) + float64(ah*al) + float64(al*ah)) + float64(al*al)
 	return p, e
 }
 
@@ -136,7 +231,7 @@ func expDD(xh, xl float64) (hi, lo float64, m int) {
 func Exp(x float64) float64 {
 	x = float64(x) // see the package comment
 	hi, lo, m := expDD(x, 0)
-	return math.Ldexp(hi+lo, m)
+	return scale(hi+lo, m)
 }
 
 // Exp2 returns 2^x, exact for integers. Measured error: at most 0.51 ULP.
@@ -152,10 +247,10 @@ func Exp2(x float64) float64 {
 	}
 	k := math.Round(x * 64) // exact
 	f := x - float64(k/64)  // exact: |f| <= 1/128
-	rh, rl := twoProd(f, ln2Hi)
+	rh, rl := twoProdSplit(f, ln2Hi, ln2HiH, ln2HiL)
 	rl += float64(f * ln2Lo)
 	hi, lo, m := expReduced(int(k), rh, rl)
-	return math.Ldexp(hi+lo, m)
+	return scale(hi+lo, m)
 }
 
 // Exp10 returns 10^x, exact where 10^x is a representable integer. Measured
@@ -171,11 +266,11 @@ func Exp10(x float64) float64 {
 	if x < -324 {
 		return 0
 	}
-	h, l := twoProd(x, ln10Hi)
+	h, l := twoProdSplit(x, ln10Hi, ln10HiH, ln10HiL)
 	l += float64(x * ln10Lo)
 	h, l = fastTwoSum(h, l)
 	hi, lo, m := expDD(h, l)
-	return math.Ldexp(hi+lo, m)
+	return scale(hi+lo, m)
 }
 
 // logDD returns log(x) as a double-double for finite x > 0.
@@ -195,9 +290,16 @@ func logDD(x float64) (hi, lo float64) {
 	// to a double it limits the accuracy of Pow for large exponents.
 	z, zl := twoProd(sh, sh)
 	q := 1.0 / 25
-	for _, c := range [...]float64{1.0 / 23, 1.0 / 21, 1.0 / 19, 1.0 / 17, 1.0 / 15, 1.0 / 13, 1.0 / 11, 1.0 / 9, 1.0 / 7, 1.0 / 5} {
-		q = c + float64(z*q)
-	}
+	q = 1.0/23 + float64(z*q)
+	q = 1.0/21 + float64(z*q)
+	q = 1.0/19 + float64(z*q)
+	q = 1.0/17 + float64(z*q)
+	q = 1.0/15 + float64(z*q)
+	q = 1.0/13 + float64(z*q)
+	q = 1.0/11 + float64(z*q)
+	q = 1.0/9 + float64(z*q)
+	q = 1.0/7 + float64(z*q)
+	q = 1.0/5 + float64(z*q)
 	s2 := float64(2 * sh) // exact
 	// 2s^3 = 2sh*(z + zl) + 6 sh^2 sl, to 2^-100 of 2s^3.
 	ch, cl := twoProd(s2, z)
@@ -224,6 +326,109 @@ func Log(x float64) float64 {
 	}
 	hi, lo := logDD(x)
 	return hi + lo
+}
+
+// Log1p returns log(1 + x) for x >= -1, accurate where x is small. It is
+// NaN below -1 and for NaN, -Inf at -1, and keeps the sign of zero. It is
+// FreeBSD's s_log1p.c (as in Go's math.Log1p) in plain float64 with every
+// product rounded, at about a sixth of the cost of a double-double logarithm:
+// 1 + x = 2^k * (1 + f) with sqrt(2)/2 < 1 + f < sqrt(2), a correction c for
+// the rounding of 1 + x, and log(1 + f) from s = f/(2 + f) and a degree-14
+// polynomial in s. Measured error: at most 0.80 ULP (TestLog1pAccuracy, dense
+// sweep).
+func Log1p(x float64) float64 {
+	x = float64(x) // see the package comment
+	const (
+		sqrt2M1     = 4.142135623730950488017e-01  // sqrt(2) - 1
+		sqrt2HalfM1 = -2.928932188134524755992e-01 // sqrt(2)/2 - 1
+		ln2Hi       = 6.93147180369123816490e-01   // ln2Hi + ln2Lo = ln 2; k*ln2Hi is exact
+		ln2Lo       = 1.90821492927058770002e-10
+		lp1         = 6.666666666666735130e-01
+		lp2         = 3.999999999940941908e-01
+		lp3         = 2.857142874366239149e-01
+		lp4         = 2.222219843214978396e-01
+		lp5         = 1.818357216161805012e-01
+		lp6         = 1.531383769920937332e-01
+		lp7         = 1.479819860511658591e-01
+	)
+	switch {
+	case x != x || x == math.Inf(1):
+		return x
+	case x < -1:
+		return math.NaN()
+	case x == -1:
+		return math.Inf(-1)
+	}
+	a := math.Abs(x)
+	var f, c float64
+	var iu uint64
+	k := 1
+	if a < sqrt2M1 {
+		if a < 0x1p-29 {
+			if a < 0x1p-54 {
+				return x // log1p(x) = x - x^2/2 + ..., and x^2/2 is below half an ULP of x
+			}
+			return x - float64(float64(x*x)*0.5)
+		}
+		if x > sqrt2HalfM1 {
+			k, f, iu = 0, x, 1 // 1 + x is already in range: f = x
+		}
+	}
+	if k != 0 {
+		u := x
+		if a < 0x1p53 {
+			u = 1 + x
+			iu = math.Float64bits(u)
+			k = int((iu >> 52) - 1023)
+			if k > 0 {
+				c = 1 - (u - x)
+			} else {
+				c = x - (u - 1)
+			}
+			c /= u // the rounding error of 1 + x, relative to it
+		} else {
+			iu = math.Float64bits(u)
+			k = int((iu >> 52) - 1023)
+		}
+		iu &= 0x000fffffffffffff
+		if iu < 0x0006a09e667f3bcd { // below the mantissa of sqrt(2)
+			u = math.Float64frombits(iu | 0x3ff0000000000000)
+		} else {
+			k++
+			u = math.Float64frombits(iu | 0x3fe0000000000000)
+			iu = (0x0010000000000000 - iu) >> 2
+		}
+		f = u - 1
+	}
+	hfsq := float64(float64(0.5*f) * f)
+	kf := float64(k)
+	if iu == 0 { // |f| < 2^-20
+		if f == 0 {
+			if k == 0 {
+				return 0
+			}
+			c += float64(kf * ln2Lo)
+			return float64(kf*ln2Hi) + c
+		}
+		r := float64(hfsq * (1 - float64(0.66666666666666666*f)))
+		if k == 0 {
+			return f - r
+		}
+		return float64(kf*ln2Hi) - ((r - (float64(kf*ln2Lo) + c)) - f)
+	}
+	s := f / (2 + f)
+	z := float64(s * s)
+	p := lp6 + float64(z*lp7)
+	p = lp5 + float64(z*p)
+	p = lp4 + float64(z*p)
+	p = lp3 + float64(z*p)
+	p = lp2 + float64(z*p)
+	p = lp1 + float64(z*p)
+	r := float64(z * p)
+	if k == 0 {
+		return f - (hfsq - float64(s*(hfsq+r)))
+	}
+	return float64(kf*ln2Hi) - ((hfsq - (float64(s*(hfsq+r)) + (float64(kf*ln2Lo) + c))) - f)
 }
 
 // Log2 returns the base-2 logarithm of x, exact for powers of two. Measured
@@ -318,7 +523,7 @@ func Pow(x, y float64) float64 {
 	l += float64(y * ll)
 	h, l = fastTwoSum(h, l)
 	hi, lo, m := expDD(h, l)
-	r := math.Ldexp(hi+lo, m)
+	r := scale(hi+lo, m)
 	if x < 0 && odd {
 		return -r
 	}
@@ -340,19 +545,45 @@ func Tanh(x float64) float64 {
 		// Odd Taylor series; the next term is below 2^-70 of x.
 		z := float64(x * x)
 		q := 6404582.0 / 10854718875
-		for _, c := range [...]float64{-929569.0 / 638512875, 21844.0 / 6081075, -1382.0 / 155925, 62.0 / 2835, -17.0 / 315, 2.0 / 15, -1.0 / 3} {
-			q = c + float64(z*q)
-		}
+		q = -929569.0/638512875 + float64(z*q)
+		q = 21844.0/6081075 + float64(z*q)
+		q = -1382.0/155925 + float64(z*q)
+		q = 62.0/2835 + float64(z*q)
+		q = -17.0/315 + float64(z*q)
+		q = 2.0/15 + float64(z*q)
+		q = -1.0/3 + float64(z*q)
 		return x + float64(float64(x*z)*q)
 	}
 	// tanh(a) = 1 - 2/(e^(2a) + 1).
 	eh, el, m := expDD(2*a, 0) // 2a <= 44: no overflow or underflow
-	eh, el = math.Ldexp(eh, m), math.Ldexp(el, m)
+	eh, el = scale(eh, m), scale(el, m)
 	dh, dl := twoSum(eh, 1)
 	dl += el
 	qh, ql := divDD(2, 0, dh, dl)
 	th, tl := twoSum(1, -qh)
 	return math.Copysign(th+(tl-ql), x)
+}
+
+// TanhNear returns tanh(x) within 2 ULP (measured: at most 1.77 ULP over a
+// dense sweep and the hard cases, TestTanhNearAccuracy), at about 60% of
+// Tanh's cost. It is second tier (see the package comment): for |x| >= 0.125
+// it returns E/(E+2) with E = e^(2|x|) - 1 in plain float64, where Tanh forms
+// the quotient in double-double; below that it is Tanh.
+func TanhNear(x float64) float64 {
+	x = float64(x) // see the package comment
+	a := math.Abs(x)
+	switch {
+	case x != x:
+		return x
+	case a < 0.125:
+		return Tanh(x)
+	case a > 22:
+		return math.Copysign(1, x)
+	}
+	eh, el, m := expDD(2*a, 0) // 2a <= 44: no overflow or underflow
+	eh, el = scale(eh, m), scale(el, m)
+	e := (eh - 1) + el // eh - 1 is exact for eh in [1, 4) and within an ULP above
+	return math.Copysign(e/(e+2), x)
 }
 
 const (
@@ -383,7 +614,7 @@ func reduce(x float64) (rh, rl float64, quadrant int) {
 	t := x - float64(k*halfPi1) // exact
 	h, e1 := twoSum(t, -float64(k*halfPi2))
 	h, e2 := twoSum(h, -float64(k*halfPi3))
-	p, pe := twoProd(k, halfPi4)
+	p, pe := twoProdSplit(k, halfPi4, halfPi4H, halfPi4L)
 	l := ((e1 + e2) - p) - pe
 	rh, rl = twoSum(h, l)
 	return rh, rl, int(k - float64(4*math.Floor(float64(k/4))))
@@ -394,9 +625,14 @@ func sinKernel(rh, rl float64) (hi, lo float64) {
 	z := float64(rh * rh)
 	// sin(r) = r + r^3 (-1/6 + z/120 - ...), through r^19 (next term below 2^-72).
 	p := -1.0 / 121645100408832000
-	for _, c := range [...]float64{1.0 / 355687428096000, -1.0 / 1307674368000, 1.0 / 6227020800, -1.0 / 39916800, 1.0 / 362880, -1.0 / 5040, 1.0 / 120, -1.0 / 6} {
-		p = c + float64(z*p)
-	}
+	p = 1.0/355687428096000 + float64(z*p)
+	p = -1.0/1307674368000 + float64(z*p)
+	p = 1.0/6227020800 + float64(z*p)
+	p = -1.0/39916800 + float64(z*p)
+	p = 1.0/362880 + float64(z*p)
+	p = -1.0/5040 + float64(z*p)
+	p = 1.0/120 + float64(z*p)
+	p = -1.0/6 + float64(z*p)
 	// sin(rh + rl) = sin(rh) + rl cos(rh), with cos(rh) = 1 - z/2 to 2^-53 of rl.
 	tail := float64(float64(rh*z)*p) + float64(rl*(1-float64(0.5*z)))
 	return fastTwoSum(rh, tail)
@@ -404,12 +640,17 @@ func sinKernel(rh, rl float64) (hi, lo float64) {
 
 // cosKernel returns cos(rh + rl) as a double-double for |rh| <= pi/4.
 func cosKernel(rh, rl float64) (hi, lo float64) {
-	z, zl := twoProd(rh, rh)
+	z, zl := twoSquare(rh)
 	// cos(r) = 1 - z/2 + z^2 (1/24 - z/720 + ...), through r^20.
 	q := 1.0 / 2432902008176640000
-	for _, c := range [...]float64{-1.0 / 6402373705728000, 1.0 / 20922789888000, -1.0 / 87178291200, 1.0 / 479001600, -1.0 / 3628800, 1.0 / 40320, -1.0 / 720, 1.0 / 24} {
-		q = c + float64(z*q)
-	}
+	q = -1.0/6402373705728000 + float64(z*q)
+	q = 1.0/20922789888000 + float64(z*q)
+	q = -1.0/87178291200 + float64(z*q)
+	q = 1.0/479001600 + float64(z*q)
+	q = -1.0/3628800 + float64(z*q)
+	q = 1.0/40320 + float64(z*q)
+	q = -1.0/720 + float64(z*q)
+	q = 1.0/24 + float64(z*q)
 	hz := float64(0.5 * z)
 	w := 1 - hz
 	// cos(rh + rl) = cos(rh) - rl sin(rh), with sin(rh) = rh to 2^-55 of rl.
@@ -443,11 +684,61 @@ func Sincos(x float64) (sin, cos float64) {
 
 // Sin returns the sine of x for |x| < TrigLimit and NaN otherwise. Measured
 // error: at most 0.75 ULP, including arguments next to multiples of pi/2.
-func Sin(x float64) float64 { s, _ := Sincos(x); return s }
+//
+// It evaluates only the kernel its quadrant needs, so it returns exactly the
+// sine Sincos returns at about half the cost.
+func Sin(x float64) float64 {
+	x = float64(x)                          // see the package comment
+	if !(x > -TrigLimit && x < TrigLimit) { // NaN, infinite or out of range
+		return math.NaN()
+	}
+	if x > -0x1p-27 && x < 0x1p-27 {
+		return x
+	}
+	rh, rl, q := reduce(x)
+	switch q {
+	case 1:
+		h, l := cosKernel(rh, rl)
+		return h + l
+	case 2:
+		h, l := sinKernel(rh, rl)
+		return -(h + l)
+	case 3:
+		h, l := cosKernel(rh, rl)
+		return -(h + l)
+	}
+	h, l := sinKernel(rh, rl)
+	return h + l
+}
 
 // Cos returns the cosine of x for |x| < TrigLimit and NaN otherwise. Measured
 // error: at most 0.75 ULP, including arguments next to multiples of pi/2.
-func Cos(x float64) float64 { _, c := Sincos(x); return c }
+//
+// Like Sin, it evaluates only the kernel its quadrant needs and returns
+// exactly the cosine Sincos returns.
+func Cos(x float64) float64 {
+	x = float64(x)                          // see the package comment
+	if !(x > -TrigLimit && x < TrigLimit) { // NaN, infinite or out of range
+		return math.NaN()
+	}
+	if x > -0x1p-27 && x < 0x1p-27 {
+		return 1
+	}
+	rh, rl, q := reduce(x)
+	switch q {
+	case 1:
+		h, l := sinKernel(rh, rl)
+		return -(h + l)
+	case 2:
+		h, l := cosKernel(rh, rl)
+		return -(h + l)
+	case 3:
+		h, l := sinKernel(rh, rl)
+		return h + l
+	}
+	h, l := cosKernel(rh, rl)
+	return h + l
+}
 
 // Tan returns the tangent of x for |x| < TrigLimit and NaN otherwise.
 // Measured error: at most 0.85 ULP, including arguments next to multiples of
@@ -536,4 +827,362 @@ var exp2Table = [64][2]float64{ // 2^(j/64) as hi + lo
 	{0x1.efa1bee615a27p+00, 0x1.dc7f486a4b6bp-54},
 	{0x1.f50765b6e454p+00, 0x1.9d3e12dd8a18bp-54},
 	{0x1.fa7c1819e90d8p+00, 0x1.74853f3a5931ep-55},
+}
+
+// Atan returns the arctangent of x, in [-pi/2, pi/2]. The kernel is the Cephes
+// rational approximation that Go's math.Atan uses (same constants and
+// evaluation order), so for |x| <= 0.66 Atan returns what math.Atan returns on
+// amd64 without FMA. Above that, math.Atan reduces x to (x-1)/(x+1) or 1/x and
+// adds pi/4 or pi/2, and the rounding of those steps takes its error to 1.08
+// ULP; here the reduced argument's rounding is corrected to first order and the
+// sum is done in double-double. For y and x > 0, Atan(y/x) is the angle
+// math.Atan2(y, x) computes. Measured error: at most 0.83 ULP.
+func Atan(x float64) float64 {
+	x = float64(x)        // see the package comment
+	if x == 0 || x != x { // keeps the sign of zero; NaN stays NaN
+		return x
+	}
+	if x < 0 {
+		return -atanPositive(-x)
+	}
+	return atanPositive(x)
+}
+
+const (
+	atanPio2Hi = 0x1.921fb54442d18p+00 // pi/2 = atanPio2Hi + atanPio2Lo
+	atanPio2Lo = 0x1.1a62633145c07p-54
+	atanPio4Hi = 0x1.921fb54442d18p-01 // pi/4 = atanPio4Hi + atanPio4Lo
+	atanPio4Lo = 0x1.1a62633145c07p-55
+)
+
+func atanPositive(x float64) float64 {
+	const tan3pio8 = 2.41421356237309504880 // tan(3*pi/8)
+	switch {
+	case x <= 0.66:
+		hi, lo := atanKernel(x)
+		return hi + lo
+	case x > 0x1p60: // includes +Inf: 1/x is below half an ULP of pi/2
+		return atanPio2Hi + (atanPio2Lo - 1/x)
+	case x > tan3pio8:
+		// atan(x) = pi/2 - atan(1/x). 1/x = u + d, d = (1 - u*x)/x to first order.
+		u := 1 / x
+		p, pe := twoProd(u, x)
+		d := ((1 - p) - pe) / x // 1 - p is exact: p is within an ULP of 1
+		hi, lo := atanKernel(u)
+		lo += d / (1 + float64(u*u)) // atan(u+d) = atan(u) + d/(1+u^2) + O(d^2)
+		s, e := twoSum(atanPio2Hi, -hi)
+		return s + ((e - lo) + atanPio2Lo)
+	default:
+		// atan(x) = pi/4 + atan(t), t = (x-1)/(x+1). x-1 is exact for x in
+		// (0.66, 2.42]; x+1 = den + dene exactly; t + d is the exact quotient
+		// to first order.
+		num := x - 1
+		den, dene := twoSum(x, 1)
+		t := num / den
+		p, pe := twoProd(t, den)
+		d := (((num - p) - pe) - float64(t*dene)) / den // num - p is exact
+		hi, lo := atanKernel(t)
+		lo += d / (1 + float64(t*t))
+		s, e := twoSum(atanPio4Hi, hi)
+		return s + ((e + lo) + atanPio4Lo)
+	}
+}
+
+// atanKernel returns atan(x) = hi + lo for |x| <= 0.66 as x + x*z*P(z)/Q(z),
+// z = x^2, with Go's math/atan.go constants and evaluation order.
+func atanKernel(x float64) (hi, lo float64) {
+	const (
+		p0 = -8.750608600031904122785e-01
+		p1 = -1.615753718733365076637e+01
+		p2 = -7.500855792314704667340e+01
+		p3 = -1.228866684490136173410e+02
+		p4 = -6.485021904942025371773e+01
+		q0 = +2.485846490142306297962e+01
+		q1 = +1.650270098316988542046e+02
+		q2 = +4.328810604912902668951e+02
+		q3 = +4.853903996359136964868e+02
+		q4 = +1.945506571482613964425e+02
+	)
+	z := float64(x * x)
+	p := float64(p0*z) + p1
+	p = float64(p*z) + p2
+	p = float64(p*z) + p3
+	p = float64(p*z) + p4
+	q := z + q0
+	q = float64(q*z) + q1
+	q = float64(q*z) + q2
+	q = float64(q*z) + q3
+	q = float64(q*z) + q4
+	w := float64(z*p) / q
+	return x, float64(x * w)
+}
+
+// SinPi returns sin(pi*x). The reduction x = q/2 + r with |r| <= 1/4 is exact
+// (it needs no constant of pi), so SinPi costs less than Sin and is the sine of
+// pi times x itself, not of the rounded product math.Pi*x. Use it for phases in
+// turns or half turns: sin(2*pi*phase) is SinPi(2*phase). It is NaN for NaN
+// and infinities, keeps the sign of zero, and is zero at integers (+0 at even
+// ones, -0 at odd ones, as the quadrant gives). Measured error: at most 0.75 ULP
+// (TestSinPiAccuracy, dense sweep).
+func SinPi(x float64) float64 {
+	x = float64(x) // see the package comment
+	if x == 0 {
+		return x
+	}
+	if a := math.Abs(x); a >= 0x1p1023 && a <= math.MaxFloat64 {
+		return 0 // an even integer, where 2*x would overflow: +0, as for every even integer
+	}
+	const (
+		piHi = 0x1.921fb54442d18p+01 // pi = piHi + piLo to 2^-108
+		piLo = 0x1.1a62633145c07p-53
+	)
+	q := math.Round(float64(2 * x)) // 2*x is exact
+	// Exact: q is 0, or q/2 is within 1/4 of x and at least 1/2, so x and q/2
+	// are within a factor of two of each other (Sterbenz).
+	r := x - float64(0.5*q)
+	th, tl := twoProdSplit(r, piHi, piHiH, piHiL)
+	th, tl = fastTwoSum(th, tl+float64(r*piLo))
+	// The quadrant is q mod 4; q is a whole number, so below 2^52 an integer
+	// conversion gives it exactly, and above that the float formula does.
+	var quadrant int
+	if q > -0x1p52 && q < 0x1p52 {
+		quadrant = int(int64(q) & 3)
+	} else {
+		quadrant = int(q - float64(4*math.Floor(float64(q/4))))
+	}
+	switch quadrant {
+	case 1:
+		h, l := cosPiKernel(th, tl)
+		return h + l
+	case 2:
+		h, l := sinPiKernel(th, tl)
+		return -(h + l)
+	case 3:
+		h, l := cosPiKernel(th, tl)
+		return -(h + l)
+	}
+	h, l := sinPiKernel(th, tl)
+	return h + l
+}
+
+// SinPiNear returns sin(pi*x) within 2 ULP (measured: at most 1.67 ULP over a
+// dense sweep and the hard cases, TestSinPiNearAccuracy), at about half of
+// SinPi's cost. It is second tier (see the package comment): the same exact
+// reduction as SinPi, then pi*r and the series in plain float64 instead of
+// double-double.
+func SinPiNear(x float64) float64 {
+	x = float64(x) // see the package comment
+	if x == 0 {
+		return x
+	}
+	if a := math.Abs(x); a >= 0x1p1023 && a <= math.MaxFloat64 {
+		return 0 // an even integer, where 2*x would overflow: +0, as SinPi gives
+	}
+	q := math.Round(float64(2 * x))
+	r := x - float64(0.5*q) // exact, as in SinPi
+	t := float64(r * math.Pi)
+	z := float64(t * t)
+	z2 := float64(z * z)
+	z4 := float64(z2 * z2)
+	var quadrant int
+	if q > -0x1p52 && q < 0x1p52 {
+		quadrant = int(int64(q) & 3)
+	} else {
+		quadrant = int(q - float64(4*math.Floor(float64(q/4))))
+	}
+	if quadrant&1 == 0 {
+		a0 := -1.0/6 + float64(z*(1.0/120))
+		a1 := -1.0/5040 + float64(z*(1.0/362880))
+		a2 := -1.0/39916800 + float64(z*(1.0/6227020800))
+		a3 := -1.0/1307674368000 + float64(z*(1.0/355687428096000))
+		p := ((a0 + float64(z2*a1)) + float64(z4*(a2+float64(z2*a3)))) + float64(float64(z4*z4)*(-1.0/121645100408832000))
+		s := t + float64(float64(t*z)*p)
+		if quadrant == 2 {
+			return -s
+		}
+		return s
+	}
+	a0 := 1.0/24 + float64(z*(-1.0/720))
+	a1 := 1.0/40320 + float64(z*(-1.0/3628800))
+	a2 := 1.0/479001600 + float64(z*(-1.0/87178291200))
+	a3 := 1.0/20922789888000 + float64(z*(-1.0/6402373705728000))
+	p := ((a0 + float64(z2*a1)) + float64(z4*(a2+float64(z2*a3)))) + float64(float64(z4*z4)*(1.0/2432902008176640000))
+	c := (1 - float64(0.5*z)) + float64(z2*p)
+	if quadrant == 3 {
+		return -c
+	}
+	return c
+}
+
+// expPlain returns e^y for |y| <= 20 in plain float64: y = k*ln2/64 + r with
+// |r| <= ln2/128, e^r from its series to r^4/24 (the next term is below
+// 2^-44), times 2^(k/64) from exp2Table. Its relative error is below 2^-44:
+// enough for the float32 fast paths, whose margins absorb it and whose tests
+// check every input. The result is rounded, so no caller fuses it.
+func expPlain(y float64) float64 {
+	k := math.Round(float64(y * sixtyFourOverLn2))
+	r := (y - float64(k*ln2Over64Hi)) - float64(k*ln2Over64Lo)
+	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24))))))))
+	ki := int(k)
+	return float64(float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52))
+}
+
+// Tanh32 returns float32(Tanh(float64(x))), bit for bit, for every float32 x
+// (TestTanh32FastPathExhaustive checks every input of the fast path; the
+// others call Tanh), at a fraction of the cost of Tanh. It evaluates tanh(|x|)
+// in plain float64: below 0.625 with Cody and Waite's rational form x +
+// x^3*P(x^2)/Q(x^2) (Cephes' coefficients, as in Go's math.Tanh; relative
+// error near 2^-52), above with 1 - 2/(e^(2|x|)+1) and expPlain (absolute
+// error below 2^-45). It rounds that to float32 only when every value within
+// a margin (relative 2^-45, absolute 2^-42) rounds to the same float32; then
+// Tanh, within 1 ULP, rounds there too. Otherwise, and for tiny, large,
+// infinite and NaN inputs, it calls Tanh.
+func Tanh32(x float32) float32 {
+	v := float64(x)
+	a := math.Abs(v)
+	if !(a >= 0x1p-12 && a < 9) {
+		return float32(Tanh(v))
+	}
+	var t, margin float64
+	if a < 0.625 {
+		const (
+			p0, p1, p2 = -9.64399179425052238628e-1, -9.92877231001918586564e1, -1.61468768441708447952e3
+			q0, q1, q2 = 1.12811678491632931402e2, 2.23548839060100448583e3, 4.84406305325125486048e3
+		)
+		s := float64(a * a)
+		num := float64(float64(float64(p0*s)+p1)*s) + p2
+		den := float64(float64(float64((s+q0)*s)+q1)*s) + q2
+		t = a + float64(float64(a*s)*num)/den
+		margin = float64(t * 0x1p-45)
+	} else {
+		t = 1 - 2/(expPlain(2*a)+1) // 2a < 18
+		margin = 0x1p-42
+	}
+	if r := float32(t - margin); r == float32(t+margin) {
+		if x < 0 {
+			return -r
+		}
+		return r
+	}
+	return float32(Tanh(v))
+}
+
+// sinPiKernel is sinKernel with its polynomial evaluated by Estrin's scheme
+// instead of Horner's: the same series, every product rounded, but about half
+// the chain of dependent operations. SinPi's error bound is measured with it.
+func sinPiKernel(rh, rl float64) (hi, lo float64) {
+	z := float64(rh * rh)
+	z2 := float64(z * z)
+	z4 := float64(z2 * z2)
+	a0 := -1.0/6 + float64(z*(1.0/120))
+	a1 := -1.0/5040 + float64(z*(1.0/362880))
+	a2 := -1.0/39916800 + float64(z*(1.0/6227020800))
+	a3 := -1.0/1307674368000 + float64(z*(1.0/355687428096000))
+	b0 := a0 + float64(z2*a1)
+	b1 := a2 + float64(z2*a3)
+	p := (b0 + float64(z4*b1)) + float64(float64(z4*z4)*(-1.0/121645100408832000))
+	tail := float64(float64(rh*z)*p) + float64(rl*(1-float64(0.5*z)))
+	return fastTwoSum(rh, tail)
+}
+
+// cosPiKernel is cosKernel with Estrin's scheme for its polynomial.
+func cosPiKernel(rh, rl float64) (hi, lo float64) {
+	z, zl := twoSquare(rh)
+	z2 := float64(z * z)
+	z4 := float64(z2 * z2)
+	a0 := 1.0/24 + float64(z*(-1.0/720))
+	a1 := 1.0/40320 + float64(z*(-1.0/3628800))
+	a2 := 1.0/479001600 + float64(z*(-1.0/87178291200))
+	a3 := 1.0/20922789888000 + float64(z*(-1.0/6402373705728000))
+	b0 := a0 + float64(z2*a1)
+	b1 := a2 + float64(z2*a3)
+	q := (b0 + float64(z4*b1)) + float64(float64(z4*z4)*(1.0/2432902008176640000))
+	hz := float64(0.5 * z)
+	w := 1 - hz
+	tail := (((1 - w) - hz) - float64(0.5*zl)) + (float64(z2*q) - float64(rh*rl))
+	return fastTwoSum(w, tail)
+}
+
+// TanPi32 returns float32(Tan(math.Pi*float64(u))), bit for bit, for every
+// float32 u (checked over all 2^32 inputs), at a fraction of the cost: for
+// 2^-30 <= |u| <= 0.46 it evaluates tan(pi*|u|) in plain float64 with a Pade
+// approximant (error near 2^-42) and rounds that to float32 only when every value
+// within a relative 2^-32 of it rounds the same way; otherwise, and outside
+// that range, it computes the expression itself.
+func TanPi32(u float32) float32 {
+	a := float64(u)
+	if a < 0 {
+		a = -a
+	}
+	if !(a >= 0x1p-30 && a <= 0.46) {
+		return float32(Tan(math.Pi * float64(u)))
+	}
+	// tan(t) for t = pi*a when a <= 1/4, and cot(t) for t = pi*(1/2 - a) above
+	// (1/2 - a is exact), from the Pade [7/6] approximant
+	// tan(t) = t*N(z)/D(z), z = t^2, within a relative 2^-42 for |t| <= pi/4.
+	t := float64(math.Pi * a)
+	above := a > 0.25
+	if above {
+		t = float64(math.Pi * (0.5 - a))
+	}
+	z := float64(t * t)
+	n := 135135 + float64(z*(-17325+float64(z*(378-z))))
+	d := 135135 + float64(z*(-62370+float64(z*(3150+float64(-28*z)))))
+	v := float64(t*n) / d
+	if above {
+		v = d / float64(t*n)
+	}
+	const margin = 0x1p-32
+	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {
+		if u < 0 {
+			return -r
+		}
+		return r
+	}
+	return float32(Tan(math.Pi * float64(u)))
+}
+
+// Exp2F32 returns float32(Exp2(float64(x))), bit for bit, for every float32 x
+// (TestExp2F32FastPathExhaustive checks every input of the fast path; the
+// others call Exp2), at a fraction of the cost: for 2^-25 <= |x| <= 8 it
+// splits x = k/64 + f exactly (|f| <= 1/128), takes 2^f = e^(f*ln2) from its
+// series to the fourth power (relative error below 2^-44) and 2^(k/64) from
+// exp2Table, and rounds that to float32 only when every value within a
+// relative 2^-32 of it rounds the same way; otherwise, and outside that range,
+// it computes the expression itself. The graph's per-sample exp2 node uses it.
+func Exp2F32(x float32) float32 {
+	v := float64(x)
+	if a := math.Abs(v); !(a >= 0x1p-25 && a <= 8) {
+		return float32(Exp2(v))
+	}
+	k := math.Round(float64(v * 64)) // v*64 is exact
+	f := v - float64(k/64)           // exact; k/64 is a product the compiler could fuse
+	r := float64(f * math.Ln2)
+	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24))))))))
+	ki := int(k)
+	w := float64(float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52))
+	const margin = 0x1p-32
+	if r := float32(float64(w * (1 - margin))); r == float32(float64(w*(1+margin))) {
+		return r
+	}
+	return float32(Exp2(v))
+}
+
+// OneMinusExpNeg2Pi32 returns float32(1 - Exp(-2*math.Pi*float64(u))), bit for
+// bit, for every float32 u (checked over all 2^32 inputs), at a fraction of
+// the cost: for 2^-20 <= u <= 0.5 it evaluates e^y, y = -2*pi*u, with
+// expPlain (relative error below 2^-44), and rounds 1 - e^y to float32 only
+// when every value within a relative 2^-32 of it rounds the same way;
+// otherwise, and outside that range, it computes the expression itself.
+func OneMinusExpNeg2Pi32(u float32) float32 {
+	x := float64(u)
+	if !(x >= 0x1p-20 && x <= 0.5) {
+		return float32(1 - Exp(-2*math.Pi*float64(u)))
+	}
+	v := 1 - expPlain(float64(-2*math.Pi*x))
+	const margin = 0x1p-32
+	if r := float32(float64(v * (1 - margin))); r == float32(float64(v*(1+margin))) {
+		return r
+	}
+	return float32(1 - Exp(-2*math.Pi*float64(u)))
 }

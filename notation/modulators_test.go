@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 const modulatorHeader = "tempo 120\ntrack pad acid {}\ntrack drums acid {}\npattern p { 1 . 3 . }\nscene s { pad = p }\nsong { s*2 }\n"
@@ -189,7 +191,7 @@ func TestParseModRate(t *testing.T) {
 		{"0.0000001Hz", 0, 0, true}, {"1/7", 0, 0, true}, {"0bars", 0, 0, true}, {"-1/4", 0, 0, true}, {"4", 0, 0, true}, {"Hz", 0, 0, true},
 	}
 	for _, c := range cases {
-		got, msg := ParseModRate(c.text)
+		got, msg := ParseModRate(seq.MeterMap{}, c.text)
 		if (msg != "") != c.err || got.Ticks != c.ticks || got.MicroHertz != c.micro || got.Free != (c.micro != 0) {
 			t.Errorf("ParseModRate(%q) = %+v, %q", c.text, got, msg)
 		}

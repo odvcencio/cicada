@@ -3,13 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -35,7 +32,6 @@ type curveRecordingUI struct {
 	awaitingRefresh      bool
 	refreshUncertain     bool
 	jobs                 chan string
-	historyButtons       []historyButtonState
 }
 
 // A structured validation/conflict response is a rejection candidate. A
@@ -44,46 +40,17 @@ type automationActionRejected struct{ message string }
 
 func (e *automationActionRejected) Error() string { return e.message }
 
-type historyButtonState struct {
-	button   js.Value
-	disabled bool
-	form     js.Value
-	inert    bool
-}
-
 // A successful Keep changes the score before the shell's refreshed forms
-// arrive. Prevent Undo/Redo from submitting the prior revision in that gap.
+// arrive. The recording reason keeps Undo and Redo from submitting the prior
+// revision in that gap (history_lock.go owns the buttons' state).
 func (r *curveRecordingUI) lockHistory() {
-	r.historyButtons = nil
-	for _, selector := range []string{"#undo-form button", "#redo-form button"} {
-		button := js.Global().Get("document").Call("querySelector", selector)
-		if workspacePresent(button) {
-			form := button.Call("closest", "form")
-			state := historyButtonState{button: button, disabled: button.Get("disabled").Bool(), form: form}
-			if workspacePresent(form) {
-				state.inert = form.Call("hasAttribute", "inert").Bool()
-				form.Call("setAttribute", "inert", "")
-				form.Call("setAttribute", "data-history-refresh-pending", "")
-			}
-			r.historyButtons = append(r.historyButtons, state)
-			button.Set("disabled", true)
-		}
-	}
+	history.Set(historyRecording, true)
+	applyHistoryLock()
 }
 
 func (r *curveRecordingUI) unlockHistory() {
-	for _, state := range r.historyButtons {
-		if state.button.Get("isConnected").Bool() {
-			state.button.Set("disabled", state.disabled)
-		}
-		if workspacePresent(state.form) && state.form.Get("isConnected").Bool() {
-			state.form.Call("removeAttribute", "data-history-refresh-pending")
-			if !state.inert {
-				state.form.Call("removeAttribute", "inert")
-			}
-		}
-	}
-	r.historyButtons = nil
+	history.Set(historyRecording, false)
+	applyHistoryLock()
 }
 
 func bindAutomationRecording(u *curveEditor) func() {
@@ -154,30 +121,24 @@ func (r *curveRecordingUI) post(command string, number float64) error {
 		values["monitor"] = "on"
 	}
 	data, _ := json.Marshal(values)
-	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, js.Global().Get("location").Get("origin").String()+"/__actions/automation-record", bytes.NewReader(data))
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/automation-record", Body: data, Timeout: 30 * time.Second, Limit: 64 << 10, Headers: map[string]string{
+		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": values["csrf_token"],
+	}}.do(r.ctx)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-CSRF-Token", values["csrf_token"])
-	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
 	var result struct {
 		OK      bool   `json:"ok"`
 		Message string `json:"message"`
 	}
-	if err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil {
+	if err = decodeLimited(response.Body, 64<<10, &result); err != nil {
 		return err
 	}
-	if !result.OK || response.StatusCode >= 400 {
+	if !result.OK || response.Status >= 400 {
 		if result.Message == "" {
 			result.Message = "Automation action failed"
 		}
-		if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusUnprocessableEntity {
+		if response.Status == statusBadRequest || response.Status == statusConflict || response.Status == statusUnprocessableEntity {
 			return &automationActionRejected{message: result.Message}
 		}
 		return fmt.Errorf("%s", result.Message)
@@ -261,6 +222,17 @@ func (r *curveRecordingUI) run() {
 				r.draw()
 			} else if command == "keep" {
 				r.awaitingRefresh = true
+				// Release the recording reason once the refreshed history forms carry a
+				// revision other than the one the Keep started from. (After an
+				// uncertain Keep it stays held, as the message says, until a reload.)
+				var remove func()
+				remove = workspaceUpdated.add(func() {
+					form := js.Global().Get("document").Call("querySelector", "#undo-form input[name=revision]")
+					if workspacePresent(form) && workspaceString(form, "value") != keepVersion.Revision {
+						r.unlockHistory()
+						remove()
+					}
+				})
 				r.draw()
 				workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 			}

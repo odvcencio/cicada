@@ -117,7 +117,7 @@ func (s *Spectrum) Process(left, right []float32) {
 		if l != l || r != r || l-l != 0 || r-r != 0 { // NaN or Inf
 			l, r = 0, 0
 		}
-		s.ring[s.head] = l*0.5 + r*0.5 // halve first: l+r can overflow float32
+		s.ring[s.head] = float32(l*0.5) + float32(r*0.5) // halve first: l+r can overflow float32
 		s.head++
 		if s.head == size {
 			s.head = 0
@@ -151,7 +151,7 @@ func (s *Spectrum) Bands(out *[Bands]float32) {
 	}
 	s.plan.transform(s.re, s.im)
 	for k := 0; k <= n/2; k++ {
-		s.power[k] = (s.re[k]*s.re[k] + s.im[k]*s.im[k]) * s.scale
+		s.power[k] = (float64(s.re[k]*s.re[k]) + float64(s.im[k]*s.im[k])) * s.scale
 	}
 	for i, span := range s.spans {
 		p := s.power[span.first] * span.firstShare
@@ -159,7 +159,7 @@ func (s *Spectrum) Bands(out *[Bands]float32) {
 			for k := span.first + 1; k < span.last; k++ {
 				p += s.power[k]
 			}
-			p += s.power[span.last] * span.lastShare
+			p += float64(s.power[span.last] * span.lastShare)
 		}
 		out[i] = powerToDB(p)
 	}

@@ -17,7 +17,6 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -45,7 +44,7 @@ func TestVocalSceneControlsKeepBackingPCM(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			take := fakeTimelineTake(t, s, 0, 6*seq.TicksPerBar, 576000, 0)
+			take := fakeTimelineTake(t, s, 0, 6*ticksPerBar, 576000, 0)
 			result, _, err := s.vocalTakeResult(entry, take, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -125,7 +124,7 @@ func TestVocalSceneControlsCommitAllOwningFiles(t *testing.T) {
 	root := filepath.Dir(s.path)
 	curvesPath := filepath.Join(root, "curves.cicada")
 	curves, _ := os.ReadFile(curvesPath)
-	take := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .2)
+	take := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .2)
 	seen, err := project.ReadScoreRevision(s.path)
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +226,7 @@ func TestVocalSceneControlsKeepTrailingSilence(t *testing.T) {
 	if err := os.WriteFile(owner, []byte("song { first*2 held next quiet*2 }\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	take := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, 0)
+	take := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, 0)
 	current := entry
 	for attempt := 0; attempt < 2; attempt++ {
 		result, _, err := s.vocalTakeResult(current, take, nil)
@@ -246,7 +245,7 @@ func TestVocalSceneControlsKeepTrailingSilence(t *testing.T) {
 		for _, place := range p.Arrange.Placements {
 			end = max(end, place.AtTick+place.LengthTicks)
 		}
-		if end != 6*seq.TicksPerBar {
+		if end != 6*ticksPerBar {
 			t.Fatalf("short phrase changed the six-bar song duration to %d ticks", end)
 		}
 		if err := os.WriteFile(s.path, result.Source, 0600); err != nil {
@@ -266,7 +265,7 @@ func TestCarriedAutomationEditingKeepsOwnerAndRejectsOutsideSaves(t *testing.T) 
 	for _, conflict := range []string{"none", "unseen", "mid-commit"} {
 		t.Run(conflict, func(t *testing.T) {
 			s, entry, _, _ := sceneControlsStudio(t, t.TempDir())
-			take := fakeTimelineTake(t, s, 0, 2*seq.TicksPerBar, 192000, .2)
+			take := fakeTimelineTake(t, s, 0, 2*ticksPerBar, 192000, .2)
 			if err := s.commitTake(take.ID, studioRevision(entry), nil); err != nil {
 				t.Fatal(err)
 			}

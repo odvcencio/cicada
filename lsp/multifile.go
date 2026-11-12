@@ -252,6 +252,9 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 				}
 			}
 		}
+		if !local {
+			edits, replacements = nameUseEdits(file.Source, selected.Kind, selected.Name, newName, edits, replacements)
+		}
 		if len(edits) == 0 {
 			continue
 		}

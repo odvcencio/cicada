@@ -378,6 +378,64 @@ test('a stale revision restores, blocks the queue, and Refresh saved state recov
   await noNavigation();
 });
 
+test('Undo and Redo stay locked at every step of a Refresh saved state, and a press is refused with a message', async () => {
+  const {page, posts, cell, rewrites, hold, settled, status, noNavigation, original} = await studio();
+  const start = posts.length;
+  const undo = page.locator('#undo-form button'), redo = page.locator('#redo-form button');
+  const locked = async () => (await undo.getAttribute('aria-disabled')) === 'true' && (await redo.getAttribute('aria-disabled')) === 'true';
+  // Block the queue with a refused write.
+  rewrites.push(payload => { payload.revision = original.revision; });
+  const release = hold();
+  await page.locator(cell(23)).click();
+  release();
+  await settled(start + 1);
+  assert.equal(posts[start].status, 409);
+  await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+  assert.equal(await locked(), true, 'Undo and Redo were not locked while the queue was blocked');
+  assert.match(await undo.getAttribute('data-history-lock'), /queue/);
+  assert.equal(await undo.evaluate(button => button.disabled), false, 'the lock must use aria-disabled, which keeps focus, not disabled');
+  // A press while blocked is refused with a message, not sent.
+  const sentBefore = posts.length;
+  await undo.click({force: true}); // Playwright treats aria-disabled as not enabled; a user can still press it
+  assert.match(await status(), /Undo and Redo are waiting/i, 'a press while blocked gave no message');
+  assert.equal(posts.length, sentBefore, 'a press while blocked was sent');
+  await page.locator('#studio-shell').click({position: {x: 2, y: 2}});
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+Shift+z');
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(posts.length, sentBefore, 'the keyboard shortcut sent an Undo or Redo while blocked');
+  // Watch every DOM change during the refresh. The engine yields between region patches, so an observer callback
+  // runs in each gap: the lock must be on the buttons in all of them while the refresh is under way. (Before the
+  // fix a patch replaced the buttons and the lock came back only at the end.)
+  await page.evaluate(() => {
+    window.__gapViolations = [];
+    const check = () => {
+      const text = document.querySelector('[data-workspace-status]')?.textContent || '';
+      const retry = document.querySelector('[data-workspace-retry]');
+      const blocked = retry && !retry.hidden && !/Workspace updated/i.test(text);
+      const button = document.querySelector('#undo-form button');
+      if (blocked && button && button.getAttribute('aria-disabled') !== 'true') window.__gapViolations.push(text);
+    };
+    window.__gapObserver = new MutationObserver(check);
+    window.__gapObserver.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
+  });
+  await page.locator('[data-workspace-retry]').click();
+  await until(async () => /Workspace updated/i.test(await status()), 'Refresh saved state did not finish');
+  await until(async () => !(await locked()) && (await undo.getAttribute('data-history-lock')) === null, 'the lock stayed after the refresh');
+  const violations = await page.evaluate(() => { window.__gapObserver.disconnect(); return window.__gapViolations; });
+  assert.deepEqual(violations, [], 'Undo and Redo were unlocked while the refresh was still under way');
+  // Unlocked: a press is applied (Undo, then Redo to leave the score as it was).
+  await undo.click();
+  await settled(sentBefore + 1);
+  assert.equal(posts[sentBefore].action, 'undo');
+  assert.equal(posts[sentBefore].status, 200, JSON.stringify(posts[sentBefore].result));
+  await until(async () => (await redo.getAttribute('aria-disabled')) === null, 'Redo stayed locked after Undo');
+  await redo.click();
+  await settled(sentBefore + 2);
+  assert.equal(posts[sentBefore + 1].status, 200, JSON.stringify(posts[sentBefore + 1].result));
+  await noNavigation();
+});
+
 test('a network failure restores the cell, blocks, and is never resent', async () => {
   const {page, state, posts, cell, confirmed, settled, status, noNavigation} = await studio();
   const before = await state('/api/state');
@@ -480,6 +538,198 @@ test('Loop part after a draw sends the revision its region shows', async () => {
   // Stop the loop again.
   if (await loop.getAttribute('aria-pressed') === 'true') await loop.click();
   await noNavigation();
+});
+
+// Code recovery around a save. These steps run before the ones that leave
+// Code drafts, so the Code editor starts clean.
+const codeForm = target => target.locator('#score form', {has: target.locator('textarea')});
+const codeUnsaved = target => codeForm(target).evaluate(form => form.hasAttribute('data-code-unsaved'));
+async function typeAtEnd(target, text) {
+  await target.locator('#score textarea').first().focus();
+  await target.keyboard.press('Control+End');
+  await target.keyboard.type(text);
+}
+// Saves the Code editor and waits until the page shows the saved file.
+async function saveCode(page, state, text) {
+  await codeForm(page).getByRole('button', {name: 'Save file', exact: true}).click();
+  await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
+  const saved = await state('/api/state');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#score input[name=revision]').first().inputValue() === saved.revision, 'the page did not show the saved file');
+  // Save file is a GoSX form, so it navigates; the steps after this one
+  // count only their own navigations.
+  await until(() => page.evaluate(() => window.__studioEdits.navigations > 0), 'no navigation', 5_000).catch(() => {});
+  await page.evaluate(() => { window.__studioEdits.navigations = 0; });
+}
+// Undoes the last save: the Code editor follows it.
+async function undoCode(page, state, posts, settled, before) {
+  const start = posts.length;
+  await page.locator('#undo-form button[type=submit]').click();
+  await settled(start + 1);
+  const undone = await state('/api/state');
+  assert.equal(undone.source, before.source, 'Undo did not restore the score');
+  await until(async () => await page.locator('#score textarea').first().inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
+    'the Code editor did not follow the Undo');
+}
+// Routes a window's recovery checkpoints through this suite, which reads each
+// answer itself and then hands the same answer to the page. (Reading it from
+// the browser afterwards can fail: the browser may have dropped the body.)
+// The page's own reaction, not this record, shows that the page got it.
+//
+// With refuse, checkpoints fail, as if the network dropped them, until
+// release(); the window sends the same checkpoint again a second later. So
+// the first one Studio sees is sent after release(), and none waits on the
+// suite long enough for the window to give up on it (five seconds).
+async function checkpointAnswers(target, {refuse = false} = {}) {
+  const answers = [], refused = {count: 0};
+  let released = !refuse;
+  const handler = async route => {
+    const content = route.request().postDataJSON().content;
+    if (!released) {
+      refused.count++;
+      return route.abort();
+    }
+    const response = await route.fetch();
+    const text = await response.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch {}
+    answers.push({status: response.status(), content, body});
+    await route.fulfill({response, body: text});
+  };
+  await target.route('**/__actions/source-checkpoint', handler);
+  return {answers, refused, release: () => { released = true; }, stop: () => target.unroute('**/__actions/source-checkpoint', handler)};
+}
+
+test('a recovery copy of the text a Code save writes does not keep the Code editor from following Undo', async () => {
+  const {page, state, posts, settled} = await studio();
+  assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
+  const before = await state('/api/state');
+  const phrase = '\n// saved phrase';
+  const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
+  // This window's own checkpoints fail until the save, so the page address
+  // names no copy of its own and Studio picks the newest one it keeps.
+  const id = require('node:crypto').randomBytes(16).toString('hex');
+  await page.route('**/__actions/source-checkpoint', route => route.request().postDataJSON().recoveryId === id ? route.fallback() : route.abort());
+  try {
+    // A recovery copy of that text that the save will not name, such as a
+    // recovered draft's earlier copy, or one an editor kept just before.
+    await page.evaluate(async ({content, id}) => {
+      const form = document.querySelector('#score textarea').form;
+      const response = await fetch('/__actions/source-checkpoint', {method: 'POST',
+        headers: {'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': document.querySelector('input[name=csrf_token]').value},
+        body: JSON.stringify({file: form.querySelector('input[name=file]')?.value || '', fileRevision: form.querySelector('input[name=fileRevision]').value,
+          content, recoveryId: id, recoverySequence: '1', recoveryParentId: '', recoveryParentHash: ''})});
+      if (!response.ok) throw new Error('checkpoint returned ' + response.status);
+    }, {content: text, id});
+    await typeAtEnd(page, phrase);
+    assert.equal(await page.locator('#score textarea').first().inputValue(), text);
+    await saveCode(page, state, text);
+  } finally {
+    await page.unroute('**/__actions/source-checkpoint');
+  }
+  assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
+  await undoCode(page, state, posts, settled, before);
+});
+
+test('a checkpoint of the saved text that lands after the save keeps no copy, and its window then follows the file', async () => {
+  const {page, state, posts, settled, cell} = await studio();
+  const other = await otherClient();
+  assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
+  const before = await state('/api/state');
+  const phrase = '\n// typed in two windows';
+  const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
+  // The other window's checkpoints are refused until this window has saved
+  // the same text, so the first one Studio sees lands after the save,
+  // whatever the timing.
+  const {answers, refused, release, stop} = await checkpointAnswers(other, {refuse: true});
+  try {
+    // One input event, so every checkpoint carries the whole text.
+    await other.locator('#score textarea').first().fill(text);
+    await until(() => refused.count > 0, 'the other window sent no checkpoint');
+    await typeAtEnd(page, phrase);
+    await saveCode(page, state, text);
+    // Every recovery status the other window shows, even one a region
+    // update replaces at once.
+    await other.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
+    release();
+    await until(() => answers.length > 0, 'no checkpoint of the other window landed after the save');
+    const [first] = answers;
+    assert.equal(first.content, text, 'the first checkpoint after the save did not carry the saved text');
+    assert.equal(first.status, 200, 'the first checkpoint after the save was refused');
+    assert.equal(first.body?.data?.kept, false, 'a copy of the text the file has was kept');
+    await until(() => other.evaluate(() => window.__recoveryStatus.includes('No unsaved Code edits. The score file has this text.')),
+      'the other window did not say that the file has its text');
+    assert.ok(!(await other.evaluate(() => window.__recoveryStatus.some(text => /Recovery copy kept/.test(text || '')))), 'the other window said a copy was kept');
+    // Its editor takes the file's text as its own, so it is no longer held.
+    await until(async () => await other.locator('#score textarea').first().evaluate(node => node.value === node.defaultValue) && !(await codeUnsaved(other)),
+      'the other window still holds the saved text as an edit');
+    // The window got that one answer: it did not send the checkpoint again.
+    assert.equal(answers.length, 1, 'the other window sent its checkpoint again, so it lost an answer');
+  } finally {
+    release();
+    await stop();
+  }
+  assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
+  await undoCode(page, state, posts, settled, before);
+  // The text is in neither the file nor a copy now, so the other window must
+  // not keep showing it. Like any editor without changes, its Code region
+  // takes the saved song from the other window's next edit (a held one would
+  // keep the text and its old file revision). That edit is then taken back.
+  const done = (selector, active) => other.waitForFunction(({selector, active}) => {
+    const el = document.querySelector(selector);
+    return el?.getAttribute('data-active') === active && !el.hasAttribute('data-workspace-pending');
+  }, {selector, active});
+  const initial = await other.locator(cell(60)).getAttribute('data-active');
+  await other.locator(cell(60)).click();
+  await done(cell(60), initial === 'true' ? 'false' : 'true');
+  const drawn = await state('/api/state');
+  assert.notEqual(drawn.source, before.source, 'the other window\'s draw was not saved');
+  await until(async () => await other.locator('#score textarea').first().inputValue() === drawn.source.replace(/\r\n/g, '\n'),
+    'the other window\'s Code editor did not follow the saved song');
+  await other.locator(cell(60)).click();
+  await done(cell(60), initial);
+  await until(async () => (await state('/api/state')).source === before.source, 'the other window\'s draw was not taken back');
+});
+
+test('a save does not stop another window that typed the same text from keeping its later typing', async () => {
+  const {page, state, posts, settled} = await studio();
+  const other = await otherClient();
+  assert.equal(await codeUnsaved(page), false, 'the Code editor did not start clean');
+  const before = await state('/api/state');
+  const phrase = '\n// the same phrase in two windows';
+  const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
+  const {answers, stop} = await checkpointAnswers(other);
+  const answered = content => answers.find(answer => answer.content === content);
+  try {
+    await other.locator('#score textarea').first().fill(text);
+    await until(() => answered(text)?.status === 200, 'the other window kept no copy');
+    await typeAtEnd(page, phrase);
+    await saveCode(page, state, text);
+    assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
+    await undoCode(page, state, posts, settled, before);
+    // The other window types on: its next checkpoint is kept.
+    await other.locator('#score textarea').first().fill(text + ' and more');
+    await until(() => answered(text + ' and more'), 'the other window sent no checkpoint after typing on');
+    const last = answered(text + ' and more');
+    assert.equal(last.status, 200, 'the other window\'s later typing was refused');
+    assert.equal(last.body?.data?.kept, true, 'the other window\'s later typing was not kept');
+    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
+      'the other window did not say that its copy was kept');
+  } finally {
+    await stop();
+  }
+  // The copy survives a reload of that window; discarding it leaves none.
+  await other.reload();
+  await other.locator('#studio-shell[data-shell-edits="ready"]').waitFor({timeout: 30_000});
+  assert.equal(await other.locator('#score textarea').first().inputValue(), text + ' and more', 'the other window\'s draft was not restored');
+  assert.equal(await codeUnsaved(other), true, 'the restored draft was not marked unsaved');
+  await codeForm(other).getByRole('button', {name: 'Discard draft', exact: true}).click();
+  await until(async () => !(await codeUnsaved(other)), 'the draft was not discarded');
+  assert.equal((await state('/api/state')).source, before.source, 'the other window changed the score');
 });
 
 test('the Code editor stays mounted while other regions are patched', async () => {

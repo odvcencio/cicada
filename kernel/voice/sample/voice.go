@@ -6,6 +6,8 @@ package sample
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/expression"
 )
 
@@ -106,7 +108,7 @@ func validateRate(rate int) error {
 func (v *Voice) configure(rate int, region Region) {
 	v.rate, v.fadeFrames, v.region, v.params = rate, rate/500, region, DefaultParams()
 	if sampleExpressionEnabled {
-		v.pressureAlpha = 1 - math.Exp(-1/(float64(rate)*.005))
+		v.pressureAlpha = 1 - detmath.Exp(-1/(float64(rate)*.005))
 		v.pressureGain = 1
 		v.expression.Reset()
 	}
@@ -139,7 +141,7 @@ func (v *Voice) playbackRatio(note uint8) (float64, error) {
 	}
 	ratio := float64(v.region.SampleRate) / float64(v.rate)
 	if note != v.region.RootKey || v.params.FineTuneCents != 0 {
-		ratio *= math.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
+		ratio *= detmath.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
 	}
 	if ratio < .125 || ratio > 8 {
 		return 0, validationError("sample playback ratio must be between 0.125 and 8")
@@ -193,7 +195,7 @@ func (v *Voice) SeekFrames(frames int64) {
 	if frames < 0 {
 		return
 	}
-	v.phase = float64(v.region.Start) + float64(frames)*v.ratio
+	v.phase = float64(v.region.Start) + float64(float64(frames)*v.ratio)
 	if v.region.Loop && v.phase >= float64(v.region.LoopEnd) {
 		v.phase = float64(v.region.LoopStart) + math.Mod(v.phase-float64(v.region.LoopStart), float64(v.region.LoopEnd-v.region.LoopStart))
 		v.looped = true
@@ -214,7 +216,7 @@ func (v *Voice) NoteOnAt(note, velocity uint8, outputFrame int64) error {
 	if err := v.NoteOn(note, velocity); err != nil {
 		return err
 	}
-	phase := float64(v.region.Start) + float64(outputFrame)*v.ratio
+	phase := float64(v.region.Start) + float64(float64(outputFrame)*v.ratio)
 	if phase >= float64(v.region.End) {
 		v.Reset()
 		return nil
@@ -336,7 +338,7 @@ func (v *Voice) NextStereo() (float32, float32) {
 			}
 			pressureTarget := 1 + float64(v.expression.Pressure)
 			if v.pressureGain != pressureTarget {
-				v.pressureGain += (pressureTarget - v.pressureGain) * v.pressureAlpha
+				v.pressureGain += float64((pressureTarget - v.pressureGain) * v.pressureAlpha)
 				if math.Abs(v.pressureGain-pressureTarget) < 1e-7 {
 					v.pressureGain = pressureTarget
 				}
