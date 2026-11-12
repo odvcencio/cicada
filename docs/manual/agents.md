@@ -86,12 +86,24 @@ song { main*4 }
 
 `cicada agents` prints the [quick start for agents](agent-quickstart.md): the
 one page an agent that has never seen Cicada reads first. The binary carries
-it, so it needs no repository checkout. `cicada agents --json` gives the same
-text as `guide`, its size in bytes as `guide_bytes`, and in `commands` the
-commands the quick start offers for looking up the rest, each with the
-`summary` of what it answers; placeholders such as `<kind>` are in angle
-brackets. The agent task suite reads this document and runs every command in
-it.
+it, so it needs no repository checkout. `cicada agents reference` prints the
+core reference, which the binary builds from its own catalogs, so it is always
+current: the quick start, the JSON conventions in brief, and one line for every
+command, edit intent, diagnostic code and effect route.
+
+`cicada new <name>` also writes a short `AGENTS.md` into the project, which
+points an agent to `cicada agents`; it never replaces one already there.
+`cicada new --json <name>` reports the `project`, its `score`, the `files` it
+wrote and `agents_md_written` (schema `cicada.new.v1`; failures have the codes
+`usage`, `invalid_name`, `destination_exists` and `write`).
+
+`cicada agents --json` gives the page asked for as `guide`, its name as `page`
+(`quickstart` or `reference`) and its size in bytes as `guide_bytes`; in
+`commands`, the commands the quick start offers for looking up the rest, each
+with the `summary` of what it answers (placeholders such as `<kind>` are in
+angle brackets); and in `pages`, each page the binary carries with its `name`,
+`title` and `bytes`. The agent task suite reads this document and runs every
+command in it.
 
 ## help --json
 

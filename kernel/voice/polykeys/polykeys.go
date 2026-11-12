@@ -5,6 +5,8 @@ package polykeys
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
@@ -138,28 +140,28 @@ func New(rate int, params Params) (*Instrument, error) {
 	i := &Instrument{params: params, voiceLimit: MaxVoices}
 	sr := float64(rate)
 	i.attack = float32(1 / (params.Attack * sr))
-	i.decay = float32(math.Exp(-4.605170186 / (params.Decay * sr)))
-	i.release = float32(math.Exp(-4.605170186 / (params.Release * sr)))
+	i.decay = float32(detmath.Exp(-4.605170186 / (params.Decay * sr)))
+	i.release = float32(detmath.Exp(-4.605170186 / (params.Release * sr)))
 	i.sustain = float32(params.Sustain)
 	norm := 1 / (float64(params.Saw+params.Pulse) + float64(.5*params.Sub))
 	i.waveSaw, i.wavePulse = float32(params.Saw*norm), float32(params.Pulse*norm)
 	i.sub, i.width, i.pwm = float32(.5*params.Sub*norm), float32(params.PulseWidth), float32(params.PWM)
 	i.pwmRate, i.sync = float32(params.PWMRate/sr), float32(params.Sync)
-	i.drive, i.gain, i.velocity = float32(1+float64(4*params.Drive)), float32(.4*math.Pow(10, params.LevelDB/20)), float32(params.Velocity)
+	i.drive, i.gain, i.velocity = float32(1+float64(4*params.Drive)), float32(.4*detmath.Pow(10, params.LevelDB/20)), float32(params.Velocity)
 	i.driveT, i.gainT = i.drive, i.gain
 	i.resonanceFeedback = float32(3.8 * params.Resonance)
 	ceiling := math.Min(18000, sr*.2)
-	span := math.Log2(ceiling / 20)
+	span := detmath.Log2(ceiling / 20)
 	i.envIndex = float32(params.FilterEnv * 256 / span)
 	for n := range i.deltas {
-		freq := 440 * math.Pow(2, (float64(n+21)-69)/12)
+		freq := 440 * detmath.Pow(2, (float64(n+21)-69)/12)
 		i.deltas[n] = float32(freq / (2 * sr))
-		cutoff := params.Cutoff * math.Pow(2, params.KeyTrack*(float64(n+21)-60)/12)
-		i.cutoffIndexes[n] = float32(math.Log2(cutoff/20) * 256 / span)
+		cutoff := params.Cutoff * detmath.Pow(2, params.KeyTrack*(float64(n+21)-60)/12)
+		i.cutoffIndexes[n] = float32(detmath.Log2(cutoff/20) * 256 / span)
 	}
 	for t := range i.table {
-		cutoff := 20 * math.Pow(2, float64(t)*span/256)
-		g := math.Tan(math.Pi * cutoff / (2 * sr))
+		cutoff := 20 * detmath.Pow(2, float64(t)*span/256)
+		g := detmath.Tan(math.Pi * cutoff / (2 * sr))
 		gl := g / .43497944204608224
 		k := math.Sqrt2 * (1 - float64(.95*params.Resonance))
 		a1 := 1 / (1 + float64(g*(float64(g)+float64(k))))
@@ -169,19 +171,19 @@ func New(rate int, params Params) (*Instrument, error) {
 	for v := range i.voices {
 		seed = seed*1664525 + 1013904223
 		signed := float64(seed>>8)/8388607.5 - 1
-		i.detuneRatios[v] = float32(math.Pow(2, (params.Detune+float64(signed*params.Drift))/1200))
+		i.detuneRatios[v] = float32(detmath.Pow(2, (params.Detune+float64(signed*params.Drift))/1200))
 		i.driftAmounts[v] = float32(params.Drift * .00057762265)
 		i.driftRates[v] = float32((.071 + float64(float64(v)*.013)) / sr)
 		pan := float64(float64(v)/7*.6) - .3
 		i.panL[v], i.panR[v] = float32(math.Sqrt((1-pan)*.5)), float32(math.Sqrt((1+pan)*.5))
 	}
 	for s := range i.sine {
-		i.sine[s] = float32(math.Sin(2 * math.Pi * float64(s) / 1024))
+		i.sine[s] = float32(detmath.Sin(2 * math.Pi * float64(s) / 1024))
 	}
 	i.chorus = float32(params.Chorus)
-	i.dcAlpha = float32(math.Exp(-2 * math.Pi * 12 / sr))
+	i.dcAlpha = float32(detmath.Exp(-2 * math.Pi * 12 / sr))
 	i.chorusBase, i.chorusDepth = float32(sr*.013), float32(sr*.0034)
-	i.chorusInput, i.chorusOutput = float32(1-math.Exp(-2*math.Pi*8000/sr)), float32(1-math.Exp(-2*math.Pi*6500/sr))
+	i.chorusInput, i.chorusOutput = float32(1-detmath.Exp(-2*math.Pi*8000/sr)), float32(1-detmath.Exp(-2*math.Pi*6500/sr))
 	for c := range i.chorusPhases {
 		i.chorusPhases[c] = float32(c) / 3
 		i.chorusRates[c] = float32((.31 + float64(float64(c)*.137)) / sr)
@@ -524,7 +526,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 		if !keyboard.InRange(value, -60, 6) {
 			return Error("poly keys output must be -60..6 dB")
 		}
-		i.gainT = float32(.4 * math.Pow(10, float64(value)/20))
+		i.gainT = float32(.4 * detmath.Pow(10, float64(value)/20))
 	default:
 		return Error("poly keys has no such control")
 	}

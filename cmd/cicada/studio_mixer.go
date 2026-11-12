@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -429,7 +429,7 @@ func mixerSendAddressValue(sourceValue string) float64 {
 	if strings.HasSuffix(strings.ToLower(sourceValue), "db") {
 		number, err := strconv.ParseFloat(sourceValue[:len(sourceValue)-2], 64)
 		if err == nil {
-			return math.Pow(10, number/20)
+			return detmath.Pow(10, number/20)
 		}
 	}
 	number, _ := strconv.ParseFloat(sourceValue, 64)
