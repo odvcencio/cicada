@@ -83,6 +83,14 @@ expect_groups "one unknown path among docs" all-but-gates docs/manual/README.md 
 expect_groups "one CI path among docs" all-but-sweep docs/manual/README.md .github/workflows/ci.yml
 expect_groups "one kernel file among workstation files" all-but-sweep workstation/panels.go kernel/graph/graph.go
 
+# --- the render-paths agreement test (render.TestRenderPathsAgree) runs in the
+# root group's job m0-render-paths, so every path that can change what either
+# renderer plays, and the examples it renders, must turn root on ---
+for render_input in render/wav.go render/schedule.go kernel/engine/engine.go kernel/seq/schedule.go project/compile.go project/runtime.go notation/parse.go host/capture/block.go examples/acid-voice.cicada; do
+	turns_on_root="$(printf '%s\n' "$render_input" | "$classifier" | grep -x 'root=true' || true)"
+	[[ -n "$turns_on_root" ]] || fail "$render_input does not turn the root group on, so the render-paths test would not run"
+done
+
 # --- the self-hosted M2 CPU gate: only its own inputs queue it ---
 expect_groups "edit package" all-but-gates edit/intents.go
 expect_groups "Studio vocal handlers" all-but-gates cmd/cicada/studio_vocals.go
