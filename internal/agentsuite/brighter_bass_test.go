@@ -118,10 +118,10 @@ func TestAgentBrighterBassTask(t *testing.T) {
 		Schema   string    `json:"schema"`
 		Controls []control `json:"controls"`
 	}
-	stdout, code = cicada(t, bin, dir, "params", "--json", chosen.ID)
-	decode(t, "params --json", stdout, &params)
+	stdout, code = cicada(t, bin, dir, "params", "--json", "--voice", track.Track.Owner, chosen.ID)
+	decode(t, "params --json --voice", stdout, &params)
 	if code != 0 || params.Schema != "cicada.params.v1" || len(params.Controls) != 1 || params.Controls[0].Min == nil || target < *params.Controls[0].Min || target > *params.Controls[0].Max {
-		t.Fatalf("params --json %s: exit %d %+v", chosen.ID, code, params)
+		t.Fatalf("params --json --voice %s %s: exit %d %+v", track.Track.Owner, chosen.ID, code, params)
 	}
 
 	// 4. Measure the starting point.
