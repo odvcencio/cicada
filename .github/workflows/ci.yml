@@ -340,6 +340,10 @@ jobs:
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
           go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
+          # The decay pins: long renders of voices and effects whose state or
+          # smoothed controls decay toward zero, with the output hash that amd64
+          # also produces (kernel/dsp/subnormal). About 10 s.
+          go test ./kernel/voice/piano ./kernel/voice/ep ./kernel/voice/polykeys ./kernel/voice/strings ./kernel/voice/acid ./kernel/voice/drum ./kernel/voice/sample ./kernel/fx/... -run 'NeverSubnormal$' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
           # lists every one it would fuse into a multiply-add on this machine, also
@@ -350,7 +354,9 @@ jobs:
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange; do
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
+            TestDecayingStateIsNeverSubnormal TestHeldChordStateIsNeverSubnormal TestReleaseStateIsNeverSubnormal TestReverbTailIsNeverSubnormal TestControlsAreNeverSubnormal \
+            TestChorusIsNeverSubnormal TestTapeControlsAreNeverSubnormal TestAmpCabinetIsNeverSubnormal TestGainIsNeverSubnormal; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1
