@@ -61,6 +61,15 @@ func TestRunRendersEveryTrackOnce(t *testing.T) {
 		}
 	})
 	defer p.Close()
+	// The costs the spin loop imitates, stated so that a pause cannot make
+	// the heaviest track or the mix dominate and keep every segment serial:
+	// from 130 frames on, a segment is worth two lanes.
+	stateCosts(p, func(track int) float64 {
+		if track == 0 {
+			return 400
+		}
+		return 20
+	})
 	for segment := range 50 {
 		start, count := segment%7, 64+segment*13
 		for track := range next {
@@ -133,21 +142,52 @@ func TestAssignBalancesByCost(t *testing.T) {
 }
 
 // A segment too short to pay for a hand-off runs on the caller alone.
+// stateCosts makes p decide from cost, in nanoseconds per frame (track -1 is
+// the caller's mix), from the first segment on, instead of from measured
+// time: a test that asserts a scheduling decision must not fail because the
+// machine paused during a render.
+func stateCosts(p *Pool, cost func(track int) float64) {
+	p.statedCost = cost
+	for track := range p.cost {
+		p.cost[track], p.measured[track] = cost(track), true
+	}
+	p.mixCost, p.mixMeasured = cost(-1), true
+}
+
 func TestLightSegmentsStaySerial(t *testing.T) {
 	var calls atomic.Int64
 	p := New(4, 4, func(int, int, int) { calls.Add(1) })
 	defer p.Close()
+	// Four tracks and the mix at 5 ns per frame: 64 frames of all of them
+	// (1,600 ns) are far below MinLaneWork, so no segment is worth a lane.
+	stateCosts(p, func(int) float64 { return 5 })
 	for range 20 {
 		p.Run(0, 64)
 	}
 	if calls.Load() != 80 {
 		t.Fatalf("calls = %d, want one 64-frame run per track per segment", calls.Load())
 	}
-	// The first segment uses the default estimate; after it every track
-	// measures as nearly free, so later segments stay on the caller.
-	// They count as light (render.SerialLight), not starved.
-	if stats := p.Stats(); stats.ParallelSegments > 1 || stats.LightSegments < 19 || stats.StarvedSegments != 0 {
+	// Every segment stays on the caller and counts as light
+	// (render.SerialLight), not starved.
+	if stats := p.Stats(); stats.ParallelSegments != 0 || stats.LightSegments != 20 || stats.StarvedSegments != 0 {
 		t.Fatalf("light segments ran on lanes or were not counted as light: %+v", stats)
+	}
+}
+
+// observe folds a segment's measured nanoseconds into each estimate: the
+// first sample sets it, later ones move it by costWeight.
+func TestObserveFoldsMeasuredTimes(t *testing.T) {
+	p := New(2, 2, func(int, int, int) {})
+	defer p.Close()
+	p.took[0], p.took[1] = 6400, 640
+	p.observe(64, 3200)
+	if p.cost[0] != 100 || p.cost[1] != 10 || p.mixCost != 50 || !p.measured[0] || !p.measured[1] || !p.mixMeasured {
+		t.Fatalf("first sample: costs %v, mix %g", p.cost, p.mixCost)
+	}
+	p.took[0], p.took[1] = 12800, 640
+	p.observe(64, 0)
+	if want := 100 + costWeight*(200-100); p.cost[0] != want || p.cost[1] != 10 || p.mixCost != 50+costWeight*(0-50) {
+		t.Fatalf("second sample: costs %v (track 0 want %g), mix %g", p.cost, want, p.mixCost)
 	}
 }
 
@@ -163,10 +203,18 @@ func TestPanicInALaneReachesTheCaller(t *testing.T) {
 		}
 	})
 	defer p.Close()
-	p.Run(0, 4096) // measure both tracks as heavy enough for two lanes
+	// Two equal tracks and no mix: every segment is worth two lanes, and
+	// track 1 renders on worker lane 1.
+	stateCosts(p, func(track int) float64 {
+		if track < 0 {
+			return 0
+		}
+		return 2000
+	})
+	p.Run(0, 4096)
 	defer func() {
 		lanePanic, ok := recover().(*LanePanic)
-		if !ok || lanePanic.Value != "track 1 failed" || !strings.Contains(string(lanePanic.Stack), "TestPanicInALaneReachesTheCaller") {
+		if !ok || lanePanic.Lane != 1 || lanePanic.Value != "track 1 failed" || !strings.Contains(string(lanePanic.Stack), "TestPanicInALaneReachesTheCaller") {
 			t.Fatalf("recovered %#v", lanePanic)
 		}
 		if busy.Load() != 0 {
@@ -197,6 +245,11 @@ func TestBudgetLimitsConcurrentPools(t *testing.T) {
 	a, b := New(8, 8, render), New(8, 8, render)
 	defer a.Close()
 	defer b.Close()
+	// Stated heavy costs: every segment of both pools wants all eight lanes,
+	// so the pools always compete for the budget.
+	heavy := func(int) float64 { return 1e4 }
+	stateCosts(a, heavy)
+	stateCosts(b, heavy)
 	done := make(chan struct{})
 	go func() {
 		for range 40 {
@@ -308,6 +361,9 @@ func TestLaneCountChangesBetweenSegments(t *testing.T) {
 					p.cost[track] = 1e6
 				}
 			}
+			// The mix too, or End's measured mix time would decide: a pause
+			// there could put a light segment on lanes.
+			p.mixCost, p.mixMeasured = 1, true
 			start, count := segment%5, 1+(segment*37)%300
 			for track := range next {
 				next[track].Store(int64(start))
