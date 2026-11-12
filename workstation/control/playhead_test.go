@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/base64"
+	"m31labs.dev/cicada/kernel/seq"
 	"testing"
 	"time"
 
@@ -14,12 +15,12 @@ func TestPlayheadReadsNativeFrameAndWrapsAudition(t *testing.T) {
 	frame.Encode(raw[:])
 	s := PlaybackState{Playing: true, Bar: 3, Step: 16, Range: &PlaybackRange{Start: 7680, End: 11520, Loop: true}}
 	s.Frames.Transport = base64.StdEncoding.EncodeToString(raw[:])
-	p := s.Playhead()
+	p := s.Playhead(seq.MeterMap{})
 	if p.Tick != 11280 || p.Tempo != 120000 || p.At(250*time.Millisecond) != 7920 {
 		t.Fatalf("native loop position %+v -> %f", p, p.At(250*time.Millisecond))
 	}
 	s.Playing = false // The last binary frame can still say playing after Stop.
-	if got := s.Playhead().At(time.Second); got != 11280 {
+	if got := s.Playhead(seq.MeterMap{}).At(time.Second); got != 11280 {
 		t.Fatalf("stopped cursor advanced: %f", got)
 	}
 	p.Range.Loop = false
@@ -32,7 +33,7 @@ func TestPlayheadReadsNativeFrameAndWrapsAudition(t *testing.T) {
 		t.Fatalf("disconnected cursor extrapolated too far: %f", got)
 	}
 	s.Frames.Transport = "bad frame"
-	if got := s.Playhead(); got.Tick != 11280 || got.Tempo != 0 {
+	if got := s.Playhead(seq.MeterMap{}); got.Tick != 11280 || got.Tempo != 0 {
 		t.Fatalf("invalid telemetry did not fall back: %+v", got)
 	}
 }

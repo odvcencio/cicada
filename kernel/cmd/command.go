@@ -14,6 +14,16 @@ const (
 	MessageSize = 16
 )
 
+// SeekUnit is the weight of an OpSeek Arg0: the target tick is
+// Arg0*SeekUnit + Arg1, with Arg1 below SeekUnit. It encodes a tick and is not
+// a bar length; build the arguments with SeekArgs.
+const SeekUnit = 3840
+
+// SeekArgs encodes a nonnegative tick as OpSeek's Arg0 and Arg1.
+func SeekArgs(tick int64) (arg0, arg1 uint32) {
+	return uint32(tick / SeekUnit), uint32(tick % SeekUnit)
+}
+
 // LiveIdentity opts OpNoteOn/OpNoteOff into independent live-note ownership.
 // Arg1=0 retains the legacy routing. In this mode Index is 1..65534, with
 // 65535 on NoteOff releasing live notes only. Hosts negotiate bit 20 first.
@@ -230,7 +240,7 @@ func (c Command) Validate(tracks uint8) error {
 			return validationError("transport command has unexpected payload")
 		}
 	case OpSeek:
-		if c.Arg1 >= 3840 {
+		if c.Arg1 >= SeekUnit {
 			return validationError("seek tick must be within one bar")
 		}
 	case OpSetTempo:

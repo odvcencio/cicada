@@ -3,7 +3,6 @@ package engine
 import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
-	"m31labs.dev/cicada/kernel/seq"
 	"testing"
 )
 
@@ -67,7 +66,7 @@ func TestPlacementTempoSeekLoopAndRenderBlockIndependence(t *testing.T) {
 		if e.transport.BPMMilli() != 60000 {
 			t.Fatal("seek tempo", e.transport.Clock())
 		}
-		if n := testing.AllocsPerRun(50, func() { e.FramesBetweenTicks(0, 12*seq.TicksPerBar); e.Render(l, r) }); n != 0 {
+		if n := testing.AllocsPerRun(50, func() { e.FramesBetweenTicks(0, 12*ticksPerBar); e.Render(l, r) }); n != 0 {
 			t.Fatal("callback allocated", n)
 		}
 		e.Close()

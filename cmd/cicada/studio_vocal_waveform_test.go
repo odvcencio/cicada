@@ -11,7 +11,6 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestVocalWaveformUsesMappedVocalRangeAndMonoSignal(t *testing.T) {
@@ -20,7 +19,7 @@ func TestVocalWaveformUsesMappedVocalRangeAndMonoSignal(t *testing.T) {
 	if err := os.WriteFile(s.path, source, 0600); err != nil {
 		t.Fatal(err)
 	}
-	timeline := &takejournal.Timeline{StartTick: seq.TicksPerBar, EndTick: 2 * seq.TicksPerBar, PlaybackStartTick: 0, TempoMilli: 120000}
+	timeline := &takejournal.Timeline{StartTick: ticksPerBar, EndTick: 2 * ticksPerBar, PlaybackStartTick: 0, TempoMilli: 120000}
 	id, err := s.takes.BeginTimeline("vox", "session", studioRevision(source), 48000, 2, timeline)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +65,7 @@ func TestVocalWaveformUsesMappedVocalRangeAndMonoSignal(t *testing.T) {
 	if err = json.Unmarshal(response.Body.Bytes(), &wave); err != nil {
 		t.Fatal(err)
 	}
-	if wave.Take != id || wave.Start != seq.TicksPerBar || wave.End != 2*seq.TicksPerBar || len(wave.Peaks) != 64 {
+	if wave.Take != id || wave.Start != ticksPerBar || wave.End != 2*ticksPerBar || len(wave.Peaks) != 64 {
 		t.Fatalf("waveform %+v", wave)
 	}
 	for i, p := range wave.Peaks {

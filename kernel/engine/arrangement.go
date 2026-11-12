@@ -7,7 +7,6 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 type SceneMode uint8
@@ -59,7 +58,7 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 		}
 	} else {
 		var err error
-		at, err = seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), 16)
+		at, err = e.MeterMap().QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), 16)
 		if err != nil {
 			e.fault(FaultQuantize)
 			return
@@ -117,7 +116,8 @@ func (e *Engine) scenePatternEndTick() (int64, bool) {
 		period *= cycles
 	}
 	if !active {
-		period = seq.TicksPerBar
+		// No pattern plays: the next bar line at or after now.
+		return e.MeterMap().QuantizeBars(e.transport.Tick(), 1), true
 	}
 	tick := e.transport.Tick()
 	if tick > residue {

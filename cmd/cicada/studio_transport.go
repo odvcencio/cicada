@@ -24,6 +24,7 @@ import (
 	"m31labs.dev/cicada/host/midi"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/musictime"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/sdk/director"
@@ -133,6 +134,10 @@ type transportSnapshot struct {
 	Listening           *studioListening             `json:"listening,omitempty"`
 	ListeningStatus     string                       `json:"listeningStatus"`
 	Streaming           *studioStreamHealth          `json:"streaming,omitempty"`
+
+	// Tick is the song tick of Bar and Step on the playing score's meter map,
+	// the map that encoded them. It stays on the server.
+	Tick int64 `json:"-"`
 }
 
 type studioStreamHealth struct {
@@ -185,6 +190,21 @@ func studioQuantizeLabel(value cmd.Quantize) string {
 	}
 }
 
+// transportFrameTick is the song tick of a transport frame's one-based bar,
+// one-based beat and tick within the beat, on the meter map that encoded it.
+func transportFrameTick(meterMap seq.MeterMap, bar, beat, tick int64) int64 {
+	return meterMap.BarStart(bar-1) + (beat-1)*meterMap.BeatTicks(bar-1) + tick
+}
+
+// meterMap is the playing score's meter map, which placed the bar and beat of
+// every transport frame. With no player there is no song yet: the zero map.
+func (t *studioTransport) meterMap() seq.MeterMap {
+	if t.stream != nil {
+		return t.stream.MeterMap()
+	}
+	return seq.MeterMap{}
+}
+
 func (t *studioTransport) snapshot() transportSnapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -215,7 +235,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		listening.Completed, listening.Cycles = t.stream.RangeFinished(), t.stream.RangeCycles()
 		state.Listening = &listening
 		state.Playing = t.playing && !listening.Completed
-		state.ListeningStatus = listening.label()
+		state.ListeningStatus = listening.label(t.meterMap())
 	}
 	if t.browserPlaying && t.browserSampleRate > 0 {
 		state.ActiveBackend = fmt.Sprintf("browser · AudioWorklet · %s", studioAudioRateLabel(t.browserSampleRate))
@@ -279,6 +299,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		state.PendingSlotQuantize = t.stream.PendingPatternQuantizes()
 		position := t.stream.Position()
 		state.Bar, state.Step = position.Bar, position.Step
+		state.Tick = t.meterMap().BarStart(position.Bar-1) + (position.Step-1)*seq.TicksPerStep
 	}
 	for track, stopped := range t.stoppedTracks {
 		if stopped {
@@ -294,7 +315,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 				age = now - frame.WallNanos
 			}
 			state.FrameAgeNanos = &age
-			tick := (int64(frame.Bar)-1)*3840 + (int64(frame.Beat)-1)*960 + int64(frame.Tick)
+			tick := transportFrameTick(t.meterMap(), int64(frame.Bar), int64(frame.Beat), int64(frame.Tick))
 			if next.Valid(tick, int64(frame.TempoMilli)) {
 				state.NextTempo = &next
 			}
@@ -430,7 +451,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 			t.audio = audio
 		}
 		if t.audio != nil {
-			if err := t.prepareCaptureLocked(t.audio, t.stream.BPMMilli(), t.stream.CountInBars()); err != nil {
+			if err := t.prepareCaptureLocked(t.audio, t.stream.MeterMap(), t.stream.BPMMilli(), t.stream.CountInBars()); err != nil {
 				return err
 			}
 			if err := t.audio.Play(); err != nil {
@@ -542,7 +563,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		if initial.CountInBars != nil {
 			countInBars = *initial.CountInBars
 		}
-		if err := t.prepareCaptureLocked(audio, initial.BPMMilli, countInBars); err != nil {
+		if err := t.prepareCaptureLocked(audio, stream.MeterMap(), initial.BPMMilli, countInBars); err != nil {
 			return err
 		}
 		if err := audio.Play(); err != nil {

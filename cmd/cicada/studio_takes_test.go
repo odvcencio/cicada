@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/projectcopy"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -116,7 +117,7 @@ func captureTestTake(t *testing.T, s *studio) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := capture.NewCountIn(48000, 120000, 0)
+	c, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err = r.Begin(c, capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +384,7 @@ func TestTakeAPIArmStopUsesCaptureWriter(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
-	c, _ := capture.NewCountIn(48000, 120000, 0)
+	c, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err := s.captureRecorder.Begin(c, capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +421,7 @@ func TestTakeShutdownFinalizesShortBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := capture.NewCountIn(48000, 120000, 0)
+	c, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err = r.Begin(c, capture.Calibration{}); err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +463,7 @@ func TestNativeTakeTrailingGap(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer r.Close()
-			c, _ := capture.NewCountIn(48000, 120000, 0)
+			c, _ := capture.NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 			if err := r.Begin(c, capture.Calibration{}); err != nil {
 				t.Fatal(err)
 			}
@@ -654,7 +655,7 @@ func TestTakeStateRestoresActiveCapture(t *testing.T) {
 	}
 	for _, recording := range []bool{false, true} {
 		if recording {
-			countIn, _ := capture.DefaultCountIn(48000, 120000)
+			countIn, _ := capture.DefaultCountIn(seq.MeterMap{}, 48000, 120000)
 			if err := s.captureRecorder.Begin(countIn, capture.Calibration{}); err != nil {
 				t.Fatal(err)
 			}
