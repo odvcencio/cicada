@@ -28,7 +28,7 @@ async function worklet(asset, drained) {
       gosx_audio_bank_image_ptr: () => 1024, gosx_audio_bank_image_len: () => 16,
       gosx_audio_cmd_cap: () => 512, gosx_audio_cmd_ptr: () => 8192, gosx_audio_cmd_commit() {},
       gosx_audio_msg_ptr: () => 32768, gosx_audio_out_ptr: () => 262144,
-      gosx_audio_tick_frames: (from, to) => Math.ceil((to - from) * 60000 * 48000 / (120000 * 960)),
+      gosx_audio_tick_frames: (from, to) => Math.ceil((to - from) * 60000 * 48000 / (120000 * 960)), gosx_audio_next_bar: tick => (Math.floor(tick / 3840) + 1) * 3840,
       gosx_audio_render() {},
       gosx_audio_msg_drain() {
         // Message i is a Playhead (kind 1) at tick i.
