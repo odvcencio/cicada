@@ -164,6 +164,12 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "agents" {
+		if code := agentsCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
+			exitProcess(code)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		if err := checkCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -919,7 +925,8 @@ func renderStudioLoudnessFileReport(score *notation.Score, path string, opts ren
 type loudnessShortfallError struct {
 	reason, message string
 	limiterCeiling  *float64
-	remedySummary   string // limiterRemedySummaryFor the score, when limiterCeiling is set
+	remedySummary   string  // limiterRemedySummaryFor the score, when limiterCeiling is set
+	neededGainDB    float64 // the input gain the target needs, when limiterCeiling is set
 }
 
 func (e *loudnessShortfallError) Error() string {
@@ -1258,7 +1265,10 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				// limiter's ceiling is -12 to 0 dBTP.
 				ceiling := target.TruePeakMaxDBTP
 				shortfallErr.limiterCeiling = &ceiling
-				shortfallErr.remedySummary = limiterRemedySummaryFor(score, ceiling)
+				// The gain the target needs from the material's level at unity;
+				// past the input gain cap a limiter alone cannot supply it.
+				shortfallErr.neededGainDB = target.LoudnessTarget - (bestMeasure.IntegratedLUFS - bestGain)
+				shortfallErr.remedySummary = limiterRemedySummaryFor(score, ceiling, shortfallErr.neededGainDB)
 			}
 		} else {
 			shortfallErr = &loudnessShortfallError{reason: "loudness_target_missed", message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}

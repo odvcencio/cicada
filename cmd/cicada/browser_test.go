@@ -319,9 +319,15 @@ func TestBrowserUnderrunDetector(t *testing.T) {
 	if err := json.Unmarshal(baselineResult, &baseline); err != nil {
 		t.Fatalf("decode baseline underrun metrics %s: %v", baselineResult, err)
 	}
-	// Freeze the simulated context clock: the real one can advance a render
-	// quantum between constructing the timestamp and sampling the timeline.
-	timestampCheck := chrome.eval(`(()=>{const audio=window.cicadaBrowserAudio,context=audio.context,ageMs=20,latencyMs=((context.baseLatency||0)+(context.outputLatency||0))*1000,currentTime=context.currentTime;audio.outputTimeline={available:false,samples:0,misses:0,maxLagMs:0,maxExcessMs:0};audio.context={state:'running',currentTime,sampleRate:context.sampleRate,renderQuantumSize:context.renderQuantumSize,baseLatency:context.baseLatency,outputLatency:context.outputLatency,getOutputTimestamp:()=>({contextTime:Math.max(0,currentTime-latencyMs/1000-ageMs/1000),performanceTime:performance.now()-ageMs})};try{audio.sampleOutputTimeline();return {...audio.outputTimeline,latencyMs,ageMs}}finally{audio.context=context}})()`)
+	// The check: sampleOutputTimeline must add a timestamp's age to its
+	// context time before comparing it with currentTime. Without that, a 20 ms-old
+	// timestamp reads as 20 ms of extra lag. Freeze both clocks the sampler
+	// reads: the simulated context clock (the real one can advance a render
+	// quantum between building the timestamp and sampling it) and
+	// performance.now() (any pause between the timestamp's reading and the
+	// sampler's own, a scheduling delay on a busy hosted runner for one, would
+	// otherwise count against the result). The lag is then exactly the latency.
+	timestampCheck := chrome.eval(`(()=>{const audio=window.cicadaBrowserAudio,context=audio.context,ageMs=20,latencyMs=((context.baseLatency||0)+(context.outputLatency||0))*1000,currentTime=context.currentTime,now=performance.now();audio.outputTimeline={available:false,samples:0,misses:0,maxLagMs:0,maxExcessMs:0};audio.context={state:'running',currentTime,sampleRate:context.sampleRate,renderQuantumSize:context.renderQuantumSize,baseLatency:context.baseLatency,outputLatency:context.outputLatency,getOutputTimestamp:()=>({contextTime:Math.max(0,currentTime-latencyMs/1000-ageMs/1000),performanceTime:now-ageMs})};performance.now=()=>now;try{audio.sampleOutputTimeline();return {...audio.outputTimeline,latencyMs,ageMs}}finally{delete performance.now;audio.context=context}})()`)
 	var timestampAge struct {
 		Samples   int     `json:"samples"`
 		Misses    int     `json:"misses"`
@@ -333,7 +339,7 @@ func TestBrowserUnderrunDetector(t *testing.T) {
 		t.Fatalf("decode output timestamp age check %s: %v", timestampCheck, err)
 	}
 	deltaMs := timestampAge.MaxLagMs - timestampAge.LatencyMs
-	if timestampAge.Samples != 1 || timestampAge.Misses != 0 || deltaMs < -1 || deltaMs > 2 {
+	if timestampAge.Samples != 1 || timestampAge.Misses != 0 || deltaMs < -0.5 || deltaMs > 0.5 {
 		t.Fatalf("output timeline did not compensate for a stale 20 ms output timestamp: metrics=%s lag-minus-latency=%.3f ms", timestampCheck, deltaMs)
 	}
 	t.Logf("output timeline age check: a %g ms-old timestamp measured %.3f ms lag at %.3f ms reported latency without an exceedance", timestampAge.AgeMs, timestampAge.MaxLagMs, timestampAge.LatencyMs)

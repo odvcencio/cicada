@@ -26,7 +26,13 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 			listener.Close()
 			return address
 		}
-		browserStudioAddress, browserDebugAddress = freeAddress(), freeAddress()
+		browserStudioAddress = freeAddress()
+		// browser-runner.sh starts one Chrome on the default DevTools port
+		// and sets CICADA_BROWSER_CHROME_EXTERNAL=1; only a test that starts
+		// its own Chrome can move it.
+		if os.Getenv("CICADA_BROWSER_CHROME_EXTERNAL") != "1" {
+			browserDebugAddress = freeAddress()
+		}
 	}
 	wav, err := os.ReadFile("../../host/recording/testdata/taps.wav")
 	if err != nil {
@@ -36,6 +42,7 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 	chrome := startBrowserChrome(t, server)
 	chrome.setViewport(1440, 1000)
 	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.waitForPanelTabs()
 	chrome.click("[data-panel-tab=record]")
 	chrome.waitFor(`document.querySelector('[data-workspace-panel=record]')?.hidden===false && typeof window.cicadaPlayRecordedInstrument==='function'`, 10*time.Second)
 	chrome.eval(`(() => { const mode=document.getElementById('audio-mode');mode.value='browser';mode.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`)
