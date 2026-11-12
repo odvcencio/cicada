@@ -571,16 +571,33 @@ async function undoCode(page, state, posts, settled, before) {
   await until(async () => await page.locator('#score textarea').first().inputValue() === undone.source.replace(/\r\n/g, '\n') && await page.locator('#score input[name=revision]').first().inputValue() === undone.revision,
     'the Code editor did not follow the Undo');
 }
-// Records the other window's recovery answers: status, the text sent, and
-// the body, read at once (a navigation discards a body not yet read).
-function checkpointAnswers(target) {
-  const answers = [];
-  const listener = response => {
-    if (new URL(response.url()).pathname !== '/__actions/source-checkpoint') return;
-    answers.push({status: response.status(), content: response.request().postDataJSON().content, body: response.json().catch(() => null)});
+// Routes a window's recovery checkpoints through this suite, which reads each
+// answer itself and then hands the same answer to the page. (Reading it from
+// the browser afterwards can fail: the browser may have dropped the body.)
+// The page's own reaction, not this record, shows that the page got it.
+//
+// With refuse, checkpoints fail, as if the network dropped them, until
+// release(); the window sends the same checkpoint again a second later. So
+// the first one Studio sees is sent after release(), and none waits on the
+// suite long enough for the window to give up on it (five seconds).
+async function checkpointAnswers(target, {refuse = false} = {}) {
+  const answers = [], refused = {count: 0};
+  let released = !refuse;
+  const handler = async route => {
+    const content = route.request().postDataJSON().content;
+    if (!released) {
+      refused.count++;
+      return route.abort();
+    }
+    const response = await route.fetch();
+    const text = await response.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch {}
+    answers.push({status: response.status(), content, body});
+    await route.fulfill({response, body: text});
   };
-  target.on('response', listener);
-  return {answers, stop: () => target.off('response', listener)};
+  await target.route('**/__actions/source-checkpoint', handler);
+  return {answers, refused, release: () => { released = true; }, stop: () => target.unroute('**/__actions/source-checkpoint', handler)};
 }
 
 test('a recovery copy of the text a Code save writes does not keep the Code editor from following Undo', async () => {
@@ -621,15 +638,14 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
   const before = await state('/api/state');
   const phrase = '\n// typed in two windows';
   const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
-  // The other window's checkpoints are held until this window has saved the
-  // same text, so they land after the save, whatever the timing.
-  const held = [];
-  await other.route('**/__actions/source-checkpoint', route => { held.push(route); });
-  const {answers, stop} = checkpointAnswers(other);
+  // The other window's checkpoints are refused until this window has saved
+  // the same text, so the first one Studio sees lands after the save,
+  // whatever the timing.
+  const {answers, refused, release, stop} = await checkpointAnswers(other, {refuse: true});
   try {
-    // One input event, so the held checkpoint carries the whole text.
+    // One input event, so every checkpoint carries the whole text.
     await other.locator('#score textarea').first().fill(text);
-    await until(() => held.length > 0, 'the other window sent no checkpoint');
+    await until(() => refused.count > 0, 'the other window sent no checkpoint');
     await typeAtEnd(page, phrase);
     await saveCode(page, state, text);
     // Every recovery status the other window shows, even one a region
@@ -639,21 +655,23 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
       new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
         .observe(document.body, {subtree: true, childList: true, characterData: true});
     });
-    await other.unroute('**/__actions/source-checkpoint');
-    for (const route of held.splice(0)) await route.continue().catch(() => {});
-    const landed = () => answers.find(answer => answer.status === 200 && answer.content === text);
-    await until(() => landed(), 'the held checkpoint did not land');
-    const answer = await landed().body;
-    assert.equal(answer?.data?.kept, false, 'a copy of the text the file has was kept');
+    release();
+    await until(() => answers.length > 0, 'no checkpoint of the other window landed after the save');
+    const [first] = answers;
+    assert.equal(first.content, text, 'the first checkpoint after the save did not carry the saved text');
+    assert.equal(first.status, 200, 'the first checkpoint after the save was refused');
+    assert.equal(first.body?.data?.kept, false, 'a copy of the text the file has was kept');
     await until(() => other.evaluate(() => window.__recoveryStatus.includes('No unsaved Code edits. The score file has this text.')),
       'the other window did not say that the file has its text');
     assert.ok(!(await other.evaluate(() => window.__recoveryStatus.some(text => /Recovery copy kept/.test(text || '')))), 'the other window said a copy was kept');
     // Its editor takes the file's text as its own, so it is no longer held.
     await until(async () => await other.locator('#score textarea').first().evaluate(node => node.value === node.defaultValue) && !(await codeUnsaved(other)),
       'the other window still holds the saved text as an edit');
+    // The window got that one answer: it did not send the checkpoint again.
+    assert.equal(answers.length, 1, 'the other window sent its checkpoint again, so it lost an answer');
   } finally {
-    stop();
-    await other.unroute('**/__actions/source-checkpoint');
+    release();
+    await stop();
   }
   assert.equal(await codeUnsaved(page), false, 'the saved text came back as an unsaved draft');
   await undoCode(page, state, posts, settled, before);
@@ -684,7 +702,7 @@ test('a save does not stop another window that typed the same text from keeping 
   const before = await state('/api/state');
   const phrase = '\n// the same phrase in two windows';
   const text = (await page.locator('#score textarea').first().inputValue()) + phrase;
-  const {answers, stop} = checkpointAnswers(other);
+  const {answers, stop} = await checkpointAnswers(other);
   const answered = content => answers.find(answer => answer.content === content);
   try {
     await other.locator('#score textarea').first().fill(text);
@@ -698,11 +716,11 @@ test('a save does not stop another window that typed the same text from keeping 
     await until(() => answered(text + ' and more'), 'the other window sent no checkpoint after typing on');
     const last = answered(text + ' and more');
     assert.equal(last.status, 200, 'the other window\'s later typing was refused');
-    assert.equal((await last.body)?.data?.kept, true, 'the other window\'s later typing was not kept');
+    assert.equal(last.body?.data?.kept, true, 'the other window\'s later typing was not kept');
     await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
       'the other window did not say that its copy was kept');
   } finally {
-    stop();
+    await stop();
   }
   // The copy survives a reload of that window; discarding it leaves none.
   await other.reload();
