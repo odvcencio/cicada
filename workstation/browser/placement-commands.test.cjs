@@ -312,6 +312,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal(await page.locator('[data-placement-command=delete]').isDisabled(),true);
     await noPost(focusArrange,['Delete','Backspace']);
     assert.equal((await state()).source,oneOnly,'the last placement must stay intact');
+    assert.match(await page.locator('[data-workspace-status]').textContent(),/only placement cannot be removed/,'Delete on the last placement did nothing without saying why');
     await undo(fixture);
     await select('two');
     await key('Delete'); await block('two').waitFor({state:'detached'}); await ready(); await undo(fixture);

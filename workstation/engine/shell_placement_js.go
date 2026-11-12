@@ -63,10 +63,14 @@ func watchPlacementCommands(host enginewasm.Context, root js.Value) func() {
 	}
 }
 
-func submitPlacementCommand(ctx context.Context, root js.Value, id string) {
+const placementNeeded = "This command needs one selected placement in the Arrange view, and no unsaved edits."
+
+// submitPlacementCommand runs a keyboard command on the selected placement.
+// A command that cannot run returns why, for the shell's status line.
+func submitPlacementCommand(ctx context.Context, root js.Value, id string) string {
 	inspector := selectedPlacementInspector(root)
 	if !workspacePresent(inspector) {
-		return
+		return placementNeeded
 	}
 	var button js.Value
 	switch id {
@@ -74,7 +78,7 @@ func submitPlacementCommand(ctx context.Context, root js.Value, id string) {
 		button = inspector.Call("querySelector", "[data-placement-command=duplicate]")
 	case "edit.delete":
 		if root.Call("querySelectorAll", "#view-panel-arrange [data-placement-block]").Length() <= 1 {
-			return
+			return "The song's only placement cannot be removed."
 		}
 		button = inspector.Call("querySelector", "[data-placement-command=delete]")
 	case "transport.loop":
@@ -86,13 +90,14 @@ func submitPlacementCommand(ctx context.Context, root js.Value, id string) {
 			} `json:"listening"`
 		}
 		if !readNativeProjection(ctx, "/api/transport", &state) {
-			return
+			return "Loop did not start: Studio did not answer. Try again."
 		}
-		// Recheck after the request; managed navigation may have changed the
+		// Recheck after the request. Managed navigation may have rendered the
+		// inspector again (same placement: use the new one) or changed the
 		// selection, form revision, or focused editor in the meantime.
-		current := selectedPlacementInspector(root)
-		if !workspacePresent(current) || !current.Equal(inspector) {
-			return
+		name := workspaceAttr(inspector, "data-placement-inspector")
+		if inspector = selectedPlacementInspector(root); workspaceAttr(inspector, "data-placement-inspector") != name {
+			return "Loop did not start: the selection changed while it was starting."
 		}
 		if state.Listening != nil && state.Listening.Kind == "placement" && state.Listening.Name == workspaceAttr(inspector, "data-placement-inspector") && state.Listening.Loop {
 			button = root.Call("querySelector", "#view-panel-arrange .session-listening button[name=action][value=stop]")
@@ -107,11 +112,14 @@ func submitPlacementCommand(ctx context.Context, root js.Value, id string) {
 			}
 		}
 	}
-	if ctx.Err() != nil || !root.Get("isConnected").Bool() || !workspacePresent(button) || button.Get("disabled").Bool() {
-		return
+	if ctx.Err() != nil || !root.Get("isConnected").Bool() {
+		return ""
 	}
-	form := button.Call("closest", "form")
-	if workspacePresent(form) && form.Get("isConnected").Bool() {
+	if !workspacePresent(button) || button.Get("disabled").Bool() {
+		return "That command is not available for this placement now."
+	}
+	if form := button.Call("closest", "form"); workspacePresent(form) && form.Get("isConnected").Bool() {
 		form.Call("requestSubmit", button)
 	}
+	return ""
 }
