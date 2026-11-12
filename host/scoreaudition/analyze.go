@@ -48,6 +48,11 @@ type Options struct {
 	// the tracks' band levels), which takes about an eighth of an audition's
 	// CPU time.
 	NoBands bool
+	// Jobs is the most render lanes the stem render may use, as
+	// render.Options.Jobs: zero, the default, renders serially, and
+	// render.AutoJobs picks the automatic count. Every value gives the same
+	// stems and the same report.
+	Jobs int
 }
 
 type Report struct {
@@ -337,7 +342,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, StemTracks: opts.Tracks, StemBuses: len(opts.Tracks) > 0}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, Jobs: opts.Jobs, StemTracks: opts.Tracks, StemBuses: len(opts.Tracks) > 0}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}

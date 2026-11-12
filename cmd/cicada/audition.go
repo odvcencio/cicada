@@ -14,7 +14,7 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--tracks <a,b>] [--peaks <n>] [--detail] [--no-bands] [--image-width <px>] [--json] [--max-resident-pcm <size>]"
+const auditionUsage = "usage: cicada audition <score.cicada> [-o <dir>] [--from <bar>] [--bars <n>] [--tracks <a,b>] [--peaks <n>] [--detail] [--no-bands] [--image-width <px>] [--json] [--max-resident-pcm <size>] [--jobs auto|<n>]"
 
 // auditionErrorDocument is what audition --json prints when it fails.
 type auditionErrorDocument struct {
@@ -88,6 +88,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	imageWidth := flags.Int("image-width", scoreaudition.DefaultImageWidth, "widest picture in pixels; 0 keeps one full strip")
 	detail := flags.Bool("detail", false, "add the per-bar and per-beat matrices to the JSON")
 	noBands := flags.Bool("no-bands", false, "skip band ownership, about an eighth of the CPU time")
+	jobsText := flags.String("jobs", "", "render lanes: auto or a count; absent renders serially")
 	// Accept the score before or after the flags.
 	var path string
 	rest := args
@@ -122,6 +123,10 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if peakCount == 0 {
 		peakCount = -1
 	}
+	jobs, err := parseJobs(*jobsText)
+	if err != nil {
+		return &codedError{"usage", err}
+	}
 	inspection, err := inspectScore(path)
 	if err != nil {
 		return &codedError{"unreadable_score", err}
@@ -137,7 +142,7 @@ func auditionRun(args []string, stdout, stderr io.Writer) error {
 	if failed {
 		return &codedError{"invalid_score", fmt.Errorf("%s has errors", path)}
 	}
-	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Tracks: splitTrackList(*tracks), Peaks: peakCount, NoBands: *noBands})
+	analysis, err := scoreaudition.Analyze(inspection.score, scoreaudition.Options{From: fromBar, Bars: *bars, AssetDir: inspection.root(path), MaxResidentPCM: residentPCM, Jobs: jobs, Tracks: splitTrackList(*tracks), Peaks: peakCount, NoBands: *noBands})
 	if err != nil {
 		var unknown *render.UnknownTrackError
 		if errors.As(err, &unknown) {
