@@ -640,6 +640,40 @@ func TestInstrumentReleaseFollowsAOneLayerAttack(t *testing.T) {
 	}
 }
 
+// A pack's own humanize moves a played velocity. With recorded dynamics the
+// moved velocity is kept whenever an attack recording of the note covers it,
+// even across a layer boundary into another group's layer: the layers blend
+// continuously there, so the move changes the level as it would anywhere
+// else. Layers 1-63 (group 0, centre 32) and 64-127 (group 1, centre 96);
+// written velocity 62 with humanize 12.
+func TestInstrumentRecordedHumanizeCrossesGroupsContinuously(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 1
+	c.Humanize.Velocity = 12
+	soft, loud := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 1, 0, 1, false)
+	soft.VelocityLow, soft.VelocityHigh = 1, 63
+	loud.VelocityLow, loud.VelocityHigh = 64, 127
+	p := newMapped(t, []Zone{soft, loud}, c)
+	level := func(v float64) float64 { w := (v - 32) / 64; return .2*(1-w) + .8*w }
+	crossed := 0
+	for seed := uint64(1); seed <= 64; seed++ {
+		p.Reset()
+		if _, err := p.NoteOnSeeded(60, 62, seed); err != nil {
+			t.Fatal(err)
+		}
+		got := float64(settled(p))
+		if got < level(50)-1e-6 || got > level(74)+1e-6 {
+			t.Fatalf("seed %d: level %g is outside velocities 50 to 74 (%g to %g)", seed, got, level(50), level(74))
+		}
+		if got > level(63)+1e-6 {
+			crossed++
+		}
+	}
+	if crossed == 0 {
+		t.Fatal("no humanized velocity crossed into the loud layer's group; the move was undone")
+	}
+}
+
 // Layers count per note, not per velocity: a pack whose layers split the
 // velocity range blends the neighbouring centres across the split, so the
 // level is continuous and rises with velocity. Two layouts: ranges 1-63 and
