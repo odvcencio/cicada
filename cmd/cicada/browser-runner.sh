@@ -45,17 +45,24 @@ profile_root=$(mktemp -d "${TMPDIR:-/tmp}/cicada-browser.XXXXXX")
 profile="$profile_root/profile"
 chrome_log=build/m2-browser-chrome.log
 chrome_pid=
-chrome_pgid=
+# cleanup signals only the Chrome this script started. setsid makes Chrome
+# the leader of a new process group whose ID is chrome_pid. chrome_pid is
+# this script's own child and is not reaped before the wait below, so no other
+# process can hold that PID or lead that group. Until setsid has run, the
+# group does not exist and only the child is signaled. Do not read the group
+# from ps: before setsid runs it is this script's own group, which a CI step's
+# shell, make and the runner's worker share (browser-runner_test.sh).
 cleanup() {
-  if [[ -n "$chrome_pgid" ]] && kill -0 -- "-$chrome_pgid" 2>/dev/null; then
-    kill -TERM -- "-$chrome_pgid" 2>/dev/null || true
-  fi
+  trap - EXIT INT TERM
   if [[ -n "$chrome_pid" ]]; then
+    kill -TERM -- "-$chrome_pid" 2>/dev/null || kill -TERM "$chrome_pid" 2>/dev/null || true
     wait "$chrome_pid" 2>/dev/null || true
   fi
   rm -rf "$profile_root"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 PULSE_SERVER=unix:/nonexistent "$browser_path" --mute-audio --version
 setsid env PULSE_SERVER=unix:/nonexistent "$browser_path" \
@@ -64,7 +71,6 @@ setsid env PULSE_SERVER=unix:/nonexistent "$browser_path" \
   --remote-debugging-address=127.0.0.1 --remote-debugging-port=8165 \
   --user-data-dir="$profile" about:blank >"$chrome_log" 2>&1 &
 chrome_pid=$!
-chrome_pgid=$(ps -o pgid= -p "$chrome_pid" | tr -d ' ')
 
 ready=false
 for _ in $(seq 1 200); do
