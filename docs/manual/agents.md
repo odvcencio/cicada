@@ -766,6 +766,92 @@ to check whether reuse caused a difference you see.
 }
 ```
 
+`--jobs` lets a render synthesize tracks on several lanes at once. Without it
+the render is serial, as it is for every library caller that leaves
+`render.Options.Jobs` at zero; `--jobs auto` picks the smaller of 4 and half
+the CPUs (at least 1), and `--jobs N` is honoured up to the number of CPUs.
+Every value writes the same bytes: lanes only synthesize each track's own
+signal between notes and other control changes, and the tracks are always
+mixed in track order, so an agent can choose `--jobs` for speed alone. The
+document says what the render chose and what happened:
+
+- `jobs`: the most lanes allowed, after the CPU cap; `jobs_auto` is true when
+  `--jobs auto` chose it.
+- `lanes_requested`: the lanes asked for, before the CPU and track caps (the
+  `--jobs` count, the automatic choice, or 1 for serial).
+- `lanes`: the lanes the render set up, `jobs` capped at the song's tracks.
+- `lanes_peak`: the most lanes that rendered one segment at once. A segment is
+  a run of frames between control changes; one with too little work runs on
+  fewer lanes. The renders of one cicada process share `GOMAXPROCS` − 1 worker
+  lanes, and each render's own goroutine works as one more lane. Other
+  processes are not counted, so give each of several concurrent `cicada`
+  processes a smaller `--jobs`.
+- `segments` and `parallel_segments`: the segments offered to the lanes and
+  those that ran on two or more.
+- `serial_reason`, present when no segment ran on two or more lanes:
+
+<!-- render-serial-reasons -->
+- `jobs`: the job count is 1: no `--jobs`, `--jobs 1`, or `--jobs auto` on a machine with three CPUs or fewer.
+- `one_track`: the song has one track; lanes split tracks.
+- `graph_lfo`: a graph LFO shares the scheduled renderer's serial frame clock.
+- `replay`: the render replayed a stored mix and synthesized nothing.
+- `no_processor`: lanes were set up but no processor was free for them.
+- `light`: every segment had too little work to pay for waking a lane.
+<!-- /render-serial-reasons -->
+
+With a loudness target or `--normalize`, the counts describe the render that
+synthesized the song, not the passes that replayed it.
+
+<!-- agent-example: render song.cicada -o song-serial.wav --bars 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "song.cicada",
+  "ok": true,
+  "jobs": 1,
+  "lanes_requested": 1,
+  "lanes": 1,
+  "lanes_peak": 1,
+  "parallel_segments": 0,
+  "serial_reason": "jobs",
+  "outputs": [
+    {
+      "path": "song-serial.wav",
+      "role": "mix"
+    }
+  ]
+}
+```
+
+<!-- agent-example: render song.cicada -o song-two-lanes.wav --bars 2 --jobs 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "song.cicada",
+  "ok": true,
+  "from_bar": 1,
+  "bars": 2,
+  "jobs": 2,
+  "lanes_requested": 2,
+  "lanes": 2,
+  "outputs": [
+    {
+      "path": "song-two-lanes.wav",
+      "role": "mix",
+      "frames": 336000
+    }
+  ]
+}
+```
+
+A lane count above 1 is a request, not a promise: this two-track song is
+light, so a given machine may run it with `lanes_peak` 1 and `serial_reason`
+`light`.
+
 A render that fails carries `error`, with a stable `code`, the `message` the
 command prints and, when the documentation gives a fix for that cause, a
 `remedy`. The codes are:
