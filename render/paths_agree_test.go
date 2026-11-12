@@ -79,23 +79,6 @@ type pathsKnown struct {
 // pathsKnownDifferences can only shrink: delete an entry in the pull request
 // that fixes its difference.
 var pathsKnownDifferences = []pathsKnown{
-	// Slide (~) on the last step of a pattern, into the first note of the next
-	// scene. With sixteenth-note steps both paths glide; with quarter-note
-	// steps the engine holds the note to the bar line and glides, and the
-	// direct mixer releases it at its gate and plays a plain note:
-	// sceneTransitionFor (render/wav.go) finds the last step with
-	// seq.TicksPerStep, not the pattern's own step length. Pull request #347
-	// fixes it; delete this entry when #347 is on main, and nothing else changes.
-	{"targeted: slide across a scene switch, quarter-note steps", "slide across a scene switch, pattern step other than a sixteenth", "the engine holds the note and slides into the next scene's first note, the direct mixer does not", "#347 (open)",
-		"4 only direct, 4 only engine, notes 00b2ebc8", "68005 frames differ, first at frame 166478 (3.775 s), last at frame 441065; renders direct f321fcc0, engine 3c40439e"},
-	// The same slide with gate = 100%: both paths tap the same notes with the
-	// same ends, but the audio differs from the first scene switch (bar 3).
-	// Probable cause, not proven: the pending pattern's release at the bar line
-	// (render/wav.go, the hasPendingGate loop) reaches the voice before the
-	// slide, while the engine suppresses that release (pendingSwitchSlides,
-	// kernel/engine/pattern.go). #347 does not change it.
-	{"targeted: slide across a scene switch, full gate", "slide across a scene switch with gate = 100%", "audio differs, cause not yet known (the note events agree)", "none yet (found reviewing #347)",
-		"", "29996 frames differ, first at frame 176400 (4.000 s), last at frame 441056; renders direct 5f5e8826, engine 19adec9b"},
 	// Drum humanize: the velocity draw takes the step's note as an input
 	// (kernel/seq/schedule.go:168). The engine's lane steps carry the lane
 	// number (project/runtime.go:408, packProjectStep), as
@@ -107,13 +90,6 @@ var pathsKnownDifferences = []pathsKnown{
 		"49 only direct, 49 only engine, notes fbe68979", "353019 frames differ, first at frame 0 (0.000 s), last at frame 353019; renders direct 84ebd736, engine 3b088b12"},
 	{"targeted: drum humanize across two scenes", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
 		"66 only direct, 66 only engine, notes fc471b29", "529420 frames differ, first at frame 0 (0.000 s), last at frame 529419; renders direct 82bad56c, engine cecb340b"},
-	// A single-asset sampler plays bend and vibrato rows on the engine; the
-	// direct mixer's sampler voice has no note expression and plays the notes
-	// plain. Pull request #337 routes such scores to the engine
-	// (hasSamplerExpression), after which only the engine can render this case:
-	// delete the case and this entry then.
-	{"targeted: expression rows on a sampler", "single-asset sampler with bend: and vibrato: rows", "the direct mixer drops the bend and vibrato", "#337 (open)",
-		"", "265296 frames differ, first at frame 5514 (0.125 s), last at frame 347375; renders direct 808ceb2e, engine 5b8ad038"},
 }
 
 // pathsEngineOnly lists every example score that only the engine can render,
@@ -231,15 +207,15 @@ song { x*4 }`},
 }
 scene x { bass = e }
 song { x*4 }`},
-	{name: "expression rows on a sampler", asset: true, source: `asset take "take.wav" { sha256 = "TAKE_SHA256" format = wav frames = 120000 rate = 48000Hz channels = 2 }
+	// A single-asset sampler. With bend: or vibrato: rows it renders only on the
+	// engine (hasSamplerExpression, render/wav.go), so this case has none.
+	{name: "single-asset sampler", asset: true, source: `asset take "take.wav" { sha256 = "TAKE_SHA256" format = wav frames = 120000 rate = 48000Hz channels = 2 }
 sampler hit { asset = take root = c3 mode = loop voices = 2 }
 track keys hit {}
-pattern e { c3 - - - g3 - - .
-  bend: 0ct +50ct +100ct 0ct -50ct . 0ct .
-  vibrato: 0ct . 12ct . 4ct . 0ct .
-}
+pattern e { c3 - - - g3 - - . [c3 e3] - - . d3 . e3 . }
 scene x { keys = e }
-song { x*4 }`},
+scene y { keys = idle }
+song { x*2 y*1 x*1 }`},
 	{name: "tied first note at a scene change", source: `pattern tf { step = 1/4 - . c4 - }
 scene x { lead = idle }
 scene y { lead = tf }
