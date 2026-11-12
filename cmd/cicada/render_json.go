@@ -16,6 +16,7 @@ import (
 	gts "github.com/odvcencio/gotreesitter"
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
 )
@@ -115,7 +116,7 @@ func normalizeJSON(opts render.Options, report render.Report) *renderNormalizeJS
 	if report.NormalizeSkipped != "" {
 		return &renderNormalizeJSON{Code: normalizeSkippedSilentRange, Reason: report.NormalizeSkipped}
 	}
-	return &renderNormalizeJSON{Applied: true, GainDB: 20 * math.Log10(float64(report.NormalizeGain))}
+	return &renderNormalizeJSON{Applied: true, GainDB: 20 * detmath.Log10(float64(report.NormalizeGain))}
 }
 
 // renderErrorJSON says why a render failed. Code is one of renderErrorCodes;
