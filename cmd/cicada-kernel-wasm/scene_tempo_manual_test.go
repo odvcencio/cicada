@@ -14,7 +14,6 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -83,7 +82,7 @@ func TestAudioWASMSceneTempoManualLaunchOnBoundaryParity(t *testing.T) {
 	var left, right [block]float32
 	// main*2 is 192000 frames. Launch the "slowest" scene (index 2, 84 BPM) on the
 	// bar line where the song starts "slower" (100 BPM), then play four more bars.
-	end := int(native.FramesBetweenTicks(0, 6*seq.TicksPerBar))
+	end := int(native.FramesBetweenTicks(0, 6*ticksPerBar))
 	for at := 0; at < end; at += block {
 		if at == 150_016 {
 			push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 2, Arg0: 2})
@@ -110,15 +109,15 @@ func TestAudioWASMSceneTempoManualLaunchOnBoundaryParity(t *testing.T) {
 		t.Fatal("no scene is active")
 	}
 	for bar := int64(1); bar <= 6; bar++ {
-		want := native.FramesBetweenTicks(0, bar*seq.TicksPerBar)
-		got := int64(math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(bar*seq.TicksPerBar)))))
+		want := native.FramesBetweenTicks(0, bar*ticksPerBar)
+		got := int64(math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(bar*ticksPerBar)))))
 		if got != want {
 			t.Fatalf("bar %d: WASM %d frames, native %d", bar, got, want)
 		}
 	}
 	// Frames per bar match what the transport did, not only what the map says.
-	tempo, _ := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
-	if native.FramesBetweenTicks(0, 6*seq.TicksPerBar) != tempo.SampleAtTick(6*seq.TicksPerBar) {
+	tempo, _ := project.NewTempoMap(p.MeterMap(), rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	if native.FramesBetweenTicks(0, 6*ticksPerBar) != tempo.SampleAtTick(6*ticksPerBar) {
 		t.Fatal("the tempo map and the export disagree")
 	}
 }
@@ -176,7 +175,7 @@ func TestAudioWASMSceneTempoManualLaunchWithoutChainTickFrames(t *testing.T) {
 		call("gosx_audio_cmd_commit", 1)
 	}
 	frames := func(bar int64) (wasmFrames float64, nativeFrames int64) {
-		to := bar * seq.TicksPerBar
+		to := bar * ticksPerBar
 		return math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(to)))), native.FramesBetweenTicks(0, to)
 	}
 	push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
@@ -257,13 +256,13 @@ func TestAudioWASMSceneTempoLoopSeamTickFrames(t *testing.T) {
 		}
 	}
 	for bar := int64(1); bar <= 15; bar++ {
-		got := int64(math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(bar*seq.TicksPerBar)))))
-		if got != reached[bar] || got != native.FramesBetweenTicks(0, bar*seq.TicksPerBar) {
-			t.Fatalf("bar %d: WASM %d, native prediction %d, the transport took %d", bar, got, native.FramesBetweenTicks(0, bar*seq.TicksPerBar), reached[bar])
+		got := int64(math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(bar*ticksPerBar)))))
+		if got != reached[bar] || got != native.FramesBetweenTicks(0, bar*ticksPerBar) {
+			t.Fatalf("bar %d: WASM %d, native prediction %d, the transport took %d", bar, got, native.FramesBetweenTicks(0, bar*ticksPerBar), reached[bar])
 		}
 	}
 }
 
 func bar2(e *engine.Engine) int64 {
-	return e.LiveClock().TickAtSample(e.TransportSample()) / seq.TicksPerBar
+	return e.LiveClock().TickAtSample(e.TransportSample()) / ticksPerBar
 }

@@ -25,6 +25,7 @@ type mixInput struct {
 	selected   []bool
 	rate       int
 	clock      *project.TempoMap
+	meter      seq.MeterMap // the song's bar and beat lines
 	base       int64
 	fromTick   int64
 	bars       int
@@ -58,9 +59,14 @@ func (a *Analysis) measureMix(in mixInput) error {
 	for b := range barEnds {
 		barEnds[b] = a.barSamples[b+1]
 	}
-	beatEnds := make([]int, bars*4)
-	for k := range beatEnds {
-		beatEnds[k] = min(in.mix.Len(), max(0, int(in.clock.SampleAtTick(in.fromTick+int64(k+1)*ticksPerBeat)-in.base)))
+	// Beat ends follow each bar's meter: a beat is one denominator note.
+	firstBar, _ := in.meter.BarAt(in.fromTick)
+	var beatEnds []int
+	for b := range int64(bars) {
+		start, beat := in.meter.BarStart(firstBar+b), in.meter.BeatTicks(firstBar+b)
+		for k := range in.meter.BeatsInBar(firstBar + b) {
+			beatEnds = append(beatEnds, min(in.mix.Len(), max(0, int(in.clock.SampleAtTick(start+(k+1)*beat)-in.base))))
+		}
 	}
 	ml, err := measureMixLoudness(in.mix, rate, barEnds, beatEnds)
 	if err != nil {
@@ -142,7 +148,7 @@ func (a *Analysis) measureMix(in mixInput) error {
 		tr.NoteBars, tr.SameAsPreviousBar, tr.SameAsFourBarsBefore, tr.LongestSameRun = rp.noteBars, rp.previous, rp.fourBefore, rp.longestRun
 	}
 	r.Activity = &ActivityReport{SoundingThresholdDB: soundingBelowDB, TailGraceS: tailGraceS, SilenceBelowDBFS: silenceBelowDBFS,
-		SilenceMinS: silenceMinS, Silences: findSilences(in.mix, rate, in.clock, in.base)}
+		SilenceMinS: silenceMinS, Silences: findSilences(in.mix, rate, in.clock, in.meter, in.base)}
 
 	// Band ownership, from the per-sixteenth transforms of each stem.
 	if !in.noBands {
@@ -160,7 +166,7 @@ func (a *Analysis) measureMix(in mixInput) error {
 		return err
 	}
 	for i, c := range cands {
-		r.Peaks = append(r.Peaks, PeakReport{Rank: i + 1, At: positionAt(in.clock, in.base, c.sample, rate),
+		r.Peaks = append(r.Peaks, PeakReport{Rank: i + 1, At: positionAt(in.clock, in.meter, in.base, c.sample, rate),
 			TruePeakDBTP: dbFloor(db(c.truePeak)), SamplePeakDBFS: dbFloor(db(c.sample1)),
 			Tracks: peakTracks(c.sample, rate, in.ids, in.stems, use)})
 	}
@@ -288,6 +294,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 		})
 	}
 	r.Bands = report
+	firstBar, _ := in.meter.BarAt(in.fromTick)
 	for si, sp := range in.sections {
 		sec := &r.Sections[si]
 		sec.Bands = make([]SectionBand, numBands)
@@ -295,7 +302,7 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 		for k := 0; k < numBands; k++ {
 			sb := SectionBand{BandOwner: owner(k, secEnergy[si][k], in.ids, use, secFrames[si], chromaFFT, loudest[k], span, top)}
 			for b := range r.Bars {
-				start := in.fromTick + int64(b)*seq.TicksPerBar
+				start := in.meter.BarStart(firstBar + int64(b))
 				if start >= sp.lo && start < sp.hi && r.Bars[b].Bands[k].Collision {
 					sb.CollisionBars++
 				}

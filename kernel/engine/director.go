@@ -2,7 +2,6 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/cmd"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 type directorTrack struct {
@@ -28,11 +27,10 @@ func (e *Engine) applyDirector(c cmd.Command) {
 			e.fault(cmd.FaultDirectorQuantize)
 			return
 		}
-		quantum := int64(e.phraseBars) * seq.TicksPerBar
-		at = ((tick + quantum - 1) / quantum) * quantum
+		at = e.MeterMap().QuantizeBars(tick, int64(e.phraseBars))
 	} else {
 		var err error
-		at, err = seq.QuantizeTick(tick, cmd.Quantize(q), 16)
+		at, err = e.MeterMap().QuantizeTick(tick, cmd.Quantize(q), 16)
 		if err != nil {
 			e.fault(cmd.FaultDirectorQuantize)
 			return

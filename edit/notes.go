@@ -190,8 +190,9 @@ func (in *EditNotes) Validate() error {
 			}
 		}
 	case "quantize":
-		if in.Grid < 30 || in.Grid > seq.TicksPerBar {
-			return fmt.Errorf("choose a quantize grid from 30 to %d ticks", seq.TicksPerBar)
+		// The coarsest grid is one bar; a score declares no meter yet, so 4/4.
+		if bar := (seq.MeterMap{}).BarTicks(0); in.Grid < 30 || in.Grid > bar {
+			return fmt.Errorf("choose a quantize grid from 30 to %d ticks", bar)
 		}
 		if in.Strength < 0 || in.Strength > 100 {
 			return fmt.Errorf("quantize strength must be 1–100%%")
@@ -239,9 +240,9 @@ func quantizeTick(tick, grid, strength int64) int64 {
 	return tick + (target-tick)*strength/100
 }
 
-func gridLabel(ticks int64) string {
+func gridLabel(meterMap seq.MeterMap, ticks int64) string {
 	switch ticks {
-	case seq.TicksPerBar:
+	case meterMap.BarTicks(0): // one bar of the base meter
 		return "1 bar"
 	case seq.PPQ:
 		return "1 beat"
@@ -265,14 +266,14 @@ func notePitchName(pitch int) string {
 	return notePitchNames[((pitch%12)+12)%12] + strconv.Itoa(pitch/12-1)
 }
 
-func notesLabel(id string, in *EditNotes, count int) string {
+func notesLabel(meterMap seq.MeterMap, id string, in *EditNotes, count int) string {
 	noun := "notes"
 	if count == 1 {
 		noun = "note"
 	}
 	switch in.Op {
 	case "quantize":
-		return fmt.Sprintf("Notes · %s · %d %s quantized to %s", id, count, noun, gridLabel(in.Grid))
+		return fmt.Sprintf("Notes · %s · %d %s quantized to %s", id, count, noun, gridLabel(meterMap, in.Grid))
 	case "move":
 		if in.Copy {
 			return fmt.Sprintf("Notes · %s · %d %s copied", id, count, noun)
@@ -506,7 +507,7 @@ func editPerformedNotes(ctx *Context, id string, pattern Pattern, in *EditNotes)
 	if err := replaceProjectPerformance(ctx, id, performance, true); err != nil {
 		return err
 	}
-	ctx.SetLabel(notesLabel(id, in, changed))
+	ctx.SetLabel(notesLabel(ctx.MeterMap(), id, in, changed))
 	return nil
 }
 
@@ -618,7 +619,7 @@ func editGridNotes(ctx *Context, intent Intent) error {
 		return err
 	}
 	ctx.Source, ctx.plan = updated, nil
-	ctx.SetLabel(notesLabel(id, in, count))
+	ctx.SetLabel(notesLabel(ctx.MeterMap(), id, in, count))
 	return nil
 }
 

@@ -27,10 +27,19 @@ type loggedNote struct {
 
 // noteLog collects the render's note events (render.Options.NoteTap).
 type noteLog struct {
-	mu    sync.Mutex
-	notes []loggedNote
-	open  map[[2]int64]int // (track, note id) -> index of a note not yet released
-	cur   map[int]int      // track -> index of its latest start
+	mu       sync.Mutex
+	notes    []loggedNote
+	open     map[[2]int64]int // (track, note id) -> index of a note not yet released
+	cur      map[int]int      // track -> index of its latest start
+	meterMap seq.MeterMap     // the song's bar lines
+}
+
+// barsFrom counts the bars from fromTick, a bar line, to the bar holding tick.
+// Callers skip or override ticks before fromTick.
+func (l *noteLog) barsFrom(fromTick, tick int64) int {
+	from, _ := l.meterMap.BarAt(fromTick)
+	bar, _ := l.meterMap.BarAt(tick)
+	return int(bar - from)
 }
 
 func (l *noteLog) tap(track int, ev seq.Event) {
@@ -79,7 +88,7 @@ func pitchedKind(k engine.VoiceKind) bool {
 func (l *noteLog) writtenSets(pitched []bool, fromTick int64, bars int) [][12]bool {
 	sets := make([][12]bool, bars)
 	for _, n := range l.notes {
-		bar := int((n.tick - fromTick) / seq.TicksPerBar)
+		bar := l.barsFrom(fromTick, n.tick)
 		if n.tick < fromTick || bar >= bars || n.track >= len(pitched) || !pitched[n.track] {
 			continue
 		}
@@ -145,7 +154,7 @@ func (l *noteLog) hasEvents(tracks int) []bool {
 // bars where each track's stem has sound; it is merged in so a track is
 // active wherever it either played or sounded.
 func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars int, sustain []bool, sounding [][]bool) []barActivity {
-	rangeEnd := fromTick + int64(bars)*seq.TicksPerBar
+	rangeEnd := fromTick + l.meterMap.BarsTicks(fromTick, int64(bars))
 	out := make([]barActivity, tracks)
 	for i := range out {
 		out[i] = barActivity{active: make([]bool, bars), played: make([]bool, bars), pattern: make([]*seq.Pattern, bars)}
@@ -157,7 +166,7 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		a := &out[n.track]
 		a.hasEvents = true
 		pat := patternOf(cfg, n.track, int(n.slot))
-		first := int((n.tick - fromTick) / seq.TicksPerBar)
+		first := l.barsFrom(fromTick, n.tick)
 		if n.tick < fromTick {
 			first = -1
 		}
@@ -168,9 +177,9 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		if n.tick < fromTick && end <= fromTick {
 			continue
 		}
-		lastBar := int((end - fromTick) / seq.TicksPerBar)
+		lastBar := l.barsFrom(fromTick, end)
 		// A release exactly on a bar line does not reach into that bar.
-		if end > n.tick && (end-fromTick)%seq.TicksPerBar == 0 {
+		if end > n.tick && l.meterMap.IsBarLine(end) {
 			lastBar--
 		}
 		if first >= 0 && first < bars {

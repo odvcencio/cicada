@@ -38,7 +38,7 @@ func mappedVocalTake(t *testing.T, s *studio, start, end int64, silent bool, sig
 	if err != nil {
 		t.Fatal(err)
 	}
-	timeline, err := recordingTimeline(p, &studioRecordingSettings{Start: listeningPosition(start), End: listeningPosition(end)})
+	timeline, err := recordingTimeline(p, &studioRecordingSettings{Start: listeningPosition(p.MeterMap(), start), End: listeningPosition(p.MeterMap(), end)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestVocalTempoPhraseReadsOriginalPCMAndRejectsChangedMap(t *testing.T) {
 	}
 	zero := float64(0)
 	comp := vocalComp{Track: "vox", Tempo: take.Timeline.TempoMilli, TempoChanges: take.Timeline.TempoChanges, Segments: []vocalSegment{{Take: take.ID, Start: 2 * 3840, End: 4 * 3840, FadeMS: &zero}}}
-	asset, err := s.printVocalComp(comp, 48000)
+	asset, err := s.printVocalComp(comp, 48000, seq.MeterMap{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestVocalTempoWaveformTransientStaysUnderItsMusicalBar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock, err := project.NewTempoMap(48000, int64(p.TempoMilli), project.SongTempoChanges(p))
+	clock, err := project.NewTempoMap(p.MeterMap(), 48000, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		t.Fatal(err)
 	}

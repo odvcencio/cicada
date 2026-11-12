@@ -35,7 +35,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		}
 		rows = append(rows, gosx.El("tr",
 			gosx.El("th", gosx.Attrs(gosx.Attr("scope", "row")), gosx.El("a", attrs, gosx.Text(fmt.Sprintf("%d · %s", index+1, performancePitch(int(note.Note)+int(p.Transpose)))))),
-			gosx.El("td", gosx.Text(performancePosition(note.Tick))),
+			gosx.El("td", gosx.Text(performancePosition(v.Project.MeterMap(), note.Tick))),
 			gosx.El("td", gosx.Text(performanceDuration(note.EndTick-note.Tick))),
 			gosx.El("td", gosx.Text(strconv.Itoa(int(note.Velocity))))))
 	}
@@ -78,7 +78,7 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 		gosx.El("h3", gosx.Text(p.ID+" · Played timing")),
 		s.patternPreview(ctx, v, csrf, p),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%d notes · %s loop", len(notes), performanceDuration(performance.LengthTicks)))),
-		notePerformanceTrace(notes, p.ID), transpose,
+		notePerformanceTrace(v.Project.MeterMap(), notes, p.ID), transpose,
 		s.noteQuantize(ctx, v, csrf, p, returnTo),
 		s.performancePitch(ctx, v, csrf, p, selected),
 		s.performanceTime(ctx, v, csrf, p, selected),

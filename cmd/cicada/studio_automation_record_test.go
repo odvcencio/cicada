@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -106,6 +107,38 @@ func TestRecordedAutomationUsesNativeClockLivePreviewAndOneUndo(t *testing.T) {
 	restored, _ := os.ReadFile(s.path)
 	if !bytes.Equal(source, restored) {
 		t.Fatal("one Undo did not restore exact original source")
+	}
+}
+
+// TestPhase2RecordedAutomationUsesThePlayersMeterMap pins that a recorded
+// point takes the song tick the transport snapshot decoded on the playing
+// score's meter map, the map that encoded its bar and step, and never decodes
+// that bar and step again on the file's map: the two differ while an edit that
+// changes the meter is pending. A 3/4 bar 2 starts at tick 2,880, a 4/4 one at
+// 3,840. No song can declare a meter in phase 1, so the player's map is 4/4
+// here; time-signatures phase 2 should repeat the second half with a 3/4 song.
+func TestPhase2RecordedAutomationUsesThePlayersMeterMap(t *testing.T) {
+	waltzBar2 := transportSnapshot{Bar: 2, Step: 1, Tick: 2880}
+	if got := automationTick(waltzBar2, 1<<20); got != 2880 {
+		t.Fatalf("automation tick = %d, want the snapshot's 2880", got)
+	}
+	if got := automationTick(waltzBar2, 1000); got != 1000 {
+		t.Fatalf("automation tick = %d, want the song end 1000", got)
+	}
+	s, source, player := automationRecordStudio(t)
+	id := beginAutomation(t, s, "bass.level", false)
+	if _, err := io.CopyN(io.Discard, player, int64(liveSampleRate*8)); err != nil {
+		t.Fatal(err)
+	}
+	value, _ := json.Marshal(map[string]any{"number": -6})
+	if r := studioCall(t, s.routes(), "/api/automation/recording", studioEdit{Action: "value", Revision: studioRevision(source), Name: id, Value: value}); r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	position, meterMap := player.Position(), player.MeterMap()
+	want := min(s.automationRecording.End, meterMap.BarStart(position.Bar-1)+(position.Step-1)*seq.TicksPerStep)
+	points := s.automationRecording.Points
+	if got := points[len(points)-1].Tick; got != want || got <= 0 {
+		t.Fatalf("recorded tick = %d, want %d from bar %d step %d on the player's map", got, want, position.Bar, position.Step)
 	}
 }
 

@@ -3,7 +3,8 @@ package seq
 import "m31labs.dev/cicada/kernel/cmd"
 
 // Transport keeps the musical tick fixed while stopped, even as audio blocks
-// continue to pass. Tempo changes are applied on a bar boundary.
+// continue to pass. Tempo changes are applied on a bar boundary of its meter
+// map, which is 4/4 until SetMeterMap gives it another.
 type Transport struct {
 	clock        Clock
 	sample       int64
@@ -11,6 +12,7 @@ type Transport struct {
 	playing      bool
 	pendingTempo int64
 	applyTick    int64
+	meters       MeterMap
 }
 
 func NewTransport(sampleRate int, bpmMilli int64) (Transport, error) {
@@ -29,6 +31,12 @@ func (t *Transport) Clock() Clock    { return t.clock }
 func (t *Transport) PendingTempo() (int64, int64) {
 	return t.pendingTempo, t.applyTick
 }
+
+// MeterMap is the map that places the transport's bar lines.
+func (t *Transport) MeterMap() MeterMap { return t.meters }
+
+// SetMeterMap replaces the meter map. Call it before playback.
+func (t *Transport) SetMeterMap(m MeterMap) { t.meters = m }
 
 func (t *Transport) Play() {
 	if t.playing {
@@ -49,7 +57,7 @@ func (t *Transport) SeekTick(tick int64) error {
 	t.clock.AnchorSample = t.sample
 	t.clock.AnchorTick = tick
 	if t.pendingTempo != 0 {
-		t.applyTick = nextMultiple(tick, TicksPerBar)
+		t.applyTick = t.meters.QuantizeBars(tick, 1)
 	}
 	return nil
 }
@@ -72,7 +80,7 @@ func (t *Transport) QueueTempo(bpmMilli int64) error {
 		return validationError("tempo must be 20 to 300 BPM")
 	}
 	t.pendingTempo = bpmMilli
-	t.applyTick = nextMultiple(t.tick, TicksPerBar)
+	t.applyTick = t.meters.QuantizeBars(t.tick, 1)
 	return nil
 }
 
@@ -106,9 +114,9 @@ func (t *Transport) Advance(frames int) (startTick, endTick int64) {
 	return startTick, t.tick
 }
 
-// QuantizeTick returns the first requested boundary at or after tick.
-// Pattern-end quantization uses the active pattern length.
-func QuantizeTick(tick int64, quantize cmd.Quantize, patternLength uint8) (int64, error) {
+// QuantizeTick returns the first requested boundary at or after tick, on the
+// map's beat and bar lines. Pattern-end quantization uses the active pattern length.
+func (m MeterMap) QuantizeTick(tick int64, quantize cmd.Quantize, patternLength uint8) (int64, error) {
 	if tick < 0 {
 		return 0, validationError("quantize tick cannot be negative")
 	}
@@ -116,9 +124,8 @@ func QuantizeTick(tick int64, quantize cmd.Quantize, patternLength uint8) (int64
 	case 0:
 		return tick, nil
 	case 1:
-		return nextMultiple(tick, PPQ), nil
+		return m.QuantizeBeat(tick), nil
 	case 2:
-		return nextMultiple(tick, TicksPerBar), nil
 	case 3:
 		if patternLength < 1 || patternLength > 64 {
 			return 0, validationError("pattern length must be 1 to 64")
@@ -128,8 +135,13 @@ func QuantizeTick(tick int64, quantize cmd.Quantize, patternLength uint8) (int64
 		if quantize < 5 || quantize > 20 {
 			return 0, validationError("quantize value is out of range")
 		}
-		return nextMultiple(tick, int64(quantize-4)*TicksPerBar), nil
 	}
+	// One bar (2), or quantize-4 bars (5 to 20).
+	bars := int64(1)
+	if quantize > 4 {
+		bars = int64(quantize - 4)
+	}
+	return m.QuantizeBars(tick, bars), nil
 }
 
 func nextMultiple(value, quantum int64) int64 {

@@ -1609,7 +1609,7 @@ func emitEvents(score *notation.Score, trackName, patternName string) error {
 	if err != nil {
 		return err
 	}
-	end := clock.SampleAtTick(seq.TicksPerBar)
+	end := clock.SampleAtTick(score.MeterMap().BarTicks(0)) // one bar of the base meter
 	var records []eventRecord
 	var buf [128]seq.Event
 	for _, cp := range compiled {

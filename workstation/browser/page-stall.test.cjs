@@ -150,8 +150,26 @@ test('a freeze inside a Go entry is reported and the suite exits within its tear
   assert.match(result.output, /last setInterval beat \d+ ms ago/);
   assert.match(result.output, /renderer CPU over 1 s: pid \d+ \d+%/, result.output);
   assert.match(result.output, /OPEN 1:inline timer entry \d+ ms ago and never returned/, result.output);
+  // The stand-in re-enters "Go" every 50 ms. One termination used to let that
+  // timer run before the queued read, which then never answered (CI, three times).
+  assert.doesNotMatch(result.output, /go: the page did not answer/, result.output);
   assert.match(result.output, /skipped the teardown step because a page stopped responding; browser closed/, result.output);
   assert.doesNotMatch(result.output, /Exiting with code/, 'the suite must exit without the forced exit');
+  assertBudget(result.output);
+});
+
+// The order CI hit by chance, forced: the frozen entry posts a message that
+// calls it again before it spins, so that message is queued ahead of the
+// helper's read and runs first once the script is terminated. With one
+// termination the read never answered (8 of 8 runs). The read is queued ahead
+// of the message the second freeze posts, so the next termination lets it run.
+test('a page that re-enters Go after its script is terminated still reports the open entry', { timeout: 60000 }, async () => {
+  const result = await run('reenter', 30000);
+  assert.equal(result.killed, false, `the suite was still running after 30000 ms:\n${result.output}`);
+  assert.match(result.output, failed);
+  assert.doesNotMatch(result.output, /go: the page did not answer/, result.output);
+  assert.match(result.output, /OPEN 1:inline timer entry \d+ ms ago and never returned/, result.output);
+  assert.match(result.output, /[1-9]\d* more entries opened after the first Runtime\.terminateExecution: the page re-entered Go/, `the page did not re-enter Go, so this test proves nothing:\n${result.output}`);
   assertBudget(result.output);
 });
 

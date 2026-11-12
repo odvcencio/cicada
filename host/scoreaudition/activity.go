@@ -73,13 +73,13 @@ func sounding(full, test []float64) (relative []float64, on []bool) {
 }
 
 // findSilences scans the mix in 10 ms blocks.
-func findSilences(mix stereo, rate int, clock *project.TempoMap, base int64) []Silence {
+func findSilences(mix stereo, rate int, clock *project.TempoMap, meter seq.MeterMap, base int64) []Silence {
 	block := max(1, rate/100)
 	out := []Silence{}
 	start := -1
 	flush := func(end int) {
 		if start >= 0 && float64(end-start) >= silenceMinS*float64(rate) {
-			out = append(out, Silence{Start: positionAt(clock, base, start, rate), End: positionAt(clock, base, end, rate), LengthS: round(float64(end-start)/float64(rate), 3)})
+			out = append(out, Silence{Start: positionAt(clock, meter, base, start, rate), End: positionAt(clock, meter, base, end, rate), LengthS: round(float64(end-start)/float64(rate), 3)})
 		}
 		start = -1
 	}
@@ -125,11 +125,12 @@ func (l *noteLog) barRepeats(tracks int, fromTick int64, bars int) []repeats {
 		if n.track >= tracks || n.tick < fromTick {
 			continue
 		}
-		b := int((n.tick - fromTick) / seq.TicksPerBar)
+		b := l.barsFrom(fromTick, n.tick)
 		if b >= bars {
 			continue
 		}
-		s := noteSig{offset: (n.tick - fromTick) % seq.TicksPerBar, length: -1, velocity: n.velocity, count: n.count, notes: n.notes}
+		_, offset := l.meterMap.BarAt(n.tick)
+		s := noteSig{offset: offset, length: -1, velocity: n.velocity, count: n.count, notes: n.notes}
 		if n.off && !n.replaced {
 			s.length = n.end - n.tick
 		}

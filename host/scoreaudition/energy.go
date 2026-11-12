@@ -27,15 +27,16 @@ type LoudnessReport struct {
 	LoudestSection  string   `json:"loudest_section,omitempty"`
 	QuietestSection string   `json:"quietest_section,omitempty"`
 	SectionSpreadLU *float64 `json:"section_spread_lu"`
-	// ShortTermPerBeatLUFS has one value per beat (a quarter note): the 3 s
-	// window that ends where the beat ends. Null while under 3 s of the range
-	// precede it.
+	// ShortTermPerBeatLUFS has one value per beat of the song's meter (a
+	// quarter note in 4/4): the 3 s window that ends where the beat ends. Null
+	// while under 3 s of the range precede it.
 	ShortTermPerBeatLUFS []*float64 `json:"short_term_per_beat_lufs"`
 }
 
 // Position is a moment in the analyzed range. Bar, Beat and Sixteenth are
-// one-based song positions (Text is "bar.beat.sixteenth", as a placement's
-// @ position); Tick is absolute (960 per quarter note); TimeS is seconds from
+// one-based song positions on the song's meter map, the sixteenth counted
+// within its beat (Text is "bar.beat.sixteenth", as a placement's @
+// position); Tick is absolute (960 per quarter note); TimeS is seconds from
 // the start of the analyzed range.
 type Position struct {
 	Text      string  `json:"text"`
@@ -65,8 +66,7 @@ type PeakContribution struct {
 }
 
 const (
-	ticksPerBeat = seq.TicksPerStep * 4
-	shortTermS   = 3
+	shortTermS = 3
 	// DefaultPeaks is how many peaks the report lists when Options.Peaks is 0.
 	DefaultPeaks = 10
 	// peakSpacingS keeps two listed peaks apart, so one hit is one peak.
@@ -88,11 +88,12 @@ func loudnessValue(v float64) *float64 {
 
 func dbFloor(v float64) float64 { return round(math.Max(-120, v), 1) }
 
-// positionAt converts a sample offset in the analyzed range to a position.
-func positionAt(clock *project.TempoMap, base int64, sample, rate int) Position {
+// positionAt converts a sample offset in the analyzed range to a position on
+// the song's meter map.
+func positionAt(clock *project.TempoMap, meter seq.MeterMap, base int64, sample, rate int) Position {
 	tick := clock.TickAtSample(base + int64(sample))
-	p := Position{Bar: int(tick/seq.TicksPerBar) + 1, Beat: int(tick%seq.TicksPerBar/ticksPerBeat) + 1,
-		Sixteenth: int(tick%ticksPerBeat/seq.TicksPerStep) + 1, Tick: tick, TimeS: round(float64(sample)/float64(rate), 3)}
+	bar, beat, step, _ := meter.Position(max(tick, 0))
+	p := Position{Bar: int(bar), Beat: int(beat), Sixteenth: int(step), Tick: tick, TimeS: round(float64(sample)/float64(rate), 3)}
 	p.Text = fmt.Sprintf("%d.%d.%d", p.Bar, p.Beat, p.Sixteenth)
 	return p
 }

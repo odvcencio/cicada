@@ -425,7 +425,7 @@ floored at -120; null means the method cannot give a value.
 | `sections[].vs_loudest_lu` | number or null | `integrated_lufs` minus the loudest section's. |
 | `sections[].bands[]` | array | As `bars[].bands[]` over the section's frames, plus `collision_bars`: bars whose first tick is in the section and whose band collides. |
 | `selected_tracks` | array | Tracks chosen with `--tracks`, in score order. Absent without it. |
-| `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu`, `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`, `loudest_section`, `quietest_section`, `section_spread_lu` (loudest minus quietest), and `short_term_per_beat_lufs`: one value per quarter note, the 3 s window that ends where the beat ends. Absent at a sample rate the meter does not support. |
+| `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu`, `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`, `loudest_section`, `quietest_section`, `section_spread_lu` (loudest minus quietest), and `short_term_per_beat_lufs`: one value per beat of the song's meter (a quarter note in 4/4), the 3 s window that ends where the beat ends. Absent at a sample rate the meter does not support. |
 | `bands` | object | Absent with `--no-bands`. `names`, `edges_hz` (eight edges for seven bands), `collision_share_pct` (25), `quiet_below_band_db` (30), `quiet_below_span_db` (30), `quiet_below_range_db` (40), and `collisions[]`: per band, `band`, `bars` (one-based bars with a collision) and `pairs` (`tracks`, the two colliding tracks in score order, and `bars`, how often), most frequent first. |
 | `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
 | `peaks[]` | array | Highest true peaks first: `rank`, `at` (a position), `true_peak_dbtp`, `sample_peak_dbfs`, and `tracks[]` (`id`, `share_pct`: percent of the summed track-stem energy in the 5 ms around the peak; `peak_dbfs`: the track stem's own sample peak in those 5 ms, before the master chain). Empty with `--peaks 0`. |
@@ -433,7 +433,7 @@ floored at -120; null means the method cannot give a value.
 
 A position (`at`, `start`, `end`) has `text` (`bar.beat.sixteenth`, as an
 `@` placement position), `bar`, `beat` and `sixteenth` (one-based song
-positions), `tick` (absolute, 960 per quarter note) and `time_s` (seconds from
+positions on the song's meter; the sixteenth is counted within its beat), `tick` (absolute, 960 per quarter note) and `time_s` (seconds from
 the start of the analyzed range).
 
 ## Limits

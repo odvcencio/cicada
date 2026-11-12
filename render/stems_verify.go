@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/kernel/engine"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -100,7 +99,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		for _, v := range events {
 			end = max(end, v.Tick, v.EndTick)
 		}
-		songBars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
+		songBars = int(p.MeterMap().BarsUntil(end))
 		songChanges, scoreMilli = project.SongTempoChanges(p), p.TempoMilli
 	}
 	names := make([]string, 0, len(manifest.Tracks)+5)

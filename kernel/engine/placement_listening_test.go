@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel/cmd"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 // Two overlapping clips share a track and asset. The reference plays the full
@@ -18,12 +17,12 @@ func TestPlacementListeningRetainsClockAndIsolatesOverlappingClips(t *testing.T)
 		cfg.BPMMilli = 137333
 		cfg.Schedule = []ScheduleEvent{
 			{Kind: ScheduleTempo, ID: 137333},
-			{Kind: ScheduleClip, Tick: 0, EndTick: 4 * seq.TicksPerBar, ID: 1},
+			{Kind: ScheduleClip, Tick: 0, EndTick: 4 * ticksPerBar, ID: 1},
 			{Kind: ScheduleClip, Tick: 240, EndTick: 960, ID: 2},
 			{Kind: ScheduleClipEnd, Tick: 960, EndTick: 960, ID: 2},
-			{Kind: ScheduleTempo, Tick: seq.TicksPerBar, EndTick: seq.TicksPerBar, ID: 96000},
-			{Kind: ScheduleTempo, Tick: 3 * seq.TicksPerBar, EndTick: 3 * seq.TicksPerBar, ID: 180000},
-			{Kind: ScheduleClipEnd, Tick: 4 * seq.TicksPerBar, EndTick: 4 * seq.TicksPerBar, ID: 1},
+			{Kind: ScheduleTempo, Tick: ticksPerBar, EndTick: ticksPerBar, ID: 96000},
+			{Kind: ScheduleTempo, Tick: 3 * ticksPerBar, EndTick: 3 * ticksPerBar, ID: 180000},
+			{Kind: ScheduleClipEnd, Tick: 4 * ticksPerBar, EndTick: 4 * ticksPerBar, ID: 1},
 		}
 		a, err := New(cfg)
 		if err != nil {
@@ -41,7 +40,7 @@ func TestPlacementListeningRetainsClockAndIsolatesOverlappingClips(t *testing.T)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if a.FramesBetweenTicks(0, 4*seq.TicksPerBar) != b.FramesBetweenTicks(0, 4*seq.TicksPerBar) || a.TempoAtTick(3*seq.TicksPerBar) != 180000 {
+		if a.FramesBetweenTicks(0, 4*ticksPerBar) != b.FramesBetweenTicks(0, 4*ticksPerBar) || a.TempoAtTick(3*ticksPerBar) != 180000 {
 			t.Fatal("solo changed the full song clock")
 		}
 		var audible bool
@@ -79,7 +78,7 @@ func TestPlacementListeningRetainsClockAndIsolatesOverlappingClips(t *testing.T)
 func TestPlacementListeningDoesNotHandOffToAnUnselectedPattern(t *testing.T) {
 	cfg := handoffLoopConfig(t)
 	cfg.LoopSong = false
-	bar := int64(seq.TicksPerBar)
+	bar := int64(ticksPerBar)
 	cfg.Schedule = []ScheduleEvent{{Kind: SchedulePattern, EndTick: bar, ID: 1}, {Kind: SchedulePatternEnd, Tick: bar, EndTick: bar, ID: 1}, {Kind: SchedulePattern, Tick: bar, EndTick: 2 * bar, ID: 2}, {Kind: SchedulePatternEnd, Tick: 2 * bar, EndTick: 2 * bar, ID: 2}}
 	e, err := New(cfg)
 	if err != nil {
