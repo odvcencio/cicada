@@ -35,7 +35,7 @@ shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
-	3) echo "owner_session page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
+	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
@@ -47,6 +47,7 @@ segment_runs() {
 	case "$1" in
 	shutdown_proof) ;;
 	owner_session) echo owner-session ;;
+	chrome_gpu_raster) echo chrome-gpu-raster ;;
 	page_stall) echo page-stall ;;
 	continuity) echo continuity ;;
 	modulation_source) echo modulation-source ;;
@@ -331,6 +332,11 @@ continuity_fixture() {
 seg_owner_session() { # 1 s
 	# Runs before NODE_OPTIONS loads the owner session helper for the others.
 	run_suite owner-session env NODE_OPTIONS="$base_node_options" node --test workstation/browser/owner-session.test.cjs
+}
+
+seg_chrome_gpu_raster() { # about 2 s, no Studio
+	# producer-workflow's Chrome rasterizes on the GPU (chrome-gpu-raster.cjs).
+	run_suite chrome-gpu-raster env NODE_OPTIONS="$base_node_options" node --test workstation/browser/chrome-gpu-raster.test.cjs
 }
 
 seg_page_stall() { # about 41 s (35 s, plus about 6 s for the reenter case), no Studio

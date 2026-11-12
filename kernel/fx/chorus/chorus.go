@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/modulate"
 )
@@ -50,6 +51,7 @@ type Processor struct {
 	at                             int
 	slowPhase, fastPhase, fastStep [3]uint32
 	fault                          bool
+	frames                         uint32 // Process calls since New or Reset, for flushSubnormals
 }
 
 // New preallocates the complete delay history and initializes settled controls.
@@ -99,6 +101,7 @@ func (p *Processor) Reset() {
 	clear(p.ring)
 	p.at, p.filteredL, p.filteredR, p.fault = 0, 0, 0, false
 	p.current = p.params
+	p.frames = 0
 	for i := range p.slowPhase {
 		phase := uint32(uint64(i) * (1 << 32) / 3)
 		p.slowPhase[i], p.fastPhase[i] = phase, phase
@@ -142,6 +145,10 @@ func (p *Processor) Process(left, right float32) (float32, float32) {
 	}
 	p.filteredL += float64((float64(left) - p.filteredL) * p.lowpass)
 	p.filteredR += float64((float64(right) - p.filteredR) * p.lowpass)
+	p.frames++
+	if p.frames%subnormal.SweepFrames == 0 {
+		p.flushSubnormals()
+	}
 	p.ring[p.at] = frame{float32(p.filteredL), float32(p.filteredR)}
 	var wetL, wetR float64
 	for i := 0; i < p.params.Voices; i++ {
@@ -166,6 +173,18 @@ func (p *Processor) Process(left, right float32) (float32, float32) {
 	mid := (wetL + wetR) * .5
 	spread, mix := p.current.Spread, p.current.Mix
 	return float32(float64((1-mix)*float64(left)) + float64(mix*(float64((1-spread)*mid)+float64(spread*wetL)))), float32(float64((1-mix)*float64(right)) + float64(mix*(float64((1-spread)*mid)+float64(spread*wetR))))
+}
+
+// flushSubnormals replaces a subnormal value with a zero of the same sign
+// (kernel/dsp/subnormal) in the values that glide to exactly zero: the depth
+// and spread controls, and the input lowpass, which decays toward zero in
+// silence. Without it each stalls at a subnormal number and slows every frame
+// from then on. The lowpass is stored as float32, where a subnormal float64 is
+// zero, and the controls reach the output only through sums with normal
+// values; the mix already snaps to zero, and the rate never glides there.
+func (p *Processor) flushSubnormals() {
+	p.current.Depth, p.current.Spread = subnormal.Flush64(p.current.Depth), subnormal.Flush64(p.current.Spread)
+	p.filteredL, p.filteredR = subnormal.Flush64(p.filteredL), subnormal.Flush64(p.filteredR)
 }
 
 func finite32(v float32) bool { return v == v && v <= math.MaxFloat32 && v >= -math.MaxFloat32 }

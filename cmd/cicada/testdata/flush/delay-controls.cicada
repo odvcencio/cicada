@@ -1,0 +1,46 @@
+cicada 2
+title "Flush check: delay feedback, width and ping-pong to zero while notes play"
+tempo 240
+key a minor
+seed 1
+
+fx echo delay {
+  time = 1/8
+  feedback = 0.5
+  damp = 6kHz
+  pingpong = true
+  width = 1
+  mix = 1
+}
+
+track lead acid {
+  send echo = 0.6
+}
+
+pattern line {
+  1 . 3 . | 5 . 3 .
+}
+
+scene ping {
+  lead = line
+}
+
+scene plain {
+  lead = line
+  echo.pingpong = false
+}
+
+automate echo.feedback {
+  @1.1.1 0.5
+  @2.1.1 0
+}
+
+automate echo.width {
+  @1.1.1 1
+  @2.1.1 0
+}
+
+song {
+  ping*1
+  plain*9
+}
