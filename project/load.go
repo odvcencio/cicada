@@ -270,17 +270,25 @@ func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 // LoadScore is shared by commands and editors. Compilation remains a separate
 // stage so tools can inspect the positioned source model.
 func LoadScore(path string, overrides map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
-	return LoadScoreIn(OSFiles{}, path, overrides)
+	score, diagnostics, _, err := LoadScoreIn(OSFiles{}, path, overrides)
+	return score, diagnostics, err
 }
 
 // LoadScoreIn is LoadScore with every project file read from files.
-func LoadScoreIn(files ProjectFiles, path string, overrides map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
+//
+// assetsVerified says whether the diagnostics include the check of the score's
+// audio files against their declarations (VerifyAssets). It is false for files
+// held in memory, which hold no audio: the score's asset declarations are then
+// trusted, and a host verifies them when it commits. A caller that shows the
+// result says so, for example "audio verified at commit"; one that does not
+// care discards it with _, which a review can see.
+func LoadScoreIn(files ProjectFiles, path string, overrides map[string][]byte) (score *notation.Score, diagnostics []notation.Diagnostic, assetsVerified bool, err error) {
 	sources, err := ReadSourcesIn(files, path, overrides)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	score, diagnostics := sources.Parse()
-	return score, diagnostics, nil
+	score, diagnostics = sources.Parse()
+	return score, diagnostics, sources.VerifiesAssets(), nil
 }
 
 func (s *Sources) sourceEdition() int {

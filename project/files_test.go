@@ -81,8 +81,8 @@ func TestMemoryFilesLoadExamplesAsDiskDoes(t *testing.T) {
 			t.Errorf("%s: diagnostics differ\ndisk:   %v\nmemory: %v", name, diskDiagnostics, heldDiagnostics)
 		}
 		diskScore, diskDiagnostics, err := LoadScore(score, nil)
-		heldScore, heldDiagnostics, heldErr := LoadScoreIn(memory, score, nil)
-		if err != nil || heldErr != nil || !reflect.DeepEqual(diskDiagnostics, heldDiagnostics) || (diskScore == nil) != (heldScore == nil) {
+		heldScore, heldDiagnostics, verified, heldErr := LoadScoreIn(memory, score, nil)
+		if err != nil || heldErr != nil || verified || !reflect.DeepEqual(diskDiagnostics, heldDiagnostics) || (diskScore == nil) != (heldScore == nil) {
 			t.Errorf("%s: LoadScoreIn differs from LoadScore: %v, %v", name, err, heldErr)
 		}
 	}
@@ -130,13 +130,13 @@ func TestMemoryFilesKeepReadsInsideTheRoot(t *testing.T) {
 	if data, err := lib.ReadFile("a.cicada"); err != nil || string(data) != "a" {
 		t.Fatalf("inside: %q, %v", data, err)
 	}
-	if _, err := lib.ReadFile(filepath.Join("..", "b.cicada")); err == nil || os.IsNotExist(err) {
+	if _, err := lib.ReadFile(filepath.Join("..", "b.cicada")); err == nil || errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("escaping name: %v", err)
 	}
-	if _, err := lib.ReadFile("missing.cicada"); !os.IsNotExist(err) {
+	if _, err := lib.ReadFile("missing.cicada"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("missing name: %v", err)
 	}
-	if _, err := memory.OpenRoot(filepath.Join(root, "nowhere")); !os.IsNotExist(err) {
+	if _, err := memory.OpenRoot(filepath.Join(root, "nowhere")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("missing folder: %v", err)
 	}
 	if _, err := fs.Stat(lib.FS(), "a.cicada"); err != nil {
@@ -275,5 +275,22 @@ func TestMemoryFilesHashLibraryAudioAsDiskDoes(t *testing.T) {
 	partial, err := ReadSourcesIn(MemoryFiles{Files: files, UserLibraries: user}, entry, nil)
 	if err != nil || partial.Libraries["demo/kit"].SHA256 == diskLibrary.SHA256 {
 		t.Fatalf("library without its audio: %v", err)
+	}
+}
+
+// A file missing from memory reads as one missing from the service's disk, on
+// every target: js/wasm's own text for ENOENT starts with a capital letter.
+func TestMemoryFilesMissingFileText(t *testing.T) {
+	missing := filepath.Join(string(filepath.Separator), "song", "missing.cicada")
+	_, err := MemoryFiles{}.ReadFile(missing)
+	if err == nil || err.Error() != "open "+missing+": no such file or directory" || !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing file: %v", err)
+	}
+	root, err := MemoryFiles{Files: map[string][]byte{filepath.Join(string(filepath.Separator), "song", "a.cicada"): nil}}.OpenRoot(filepath.Dir(missing))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.ReadFile("missing.cicada"); err == nil || err.Error() != "openat missing.cicada: no such file or directory" || !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing file in a root: %v", err)
 	}
 }

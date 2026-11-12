@@ -199,7 +199,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 	}
 	for _, base := range []struct{ kind, dir string }{{"project", filepath.Join(s.Root, "lib")}, {"user", user}} {
 		root, err := s.reader().OpenRoot(base.dir)
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
@@ -207,13 +207,13 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		}
 		child, openErr := root.OpenRoot(filepath.FromSlash(name))
 		root.Close()
-		if os.IsNotExist(openErr) {
+		if errors.Is(openErr, fs.ErrNotExist) {
 			continue
 		}
 		if openErr != nil {
 			return nil, sourceError("", 1, 1, "CICADA-LIB-PATH", "library path must stay inside its search root", openErr)
 		}
-		if _, err := child.Stat("cicada.mod"); os.IsNotExist(err) {
+		if _, err := child.Stat("cicada.mod"); errors.Is(err, fs.ErrNotExist) {
 			child.Close()
 			continue
 		} else if err != nil {
@@ -344,7 +344,7 @@ func readLibraryMode(name, kind, root string, files fs.FS, overrides map[string]
 		}); err != nil {
 			return nil, sourceError("", 1, 1, "CICADA-LIB-PATH", err.Error(), err)
 		}
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	names := make([]string, 0, len(content))
@@ -490,7 +490,7 @@ func (s *Sources) readSum() (map[string]LibraryPin, error) {
 		return pins, err
 	}
 	data, err := s.reader().ReadFile(filename)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return map[string]LibraryPin{}, nil
 	}
 	if err != nil {

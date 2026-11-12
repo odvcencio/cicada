@@ -2,7 +2,9 @@
 package edition
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +22,8 @@ func ScoreEdition(scorePath string) (int, string, error) {
 }
 
 // ScoreEditionWith is ScoreEdition with the manifests read through readFile,
-// which reports a missing file with an error for which os.IsNotExist holds.
+// which reports a missing file with an error for which errors.Is(err,
+// fs.ErrNotExist) holds.
 func ScoreEditionWith(readFile func(path string) ([]byte, error), scorePath string) (int, string, error) {
 	dir, err := filepath.Abs(filepath.Dir(scorePath))
 	if err != nil {
@@ -36,7 +39,7 @@ func ScoreEditionWith(readFile func(path string) ([]byte, error), scorePath stri
 			}
 			return edition, path, nil
 		}
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return 0, path, err
 		}
 		parent := filepath.Dir(dir)

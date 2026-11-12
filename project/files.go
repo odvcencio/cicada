@@ -9,14 +9,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
 // ProjectFiles is where a project's files are read from: the operating
 // system's files (OSFiles), or files held in memory (MemoryFiles). Paths are
 // absolute and in the operating system's form. A missing file or folder is an
-// error for which os.IsNotExist holds.
+// error for which errors.Is(err, fs.ErrNotExist) holds.
 type ProjectFiles interface {
 	// ReadFile reads the file at path.
 	ReadFile(path string) ([]byte, error)
@@ -91,10 +90,17 @@ type MemoryFiles struct {
 // not checked against its audio files, and Sources.VerifiesAssets says so.
 func (MemoryFiles) VerifiesAssets() bool { return false }
 
-// errMissing is the operating system's error for a missing file, so a file
-// missing from memory reads as one missing from disk; errors.Is(errMissing,
+// errMissing reads as the service's error for a missing file ("no such file or
+// directory", as on Linux and macOS) on every target, so a file missing from
+// memory in a browser reads as one missing from the service's disk. js/wasm's
+// own ENOENT text starts with a capital letter. errors.Is(errMissing,
 // fs.ErrNotExist) holds.
-var errMissing error = syscall.ENOENT
+var errMissing error = missingFile{}
+
+type missingFile struct{}
+
+func (missingFile) Error() string        { return "no such file or directory" }
+func (missingFile) Is(target error) bool { return target == fs.ErrNotExist }
 
 func (m MemoryFiles) ReadFile(name string) ([]byte, error) {
 	if data, ok := m.Files[filepath.Clean(name)]; ok {
