@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"syscall"
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/internal/agentguide"
@@ -62,6 +64,15 @@ func mcpCommand(args []string, stdin io.Reader, stdout, stderr *os.File) int {
 		return 2
 	}
 	defer cleanup()
+	// A host may stop the server with a signal instead of closing its input;
+	// the stand-in folder goes either way.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signals
+		cleanup()
+		os.Exit(1)
+	}()
 	os.Stdout = stderr
 	server := &mcpwire.Server{Name: "cicada", Version: cicadaVersion(), Instructions: mcpInstructions, Tools: mcpTools(), Call: mcpCall, Resources: mcpResources(), Read: mcpRead, Log: stderr}
 	if err := server.Serve(stdin, stdout); err != nil {

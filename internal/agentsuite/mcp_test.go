@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -20,11 +21,14 @@ type mcpClient struct {
 	stdin  io.WriteCloser
 	lines  *bufio.Scanner
 	nextID int
+	tmp    string // the server's TMPDIR, which holds its stand-in user library
 }
 
 func startMCP(t *testing.T, bin, root string) *mcpClient {
 	t.Helper()
 	cmd := exec.Command(bin, "mcp", "--root", root)
+	tmp := t.TempDir()
+	cmd.Env = append(os.Environ(), "TMPDIR="+tmp)
 	cmd.Stderr = io.Discard
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -39,7 +43,7 @@ func startMCP(t *testing.T, bin, root string) *mcpClient {
 	}
 	lines := bufio.NewScanner(stdout)
 	lines.Buffer(make([]byte, 64<<10), 8<<20)
-	client := &mcpClient{t: t, cmd: cmd, stdin: stdin, lines: lines}
+	client := &mcpClient{t: t, cmd: cmd, stdin: stdin, lines: lines, tmp: tmp}
 	t.Cleanup(func() {
 		if cmd.ProcessState == nil {
 			_ = cmd.Process.Kill()
@@ -125,6 +129,16 @@ func (c *mcpClient) close() {
 	}
 	if c.lines.Scan() {
 		c.t.Fatalf("cicada mcp wrote after the last reply: %q", c.lines.Text())
+	}
+	c.requireNoStandIn()
+}
+
+// requireNoStandIn fails while the server's empty stand-in for the user
+// library is still in its TMPDIR.
+func (c *mcpClient) requireNoStandIn() {
+	c.t.Helper()
+	if entries, err := os.ReadDir(c.tmp); err != nil || len(entries) != 0 {
+		c.t.Fatalf("cicada mcp left %v in its TMPDIR (%v)", entries, err)
 	}
 }
 
@@ -262,5 +276,18 @@ func driveMCPServer(t *testing.T, bin string) {
 		t.Fatalf("legacy resources/read: %v", read)
 	}
 	legacy.close()
+
+	// Stopped by a signal instead of closing its input, the server still
+	// removes its stand-in folder.
+	stopped := startMCP(t, bin, root)
+	stopped.modern("server/discover", nil)
+	if entries, _ := os.ReadDir(stopped.tmp); len(entries) != 1 {
+		t.Fatalf("the running server's TMPDIR holds %v, not its one stand-in folder", entries)
+	}
+	if err := stopped.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	_ = stopped.cmd.Wait()
+	stopped.requireNoStandIn()
 	t.Logf("cicada mcp: started and answered server/discover in %s; one check call round trip %s", startup.Round(time.Millisecond), roundTrip.Round(time.Millisecond))
 }

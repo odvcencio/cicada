@@ -293,7 +293,11 @@ func TestMCPRootConfinement(t *testing.T) {
 		{filepath.Join(root, "nosuch"), "nosuch"},
 	} {
 		t.Chdir(root)
-		if _, err := mcpStart(tc.root, false); err == nil || !strings.Contains(err.Error(), tc.want) {
+		cleanup, err := mcpStart(tc.root, false)
+		if err == nil {
+			cleanup()
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("mcpStart(%s): %v, want %q", tc.root, err, tc.want)
 		}
 	}
