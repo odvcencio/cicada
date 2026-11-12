@@ -865,8 +865,15 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			planSceneTransitions(tracks, nextScene, meterMap.BarStart(int64(bar+1)), tempoMap.SampleAtTick, stopIsAction)
 			end := clock.SampleAtTick(meterMap.BarStart(int64(bar + 1)))
 			for position < end {
-				if err := advanceRenderChains(tracks, clock.TickAtSample(position)); err != nil {
+				advanced, err := advanceRenderChains(tracks, clock.TickAtSample(position))
+				if err != nil {
 					return report, err
+				}
+				if advanced {
+					// A chain that moved to its next pattern inside the bar
+					// changes which note may slide into the next scene: plan
+					// the transitions again against the pattern now playing.
+					planSceneTransitions(tracks, nextScene, meterMap.BarStart(int64(bar+1)), tempoMap.SampleAtTick, stopIsAction)
 				}
 				blockEnd := nextRenderChainSample(tracks, clock, end)
 				frames := opts.Block

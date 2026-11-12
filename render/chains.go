@@ -7,7 +7,8 @@ import (
 
 // advanceRenderChains splits offline blocks at exact section boundaries. A
 // scene's explicit pattern/off action disables its authored track chain.
-func advanceRenderChains(tracks []trackRuntime, tick int64) error {
+func advanceRenderChains(tracks []trackRuntime, tick int64) (bool, error) {
+	advanced := false
 	for i := range tracks {
 		track := &tracks[i]
 		if len(track.chain) == 0 || tick < track.chainDue {
@@ -17,8 +18,9 @@ func advanceRenderChains(tracks []trackRuntime, tick int64) error {
 		scene := notation.Scene{Bindings: []notation.Binding{{Track: track.name, Pattern: name}}}
 		chain := track.chain
 		if err := applyScene(tracks[i:i+1], &scene, false); err != nil {
-			return err
+			return advanced, err
 		}
+		advanced = true
 		track.chain = chain
 		track.startTick = track.chainDue
 		track.chainIndex = (track.chainIndex + 1) % len(chain)
@@ -37,7 +39,7 @@ func advanceRenderChains(tracks []trackRuntime, tick int64) error {
 			track.chainDue += pattern.DurationTicks()
 		}
 	}
-	return nil
+	return advanced, nil
 }
 
 func nextRenderChainSample(tracks []trackRuntime, clock seq.Clock, end int64) int64 {

@@ -110,3 +110,45 @@ func TestSlideAtFullGateAcrossASceneSwitch(t *testing.T) {
 		t.Errorf("slide at full gate: direct %s, engine %s", sceneSlideHash(direct), sceneSlideHash(engine))
 	}
 }
+
+// chainSlideScore is a bass track whose chain plays ca, then cb (whose one
+// note slides), so cb starts at bar 2, before a scene switches the track to ay
+// at bar 3. ay's grid is a whole note, so bar 3 is its step 2.
+func chainSlideScore(t *testing.T, last, ay string) *notation.Score {
+	t.Helper()
+	source := "cicada 2\ntempo 120\ntrack bass acid { chain = ca cb }\npattern ca { step = 1/1 3 }\npattern cb { step = 1/1 " + last + " }\npattern ay { " + ay + " }\nscene x {}\nscene y { bass = ay }\nsong { x*2 y*2 }\n"
+	score, ds := notation.Parse([]byte(source))
+	for _, d := range ds {
+		if d.Severity == "error" {
+			t.Fatal(d.Error())
+		}
+	}
+	return score
+}
+
+// A slide from a chained pattern into the next scene glides on both paths. The
+// direct mixer planned the transition at the start of the bar, before the chain
+// moved on to cb inside it, so it never saw the sliding note; the engine counted
+// the new pattern's step from cb's start (bar 2) instead of from the song's
+// start, so with a swung target it aimed the glide one swing late and dropped
+// it.
+func TestSlideFromAChainAcrossASceneSwitch(t *testing.T) {
+	for _, c := range []struct{ name, ay string }{
+		{"straight target", "step = 1/1 5"},
+		{"swung target", "step = 1/1 swing = 60% 5"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			slide, plain := chainSlideScore(t, "1~", c.ay), chainSlideScore(t, "1", c.ay)
+			direct, engine := renderSceneSlide(t, slide, false), renderSceneSlide(t, slide, true)
+			if bytes.Equal(direct, renderSceneSlide(t, plain, false)) {
+				t.Errorf("direct mixer: the slide rendered like no slide (%s)", sceneSlideHash(direct))
+			}
+			if bytes.Equal(engine, renderSceneSlide(t, plain, true)) {
+				t.Errorf("engine: the slide rendered like no slide (%s)", sceneSlideHash(engine))
+			}
+			if !bytes.Equal(direct, engine) {
+				t.Errorf("direct %s, engine %s", sceneSlideHash(direct), sceneSlideHash(engine))
+			}
+		})
+	}
+}
