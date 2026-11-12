@@ -43,31 +43,42 @@ grep -q "job 'Gamma' has no budget" "$tmp/err" || fail "no missing-budget messag
 printf '9\tpr\tAlpha (shard */2)\n17\tpr\tBeta\n5\tpr\tGamma\n' >"$tmp/budgets.tsv"
 python3 "$script" check-workflow "$tmp/ci.yml" "$tmp/budgets.tsv" >/dev/null || fail "check-workflow failed a good budget file"
 
-# --- a run: matrix names match, skipped and queued jobs are not judged ---
-cat >"$tmp/ok.json" <<'EOF'
-{"total_count": 5, "jobs": [
+# --- a run within its limits: matrix names match, a job over its budget only warns ---
+printf '9\tpr\tAlpha (shard */2)\n17\tpr\tBeta\n5\tpr\tGamma\n30\tnightly\tNightly\n' >"$tmp/budgets.tsv"
+cat >"$tmp/ok.json" <<'JSON'
+{"total_count": 6, "jobs": [
   {"name": "Alpha (shard 1/2)", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:08:59Z"},
-  {"name": "Alpha (shard 2/2)", "status": "completed", "conclusion": "failure", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:02:00Z"},
+  {"name": "Alpha (shard 2/2)", "status": "completed", "conclusion": "failure", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:12:00Z"},
   {"name": "Beta", "status": "completed", "conclusion": "skipped", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:00:00Z"},
   {"name": "Gamma", "status": "in_progress", "conclusion": null, "started_at": "2026-11-12T10:10:00Z", "completed_at": null},
-  {"name": "Unlisted but queued", "status": "queued", "conclusion": null, "started_at": null, "completed_at": null}
+  {"name": "Nightly", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:29:00Z"},
+  {"name": "Beta", "status": "queued", "conclusion": null, "started_at": null, "completed_at": null}
 ]}
-EOF
-python3 "$script" check-run "$tmp/budgets.tsv" "$tmp/ok.json" 2026-11-12T10:12:00Z >"$tmp/out" || fail "check-run failed a run within budget: $(cat "$tmp/out")"
-grep -Eq "^ok +8m59s of +9m  Alpha \(shard 1/2\) \(success\)$" "$tmp/out" || fail "no per-job line: $(cat "$tmp/out")"
+JSON
+python3 "$script" check-run "$tmp/budgets.tsv" "$tmp/ok.json" 2026-11-12T10:12:00Z >"$tmp/out" || fail "check-run failed a run within its limits: $(cat "$tmp/out")"
+grep -Eq "^ok +8m59s \(warn above 9m, fail above 20m\)  Alpha \(shard 1/2\) \(success\)$" "$tmp/out" || fail "no per-job line with both limits: $(cat "$tmp/out")"
+grep -q "^::warning::Alpha (shard 2/2) took 12m00s, over its budget of 9 minutes" "$tmp/out" || fail "no warning above the budget: $(cat "$tmp/out")"
+grep -q "not judged (skipped, no time)  Beta" "$tmp/out" || fail "a skipped job is not reported as not judged: $(cat "$tmp/out")"
+grep -q "not judged (queued, no time)  Beta" "$tmp/out" || fail "a queued job is not reported as not judged: $(cat "$tmp/out")"
+grep -Eq "^ok +29m00s \(warn above 30m, fail above 30m\)  Nightly" "$tmp/out" || fail "a nightly job's limit is not its budget: $(cat "$tmp/out")"
 
-# --- a finished job over budget, a running job over budget, a job without a budget ---
-cat >"$tmp/over.json" <<'EOF'
-{"total_count": 3, "jobs": [
-  {"name": "Alpha (shard 2/2)", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:09:01Z"},
+# --- failures: a pull-request job over 20 minutes, running or cancelled (a
+# timeout ends as cancelled), a nightly job over its budget, a job without one ---
+cat >"$tmp/over.json" <<'JSON'
+{"total_count": 5, "jobs": [
+  {"name": "Alpha (shard 2/2)", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:20:01Z"},
+  {"name": "Beta", "status": "completed", "conclusion": "cancelled", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:45:00Z"},
   {"name": "Gamma", "status": "in_progress", "conclusion": null, "started_at": "2026-11-12T10:00:00Z", "completed_at": null},
+  {"name": "Nightly", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:31:00Z"},
   {"name": "Epsilon", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:01:00Z"}
 ]}
-EOF
-if python3 "$script" check-run "$tmp/budgets.tsv" "$tmp/over.json" 2026-11-12T10:06:00Z >"$tmp/out"; then fail "check-run passed a run over budget"; fi
-grep -q "::error::Alpha (shard 2/2) took 9m01s, over its budget of 9 minutes" "$tmp/out" || fail "no over-budget message: $(cat "$tmp/out")"
-grep -q "::error::Gamma has run for 6m00s, over its budget of 5 minutes" "$tmp/out" || fail "no running-over message: $(cat "$tmp/out")"
-grep -q "::error::job 'Epsilon' has no budget" "$tmp/out" || fail "no missing-budget message: $(cat "$tmp/out")"
+JSON
+if python3 "$script" check-run "$tmp/budgets.tsv" "$tmp/over.json" 2026-11-12T10:21:00Z >"$tmp/out"; then fail "check-run passed a run over its limits"; fi
+grep -q "::error::Alpha (shard 2/2) took 20m01s, over 20 minutes (the project's 20-minute rule)" "$tmp/out" || fail "no rule failure: $(cat "$tmp/out")"
+grep -q "::error::Beta took 45m00s, over 20 minutes" "$tmp/out" || fail "a cancelled (timed-out) job was not judged: $(cat "$tmp/out")"
+grep -q "::error::Gamma has run for 21m00s, over 20 minutes" "$tmp/out" || fail "no failure for a running job past the rule: $(cat "$tmp/out")"
+grep -q "::error::Nightly took 31m00s, over 30 minutes (its budget" "$tmp/out" || fail "no failure for a nightly job over its budget: $(cat "$tmp/out")"
+grep -q "::error::job 'Epsilon' has no budget" "$tmp/out" || fail "no missing-budget failure: $(cat "$tmp/out")"
 
 # --- a truncated job list is an error, not a pass ---
 printf '{"total_count": 120, "jobs": []}\n' >"$tmp/short.json"

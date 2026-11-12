@@ -92,10 +92,11 @@ func TestFilterCoefficientDigest(t *testing.T) {
 
 // skipUnlessExhaustive skips the exhaustive fast-path proofs unless
 // CICADA_DETMATH_EXHAUSTIVE=1. Together they check hundreds of millions of
-// inputs and give the same answer for every pull request that leaves this
-// package alone, so CI runs them in the WAV parity sweep jobs (amd64 at GOAMD64
-// v1 and v3, and arm64) on every pull request that changes kernel/dsp/detmath,
-// and every night, instead of in every Go test job.
+// inputs, and only this package, the toolchain and the target can change their
+// answer, so CI runs them in the detmath-proofs jobs (scripts/detmath-proofs.sh:
+// amd64 at GOAMD64 v1 and v3 and arm64, with go.mod's Go and Go 1.27.3) when
+// one of those inputs changes and on every push and night, instead of in every
+// Go test job. The required check judges those jobs.
 func skipUnlessExhaustive(t *testing.T) {
 	t.Helper()
 	if os.Getenv("CICADA_DETMATH_EXHAUSTIVE") != "1" {

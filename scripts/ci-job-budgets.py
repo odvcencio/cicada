@@ -9,10 +9,13 @@
   ci-job-budgets.py check-run BUDGETS JOBS_JSON [NOW]
       JOBS_JSON is GitHub's list of one run attempt's jobs
       (GET /repos/OWNER/REPO/actions/runs/ID/attempts/N/jobs). Prints every
-      job's time against its budget and fails when a finished job took longer
-      than its budget, when a running job has already used more than its
-      budget, or when a job has no budget. Queued, skipped and cancelled jobs
-      are not judged. NOW (ISO 8601, for tests) replaces the current time.
+      job's time and both of its limits. Warns when a job ran longer than its
+      budget. Fails when a pull-request job ran longer than 20 minutes (the
+      project's rule), when a nightly job ran longer than its budget, or when a
+      job has no budget. A running job is judged by how long it has run so
+      far, a cancelled one (a timeout ends that way) by how long it ran; a job
+      that never started is printed as not judged. NOW (ISO 8601, for tests)
+      replaces the current time.
 
 Uses only the Python standard library, so it runs on any hosted runner.
 """
@@ -24,6 +27,7 @@ import re
 import sys
 
 PR_CEILING_MINUTES = 17
+RULE_MINUTES = 20
 
 
 def load_budgets(path):
@@ -106,29 +110,47 @@ def check_run(budgets_path, jobs_path, now=None):
         print(f"the run has {data['total_count']} jobs but the list holds {len(jobs)}: ask for more per page", file=sys.stderr)
         return 1
     now = parse_time(now) if now else datetime.datetime.now(datetime.timezone.utc)
-    failures = []
+    warnings, failures = [], []
     for job in sorted(jobs, key=lambda j: j["name"]):
-        name = job["name"]
-        if job["status"] in ("queued", "waiting", "pending", "requested") or not job.get("started_at"):
-            continue
-        if job.get("conclusion") in ("skipped", "cancelled"):
-            continue
+        name, conclusion = job["name"], job.get("conclusion")
         matches = [b for b in budgets if fnmatch.fnmatchcase(name, b[2])]
         if not matches:
             failures.append(f"job {name!r} has no budget in {budgets_path}")
             continue
-        minutes = matches[0][0]
+        minutes, scope = matches[0][0], matches[0][1]
+        # A pull-request job fails only above the project's rule; its budget,
+        # which leaves room for a slow runner, warns. A nightly job's budget is
+        # its limit.
+        fail_minutes = RULE_MINUTES if scope == "pr" else minutes
+        limits = f"warn above {minutes}m, fail above {fail_minutes}m"
+        if conclusion == "skipped" or not job.get("started_at"):
+            print(f"--   {'':>7s} not judged ({conclusion or job['status']}, no time)  {name}")
+            continue
         running = job["status"] != "completed" or not job.get("completed_at")
         end = now if running else parse_time(job["completed_at"])
         seconds = (end - parse_time(job["started_at"])).total_seconds()
-        state = "running" if running else (job.get("conclusion") or "done")
-        verdict = "over" if seconds > minutes * 60 else "ok"
-        print(f"{verdict:4s} {clock(seconds):>7s} of {minutes:3d}m  {name} ({state})")
-        if verdict == "over":
+        # A job that hit its timeout-minutes ends as cancelled; it is judged by
+        # how long it ran, like any other.
+        state = "running" if running else (conclusion or "done")
+        verb = "has run for" if running else "took"
+        if seconds > fail_minutes * 60:
+            verdict = "FAIL"
             failures.append(
-                f"{name} {'has run for' if running else 'took'} {clock(seconds)}, over its budget of {minutes} minutes "
-                f"in {budgets_path}. Make it faster or move work to another job; raise the budget only with a reason."
+                f"{name} {verb} {clock(seconds)}, over {fail_minutes} minutes"
+                + (" (the project's 20-minute rule)" if scope == "pr" else f" (its budget in {budgets_path})")
+                + ". Make it faster or move work to another job."
             )
+        elif seconds > minutes * 60:
+            verdict = "warn"
+            warnings.append(
+                f"{name} {verb} {clock(seconds)}, over its budget of {minutes} minutes in {budgets_path}"
+                f" (it fails above {fail_minutes}). Make it faster, or raise the budget with a reason."
+            )
+        else:
+            verdict = "ok"
+        print(f"{verdict:4s} {clock(seconds):>7s} ({limits})  {name} ({state})")
+    for warning in warnings:
+        print(f"::warning::{warning}")
     for failure in failures:
         print(f"::error::{failure}")
     return 1 if failures else 0

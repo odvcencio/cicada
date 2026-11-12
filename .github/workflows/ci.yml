@@ -70,6 +70,7 @@ jobs:
       bench: ${{ steps.classify.outputs.bench }}
       wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
       lane_stress: ${{ steps.classify.outputs.lane_stress }}
+      detmath_proofs: ${{ steps.classify.outputs.detmath_proofs }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -293,8 +294,7 @@ jobs:
           test "$(go env GOARCH)" = amd64
           make test-parity
       # The exhaustive fast-path proofs of the deterministic math
-      # (*FastPathExhaustive) run in the WAV parity sweep jobs, at GOAMD64 v1
-      # and v3 and on arm64.
+      # (*FastPathExhaustive) run in the detmath-proofs jobs.
       - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
@@ -451,9 +451,7 @@ jobs:
   # (TestExampleWAVPins). Pull requests run it too when they change the
   # deterministic math or the WAV parity test (the wav_sweep group of
   # scripts/ci-changes.sh); other pull requests render only the parity subset
-  # above. The same two jobs run the exhaustive fast-path
-  # proofs of kernel/dsp/detmath (CICADA_DETMATH_EXHAUSTIVE=1): every pull
-  # request that changes it, and every night.
+  # above.
   wav-parity-sweep-amd64:
     name: WAV parity sweep, every example (amd64)
     needs: changes
@@ -468,19 +466,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      # Every float32 input of each deterministic-math fast path, compared with
-      # the float64 reference, at both amd64 levels the project builds for.
-      - name: Exhaustive fast-path proofs of the deterministic math, GOAMD64 v1 and v3
-        run: |
-          set -euo pipefail
-          test "$(go env GOARCH)" = amd64
-          for level in v1 v3; do
-            CICADA_DETMATH_EXHAUSTIVE=1 GOAMD64="$level" go test ./kernel/dsp/detmath -run 'FastPathExhaustive$' -count=1 -v | tee "$RUNNER_TEMP/exhaustive-$level.log"
-            # go test exits 0 when -run matches nothing, for example after a rename.
-            for name in TestTanh32FastPathExhaustive TestTanPi32FastPathExhaustive TestOneMinusExpNeg2Pi32FastPathExhaustive TestExp2F32FastPathExhaustive; do
-              grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/exhaustive-$level.log" || { echo "No PASS line for $name at GOAMD64=$level; was it renamed or skipped?" >&2; exit 1; }
-            done
-          done
       - name: Render every example four ways and hash the WAV files
         run: |
           set -euo pipefail
@@ -518,15 +503,6 @@ jobs:
         with:
           name: wav-parity-amd64
           path: build/amd64-reference
-      - name: Exhaustive fast-path proofs of the deterministic math on arm64
-        run: |
-          set -euo pipefail
-          test "$(go env GOARCH)" = arm64
-          CICADA_DETMATH_EXHAUSTIVE=1 go test ./kernel/dsp/detmath -run 'FastPathExhaustive$' -count=1 -v | tee "$RUNNER_TEMP/exhaustive-arm64.log"
-          # go test exits 0 when -run matches nothing, for example after a rename.
-          for name in TestTanh32FastPathExhaustive TestTanPi32FastPathExhaustive TestOneMinusExpNeg2Pi32FastPathExhaustive TestExp2F32FastPathExhaustive; do
-            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/exhaustive-arm64.log" || { echo "No PASS line for $name on arm64; was it renamed or skipped?" >&2; exit 1; }
-          done
       - name: Render every example four ways and compare with amd64
         run: |
           set -euo pipefail
@@ -543,6 +519,45 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: build/wav-parity/report.txt
+
+  # The exhaustive fast-path proofs of kernel/dsp/detmath
+  # (scripts/detmath-proofs.sh): every float32 input of each fast path against
+  # the float64 reference, with the Go version go.mod picks and with Go 1.27.3
+  # (the workstation's pinned toolchain, which links this package through
+  # project); amd64 at GOAMD64 v1 and v3, and arm64. They run when the
+  # classifier's detmath_proofs group is on (the package, go.mod, go.sum, this
+  # workflow, the Makefile, the proof runner or the multiply-add check changed;
+  # every push, nightly and manual run), and the required check judges them.
+  # The Go test jobs skip them (CICADA_DETMATH_EXHAUSTIVE is unset there).
+  detmath-proofs:
+    name: Deterministic math proofs (${{ matrix.arch }})
+    needs: changes
+    if: ${{ needs.changes.outputs.detmath_proofs == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Exhaustive fast-path proofs with go.mod's Go and with Go 1.27.3
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$ARCH"
+          scripts/detmath-proofs.sh local go1.27.3
 
   studio-cli:
     name: Studio CLI tests (shard ${{ matrix.shard }}/3)
@@ -867,20 +882,10 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    # The first line lists the parts this job judges. The second lists the
-    # other jobs a pull request or push runs on hosted runners: this job waits
-    # for them only so that its last step can hold each one to its time budget.
-    # Their results are not judged here. The self-hosted M2 AudioWorklet gates
-    # are left out, because waiting for that one shared machine's queue would
-    # hold up every merge; the budget step judges them when they have finished.
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation,
-      native-go127, native-go127-cli, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, studio-cli, bench, lane-stress-pr, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation, detmath-proofs]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
     steps:
       # This one required check also stands for the always-on jobs. The tests
       # that read the docs and the classifier's own tests run in repo-checks
@@ -898,6 +903,8 @@ jobs:
           RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
           RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
           WORKSTATION_RESULT: ${{ needs.workstation.result }}
+          RUN_PROOFS: ${{ needs.changes.outputs.detmath_proofs }}
+          PROOFS_RESULT: ${{ needs.detmath-proofs.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
@@ -906,6 +913,7 @@ jobs:
           #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
           #   workstation                success when workstation=true, skipped otherwise
           #                              (its go generate enforces the UI engine size limit)
+          #   detmath-proofs             success when detmath_proofs=true, skipped otherwise
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -942,17 +950,34 @@ jobs:
           else
             check workstation "$WORKSTATION_RESULT" skipped
           fi
+          if [[ "$RUN_PROOFS" == true ]]; then
+            check detmath-proofs "$PROOFS_RESULT" success
+          else
+            check detmath-proofs "$PROOFS_RESULT" skipped
+          fi
           exit "$status"
+
+  # Holds every job of this run to its time budget in scripts/ci-job-budgets.tsv:
+  # a warning above the budget, a failure above 20 minutes, the project's rule
+  # for pull-request jobs. It waits for every hosted job, so it is not part of
+  # the required check, which would then finish only when CI does: a slow job
+  # shows here, in red when it broke the rule, without holding up a merge. The
+  # self-hosted M2 AudioWorklet gates are judged when they have finished.
+  ci-budgets:
+    name: CI job time budgets
+    needs: [changes, native-go127, native-go127-cli, commit-hygiene, repo-checks, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, detmath-proofs, studio-cli, bench, lane-stress-pr, m0-core, m0-render-paths, m0-kernel, m0-wasm, m0, workstation, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        if: ${{ always() }}
         with:
           persist-credentials: false
           sparse-checkout: scripts
-      # CI must stay under 20 minutes. Every job of this run that has started
-      # must be within its budget in scripts/ci-job-budgets.tsv (a running job
-      # too), and every job must have one. The log lists each job's time.
       - name: Every job within its time budget
-        if: ${{ always() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
