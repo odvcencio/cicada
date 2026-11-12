@@ -119,6 +119,9 @@ func TestAgentTaskSuite(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now()
+	// 0. Start as a new agent does: read the quick start from the binary and
+	// follow it (quickstart_test.go).
+	followQuickStart(t, bin)
 	dir := t.TempDir()
 	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
 	if err != nil {

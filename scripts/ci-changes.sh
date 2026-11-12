@@ -51,7 +51,8 @@ classify_path() {
 	.github/* | Makefile | scripts/* | go.mod | go.sum)
 		echo all ;;
 	# Text that a Go //go:embed or a test fixture may read: do not treat as docs.
-	project/std/* | assets/* | testdata/* | */testdata/*)
+	# internal/agentguide embeds the quick start that cicada agents prints.
+	project/std/* | assets/* | testdata/* | */testdata/* | internal/agentguide/*)
 		echo all ;;
 	# Every nested go.mod and go.sum turns everything on: desktop/go.mod, for
 	# one, changes the module graph that other jobs resolve.
@@ -98,9 +99,21 @@ classify_path() {
 # packages; the worklet and page in host/web; the Studio handlers and test files
 # that serve and time them; the WASM toolchain; and this workflow.
 # scripts/ci-changes_test.sh --graph checks the Go part against the import graph.
-# edit/ is left out on purpose: project imports it only in project/editplan.go,
-# a view of an already compiled project that the image path never calls (the
-# graph test checks that too).
+#
+# edit/ is left out on purpose. The image path reaches it in two places, and
+# neither can change the image the gate times: project imports it only for
+# project/editplan.go, a view of an already compiled project, and the Studio
+# handler calls edit.Revision (studioRevision, cmd/cicada/studio.go) for the
+# content hash in a response header. The graph test fails if the compile path
+# (project outside editplan.go, host/schedule, host/kernelimage) calls EditPlan.
+#
+# The gate's setup path is in too: studio_files.go (studioProjectRoot feeds
+# CompileResident), and isolate_test.go with internal/isolatetest (the gate
+# test's TestMain). newStudio also builds takes, history and transport
+# (studio_takes.go, studio_history.go, studio_transport.go); the gate's two
+# requests read none of them, so a change there can only stop Studio starting,
+# which the Studio CLI tests catch on the pull request and the gate itself on
+# the push to main.
 gate_input() {
 	case "$1" in
 	.github/workflows/ci.yml | .github/actions/setup-wasm-tools/* | Makefile | go.mod | go.sum) return 0 ;;
@@ -110,8 +123,8 @@ gate_input() {
 	*.md) return 1 ;;
 	cmd/cicada-kernel-wasm/* | cmd/cicada-wasm-size/*) return 0 ;;
 	cmd/cicada/browser_test.go | cmd/cicada/browser_soak_helpers_test.go | cmd/cicada/browser_test_helpers_test.go | cmd/cicada/browser_cpu_node.js) return 0 ;;
-	cmd/cicada/studio.go | cmd/cicada/studio_audio.go) return 0 ;;
-	internal/soaktiming/* | internal/paramdefs/* | internal/filetarget/*) return 0 ;;
+	cmd/cicada/studio.go | cmd/cicada/studio_audio.go | cmd/cicada/studio_files.go | cmd/cicada/isolate_test.go) return 0 ;;
+	internal/soaktiming/* | internal/isolatetest/* | internal/paramdefs/* | internal/filetarget/*) return 0 ;;
 	kernel/measure/*) return 1 ;; # test-only; nothing the gate builds imports it
 	kernel/* | host/web/* | host/schedule/* | host/kernelimage/* | host/sampleasset/* | host/irasset/*) return 0 ;;
 	host/keyboard/* | host/instrumentpack/* | host/audioencoding/*) return 0 ;;

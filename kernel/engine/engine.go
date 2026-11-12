@@ -334,6 +334,8 @@ type Engine struct {
 	patternEdit                  seq.Pattern // reused by serialized callback edits; avoids a TinyGo heap temporary
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
+	// rescheduled is set when a track's events are rebuilt; see prepareRenderFrame.
+	rescheduled                  bool
 	sceneDefaults                *sceneParameterState
 	sceneTick                    int64
 	savedParameters              ParameterState

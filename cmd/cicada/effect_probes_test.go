@@ -118,6 +118,8 @@ func probeApply(t *testing.T, score, intents string) string {
 // TestEffectIntentsRefuseEditsToOtherFiles applies the review's multi-file
 // probes: the tracks and master live in parts/tracks.cicada, and the edit
 // writes only main.cicada, so each is refused with the other file named.
+// (The structural intents edit every file of the project; see
+// TestRenameEditsEveryFileOfTheProject.)
 func TestEffectIntentsRefuseEditsToOtherFiles(t *testing.T) {
 	for _, tc := range []struct {
 		name, intents, reason, field string
