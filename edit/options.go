@@ -89,6 +89,16 @@ type Options struct {
 	// while a recording is open.
 	CaptureGuard func() error
 	Compiler     Compiler
+	// Base is the compiled state of the source passed to Apply, with no
+	// staged files, that the host kept from an earlier edit or read: Apply
+	// reads the unchanged source from it, and builds the state of each later
+	// set of bytes from it, so it parses each set of bytes once. It must come
+	// from Compiler (StateCompiler) and hold exactly the bytes passed to Apply
+	// and the saved project's other files; Apply compares the entry's bytes
+	// and moves to a new state when they differ. nil builds the base once
+	// through Compiler when it is a StateCompiler. After a refused edit Base
+	// is as it was.
+	Base         State
 	RenderCheck  RenderCheck
 	Path         string                // absolute path of the entry score
 	Edition      int                   // from the manifest or header; 0 lets the header decide

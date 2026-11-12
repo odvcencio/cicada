@@ -22,6 +22,11 @@ type Result struct {
 	Warnings [][]string
 	Response map[string]any
 	Plan     *Plan // compiled candidate
+	// State is the compiled state of Source and Files when the compiler keeps
+	// states (StateCompiler, or Options.Base); nil otherwise. Plan is its
+	// plan. A host that commits the result keeps it as the next edit's
+	// Options.Base.
+	State State
 	// Invalid is the compile error of a candidate that Options.KeepInvalid
 	// kept; Plan is nil then.
 	Invalid   error
@@ -74,6 +79,23 @@ type Context struct {
 	running      int          // the index of the intent that runs
 	final        []finalCheck // checks that run after the last intent
 	warnings     []string     // what the running intent changed that its label does not say
+	// states is the compiled state of the bytes last read, shared by every
+	// copy of this context; nil when the compiler keeps no states.
+	states *stateChain
+}
+
+// state returns the compiled state of the context's current bytes when the
+// context edits the entry score and the compiler keeps states. A context that
+// edits another file (ownedSourceContext) reads through the entry's context.
+func (c *Context) state() (State, bool) {
+	if c.states == nil || c.Options.Path != c.states.path {
+		return nil, false
+	}
+	state, err := c.states.at(c.Source, c.files)
+	if err != nil {
+		return nil, false
+	}
+	return state, true
 }
 
 // warn records, for the running intent, a change the result reports beside
@@ -127,6 +149,10 @@ func (c *Context) ParseProject() (*notation.Score, []notation.Diagnostic, error)
 		return c.parseProject(c.Source, c.fileOverrides())
 	}
 	if c.Options.ParseProject != nil {
+		// A StateCompiler's state parses as the host's ParseProject does.
+		if state, ok := c.state(); ok {
+			return state.Score()
+		}
 		return c.Options.ParseProject(c.Source, c.fileOverrides())
 	}
 	if len(c.Options.Sources) == 0 {
@@ -151,7 +177,13 @@ func (c *Context) CurrentPlan() (*Plan, error) {
 	if c.plan != nil {
 		return c.plan, nil
 	}
-	plan, err := c.Options.Compiler.Compile(c.Source, c.fileOverrides())
+	var plan *Plan
+	var err error
+	if state, ok := c.state(); ok {
+		plan, err = state.Plan()
+	} else {
+		plan, err = c.Options.Compiler.Compile(c.Source, c.fileOverrides())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +253,14 @@ func hasErrors(ds []notation.Diagnostic) bool {
 
 // Apply runs the intents in order on a copy of source, then validates and
 // compiles the candidate. It never touches disk.
-func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
+func Apply(source []byte, env Envelope, opts Options) (result *Result, err error) {
+	states := newStateChain(opts)
+	defer func() {
+		// A refused or invalid candidate leaves Options.Base as it was.
+		if err != nil || result != nil && result.State == nil {
+			states.rollback()
+		}
+	}()
 	if opts.Compiler == nil {
 		return nil, errors.New("edit: Options.Compiler is required")
 	}
@@ -231,7 +270,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if env.Revision != "" && env.Revision != Revision(source) {
 		return nil, &ConflictError{Expected: env.Revision, Actual: Revision(source)}
 	}
-	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env}
+	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env, states: states}
 	labels := make([]string, 0, len(env.Intents))
 	warnings := make([][]string, 0, len(env.Intents))
 	for index, intent := range env.Intents {
@@ -259,14 +298,23 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 			return nil, intentError(final.index, final.kind, err)
 		}
 	}
-	plan, err := opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
+	var plan *Plan
+	state, stateful := ctx.state()
+	if stateful {
+		plan, err = state.Plan()
+	} else {
+		plan, err = opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
+	}
 	if err != nil && opts.KeepInvalid {
 		return &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Invalid: err, Unchanged: bytes.Equal(ctx.Source, source) && len(ctx.files) == 0}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Warnings: warnings, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
+	result = &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Warnings: warnings, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
+	if stateful {
+		result.State = state
+	}
 	if len(ctx.rechecks) > 0 {
 		result.RenderIdentity = strings.Join(ctx.identities, "\n")
 		rechecks := ctx.rechecks
