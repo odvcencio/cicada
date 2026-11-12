@@ -165,3 +165,34 @@ func TestLibraryReverbOnlyASceneAddressesGetsNoSlot(t *testing.T) {
 		t.Fatalf("reverb returns %v, want [room]", got)
 	}
 }
+
+// Every construct that resolves a parameter path refuses a send path to a
+// later reverb with the same message (one resolver, ResolveParameterPath,
+// and notation's mirror of it for check): none treats it as the send to the
+// first reverb. setparam is a source edit, not a parameter path: it names the
+// send by its effect and writes that send's line (edit/mixer.go).
+func TestEveryParameterPathRefusesALaterReverbSend(t *testing.T) {
+	const head = "cicada 2\ntempo 120\nfx hall reverb {}\nfx room reverb {}\n"
+	const body = "track keys acid { send hall = -9dB send room = -12dB }\npattern p { c3 . e3 . }\n"
+	for name, rest := range map[string]string{
+		"scene":    "scene s { keys = p keys.send.room = 0.4 }\nsong { s }\n",
+		"automate": "scene s { keys = p }\nsong { s }\nautomate keys.send.room { @1.1.1 0.2 @2.1.1 0.5 }\n",
+		"route":    "lfo drift { rate = 1/4 }\nmod drift -> keys.send.room depth = 0.1\nscene s { keys = p }\nsong { s }\n",
+		"macro":    "live { macro wet -> keys.send.room 0..1 }\nscene s { keys = p }\nsong { s }\n",
+		"midi":     "midi { port pads\n  pads ch 1 cc 20 -> keys.send.room\n}\nscene s { keys = p }\nsong { s }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			score, ds := notation.Parse([]byte(head + body + rest))
+			if score != nil {
+				_, pds := FromScore(score)
+				ds = append(ds, pds...)
+			}
+			for _, d := range ds {
+				if d.Severity == "error" && strings.Contains(d.Message, "send.reverb is the send to hall") {
+					return
+				}
+			}
+			t.Fatalf("want a refusal naming hall as send.reverb, got %+v", ds)
+		})
+	}
+}
