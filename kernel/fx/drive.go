@@ -245,6 +245,11 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		// their cursor: their coefficients depend on relative age, so the next
 		// nonzero input renders identically at any cursor. Keep the explicit dry
 		// delay timeline moving, and keep all shape/parameter ramps above warm.
+		// The dry delay is read and written as below: its zeros carry the
+		// input's sign, which decides the sign of a zero output.
+		index := d.position
+		dry := d.dryDelay[index]
+		d.dryDelay[index] = x
 		d.position++
 		if d.position == DriveLatencyFrames {
 			d.position = 0
@@ -260,7 +265,12 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		// Tone tails keep their exact per-sample decay; no threshold gates
 		// them. Only a tail that has decayed into subnormal numbers, where
 		// it no longer reaches the float32 output, is flushed (flushSubnormals).
-		return float32(wet.left * d.mix), float32(wet.right * d.mix)
+		// The output is the full path's expression: dry*(1-mix) is a zero,
+		// but +0 + -0 is +0, so returning wet*mix alone gave -0 where the full
+		// path gives +0 whenever the wet product rounded to -0.
+		outL := float64(dry.left*(1-d.mix)) + float64(wet.left*d.mix)
+		outR := float64(dry.right*(1-d.mix)) + float64(wet.right*d.mix)
+		return float32(outL), float32(outR)
 	}
 	if left == 0 && right == 0 {
 		d.zeroFrames++

@@ -3,6 +3,7 @@ package chorus
 import (
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal/subnormaltest"
 	"m31labs.dev/cicada/kernel/internal/bitdigest"
 )
 
@@ -20,6 +21,7 @@ import (
 const chorusDigest = "7853bbeaa409b00f4d0a568bed9cb0c3ac57f8e20218d3948fa4d9f3560c767e"
 
 func TestChorusDigest(t *testing.T) {
+	subnormaltest.SkipWithoutFlush(t) // the digest hashes the flushed float64 state
 	d := bitdigest.New()
 	settings := []Params{
 		DefaultParams(),

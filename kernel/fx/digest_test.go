@@ -3,6 +3,7 @@ package fx
 import (
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal/subnormaltest"
 	"m31labs.dev/cicada/kernel/internal/bitdigest"
 )
 
@@ -141,6 +142,7 @@ func TestDelayDigest(t *testing.T) {
 const driveDigest = "fe580e9c2b5c8005edbcf2c7f4836df5a0d9239d621d010242266e7bfdabbab9"
 
 func TestDriveDigest(t *testing.T) {
+	subnormaltest.SkipWithoutFlush(t) // the digest pins the flushed tone tails
 	d := bitdigest.New()
 	settings := []DriveParams{
 		{Shape: Soft, GainDB: 9, ToneHz: 9_000, Mix: 1},
