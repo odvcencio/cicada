@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
@@ -108,6 +109,7 @@ type Instrument struct {
 	stealL, stealR, stealDecay, lastL, lastR  float32
 	voiceLimit                                int
 	live                                      liveControls
+	frames                                    uint32 // samples since New or Reset, for flushSubnormals
 }
 
 // liveControls holds the smoothed values that SetControl can change. Until a
@@ -287,6 +289,7 @@ func (i *Instrument) Reset() {
 	i.lfoP = 1
 	i.serial = 0
 	i.pedal = false
+	i.frames = 0
 }
 func (i *Instrument) Active() int {
 	n := 0
@@ -379,7 +382,40 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	i.stealR = float32(i.stealR * i.stealDecay)
 	i.lastL = l
 	i.lastR = r
+	i.frames++
+	if i.frames%flushFrames == 0 {
+		i.flushSubnormals()
+	}
 	return l, r
+}
+
+// flushFrames is how often, in output samples, the recursive state is swept
+// for subnormal numbers. A decayed mode, the click or a filter stays in them at
+// most this long before it becomes zero, and stays zero while it gets no new
+// input. A flush on every store made the common case slower: about 21% on
+// arm64, where subnormal arithmetic runs at full speed and every flush is
+// pure cost. The sweep falls on the same samples on every architecture and
+// block size: it counts the instrument's own samples since New or Reset.
+const flushFrames = 256
+
+// flushSubnormals replaces every subnormal state value with a signed zero
+// (kernel/dsp/subnormal). The gain from any of them to the output is below
+// 2^17 (weight 1, field slope 5, derivative fs/(2*pi*27.5 Hz) < 4500 at
+// 768 kHz, DC blocker 2, amplitude 0.68, tremolo and pan 4).
+func (i *Instrument) flushSubnormals() {
+	for n := range i.voices {
+		v := &i.voices[n]
+		if !v.active {
+			continue
+		}
+		for m := range v.modes {
+			v.modes[m].q, v.modes[m].p = subnormal.Flush(v.modes[m].q), subnormal.Flush(v.modes[m].p)
+		}
+		v.thump, v.thumpP = subnormal.Flush(v.thump), subnormal.Flush(v.thumpP)
+		v.click = subnormal.Flush(v.click)
+	}
+	i.low, i.dcIn, i.dcOut = subnormal.Flush(i.low), subnormal.Flush(i.dcIn), subnormal.Flush(i.dcOut)
+	i.stealL, i.stealR = subnormal.Flush(i.stealL), subnormal.Flush(i.stealR)
 }
 
 // SetVoiceLimit configures bounded polyphony before playback. Reducing it

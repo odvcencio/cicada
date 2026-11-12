@@ -306,7 +306,10 @@ async function watchContext(context, { serverLog, stack = envStack() } = {}) {
 // scheduler never goes idle re-enters through its next timer; the self-test's
 // "reenter" stand-in forces this order), and the read then waits behind a
 // second freeze. So the loop ends the running script again, every 150 ms, until the
-// read answers or about 4 s pass. Entries opened after the first termination
+// read answers or about 4 s pass. A read that fails for another reason (the
+// DevTools session is gone) is reported as it failed, not retried: send()
+// rejects at once then, and a loop of retries would hold Node's event loop.
+// Entries opened after the first termination
 // are the page re-entering, not the stall, and are counted apart. This leaves
 // the page's Go programs unusable, so it runs only in a report on a stalled page.
 async function goSnapshot(session) {
@@ -314,13 +317,17 @@ async function goSnapshot(session) {
   const expression = '(() => { const g = globalThis.__cicadaGoResumes; return g ? { open: g.open, recent: g.recent.slice(-6), count: g.count, timers: g.timers, now: Date.now() } : null; })()';
   const deadline = Date.now() + 4000;
   let firstTermination = 0, terminations = 0, answered = 0, value = null;
-  while (!value && Date.now() < deadline) {
+  for (let attempt = 0; !value && Date.now() < deadline; attempt++) {
+    // Wait before each retry, without blocking the event loop.
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 25));
     const read = session.send('Runtime.evaluate', { returnByValue: true, expression });
     read.catch(() => {});
     for (;;) {
       const result = await within(read, 150, 'pending');
       if (result !== 'pending') {
         // A termination that reached the read itself rejects it: ask again.
+        // Any other error means the session cannot answer: report it.
+        if (result.error && !/terminat/i.test(String(result.error.message))) return `go: no entry record (${result.error.message})${terminations ? `, after ${terminations} Runtime.terminateExecution (${answered} answered)` : ''}`;
         if (!result.error && result.exceptionDetails === undefined) value = result;
         break;
       }
@@ -801,4 +808,4 @@ function teardown(t, browser, { watch = null, before = null, exitWhenDone = fals
   }, { timeout: hookMS + nativeMS });
 }
 
-module.exports = { watchContext, watchPage, teardown, closeBrowser, killBrowser, withChromeLog, nativeStacks, installRefusal, runSudo, within, tail, redact };
+module.exports = { goSnapshot, watchContext, watchPage, teardown, closeBrowser, killBrowser, withChromeLog, nativeStacks, installRefusal, runSudo, within, tail, redact };

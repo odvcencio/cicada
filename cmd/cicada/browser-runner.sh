@@ -46,16 +46,37 @@ profile="$profile_root/profile"
 chrome_log=build/m2-browser-chrome.log
 chrome_pid=
 # cleanup signals only the Chrome this script started. setsid makes Chrome
-# the leader of a new process group whose ID is chrome_pid. chrome_pid is
-# this script's own child and is not reaped before the wait below, so no other
-# process can hold that PID or lead that group. Until setsid has run, the
-# group does not exist and only the child is signaled. Do not read the group
-# from ps: before setsid runs it is this script's own group, which a CI step's
-# shell, make and the runner's worker share (browser-runner_test.sh).
+# the leader of a new process group whose ID is chrome_pid. bash reaps a
+# background child as soon as it exits, so after a Chrome crash chrome_pid may
+# belong to another process. What the cleanup guarantees:
+# - While "jobs -rp" lists chrome_pid (bash has not reaped it), chrome_pid is
+#   still this script's child: the cleanup signals its group, or the child
+#   itself if setsid has not run yet (then the group does not exist).
+# - Once bash has reaped Chrome, the bare PID is never signaled. Only the group
+#   is, so helpers a crashed Chrome left in its group still get TERM. Linux
+#   does not hand out a group's ID as a new PID while the group has members,
+#   so while any of them lives, -chrome_pid is Chrome's group.
+# What it does not guarantee: if every process of Chrome's group has exited,
+# and the PID counter has wrapped around to chrome_pid, and that new process
+# leads its own group, the group signal reaches it. And if Chrome exits
+# between the "jobs -rp" check and the kill (about 0.35 ms, measured from the
+# fork of the check's subshell), the group or the bare PID is signaled after
+# all; that too reaches another process only if the PID counter wrapped around
+# to chrome_pid within that window. Do not read the group from ps:
+# before setsid runs it is this script's own group, which a CI step's shell,
+# make and the runner's worker share (browser-runner_test.sh).
 cleanup() {
   trap - EXIT INT TERM
   if [[ -n "$chrome_pid" ]]; then
-    kill -TERM -- "-$chrome_pid" 2>/dev/null || kill -TERM "$chrome_pid" 2>/dev/null || true
+    # jobs -rp prints one PID per line, and lists the go test pipeline too
+    # when a signal bash does not trap (HUP) ends the script during the tests.
+    local running
+    running=$'\n'$(jobs -rp)$'\n'
+    if [[ "$running" == *$'\n'"$chrome_pid"$'\n'* ]]; then
+      kill -TERM -- "-$chrome_pid" 2>/dev/null || kill -TERM "$chrome_pid" 2>/dev/null || true
+    else
+      kill -TERM -- "-$chrome_pid" 2>/dev/null || true
+    fi
     wait "$chrome_pid" 2>/dev/null || true
   fi
   rm -rf "$profile_root"
