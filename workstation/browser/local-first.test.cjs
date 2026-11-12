@@ -922,7 +922,14 @@ const STEPS = {
       await ctx.open(CODE, {force: true});
       await ctx.codeEnd(CODE); await ctx.page.keyboard.type('\n// check this draft\n');
     },
-    act: ctx => ctx.tap('#editor-native-form button[name=intent][value=check]'),
+    // code-editor.test.cjs finds the button by its accessible name.
+    act: async ctx => {
+      const check = ctx.page.getByRole('button', {name: 'Check file', exact: true});
+      await check.click({timeout: 5_000}).catch(async error => {
+        const buttons = await ctx.page.evaluate(() => [...document.querySelectorAll('#score button, #editor-native-form button')].map(button => `${button.textContent.trim().slice(0, 20)}${button.getClientRects().length ? '' : ' (hidden)'}`));
+        throw new Error(`${error.message.split('\n')[0]}; the Code pane's buttons: ${buttons.join(', ') || 'none'}`);
+      });
+    },
     check: () => document.querySelector('#editor-native-form')?.getAttribute('data-gosx-form-state') === 'success',
     finish: ctx => ctx.codeRevert(),
   },
