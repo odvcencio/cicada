@@ -3,12 +3,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
@@ -218,28 +215,21 @@ func (u *soundsUI) post(ctx context.Context, values map[string]string) (soundRes
 	if err != nil {
 		return result, err
 	}
-	origin := js.Global().Get("location").Get("origin").String()
-	request, err := http.NewRequestWithContext(ctx, "POST", origin+"/__actions/sound-preview", bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("X-CSRF-Token", u.props.CSRF)
-	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/sound-preview", Body: data, Timeout: 10 * time.Second, Limit: 16 << 10, Headers: map[string]string{
+		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+	}}.do(ctx)
 	if err != nil {
 		return result, fmt.Errorf("sound preview could not reach the audio service")
 	}
-	defer response.Body.Close()
 	var receipt struct {
 		OK      bool          `json:"ok"`
 		Message string        `json:"message"`
 		Data    soundResponse `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 16<<10)).Decode(&receipt); err != nil {
+	if err := decodeLimited(response.Body, 16<<10, &receipt); err != nil {
 		return result, fmt.Errorf("sound preview returned an unreadable response")
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 || !receipt.OK {
+	if response.Status < 200 || response.Status >= 300 || !receipt.OK {
 		if receipt.Message == "" {
 			receipt.Message = "Sound preview is unavailable."
 		}

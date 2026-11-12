@@ -7,6 +7,7 @@ toolchain go1.27.3
 tool m31labs.dev/gosx/cmd/gosx
 
 require (
+	github.com/andybalholm/brotli v1.2.4
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/net v0.52.0
 	golang.org/x/sys v0.47.0
@@ -16,7 +17,6 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
 	github.com/chromedp/chromedp v0.15.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
