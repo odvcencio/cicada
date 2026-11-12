@@ -174,3 +174,45 @@ func hasDiagnostic(diagnostics []notation.Diagnostic, code string) bool {
 	}
 	return false
 }
+
+// A library's hash covers the files of its audio folder, so a project held in
+// memory hashes them from memory to the same pin as on disk.
+func TestMemoryFilesHashLibraryAudioAsDiskDoes(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("CICADA_LIBRARY", user)
+	root := t.TempDir()
+	writeSource(t, root, "cicada.mod", "project kit\ncicada 2\nentry \"main.cicada\"\n")
+	entry := writeSource(t, root, "main.cicada", "import \"demo/kit\"\ntitle \"Kit\"\ntrack lead kit.glass {}\npattern riff { 1 . }\nscene main { lead = riff }\nsong { main }\n")
+	writeSource(t, root, "lib/demo/kit/cicada.mod", "library demo/kit\ncicada 2\nsource \"kit.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\nengine 2\ncapabilities 0\n")
+	writeSource(t, root, "lib/demo/kit/kit.cicada", "instrument glass {\n  voice mono {\n    out = sine(pitch) * env(gate, 90ms) * velocity\n  }\n}\n")
+	writeSource(t, root, "lib/demo/kit/audio/hit.wav", "RIFF not really a wave")
+	writeSource(t, root, "lib/demo/kit/audio/deep/tail.wav", "another file")
+	files := map[string][]byte{}
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		files[path], err = os.ReadFile(path)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	disk, err := ReadSources(entry, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := ReadSourcesIn(MemoryFiles{Files: files, UserLibraries: user}, entry, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diskLibrary, heldLibrary := disk.Libraries["demo/kit"], held.Libraries["demo/kit"]
+	if diskLibrary == nil || heldLibrary == nil || diskLibrary.SHA256 != heldLibrary.SHA256 || !reflect.DeepEqual(diskLibrary.Assets, heldLibrary.Assets) || len(heldLibrary.Assets) != 2 {
+		t.Fatalf("library from disk %+v, from memory %+v", diskLibrary, heldLibrary)
+	}
+	// Without its audio the library hashes differently, so its pin fails.
+	delete(files, filepath.Join(root, "lib", "demo", "kit", "audio", "hit.wav"))
+	partial, err := ReadSourcesIn(MemoryFiles{Files: files, UserLibraries: user}, entry, nil)
+	if err != nil || partial.Libraries["demo/kit"].SHA256 == diskLibrary.SHA256 {
+		t.Fatalf("library without its audio: %v", err)
+	}
+}
