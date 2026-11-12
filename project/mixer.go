@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -214,7 +215,7 @@ func resolveNamedMixer(mixer *Mixer, source notation.Track, effectKinds map[stri
 		}
 		linear := *value.Number
 		if value.Unit == "db" {
-			linear = math.Pow(10, linear/20)
+			linear = detmath.Pow(10, linear/20)
 		}
 		switch kind {
 		case "delay", "tape":

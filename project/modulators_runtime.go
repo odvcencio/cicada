@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 )
@@ -70,7 +71,7 @@ func followerCoefficient(ms float64, sampleRate int) uint32 {
 	if ms <= 0 {
 		return math.MaxUint32
 	}
-	c := 1 - math.Exp(-128/(ms*.001*float64(sampleRate)))
+	c := 1 - detmath.Exp(-128/(ms*.001*float64(sampleRate)))
 	return uint32(min(math.Floor(c*(1<<32)), math.MaxUint32))
 }
 
