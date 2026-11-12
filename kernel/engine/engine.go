@@ -491,12 +491,12 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if err := e.initEffects(cfg, bpmMilli); err != nil {
 		return nil, err
 	}
+	// Portable kernels never see Routing: kernel images have no field for it,
+	// and kernelimage.Encode refuses a config that sets it.
 	if returnsEnabled {
 		if err := e.initRouting(cfg); err != nil {
 			return nil, err
 		}
-	} else if cfg.Routing != nil && (len(cfg.Routing.Returns) != 0 || len(cfg.Routing.TrackSends) != 0) {
-		return nil, engineError("extra reverb returns are not available in portable kernels")
 	}
 	voices, err := e.initTrackVoices(cfg)
 	if err != nil {
@@ -1202,7 +1202,9 @@ func (e *Engine) Reset() {
 	if e.reverbB != nil {
 		e.reverbB.Reset()
 	}
-	e.resetExtraReturns()
+	if returnsEnabled {
+		e.resetExtraReturns()
+	}
 	if e.compMusic != nil {
 		e.compMusic.Reset()
 	}
@@ -1561,7 +1563,9 @@ func (e *Engine) apply(c cmd.Command) {
 		if e.reverbB != nil {
 			e.reverbB.Reset()
 		}
-		e.resetExtraReturns()
+		if returnsEnabled {
+			e.resetExtraReturns()
+		}
 		if e.compMusic != nil {
 			e.compMusic.Reset()
 		}
@@ -2425,7 +2429,9 @@ func (e *Engine) emit(message cmd.Message) {
 			if e.reverbB != nil {
 				e.reverbB.Reset()
 			}
-			e.resetExtraReturns()
+			if returnsEnabled {
+				e.resetExtraReturns()
+			}
 			if e.compMusic != nil {
 				e.compMusic.Reset()
 			}
@@ -2460,7 +2466,9 @@ func (e *Engine) fault(code uint16) {
 	if e.reverbB != nil {
 		e.reverbB.Reset()
 	}
-	e.resetExtraReturns()
+	if returnsEnabled {
+		e.resetExtraReturns()
+	}
 	if e.compMusic != nil {
 		e.compMusic.Reset()
 	}
