@@ -8,6 +8,8 @@ import (
 	"image/png"
 	"math"
 	"strconv"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 var rampStops = [][3]float64{{0, 0, 4}, {40, 11, 84}, {101, 21, 110}, {159, 42, 99}, {212, 72, 66}, {245, 125, 21}, {250, 193, 39}, {252, 255, 164}}
@@ -179,7 +181,7 @@ func (a *Analysis) spectrogram(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 		for c := c0; c < c1 && c < len(a.specRows); c++ {
 			for r, v := range a.specRows[c] {
 				if scaled {
-					column[r] += math.Pow(10, float64(v)/10)
+					column[r] += detmath.Pow(10, float64(v)/10)
 				} else {
 					column[r] = float64(v)
 				}
@@ -191,7 +193,7 @@ func (a *Analysis) spectrogram(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 			switch {
 			case count == 0:
 			case scaled:
-				v = 10 * math.Log10(column[r]/float64(count)+1e-30)
+				v = 10 * detmath.Log10(column[r]/float64(count)+1e-30)
 			default:
 				v = column[r]
 			}
@@ -222,12 +224,12 @@ func (a *Analysis) spectrogram(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 			lastLabel = x
 		}
 	}
-	ratio := math.Pow(specHighHz/specLowHz, 1.0/specRows)
+	ratio := detmath.Pow(specHighHz/specLowHz, 1.0/specRows)
 	for _, tick := range []struct {
 		hz    float64
 		label string
 	}{{30, "30"}, {50, "50"}, {100, "100"}, {200, "200"}, {500, "500"}, {1000, "1k"}, {2000, "2k"}, {5000, "5k"}, {10000, "10k"}} {
-		row := int(math.Log(tick.hz/specLowHz) / math.Log(ratio))
+		row := int(detmath.Log(tick.hz/specLowHz) / detmath.Log(ratio))
 		y := (specRows-1-row)*2 + 1
 		for x := 0; x < min(width, 6); x++ {
 			img.SetNRGBA(x, y, color.NRGBA{255, 255, 255, 255})

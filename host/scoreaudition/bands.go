@@ -3,6 +3,8 @@ package scoreaudition
 import (
 	"math"
 	"sort"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // The bands that mixing decisions use. Edges are fixed: a band holds the FFT
@@ -166,7 +168,7 @@ func bandLevelDB(sum, frames float64, n int) float64 {
 	if frames <= 0 || sum <= 0 {
 		return -120
 	}
-	return math.Max(-120, 10*math.Log10(sum/frames/(3*float64(n)*float64(n)/16)))
+	return math.Max(-120, 10*detmath.Log10(sum/frames/(3*float64(n)*float64(n)/16)))
 }
 
 // owner reads one band's per-track energies, all summed over the same
@@ -183,8 +185,8 @@ func owner(band int, energy []float64, ids []string, use []bool, frames float64,
 	}
 	o.LevelDB = round(bandLevelDB(total, frames, n), 1)
 	mean := total / math.Max(frames, 1)
-	if total <= 0 || loudest <= 0 || span <= 0 || top <= 0 || frames <= 0 || 10*math.Log10(mean/loudest) < -quietBandDB ||
-		10*math.Log10(mean/span) < -quietSpanDB || 10*math.Log10(mean/top) < -quietRangeDB {
+	if total <= 0 || loudest <= 0 || span <= 0 || top <= 0 || frames <= 0 || 10*detmath.Log10(mean/loudest) < -quietBandDB ||
+		10*detmath.Log10(mean/span) < -quietSpanDB || 10*detmath.Log10(mean/top) < -quietRangeDB {
 		o.Quiet = true
 		return o
 	}
