@@ -428,8 +428,8 @@ floored at -120; null means the method cannot give a value.
 | `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu`, `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`, `loudest_section`, `quietest_section`, `section_spread_lu` (loudest minus quietest), and `short_term_per_beat_lufs`: one value per quarter note, the 3 s window that ends where the beat ends. Absent at a sample rate the meter does not support. |
 | `bands` | object | Absent with `--no-bands`. `names`, `edges_hz` (eight edges for seven bands), `collision_share_pct` (25), `quiet_below_band_db` (30), `quiet_below_span_db` (30), `quiet_below_range_db` (40), and `collisions[]`: per band, `band`, `bars` (one-based bars with a collision) and `pairs` (`tracks`, the two colliding tracks in score order, and `bars`, how often), most frequent first. |
 | `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
-| `peaks[]` | array | Highest true peaks first: `rank`, `at` (a position), `true_peak_dbtp`, `sample_peak_dbfs`, and `tracks[]` (`id`, `share_pct`, `peak_dbfs`: the track's own sample peak in those 5 ms). Empty with `--peaks 0`. |
-| `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width`, `height`, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
+| `peaks[]` | array | Highest true peaks first: `rank`, `at` (a position), `true_peak_dbtp`, `sample_peak_dbfs`, and `tracks[]` (`id`, `share_pct`: percent of the summed track-stem energy in the 5 ms around the peak; `peak_dbfs`: the track stem's own sample peak in those 5 ms, before the master chain). Empty with `--peaks 0`. |
+| `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width` and `height` in pixels, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
 
 A position (`at`, `start`, `end`) has `text` (`bar.beat.sixteenth`, as an
 `@` placement position), `bar`, `beat` and `sixteenth` (one-based song
@@ -474,6 +474,18 @@ The added measures have these limits:
 - A pitched percussion voice such as a log drum adds energy at its third
   harmonic (a fifth above the octave), which can pull the heard chord a fifth
   above the written one when it outweighs the harmony parts.
+- Peak shares and a peak's per-track `peak_dbfs` come from the track stems,
+  which are taken before the master chain. When the master adds gain or
+  compression, a track's `peak_dbfs` reads below the mix's `sample_peak_dbfs`
+  (a kick stem at -10.3 dBFS under a mix peak at -1.9 dBFS, for example); the
+  shares still say which hit set the peak. Effect
+  returns are left out, so a peak set by a reverb or echo throw is credited to
+  the tracks that sound with it.
+- The activity matrix has one cell per bar: a part that rests for a beat or
+  two inside a bar still sounds in that bar. `bars[].sample_peak_dbfs`,
+  `loudness.short_term_per_beat_lufs` and `activity.silences` show shorter
+  drops.
+
 Note starts come from spectral flux and miss soft notes under loud ones.
 `decay20` stops at the next detected attack, so a very dense part reports a
 short gap. Written chords use onsets only: a note held from an earlier bar does
@@ -499,9 +511,20 @@ all) puts them at about a fifth of the run:
 | The render that makes the stems, for comparison | 6.34 s | 48% |
 
 Band ownership grows with the number of tracks and the length; the loudness
-passes only with the length. `--no-bands` skips band ownership. Memory does
-not change measurably: the report already holds every analyzed stem in memory
-as 32-bit float, about 23 MB per track per minute of song, and `--tracks`
-lowers that. The JSON grows: about 300 KB for a three-minute song of twelve
+passes only with the length. Band ownership runs on several cores beside the
+per-track measures, one track per core at a time, and gives the same numbers
+however the work is scheduled. `--no-bands` skips it. Memory does not change
+measurably: the report already holds every analyzed stem in memory as 32-bit
+float, about 23 MB per track per minute of song, and `--tracks` lowers that.
+
+Measured on the 181-second, twelve-track reference song
+`examples/songs/anywhere-you-are.cicada` (Apple M1 Max, four Go threads,
+load average 4 to 9):
+
+| `audition --json` | Wall time | Peak memory |
+| --- | --- | --- |
+| Before these measures | 58 to 60 s | 1.84 GB |
+| With them, band ownership on one core | 70 to 75 s | 1.83 GB |
+| With them, `--no-bands` | 63 s | 1.85 GB | The JSON grows: about 300 KB for a three-minute song of twelve
 or twenty-four tracks, plus about 140 bytes per track per bar with
 `--bar-bands`.

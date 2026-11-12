@@ -92,9 +92,21 @@ func magFrames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i i
 // powFrames is magFrames giving each bin's power, (|L|^2+|R|^2)/2, the square
 // of magFrames' magnitude, without its square roots.
 func powFrames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i int, pow []float64)) {
+	newPowBuffers(p.n).frames(x, p, count, start, fn)
+}
+
+// powBuffers is the scratch of powFrames. A caller that transforms bar by bar
+// keeps one and reuses it, so it allocates once instead of once per bar.
+type powBuffers struct{ re, im, pow []float64 }
+
+func newPowBuffers(n int) *powBuffers {
+	return &powBuffers{re: make([]float64, n), im: make([]float64, n), pow: make([]float64, n/2+1)}
+}
+
+// frames is powFrames with these buffers; fn must not keep pow.
+func (buf *powBuffers) frames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i int, pow []float64)) {
 	n := p.n
-	re, im := make([]float64, n), make([]float64, n)
-	pow := make([]float64, n/2+1)
+	re, im, pow := buf.re, buf.im, buf.pow
 	for i := 0; i < count; i++ {
 		s := start(i)
 		for k := 0; k < n; k++ {
