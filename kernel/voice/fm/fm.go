@@ -5,6 +5,8 @@ package fm
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
@@ -220,9 +222,9 @@ func New(sampleRate int, params Params) (*Instrument, error) {
 		return nil, err
 	}
 	f := &Instrument{rate: sampleRate, voiceLimit: MaxVoices, gain: params.Gain, gainT: params.Gain, stealFrames: sampleRate / 100}
-	f.tailDecay = float32(math.Exp(-8 / float64(f.stealFrames)))
+	f.tailDecay = float32(detmath.Exp(-8 / float64(f.stealFrames)))
 	for i := range f.sine {
-		f.sine[i] = float32(math.Sin(2 * math.Pi * float64(i) / tableSize))
+		f.sine[i] = float32(detmath.Sin(2 * math.Pi * float64(i) / tableSize))
 	}
 	f.sine[tableSize] = 0
 	// A 128-tap Blackman-windowed sinc is shared by the whole instrument.
@@ -230,8 +232,8 @@ func New(sampleRate int, params Params) (*Instrument, error) {
 	var sum float64
 	for i := range f.fir {
 		x := float64(i) - float64(firSize-1)/2
-		window := float64(.42-float64(.5*math.Cos(2*math.Pi*float64(i)/float64(firSize-1)))) + float64(.08*math.Cos(4*math.Pi*float64(i)/float64(firSize-1)))
-		coefficient := math.Sin(2*math.Pi*.2*x) / (math.Pi * x) * window
+		window := float64(.42-float64(.5*detmath.Cos(2*math.Pi*float64(i)/float64(firSize-1)))) + float64(.08*detmath.Cos(4*math.Pi*float64(i)/float64(firSize-1)))
+		coefficient := detmath.Sin(2*math.Pi*.2*x) / (math.Pi * x) * window
 		f.fir[i] = float32(coefficient)
 		sum += float64(2 * float64(coefficient))
 	}
@@ -246,13 +248,13 @@ func New(sampleRate int, params Params) (*Instrument, error) {
 
 func (f *Instrument) prepareKey(index int, p Params) {
 	note := index + MinNote
-	frequency := 440 * math.Exp2(float64(note-69)/12)
+	frequency := 440 * detmath.Exp2(float64(note-69)/12)
 	internalRate := float64(f.rate * 2)
 	guard := float64(f.rate) * .39
 	var bandwidth [Operators]float64
 	for i := Operators - 1; i >= 0; i-- {
 		o, k := p.Operators[i], &f.keys[index].ops[i]
-		hz := frequency * float64(o.Ratio) * math.Exp2(float64(o.Detune)/1200)
+		hz := frequency * float64(o.Ratio) * detmath.Exp2(float64(o.Detune)/1200)
 		k.level = o.Level
 		if hz >= guard {
 			k.level = 0
@@ -278,17 +280,17 @@ func (f *Instrument) prepareKey(index int, p Params) {
 		if k.level == 0 {
 			bandwidth[i] = 0
 		}
-		timeScale := math.Exp2(float64(60-note) * float64(o.KeyTracking) / 24)
+		timeScale := detmath.Exp2(float64(60-note) * float64(o.KeyTracking) / 24)
 		e := o.Envelope
 		k.attackFrames = int(math.Ceil(float64(e.Attack) * internalRate))
 		if k.attackFrames > 0 {
 			k.attackStep = 1 / float32(k.attackFrames)
 		}
 		if e.Decay > 0 {
-			k.decay = float32(math.Exp(-6.907755278982137 / (float64(e.Decay) * timeScale * internalRate)))
+			k.decay = float32(detmath.Exp(-6.907755278982137 / (float64(e.Decay) * timeScale * internalRate)))
 		}
 		k.releaseFrames = int(math.Ceil(float64(e.Release) * timeScale * internalRate))
-		k.release = float32(math.Exp(-6.907755278982137 / float64(k.releaseFrames)))
+		k.release = float32(detmath.Exp(-6.907755278982137 / float64(k.releaseFrames)))
 		k.sustain, k.velocity = e.Sustain, o.Velocity
 		pan := float32(float32(float32(note-64)/44)*.2) + o.Pan
 		pan = float32(min(float32(1), max(float32(-1), pan)) * p.StereoSpread)

@@ -41,7 +41,7 @@ func (e *Engine) parallelSegmentFrames(remaining int) int {
 	if e.songMode {
 		limitTick(e.songEndTick)
 	}
-	limitTick(e.MeterMap().NextBarLine(e.transport.Tick()))
+	limitTick(e.transport.NextBarLine())
 	if tempo, tick := e.transport.PendingTempo(); tempo != 0 {
 		limitTick(tick)
 	}

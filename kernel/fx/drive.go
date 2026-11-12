@@ -168,12 +168,21 @@ func (d *Drive) buildTables() {
 			var power float64
 			for sample := 0; sample < 1024; sample++ {
 				x := sine[sample]
-				y := shapeSample(shape, x*pre)
+				y := tableShape(shape, x*pre)
 				power += float64(y * y)
 			}
 			d.table[shape][index] = inputRMS / math.Sqrt(power/1024)
 		}
 	}
+}
+
+// tableShape is shapeSample for the gain tables: they are coefficients, so
+// the fold uses the exact SinPi (detmath package comment).
+func tableShape(shape DriveShape, input float64) float64 {
+	if shape == Fold {
+		return detmath.SinPi(0.5 * input)
+	}
+	return shapeSample(shape, input)
 }
 
 func shapeSample(shape DriveShape, input float64) float64 {
@@ -183,9 +192,9 @@ func shapeSample(shape DriveShape, input float64) float64 {
 	case Hard:
 		return math.Max(-1, math.Min(1, input))
 	case Fold:
-		// sin(pi/2 * input), with the exact reduction of SinPi: it runs four
-		// times per frame for every shape, so its cost matters.
-		return detmath.SinPi(0.5 * input)
+		// sin(pi/2 * input) per sample, four times per frame for every shape:
+		// the second tier (detmath package comment). Tables use tableShape.
+		return detmath.SinPiNear(0.5 * input)
 	case Diode:
 		if input > 0 {
 			return fastmath.Tanh(input)

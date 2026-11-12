@@ -47,7 +47,7 @@ func (e *Engine) processBarBoundary() {
 		return
 	}
 	tick := e.transport.Tick()
-	completedBars, offset := e.MeterMap().BarAt(tick)
+	completedBars, offset := e.transport.Bar()
 	if offset != 0 || tick == e.lastBarTick {
 		return
 	}

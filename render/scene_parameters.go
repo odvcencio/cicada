@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
@@ -52,7 +54,7 @@ func hasSceneParameters(p *project.Project) bool {
 }
 
 func sceneSmoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
-	return float32(1 - math.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
+	return float32(1 - detmath.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
 }
 
 func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRate int, delay *fx.Delay, reverb *fx.Reverb, compressor *fx.Compressor) (*sceneParameters, error) {
@@ -471,6 +473,14 @@ func (p *sceneParameters) setGlobal(id kernel.ParamID, value float32) error {
 type offlineControl struct {
 	Sample  int64
 	Setting engine.SceneSetting
+}
+
+// nextAutomation is the sample of the first automation point not applied yet.
+func (p *sceneParameters) nextAutomation() (int64, bool) {
+	if p == nil || p.automationIndex >= len(p.automation) {
+		return 0, false
+	}
+	return p.automation[p.automationIndex].Sample, true
 }
 
 func (p *sceneParameters) advanceAutomation(sample int64) error {
