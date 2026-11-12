@@ -1,3 +1,10 @@
+// TinyGo 0.41.1 crashes in LLVM's optimizer (SIGSEGV in LLVMRunPasses) while
+// compiling this file into a test binary, so it is left out of TinyGo builds:
+// make test-tinygo-digests compiles every test file of kernel/voice/acid for
+// TestAcidDigest. The round trip still runs natively on every target Go tests.
+
+//go:build !tinygo
+
 package acid
 
 import "testing"
