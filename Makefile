@@ -416,11 +416,11 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 # WebAssembly (under Node), so a TinyGo code-generation difference fails here as
 # it would on arm64 or with GOAMD64=v3. go test exits 0 when -run matches
 # nothing, so every digest must print a PASS line.
-TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness
+TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness ./kernel/voice/acid
 TINYGO_DIGEST_TESTS = TestIdentityDigest TestSinPiDigest TestAtanDigest TestTanh32Digest TestLog1pDigest TestNearDigest TestFilterCoefficientDigest TestExp2F32Digest \
 	TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest TestAmpcabDigest TestAmpcabOutputDigest TestChorusDigest \
 	TestConvolutionDigest TestTapeDigest TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest \
-	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget
+	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget TestAcidDigest
 test-tinygo-digests:
 	mkdir -p build
 	bash -o pipefail -c 'GOWORK=off GOFLAGS=-buildvcs=false tinygo test -target=wasm -v -run Digest $(TINYGO_DIGEST_PACKAGES) | tee build/tinygo-digests.txt'
