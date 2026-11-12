@@ -3,6 +3,7 @@ package render
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"m31labs.dev/cicada/host/sampleasset"
@@ -309,6 +310,21 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	return renderWithOptions(score, opts, writer, "")
 }
 
+// ErrSilentRange is wrapped by the error of a peak-normalized render whose
+// range has no output sample of at least normalizeFloor.
+var ErrSilentRange = errors.New("the range is silent")
+
+// normalizeFloor is the smallest output peak that peak normalization raises to
+// -1 dBFS: 2^-23, one step of 24-bit PCM. A quieter range holds nothing a
+// 24-bit file can show, and its gain (0.89/peak, above 2^22) would amplify
+// only the arithmetic of a decaying tail. Such a tail's peak was 2.2e-44 when
+// voices left their state in subnormal numbers, and the gain overflowed
+// ("invalid WAV output gain"); with that state flushed (kernel/dsp/subnormal)
+// the peak is exactly zero. Either way the render now fails with
+// ErrSilentRange. The floor also caps the gain normalization can add after a
+// flush at 0.89*2^23.
+const normalizeFloor = 1.0 / (1 << 23)
+
 func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, stemsDir string) (Report, error) {
 	gain := float32(1)
 	if opts.Normalize {
@@ -319,9 +335,11 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 		if err != nil {
 			return report, err
 		}
-		if report.OutputPeak > 0 {
-			gain = float32(detmath.Pow(10, -1.0/20) / float64(report.OutputPeak))
+		if report.OutputPeak < normalizeFloor {
+			return report, fmt.Errorf("cannot peak-normalize bars %d to %d and the %g s tail: %w; its output peak %g is below one 24-bit step (2^-23)",
+				report.From+1, report.From+report.Bars, opts.TailSec, ErrSilentRange, report.OutputPeak)
 		}
+		gain = float32(detmath.Pow(10, -1.0/20) / float64(report.OutputPeak))
 	}
 	return renderWAV(score, opts, writer, stemsDir, gain)
 }
