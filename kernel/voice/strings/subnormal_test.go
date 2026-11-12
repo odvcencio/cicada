@@ -10,6 +10,7 @@ import (
 // silence; they must reach zero rather than stall in subnormal numbers, which
 // tripled the cost of the silence after a chord.
 func TestReleaseStateIsNeverSubnormal(t *testing.T) {
+	subnormaltest.SkipWithoutFlush(t)
 	const rate = 48000
 	params, err := Patch("string_machine")
 	if err != nil {

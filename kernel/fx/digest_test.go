@@ -131,7 +131,14 @@ func TestDelayDigest(t *testing.T) {
 	checkDigest(t, "delay", d, delayDigest)
 }
 
-const driveDigest = "267a31bf2928cce345c1e9b8645288576285467f8139b6c376a4aeae4334a575"
+// driveDigest changed with #323, which flushes the drive's silent tone tails
+// once they decay into float64 subnormal numbers (kernel/dsp/subnormal): the
+// 4 kHz tone at 44.1 kHz stalls there in the program's silent blocks. The
+// output changes in the sign of zero only: 3,350 of the 180,000 samples are
+// +0 where they were -0 (compared bit by bit on amd64), which PCM encodes
+// alike. amd64 and arm64 produce the new digest alike; it was
+// 267a31bf2928cce345c1e9b8645288576285467f8139b6c376a4aeae4334a575.
+const driveDigest = "fe580e9c2b5c8005edbcf2c7f4836df5a0d9239d621d010242266e7bfdabbab9"
 
 func TestDriveDigest(t *testing.T) {
 	d := bitdigest.New()

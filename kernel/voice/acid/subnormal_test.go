@@ -10,9 +10,9 @@ import (
 // Resonance, envelope modulation and accent glide to live targets, and the
 // savage blend glides to zero when the switch goes off; in float64 each
 // stalls at a subnormal number seconds after a target of zero (the savage
-// blend, with its 20 ms glide, after about 15 s) and slows every sample. The voice sweeps them every subnormal.SweepFrames samples. With the
-// build tag cicada_noflush the case must reach the stall, and the output must
-// match the same pin.
+// blend, with its 20 ms glide, after about 15 s) and slows every sample.
+// The voice sweeps them every subnormal.SweepFrames samples. With the build
+// tag cicada_noflush the case must reach the stall.
 func TestControlsAreNeverSubnormal(t *testing.T) {
 	const rate = 48000
 	v, err := New(rate)
@@ -50,6 +50,10 @@ func TestControlsAreNeverSubnormal(t *testing.T) {
 	})
 }
 
-// pinnedAcidControlsHash is the float32 output of TestControlsAreNeverSubnormal,
-// produced alike on amd64 and arm64, with and without cicada_noflush.
-const pinnedAcidControlsHash = 0x2bae0163d409ab79
+// pinnedAcidControlsHash is zero: the output is not pinned, because the acid
+// voice's float32 output differs between architectures without any flush.
+// This case gave 0x2bae0163d409ab79 on amd64 and 0x65564691e809b4e1 on arm64
+// (macOS), each the same with and without cicada_noflush, so the flush
+// changes no output bit on either. The voice computes its coefficients with
+// the math library (math.Exp in SetParams and NoteOn), the likely cause.
+const pinnedAcidControlsHash = 0

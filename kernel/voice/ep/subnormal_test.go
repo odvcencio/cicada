@@ -40,6 +40,7 @@ const pinnedHeldChordHash = 0x5e0add3af9bcc789
 // and the output filters after the release. The output is pinned: the
 // voice goldens end too soon after a release to see what a flush changes.
 func TestHeldChordStateIsNeverSubnormal(t *testing.T) {
+	subnormaltest.SkipWithoutFlush(t)
 	const rate = 48000
 	i := newHeldChord(t, rate)
 	hash := subnormaltest.NewHash(rate)

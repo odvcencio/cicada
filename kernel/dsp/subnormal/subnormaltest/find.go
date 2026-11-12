@@ -176,6 +176,17 @@ func Run(t *testing.T, c Case) {
 	CheckPin(t, c.Name, hash, pinned)
 }
 
+// SkipWithoutFlush skips a test whose checks hold only when the processors
+// flush: in a build with the tag cicada_noflush, where Flush and Flush64
+// return their argument, its state stalls in subnormal numbers and its pinned
+// output differs by design.
+func SkipWithoutFlush(t testing.TB) {
+	t.Helper()
+	if !subnormal.Enabled {
+		t.Skip("built with cicada_noflush: this test checks the flush itself")
+	}
+}
+
 // Noise returns a deterministic noise source in [-1, 1).
 func Noise(seed uint32) func() float32 {
 	return func() float32 {
