@@ -4,6 +4,7 @@
 #   scripts/ci-studio-browser.sh run SHARD     run the segments of one shard
 #   scripts/ci-studio-browser.sh list SHARD    print the segments of one shard
 #   scripts/ci-studio-browser.sh check         fail unless every suite runs in exactly one shard
+#   scripts/ci-studio-browser.sh local-first   the local-first walkthrough (its own job)
 #
 # "run" expects what the workflow's studio-build job produced: build/cicada,
 # build/cicada-kernel.wasm, build/cicada-workstation and build/workstation/,
@@ -121,8 +122,15 @@ segment_runs() {
 # This list is an exemption, not coverage: it only keeps the completeness check
 # from failing on them. Remove a name here when you add its suite to a segment.
 not_run_by_ci=(
-	# (none: every suite file runs in a shard)
+	# Runs in its own job, "Studio local-first walkthrough": local-first below.
+	# check runs its row check and requires a workflow job that runs it.
+	local-first
 )
+
+# The walkthrough's CI runs, fixture:part (see local_first_parts). check
+# passes them to the suite's --check-rows, which fails unless every scripted
+# row runs in exactly one of them.
+local_first_runs="scene:1/3 scene:2/3 scene:3/3 placement:1/1"
 
 self="${BASH_SOURCE[0]}"
 
@@ -207,11 +215,21 @@ check_shards() {
 		if [[ ! -f "$root/workstation/browser/$name.test.cjs" ]]; then complain "no file workstation/browser/$name.test.cjs"; fi
 	done
 
+	# The local-first walkthrough runs in its own job: its rows must split
+	# exactly into scripted and unscripted ones, every scripted row must run in
+	# one of local_first_runs, and a workflow job must run it.
+	if ! node "$root/workstation/browser/local-first.test.cjs" --check-rows $local_first_runs >&2; then
+		complain "the local-first walkthrough's row check failed (above)"
+	fi
+	if ! grep -q 'bash scripts/ci-studio-browser.sh local-first' "$root/.github/workflows/ci.yml" 2>/dev/null; then
+		complain "no workflow job runs scripts/ci-studio-browser.sh local-first"
+	fi
+
 	if [[ "$problems" -gt 0 ]]; then
 		echo "$problems problem(s)" >&2
 		return 1
 	fi
-	echo "studio browser shards: ${#defined[@]} segments, ${#declared[@]} suites, each suite in exactly one of $shard_count shards"
+	echo "studio browser shards: ${#defined[@]} segments, ${#declared[@]} suites, each suite in exactly one of $shard_count shards; local-first in its own job"
 }
 
 # --- helpers used by segments ---------------------------------------------
@@ -248,6 +266,9 @@ stop_studio() {
 # device is opened. It sets studio_pid to the workstation. stop_synthetic_studio
 # stops all three processes.
 synthetic_pids=()
+# Studios a run starts itself (local_first_parts runs several at once); the
+# EXIT trap stops them too.
+extra_pids=()
 start_synthetic_studio() {
 	local score="$1" name="$2" manifest backend token _
 	manifest="$PWD/build/studio-$name-manifest.json"
@@ -747,6 +768,50 @@ seg_scene_launch_keys() { # new; about 10 s locally
 	stop_studio
 }
 
+# local_first_parts runs workstation/browser/local-first.test.cjs for the
+# "Studio local-first walkthrough" job (scripts/ci-studio-browser.sh
+# local-first), not in a shard. Report mode: it prints, per interaction,
+# whether the result waits on the server, and fails only when a row's measured
+# kind differs from workstation/browser/local-first.expected.json. Each part
+# gets its own fresh Studio and fixture (the walkthrough edits the score), and
+# the four parts run side by side.
+local_first_parts() {
+	local run fixture part tag port pid status=0
+	local -a tags=() walks=()
+	export CICADA_LOCAL_FIRST_PROOF_DIR="$PWD/build/studio-local-first-proof"
+	for run in $local_first_runs; do
+		fixture="${run%%:*}" part="${run#*:}"
+		tag="$fixture-${part%/*}of${part#*/}"
+		tags+=("$tag")
+		if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then
+			run_suite "local-first@$tag" true
+			continue
+		fi
+		mkdir -p "$browser_root/local-first-$tag"
+		node workstation/browser/local-first.test.cjs --write-fixture "$browser_root/local-first-$tag/main.cicada" "$fixture"
+		port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
+		./build/cicada studio "$browser_root/local-first-$tag/main.cicada" --audio null --listen "127.0.0.1:$port" > "build/studio-local-first-$tag-server.log" 2>&1 &
+		pid=$!
+		extra_pids+=("$pid")
+		for _ in $(seq 1 100); do
+			if curl --silent --fail "http://127.0.0.1:$port/" > /dev/null; then break; fi
+			kill -0 "$pid"
+			sleep 0.1
+		done
+		CICADA_STUDIO_URL="http://127.0.0.1:$port" CICADA_STUDIO_STARTUP_LOG="/proc/$pid/fd/1" \
+			run_suite "local-first@$tag" env CICADA_LOCAL_FIRST_FIXTURE="$fixture" CICADA_LOCAL_FIRST_PART="$part" node --test workstation/browser/local-first.test.cjs > "build/studio-local-first-$tag-report.txt" 2>&1 &
+		walks+=($!)
+	done
+	for pid in "${walks[@]}"; do wait "$pid" || status=1; done
+	if [[ "${CICADA_STUDIO_DRY_RUN:-}" != 1 ]]; then
+		for tag in "${tags[@]}"; do cat "build/studio-local-first-$tag-report.txt"; done
+	fi
+	for pid in "${extra_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+	for pid in "${extra_pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+	extra_pids=()
+	return "$status"
+}
+
 seg_live_write() { # new; about 3 minutes locally, most of it the harness build and five Studio starts
 	# These suites need a synthetic microphone: build the harness test binary
 	# once, then start it with a score that has no amp_drive curve.
@@ -987,6 +1052,33 @@ seg_editor() { # 22 s
 
 # --- run ------------------------------------------------------------------
 
+# browser_env NAME prepares a GitHub Actions run (a shard, or the local-first
+# job): Playwright, Chrome, the owner-session hook, a free port and the EXIT
+# trap that stops every Studio the run starts.
+browser_env() {
+	browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$1"
+	mkdir -p "$browser_root" build
+	npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
+	export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
+	local tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
+	export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+	if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
+		mkdir -p "$tool_root"
+		curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+		unzip -q "$browser_root/chrome.zip" -d "$browser_root"
+		mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
+	fi
+	# A page that stops responding gets native stacks in its report. On a
+	# GitHub-hosted runner gdb is installed only then, inside that failure
+	# (page-stall.cjs); a self-hosted machine never installs packages.
+	if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then export CICADA_PAGE_STALL_NATIVE=install; fi
+	base_node_options="${NODE_OPTIONS:-}"
+	export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
+	studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
+	export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
+	trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" "${extra_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" "${extra_pids[@]}" 2>/dev/null || true' EXIT
+}
+
 run_shard() {
 	local shard="$1" seg run missing=0
 	segments="$(shard_segments "$shard")"
@@ -1006,27 +1098,7 @@ run_shard() {
 		stop_synthetic_studio() { return 0; }
 		continuity_fixture() { mkdir -p "$browser_root/$1"; }
 	else
-		browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$shard"
-		mkdir -p "$browser_root" build
-		npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
-		export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
-		local tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
-		export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
-		if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
-			mkdir -p "$tool_root"
-			curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
-			unzip -q "$browser_root/chrome.zip" -d "$browser_root"
-			mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
-		fi
-		# A page that stops responding gets native stacks in its report. On a
-		# GitHub-hosted runner gdb is installed only then, inside that failure
-		# (page-stall.cjs); a self-hosted machine never installs packages.
-		if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then export CICADA_PAGE_STALL_NATIVE=install; fi
-		base_node_options="${NODE_OPTIONS:-}"
-		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
-		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
-		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true' EXIT
+		browser_env "$shard"
 	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"
@@ -1052,8 +1124,35 @@ run_shard() {
 	echo "shard $shard ran all $(wc -l < "$ran_file") recorded suite runs"
 }
 
+# run_local_first runs the walkthrough for its own job. It needs the same
+# build outputs and variables as "run".
+run_local_first() {
+	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then
+		browser_root="${CICADA_STUDIO_DRY_ROOT:?set CICADA_STUDIO_DRY_ROOT}"
+	else
+		browser_env local-first
+	fi
+	mkdir -p "$browser_root" build
+	ran_file="$browser_root/ran-suites.txt"
+	: > "$ran_file"
+	local status=0 run missing=0
+	local_first_parts || status=$?
+	# A part whose command was deleted or skipped leaves no record: fail.
+	for run in $local_first_runs; do
+		run="local-first@${run%%:*}-$(sed 's#/#of#' <<<"${run#*:}")"
+		if ! grep -qxF -- "$run" "$ran_file"; then
+			echo "FAIL: the local-first job did not run $run" >&2
+			missing=1
+		fi
+	done
+	if [[ "$missing" == 1 ]]; then return 1; fi
+	echo "local-first ran all $(wc -l < "$ran_file") recorded parts"
+	return "$status"
+}
+
 case "${1:-}" in
 run) run_shard "${2:?shard number}" ;;
+local-first) run_local_first ;;
 list) shard_segments "${2:?shard number}" ;;
 check) check_shards ;;
 run-suite) # run-suite NAME COMMAND...: one suite under the time limit (used by the test)
@@ -1062,7 +1161,7 @@ run-suite) # run-suite NAME COMMAND...: one suite under the time limit (used by 
 	run_suite "$@"
 	;;
 *)
-	echo "usage: $0 run SHARD | list SHARD | check" >&2
+	echo "usage: $0 run SHARD | list SHARD | check | local-first" >&2
 	exit 2
 	;;
 esac

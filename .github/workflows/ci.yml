@@ -826,7 +826,10 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation]
+    # local-first (the Studio local-first walkthrough) is required here. If it
+    # fails on main twice for a reason that is not a product change, it goes
+    # to report-only until fixed.
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation, local-first]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -847,6 +850,8 @@ jobs:
           RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
           RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
           WORKSTATION_RESULT: ${{ needs.workstation.result }}
+          RUN_STUDIO_BROWSER: ${{ needs.changes.outputs.studio_browser }}
+          LOCAL_FIRST_RESULT: ${{ needs.local-first.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
@@ -855,6 +860,7 @@ jobs:
           #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
           #   workstation                success when workstation=true, skipped otherwise
           #                              (its go generate enforces the UI engine size limit)
+          #   local-first                success when studio_browser=true, skipped otherwise
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -890,6 +896,11 @@ jobs:
             check workstation "$WORKSTATION_RESULT" success
           else
             check workstation "$WORKSTATION_RESULT" skipped
+          fi
+          if [[ "$RUN_STUDIO_BROWSER" == true ]]; then
+            check local-first "$LOCAL_FIRST_RESULT" success
+          else
+            check local-first "$LOCAL_FIRST_RESULT" skipped
           fi
           exit "$status"
 
@@ -1215,6 +1226,44 @@ jobs:
             build/studio-print-*-proof/
             build/studio-editor-*-report.txt
             build/studio-editor-*-server.log
+
+  # workstation/browser/local-first.test.cjs: for each scripted Studio
+  # interaction, does the result wait on the server? Report mode: it fails
+  # when a row's measured kind differs from local-first.expected.json. It
+  # reuses the studio-build outputs; its four parts run side by side.
+  local-first:
+    name: Studio local-first walkthrough
+    needs: [changes, studio-build]
+    if: ${{ needs.changes.outputs.studio_browser == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CHROME_VERSION: 152.0.7977.64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: studio-browser-build
+          path: ${{ runner.temp }}/studio-browser-build
+      - name: Unpack the build outputs
+        run: tar -xzf "$RUNNER_TEMP/studio-browser-build/studio-browser-build.tgz"
+      - name: Walk the Studio interactions
+        shell: bash
+        run: bash scripts/ci-studio-browser.sh local-first
+      - name: Save the walkthrough reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: studio-local-first-reports
+          if-no-files-found: warn
+          path: |
+            build/studio-local-first-*-report.txt
+            build/studio-local-first-*-server.log
+            build/studio-local-first-proof/
 
   macos-desktop:
     name: macOS desktop (${{ matrix.arch }})
