@@ -576,8 +576,40 @@ jobs:
           if-no-files-found: warn
           path: build/render-identity.log
 
+  # The direct mixer and the scheduled engine must play the same notes and
+  # write the same bytes at 44.1 kHz (TestRenderPathsAgree, job m0-render-paths
+  # on every pull request in the root group). Nightly, the same scores are
+  # compared at 48 kHz. The step reports and never fails: the log names each
+  # score that differs and by how much.
+  render-paths-audio:
+    name: Render paths, audio comparison report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-render-paths-audio | tee build/render-paths-audio.log
+      - name: Save the report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: render-paths-audio
+          if-no-files-found: warn
+          path: build/render-paths-audio.log
+
   # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
   # aggregate. Every command that was in the single job is in exactly one part.
+  # A fourth part, m0-render-paths, was added later.
   m0-core:
     name: M0 grammar and Go tests
     needs: changes
@@ -607,6 +639,32 @@ jobs:
           name: m0-core-reports
           if-no-files-found: error
           path: build/grammar-doctor.txt
+
+  # Renders every example score the direct mixer can render, whole, and the
+  # targeted scores in render/paths_agree_test.go through the direct mixer and
+  # the scheduled engine, and fails when their note events or audio bytes
+  # differ outside the listed known differences. It runs only here:
+  # `make test-ci-core` skips it, so the two Go test jobs do not wait for it.
+  m0-render-paths:
+    name: M0 render paths agree
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare the direct mixer and the scheduled engine
+        run: |
+          set -euo pipefail
+          make test-render-paths | tee "$RUNNER_TEMP/render-paths.log"
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '^--- PASS: TestRenderPathsAgree ' "$RUNNER_TEMP/render-paths.log" || { echo "No PASS line for TestRenderPathsAgree; was it renamed or skipped?" >&2; exit 1; }
 
   m0-kernel:
     name: M0 kernel, golden, realtime, CLI and generator
@@ -735,7 +793,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, workstation]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -753,6 +811,7 @@ jobs:
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
+          RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
           RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
           WORKSTATION_RESULT: ${{ needs.workstation.result }}
         run: |
@@ -760,7 +819,7 @@ jobs:
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
-          #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
           #   workstation                success when workstation=true, skipped otherwise
           #                              (its go generate enforces the UI engine size limit)
           # Anything else (failure, cancelled, or a skip that should not happen)
@@ -793,6 +852,7 @@ jobs:
           check m0-core "$CORE_RESULT" "$part_expected"
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
+          check m0-render-paths "$RENDER_PATHS_RESULT" "$part_expected"
           if [[ "$RUN_WORKSTATION" == true ]]; then
             check workstation "$WORKSTATION_RESULT" success
           else

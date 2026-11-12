@@ -16,7 +16,8 @@
 # read at test time.
 #
 # Groups and the jobs they gate (see .github/workflows/ci.yml):
-#   root             native-go127, the four M0 parts
+#   root             native-go127, the M0 parts (m0-core, m0-kernel, m0-wasm,
+#                    m0-render-paths)
 #   studio_cli       Studio CLI tests (cmd/cicada shards)
 #   parity           PCM24 and WAV parity (amd64, arm64)
 #   workstation      GoSX workstation and Tymbal boundary

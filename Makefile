@@ -47,9 +47,10 @@ test: test-build-tools
 .PHONY: test-ci-core test-cmd-shard test-cmd-shard-check
 
 # CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
-# target covers every other package. `make test` still runs everything.
+# target covers every other package. It skips TestRenderPathsAgree, which CI
+# runs in its own job (make test-render-paths). `make test` still runs everything.
 test-ci-core: test-build-tools
-	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
+	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -skip '^TestRenderPathsAgree$$' -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -118,6 +119,17 @@ test-render-identity:
 .PHONY: agent-front-door
 agent-front-door:
 	CICADA_UPDATE_AGENT_FRONT_DOOR=1 CICADA_LLMS_FULL_OUT=$(CURDIR)/llms-full.txt go test ./internal/agentguide -run '^(TestAgentFrontDoorIsCurrent|TestLLMsFullFitsItsBudget)$$' -count=1
+
+# The two render paths (the direct mixer and the scheduled engine) must play the
+# same notes and write the same float32 bytes at 44.1 kHz (TestRenderPathsAgree;
+# CI job "M0 render paths agree"). The audio target compares whole songs at
+# 48 kHz and only reports (nightly).
+.PHONY: test-render-paths test-render-paths-audio
+test-render-paths:
+	go test ./render -run '^TestRenderPathsAgree$$' -count=1 -v
+
+test-render-paths-audio:
+	CICADA_PATHS_AUDIO=full go test ./render -run '^TestRenderPathsAudio$$' -count=1 -timeout=60m -v
 
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
