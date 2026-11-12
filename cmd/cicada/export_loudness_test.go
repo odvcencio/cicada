@@ -885,9 +885,9 @@ func TestExportLoudnessCappedPassRendersPendingDCCorrectionScheduled(t *testing.
 	testCappedPassRendersPendingDCCorrection(t, true)
 }
 
-// Without a limiter the scheduled engine still adds the export gain ahead of
-// the master chain, so the report must say master_input there and post_chain
-// on the direct renderer.
+// Without a limiter both renderers add the export gain after the master chain,
+// so both reports say post_chain. The scheduled engine used to add it ahead of
+// the chain, with its master gain.
 func TestExportLoudnessGainStageIsTheSameOnBothRenderers(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
 	if err != nil {

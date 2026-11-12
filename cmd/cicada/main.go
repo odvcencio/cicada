@@ -680,12 +680,14 @@ var openLoudnessPassFile = func(path string) (loudnessPassFile, error) {
 var copyLoudnessFile = copyRenderFile
 
 // When the score's master chain holds a limiter, loudness targeting applies its
-// gain at the master input and lets that limiter hold the true-peak ceiling.
-// Two guard rails keep the search from crushing the mix:
-//   - the input gain never exceeds +12 dB, which already covers the 2 to 3 LU
-//     gaps seen on punchy mixes with room to spare;
-//   - the limiter's own gain reduction stays at or below 6 dB, the upper end
-//     of ordinary streaming-master practice (a few dB of limiting).
+// gain as makeup gain into the chain's last limiter, after every insert ahead
+// of it (which runs as in playback), and lets that limiter hold the true-peak
+// ceiling. Two guard rails keep the search from crushing the mix:
+//   - the gain never exceeds +12 dB, which already covers the 2 to 3 LU gaps
+//     seen on punchy mixes with room to spare; all of it reaches the limiter;
+//   - the last limiter's gain reduction stays at or below 6 dB, the upper end
+//     of ordinary streaming-master practice (a few dB of limiting). A limiter
+//     ahead of it does not count: it runs as in playback, whatever the gain.
 //
 // A target that needs more is reported as a shortfall, not forced.
 const (
@@ -1007,11 +1009,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		}
 	}
 	// Every pass differs only in export gain and DC correction, and both enter
-	// after the mix that the master stage receives. Passes after the first
-	// therefore replay the first pass's stored mix through the master stage
-	// instead of synthesizing it again, on both renderers, with or without a
-	// master chain (see render.MasterCache). The cache only saves time. If its
-	// file cannot be created, every pass renders in full.
+	// at or after the export gain point; everything ahead of it runs as in
+	// playback. Passes after the first therefore replay the first pass's
+	// stored signal at that point instead of synthesizing it again, on both
+	// renderers, with or without a master chain (see render.MasterCache). The
+	// cache only saves time. If its file cannot be created, every pass renders
+	// in full.
 	//
 	// A finished capture keeps its file, next to the output, for the rest of the
 	// search, and the file takes disk space that the export's own files need. A
@@ -1248,7 +1251,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		guard := fmt.Sprintf("the %.1f dB maximum master limiter gain reduction", maxExportLimiterReductionDB)
 		reason := "loudness_shortfall_at_limiter_maximum"
 		if inputCapped && bestChainReduction < maxExportLimiterReductionDB-0.5 {
-			guard = fmt.Sprintf("the +%.0f dB input gain cap ahead of the master limiter", maxExportInputGainDB)
+			guard = fmt.Sprintf("the +%.0f dB input gain cap ahead of the last master limiter", maxExportInputGainDB)
 			reason = "loudness_shortfall_at_input_gain_cap"
 		}
 		shortfallErr = &loudnessShortfallError{reason: reason, message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at %s (master limiter reduction %.2f dB, target %.2f LUFS)", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS, guard, bestChainReduction, target.LoudnessTarget)}

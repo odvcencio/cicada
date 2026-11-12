@@ -56,13 +56,13 @@ type Options struct {
 	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
 	MaxResidentPCM int64
 	// MasterCache, when set, lets repeated renders of one score skip
-	// synthesis: a render replays the signal that entered the master stage when
-	// it differs from the stored capture only in MasterGainDB, MasterBiasL,
-	// MasterBiasR, Bits, Dither or Normalize. A
-	// difference in anything else (the score, From, Bars, TailSec, SampleRate,
-	// Block, AssetRoot, AssetDir or SamplerBaseline) makes the render capture a
-	// new signal in place of the stored one. The cache matches scores by
-	// pointer, so do not modify a score between renders that share a cache. See
+	// synthesis: a render replays the stored signal at the export gain point
+	// when it differs from the stored capture only in MasterGainDB,
+	// MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A difference in
+	// anything else (the score, From, Bars, TailSec, SampleRate, Block,
+	// AssetRoot, AssetDir or SamplerBaseline) makes the render capture a new
+	// signal in place of the stored one. The cache matches scores by pointer,
+	// so do not modify a score between renders that share a cache. See
 	// MasterCache.
 	MasterCache *MasterCache
 	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
@@ -187,7 +187,7 @@ type busMixerState struct {
 	masterProcessor      engine.StereoProcessor
 	masterLimiter        interface{ LimiterGainReductionDB() float64 }
 	exportLimiter        interface{ ExportLimiterGainReductionDB() float64 }
-	masterCache          *MasterCache // captures or replays the signal entering the master stage
+	masterCache          *MasterCache // captures or replays the signal at the export gain point
 	cacheReplay          bool
 	outputGain           float32
 	musicMute, musicSolo bool
