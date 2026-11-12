@@ -30,6 +30,11 @@ type instrumentResult struct {
 }
 
 func newInstrumentCache(previous *instrumentCache) *instrumentCache {
+	// A state that was only parsed, such as one between two intents of a
+	// batch, compiled no instrument: look past it to the last state that did.
+	for previous != nil && len(previous.entries) == 0 {
+		previous = previous.previous
+	}
 	return &instrumentCache{entries: map[string]instrumentResult{}, previous: previous}
 }
 

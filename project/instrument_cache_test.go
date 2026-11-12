@@ -50,6 +50,21 @@ func TestStateCompilesEachInstrumentOnce(t *testing.T) {
 			t.Fatal("an unchanged instrument was compiled again")
 		}
 	}
+	// A state between two intents of a batch is parsed but not compiled; the
+	// state after it still reuses the instrument.
+	between, _ := next.With(map[string][]byte{path: bytes.Replace([]byte(cacheScore), []byte("tempo 120"), []byte("tempo 122"), 1)})
+	if _, _, err := between.Score(); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := between.With(map[string][]byte{path: bytes.Replace([]byte(cacheScore), []byte("tempo 120"), []byte("tempo 123"), 1)})
+	if _, err := after.Plan(); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range after.(*State).instruments.entries {
+		if any(result.program) != program {
+			t.Fatal("an instrument was compiled again after a state that only parsed")
+		}
+	}
 	louder, _ := next.With(map[string][]byte{path: bytes.Replace([]byte(cacheScore), []byte("* 0.3"), []byte("* 0.4"), 1)})
 	changed := louder.(*State)
 	if _, err := changed.Plan(); err != nil {
