@@ -65,17 +65,39 @@ chrome_pid=
 # to chrome_pid within that window. Do not read the group from ps:
 # before setsid runs it is this script's own group, which a CI step's shell,
 # make and the runner's worker share (browser-runner_test.sh).
+# chrome_listed says whether bash still lists Chrome as a running job. jobs -rp
+# prints one PID per line, and lists the go test pipeline too when a signal
+# bash does not trap (HUP) ends the script during the tests.
+chrome_listed() {
+  local running
+  running=$'\n'$(jobs -rp)$'\n'
+  [[ "$running" == *$'\n'"$chrome_pid"$'\n'* ]]
+}
+# signal_chrome SIGNAL sends SIGNAL as the comment above allows.
+signal_chrome() {
+  if chrome_listed; then
+    kill "-$1" -- "-$chrome_pid" 2>/dev/null || kill "-$1" "$chrome_pid" 2>/dev/null || true
+  else
+    kill "-$1" -- "-$chrome_pid" 2>/dev/null || true
+  fi
+}
+# Chrome, and any helper left in its group, gets 5 s to exit after TERM, then
+# KILL: a Chrome that ignores TERM would otherwise keep the wait below, and the
+# runner, blocked forever. kill -0 on the group asks only whether it still has
+# members; the same limits as above apply to it.
+chrome_grace=5
 cleanup() {
   trap - EXIT INT TERM
   if [[ -n "$chrome_pid" ]]; then
-    # jobs -rp prints one PID per line, and lists the go test pipeline too
-    # when a signal bash does not trap (HUP) ends the script during the tests.
-    local running
-    running=$'\n'$(jobs -rp)$'\n'
-    if [[ "$running" == *$'\n'"$chrome_pid"$'\n'* ]]; then
-      kill -TERM -- "-$chrome_pid" 2>/dev/null || kill -TERM "$chrome_pid" 2>/dev/null || true
-    else
-      kill -TERM -- "-$chrome_pid" 2>/dev/null || true
+    signal_chrome TERM
+    local tick
+    for ((tick = 0; tick < chrome_grace * 10; tick++)); do
+      if ! chrome_listed && ! kill -0 -- "-$chrome_pid" 2>/dev/null; then break; fi
+      sleep 0.1
+    done
+    if chrome_listed || kill -0 -- "-$chrome_pid" 2>/dev/null; then
+      echo "browser-runner: Chrome (PID $chrome_pid) did not exit within ${chrome_grace} s of TERM; sending KILL" >&2
+      signal_chrome KILL
     fi
     wait "$chrome_pid" 2>/dev/null || true
   fi
