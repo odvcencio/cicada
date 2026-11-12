@@ -306,6 +306,14 @@ jobs:
           set -euo pipefail
           CICADA_WAV_PARITY_OUT="$PWD/build/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+      # Flushing subnormal numbers (kernel/dsp/subnormal) must leave 24-bit
+      # output unchanged. That is checked, not proven: the same renders, with
+      # Flush turned into the identity by the build tag cicada_noflush, must
+      # match the hashes above byte for byte.
+      - name: Require the same WAV files with subnormal flushing turned off
+        run: |
+          set -euo pipefail
+          make test-flush-identity FLUSH_REFERENCE="$PWD/build/parity/wav-hashes.txt"
       - name: Race-check the render lanes
         run: |
           set -euo pipefail
@@ -399,6 +407,10 @@ jobs:
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
           go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
+          # The decay pins: long renders of voices and effects whose state or
+          # smoothed controls decay toward zero, with the output hash that amd64
+          # also produces (kernel/dsp/subnormal). About 10 s.
+          go test ./kernel/voice/piano ./kernel/voice/ep ./kernel/voice/polykeys ./kernel/voice/strings ./kernel/voice/acid ./kernel/voice/drum ./kernel/voice/sample ./kernel/fx/... -run 'NeverSubnormal$' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
           # lists every one it would fuse into a multiply-add on this machine, also
@@ -410,7 +422,9 @@ jobs:
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
             TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
             TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
-            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest; do
+            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest \
+            TestDecayingStateIsNeverSubnormal TestHeldChordStateIsNeverSubnormal TestReleaseStateIsNeverSubnormal TestReverbTailIsNeverSubnormal TestControlsAreNeverSubnormal \
+            TestChorusIsNeverSubnormal TestTapeControlsAreNeverSubnormal TestAmpCabinetIsNeverSubnormal TestGainIsNeverSubnormal; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1

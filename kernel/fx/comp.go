@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
@@ -65,6 +66,7 @@ type Compressor struct {
 	reduction                   float64
 	lastLevel, lastTarget       float64
 	fault                       bool
+	frames                      uint32 // process calls since New or Reset, for flushControls
 }
 
 func NewCompressor(sampleRate int) (*Compressor, error) {
@@ -115,6 +117,31 @@ func (c *Compressor) Reset() {
 	c.attack, c.release, c.kneeFloor = c.targetAttack, c.targetRelease, c.targetKneeFloor
 	c.makeup, c.mix, c.reduction, c.fault = c.targetMakeup, c.targetMix, 0, false
 	c.lastLevel, c.lastTarget = math.NaN(), 0
+	c.frames = 0
+}
+
+// flushControls replaces a subnormal value with a zero of the same sign
+// (kernel/dsp/subnormal) in the compressor's smoothed values that can glide
+// to exactly zero: the threshold and knee (0 dB and a hard knee are legal
+// targets), the mix, and the external sidechain's 80 Hz follower, which
+// decays toward zero in silence. Each stalls at a subnormal number without it
+// and slows every frame; a stalled threshold or knee also keeps the per-frame
+// parameter path and the level recomputation running. Each reaches the
+// output only through sums with normal values, which absorb it. (A threshold
+// at a subnormal number against one at 0 dB changes the gain only when the
+// detector level is exactly 1.0 and the knee is 0; see below.)
+//
+// The gain reduction and the makeup are not flushed, although they stall the
+// same way (the reduction after every release below the threshold, the
+// makeup when it glides to 0 dB). Both feed fastmath.Exp2, which returns
+// exactly 1 for an argument of 0 but 1.0000000755 for any tiny nonzero one,
+// so a flush would change the gain by 2^-23.7 and the 24-bit output of a
+// sidechain breakdown. That fix belongs in the consumer, with a stated output
+// change.
+func (c *Compressor) flushControls() {
+	c.params.Threshold, c.params.Knee = subnormal.Flush64(c.params.Threshold), subnormal.Flush64(c.params.Knee)
+	c.mix = subnormal.Flush64(c.mix)
+	c.sideLP.left, c.sideLP.right = subnormal.Flush64(c.sideLP.left), subnormal.Flush64(c.sideLP.right)
 }
 
 func (c *Compressor) reductionDB(level float64) float64 {
@@ -213,6 +240,10 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	c.reduction += float64((target - c.reduction) * coefficient)
 	c.makeup += float64((c.targetMakeup - c.makeup) * c.smooth)
 	c.mix += float64((c.targetMix - c.mix) * c.smooth)
+	c.frames++
+	if c.frames%subnormal.SweepFrames == 0 {
+		c.flushControls()
+	}
 	// The detector, gain reduction and automation have advanced above. With
 	// zero audio the output is exactly zero for any finite gain; avoid the
 	// exponentiation without freezing an external sidechain or release.
