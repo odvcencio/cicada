@@ -96,6 +96,10 @@ func validateArrangementProject(p *Project) error {
 		}
 	}
 	s := &notation.Score{Version: p.Edition, Arrange: &notation.Arrangement{}}
+	// The rebuilt score reads tempo positions on the project's meter.
+	if m := p.Meter; m != nil {
+		s.SetMeter(&notation.Meter{Beats: int64(m.Numerator), Unit: int64(m.Denominator)})
+	}
 	for _, t := range p.Tracks {
 		s.Tracks = append(s.Tracks, notation.Track{Name: t.ID, Kind: t.Kind})
 	}

@@ -15,9 +15,11 @@ import (
 func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
 	t.Run("project-1", func(t *testing.T) { checkSemanticIRFields(t, "schema/project-1.json", false) })
 	t.Run("project-2", func(t *testing.T) { checkSemanticIRFields(t, "schema/project-2.json", true) })
+	t.Run("project-3", func(t *testing.T) { checkSemanticIRFields(t, "schema/project-3.json", true, true) })
 }
 
-func checkSemanticIRFields(t *testing.T, path string, includeV2 bool) {
+func checkSemanticIRFields(t *testing.T, path string, includeV2 bool, v3 ...bool) {
+	includeV3 := len(v3) == 1 && v3[0]
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +55,7 @@ func checkSemanticIRFields(t *testing.T, path string, includeV2 bool) {
 		wantRequired := map[string]bool{}
 		for index := 0; index < typ.NumField(); index++ {
 			field := typ.Field(index)
-			if !field.IsExported() || !includeV2 && field.Tag.Get("introduced") == "cicada.project/2" {
+			if !field.IsExported() || !includeV2 && field.Tag.Get("introduced") == "cicada.project/2" || !includeV3 && field.Tag.Get("introduced") == "cicada.project/3" {
 				continue
 			}
 			if includeV2 && field.Tag.Get("legacy") == "cicada.project/1" {

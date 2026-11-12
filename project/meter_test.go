@@ -82,6 +82,40 @@ func TestMeterSourceJSONImageRoundTrip(t *testing.T) {
 	}
 }
 
+// A meter is allowed in edition 1 too, and a track level survives JSON /3.
+func TestEditionOneMeterRoundTrip(t *testing.T) {
+	text := "meter 5/4\ntempo 100\ntrack bass acid { level = -18dB }\npattern five { step = 1/4 c2 g2 c3 g2 c3 }\nscene a { bass = five }\nsong { a*2 }\n"
+	score, ds := notation.Parse([]byte(text))
+	if score == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || hasErrors(ds) || p.Format != FormatID3 {
+		t.Fatalf("%v %+v", ds, p)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, errA := CompileEngine(p, 48000, 128)
+	b, errB := CompileEngine(decoded, 48000, 128)
+	if errA != nil || errB != nil || a.Track[0].GainDB != -18 || b.Track[0].GainDB != -18 {
+		t.Fatalf("level through JSON: %v %v %v %v", errA, errB, a.Track[0].GainDB, b.Track[0].GainDB)
+	}
+	source, err := ToSource(decoded)
+	if err != nil || !bytes.Contains(source, []byte("meter 5/4")) {
+		t.Fatalf("source: %s %v", source, err)
+	}
+	again, ds := notation.Parse(source)
+	if again == nil || hasErrors(ds) || again.Meter == nil || again.Meter.Beats != 5 {
+		t.Fatalf("source does not parse back: %v\n%s", ds, source)
+	}
+}
+
 // A song without a meter keeps its format, its JSON and its image bytes.
 func TestNoMeterKeepsFormatAndImage(t *testing.T) {
 	plain := strings.Replace(waltzSource, "meter 7/8 2+2+3\n", "", 1)

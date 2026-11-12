@@ -837,8 +837,8 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"SetProjectSettings": {
-		Meaning: "sets the score's title, tempo, key root and scale together, and its meter when meter is given",
-		Notes:   "A meter change rewrites the meter declaration only; positions keep their text, and the edit is refused when one no longer fits its bar.",
+		Meaning: "sets the score's title, tempo, key root and scale together, and its meter when Meter is given",
+		Notes:   "A meter change rewrites the declaration only; it is refused when a position no longer fits its bar.",
 		Examples: []string{
 			"{\"kind\":\"setprojectsettings\",\"title\":\"Intent catalog\",\"tempomilli\":124000,\"root\":\"a\",\"scale\":\"minor\"}",
 			"{\"kind\":\"setprojectsettings\",\"title\":\"Waltz\",\"tempomilli\":132000,\"root\":\"a\",\"scale\":\"minor\",\"meter\":\"3/4\"}",

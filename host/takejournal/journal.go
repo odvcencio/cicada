@@ -96,10 +96,19 @@ type Timeline struct {
 	PlaybackStartTick int64                   `json:"playbackStartTick"`
 	TempoMilli        int64                   `json:"tempoMilli"`
 	TempoChanges      []musictime.TempoChange `json:"tempoChanges,omitempty"`
+	// Meter is the song meter the take was recorded in; nil is 4/4, as for
+	// every take recorded before songs could declare one.
+	Meter *TimelineMeter `json:"meter,omitempty"`
+}
+
+// TimelineMeter is a recorded song meter: Beats beats of a 1/Unit note.
+type TimelineMeter struct {
+	Beats int64 `json:"beats"`
+	Unit  int64 `json:"unit"`
 }
 
 func (v Timeline) Valid() bool {
-	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40 && musictime.ValidateTempoChanges(v.TempoChanges) == nil
+	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40 && musictime.ValidateTempoChanges(v.TempoChanges) == nil && v.meterValid()
 }
 
 func (v *Timeline) Clock(rate int) (*project.TempoMap, error) {
@@ -109,10 +118,32 @@ func (v *Timeline) Clock(rate int) (*project.TempoMap, error) {
 	return project.NewTempoMap(v.MeterMap(), rate, v.TempoMilli, v.TempoChanges)
 }
 
-// MeterMap is the meter map the timeline's tempo steps and positions sit on.
-// A timeline records no meter yet, so it is the zero (4/4) map; time-signatures
-// phase 2 records the song's map with the take.
-func (v *Timeline) MeterMap() seq.MeterMap { return seq.MeterMap{} }
+func (v Timeline) meterValid() bool {
+	if v.Meter == nil {
+		return true
+	}
+	_, err := seq.NewMeterMap([]seq.MeterChange{{Meter: seq.Meter{Beats: v.Meter.Beats, Unit: v.Meter.Unit}}})
+	return err == nil
+}
+
+// MeterMap is the meter map the timeline's tempo steps and positions sit on:
+// the recorded song meter, or 4/4 for a take that recorded none.
+func (v *Timeline) MeterMap() seq.MeterMap {
+	var m seq.MeterMap
+	if v != nil && v.Meter != nil {
+		if built, err := seq.NewMeterMap([]seq.MeterChange{{Meter: seq.Meter{Beats: v.Meter.Beats, Unit: v.Meter.Unit}}}); err == nil {
+			m = built
+		}
+	}
+	return m
+}
+
+// SameMeter reports whether the timeline was recorded in meterMap's meter:
+// the same bar and beat lengths (a song has one meter in this phase).
+func (v *Timeline) SameMeter(meterMap seq.MeterMap) bool {
+	m := v.MeterMap()
+	return m.BarTicks(0) == meterMap.BarTicks(0) && m.BeatTicks(0) == meterMap.BeatTicks(0)
+}
 
 // Coverage maps the retained PCM back onto the recording's own musical clock.
 // Invalid or empty takes expose no usable interval.

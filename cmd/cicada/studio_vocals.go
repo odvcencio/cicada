@@ -190,7 +190,11 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	if start < 0 || end <= start || end > studioArrangementEnd(p) {
 		return nil, fmt.Errorf("choose a recording range within the full song")
 	}
-	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-p.MeterMap().BarTicks(0)), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}, nil
+	timeline := &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-p.MeterMap().BarTicks(0)), TempoMilli: int64(p.TempoMilli), TempoChanges: project.SongTempoChanges(p)}
+	if m := p.Meter; m != nil {
+		timeline.Meter = &takejournal.TimelineMeter{Beats: int64(m.Numerator), Unit: int64(m.Denominator)}
+	}
+	return timeline, nil
 }
 
 // vocalTakeSource is the candidate source for selecting a take; see
@@ -259,6 +263,9 @@ func (s *studio) vocalTakeResult(source []byte, t takejournal.Take, settings *st
 	}
 	if settings != nil && settings.Elastic != nil {
 		follow = *settings.Elastic
+	}
+	if !t.Timeline.SameMeter(p.MeterMap()) {
+		return nil, env, fmt.Errorf("this take was recorded in another meter than the song's; record it again in the song's meter")
 	}
 	if !follow && (int64(p.TempoMilli) != t.Timeline.TempoMilli || !slices.Equal(project.SongTempoChanges(p), t.Timeline.TempoChanges)) {
 		return nil, env, fmt.Errorf("enable Follow song tempo or restore the recording tempo map before selecting this take")
@@ -392,8 +399,8 @@ func (s *studio) printVocalComp(c vocalComp, rate int, meterMap seq.MeterMap) (p
 				return result, err
 			}
 		}
-		if take.Timeline == nil || take.Track != c.Track || take.Rate != rate || take.Timeline.TempoMilli != c.Tempo || !slices.Equal(take.Timeline.TempoChanges, c.TempoChanges) {
-			return result, fmt.Errorf("comp takes must share track, sample rate and tempo")
+		if take.Timeline == nil || take.Track != c.Track || take.Rate != rate || take.Timeline.TempoMilli != c.Tempo || !slices.Equal(take.Timeline.TempoChanges, c.TempoChanges) || !take.Timeline.SameMeter(meterMap) {
+			return result, fmt.Errorf("comp takes must share track, sample rate, tempo and the song's meter")
 		}
 		a, b := takeCoverage(take)
 		if seg.Start < a || seg.End > b {

@@ -479,6 +479,16 @@
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
+    },
+    {
+      "name": "meter",
+      "child_roles": [
+        "groups"
+      ],
+      "variants": [],
+      "introduced": "cicada.project/3",
+      "profile": "M0",
+      "layer": "semantic"
     }
   ],
   "fields": [
@@ -843,6 +853,20 @@
       "meaning": "Modulator routes to registered parameters",
       "order": 26,
       "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "project",
+      "name": "meter",
+      "required": false,
+      "type": "nullable\u003cmeter\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Song meter; omitted for 4/4",
+      "order": 27,
+      "introduced": "cicada.project/3",
       "profile": "M0",
       "layer": "semantic"
     },
@@ -3988,6 +4012,48 @@
       "meaning": "Depth in the target's base units, or a factor for multiply",
       "order": 4,
       "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "meter",
+      "name": "numerator",
+      "required": true,
+      "type": "integer",
+      "unit": null,
+      "range": "1..32",
+      "default": null,
+      "meaning": "Beats in a bar",
+      "order": 1,
+      "introduced": "cicada.project/3",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "meter",
+      "name": "denominator",
+      "required": true,
+      "type": "integer",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Note value of one beat: 2, 4, 8 or 16",
+      "order": 2,
+      "introduced": "cicada.project/3",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "meter",
+      "name": "groups",
+      "required": false,
+      "type": "array\u003cinteger\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Beat groups that add up to the numerator, for accents",
+      "order": 3,
+      "introduced": "cicada.project/3",
       "profile": "M0",
       "layer": "semantic"
     }

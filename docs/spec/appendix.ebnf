@@ -15,7 +15,7 @@ _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | 
                  drum_pattern | performance_pattern | automate_decl | scene_decl | song_decl |
                  fx_decl | bus_decl | master_decl | export_decl | arrange_decl | asset_decl |
                  clip_decl | sampler_decl | live_decl | lfo_decl | envelope_decl | sway_decl |
-                 contour_decl | mod_decl | midi_decl ;
+                 contour_decl | mod_decl | midi_decl | meter_decl ;
 automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
 automation_point ::= musical_position , number , [ identifier , [ number ] ] ;
 musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
@@ -158,3 +158,5 @@ midi_cc ::= identifier , [ "ch" , integer ] , "cc" , integer , "->" , parameter_
 midi_note ::= identifier , [ "ch" , integer ] , "note" , (integer | letter_pitch) , "->" ,
               ("play" | "stop" | "launch" , identifier | "stop-track" , identifier | "launch-slot" , identifier , _name) ,
               [ "mode" , "=" , identifier ] , [ ";" ] ;
+meter_decl ::= "meter" , fraction , [ beat_groups ] ;
+beat_groups ::= /[0-9]+(\+[0-9]+)*/ ;

@@ -133,7 +133,7 @@ var zeroMeterMapAllowlist = map[[2]string]barAllowance{
 	{"edit/apply.go", "Context.MeterMap"}:                            {1, meterHook},
 	{"edit/notes.go", "EditNotes.Validate"}:                          {1, noMeterYet + "an interface method with no context; phase 2 raises the grid limit to 30,720 ticks so it needs no map"},
 	{"host/kernelimage/meter.go", "configMeterMap"}:                  {1, "an image without a meter table (header flag bit 7) is 4/4"},
-	{"host/takejournal/journal.go", "Timeline.MeterMap"}:             {1, silentPhase2 + "a take timeline records tempo steps by bar but no meter, so its clock and its count-in sit on 4/4 bars"},
+	{"host/takejournal/journal.go", "Timeline.MeterMap"}:             {1, "a take recorded before songs could declare a meter carries none, so it is 4/4"},
 	{"render/wav_timing.go", "wavTiming.meterMap"}:                   {1, "timing chunk versions 1 and 2 record no meter, so they are 4/4 (version 3 records it)"},
 	{"smf/import.go", "ImportSource"}:                                {1, noMeterYet + "the importer accepts 4/4 files only (spec phase 6)"},
 	{"smf/import.go", "writeImport"}:                                 {1, noMeterYet + "the importer writes a 4/4 song (spec phase 6)"},

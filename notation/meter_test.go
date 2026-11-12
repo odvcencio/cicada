@@ -16,8 +16,8 @@ func TestMeterDeclarationSetsTheScoreMap(t *testing.T) {
 	}{
 		{waltzHeader + "track bass acid {}\npattern oom { step = 1/4 c2 g2 g2 }\nscene a { bass = oom }\nsong { a*16 }\n", 3, 4, "", 2880, 960},
 		{"cicada 2\nmeter 6/8\ntrack lead acid {}\npattern jig { step = 1/8 c3 eb3 g3 c4 g3 eb3 }\nscene a { lead = jig }\nsong { a*8 }\n", 6, 8, "", 2880, 480},
-		{"cicada 2\nmeter 7/8 2+2+3\ntrack bass acid {}\n", 7, 8, "2+2+3", 3360, 480},
-		{"meter 5/4\ntrack bass acid {}\n", 5, 4, "", 4800, 960}, // edition 1 too
+		{"cicada 2\nmeter 7/8 2+2+3\ntrack bass acid {}\npattern seven { step = 1/8 c2 g2 c3 g2 c3 eb3 g3 }\nscene a { bass = seven }\nsong { a*4 }\n", 7, 8, "2+2+3", 3360, 480},
+		{"meter 5/4\ntrack bass acid {}\npattern five { step = 1/4 c2 g2 c3 g2 c3 }\nscene a { bass = five }\nsong { a*4 }\n", 5, 4, "", 4800, 960}, // edition 1 too
 	} {
 		s, ds := Parse([]byte(c.source))
 		if s == nil || parseHasErrors(ds) {
@@ -34,7 +34,7 @@ func TestMeterDeclarationSetsTheScoreMap(t *testing.T) {
 			t.Fatalf("%q: bar %d beat %d", c.source, mm.BarTicks(0), mm.BeatTicks(0))
 		}
 	}
-	s, ds := Parse([]byte("cicada 2\ntrack bass acid {}\n"))
+	s, ds := Parse([]byte("cicada 2\ntrack bass acid {}\npattern p { c2 }\nscene a { bass = p }\nsong { a }\n"))
 	if s == nil || parseHasErrors(ds) || s.Meter != nil || s.MeterMap().BarTicks(0) != 3840 {
 		t.Fatalf("a score without a meter must be 4/4: %v %+v", ds, s)
 	}

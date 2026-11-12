@@ -82,3 +82,11 @@ func resolveMeter(s *Score) {
 		s.meterMap = m
 	}
 }
+
+// SetMeter gives a score built in code, rather than parsed, a declared meter
+// and the map built from it. Project validation rebuilds a score from a
+// project this way; without it every position would read as 4/4.
+func (s *Score) SetMeter(m *Meter) {
+	s.Meter = m
+	resolveMeter(s)
+}

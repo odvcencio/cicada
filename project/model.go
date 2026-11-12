@@ -28,7 +28,6 @@ type Project struct {
 	Edition     int          `cicada:"Source language edition" default:"1" json:"edition,omitempty"`
 	Title       string       `cicada:"Project title" json:"title"`
 	TempoMilli  int          `cicada:"Tempo in thousandths of a beat per minute" unit:"milli-BPM" range:"20000..300000" json:"tempo_milli"`
-	Meter       *Meter       `cicada:"Song meter; omitted for 4/4" json:"meter,omitempty" introduced:"cicada.project/3"`
 	Key         Key          `cicada:"Tonal root and scale" json:"key"`
 	Seed        uint32       `cicada:"Project random seed" json:"seed"`
 	Assets      []Asset      `cicada:"Immutable audio asset table" json:"assets,omitempty" introduced:"cicada.project/2"`
@@ -51,7 +50,9 @@ type Project struct {
 	Automation []AutomationLane `cicada:"Continuous song parameter lanes" json:"automation,omitempty" introduced:"cicada.project/2"`
 	Modulators []Modulator      `cicada:"Control sources: lfo, envelope, sway and contour" json:"modulators,omitempty" introduced:"cicada.project/2"`
 	Routes     []ModRoute       `cicada:"Modulator routes to registered parameters" json:"routes,omitempty" introduced:"cicada.project/2"`
-	p2Syntax   bool
+	// Meter is last so the field catalog keeps every earlier field's order.
+	Meter    *Meter `cicada:"Song meter; omitted for 4/4" json:"meter,omitempty" introduced:"cicada.project/3"`
+	p2Syntax bool
 }
 
 type Key struct {
@@ -375,7 +376,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	// Select /2 before lowering mixer fields. A later arrangement/automation
 	// upgrade must not discard levels or routing needed by its JSON wire form.
-	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0 || score.Meter != nil
 	p.Live = liveFromScore(score.Live)
 	p.MIDI = midiFromScore(score.MIDI)
 	for _, scene := range score.Scenes {
