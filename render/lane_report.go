@@ -28,8 +28,9 @@ const (
 var SerialReasons = []string{SerialJobs, SerialOneTrack, SerialGraphLFO, SerialReplay, SerialNoProcessor, SerialLight}
 
 // LaneReport says how a render used its lanes (Options.Jobs), so a caller can
-// tell why a render was or was not faster. The counts other than
-// JobsRequested, Jobs and Lanes depend on scheduling and load and may differ
+// tell why a render was or was not faster. Every field other than
+// JobsRequested, LanesRequested, Jobs and Lanes depends on scheduling and
+// load, SerialReason included (it follows from the counts), and may differ
 // between runs that write the same bytes.
 type LaneReport struct {
 	// JobsRequested is Options.Jobs as given: 0 (serial), AutoJobs or a count.

@@ -402,7 +402,7 @@ func checkStemsIdentity(t *testing.T, score *notation.Score, opts render.Options
 
 // checkLoudnessJobsIdentity runs the loudness search to -14 LUFS at --jobs 1
 // and compares the written file and the report with other job counts: the
-// sweep checks every count, the per-run subset the automatic one.
+// sweep checks every count, the per-run subset --jobs 4.
 func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.Options, sweep bool, all []int) {
 	t.Helper()
 	target := renderTargetOptions{LoudnessTarget: -14, TruePeakMaxDBTP: -1, Tolerance: 0.5, Loudness: true}
@@ -419,7 +419,8 @@ func checkLoudnessJobsIdentity(t *testing.T, score *notation.Score, opts render.
 		return data, report, err
 	}
 	serial, serialReport, serialErr := search(1)
-	jobsList := []int{0}
+	// Four lanes, not the automatic count, which is 1 on a two-CPU runner.
+	jobsList := []int{4}
 	if sweep {
 		jobsList = all
 	}

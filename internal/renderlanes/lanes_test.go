@@ -145,8 +145,9 @@ func TestLightSegmentsStaySerial(t *testing.T) {
 	}
 	// The first segment uses the default estimate; after it every track
 	// measures as nearly free, so later segments stay on the caller.
-	if stats := p.Stats(); stats.ParallelSegments > 1 {
-		t.Fatalf("light segments ran on lanes: %+v", stats)
+	// They count as light (render.SerialLight), not starved.
+	if stats := p.Stats(); stats.ParallelSegments > 1 || stats.LightSegments < 19 || stats.StarvedSegments != 0 {
+		t.Fatalf("light segments ran on lanes or were not counted as light: %+v", stats)
 	}
 }
 
