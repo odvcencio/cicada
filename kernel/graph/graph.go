@@ -605,7 +605,7 @@ func (v *Voice) nextSample(substep uint64) float32 {
 		case Tanh:
 			y = detmath.Tanh32(a) // float32(detmath.Tanh(float64(a))), bit for bit
 		case Exp2:
-			y = float32(detmath.Exp2(float64(clamp(a, -8, 8))))
+			y = detmath.Exp2F32(clamp(a, -8, 8)) // float32(detmath.Exp2(float64(a))), bit for bit
 		case Clamp:
 			y = clamp(a, b, c)
 		}

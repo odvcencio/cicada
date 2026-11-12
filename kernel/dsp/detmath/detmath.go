@@ -1142,6 +1142,32 @@ func TanPi32(u float32) float32 {
 	return float32(Tan(math.Pi * float64(u)))
 }
 
+// Exp2F32 returns float32(Exp2(float64(x))), bit for bit, for every float32 x
+// (TestExp2F32FastPathExhaustive checks every input of the fast path; the
+// others call Exp2), at a fraction of the cost: for 2^-25 <= |x| <= 8 it
+// splits x = k/64 + f exactly (|f| <= 1/128), takes 2^f = e^(f*ln2) from its
+// series to the fourth power (relative error below 2^-44) and 2^(k/64) from
+// exp2Table, and rounds that to float32 only when every value within a
+// relative 2^-32 of it rounds the same way; otherwise, and outside that range,
+// it computes the expression itself. The graph's per-sample exp2 node uses it.
+func Exp2F32(x float32) float32 {
+	v := float64(x)
+	if a := math.Abs(v); !(a >= 0x1p-25 && a <= 8) {
+		return float32(Exp2(v))
+	}
+	k := math.Round(float64(v * 64)) // v*64 is exact
+	f := v - k/64                    // exact
+	r := float64(f * math.Ln2)
+	p := 1 + float64(r*(1+float64(r*(0.5+float64(r*(1.0/6+float64(r*(1.0/24))))))))
+	ki := int(k)
+	w := float64(float64(exp2Table[ki&63][0]*p) * math.Float64frombits(uint64((ki>>6)+1023)<<52))
+	const margin = 0x1p-32
+	if r := float32(float64(w * (1 - margin))); r == float32(float64(w*(1+margin))) {
+		return r
+	}
+	return float32(Exp2(v))
+}
+
 // OneMinusExpNeg2Pi32 returns float32(1 - Exp(-2*math.Pi*float64(u))), bit for
 // bit, for every float32 u (checked over all 2^32 inputs), at a fraction of
 // the cost: for 2^-20 <= u <= 0.5 it evaluates e^y, y = -2*pi*u, with

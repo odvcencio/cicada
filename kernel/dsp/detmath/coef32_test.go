@@ -136,3 +136,38 @@ func TestTanPi32FastPathExhaustive(t *testing.T) {
 func TestOneMinusExpNeg2Pi32FastPathExhaustive(t *testing.T) {
 	exhaustive32(t, "OneMinusExpNeg2Pi32", 0x1p-20, 0.5, false, OneMinusExpNeg2Pi32, func(u float32) float32 { return float32(1 - Exp(-2*math.Pi*float64(u))) })
 }
+
+// TestExp2F32FastPathExhaustive checks every float32 that takes Exp2F32's
+// fast path (2^-25 <= |x| <= 8, both signs: 469,762,050 inputs); all others
+// go to Exp2 itself.
+func TestExp2F32FastPathExhaustive(t *testing.T) {
+	exhaustive32(t, "Exp2F32", 0x1p-25, 8, true, Exp2F32, func(x float32) float32 { return float32(Exp2(float64(x))) })
+}
+
+func TestExp2F32MatchesExpression(t *testing.T) {
+	for _, x := range float32Sample(0x1p-25, 1, 8) {
+		got, want := Exp2F32(x), float32(Exp2(float64(x)))
+		if math.Float32bits(got) != math.Float32bits(want) {
+			t.Fatalf("Exp2F32(%v) = %v, want %v", x, got, want)
+		}
+	}
+	if !math.IsNaN(float64(Exp2F32(float32(math.NaN())))) {
+		t.Error("Exp2F32(NaN) is not NaN")
+	}
+}
+
+// exp2F32Digest pins Exp2F32 over its sample on every target, TinyGo's
+// WebAssembly included (make test-tinygo-digests).
+const exp2F32Digest = "9e90690a54607c46b2fcbc607c607f84425420bee72ae5d94e8f64b600668622"
+
+func TestExp2F32Digest(t *testing.T) {
+	h := sha256.New()
+	var word [8]byte
+	for _, x := range float32Sample(0x1p-25, 1, 8) {
+		binary.LittleEndian.PutUint64(word[:], uint64(math.Float32bits(Exp2F32(x))))
+		h.Write(word[:])
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != exp2F32Digest {
+		t.Fatalf("Exp2F32 digest = %s, want %s", got, exp2F32Digest)
+	}
+}
