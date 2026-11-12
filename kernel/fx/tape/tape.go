@@ -11,6 +11,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/fx"
@@ -126,6 +127,7 @@ type Tape struct {
 	maxDelay             float64
 	feedbackState        stereo
 	fault, excited       bool
+	frames               uint32 // Process calls since New or Reset, for flushControls
 }
 
 func New(sampleRate int, bpmMilli int64) (*Tape, error) {
@@ -236,6 +238,19 @@ func (t *Tape) Reset() {
 	t.feedback, t.damp, t.wow, t.flutter, t.sat = t.tFeedback, t.tDamp, t.tWow, t.tFlutter, t.tSat
 	t.wowPhase = [2]uint32{}
 	t.flutterPhase = [2]uint32{}
+	t.frames = 0
+}
+
+// flushControls replaces a subnormal smoothed control with a zero of the same
+// sign (kernel/dsp/subnormal). Feedback, wow, flutter and saturation can glide
+// to a target of exactly zero; there each stalls at a subnormal number, every
+// frame's products with it run slowly, and a stalled wow or flutter also keeps
+// the modulation sums running. Each reaches the output only through sums with
+// normal values (the read delay, 1 + 3*sat, the input), which absorb it. The
+// damping coefficient's target is never zero.
+func (t *Tape) flushControls() {
+	t.feedback, t.sat = subnormal.Flush64(t.feedback), subnormal.Flush64(t.sat)
+	t.wow, t.flutter = subnormal.Flush64(t.wow), subnormal.Flush64(t.flutter)
 }
 
 func (t *Tape) read(frames float64) stereo {
@@ -266,6 +281,10 @@ func (t *Tape) advance() float64 {
 	t.wow += float64((t.tWow - t.wow) * t.smooth)
 	t.flutter += float64((t.tFlutter - t.flutter) * t.smooth)
 	t.sat += float64((t.tSat - t.sat) * t.smooth)
+	t.frames++
+	if t.frames%subnormal.SweepFrames == 0 {
+		t.flushControls()
+	}
 	if step := t.target - t.head; step > MaxSlew {
 		t.head += MaxSlew
 	} else if step < -MaxSlew {

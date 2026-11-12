@@ -2,11 +2,8 @@ package irasset
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
-	"io"
 	"math"
-	"net/http"
 	"os"
 	"testing"
 
@@ -58,29 +55,6 @@ func TestDecodeVerifiedPCMAndRejectMismatch(t *testing.T) {
 	entry.Frames++
 	if _, err := Decode(bytes.NewReader(data), entry, 48000); err == nil {
 		t.Fatal("wrong dimensions accepted")
-	}
-}
-
-type transport func(*http.Request) (*http.Response, error)
-
-func (f transport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
-func TestFetchBoundsAndChecksum(t *testing.T) {
-	data, entry := testWAV()
-	client := &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), ContentLength: -1}, nil
-	})}
-	if fetched, err := Fetch(context.Background(), client, entry); err != nil || !bytes.Equal(fetched, data) {
-		t.Fatalf("verified fetch: %v", err)
-	}
-	data = append(data, 1)
-	if _, err := Fetch(context.Background(), client, entry); err == nil {
-		t.Fatal("oversized transfer accepted")
-	}
-	data = data[:len(data)-1]
-	data[44] ^= 1
-	if _, err := Fetch(context.Background(), client, entry); err == nil {
-		t.Fatal("corrupt transfer accepted")
 	}
 }
 

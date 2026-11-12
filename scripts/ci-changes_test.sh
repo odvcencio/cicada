@@ -254,6 +254,11 @@ if [[ "${1:-}" == "--graph" ]]; then
 	# The real risk is the compile path building an edit plan: reject any
 	# EditPlan call in project (other than its definition) and in the packages
 	# that turn a project into the kernel image.
+	# The search below is a text search. A renamed folder would match no files
+	# and pass silently, so each folder must still hold Go files.
+	for dir in project host/schedule host/kernelimage; do
+		if ! compgen -G "$repo/$dir/*.go" >/dev/null; then fail "the EditPlan check reads $dir/*.go, which matches no files; update the check for the renamed folder"; fi
+	done
 	callers="$(cd "$repo" && grep -n 'EditPlan(' project/*.go host/schedule/*.go host/kernelimage/*.go | grep -v '_test\.go:' | grep -v '^project/editplan\.go:[0-9]*:func EditPlan(' || true)"
 	if [[ -n "$callers" ]]; then fail "the kernel image path calls EditPlan ($callers); add edit to gate_input"; fi
 	check_imports studio_cli "cmd/cicada" < <(go_deps linux "" ./cmd/cicada)

@@ -1,0 +1,38 @@
+cicada 2
+title "Flush check: acid resonance, envelope modulation and accent to zero while notes play"
+tempo 240
+key a minor
+seed 1
+
+track bass acid {
+  reso = 0.8
+  envmod = 0.7
+  accent = 0.6
+}
+
+pattern riff {
+  1 . 5 . | 1 3 5 .
+}
+
+scene main {
+  bass = riff
+}
+
+automate bass.reso {
+  @1.1.1 0.8
+  @2.1.1 0
+}
+
+automate bass.envmod {
+  @1.1.1 0.7
+  @2.1.1 0
+}
+
+automate bass.accent {
+  @1.1.1 0.6
+  @2.1.1 0
+}
+
+song {
+  main*12
+}
