@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/voice/modeledkit"
 )
@@ -190,6 +191,7 @@ type Kit struct {
 	lanes      [LaneCount]laneVoice
 	banks      []*SamplerBank
 	fault      bool
+	frames     uint32 // NextStereo calls since New or Reset, for flushControls
 }
 
 func New(sampleRate int, seed uint32) (*Kit, error) {
@@ -422,6 +424,22 @@ func (k *Kit) Reset() {
 			bank.reset()
 		}
 	}
+	k.frames = 0
+}
+
+// flushControls replaces a subnormal smoothed control with a zero of the same
+// sign (kernel/dsp/subnormal) in every lane. A lane's level glides to exactly
+// zero when it is set to -1000 dB, and its right pan gain when it is panned
+// hard left (sin 0); there each stalls at a subnormal number and slows every
+// frame. Each reaches the output only through the lane's sum with the others
+// and the float32 conversion, which absorb it. Tune and decay never glide to
+// zero.
+func (k *Kit) flushControls() {
+	for lane := range k.lanes {
+		v := &k.lanes[lane]
+		v.level = subnormal.Flush64(v.level)
+		v.panL, v.panR = subnormal.Flush64(v.panL), subnormal.Flush64(v.panR)
+	}
 }
 
 func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
@@ -536,6 +554,10 @@ func (k *Kit) NoteOff(lane Lane) {
 func (k *Kit) NextStereo() (left, right float32) {
 	if k.fault {
 		return 0, 0
+	}
+	k.frames++
+	if k.frames%subnormal.SweepFrames == 0 {
+		k.flushControls()
 	}
 	var l, r float64
 	for lane := Lane(0); lane < LaneCount; lane++ {

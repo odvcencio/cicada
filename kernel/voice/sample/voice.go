@@ -6,6 +6,7 @@ package sample
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 	"m31labs.dev/cicada/kernel/expression"
 )
 
@@ -348,6 +349,11 @@ func (v *Voice) NextStereo() (float32, float32) {
 		}
 		if v.gainAlpha != 0 {
 			v.gain += float64((v.targetGain - v.gain) * v.gainAlpha)
+			// Gain 0 is a legal target; the glide would stall at a subnormal
+			// number and slow every frame of a looping note. The gain reaches
+			// the output only through a product converted to float32, where a
+			// subnormal float64 is zero.
+			v.gain = subnormal.Flush64(v.gain)
 		}
 		gain := v.gain
 		if sampleExpressionEnabled {
