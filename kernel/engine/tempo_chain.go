@@ -13,7 +13,7 @@ import (
 // transport tempo applies.
 // sceneTempoMilli converts a scene tempo setting to thousandths of a BPM.
 func sceneTempoMilli(setting SceneSetting) int64 {
-	return int64(setting.Value*1000 + .5) // tempos are positive
+	return int64(float32(setting.Value*1000) + .5) // tempos are positive
 }
 
 // stepClock moves a clock to a new tempo at a tick, as the transport does.
@@ -145,6 +145,10 @@ func (e *Engine) authoredFrames(from, to int64) int64 {
 // anchored at counted in the engine's own frames. Hosts that place bar
 // boundaries follow it after a manual launch changes the tempo.
 func (e *Engine) LiveClock() seq.Clock { return e.transport.Clock() }
+
+// MeterMap places the song's bar and beat lines. Hosts take bar lines from it
+// instead of keeping their own bar arithmetic.
+func (e *Engine) MeterMap() seq.MeterMap { return e.transport.MeterMap() }
 
 // TransportSample counts the frames the engine has rendered.
 func (e *Engine) TransportSample() int64 { return e.transport.Sample() }

@@ -3,12 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -55,13 +53,6 @@ type liveJob struct {
 	Action string
 	Values map[string]string
 }
-
-type liveActionFailure struct {
-	Status  int
-	Message string
-}
-
-func (e *liveActionFailure) Error() string { return e.Message }
 
 type liveEvent struct {
 	Target   js.Value
@@ -253,14 +244,6 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if err != nil {
 		return nil, err
 	}
-	origin := js.Global().Get("location").Get("origin").String()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+"/__actions/"+action, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-CSRF-Token", u.props.CSRF)
 	timeout := 2 * time.Second
 	if action == "note-preview" {
 		timeout = 90 * time.Second
@@ -271,29 +254,13 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if action == "midi-bind" {
 		timeout = 20 * time.Second // local score validation and atomic file update
 	}
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/" + action, Body: data, Timeout: timeout, Limit: 1 << 20, Headers: map[string]string{
+		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+	}}.do(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	var result struct {
-		OK      bool            `json:"ok"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
-		if result.Message == "" {
-			result.Message = fmt.Sprintf("Live action failed (%d)", resp.StatusCode)
-		}
-		if action == "live" && resp.StatusCode == http.StatusConflict {
-			result.Message += ". Reopen Live to resume."
-		}
-		return nil, &liveActionFailure{Status: resp.StatusCode, Message: result.Message}
-	}
-	return result.Data, nil
+	return liveActionResult(action, response)
 }
 func (u *liveUI) runCommands() {
 	var pending *liveJob
@@ -332,7 +299,11 @@ func (u *liveUI) runCommands() {
 			}
 			data, err := u.post(u.ctx, job.Action, job.Values)
 			if err != nil && !u.closed.Load() {
-				u.status.Set(err.Error())
+				var failure *liveActionFailure
+				if !errors.As(err, &failure) {
+					consoleWarn("Live action "+job.Action, err)
+				}
+				u.status.Set(liveFailureText(err))
 			}
 			if err == nil && job.Action == "note-preview" && !u.closed.Load() {
 				var retained struct {
@@ -452,7 +423,7 @@ func (u *liveUI) poll() {
 				continue
 			}
 			u.syncMIDIClock(t.MIDIClockEpoch)
-			u.playhead, u.playing, u.sampled = t.Playhead(), t.Playing, time.Now()
+			u.playhead, u.playing, u.sampled = t.Playhead(control.GridMeterMap()), t.Playing, time.Now()
 			launch := "Scene: " + t.Scene
 			if t.PendingScene != "" {
 				launch += " · queued: " + t.PendingScene

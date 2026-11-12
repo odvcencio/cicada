@@ -21,7 +21,9 @@ instrument glow {
   }
 }
 
-track bass acid { cutoff = 620Hz }
+fx grit drive {}
+
+track bass acid { cutoff = 620Hz insert = grit }
 track drums drums {}
 track keys piano {}
 track lead glow {}
@@ -40,6 +42,7 @@ pattern beat drums {
   bd: x... x...
   sd: .... x...
 }
+pattern fill drums { bd: x.x. x.x. }
 pattern chords notes { [a3 c4 e4] - - . [g3 b3 d4] - - . }
 pattern phrase performance length=3840ticks {
   gesture-group breath {
@@ -70,5 +73,6 @@ scene main {
   bass.reso = 0.5
 }
 scene break { bass = hooked }
+scene outro { drums = beat }
 
 song { main*4 break*2 }

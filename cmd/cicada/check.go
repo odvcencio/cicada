@@ -247,7 +247,7 @@ func checkPathsWith(paths []string, options checkOptions, stdout, stderr io.Writ
 			continue
 		}
 		// Check loads the sampler packs, which inspectScore leaves to render.
-		packDiagnostics := checkSamplerPacks(path, inspection, options.maxResidentPCM)
+		packDiagnostics, _ := checkSamplerPacks(path, inspection, options.maxResidentPCM)
 		for _, diagnostic := range packDiagnostics {
 			printCheckDiagnostic(stderr, path, inspection.source, diagnostic)
 			if diagnostic.Severity == "error" {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,8 +34,34 @@ type applyResult struct {
 	unchanged       bool
 	intents         []edits.Intent
 	labels          []string
+	warnings        [][]string
 	files           []string
+	sources         []string             // the project's source paths, which messages name as jsonPath does
+	fileRevisions   []edits.FileRevision // the revision of each source file the apply read, relative to the project folder
 }
+
+// pathsAsJSON rewrites the project's source paths in text as jsonPath writes
+// them (relative inside the working folder), the longest first.
+func pathsAsJSON(text string, paths []string) string {
+	sorted := append([]string(nil), paths...)
+	sort.Slice(sorted, func(i, j int) bool { return len(sorted[i]) > len(sorted[j]) })
+	for _, path := range sorted {
+		if path != "" && filepath.IsAbs(path) {
+			text = strings.ReplaceAll(text, path, jsonPath(path))
+		}
+	}
+	return text
+}
+
+// relativeError is an apply error whose text names the project's files as
+// jsonPath does; it unwraps to the error it rewrites.
+type relativeError struct {
+	err   error
+	paths []string
+}
+
+func (e *relativeError) Error() string { return pathsAsJSON(e.err.Error(), e.paths) }
+func (e *relativeError) Unwrap() error { return e.err }
 
 // applyFailure is an apply error with the stage it happened in.
 type applyFailure struct {
@@ -149,17 +176,28 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	if err != nil {
 		return fail("read", err)
 	}
+	for _, file := range opts.Sources {
+		result.sources = append(result.sources, file.Path)
+	}
+	result.fileRevisions = fileRevisions(opts)
+	// The envelope's revision covers the entry; revisions covers the other
+	// files the intents were computed against.
+	if err := checkFileRevisions(opts, env.Revisions); err != nil {
+		return fail("revision_mismatch", err)
+	}
 	applied, err := edits.Apply(before, env, opts)
 	if err != nil {
+		err = &relativeError{err: err, paths: result.sources}
 		var located *edits.IntentError
 		if errors.As(err, &located) {
 			return fail("intent_refused", err)
 		}
 		return fail("invalid_result", err)
 	}
-	result.diff = intentDiff(before, applied, filepath.Base(path))
+	root, _ := filepath.Abs(filepath.Dir(path))
+	result.diff = intentDiff(before, applied, filepath.Base(path), root)
 	result.revisionAfter = edits.Revision(applied.Source)
-	result.labels = applied.Labels
+	result.labels, result.warnings = applied.Labels, applied.Warnings
 	for _, file := range applied.Files {
 		if fileChanged(file.Before, file.After) {
 			result.files = append(result.files, file.Path)
@@ -217,40 +255,48 @@ func fileChanged(before, after []byte) bool {
 const applySchema = "cicada.apply.v1"
 
 type applyDocument struct {
-	Schema         string            `json:"schema"`
-	Score          string            `json:"score,omitempty"`
-	OK             bool              `json:"ok"`
-	Written        bool              `json:"written"`
-	DryRun         bool              `json:"dry_run"`
-	Changed        bool              `json:"changed"`
-	RevisionBefore string            `json:"revision_before,omitempty"`
-	RevisionAfter  string            `json:"revision_after,omitempty"`
-	Intents        []applyIntentJSON `json:"intents"`
-	Files          []string          `json:"files,omitempty"`
-	Diff           string            `json:"diff"`
-	Error          *applyErrorJSON   `json:"error,omitempty"`
+	Schema         string               `json:"schema"`
+	Score          string               `json:"score,omitempty"`
+	OK             bool                 `json:"ok"`
+	Written        bool                 `json:"written"`
+	DryRun         bool                 `json:"dry_run"`
+	Changed        bool                 `json:"changed"`
+	RevisionBefore string               `json:"revision_before,omitempty"`
+	RevisionAfter  string               `json:"revision_after,omitempty"`
+	Intents        []applyIntentJSON    `json:"intents"`
+	Files          []string             `json:"files,omitempty"`
+	FileRevisions  []edits.FileRevision `json:"file_revisions,omitempty"`
+	Diff           string               `json:"diff"`
+	Error          *applyErrorJSON      `json:"error,omitempty"`
 }
 
 // applyIntentJSON is one intent of the batch and what it did, in the words of
 // the edit history.
 type applyIntentJSON struct {
-	Index int    `json:"index"`
-	Kind  string `json:"kind"`
-	Label string `json:"label,omitempty"`
+	Index    int      `json:"index"`
+	Kind     string   `json:"kind"`
+	Label    string   `json:"label,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // applyErrorJSON says why an apply failed. Code is one of applyErrorCodes.
 // Index, kind and field name the intent at fault when the error is about
-// one; diagnostic, reason and note carry a note refusal of editnotes as data.
+// one; reason names why an intent was refused when it says (with uses, the
+// references that block it, file, the other source file the edit would have
+// to change, and range, the bounds a value broke); diagnostic and note carry
+// a note refusal of editnotes as data.
 type applyErrorJSON struct {
-	Code       string         `json:"code"`
-	Message    string         `json:"message"`
-	Index      *int           `json:"index,omitempty"`
-	Kind       string         `json:"kind,omitempty"`
-	Field      string         `json:"field,omitempty"`
-	Diagnostic string         `json:"diagnostic,omitempty"`
-	Reason     string         `json:"reason,omitempty"`
-	Note       map[string]any `json:"note,omitempty"`
+	Code       string            `json:"code"`
+	Message    string            `json:"message"`
+	Index      *int              `json:"index,omitempty"`
+	Kind       string            `json:"kind,omitempty"`
+	Field      string            `json:"field,omitempty"`
+	Diagnostic string            `json:"diagnostic,omitempty"`
+	Reason     string            `json:"reason,omitempty"`
+	Note       map[string]any    `json:"note,omitempty"`
+	Uses       []string          `json:"uses,omitempty"`
+	File       string            `json:"file,omitempty"`
+	Range      *edits.ValueRange `json:"range,omitempty"`
 }
 
 // applyErrorCodes are the codes of apply --json errors; docs/manual/agents.md
@@ -258,11 +304,14 @@ type applyErrorJSON struct {
 var applyErrorCodes = []string{"usage", "read", "decode", "revision_mismatch", "intent_refused", "invalid_result", "write"}
 
 func writeApplyJSON(w io.Writer, result applyResult, err error) error {
-	document := applyDocument{Schema: applySchema, Score: jsonPath(result.path), OK: err == nil, Written: result.written, DryRun: result.dryRun, Changed: result.revisionAfter != "" && !result.unchanged, RevisionBefore: result.revisionBefore, RevisionAfter: result.revisionAfter, Intents: []applyIntentJSON{}, Files: result.files, Diff: result.diff}
+	document := applyDocument{Schema: applySchema, Score: jsonPath(result.path), OK: err == nil, Written: result.written, DryRun: result.dryRun, Changed: result.revisionAfter != "" && !result.unchanged, RevisionBefore: result.revisionBefore, RevisionAfter: result.revisionAfter, Intents: []applyIntentJSON{}, Files: result.files, FileRevisions: result.fileRevisions, Diff: result.diff}
 	for i, intent := range result.intents {
 		entry := applyIntentJSON{Index: i, Kind: intent.Kind()}
 		if i < len(result.labels) {
 			entry.Label = result.labels[i]
+		}
+		if i < len(result.warnings) {
+			entry.Warnings = result.warnings[i]
 		}
 		document.Intents = append(document.Intents, entry)
 	}
@@ -279,11 +328,21 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 		if errors.As(err, &located) {
 			index := located.Index
 			failure.Index, failure.Kind, failure.Field = &index, located.Kind, located.Field
-			failure.Message = located.Err.Error()
+			failure.Message = pathsAsJSON(located.Err.Error(), result.sources)
 		}
 		var refusal *edits.NoteError
 		if errors.As(err, &refusal) {
 			failure.Diagnostic, failure.Reason, failure.Note = "CICADA-NOTES", refusal.Code, refusal.Note()
+		}
+		var reason *edits.ReasonError
+		if errors.As(err, &reason) {
+			failure.Reason, failure.Range = reason.Reason, reason.Range
+			for _, use := range reason.Uses {
+				failure.Uses = append(failure.Uses, pathsAsJSON(use, result.sources))
+			}
+			if reason.File != "" {
+				failure.File = jsonPath(reason.File)
+			}
 		}
 		document.Error = failure
 	}

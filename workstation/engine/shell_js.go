@@ -76,7 +76,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 				}
 				return
 			}
-			selector := ""
+			selector, launch := "", js.Undefined()
 			switch id {
 			case "transport.toggle":
 				var state struct {
@@ -115,13 +115,22 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 				if err != nil || scene < 1 || scene > 8 {
 					return
 				}
-				selector = fmt.Sprintf("#live form[action='/__actions/launch'] [data-live-scene='%d'] button", scene)
+				for _, form := range actionForms(root, "#live form", "/__actions/launch") {
+					if found := form.Call("querySelector", fmt.Sprintf("[data-live-scene='%d'] button", scene)); workspacePresent(found) {
+						launch = found
+						break
+					}
+				}
 			}
 			if ctx.Err() != nil || !root.Get("isConnected").Bool() {
 				return
 			}
-			button := root.Call("querySelector", selector)
-			if workspacePresent(button) && !button.Get("disabled").Bool() {
+			button := launch
+			if selector != "" {
+				button = root.Call("querySelector", selector)
+			}
+			// A locked Undo or Redo stays focusable (aria-disabled); the lock refuses the press.
+			if workspacePresent(button) && !button.Get("disabled").Bool() && !(history.Locked() && (id == "edit.undo" || id == "edit.redo")) {
 				button.Call("closest", "form").Call("requestSubmit", button)
 			} else {
 				shellSay("That command is not available here now.")

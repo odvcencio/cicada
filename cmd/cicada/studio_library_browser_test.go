@@ -19,8 +19,11 @@ func TestBrowserStudioLibrary(t *testing.T) {
 	chrome := startBrowserChrome(t, server)
 	chrome.setViewport(1440, 1000)
 	chrome.navigate("http://" + browserStudioAddress + "/")
+	// A tab click before the tabs are installed is lost, and the Library rows
+	// are then painted into a hidden panel (main 762e87fa, M2 job 130327595591).
+	chrome.waitForPanelTabs()
 	chrome.click("[data-panel-tab=library]")
-	chrome.waitFor("document.querySelectorAll('.library-row').length>0", 5*time.Second)
+	chrome.waitFor("!document.querySelector('#library').hidden && document.querySelectorAll('.library-row').length>0", 5*time.Second)
 	chrome.eval(`(()=>{document.querySelector('#library-kind').value='instrument';document.querySelector('#library-kind').dispatchEvent(new Event('change'));document.querySelector('#library-query').value='glassbass';document.querySelector('#library-query').dispatchEvent(new Event('input'));document.querySelector('#library-track').value='lead';return true})()`)
 	chrome.waitFor("document.querySelectorAll('.library-row').length===1", 5*time.Second)
 	chrome.eval(`(()=>{const mode=document.querySelector('#audio-mode');mode.value='browser';mode.dispatchEvent(new Event('change'));return true})()`)

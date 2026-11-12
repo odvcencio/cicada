@@ -34,9 +34,9 @@ shard_count=4
 shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
-	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup" ;;
-	3) echo "owner_session page_stall pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits" ;;
-	4) echo "shutdown_proof grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor" ;;
+	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
+	3) echo "owner_session page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
+	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
 }
@@ -56,6 +56,7 @@ segment_runs() {
 	mixer_strips) echo mixer-strips ;;
 	studio_edits) echo studio-edits ;;
 	note_editor) echo note-editor ;;
+	engine_requests) echo engine-requests ;;
 	columns) echo columns ;;
 	first_song) echo first-song@compose first-song@reopen ;;
 	portable_song) echo portable-song@select portable-song@reopen ;;
@@ -100,27 +101,26 @@ segment_runs() {
 		echo producer-workflow@tempo-producer automation-recall@tempo-automation-recall tempo-arrangement@tempo-tempo-arrangement print-roundtrip@tempo-roundtrip print-roundtrip@tempo-reopen
 		;;
 	editor) echo code-editor@buffer code-editor@project ;;
+	dock_fit) echo dock-fit ;;
+	meter_performance) echo meter-performance ;;
+	recording_setup) echo recording-setup ;;
+	recording_levels) echo recording-levels ;;
+	vocals) echo vocals ;;
+	vocal_levels) echo vocal-levels ;;
+	shared_capture) echo shared-capture@mpe shared-capture@channel ;;
+	performance) echo performance@capacity performance@buffer ;;
+	amp_automation) echo amp-automation ;;
+	scene_launch_keys) echo scene-launch-keys ;;
+	live_write) echo live-write live-write-uncertain@reject live-write-uncertain@lost live-write-uncertain@timeout live-write-uncertain@late ;;
 	*) return 1 ;;
 	esac
 }
 
-# Suite files in workstation/browser that no workflow runs: NEVER RUN IN CI as
-# of 2026-11-09; wiring them in is tracked separately. The old single step did
-# not run them either. This list is an exemption, not coverage: it only keeps
-# the completeness check from failing on them. Remove a name here when you add
-# its suite to a segment.
+# Suite files in workstation/browser that no shard runs, each with the reason.
+# This list is an exemption, not coverage: it only keeps the completeness check
+# from failing on them. Remove a name here when you add its suite to a segment.
 not_run_by_ci=(
-	amp-automation
-	dock-fit
-	live-write
-	live-write-uncertain
-	meter-performance
-	performance
-	recording-levels
-	recording-setup
-	shared-capture
-	vocal-levels
-	vocals
+	# (none: every suite file runs in a shard)
 )
 
 self="${BASH_SOURCE[0]}"
@@ -151,7 +151,9 @@ check_shards() {
 		if [[ -z "${seg_shard[$seg]:-}" ]]; then complain "segment $seg is in no shard"; fi
 	done
 	for seg in "${!seg_shard[@]}"; do
-		if ! printf '%s\n' "${defined[@]}" | grep -qx "$seg"; then complain "shard ${seg_shard[$seg]} names segment $seg, which has no function"; fi
+		# A here-string, not a pipe: grep -q exits at its first match, and under
+		# pipefail the writer's broken pipe would read as "no function".
+		if ! grep -qx -- "$seg" <<<"$(printf '%s\n' "${defined[@]}")"; then complain "shard ${seg_shard[$seg]} names segment $seg, which has no function"; fi
 	done
 
 	# Every suite in segment_runs sits in exactly one shard. A suite may run in
@@ -180,7 +182,7 @@ check_shards() {
 		done
 		# Every literal run_suite call must be listed.
 		for name in $(grep -o 'run_suite "\{0,1\}[a-z0-9-]*' <<<"$body" | sed 's/run_suite "\{0,1\}//'); do
-			if ! segment_runs "$seg" | tr ' ' '\n' | sed 's/@.*//' | grep -qx "$name"; then
+			if ! grep -qx -- "$name" <<<"$(segment_runs "$seg" | tr ' ' '\n' | sed 's/@.*//')"; then
 				complain "segment $seg calls run_suite for $name but segment_runs does not list it"
 			fi
 		done
@@ -239,6 +241,48 @@ stop_studio() {
 	studio_log= # a later timeout must not print this server's log
 }
 
+# start_synthetic_studio SCORE NAME starts Studio with a synthetic microphone:
+# the Go test harness TestSyntheticStudioUIHarness serves the domain API with
+# synthetic PCM, and cicada-workstation serves the page in front of it. No
+# device is opened. It sets studio_pid to the workstation. stop_synthetic_studio
+# stops all three processes.
+synthetic_pids=()
+start_synthetic_studio() {
+	local score="$1" name="$2" manifest backend token _
+	manifest="$PWD/build/studio-$name-manifest.json"
+	rm -f "$manifest"
+	CICADA_SYNTHETIC_SCORE="$score" CICADA_SYNTHETIC_MANIFEST="$manifest" ./build/cicada-synthetic-ui.test -test.run '^TestSyntheticStudioUIHarness$' > "build/studio-$name-harness.log" 2>&1 &
+	synthetic_pids=($!)
+	for _ in $(seq 1 100); do
+		if [[ -s "$manifest" ]]; then break; fi
+		kill -0 "${synthetic_pids[0]}"
+		sleep 0.1
+	done
+	backend="$(node -e 'process.stdout.write(require(process.argv[1]).backend)' "$manifest")"
+	token="$(node -e 'process.stdout.write(require(process.argv[1]).token)' "$manifest")"
+	# The workstation exits when its stdin closes; a sleeper holds it open.
+	exec {synthetic_stdin}< <(sleep 3600)
+	synthetic_pids+=($!)
+	studio_log="build/studio-$name-server.log"
+	CICADA_BACKEND_TOKEN="$token" ./build/cicada-workstation --backend "$backend" --listen "127.0.0.1:$studio_port" --state-dir "$browser_root/$name-state" --parent-watch <&"$synthetic_stdin" > "$studio_log" 2>&1 &
+	studio_pid=$!
+	exec {synthetic_stdin}<&-
+	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+	for _ in $(seq 1 100); do
+		if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+		kill -0 "$studio_pid"
+		sleep 0.1
+	done
+}
+
+stop_synthetic_studio() {
+	local pid
+	for pid in "$studio_pid" "${synthetic_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+	for pid in "$studio_pid" "${synthetic_pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+	synthetic_pids=()
+	studio_log=
+}
+
 ran_file=
 
 # run_suite NAME[@CONFIG] COMMAND... records the run, then runs the command.
@@ -289,7 +333,7 @@ seg_owner_session() { # 1 s
 	run_suite owner-session env NODE_OPTIONS="$base_node_options" node --test workstation/browser/owner-session.test.cjs
 }
 
-seg_page_stall() { # about 35 s (32 s locally), no Studio
+seg_page_stall() { # about 41 s (35 s, plus about 6 s for the reenter case), no Studio
 	# A frozen page must make its suite report and exit (see page-stall.cjs).
 	run_suite page-stall env NODE_OPTIONS="$base_node_options" node --test workstation/browser/page-stall.test.cjs
 }
@@ -364,6 +408,15 @@ seg_note_editor() { # new; under 1 minute locally
 	export CICADA_NOTES_PROOF_DIR="$PWD/build/studio-notes-proof"
 	start_studio "$browser_root/note-editor/note-editor.cicada" build/studio-notes-server.log /
 	run_suite note-editor make test-studio-notes | tee build/studio-notes-report.txt
+	stop_studio
+}
+
+seg_engine_requests() { # new; about 40 s locally
+	# The engine's requests through the browser fetch: failures, limits, the
+	# native MIDI stream and note recovery (engine/fetch_js.go).
+	node workstation/browser/engine-requests.test.cjs --write-fixture "$browser_root/engine-requests"
+	start_studio "$browser_root/engine-requests/main.cicada" build/studio-engine-requests-server.log /
+	run_suite engine-requests node --test workstation/browser/engine-requests.test.cjs | tee build/studio-engine-requests-report.txt
 	stop_studio
 }
 
@@ -608,6 +661,111 @@ seg_library_recording() { # 5 s
 	stop_studio
 }
 
+seg_dock_fit() { # new; 5 s locally
+	continuity_fixture dock-fit
+	export CICADA_DOCK_PROOF_DIR="$PWD/build/studio-dock-fit-proof"
+	start_studio "$browser_root/dock-fit/continuity.cicada" build/studio-dock-fit-server.log /
+	run_suite dock-fit make test-studio-dock-fit | tee build/studio-dock-fit-report.txt
+	stop_studio
+}
+
+seg_meter_performance() { # new; 5 s locally
+	# Despite the name this is a correctness test: no canvas paint while the meters are unchanged, and the poller keeps up (median gap between meter requests at most 100 ms, timed on the page clock).
+	continuity_fixture meter-performance
+	start_studio "$browser_root/meter-performance/continuity.cicada" build/studio-meter-performance-server.log /
+	run_suite meter-performance env CICADA_METERS_URL="$CICADA_STUDIO_URL" CICADA_METERS_PROOF_DIR="$PWD/build/studio-meter-performance-proof" make test-studio-meter-performance | tee build/studio-meter-performance-report.txt
+	stop_studio
+}
+
+seg_recording_setup() { # new; 5 s locally
+	node workstation/browser/recording-setup.test.cjs --write-fixture "$browser_root/recording-setup/main.cicada"
+	start_studio "$browser_root/recording-setup/main.cicada" build/studio-recording-setup-server.log /
+	run_suite recording-setup env CICADA_SETUP_URL="$CICADA_STUDIO_URL" CICADA_VOCAL_PROOF_DIR="$PWD/build/studio-recording-setup-proof" make test-studio-recording-setup | tee build/studio-recording-setup-report.txt
+	stop_studio
+}
+
+seg_recording_levels() { # new; 10 s locally
+	node workstation/browser/recording-levels.test.cjs --write-fixture "$browser_root/recording-levels/main.cicada"
+	start_studio "$browser_root/recording-levels/main.cicada" build/studio-recording-levels-server.log /
+	run_suite recording-levels env CICADA_LEVELS_URL="$CICADA_STUDIO_URL" CICADA_LEVELS_PROOF_DIR="$PWD/build/studio-recording-levels-proof" make test-studio-recording-levels | tee build/studio-recording-levels-report.txt
+	stop_studio
+}
+
+seg_vocals() { # new; 15 s locally
+	local vocals_score
+	go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-vocals-fixture.json
+	vocals_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$PWD/build/studio-vocals-fixture.json")"
+	start_studio "$vocals_score" build/studio-vocals-server.log /
+	run_suite vocals env CICADA_VOCAL_PROOF_DIR="$PWD/build/studio-vocals-proof" make test-studio-vocals | tee build/studio-vocals-report.txt
+	stop_studio
+}
+
+seg_vocal_levels() { # new; 15 s locally
+	local levels_score
+	go -C workstation run ./browser/testdata/print-sources > build/studio-vocal-levels-fixture.json
+	levels_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$PWD/build/studio-vocal-levels-fixture.json")"
+	start_studio "$levels_score" build/studio-vocal-levels-server.log /
+	run_suite vocal-levels env CICADA_LEVELING_URL="$CICADA_STUDIO_URL" CICADA_LEVELING_SCORE="$levels_score" CICADA_LEVELING_PROOF_DIR="$PWD/build/studio-vocal-levels-proof" make test-studio-vocal-levels | tee build/studio-vocal-levels-report.txt
+	stop_studio
+}
+
+seg_shared_capture() { # new; 35 s locally
+	# One fresh Studio per kind: the suite rewrites the score and claims edit access.
+	local capture_kind capture_env
+	for capture_kind in mpe channel; do
+		continuity_fixture "shared-capture-$capture_kind"
+		capture_env=()
+		if [[ "$capture_kind" == channel ]]; then capture_env+=(CICADA_CAPTURE_KIND=channel); fi
+		start_studio "$browser_root/shared-capture-$capture_kind/continuity.cicada" "build/studio-shared-capture-$capture_kind-server.log" /
+		run_suite "shared-capture@$capture_kind" env CICADA_SHARED_CAPTURE_PROOF_DIR="$PWD/build/studio-shared-capture-proof" "${capture_env[@]}" make test-studio-shared-capture | tee "build/studio-shared-capture-$capture_kind-report.txt"
+		stop_studio
+	done
+}
+
+seg_performance() { # new; 15 s locally
+	# Two Studios: playback leaves the audio runtime armed, which locks the audio
+	# form the buffer check uses, so each half starts on a fresh process.
+	local performance_part
+	node workstation/browser/performance.test.cjs --write-fixture "$browser_root/performance/main.cicada"
+	for performance_part in capacity buffer; do
+		start_studio "$browser_root/performance/main.cicada" "build/studio-performance-$performance_part-server.log" /
+		run_suite "performance@$performance_part" env CICADA_PERFORMANCE_PART="$performance_part" CICADA_CAPACITY_URL="$CICADA_STUDIO_URL" CICADA_BUFFER_URL="$CICADA_STUDIO_URL" CICADA_PERFORMANCE_PROOF_DIR="$PWD/build/studio-performance-proof" make test-studio-performance | tee "build/studio-performance-$performance_part-report.txt"
+		stop_studio
+	done
+}
+
+seg_scene_launch_keys() { # new; about 10 s locally
+	continuity_fixture scene-launch-keys
+	start_studio "$browser_root/scene-launch-keys/continuity.cicada" build/studio-scene-launch-keys-server.log /
+	run_suite scene-launch-keys make test-studio-scene-launch-keys | tee build/studio-scene-launch-keys-report.txt
+	stop_studio
+}
+
+seg_live_write() { # new; about 3 minutes locally, most of it the harness build and five Studio starts
+	# These suites need a synthetic microphone: build the harness test binary
+	# once, then start it with a score that has no amp_drive curve.
+	local live_score live_mode
+	go test -c -o build/cicada-synthetic-ui.test ./cmd/cicada
+	live_score="$(node workstation/browser/live-fixture.cjs "$browser_root/live-write" --no-curve)"
+	start_synthetic_studio "$live_score" live-write
+	run_suite live-write env CICADA_LIVE_WRITE_SCORE="$live_score" CICADA_LIVE_WRITE_PROOF_DIR="$PWD/build/studio-live-write-proof" make test-studio-live-write | tee build/studio-live-write-report.txt
+	stop_synthetic_studio
+	for live_mode in reject lost timeout late; do
+		live_score="$(node workstation/browser/live-fixture.cjs "$browser_root/live-write-$live_mode" --no-curve)"
+		start_synthetic_studio "$live_score" "live-write-$live_mode"
+		run_suite "live-write-uncertain@$live_mode" env CICADA_LIVE_WRITE_FAILURE="$live_mode" CICADA_LIVE_WRITE_PROOF_DIR="$PWD/build/studio-live-write-proof" make test-studio-live-write-uncertain | tee "build/studio-live-write-$live_mode-report.txt"
+		stop_synthetic_studio
+	done
+}
+
+seg_amp_automation() { # new; 10 s locally
+	local amp_score
+	amp_score="$(node workstation/browser/amp-automation.test.cjs --write-fixture "$browser_root/amp-automation")"
+	start_studio "$amp_score" build/studio-amp-automation-server.log /
+	run_suite amp-automation env CICADA_AMP_AUTOMATION_FIXTURE="$amp_score" CICADA_AMP_AUTOMATION_PROOF_DIR="$PWD/build/studio-amp-automation-proof" make test-studio-amp-automation | tee build/studio-amp-automation-report.txt
+	stop_studio
+}
+
 seg_pattern_song() { # 132 s
 	local song_layout song_phase song_args
 	for song_layout in scene placement; do
@@ -838,6 +996,8 @@ run_shard() {
 		python3() { return 0; }
 		start_studio() { studio_pid=0; }
 		stop_studio() { return 0; }
+		start_synthetic_studio() { studio_pid=0; }
+		stop_synthetic_studio() { return 0; }
 		continuity_fixture() { mkdir -p "$browser_root/$1"; }
 	else
 		browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$shard"
@@ -852,11 +1012,15 @@ run_shard() {
 			unzip -q "$browser_root/chrome.zip" -d "$browser_root"
 			mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
 		fi
+		# A page that stops responding gets native stacks in its report. On a
+		# GitHub-hosted runner gdb is installed only then, inside that failure
+		# (page-stall.cjs); a self-hosted machine never installs packages.
+		if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then export CICADA_PAGE_STALL_NATIVE=install; fi
 		base_node_options="${NODE_OPTIONS:-}"
 		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
 		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-		trap 'kill "${studio_pid:-}" 2>/dev/null || true; wait "${studio_pid:-}" 2>/dev/null || true' EXIT
+		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true' EXIT
 	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"

@@ -40,9 +40,9 @@ func (d *Decoder) Init(sampleRate int) {
 				lateral = -lateral
 			}
 			delay := .000325 * (1 - lateral) * float64(sampleRate)
-			e.delay, e.fraction = int(delay), float32(delay-float64(int(delay)))
-			cutoff := 9000 + 6500*lateral
-			e.gain = float32(.85 + .15*lateral)
+			e.delay, e.fraction = int(delay), float32(float64(delay)-float64(int(delay)))
+			cutoff := 9000 + float64(6500*lateral)
+			e.gain = float32(.85 + float64(.15*lateral))
 			e.echo = -.12
 			reflection := .00012
 			switch i {

@@ -590,6 +590,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	if err := ValidateProject(p); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
+	diagnostics = append(diagnostics, sceneEntryWarnings(p, score)...)
 	if _, err := canonicalProjectBytes(p); err != nil {
 		code := projectDiagnosticCode(err)
 		if errors.Is(err, errCanonicalJSONLimit) {

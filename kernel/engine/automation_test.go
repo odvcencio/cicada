@@ -6,6 +6,7 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestAutomationSeekLoopAndAllocationFree(t *testing.T) {
@@ -17,7 +18,7 @@ func TestAutomationSeekLoopAndAllocationFree(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg := sourceChainConfig(t)
 			if scheduled {
-				cfg.Schedule = LowerSong(cfg.Song)
+				cfg.Schedule = LowerSong(cfg.Song, seq.MeterMap{})
 				cfg.Song = nil
 			}
 			cfg.LoopSong = true

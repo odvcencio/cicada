@@ -205,7 +205,7 @@ func (i Impulse) Condition(highpassHz, energyLimit float64) (Impulse, error) {
 			}
 			previousInput, previousOutput = x, y
 			output[n] = float32(y)
-			energy += y * y
+			energy += float64(y * y)
 		}
 		maximumEnergy = math.Max(maximumEnergy, energy)
 	}
@@ -325,20 +325,20 @@ func resample(input []float32, sourceRate, targetRate, frames int) []float32 {
 		center := int(position)
 		var sum, weights float64
 		for j := center - radius; j <= center+radius; j++ {
-			x := float64(j) - position
+			x := float64(j) - float64(position)
 			if math.Abs(x) > float64(radius) {
 				continue
 			}
-			weight := 2 * cutoff
+			weight := float64(2 * float64(cutoff))
 			if math.Abs(x) > 1e-12 {
 				weight = math.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
 			}
-			weight *= .42 + .5*math.Cos(math.Pi*x/float64(radius)) + .08*math.Cos(2*math.Pi*x/float64(radius))
+			weight *= float64(.42+float64(.5*math.Cos(math.Pi*x/float64(radius)))) + float64(.08*math.Cos(2*math.Pi*x/float64(radius)))
 			// Zero padding preserves causal edge behaviour; all filter taps
 			// contribute to the normalization, including those outside data.
-			weights += weight
+			weights += float64(weight)
 			if j >= 0 && j < len(input) {
-				sum += float64(input[j]) * weight
+				sum += float64(float64(input[j]) * weight)
 			}
 		}
 		result[i] = float32(sum * ratio / weights)

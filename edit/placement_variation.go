@@ -54,7 +54,7 @@ func varyPlacement(ctx *Context, intent Intent) error {
 	copied := appendPatternCopy(ctx.Source, clone)
 	op := arrangementOp{action: "update", name: placement.ID, settings: &PlacementSettings{Content: in.Name}}
 	if file == ctx.Options.Path {
-		updated, err := arrangementSource(copied, file, op)
+		updated, err := arrangementSource(ctx.MeterMap(), copied, file, op)
 		if err != nil {
 			return err
 		}
@@ -78,7 +78,7 @@ func varyPlacement(ctx *Context, intent Intent) error {
 			return &RefusalError{Intent: "VaryPlacement", Cause: "adding the independent pattern changes the rendered song"}
 		}
 		ctx.Source, ctx.plan = copied, nil
-		updated, err := arrangementSource(before, file, op)
+		updated, err := arrangementSource(ctx.MeterMap(), before, file, op)
 		if err != nil {
 			return err
 		}

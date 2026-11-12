@@ -259,6 +259,7 @@ func BenchmarkFunctions(b *testing.B) {
 		{"Exp", Exp, math.Exp, 0.7}, {"Exp10", Exp10, func(x float64) float64 { return math.Pow(10, x) }, -0.35},
 		{"Log", Log, math.Log, 3.7}, {"Log10", Log10, math.Log10, 3.7}, {"Sin", Sin, math.Sin, 0.9},
 		{"Tan", Tan, math.Tan, 0.9}, {"Tanh", Tanh, math.Tanh, 0.9},
+		{"SinPi", SinPi, func(x float64) float64 { return math.Sin(math.Pi * x) }, 0.29},
 		{"Pow", func(x float64) float64 { return Pow(x, 1.37) }, func(x float64) float64 { return math.Pow(x, 1.37) }, 3.7},
 	} {
 		b.Run(c.name+"/detmath", func(b *testing.B) {

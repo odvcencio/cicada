@@ -161,7 +161,7 @@ func NewVoiceFromProgramWithModulators(program *Program, sampleRate int, modulat
 					v.lfo = new(lfoVoice)
 				}
 				v.states[i].neural = uint8(len(v.lfo.rates))
-				v.lfo.rates = append(v.lfo.rates, uint64(float64(program.Nodes[i].Value)*1_000_000+0.5))
+				v.lfo.rates = append(v.lfo.rates, uint64(float64(float64(program.Nodes[i].Value)*1_000_000)+0.5))
 			}
 		}
 	}
@@ -416,7 +416,7 @@ func (v *Voice) Next() float32 {
 	out := float32(v.quality.down.Downsample(float64(first), float64(second)))
 	if v.quality.fade > 0 {
 		blend := float32(v.quality.fade) / float32(v.quality.fadeFrames)
-		out = out*(1-blend) + v.quality.previous*blend
+		out = float32(out*(1-blend)) + float32(v.quality.previous*blend)
 		v.quality.fade--
 	}
 	v.quality.last = out

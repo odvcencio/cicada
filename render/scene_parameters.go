@@ -96,7 +96,7 @@ func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRat
 	if err != nil {
 		return nil, err
 	}
-	tempo, err := project.NewTempoMap(sampleRate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	tempo, err := project.NewTempoMap(p.MeterMap(), sampleRate, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		return nil, err
 	}
@@ -122,10 +122,10 @@ func (p *sceneParameters) updateMuteTargets() {
 }
 
 func (p *sceneTrackParameters) advance(track *trackRuntime) {
-	p.mix.Left += (p.targetMix.Left - p.mix.Left) * p.mixAlpha
-	p.mix.Right += (p.targetMix.Right - p.mix.Right) * p.mixAlpha
-	p.sendA += (p.targetSendA - p.sendA) * p.sendAlpha
-	p.sendB += (p.targetSendB - p.sendB) * p.sendAlpha
+	p.mix.Left += float32((p.targetMix.Left - p.mix.Left) * p.mixAlpha)
+	p.mix.Right += float32((p.targetMix.Right - p.mix.Right) * p.mixAlpha)
+	p.sendA += float32((p.targetSendA - p.sendA) * p.sendAlpha)
+	p.sendB += float32((p.targetSendB - p.sendB) * p.sendAlpha)
 	if p.muteGain < p.muteTarget {
 		p.muteGain = min(p.muteTarget, p.muteGain+p.muteStep)
 	} else if p.muteGain > p.muteTarget {

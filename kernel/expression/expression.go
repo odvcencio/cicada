@@ -83,7 +83,7 @@ func (s *State) SetParams(p Params, rate float32) {
 func (s *State) NextCents() float64 {
 	cents := float64(s.PitchCents) + s.defaultVibrato.next()
 	if s.VibratoDepthCents != 0 && s.increment != 0 {
-		cents += float64(s.VibratoDepthCents) * math.Sin(2*math.Pi*s.phase)
+		cents += float64(float64(s.VibratoDepthCents) * math.Sin(2*math.Pi*s.phase))
 		s.phase += s.increment
 		if s.phase >= 1 {
 			s.phase--

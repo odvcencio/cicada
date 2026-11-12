@@ -66,12 +66,12 @@ func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf str
 		for _, place := range v.Project.Arrange.Placements {
 			end = max(end, place.AtTick+place.LengthTicks)
 			if place.Content == pattern.ID {
-				uses = append(uses, gosx.El("li", gosx.El("a", gosx.Attrs(gosx.Attr("href", placementURL(place.ID))), gosx.Text(place.ID+" · "+place.Track+" · "+placementPosition(place.AtTick)))))
+				uses = append(uses, gosx.El("li", gosx.El("a", gosx.Attrs(gosx.Attr("href", placementURL(place.ID))), gosx.Text(place.ID+" · "+place.Track+" · "+placementPosition(v.Project.MeterMap(), place.AtTick)))))
 			}
 		}
 		end = (end + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
 		length := pattern.DurationTicks()
-		values := map[string]string{"newName": patternPlacementName(v.Project, pattern.ID), "track": preferred, "at": placementLiteral(end, true), "length": strconv.FormatInt(length, 10) + "ticks"}
+		values := map[string]string{"newName": patternPlacementName(v.Project, pattern.ID), "track": preferred, "at": placementLiteral(v.Project.MeterMap(), end, true), "length": strconv.FormatInt(length, 10) + "ticks"}
 		placeState := action.States(ctx.Request)["arrange"]
 		placeFailed := !placeState.OK() && placeState.Value("action") == "append" && placeState.Value("content") == pattern.ID
 		if placeFailed {

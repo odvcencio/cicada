@@ -9,16 +9,16 @@ import (
 )
 
 func TestCountInDefaultAndIntegerClock(t *testing.T) {
-	c, err := DefaultCountIn(48000, 120000)
+	c, err := DefaultCountIn(seq.MeterMap{}, 48000, 120000)
 	if err != nil || c.Frames != 96000 || c.count != 4 {
 		t.Fatalf("default count-in = %+v, %v", c, err)
 	}
-	c, err = DefaultCountIn(44100, 137333)
+	c, err = DefaultCountIn(seq.MeterMap{}, 44100, 137333)
 	clock, _ := seq.NewClock(44100, 137333)
-	if err != nil || c.Frames != clock.SampleAtTick(seq.TicksPerBar) {
+	if err != nil || c.Frames != clock.SampleAtTick(ticksPerBar) {
 		t.Fatalf("fractional tempo count-in = %+v, %v", c, err)
 	}
-	if _, err := NewCountIn(48000, 120000, 9); err == nil {
+	if _, err := NewCountIn(seq.MeterMap{}, 48000, 120000, 9); err == nil {
 		t.Fatal("accepted unbounded count-in")
 	}
 }
@@ -36,7 +36,7 @@ func TestRecorderTrailingOverrunAndWriterDrain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := NewCountIn(48000, 120000, 0)
+	c, _ := NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err := r.Begin(c, Calibration{}); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestRecorderWriterFailureAndDeviceGap(t *testing.T) {
 	want := errors.New("simulated storage full")
 	var records []RecordedBlock
 	r, _ := NewRecorder(4, 4, 1, func(b RecordedBlock, _ [][]float32) error { records = append(records, b); return want })
-	c, _ := NewCountIn(48000, 120000, 0)
+	c, _ := NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	r.Begin(c, Calibration{})
 	for _, frame := range []uint64{0, 12} {
 		r.Capture(Block{EngineEpoch: 1, DeviceEpoch: 1, DeviceFrame: frame, SampleRate: 48000, Frames: 4, Layout: LayoutMono}, [][]float32{{1, 2, 3, 4}})
@@ -91,7 +91,7 @@ func TestRecorderCallbackAllocations(t *testing.T) {
 	// Isolate the producer from allocations in an application-supplied writer.
 	ring, _ := NewRing(1002, 256, 2)
 	r := &Recorder{ring: ring}
-	c, _ := DefaultCountIn(48000, 120000)
+	c, _ := DefaultCountIn(seq.MeterMap{}, 48000, 120000)
 	r.Begin(c, Calibration{})
 	in, out := [][]float32{make([]float32, 256), make([]float32, 256)}, [][]float32{make([]float32, 256), make([]float32, 256)}
 	b := Block{DeviceEpoch: 1, SampleRate: 48000, Period: 256, Frames: 256, Layout: LayoutStereo}
@@ -118,7 +118,7 @@ func TestRecorderConsumedGapIsNotTrailing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	c, _ := NewCountIn(48000, 120000, 0)
+	c, _ := NewCountIn(seq.MeterMap{}, 48000, 120000, 0)
 	if err := r.Begin(c, Calibration{}); err != nil {
 		t.Fatal(err)
 	}

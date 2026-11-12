@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -97,10 +98,10 @@ func TestFormatMusicalTime(t *testing.T) {
 		{3840 + 250, "4090ticks", "4090ticks"},
 		{2 * 3840, "@3.1.1", "2bars"},
 	} {
-		if got := FormatPosition(c.tick); got != c.position {
+		if got := FormatPosition(seq.MeterMap{}, c.tick); got != c.position {
 			t.Errorf("FormatPosition(%d)=%q, want %q", c.tick, got, c.position)
 		}
-		if got := FormatLength(c.tick); got != c.length {
+		if got := FormatLength(seq.MeterMap{}, 0, c.tick); got != c.length {
 			t.Errorf("FormatLength(%d)=%q, want %q", c.tick, got, c.length)
 		}
 	}

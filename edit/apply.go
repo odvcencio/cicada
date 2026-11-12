@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -15,7 +16,10 @@ type Result struct {
 	Label  string
 	// Labels holds, for each intent in order, the history label it set, or
 	// "" when it set none.
-	Labels   []string
+	Labels []string
+	// Warnings holds, for each intent in order, the changes it made that the
+	// agent accepted with a flag, such as random choices that change.
+	Warnings [][]string
 	Response map[string]any
 	Plan     *Plan // compiled candidate
 	// Invalid is the compile error of a candidate that Options.KeepInvalid
@@ -67,7 +71,38 @@ type Context struct {
 	identities   []string                // verified identity of each render comparison
 	rechecks     []func() (string, bool) // recompute each identity from the same inputs
 	response     map[string]any
+	running      int          // the index of the intent that runs
+	final        []finalCheck // checks that run after the last intent
+	warnings     []string     // what the running intent changed that its label does not say
 }
+
+// warn records, for the running intent, a change the result reports beside
+// the label: something the edit changes that the agent asked to accept.
+func (c *Context) warn(format string, args ...any) {
+	c.warnings = append(c.warnings, fmt.Sprintf(format, args...))
+}
+
+// finalCheck is a check an intent leaves for the end of the envelope, when
+// later intents have had their turn; a failure names that intent.
+type finalCheck struct {
+	index int
+	kind  string
+	check func(*Context) error
+}
+
+// afterIntents runs check after the envelope's last intent and before the
+// compile, and reports its error as the running intent's.
+func (c *Context) afterIntents(check func(*Context) error) {
+	kind := ""
+	if c.running < len(c.Envelope.Intents) {
+		kind = c.Envelope.Intents[c.running].Kind()
+	}
+	c.final = append(c.final, finalCheck{index: c.running, kind: kind, check: check})
+}
+
+// MeterMap places the edited song's bar and beat lines. A score cannot declare
+// a meter yet, so it is the 4/4 map.
+func (c *Context) MeterMap() seq.MeterMap { return seq.MeterMap{} }
 
 // Parse parses the working buffer. Recording token writers can retain the
 // complete project context when the buffer owns only part of the score.
@@ -198,12 +233,13 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	}
 	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env}
 	labels := make([]string, 0, len(env.Intents))
+	warnings := make([][]string, 0, len(env.Intents))
 	for index, intent := range env.Intents {
 		handler := handlers[intent.Kind()]
 		if handler == nil {
 			return nil, intentError(index, intent.Kind(), fmt.Errorf("no handler for intent kind %q", intent.Kind()))
 		}
-		ctx.labelSet = false
+		ctx.labelSet, ctx.running, ctx.warnings = false, index, nil
 		if err := handler(ctx, intent); err != nil {
 			return nil, intentError(index, intent.Kind(), err)
 		}
@@ -212,9 +248,16 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 		} else {
 			labels = append(labels, "")
 		}
+		warnings = append(warnings, ctx.warnings)
 		// A handler may replace Source without resolving a plan. The next
 		// intent must compile the latest entry and auxiliary bytes together.
 		ctx.plan = nil
+	}
+	for _, final := range ctx.final {
+		ctx.plan = nil
+		if err := final.check(ctx); err != nil {
+			return nil, intentError(final.index, final.kind, err)
+		}
 	}
 	plan, err := opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
 	if err != nil && opts.KeepInvalid {
@@ -223,7 +266,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
+	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Labels: labels, Warnings: warnings, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
 	if len(ctx.rechecks) > 0 {
 		result.RenderIdentity = strings.Join(ctx.identities, "\n")
 		rechecks := ctx.rechecks

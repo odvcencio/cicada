@@ -101,7 +101,7 @@ func (r *Reader) FilterOutput(l, rr float32, ok, inRange bool) (float32, float32
 		}
 		if r.recovery > 0 {
 			gain := float32(r.fadeFrames-r.recovery+1) / float32(r.fadeFrames)
-			l, rr = r.heldL*(1-gain)+l*gain, r.heldR*(1-gain)+rr*gain
+			l, rr = float32(r.heldL*(1-gain))+float32(l*gain), float32(r.heldR*(1-gain))+float32(rr*gain)
 			r.recovery--
 		}
 	}
@@ -289,7 +289,7 @@ func (r *Reader) Render(left, right []float32) {
 			}
 			if r.recovery > 0 {
 				gain := float32(r.fadeFrames-r.recovery+1) / float32(r.fadeFrames)
-				l, rr = r.heldL*(1-gain)+l*gain, r.heldR*(1-gain)+rr*gain
+				l, rr = float32(r.heldL*(1-gain))+float32(l*gain), float32(r.heldR*(1-gain))+float32(rr*gain)
 				r.recovery--
 			}
 		}

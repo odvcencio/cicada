@@ -16,23 +16,33 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"AddEffect": {
-		Meaning: "declares a new effect; it is SetParam's fx.<name> path with a typed request",
-		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. To insert the new effect on a track, follow it with setparam on param:<track>.insert.",
+		Meaning: "declares a new effect and, with InsertOn, inserts it in one edit",
+		Notes:   "The effect kind is EffectKind because the envelope's \"kind\" key names the intent. It is SetParam's fx.<name> path with a typed request. Where a kind may go follows the language: drive, deesser, ampcab and chorus are track inserts; eq a track or master insert; comp a track, bus music or master insert; transient, width, limiter and convolution master inserts; delay, tape and reverb send returns (one delay or tape, one reverb), which a track reaches with setparam param:<track>.send.<name>. Bus sfx takes no inserts. Comp, transient, width, limiter and convolution work only in an insert chain: give inserton, or set the chain with a later setparam param:<owner>.insert in the same envelope; if no intent of the envelope does, this intent is refused with effect_needs_insert. A track takes eight inserts and master sixteen; the new effect goes at the end of the chain, or in front of Before or behind After, inserts already in the chain; with Before or After and no InsertOn, the chain that holds that insert. Settings are set as setparam param:<name>.<field> sets them; only the compressor on bus music takes a sidechain, a track of the score, music or sfx. The edit writes only the entry file: an insert target declared in another file is refused with declared_in_other_file. An edition-1 score needs ConfirmUpgrade, since a mixer write upgrades it to edition 2. The catalog's reasons list names every refusal code.",
 		Examples: []string{
 			"{\"kind\":\"addeffect\",\"name\":\"echo\",\"effectkind\":\"delay\"}",
-			"{\"kind\":\"addeffect\",\"name\":\"grit\",\"effectkind\":\"drive\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"fuzz\",\"effectkind\":\"drive\",\"inserton\":\"bass\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"fuzz\",\"effectkind\":\"drive\",\"inserton\":\"bass\",\"before\":\"grit\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"fuzz\",\"effectkind\":\"drive\",\"after\":\"grit\"}",
 			"{\"kind\":\"addeffect\",\"name\":\"hall\",\"effectkind\":\"reverb\"}",
 			"{\"kind\":\"addeffect\",\"name\":\"glue\",\"effectkind\":\"comp\",\"inserton\":\"music\"}",
-			"{\"kind\":\"addeffect\",\"name\":\"tilt\",\"effectkind\":\"eq\"}",
-			"{\"kind\":\"addeffect\",\"name\":\"soft\",\"effectkind\":\"deesser\"}",
-			"{\"kind\":\"addeffect\",\"name\":\"cab\",\"effectkind\":\"ampcab\"}",
-			"{\"kind\":\"addeffect\",\"name\":\"wide\",\"effectkind\":\"chorus\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"tilt\",\"effectkind\":\"eq\",\"inserton\":\"keys\",\"settings\":{\"type\":\"high_shelf\",\"frequency\":\"6kHz\",\"gain\":\"2dB\"}}",
+			"{\"kind\":\"addeffect\",\"name\":\"soft\",\"effectkind\":\"deesser\",\"inserton\":\"lead\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"cab\",\"effectkind\":\"ampcab\",\"inserton\":\"bass\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"wide\",\"effectkind\":\"chorus\",\"inserton\":\"keys\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"warble\",\"effectkind\":\"tape\"}",
+			"{\"kind\":\"addeffect\",\"name\":\"punch\",\"effectkind\":\"transient\",\"inserton\":\"master\",\"settings\":{\"attack\":\"3dB\"}}",
+			"{\"kind\":\"addeffect\",\"name\":\"stereo\",\"effectkind\":\"width\",\"inserton\":\"master\",\"settings\":{\"amount\":1.2,\"bass_mono\":\"120Hz\"}}",
+			"{\"kind\":\"addeffect\",\"name\":\"ceiling\",\"effectkind\":\"limiter\",\"inserton\":\"master\",\"settings\":{\"ceiling\":\"-2dBTP\"}}",
+			"{\"kind\":\"addeffect\",\"name\":\"space\",\"effectkind\":\"convolution\",\"inserton\":\"master\",\"settings\":{\"asset\":\"vocal\",\"mix\":0.2}}",
 		},
 		Fields: map[string]string{
+			"After":          "an insert of that chain to put the new effect behind",
+			"Before":         "an insert of that chain to put the new effect in front of; default the end of the chain; without inserton, the chain that holds it",
 			"ConfirmUpgrade": "edition-1 scores need confirmation for mixer writes, which upgrade them to edition 2",
 			"EffectKind":     "the effect's kind",
-			"InsertOn":       "the bus a comp is inserted on; a comp needs it, other kinds take none",
+			"InsertOn":       "a track's name, music or master: where to insert the effect; these kinds need it unless a later intent sets the chain",
 			"Name":           "the new effect's name: lowercase letters, digits, _ and -, at most 64 bytes",
+			"Settings":       "initial settings, field to value, such as {\"ceiling\":\"-2dBTP\"}; a convolution needs its asset",
 		},
 	},
 	"AddMarker": {
@@ -81,6 +91,31 @@ var intentDocs = map[string]typeDoc{
 			"Instrument": "the name of the new instrument declaration",
 			"Preset":     "a built-in patch, such as warm-pad",
 			"Track":      "the name of the new track that plays it",
+		},
+	},
+	"AddScene": {
+		Meaning: "adds an empty scene after the last scene",
+		Notes:   "Bind patterns to it with bindscene and play it with appendsongentry. In the song, a track a scene does not bind keeps playing what the scene before it selected.",
+		Examples: []string{
+			"{\"kind\":\"addscene\",\"name\":\"drop\"}",
+		},
+		Fields: map[string]string{
+			"Name": "the new scene's name",
+		},
+	},
+	"AddTrack": {
+		Meaning: "adds a track after the last track",
+		Notes:   "Voice names what the track plays: a built-in voice (acid, drums, piano, a modal or keyboard voice) or an instrument, kit, sampler or preset the score declares or imports. Preset instead declares a patch from the instrument library as a new instrument, named instrument or after the track, as addpreset does; instrument is refused without preset. The new track plays nothing until a scene binds a pattern to it (bindscene) or a placement puts one on it. A voice the score cannot play is refused with voice_invalid, and uses lists the problems.",
+		Examples: []string{
+			"{\"kind\":\"addtrack\",\"name\":\"pad\",\"voice\":\"piano\"}",
+			"{\"kind\":\"addtrack\",\"name\":\"pad\",\"preset\":\"warm-pad\",\"instrument\":\"warm\"}",
+		},
+		Fields: map[string]string{
+			"Instrument": "with preset, the name of the instrument it declares; default the track's name",
+			"Name":       "the new track's name",
+			"Preset":     "a patch from the instrument library, such as warm-pad",
+			"Reseed":     "accept that random choices of other tracks change (see deletetrack)",
+			"Voice":      "a built-in voice, or a declared or imported instrument, kit, sampler or preset",
 		},
 	},
 	"AppendSongEntry": {
@@ -174,6 +209,32 @@ var intentDocs = map[string]typeDoc{
 			"Entity": "the placement, as placement:<name>",
 		},
 	},
+	"DeletePattern": {
+		Meaning: "removes a pattern",
+		Notes:   "Refused with pattern_in_use while a scene binds it (a binding to a pattern named stop included), or a track chain, an arrangement placement, a live stinger or a MIDI launch mapping names it; uses lists them. With cascade, each scene binding of the pattern becomes off (the track stops in that scene; an omitted binding would keep the previous pattern playing) and its placements are removed; chains, stingers and MIDI mappings still refuse. The last pattern is refused with last_pattern. The engine seeds chance and humanize by a pattern's slot on its track, so a deletion that moves the slots of such patterns is refused with reseeds_random_choices unless reseed accepts it.",
+		Examples: []string{
+			"{\"kind\":\"deletepattern\",\"pattern\":\"fill\"}",
+			"{\"kind\":\"deletepattern\",\"pattern\":\"fill\",\"cascade\":true}",
+		},
+		Fields: map[string]string{
+			"Cascade": "set its scene bindings to off and remove its placements",
+			"Pattern": "the pattern's name",
+			"Reseed":  "accept that random choices change",
+		},
+	},
+	"DeleteScene": {
+		Meaning: "removes a scene",
+		Notes:   "Refused with scene_in_use while the song, a live state or a MIDI launch mapping names it; uses lists them. With cascade the scene's song entries are removed with it; live states and MIDI mappings still refuse, and so does a song that would be left empty (song_would_be_empty). Random choices that move are refused with reseeds_random_choices unless reseed accepts them (see deletetrack).",
+		Examples: []string{
+			"{\"kind\":\"deletescene\",\"scene\":\"outro\"}",
+			"{\"kind\":\"deletescene\",\"scene\":\"outro\",\"cascade\":true}",
+		},
+		Fields: map[string]string{
+			"Cascade": "also remove the song entries that play the scene",
+			"Reseed":  "accept that random choices change",
+			"Scene":   "the scene's name",
+		},
+	},
 	"DeleteSongEntry": {
 		Meaning: "removes one entry of the song block",
 		Notes:   "The last entry stays.",
@@ -182,6 +243,18 @@ var intentDocs = map[string]typeDoc{
 		},
 		Fields: map[string]string{
 			"Entity": "the entry, as song:<index>",
+		},
+	},
+	"DeleteTrack": {
+		Meaning: "removes a track: its declaration and its bindings in scenes, in every file of the project",
+		Notes:   "Its patterns stay. Refused with track_in_use while anything else names the track: automation, a scene setting, a modulation route, an envelope source, a MIDI mapping, a live macro, stinger or layer, an arrangement placement or a compressor sidechain; uses lists them. The last track is refused with last_track. The engine seeds chance and humanize by a track's position, so deleting a track before a track that plays such a pattern changes its random choices: refused with reseeds_random_choices unless reseed accepts it, and then the result's warnings name each track.",
+		Examples: []string{
+			"{\"kind\":\"deletetrack\",\"track\":\"keys\"}",
+			"{\"kind\":\"deletetrack\",\"track\":\"keys\",\"reseed\":true}",
+		},
+		Fields: map[string]string{
+			"Reseed": "accept that random choices of later tracks change",
+			"Track":  "the track's name",
 		},
 	},
 	"DuplicateClip": {
@@ -203,6 +276,16 @@ var intentDocs = map[string]typeDoc{
 			"Entity": "the pattern to copy, as pattern:<name>",
 			"Name":   "the new pattern's name: lowercase letters, digits, _ and -, at most 64 bytes",
 			"Track":  "the track the copy is for",
+		},
+	},
+	"DuplicateScene": {
+		Meaning: "copies a scene, with its bindings, settings and the comments inside it, under a new name right after the original",
+		Examples: []string{
+			"{\"kind\":\"duplicatescene\",\"scene\":\"main\",\"name\":\"main-2\"}",
+		},
+		Fields: map[string]string{
+			"Name":  "the copy's name",
+			"Scene": "the scene to copy",
 		},
 	},
 	"DuplicateSongEntry": {
@@ -427,6 +510,16 @@ var intentDocs = map[string]typeDoc{
 			"Shape":  "ignored; kept so a removal can carry the point it removes",
 		},
 	},
+	"RemoveEffect": {
+		Meaning: "deletes an effect: its declaration, the comment lines above it and a comment after it on its line, and the routes that carry it (its place in track, music and master insert chains, and track sends to it)",
+		Notes:   "An insert setting the removal empties is removed too. It is refused with effect_in_use while automation, a scene setting, a modulation route, a MIDI mapping, a live macro, a preset that targets it, or an edition-1 send_a or send_b level still names the effect; uses lists them. The edit changes only the entry file: an effect declared in another file is refused with declared_in_other_file, and one routed from another file with route_in_other_file; file names that file. Also unknown_effect and score_invalid.",
+		Examples: []string{
+			"{\"kind\":\"removeeffect\",\"name\":\"grit\"}",
+		},
+		Fields: map[string]string{
+			"Name": "the effect's name",
+		},
+	},
 	"RemoveMarker": {
 		Meaning: "removes the declaration of one marker",
 		Examples: []string{
@@ -453,6 +546,19 @@ var intentDocs = map[string]typeDoc{
 		},
 		Fields: map[string]string{
 			"Entity": "the setting, as setting:<scene>/<owner>.<field>",
+		},
+	},
+	"Rename": {
+		Meaning: "renames a track, a pattern or a scene and every reference to it, in every file of the project: scene bindings and settings, the song, automation, modulation routes and envelope sources, MIDI mappings, live states, stingers, layers and macros, track chains, arrangement placements and compressor sidechains",
+		Notes:   "Comments, strings and other text stay as they are. A track named master whose name also begins parameter paths is refused with name_ambiguous: master.<field> may mean the master bus. A rename that would leave the score invalid is refused with rename_incomplete, and uses lists every problem.",
+		Examples: []string{
+			"{\"kind\":\"rename\",\"entity\":\"track:bass\",\"name\":\"sub\"}",
+			"{\"kind\":\"rename\",\"entity\":\"pattern:riff\",\"name\":\"riff-a\"}",
+			"{\"kind\":\"rename\",\"entity\":\"scene:main\",\"name\":\"verse\"}",
+		},
+		Fields: map[string]string{
+			"Entity": "track:<name>, pattern:<name> or scene:<name>",
+			"Name":   "the new name",
 		},
 	},
 	"ReplaceDeclaration": {

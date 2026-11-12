@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -63,21 +64,29 @@ type renderLevelsJSON struct {
 // null when there is none: no pass finished, or the render is too short or
 // too quiet to measure.
 type renderLoudnessJSON struct {
-	TargetLUFS                float64  `json:"target_lufs"`
-	ToleranceLU               float64  `json:"tolerance_lu"`
-	TruePeakMaxDBTP           float64  `json:"true_peak_max_dbtp"`
-	IntegratedLUFS            *float64 `json:"integrated_lufs"`
-	TruePeakDBTP              *float64 `json:"true_peak_dbtp"`
-	SamplePeakDBFS            *float64 `json:"sample_peak_dbfs"`
-	AppliedGainDB             *float64 `json:"applied_gain_db"`
-	TargetMet                 bool     `json:"target_met"`
-	Passes                    int      `json:"passes"`
-	GainStage                 string   `json:"gain_stage,omitempty"`
-	MasterLimiterReductionDB  float64  `json:"master_limiter_reduction_db"`
-	LargestLimiterReductionDB float64  `json:"largest_limiter_reduction_db"`
-	DCCorrectionLeftFS        float64  `json:"dc_correction_left_fs"`
-	DCCorrectionRightFS       float64  `json:"dc_correction_right_fs"`
-	Notes                     []string `json:"notes,omitempty"`
+	TargetLUFS      float64  `json:"target_lufs"`
+	ToleranceLU     float64  `json:"tolerance_lu"`
+	TruePeakMaxDBTP float64  `json:"true_peak_max_dbtp"`
+	IntegratedLUFS  *float64 `json:"integrated_lufs"`
+	TruePeakDBTP    *float64 `json:"true_peak_dbtp"`
+	SamplePeakDBFS  *float64 `json:"sample_peak_dbfs"`
+	AppliedGainDB   *float64 `json:"applied_gain_db"`
+	TargetMet       bool     `json:"target_met"`
+	Passes          int      `json:"passes"`
+	// Syntheses, Replays and Repeats count how the passes got their audio:
+	// rendered in full, replayed from the first pass's stored mix, or not
+	// rendered because they would have written an earlier pass's audio. They
+	// add up to Passes. PassLog has one entry per pass, in order.
+	Syntheses                 int            `json:"syntheses"`
+	Replays                   int            `json:"replays"`
+	Repeats                   int            `json:"repeats"`
+	PassLog                   []loudnessPass `json:"pass_log"`
+	GainStage                 string         `json:"gain_stage,omitempty"`
+	MasterLimiterReductionDB  float64        `json:"master_limiter_reduction_db"`
+	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
+	DCCorrectionLeftFS        float64        `json:"dc_correction_left_fs"`
+	DCCorrectionRightFS       float64        `json:"dc_correction_right_fs"`
+	Notes                     []string       `json:"notes,omitempty"`
 }
 
 // renderErrorJSON says why a render failed. Code is one of renderErrorCodes;
@@ -95,13 +104,14 @@ type renderErrorJSON struct {
 // otherwise it is added at the end of File. Revision is File's revision when
 // the render read it, in the form cicada apply uses: a remedy holds only
 // while the file is at that revision. Intents, when present, make the same
-// change through cicada apply; it is absent when no intent can.
+// change through cicada apply on the score the render read, in an envelope
+// with Revision; it is absent when no intent can.
 type renderRemedyJSON struct {
 	Summary   string            `json:"summary"`
 	File      string            `json:"file"`
 	Revision  string            `json:"revision"`
 	Replaces  string            `json:"replaces,omitempty"`
-	ScoreText string            `json:"score_text"`
+	ScoreText string            `json:"score_text,omitempty"`
 	Intents   []json.RawMessage `json:"intents,omitempty"`
 }
 
@@ -233,7 +243,10 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 	}
 	if target != nil && target.Loudness {
 		report, err := renderLoudnessFileReport(inspection.score, output, opts, *target, nil)
-		loudness := &renderLoudnessJSON{TargetLUFS: target.LoudnessTarget, ToleranceLU: target.Tolerance, TruePeakMaxDBTP: target.TruePeakMaxDBTP, Passes: report.Passes, Notes: report.Notes}
+		loudness := &renderLoudnessJSON{TargetLUFS: target.LoudnessTarget, ToleranceLU: target.Tolerance, TruePeakMaxDBTP: target.TruePeakMaxDBTP, Passes: report.Passes, Syntheses: report.Syntheses, Replays: report.Replays, Repeats: report.Repeats, PassLog: report.PassLog, Notes: report.Notes}
+		if loudness.PassLog == nil {
+			loudness.PassLog = []loudnessPass{}
+		}
 		var shortfall *loudnessShortfallError
 		written := err == nil || errors.As(err, &shortfall)
 		if written {
@@ -277,7 +290,7 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 	if errors.As(err, &shortfall) {
 		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message}
 		if shortfall.limiterCeiling != nil {
-			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling)
+			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling, shortfall.neededGainDB)
 		}
 		return failure
 	}
@@ -298,8 +311,17 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 // limiterRemedy builds the score text that adds a limiter at ceiling dBTP as
 // the last master insert: a new fx declaration, and the master declaration
 // with that limiter at the end of its insert chain.
-func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *renderRemedyJSON {
-	remedy := &renderRemedyJSON{Summary: limiterRemedySummary(ceiling), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
+func limiterRemedy(path string, inspection scoreInspection, ceiling, neededGainDB float64) *renderRemedyJSON {
+	score := inspection.score
+	if score == nil {
+		score, _ = notation.Parse(inspection.source)
+	}
+	remedy := &renderRemedyJSON{Summary: limiterRemedySummaryFor(score, ceiling, neededGainDB), File: jsonPath(path), Revision: edits.Revision(inspection.source)}
+	if score != nil && len(masterInsertChain(score)) >= maxRemedyMasterInserts {
+		// A 17th insert fails validation: the summary says what to remove
+		// first, and no score text or intent is offered.
+		return remedy
+	}
 	files := []notation.SourceFile{{Path: path, Source: inspection.source}}
 	if inspection.sources != nil {
 		files = inspection.sources.Files
@@ -310,6 +332,16 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 		name = fmt.Sprintf("ceiling-%d", i)
 	}
 	fx := fmt.Sprintf("fx %s limiter { ceiling = %sdBTP }", name, formatDBTP(ceiling))
+	// The same change as intents: addeffect declares the limiter with the
+	// ceiling and appends it to the master insert chain.
+	envelope := edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{&edits.AddEffect{
+		Name: name, EffectKind: "limiter", InsertOn: "master",
+		Settings: map[string]json.RawMessage{"ceiling": json.RawMessage(strconv.Quote(formatDBTP(ceiling) + "dBTP"))},
+		// A mixer write upgrades an edition-1 score to edition 2; the
+		// summary says so.
+		ConfirmUpgrade: score != nil && score.Version == 1,
+	}}}
+	raw, rawErr := envelope.RawIntents()
 	remedy.ScoreText = fx + "\nmaster { insert = " + name + " }"
 	for _, file := range files {
 		if file.Library != "" {
@@ -326,7 +358,49 @@ func limiterRemedy(path string, inspection scoreInspection, ceiling float64) *re
 		remedy.File, remedy.Revision, remedy.Replaces, remedy.ScoreText = jsonPath(file.Path), edits.Revision(file.Source), master, fx+"\n"+replaced
 		break
 	}
+	// cicada apply edits the score it is given, so the intents are offered
+	// only when the change belongs to that file.
+	if rawErr == nil && remedy.File == jsonPath(path) {
+		remedy.Intents = raw
+	}
 	return remedy
+}
+
+// limiterRemedySummaryFor fits the summary to the score. A master chain that
+// already holds 16 inserts takes no limiter until one is removed; an
+// edition-1 score is upgraded to edition 2 by the addeffect intent, which
+// carries the confirmation.
+func limiterRemedySummaryFor(score *notation.Score, ceiling, neededGainDB float64) string {
+	if score != nil && len(masterInsertChain(score)) >= maxRemedyMasterInserts {
+		return fmt.Sprintf("the master insert chain is full (%d inserts, the most it takes), so a limiter cannot be added as it is: remove a master insert first (setparam param:master.insert with a shorter chain, or removeeffect), then add a limiter with ceiling = %sdBTP, the export's true-peak ceiling, as the last master insert (docs/audio/mix-chain.md, Export loudness targets)", maxRemedyMasterInserts, formatDBTP(ceiling))
+	}
+	summary := limiterRemedySummary(ceiling)
+	if score != nil && score.Version == 1 {
+		summary += "; this score uses edition 1, and applying the intent upgrades it to edition 2 (the intent sets confirmupgrade), while the score text keeps edition 1"
+	}
+	if neededGainDB > maxExportInputGainDB {
+		summary += fmt.Sprintf("; the limiter alone will not reach the target: the material needs about %+.1f dB of gain and the export adds at most %+.0f dB ahead of the limiter, so also raise the track or master levels by about %.1f dB, or choose a lower target", neededGainDB, maxExportInputGainDB, neededGainDB-maxExportInputGainDB)
+	}
+	return summary
+}
+
+// maxRemedyMasterInserts is the most inserts a master chain takes.
+const maxRemedyMasterInserts = 16
+
+// masterInsertChain lists the master's inserts in order.
+func masterInsertChain(score *notation.Score) []string {
+	var chain []string
+	for _, param := range score.Master {
+		if param.Name != "insert" || strings.TrimSpace(param.Value) == "none" {
+			continue
+		}
+		for _, name := range strings.Split(param.Value, "->") {
+			if name = strings.TrimSpace(name); name != "" {
+				chain = append(chain, name)
+			}
+		}
+	}
+	return chain
 }
 
 // masterWithInsert finds the master declaration of a source and returns its

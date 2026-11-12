@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/testpack"
 )
 
 // checkJSONDocument mirrors the fields of cicada.check.v1 the tests read.
@@ -18,6 +22,7 @@ type checkJSONDocument struct {
 	Warnings int    `json:"warnings"`
 	Scores   []struct {
 		File        string `json:"file"`
+		Revision    string `json:"revision"`
 		Valid       bool   `json:"valid"`
 		Diagnostics []struct {
 			Code     string         `json:"code"`
@@ -123,6 +128,56 @@ func TestCheckJSONOffersAnIntentFixThatApplies(t *testing.T) {
 	}
 }
 
+// TestCheckJSONReportsEachScoresRevision gives every score its revision, valid
+// or not, in the form cicada apply checks, and equal to the revision of a fix.
+func TestCheckJSONReportsEachScoresRevision(t *testing.T) {
+	dir := t.TempDir()
+	scores := map[string]string{
+		"valid.cicada":  "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main*2 }\n",
+		"syntax.cicada": "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . zz }\nscene main { bass = riff }\nsong { main*2 }\n",
+		"snap.cicada":   "cicada 2\ntempo 120\ntrack bass acid {}\npattern pulse { a1 . . . e2 . . . }\narrange {\n  place intro bass pulse { at = 100ticks length = 1bars }\n}\n",
+	}
+	for name, source := range scores {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		document, _ := runCheckJSON(t, path)
+		if len(document.Scores) != 1 || document.Scores[0].Revision != edits.Revision([]byte(source)) {
+			t.Fatalf("%s: scores %+v, want revision %s", name, document.Scores, edits.Revision([]byte(source)))
+		}
+		for _, diagnostic := range document.Scores[0].Diagnostics {
+			if diagnostic.Fix != nil && diagnostic.Fix.Revision != document.Scores[0].Revision {
+				t.Fatalf("%s: fix revision %s, score revision %s", name, diagnostic.Fix.Revision, document.Scores[0].Revision)
+			}
+		}
+	}
+	// The revision is what apply compares: an envelope that carries it
+	// applies, one that carries another is refused.
+	path := filepath.Join(dir, "valid.cicada")
+	document, err := runCheckJSON(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := filepath.Join(dir, "edit.json")
+	for _, tc := range []struct {
+		revision string
+		ok       bool
+	}{{strings.Repeat("0", 64), false}, {document.Scores[0].Revision, true}} {
+		if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+tc.revision+`","intents":[{"kind":"setparam","entity":"param:bass.cutoff","value":"900Hz"}]}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := applyCommandWithHooks([]string{path, envelope}, &bytes.Buffer{}, nil); (err == nil) != tc.ok {
+			t.Fatalf("apply at revision %s: %v", tc.revision, err)
+		}
+	}
+	// A score that cannot be read has no revision.
+	document, _ = runCheckJSON(t, filepath.Join(dir, "missing.cicada"))
+	if len(document.Scores) != 1 || document.Scores[0].Revision != "" {
+		t.Fatalf("missing score: %+v", document.Scores)
+	}
+}
+
 // TestCheckJSONAgreesWithText runs the text and JSON checks on the same
 // scores and requires the same result and the same count of errors.
 func TestCheckJSONAgreesWithText(t *testing.T) {
@@ -157,5 +212,24 @@ func TestCheckJSONAgreesWithText(t *testing.T) {
 				t.Fatalf("%s %s: JSON has %d warnings, text %d:\n%s", name, profile, document.Warnings, warnings, stderr.String())
 			}
 		}
+	}
+}
+
+// check --json names the velocity law each declared pack plays by: a pack
+// whose zones share one gain plays its recorded layers at their recorded
+// level, and a pack whose zone gains differ keeps velocity/127.
+func TestCheckJSONNamesEachPackVelocityLaw(t *testing.T) {
+	dir := t.TempDir()
+	recorded := testpack.Write(t, dir, testpack.Options{ID: "even", Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 63}, {KeyLow: 48, KeyHigh: 72, VelocityLow: 64, VelocityHigh: 127}}})
+	shaped := testpack.Write(t, dir, testpack.Options{ID: "shaped", Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 63, Gain: 2}, {KeyLow: 48, KeyHigh: 72, VelocityLow: 64, VelocityHigh: 127}}})
+	source := "cicada 2\ntempo 120\n" + recorded.Sampler("even", 4) + shaped.Sampler("shaped", 4) + "track a even {}\ntrack b shaped {}\npattern p { c4 . . . }\nscene s { a = p b = p }\nsong { s }\n"
+	path := filepath.Join(dir, "song.cicada")
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := checkScoreJSON(path, checkOptions{profile: profileDesktop})
+	want := []checkPackReport{{Sampler: "even", Manifest: recorded.Manifest, VelocityLaw: "recorded"}, {Sampler: "shaped", Manifest: shaped.Manifest, VelocityLaw: "velocity/127"}}
+	if !report.Valid || !reflect.DeepEqual(report.Packs, want) {
+		t.Fatalf("packs %+v (valid %v, diagnostics %+v), want %+v", report.Packs, report.Valid, report.Diagnostics, want)
 	}
 }

@@ -30,8 +30,8 @@ func modalPedalConfig(sustain float32) Config {
 func modalPlacementConfig(sustain float32) Config {
 	cfg := modalPedalConfig(sustain)
 	cfg.Schedule = []ScheduleEvent{
-		{Kind: SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: seq.TicksPerBar, ID: 1},
-		{Kind: SchedulePatternEnd, Track: 0, Tick: seq.TicksPerBar, EndTick: seq.TicksPerBar, ID: 1},
+		{Kind: SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: ticksPerBar, ID: 1},
+		{Kind: SchedulePatternEnd, Track: 0, Tick: ticksPerBar, EndTick: ticksPerBar, ID: 1},
 	}
 	return cfg
 }
@@ -125,7 +125,7 @@ func TestModalPedalSurvivesThePlacementEnd(t *testing.T) {
 	placed := func(bars int64) Config {
 		cfg := modalPedalConfig(1)
 		cfg.Patterns[0].Slots[0].Len = 64
-		end := bars * seq.TicksPerBar
+		end := bars * ticksPerBar
 		cfg.Schedule = []ScheduleEvent{
 			{Kind: SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: end, ID: 1},
 			{Kind: SchedulePatternEnd, Track: 0, Tick: end, EndTick: end, ID: 1},

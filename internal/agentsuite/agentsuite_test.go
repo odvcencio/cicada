@@ -119,6 +119,9 @@ func TestAgentTaskSuite(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now()
+	// 0. Start as a new agent does: read the quick start from the binary and
+	// follow it (quickstart_test.go).
+	followQuickStart(t, bin)
 	dir := t.TempDir()
 	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
 	if err != nil {
@@ -280,6 +283,16 @@ func TestAgentTaskSuite(t *testing.T) {
 			TruePeakDBTP    *float64 `json:"true_peak_dbtp"`
 			AppliedGainDB   *float64 `json:"applied_gain_db"`
 			TargetMet       bool     `json:"target_met"`
+			Passes          int      `json:"passes"`
+			Syntheses       int      `json:"syntheses"`
+			Replays         int      `json:"replays"`
+			Repeats         int      `json:"repeats"`
+			PassLog         []struct {
+				GainDB         float64  `json:"gain_db"`
+				IntegratedLUFS *float64 `json:"integrated_lufs"`
+				TruePeakDBTP   *float64 `json:"true_peak_dbtp"`
+				Render         string   `json:"render"`
+			} `json:"pass_log"`
 		} `json:"loudness"`
 		Error *struct {
 			Reason string `json:"reason"`
@@ -296,6 +309,33 @@ func TestAgentTaskSuite(t *testing.T) {
 	}
 	if output := rendered.Outputs[0]; output.Path != "song.wav" || output.SampleRate != 48000 || output.Channels != 2 || output.Frames <= 0 {
 		t.Fatalf("render --json output: %+v", output)
+	}
+	// The search synthesizes the song once; later passes replay its mix.
+	if loudness.Syntheses != 1 || loudness.Syntheses+loudness.Replays+loudness.Repeats != loudness.Passes || len(loudness.PassLog) != loudness.Passes || loudness.PassLog[0].Render != "synthesized" || loudness.PassLog[0].GainDB != 0 {
+		t.Fatalf("render --json passes: %d passes, %d syntheses, %d replays, %d repeats, log %+v", loudness.Passes, loudness.Syntheses, loudness.Replays, loudness.Repeats, loudness.PassLog)
+	}
+
+	// 6b. The medium reference song (95 seconds, four tracks) at -14 LUFS:
+	// one full synthesis whatever the number of passes (plan row F1). It
+	// misses the target at the true-peak ceiling, which is a result: the best
+	// pass is still written.
+	for _, name := range []string{"lanterns-after-rain.cicada", "cicada.mod"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "examples", "songs", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "medium"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "medium", name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rendered.Loudness = nil
+	stdout, _ = cicada(t, bin, dir, "render", "medium/lanterns-after-rain.cicada", "-o", "medium/song.wav", "--loudness", "-14", "--json")
+	decode(t, "render --json of the medium song", stdout, &rendered)
+	if loudness = rendered.Loudness; loudness == nil || loudness.Syntheses != 1 || loudness.Passes < 1 || len(rendered.Outputs) != 1 {
+		t.Fatalf("render --json of the medium song: %+v %+v", rendered, loudness)
 	}
 
 	// 7. Listen to the edited score.
@@ -317,7 +357,7 @@ func TestAgentTaskSuite(t *testing.T) {
 	}
 
 	elapsed := time.Since(started)
-	t.Logf("agent task suite: 8 commands in %s", elapsed.Round(time.Millisecond))
+	t.Logf("agent task suite: 9 commands in %s", elapsed.Round(time.Millisecond))
 	if elapsed > suiteBudget {
 		t.Fatalf("the suite took %s; its budget is %s", elapsed, suiteBudget)
 	}

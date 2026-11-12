@@ -5,12 +5,12 @@ package main
 import (
 	"fmt"
 	"math"
-	"net/http"
 	"net/url"
 	"strconv"
 	"syscall/js"
 
 	"m31labs.dev/cicada/kernel/seq"
+	studiocontrol "m31labs.dev/cicada/workstation/control"
 )
 
 type placementDrag struct {
@@ -174,7 +174,8 @@ func (u *placementEditorUI) previewPlacementDrag(drag *placementDrag) {
 	drag.block.Call("setAttribute", "data-placement-preview", field)
 	value := strconv.FormatInt(next, 10) + "ticks"
 	if !drag.resize && next%seq.TicksPerStep == 0 {
-		value = fmt.Sprintf("@%d.%d.%d", next/seq.TicksPerBar+1, next%seq.TicksPerBar/seq.PPQ+1, next%seq.PPQ/seq.TicksPerStep+1)
+		bar, beat, step := studiocontrol.GridPosition(next)
+		value = fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 	}
 	message := workspaceAttr(drag.block, "data-placement-block") + " · " + field + " " + value
 	if drag.copyDrag {
@@ -275,7 +276,7 @@ func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 	}
 	delta := placementCompatibleStep(block, field == "length", placementSnap(block))
 	if event.Get("shiftKey").Bool() {
-		delta = seq.TicksPerBar
+		delta = studiocontrol.GridBarTicks()
 	}
 	if key == "ArrowLeft" {
 		delta = -delta
@@ -307,7 +308,7 @@ func (u *workspaceUI) placementEdit(block js.Value, field string, value int64) {
 			break
 		}
 	}
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, controls: controls, pendingCell: block})
+	u.queue(workspaceJob{method: methodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, controls: controls, pendingCell: block})
 }
 
 func (u *placementEditorUI) placementViewChanged(event js.Value) {
@@ -323,9 +324,13 @@ func (u *placementEditorUI) placementViewChanged(event js.Value) {
 }
 
 // Quantize deltas rather than positions, retaining an authored off-grid offset.
+// The Bar and Beat snap values the server renders from the song's meter map;
+// the engine's grid is the same base meter.
+var barSnap, beatSnap = strconv.FormatInt(studiocontrol.GridBarTicks(), 10), strconv.FormatInt(studiocontrol.GridBeatTicks(), 10)
+
 func normalizedPlacementSnap(value string) string {
 	switch value {
-	case "3840", "960", "480", "320", "240", "160", "120", "1":
+	case barSnap, beatSnap, "480", "320", "240", "160", "120", "1":
 		return value
 	}
 	return "240"
@@ -364,7 +369,7 @@ func (u *workspaceUI) placementCopy(block js.Value, at int64) {
 	}
 	values := u.editValues()
 	values["action"], values["name"], values["newName"], values["at"] = "duplicate", workspaceAttr(block, "data-placement-block"), name, strconv.FormatInt(at, 10)+"ticks"
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
+	u.queue(workspaceJob{method: methodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
 }
 
 // Pattern scheduling requires sixteenth-aligned starts. Use the smallest
