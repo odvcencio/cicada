@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"math"
 	"os"
@@ -63,8 +64,9 @@ import (
 // reports (nightly, `make test-render-paths-audio`).
 
 // pathsKnown is one difference between the paths that is understood and owned.
-// Events and Audio are the signatures the comparison prints for the score, so
-// a second difference in the same score does not hide behind the entry.
+// Events and Audio are the signatures the comparison prints for the score. The
+// audio signature ends with a hash of each render, so any change to either
+// render of a listed score fails the gate and must be looked at.
 type pathsKnown struct {
 	Score      string // example path under examples/, or "targeted: " and the case name
 	Construct  string
@@ -85,7 +87,7 @@ var pathsKnownDifferences = []pathsKnown{
 	// seq.TicksPerStep, not the pattern's own step length. Pull request #347
 	// fixes it; delete this entry when #347 is on main, and nothing else changes.
 	{"targeted: slide across a scene switch, quarter-note steps", "slide across a scene switch, pattern step other than a sixteenth", "the engine holds the note and slides into the next scene's first note, the direct mixer does not", "#347 (open)",
-		"4 only direct, 4 only engine, notes 00b2ebc8", "68005 frames differ, first at frame 166478 (3.775 s), last at frame 441065"},
+		"4 only direct, 4 only engine, notes 00b2ebc8", "68005 frames differ, first at frame 166478 (3.775 s), last at frame 441065; renders direct f321fcc0, engine 3c40439e"},
 	// The same slide with gate = 100%: both paths tap the same notes with the
 	// same ends, but the audio differs from the first scene switch (bar 3).
 	// Probable cause, not proven: the pending pattern's release at the bar line
@@ -93,7 +95,7 @@ var pathsKnownDifferences = []pathsKnown{
 	// slide, while the engine suppresses that release (pendingSwitchSlides,
 	// kernel/engine/pattern.go). #347 does not change it.
 	{"targeted: slide across a scene switch, full gate", "slide across a scene switch with gate = 100%", "audio differs, cause not yet known (the note events agree)", "none yet (found reviewing #347)",
-		"", "29996 frames differ, first at frame 176400 (4.000 s), last at frame 441056"},
+		"", "29996 frames differ, first at frame 176400 (4.000 s), last at frame 441056; renders direct 5f5e8826, engine 19adec9b"},
 	// Drum humanize: the velocity draw takes the step's note as an input
 	// (kernel/seq/schedule.go:168). The engine's lane steps carry the lane
 	// number (project/runtime.go:408, packProjectStep), as
@@ -102,16 +104,16 @@ var pathsKnownDifferences = []pathsKnown{
 	// compile.go:36), so every humanized hit gets a different velocity. Every
 	// other input (seed, track, slot, iteration, step) agrees.
 	{"targeted: drum humanize with accents and chance steps", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
-		"49 only direct, 49 only engine, notes fbe68979", "353019 frames differ, first at frame 0 (0.000 s), last at frame 353019"},
+		"49 only direct, 49 only engine, notes fbe68979", "353019 frames differ, first at frame 0 (0.000 s), last at frame 353019; renders direct 84ebd736, engine 3b088b12"},
 	{"targeted: drum humanize across two scenes", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
-		"66 only direct, 66 only engine, notes fc471b29", "529420 frames differ, first at frame 0 (0.000 s), last at frame 529419"},
+		"66 only direct, 66 only engine, notes fc471b29", "529420 frames differ, first at frame 0 (0.000 s), last at frame 529419; renders direct 82bad56c, engine cecb340b"},
 	// A single-asset sampler plays bend and vibrato rows on the engine; the
 	// direct mixer's sampler voice has no note expression and plays the notes
 	// plain. Pull request #337 routes such scores to the engine
 	// (hasSamplerExpression), after which only the engine can render this case:
 	// delete the case and this entry then.
 	{"targeted: expression rows on a sampler", "single-asset sampler with bend: and vibrato: rows", "the direct mixer drops the bend and vibrato", "#337 (open)",
-		"", "265296 frames differ, first at frame 5514 (0.125 s), last at frame 347375"},
+		"", "265296 frames differ, first at frame 5514 (0.125 s), last at frame 347375; renders direct 808ceb2e, engine 5b8ad038"},
 }
 
 // pathsEngineOnly lists every example score that only the engine can render,
@@ -423,9 +425,10 @@ func pathsEventDiff(direct, engine map[string]int) (signature string, detail []s
 }
 
 // pathsAudioDiff compares a float32 stereo WAV, as it is written, with a
-// reference render, and keeps only the comparison.
+// reference render, and keeps only the comparison and a hash of the render.
 type pathsAudioDiff struct {
 	ref                []byte
+	engine             hash.Hash // SHA-256 of the render being written
 	n                  int
 	dataStart, dataEnd int
 	frames             int // data frames that differ
@@ -436,7 +439,7 @@ type pathsAudioDiff struct {
 }
 
 func newPathsAudioDiff(ref []byte) *pathsAudioDiff {
-	d := &pathsAudioDiff{ref: ref, first: -1, last: -1, lastSample: -1}
+	d := &pathsAudioDiff{ref: ref, engine: sha256.New(), first: -1, last: -1, lastSample: -1}
 	if len(ref) >= 44 && string(ref[36:40]) == "data" {
 		d.dataStart = 44
 		d.dataEnd = 44 + int(binary.LittleEndian.Uint32(ref[40:44]))
@@ -445,6 +448,7 @@ func newPathsAudioDiff(ref []byte) *pathsAudioDiff {
 }
 
 func (d *pathsAudioDiff) Write(p []byte) (int, error) {
+	d.engine.Write(p)
 	start := d.n
 	d.n += len(p)
 	end := min(d.n, len(d.ref))
@@ -478,7 +482,9 @@ func (d *pathsAudioDiff) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// signature is "" when the two renders are byte-identical.
+// signature is "" when the two renders are byte-identical. Otherwise it ends
+// with a short hash of each render, so that any change to either render of a
+// listed score fails the gate, including one inside frames that already differ.
 func (d *pathsAudioDiff) signature(rate int) string {
 	var parts []string
 	if d.n != len(d.ref) {
@@ -489,6 +495,10 @@ func (d *pathsAudioDiff) signature(rate int) string {
 	}
 	if d.other > 0 {
 		parts = append(parts, fmt.Sprintf("%d header bytes differ", d.other))
+	}
+	if len(parts) > 0 {
+		direct := sha256.Sum256(d.ref)
+		parts = append(parts, fmt.Sprintf("renders direct %s, engine %s", hex.EncodeToString(direct[:4]), hex.EncodeToString(d.engine.Sum(nil)[:4])))
 	}
 	return strings.Join(parts, "; ")
 }
