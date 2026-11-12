@@ -47,6 +47,13 @@ const UnifiedImageVersion = 15     // unified chords, schedules, guitar and resi
 const PerformanceImageVersion = 16 // additive independent note gates after the unified payload
 const GestureImageVersion = 17     // additive note-owned controller samples after performance gates
 const SharedImageVersion = 18      // additive shared gesture lanes and note bindings
+
+// LatestImageVersion is the newest image version the decoder reads. Raise it
+// with every new version: TestLatestImageVersionIsTheNewest compares it with
+// every image version constant in this package, and image version 19, which
+// will carry return slots C to H, must first make the TinyGo engine handle
+// engine.Config.Routing (TestNoImageVersionCarriesRoutingYet).
+const LatestImageVersion = SharedImageVersion
 const ChordImageVersion = UnifiedImageVersion
 const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
 const masterSoloImageVersion = 13
