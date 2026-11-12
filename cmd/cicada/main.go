@@ -1362,6 +1362,11 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 		fmt.Fprintf(os.Stderr, "cicada: %v\n", badCap.err)
 		exitProcess(2)
 	}
+	var badJobs *jobsArgError
+	if errors.As(err, &badJobs) {
+		fmt.Fprintf(os.Stderr, "cicada: %v\n", badJobs)
+		exitProcess(2)
+	}
 	if err != nil {
 		usage()
 	}

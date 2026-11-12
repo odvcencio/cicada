@@ -18,9 +18,18 @@ func parseJobs(text string) (int, error) {
 	}
 	jobs, err := strconv.Atoi(text)
 	if err != nil || jobs < 1 {
-		return 0, fmt.Errorf("--jobs takes auto or a count of at least 1, not %q", text)
+		return 0, &jobsArgError{text}
 	}
 	return jobs, nil
+}
+
+// jobsArgError is a --jobs value that is neither auto nor a count of at
+// least 1. The text commands print it, as the JSON ones do, instead of the
+// general usage line.
+type jobsArgError struct{ text string }
+
+func (e *jobsArgError) Error() string {
+	return fmt.Sprintf("--jobs takes auto or a count of at least 1, not %q", e.text)
 }
 
 // laneSummary is the summary line's account of the render's lanes.
