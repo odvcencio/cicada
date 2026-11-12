@@ -12,6 +12,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -70,7 +71,10 @@ func Values(c controls.Control) ([3]float64, bool) {
 		lo, hi = math.Max(*c.Min, def/2), math.Min(*c.Max, def*2)
 	default:
 		span := *c.Max - *c.Min
-		lo, hi = math.Max(*c.Min, def-span/4), math.Min(*c.Max, def+span/4)
+		// The compiler turns span/4 into a product it may fuse with the add
+		// on arm64; rounding it keeps the probe values the same everywhere.
+		quarter := float64(span / 4)
+		lo, hi = math.Max(*c.Min, def-quarter), math.Min(*c.Max, def+quarter)
 	}
 	if c.Type == "integer" {
 		lo, hi = math.Round(lo), math.Round(hi)
@@ -91,12 +95,14 @@ func Values(c controls.Control) ([3]float64, bool) {
 }
 
 // roundProbe keeps four significant digits, so the score text stays short.
+// strconv rounds the decimal correctly, so every target gets the same bits;
+// math.Pow and math.Log10 would not (kernel/dsp/detmath's guard).
 func roundProbe(v float64) float64 {
-	if v == 0 {
-		return 0
+	rounded, err := strconv.ParseFloat(strconv.FormatFloat(v, 'g', 4, 64), 64)
+	if err != nil {
+		return v
 	}
-	scale := math.Pow(10, 3-math.Floor(math.Log10(math.Abs(v))))
-	return math.Round(v*scale) / scale
+	return rounded
 }
 
 // score writes the probe score for one control at one value.
