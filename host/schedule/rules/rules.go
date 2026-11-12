@@ -78,7 +78,9 @@ func StreamableAssets(p *project.Project) map[string]bool {
 	return streamable
 }
 
-// Packs checks the sampler packs a project names, from their manifests.
+// Packs checks the sampler packs a project names, from their manifests. One
+// value counts the PCM of one check against the host's cap, so a caller makes
+// a new one for each Validate call, as schedule.Validate does.
 type Packs interface {
 	// Check reads the manifest of the pack at path, relative to the project's
 	// folder, checks it against pin (the manifest's SHA-256, or empty), counts

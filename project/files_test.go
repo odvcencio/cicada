@@ -12,17 +12,26 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// exampleFiles reads every regular file under the repository's examples
-// folder into a map keyed by absolute path, and lists its scores.
-func exampleFiles(t *testing.T) (map[string][]byte, []string) {
+// exampleFiles reads every regular file under the given folders into a map
+// keyed by absolute path, and lists their scores.
+func exampleFiles(t *testing.T, folders ...string) (map[string][]byte, []string) {
 	t.Helper()
-	root, err := filepath.Abs(filepath.Join("..", "examples"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	files := map[string][]byte{}
 	var scores []string
-	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+	for _, folder := range folders {
+		root, err := filepath.Abs(folder)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := walkFiles(root, files, &scores); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return files, scores
+}
+
+func walkFiles(root string, files map[string][]byte, scores *[]string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || !entry.Type().IsRegular() {
 			return err
 		}
@@ -32,23 +41,20 @@ func exampleFiles(t *testing.T) (map[string][]byte, []string) {
 		}
 		files[path] = data
 		if strings.HasSuffix(path, ".cicada") {
-			scores = append(scores, path)
+			*scores = append(*scores, path)
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return files, scores
 }
 
-// TestMemoryFilesLoadExamplesAsDiskDoes loads every example score once from
-// disk and once from a map of the same files. The source files, their order,
-// the score revision, the diagnostics and any loading error must be equal.
+// TestMemoryFilesLoadExamplesAsDiskDoes loads every example score, edition 1
+// and 2, once from disk and once from a map of the same files. Every score
+// loads from both, and the source files, their order, the score revision and
+// the diagnostics are equal.
 func TestMemoryFilesLoadExamplesAsDiskDoes(t *testing.T) {
 	user := t.TempDir()
 	t.Setenv("CICADA_LIBRARY", user)
-	files, scores := exampleFiles(t)
+	files, scores := exampleFiles(t, filepath.Join("..", "examples"), filepath.Join("..", "testdata", "edition1", "examples"))
 	memory := MemoryFiles{Files: files, UserLibraries: user}
 	loaded := 0
 	for _, score := range scores {
@@ -80,11 +86,9 @@ func TestMemoryFilesLoadExamplesAsDiskDoes(t *testing.T) {
 			t.Errorf("%s: LoadScoreIn differs from LoadScore: %v, %v", name, err, heldErr)
 		}
 	}
-	// The examples include manifest projects, project libraries and std
-	// imports; most of them must load for the comparison to mean anything.
 	t.Logf("%d of %d example scores loaded from both", loaded, len(scores))
-	if loaded < len(scores)/2 {
-		t.Fatalf("only %d of %d example scores loaded", loaded, len(scores))
+	if loaded != len(scores) || len(scores) < 200 {
+		t.Fatalf("%d of %d example scores loaded", loaded, len(scores))
 	}
 }
 
@@ -163,6 +167,63 @@ func TestMemoryFilesTrustDeclaredAssets(t *testing.T) {
 	score, ds := held.Parse()
 	if score == nil || hasDiagnostic(ds, "CICADA-ASSET-MISSING") || len(score.Assets) != 1 || score.Assets[0].Root != root {
 		t.Fatalf("memory parse: %v", ds)
+	}
+	// The result says which: the disk checked the audio, memory did not.
+	if !disk.VerifiesAssets() || held.VerifiesAssets() {
+		t.Fatalf("VerifiesAssets: disk %v, memory %v", disk.VerifiesAssets(), held.VerifiesAssets())
+	}
+}
+
+// Projects that fail to load fail the same way from memory as from disk: the
+// same diagnostic code, position and message text.
+func TestMemoryFilesFailAsDiskFails(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("CICADA_LIBRARY", user)
+	score := "cicada 2\ntrack bass acid {}\npattern riff { a1 . }\nscene main { bass = riff }\nsong { main }\n"
+	for name, project := range map[string]map[string]string{
+		"listed source missing": {"cicada.mod": "project broken\ncicada 2\nentry \"main.cicada\"\nsource \"gone.cicada\"\n", "main.cicada": score},
+		"score not listed":      {"cicada.mod": "project broken\ncicada 2\nentry \"other.cicada\"\n", "main.cicada": score, "other.cicada": score},
+		"library missing":       {"main.cicada": "import \"demo/absent\"\n" + score},
+		"bad manifest":          {"cicada.mod": "project broken\ncicada nine\n", "main.cicada": score},
+		"unpinned library":      {"main.cicada": "import \"demo/tone\"\n" + score, "lib/demo/tone/cicada.mod": "library demo/tone\ncicada 2\nsource \"tone.cicada\"\nlicense \"MIT\"\nauthor \"A\"\nengine 2\ncapabilities 0\n", "lib/demo/tone/tone.cicada": "phrase hook { 1 . }\n"},
+	} {
+		root := t.TempDir()
+		files := map[string][]byte{}
+		for file, text := range project {
+			files[writeSource(t, root, file, text)] = []byte(text)
+		}
+		entry := filepath.Join(root, "main.cicada")
+		disk, diskErr := ReadSources(entry, nil)
+		held, heldErr := ReadSourcesIn(MemoryFiles{Files: files, UserLibraries: user}, entry, nil)
+		if (diskErr == nil) != (heldErr == nil) || diskErr != nil && diskErr.Error() != heldErr.Error() {
+			t.Errorf("%s: disk %v\nmemory %v", name, diskErr, heldErr)
+			continue
+		}
+		if diskErr != nil {
+			continue
+		}
+		_, diskDiagnostics := disk.Parse()
+		_, heldDiagnostics := held.Parse()
+		if len(diskDiagnostics) == 0 || !reflect.DeepEqual(diskDiagnostics, heldDiagnostics) {
+			t.Errorf("%s: diagnostics differ or are missing\ndisk:   %v\nmemory: %v", name, diskDiagnostics, heldDiagnostics)
+		}
+	}
+	// A missing score reads the same, with the operating system's words.
+	missing := filepath.Join(t.TempDir(), "missing.cicada")
+	_, diskErr := ReadSources(missing, nil)
+	_, heldErr := ReadSourcesIn(MemoryFiles{}, missing, nil)
+	if diskErr == nil || heldErr == nil || diskErr.Error() != heldErr.Error() || !errors.Is(heldErr, fs.ErrNotExist) {
+		t.Fatalf("missing score: disk %v, memory %v", diskErr, heldErr)
+	}
+}
+
+// Memory has no working folder, so a score read from it is named by an
+// absolute path.
+func TestMemoryFilesRefuseRelativePaths(t *testing.T) {
+	_, err := ReadSourcesIn(MemoryFiles{Files: map[string][]byte{"/song/main.cicada": []byte("song { }\n")}}, "main.cicada", nil)
+	var source *SourceError
+	if !errors.As(err, &source) || source.Diagnostic.Code != "CICADA-SOURCE-PATH" {
+		t.Fatalf("relative path: %v", err)
 	}
 }
 

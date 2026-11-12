@@ -37,6 +37,23 @@ type Sources struct {
 	files        ProjectFiles // where the sources were read; nil is OSFiles
 }
 
+// VerifiesAssets reports whether Parse checks the score's audio files against
+// their declarations (VerifyAssets). It is false for a project read from
+// memory (MemoryFiles), which holds no audio: such a score trusts the hash,
+// frames, rate and channels it declares, and the host verifies them when it
+// commits. A caller shows that, for example "audio verified at commit".
+func (s *Sources) VerifiesAssets() bool {
+	verifier, ok := s.reader().(AssetVerifier)
+	return !ok || verifier.VerifiesAssets()
+}
+
+func describeFiles(files ProjectFiles) string {
+	if _, ok := files.(MemoryFiles); ok {
+		return "memory"
+	}
+	return "this source"
+}
+
 // reader is where the project's other files are read from.
 func (s *Sources) reader() ProjectFiles {
 	if s.files == nil {
@@ -87,6 +104,14 @@ func readSources(path string, overrides map[string][]byte, pin *Resolution) (*So
 }
 
 func readSourcesMode(files ProjectFiles, path string, overrides map[string][]byte, pin *Resolution, revisionOnly bool) (*Sources, error) {
+	switch files.(type) {
+	case OSFiles, *OSFiles:
+	default:
+		// Only the disk has a working folder to resolve a relative path in.
+		if !filepath.IsAbs(path) {
+			return nil, sourceError(path, 1, 1, "CICADA-SOURCE-PATH", "a score read from "+describeFiles(files)+" is named by an absolute path", nil)
+		}
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -229,10 +254,7 @@ func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 		score, diagnostics = notation.ParseFiles(s.Files, s.sourceEdition())
 	}
 	diagnostics = append(diagnostics, s.verifyLibraries()...)
-	switch s.reader().(type) {
-	case OSFiles, *OSFiles:
-		// Only the host hashes audio files. A project read from memory trusts
-		// the asset declarations; the host verifies them at commit.
+	if s.VerifiesAssets() {
 		diagnostics = append(diagnostics, VerifyAssets(score, s.Root)...)
 	}
 	if score != nil {

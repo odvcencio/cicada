@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -37,9 +38,19 @@ type ProjectRoot interface {
 	Close() error
 }
 
+// AssetVerifier is a ProjectFiles that says whether its audio files can be
+// checked. A source that does not implement it is checked as the disk is.
+type AssetVerifier interface {
+	// VerifiesAssets reports whether Sources.Parse can hash and inspect the
+	// project's audio files (VerifyAssets) from this source.
+	VerifiesAssets() bool
+}
+
 // OSFiles reads the operating system's files. ReadSources, LoadScore and the
 // other functions without a ProjectFiles argument use it.
 type OSFiles struct{}
+
+func (OSFiles) VerifiesAssets() bool { return true }
 
 func (OSFiles) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
 
@@ -76,17 +87,26 @@ type MemoryFiles struct {
 	UserLibraries string
 }
 
+// VerifiesAssets is false: memory holds no audio, so a score read from it is
+// not checked against its audio files, and Sources.VerifiesAssets says so.
+func (MemoryFiles) VerifiesAssets() bool { return false }
+
+// errMissing is the operating system's error for a missing file, so a file
+// missing from memory reads as one missing from disk; errors.Is(errMissing,
+// fs.ErrNotExist) holds.
+var errMissing error = syscall.ENOENT
+
 func (m MemoryFiles) ReadFile(name string) ([]byte, error) {
 	if data, ok := m.Files[filepath.Clean(name)]; ok {
 		return data, nil
 	}
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	return nil, &fs.PathError{Op: "open", Path: name, Err: errMissing}
 }
 
 func (m MemoryFiles) OpenRoot(dir string) (ProjectRoot, error) {
 	dir = filepath.Clean(dir)
 	if dir == "." || !m.holdsFolder(dir) {
-		return nil, &fs.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
+		return nil, &fs.PathError{Op: "open", Path: dir, Err: errMissing}
 	}
 	return memoryRoot{files: m.Files, dir: dir}, nil
 }
@@ -127,7 +147,7 @@ func (r memoryRoot) ReadFile(name string) ([]byte, error) {
 	if data, ok := r.files[full]; ok {
 		return data, nil
 	}
-	return nil, &fs.PathError{Op: "openat", Path: name, Err: fs.ErrNotExist}
+	return nil, &fs.PathError{Op: "openat", Path: name, Err: errMissing}
 }
 
 func (r memoryRoot) Stat(name string) (fs.FileInfo, error) {
@@ -141,7 +161,7 @@ func (r memoryRoot) Stat(name string) (fs.FileInfo, error) {
 	if (MemoryFiles{Files: r.files}).holdsFolder(full) {
 		return memoryInfo{name: filepath.Base(full), dir: true}, nil
 	}
-	return nil, &fs.PathError{Op: "statat", Path: name, Err: fs.ErrNotExist}
+	return nil, &fs.PathError{Op: "statat", Path: name, Err: errMissing}
 }
 
 func (r memoryRoot) OpenRoot(name string) (ProjectRoot, error) {
@@ -150,7 +170,7 @@ func (r memoryRoot) OpenRoot(name string) (ProjectRoot, error) {
 		return nil, err
 	}
 	if !(MemoryFiles{Files: r.files}).holdsFolder(full) {
-		return nil, &fs.PathError{Op: "openat", Path: name, Err: fs.ErrNotExist}
+		return nil, &fs.PathError{Op: "openat", Path: name, Err: errMissing}
 	}
 	return memoryRoot{files: r.files, dir: full}, nil
 }
