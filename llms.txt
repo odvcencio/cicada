@@ -46,3 +46,4 @@ the full text of the pages outside Optional.
 - [Modulation](docs/manual/modulation.md): modulation sources and their routes
 - [Hosting the engine](docs/manual/engine-host.md): the Go and TinyGo audio engine in another program
 - [Engine measurements](docs/manual/engine-metrics.md): CPU and render costs of synthetic sessions
+- [Audition measures](docs/manual/audition-measures.md): how audition measures loudness, band owners, activity and peaks; its limits and cost

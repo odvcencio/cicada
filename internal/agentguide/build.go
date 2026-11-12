@@ -96,6 +96,7 @@ var llmsSections = []struct {
 		{"docs/manual/modulation.md", "Modulation", "modulation sources and their routes"},
 		{"docs/manual/engine-host.md", "Hosting the engine", "the Go and TinyGo audio engine in another program"},
 		{"docs/manual/engine-metrics.md", "Engine measurements", "CPU and render costs of synthetic sessions"},
+		{"docs/manual/audition-measures.md", "Audition measures", "how audition measures loudness, band owners, activity and peaks; its limits and cost"},
 	}},
 }
 

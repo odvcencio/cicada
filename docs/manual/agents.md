@@ -896,16 +896,13 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 ## audition --json
 
 `cicada audition --json` renders a score and reports what it sounds like:
-key, chords and levels, and the measures that decide a mix: loudness per bar
-and section, which track owns each of seven frequency bands in each section
-and where two collide, where each track sounds, repeated bars, silences in the
-mix, and the highest true peaks split into the stems that make them.
-[Audition](audition.md) describes every field and its method. The default
-document keeps summaries, so it stays small enough to read whole; `--detail`
-adds the per-bar and per-beat matrices behind them. `--tracks` analyzes chosen
-tracks only; a name the score does not have fails with the code
-`unknown_track` and `valid_tracks`, the score's track names, and an empty or
-repeated name with `usage`.
+key, chords, levels, loudness per bar and section, band owners and
+collisions, where each track sounds, repeats, silences and the highest peaks
+split into the stems that make them. [Audition](audition.md) describes every
+field. The default document is a summary small enough to read whole;
+`--detail` adds the per-bar and per-beat detail. An unknown `--tracks` name
+fails with `unknown_track` and `valid_tracks`; an empty or repeated one with
+`usage`.
 
 This example reads the page's score after the edit above. The rules the
 report applies are in `bands` and `activity`, so a client need not hard-code
