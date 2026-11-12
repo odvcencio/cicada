@@ -246,9 +246,17 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 				continue
 			}
 			address = mixerAddressFor(addresses, track.Name, descriptorID, "track")
+			// mix.send_b is the send to the first reverb (return slot B). A send
+			// to a later reverb (slots C to H) has no live address yet, so its
+			// knob previews nothing and shows the level the source writes; a
+			// commit still edits the source.
+			laterReverb := kind == "reverb" && param.Target != project.FirstReverbName(semantic)
+			if laterReverb {
+				address = ""
+			}
 			controlPath := track.Name + ".send." + param.Target
 			liveValue := addressValues[address]
-			if liveValue == nil {
+			if liveValue == nil || laterReverb {
 				liveValue = mixerSendAddressValue(param.Value)
 			}
 			control := mixerSendView{Path: controlPath, Address: address, To: param.Target, Kind: kind, Level: param.Value, Value: liveValue, Pre: param.Pre, Descriptor: descriptor, SourceRange: ranges[controlPath]}
@@ -579,8 +587,11 @@ func mixerSendCapability(track notation.Track, target, kind string, score *notat
 		if param.Name != "send" || param.Target == target {
 			continue
 		}
+		// One send per return slot. A score has one delay return (slot A), and
+		// each reverb is a return of its own (slot B, then C to H), so sends to
+		// two different reverbs do not collide.
 		other := findNotationEffect(score, param.Target)
-		if other != nil && other.Kind == kind {
+		if other != nil && other.Kind == kind && kind != "reverb" {
 			return false, "CICADA-UNSUPPORTED: one send per effect kind is implemented"
 		}
 	}
