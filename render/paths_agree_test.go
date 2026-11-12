@@ -79,17 +79,9 @@ type pathsKnown struct {
 // pathsKnownDifferences can only shrink: delete an entry in the pull request
 // that fixes its difference.
 var pathsKnownDifferences = []pathsKnown{
-	// Drum humanize: the velocity draw takes the step's note as an input
-	// (kernel/seq/schedule.go:168). The engine's lane steps carry the lane
-	// number (project/runtime.go:408, packProjectStep), as
-	// kernel/seq/schedule.go:73-78 documents; the direct mixer's carry the
-	// General MIDI pitch (project/compile.go:268-274, drumNotes at
-	// compile.go:36), so every humanized hit gets a different velocity. Every
-	// other input (seed, track, slot, iteration, step) agrees.
-	{"targeted: drum humanize with accents and chance steps", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
-		"49 only direct, 49 only engine, notes fbe68979", "353019 frames differ, first at frame 0 (0.000 s), last at frame 353019; renders direct 84ebd736, engine 3b088b12"},
-	{"targeted: drum humanize across two scenes", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
-		"66 only direct, 66 only engine, notes fc471b29", "529420 frames differ, first at frame 0 (0.000 s), last at frame 529419; renders direct 82bad56c, engine cecb340b"},
+	// None: the two drum humanize entries went with the fix that gives every
+	// direct-mixer drum lane step its lane as its note (render/wav.go,
+	// laneStepNotes), as the engine does.
 }
 
 // pathsEngineOnly lists every example score that only the engine can render,
