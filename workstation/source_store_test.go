@@ -117,7 +117,7 @@ func TestACopyClosedForMatchingTheFileIsGuardedAndReopens(t *testing.T) {
 	if _, err := store.saveSource("owner", edited); err != nil {
 		t.Fatal(err)
 	}
-	if closed, err := store.closeSourceCopy("owner", listed); closed || err != nil {
+	if closed, err := store.closeSourceCopy("owner", listed, "file"); closed || err != nil {
 		t.Fatal("a copy edited after it was listed was closed", closed, err)
 	}
 	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 1 || copies[0].Source != edited.Source {
@@ -127,7 +127,7 @@ func TestACopyClosedForMatchingTheFileIsGuardedAndReopens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if closed, err := store.closeSourceCopy("owner", current); !closed || err != nil {
+	if closed, err := store.closeSourceCopy("owner", current, "file"); !closed || err != nil {
 		t.Fatal("an unchanged copy was not closed", closed, err)
 	}
 	if _, err := store.saveSource("owner", edited); !errors.Is(err, errSourceCheckpoint) {
@@ -193,16 +193,16 @@ func TestReopeningACopyClosedForMatchingTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if closed, err := store.closeSourceCopy("owner", copy); !closed || err != nil {
+	if closed, err := store.closeSourceCopy("owner", copy, "file"); !closed || err != nil {
 		t.Fatal(closed, err)
 	}
-	if err := store.reopenSourceCopy("owner", copy); err != nil {
-		t.Fatal(err)
+	if kept, err := store.reopenSourceCopy("owner", copy); !kept || err != nil {
+		t.Fatal(kept, err)
 	}
 	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 1 || copies[0].Source != copy.Source || !copies[0].Updated.Equal(copy.Updated) {
 		t.Fatal("the copy was not reopened as it was", copies, err)
 	}
-	if closed, err := store.closeSourceCopy("owner", copy); !closed || err != nil {
+	if closed, err := store.closeSourceCopy("owner", copy, "file"); !closed || err != nil {
 		t.Fatal(closed, err)
 	}
 	newer := copy
@@ -210,10 +210,48 @@ func TestReopeningACopyClosedForMatchingTheFile(t *testing.T) {
 	if _, err := store.saveSource("owner", newer); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.reopenSourceCopy("owner", copy); err != nil {
-		t.Fatal(err)
+	if kept, err := store.reopenSourceCopy("owner", copy); !kept || err != nil {
+		t.Fatal("the newer edit is not kept", kept, err)
 	}
 	if copies, err := store.sourceCopies("owner", copy.File); err != nil || len(copies) != 1 || copies[0].Source != newer.Source {
 		t.Fatal("reopening replaced a newer edit", copies, err)
+	}
+}
+
+// Discard, pressed while a checkpoint has closed the copy for matching the
+// file and has not yet read it again, closes the copy at that same sequence;
+// the checkpoint's reopen then leaves it closed. A copy Discard closed
+// first is not closed for matching at all.
+func TestADiscardBetweenAMatchCloseAndItsReopenStands(t *testing.T) {
+	store, _, err := openNoteStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := "Z\n// draft the user discards\n"
+	copy, err := store.saveSource("owner", savedSource{ID: newNoteID(), Sequence: 4, File: "song.cicada", Revision: "r0", Source: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed, err := store.closeSourceCopy("owner", copy, "file"); !closed || err != nil {
+		t.Fatal(closed, err)
+	}
+	if err := store.closeSource("owner", copy.ID, copy.File, 4, false, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if kept, err := store.reopenSourceCopy("owner", copy); kept || err != nil {
+		t.Fatal("the reopen undid the Discard", kept, err)
+	}
+	if got, err := store.getSource("owner", copy.ID); err != nil || got.State != "closed" || got.Matched != "" {
+		t.Fatalf("the discarded copy is %s (matched %q), %v", got.State, got.Matched, err)
+	}
+	first, err := store.saveSource("owner", savedSource{ID: newNoteID(), Sequence: 4, File: "song.cicada", Revision: "r0", Source: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.closeSource("owner", first.ID, first.File, 4, false, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if closed, err := store.closeSourceCopy("owner", first, "file"); closed || err != nil {
+		t.Fatal("a discarded copy was closed for matching", closed, err)
 	}
 }

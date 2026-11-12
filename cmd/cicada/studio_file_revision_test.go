@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -60,19 +61,38 @@ func TestFileRevisionTakesNoStudioLock(t *testing.T) {
 		}
 		t.Logf("%q read in %v", c.file, time.Since(start))
 	}
-	for _, file := range []string{"../escape.cicada", "parts/missing.cicada", "cicada.mod"} {
-		if response := read(file); response.Code != 404 {
+	// 422, not 404: a 404 means a service without this route.
+	for _, file := range []string{"../escape.cicada", "parts/missing.cicada", "cicada.mod", "/etc/passwd", "parts/../main.cicada", "main.cicada\x00"} {
+		if response := read(file); response.Code != 422 {
 			t.Fatalf("%q outside the project's sources answered %d %s", file, response.Code, response.Body)
 		}
 	}
-	// The answer follows the file on disk.
-	edited := append(append([]byte{}, part...), "\n// edited\n"...)
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "parts/patterns.cicada"), edited, 0644); err != nil {
+	// The answer follows the file on disk. textRevision reads each CRLF as LF
+	// and keeps a lone CR.
+	partPath := filepath.Join(filepath.Dir(path), "parts/patterns.cicada")
+	for _, edited := range []string{string(part) + "\n// edited\n", "a\r\nb\n// mixed\r\n", "a\rb\n"} {
+		if err := os.WriteFile(partPath, []byte(edited), 0644); err != nil {
+			t.Fatal(err)
+		}
+		var body struct{ Revision, TextRevision string }
+		if response := read("parts/patterns.cicada"); json.Unmarshal(response.Body.Bytes(), &body) != nil || body.Revision != studioRevision([]byte(edited)) || body.TextRevision != studioRevision([]byte(strings.ReplaceAll(edited, "\r\n", "\n"))) {
+			t.Fatalf("%q: the revision did not follow the file: %s", edited, response.Body)
+		}
+	}
+	// A name already checked, whose file is then replaced by a symlink to a
+	// file outside the project, is not read through the link.
+	outside := filepath.Join(t.TempDir(), "outside.cicada")
+	if err := os.WriteFile(outside, []byte("outside the project\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	var body struct{ Revision string }
-	if response := read("parts/patterns.cicada"); json.Unmarshal(response.Body.Bytes(), &body) != nil || body.Revision != studioRevision(edited) {
-		t.Fatalf("the revision did not follow the file: %s", response.Body)
+	if err := os.Remove(partPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, partPath); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if response := read("parts/patterns.cicada"); response.Code != 422 || strings.Contains(response.Body.String(), studioRevision([]byte("outside the project\n"))) {
+		t.Fatalf("the cached name was read through a symlink out of the project: %d %s", response.Code, response.Body)
 	}
 	s.mu.Unlock()
 	locked = false

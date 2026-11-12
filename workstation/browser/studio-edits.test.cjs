@@ -732,6 +732,52 @@ test('a save does not stop another window that typed the same text from keeping 
   assert.equal((await state('/api/state')).source, before.source, 'the other window changed the score');
 });
 
+test('a checkpoint answer that cannot be read is a failed attempt, and the window sends the same checkpoint again', async () => {
+  const {state} = await studio();
+  const other = await otherClient();
+  const before = await state('/api/state');
+  const editor = other.locator('#score textarea').first();
+  const original = await editor.inputValue();
+  const text = original + '\n// an answer that cannot be read';
+  // The first checkpoint is answered 200 with a body that is not JSON; the
+  // next ones reach Studio.
+  const sent = [], warnings = [];
+  const handler = async route => {
+    const body = route.request().postDataJSON();
+    sent.push({id: body.recoveryId, sequence: body.recoverySequence, content: body.content});
+    if (sent.length === 1) return route.fulfill({status: 200, contentType: 'application/json', body: 'not json'});
+    return route.fallback();
+  };
+  const onConsole = message => { if (message.type() === 'warning') warnings.push(message.text()); };
+  await other.route('**/__actions/source-checkpoint', handler);
+  other.on('console', onConsole);
+  try {
+    await other.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
+    await editor.fill(text);
+    await until(() => sent.length >= 2, 'the window did not send the checkpoint again');
+    assert.equal(sent[0].content, text, 'the first checkpoint did not carry the text');
+    assert.deepEqual(sent[1], sent[0], 'the second attempt was not the same checkpoint');
+    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
+      'the second attempt was not kept');
+    assert.ok(await other.evaluate(() => window.__recoveryStatus.includes('Recovery could not save. Keep this window open; another attempt will follow.')),
+      'the window did not say that the first attempt failed');
+    assert.ok(warnings.some(text => text.startsWith('Cicada: Code recovery checkpoint: recovery answer could not be read')),
+      `the console does not name the cause: ${JSON.stringify(warnings)}`);
+  } finally {
+    other.off('console', onConsole);
+    await other.unroute('**/__actions/source-checkpoint', handler);
+  }
+  // Back to the file's text: the window closes its copy for good.
+  await editor.fill(original);
+  await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'No unsaved Code edits.',
+    'the window did not close its copy');
+  assert.equal((await state('/api/state')).source, before.source, 'the window changed the score');
+});
+
 test('the Code editor stays mounted while other regions are patched', async () => {
   const {page, posts, cell, settled, confirmed, region, noNavigation} = await studio();
   const editor = await page.locator('#score textarea').elementHandle();

@@ -164,6 +164,7 @@ func (u *workspaceUI) checkpointSources() {
 				continue
 			}
 			if err != nil {
+				consoleWarn("Code recovery checkpoint", err)
 				u.sourceStatus("Recovery could not save. Keep this window open; another attempt will follow.")
 				continue
 			}
