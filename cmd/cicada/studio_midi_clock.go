@@ -5,7 +5,6 @@ import (
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/host/midi"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/musictime"
 )
 
@@ -26,7 +25,8 @@ func (t *studioTransport) observeMIDIClockLocked() {
 }
 
 func (t *studioTransport) observeMIDIFrameLocked(f liveplay.TransportFrame, next musictime.ObservedTempoStep, wallNow, hostNow int64) {
-	if !t.playing || !f.Playing || f.WallNanos == t.midiFrameWall || f.Bar < 1 || f.Beat < 1 || f.Beat > 4 || f.Tick < 0 || int64(f.Tick) >= seq.PPQ || f.TempoMilli < 20000 || f.TempoMilli > 300000 {
+	meterMap := t.meterMap()
+	if !t.playing || !f.Playing || f.WallNanos == t.midiFrameWall || f.Bar < 1 || f.Beat < 1 || int64(f.Beat) > meterMap.BeatsInBar(int64(f.Bar)-1) || f.Tick < 0 || int64(f.Tick) >= meterMap.BeatTicks(int64(f.Bar)-1) || f.TempoMilli < 20000 || f.TempoMilli > 300000 {
 		return
 	}
 	at, valid := midi.ObservationHostTime(f.WallNanos, wallNow, hostNow)
@@ -34,7 +34,7 @@ func (t *studioTransport) observeMIDIFrameLocked(f liveplay.TransportFrame, next
 		return
 	}
 	t.midiFrameWall = f.WallNanos
-	tick := (int64(f.Bar)-1)*seq.TicksPerBar + (int64(f.Beat)-1)*seq.PPQ + int64(f.Tick)
+	tick := transportFrameTick(meterMap, int64(f.Bar), int64(f.Beat), int64(f.Tick))
 	if !t.midiTimeline.ObserveClock(at, tick, int64(f.TempoMilli), next) {
 		t.midiTimeline.Reset(at)
 		t.midiFrameWall = f.WallNanos

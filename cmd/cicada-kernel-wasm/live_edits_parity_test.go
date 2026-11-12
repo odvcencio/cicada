@@ -132,7 +132,7 @@ func TestAudioWASMStepAndBindingPatchParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const editTick = 2 * seq.TicksPerBar
+	const editTick = 2 * ticksPerBar
 	setup := []cmd.Command{{Op: cmd.OpPlay, Track: 0xff}, {Op: cmd.OpMeterRate, Track: 0xff, Arg0: 4, Arg1: 1}}
 	edits := []cmd.Command{
 		{Op: cmd.OpSetStep, Track: 1, Index: 1, Arg0: snare, Tick: editTick},

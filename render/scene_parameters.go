@@ -98,7 +98,7 @@ func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRat
 	if err != nil {
 		return nil, err
 	}
-	tempo, err := project.NewTempoMap(sampleRate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	tempo, err := project.NewTempoMap(p.MeterMap(), sampleRate, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		return nil, err
 	}

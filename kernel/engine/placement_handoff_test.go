@@ -38,7 +38,7 @@ func TestPlacementLoopWrapHandsOffLikeSongLoop(t *testing.T) {
 	song.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot}}}}
 	song.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 0, Bars: 1}}
 	placed := handoffLoopConfig(t)
-	bar := int64(seq.TicksPerBar)
+	bar := int64(ticksPerBar)
 	placed.Schedule = []ScheduleEvent{
 		{Kind: SchedulePattern, Tick: 0, EndTick: bar, ID: 1},
 		{Kind: SchedulePatternEnd, Tick: bar, EndTick: bar, ID: 1},
@@ -74,7 +74,7 @@ func TestPlacementLoopWrapHandsOffLikeSongLoop(t *testing.T) {
 // when a lane also restarts there: the output matches the same arrangement
 // without the lane, and the lane's parameter returns to its authored value.
 func TestPlacementLoopHandoffKeepsTailsAndRestartsLanes(t *testing.T) {
-	bar := int64(seq.TicksPerBar)
+	bar := int64(ticksPerBar)
 	build := func(lane bool) Config {
 		cfg := handoffLoopConfig(t)
 		cfg.Tracks = 2

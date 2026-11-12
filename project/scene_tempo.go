@@ -97,8 +97,9 @@ type TempoMap struct {
 	clocks []seq.Clock
 }
 
-// NewTempoMap builds the map for a score tempo and its steps in bar order.
-func NewTempoMap(sampleRate int, tempoMilli int64, changes []TempoChange) (*TempoMap, error) {
+// NewTempoMap builds the map for a score tempo and its steps in bar order,
+// each on its bar line in the meter map.
+func NewTempoMap(meterMap seq.MeterMap, sampleRate int, tempoMilli int64, changes []TempoChange) (*TempoMap, error) {
 	if err := musictime.ValidateTempoChanges(changes); err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func NewTempoMap(sampleRate int, tempoMilli int64, changes []TempoChange) (*Temp
 		if change.Bar < 0 || change.Bar > 1<<20 {
 			return nil, fmt.Errorf("tempo change bar %d is out of range", change.Bar)
 		}
-		if clock, err = clock.Reanchor(int64(change.Bar)*seq.TicksPerBar, int64(change.BPMMilli)); err != nil {
+		if clock, err = clock.Reanchor(meterMap.BarStart(int64(change.Bar)), int64(change.BPMMilli)); err != nil {
 			return nil, err
 		}
 		m.clocks = append(m.clocks, clock)
@@ -182,14 +183,18 @@ func ExcerptTempoChanges(scoreMilli int, changes []TempoChange, from, bars int) 
 // across the tempo steps. It is for display; playback and renders use TempoMap.
 func SongSeconds(p *Project, bars int) float64 {
 	changes := SongTempoChanges(p)
+	meterMap := p.MeterMap()
+	ticks := func(from, to int) float64 {
+		return float64(meterMap.BarStart(int64(to)) - meterMap.BarStart(int64(from)))
+	}
 	var seconds float64
 	tempo, from := float64(p.TempoMilli), 0
 	for _, change := range changes {
 		if change.Bar >= bars {
 			break
 		}
-		seconds += float64(change.Bar-from) * 4 * 60000 / tempo
+		seconds += ticks(from, change.Bar) * 60000 / float64(seq.PPQ) / tempo
 		tempo, from = float64(change.BPMMilli), change.Bar
 	}
-	return seconds + float64(bars-from)*4*60000/tempo
+	return seconds + ticks(from, bars)*60000/float64(seq.PPQ)/tempo
 }

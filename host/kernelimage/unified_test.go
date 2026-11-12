@@ -293,7 +293,7 @@ func TestUnifiedInvalidRecordsRejectAtEncode(t *testing.T) {
 func TestUnifiedFeatureShapesRoundTrip(t *testing.T) {
 	mono := firstAcidConfig(t)
 	scheduleOnly := firstAcidConfig(t)
-	scheduleOnly.Schedule = engine.LowerSong(scheduleOnly.Song)
+	scheduleOnly.Schedule = engine.LowerSong(scheduleOnly.Song, seq.MeterMap{})
 	scheduleOnly.Song = nil
 	clips := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000, Patterns: []engine.PatternBank{{}}}
 	clips.Track[0].Kind = engine.VoiceAudio
