@@ -8,7 +8,10 @@ and `cicada.mod` makes the folder a project in edition 2 of the language.
   diagnostic code.
 - Check after every edit: `cicada check --json main.cicada`, until `valid` is
   true.
-- Change the score one revision-checked batch at a time:
-  `cicada apply main.cicada edit.json --write --json`, with the `revision` that
-  the last `check --json` or `apply` gave. A batch whose revision is stale is
-  refused and changes nothing.
+- Change the score one revision-checked batch at a time with
+  `cicada apply main.cicada edit.json --write --json`. Set `revision` in
+  `edit.json` to `scores[0].revision` from the last
+  `cicada check --json main.cicada`, to `revision` from
+  `cicada song --json main.cicada`, or to `revision_after` from the last
+  `apply --write`. A batch whose revision is stale is refused and changes
+  nothing. Without `--write`, `apply` prints the diff and writes nothing.

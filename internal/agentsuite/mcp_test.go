@@ -25,7 +25,6 @@ type mcpClient struct {
 func startMCP(t *testing.T, bin, root string) *mcpClient {
 	t.Helper()
 	cmd := exec.Command(bin, "mcp", "--root", root)
-	cmd.Env = append(os.Environ(), "CICADA_LIBRARY="+t.TempDir())
 	cmd.Stderr = io.Discard
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -134,6 +133,19 @@ func (c *mcpClient) close() {
 // documents.
 func driveMCPServer(t *testing.T, bin string) {
 	t.Helper()
+	// The server reads no user library; neither may the commands it is
+	// compared with.
+	previous, had := os.LookupEnv("CICADA_LIBRARY")
+	if err := os.Setenv("CICADA_LIBRARY", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if had {
+			_ = os.Setenv("CICADA_LIBRARY", previous)
+		} else {
+			_ = os.Unsetenv("CICADA_LIBRARY")
+		}
+	}()
 	dir := t.TempDir()
 	if _, code := cicada(t, bin, dir, "new", "demo"); code != 0 {
 		t.Fatal("cicada new failed")
@@ -156,11 +168,12 @@ func driveMCPServer(t *testing.T, bin string) {
 			t.Fatalf("tool %v lacks a schema or the read-only hint", tool["name"])
 		}
 	}
-	if mustJSONString(names) != `["song","check","intents","explain","library"]` {
+	if mustJSONString(names) != `["song","check","intents","explain","library","params"]` {
 		t.Fatalf("tools/list: %v", names)
 	}
 
-	// check returns check --json, as the command prints it in the root.
+	// Every tool returns, by value, the document its command prints in the
+	// root; check is also timed.
 	called := time.Now()
 	document, isError := c.call(c.modern("tools/call", map[string]any{"name": "check", "arguments": map[string]any{"score": "main.cicada"}}))
 	roundTrip := time.Since(called)
@@ -172,22 +185,51 @@ func driveMCPServer(t *testing.T, bin string) {
 	for _, tc := range []struct {
 		tool      string
 		arguments map[string]any
-		schema    string
+		command   []string
 	}{
-		{"song", map[string]any{}, "cicada.song.v1"},
-		{"song", map[string]any{"score": "main.cicada", "include": []string{"symbols"}}, "cicada.song.v1"},
-		{"intents", map[string]any{}, "cicada.intents_index.v1"},
-		{"intents", map[string]any{"kinds": []string{"setparam"}}, "cicada.intents.v1"},
-		{"explain", map[string]any{"diagnostic": "CICADA-PARAM"}, "cicada.diagnostics.v1"},
-		{"explain", map[string]any{"construct": "pattern"}, "cicada.explain.v1"},
-		{"library", map[string]any{}, "cicada.library.v1"},
-		{"library", map[string]any{"path": "std/drums"}, "cicada.library.v1"},
+		{"song", map[string]any{}, []string{"song", "--json"}},
+		{"song", map[string]any{"score": "main.cicada", "include": []string{"symbols"}}, []string{"song", "--json", "--include", "symbols", "main.cicada"}},
+		{"check", map[string]any{"score": "main.cicada", "profile": "browser"}, []string{"check", "--json", "--profile", "browser", "main.cicada"}},
+		{"intents", map[string]any{}, []string{"intents", "--json", "--index"}},
+		{"intents", map[string]any{"kinds": []string{"setparam"}}, []string{"intents", "--json", "setparam"}},
+		{"explain", map[string]any{"diagnostic": "CICADA-PARAM"}, []string{"diagnostics", "--json", "CICADA-PARAM"}},
+		{"explain", map[string]any{"construct": "pattern"}, []string{"explain", "pattern", "--json"}},
+		{"library", map[string]any{}, []string{"lib", "list", "--json"}},
+		{"library", map[string]any{"path": "std/drums"}, []string{"lib", "show", "std/drums", "--json"}},
 	} {
 		document, isError := c.call(c.modern("tools/call", map[string]any{"name": tc.tool, "arguments": tc.arguments}))
-		if isError || document["schema"] != tc.schema || document["error"] != nil {
-			t.Fatalf("%s %v: isError %v, %v", tc.tool, tc.arguments, isError, document)
+		stdout, code := cicada(t, bin, root, tc.command...)
+		var want any
+		if err := json.Unmarshal(stdout, &want); err != nil || code != 0 || isError || mustJSONString(document) != mustJSONString(want) {
+			t.Fatalf("%s %v differs from cicada %v (isError %v):\n%s\n%s", tc.tool, tc.arguments, tc.command, isError, mustJSONString(document), stdout)
 		}
 	}
+	document, isError = c.call(c.modern("tools/call", map[string]any{"name": "params", "arguments": map[string]any{}}))
+	stdout, _ = cicada(t, bin, root, "params")
+	var registry any
+	if err := json.Unmarshal(stdout, &registry); err != nil || isError || document["schema"] != "cicada.param_registry.v1" || mustJSONString(document["params"]) != mustJSONString(registry) {
+		t.Fatalf("params differs from cicada params: %v %v", err, isError)
+	}
+
+	// The guide resources are what cicada agents and cicada agents reference
+	// print, so an agent with only the server can start.
+	resources := c.modern("resources/list", nil)["result"].(map[string]any)["resources"].([]any)
+	if len(resources) != 2 {
+		t.Fatalf("resources/list: %v", resources)
+	}
+	for i, page := range [][]string{{"agents"}, {"agents", "reference"}} {
+		uri := resources[i].(map[string]any)["uri"].(string)
+		read := c.modern("resources/read", map[string]any{"uri": uri})["result"].(map[string]any)
+		text := read["contents"].([]any)[0].(map[string]any)["text"].(string)
+		stdout, code := cicada(t, bin, root, page...)
+		if code != 0 || text != string(stdout) || resources[i].(map[string]any)["size"] != float64(len(stdout)) {
+			t.Fatalf("resource %s differs from cicada %v", uri, page)
+		}
+	}
+	if failure, _ := c.modern("resources/read", map[string]any{"uri": "cicada://guide/nosuch"})["error"].(map[string]any); failure["code"] != float64(-32602) {
+		t.Fatalf("an unknown resource: %v", failure)
+	}
+
 	// A refusal is a result with isError and the tool's own format; an
 	// unknown tool and an unsupported version are protocol errors.
 	document, isError = c.call(c.modern("tools/call", map[string]any{"name": "check", "arguments": map[string]any{"score": "../outside.cicada"}}))
@@ -210,11 +252,14 @@ func driveMCPServer(t *testing.T, bin string) {
 		t.Fatalf("initialize: %v", initialized)
 	}
 	legacy.send("notifications/initialized", nil, true)
-	if list := legacy.send("tools/list", nil, false)["result"].(map[string]any); len(list["tools"].([]any)) != 5 {
+	if list := legacy.send("tools/list", nil, false)["result"].(map[string]any); len(list["tools"].([]any)) != 6 {
 		t.Fatalf("legacy tools/list: %v", list)
 	}
 	if document, isError := legacy.call(legacy.send("tools/call", map[string]any{"name": "check", "arguments": map[string]any{"score": "main.cicada"}}, false)); isError || !bytes.Equal(mustJSON(document), mustJSON(cli)) {
 		t.Fatalf("legacy check: %v %v", isError, document)
+	}
+	if read := legacy.send("resources/read", map[string]any{"uri": "cicada://guide/quickstart"}, false); read["result"] == nil {
+		t.Fatalf("legacy resources/read: %v", read)
 	}
 	legacy.close()
 	t.Logf("cicada mcp: started and answered server/discover in %s; one check call round trip %s", startup.Round(time.Millisecond), roundTrip.Round(time.Millisecond))
