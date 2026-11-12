@@ -219,3 +219,36 @@ func TestStateKeepsExactlyItsBytes(t *testing.T) {
 		t.Fatal("a score with a sampler counts as reading nothing but its sources")
 	}
 }
+
+// Tree and Offset read the state's own bytes of a file: the entry by its
+// path, a staged file by its, and nothing else.
+func TestStateTreeAndOffset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.cicada")
+	source := []byte("title \"T\"\ntrack bass acid {}\n")
+	if err := os.WriteFile(path, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	staged := filepath.Join(dir, "other.cicada")
+	state := project.NewState(path, source, map[string][]byte{staged: []byte("tempo 120\n")}, stateOptions)
+	root, walker, err := state.Tree(path)
+	if err != nil || root == nil || walker == nil || walker.Type(root.NamedChild(1)) != "track_decl" {
+		t.Fatalf("entry tree: %v", err)
+	}
+	if again, _, _ := state.Tree(path); again != root {
+		t.Fatal("the entry was parsed twice")
+	}
+	if root, walker, err := state.Tree(staged); err != nil || walker.Type(root.NamedChild(0)) != "tempo_decl" {
+		t.Fatalf("staged tree: %v", err)
+	}
+	if _, _, err := state.Tree(filepath.Join(dir, "missing.cicada")); err == nil {
+		t.Fatal("a file outside the state has a tree")
+	}
+	at, err := state.Offset(path, notation.Position{File: path, Line: 2, Column: 7})
+	if err != nil || string(source[at:at+4]) != "bass" {
+		t.Fatalf("offset %d: %v", at, err)
+	}
+	if _, err := state.Offset(path, notation.Position{File: staged, Line: 1, Column: 1}); err == nil {
+		t.Fatal("a position in another file converted")
+	}
+}
