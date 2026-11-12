@@ -92,7 +92,7 @@ var barAllowlist = map[[2]string]barAllowance{
 	{"notation/grid.go", "GridTicks"}:                                           {2, wholeNote},
 	{"notation/modulators.go", "ParseModRate"}:                                  {1, wholeNote},
 	{"project/modulators.go", "rateSource"}:                                     {2, wholeNote},
-	{"project/validate.go", "ValidateProject"}:                                  {1, wholeNote},
+	{"project/validate.go", "validateProject"}:                                  {1, wholeNote},
 	{"smf/project.go", "fromProject"}:                                           {1, "a whole note divided by the beat gives the time-signature denominator"},
 	{"workstation/modulation.go", "modulationRate"}:                             {2, wholeNote},
 	{"workstation/pattern_grid.go", "patternGridName"}:                          {1, wholeNote},
