@@ -9,10 +9,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
-	"sync"
 
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/kernel/seq"
@@ -584,29 +582,6 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 	}
 	acts := notes.activity(cfg, len(p.Tracks), fromTick, bars, sustain, barSounding)
-	// Band ownership takes one transform every 2,048 samples of each sounding
-	// stem: it runs beside the per-track loop below, one track per worker at a
-	// time. A track's frames come from one goroutine in order, so the result
-	// does not depend on scheduling.
-	var bandWork sync.WaitGroup
-	if !opts.NoBands {
-		queue := make(chan int, len(p.Tracks))
-		for ti := range p.Tracks {
-			if rmsDB(stems[ti]) >= silentDB {
-				queue <- ti
-			}
-		}
-		close(queue)
-		for range min(runtime.GOMAXPROCS(0), len(queue)) {
-			bandWork.Add(1)
-			go func() {
-				defer bandWork.Done()
-				for ti := range queue {
-					bandFrames[ti] = bandPower(stems[ti], chromaPlan, binBand, layout)
-				}
-			}()
-		}
-	}
 	var maxEnergy float64
 	for ti, track := range p.Tracks {
 		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, 16)}
@@ -645,13 +620,15 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
 		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
+		if !opts.NoBands {
+			bandFrames[ti] = bandPower(s, chromaPlan, binBand, layout)
+		}
 		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
 		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, meterMap, baseSample, opts.From, bars, acts[ti])
 		r.Tracks = append(r.Tracks, tr)
 		a.rhythmRows = append(a.rhythmRows, tr.Rhythm)
 	}
-	bandWork.Wait()
 	for ti := range r.Tracks {
 		if r.Tracks[ti].Silent {
 			continue

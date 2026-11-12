@@ -511,11 +511,10 @@ all) puts them at about a fifth of the run:
 | The render that makes the stems, for comparison | 6.34 s | 48% |
 
 Band ownership grows with the number of tracks and the length; the loudness
-passes only with the length. Band ownership runs on several cores beside the
-per-track measures, one track per core at a time, and gives the same numbers
-however the work is scheduled. `--no-bands` skips it. Memory does not change
-measurably: the report already holds every analyzed stem in memory as 32-bit
-float, about 23 MB per track per minute of song, and `--tracks` lowers that.
+passes only with the length. `--no-bands` skips band ownership. Memory does
+not change measurably: the report already holds every analyzed stem in memory
+as 32-bit float, about 23 MB per track per minute of song, and `--tracks`
+lowers that.
 
 Measured on the 181-second, twelve-track reference song
 `examples/songs/anywhere-you-are.cicada` (Apple M1 Max, four Go threads,
@@ -524,7 +523,9 @@ load average 4 to 9):
 | `audition --json` | Wall time | Peak memory |
 | --- | --- | --- |
 | Before these measures | 58 to 60 s | 1.84 GB |
-| With them, band ownership on one core | 70 to 75 s | 1.83 GB |
-| With them, `--no-bands` | 63 s | 1.85 GB | The JSON grows: about 300 KB for a three-minute song of twelve
+| With them | 70 to 75 s | 1.83 GB |
+| With them, `--no-bands` | 63 s | 1.85 GB |
+
+The JSON grows: about 300 KB for a three-minute song of twelve
 or twenty-four tracks, plus about 140 bytes per track per bar with
 `--bar-bands`.
